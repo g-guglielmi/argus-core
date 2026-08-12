@@ -34,11 +34,12 @@ type hostView struct {
 	Name     string `json:"name"`
 	Problems int    `json:"problems"`
 	Severity int    `json:"severity"` // -1 when no active problem, else 0..5
-	State       string `json:"state"`  // ok | warning | error
-	Paused      bool   `json:"paused"` // disabled in Zabbix (stopped collecting)
-	Hidden      bool   `json:"hidden"` // Argus-side suppression (still collecting)
-	PausedUntil *int64 `json:"paused_until,omitempty"`
-	HiddenUntil *int64 `json:"hidden_until,omitempty"`
+	State       string   `json:"state"`  // ok | warning | error
+	Paused      bool     `json:"paused"` // disabled in Zabbix (stopped collecting)
+	Hidden      bool     `json:"hidden"` // Argus-side suppression (still collecting)
+	PausedUntil *int64   `json:"paused_until,omitempty"`
+	HiddenUntil *int64   `json:"hidden_until,omitempty"`
+	Groups      []string `json:"groups"` // host groups (drive the site tree)
 }
 
 type itemView struct {
@@ -111,7 +112,11 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]hostView, 0, len(hosts))
 	for _, h := range hosts {
-		hv := hostView{ID: h.HostID, Name: h.Name, Severity: -1, State: "ok"}
+		groups := make([]string, 0, len(h.Groups))
+		for _, g := range h.Groups {
+			groups = append(groups, g.Name)
+		}
+		hv := hostView{ID: h.HostID, Name: h.Name, Severity: -1, State: "ok", Groups: groups}
 		if n := count[h.HostID]; n > 0 {
 			hv.Problems = n
 			hv.Severity = worst[h.HostID]

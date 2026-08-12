@@ -11,6 +11,29 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.0.27] - 2026-08-12
+
+**New UI, stage 2 of 4 — the Monitoring tree & live Probes.**
+
+### Added
+- **Site → host → sensor tree** in Monitoring, grouped by **Zabbix host group** (site = host
+  group; a host in several groups appears under each; hosts with none fall under "Ungrouped").
+  Collapsible sites and hosts, a worst-state dot per site, and a panel-level Key sensors / All
+  sensors toggle. Backend: `host.get` now returns each host's groups (`selectHostGroups`), and
+  `hostView` carries `groups`.
+- **Kebab (⋮) action menus** on hosts and sensors, replacing the inline Pause/Hide buttons —
+  Pause / Hide (with the duration picker), Resume / Show, and **Acknowledge** on a sensor that
+  has an unacknowledged problem. Inherited (host-controlled) pause/hide is cleared at the host.
+- **Live Probes page**: shows the real Zabbix proxies (the per-site collectors) with online /
+  offline status (seen within 5 min), last check-in, and mode — replacing the placeholder table.
+  New `GET /api/proxies` (proxy.get) and client method. Token enrollment is still "coming soon".
+
+### Changed
+- The sensor table, charts (range tabs), and problem panel now use the design-token styling.
+  Full-size charts keep uPlot, so they retain axis ticks and the hover legend.
+
+---
+
 ## [0.0.26] - 2026-08-12
 
 **New UI, stage 1 of 4 — foundation & shell.** Start of the port from the approved design

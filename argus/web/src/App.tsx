@@ -7,7 +7,8 @@ type Me = { email: string; name: string; surname: string; role: string; mfa_enab
 type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number }
 type Health = { status: string; zabbix: { reachable: boolean; version?: string; error?: string } }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
-type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number }
+type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[] }
+type Proxy = { name: string; last_access: number; online: boolean; mode: string }
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
 type ProblemRow = { event_id: string; name: string; host_id: string; host_name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; clock: number }
@@ -479,22 +480,37 @@ function NotificationsView() {
   )
 }
 
-const PLACEHOLDER_SITES = ['site1', 'site2', 'site3', 'site4']
 function ProbesView() {
+  const [proxies, setProxies] = useState<Proxy[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    const load = () => fetch('/api/proxies')
+      .then(async (r) => { if (!r.ok) throw new Error(await errText(r, 'Failed to load probes')); return r.json() })
+      .then((p: Proxy[]) => { setProxies(p || []); setError(null) })
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load probes'))
+    load(); const t = setInterval(load, 30000); return () => clearInterval(t)
+  }, [])
   return (
     <div className="panel">
       <div className="ph-hero">
         <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5" /></svg>
-        <div className="soon-badge">Coming soon</div>
-        <h2>Probe enrollment</h2>
-        <p>Bring a site online by running a probe there and enrolling it with a one-time token. Once it checks in over its secure tunnel, that site's hosts and sensors flow into Argus automatically.</p>
+        <div className="soon-badge">Enrollment coming soon</div>
+        <h2>Site probes</h2>
+        <p>Each site collects through a probe that pushes to the core over a secure tunnel. Below is the live status of the probes the core knows about; one-click token enrollment for new sites is on the way.</p>
       </div>
       <table className="enroll">
-        <thead><tr><th>Site</th><th>Status</th><th>Last check-in</th><th style={{ textAlign: 'right' }}>Action</th></tr></thead>
+        <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Mode</th></tr></thead>
         <tbody>
-          <tr><td><strong>site5</strong> <span style={{ color: 'var(--faint)' }}>· core</span></td><td><span className="tag online">● online</span></td><td className="mono">just now</td><td style={{ textAlign: 'right' }}><button className="btn" disabled>Re-issue token</button></td></tr>
-          {PLACEHOLDER_SITES.map((s) => (
-            <tr key={s}><td><strong>{s}</strong></td><td><span className="tag pending">awaiting probe</span></td><td className="mono" style={{ color: 'var(--faint)' }}>never</td><td style={{ textAlign: 'right' }}><button className="btn primary" disabled>Generate token</button></td></tr>
+          {error && <tr><td colSpan={4} style={{ color: 'var(--err)' }}>{error}</td></tr>}
+          {!error && proxies === null && <tr><td colSpan={4} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
+          {!error && proxies && proxies.length === 0 && <tr><td colSpan={4} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
+          {!error && proxies && proxies.map((p) => (
+            <tr key={p.name}>
+              <td><strong>{p.name}</strong></td>
+              <td>{p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}</td>
+              <td className="mono" style={{ color: p.last_access ? undefined : 'var(--faint)' }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
+              <td className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
+            </tr>
           ))}
         </tbody>
       </table>
@@ -585,11 +601,69 @@ function DashboardView() {
   )
 }
 
+const kbIcon = {
+  pause: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>,
+  hide: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7" /><path d="M3 3l18 18" /><path d="M9.5 9.5a3 3 0 0 0 4.2 4.2" /></svg>,
+  resume: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M7 5l12 7-12 7z" /></svg>,
+  show: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>,
+  ack: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M22 11.2V12a10 10 0 1 1-5.9-9.1" /><path d="M22 4 12 14.5l-3-3" /></svg>,
+}
+
+// A kebab menu action. onClick fires immediately; onPick opens the duration submenu first and
+// fires with the chosen seconds (null = indefinite). sep renders a divider.
+type KAction = { label: string; icon?: ReactNode; danger?: boolean; onClick?: () => void; onPick?: (s: number | null) => void; sep?: boolean }
+
+function Kebab({ actions, disabled, up }: { actions: KAction[]; disabled?: boolean; up?: boolean }) {
+  const [open, setOpen] = useState(false)
+  const [dur, setDur] = useState<KAction | null>(null)
+  const [custom, setCustom] = useState(false)
+  const [val, setVal] = useState('')
+  function close() { setOpen(false); setDur(null); setCustom(false) }
+  function choose(a: KAction) { if (a.onPick) { setDur(a) } else { const fn = a.onClick; close(); fn?.() } }
+  function pickPreset(s: number | null | 'custom') {
+    if (s === 'custom') { setVal(toLocalInput(Date.now() + 3600_000)); setCustom(true); return }
+    const fn = dur?.onPick; close(); fn?.(s)
+  }
+  function confirmCustom() {
+    const t = new Date(val).getTime(); const secs = Math.round((t - Date.now()) / 1000); const fn = dur?.onPick
+    close(); if (isFinite(t) && secs > 0) fn?.(secs)
+  }
+  return (
+    <span className="kebab-wrap" onClick={(e) => e.stopPropagation()}>
+      <button className={'kebab' + (open ? ' open' : '')} title="Actions" disabled={disabled} onClick={() => { if (!open) { setDur(null); setCustom(false) } setOpen((o) => !o) }}>⋮</button>
+      {open && (
+        <>
+          <div onClick={close} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
+          <div className={'menu' + (up ? ' up' : '')} style={{ zIndex: 31, minWidth: dur && custom ? 240 : 180 }} onClick={(e) => e.stopPropagation()}>
+            {!dur && actions.map((a, i) => a.sep
+              ? <div key={i} className="sep" />
+              : <button key={i} className={a.danger ? 'danger' : ''} onClick={() => choose(a)}>{a.icon}{a.label}</button>)}
+            {dur && !custom && DURATIONS.map((d) => <button key={d.label} onClick={() => pickPreset(d.seconds)}>{d.label}</button>)}
+            {dur && custom && (
+              <div style={{ padding: '0.4rem 0.5rem' }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginBottom: '0.35rem' }}>{dur.label} until:</div>
+                <input type="datetime-local" className="input" value={val} min={toLocalInput(Date.now())} onChange={(e) => setVal(e.target.value)} style={{ width: '100%', marginBottom: '0.5rem' }} />
+                <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
+                  <button className="btn ghost" onClick={() => setCustom(false)}>Back</button>
+                  <button className="btn primary" onClick={confirmCustom}>Set</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </span>
+  )
+}
+
 function MonitoringView({ role }: { role: string }) {
   const [hosts, setHosts] = useState<Host[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [openId, setOpenId] = useState<string | null>(null)
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+  const [openHost, setOpenHost] = useState<string | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
   const canPause = role === 'admin' || role === 'helpdesk'
 
   function load(initial = false) {
@@ -601,15 +675,14 @@ function MonitoringView({ role }: { role: string }) {
   }
   useEffect(() => { load(true); const t = setInterval(() => load(false), 30000); return () => clearInterval(t) }, [])
 
-  const [busyId, setBusyId] = useState<string | null>(null)
-  async function setState(h: Host, action: 'pause' | 'hide', seconds: number | null) {
+  async function setHostState(h: Host, action: 'pause' | 'hide', seconds: number | null) {
     setBusyId(h.id)
     const res = await fetch(`/api/hosts/${h.id}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration_seconds: seconds ?? 0 }) }).catch(() => null)
     setBusyId(null)
     if (res && !res.ok) { setError(await errText(res, `Could not ${action} host`)); return }
     load()
   }
-  async function clearState(h: Host, action: 'pause' | 'hide') {
+  async function clearHostState(h: Host, action: 'pause' | 'hide') {
     setBusyId(h.id)
     const res = await fetch(`/api/hosts/${h.id}/${action}`, { method: 'DELETE' }).catch(() => null)
     setBusyId(null)
@@ -617,57 +690,80 @@ function MonitoringView({ role }: { role: string }) {
     load()
   }
 
+  // Build the site tree: site = Zabbix host group. A host in several groups appears under each;
+  // hosts with no group fall under "Ungrouped".
+  const sites: Record<string, Host[]> = {}
+  for (const h of hosts) {
+    const gs = h.groups && h.groups.length ? h.groups : ['Ungrouped']
+    for (const g of gs) { (sites[g] = sites[g] || []).push(h) }
+  }
+  const siteNames = Object.keys(sites).sort((a, b) => a.localeCompare(b))
+  function siteWorst(hs: Host[]): string { let s = 'ok'; for (const h of hs) if (!h.paused && !h.hidden && stateRank[h.state] > stateRank[s]) s = h.state; return s }
+  function toggleSite(name: string) { setCollapsed((c) => { const n = new Set(c); if (n.has(name)) n.delete(name); else n.add(name); return n }) }
+
   return (
-    <section style={card}>
-      <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Hosts</h2>
-      {loading && <p>Loading…</p>}
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {!loading && !error && hosts.length === 0 && <p style={{ color: '#888' }}>No hosts found.</p>}
-      <div style={{ display: 'grid', gap: '0.4rem' }}>
-        {hosts.map((h) => (
-          <div key={h.id}>
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => setOpenId(openId === h.id ? null : h.id)}
-              style={{ ...ghost, width: '100%', display: 'flex', alignItems: 'center', gap: '0.6rem', textAlign: 'left', cursor: 'pointer', boxSizing: 'border-box', opacity: h.paused || h.hidden ? 0.7 : 1, borderColor: openId === h.id ? 'var(--accent)' : 'var(--border)' }}
-            >
-              <span style={{ width: 10, height: 10, borderRadius: '50%', flexShrink: 0, background: dotColor(h.paused, h.hidden, h.state) }} />
-              <span style={{ fontWeight: 600 }}>{h.name}</span>
-              {h.paused && <span style={{ color: PAUSED_BLUE, fontSize: '0.8rem' }}>(paused · {untilLabel(h.paused_until)})</span>}
-              {h.hidden && <span style={{ color: HIDDEN_GREY, fontSize: '0.8rem' }}>(hidden · {untilLabel(h.hidden_until)})</span>}
-              <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                {!h.paused && !h.hidden && h.problems > 0 && (
-                  <span style={{ color: stateColor[h.state] || '#aaa', fontSize: '0.85rem', marginRight: '0.25rem' }}>
-                    {h.problems} problem{h.problems === 1 ? '' : 's'}
-                  </span>
-                )}
-                {canPause && (
-                  <>
-                    {h.paused
-                      ? <button onClick={(e) => { e.stopPropagation(); clearState(h, 'pause') }} disabled={busyId === h.id} style={{ ...ghost, padding: '0.15rem 0.55rem', fontSize: '0.8rem', borderColor: PAUSED_BLUE }}>Resume</button>
-                      : <DurationButton label="Pause" onPick={(s) => setState(h, 'pause', s)} disabled={busyId === h.id} />}
-                    {h.hidden
-                      ? <button onClick={(e) => { e.stopPropagation(); clearState(h, 'hide') }} disabled={busyId === h.id} style={{ ...ghost, padding: '0.15rem 0.55rem', fontSize: '0.8rem' }}>Show</button>
-                      : <DurationButton label="Hide" onPick={(s) => setState(h, 'hide', s)} disabled={busyId === h.id} />}
-                  </>
-                )}
-              </span>
-            </div>
-            {openId === h.id && <HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} />}
+    <div className="panel">
+      <div className="phead">
+        <h2>Sites &amp; hosts</h2>
+        <span className="hint">{siteNames.length} group{siteNames.length === 1 ? '' : 's'} · {hosts.length} host{hosts.length === 1 ? '' : 's'}</span>
+        <div className="tools">
+          <div className="seg">
+            <button className={!showAll ? 'on' : ''} onClick={() => setShowAll(false)}>Key sensors</button>
+            <button className={showAll ? 'on' : ''} onClick={() => setShowAll(true)}>All sensors</button>
           </div>
-        ))}
+        </div>
       </div>
-    </section>
+      {loading && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>Loading…</div>}
+      {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
+      {!loading && !error && hosts.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>No hosts found.</div>}
+      {siteNames.map((name) => {
+        const hs = sites[name]
+        const open = !collapsed.has(name)
+        return (
+          <div className="site" key={name}>
+            <div className="site-head" onClick={() => toggleSite(name)}>
+              <svg className={'chev' + (open ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
+              <span className="name">{name}</span>
+              <span className="loc">{hs.length} host{hs.length === 1 ? '' : 's'}</span>
+              <div className="right"><span style={{ width: 9, height: 9, borderRadius: '50%', background: stateColor[siteWorst(hs)] || 'var(--muted)' }} /></div>
+            </div>
+            {open && hs.map((h) => {
+              const key = name + '::' + h.id
+              const hopen = openHost === key
+              return (
+                <div className="host" key={key}>
+                  <div className="host-head" onClick={() => setOpenHost(hopen ? null : key)}>
+                    <svg className={'chev' + (hopen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
+                    <span style={{ width: 9, height: 9, borderRadius: '50%', flexShrink: 0, background: dotColor(h.paused, h.hidden, h.state) }} />
+                    <span className="hn">{h.name}</span>
+                    {h.paused && <span className="kind" style={{ color: PAUSED_BLUE }}>· paused {untilLabel(h.paused_until)}</span>}
+                    {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
+                    <div className="right">
+                      {!h.paused && !h.hidden && h.problems > 0 && <span style={{ color: stateColor[h.state], fontSize: 12 }}>{h.problems} problem{h.problems === 1 ? '' : 's'}</span>}
+                      {canPause && (
+                        <Kebab disabled={busyId === h.id} actions={[
+                          h.paused ? { label: 'Resume', icon: kbIcon.resume, onClick: () => clearHostState(h, 'pause') } : { label: 'Pause', icon: kbIcon.pause, onPick: (s) => setHostState(h, 'pause', s) },
+                          h.hidden ? { label: 'Show', icon: kbIcon.show, onClick: () => clearHostState(h, 'hide') } : { label: 'Hide', icon: kbIcon.hide, onPick: (s) => setHostState(h, 'hide', s) },
+                        ]} />
+                      )}
+                    </div>
+                  </div>
+                  {hopen && <div className="host-body"><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAll} /></div>}
+                </div>
+              )
+            })}
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
-function HostItems({ hostId, canPause, hostPaused, hostHidden }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean }) {
+function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; showAll: boolean }) {
   const [items, setItems] = useState<SensorItem[] | null>(null)
   const [problems, setProblems] = useState<Problem[]>([])
   const [error, setError] = useState<string | null>(null)
   const [openItem, setOpenItem] = useState<string | null>(null)
-  const [showAll, setShowAll] = useState(false)
 
   function loadItems(reset = true) {
     if (reset) setItems(null)
@@ -709,8 +805,8 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden }: { hostId: strin
     loadProblems()
   }
 
-  if (error) return <p style={{ color: 'crimson', margin: '0.4rem 0 0.8rem' }}>{error}</p>
-  if (!items) return <p style={{ color: '#888', margin: '0.4rem 0 0.8rem' }}>Loading sensors…</p>
+  if (error) return <div style={{ color: 'var(--err)', padding: '0.4rem 0' }}>{error}</div>
+  if (!items) return <div style={{ color: 'var(--muted)', padding: '0.4rem 0' }}>Loading sensors…</div>
 
   // Map each problem-referenced item to its worst state (and whether every problem on it is
   // acknowledged, so the highlight fades).
@@ -725,115 +821,85 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden }: { hostId: strin
   }
 
   return (
-    <div style={{ margin: '0.3rem 0 0.8rem' }}>
+    <div>
       {problems.length > 0 && (
-        <div style={{ border: '1px solid #4a2a2a', background: '#1e1414', borderRadius: 6, padding: '0.5rem 0.75rem', marginBottom: '0.5rem' }}>
-          <div style={{ color: '#c88', fontSize: '0.8rem', marginBottom: '0.25rem' }}>Active problems</div>
+        <div style={{ border: '1px solid color-mix(in srgb, var(--err) 30%, var(--border))', background: 'color-mix(in srgb, var(--err) 7%, var(--panel))', borderRadius: 8, padding: '0.5rem 0.75rem', marginBottom: '0.5rem' }}>
+          <div style={{ color: 'var(--err)', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Active problems</div>
           {problems.map((p, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.2rem 0' }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: healthColor(p.state, p.acknowledged) }} />
               <span style={{ opacity: p.acknowledged ? 0.7 : 1 }}>{p.name}</span>
               <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 {p.acknowledged
-                  ? <><span style={{ color: '#7fb894', fontSize: '0.8rem' }}>✓ acked · {untilLabel(p.ack_until)}</span><button onClick={() => unack(p)} style={{ ...ghost, padding: '0.15rem 0.55rem', fontSize: '0.8rem' }}>Unacknowledge</button></>
+                  ? <><span className="acktag">✓ acked · {untilLabel(p.ack_until)}</span><button className="btn ghost" onClick={() => unack(p)}>Unacknowledge</button></>
                   : <DurationButton label="Acknowledge" onPick={(s) => ack(p, s)} />}
               </span>
             </div>
           ))}
         </div>
       )}
-      <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '0.4rem' }}>
-        <button onClick={() => setShowAll(false)} style={{ ...ghost, padding: '0.2rem 0.6rem', fontSize: '0.82rem', borderColor: !showAll ? 'var(--accent)' : 'var(--border)' }}>Key sensors</button>
-        <button onClick={() => setShowAll(true)} style={{ ...ghost, padding: '0.2rem 0.6rem', fontSize: '0.82rem', borderColor: showAll ? 'var(--accent)' : 'var(--border)' }}>All sensors</button>
-      </div>
       {items.length === 0
-        ? <p style={{ color: '#888', margin: '0.2rem 0 0.4rem' }}>{showAll ? 'No sensors.' : 'No recognized sensors — try “All sensors”.'}</p>
+        ? <div style={{ color: 'var(--muted)', padding: '0.2rem 0 0.4rem' }}>{showAll ? 'No sensors.' : 'No recognized sensors — try “All sensors”.'}</div>
         : (
-          <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
-            <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-              <colgroup>
-                <col style={{ width: '28%' }} />
-                <col />
-                <col style={{ width: '250px' }} />
-              </colgroup>
-              <thead>
-                <tr style={{ textAlign: 'left', color: '#aaa' }}>
-                  <th style={{ padding: '0.4rem 0.6rem' }}>Sensor</th>
-                  <th style={{ padding: '0.4rem 0.6rem' }}>Value</th>
-                  <th style={{ padding: '0.4rem 0.6rem', whiteSpace: 'nowrap' }}>Last check</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((it, idx) => {
-                  const st = itemState[it.id]
-                  const open = openItem === it.id
-                  const clickable = it.numeric && it.supported
-                  const label = it.label || it.name
-                  // A sensor inherits its host's paused/hidden state; the individual toggle is
-                  // locked while the host controls it.
-                  const effPaused = it.paused || hostPaused
-                  const effHidden = it.hidden || hostHidden
-                  const newGroup = !showAll && it.category && it.category !== items[idx - 1]?.category
-                  return (
-                    <Fragment key={it.id}>
-                      {newGroup && (
-                        <tr>
-                          <td colSpan={3} style={{ padding: '0.5rem 0.6rem 0.25rem', color: '#7fb894', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.04em', borderTop: idx === 0 ? 'none' : '1px solid var(--border)' }}>{it.category}</td>
-                        </tr>
-                      )}
-                      <tr
-                        onClick={clickable ? () => setOpenItem(open ? null : it.id) : undefined}
-                        style={{
-                          borderTop: '1px solid var(--border)',
-                          opacity: it.supported ? 1 : 0.55,
-                          cursor: clickable ? 'pointer' : 'default',
-                          background: open ? 'rgba(47,111,79,0.14)' : (st ? (itemAcked[it.id] ? 'rgba(120,120,120,0.10)' : (st === 'error' ? 'rgba(180,40,40,0.16)' : 'rgba(217,164,65,0.14)')) : undefined),
-                        }}
-                      >
-                        <td style={{ padding: '0.4rem 0.6rem', wordBreak: 'break-word', borderLeft: `3px solid ${st ? healthColor(st, itemAcked[it.id]) : 'transparent'}` }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                            {clickable && <span style={{ color: '#6a6', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none' }}>›</span>}
-                            <span style={{ opacity: effPaused || effHidden ? 0.55 : 1 }}>
-                              {label}
-                              {effPaused && <span style={{ color: PAUSED_BLUE, fontSize: '0.78rem' }}> (paused · {hostPaused && !it.paused ? 'host' : untilLabel(it.paused_until)})</span>}
-                              {effHidden && <span style={{ color: HIDDEN_GREY, fontSize: '0.78rem' }}> (hidden · {hostHidden && !it.hidden ? 'host' : untilLabel(it.hidden_until)})</span>}
-                            </span>
-                          </div>
-                        </td>
-                        <td style={{ padding: '0.4rem 0.6rem', wordBreak: 'break-word' }}>
-                          {it.supported
-                            ? (() => { const [dv, du] = readingParts(it.last_value, it.units); return <span><strong>{dv}</strong>{du ? ` ${du}` : ''}</span> })()
-                            : <span style={{ color: '#c66' }}>not supported</span>}
-                        </td>
-                        <td style={{ padding: '0.4rem 0.6rem', whiteSpace: 'nowrap' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                            <span style={{ color: '#999' }}>{relTime(it.last_clock)}</span>
-                            {canPause && (
-                              <>
-                                {it.paused
-                                  ? <button onClick={(e) => { e.stopPropagation(); clearItemState(it, 'pause') }} disabled={busyItem === it.id || hostPaused} style={{ ...ghost, padding: '0.1rem 0.45rem', fontSize: '0.75rem', borderColor: PAUSED_BLUE, opacity: hostPaused ? 0.4 : 1 }}>Resume</button>
-                                  : <DurationButton label="Pause" disabled={busyItem === it.id || hostPaused} onPick={(s) => setItemState(it, 'pause', s)} />}
-                                {it.hidden
-                                  ? <button onClick={(e) => { e.stopPropagation(); clearItemState(it, 'hide') }} disabled={busyItem === it.id || hostHidden} style={{ ...ghost, padding: '0.1rem 0.45rem', fontSize: '0.75rem', opacity: hostHidden ? 0.4 : 1 }}>Show</button>
-                                  : <DurationButton label="Hide" disabled={busyItem === it.id || hostHidden} onPick={(s) => setItemState(it, 'hide', s)} />}
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                      {open && clickable && (
-                        <tr>
-                          <td colSpan={3} style={{ padding: '0.4rem 0.6rem 0.8rem', background: 'var(--elevated)', borderTop: '1px solid var(--border)' }}>
-                            <SensorChart itemId={it.id} units={it.units} />
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <table className="sensors">
+            <thead><tr><th>Sensor</th><th>Value</th><th style={{ textAlign: 'right' }}>Last check</th></tr></thead>
+            <tbody>
+              {items.map((it, idx) => {
+                const st = itemState[it.id]
+                const open = openItem === it.id
+                const clickable = it.numeric && it.supported
+                const label = it.label || it.name
+                // A sensor inherits its host's paused/hidden state; its own toggle is locked while
+                // the host controls it.
+                const effPaused = it.paused || hostPaused
+                const effHidden = it.hidden || hostHidden
+                const newGroup = !showAll && it.category && it.category !== items[idx - 1]?.category
+                const rowClass = st && !itemAcked[it.id] ? (st === 'error' ? 'err' : 'warn') : ''
+                const unacked = problems.filter((p) => p.item_ids.includes(it.id) && !p.acknowledged)
+                // Pause/Hide are offered only when the host isn't already controlling that state
+                // (an inherited "· host" state is cleared at the host, not per-sensor).
+                const acts: KAction[] = []
+                if (!hostPaused) acts.push(it.paused
+                  ? { label: 'Resume', icon: kbIcon.resume, onClick: () => clearItemState(it, 'pause') }
+                  : { label: 'Pause', icon: kbIcon.pause, onPick: (s) => setItemState(it, 'pause', s) })
+                if (!hostHidden) acts.push(it.hidden
+                  ? { label: 'Show', icon: kbIcon.show, onClick: () => clearItemState(it, 'hide') }
+                  : { label: 'Hide', icon: kbIcon.hide, onPick: (s) => setItemState(it, 'hide', s) })
+                const actions: KAction[] = []
+                if (unacked.length) { actions.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => unacked.forEach((p) => ack(p, s)) }); if (acts.length) actions.push({ sep: true, label: '' }) }
+                actions.push(...acts)
+                return (
+                  <Fragment key={it.id}>
+                    {newGroup && <tr className="cat"><td colSpan={3}>{it.category}</td></tr>}
+                    <tr className={rowClass} onClick={clickable ? () => setOpenItem(open ? null : it.id) : undefined} style={{ opacity: it.supported ? 1 : 0.55, cursor: clickable ? 'pointer' : 'default' }}>
+                      <td className="namecell">
+                        <span className={'sname' + (clickable ? ' sclick' : '')} style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: effPaused || effHidden ? 0.6 : 1 }}>
+                          {clickable && <span style={{ color: 'var(--accent)', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none' }}>›</span>}
+                          {label}
+                          {effPaused && <span style={{ color: PAUSED_BLUE, fontSize: 11 }}> (paused · {hostPaused && !it.paused ? 'host' : untilLabel(it.paused_until)})</span>}
+                          {effHidden && <span style={{ color: HIDDEN_GREY, fontSize: 11 }}> (hidden · {hostHidden && !it.hidden ? 'host' : untilLabel(it.hidden_until)})</span>}
+                        </span>
+                      </td>
+                      <td className="mono val">
+                        {it.supported
+                          ? (() => { const [dv, du] = readingParts(it.last_value, it.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })()
+                          : <span style={{ color: 'var(--err)' }}>not supported</span>}
+                      </td>
+                      <td>
+                        <div className="lccell">
+                          <span className="when">{relTime(it.last_clock)}</span>
+                          {canPause && actions.length > 0 && <Kebab disabled={busyItem === it.id} actions={actions} />}
+                        </div>
+                      </td>
+                    </tr>
+                    {open && clickable && (
+                      <tr className="chartrow"><td colSpan={3}><SensorChart itemId={it.id} units={it.units} /></td></tr>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
         )}
     </div>
   )
@@ -955,9 +1021,9 @@ function SensorChart({ itemId, units }: { itemId: string; units: string }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+      <div className="rtabs">
         {RANGES.map((rk) => (
-          <button key={rk} onClick={() => setRange(rk)} style={{ ...ghost, padding: '0.2rem 0.55rem', fontSize: '0.85rem', borderColor: range === rk ? 'var(--accent)' : 'var(--border)' }}>{rk}</button>
+          <button key={rk} className={'rtab' + (range === rk ? ' on' : '')} onClick={() => setRange(rk)}>{rk}</button>
         ))}
       </div>
       {loading && <p style={{ color: '#888', margin: '0.3rem 0' }}>Loading…</p>}

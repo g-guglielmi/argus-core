@@ -109,10 +109,16 @@ func (c *Client) APIVersion(ctx context.Context) (string, error) {
 
 // --- read models ---
 
+type HostGroup struct {
+	GroupID string `json:"groupid"`
+	Name    string `json:"name"`
+}
+
 type Host struct {
-	HostID string `json:"hostid"`
-	Name   string `json:"name"`
-	Status string `json:"status"` // "0" monitored, "1" not monitored
+	HostID string      `json:"hostid"`
+	Name   string      `json:"name"`
+	Status string      `json:"status"` // "0" monitored, "1" not monitored
+	Groups []HostGroup `json:"hostgroups"`
 }
 
 type Item struct {
@@ -137,14 +143,36 @@ type Trigger struct {
 	} `json:"hosts"`
 }
 
-// Hosts returns all hosts, sorted by name.
+// Hosts returns all hosts, sorted by name, each with its host groups (used to build the
+// site -> host -> sensor tree; site = host group).
 func (c *Client) Hosts(ctx context.Context) ([]Host, error) {
 	params := map[string]any{
-		"output":    []string{"hostid", "name", "status"},
-		"sortfield": "name",
+		"output":          []string{"hostid", "name", "status"},
+		"selectHostGroups": []string{"groupid", "name"},
+		"sortfield":       "name",
 	}
 	var hosts []Host
 	return hosts, c.call(ctx, "host.get", params, true, &hosts)
+}
+
+type Proxy struct {
+	ProxyID    string `json:"proxyid"`
+	Name       string `json:"name"`
+	LastAccess string `json:"lastaccess"`     // unix seconds, "0" if never
+	Mode       string `json:"operating_mode"` // "0" active, "1" passive
+}
+
+// Proxies returns the configured Zabbix proxies (the per-site collectors) with their
+// last-access time, so the Probes view can show which sites are actually reporting.
+// Uses output:"extend" so it tolerates field-name differences across Zabbix versions
+// (e.g. proxy name/lastaccess) rather than failing on an unknown output field.
+func (c *Client) Proxies(ctx context.Context) ([]Proxy, error) {
+	params := map[string]any{
+		"output":    "extend",
+		"sortfield": "name",
+	}
+	var ps []Proxy
+	return ps, c.call(ctx, "proxy.get", params, true, &ps)
 }
 
 // Items returns the items of one host, sorted by name.
