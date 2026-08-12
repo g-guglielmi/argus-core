@@ -11,6 +11,31 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.1.0] - 2026-08-12
+
+**First minor release — feature-complete UI.** No code changes since v0.0.32; this marks the
+milestone where the redesigned interface and the core monitoring feature set are complete. From
+here, `0.1.x` continues for fixes and the next features (notifications), with `1.0.0` reserved
+for the production-ready release.
+
+What 0.1.0 delivers:
+- **Auth & users**: roles (admin / helpdesk / viewer), argon2id + server-side sessions, TOTP
+  two-factor with recovery codes, WebAuthn passkeys, and admin user management including
+  enable/disable.
+- **Monitoring** (Zabbix-backed): a site → host → sensor tree (grouped by host group), curated
+  "key" sensors with live values, per-sensor charts (uPlot, history + trends) and inline
+  sparklines.
+- **States**: acknowledge, pause (actually stop collecting), and hide (suppress) at host and
+  sensor level — with durations, auto-expiry, inheritance, and honest graph gaps.
+- **Overview & summary**: a cross-site active-problem list with deep-links into the tree, and a
+  six-state status summary (OK / Warning / Error / Acknowledged / Paused / Hidden) whose chips
+  open filtered, cross-site sensor lists.
+- **Live Probes** view (real Zabbix proxy status) and a polished, theme-aware (dark/light),
+  collapsible shell that updates on its own.
+- Placeholders for the upcoming **Notifications** and **Probe enrollment** work.
+
+---
+
 ## [0.0.32] - 2026-08-12
 
 **New UI, stage 4 of 4 — the Users page (+ real "disable user"), and Overview spacing.**
