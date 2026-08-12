@@ -69,11 +69,11 @@ function DurationButton({ label, onPick, disabled, borderColor }: { label: strin
   }
   return (
     <span style={{ position: 'relative', display: 'inline-block' }}>
-      <button onClick={(e) => { e.stopPropagation(); setCustom(false); setOpen((o) => !o) }} disabled={disabled} style={{ ...ghost, padding: '0.1rem 0.45rem', fontSize: '0.75rem', borderColor: borderColor || '#333' }}>{label}</button>
+      <button onClick={(e) => { e.stopPropagation(); setCustom(false); setOpen((o) => !o) }} disabled={disabled} style={{ ...ghost, padding: '0.1rem 0.45rem', fontSize: '0.75rem', borderColor: borderColor || 'var(--border)' }}>{label}</button>
       {open && (
         <>
           <div onClick={(e) => { e.stopPropagation(); close() }} style={{ position: 'fixed', inset: 0, zIndex: 20 }} />
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 21, background: '#1b1b1b', border: '1px solid #333', borderRadius: 6, minWidth: custom ? 240 : 140, boxShadow: '0 8px 24px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 21, background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 6, minWidth: custom ? 240 : 140, boxShadow: '0 8px 24px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
             {!custom && DURATIONS.map((d) => (
               <div key={d.label} onClick={(e) => { e.stopPropagation(); pickPreset(d.seconds) }} style={{ padding: '0.4rem 0.7rem', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{d.label}</div>
             ))}
@@ -181,10 +181,10 @@ function lastVal(u: any, sidx: number): number | null {
 
 const ROLES = ['admin', 'helpdesk', 'viewer']
 
-const card: CSSProperties = { border: '1px solid #333', borderRadius: 8, padding: '1rem 1.25rem', background: '#1b1b1b' }
-const input: CSSProperties = { padding: '0.5rem 0.6rem', borderRadius: 6, border: '1px solid #333', background: '#111', color: '#e6e6e6', boxSizing: 'border-box' }
-const btn: CSSProperties = { padding: '0.5rem 0.9rem', borderRadius: 6, border: 'none', background: '#2f6f4f', color: 'white', cursor: 'pointer', fontWeight: 600 }
-const ghost: CSSProperties = { padding: '0.4rem 0.7rem', borderRadius: 6, border: '1px solid #333', background: 'transparent', color: '#e6e6e6', cursor: 'pointer' }
+const card: CSSProperties = { border: '1px solid var(--border)', borderRadius: 12, padding: '1rem 1.25rem', background: 'var(--panel)', boxShadow: 'var(--shadow)' }
+const input: CSSProperties = { padding: '0.5rem 0.6rem', borderRadius: 7, border: '1px solid var(--border-strong)', background: 'var(--elevated)', color: 'var(--text)', boxSizing: 'border-box' }
+const btn: CSSProperties = { padding: '0.5rem 0.9rem', borderRadius: 7, border: '1px solid var(--accent)', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontWeight: 600 }
+const ghost: CSSProperties = { padding: '0.4rem 0.7rem', borderRadius: 7, border: '1px solid var(--border-strong)', background: 'transparent', color: 'var(--text)', cursor: 'pointer' }
 
 async function errText(res: Response, fallback: string) {
   const j = await res.json().catch(() => ({}))
@@ -324,33 +324,181 @@ function Login({ onSuccess, passkeysAvailable }: { onSuccess: (m: Me) => void; p
   )
 }
 
+type View = 'overview' | 'monitoring' | 'notifications' | 'probes' | 'users' | 'account'
+const VIEW_TITLES: Record<View, [string, string]> = {
+  overview: ['Overview', 'What needs attention right now'],
+  monitoring: ['Monitoring', 'Sites, hosts and sensors'],
+  notifications: ['Notifications', 'Alert routing and channels'],
+  probes: ['Probes', 'Site probe enrollment'],
+  users: ['Users', 'Accounts and access'],
+  account: ['Account', 'Your security settings'],
+}
+
+const ic = {
+  overview: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 12a9 9 0 0 1 18 0" /><path d="M12 12l4-2" /><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" /></svg>,
+  monitoring: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="7" rx="2" /><rect x="3" y="13" width="18" height="7" rx="2" /><path d="M7 7.5h.01M7 16.5h.01" /></svg>,
+  notifications: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>,
+  probes: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5" /></svg>,
+  users: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><path d="M16 5.2a3.2 3.2 0 0 1 0 6M17 14.5a5.5 5.5 0 0 1 3.5 5.5" /></svg>,
+  account: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="3.4" /><path d="M5 20a7 7 0 0 1 14 0" /></svg>,
+  logout: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M15 12H3M9 6l-6 6 6 6M15 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" /></svg>,
+  err: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /><path d="M15 9l-6 6M9 9l6 6" /></svg>,
+  warn: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /><path d="M12 9.5v4M12 17h.01" /></svg>,
+  acked: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z" /><path d="M8.5 10.3l2.4 2.4 4.6-4.6" /></svg>,
+}
+const sun = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" /></svg>
+const moon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" /></svg>
+
+function useTheme(): ['dark' | 'light', () => void] {
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    try { const s = localStorage.getItem('argus-theme'); if (s === 'dark' || s === 'light') return s } catch { /* ignore */ }
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  })
+  const first = useRef(true)
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    try { localStorage.setItem('argus-theme', theme) } catch { /* ignore */ }
+    // Force a repaint so text under composited layers (the blurred top bar) re-resolves the
+    // CSS variables immediately instead of keeping the previous theme's colours until reflow.
+    if (first.current) { first.current = false; return }
+    const b = document.body; b.style.display = 'none'; void b.offsetHeight; b.style.display = ''
+  }, [theme])
+  return [theme, () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))]
+}
+
 function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () => void; passkeysAvailable: boolean }) {
-  const [view, setView] = useState<'overview' | 'dashboard' | 'monitoring' | 'users' | 'account'>('overview')
+  const [view, setView] = useState<View>('overview')
+  const [collapsed, setCollapsed] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [theme, toggleTheme] = useTheme()
+  const [problems, setProblems] = useState<ProblemRow[]>([])
+
+  useEffect(() => {
+    const load = () => fetch('/api/problems').then((r) => (r.ok ? r.json() : [])).then((p) => setProblems(p || [])).catch(() => {})
+    load(); const t = setInterval(load, 30000); return () => clearInterval(t)
+  }, [])
+  const errN = problems.filter((p) => p.state === 'error' && !p.acknowledged).length
+  const warnN = problems.filter((p) => p.state === 'warning' && !p.acknowledged).length
+  const ackN = problems.filter((p) => p.acknowledged).length
+
   async function logout() { await fetch('/api/logout', { method: 'POST' }).catch(() => {}); onLogout() }
-  const tab = (id: typeof view, label: string) => (
-    <button onClick={() => setView(id)} style={{ ...ghost, borderColor: view === id ? '#2f6f4f' : '#333' }}>{label}</button>
+  function goto(v: View) { setView(v); setMenuOpen(false) }
+
+  const nav = (id: View, label: string, opts?: { count?: number; soon?: boolean }) => (
+    <button className={'nav' + (view === id ? ' active' : '')} onClick={() => goto(id)}>
+      {ic[id]}
+      <span className="lbl">{label}</span>
+      {opts?.count ? <span className="count txt-err">{opts.count}</span> : null}
+      {opts?.soon ? <span className="soon">Soon</span> : null}
+    </button>
   )
+  const chip = (icon: ReactNode, color: string, n: number, label: string) => (
+    <button className="stat" title={label} onClick={() => goto('overview')}>
+      <span className="si" style={{ color }}>{icon}</span>{n}
+    </button>
+  )
+
+  const [title, sub] = VIEW_TITLES[view]
   return (
-    <Frame>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '1rem 0 1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {tab('overview', 'Overview')}
-          {tab('monitoring', 'Monitoring')}
-          {tab('dashboard', 'Dashboard')}
-          {me.role === 'admin' && tab('users', 'Users')}
-          {tab('account', 'Account')}
+    <div className={'app-shell' + (collapsed ? ' collapsed' : '')}>
+      <aside className="sidebar">
+        <div className="brand">
+          <svg className="eye" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z" /><circle cx="12" cy="12" r="3.2" fill="currentColor" stroke="none" /></svg>
+          <div><div className="word">ARGUS</div><div className="sub">Monitoring</div></div>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-          <span style={{ color: '#aaa' }}>{me.email} · <strong style={{ color: '#e6e6e6' }}>{me.role}</strong></span>
-          <button onClick={logout} style={ghost}>Log out</button>
+        <div className="navlabel">Watch</div>
+        {nav('overview', 'Overview', { count: errN })}
+        {nav('monitoring', 'Monitoring')}
+        <div className="navlabel">Configure</div>
+        {nav('notifications', 'Notifications', { soon: true })}
+        {nav('probes', 'Probes', { soon: true })}
+        {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('users', 'Users')}</>}
+        <div className="side-foot">
+          <button className="themebtn" onClick={toggleTheme}>{theme === 'dark' ? moon : sun}<span>Theme</span></button>
+          <div className="kebab-wrap" style={{ display: 'block' }}>
+            <button className="userbtn" onClick={() => setMenuOpen((o) => !o)}>
+              <div className="avatar">{(me.name?.[0] || me.email[0] || '?').toUpperCase()}{(me.surname?.[0] || '').toUpperCase()}</div>
+              <div className="who"><div className="em">{me.email}</div><div className="ro">{me.role}</div></div>
+              <svg className="car" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 15l6-6 6 6" /></svg>
+            </button>
+            {menuOpen && (
+              <>
+                <div onClick={() => setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
+                <div className="menu up" style={{ left: 0, right: 'auto', minWidth: 196, zIndex: 31 }}>
+                  <div className="mlabel">Signed in as {me.role}</div>
+                  <button onClick={() => goto('account')}>{ic.account}Account settings</button>
+                  <div className="sep" />
+                  <button className="danger" onClick={logout}>{ic.logout}Log out</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </aside>
+
+      <div className="main">
+        <div className="topbar">
+          <button className="iconbtn" title="Toggle sidebar" aria-label="Toggle sidebar" onClick={() => setCollapsed((c) => !c)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M3.5 6h17M3.5 12h17M3.5 18h17" /></svg>
+          </button>
+          <div><h1>{title}</h1><div className="sub">{sub}</div></div>
+          <div className="summary">
+            {chip(ic.err, 'var(--err)', errN, 'Errors')}
+            {chip(ic.warn, 'var(--warn)', warnN, 'Warnings')}
+            {chip(ic.acked, 'var(--acked)', ackN, 'Acknowledged')}
+          </div>
+        </div>
+        <div className="content">
+          {view === 'overview' && <OverviewView />}
+          {view === 'monitoring' && <MonitoringView role={me.role} />}
+          {view === 'notifications' && <NotificationsView />}
+          {view === 'probes' && <ProbesView />}
+          {view === 'users' && me.role === 'admin' && <UsersView />}
+          {view === 'account' && <AccountView passkeysAvailable={passkeysAvailable} />}
         </div>
       </div>
-      {view === 'overview' && <OverviewView />}
-      {view === 'dashboard' && <DashboardView />}
-      {view === 'monitoring' && <MonitoringView role={me.role} />}
-      {view === 'users' && me.role === 'admin' && <UsersView />}
-      {view === 'account' && <AccountView passkeysAvailable={passkeysAvailable} />}
-    </Frame>
+    </div>
+  )
+}
+
+function NotificationsView() {
+  return (
+    <div className="panel">
+      <div className="ph-hero">
+        <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
+        <div className="soon-badge">Coming soon</div>
+        <h2>Alerting &amp; notifications</h2>
+        <p>Route Warning and Error events to the channels you choose — per site or globally. Acknowledged, paused, and hidden items stay quiet, and you'll get recovery notices when things clear.</p>
+      </div>
+      <div className="chan-grid">
+        <div className="chan"><div className="ct"><span className="ci" style={{ background: '#5865F2' }}>D</span> Discord</div><p>Per-site webhooks, so each location posts to its own channel.</p><div className="st">Not configured yet</div></div>
+        <div className="chan"><div className="ct"><span className="ci" style={{ background: '#229ED9' }}>T</span> Telegram</div><p>One shared bot with a topic per site for tidy threads.</p><div className="st">Not configured yet</div></div>
+        <div className="chan"><div className="ct"><span className="ci" style={{ background: '#6b7686' }}>@</span> Email</div><p>SMTP delivery for a mailbox or a distribution list.</p><div className="st">Not configured yet</div></div>
+      </div>
+    </div>
+  )
+}
+
+const PLACEHOLDER_SITES = ['site1', 'site2', 'site3', 'site4']
+function ProbesView() {
+  return (
+    <div className="panel">
+      <div className="ph-hero">
+        <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5" /></svg>
+        <div className="soon-badge">Coming soon</div>
+        <h2>Probe enrollment</h2>
+        <p>Bring a site online by running a probe there and enrolling it with a one-time token. Once it checks in over its secure tunnel, that site's hosts and sensors flow into Argus automatically.</p>
+      </div>
+      <table className="enroll">
+        <thead><tr><th>Site</th><th>Status</th><th>Last check-in</th><th style={{ textAlign: 'right' }}>Action</th></tr></thead>
+        <tbody>
+          <tr><td><strong>site5</strong> <span style={{ color: 'var(--faint)' }}>· core</span></td><td><span className="tag online">● online</span></td><td className="mono">just now</td><td style={{ textAlign: 'right' }}><button className="btn" disabled>Re-issue token</button></td></tr>
+          {PLACEHOLDER_SITES.map((s) => (
+            <tr key={s}><td><strong>{s}</strong></td><td><span className="tag pending">awaiting probe</span></td><td className="mono" style={{ color: 'var(--faint)' }}>never</td><td style={{ textAlign: 'right' }}><button className="btn primary" disabled>Generate token</button></td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -380,7 +528,7 @@ function OverviewView() {
     .sort((a, b) => (stateRank[b.state] - stateRank[a.state]) || (Number(a.acknowledged) - Number(b.acknowledged)) || (b.clock - a.clock))
 
   const toggle = (id: typeof mode, label: string) => (
-    <button onClick={() => setMode(id)} style={{ ...ghost, padding: '0.25rem 0.7rem', fontSize: '0.85rem', borderColor: mode === id ? '#2f6f4f' : '#333' }}>{label}</button>
+    <button onClick={() => setMode(id)} style={{ ...ghost, padding: '0.25rem 0.7rem', fontSize: '0.85rem', borderColor: mode === id ? 'var(--accent)' : 'var(--border)' }}>{label}</button>
   )
 
   return (
@@ -482,7 +630,7 @@ function MonitoringView({ role }: { role: string }) {
               role="button"
               tabIndex={0}
               onClick={() => setOpenId(openId === h.id ? null : h.id)}
-              style={{ ...ghost, width: '100%', display: 'flex', alignItems: 'center', gap: '0.6rem', textAlign: 'left', cursor: 'pointer', boxSizing: 'border-box', opacity: h.paused || h.hidden ? 0.7 : 1, borderColor: openId === h.id ? '#2f6f4f' : '#333' }}
+              style={{ ...ghost, width: '100%', display: 'flex', alignItems: 'center', gap: '0.6rem', textAlign: 'left', cursor: 'pointer', boxSizing: 'border-box', opacity: h.paused || h.hidden ? 0.7 : 1, borderColor: openId === h.id ? 'var(--accent)' : 'var(--border)' }}
             >
               <span style={{ width: 10, height: 10, borderRadius: '50%', flexShrink: 0, background: dotColor(h.paused, h.hidden, h.state) }} />
               <span style={{ fontWeight: 600 }}>{h.name}</span>
@@ -595,13 +743,13 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden }: { hostId: strin
         </div>
       )}
       <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '0.4rem' }}>
-        <button onClick={() => setShowAll(false)} style={{ ...ghost, padding: '0.2rem 0.6rem', fontSize: '0.82rem', borderColor: !showAll ? '#2f6f4f' : '#333' }}>Key sensors</button>
-        <button onClick={() => setShowAll(true)} style={{ ...ghost, padding: '0.2rem 0.6rem', fontSize: '0.82rem', borderColor: showAll ? '#2f6f4f' : '#333' }}>All sensors</button>
+        <button onClick={() => setShowAll(false)} style={{ ...ghost, padding: '0.2rem 0.6rem', fontSize: '0.82rem', borderColor: !showAll ? 'var(--accent)' : 'var(--border)' }}>Key sensors</button>
+        <button onClick={() => setShowAll(true)} style={{ ...ghost, padding: '0.2rem 0.6rem', fontSize: '0.82rem', borderColor: showAll ? 'var(--accent)' : 'var(--border)' }}>All sensors</button>
       </div>
       {items.length === 0
         ? <p style={{ color: '#888', margin: '0.2rem 0 0.4rem' }}>{showAll ? 'No sensors.' : 'No recognized sensors — try “All sensors”.'}</p>
         : (
-          <div style={{ border: '1px solid #262626', borderRadius: 6, overflow: 'hidden' }}>
+          <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
             <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
               <colgroup>
                 <col style={{ width: '28%' }} />
@@ -630,13 +778,13 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden }: { hostId: strin
                     <Fragment key={it.id}>
                       {newGroup && (
                         <tr>
-                          <td colSpan={3} style={{ padding: '0.5rem 0.6rem 0.25rem', color: '#7fb894', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.04em', borderTop: idx === 0 ? 'none' : '1px solid #262626' }}>{it.category}</td>
+                          <td colSpan={3} style={{ padding: '0.5rem 0.6rem 0.25rem', color: '#7fb894', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.04em', borderTop: idx === 0 ? 'none' : '1px solid var(--border)' }}>{it.category}</td>
                         </tr>
                       )}
                       <tr
                         onClick={clickable ? () => setOpenItem(open ? null : it.id) : undefined}
                         style={{
-                          borderTop: '1px solid #262626',
+                          borderTop: '1px solid var(--border)',
                           opacity: it.supported ? 1 : 0.55,
                           cursor: clickable ? 'pointer' : 'default',
                           background: open ? 'rgba(47,111,79,0.14)' : (st ? (itemAcked[it.id] ? 'rgba(120,120,120,0.10)' : (st === 'error' ? 'rgba(180,40,40,0.16)' : 'rgba(217,164,65,0.14)')) : undefined),
@@ -675,7 +823,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden }: { hostId: strin
                       </tr>
                       {open && clickable && (
                         <tr>
-                          <td colSpan={3} style={{ padding: '0.4rem 0.6rem 0.8rem', background: '#141414', borderTop: '1px solid #262626' }}>
+                          <td colSpan={3} style={{ padding: '0.4rem 0.6rem 0.8rem', background: 'var(--elevated)', borderTop: '1px solid var(--border)' }}>
                             <SensorChart itemId={it.id} units={it.units} />
                           </td>
                         </tr>
@@ -809,7 +957,7 @@ function SensorChart({ itemId, units }: { itemId: string; units: string }) {
     <div>
       <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
         {RANGES.map((rk) => (
-          <button key={rk} onClick={() => setRange(rk)} style={{ ...ghost, padding: '0.2rem 0.55rem', fontSize: '0.85rem', borderColor: range === rk ? '#2f6f4f' : '#333' }}>{rk}</button>
+          <button key={rk} onClick={() => setRange(rk)} style={{ ...ghost, padding: '0.2rem 0.55rem', fontSize: '0.85rem', borderColor: range === rk ? 'var(--accent)' : 'var(--border)' }}>{rk}</button>
         ))}
       </div>
       {loading && <p style={{ color: '#888', margin: '0.3rem 0' }}>Loading…</p>}
@@ -1044,7 +1192,7 @@ function MfaCard() {
           <p style={{ marginBottom: '0.5rem' }}>1. Scan this QR, or paste the setup key into Bitwarden:</p>
           <img src={enrollment.qr_data_uri} alt="TOTP QR code" style={{ borderRadius: 8, background: 'white', padding: 8 }} width={200} height={200} />
           <p style={{ margin: '0.75rem 0 0.25rem', color: '#aaa' }}>Setup key</p>
-          <code style={{ display: 'block', wordBreak: 'break-all', background: '#111', border: '1px solid #333', borderRadius: 6, padding: '0.5rem', fontSize: '0.9rem' }}>{enrollment.secret}</code>
+          <code style={{ display: 'block', wordBreak: 'break-all', background: 'var(--elevated)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.5rem', fontSize: '0.9rem' }}>{enrollment.secret}</code>
           <form onSubmit={confirmEnable} style={{ marginTop: '1rem' }}>
             <p style={{ marginBottom: '0.4rem' }}>2. Enter the current 6-digit code to confirm:</p>
             <input style={{ ...input, width: '100%', marginBottom: '0.75rem', letterSpacing: '0.15em' }} value={code} onChange={(e) => setCode(e.target.value)} autoComplete="one-time-code" inputMode="numeric" name="otp" placeholder="123456" required />

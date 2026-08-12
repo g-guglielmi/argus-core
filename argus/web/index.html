@@ -4,18 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Argus</title>
-    <style>
-      :root { color-scheme: dark; }
-      body {
-        margin: 0;
-        background: #0f1115;
-        color: #e6e6e6;
-        font-family: system-ui, -apple-system, sans-serif;
-      }
-      /* uPlot legend readability on the dark theme */
-      .u-legend { color: #cfcfcf; font-size: 0.8rem; }
-      .u-legend .u-marker { border-radius: 2px; }
-    </style>
+    <script>
+      // Apply the saved theme before paint to avoid a flash of the wrong theme.
+      try {
+        var t = localStorage.getItem('argus-theme');
+        if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

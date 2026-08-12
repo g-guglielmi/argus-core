@@ -11,6 +11,30 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.0.26] - 2026-08-12
+
+**New UI, stage 1 of 4 — foundation & shell.** Start of the port from the approved design
+mockup. This release lands the visual foundation and app shell; Monitoring, Overview, and Users
+keep working inside it and get their full redesign in the next stages.
+
+### Added
+- **Design-token system** (`theme.css`): a cohesive set of CSS variables for colour, surfaces,
+  borders, and shadow, driving every component. Cerulean accent kept distinct from the status
+  palette (ok/warn/err/paused/hidden/acknowledged).
+- **Light & dark themes** with a toggle (in the sidebar). The choice persists and is applied
+  before first paint to avoid a flash; a forced repaint on toggle keeps text readable.
+- **Left-sidebar shell**: collapsible sidebar (Overview, Monitoring, Notifications, Probes,
+  Users) plus a top bar with the page title and a live status summary (errors / warnings /
+  acknowledged) that links to the Overview.
+- **Account moved into the user chip** menu (Account settings · Log out) — no longer a nav tab.
+- **Placeholders** for the upcoming **Notifications** and **Probes** sections, marked "Soon".
+
+### Changed
+- Shared surfaces (cards, inputs, buttons, dropdowns) now read from the design tokens, so the
+  existing views are theme-aware. Full per-view redesigns follow in stages 2–4.
+
+---
+
 ## [0.0.25] - 2026-08-12
 
 ### Added
