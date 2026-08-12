@@ -97,6 +97,15 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/me/passkeys/register/finish", auth.RequireAuth(s.handlePasskeyRegisterFinish))
 	mux.HandleFunc("DELETE /api/me/passkeys/{id}", auth.RequireAuth(s.handleDeletePasskey))
 
+	// notifications (admin only)
+	mux.HandleFunc("GET /api/notify/channels", auth.RequireRole("admin", s.handleListChannels))
+	mux.HandleFunc("POST /api/notify/channels", auth.RequireRole("admin", s.handleCreateChannel))
+	mux.HandleFunc("PATCH /api/notify/channels/{id}", auth.RequireRole("admin", s.handleUpdateChannel))
+	mux.HandleFunc("POST /api/notify/channels/{id}/enabled", auth.RequireRole("admin", s.handleSetChannelEnabled))
+	mux.HandleFunc("POST /api/notify/channels/{id}/test", auth.RequireRole("admin", s.handleTestChannel))
+	mux.HandleFunc("DELETE /api/notify/channels/{id}", auth.RequireRole("admin", s.handleDeleteChannel))
+	mux.HandleFunc("GET /api/notify/sites", auth.RequireRole("admin", s.handleNotifySites))
+
 	// user management (admin only)
 	mux.HandleFunc("GET /api/users", auth.RequireRole("admin", s.handleListUsers))
 	mux.HandleFunc("POST /api/users", auth.RequireRole("admin", s.handleCreateUser))

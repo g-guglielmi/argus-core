@@ -11,6 +11,29 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.2.0] - 2026-08-12
+
+**Notifications — alerting engine + channel management.** Argus now watches active problems
+itself and delivers alerts, respecting the same suppression rules as the Overview: acknowledged,
+paused, and hidden items stay quiet.
+
+- **Channels** (admin, Notifications tab): add/edit/enable/delete **Discord** (webhook),
+  **Telegram** (bot + optional forum topic), and **Email** (SMTP: STARTTLS / implicit TLS / none)
+  targets, each scoped to **all sites** or one **host group**. A **Test** button sends a sample
+  notification so credentials can be verified end-to-end. Config is stored in the SQLite data
+  volume (plaintext — single-tenant, private-VM assumption; env-key encryption may come later).
+- **Engine** (background goroutine, 30s poll): Warning and Error problems alert; a **60-second
+  debounce** suppresses flapping; a **recovery** notice follows when a fired problem clears.
+  Problems already active at first-ever startup are **baselined** (never retro-alerted), and a
+  problem stays pending (does not fire) while it is acknowledged / on a paused or hidden host, or
+  until a channel serving its site exists.
+- **Routing**: a problem routes to every enabled channel whose site matches one of its host's
+  Zabbix host groups (or is "all sites").
+- New: `internal/notify` package (Discord/Telegram/email dispatchers), notifier state machine,
+  `notify_channels` / `notify_events` / `app_meta` tables, and admin `/api/notify/*` endpoints.
+
+---
+
 ## [0.1.0] - 2026-08-12
 
 **First minor release — feature-complete UI.** No code changes since v0.0.32; this marks the

@@ -127,6 +127,37 @@ CREATE TABLE IF NOT EXISTS suppressions (
   until      INTEGER,             -- NULL = indefinite
   PRIMARY KEY (kind, scope, target_id)
 );
+
+-- Alert delivery channels (Discord / Telegram / email), managed in the Notifications tab.
+-- config is a JSON object of type-specific keys; site is a host-group name ('' = all sites).
+CREATE TABLE IF NOT EXISTS notify_channels (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  type       TEXT NOT NULL,       -- 'discord' | 'telegram' | 'email'
+  name       TEXT NOT NULL,
+  enabled    INTEGER NOT NULL DEFAULT 1,
+  site       TEXT NOT NULL DEFAULT '',
+  config     TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL
+);
+
+-- Per-problem notifier state machine. state: 'baseline' (present at first startup, never
+-- alerted), 'pending' (waiting out the debounce), 'firing' (a problem alert was sent).
+CREATE TABLE IF NOT EXISTS notify_events (
+  event_id   TEXT PRIMARY KEY,
+  host_id    TEXT NOT NULL DEFAULT '',
+  host_name  TEXT NOT NULL DEFAULT '',
+  name       TEXT NOT NULL DEFAULT '',
+  severity   INTEGER NOT NULL DEFAULT 0,
+  state      TEXT NOT NULL,
+  first_seen INTEGER NOT NULL,
+  fired_at   INTEGER
+);
+
+-- Small key/value store for app-level flags (e.g. the notifier's one-time baseline marker).
+CREATE TABLE IF NOT EXISTS app_meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `); err != nil {
 		return err
 	}

@@ -9,6 +9,7 @@ type Health = { status: string; zabbix: { reachable: boolean; version?: string; 
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[] }
 type Proxy = { name: string; last_access: number; online: boolean; mode: string }
+type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; config: Record<string, string> }
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
 type ProblemRow = { event_id: string; name: string; host_id: string; host_name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; clock: number; item_ids: string[] }
@@ -528,21 +529,189 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
   )
 }
 
+const CH_META: Record<string, { c: string; l: string; label: string }> = {
+  discord: { c: '#5865F2', l: 'D', label: 'Discord' },
+  telegram: { c: '#229ED9', l: 'T', label: 'Telegram' },
+  email: { c: '#6b7686', l: '@', label: 'Email' },
+}
+type ChField = { key: string; label: string; ph?: string; type?: string; opt?: boolean }
+const CH_FIELDS: Record<string, ChField[]> = {
+  discord: [{ key: 'webhook_url', label: 'Webhook URL', ph: 'https://discord.com/api/webhooks/…' }],
+  telegram: [
+    { key: 'bot_token', label: 'Bot token', ph: '123456:ABC-DEF…' },
+    { key: 'chat_id', label: 'Chat ID', ph: '-1001234567890' },
+    { key: 'thread_id', label: 'Topic ID', ph: 'forum topic, optional', opt: true },
+  ],
+  email: [
+    { key: 'host', label: 'SMTP host', ph: 'smtp.example.com' },
+    { key: 'port', label: 'Port', ph: '587' },
+    { key: 'from', label: 'From address', ph: 'argus@example.com' },
+    { key: 'to', label: 'To (comma-separated)', ph: 'you@example.com' },
+    { key: 'username', label: 'Username', ph: 'optional', opt: true },
+    { key: 'password', label: 'Password', ph: 'optional', type: 'password', opt: true },
+  ],
+}
+
 function NotificationsView() {
+  const [channels, setChannels] = useState<Channel[] | null>(null)
+  const [sites, setSites] = useState<string[]>([])
+  const [editing, setEditing] = useState<Channel | 'new' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [busy, setBusy] = useState<number | null>(null)
+
+  function load() {
+    fetch('/api/notify/channels').then((r) => r.json()).then((c) => setChannels(c || [])).catch(() => setError('Failed to load channels'))
+  }
+  useEffect(() => {
+    load()
+    fetch('/api/notify/sites').then((r) => r.json()).then((s) => setSites(s || [])).catch(() => {})
+  }, [])
+
+  async function toggle(c: Channel) {
+    setError(null); setMsg(null)
+    const res = await fetch(`/api/notify/channels/${c.id}/enabled`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !c.enabled }) })
+    if (!res.ok) { setError(await errText(res, 'Could not update channel')); return }
+    load()
+  }
+  async function test(c: Channel) {
+    setError(null); setMsg(null); setBusy(c.id)
+    try {
+      const res = await fetch(`/api/notify/channels/${c.id}/test`, { method: 'POST' })
+      if (!res.ok) { setError(`Test failed for ${c.name}: ` + await errText(res, 'delivery error')); return }
+      setMsg(`Test notification sent to ${c.name}.`)
+    } finally { setBusy(null) }
+  }
+  async function del(c: Channel) {
+    setError(null); setMsg(null)
+    if (!window.confirm(`Delete channel “${c.name}”? Alerts will stop routing here.`)) return
+    const res = await fetch(`/api/notify/channels/${c.id}`, { method: 'DELETE' })
+    if (!res.ok) { setError(await errText(res, 'Could not delete channel')); return }
+    load()
+  }
+
   return (
     <div className="panel">
-      <div className="ph-hero">
-        <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
-        <div className="soon-badge">Coming soon</div>
-        <h2>Alerting &amp; notifications</h2>
-        <p>Route Warning and Error events to the channels you choose — per site or globally. Acknowledged, paused, and hidden items stay quiet, and you'll get recovery notices when things clear.</p>
+      <div className="phead">
+        <h2>Notifications</h2>
+        <span className="hint">{channels ? `${channels.length} channel${channels.length === 1 ? '' : 's'}` : '…'}</span>
+        <div className="tools"><button className="btn primary" onClick={() => { setEditing('new'); setError(null); setMsg(null) }}>+ Add channel</button></div>
       </div>
-      <div className="chan-grid">
-        <div className="chan"><div className="ct"><span className="ci" style={{ background: '#5865F2' }}>D</span> Discord</div><p>Per-site webhooks, so each location posts to its own channel.</p><div className="st">Not configured yet</div></div>
-        <div className="chan"><div className="ct"><span className="ci" style={{ background: '#229ED9' }}>T</span> Telegram</div><p>One shared bot with a topic per site for tidy threads.</p><div className="st">Not configured yet</div></div>
-        <div className="chan"><div className="ct"><span className="ci" style={{ background: '#6b7686' }}>@</span> Email</div><p>SMTP delivery for a mailbox or a distribution list.</p><div className="st">Not configured yet</div></div>
-      </div>
+      <p style={{ color: 'var(--muted)', fontSize: 12.5, padding: '2px 16px 0', margin: 0 }}>
+        Warning and Error events route to the channels below — globally or per site. Acknowledged, paused, and hidden items stay quiet, and a recovery notice follows when things clear.
+      </p>
+      {error && <div style={{ padding: '0.6rem 16px', color: 'var(--err)' }}>{error}</div>}
+      {msg && <div style={{ padding: '0.6rem 16px', color: 'var(--ok)' }}>{msg}</div>}
+
+      {editing && (
+        <ChannelEditor
+          initial={editing === 'new' ? null : editing}
+          sites={sites}
+          onCancel={() => setEditing(null)}
+          onSaved={() => { setEditing(null); setMsg('Channel saved.'); load() }}
+          onError={setError}
+        />
+      )}
+
+      {channels && channels.length === 0 && !editing && (
+        <div className="ph-hero">
+          <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
+          <h2>No channels yet</h2>
+          <p>Add a Discord webhook, a Telegram bot, or an email target to start receiving alerts.</p>
+        </div>
+      )}
+
+      {channels && channels.length > 0 && (
+        <div className="chan-grid">
+          {channels.map((c) => {
+            const m = CH_META[c.type] || { c: '#6b7686', l: '?', label: c.type }
+            return (
+              <div className="chan" key={c.id} style={{ opacity: c.enabled ? 1 : 0.6 }}>
+                <div className="ct">
+                  <span className="ci" style={{ background: m.c }}>{m.l}</span>
+                  <span style={{ flex: 1 }}>{c.name}</span>
+                  <span className={'badge ' + (c.enabled ? 'on' : 'off')}>{c.enabled ? 'on' : 'off'}</span>
+                </div>
+                <p style={{ marginBottom: 10 }}>{m.label} · {c.site ? c.site : 'All sites'}</p>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button className="btn" disabled={busy === c.id} onClick={() => test(c)}>{busy === c.id ? 'Sending…' : 'Test'}</button>
+                  <button className="btn" onClick={() => { setEditing(c); setError(null); setMsg(null) }}>Edit</button>
+                  <button className="btn" onClick={() => toggle(c)}>{c.enabled ? 'Disable' : 'Enable'}</button>
+                  <button className="btn danger" onClick={() => del(c)}>Delete</button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
+  )
+}
+
+function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
+  initial: Channel | null; sites: string[]; onCancel: () => void; onSaved: () => void; onError: (m: string) => void
+}) {
+  const [type, setType] = useState(initial?.type || 'discord')
+  const [name, setName] = useState(initial?.name || '')
+  const [site, setSite] = useState(initial?.site || '')
+  const [enabled, setEnabled] = useState(initial ? initial.enabled : true)
+  const [config, setConfig] = useState<Record<string, string>>(initial?.config || {})
+  const setCfg = (k: string, v: string) => setConfig((c) => ({ ...c, [k]: v }))
+
+  async function save(e: FormEvent) {
+    e.preventDefault(); onError('')
+    const body = { type, name, site, enabled, config }
+    const url = initial ? `/api/notify/channels/${initial.id}` : '/api/notify/channels'
+    const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
+    onSaved()
+  }
+
+  const fields = CH_FIELDS[type] || []
+  return (
+    <form onSubmit={save} style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)', display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Type</span>
+          <select className="roleselect" value={type} onChange={(e) => setType(e.target.value)} disabled={!!initial}>
+            {Object.keys(CH_META).map((t) => <option key={t} value={t}>{CH_META[t].label}</option>)}
+          </select>
+        </label>
+        <label style={{ display: 'grid', gap: 4, flex: 1, minWidth: 160 }}><span className="flabel">Name</span>
+          <input className="input" placeholder="e.g. Discord — site1" value={name} onChange={(e) => setName(e.target.value)} required />
+        </label>
+        <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Site</span>
+          <select className="roleselect" value={site} onChange={(e) => setSite(e.target.value)}>
+            <option value="">All sites</option>
+            {sites.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+      </div>
+      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+        {fields.map((f) => (
+          <label key={f.key} style={{ display: 'grid', gap: 4 }}><span className="flabel">{f.label}</span>
+            <input className="input" type={f.type || 'text'} placeholder={f.ph} value={config[f.key] || ''} onChange={(e) => setCfg(f.key, e.target.value)} required={!f.opt} />
+          </label>
+        ))}
+        {type === 'email' && (
+          <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Encryption</span>
+            <select className="roleselect" value={config.tls || 'starttls'} onChange={(e) => setCfg('tls', e.target.value)}>
+              <option value="starttls">STARTTLS (587)</option>
+              <option value="tls">Implicit TLS (465)</option>
+              <option value="none">None</option>
+            </select>
+          </label>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, color: 'var(--muted)' }}>
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enabled
+        </label>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          <button type="button" className="btn" onClick={onCancel}>Cancel</button>
+          <button type="submit" className="btn primary">{initial ? 'Save changes' : 'Add channel'}</button>
+        </div>
+      </div>
+    </form>
   )
 }
 

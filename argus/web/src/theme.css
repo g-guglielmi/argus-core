@@ -258,6 +258,7 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .badge { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border-strong); }
 .badge.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
 .badge.off { color: var(--faint); }
+.flabel { font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); font-weight: 600; }
 
 .acct-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
 .field { display: block; margin-bottom: 12px; }

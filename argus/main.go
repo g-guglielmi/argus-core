@@ -41,6 +41,9 @@ func main() {
 	defer sweepCancel()
 	go server.StartExpirySweeper(sweepCtx, st, zbx, logger)
 
+	// Background notifier: polls problems and dispatches alerts to the configured channels.
+	go server.StartNotifier(sweepCtx, st, zbx, logger)
+
 	srv := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           server.New(cfg, zbx, st, logger),
