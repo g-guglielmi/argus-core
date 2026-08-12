@@ -12,6 +12,7 @@ type Proxy = { name: string; last_access: number; online: boolean; mode: string 
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
 type ProblemRow = { event_id: string; name: string; host_id: string; host_name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; clock: number; item_ids: string[] }
+type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
 type Series = { name: string; units: string; kind: 'history' | 'trend'; points: SeriesPoint[] }
 
@@ -19,6 +20,9 @@ const RANGES = ['2h', '2d', '1M', '3M', '6M', '1Y']
 
 const stateColor: Record<string, string> = { ok: 'seagreen', warning: '#d9a441', error: 'crimson' }
 const stateRank: Record<string, number> = { ok: 0, warning: 1, error: 2 }
+// Census/summary state → CSS colour var and label (six buckets, incl. paused/hidden/acked).
+const STATE_VAR: Record<string, string> = { ok: 'var(--ok)', warning: 'var(--warn)', error: 'var(--err)', acked: 'var(--acked)', paused: 'var(--paused)', hidden: 'var(--hidden)' }
+const STATE_LABEL: Record<string, string> = { ok: 'OK', warning: 'Warning', error: 'Error', acked: 'Acknowledged', paused: 'Paused', hidden: 'Hidden' }
 const PAUSED_BLUE = '#4a86c5'
 const HIDDEN_GREY = '#888'
 
@@ -331,7 +335,7 @@ function Login({ onSuccess, passkeysAvailable }: { onSuccess: (m: Me) => void; p
   )
 }
 
-type View = 'overview' | 'monitoring' | 'notifications' | 'probes' | 'users' | 'account'
+type View = 'overview' | 'monitoring' | 'notifications' | 'probes' | 'users' | 'account' | 'list'
 const VIEW_TITLES: Record<View, [string, string]> = {
   overview: ['Overview', 'What needs attention right now'],
   monitoring: ['Monitoring', 'Sites, hosts and sensors'],
@@ -339,6 +343,7 @@ const VIEW_TITLES: Record<View, [string, string]> = {
   probes: ['Probes', 'Site probe enrollment'],
   users: ['Users', 'Accounts and access'],
   account: ['Account', 'Your security settings'],
+  list: ['Sensors', 'Filtered across all sites'],
 }
 
 const ic = {
@@ -352,6 +357,9 @@ const ic = {
   err: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /><path d="M15 9l-6 6M9 9l6 6" /></svg>,
   warn: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /><path d="M12 9.5v4M12 17h.01" /></svg>,
   acked: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z" /><path d="M8.5 10.3l2.4 2.4 4.6-4.6" /></svg>,
+  ok: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><path d="M20 6 9 17l-5-5" /></svg>,
+  paused: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>,
+  hidden: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M2 12s3.5-7 10-7 10 7 10 7a17 17 0 0 1-2.2 2.9M3 3l18 18M9.5 9.5a3 3 0 0 0 4.2 4.2" /></svg>,
 }
 const sun = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" /></svg>
 const moon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" /></svg>
@@ -378,21 +386,23 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
   const [collapsed, setCollapsed] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [theme, toggleTheme] = useTheme()
-  const [problems, setProblems] = useState<ProblemRow[]>([])
+  const [sensors, setSensors] = useState<SensorRow[]>([])
+  const [listFilter, setListFilter] = useState<string>('error')
+  const canPause = me.role === 'admin' || me.role === 'helpdesk'
 
   useEffect(() => {
-    const load = () => fetch('/api/problems').then((r) => (r.ok ? r.json() : [])).then((p) => setProblems(p || [])).catch(() => {})
+    const load = () => fetch('/api/sensors').then((r) => (r.ok ? r.json() : [])).then((s) => setSensors(s || [])).catch(() => {})
     load(); const t = setInterval(load, 30000); const off = onDataRefresh(load); return () => { clearInterval(t); off() }
   }, [])
-  const errN = problems.filter((p) => p.state === 'error' && !p.acknowledged).length
-  const warnN = problems.filter((p) => p.state === 'warning' && !p.acknowledged).length
-  const ackN = problems.filter((p) => p.acknowledged).length
+  const cnt = (st: string) => sensors.filter((s) => s.state === st).length
+  const errN = cnt('error'), warnN = cnt('warning'), ackN = cnt('acked'), pausedN = cnt('paused'), hiddenN = cnt('hidden'), okN = cnt('ok')
 
-  // Deep-link target: Overview asks the tree to open a host (and optionally a sensor's chart).
+  // Deep-link target: Overview / lists ask the tree to open a host (and optionally a sensor's chart).
   const [treeTarget, setTreeTarget] = useState<{ hostId: string; itemId?: string; n: number } | null>(null)
   const navN = useRef(0)
   function goHost(hostId: string) { navN.current += 1; setTreeTarget({ hostId, n: navN.current }); setView('monitoring'); setMenuOpen(false) }
   function goSensor(hostId: string, itemId: string) { navN.current += 1; setTreeTarget({ hostId, itemId, n: navN.current }); setView('monitoring'); setMenuOpen(false) }
+  function openList(st: string) { setListFilter(st); setView('list'); setMenuOpen(false) }
 
   async function logout() { await fetch('/api/logout', { method: 'POST' }).catch(() => {}); onLogout() }
   function goto(v: View) { setView(v); setMenuOpen(false) }
@@ -405,13 +415,13 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
       {opts?.soon ? <span className="soon">Soon</span> : null}
     </button>
   )
-  const chip = (icon: ReactNode, color: string, n: number, label: string) => (
-    <button className="stat" title={label} onClick={() => goto('overview')}>
+  const chip = (st: string, icon: ReactNode, color: string, n: number, label: string) => (
+    <button className={'stat' + (view === 'list' && listFilter === st ? ' on' : '')} title={label} onClick={() => openList(st)}>
       <span className="si" style={{ color }}>{icon}</span>{n}
     </button>
   )
 
-  const [title, sub] = VIEW_TITLES[view]
+  const [title, sub] = view === 'list' ? [`${STATE_LABEL[listFilter]} sensors`, 'Filtered across all sites'] : VIEW_TITLES[view]
   return (
     <div className={'app-shell' + (collapsed ? ' collapsed' : '')}>
       <aside className="sidebar">
@@ -456,13 +466,18 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
           </button>
           <div><h1>{title}</h1><div className="sub">{sub}</div></div>
           <div className="summary">
-            {chip(ic.err, 'var(--err)', errN, 'Errors')}
-            {chip(ic.warn, 'var(--warn)', warnN, 'Warnings')}
-            {chip(ic.acked, 'var(--acked)', ackN, 'Acknowledged')}
+            {chip('ok', ic.ok, 'var(--ok)', okN, 'OK')}
+            {chip('warning', ic.warn, 'var(--warn)', warnN, 'Warnings')}
+            {chip('error', ic.err, 'var(--err)', errN, 'Errors')}
+            {chip('acked', ic.acked, 'var(--acked)', ackN, 'Acknowledged')}
+            <span className="statdiv" />
+            {chip('paused', ic.paused, 'var(--paused)', pausedN, 'Paused')}
+            {chip('hidden', ic.hidden, 'var(--hidden)', hiddenN, 'Hidden')}
           </div>
         </div>
         <div className="content">
           {view === 'overview' && <OverviewView goHost={goHost} goSensor={goSensor} />}
+          {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => setView('overview')} />}
           {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} />}
           {view === 'notifications' && <NotificationsView />}
           {view === 'probes' && <ProbesView />}
@@ -928,6 +943,60 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                       <tr className="chartrow"><td colSpan={3}><SensorChart itemId={it.id} units={it.units} /></td></tr>
                     )}
                   </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+    </div>
+  )
+}
+
+// StatusListView is the flat cross-site list opened from a top-bar status chip: every sensor in
+// the chosen state, with deep-links to its host/chart and a per-row kebab.
+function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }: { filter: string; sensors: SensorRow[]; canPause: boolean; goHost: (h: string) => void; goSensor: (h: string, i: string) => void; onBack: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const rows = sensors.filter((s) => s.state === filter)
+
+  async function itemAction(s: SensorRow, action: 'pause' | 'hide', seconds: number | null) {
+    setBusy(s.item_id)
+    await fetch(`/api/items/${s.item_id}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration_seconds: seconds ?? 0 }) }).catch(() => {})
+    setBusy(null); fireDataRefresh()
+  }
+  async function clearItem(s: SensorRow, action: 'pause' | 'hide') {
+    setBusy(s.item_id)
+    await fetch(`/api/items/${s.item_id}/${action}`, { method: 'DELETE' }).catch(() => {})
+    setBusy(null); fireDataRefresh()
+  }
+  function actionsFor(s: SensorRow): KAction[] {
+    if (s.state === 'paused') return [{ label: 'Resume', icon: kbIcon.resume, onClick: () => clearItem(s, 'pause') }, { label: 'Hide', icon: kbIcon.hide, onPick: (sec) => itemAction(s, 'hide', sec) }]
+    if (s.state === 'hidden') return [{ label: 'Show', icon: kbIcon.show, onClick: () => clearItem(s, 'hide') }, { label: 'Pause', icon: kbIcon.pause, onPick: (sec) => itemAction(s, 'pause', sec) }]
+    return [{ label: 'Pause', icon: kbIcon.pause, onPick: (sec) => itemAction(s, 'pause', sec) }, { label: 'Hide', icon: kbIcon.hide, onPick: (sec) => itemAction(s, 'hide', sec) }]
+  }
+  const durCol = filter === 'paused' ? 'Paused' : filter === 'hidden' ? 'Hidden' : 'Last check'
+  return (
+    <div className="panel">
+      <div className="phead">
+        <h2>{STATE_LABEL[filter]} sensors</h2>
+        <span className="hint">{rows.length} sensor{rows.length === 1 ? '' : 's'} · across all sites</span>
+        <div className="tools"><button className="btn ghost" onClick={onBack}>← Back to overview</button></div>
+      </div>
+      {rows.length === 0
+        ? <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>No {STATE_LABEL[filter].toLowerCase()} sensors.</div>
+        : (
+          <table className="slist">
+            <thead><tr><th>Host</th><th>Sensor</th><th>Value</th><th>{durCol}</th><th /></tr></thead>
+            <tbody>
+              {rows.map((s) => {
+                const clickable = s.numeric && s.supported
+                return (
+                  <tr key={s.item_id}>
+                    <td className="slhost" style={{ borderLeftColor: STATE_VAR[s.state] || 'var(--border)' }}><span className="lnk-host" onClick={() => goHost(s.host_id)}>{s.host_name}</span></td>
+                    <td>{clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id)}>{s.label || s.name}</span> : (s.label || s.name)}</td>
+                    <td className="mono val">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })() : <span style={{ color: 'var(--err)' }}>not supported</span>}</td>
+                    <td className="mono dur">{relTime(s.last_clock)}</td>
+                    <td className="act">{canPause && <Kebab disabled={busy === s.item_id} actions={actionsFor(s)} />}</td>
+                  </tr>
                 )
               })}
             </tbody>

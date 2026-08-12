@@ -11,6 +11,28 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.0.29] - 2026-08-12
+
+**New UI, stage 3b of 4 — full status summary & filtered lists.**
+
+### Added
+- **Six-chip status summary** in the top bar — **OK · Warnings · Errors · Acknowledged ·
+  Paused · Hidden** — counted from a new cross-host sensor census, updating live (and instantly
+  on any ack/pause/hide).
+- **Clickable chips → filtered lists**: click any chip to see just those sensors across all
+  sites (host · sensor · value · last check · actions), with deep-links to each sensor's host or
+  chart and a per-row kebab (pause / hide / resume / show).
+- Backend **`GET /api/sensors`** — a census of the curated "key" sensors, each tagged with one
+  state (hidden > paused > error > warning > acknowledged > ok). New `item.get`-based
+  `AllItems` client method.
+
+### Notes
+- The census covers curated key sensors (the same set as Monitoring's "Key sensors"); unsupported
+  sensors are treated as unknown, not counted as OK. On very large deployments this census will
+  move to server-side counts.
+
+---
+
 ## [0.0.28] - 2026-08-12
 
 **New UI, stage 3a of 4 — Overview redesign, deep-links & instant refresh.**

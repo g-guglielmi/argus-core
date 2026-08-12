@@ -186,6 +186,31 @@ func (c *Client) Items(ctx context.Context, hostID string) ([]Item, error) {
 	return items, c.call(ctx, "item.get", params, true, &items)
 }
 
+type ItemHost struct {
+	HostID string `json:"hostid"`
+	Name   string `json:"name"`
+	Status string `json:"status"` // "0" monitored, "1" disabled, "3" template
+}
+
+// ItemWithHosts is an item plus its owning host (name + status), for the cross-host census.
+type ItemWithHosts struct {
+	Item
+	Hosts []ItemHost `json:"hosts"`
+}
+
+// AllItems returns every host item with its owning host, for the sensor census that powers the
+// status summary and filtered lists. No `monitored` filter, so items on disabled (paused) hosts
+// are included; template items are filtered out by the caller via host status.
+func (c *Client) AllItems(ctx context.Context) ([]ItemWithHosts, error) {
+	params := map[string]any{
+		"output":      []string{"itemid", "hostid", "name", "key_", "lastvalue", "lastclock", "units", "value_type", "status", "state"},
+		"selectHosts": []string{"hostid", "name", "status"},
+		"sortfield":   "name",
+	}
+	var items []ItemWithHosts
+	return items, c.call(ctx, "item.get", params, true, &items)
+}
+
 // ActiveTriggers returns triggers currently in the problem state, with their host(s).
 func (c *Client) ActiveTriggers(ctx context.Context) ([]Trigger, error) {
 	params := map[string]any{
