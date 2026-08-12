@@ -473,7 +473,7 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
         {nav('overview', 'Overview', { count: errN })}
         {nav('monitoring', 'Monitoring')}
         <div className="navlabel">Configure</div>
-        {nav('notifications', 'Notifications', { soon: true })}
+        {nav('notifications', 'Notifications')}
         {nav('probes', 'Probes', { soon: true })}
         {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('users', 'Users')}</>}
         <div className="side-foot">
