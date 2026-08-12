@@ -101,6 +101,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/users", auth.RequireRole("admin", s.handleListUsers))
 	mux.HandleFunc("POST /api/users", auth.RequireRole("admin", s.handleCreateUser))
 	mux.HandleFunc("PATCH /api/users/{id}", auth.RequireRole("admin", s.handleUpdateUser))
+	mux.HandleFunc("POST /api/users/{id}/disabled", auth.RequireRole("admin", s.handleSetUserDisabled))
 	mux.HandleFunc("DELETE /api/users/{id}", auth.RequireRole("admin", s.handleDeleteUser))
 	mux.HandleFunc("POST /api/users/{id}/password", auth.RequireRole("admin", s.handleResetPassword))
 	mux.HandleFunc("POST /api/users/{id}/mfa/reset", auth.RequireRole("admin", s.handleAdminResetMFA))
@@ -246,6 +247,10 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 
 // issueSession creates a server-side session, sets the cookie, and returns the user.
 func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, u *store.User) {
+	if u.Disabled {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "this account has been disabled"})
+		return
+	}
 	raw, id, err := auth.NewSessionToken()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})

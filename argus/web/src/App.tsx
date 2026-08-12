@@ -4,7 +4,7 @@ import 'uplot/dist/uPlot.min.css'
 import { registerPasskey, loginWithPasskey } from './webauthn'
 
 type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean }
-type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number }
+type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean }
 type Health = { status: string; zabbix: { reachable: boolean; version?: string; error?: string } }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[] }
@@ -624,27 +624,35 @@ function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; 
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
       {rows === null && !error && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>Loading…</div>}
       {rows !== null && !error && filtered.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--ok)' }}>✓ All clear — nothing {mode === 'errors' ? 'in error' : 'to report'}.</div>}
-      <div className="rows">
-        {filtered.map((p) => {
-          const c = healthColor(p.state, p.acknowledged)
-          const hasItem = p.item_ids && p.item_ids.length > 0
-          return (
-            <div className={'row' + (p.acknowledged ? ' acked' : '')} key={p.event_id}>
-              <div className="stripe" style={{ background: c }} />
-              <span className="sd" style={{ background: c }} />
-              <span className="hname lnk-host" onClick={() => goHost(p.host_id)}>{p.host_name}</span>
-              <span className={'desc' + (hasItem ? ' lnk-sensor' : '')} onClick={hasItem ? () => goSensor(p.host_id, p.item_ids[0]) : undefined}> · {p.name}</span>
-              <div className="right">
-                {hasItem && <span className="mini"><Spark values={sparks[p.item_ids[0]]} color={c} /></span>}
-                <span className="when">{relTime(p.clock)}</span>
-                {p.acknowledged
-                  ? <><span className="acktag">✓ acked · {untilLabel(p.ack_until)}</span><button className="btn ghost" onClick={() => unack(p)}>Unacknowledge</button></>
-                  : <DurationButton label="Acknowledge" onPick={(s) => ack(p, s)} />}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+      {filtered.length > 0 && (
+        <table className="slist">
+          <thead><tr><th>Host</th><th>Problem</th><th>Trend</th><th>Age</th><th /></tr></thead>
+          <tbody>
+            {filtered.map((p) => {
+              const c = healthColor(p.state, p.acknowledged)
+              const hasItem = p.item_ids && p.item_ids.length > 0
+              return (
+                <tr key={p.event_id} style={{ opacity: p.acknowledged ? 0.72 : 1 }}>
+                  <td className="slhost" style={{ borderLeftColor: c }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ width: 9, height: 9, borderRadius: '50%', background: c, flexShrink: 0 }} />
+                      <span className="lnk-host" onClick={() => goHost(p.host_id)}>{p.host_name}</span>
+                    </span>
+                  </td>
+                  <td>{hasItem ? <span className="lnk-sensor" onClick={() => goSensor(p.host_id, p.item_ids[0])}>{p.name}</span> : p.name}</td>
+                  <td className="trend">{hasItem ? <Spark values={sparks[p.item_ids[0]]} color={c} /> : null}</td>
+                  <td className="mono dur" style={{ whiteSpace: 'nowrap' }}>{relTime(p.clock)}</td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {p.acknowledged
+                      ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}><span className="acktag">✓ acked · {untilLabel(p.ack_until)}</span><button className="btn ghost" onClick={() => unack(p)}>Unacknowledge</button></span>
+                      : <DurationButton label="Acknowledge" onPick={(s) => ack(p, s)} />}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
     </div>
   )
 }
@@ -677,6 +685,15 @@ const kbIcon = {
   resume: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M7 5l12 7-12 7z" /></svg>,
   show: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>,
   ack: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M22 11.2V12a10 10 0 1 1-5.9-9.1" /><path d="M22 4 12 14.5l-3-3" /></svg>,
+}
+// icons for the per-user kebab actions
+const uIcon = {
+  key: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="8" cy="15" r="4" /><path d="M10.8 12.2 20 3M17 6l2 2M14 9l2 2" /></svg>,
+  shield: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" /></svg>,
+  fp: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 11v3M8 9a4 4 0 0 1 8 0v2a8 8 0 0 1-1 4M6 13a10 10 0 0 0 1 5M16 18a12 12 0 0 0 .8-4" /></svg>,
+  ban: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><path d="M5.6 5.6l12.8 12.8" /></svg>,
+  enable: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><path d="M8.5 12.5l2.5 2.5 4.5-5" /></svg>,
+  trash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" /></svg>,
 }
 
 // A kebab menu action. onClick fires immediately; onPick opens the duration submenu first and
@@ -1200,24 +1217,30 @@ function UsersView() {
   const [users, setUsers] = useState<User[]>([])
   const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
   const [nu, setNu] = useState({ email: '', name: '', surname: '', role: 'viewer', password: '' })
+  const usersRef = useRef<User[]>([])
+  usersRef.current = users
 
-  function load() { fetch('/api/users').then((r) => r.json()).then(setUsers).catch(() => setError('Failed to load users')) }
+  function load() { fetch('/api/users').then((r) => r.json()).then((u) => setUsers(u || [])).catch(() => setError('Failed to load users')) }
   useEffect(() => { load() }, [])
 
-  async function fail(res: Response) { setError(await errText(res, 'Request failed')) }
+  async function fail(res: Response) { setError(await errText(res, 'Request failed')); load() }
+  function edit(id: number, patch: Partial<User>) { setUsers((us) => us.map((x) => (x.id === id ? { ...x, ...patch } : x))) }
 
+  // Persist the row's email/name/surname/role (called on blur of a field or role change).
+  async function saveUser(id: number) {
+    const u = usersRef.current.find((x) => x.id === id); if (!u) return
+    setError(null); setMsg(null)
+    const res = await fetch(`/api/users/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: u.email, name: u.name, surname: u.surname, role: u.role }) })
+    if (!res.ok) return fail(res)
+    setMsg('Saved')
+  }
   async function create(e: FormEvent) {
     e.preventDefault(); setError(null); setMsg(null)
     const res = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(nu) })
-    if (!res.ok) return fail(res)
-    setNu({ email: '', name: '', surname: '', role: 'viewer', password: '' }); setMsg('User created'); load()
-  }
-  async function changeRole(u: User, role: string) {
-    setError(null); setMsg(null)
-    const res = await fetch(`/api/users/${u.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: u.name, surname: u.surname, role }) })
-    if (!res.ok) return fail(res)
-    load()
+    if (!res.ok) return setError(await errText(res, 'Request failed'))
+    setNu({ email: '', name: '', surname: '', role: 'viewer', password: '' }); setAdding(false); setMsg('User created'); load()
   }
   async function resetPw(u: User) {
     setError(null); setMsg(null)
@@ -1229,10 +1252,10 @@ function UsersView() {
   }
   async function resetMfa(u: User) {
     setError(null); setMsg(null)
-    if (!window.confirm(`Reset two-factor for ${u.email}? They'll sign in with just their password until they set it up again.`)) return
+    if (!window.confirm(`Remove two-factor for ${u.email}? They'll sign in with just their password until they set it up again.`)) return
     const res = await fetch(`/api/users/${u.id}/mfa/reset`, { method: 'POST' })
     if (!res.ok) return fail(res)
-    setMsg(`Two-factor reset for ${u.email}`); load()
+    setMsg(`Two-factor removed for ${u.email}`); load()
   }
   async function resetPasskeys(u: User) {
     setError(null); setMsg(null)
@@ -1241,74 +1264,75 @@ function UsersView() {
     if (!res.ok) return fail(res)
     setMsg(`Passkeys removed for ${u.email}`); load()
   }
+  async function setDisabled(u: User, disabled: boolean) {
+    setError(null); setMsg(null)
+    if (disabled && !window.confirm(`Disable ${u.email}? They won't be able to sign in until re-enabled.`)) return
+    const res = await fetch(`/api/users/${u.id}/disabled`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ disabled }) })
+    if (!res.ok) return fail(res)
+    setMsg(`${u.email} ${disabled ? 'disabled' : 'enabled'}`); load()
+  }
   async function del(u: User) {
     setError(null); setMsg(null)
-    if (!window.confirm(`Delete ${u.email}?`)) return
+    if (!window.confirm(`Remove ${u.email}? This permanently deletes the account.`)) return
     const res = await fetch(`/api/users/${u.id}`, { method: 'DELETE' })
     if (!res.ok) return fail(res)
-    load()
+    setMsg(`${u.email} removed`); load()
+  }
+
+  function userActions(u: User): KAction[] {
+    const a: KAction[] = [{ label: 'Reset password', icon: uIcon.key, onClick: () => resetPw(u) }]
+    if (u.mfa_enabled) a.push({ label: 'Remove 2FA', icon: uIcon.shield, onClick: () => resetMfa(u) })
+    if (u.passkeys) a.push({ label: 'Remove passkeys', icon: uIcon.fp, onClick: () => resetPasskeys(u) })
+    a.push({ sep: true, label: '' })
+    a.push(u.disabled
+      ? { label: 'Enable user', icon: uIcon.enable, onClick: () => setDisabled(u, false) }
+      : { label: 'Disable user', icon: uIcon.ban, danger: true, onClick: () => setDisabled(u, true) })
+    a.push({ label: 'Remove user', icon: uIcon.trash, danger: true, onClick: () => del(u) })
+    return a
   }
 
   return (
-    <section style={{ ...card }}>
-      <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Users</h2>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {msg && <p style={{ color: 'seagreen' }}>{msg}</p>}
-
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.92rem' }}>
-          <thead>
-            <tr style={{ textAlign: 'left', color: '#aaa' }}>
-              <th style={{ padding: '0.4rem 0.5rem' }}>Email</th>
-              <th style={{ padding: '0.4rem 0.5rem' }}>Name</th>
-              <th style={{ padding: '0.4rem 0.5rem' }}>Role</th>
-              <th style={{ padding: '0.4rem 0.5rem' }}>2FA</th>
-              <th style={{ padding: '0.4rem 0.5rem' }}>Passkeys</th>
-              <th style={{ padding: '0.4rem 0.5rem' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u) => (
-              <tr key={u.id} style={{ borderTop: '1px solid #2a2a2a' }}>
-                <td style={{ padding: '0.4rem 0.5rem' }}>{u.email}</td>
-                <td style={{ padding: '0.4rem 0.5rem' }}>{[u.name, u.surname].filter(Boolean).join(' ') || '—'}</td>
-                <td style={{ padding: '0.4rem 0.5rem' }}>
-                  <select value={u.role} onChange={(e) => changeRole(u, e.target.value)} style={input}>
-                    {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                </td>
-                <td style={{ padding: '0.4rem 0.5rem' }}>
-                  {u.mfa_enabled
-                    ? <span style={{ color: 'seagreen', fontWeight: 600 }}>on</span>
-                    : <span style={{ color: '#777' }}>off</span>}
-                </td>
-                <td style={{ padding: '0.4rem 0.5rem' }}>
-                  {u.passkeys ? <span style={{ color: 'seagreen', fontWeight: 600 }}>{u.passkeys}</span> : <span style={{ color: '#777' }}>0</span>}
-                </td>
-                <td style={{ padding: '0.4rem 0.5rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                  <button onClick={() => resetPw(u)} style={ghost}>Reset password</button>
-                  {u.mfa_enabled && <button onClick={() => resetMfa(u)} style={ghost}>Reset 2FA</button>}
-                  {!!u.passkeys && <button onClick={() => resetPasskeys(u)} style={ghost}>Reset passkeys</button>}
-                  <button onClick={() => del(u)} style={{ ...ghost, borderColor: '#5a2a2a', color: '#e59' }}>Delete</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="panel">
+      <div className="phead">
+        <h2>Users</h2><span className="hint">{users.length} account{users.length === 1 ? '' : 's'}</span>
+        <div className="tools"><button className="btn primary" onClick={() => setAdding((v) => !v)}>{adding ? 'Cancel' : '+ Add user'}</button></div>
       </div>
+      {error && <div style={{ padding: '0.6rem 16px', color: 'var(--err)' }}>{error}</div>}
+      {msg && <div style={{ padding: '0.6rem 16px', color: 'var(--ok)' }}>{msg}</div>}
 
-      <h3 style={{ fontSize: '0.95rem', marginBottom: '0.5rem' }}>Add user</h3>
-      <form onSubmit={create} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-        <input style={input} type="email" placeholder="email" value={nu.email} onChange={(e) => setNu({ ...nu, email: e.target.value })} required />
-        <input style={input} placeholder="name" value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} />
-        <input style={input} placeholder="surname" value={nu.surname} onChange={(e) => setNu({ ...nu, surname: e.target.value })} />
-        <select style={input} value={nu.role} onChange={(e) => setNu({ ...nu, role: e.target.value })}>
-          {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-        </select>
-        <input style={input} type="password" placeholder="password (min 8)" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} required />
-        <button type="submit" style={btn}>Add</button>
-      </form>
-    </section>
+      {adding && (
+        <form onSubmit={create} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)' }}>
+          <input className="input" type="email" placeholder="email" value={nu.email} onChange={(e) => setNu({ ...nu, email: e.target.value })} required />
+          <input className="input" placeholder="name" value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} />
+          <input className="input" placeholder="surname" value={nu.surname} onChange={(e) => setNu({ ...nu, surname: e.target.value })} />
+          <select className="roleselect" value={nu.role} onChange={(e) => setNu({ ...nu, role: e.target.value })}>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select>
+          <input className="input" type="password" placeholder="password (min 8)" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} required />
+          <button type="submit" className="btn primary">Add</button>
+        </form>
+      )}
+
+      <table className="utable">
+        <thead><tr><th style={{ width: '28%' }}>Email</th><th style={{ width: '18%' }}>Name</th><th style={{ width: '18%' }}>Surname</th><th>Role</th><th>2FA</th><th>Passkeys</th><th style={{ textAlign: 'right' }}>Manage</th></tr></thead>
+        <tbody>
+          {users.map((u) => (
+            <tr key={u.id} style={{ opacity: u.disabled ? 0.5 : 1 }}>
+              <td><input className="cellinput mono" value={u.email} onChange={(e) => edit(u.id, { email: e.target.value })} onBlur={() => saveUser(u.id)} /></td>
+              <td><input className="cellinput" value={u.name} placeholder="—" onChange={(e) => edit(u.id, { name: e.target.value })} onBlur={() => saveUser(u.id)} /></td>
+              <td><input className="cellinput" value={u.surname} placeholder="—" onChange={(e) => edit(u.id, { surname: e.target.value })} onBlur={() => saveUser(u.id)} /></td>
+              <td><select className="roleselect" value={u.role} onChange={(e) => { edit(u.id, { role: e.target.value }); setTimeout(() => saveUser(u.id), 0) }}>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select></td>
+              <td>{u.mfa_enabled ? <span className="badge on">on</span> : <span className="badge off">off</span>}</td>
+              <td className="mono">{u.passkeys || 0}</td>
+              <td style={{ textAlign: 'right' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
+                  {u.disabled && <span className="badge" style={{ color: 'var(--err)', borderColor: 'color-mix(in srgb, var(--err) 40%, var(--border))' }}>disabled</span>}
+                  <Kebab actions={userActions(u)} />
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 

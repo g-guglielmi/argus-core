@@ -11,6 +11,26 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.0.32] - 2026-08-12
+
+**New UI, stage 4 of 4 — the Users page (+ real "disable user"), and Overview spacing.**
+This completes the UI port from the approved mockup.
+
+### Added
+- **Redesigned Users page**: inline-editable **email / name / surname** (save on blur), a role
+  dropdown, and a per-user **⋮ menu** — Reset password · Remove 2FA · Remove passkeys ·
+  Disable/Enable user · Remove user. Add-user is a toggle form in the header.
+- **Disable user** is now a real feature: a disabled account **cannot sign in** (blocked on every
+  login path — password, 2FA, passkey), shown faded with a "disabled" badge, and re-enablable.
+  Guarded so you can't disable yourself or the last remaining admin. New `disabled` column
+  (additive migration), `POST /api/users/{id}/disabled`, and email is now editable via PATCH.
+
+### Changed
+- **Overview** is now a properly spaced table (Host · Problem · Trend · Age · action), matching
+  the status lists — no more large gap between the description and the controls on wide screens.
+
+---
+
 ## [0.0.31] - 2026-08-12
 
 **Mini-graphs (for real) & collapsed-sidebar fix.**

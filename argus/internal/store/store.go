@@ -24,6 +24,7 @@ type User struct {
 	Role         string // admin | helpdesk | viewer
 	TOTPSecret   string // base32 TOTP secret ("" when MFA not set up)
 	TOTPEnabled  bool   // true once the user has confirmed a code
+	Disabled     bool   // true = account suspended; cannot sign in
 	CreatedAt    time.Time
 }
 
@@ -140,6 +141,9 @@ CREATE TABLE IF NOT EXISTS suppressions (
 	if err := s.ensureColumn("users", "webauthn_handle BLOB"); err != nil {
 		return err
 	}
+	if err := s.ensureColumn("users", "disabled INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -170,7 +174,7 @@ func (s *Store) CreateUser(ctx context.Context, u User) (int64, error) {
 	return res.LastInsertId()
 }
 
-const userColumns = `id,email,name,surname,password_hash,role,totp_secret,totp_enabled,created_at`
+const userColumns = `id,email,name,surname,password_hash,role,totp_secret,totp_enabled,disabled,created_at`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (*User, error) {
 	return s.scanUser(s.db.QueryRowContext(ctx,
@@ -189,8 +193,8 @@ type rowScanner interface {
 func scanUserRow(row rowScanner) (*User, error) {
 	var u User
 	var created int64
-	var totpEnabled int
-	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Surname, &u.PasswordHash, &u.Role, &u.TOTPSecret, &totpEnabled, &created)
+	var totpEnabled, disabled int
+	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Surname, &u.PasswordHash, &u.Role, &u.TOTPSecret, &totpEnabled, &disabled, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -198,6 +202,7 @@ func scanUserRow(row rowScanner) (*User, error) {
 		return nil, err
 	}
 	u.TOTPEnabled = totpEnabled != 0
+	u.Disabled = disabled != 0
 	u.CreatedAt = time.Unix(created, 0)
 	return &u, nil
 }
@@ -222,9 +227,26 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) UpdateUserProfile(ctx context.Context, id int64, name, surname, role string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET name=?,surname=?,role=? WHERE id=?`, name, surname, role, id)
+func (s *Store) UpdateUserProfile(ctx context.Context, id int64, email, name, surname, role string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET email=?,name=?,surname=?,role=? WHERE id=?`, email, name, surname, role, id)
 	return err
+}
+
+// SetUserDisabled suspends or re-enables an account (a disabled user cannot sign in).
+func (s *Store) SetUserDisabled(ctx context.Context, id int64, disabled bool) error {
+	v := 0
+	if disabled {
+		v = 1
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET disabled=? WHERE id=?`, v, id)
+	return err
+}
+
+// CountAdmins returns the number of enabled admin accounts (for last-admin guardrails).
+func (s *Store) CountAdmins(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE role='admin' AND disabled=0`).Scan(&n)
+	return n, err
 }
 
 func (s *Store) UpdatePassword(ctx context.Context, id int64, hash string) error {
@@ -235,12 +257,6 @@ func (s *Store) UpdatePassword(ctx context.Context, id int64, hash string) error
 func (s *Store) DeleteUser(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id=?`, id)
 	return err
-}
-
-func (s *Store) CountAdmins(ctx context.Context) (int, error) {
-	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE role='admin'`).Scan(&n)
-	return n, err
 }
 
 // --- MFA (TOTP + recovery codes + login challenges) ---

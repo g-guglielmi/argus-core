@@ -28,10 +28,11 @@ type adminUser struct {
 	Role       string `json:"role"`
 	MFAEnabled bool   `json:"mfa_enabled"`
 	Passkeys   int    `json:"passkeys"`
+	Disabled   bool   `json:"disabled"`
 }
 
 func toAdminUser(u store.User) adminUser {
-	return adminUser{ID: u.ID, Email: u.Email, Name: u.Name, Surname: u.Surname, Role: u.Role, MFAEnabled: u.TOTPEnabled}
+	return adminUser{ID: u.ID, Email: u.Email, Name: u.Name, Surname: u.Surname, Role: u.Role, MFAEnabled: u.TOTPEnabled, Disabled: u.Disabled}
 }
 
 func decode(w http.ResponseWriter, r *http.Request, dst any) bool {
@@ -107,11 +108,17 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
+		Email   string `json:"email"`
 		Name    string `json:"name"`
 		Surname string `json:"surname"`
 		Role    string `json:"role"`
 	}
 	if !decode(w, r, &req) {
+		return
+	}
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	if req.Email == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email is required"})
 		return
 	}
 	if !validRole(req.Role) {
@@ -130,11 +137,51 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := s.st.UpdateUserProfile(r.Context(), id, req.Name, req.Surname, req.Role); err != nil {
+	if err := s.st.UpdateUserProfile(r.Context(), id, req.Email, req.Name, req.Surname, req.Role); err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "a user with that email already exists"})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	writeJSON(w, http.StatusOK, adminUser{ID: id, Email: target.Email, Name: req.Name, Surname: req.Surname, Role: req.Role})
+	writeJSON(w, http.StatusOK, adminUser{ID: id, Email: req.Email, Name: req.Name, Surname: req.Surname, Role: req.Role, Disabled: target.Disabled})
+}
+
+// handleSetUserDisabled suspends or re-enables an account. Guarded so an admin can't disable
+// themselves or the last remaining admin.
+func (s *Server) handleSetUserDisabled(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Disabled bool `json:"disabled"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	caller, _ := auth.UserFrom(r.Context())
+	if req.Disabled && caller != nil && caller.ID == id {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "you cannot disable your own account"})
+		return
+	}
+	target, err := s.st.UserByID(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+		return
+	}
+	if req.Disabled && target.Role == "admin" {
+		if n, _ := s.st.CountAdmins(r.Context()); n <= 1 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cannot disable the last admin"})
+			return
+		}
+	}
+	if err := s.st.SetUserDisabled(r.Context(), id, req.Disabled); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
