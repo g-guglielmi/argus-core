@@ -17,9 +17,10 @@ type sensorRow struct {
 	Value     string `json:"value"`
 	Units     string `json:"units"`
 	LastClock int64  `json:"last_clock"`
-	State     string `json:"state"` // ok | warning | error | acked | paused | hidden
-	Numeric   bool   `json:"numeric"`
-	Supported bool   `json:"supported"`
+	State     string   `json:"state"` // ok | warning | error | acked | paused | hidden
+	Numeric   bool     `json:"numeric"`
+	Supported bool     `json:"supported"`
+	EventIDs  []string `json:"event_ids"` // problem events on this sensor (for ack / unack from a list)
 }
 
 // handleSensors returns a census of the curated ("key") sensors across every host, each tagged
@@ -50,6 +51,7 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 	acked, _ := s.st.ActiveSuppressionMap(ctx, "ack", "event")
 	unackedRank := map[string]int{} // 1 = warning, 2 = error
 	hasAcked := map[string]bool{}
+	itemEvents := map[string][]string{}
 	for _, p := range problems {
 		rank := 0
 		switch severityState(atoi(p.Severity)) {
@@ -62,6 +64,7 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 		}
 		_, isAcked := acked[p.EventID]
 		for _, itemID := range itemsByTrigger[p.ObjectID] {
+			itemEvents[itemID] = append(itemEvents[itemID], p.EventID)
 			if isAcked {
 				hasAcked[itemID] = true
 			} else if rank > unackedRank[itemID] {
@@ -108,7 +111,7 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 		out = append(out, sensorRow{
 			HostID: host.HostID, HostName: host.Name, ItemID: it.ItemID, Name: it.Name,
 			Label: label, Category: cat, Value: it.LastValue, Units: it.Units, LastClock: atoi64(it.LastClock),
-			State: state, Numeric: numericValueType(it.ValueType), Supported: supported,
+			State: state, Numeric: numericValueType(it.ValueType), Supported: supported, EventIDs: itemEvents[it.ItemID],
 		})
 	}
 	sort.SliceStable(out, func(i, j int) bool {

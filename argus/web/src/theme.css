@@ -210,6 +210,9 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .sensors td.namecell { border-left: 3px solid transparent; }
 .sensors tr.warn td.namecell { border-left-color: var(--warn); }
 .sensors tr.err td.namecell { border-left-color: var(--err); }
+.sensors tr.acked td.namecell { border-left-color: var(--acked); }
+.sensors tr.paused td.namecell { border-left-color: var(--paused); }
+.sensors tr.hidden td.namecell { border-left-color: var(--hidden); }
 .lccell { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .lccell .when { color: var(--faint); white-space: nowrap; }
 

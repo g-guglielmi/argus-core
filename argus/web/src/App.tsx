@@ -12,24 +12,24 @@ type Proxy = { name: string; last_access: number; online: boolean; mode: string 
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
 type ProblemRow = { event_id: string; name: string; host_id: string; host_name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; clock: number; item_ids: string[] }
-type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean }
+type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; event_ids: string[] }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
 type Series = { name: string; units: string; kind: 'history' | 'trend'; points: SeriesPoint[] }
 
 const RANGES = ['2h', '2d', '1M', '3M', '6M', '1Y']
 
-const stateColor: Record<string, string> = { ok: 'seagreen', warning: '#d9a441', error: 'crimson' }
+const stateColor: Record<string, string> = { ok: 'var(--ok)', warning: 'var(--warn)', error: 'var(--err)' }
 const stateRank: Record<string, number> = { ok: 0, warning: 1, error: 2 }
 // Census/summary state → CSS colour var and label (six buckets, incl. paused/hidden/acked).
 const STATE_VAR: Record<string, string> = { ok: 'var(--ok)', warning: 'var(--warn)', error: 'var(--err)', acked: 'var(--acked)', paused: 'var(--paused)', hidden: 'var(--hidden)' }
 const STATE_LABEL: Record<string, string> = { ok: 'OK', warning: 'Warning', error: 'Error', acked: 'Acknowledged', paused: 'Paused', hidden: 'Hidden' }
-const PAUSED_BLUE = '#4a86c5'
-const HIDDEN_GREY = '#888'
+const PAUSED_BLUE = 'var(--paused)'
+const HIDDEN_GREY = 'var(--hidden)'
 
-// Faded health colours for acknowledged problems (PRTG-style: still visible, muted).
-const stateColorFaded: Record<string, string> = { ok: '#4a6a4a', warning: '#8a7a45', error: '#8a5252' }
+// healthColor: acknowledged problems get the dedicated "acknowledged" colour (washed red),
+// otherwise the state colour. Keeps an acked sensor visibly flagged rather than clearing it.
 function healthColor(state: string, acked: boolean): string {
-  return (acked ? stateColorFaded : stateColor)[state] || '#777'
+  return acked ? 'var(--acked)' : (stateColor[state] || 'var(--muted)')
 }
 
 // dotColor: paused (blue) and hidden (grey) override the health colour.
@@ -901,7 +901,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                 const effPaused = it.paused || hostPaused
                 const effHidden = it.hidden || hostHidden
                 const newGroup = !showAll && it.category && it.category !== items[idx - 1]?.category
-                const rowClass = st && !itemAcked[it.id] ? (st === 'error' ? 'err' : 'warn') : ''
+                const rowClass = effHidden ? 'hidden' : effPaused ? 'paused' : st ? (itemAcked[it.id] ? 'acked' : (st === 'error' ? 'err' : 'warn')) : ''
                 const unacked = problems.filter((p) => p.item_ids.includes(it.id) && !p.acknowledged)
                 // Pause/Hide are offered only when the host isn't already controlling that state
                 // (an inherited "· host" state is cleared at the host, not per-sensor).
@@ -968,10 +968,24 @@ function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }:
     await fetch(`/api/items/${s.item_id}/${action}`, { method: 'DELETE' }).catch(() => {})
     setBusy(null); fireDataRefresh()
   }
+  async function ackEvents(s: SensorRow, seconds: number | null) {
+    setBusy(s.item_id)
+    for (const ev of s.event_ids) await fetch(`/api/events/${ev}/ack`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration_seconds: seconds ?? 0 }) }).catch(() => {})
+    setBusy(null); fireDataRefresh()
+  }
+  async function unackEvents(s: SensorRow) {
+    setBusy(s.item_id)
+    for (const ev of s.event_ids) await fetch(`/api/events/${ev}/ack`, { method: 'DELETE' }).catch(() => {})
+    setBusy(null); fireDataRefresh()
+  }
   function actionsFor(s: SensorRow): KAction[] {
     if (s.state === 'paused') return [{ label: 'Resume', icon: kbIcon.resume, onClick: () => clearItem(s, 'pause') }, { label: 'Hide', icon: kbIcon.hide, onPick: (sec) => itemAction(s, 'hide', sec) }]
     if (s.state === 'hidden') return [{ label: 'Show', icon: kbIcon.show, onClick: () => clearItem(s, 'hide') }, { label: 'Pause', icon: kbIcon.pause, onPick: (sec) => itemAction(s, 'pause', sec) }]
-    return [{ label: 'Pause', icon: kbIcon.pause, onPick: (sec) => itemAction(s, 'pause', sec) }, { label: 'Hide', icon: kbIcon.hide, onPick: (sec) => itemAction(s, 'hide', sec) }]
+    const acts: KAction[] = []
+    if (s.state === 'acked' && s.event_ids.length) acts.push({ label: 'Unacknowledge', icon: kbIcon.ack, onClick: () => unackEvents(s) }, { sep: true, label: '' })
+    else if ((s.state === 'error' || s.state === 'warning') && s.event_ids.length) acts.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (sec) => ackEvents(s, sec) }, { sep: true, label: '' })
+    acts.push({ label: 'Pause', icon: kbIcon.pause, onPick: (sec) => itemAction(s, 'pause', sec) }, { label: 'Hide', icon: kbIcon.hide, onPick: (sec) => itemAction(s, 'hide', sec) })
+    return acts
   }
   const durCol = filter === 'paused' ? 'Paused' : filter === 'hidden' ? 'Hidden' : 'Last check'
   return (
@@ -1253,7 +1267,7 @@ function UsersView() {
 
 function AccountView({ passkeysAvailable }: { passkeysAvailable: boolean }) {
   return (
-    <div style={{ display: 'grid', gap: '1.25rem' }}>
+    <div style={{ display: 'grid', gap: '1rem', maxWidth: 560 }}>
       <PasswordCard />
       <MfaCard />
       {passkeysAvailable && <PasskeyCard />}
@@ -1264,27 +1278,32 @@ function AccountView({ passkeysAvailable }: { passkeysAvailable: boolean }) {
 function PasswordCard() {
   const [cur, setCur] = useState('')
   const [next, setNext] = useState('')
+  const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
 
   async function submit(e: FormEvent) {
     e.preventDefault(); setError(null); setMsg(null)
+    if (next !== confirm) { setError('The new passwords do not match.'); return }
     const res = await fetch('/api/me/password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ current_password: cur, new_password: next }) })
     if (!res.ok) { setError(await errText(res, 'Request failed')); return }
-    setCur(''); setNext(''); setMsg('Password changed')
+    setCur(''); setNext(''); setConfirm(''); setMsg('Password changed')
   }
 
   return (
-    <section style={{ ...card, maxWidth: 480 }}>
+    <section style={card}>
       <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Change my password</h2>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {msg && <p style={{ color: 'seagreen' }}>{msg}</p>}
+      {error && <p style={{ color: 'var(--err)' }}>{error}</p>}
+      {msg && <p style={{ color: 'var(--ok)' }}>{msg}</p>}
       <form onSubmit={submit}>
         <label style={{ display: 'block', marginBottom: '0.75rem' }}>Current password
           <input style={{ ...input, width: '100%', marginTop: 4 }} type="password" value={cur} autoComplete="current-password" onChange={(e) => setCur(e.target.value)} required />
         </label>
-        <label style={{ display: 'block', marginBottom: '1rem' }}>New password (min 8)
-          <input style={{ ...input, width: '100%', marginTop: 4 }} type="password" value={next} autoComplete="new-password" onChange={(e) => setNext(e.target.value)} required />
+        <label style={{ display: 'block', marginBottom: '0.75rem' }}>New password (min 8)
+          <input style={{ ...input, width: '100%', marginTop: 4 }} type="password" value={next} autoComplete="new-password" onChange={(e) => setNext(e.target.value)} required minLength={8} />
+        </label>
+        <label style={{ display: 'block', marginBottom: '1rem' }}>Confirm new password
+          <input style={{ ...input, width: '100%', marginTop: 4 }} type="password" value={confirm} autoComplete="new-password" onChange={(e) => setConfirm(e.target.value)} required />
         </label>
         <button type="submit" style={btn}>Update password</button>
       </form>
@@ -1340,7 +1359,7 @@ function MfaCard() {
   }
 
   return (
-    <section style={{ ...card, maxWidth: 480 }}>
+    <section style={card}>
       <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Two-factor authentication</h2>
       <p style={{ color: '#aaa', marginTop: 0 }}>Use an authenticator app or a password manager such as Bitwarden. Argus uses standard TOTP, so both scanning the QR and pasting the setup key work.</p>
       {error && <p style={{ color: 'crimson' }}>{error}</p>}
@@ -1455,7 +1474,7 @@ function PasskeyCard() {
   }
 
   return (
-    <section style={{ ...card, maxWidth: 560 }}>
+    <section style={card}>
       <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Passkeys</h2>
       <p style={{ color: '#aaa', marginTop: 0 }}>Sign in without a password using a passkey stored in Bitwarden, your phone, or a security key. Passkeys work when you reach Argus through its HTTPS address.</p>
       {error && <p style={{ color: 'crimson' }}>{error}</p>}

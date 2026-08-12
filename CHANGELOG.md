@@ -11,6 +11,22 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.0.30] - 2026-08-12
+
+**Fixes & Account polish.**
+
+### Fixed
+- **Sensor rows keep their left status stripe when acknowledged / paused / hidden**, recoloured
+  to that state instead of vanishing. State colours are now unified on the design tokens
+  (acknowledged = its own washed-red everywhere, matching the chip).
+- **Unacknowledge (and acknowledge) from the status-chip lists**: the sensor census now carries
+  each sensor's problem event ids, so the Acknowledged list's ⋮ menu offers **Unacknowledge**,
+  and the Errors/Warnings lists offer **Acknowledge**.
+- **Account page**: added the **Confirm new password** field (with a match check), and the cards
+  now share one width so their edges line up.
+
+---
+
 ## [0.0.29] - 2026-08-12
 
 **New UI, stage 3b of 4 — full status summary & filtered lists.**
