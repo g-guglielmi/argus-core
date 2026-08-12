@@ -22,13 +22,18 @@ type Channel struct {
 
 // Event is a single alert to deliver.
 type Event struct {
-	Kind     string    // "problem" | "recovery"
-	Severity int       // Zabbix severity 0..5
-	State    string    // "warning" | "error" | "ok"
-	Host     string    // host display name
-	Name     string    // trigger / problem name
-	Site     string    // primary site (host group) for context, may be ""
-	When     time.Time // when the problem started (problem) or cleared (recovery)
+	Kind      string    // "problem" | "recovery"
+	Severity  int       // Zabbix severity 0..5
+	State     string    // "warning" | "error" | "ok"
+	Host      string    // host display name
+	Name      string    // trigger / problem name
+	Site      string    // primary site (host group) for context, may be ""
+	When      time.Time // when the problem started (problem) or cleared (recovery)
+	Value     string    // current reading incl. units, e.g. "96 %" (optional)
+	Threshold string    // parsed trigger threshold, e.g. ">90" (optional)
+	SinceSecs int64     // how long it was in problem, for recovery notices (optional)
+	OpenURL   string    // deep link to the sensor in Argus (optional)
+	AckURL    string    // signed one-click acknowledge link (problem alerts only, optional)
 }
 
 // Colors for rich channels, matching the Argus status palette.
@@ -49,7 +54,22 @@ func (e Event) color() int {
 	}
 }
 
-// tag is the bracketed status prefix, e.g. "[ERROR]" or "[RESOLVED]".
+// emoji is the status indicator prefixed to titles across every channel.
+func (e Event) emoji() string {
+	if e.Kind == "recovery" {
+		return "🟢"
+	}
+	switch e.State {
+	case "error":
+		return "🔴"
+	case "warning":
+		return "🟡"
+	default:
+		return "🟢"
+	}
+}
+
+// tag is the bracketed status prefix, e.g. "ERROR" or "RESOLVED".
 func (e Event) tag() string {
 	if e.Kind == "recovery" {
 		return "RESOLVED"
@@ -57,22 +77,43 @@ func (e Event) tag() string {
 	return strings.ToUpper(e.State)
 }
 
-// subject is a one-line summary used as the email subject and message title.
+// subject is the one-line summary (no emoji) used as the email subject and message title.
 func (e Event) subject() string {
 	return fmt.Sprintf("[%s] %s — %s", e.tag(), e.Host, e.Name)
 }
 
-// bodyLines returns the human-readable detail lines shared across channels.
+// title is the subject with its status emoji, for chat channels.
+func (e Event) title() string { return e.emoji() + " " + e.subject() }
+
+// valueLine renders the reading + threshold context, or "" when there's no value.
+func (e Event) valueLine() string {
+	if e.Value == "" {
+		return ""
+	}
+	if e.Threshold != "" {
+		return fmt.Sprintf("Value: %s (threshold %s)", e.Value, e.Threshold)
+	}
+	return "Value: " + e.Value
+}
+
+// bodyLines returns the human-readable detail lines shared across channels (plain text).
 func (e Event) bodyLines() []string {
 	var lines []string
 	if e.Kind == "recovery" {
-		lines = append(lines, fmt.Sprintf("%s has recovered.", e.Name))
+		if e.SinceSecs > 0 {
+			lines = append(lines, fmt.Sprintf("%s has recovered after %s.", e.Name, fmtDur(e.SinceSecs)))
+		} else {
+			lines = append(lines, e.Name+" has recovered.")
+		}
 	} else {
 		lines = append(lines, e.Name)
 	}
 	lines = append(lines, "Host: "+e.Host)
 	if e.Site != "" {
 		lines = append(lines, "Site: "+e.Site)
+	}
+	if v := e.valueLine(); v != "" && e.Kind != "recovery" {
+		lines = append(lines, v)
 	}
 	when := "problem"
 	if e.Kind == "recovery" {
@@ -98,9 +139,34 @@ func Send(ctx context.Context, ch Channel, e Event) error {
 }
 
 // SampleEvent builds a representative Event for the "Test" button.
-func SampleEvent(now time.Time) Event {
+func SampleEvent(now time.Time, openURL string) Event {
 	return Event{
 		Kind: "problem", Severity: 4, State: "error",
-		Host: "argus-test-host", Name: "Argus test notification", Site: "", When: now,
+		Host: "argus-test-host", Name: "Argus test notification", Site: "",
+		Value: "96 %", Threshold: ">90", When: now, OpenURL: openURL,
+	}
+}
+
+// fmtDur renders a duration in seconds as a compact "1d 3h", "4h 12m", or "45s" string.
+func fmtDur(secs int64) string {
+	if secs < 60 {
+		return fmt.Sprintf("%ds", secs)
+	}
+	d := secs / 86400
+	h := (secs % 86400) / 3600
+	m := (secs % 3600) / 60
+	switch {
+	case d > 0:
+		if h > 0 {
+			return fmt.Sprintf("%dd %dh", d, h)
+		}
+		return fmt.Sprintf("%dd", d)
+	case h > 0:
+		if m > 0 {
+			return fmt.Sprintf("%dh %dm", h, m)
+		}
+		return fmt.Sprintf("%dh", h)
+	default:
+		return fmt.Sprintf("%dm", m)
 	}
 }

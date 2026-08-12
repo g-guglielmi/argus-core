@@ -14,6 +14,7 @@ type Config struct {
 	ZabbixAPIURL   string // ARGUS_ZABBIX_API_URL
 	ZabbixAPIToken string // ARGUS_ZABBIX_API_TOKEN, for authenticated read calls
 	DataDir        string // ARGUS_DATA_DIR, SQLite + CA store live here (mounted volume)
+	PublicURL      string // ARGUS_PUBLIC_URL, external base URL for links in notifications
 	AdminEmail    string // ARGUS_ADMIN_EMAIL, used once to seed the first admin
 	AdminPassword string // ARGUS_ADMIN_PASSWORD, used once to seed the first admin
 	CookieSecure  bool   // ARGUS_COOKIE_SECURE, set true when served over HTTPS
@@ -36,6 +37,7 @@ func Load() Config {
 		ZabbixAPIURL:   env("ARGUS_ZABBIX_API_URL", ""),
 		ZabbixAPIToken: env("ARGUS_ZABBIX_API_TOKEN", ""),
 		DataDir:        env("ARGUS_DATA_DIR", "/data"),
+		PublicURL:      strings.TrimRight(env("ARGUS_PUBLIC_URL", ""), "/"),
 		AdminEmail:    env("ARGUS_ADMIN_EMAIL", ""),
 		AdminPassword: env("ARGUS_ADMIN_PASSWORD", ""),
 		CookieSecure:  envBool("ARGUS_COOKIE_SECURE", false),

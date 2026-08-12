@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"log/slog"
+	"regexp"
+	"strings"
 	"time"
 
 	"argus/internal/notify"
@@ -19,7 +21,7 @@ const (
 // StartNotifier runs the alerting loop: it polls Zabbix problems, applies the same
 // suppression rules as the Overview (hidden / paused / acknowledged stay quiet), debounces
 // flapping, and dispatches problem/recovery notifications to the configured channels.
-func StartNotifier(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger) {
+func StartNotifier(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger, publicURL, secret string) {
 	ticker := time.NewTicker(notifyPollInterval)
 	defer ticker.Stop()
 	// Run one tick shortly after start (seeds the baseline), then on the interval.
@@ -30,14 +32,14 @@ func StartNotifier(ctx context.Context, st *store.Store, zbx *zabbix.Client, log
 		case <-ctx.Done():
 			return
 		case <-first.C:
-			notifyTick(ctx, st, zbx, logger)
+			notifyTick(ctx, st, zbx, logger, publicURL, secret)
 		case <-ticker.C:
-			notifyTick(ctx, st, zbx, logger)
+			notifyTick(ctx, st, zbx, logger, publicURL, secret)
 		}
 	}
 }
 
-func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger) {
+func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger, publicURL, secret string) {
 	if !zbx.Authenticated() {
 		return
 	}
@@ -108,9 +110,11 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			continue
 		}
 		if stt.State == "firing" {
+			since := time.Now().Unix() - stt.FirstSeen
 			ev := notify.Event{
 				Kind: "recovery", Severity: stt.Severity, State: "ok",
 				Host: stt.HostName, Name: stt.Name, Site: primarySite(hostGroups[stt.HostID]), When: time.Now(),
+				SinceSecs: since, OpenURL: OpenLink(publicURL, stt.HostID, stt.ItemID),
 			}
 			dispatch(ctx, channels, hostGroups[stt.HostID], ev, logger)
 		}
@@ -129,12 +133,16 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		if len(t.Hosts) > 0 {
 			hostID, hostName = t.Hosts[0].HostID, t.Hosts[0].Name
 		}
+		itemID := ""
+		if len(t.Items) > 0 {
+			itemID = t.Items[0].ItemID
+		}
 		alertable := isAlertable(t, hiddenHosts, hiddenItems, acked, p.EventID)
 
 		stt, seen := states[p.EventID]
 		if !seen {
 			_ = st.UpsertNotifyState(ctx, store.NotifyState{
-				EventID: p.EventID, HostID: hostID, HostName: hostName, Name: p.Name,
+				EventID: p.EventID, HostID: hostID, ItemID: itemID, HostName: hostName, Name: p.Name,
 				Severity: sev, State: "pending", FirstSeen: now.Unix(),
 			})
 			continue
@@ -152,14 +160,24 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		if len(matches) == 0 {
 			continue // no channel serves this site yet; stay pending so it alerts once one is added
 		}
+		value := ""
+		if itemID != "" {
+			if items, e := zbx.ItemsByIDs(ctx, []string{itemID}); e == nil {
+				if it, ok := items[itemID]; ok {
+					value = strings.TrimSpace(it.LastValue + " " + it.Units)
+				}
+			}
+		}
 		ev := notify.Event{
 			Kind: "problem", Severity: sev, State: severityState(sev),
 			Host: hostName, Name: p.Name, Site: primarySite(hostGroups[hostID]), When: time.Unix(atoi64(p.Clock), 0),
+			Value: value, Threshold: parseThreshold(t.Expression),
+			OpenURL: OpenLink(publicURL, hostID, itemID), AckURL: AckLink(publicURL, secret, p.EventID),
 		}
 		sendAll(ctx, matches, ev, logger)
 		firedAt := now.Unix()
 		_ = st.UpsertNotifyState(ctx, store.NotifyState{
-			EventID: p.EventID, HostID: hostID, HostName: hostName, Name: p.Name,
+			EventID: p.EventID, HostID: hostID, ItemID: itemID, HostName: hostName, Name: p.Name,
 			Severity: sev, State: "firing", FirstSeen: stt.FirstSeen, FiredAt: &firedAt,
 		})
 	}
@@ -218,6 +236,18 @@ func sendAll(ctx context.Context, channels []store.NotifyChannel, ev notify.Even
 
 func toNotifyChannel(c store.NotifyChannel) notify.Channel {
 	return notify.Channel{ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Site: c.Site, Config: c.Config}
+}
+
+var thresholdRe = regexp.MustCompile(`([<>]=?)\s*([0-9]+(?:\.[0-9]+)?)`)
+
+// parseThreshold pulls a best-effort threshold (e.g. ">90") from a trigger expression.
+// Complex expressions may not match, in which case it returns "" and the value shows alone.
+func parseThreshold(expr string) string {
+	m := thresholdRe.FindStringSubmatch(expr)
+	if m == nil {
+		return ""
+	}
+	return m[1] + m[2]
 }
 
 func primarySite(groups []string) string {

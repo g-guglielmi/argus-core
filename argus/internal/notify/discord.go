@@ -18,16 +18,47 @@ func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 	if url == "" {
 		return fmt.Errorf("discord: webhook_url is not set")
 	}
-	payload := map[string]any{
-		"username": "Argus",
-		"embeds": []map[string]any{{
-			"title":       e.subject(),
-			"description": strings.Join(e.bodyLines(), "\n"),
-			"color":       e.color(),
-			"timestamp":   e.When.UTC().Format(time.RFC3339),
-		}},
+
+	// Structured fields for the at-a-glance context.
+	fields := []map[string]any{{"name": "Host", "value": e.Host, "inline": true}}
+	if e.Site != "" {
+		fields = append(fields, map[string]any{"name": "Site", "value": e.Site, "inline": true})
 	}
-	body, err := json.Marshal(payload)
+	if v := e.valueLine(); v != "" && e.Kind != "recovery" {
+		fields = append(fields, map[string]any{"name": "Reading", "value": strings.TrimPrefix(v, "Value: "), "inline": true})
+	}
+
+	// Description: recovery duration + action links.
+	var desc []string
+	if e.Kind == "recovery" && e.SinceSecs > 0 {
+		desc = append(desc, fmt.Sprintf("Recovered after %s.", fmtDur(e.SinceSecs)))
+	}
+	var links []string
+	if e.OpenURL != "" {
+		links = append(links, "[Open in Argus]("+e.OpenURL+")")
+	}
+	if e.Kind != "recovery" && e.AckURL != "" {
+		links = append(links, "[Acknowledge]("+e.AckURL+")")
+	}
+	if len(links) > 0 {
+		desc = append(desc, strings.Join(links, " · "))
+	}
+
+	embed := map[string]any{
+		"title":     e.title(),
+		"color":     e.color(),
+		"fields":    fields,
+		"timestamp": e.When.UTC().Format(time.RFC3339),
+		"footer":    map[string]any{"text": "Argus"},
+	}
+	if e.OpenURL != "" {
+		embed["url"] = e.OpenURL // makes the title clickable
+	}
+	if len(desc) > 0 {
+		embed["description"] = strings.Join(desc, "\n")
+	}
+
+	body, err := json.Marshal(map[string]any{"username": "Argus", "embeds": []any{embed}})
 	if err != nil {
 		return err
 	}

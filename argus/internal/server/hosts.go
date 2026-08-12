@@ -203,16 +203,25 @@ func (s *Server) handleAckEvent(w http.ResponseWriter, r *http.Request) {
 	if caller != nil {
 		by = caller.ID
 	}
-	if err := s.st.SetSuppression(r.Context(), "ack", "event", id, by, req.Message, untilFrom(req.DurationSeconds)); err != nil {
+	if err := s.ackEvent(r.Context(), id, by, req.Message, untilFrom(req.DurationSeconds)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	if s.zbx.Authenticated() {
-		ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
-		defer cancel()
-		_ = s.zbx.AcknowledgeEvent(ctx, id, req.Message) // best-effort mirror
-	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// ackEvent records an acknowledgement in Argus (source of truth) and mirrors it to Zabbix
+// best-effort. Shared by the API handler and the signed one-click alert link.
+func (s *Server) ackEvent(ctx context.Context, eventID string, by int64, note string, until *int64) error {
+	if err := s.st.SetSuppression(ctx, "ack", "event", eventID, by, note, until); err != nil {
+		return err
+	}
+	if s.zbx.Authenticated() {
+		c, cancel := context.WithTimeout(ctx, 12*time.Second)
+		defer cancel()
+		_ = s.zbx.AcknowledgeEvent(c, eventID, note)
+	}
+	return nil
 }
 
 // DELETE /api/events/{id}/ack — un-acknowledge (bring the problem back).

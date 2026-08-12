@@ -23,6 +23,7 @@ type NotifyChannel struct {
 type NotifyState struct {
 	EventID   string
 	HostID    string
+	ItemID    string
 	HostName  string
 	Name      string
 	Severity  int
@@ -135,7 +136,7 @@ func (s *Store) DeleteNotifyChannel(ctx context.Context, id int64) error {
 // NotifyStates returns every tracked event keyed by event id.
 func (s *Store) NotifyStates(ctx context.Context) (map[string]NotifyState, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT event_id,host_id,host_name,name,severity,state,first_seen,fired_at FROM notify_events`)
+		`SELECT event_id,host_id,item_id,host_name,name,severity,state,first_seen,fired_at FROM notify_events`)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +145,7 @@ func (s *Store) NotifyStates(ctx context.Context) (map[string]NotifyState, error
 	for rows.Next() {
 		var st NotifyState
 		var fired sql.NullInt64
-		if err := rows.Scan(&st.EventID, &st.HostID, &st.HostName, &st.Name, &st.Severity, &st.State, &st.FirstSeen, &fired); err != nil {
+		if err := rows.Scan(&st.EventID, &st.HostID, &st.ItemID, &st.HostName, &st.Name, &st.Severity, &st.State, &st.FirstSeen, &fired); err != nil {
 			return nil, err
 		}
 		if fired.Valid {
@@ -163,12 +164,12 @@ func (s *Store) UpsertNotifyState(ctx context.Context, st NotifyState) error {
 		fired = *st.FiredAt
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO notify_events(event_id,host_id,host_name,name,severity,state,first_seen,fired_at)
-		 VALUES(?,?,?,?,?,?,?,?)
+		`INSERT INTO notify_events(event_id,host_id,item_id,host_name,name,severity,state,first_seen,fired_at)
+		 VALUES(?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(event_id) DO UPDATE SET
-		   host_id=excluded.host_id, host_name=excluded.host_name, name=excluded.name,
+		   host_id=excluded.host_id, item_id=excluded.item_id, host_name=excluded.host_name, name=excluded.name,
 		   severity=excluded.severity, state=excluded.state, fired_at=excluded.fired_at`,
-		st.EventID, st.HostID, st.HostName, st.Name, st.Severity, st.State, st.FirstSeen, fired)
+		st.EventID, st.HostID, st.ItemID, st.HostName, st.Name, st.Severity, st.State, st.FirstSeen, fired)
 	return err
 }
 

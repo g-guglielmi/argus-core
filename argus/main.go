@@ -42,7 +42,8 @@ func main() {
 	go server.StartExpirySweeper(sweepCtx, st, zbx, logger)
 
 	// Background notifier: polls problems and dispatches alerts to the configured channels.
-	go server.StartNotifier(sweepCtx, st, zbx, logger)
+	notifySecret := server.GetSigningSecret(context.Background(), st)
+	go server.StartNotifier(sweepCtx, st, zbx, logger, cfg.PublicURL, notifySecret)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,

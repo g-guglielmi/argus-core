@@ -24,17 +24,19 @@ const (
 )
 
 type Server struct {
-	cfg       config.Config
-	zbx       *zabbix.Client
-	st        *store.Store
-	logger    *slog.Logger
-	dummyHash string          // for constant-ish login timing when a user doesn't exist
-	wa        *webauthn.WebAuthn // nil when passkeys are not configured
+	cfg           config.Config
+	zbx           *zabbix.Client
+	st            *store.Store
+	logger        *slog.Logger
+	dummyHash     string             // for constant-ish login timing when a user doesn't exist
+	wa            *webauthn.WebAuthn // nil when passkeys are not configured
+	signingSecret string             // HMAC secret for signed alert links
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger) http.Handler {
 	dummy, _ := auth.HashPassword("argus-nonexistent-user")
-	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, dummyHash: dummy}
+	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, dummyHash: dummy,
+		signingSecret: GetSigningSecret(context.Background(), st)}
 
 	if cfg.PasskeysEnabled() {
 		wa, err := webauthn.New(&webauthn.Config{
@@ -56,6 +58,9 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/features", s.handleFeatures)
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
+	// signed one-click acknowledge link from notifications (public; HMAC-verified, GET confirms)
+	mux.HandleFunc("GET /api/alert/ack", s.handleAlertAck)
+	mux.HandleFunc("POST /api/alert/ack", s.handleAlertAck)
 	mux.HandleFunc("POST /api/login/totp", s.handleLoginTOTP)
 	mux.HandleFunc("POST /api/login/passkey/begin", s.handlePasskeyLoginBegin)
 	mux.HandleFunc("POST /api/login/passkey/finish", s.handlePasskeyLoginFinish)

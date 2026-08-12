@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"mime"
 	"net"
 	"net/smtp"
 	"strings"
@@ -35,7 +36,7 @@ func sendEmail(ctx context.Context, cfg map[string]string, e Event) error {
 	}
 	addr := net.JoinHostPort(host, port)
 
-	msg := buildMessage(from, to, e.subject(), strings.Join(e.bodyLines(), "\r\n"))
+	msg := buildMessage(from, to, e)
 
 	dialer := &net.Dialer{Timeout: 15 * time.Second}
 	var conn net.Conn
@@ -92,18 +93,88 @@ func sendEmail(ctx context.Context, cfg map[string]string, e Event) error {
 	return c.Quit()
 }
 
-// buildMessage assembles a minimal RFC 5322 message (plain text).
-func buildMessage(from string, to []string, subject, body string) []byte {
+const emailBoundary = "argus-alt-boundary-4f2c9a"
+
+// buildMessage assembles a multipart/alternative message (plain + styled HTML).
+func buildMessage(from string, to []string, e Event) []byte {
 	var b strings.Builder
-	b.WriteString("From: " + from + "\r\n")
+	b.WriteString("From: Argus <" + from + ">\r\n")
 	b.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
-	b.WriteString("Subject: " + subject + "\r\n")
+	b.WriteString("Subject: " + mime.QEncoding.Encode("UTF-8", e.emoji()+" "+e.subject()) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
-	b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
-	b.WriteString("\r\n")
-	b.WriteString(body)
-	b.WriteString("\r\n")
+	b.WriteString("Content-Type: multipart/alternative; boundary=\"" + emailBoundary + "\"\r\n\r\n")
+
+	// Plain-text part.
+	b.WriteString("--" + emailBoundary + "\r\n")
+	b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
+	b.WriteString(strings.Join(e.bodyLines(), "\r\n"))
+	if e.OpenURL != "" {
+		b.WriteString("\r\nOpen in Argus: " + e.OpenURL)
+	}
+	if e.Kind != "recovery" && e.AckURL != "" {
+		b.WriteString("\r\nAcknowledge: " + e.AckURL)
+	}
+	b.WriteString("\r\n\r\n")
+
+	// HTML part.
+	b.WriteString("--" + emailBoundary + "\r\n")
+	b.WriteString("Content-Type: text/html; charset=UTF-8\r\n\r\n")
+	b.WriteString(htmlBody(e))
+	b.WriteString("\r\n--" + emailBoundary + "--\r\n")
 	return []byte(b.String())
+}
+
+func htmlColor(e Event) string {
+	switch e.State {
+	case "error":
+		return "#e2564d"
+	case "warning":
+		return "#e0a53a"
+	default:
+		return "#3fa66a"
+	}
+}
+
+func htmlBody(e Event) string {
+	var rows strings.Builder
+	row := func(k, v string) {
+		rows.WriteString(`<tr><td style="padding:4px 0;color:#6b7280;width:110px">` + htmlEscape(k) + `</td><td style="padding:4px 0;color:#111827">` + htmlEscape(v) + `</td></tr>`)
+	}
+	row("Host", e.Host)
+	if e.Site != "" {
+		row("Site", e.Site)
+	}
+	if v := e.valueLine(); v != "" && e.Kind != "recovery" {
+		row("Reading", strings.TrimPrefix(v, "Value: "))
+	}
+	if e.Kind == "recovery" && e.SinceSecs > 0 {
+		row("Duration", fmtDur(e.SinceSecs))
+	}
+	when := "Problem since"
+	if e.Kind == "recovery" {
+		when = "Recovered at"
+	}
+	row(when, e.When.Format("2006-01-02 15:04:05 MST"))
+
+	var buttons strings.Builder
+	btn := func(label, href, bg string) {
+		buttons.WriteString(`<a href="` + htmlEscape(href) + `" style="display:inline-block;padding:8px 16px;margin-right:8px;border-radius:7px;background:` + bg + `;color:#fff;text-decoration:none;font-size:13px;font-weight:600">` + label + `</a>`)
+	}
+	if e.OpenURL != "" {
+		btn("Open in Argus", e.OpenURL, "#2ea8c9")
+	}
+	if e.Kind != "recovery" && e.AckURL != "" {
+		btn("Acknowledge", e.AckURL, "#6b7280")
+	}
+
+	c := htmlColor(e)
+	return `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden">` +
+		`<div style="background:` + c + `;color:#fff;padding:14px 18px;font-size:16px;font-weight:600">` + e.emoji() + " " + htmlEscape(e.subject()) + `</div>` +
+		`<div style="padding:16px 18px">` +
+		`<div style="font-size:14px;color:#111827;margin-bottom:12px">` + htmlEscape(e.bodyLines()[0]) + `</div>` +
+		`<table style="width:100%;font-size:13px;border-collapse:collapse">` + rows.String() + `</table>` +
+		`<div style="margin-top:16px">` + buttons.String() + `</div>` +
+		`</div></div>`
 }
 
 // splitList parses a comma-separated list into trimmed, non-empty values.

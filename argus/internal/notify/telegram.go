@@ -18,11 +18,21 @@ func sendTelegram(ctx context.Context, cfg map[string]string, e Event) error {
 		return fmt.Errorf("telegram: bot_token and chat_id are required")
 	}
 
-	// Build an HTML-formatted message (bold title + detail lines).
+	// Bold title (with status emoji) + detail lines, then action links.
 	var b strings.Builder
-	b.WriteString("<b>" + htmlEscape(e.subject()) + "</b>\n")
+	b.WriteString(e.emoji() + " <b>" + htmlEscape(e.subject()) + "</b>\n")
 	for _, line := range e.bodyLines() {
 		b.WriteString(htmlEscape(line) + "\n")
+	}
+	var links []string
+	if e.OpenURL != "" {
+		links = append(links, `<a href="`+htmlEscape(e.OpenURL)+`">Open in Argus</a>`)
+	}
+	if e.Kind != "recovery" && e.AckURL != "" {
+		links = append(links, `<a href="`+htmlEscape(e.AckURL)+`">Acknowledge</a>`)
+	}
+	if len(links) > 0 {
+		b.WriteString(strings.Join(links, " · "))
 	}
 
 	payload := map[string]any{

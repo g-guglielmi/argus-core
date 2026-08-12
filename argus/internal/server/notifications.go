@@ -151,7 +151,7 @@ func (s *Server) handleTestChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	if err := notify.Send(ctx, toNotifyChannel(*ch), notify.SampleEvent(time.Now())); err != nil {
+	if err := notify.Send(ctx, toNotifyChannel(*ch), notify.SampleEvent(time.Now(), s.cfg.PublicURL)); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}

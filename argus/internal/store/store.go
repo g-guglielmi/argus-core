@@ -175,6 +175,9 @@ CREATE TABLE IF NOT EXISTS app_meta (
 	if err := s.ensureColumn("users", "disabled INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	if err := s.ensureColumn("notify_events", "item_id TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	return nil
 }
 

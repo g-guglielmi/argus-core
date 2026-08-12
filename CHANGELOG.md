@@ -11,6 +11,30 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.2.1] - 2026-08-13
+
+**Richer alert messages.** Notifications now carry status, context, and one-click actions.
+
+- **Status icon + color** on every channel: a 🔴/🟡/🟢 indicator in the title, Discord's colored
+  embed with structured Host / Site / Reading fields, and a colored HTML email (with a plain-text
+  fallback) instead of plain text.
+- **The reading that fired it**: current value plus a best-effort threshold parsed from the trigger
+  expression, e.g. "Value: 96 % (threshold >90)".
+- **Recovery duration**: resolved notices say how long the problem lasted ("recovered after 14m").
+- **Open in Argus** deep-link straight to the offending sensor's chart (the SPA now honours
+  `?host=…&item=…` on load). Requires the new `ARGUS_PUBLIC_URL` env (your external base URL);
+  links are omitted when it's unset.
+- **One-click acknowledge**: a signed, HMAC-verified link that acknowledges the problem. A GET
+  shows a confirmation page (so link previewers can't silently ack); the POST performs it. The
+  signing secret is generated once and stored in the data volume.
+- Removed the stale "Soon" badge from the Notifications sidebar item (Probes keeps its badge —
+  enrollment is still pending).
+
+Next: the 2-hour trend graph in the message body (email inline / link-out, since the instance is
+internal-only).
+
+---
+
 ## [0.2.0] - 2026-08-12
 
 **Notifications — alerting engine + channel management.** Argus now watches active problems

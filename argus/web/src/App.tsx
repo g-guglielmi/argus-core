@@ -444,6 +444,17 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
   function goSensor(hostId: string, itemId: string) { navN.current += 1; setTreeTarget({ hostId, itemId, n: navN.current }); setView('monitoring'); setMenuOpen(false) }
   function openList(st: string) { setListFilter(st); setView('list'); setMenuOpen(false) }
 
+  // Open a sensor/host from a notification deep-link (?host=…&item=…), then tidy the URL.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    const host = p.get('host'); const item = p.get('item')
+    if (host) {
+      if (item) goSensor(host, item); else goHost(host)
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   async function logout() { await fetch('/api/logout', { method: 'POST' }).catch(() => {}); onLogout() }
   function goto(v: View) { setView(v); setMenuOpen(false) }
 

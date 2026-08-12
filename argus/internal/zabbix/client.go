@@ -240,6 +240,26 @@ func (c *Client) Item(ctx context.Context, itemID string) (*Item, error) {
 	return &items[0], nil
 }
 
+// ItemsByIDs returns the requested items keyed by item id (name, last value, units).
+func (c *Client) ItemsByIDs(ctx context.Context, ids []string) (map[string]Item, error) {
+	out := map[string]Item{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	params := map[string]any{
+		"output":  []string{"itemid", "hostid", "name", "key_", "lastvalue", "units", "value_type"},
+		"itemids": ids,
+	}
+	var items []Item
+	if err := c.call(ctx, "item.get", params, true, &items); err != nil {
+		return nil, err
+	}
+	for _, it := range items {
+		out[it.ItemID] = it
+	}
+	return out, nil
+}
+
 type HistoryPoint struct {
 	Clock string `json:"clock"`
 	Value string `json:"value"`
@@ -349,7 +369,8 @@ func (c *Client) AllProblems(ctx context.Context) ([]Problem, error) {
 
 // TriggerTarget is the host(s) and item(s) a trigger references.
 type TriggerTarget struct {
-	Hosts []struct {
+	Expression string `json:"expression"` // trigger expression (used to extract a threshold)
+	Hosts      []struct {
 		HostID string `json:"hostid"`
 		Name   string `json:"name"`
 		Status string `json:"status"` // "0" monitored, "1" disabled (paused)
@@ -366,7 +387,7 @@ func (c *Client) TriggerTargets(ctx context.Context, triggerIDs []string) (map[s
 		return out, nil
 	}
 	params := map[string]any{
-		"output":      []string{"triggerid"},
+		"output":      []string{"triggerid", "expression"},
 		"selectHosts": []string{"hostid", "name", "status"},
 		"selectItems": []string{"itemid"},
 		"triggerids":  triggerIDs,
