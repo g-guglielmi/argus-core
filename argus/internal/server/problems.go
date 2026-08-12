@@ -7,15 +7,16 @@ import (
 )
 
 type problemRow struct {
-	EventID      string `json:"event_id"`
-	Name         string `json:"name"`
-	HostID       string `json:"host_id"`
-	HostName     string `json:"host_name"`
-	Severity     int    `json:"severity"`
-	State        string `json:"state"` // ok | warning | error
-	Acknowledged bool   `json:"acknowledged"`
-	AckUntil     *int64 `json:"ack_until,omitempty"`
-	Clock        int64  `json:"clock"`
+	EventID      string   `json:"event_id"`
+	Name         string   `json:"name"`
+	HostID       string   `json:"host_id"`
+	HostName     string   `json:"host_name"`
+	Severity     int      `json:"severity"`
+	State        string   `json:"state"` // ok | warning | error
+	Acknowledged bool     `json:"acknowledged"`
+	AckUntil     *int64   `json:"ack_until,omitempty"`
+	Clock        int64    `json:"clock"`
+	ItemIDs      []string `json:"item_ids"` // sensors the trigger references (for deep-linking)
 }
 
 // handleProblems returns every active problem across all hosts, excluding those on hidden or
@@ -67,6 +68,10 @@ func (s *Server) handleProblems(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		sev := atoi(p.Severity)
+		itemIDs := make([]string, 0, len(t.Items))
+		for _, it := range t.Items {
+			itemIDs = append(itemIDs, it.ItemID)
+		}
 		row := problemRow{
 			EventID:  p.EventID,
 			Name:     p.Name,
@@ -75,6 +80,7 @@ func (s *Server) handleProblems(w http.ResponseWriter, r *http.Request) {
 			Severity: sev,
 			State:    severityState(sev),
 			Clock:    atoi64(p.Clock),
+			ItemIDs:  itemIDs,
 		}
 		if u, ok := acked[p.EventID]; ok {
 			row.Acknowledged = true

@@ -11,7 +11,7 @@ type Host = { id: string; name: string; problems: number; severity: number; stat
 type Proxy = { name: string; last_access: number; online: boolean; mode: string }
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
-type ProblemRow = { event_id: string; name: string; host_id: string; host_name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; clock: number }
+type ProblemRow = { event_id: string; name: string; host_id: string; host_name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; clock: number; item_ids: string[] }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
 type Series = { name: string; units: string; kind: 'history' | 'trend'; points: SeriesPoint[] }
 
@@ -191,6 +191,12 @@ async function errText(res: Response, fallback: string) {
   const j = await res.json().catch(() => ({}))
   return (j && j.error) || fallback
 }
+
+// Cross-component refresh signal: a mutation (ack / pause / hide) fires this so the shell's
+// status summary and any listening view reload immediately instead of waiting for the 30s poll.
+const refreshBus = new Set<() => void>()
+function onDataRefresh(fn: () => void): () => void { refreshBus.add(fn); return () => { refreshBus.delete(fn) } }
+function fireDataRefresh(): void { refreshBus.forEach((f) => f()) }
 
 export default function App() {
   const [me, setMe] = useState<Me | null>(null)
@@ -376,11 +382,17 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
 
   useEffect(() => {
     const load = () => fetch('/api/problems').then((r) => (r.ok ? r.json() : [])).then((p) => setProblems(p || [])).catch(() => {})
-    load(); const t = setInterval(load, 30000); return () => clearInterval(t)
+    load(); const t = setInterval(load, 30000); const off = onDataRefresh(load); return () => { clearInterval(t); off() }
   }, [])
   const errN = problems.filter((p) => p.state === 'error' && !p.acknowledged).length
   const warnN = problems.filter((p) => p.state === 'warning' && !p.acknowledged).length
   const ackN = problems.filter((p) => p.acknowledged).length
+
+  // Deep-link target: Overview asks the tree to open a host (and optionally a sensor's chart).
+  const [treeTarget, setTreeTarget] = useState<{ hostId: string; itemId?: string; n: number } | null>(null)
+  const navN = useRef(0)
+  function goHost(hostId: string) { navN.current += 1; setTreeTarget({ hostId, n: navN.current }); setView('monitoring'); setMenuOpen(false) }
+  function goSensor(hostId: string, itemId: string) { navN.current += 1; setTreeTarget({ hostId, itemId, n: navN.current }); setView('monitoring'); setMenuOpen(false) }
 
   async function logout() { await fetch('/api/logout', { method: 'POST' }).catch(() => {}); onLogout() }
   function goto(v: View) { setView(v); setMenuOpen(false) }
@@ -450,8 +462,8 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
           </div>
         </div>
         <div className="content">
-          {view === 'overview' && <OverviewView />}
-          {view === 'monitoring' && <MonitoringView role={me.role} />}
+          {view === 'overview' && <OverviewView goHost={goHost} goSensor={goSensor} />}
+          {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} />}
           {view === 'notifications' && <NotificationsView />}
           {view === 'probes' && <ProbesView />}
           {view === 'users' && me.role === 'admin' && <UsersView />}
@@ -518,7 +530,7 @@ function ProbesView() {
   )
 }
 
-function OverviewView() {
+function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; goSensor: (hostId: string, itemId: string) => void }) {
   const [rows, setRows] = useState<ProblemRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [mode, setMode] = useState<'errors' | 'both'>('errors')
@@ -528,54 +540,56 @@ function OverviewView() {
       .then(async (r) => { if (!r.ok) { setError(await errText(r, 'Failed to load problems')); return } setRows(await r.json()); setError(null) })
       .catch(() => setError('Failed to load problems'))
   }
-  useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t) }, [])
+  useEffect(() => { load(); const t = setInterval(load, 30000); const off = onDataRefresh(load); return () => { clearInterval(t); off() } }, [])
 
   async function ack(p: ProblemRow, seconds: number | null) {
     await fetch(`/api/events/${p.event_id}/ack`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration_seconds: seconds ?? 0 }) }).catch(() => {})
-    load()
+    load(); fireDataRefresh()
   }
   async function unack(p: ProblemRow) {
     await fetch(`/api/events/${p.event_id}/ack`, { method: 'DELETE' }).catch(() => {})
-    load()
+    load(); fireDataRefresh()
   }
 
   const filtered = (rows || [])
     .filter((p) => (mode === 'errors' ? p.state === 'error' && !p.acknowledged : p.state === 'error' || p.state === 'warning'))
     .sort((a, b) => (stateRank[b.state] - stateRank[a.state]) || (Number(a.acknowledged) - Number(b.acknowledged)) || (b.clock - a.clock))
 
-  const toggle = (id: typeof mode, label: string) => (
-    <button onClick={() => setMode(id)} style={{ ...ghost, padding: '0.25rem 0.7rem', fontSize: '0.85rem', borderColor: mode === id ? 'var(--accent)' : 'var(--border)' }}>{label}</button>
-  )
-
   return (
-    <section style={card}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
-        <h2 style={{ fontSize: '1rem', margin: 0 }}>Overview</h2>
-        <div style={{ display: 'flex', gap: '0.35rem' }}>{toggle('errors', 'Errors')}{toggle('both', 'Errors + Warnings')}</div>
-      </div>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {rows === null && !error && <p style={{ color: '#888' }}>Loading…</p>}
-      {rows !== null && filtered.length === 0 && (
-        <p style={{ color: 'seagreen' }}>✓ All clear — nothing {mode === 'errors' ? 'in error' : 'to report'}.</p>
-      )}
-      <div style={{ display: 'grid', gap: '0.4rem' }}>
-        {filtered.map((p) => (
-          <div key={p.event_id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.5rem 0.7rem', border: '1px solid #2a2a2a', borderLeft: `3px solid ${healthColor(p.state, p.acknowledged)}`, borderRadius: 6, opacity: p.acknowledged ? 0.8 : 1 }}>
-            <span style={{ width: 9, height: 9, borderRadius: '50%', flexShrink: 0, background: healthColor(p.state, p.acknowledged) }} />
-            <span style={{ minWidth: 0 }}>
-              <strong>{p.host_name}</strong>
-              <span style={{ color: '#bbb' }}> · {p.name}</span>
-            </span>
-            <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.6rem', flexShrink: 0 }}>
-              <span style={{ color: '#888', fontSize: '0.85rem' }}>{relTime(p.clock)}</span>
-              {p.acknowledged
-                ? <><span style={{ color: '#7fb894', fontSize: '0.8rem' }}>✓ acked · {untilLabel(p.ack_until)}</span><button onClick={() => unack(p)} style={{ ...ghost, padding: '0.15rem 0.55rem', fontSize: '0.8rem' }}>Unacknowledge</button></>
-                : <DurationButton label="Acknowledge" onPick={(s) => ack(p, s)} />}
-            </span>
+    <div className="panel">
+      <div className="phead">
+        <h2>Active problems</h2><span className="hint">across all sites</span>
+        <div className="tools">
+          <div className="seg">
+            <button className={mode === 'errors' ? 'on' : ''} onClick={() => setMode('errors')}>Errors</button>
+            <button className={mode === 'both' ? 'on' : ''} onClick={() => setMode('both')}>Errors + Warnings</button>
           </div>
-        ))}
+        </div>
       </div>
-    </section>
+      {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
+      {rows === null && !error && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>Loading…</div>}
+      {rows !== null && !error && filtered.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--ok)' }}>✓ All clear — nothing {mode === 'errors' ? 'in error' : 'to report'}.</div>}
+      <div className="rows">
+        {filtered.map((p) => {
+          const c = healthColor(p.state, p.acknowledged)
+          const hasItem = p.item_ids && p.item_ids.length > 0
+          return (
+            <div className={'row' + (p.acknowledged ? ' acked' : '')} key={p.event_id}>
+              <div className="stripe" style={{ background: c }} />
+              <span className="sd" style={{ background: c }} />
+              <span className="hname lnk-host" onClick={() => goHost(p.host_id)}>{p.host_name}</span>
+              <span className={'desc' + (hasItem ? ' lnk-sensor' : '')} onClick={hasItem ? () => goSensor(p.host_id, p.item_ids[0]) : undefined}> · {p.name}</span>
+              <div className="right">
+                <span className="when">{relTime(p.clock)}</span>
+                {p.acknowledged
+                  ? <><span className="acktag">✓ acked · {untilLabel(p.ack_until)}</span><button className="btn ghost" onClick={() => unack(p)}>Unacknowledge</button></>
+                  : <DurationButton label="Acknowledge" onPick={(s) => ack(p, s)} />}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
@@ -656,7 +670,7 @@ function Kebab({ actions, disabled, up }: { actions: KAction[]; disabled?: boole
   )
 }
 
-function MonitoringView({ role }: { role: string }) {
+function MonitoringView({ role, target }: { role: string; target: { hostId: string; itemId?: string; n: number } | null }) {
   const [hosts, setHosts] = useState<Host[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -673,21 +687,33 @@ function MonitoringView({ role }: { role: string }) {
       .catch(() => setError('Failed to load hosts'))
       .finally(() => { if (initial) setLoading(false) })
   }
-  useEffect(() => { load(true); const t = setInterval(() => load(false), 30000); return () => clearInterval(t) }, [])
+  useEffect(() => { load(true); const t = setInterval(() => load(false), 30000); const off = onDataRefresh(() => load(false)); return () => { clearInterval(t); off() } }, [])
+
+  // Respond to a deep-link from the Overview: expand the target host's site and open the host
+  // (its sensor chart is opened by HostItems via autoOpenItem). Re-runs once hosts have loaded.
+  useEffect(() => {
+    if (!target) return
+    const h = hosts.find((x) => x.id === target.hostId)
+    if (!h) return
+    const g = (h.groups && h.groups.length ? h.groups : ['Ungrouped'])[0]
+    setCollapsed((c) => { const n = new Set(c); n.delete(g); return n })
+    setOpenHost(g + '::' + target.hostId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target?.n, hosts.length])
 
   async function setHostState(h: Host, action: 'pause' | 'hide', seconds: number | null) {
     setBusyId(h.id)
     const res = await fetch(`/api/hosts/${h.id}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration_seconds: seconds ?? 0 }) }).catch(() => null)
     setBusyId(null)
     if (res && !res.ok) { setError(await errText(res, `Could not ${action} host`)); return }
-    load()
+    load(); fireDataRefresh()
   }
   async function clearHostState(h: Host, action: 'pause' | 'hide') {
     setBusyId(h.id)
     const res = await fetch(`/api/hosts/${h.id}/${action}`, { method: 'DELETE' }).catch(() => null)
     setBusyId(null)
     if (res && !res.ok) { setError(await errText(res, `Could not resume host`)); return }
-    load()
+    load(); fireDataRefresh()
   }
 
   // Build the site tree: site = Zabbix host group. A host in several groups appears under each;
@@ -748,7 +774,7 @@ function MonitoringView({ role }: { role: string }) {
                       )}
                     </div>
                   </div>
-                  {hopen && <div className="host-body"><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAll} /></div>}
+                  {hopen && <div className="host-body"><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAll} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} /></div>}
                 </div>
               )
             })}
@@ -759,7 +785,7 @@ function MonitoringView({ role }: { role: string }) {
   )
 }
 
-function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; showAll: boolean }) {
+function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpenItem }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; showAll: boolean; autoOpenItem?: string }) {
   const [items, setItems] = useState<SensorItem[] | null>(null)
   const [problems, setProblems] = useState<Problem[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -775,18 +801,24 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll }: { host
   }
   useEffect(() => { loadItems() }, [hostId, showAll])
 
+  // Open the deep-linked sensor's chart once its row is present (from an Overview sensor click).
+  useEffect(() => {
+    if (autoOpenItem && items && items.some((i) => i.id === autoOpenItem)) setOpenItem(autoOpenItem)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenItem, items])
+
   const [busyItem, setBusyItem] = useState<string | null>(null)
   async function setItemState(it: SensorItem, action: 'pause' | 'hide', seconds: number | null) {
     setBusyItem(it.id)
     await fetch(`/api/items/${it.id}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration_seconds: seconds ?? 0 }) }).catch(() => {})
     setBusyItem(null)
-    loadItems(false)
+    loadItems(false); fireDataRefresh()
   }
   async function clearItemState(it: SensorItem, action: 'pause' | 'hide') {
     setBusyItem(it.id)
     await fetch(`/api/items/${it.id}/${action}`, { method: 'DELETE' }).catch(() => {})
     setBusyItem(null)
-    loadItems(false)
+    loadItems(false); fireDataRefresh()
   }
 
   function loadProblems() {
@@ -798,11 +830,11 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll }: { host
 
   async function ack(p: Problem, seconds: number | null) {
     await fetch(`/api/events/${p.event_id}/ack`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration_seconds: seconds ?? 0 }) }).catch(() => {})
-    loadProblems()
+    loadProblems(); loadItems(false); fireDataRefresh()
   }
   async function unack(p: Problem) {
     await fetch(`/api/events/${p.event_id}/ack`, { method: 'DELETE' }).catch(() => {})
-    loadProblems()
+    loadProblems(); loadItems(false); fireDataRefresh()
   }
 
   if (error) return <div style={{ color: 'var(--err)', padding: '0.4rem 0' }}>{error}</div>

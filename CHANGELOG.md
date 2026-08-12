@@ -11,6 +11,24 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.0.28] - 2026-08-12
+
+**New UI, stage 3a of 4 — Overview redesign, deep-links & instant refresh.**
+
+### Added
+- **Overview redesigned** onto the design tokens: severity-striped problem rows, faded
+  acknowledged state, inline acknowledge / unacknowledge.
+- **Deep-links from the Overview into the tree**: click a problem's **host name** to jump to it
+  in Monitoring; click the **problem** to open that sensor's chart. `/api/problems` now returns
+  each problem's `item_ids` for the sensor link.
+
+### Fixed
+- **The top-bar status summary now updates instantly** after an acknowledge / pause / hide,
+  instead of lagging up to 30s until the next poll. A lightweight refresh signal fans a mutation
+  out to the summary and any open view.
+
+---
+
 ## [0.0.27] - 2026-08-12
 
 **New UI, stage 2 of 4 — the Monitoring tree & live Probes.**
