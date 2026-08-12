@@ -280,6 +280,41 @@ func (c *Client) Trends(ctx context.Context, itemID string, from, to int64) ([]T
 	return pts, c.call(ctx, "trend.get", params, true, &pts)
 }
 
+// ItemValueTypes returns the value_type of each requested item (to route history.get correctly).
+func (c *Client) ItemValueTypes(ctx context.Context, ids []string) (map[string]string, error) {
+	params := map[string]any{"output": []string{"itemid", "value_type"}, "itemids": ids}
+	var items []Item
+	if err := c.call(ctx, "item.get", params, true, &items); err != nil {
+		return nil, err
+	}
+	m := make(map[string]string, len(items))
+	for _, it := range items {
+		m[it.ItemID] = it.ValueType
+	}
+	return m, nil
+}
+
+type HistoryPointM struct {
+	ItemID string `json:"itemid"`
+	Clock  string `json:"clock"`
+	Value  string `json:"value"`
+}
+
+// HistoryMulti returns raw values for many items of the SAME value_type within [from, now], for
+// the inline sparklines (one history.get for the whole batch).
+func (c *Client) HistoryMulti(ctx context.Context, itemIDs []string, valueType int, from int64) ([]HistoryPointM, error) {
+	params := map[string]any{
+		"output":    []string{"itemid", "clock", "value"},
+		"itemids":   itemIDs,
+		"history":   valueType,
+		"time_from": from,
+		"sortfield": "clock",
+		"sortorder": "ASC",
+	}
+	var pts []HistoryPointM
+	return pts, c.call(ctx, "history.get", params, true, &pts)
+}
+
 type Problem struct {
 	EventID      string `json:"eventid"`
 	Name         string `json:"name"`

@@ -62,7 +62,8 @@ a { color: var(--accent); }
 
 /* ---------- shell ---------- */
 .app-shell { display: flex; min-height: 100vh; }
-.sidebar { position: sticky; top: 0; align-self: flex-start; height: 100vh; width: 232px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; padding: 15px 12px; transition: width 0.16s ease; overflow: hidden; }
+.sidebar { position: sticky; top: 0; z-index: 20; align-self: flex-start; height: 100vh; width: 232px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; padding: 15px 12px; transition: width 0.16s ease; }
+.sidebar .navlabel, .sidebar .nav .lbl, .sidebar .userbtn .who, .sidebar .themebtn span, .sidebar .brand > div { overflow: hidden; white-space: nowrap; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 12px; white-space: nowrap; }
 .brand .eye { color: var(--accent); flex-shrink: 0; }
 .brand .word { font-weight: 700; letter-spacing: 0.18em; font-size: 15px; }
@@ -207,6 +208,8 @@ table.sensors > tbody > tr > td { padding: 5px 10px; border-top: 1px solid var(-
 table.sensors > tbody > tr:first-child > td { border-top: none; }
 .sensors .cat td { color: var(--accent); font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; padding-top: 11px; font-weight: 700; border-top: none; }
 .sensors .val { font-weight: 650; } .sensors .unit { color: var(--muted); font-weight: 400; }
+.sensors td.strend { width: 100px; }
+.sensors td.strend .spark, .row .mini svg, .slist .trend svg { display: block; }
 .sensors td.namecell { border-left: 3px solid transparent; }
 .sensors tr.warn td.namecell { border-left-color: var(--warn); }
 .sensors tr.err td.namecell { border-left-color: var(--err); }

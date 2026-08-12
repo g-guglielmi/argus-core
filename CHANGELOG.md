@@ -11,6 +11,22 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.0.31] - 2026-08-12
+
+**Mini-graphs (for real) & collapsed-sidebar fix.**
+
+### Added
+- **Inline sparklines** are back — and now real, drawn from live history — in the Monitoring
+  tree (new Trend column), the Overview problem rows, and the status-chip lists. Backed by a new
+  batched **`GET /api/spark?items=…`** endpoint (one `item.get` + up to two `history.get`,
+  server-downsampled to ~24 points) so a whole host/list loads its sparks in a single request.
+
+### Fixed
+- **Collapsed sidebar**: the user menu (Account · Log out) no longer gets clipped by the
+  sidebar — it now overflows correctly and sits above the content.
+
+---
+
 ## [0.0.30] - 2026-08-12
 
 **Fixes & Account polish.**

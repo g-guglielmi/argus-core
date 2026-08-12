@@ -202,6 +202,45 @@ const refreshBus = new Set<() => void>()
 function onDataRefresh(fn: () => void): () => void { refreshBus.add(fn); return () => { refreshBus.delete(fn) } }
 function fireDataRefresh(): void { refreshBus.forEach((f) => f()) }
 
+// Spark draws a tiny inline sparkline from a compact recent value series (from /api/spark).
+function Spark({ values, color }: { values?: number[]; color: string }) {
+  if (!values || values.length < 2) return <span style={{ color: 'var(--faint)', fontSize: 12 }}>—</span>
+  const w = 84, h = 20
+  let min = values[0], max = values[0]
+  for (const v of values) { if (v < min) min = v; if (v > max) max = v }
+  const rng = max - min || 1
+  const px = (i: number) => (i / (values.length - 1)) * (w - 2) + 1
+  const py = (v: number) => h - 2 - ((v - min) / rng) * (h - 4)
+  let d = ''
+  values.forEach((v, i) => { d += (i ? 'L' : 'M') + px(i).toFixed(1) + ' ' + py(v).toFixed(1) + ' ' })
+  const area = `M1 ${h - 1} ${d.replace('M', 'L').trim()} L${w - 1} ${h - 1} Z`
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+      <path d={area} fill={color} opacity={0.13} />
+      <path d={d.trim()} fill="none" stroke={color} strokeWidth={1.4} />
+      <circle cx={w - 1} cy={py(values[values.length - 1])} r={1.8} fill={color} />
+    </svg>
+  )
+}
+
+// useSparks fetches compact recent series for a set of item ids (batched), refreshing every 60s.
+function useSparks(itemIds: string[]): Record<string, number[]> {
+  const [map, setMap] = useState<Record<string, number[]>>({})
+  const [tick, setTick] = useState(0)
+  const key = itemIds.slice().sort().join(',')
+  useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 60000); return () => clearInterval(t) }, [])
+  useEffect(() => {
+    if (!key) { setMap({}); return }
+    let cancelled = false
+    fetch(`/api/spark?items=${encodeURIComponent(key)}&range=2h`)
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((m) => { if (!cancelled) setMap(m || {}) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [key, tick])
+  return map
+}
+
 export default function App() {
   const [me, setMe] = useState<Me | null>(null)
   const [loading, setLoading] = useState(true)
@@ -569,6 +608,7 @@ function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; 
   const filtered = (rows || [])
     .filter((p) => (mode === 'errors' ? p.state === 'error' && !p.acknowledged : p.state === 'error' || p.state === 'warning'))
     .sort((a, b) => (stateRank[b.state] - stateRank[a.state]) || (Number(a.acknowledged) - Number(b.acknowledged)) || (b.clock - a.clock))
+  const sparks = useSparks(filtered.flatMap((p) => (p.item_ids && p.item_ids.length ? [p.item_ids[0]] : [])))
 
   return (
     <div className="panel">
@@ -595,6 +635,7 @@ function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; 
               <span className="hname lnk-host" onClick={() => goHost(p.host_id)}>{p.host_name}</span>
               <span className={'desc' + (hasItem ? ' lnk-sensor' : '')} onClick={hasItem ? () => goSensor(p.host_id, p.item_ids[0]) : undefined}> · {p.name}</span>
               <div className="right">
+                {hasItem && <span className="mini"><Spark values={sparks[p.item_ids[0]]} color={c} /></span>}
                 <span className="when">{relTime(p.clock)}</span>
                 {p.acknowledged
                   ? <><span className="acktag">✓ acked · {untilLabel(p.ack_until)}</span><button className="btn ghost" onClick={() => unack(p)}>Unacknowledge</button></>
@@ -852,6 +893,8 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
     loadProblems(); loadItems(false); fireDataRefresh()
   }
 
+  const sparks = useSparks((items || []).filter((i) => i.numeric && i.supported).map((i) => i.id))
+
   if (error) return <div style={{ color: 'var(--err)', padding: '0.4rem 0' }}>{error}</div>
   if (!items) return <div style={{ color: 'var(--muted)', padding: '0.4rem 0' }}>Loading sensors…</div>
 
@@ -889,7 +932,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
         ? <div style={{ color: 'var(--muted)', padding: '0.2rem 0 0.4rem' }}>{showAll ? 'No sensors.' : 'No recognized sensors — try “All sensors”.'}</div>
         : (
           <table className="sensors">
-            <thead><tr><th>Sensor</th><th>Value</th><th style={{ textAlign: 'right' }}>Last check</th></tr></thead>
+            <thead><tr><th>Sensor</th><th>Value</th><th>Trend</th><th style={{ textAlign: 'right' }}>Last check</th></tr></thead>
             <tbody>
               {items.map((it, idx) => {
                 const st = itemState[it.id]
@@ -915,9 +958,10 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                 const actions: KAction[] = []
                 if (unacked.length) { actions.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => unacked.forEach((p) => ack(p, s)) }); if (acts.length) actions.push({ sep: true, label: '' }) }
                 actions.push(...acts)
+                const trendColor = st ? healthColor(st, itemAcked[it.id]) : 'var(--accent)'
                 return (
                   <Fragment key={it.id}>
-                    {newGroup && <tr className="cat"><td colSpan={3}>{it.category}</td></tr>}
+                    {newGroup && <tr className="cat"><td colSpan={4}>{it.category}</td></tr>}
                     <tr className={rowClass} onClick={clickable ? () => setOpenItem(open ? null : it.id) : undefined} style={{ opacity: it.supported ? 1 : 0.55, cursor: clickable ? 'pointer' : 'default' }}>
                       <td className="namecell">
                         <span className={'sname' + (clickable ? ' sclick' : '')} style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: effPaused || effHidden ? 0.6 : 1 }}>
@@ -932,6 +976,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                           ? (() => { const [dv, du] = readingParts(it.last_value, it.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })()
                           : <span style={{ color: 'var(--err)' }}>not supported</span>}
                       </td>
+                      <td className="strend">{it.numeric && it.supported ? <Spark values={sparks[it.id]} color={trendColor} /> : null}</td>
                       <td>
                         <div className="lccell">
                           <span className="when">{relTime(it.last_clock)}</span>
@@ -940,7 +985,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                       </td>
                     </tr>
                     {open && clickable && (
-                      <tr className="chartrow"><td colSpan={3}><SensorChart itemId={it.id} units={it.units} /></td></tr>
+                      <tr className="chartrow"><td colSpan={4}><SensorChart itemId={it.id} units={it.units} /></td></tr>
                     )}
                   </Fragment>
                 )
@@ -957,6 +1002,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
 function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }: { filter: string; sensors: SensorRow[]; canPause: boolean; goHost: (h: string) => void; goSensor: (h: string, i: string) => void; onBack: () => void }) {
   const [busy, setBusy] = useState<string | null>(null)
   const rows = sensors.filter((s) => s.state === filter)
+  const sparks = useSparks(rows.filter((s) => s.numeric && s.supported).map((s) => s.item_id))
 
   async function itemAction(s: SensorRow, action: 'pause' | 'hide', seconds: number | null) {
     setBusy(s.item_id)
@@ -999,7 +1045,7 @@ function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }:
         ? <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>No {STATE_LABEL[filter].toLowerCase()} sensors.</div>
         : (
           <table className="slist">
-            <thead><tr><th>Host</th><th>Sensor</th><th>Value</th><th>{durCol}</th><th /></tr></thead>
+            <thead><tr><th>Host</th><th>Sensor</th><th>Value</th><th>Trend</th><th>{durCol}</th><th /></tr></thead>
             <tbody>
               {rows.map((s) => {
                 const clickable = s.numeric && s.supported
@@ -1008,6 +1054,7 @@ function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }:
                     <td className="slhost" style={{ borderLeftColor: STATE_VAR[s.state] || 'var(--border)' }}><span className="lnk-host" onClick={() => goHost(s.host_id)}>{s.host_name}</span></td>
                     <td>{clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id)}>{s.label || s.name}</span> : (s.label || s.name)}</td>
                     <td className="mono val">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })() : <span style={{ color: 'var(--err)' }}>not supported</span>}</td>
+                    <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} /> : null}</td>
                     <td className="mono dur">{relTime(s.last_clock)}</td>
                     <td className="act">{canPause && <Kebab disabled={busy === s.item_id} actions={actionsFor(s)} />}</td>
                   </tr>
