@@ -97,6 +97,7 @@ Never copy `ca.key` or another site's key to the probe.
 | `core/zabbix_server.conf.snippet` | TLS + DB + tuning settings for the server |
 | `probe/run-probe.sh` | Parametrized `docker run` for a probe (active proxy, mTLS, 7-day buffer) |
 | `unraid/zabbix-proxy-site1.xml` | unRAID Community Applications template for the site1 probe |
+| `unraid/argus.xml` | unRAID Community Applications template for the Argus app (all env vars as fields) |
 
 ## Troubleshooting / known issues
 

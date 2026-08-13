@@ -1,0 +1,48 @@
+<?xml version="1.0"?>
+<!--
+  unRAID Community Applications template — Argus (monitoring cockpit over Zabbix).
+  Import via Docker tab -> Add Container -> Template dropdown, or Apps -> paste template.
+
+  Before starting:
+    1. Point "Zabbix API URL" at your core's JSON-RPC endpoint and paste a write-capable API token.
+    2. On the FIRST run only, set the admin email/password to seed the initial account.
+    3. For HTTPS behind a reverse proxy, set Cookie Secure = true, Public URL, Trust Proxy = true,
+       and (optional) the passkey RP_* fields. Set a long, STABLE Secret Key.
+  Argus is published on host 8081 (container 8080); the Zabbix web UI usually holds host 8080.
+-->
+<Container version="2">
+  <Name>Argus</Name>
+  <Repository>ghcr.io/g-guglielmi/argus:latest</Repository>
+  <Registry>https://github.com/g-guglielmi/argus</Registry>
+  <Project>https://github.com/g-guglielmi/argus</Project>
+  <Support>https://github.com/g-guglielmi/argus/issues</Support>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Overview>PRTG-style monitoring cockpit layered on Zabbix: site-&gt;host-&gt;sensor tree, per-sensor graphs, acknowledge/pause/hide, cross-site problem overview, and Discord/Telegram/email notifications with 2h trend graphs. Single distroless container; state (SQLite + encryption keyfile) lives on the /data volume.</Overview>
+  <Category>Tools: Network:Management</Category>
+  <WebUI>http://[IP]:[PORT:8081]/</WebUI>
+  <Icon></Icon>
+
+  <Config Name="WebUI Port" Target="8080" Default="8081" Mode="tcp" Description="Host port for the Argus web UI (container listens on 8080)." Type="Port" Display="always" Required="true" Mask="false">8081</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/argus" Mode="rw" Description="SQLite database + at-rest encryption keyfile. Persist this." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/argus</Config>
+
+  <Config Name="Zabbix API URL" Target="ARGUS_ZABBIX_API_URL" Default="http://10.0.0.10:8080/api_jsonrpc.php" Mode="" Description="Zabbix JSON-RPC endpoint." Type="Variable" Display="always" Required="true" Mask="false">http://10.0.0.10:8080/api_jsonrpc.php</Config>
+  <Config Name="Zabbix API Token" Target="ARGUS_ZABBIX_API_TOKEN" Default="" Mode="" Description="Zabbix API token (Bearer). Needs write scope for acknowledge/pause." Type="Variable" Display="always" Required="true" Mask="true"></Config>
+
+  <Config Name="Admin Email (first run)" Target="ARGUS_ADMIN_EMAIL" Default="admin@example.com" Mode="" Description="Seeds the initial admin only while the user table is empty; ignored afterwards." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Admin Password (first run)" Target="ARGUS_ADMIN_PASSWORD" Default="" Mode="" Description="Password for the seeded admin. Remove after first run." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+
+  <Config Name="Cookie Secure (HTTPS)" Target="ARGUS_COOKIE_SECURE" Default="true" Mode="" Description="Set true when served over HTTPS (Secure session cookie)." Type="Variable" Display="always" Required="false" Mask="false">true</Config>
+  <Config Name="Secret Key (at-rest encryption)" Target="ARGUS_SECRET_KEY" Default="" Mode="" Description="Encrypts stored secrets (channel creds, TOTP, signing key). Use e.g. `openssl rand -hex 32`. Keep it STABLE - changing it makes existing encrypted values unreadable. Empty = auto keyfile on /data (weaker)." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="Trust Proxy" Target="ARGUS_TRUST_PROXY" Default="true" Mode="" Description="Read client IP from X-Forwarded-For for rate limiting. Set true behind a reverse proxy (ensure it sends XFF)." Type="Variable" Display="always" Required="false" Mask="false">true</Config>
+
+  <Config Name="Public URL" Target="ARGUS_PUBLIC_URL" Default="https://monitoring.example.com" Mode="" Description="External base URL, used for Open/Acknowledge links in notifications." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Timezone" Target="ARGUS_TZ" Default="Europe/Rome" Mode="" Description="IANA timezone for notification timestamps." Type="Variable" Display="always" Required="false" Mask="false">Europe/Rome</Config>
+
+  <Config Name="Login Max Attempts" Target="ARGUS_LOGIN_MAX_ATTEMPTS" Default="7" Mode="" Description="Failed logins per window before throttling." Type="Variable" Display="advanced" Required="false" Mask="false">7</Config>
+  <Config Name="Login Window (minutes)" Target="ARGUS_LOGIN_WINDOW_MINUTES" Default="15" Mode="" Description="Rate-limit sliding window." Type="Variable" Display="advanced" Required="false" Mask="false">15</Config>
+
+  <Config Name="Passkey RP ID" Target="ARGUS_RP_ID" Default="monitoring.example.com" Mode="" Description="WebAuthn relying-party ID = the FQDN, no scheme. Needs HTTPS + real domain; omit for plain HTTP/IP." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Passkey Display Name" Target="ARGUS_RP_DISPLAY_NAME" Default="Argus" Mode="" Description="Name shown by the authenticator." Type="Variable" Display="advanced" Required="false" Mask="false">Argus</Config>
+  <Config Name="Passkey Origins" Target="ARGUS_RP_ORIGINS" Default="https://monitoring.example.com" Mode="" Description="Comma-separated origins, e.g. https://monitoring.example.com" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+</Container>
