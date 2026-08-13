@@ -299,24 +299,33 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   .phead { padding: 12px 14px; }
   .menu { max-width: calc(100vw - 24px); } /* keep kebab menus on-screen */
 
-  /* --- problem/status lists: stack each row into a card (no side-scroll) --- */
+  /* --- problem/status lists: stack each row into a labelled card (no side-scroll) --- */
   .slist thead { display: none; }
   .slist, .slist tbody, .slist tr { display: block; }
   .slist tr { padding: 11px 14px; border-bottom: 1px solid var(--border); }
   .slist tr:last-child { border-bottom: none; }
-  .slist td { display: block; width: auto; padding: 1px 0; border: none; text-align: left !important; }
-  .slist td > span { justify-content: flex-start !important; }
-  .slist td.slhost { border-left: 3px solid transparent; padding-left: 10px; font-size: 14px; margin-bottom: 3px; }
+  .slist td { display: block; width: auto; padding: 2px 0; border: none; text-align: left !important; }
+  .slist td.slhost { border-left: 3px solid transparent; padding-left: 10px; font-size: 14px; margin-bottom: 2px; }
+  .slist td:nth-child(2) { color: var(--muted); }
   .slist td.trend { display: none; }
-  .slist td.act, .slist td:last-child { text-align: right !important; margin-top: 8px; }
+  .slist td[data-label] { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .slist td[data-label]::before { content: attr(data-label); color: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+  .slist td.act, .slist td:last-child:not([data-label]) { text-align: right !important; margin-top: 8px; }
   .slist td:last-child > span { justify-content: flex-end !important; }
 
-  /* --- users table: stack into cards too --- */
+  /* --- users table: labelled cards --- */
   .utable thead { display: none; }
   .utable, .utable tbody, .utable tr { display: block; }
   .utable tr { padding: 11px 14px; border-bottom: 1px solid var(--border); }
-  .utable td { display: block; width: auto; padding: 4px 0; border: none; }
-  .utable td:last-child { text-align: right; }
+  .utable td { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: auto; padding: 5px 0; border: none; }
+  .utable td::before { content: attr(data-label); color: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; flex-shrink: 0; }
+  .utable td:first-child { display: block; margin-bottom: 2px; padding: 0; }
+  .utable td:first-child::before { display: none; }
+  .utable td:first-child .cellinput { width: 100%; font-size: 14px; }
+  .utable td:last-child { justify-content: flex-end; }
+  .utable td:last-child::before { display: none; }
+  .utable .cellinput { flex: 1; min-width: 0; width: auto; }
+  .utable .roleselect { flex-shrink: 0; }
 
   /* --- monitoring tree: drop the trend column, tighten indentation --- */
   table.sensors thead th:nth-child(3), table.sensors td.strend { display: none; }

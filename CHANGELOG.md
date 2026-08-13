@@ -11,6 +11,15 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.2.5] - 2026-08-13
+
+- **Mobile card labels**: the stacked lists from v0.2.4 dropped their column headers, so on a phone
+  the Users page and status lists read as unlabeled values. Each stacked cell now shows its label
+  (Name / Role / 2FA / Passkeys, Value / Last check / Age), with the email/host as the card title
+  and the kebab in the corner. Empty name/surname show a clearer placeholder.
+
+---
+
 ## [0.2.4] - 2026-08-13
 
 **Mobile-responsive layout.** The dashboard was desktop-only; on a phone the sidebar squeezed the

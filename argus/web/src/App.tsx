@@ -829,7 +829,7 @@ function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; 
                   </td>
                   <td>{hasItem ? <span className="lnk-sensor" onClick={() => goSensor(p.host_id, p.item_ids[0])}>{p.name}</span> : p.name}</td>
                   <td className="trend">{hasItem ? <Spark values={sparks[p.item_ids[0]]} color={c} /> : null}</td>
-                  <td className="mono dur" style={{ whiteSpace: 'nowrap' }}>{relTime(p.clock)}</td>
+                  <td className="mono dur" data-label="Age" style={{ whiteSpace: 'nowrap' }}>{relTime(p.clock)}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {p.acknowledged
                       ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}><span className="acktag">✓ acked · {untilLabel(p.ack_until)}</span><button className="btn ghost" onClick={() => unack(p)}>Unacknowledge</button></span>
@@ -1258,9 +1258,9 @@ function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }:
                   <tr key={s.item_id}>
                     <td className="slhost" style={{ borderLeftColor: STATE_VAR[s.state] || 'var(--border)' }}><span className="lnk-host" onClick={() => goHost(s.host_id)}>{s.host_name}</span></td>
                     <td>{clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id)}>{s.label || s.name}</span> : (s.label || s.name)}</td>
-                    <td className="mono val">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })() : <span style={{ color: 'var(--err)' }}>not supported</span>}</td>
+                    <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })() : <span style={{ color: 'var(--err)' }}>not supported</span>}</td>
                     <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} /> : null}</td>
-                    <td className="mono dur">{relTime(s.last_clock)}</td>
+                    <td className="mono dur" data-label={durCol}>{relTime(s.last_clock)}</td>
                     <td className="act">{canPause && <Kebab disabled={busy === s.item_id} actions={actionsFor(s)} />}</td>
                   </tr>
                 )
@@ -1504,13 +1504,13 @@ function UsersView() {
         <tbody>
           {users.map((u) => (
             <tr key={u.id} style={{ opacity: u.disabled ? 0.5 : 1 }}>
-              <td><input className="cellinput mono" value={u.email} onChange={(e) => edit(u.id, { email: e.target.value })} onBlur={() => saveUser(u.id)} /></td>
-              <td><input className="cellinput" value={u.name} placeholder="—" onChange={(e) => edit(u.id, { name: e.target.value })} onBlur={() => saveUser(u.id)} /></td>
-              <td><input className="cellinput" value={u.surname} placeholder="—" onChange={(e) => edit(u.id, { surname: e.target.value })} onBlur={() => saveUser(u.id)} /></td>
-              <td><select className="roleselect" value={u.role} onChange={(e) => { edit(u.id, { role: e.target.value }); setTimeout(() => saveUser(u.id), 0) }}>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select></td>
-              <td>{u.mfa_enabled ? <span className="badge on">on</span> : <span className="badge off">off</span>}</td>
-              <td className="mono">{u.passkeys || 0}</td>
-              <td style={{ textAlign: 'right' }}>
+              <td data-label="Email"><input className="cellinput mono" value={u.email} onChange={(e) => edit(u.id, { email: e.target.value })} onBlur={() => saveUser(u.id)} /></td>
+              <td data-label="Name"><input className="cellinput" value={u.name} placeholder="Name" onChange={(e) => edit(u.id, { name: e.target.value })} onBlur={() => saveUser(u.id)} /></td>
+              <td data-label="Surname"><input className="cellinput" value={u.surname} placeholder="Surname" onChange={(e) => edit(u.id, { surname: e.target.value })} onBlur={() => saveUser(u.id)} /></td>
+              <td data-label="Role"><select className="roleselect" value={u.role} onChange={(e) => { edit(u.id, { role: e.target.value }); setTimeout(() => saveUser(u.id), 0) }}>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select></td>
+              <td data-label="2FA">{u.mfa_enabled ? <span className="badge on">on</span> : <span className="badge off">off</span>}</td>
+              <td data-label="Passkeys" className="mono">{u.passkeys || 0}</td>
+              <td data-label="Manage" style={{ textAlign: 'right' }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
                   {u.disabled && <span className="badge" style={{ color: 'var(--err)', borderColor: 'color-mix(in srgb, var(--err) 40%, var(--border))' }}>disabled</span>}
                   <Kebab actions={userActions(u)} />
