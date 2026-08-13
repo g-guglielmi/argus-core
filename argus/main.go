@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // embed the IANA tz database so ARGUS_TZ works on distroless
 
 	"argus/internal/auth"
 	"argus/internal/config"
@@ -43,7 +44,7 @@ func main() {
 
 	// Background notifier: polls problems and dispatches alerts to the configured channels.
 	notifySecret := server.GetSigningSecret(context.Background(), st)
-	go server.StartNotifier(sweepCtx, st, zbx, logger, cfg.PublicURL, notifySecret)
+	go server.StartNotifier(sweepCtx, st, zbx, logger, cfg.PublicURL, notifySecret, cfg.Location())
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,

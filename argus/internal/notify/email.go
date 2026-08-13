@@ -114,7 +114,7 @@ func buildMessage(from string, to []string, e Event) []byte {
 		writeAlternative(&b, e)
 		b.WriteString("\r\n--" + relBoundary + "\r\n")
 		b.WriteString("Content-Type: image/png\r\nContent-Transfer-Encoding: base64\r\n")
-		b.WriteString("Content-ID: <chart>\r\nContent-Disposition: inline; filename=\"chart.png\"\r\n\r\n")
+		b.WriteString("Content-ID: <chart@argus>\r\nContent-Disposition: inline; filename=\"chart.png\"\r\n\r\n")
 		b.WriteString(wrap76(base64.StdEncoding.EncodeToString(e.ChartPNG)))
 		b.WriteString("\r\n--" + relBoundary + "--\r\n")
 		return []byte(b.String())
@@ -203,7 +203,7 @@ func htmlBody(e Event) string {
 
 	chart := ""
 	if len(e.ChartPNG) > 0 {
-		chart = `<img src="cid:chart" alt="2-hour trend" style="width:100%;max-width:524px;margin-top:14px;border:1px solid #e5e7eb;border-radius:8px">`
+		chart = `<img src="cid:chart@argus" alt="2-hour trend" style="width:100%;max-width:524px;margin-top:14px;border:1px solid #e5e7eb;border-radius:8px">`
 	}
 
 	c := htmlColor(e)

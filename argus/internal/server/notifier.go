@@ -21,7 +21,7 @@ const (
 // StartNotifier runs the alerting loop: it polls Zabbix problems, applies the same
 // suppression rules as the Overview (hidden / paused / acknowledged stay quiet), debounces
 // flapping, and dispatches problem/recovery notifications to the configured channels.
-func StartNotifier(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger, publicURL, secret string) {
+func StartNotifier(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger, publicURL, secret string, loc *time.Location) {
 	ticker := time.NewTicker(notifyPollInterval)
 	defer ticker.Stop()
 	// Run one tick shortly after start (seeds the baseline), then on the interval.
@@ -32,14 +32,14 @@ func StartNotifier(ctx context.Context, st *store.Store, zbx *zabbix.Client, log
 		case <-ctx.Done():
 			return
 		case <-first.C:
-			notifyTick(ctx, st, zbx, logger, publicURL, secret)
+			notifyTick(ctx, st, zbx, logger, publicURL, secret, loc)
 		case <-ticker.C:
-			notifyTick(ctx, st, zbx, logger, publicURL, secret)
+			notifyTick(ctx, st, zbx, logger, publicURL, secret, loc)
 		}
 	}
 }
 
-func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger, publicURL, secret string) {
+func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger, publicURL, secret string, loc *time.Location) {
 	if !zbx.Authenticated() {
 		return
 	}
@@ -113,7 +113,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			since := time.Now().Unix() - stt.FirstSeen
 			ev := notify.Event{
 				Kind: "recovery", Severity: stt.Severity, State: "ok",
-				Host: stt.HostName, Name: stt.Name, Site: primarySite(hostGroups[stt.HostID]), When: time.Now(),
+				Host: stt.HostName, Name: stt.Name, Site: primarySite(hostGroups[stt.HostID]), When: time.Now().In(loc),
 				SinceSecs: since, OpenURL: OpenLink(publicURL, stt.HostID, stt.ItemID),
 				ChartPNG: alertChart(ctx, zbx, stt.ItemID, "ok"),
 			}
@@ -171,7 +171,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		}
 		ev := notify.Event{
 			Kind: "problem", Severity: sev, State: severityState(sev),
-			Host: hostName, Name: p.Name, Site: primarySite(hostGroups[hostID]), When: time.Unix(atoi64(p.Clock), 0),
+			Host: hostName, Name: p.Name, Site: primarySite(hostGroups[hostID]), When: time.Unix(atoi64(p.Clock), 0).In(loc),
 			Value: value, Threshold: parseThreshold(t.Expression),
 			OpenURL: OpenLink(publicURL, hostID, itemID), AckURL: AckLink(publicURL, secret, p.EventID),
 			ChartPNG: alertChart(ctx, zbx, itemID, severityState(sev)),

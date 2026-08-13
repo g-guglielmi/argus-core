@@ -31,12 +31,13 @@ type Server struct {
 	dummyHash     string             // for constant-ish login timing when a user doesn't exist
 	wa            *webauthn.WebAuthn // nil when passkeys are not configured
 	signingSecret string             // HMAC secret for signed alert links
+	loc           *time.Location     // timezone for notification timestamps
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger) http.Handler {
 	dummy, _ := auth.HashPassword("argus-nonexistent-user")
 	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, dummyHash: dummy,
-		signingSecret: GetSigningSecret(context.Background(), st)}
+		signingSecret: GetSigningSecret(context.Background(), st), loc: cfg.Location()}
 
 	if cfg.PasskeysEnabled() {
 		wa, err := webauthn.New(&webauthn.Config{

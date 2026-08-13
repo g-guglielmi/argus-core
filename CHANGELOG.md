@@ -11,6 +11,19 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.2.3] - 2026-08-13
+
+- **Configurable timezone** for notification timestamps: set `ARGUS_TZ` to an IANA name
+  (e.g. `Europe/Rome`); defaults to `UTC`. The binary embeds the tz database (`time/tzdata`) so
+  it works on the distroless image without a system zoneinfo.
+- **Email graph fix**: the inline chart now uses a fully-qualified `Content-ID` (`<chart@argus>`)
+  for broader client compatibility (some clients, Gmail included, are picky about bare cids).
+
+Note: pulling a new image doesn't replace a *running* container — recreate it (or update the
+pinned tag) to pick up a release.
+
+---
+
 ## [0.2.2] - 2026-08-13
 
 **2-hour trend graph in alerts.** Every problem and recovery notification now carries a compact
