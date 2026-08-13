@@ -11,6 +11,21 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.2.7] - 2026-08-14
+
+**Login rate limiting** (brute-force protection). Repeated failed sign-ins are now throttled by
+both **client IP** and **account**, with a `429 Too Many Requests` (and `Retry-After`) once the
+limit is hit; a successful sign-in clears the counters.
+
+- Applies to the password step and the TOTP-code step (per-account limiting means IP rotation
+  can't grind a single account, and it works even behind a shared proxy IP).
+- Tunable via `ARGUS_LOGIN_MAX_ATTEMPTS` (default 7) and `ARGUS_LOGIN_WINDOW_MINUTES` (default 15).
+- **Behind a reverse proxy** (HAProxy), set **`ARGUS_TRUST_PROXY=true`** so the real client IP is
+  read from `X-Forwarded-For` (ensure the proxy sends it, e.g. HAProxy `option forwardfor`).
+  Without it, all requests share the proxy's IP; account-level limiting still protects each login.
+
+---
+
 ## [0.2.6] - 2026-08-14
 
 Mobile card polish:

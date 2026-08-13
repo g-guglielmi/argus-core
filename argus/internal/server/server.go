@@ -3,14 +3,19 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"argus/internal/auth"
 	"argus/internal/config"
 	"argus/internal/mfa"
+	"argus/internal/ratelimit"
 	"argus/internal/store"
 	"argus/internal/zabbix"
 	"argus/web"
@@ -32,12 +37,14 @@ type Server struct {
 	wa            *webauthn.WebAuthn // nil when passkeys are not configured
 	signingSecret string             // HMAC secret for signed alert links
 	loc           *time.Location     // timezone for notification timestamps
+	loginLimiter  *ratelimit.Limiter // brute-force protection for login
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger) http.Handler {
 	dummy, _ := auth.HashPassword("argus-nonexistent-user")
 	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, dummyHash: dummy,
-		signingSecret: GetSigningSecret(context.Background(), st), loc: cfg.Location()}
+		signingSecret: GetSigningSecret(context.Background(), st), loc: cfg.Location(),
+		loginLimiter: ratelimit.New(cfg.LoginMaxAttempts, cfg.LoginWindow)}
 
 	if cfg.PasskeysEnabled() {
 		wa, err := webauthn.New(&webauthn.Config{
@@ -183,6 +190,40 @@ func toUserResponse(u *store.User) userResponse {
 	return userResponse{Email: u.Email, Name: u.Name, Surname: u.Surname, Role: u.Role, MFAEnabled: u.TOTPEnabled}
 }
 
+// clientIP returns the caller's IP, honouring X-Forwarded-For only when TrustProxy is set
+// (Argus behind a reverse proxy like HAProxy). Otherwise it uses the direct socket address.
+func (s *Server) clientIP(r *http.Request) string {
+	if s.cfg.TrustProxy {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if i := strings.IndexByte(xff, ','); i >= 0 {
+				return strings.TrimSpace(xff[:i])
+			}
+			return strings.TrimSpace(xff)
+		}
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+// rateBlocked returns true (and writes a 429 with Retry-After) if any key is currently throttled.
+func (s *Server) rateBlocked(w http.ResponseWriter, keys ...string) bool {
+	for _, k := range keys {
+		if blocked, retry := s.loginLimiter.Blocked(k); blocked {
+			secs := int(retry.Seconds())
+			if secs < 1 {
+				secs = 1
+			}
+			w.Header().Set("Retry-After", strconv.Itoa(secs))
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{
+				"error": fmt.Sprintf("Too many attempts. Try again in about %d seconds.", secs)})
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
@@ -190,17 +231,29 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ipKey := "login:ip:" + s.clientIP(r)
+	acctKey := "login:acct:" + strings.ToLower(strings.TrimSpace(req.Email))
+	if s.rateBlocked(w, ipKey, acctKey) {
+		return
+	}
+	loginFailed := func() { s.loginLimiter.Fail(ipKey); s.loginLimiter.Fail(acctKey) }
+
 	u, err := s.st.UserByEmail(r.Context(), req.Email)
 	if err != nil {
 		_, _ = auth.VerifyPassword(req.Password, s.dummyHash) // equalize timing
+		loginFailed()
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
 	ok, err := auth.VerifyPassword(req.Password, u.PasswordHash)
 	if err != nil || !ok {
+		loginFailed()
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
+	// Password correct — clear the failure counters for this IP and account.
+	s.loginLimiter.Reset(ipKey)
+	s.loginLimiter.Reset(acctKey)
 
 	// If MFA is enabled, the password alone doesn't authenticate: issue a short-lived
 	// challenge and make the client complete the second factor.
@@ -237,6 +290,13 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "this sign-in has expired; please start again"})
 		return
 	}
+
+	ipKey := "totp:ip:" + s.clientIP(r)
+	userKey := "totp:uid:" + strconv.FormatInt(uid, 10)
+	if s.rateBlocked(w, ipKey, userKey) {
+		return
+	}
+
 	u, err := s.st.UserByID(r.Context(), uid)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "this sign-in has expired; please start again"})
@@ -251,11 +311,15 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !valid {
-		// Keep the challenge alive so the user can retry within its short window.
+		// Throttle code-guessing; keep the challenge alive so the user can retry in its window.
+		s.loginLimiter.Fail(ipKey)
+		s.loginLimiter.Fail(userKey)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid code"})
 		return
 	}
 
+	s.loginLimiter.Reset(ipKey)
+	s.loginLimiter.Reset(userKey)
 	_ = s.st.DeleteMFAChallenge(r.Context(), challengeID) // one-time use
 	s.issueSession(w, r, u)
 }

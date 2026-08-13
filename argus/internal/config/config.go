@@ -21,6 +21,11 @@ type Config struct {
 	AdminPassword string // ARGUS_ADMIN_PASSWORD, used once to seed the first admin
 	CookieSecure  bool   // ARGUS_COOKIE_SECURE, set true when served over HTTPS
 
+	// Login rate limiting (brute-force protection).
+	LoginMaxAttempts int           // ARGUS_LOGIN_MAX_ATTEMPTS, failures before a temporary block
+	LoginWindow      time.Duration // ARGUS_LOGIN_WINDOW_MINUTES, the sliding window
+	TrustProxy       bool          // ARGUS_TRUST_PROXY, use X-Forwarded-For for the client IP
+
 	// WebAuthn / passkeys. Passkeys need a real domain (never a bare IP) and HTTPS,
 	// so they're only active when RPID and at least one origin are configured.
 	RPID          string   // ARGUS_RP_ID, e.g. "monitoring.example.com"
@@ -44,6 +49,9 @@ func Load() Config {
 		AdminEmail:    env("ARGUS_ADMIN_EMAIL", ""),
 		AdminPassword: env("ARGUS_ADMIN_PASSWORD", ""),
 		CookieSecure:  envBool("ARGUS_COOKIE_SECURE", false),
+		LoginMaxAttempts: envInt("ARGUS_LOGIN_MAX_ATTEMPTS", 7),
+		LoginWindow:      time.Duration(envInt("ARGUS_LOGIN_WINDOW_MINUTES", 15)) * time.Minute,
+		TrustProxy:       envBool("ARGUS_TRUST_PROXY", false),
 		RPID:          env("ARGUS_RP_ID", ""),
 		RPDisplayName: env("ARGUS_RP_DISPLAY_NAME", "Argus"),
 		RPOrigins:     envList("ARGUS_RP_ORIGINS"),
@@ -80,6 +88,15 @@ func (c Config) Location() *time.Location {
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return def
+}
+
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
 	}
 	return def
 }
