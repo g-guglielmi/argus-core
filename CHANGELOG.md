@@ -11,6 +11,17 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.2.6] - 2026-08-14
+
+Mobile card polish:
+- **Status-list kebab** no longer opens off-screen — the action cell kept its desktop 44px width,
+  which pinned the kebab to the left of the stacked card so its menu opened past the screen edge.
+  It now spans full width with the kebab on the right.
+- **Users cards**: the name/surname values are right-aligned to match the role, 2FA, and passkeys
+  rows (the email title stays left-aligned).
+
+---
+
 ## [0.2.5] - 2026-08-13
 
 - **Mobile card labels**: the stacked lists from v0.2.4 dropped their column headers, so on a phone
