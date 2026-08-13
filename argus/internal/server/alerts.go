@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"html"
@@ -17,16 +16,10 @@ import (
 
 const alertLinkTTL = 14 * 24 * time.Hour
 
-// GetSigningSecret returns the persistent HMAC secret used to sign alert links, generating and
-// storing one on first use. Both the server and the notifier resolve the same value from it.
+// GetSigningSecret returns the persistent HMAC secret used to sign alert links (decrypted at rest),
+// generating one on first use. Both the server and the notifier resolve the same value from it.
 func GetSigningSecret(ctx context.Context, st *store.Store) string {
-	if v, ok, _ := st.MetaGet(ctx, "signing_secret"); ok && v != "" {
-		return v
-	}
-	buf := make([]byte, 32)
-	_, _ = rand.Read(buf)
-	secret := hex.EncodeToString(buf)
-	_ = st.MetaSet(ctx, "signing_secret", secret)
+	secret, _ := st.GetOrCreateSigningSecret(ctx)
 	return secret
 }
 

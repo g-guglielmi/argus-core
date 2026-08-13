@@ -34,7 +34,7 @@ type NotifyState struct {
 
 // --- channels ---
 
-func scanChannel(row rowScanner) (*NotifyChannel, error) {
+func (s *Store) scanChannel(row rowScanner) (*NotifyChannel, error) {
 	var c NotifyChannel
 	var enabled int
 	var cfg string
@@ -48,7 +48,7 @@ func scanChannel(row rowScanner) (*NotifyChannel, error) {
 	c.Enabled = enabled != 0
 	c.CreatedAt = time.Unix(created, 0)
 	c.Config = map[string]string{}
-	_ = json.Unmarshal([]byte(cfg), &c.Config)
+	_ = json.Unmarshal([]byte(s.cipher.Decrypt(cfg)), &c.Config)
 	return &c, nil
 }
 
@@ -62,7 +62,7 @@ func (s *Store) ListNotifyChannels(ctx context.Context) ([]NotifyChannel, error)
 	defer rows.Close()
 	var out []NotifyChannel
 	for rows.Next() {
-		c, err := scanChannel(rows)
+		c, err := s.scanChannel(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -87,7 +87,7 @@ func (s *Store) EnabledNotifyChannels(ctx context.Context) ([]NotifyChannel, err
 }
 
 func (s *Store) GetNotifyChannel(ctx context.Context, id int64) (*NotifyChannel, error) {
-	return scanChannel(s.db.QueryRowContext(ctx, `SELECT `+channelColumns+` FROM notify_channels WHERE id=?`, id))
+	return s.scanChannel(s.db.QueryRowContext(ctx, `SELECT `+channelColumns+` FROM notify_channels WHERE id=?`, id))
 }
 
 func (s *Store) CreateNotifyChannel(ctx context.Context, c NotifyChannel) (int64, error) {
@@ -98,7 +98,7 @@ func (s *Store) CreateNotifyChannel(ctx context.Context, c NotifyChannel) (int64
 	}
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO notify_channels(type,name,enabled,site,config,created_at) VALUES(?,?,?,?,?,?)`,
-		c.Type, c.Name, enabled, c.Site, string(cfg), time.Now().Unix())
+		c.Type, c.Name, enabled, c.Site, s.cipher.Encrypt(string(cfg)), time.Now().Unix())
 	if err != nil {
 		return 0, err
 	}
@@ -113,7 +113,7 @@ func (s *Store) UpdateNotifyChannel(ctx context.Context, c NotifyChannel) error 
 	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE notify_channels SET type=?,name=?,enabled=?,site=?,config=? WHERE id=?`,
-		c.Type, c.Name, enabled, c.Site, string(cfg), c.ID)
+		c.Type, c.Name, enabled, c.Site, s.cipher.Encrypt(string(cfg)), c.ID)
 	return err
 }
 

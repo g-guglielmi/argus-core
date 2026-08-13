@@ -11,6 +11,26 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.2.8] - 2026-08-14
+
+**Encrypt secrets at rest.** Sensitive values in the SQLite database are now stored encrypted with
+AES-256-GCM instead of plaintext: notification channel credentials (Discord webhook, Telegram bot
+token, SMTP password), users' TOTP seeds, and the alert-link signing key.
+
+- **Zero-config by default**: a key is generated once and kept in `<data>/secret.key` (mode 0600).
+  For real protection of database backups, set **`ARGUS_SECRET_KEY`** to a long random string —
+  it's hashed to the key and kept off the data volume. Set it on the first v0.2.8 deploy and keep
+  it stable (changing the key, or losing the keyfile, makes existing encrypted values unreadable —
+  channels would need re-entering and 2FA re-enrolling).
+- Existing plaintext values are migrated to encrypted form automatically on startup. Encryption is
+  transparent — values are decrypted only in memory when needed.
+- Password hashes (argon2id), recovery codes (hashed), and passkeys (public keys) were already not
+  reversible and are unchanged.
+
+New: `internal/secret` (AES-256-GCM, marker-prefixed ciphertext, passthrough when disabled).
+
+---
+
 ## [0.2.7] - 2026-08-14
 
 **Login rate limiting** (brute-force protection). Repeated failed sign-ins are now throttled by

@@ -13,6 +13,7 @@ import (
 
 	"argus/internal/auth"
 	"argus/internal/config"
+	"argus/internal/secret"
 	"argus/internal/server"
 	"argus/internal/store"
 	"argus/internal/zabbix"
@@ -29,6 +30,19 @@ func main() {
 		os.Exit(1)
 	}
 	defer st.Close()
+
+	// At-rest encryption for stored secrets (channel creds, TOTP seeds, signing key).
+	cipher, keySrc, err := secret.Load(cfg.SecretKey, cfg.DataDir)
+	if err != nil {
+		logger.Error("init at-rest encryption", "err", err)
+		os.Exit(1)
+	}
+	st.SetCipher(cipher)
+	if n, err := st.EncryptPlaintextSecrets(context.Background()); err != nil {
+		logger.Warn("encrypt existing secrets", "err", err)
+	} else {
+		logger.Info("at-rest encryption enabled", "key_source", keySrc, "migrated_rows", n)
+	}
 
 	if err := bootstrapAdmin(context.Background(), st, cfg, logger); err != nil {
 		logger.Error("bootstrap admin", "err", err)

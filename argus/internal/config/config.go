@@ -17,6 +17,7 @@ type Config struct {
 	DataDir        string // ARGUS_DATA_DIR, SQLite + CA store live here (mounted volume)
 	PublicURL      string // ARGUS_PUBLIC_URL, external base URL for links in notifications
 	TimeZone       string // ARGUS_TZ, IANA name for timestamps in notifications (default UTC)
+	SecretKey      string // ARGUS_SECRET_KEY, encrypts stored secrets at rest (empty = keyfile)
 	AdminEmail    string // ARGUS_ADMIN_EMAIL, used once to seed the first admin
 	AdminPassword string // ARGUS_ADMIN_PASSWORD, used once to seed the first admin
 	CookieSecure  bool   // ARGUS_COOKIE_SECURE, set true when served over HTTPS
@@ -46,6 +47,7 @@ func Load() Config {
 		DataDir:        env("ARGUS_DATA_DIR", "/data"),
 		PublicURL:      strings.TrimRight(env("ARGUS_PUBLIC_URL", ""), "/"),
 		TimeZone:       env("ARGUS_TZ", "UTC"),
+		SecretKey:      env("ARGUS_SECRET_KEY", ""),
 		AdminEmail:    env("ARGUS_ADMIN_EMAIL", ""),
 		AdminPassword: env("ARGUS_ADMIN_PASSWORD", ""),
 		CookieSecure:  envBool("ARGUS_COOKIE_SECURE", false),

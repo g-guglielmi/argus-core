@@ -5,10 +5,13 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"argus/internal/secret"
 
 	_ "modernc.org/sqlite" // pure-Go SQLite driver (works with CGO_ENABLED=0)
 )
@@ -29,8 +32,12 @@ type User struct {
 }
 
 type Store struct {
-	db *sql.DB
+	db     *sql.DB
+	cipher *secret.Cipher // nil = passthrough (no at-rest encryption)
 }
+
+// SetCipher enables at-rest encryption/decryption of stored secrets. Call once after Open.
+func (s *Store) SetCipher(c *secret.Cipher) { s.cipher = c }
 
 func Open(path string) (*Store, error) {
 	db, err := sql.Open("sqlite", path)
@@ -224,7 +231,7 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanUserRow(row rowScanner) (*User, error) {
+func (s *Store) scanUserRow(row rowScanner) (*User, error) {
 	var u User
 	var created int64
 	var totpEnabled, disabled int
@@ -235,13 +242,14 @@ func scanUserRow(row rowScanner) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
+	u.TOTPSecret = s.cipher.Decrypt(u.TOTPSecret)
 	u.TOTPEnabled = totpEnabled != 0
 	u.Disabled = disabled != 0
 	u.CreatedAt = time.Unix(created, 0)
 	return &u, nil
 }
 
-func (s *Store) scanUser(row *sql.Row) (*User, error) { return scanUserRow(row) }
+func (s *Store) scanUser(row *sql.Row) (*User, error) { return s.scanUserRow(row) }
 
 func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 	rows, err := s.db.QueryContext(ctx,
@@ -252,7 +260,7 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 	defer rows.Close()
 	var out []User
 	for rows.Next() {
-		u, err := scanUserRow(rows)
+		u, err := s.scanUserRow(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -293,11 +301,82 @@ func (s *Store) DeleteUser(ctx context.Context, id int64) error {
 	return err
 }
 
+// --- at-rest secret encryption ---
+
+// GetOrCreateSigningSecret returns the persistent alert-link HMAC secret (decrypted), generating
+// one on first use and migrating a pre-existing plaintext value to encrypted form.
+func (s *Store) GetOrCreateSigningSecret(ctx context.Context) (string, error) {
+	raw, ok, err := s.MetaGet(ctx, "signing_secret")
+	if err != nil {
+		return "", err
+	}
+	if ok && raw != "" {
+		if s.cipher.Enabled() && !secret.IsEncrypted(raw) {
+			_ = s.MetaSet(ctx, "signing_secret", s.cipher.Encrypt(raw))
+		}
+		return s.cipher.Decrypt(raw), nil
+	}
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	plain := hex.EncodeToString(buf)
+	if err := s.MetaSet(ctx, "signing_secret", s.cipher.Encrypt(plain)); err != nil {
+		return "", err
+	}
+	return plain, nil
+}
+
+// EncryptPlaintextSecrets re-stores any not-yet-encrypted channel configs and TOTP seeds in
+// encrypted form. Idempotent; a no-op when encryption is disabled. Returns how many rows changed.
+func (s *Store) EncryptPlaintextSecrets(ctx context.Context) (int, error) {
+	if !s.cipher.Enabled() {
+		return 0, nil
+	}
+	n := 0
+	migrate := func(sel, upd string) error {
+		type row struct {
+			id  int64
+			val string
+		}
+		var todo []row
+		rows, err := s.db.QueryContext(ctx, sel)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var x row
+			if err := rows.Scan(&x.id, &x.val); err != nil {
+				rows.Close()
+				return err
+			}
+			if !secret.IsEncrypted(x.val) {
+				todo = append(todo, x)
+			}
+		}
+		rows.Close()
+		for _, x := range todo {
+			if _, err := s.db.ExecContext(ctx, upd, s.cipher.Encrypt(x.val), x.id); err != nil {
+				return err
+			}
+			n++
+		}
+		return nil
+	}
+	if err := migrate(`SELECT id, config FROM notify_channels`, `UPDATE notify_channels SET config=? WHERE id=?`); err != nil {
+		return n, err
+	}
+	if err := migrate(`SELECT id, totp_secret FROM users WHERE totp_secret != ''`, `UPDATE users SET totp_secret=? WHERE id=?`); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 // --- MFA (TOTP + recovery codes + login challenges) ---
 
 // SetTOTPSecret stores a pending secret (enrollment); MFA stays disabled until confirmed.
-func (s *Store) SetTOTPSecret(ctx context.Context, id int64, secret string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET totp_secret=?, totp_enabled=0 WHERE id=?`, secret, id)
+func (s *Store) SetTOTPSecret(ctx context.Context, id int64, totpSecret string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET totp_secret=?, totp_enabled=0 WHERE id=?`, s.cipher.Encrypt(totpSecret), id)
 	return err
 }
 
