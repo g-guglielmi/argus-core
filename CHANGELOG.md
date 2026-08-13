@@ -11,6 +11,23 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.2.2] - 2026-08-13
+
+**2-hour trend graph in alerts.** Every problem and recovery notification now carries a compact
+chart of the offending sensor's last two hours, rendered server-side to PNG (pure stdlib, no new
+deps) in the status color.
+
+- The image is **uploaded directly** to each channel — Discord webhook attachment
+  (`attachment://`), Telegram `sendPhoto`, and an inline `cid:` image in the HTML email — so it
+  works whether the instance is internal-only or public, with no image URL to host or expose.
+- Graphs are best-effort: non-numeric sensors or sensors without history simply omit the chart.
+- The **Test** button now renders a demo graph too, so the whole message format previews at once.
+
+New: `internal/server/chart.go` (history fetch + PNG renderer) and `internal/notify/multipart.go`
+(shared multipart uploader).
+
+---
+
 ## [0.2.1] - 2026-08-13
 
 **Richer alert messages.** Notifications now carry status, context, and one-click actions.

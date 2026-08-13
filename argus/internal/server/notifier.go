@@ -115,6 +115,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 				Kind: "recovery", Severity: stt.Severity, State: "ok",
 				Host: stt.HostName, Name: stt.Name, Site: primarySite(hostGroups[stt.HostID]), When: time.Now(),
 				SinceSecs: since, OpenURL: OpenLink(publicURL, stt.HostID, stt.ItemID),
+				ChartPNG: alertChart(ctx, zbx, stt.ItemID, "ok"),
 			}
 			dispatch(ctx, channels, hostGroups[stt.HostID], ev, logger)
 		}
@@ -173,6 +174,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			Host: hostName, Name: p.Name, Site: primarySite(hostGroups[hostID]), When: time.Unix(atoi64(p.Clock), 0),
 			Value: value, Threshold: parseThreshold(t.Expression),
 			OpenURL: OpenLink(publicURL, hostID, itemID), AckURL: AckLink(publicURL, secret, p.EventID),
+			ChartPNG: alertChart(ctx, zbx, itemID, severityState(sev)),
 		}
 		sendAll(ctx, matches, ev, logger)
 		firedAt := now.Unix()

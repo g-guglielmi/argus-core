@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"mime"
 	"net"
@@ -93,19 +94,42 @@ func sendEmail(ctx context.Context, cfg map[string]string, e Event) error {
 	return c.Quit()
 }
 
-const emailBoundary = "argus-alt-boundary-4f2c9a"
+const (
+	altBoundary = "argus-alt-boundary-4f2c9a"
+	relBoundary = "argus-rel-boundary-7b1e30"
+)
 
-// buildMessage assembles a multipart/alternative message (plain + styled HTML).
+// buildMessage assembles the email: a multipart/alternative (plain + styled HTML), wrapped in a
+// multipart/related with the inline chart image (referenced as cid:chart) when one is present.
 func buildMessage(from string, to []string, e Event) []byte {
 	var b strings.Builder
 	b.WriteString("From: Argus <" + from + ">\r\n")
 	b.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
 	b.WriteString("Subject: " + mime.QEncoding.Encode("UTF-8", e.emoji()+" "+e.subject()) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
-	b.WriteString("Content-Type: multipart/alternative; boundary=\"" + emailBoundary + "\"\r\n\r\n")
 
-	// Plain-text part.
-	b.WriteString("--" + emailBoundary + "\r\n")
+	if len(e.ChartPNG) > 0 {
+		b.WriteString("Content-Type: multipart/related; type=\"multipart/alternative\"; boundary=\"" + relBoundary + "\"\r\n\r\n")
+		b.WriteString("--" + relBoundary + "\r\n")
+		writeAlternative(&b, e)
+		b.WriteString("\r\n--" + relBoundary + "\r\n")
+		b.WriteString("Content-Type: image/png\r\nContent-Transfer-Encoding: base64\r\n")
+		b.WriteString("Content-ID: <chart>\r\nContent-Disposition: inline; filename=\"chart.png\"\r\n\r\n")
+		b.WriteString(wrap76(base64.StdEncoding.EncodeToString(e.ChartPNG)))
+		b.WriteString("\r\n--" + relBoundary + "--\r\n")
+		return []byte(b.String())
+	}
+
+	writeAlternative(&b, e)
+	return []byte(b.String())
+}
+
+// writeAlternative writes a complete multipart/alternative block (its own Content-Type header,
+// the plain + HTML parts, and its closing boundary).
+func writeAlternative(b *strings.Builder, e Event) {
+	b.WriteString("Content-Type: multipart/alternative; boundary=\"" + altBoundary + "\"\r\n\r\n")
+
+	b.WriteString("--" + altBoundary + "\r\n")
 	b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
 	b.WriteString(strings.Join(e.bodyLines(), "\r\n"))
 	if e.OpenURL != "" {
@@ -116,12 +140,22 @@ func buildMessage(from string, to []string, e Event) []byte {
 	}
 	b.WriteString("\r\n\r\n")
 
-	// HTML part.
-	b.WriteString("--" + emailBoundary + "\r\n")
+	b.WriteString("--" + altBoundary + "\r\n")
 	b.WriteString("Content-Type: text/html; charset=UTF-8\r\n\r\n")
 	b.WriteString(htmlBody(e))
-	b.WriteString("\r\n--" + emailBoundary + "--\r\n")
-	return []byte(b.String())
+	b.WriteString("\r\n--" + altBoundary + "--\r\n")
+}
+
+// wrap76 breaks a base64 string into 76-character lines per MIME.
+func wrap76(s string) string {
+	var b strings.Builder
+	for len(s) > 76 {
+		b.WriteString(s[:76])
+		b.WriteString("\r\n")
+		s = s[76:]
+	}
+	b.WriteString(s)
+	return b.String()
 }
 
 func htmlColor(e Event) string {
@@ -167,12 +201,18 @@ func htmlBody(e Event) string {
 		btn("Acknowledge", e.AckURL, "#6b7280")
 	}
 
+	chart := ""
+	if len(e.ChartPNG) > 0 {
+		chart = `<img src="cid:chart" alt="2-hour trend" style="width:100%;max-width:524px;margin-top:14px;border:1px solid #e5e7eb;border-radius:8px">`
+	}
+
 	c := htmlColor(e)
 	return `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden">` +
 		`<div style="background:` + c + `;color:#fff;padding:14px 18px;font-size:16px;font-weight:600">` + e.emoji() + " " + htmlEscape(e.subject()) + `</div>` +
 		`<div style="padding:16px 18px">` +
 		`<div style="font-size:14px;color:#111827;margin-bottom:12px">` + htmlEscape(e.bodyLines()[0]) + `</div>` +
 		`<table style="width:100%;font-size:13px;border-collapse:collapse">` + rows.String() + `</table>` +
+		chart +
 		`<div style="margin-top:16px">` + buttons.String() + `</div>` +
 		`</div></div>`
 }

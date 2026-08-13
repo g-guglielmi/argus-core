@@ -34,6 +34,7 @@ type Event struct {
 	SinceSecs int64     // how long it was in problem, for recovery notices (optional)
 	OpenURL   string    // deep link to the sensor in Argus (optional)
 	AckURL    string    // signed one-click acknowledge link (problem alerts only, optional)
+	ChartPNG  []byte    // rendered 2-hour trend graph, uploaded inline (optional)
 }
 
 // Colors for rich channels, matching the Argus status palette.

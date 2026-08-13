@@ -34,22 +34,34 @@ func sendTelegram(ctx context.Context, cfg map[string]string, e Event) error {
 	if len(links) > 0 {
 		b.WriteString(strings.Join(links, " · "))
 	}
+	text := b.String()
+	thread := strings.TrimSpace(cfg["thread_id"])
+
+	// With a chart, push the PNG via sendPhoto (bytes uploaded directly, so no public URL is
+	// needed); the message text becomes the photo caption. Otherwise a plain sendMessage.
+	if len(e.ChartPNG) > 0 {
+		fields := map[string]string{"chat_id": chatID, "caption": text, "parse_mode": "HTML"}
+		if thread != "" {
+			fields["message_thread_id"] = thread
+		}
+		return postMultipart(ctx, "https://api.telegram.org/bot"+token+"/sendPhoto", fields,
+			[]filePart{{field: "photo", filename: "chart.png", contentType: "image/png", data: e.ChartPNG}})
+	}
 
 	payload := map[string]any{
 		"chat_id":                  chatID,
-		"text":                     b.String(),
+		"text":                     text,
 		"parse_mode":               "HTML",
 		"disable_web_page_preview": true,
 	}
-	if tid := strings.TrimSpace(cfg["thread_id"]); tid != "" {
-		payload["message_thread_id"] = tid
+	if thread != "" {
+		payload["message_thread_id"] = thread
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	url := "https://api.telegram.org/bot" + token + "/sendMessage"
-	return postJSON(ctx, url, body)
+	return postJSON(ctx, "https://api.telegram.org/bot"+token+"/sendMessage", body)
 }
 
 func htmlEscape(s string) string {

@@ -57,10 +57,18 @@ func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 	if len(desc) > 0 {
 		embed["description"] = strings.Join(desc, "\n")
 	}
+	if len(e.ChartPNG) > 0 {
+		embed["image"] = map[string]any{"url": "attachment://chart.png"}
+	}
 
 	body, err := json.Marshal(map[string]any{"username": "Argus", "embeds": []any{embed}})
 	if err != nil {
 		return err
+	}
+	// With a chart, upload the PNG alongside the embed (attachment://); otherwise a plain webhook.
+	if len(e.ChartPNG) > 0 {
+		return postMultipart(ctx, url, map[string]string{"payload_json": string(body)},
+			[]filePart{{field: "files[0]", filename: "chart.png", contentType: "image/png", data: e.ChartPNG}})
 	}
 	return postJSON(ctx, url, body)
 }
