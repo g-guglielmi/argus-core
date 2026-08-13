@@ -424,6 +424,7 @@ function useTheme(): ['dark' | 'light', () => void] {
 function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () => void; passkeysAvailable: boolean }) {
   const [view, setView] = useState<View>('overview')
   const [collapsed, setCollapsed] = useState(false)
+  const [navOpen, setNavOpen] = useState(false) // mobile drawer
   const [menuOpen, setMenuOpen] = useState(false)
   const [theme, toggleTheme] = useTheme()
   const [sensors, setSensors] = useState<SensorRow[]>([])
@@ -440,9 +441,15 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
   // Deep-link target: Overview / lists ask the tree to open a host (and optionally a sensor's chart).
   const [treeTarget, setTreeTarget] = useState<{ hostId: string; itemId?: string; n: number } | null>(null)
   const navN = useRef(0)
-  function goHost(hostId: string) { navN.current += 1; setTreeTarget({ hostId, n: navN.current }); setView('monitoring'); setMenuOpen(false) }
-  function goSensor(hostId: string, itemId: string) { navN.current += 1; setTreeTarget({ hostId, itemId, n: navN.current }); setView('monitoring'); setMenuOpen(false) }
-  function openList(st: string) { setListFilter(st); setView('list'); setMenuOpen(false) }
+  function goHost(hostId: string) { navN.current += 1; setTreeTarget({ hostId, n: navN.current }); setView('monitoring'); setMenuOpen(false); setNavOpen(false) }
+  function goSensor(hostId: string, itemId: string) { navN.current += 1; setTreeTarget({ hostId, itemId, n: navN.current }); setView('monitoring'); setMenuOpen(false); setNavOpen(false) }
+  function openList(st: string) { setListFilter(st); setView('list'); setMenuOpen(false); setNavOpen(false) }
+
+  // The header ☰ opens the drawer on mobile, and collapses the rail on desktop.
+  function toggleNav() {
+    if (window.matchMedia('(max-width: 768px)').matches) { setCollapsed(false); setNavOpen((o) => !o) }
+    else setCollapsed((c) => !c)
+  }
 
   // Open a sensor/host from a notification deep-link (?host=…&item=…), then tidy the URL.
   useEffect(() => {
@@ -456,7 +463,7 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
   }, [])
 
   async function logout() { await fetch('/api/logout', { method: 'POST' }).catch(() => {}); onLogout() }
-  function goto(v: View) { setView(v); setMenuOpen(false) }
+  function goto(v: View) { setView(v); setMenuOpen(false); setNavOpen(false) }
 
   const nav = (id: View, label: string, opts?: { count?: number; soon?: boolean }) => (
     <button className={'nav' + (view === id ? ' active' : '')} onClick={() => goto(id)}>
@@ -474,7 +481,8 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
 
   const [title, sub] = view === 'list' ? [`${STATE_LABEL[listFilter]} sensors`, 'Filtered across all sites'] : VIEW_TITLES[view]
   return (
-    <div className={'app-shell' + (collapsed ? ' collapsed' : '')}>
+    <div className={'app-shell' + (collapsed ? ' collapsed' : '') + (navOpen ? ' nav-open' : '')}>
+      {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} />}
       <aside className="sidebar">
         <div className="brand">
           <svg className="eye" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z" /><circle cx="12" cy="12" r="3.2" fill="currentColor" stroke="none" /></svg>
@@ -512,7 +520,7 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
 
       <div className="main">
         <div className="topbar">
-          <button className="iconbtn" title="Toggle sidebar" aria-label="Toggle sidebar" onClick={() => setCollapsed((c) => !c)}>
+          <button className="iconbtn" title="Toggle sidebar" aria-label="Toggle sidebar" onClick={toggleNav}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M3.5 6h17M3.5 12h17M3.5 18h17" /></svg>
           </button>
           <div><h1>{title}</h1><div className="sub">{sub}</div></div>

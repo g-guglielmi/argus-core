@@ -11,6 +11,21 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.2.4] - 2026-08-13
+
+**Mobile-responsive layout.** The dashboard was desktop-only; on a phone the sidebar squeezed the
+content, the status chips stacked, and tables ran off-screen. Now (≤768px wide):
+
+- The sidebar becomes an **off-canvas drawer** — hidden by default, slid in by the ☰ button over a
+  dimmed backdrop, and closed by tapping the backdrop or a nav item. On desktop ☰ still collapses
+  the rail as before.
+- The top bar wraps: title + ☰ on the first row, the **status chips on their own horizontally
+  scrollable row**.
+- Problem/status lists and the users table **stack each row into a card** instead of scrolling
+  sideways; the monitoring tree drops its trend column and tightens indentation.
+
+---
+
 ## [0.2.3] - 2026-08-13
 
 - **Configurable timezone** for notification timestamps: set `ARGUS_TZ` to an IANA name
