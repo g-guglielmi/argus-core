@@ -307,7 +307,9 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   .slist td { display: block; width: auto; padding: 2px 0; border: none; text-align: left !important; }
   .slist td.slhost { border-left: 3px solid transparent; padding-left: 10px; font-size: 14px; margin-bottom: 2px; }
   .slist td:nth-child(2) { color: var(--muted); }
-  .slist td.trend { display: none; }
+  .slist td.trend { display: flex; width: auto; justify-content: space-between; align-items: center; padding: 3px 0; }
+  .slist td.trend:empty { display: none; } /* problems/sensors with no graphable series */
+  .slist td.trend::before { content: "Trend"; color: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
   .slist td[data-label] { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
   .slist td[data-label]::before { content: attr(data-label); color: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
   .slist td.act, .slist td:last-child:not([data-label]) { width: auto; text-align: right !important; margin-top: 8px; }

@@ -19,6 +19,9 @@ Mobile card polish:
   It now spans full width with the kebab on the right.
 - **Users cards**: the name/surname values are right-aligned to match the role, 2FA, and passkeys
   rows (the email title stays left-aligned).
+- **Trend sparkline restored on mobile**: v0.2.4 dropped the trend column to save width; it's back
+  as a labelled "Trend" row in the stacked Overview/status-list cards (hidden only when a
+  problem/sensor has no graphable series).
 
 ---
 
