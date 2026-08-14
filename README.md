@@ -38,6 +38,7 @@ from a homelab to a multi-site enterprise — can layer Argus on top.
 | [`argus/`](argus/README.md) | The app — Go backend + React frontend, packaged as a Docker image to GHCR |
 | [`deploy/`](deploy/README.md) | Deploy kit — Zabbix core install, probe scripts, PKI, unRAID templates, checklist |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Full design document (architecture, device classes, thresholds, roadmap) |
+| [`ROADMAP.md`](ROADMAP.md) | Tracking checklist of what's built and what's left |
 | [`.github/workflows/`](.github/workflows/build.yml) | CI — builds the Argus image, pushes to `ghcr.io/<owner>/argus`, auto-publishes GitHub Releases on tags |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release-by-release history |
 
@@ -268,14 +269,14 @@ GitHub Actions (`.github/workflows/build.yml`):
 - v0.2.0–v0.2.3 — Notifications (alerting engine, channels, rich messages, trend graphs)
 - v0.2.4–v0.2.6 — Mobile-responsive layout
 - v0.2.7–v0.2.8 — Security hardening (rate limiting, at-rest encryption)
+- v0.3.0 — Admin Settings page (runtime config)
+- v0.3.1 — Deep-link URLs (view reflected in the address bar; reload/bookmark/share safe)
 
 **Planned:**
 - Probe enrollment — token-based PKI enrollment service (replaces manual `gen-certs.sh`)
 - Auto-discovery — UniFi API sweep + SNMP fingerprinting → automatic host/sensor provisioning
 - Global search — top-bar quick-switcher to jump to a host/sensor by name, IP, or tag
   (server-side, for large deployments; see DESIGN §16)
-- Deep-link URLs — reflect the current view in the address bar so reload/bookmark/share and
-  notification links restore the exact sensor (small, frontend-only; see DESIGN §17)
 - Per-channel severity filter, labeled graph axes
 - Scaling pass for large deployments (~6000 sensors)
 

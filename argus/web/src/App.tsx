@@ -423,14 +423,43 @@ function useTheme(): ['dark' | 'light', () => void] {
   return [theme, () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))]
 }
 
+// --- URL <-> navigation state -------------------------------------------------
+// The active view (and its parameters) is mirrored in the address bar so a reload,
+// bookmark, shared link, or Back/Forward restores the exact screen — instead of always
+// resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
+// (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
+const NAV_VIEWS: View[] = ['overview', 'monitoring', 'notifications', 'probes', 'users', 'settings', 'account', 'list']
+type NavState = { view: View; filter: string; host?: string; item?: string }
+
+function parseNav(): NavState {
+  const p = new URLSearchParams(window.location.search)
+  const host = p.get('host') || undefined
+  const item = p.get('item') || undefined
+  const raw = p.get('view')
+  // Fall back to monitoring for a legacy ?host=&item= link that predates ?view=.
+  const view: View = raw && (NAV_VIEWS as string[]).includes(raw) ? (raw as View) : host ? 'monitoring' : 'overview'
+  return { view, filter: p.get('filter') || 'error', host, item }
+}
+
+function buildNav(s: NavState): string {
+  const p = new URLSearchParams()
+  if (s.view !== 'overview') p.set('view', s.view)
+  if (s.view === 'list') p.set('filter', s.filter)
+  if (s.view === 'monitoring') { if (s.host) p.set('host', s.host); if (s.item) p.set('item', s.item) }
+  const qs = p.toString()
+  return window.location.pathname + (qs ? '?' + qs : '')
+}
+
 function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () => void; passkeysAvailable: boolean }) {
-  const [view, setView] = useState<View>('overview')
+  // Admin-only views can't be restored from a shared/stale URL by a non-admin.
+  const clampView = (v: View): View => ((v === 'users' || v === 'settings') && me.role !== 'admin' ? 'overview' : v)
+  const [view, setView] = useState<View>(() => clampView(parseNav().view))
   const [collapsed, setCollapsed] = useState(false)
   const [navOpen, setNavOpen] = useState(false) // mobile drawer
   const [menuOpen, setMenuOpen] = useState(false)
   const [theme, toggleTheme] = useTheme()
   const [sensors, setSensors] = useState<SensorRow[]>([])
-  const [listFilter, setListFilter] = useState<string>('error')
+  const [listFilter, setListFilter] = useState<string>(() => parseNav().filter)
   const canPause = me.role === 'admin' || me.role === 'helpdesk'
 
   useEffect(() => {
@@ -440,12 +469,27 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
   const cnt = (st: string) => sensors.filter((s) => s.state === st).length
   const errN = cnt('error'), warnN = cnt('warning'), ackN = cnt('acked'), pausedN = cnt('paused'), hiddenN = cnt('hidden'), okN = cnt('ok')
 
-  // Deep-link target: Overview / lists ask the tree to open a host (and optionally a sensor's chart).
-  const [treeTarget, setTreeTarget] = useState<{ hostId: string; itemId?: string; n: number } | null>(null)
+  // Deep-link target: Overview / lists / a shared URL ask the tree to open a host (and optionally
+  // a sensor's chart). Seeded from the URL so a reload restores the open host/sensor.
+  const [treeTarget, setTreeTarget] = useState<{ hostId: string; itemId?: string; n: number } | null>(() => {
+    const s = parseNav()
+    return s.view === 'monitoring' && s.host ? { hostId: s.host, itemId: s.item, n: 0 } : null
+  })
   const navN = useRef(0)
-  function goHost(hostId: string) { navN.current += 1; setTreeTarget({ hostId, n: navN.current }); setView('monitoring'); setMenuOpen(false); setNavOpen(false) }
-  function goSensor(hostId: string, itemId: string) { navN.current += 1; setTreeTarget({ hostId, itemId, n: navN.current }); setView('monitoring'); setMenuOpen(false); setNavOpen(false) }
-  function openList(st: string) { setListFilter(st); setView('list'); setMenuOpen(false); setNavOpen(false) }
+
+  // Push a new history entry for a top-level navigation (tab switch, deep-link jump).
+  function pushNav(v: View, opts?: { host?: string; item?: string; filter?: string }) {
+    window.history.pushState({}, '', buildNav({ view: v, filter: opts?.filter ?? listFilter, host: opts?.host, item: opts?.item }))
+  }
+  function goHost(hostId: string) { navN.current += 1; setTreeTarget({ hostId, n: navN.current }); setView('monitoring'); pushNav('monitoring', { host: hostId }); setMenuOpen(false); setNavOpen(false) }
+  function goSensor(hostId: string, itemId: string) { navN.current += 1; setTreeTarget({ hostId, itemId, n: navN.current }); setView('monitoring'); pushNav('monitoring', { host: hostId, item: itemId }); setMenuOpen(false); setNavOpen(false) }
+  function openList(st: string) { setListFilter(st); setView('list'); pushNav('list', { filter: st }); setMenuOpen(false); setNavOpen(false) }
+
+  // In-tree drilldown (expand a host, open a chart) refines the URL in place — replaceState so the
+  // Back button steps between screens, not every accordion toggle.
+  function onTreeNav(hostId: string | null, itemId: string | null) {
+    window.history.replaceState({}, '', buildNav({ view: 'monitoring', filter: listFilter, host: hostId || undefined, item: itemId || undefined }))
+  }
 
   // The header ☰ opens the drawer on mobile, and collapses the rail on desktop.
   function toggleNav() {
@@ -453,19 +497,24 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
     else setCollapsed((c) => !c)
   }
 
-  // Open a sensor/host from a notification deep-link (?host=…&item=…), then tidy the URL.
+  // Keep the address bar and app state in sync: canonicalize the initial URL, and respond to
+  // Back/Forward (popstate) by restoring the view the URL describes.
   useEffect(() => {
-    const p = new URLSearchParams(window.location.search)
-    const host = p.get('host'); const item = p.get('item')
-    if (host) {
-      if (item) goSensor(host, item); else goHost(host)
-      window.history.replaceState({}, '', window.location.pathname)
+    const s = parseNav()
+    window.history.replaceState({}, '', buildNav({ ...s, view: clampView(s.view) }))
+    const onPop = () => {
+      const n = parseNav()
+      setView(clampView(n.view)); setListFilter(n.filter); setMenuOpen(false); setNavOpen(false)
+      if (n.view === 'monitoring' && n.host) { navN.current += 1; setTreeTarget({ hostId: n.host, itemId: n.item, n: navN.current }) }
+      else setTreeTarget(null)
     }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function logout() { await fetch('/api/logout', { method: 'POST' }).catch(() => {}); onLogout() }
-  function goto(v: View) { setView(v); setMenuOpen(false); setNavOpen(false) }
+  function goto(v: View) { if (v !== 'monitoring') setTreeTarget(null); setView(v); pushNav(v); setMenuOpen(false); setNavOpen(false) }
 
   const nav = (id: View, label: string, opts?: { count?: number; soon?: boolean }) => (
     <button className={'nav' + (view === id ? ' active' : '')} onClick={() => goto(id)}>
@@ -538,8 +587,8 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
         </div>
         <div className="content">
           {view === 'overview' && <OverviewView goHost={goHost} goSensor={goSensor} />}
-          {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => setView('overview')} />}
-          {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} />}
+          {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
+          {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} onNavigate={onTreeNav} />}
           {view === 'notifications' && <NotificationsView />}
           {view === 'probes' && <ProbesView />}
           {view === 'users' && me.role === 'admin' && <UsersView />}
@@ -1048,7 +1097,7 @@ function Kebab({ actions, disabled, up }: { actions: KAction[]; disabled?: boole
   )
 }
 
-function MonitoringView({ role, target }: { role: string; target: { hostId: string; itemId?: string; n: number } | null }) {
+function MonitoringView({ role, target, onNavigate }: { role: string; target: { hostId: string; itemId?: string; n: number } | null; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
   const [hosts, setHosts] = useState<Host[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1136,7 +1185,7 @@ function MonitoringView({ role, target }: { role: string; target: { hostId: stri
               const hopen = openHost === key
               return (
                 <div className="host" key={key}>
-                  <div className="host-head" onClick={() => setOpenHost(hopen ? null : key)}>
+                  <div className="host-head" onClick={() => { const next = hopen ? null : key; setOpenHost(next); onNavigate(next ? h.id : null, null) }}>
                     <svg className={'chev' + (hopen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
                     <span style={{ width: 9, height: 9, borderRadius: '50%', flexShrink: 0, background: dotColor(h.paused, h.hidden, h.state) }} />
                     <span className="hn">{h.name}</span>
@@ -1152,7 +1201,7 @@ function MonitoringView({ role, target }: { role: string; target: { hostId: stri
                       )}
                     </div>
                   </div>
-                  {hopen && <div className="host-body"><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAll} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} /></div>}
+                  {hopen && <div className="host-body"><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAll} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onNavigate={onNavigate} /></div>}
                 </div>
               )
             })}
@@ -1163,7 +1212,7 @@ function MonitoringView({ role, target }: { role: string; target: { hostId: stri
   )
 }
 
-function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpenItem }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; showAll: boolean; autoOpenItem?: string }) {
+function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpenItem, onNavigate }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; showAll: boolean; autoOpenItem?: string; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
   const [items, setItems] = useState<SensorItem[] | null>(null)
   const [problems, setProblems] = useState<Problem[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -1284,7 +1333,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                 return (
                   <Fragment key={it.id}>
                     {newGroup && <tr className="cat"><td colSpan={4}>{it.category}</td></tr>}
-                    <tr className={rowClass} onClick={clickable ? () => setOpenItem(open ? null : it.id) : undefined} style={{ opacity: it.supported ? 1 : 0.55, cursor: clickable ? 'pointer' : 'default' }}>
+                    <tr className={rowClass} onClick={clickable ? () => { const next = open ? null : it.id; setOpenItem(next); onNavigate(hostId, next) } : undefined} style={{ opacity: it.supported ? 1 : 0.55, cursor: clickable ? 'pointer' : 'default' }}>
                       <td className="namecell">
                         <span className={'sname' + (clickable ? ' sclick' : '')} style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: effPaused || effHidden ? 0.6 : 1 }}>
                           {clickable && <span style={{ color: 'var(--accent)', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none' }}>›</span>}

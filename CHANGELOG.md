@@ -11,6 +11,23 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.3.1] - 2026-08-14
+
+**Deep-link URLs — the view now lives in the address bar.** Navigation was tracked in React
+state only, so the URL stayed at the base FQDN and a **reload always dropped you back to
+Overview**; notification "Open in Argus" links also didn't survive a refresh.
+
+- The active view is encoded in the URL — `?view=…`, with `&filter=…` for the status lists and
+  `&host=…&item=…` for an open host/sensor in the Monitoring tree. **Reload, bookmark, and share
+  now restore the exact screen**, and notification deep-links are reload-safe.
+- **Back/Forward** work: tab switches and deep-link jumps push history; expanding a host or
+  opening a chart refines the URL in place (so Back steps between screens, not accordion toggles).
+- Admin-only views (Users, Settings) are clamped to Overview if a non-admin opens a shared or
+  stale link.
+- Frontend-only; no backend change and no new dependency (native History API).
+
+---
+
 ## [0.3.0] - 2026-08-14
 
 **In-app Settings (admin).** A new admin-only **Settings** page moves the most frequently

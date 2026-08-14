@@ -346,9 +346,9 @@ users; fuzzy matching. Pairs naturally with the **sizing pass** (§14b) as part 
 
 ---
 
-## 17. Deep-link URLs & reload persistence — future phase (small)
+## 17. Deep-link URLs & reload persistence — ✅ implemented (v0.3.1)
 
-**Problem.** The SPA tracks the active view in React state only; it never reflects navigation
+**Problem.** The SPA tracked the active view in React state only; it never reflected navigation
 in the address bar, and it deliberately strips `?host=&item=` after consuming a notification
 deep-link. So the URL stays at the base FQDN, a **reload resets to the Overview** landing page,
 notification "Open in Argus" links don't survive a refresh, and a specific sensor view can't be
@@ -364,6 +364,11 @@ bookmarked or shared.
 **Effort.** Small, **frontend-only** (`web/src/App.tsx`), **no backend change and no new
 dependency** — the native History API is enough (a tiny router could be added but isn't needed).
 Bonus: makes notification deep-links reload-safe and shareable.
+
+**Delivered.** The active view is encoded as `?view=…` (list adds `&filter=…`; monitoring adds
+`&host=…&item=…` when a host/sensor is open), pushed on tab switches / deep-link jumps and
+refined in place (`replaceState`) on in-tree drilldown; Back/Forward restore the view; admin-only
+views are clamped for non-admins on a shared/stale URL.
 
 ---
 
