@@ -1151,21 +1151,49 @@ function slugPreview(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
+function probeUnraidXml(c: CreatedToken): string {
+  const vol = `/mnt/user/appdata/argus-probe-${c.site}`
+  const serverHost = c.core_host ? '' :
+    `\n  <Config Name="Zabbix server host" Target="ZBX_SERVER_HOST" Default="" Mode="" Description="Core address the probe dials for :10051 (set if Argus didn't provide one)." Type="Variable" Display="always" Required="true" Mask="false"></Config>`
+  return `<?xml version="1.0"?>
+<Container version="2">
+  <Name>argus-probe-${c.site}</Name>
+  <Repository>${PROBE_IMAGE}</Repository>
+  <Registry>https://github.com/g-guglielmi/argus</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Overview>Self-enrolling Zabbix active proxy for Argus (site: ${c.site}). Enrolls on first boot; keep the volume persistent so the single-use token isn't re-redeemed.</Overview>
+  <Category>Tools: Network:Management</Category>
+  <Config Name="Enroll URL" Target="ARGUS_ENROLL_URL" Default="" Mode="" Description="Argus enrollment endpoint." Type="Variable" Display="always" Required="true" Mask="false">${c.enroll_url}</Config>
+  <Config Name="Enroll Token" Target="ARGUS_ENROLL_TOKEN" Default="" Mode="" Description="Single-use enrollment token (shown once)." Type="Variable" Display="always" Required="true" Mask="true">${c.token}</Config>${serverHost}
+  <Config Name="Data" Target="/var/lib/zabbix" Default="${vol}" Mode="rw" Description="Certs + SQLite spool. Persist this." Type="Path" Display="always" Required="true" Mask="false">${vol}</Config>
+</Container>`
+}
+
 function ProbeCommand({ created, onDone }: { created: CreatedToken; onDone: () => void }) {
-  const cmd = probeDockerCmd(created)
+  const [fmt, setFmt] = useState<'docker' | 'unraid'>('docker')
   const [copied, setCopied] = useState(false)
+  const content = fmt === 'docker' ? probeDockerCmd(created) : probeUnraidXml(created)
+  const pick = (f: 'docker' | 'unraid') => { setFmt(f); setCopied(false) }
   return (
     <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
         <strong>Deploy {created.proxy_name}</strong>
         <span className="envpill" title="Shown once">token shown once</span>
-        <button className="btn" style={{ marginLeft: 'auto' }} onClick={async () => { if (await copyToClipboard(cmd)) { setCopied(true); setTimeout(() => setCopied(false), 2000) } }}>{copied ? 'Copied!' : 'Copy'}</button>
+        <div className="seg" style={{ marginLeft: 'auto' }}>
+          <button className={fmt === 'docker' ? 'on' : ''} onClick={() => pick('docker')}>Docker run</button>
+          <button className={fmt === 'unraid' ? 'on' : ''} onClick={() => pick('unraid')}>unRAID XML</button>
+        </div>
+        <button className="btn" onClick={async () => { if (await copyToClipboard(content)) { setCopied(true); setTimeout(() => setCopied(false), 2000) } }}>{copied ? 'Copied!' : 'Copy'}</button>
         <button className="btn" onClick={onDone}>Done</button>
       </div>
       <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: '0 0 8px' }}>
-        Run this on the site's Docker host. It self-enrolls on first boot; the token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set ZBX_SERVER_HOST to your core address (reachable on TCP 10051), or set ARGUS_PROBE_CORE_HOST in Settings so it fills in automatically.'}
+        {fmt === 'docker'
+          ? "Run this on the site's Docker host."
+          : 'On unRAID: Docker → Add Container → paste into the Template box, or save it as a .xml under /boot/config/plugins/dockerMan/templates-user/.'}
+        {' '}It self-enrolls on first boot; the token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set the core host (ZBX_SERVER_HOST / ARGUS_PROBE_CORE_HOST) so it can reach :10051.'}
       </p>
-      <pre style={{ margin: 0, padding: '11px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12, lineHeight: 1.5 }}><code>{cmd}</code></pre>
+      <pre style={{ margin: 0, padding: '11px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12, lineHeight: 1.5 }}><code>{content}</code></pre>
     </div>
   )
 }

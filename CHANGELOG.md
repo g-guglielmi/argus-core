@@ -17,9 +17,10 @@ GitHub Release from the matching section below.
 `gen-certs.sh` or manual Zabbix proxy registration.
 
 - **Probes → Add probe** (admin): pick a site name + token TTL → Argus mints a **single-use,
-  time-limited token** and shows a ready-to-run `docker run` for the new **`argus-probe`** image
-  (the token is shown once). Pending/recent tokens are listed with status (pending / enrolled /
-  expired) and can be revoked.
+  time-limited token** and shows a ready-to-deploy **`docker run`** *or* **unRAID XML template**
+  for the new **`argus-probe`** image, with the enroll URL + token filled in (the token is shown
+  once). Pending/recent tokens are listed with status (pending / enrolled / expired) and can be
+  revoked. `ARGUS_PROBE_CORE_HOST` (the address probes dial for `:10051`) is editable in **Settings**.
 - **Self-enrolling probe image** (`ghcr.io/<owner>/argus-probe`): on first boot it generates its
   own key + CSR **locally**, redeems the token against `POST /api/enroll`, receives its signed
   certificate + `ca.crt`, and starts the stock Zabbix proxy. **The private key never leaves the

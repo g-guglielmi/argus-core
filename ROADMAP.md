@@ -29,7 +29,7 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 - [x] **"Add probe" wizard** UI + self-enrolling `argus-probe` image — v0.4.0
 - [ ] Bring **site2–site5** probes online (now: Probes → Add probe) — _(ops)_ S each
 - [ ] **Probe fleet updates — control plane + opt-in self-update** (Argus sets target version + shows fleet; probe self-updates via mounted socket when enabled, else one-click command). Outbound-only means pull-based, not push. Build **after v0.4.0 is validated**. See DESIGN §18 — _(BE+FE+image)_ M
-- [ ] Golden Debian VM template (Packer) + cloud-init for scaled rollout — _(ops)_ M
+- [ ] **Self-configuring probe VM** (VMware / Nutanix / XCP-NG / KVM) — Packer golden image (Debian cloud image + the `argus-probe` container) that self-enrolls via **cloud-init**; the Add-probe flow gains a third output generating the cloud-init user-data / a tiny **NoCloud seed ISO** carrying the enroll token. Distribute as **OVA** (VMware/Nutanix) + **qcow2/XVA** (XCP-NG/KVM). See DESIGN §14. — _(ops+image+FE)_ L
 
 ### B. Auto-provisioning / discovery (Phase 4 — "replaces PRTG Add Sensor")
 - [ ] Per-site **UniFi API sweep** → inventory → Zabbix hosts, tagged, bound to proxy — _(BE)_ **L**

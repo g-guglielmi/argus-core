@@ -91,8 +91,9 @@ probe no longer needs `gen-certs.sh` or manual proxy registration:
 
 **Per probe:**
 1. In Argus → **Probes → Add probe**: enter the site name + token TTL. Argus mints a single-use
-   token and shows a ready-to-run `docker run` for `argus-probe` (the token is shown once).
-2. On the site's Docker host, run that command. On first boot the probe generates its own key +
+   token and shows a ready-to-deploy **`docker run`** *or* **unRAID XML template** for
+   `argus-probe`, with the enroll URL + token filled in (the token is shown once).
+2. On the site's Docker host, run that command (or import the XML on unRAID). On first boot the probe generates its own key +
    CSR, redeems the token (`/api/enroll`), receives its signed cert + `ca.crt`, and starts the
    proxy. **The private key never leaves the probe.** Certs persist on the mounted volume, so the
    single-use token isn't re-redeemed on restart.
