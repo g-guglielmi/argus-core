@@ -197,6 +197,21 @@ async function errText(res: Response, fallback: string) {
   return (j && j.error) || fallback
 }
 
+// copyToClipboard works over HTTPS (navigator.clipboard) and falls back to execCommand so Copy
+// still works over plain HTTP on a private IP.
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true }
+    const ta = document.createElement('textarea')
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'
+    document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
+    return true
+  } catch { return false }
+}
+
+type EnrollTokenRow = { id: number; proxy_name: string; site: string; status: string; created_at: number; expires_at: number }
+type CreatedToken = { id: number; token: string; proxy_name: string; site: string; expires_at: number; enroll_url: string; core_host: string }
+
 // Cross-component refresh signal: a mutation (ack / pause / hide) fires this so the shell's
 // status summary and any listening view reload immediately instead of waiting for the 30s poll.
 const refreshBus = new Set<() => void>()
@@ -247,6 +262,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [passkeysAvailable, setPasskeysAvailable] = useState(false)
   const [passwordReset, setPasswordReset] = useState(false)
+  const [probeEnroll, setProbeEnroll] = useState(false)
   // A password-reset link (?reset=…) shows the set-new-password screen, signed in or not.
   const [resetToken, setResetToken] = useState<string | null>(() => new URLSearchParams(window.location.search).get('reset'))
 
@@ -254,13 +270,13 @@ export default function App() {
     fetch('/api/me').then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => setMe(null)).finally(() => setLoading(false))
     // Passkeys require the server to be configured for WebAuthn AND a secure context
     // (HTTPS or localhost) — over a private IP on plain HTTP they can't be used.
-    fetch('/api/features').then((r) => r.json()).then((f) => { setPasskeysAvailable(!!f.passkeys && window.isSecureContext); setPasswordReset(!!f.password_reset) }).catch(() => {})
+    fetch('/api/features').then((r) => r.json()).then((f) => { setPasskeysAvailable(!!f.passkeys && window.isSecureContext); setPasswordReset(!!f.password_reset); setProbeEnroll(!!f.probe_enroll) }).catch(() => {})
   }, [])
 
   if (resetToken) return <ResetPassword token={resetToken} onDone={() => { window.history.replaceState({}, '', window.location.pathname); setResetToken(null) }} />
   if (loading) return <Frame><p>Loading…</p></Frame>
   if (!me) return <Login onSuccess={setMe} passkeysAvailable={passkeysAvailable} passwordReset={passwordReset} />
-  return <AppShell me={me} onLogout={() => setMe(null)} passkeysAvailable={passkeysAvailable} />
+  return <AppShell me={me} onLogout={() => setMe(null)} passkeysAvailable={passkeysAvailable} probeEnroll={probeEnroll} />
 }
 
 function Frame({ children }: { children: ReactNode }) {
@@ -544,7 +560,7 @@ function buildNav(s: NavState): string {
   return window.location.pathname + (qs ? '?' + qs : '')
 }
 
-function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () => void; passkeysAvailable: boolean }) {
+function AppShell({ me, onLogout, passkeysAvailable, probeEnroll }: { me: Me; onLogout: () => void; passkeysAvailable: boolean; probeEnroll: boolean }) {
   // Admin-only views can't be restored from a shared/stale URL by a non-admin.
   const clampView = (v: View): View => ((v === 'users' || v === 'settings') && me.role !== 'admin' ? 'overview' : v)
   const [view, setView] = useState<View>(() => clampView(parseNav().view))
@@ -640,7 +656,7 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
         {nav('monitoring', 'Monitoring')}
         <div className="navlabel">Configure</div>
         {nav('notifications', 'Notifications')}
-        {nav('probes', 'Probes', { soon: true })}
+        {nav('probes', 'Probes')}
         {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('users', 'Users')}{nav('settings', 'Settings')}</>}
         <div className="side-foot">
           <div className="kebab-wrap" style={{ display: 'block' }}>
@@ -685,7 +701,7 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
           {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
           {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} onNavigate={onTreeNav} />}
           {view === 'notifications' && <NotificationsView />}
-          {view === 'probes' && <ProbesView />}
+          {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} />}
           {view === 'users' && me.role === 'admin' && <UsersView />}
           {view === 'settings' && me.role === 'admin' && <SettingsView theme={theme} toggleTheme={toggleTheme} />}
           {view === 'account' && <AccountView passkeysAvailable={passkeysAvailable} theme={theme} toggleTheme={toggleTheme} />}
@@ -995,9 +1011,28 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   )
 }
 
-function ProbesView() {
+const PROBE_IMAGE = 'ghcr.io/g-guglielmi/argus-probe:latest'
+
+function probeDockerCmd(c: CreatedToken): string {
+  const lines = [
+    'docker run -d --name argus-probe --restart unless-stopped \\',
+    `  -v /docker/${c.proxy_name}:/var/lib/zabbix \\`,
+    `  -e ARGUS_ENROLL_URL=${c.enroll_url} \\`,
+    `  -e ARGUS_ENROLL_TOKEN=${c.token} \\`,
+  ]
+  if (!c.core_host) lines.push('  -e ZBX_SERVER_HOST=<core-host-or-ip:reachable-on-10051> \\')
+  lines.push(`  ${PROBE_IMAGE}`)
+  return lines.join('\n')
+}
+
+function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
   const [proxies, setProxies] = useState<Proxy[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [tokens, setTokens] = useState<EnrollTokenRow[] | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [created, setCreated] = useState<CreatedToken | null>(null)
+  const isAdmin = role === 'admin'
+
   useEffect(() => {
     const load = () => fetch('/api/proxies')
       .then(async (r) => { if (!r.ok) throw new Error(await errText(r, 'Failed to load probes')); return r.json() })
@@ -1005,14 +1040,52 @@ function ProbesView() {
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load probes'))
     load(); const t = setInterval(load, 30000); return () => clearInterval(t)
   }, [])
+
+  function loadTokens() {
+    if (!isAdmin || !enroll) return
+    fetch('/api/probes/tokens').then((r) => (r.ok ? r.json() : [])).then((t) => setTokens(t || [])).catch(() => {})
+  }
+  useEffect(() => { loadTokens() }, [isAdmin, enroll]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function revoke(t: EnrollTokenRow) {
+    if (!window.confirm(`Revoke the enrollment token for ${t.proxy_name}?`)) return
+    await fetch(`/api/probes/tokens/${t.id}`, { method: 'DELETE' }).catch(() => {})
+    loadTokens()
+  }
+
   return (
     <div className="panel">
-      <div className="ph-hero">
-        <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5" /></svg>
-        <div className="soon-badge">Enrollment coming soon</div>
+      <div className="phead">
         <h2>Site probes</h2>
-        <p>Each site collects through a probe that pushes to the core over a secure tunnel. Below is the live status of the probes the core knows about; one-click token enrollment for new sites is on the way.</p>
+        <span className="hint">{proxies ? `${proxies.length} known to the core` : '…'}</span>
+        {isAdmin && enroll && <div className="tools"><button className="btn primary" onClick={() => { setAdding((v) => !v); setCreated(null) }}>+ Add probe</button></div>}
       </div>
+
+      {isAdmin && !enroll && (
+        <p style={{ color: 'var(--muted)', fontSize: 12.5, padding: '2px 16px 0', margin: 0 }}>
+          One-click enrollment is off. Mount the monitoring CA into Argus and set <code>ARGUS_CA_CERT_FILE</code> / <code>ARGUS_CA_KEY_FILE</code> (and <code>ARGUS_PROBE_CORE_HOST</code>) to enable it. Live probe status still works below.
+        </p>
+      )}
+
+      {isAdmin && enroll && adding && !created && <AddProbeForm onCreated={(c) => { setCreated(c); setAdding(false); loadTokens() }} onCancel={() => setAdding(false)} />}
+      {created && <ProbeCommand created={created} onDone={() => setCreated(null)} />}
+
+      {isAdmin && enroll && tokens && tokens.length > 0 && (
+        <table className="enroll">
+          <thead><tr><th>Pending / recent tokens</th><th>Status</th><th>Expires</th><th></th></tr></thead>
+          <tbody>
+            {tokens.map((t) => (
+              <tr key={t.id}>
+                <td><strong>{t.proxy_name}</strong></td>
+                <td><span className={'tag ' + (t.status === 'enrolled' ? 'online' : t.status === 'expired' ? 'pending' : 'pending')}>{t.status}</span></td>
+                <td className="mono" style={{ color: 'var(--muted)' }}>{t.status === 'enrolled' ? '—' : relTime(t.expires_at)}</td>
+                <td style={{ textAlign: 'right' }}><button className="btn danger" onClick={() => revoke(t)}>{t.status === 'pending' ? 'Revoke' : 'Remove'}</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
       <table className="enroll">
         <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Mode</th></tr></thead>
         <tbody>
@@ -1029,6 +1102,69 @@ function ProbesView() {
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+function AddProbeForm({ onCreated, onCancel }: { onCreated: (c: CreatedToken) => void; onCancel: () => void }) {
+  const [site, setSite] = useState('')
+  const [ttl, setTtl] = useState(24)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault(); setError(null); setBusy(true)
+    try {
+      const res = await fetch('/api/probes/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ site, ttl_hours: ttl }) })
+      if (!res.ok) { setError(await errText(res, 'Could not create token')); return }
+      onCreated(await res.json())
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <form onSubmit={submit} style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)', display: 'grid', gap: 12, maxWidth: 460 }}>
+      <label style={{ display: 'grid', gap: 4 }}>
+        <span className="flabel">Site name</span>
+        <input className="input" placeholder="e.g. site1" value={site} onChange={(e) => setSite(e.target.value)} required autoFocus />
+        <span className="set-hint">The proxy will be named <strong>proxy-{slugPreview(site) || '<site>'}</strong>.</span>
+      </label>
+      <label style={{ display: 'grid', gap: 4 }}>
+        <span className="flabel">Token valid for</span>
+        <select className="roleselect" value={ttl} onChange={(e) => setTtl(Number(e.target.value))}>
+          <option value={1}>1 hour</option>
+          <option value={24}>24 hours</option>
+          <option value={168}>7 days</option>
+          <option value={720}>30 days</option>
+        </select>
+      </label>
+      {error && <div style={{ color: 'var(--err)', fontSize: 12.5 }}>{error}</div>}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="submit" className="btn primary" disabled={busy || !site.trim()}>{busy ? 'Creating…' : 'Create token'}</button>
+        <button type="button" className="btn" onClick={onCancel}>Cancel</button>
+      </div>
+    </form>
+  )
+}
+
+function slugPreview(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
+}
+
+function ProbeCommand({ created, onDone }: { created: CreatedToken; onDone: () => void }) {
+  const cmd = probeDockerCmd(created)
+  const [copied, setCopied] = useState(false)
+  return (
+    <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <strong>Deploy {created.proxy_name}</strong>
+        <span className="envpill" title="Shown once">token shown once</span>
+        <button className="btn" style={{ marginLeft: 'auto' }} onClick={async () => { if (await copyToClipboard(cmd)) { setCopied(true); setTimeout(() => setCopied(false), 2000) } }}>{copied ? 'Copied!' : 'Copy'}</button>
+        <button className="btn" onClick={onDone}>Done</button>
+      </div>
+      <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: '0 0 8px' }}>
+        Run this on the site's Docker host. It self-enrolls on first boot; the token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set ZBX_SERVER_HOST to your core address (reachable on TCP 10051), or set ARGUS_PROBE_CORE_HOST in Settings so it fills in automatically.'}
+      </p>
+      <pre style={{ margin: 0, padding: '11px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12, lineHeight: 1.5 }}><code>{cmd}</code></pre>
     </div>
   )
 }
