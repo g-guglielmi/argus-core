@@ -315,7 +315,38 @@ moderate Zabbix load; architecture unchanged, resources scaled.
 
 ---
 
-## 16. Parking lot / future
+## 16. Global search (host & sensor) — future phase
+
+**Motivation (scale-driven).** At homelab scale (a few hundred items) the site→host→sensor
+tree plus the status chips are enough to find anything. At the target **~6000-sensor** work
+deployment, expanding sites/hosts to locate one device does not scale — you need to jump
+straight to a host or sensor by name. This phase is therefore parked until the production
+rollout; it is low priority for the homelab but important before the large deployment.
+
+**Scope.**
+- A persistent **search box in the top bar** with a keyboard shortcut (e.g. `/` or `Ctrl/⌘-K`)
+  opening a quick-switcher palette.
+- **Hosts** searchable by visible name, technical name, interface IP/DNS, host group (site),
+  and Zabbix tags.
+- **Sensors/items** searchable by name and key — globally or scoped to a host.
+- Results are grouped (Hosts / Sensors); each row **deep-links into the existing tree**
+  (reusing the current `goHost` / `goSensor` navigation) and/or opens the sensor's chart.
+
+**Implementation — must be server-side at scale.**
+- Back it with a new endpoint `GET /api/search?q=…` that calls Zabbix `host.get` / `item.get`
+  with `search` / `searchByAny` filters and a **result cap** (e.g. top ~50), **debounced** on
+  the client. Do **not** filter a full client-side census — the current `/api/sensors` census
+  is fine for the homelab but would mean shipping thousands of items to the browser at
+  production scale.
+- Honour the same **role and suppression** model as the rest of the UI.
+
+**Nice-to-haves.** Recent/pinned hosts; filter tokens (`site:`, `tag:`, `down:`) for power
+users; fuzzy matching. Pairs naturally with the **sizing pass** (§14b) as part of readying the
+6000-sensor deployment.
+
+---
+
+## 17. Parking lot / future
 - Public status page (Uptime-Kuma-style shareable page).
 - Native mobile apps (only if the responsive web UI proves insufficient).
 - Escalation policies / repeat notifications beyond flap debounce.

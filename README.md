@@ -272,6 +272,8 @@ GitHub Actions (`.github/workflows/build.yml`):
 **Planned:**
 - Probe enrollment — token-based PKI enrollment service (replaces manual `gen-certs.sh`)
 - Auto-discovery — UniFi API sweep + SNMP fingerprinting → automatic host/sensor provisioning
+- Global search — top-bar quick-switcher to jump to a host/sensor by name, IP, or tag
+  (server-side, for large deployments; see DESIGN §16)
 - Per-channel severity filter, labeled graph axes
 - Scaling pass for large deployments (~6000 sensors)
 
