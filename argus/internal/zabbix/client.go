@@ -196,6 +196,51 @@ func (c *Client) Proxies(ctx context.Context) ([]Proxy, error) {
 	return ps, c.call(ctx, "proxy.get", params, true, &ps)
 }
 
+// EnsureActiveProxyCert registers (or updates) an active proxy that authenticates to the server
+// with a client certificate, pinned by issuer + subject. Idempotent: if a proxy with this name
+// already exists, its TLS settings are updated instead of failing. Requires a super-admin token.
+func (c *Client) EnsureActiveProxyCert(ctx context.Context, name, issuerDN, subjectDN string) error {
+	existing, err := c.proxyIDByName(ctx, name)
+	if err != nil {
+		return err
+	}
+	// operating_mode 0 = active (proxy dials the server); tls_accept 2 = certificate (how the
+	// server accepts the proxy's connection); tls_connect 1 = no-encryption for the unused
+	// server-initiated direction.
+	fields := map[string]any{
+		"tls_accept":  2,
+		"tls_connect": 1,
+		"tls_issuer":  issuerDN,
+		"tls_subject": subjectDN,
+	}
+	if existing != "" {
+		fields["proxyid"] = existing
+		return c.call(ctx, "proxy.update", fields, true, nil)
+	}
+	fields["name"] = name
+	fields["operating_mode"] = 0
+	var res struct {
+		ProxyIDs []string `json:"proxyids"`
+	}
+	return c.call(ctx, "proxy.create", fields, true, &res)
+}
+
+// proxyIDByName returns the proxyid for a proxy name, or "" if none exists.
+func (c *Client) proxyIDByName(ctx context.Context, name string) (string, error) {
+	params := map[string]any{
+		"output": []string{"proxyid", "name"},
+		"filter": map[string]any{"name": []string{name}},
+	}
+	var ps []Proxy
+	if err := c.call(ctx, "proxy.get", params, true, &ps); err != nil {
+		return "", err
+	}
+	if len(ps) > 0 {
+		return ps[0].ProxyID, nil
+	}
+	return "", nil
+}
+
 // Items returns the items of one host, sorted by name.
 func (c *Client) Items(ctx context.Context, hostID string) ([]Item, error) {
 	params := map[string]any{

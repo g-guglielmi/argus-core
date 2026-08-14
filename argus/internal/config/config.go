@@ -27,6 +27,12 @@ type Config struct {
 	LoginWindow      time.Duration // ARGUS_LOGIN_WINDOW_MINUTES, the sliding window
 	TrustProxy       bool          // ARGUS_TRUST_PROXY, use X-Forwarded-For for the client IP
 
+	// Probe enrollment (token-based PKI). When the CA files are mounted, Argus can sign probe
+	// CSRs and register their proxies in Zabbix. CAKeyFile is the crown jewel — mount read-only.
+	CACertFile    string // ARGUS_CA_CERT_FILE, path to the monitoring CA certificate (ca.crt)
+	CAKeyFile     string // ARGUS_CA_KEY_FILE, path to the CA private key (ca.key)
+	ProbeCoreHost string // ARGUS_PROBE_CORE_HOST, address probes dial for :10051 (host or host:port)
+
 	// WebAuthn / passkeys. Passkeys need a real domain (never a bare IP) and HTTPS,
 	// so they're only active when RPID and at least one origin are configured.
 	RPID          string   // ARGUS_RP_ID, e.g. "monitoring.example.com"
@@ -54,6 +60,9 @@ func Load() Config {
 		LoginMaxAttempts: envInt("ARGUS_LOGIN_MAX_ATTEMPTS", 7),
 		LoginWindow:      time.Duration(envInt("ARGUS_LOGIN_WINDOW_MINUTES", 15)) * time.Minute,
 		TrustProxy:       envBool("ARGUS_TRUST_PROXY", false),
+		CACertFile:       env("ARGUS_CA_CERT_FILE", ""),
+		CAKeyFile:        env("ARGUS_CA_KEY_FILE", ""),
+		ProbeCoreHost:    env("ARGUS_PROBE_CORE_HOST", ""),
 		RPID:          env("ARGUS_RP_ID", ""),
 		RPDisplayName: env("ARGUS_RP_DISPLAY_NAME", "Argus"),
 		RPOrigins:     envList("ARGUS_RP_ORIGINS"),

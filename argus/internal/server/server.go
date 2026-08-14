@@ -15,6 +15,7 @@ import (
 	"argus/internal/auth"
 	"argus/internal/config"
 	"argus/internal/mfa"
+	"argus/internal/pki"
 	"argus/internal/ratelimit"
 	"argus/internal/settings"
 	"argus/internal/store"
@@ -39,6 +40,7 @@ type Server struct {
 	wa            *webauthn.WebAuthn // nil when passkeys are not configured
 	signingSecret string             // HMAC secret for signed alert links
 	loginLimiter  *ratelimit.Limiter // brute-force protection for login (owned by mgr)
+	ca            *pki.CA            // nil when probe enrollment is not configured
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {
@@ -46,6 +48,17 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, mgr: mgr, dummyHash: dummy,
 		signingSecret: GetSigningSecret(context.Background(), st),
 		loginLimiter:  mgr.Limiter()}
+
+	// Probe enrollment is available only when the CA is mounted. A load failure disables it
+	// (logged) rather than blocking startup.
+	if cfg.CACertFile != "" || cfg.CAKeyFile != "" {
+		if ca, err := pki.Load(cfg.CACertFile, cfg.CAKeyFile); err != nil {
+			logger.Error("probe enrollment disabled: could not load CA", "err", err)
+		} else {
+			s.ca = ca
+			logger.Info("probe enrollment enabled", "ca_subject", ca.SubjectCN())
+		}
+	}
 
 	if cfg.PasskeysEnabled() {
 		wa, err := webauthn.New(&webauthn.Config{
@@ -70,6 +83,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// self-service password reset (public; email-delivered single-use token)
 	mux.HandleFunc("POST /api/password-reset/request", s.handleRequestPasswordReset)
 	mux.HandleFunc("POST /api/password-reset/confirm", s.handleConfirmPasswordReset)
+	// probe enrollment (public; authenticated by a single-use enrollment token)
+	mux.HandleFunc("POST /api/enroll", s.handleEnroll)
 	// signed one-click acknowledge link from notifications (public; HMAC-verified, GET confirms)
 	mux.HandleFunc("GET /api/alert/ack", s.handleAlertAck)
 	mux.HandleFunc("POST /api/alert/ack", s.handleAlertAck)
@@ -127,6 +142,11 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/settings", auth.RequireRole("admin", s.handleListSettings))
 	mux.HandleFunc("PATCH /api/settings", auth.RequireRole("admin", s.handleUpdateSettings))
 
+	// probe enrollment tokens (admin only)
+	mux.HandleFunc("GET /api/probes/tokens", auth.RequireRole("admin", s.handleListEnrollTokens))
+	mux.HandleFunc("POST /api/probes/tokens", auth.RequireRole("admin", s.handleCreateEnrollToken))
+	mux.HandleFunc("DELETE /api/probes/tokens/{id}", auth.RequireRole("admin", s.handleDeleteEnrollToken))
+
 	// user management (admin only)
 	mux.HandleFunc("GET /api/users", auth.RequireRole("admin", s.handleListUsers))
 	mux.HandleFunc("POST /api/users", auth.RequireRole("admin", s.handleCreateUser))
@@ -178,7 +198,7 @@ func (s *Server) handleAPIHealth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleFeatures(w http.ResponseWriter, r *http.Request) {
 	// Self-service password reset needs an email channel to deliver the link.
 	resetReady := s.firstEmailChannel(r.Context()) != nil
-	writeJSON(w, http.StatusOK, map[string]bool{"passkeys": s.wa != nil, "password_reset": resetReady})
+	writeJSON(w, http.StatusOK, map[string]bool{"passkeys": s.wa != nil, "password_reset": resetReady, "probe_enroll": s.ca != nil})
 }
 
 // --- auth ---

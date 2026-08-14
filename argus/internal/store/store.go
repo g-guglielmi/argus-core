@@ -110,6 +110,19 @@ CREATE TABLE IF NOT EXISTS password_resets (
 );
 CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
 
+-- Probe enrollment tokens. token_hash is the SHA-256 of the token shown once in the UI; a probe
+-- redeems it (single-use) to get its proxy certificate signed and its proxy registered in Zabbix.
+CREATE TABLE IF NOT EXISTS enroll_tokens (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  token_hash TEXT NOT NULL UNIQUE,
+  proxy_name TEXT NOT NULL,
+  site       TEXT NOT NULL DEFAULT '',
+  created_by INTEGER,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used_at    INTEGER
+);
+
 -- Registered WebAuthn credentials (passkeys). credential is the JSON-serialized
 -- webauthn.Credential; the raw credential ID is the primary key.
 CREATE TABLE IF NOT EXISTS passkeys (
