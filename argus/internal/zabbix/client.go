@@ -204,11 +204,12 @@ func (c *Client) EnsureActiveProxyCert(ctx context.Context, name, issuerDN, subj
 	if err != nil {
 		return err
 	}
-	// operating_mode 0 = active (proxy dials the server); tls_accept 2 = certificate (how the
-	// server accepts the proxy's connection); tls_connect 1 = no-encryption for the unused
-	// server-initiated direction.
+	// operating_mode 0 = active (proxy dials the server). TLS values are Zabbix's bitmask:
+	// 1 = no encryption, 2 = PSK, 4 = certificate. tls_accept = 4 (server accepts the proxy's
+	// cert-authenticated connection); tls_connect = 1 (no encryption on the unused, server-
+	// initiated direction — an active proxy is never connected TO).
 	fields := map[string]any{
-		"tls_accept":  2,
+		"tls_accept":  4,
 		"tls_connect": 1,
 		"tls_issuer":  issuerDN,
 		"tls_subject": subjectDN,
