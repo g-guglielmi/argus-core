@@ -88,7 +88,9 @@ func (c *CA) SignCSR(csrPEM []byte, cn string, ttl time.Duration) ([]byte, error
 		NotBefore:    time.Now().Add(-5 * time.Minute),
 		NotAfter:     notAfter,
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		// A probe is a TLS client to the Zabbix server; clientAuth only (so the leaf can't
+		// double as a server certificate).
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, c.cert, csr.PublicKey, c.key)
 	if err != nil {

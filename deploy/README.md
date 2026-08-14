@@ -96,6 +96,47 @@ probe no longer needs `gen-certs.sh` or manual proxy registration:
 
 The manual flow below stays available as a fallback (e.g. before the CA is mounted).
 
+### Updating a probe (automatic)
+
+The probe runs `ghcr.io/<owner>/argus-probe:latest`. An update is a plain image pull + container
+recreate — **no re-enrollment**: the signed cert + `ca.crt` live on the persistent
+`/var/lib/zabbix` volume, and the entrypoint skips enrollment whenever those certs already exist
+(so the single-use token is never needed again). Options:
+
+- **Watchtower** (recommended, per probe host): run one alongside the probe and it pulls new
+  `:latest` images and recreates the container with the same volume + env automatically:
+  ```bash
+  docker run -d --name watchtower --restart unless-stopped \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    containrrr/watchtower --cleanup --interval 3600 argus-probe
+  ```
+- **unRAID**: the built-in *CA Auto Update* plugin updates the container on a schedule.
+- **Manual / cron**: `docker pull …/argus-probe:latest && docker rm -f argus-probe && docker run …`
+  (same command you deployed with — the token env is harmless once certs exist).
+
+Because the probe pins `:latest`, pushing a new `argus-probe` image to GHCR is enough for these to
+pick it up. (Pin a specific `:vX.Y.Z` instead if you'd rather gate probe updates.)
+
+### Security notes (before publishing Argus to the internet)
+
+Enrollment was designed to be safe as a public endpoint, but mind these:
+
+- **The enrollment token is a bootstrap secret.** It's 256-bit, single-use, time-limited, and
+  revocable, and it only yields one proxy certificate for the site it's scoped to — but treat the
+  generated `docker run` (which embeds it) like a password. Short TTLs are your friend.
+- **`ARGUS_ENROLL_URL` must be HTTPS with a valid certificate.** The probe posts the token over it;
+  `curl` verifies the cert (don't use `-k`). Terminate TLS at HAProxy with a real cert.
+- **The CA private key is online** (mounted into Argus so it can sign). That's inherent to
+  automated enrollment, but it means a compromise of the Argus host exposes the CA. To limit the
+  blast radius, consider signing with an **intermediate CA** (root stays offline; Zabbix trusts the
+  root; Argus holds only the intermediate — revoke/replace it without touching the root). The
+  single-CA setup is fine to start; the intermediate is the hardening step for a public deployment.
+- **Scope the Zabbix API token.** It needs super-admin for `proxy.create`; keep it Argus-only and
+  rotate it if leaked (now easy from Settings).
+- **Keep 10051 pinned.** The Zabbix server accepts proxies only by certificate issuer+subject, so
+  exposing 10051 doesn't accept anonymous connections — but only publish it as far as remote sites
+  need.
+
 ## Adding a new remote site later — manual (fallback)
 
 The CA never changes — you only mint one new leaf:

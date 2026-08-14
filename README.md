@@ -278,7 +278,7 @@ GitHub Actions (`.github/workflows/build.yml`):
 - v0.3.1 — Deep-link URLs (view reflected in the address bar; reload/bookmark/share safe)
 - v0.3.2 — Sidebar polish (persist collapsed state; theme moved to Settings/Account)
 - v0.3.3 — Self-service password reset (emailed single-use link)
-- v0.3.4 — Probe enrollment (GUI token → self-enrolling `argus-probe` container)
+- v0.4.0 — Probe enrollment (GUI token → self-enrolling `argus-probe` container)
 
 **Planned:**
 - Auto-discovery — UniFi API sweep + SNMP fingerprinting → automatic host/sensor provisioning

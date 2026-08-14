@@ -106,7 +106,7 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
   A leak is contained to one site; adding a site = sign one new leaf with the existing CA
   (`gen-certs.sh <site>`). `ca.key` stays offline, never on a probe. (Token-over-TLS as a
   fallback where mTLS is impractical.)
-- **Probe enrollment (token-based, preferred): ✅ implemented (v0.3.4).** The core runs a small
+- **Probe enrollment (token-based, preferred): ✅ implemented (v0.4.0).** The core runs a small
   enrollment/PKI service. Admin creates a short-TTL token in the UI → probe boots with the token →
   probe generates its own keypair **locally** and sends a CSR → core validates the token, signs the
   cert, registers the proxy via the Zabbix API, returns cert + `ca.crt`. The **private key never

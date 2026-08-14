@@ -25,8 +25,8 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 ## 🚧 Remaining
 
 ### A. Probe fleet & enrollment
-- [x] **Token-based enrollment / PKI service** — mint token → probe self-generates key + CSR → core signs & registers proxy via Zabbix API; private key never leaves the probe — v0.3.4
-- [x] **"Add probe" wizard** UI + self-enrolling `argus-probe` image — v0.3.4
+- [x] **Token-based enrollment / PKI service** — mint token → probe self-generates key + CSR → core signs & registers proxy via Zabbix API; private key never leaves the probe — v0.4.0
+- [x] **"Add probe" wizard** UI + self-enrolling `argus-probe` image — v0.4.0
 - [ ] Bring **site2–site5** probes online (now: Probes → Add probe) — _(ops)_ S each
 - [ ] Golden Debian VM template (Packer) + cloud-init for scaled rollout — _(ops)_ M
 
@@ -71,5 +71,5 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 
 1. ~~Deep-link URLs~~ ✅ (done) — small, felt every day
 2. ~~Self-service password reset~~ ✅ (done, v0.3.3)
-3. ~~Probe enrollment~~ ✅ (done, v0.3.4) — now bring site2–5 online from the GUI
+3. ~~Probe enrollment~~ ✅ (done, v0.4.0) — now bring site2–5 online from the GUI
 4. Then the big lift: **discovery + device templates** (B/C) → the real path to a production **1.0**.

@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [0.3.4] - 2026-08-14
+## [0.4.0] - 2026-08-14
 
 **Probe enrollment — one-click, from the GUI.** Adding a site probe no longer needs
 `gen-certs.sh` or manual Zabbix proxy registration.
