@@ -198,3 +198,22 @@ func (s *Store) MetaSet(ctx context.Context, key, value string) error {
 		key, value)
 	return err
 }
+
+func (s *Store) MetaDelete(ctx context.Context, key string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM app_meta WHERE key=?`, key)
+	return err
+}
+
+// MetaGetSecret reads an app_meta value stored encrypted (transparently decrypting it).
+func (s *Store) MetaGetSecret(ctx context.Context, key string) (string, bool, error) {
+	raw, ok, err := s.MetaGet(ctx, key)
+	if err != nil || !ok {
+		return "", ok, err
+	}
+	return s.cipher.Decrypt(raw), true, nil
+}
+
+// MetaSetSecret stores an app_meta value encrypted at rest (channel-credential style).
+func (s *Store) MetaSetSecret(ctx context.Context, key, plain string) error {
+	return s.MetaSet(ctx, key, s.cipher.Encrypt(plain))
+}

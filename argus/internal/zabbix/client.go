@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
 type Client struct {
+	mu    sync.RWMutex // guards url/token so they can be reconfigured at runtime
 	url   string
 	token string
 	http  *http.Client
@@ -27,8 +29,26 @@ func New(url, token string) *Client {
 	}
 }
 
+// Configure updates the endpoint and token in place. Because callers (server, notifier,
+// sweeper) share one *Client, a settings change propagates to all of them at once.
+func (c *Client) Configure(url, token string) {
+	c.mu.Lock()
+	c.url, c.token = url, token
+	c.mu.Unlock()
+}
+
+func (c *Client) endpoint() (url, token string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.url, c.token
+}
+
 // Authenticated reports whether an API token is configured for read calls.
-func (c *Client) Authenticated() bool { return c.token != "" }
+func (c *Client) Authenticated() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.token != ""
+}
 
 type rpcRequest struct {
 	JSONRPC string `json:"jsonrpc"`
@@ -55,23 +75,24 @@ func (e *rpcError) Error() string {
 // call performs a JSON-RPC request. When withAuth is true, the configured API
 // token is sent as a Bearer header (Zabbix 7.0 style); out may be nil.
 func (c *Client) call(ctx context.Context, method string, params any, withAuth bool, out any) error {
-	if c.url == "" {
-		return fmt.Errorf("ARGUS_ZABBIX_API_URL is not set")
+	url, token := c.endpoint()
+	if url == "" {
+		return fmt.Errorf("the Zabbix API URL is not set (configure it in Settings or ARGUS_ZABBIX_API_URL)")
 	}
-	if withAuth && c.token == "" {
-		return fmt.Errorf("ARGUS_ZABBIX_API_TOKEN is not set")
+	if withAuth && token == "" {
+		return fmt.Errorf("the Zabbix API token is not set (configure it in Settings or ARGUS_ZABBIX_API_TOKEN)")
 	}
 	payload, err := json.Marshal(rpcRequest{JSONRPC: "2.0", Method: method, Params: params, ID: 1})
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json-rpc")
 	if withAuth {
-		req.Header.Set("Authorization", "Bearer "+c.token)
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := c.http.Do(req)

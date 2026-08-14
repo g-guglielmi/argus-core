@@ -11,6 +11,31 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.3.0] - 2026-08-14
+
+**In-app Settings (admin).** A new admin-only **Settings** page moves the most frequently
+changed configuration off the `docker run` command and into the UI — no redeploy to change it.
+
+- **Editable in the UI**: the **Zabbix API URL + token**, the **Public URL** (notification
+  links), the **timezone**, and the **login rate-limit** thresholds. Changes apply live — the
+  Zabbix client, notifier, and rate limiter are reconfigured in place, no restart.
+- **Env-wins precedence**: if the backing `ARGUS_*` variable is set, that value is used and the
+  field is shown **read-only** ("via env"). Your existing `docker run … -e …` keeps working
+  unchanged; drop a variable to manage that setting in the GUI instead.
+- The Zabbix token is stored **encrypted at rest** (same AES-256-GCM as channel credentials);
+  it's never sent back to the browser. The connection card shows live reachability after a save.
+- **Not** movable (stay in env, by design): `ARGUS_SECRET_KEY` (it *is* the encryption key),
+  `ARGUS_COOKIE_SECURE` / `ARGUS_TRUST_PROXY` (they govern the session you'd edit them with),
+  the passkey `ARGUS_RP_*` (changing them invalidates passkeys), and `ARGUS_LISTEN` /
+  `ARGUS_DATA_DIR` (needed before the app starts).
+- Theme selection now also appears on the Settings page (still a per-device preference; the
+  sidebar toggle stays for everyone).
+
+New: `internal/settings` (env/DB resolver + live apply), `GET`/`PATCH /api/settings`,
+`zabbix.Client.Configure` and `ratelimit.Limiter.Configure` for runtime reconfiguration.
+
+---
+
 ## [0.2.8] - 2026-08-14
 
 **Encrypt secrets at rest.** Sensitive values in the SQLite database are now stored encrypted with

@@ -88,11 +88,17 @@ cd argus/web && npm install && npm run dev
 
 All configuration is via environment variables (`docker run -e …` / `--env-file`).
 
+> **Runtime settings (admin UI).** Several of these can also be set from the admin **Settings**
+> page with no redeploy: the **Zabbix API URL + token**, **`ARGUS_PUBLIC_URL`**, **`ARGUS_TZ`**,
+> and the **login rate-limit** vars. Precedence is **env-wins**: when the variable is set it takes
+> effect and the field is read-only in the UI; unset the variable to manage that setting in the
+> GUI (stored in the database, token encrypted at rest). The rows below are marked _(UI)_.
+
 **Core**
 | Var | Default | Purpose |
 |---|---|---|
-| `ARGUS_ZABBIX_API_URL` | *(empty)* | Zabbix JSON-RPC endpoint, e.g. `http://10.0.0.10:8080/api_jsonrpc.php` |
-| `ARGUS_ZABBIX_API_TOKEN` | *(empty)* | Zabbix API token (Bearer). Needs **write** scope for acknowledge/pause |
+| `ARGUS_ZABBIX_API_URL` | *(empty)* | _(UI)_ Zabbix JSON-RPC endpoint, e.g. `http://10.0.0.10:8080/api_jsonrpc.php` |
+| `ARGUS_ZABBIX_API_TOKEN` | *(empty)* | _(UI)_ Zabbix API token (Bearer). Needs **write** scope for acknowledge/pause |
 | `ARGUS_DATA_DIR` | `/data` | SQLite DB + encryption keyfile location (mount a volume) |
 | `ARGUS_LISTEN` | `:8080` | address the server listens on inside the container |
 
@@ -108,14 +114,14 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 | `ARGUS_COOKIE_SECURE` | `false` | set `true` when served over HTTPS (Secure session cookie) |
 | `ARGUS_SECRET_KEY` | *(empty)* | key for at-rest encryption of stored secrets. Empty ⇒ auto keyfile on the volume; set a long random value (e.g. `openssl rand -hex 32`) to keep the key off the volume. **Keep it stable.** |
 | `ARGUS_TRUST_PROXY` | `false` | read the client IP from `X-Forwarded-For` (set `true` behind a reverse proxy) |
-| `ARGUS_LOGIN_MAX_ATTEMPTS` | `7` | failed logins per window before throttling |
-| `ARGUS_LOGIN_WINDOW_MINUTES` | `15` | rate-limit sliding window |
+| `ARGUS_LOGIN_MAX_ATTEMPTS` | `7` | _(UI)_ failed logins per window before throttling |
+| `ARGUS_LOGIN_WINDOW_MINUTES` | `15` | _(UI)_ rate-limit sliding window |
 
 **Notifications**
 | Var | Default | Purpose |
 |---|---|---|
-| `ARGUS_PUBLIC_URL` | *(empty)* | external base URL, for "Open in Argus" / acknowledge links in alerts |
-| `ARGUS_TZ` | `UTC` | IANA timezone for timestamps in notifications, e.g. `Europe/Rome` |
+| `ARGUS_PUBLIC_URL` | *(empty)* | _(UI)_ external base URL, for "Open in Argus" / acknowledge links in alerts |
+| `ARGUS_TZ` | `UTC` | _(UI)_ IANA timezone for timestamps in notifications, e.g. `Europe/Rome` |
 
 **Passkeys / WebAuthn** (optional; needs HTTPS + a real domain — omit for plain-HTTP/IP)
 | Var | Default | Purpose |

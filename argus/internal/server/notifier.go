@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"argus/internal/notify"
+	"argus/internal/settings"
 	"argus/internal/store"
 	"argus/internal/zabbix"
 )
@@ -21,7 +22,7 @@ const (
 // StartNotifier runs the alerting loop: it polls Zabbix problems, applies the same
 // suppression rules as the Overview (hidden / paused / acknowledged stay quiet), debounces
 // flapping, and dispatches problem/recovery notifications to the configured channels.
-func StartNotifier(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger, publicURL, secret string, loc *time.Location) {
+func StartNotifier(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger, mgr *settings.Manager, secret string) {
 	ticker := time.NewTicker(notifyPollInterval)
 	defer ticker.Stop()
 	// Run one tick shortly after start (seeds the baseline), then on the interval.
@@ -32,17 +33,20 @@ func StartNotifier(ctx context.Context, st *store.Store, zbx *zabbix.Client, log
 		case <-ctx.Done():
 			return
 		case <-first.C:
-			notifyTick(ctx, st, zbx, logger, publicURL, secret, loc)
+			notifyTick(ctx, st, zbx, logger, mgr, secret)
 		case <-ticker.C:
-			notifyTick(ctx, st, zbx, logger, publicURL, secret, loc)
+			notifyTick(ctx, st, zbx, logger, mgr, secret)
 		}
 	}
 }
 
-func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger, publicURL, secret string, loc *time.Location) {
+func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger, mgr *settings.Manager, secret string) {
 	if !zbx.Authenticated() {
 		return
 	}
+	// Read the live values each tick so a Settings change takes effect without a restart.
+	publicURL := mgr.PublicURL()
+	loc := mgr.Location()
 	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 

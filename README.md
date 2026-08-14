@@ -20,6 +20,8 @@ SQLite state, no external dependencies beyond a running Zabbix).
   2-hour trend graph, deep-links, one-click acknowledge).
 - **Auth** — three roles (admin / helpdesk / viewer), argon2id passwords, TOTP two-factor
   with recovery codes, WebAuthn passkeys, admin user management, login rate-limiting.
+- **Admin Settings** — an in-app page to change the Zabbix connection, public URL, timezone,
+  and login limits at runtime (no redeploy); env vars, when set, take precedence and lock the field.
 - **Security** — AES-256-GCM encryption at rest for stored secrets, brute-force protection
   by IP + account.
 - **Mobile-responsive** — off-canvas drawer sidebar, scrollable status chips, stacked card
@@ -209,7 +211,9 @@ across container recreations.
 ## Configuration reference
 
 All Argus configuration is via environment variables. Full table with defaults:
-[`argus/README.md` — Configuration (env vars)](argus/README.md#configuration-env-vars).
+[`argus/README.md` — Configuration (env vars)](argus/README.md#configuration-env-vars). Several
+(Zabbix URL + token, Public URL, timezone, login limits) can also be changed at runtime from the
+admin **Settings** page — a set env var takes precedence and locks the field.
 
 | Group | Vars |
 |---|---|

@@ -22,6 +22,17 @@ func New(max int, window time.Duration) *Limiter {
 	return &Limiter{fails: map[string][]int64{}, max: max, window: int64(window.Seconds())}
 }
 
+// Configure updates the threshold and window in place (used when the admin changes the
+// login rate-limit settings at runtime). Existing recorded failures are kept.
+func (l *Limiter) Configure(max int, window time.Duration) {
+	if max < 1 {
+		max = 1
+	}
+	l.mu.Lock()
+	l.max, l.window = max, int64(window.Seconds())
+	l.mu.Unlock()
+}
+
 // Blocked reports whether the key currently has >= max failures inside the window, and if so how
 // long until the oldest counted failure ages out (the retry-after hint).
 func (l *Limiter) Blocked(key string) (bool, time.Duration) {

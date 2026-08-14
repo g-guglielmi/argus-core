@@ -15,6 +15,7 @@ import (
 	"argus/internal/config"
 	"argus/internal/secret"
 	"argus/internal/server"
+	"argus/internal/settings"
 	"argus/internal/store"
 	"argus/internal/zabbix"
 )
@@ -51,6 +52,15 @@ func main() {
 
 	zbx := zabbix.New(cfg.ZabbixAPIURL, cfg.ZabbixAPIToken)
 
+	// Runtime-editable settings (Zabbix connection, public URL, timezone, login limits). Loads
+	// any stored overrides and applies the effective values to the Zabbix client + rate limiter.
+	// Env vars, when set, take precedence and lock the corresponding field in the UI.
+	mgr, err := settings.New(context.Background(), st, zbx)
+	if err != nil {
+		logger.Error("init settings", "err", err)
+		os.Exit(1)
+	}
+
 	// Background sweeper: re-enables timed pauses and prunes expired suppressions.
 	sweepCtx, sweepCancel := context.WithCancel(context.Background())
 	defer sweepCancel()
@@ -58,11 +68,11 @@ func main() {
 
 	// Background notifier: polls problems and dispatches alerts to the configured channels.
 	notifySecret := server.GetSigningSecret(context.Background(), st)
-	go server.StartNotifier(sweepCtx, st, zbx, logger, cfg.PublicURL, notifySecret, cfg.Location())
+	go server.StartNotifier(sweepCtx, st, zbx, logger, mgr, notifySecret)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           server.New(cfg, zbx, st, logger),
+		Handler:           server.New(cfg, zbx, st, logger, mgr),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,

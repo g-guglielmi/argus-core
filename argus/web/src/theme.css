@@ -265,6 +265,22 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .field > span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
 .field input { width: 100%; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--elevated); color: var(--text); font: inherit; }
 
+/* Settings page */
+.set-body { display: grid; gap: 14px; padding: 14px 16px 18px; }
+.set-card { border: 1px solid var(--border); border-radius: 10px; background: var(--elevated); padding: 14px 16px; }
+.set-card h3 { margin: 0 0 2px; font-size: 14px; }
+.set-note { margin: 0 0 12px; font-size: 12.5px; color: var(--muted); }
+.set-row { display: grid; gap: 5px; margin-bottom: 13px; max-width: 560px; }
+.set-row:last-child { margin-bottom: 0; }
+.set-head { display: flex; align-items: center; gap: 8px; }
+.set-hint { font-size: 11.5px; color: var(--faint); }
+.set-src { font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; }
+.set-row .input:disabled { opacity: 0.65; cursor: not-allowed; }
+.envpill { font-size: 10px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border)); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.zbx-status { font-size: 12.5px; padding: 7px 10px; border-radius: 8px; margin-bottom: 12px; border: 1px solid var(--border-strong); }
+.zbx-status.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); background: color-mix(in srgb, var(--ok) 8%, transparent); }
+.zbx-status.bad { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, var(--border)); background: color-mix(in srgb, var(--err) 8%, transparent); }
+
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 
 /* uPlot legend readability, themed */

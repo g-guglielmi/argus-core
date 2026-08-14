@@ -151,7 +151,7 @@ func (s *Server) handleTestChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	ev := notify.SampleEvent(time.Now().In(s.loc), s.cfg.PublicURL)
+	ev := notify.SampleEvent(time.Now().In(s.mgr.Location()), s.mgr.PublicURL())
 	dr, dg, db := statusRGB(ev.State)
 	ev.ChartPNG = renderChart(demoSeries(), dr, dg, db) // preview the graph too
 	if err := notify.Send(ctx, toNotifyChannel(*ch), ev); err != nil {

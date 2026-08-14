@@ -16,6 +16,7 @@ import (
 	"argus/internal/config"
 	"argus/internal/mfa"
 	"argus/internal/ratelimit"
+	"argus/internal/settings"
 	"argus/internal/store"
 	"argus/internal/zabbix"
 	"argus/web"
@@ -33,18 +34,18 @@ type Server struct {
 	zbx           *zabbix.Client
 	st            *store.Store
 	logger        *slog.Logger
+	mgr           *settings.Manager  // runtime-editable settings (Zabbix conn, public URL, tz, limits)
 	dummyHash     string             // for constant-ish login timing when a user doesn't exist
 	wa            *webauthn.WebAuthn // nil when passkeys are not configured
 	signingSecret string             // HMAC secret for signed alert links
-	loc           *time.Location     // timezone for notification timestamps
-	loginLimiter  *ratelimit.Limiter // brute-force protection for login
+	loginLimiter  *ratelimit.Limiter // brute-force protection for login (owned by mgr)
 }
 
-func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger) http.Handler {
+func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {
 	dummy, _ := auth.HashPassword("argus-nonexistent-user")
-	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, dummyHash: dummy,
-		signingSecret: GetSigningSecret(context.Background(), st), loc: cfg.Location(),
-		loginLimiter: ratelimit.New(cfg.LoginMaxAttempts, cfg.LoginWindow)}
+	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, mgr: mgr, dummyHash: dummy,
+		signingSecret: GetSigningSecret(context.Background(), st),
+		loginLimiter:  mgr.Limiter()}
 
 	if cfg.PasskeysEnabled() {
 		wa, err := webauthn.New(&webauthn.Config{
@@ -118,6 +119,10 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/notify/channels/{id}/test", auth.RequireRole("admin", s.handleTestChannel))
 	mux.HandleFunc("DELETE /api/notify/channels/{id}", auth.RequireRole("admin", s.handleDeleteChannel))
 	mux.HandleFunc("GET /api/notify/sites", auth.RequireRole("admin", s.handleNotifySites))
+
+	// system settings (admin only) — runtime-editable config
+	mux.HandleFunc("GET /api/settings", auth.RequireRole("admin", s.handleListSettings))
+	mux.HandleFunc("PATCH /api/settings", auth.RequireRole("admin", s.handleUpdateSettings))
 
 	// user management (admin only)
 	mux.HandleFunc("GET /api/users", auth.RequireRole("admin", s.handleListUsers))

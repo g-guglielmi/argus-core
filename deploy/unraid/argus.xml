@@ -9,6 +9,10 @@
     3. For HTTPS behind a reverse proxy, set Cookie Secure = true, Public URL, Trust Proxy = true,
        and (optional) the passkey RP_* fields. Set a long, STABLE Secret Key.
   Argus is published on host 8081 (container 8080); the Zabbix web UI usually holds host 8080.
+
+  Note: Zabbix API URL + token, Public URL, Timezone, and the Login rate-limit fields can also be
+  changed later from the in-app admin Settings page. If you set them here, the env value wins and
+  the field is read-only in the UI; leave them blank to manage them in the GUI instead.
 -->
 <Container version="2">
   <Name>Argus</Name>

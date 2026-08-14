@@ -375,13 +375,14 @@ function Login({ onSuccess, passkeysAvailable }: { onSuccess: (m: Me) => void; p
   )
 }
 
-type View = 'overview' | 'monitoring' | 'notifications' | 'probes' | 'users' | 'account' | 'list'
+type View = 'overview' | 'monitoring' | 'notifications' | 'probes' | 'users' | 'settings' | 'account' | 'list'
 const VIEW_TITLES: Record<View, [string, string]> = {
   overview: ['Overview', 'What needs attention right now'],
   monitoring: ['Monitoring', 'Sites, hosts and sensors'],
   notifications: ['Notifications', 'Alert routing and channels'],
   probes: ['Probes', 'Site probe enrollment'],
   users: ['Users', 'Accounts and access'],
+  settings: ['Settings', 'System configuration'],
   account: ['Account', 'Your security settings'],
   list: ['Sensors', 'Filtered across all sites'],
 }
@@ -392,6 +393,7 @@ const ic = {
   notifications: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>,
   probes: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5" /></svg>,
   users: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><path d="M16 5.2a3.2 3.2 0 0 1 0 6M17 14.5a5.5 5.5 0 0 1 3.5 5.5" /></svg>,
+  settings: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3.2" /><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" /></svg>,
   account: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="3.4" /><path d="M5 20a7 7 0 0 1 14 0" /></svg>,
   logout: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M15 12H3M9 6l-6 6 6 6M15 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" /></svg>,
   err: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /><path d="M15 9l-6 6M9 9l6 6" /></svg>,
@@ -494,7 +496,7 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
         <div className="navlabel">Configure</div>
         {nav('notifications', 'Notifications')}
         {nav('probes', 'Probes', { soon: true })}
-        {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('users', 'Users')}</>}
+        {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('users', 'Users')}{nav('settings', 'Settings')}</>}
         <div className="side-foot">
           <button className="themebtn" onClick={toggleTheme}>{theme === 'dark' ? moon : sun}<span>Theme</span></button>
           <div className="kebab-wrap" style={{ display: 'block' }}>
@@ -541,9 +543,124 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
           {view === 'notifications' && <NotificationsView />}
           {view === 'probes' && <ProbesView />}
           {view === 'users' && me.role === 'admin' && <UsersView />}
+          {view === 'settings' && me.role === 'admin' && <SettingsView theme={theme} toggleTheme={toggleTheme} />}
           {view === 'account' && <AccountView passkeysAvailable={passkeysAvailable} />}
         </div>
       </div>
+    </div>
+  )
+}
+
+type SettingItem = {
+  key: string; label: string; group: string; type: string; secret: boolean; hint: string
+  env: string; value: string; source: string; locked: boolean; has_value: boolean
+}
+
+function SettingsView({ theme, toggleTheme }: { theme: 'dark' | 'light'; toggleTheme: () => void }) {
+  const [items, setItems] = useState<SettingItem[] | null>(null)
+  const [edits, setEdits] = useState<Record<string, string>>({})
+  const [error, setError] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [zbx, setZbx] = useState<{ reachable: boolean; version?: string; error?: string } | null>(null)
+
+  function load() {
+    fetch('/api/settings').then((r) => r.json()).then((s) => { setItems(s || []); setEdits({}) }).catch(() => setError('Failed to load settings'))
+  }
+  function checkHealth() {
+    fetch('/api/health').then((r) => r.json()).then((h) => setZbx(h.zabbix)).catch(() => setZbx(null))
+  }
+  useEffect(() => { load(); checkHealth() }, [])
+
+  const dirty = Object.keys(edits).length > 0
+  const setEdit = (k: string, v: string) => setEdits((e) => ({ ...e, [k]: v }))
+
+  async function save(e?: FormEvent) {
+    e?.preventDefault(); setError(null); setMsg(null); setBusy(true)
+    try {
+      const res = await fetch('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: edits }) })
+      if (!res.ok) { setError(await errText(res, 'Could not save settings')); return }
+      setItems(await res.json()); setEdits({}); setMsg('Settings saved and applied.'); checkHealth()
+    } finally { setBusy(false) }
+  }
+
+  const field = (it: SettingItem) => {
+    const editing = it.key in edits
+    const cur = editing ? edits[it.key] : it.secret ? '' : it.value
+    const ph = it.secret ? (it.has_value ? '•••••••• (unchanged)' : 'not set') : ''
+    return (
+      <label className="set-row" key={it.key}>
+        <div className="set-head">
+          <span className="flabel">{it.label}</span>
+          {it.locked ? <span className="envpill" title={`Set via ${it.env}`}>via env</span>
+            : it.source === 'default' && !editing ? <span className="set-src">default</span> : null}
+        </div>
+        <input
+          className="input"
+          type={it.secret ? 'password' : it.type === 'int' ? 'number' : 'text'}
+          value={it.locked ? (it.secret ? '' : it.value) : cur}
+          placeholder={it.locked && it.secret ? '•••••••• (managed by environment)' : ph}
+          disabled={it.locked || busy}
+          autoComplete={it.secret ? 'new-password' : 'off'}
+          min={it.type === 'int' ? 1 : undefined}
+          onChange={(e) => setEdit(it.key, e.target.value)}
+        />
+        <span className="set-hint">{it.locked ? `Managed via ${it.env} — unset that variable to edit here.` : it.hint}</span>
+      </label>
+    )
+  }
+
+  const groups: { name: string; title: string; note?: string }[] = [
+    { name: 'Connection', title: 'Zabbix connection', note: 'Where Argus reads monitoring data from.' },
+    { name: 'General', title: 'General', note: 'Timezone and the external URL used in notification links.' },
+    { name: 'Security', title: 'Login rate limiting', note: 'Brute-force protection thresholds.' },
+  ]
+
+  return (
+    <div className="panel">
+      <div className="phead">
+        <h2>Settings</h2>
+        <span className="hint">Admin only</span>
+        <div className="tools">
+          <button className="btn primary" disabled={!dirty || busy} onClick={() => save()}>{busy ? 'Saving…' : 'Save changes'}</button>
+        </div>
+      </div>
+      {error && <div style={{ padding: '0.6rem 16px', color: 'var(--err)' }}>{error}</div>}
+      {msg && <div style={{ padding: '0.6rem 16px', color: 'var(--ok)' }}>{msg}</div>}
+
+      <form onSubmit={save} className="set-body">
+        {/* Appearance — a per-user preference, stored in this browser (not server-side). */}
+        <section className="set-card">
+          <h3>Appearance</h3>
+          <p className="set-note">Theme is remembered on this device.</p>
+          <div className="set-row">
+            <div className="set-head"><span className="flabel">Theme</span></div>
+            <button type="button" className="btn" onClick={toggleTheme} style={{ width: 'fit-content' }}>
+              Switch to {theme === 'dark' ? 'light' : 'dark'} mode
+            </button>
+            <span className="set-hint">Currently {theme}.</span>
+          </div>
+        </section>
+
+        {items === null ? <p className="set-note" style={{ padding: '0 4px' }}>Loading…</p> : groups.map((g) => {
+          const gi = items.filter((it) => it.group === g.name)
+          if (gi.length === 0) return null
+          return (
+            <section className="set-card" key={g.name}>
+              <h3>{g.title}</h3>
+              {g.note && <p className="set-note">{g.note}</p>}
+              {g.name === 'Connection' && zbx && (
+                <div className={'zbx-status ' + (zbx.reachable ? 'ok' : 'bad')}>
+                  {zbx.reachable ? `Connected — Zabbix ${zbx.version}` : `Not reachable${zbx.error ? ': ' + zbx.error : ''}`}
+                </div>
+              )}
+              {gi.map(field)}
+            </section>
+          )
+        })}
+        {/* Native submit so Enter works; the header button submits too. */}
+        <button type="submit" style={{ display: 'none' }} aria-hidden />
+      </form>
     </div>
   )
 }
