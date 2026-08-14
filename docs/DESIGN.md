@@ -346,7 +346,28 @@ users; fuzzy matching. Pairs naturally with the **sizing pass** (§14b) as part 
 
 ---
 
-## 17. Parking lot / future
+## 17. Deep-link URLs & reload persistence — future phase (small)
+
+**Problem.** The SPA tracks the active view in React state only; it never reflects navigation
+in the address bar, and it deliberately strips `?host=&item=` after consuming a notification
+deep-link. So the URL stays at the base FQDN, a **reload resets to the Overview** landing page,
+notification "Open in Argus" links don't survive a refresh, and a specific sensor view can't be
+bookmarked or shared.
+
+**Scope.**
+- Encode the current view (and `host`/`item` for the tree, `filter` for the status lists) in the
+  URL — query params or a hash route — and `pushState` on navigation.
+- Parse the URL on load to restore the exact view (extends the existing `?host=&item=` handler;
+  stop stripping it).
+- Handle browser **back/forward** (`popstate`).
+
+**Effort.** Small, **frontend-only** (`web/src/App.tsx`), **no backend change and no new
+dependency** — the native History API is enough (a tiny router could be added but isn't needed).
+Bonus: makes notification deep-links reload-safe and shareable.
+
+---
+
+## 18. Parking lot / future
 - Public status page (Uptime-Kuma-style shareable page).
 - Native mobile apps (only if the responsive web UI proves insufficient).
 - Escalation policies / repeat notifications beyond flap debounce.

@@ -274,6 +274,8 @@ GitHub Actions (`.github/workflows/build.yml`):
 - Auto-discovery — UniFi API sweep + SNMP fingerprinting → automatic host/sensor provisioning
 - Global search — top-bar quick-switcher to jump to a host/sensor by name, IP, or tag
   (server-side, for large deployments; see DESIGN §16)
+- Deep-link URLs — reflect the current view in the address bar so reload/bookmark/share and
+  notification links restore the exact sensor (small, frontend-only; see DESIGN §17)
 - Per-channel severity filter, labeled graph axes
 - Scaling pass for large deployments (~6000 sensors)
 
