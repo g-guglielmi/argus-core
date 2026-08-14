@@ -45,6 +45,7 @@ docker run -d \
   --restart unless-stopped \
   -p 8081:8080 \
   -v /docker/argus:/data \
+  -v /docker/pki:/ca:ro \
   -e ARGUS_ZABBIX_API_URL=http://10.0.0.10:8080/api_jsonrpc.php \
   -e ARGUS_ZABBIX_API_TOKEN=<zabbix-api-token> \
   -e ARGUS_ADMIN_EMAIL=admin@example.com \
@@ -54,6 +55,9 @@ docker run -d \
   -e ARGUS_TZ=Europe/Rome \
   -e ARGUS_SECRET_KEY=<run: openssl rand -hex 32 — set once, keep stable> \
   -e ARGUS_TRUST_PROXY=true \
+  -e ARGUS_CA_CERT_FILE=/ca/ca.crt \
+  -e ARGUS_CA_KEY_FILE=/ca/ca.key \
+  -e ARGUS_PROBE_CORE_HOST=monitoring.example.com \
   -e ARGUS_RP_ID=monitoring.example.com \
   -e ARGUS_RP_DISPLAY_NAME=Argus \
   -e ARGUS_RP_ORIGINS=https://monitoring.example.com \
@@ -71,6 +75,13 @@ docker run -d \
 > keep it off the volume and **stable** (changing it makes existing encrypted values unreadable).
 > **`ARGUS_TRUST_PROXY=true`** is required behind a reverse proxy for correct client-IP rate
 > limiting (ensure the proxy sends `X-Forwarded-For`).
+>
+> **Probe enrollment** (optional): mount the monitoring CA (`ca.crt` + `ca.key` from
+> `gen-certs.sh`) read-only and set `ARGUS_CA_CERT_FILE` / `ARGUS_CA_KEY_FILE` so Argus can sign
+> probe certificates from the **Probes → Add probe** wizard. Set `ARGUS_PROBE_CORE_HOST` to the
+> address probes dial for `:10051` (the FQDN, which must publish 10051 for remote sites, or the
+> LAN IP). The Zabbix API token must have **super-admin** rights to register proxies. Omit the CA
+> mount to leave enrollment off (probe status still works).
 
 4. Open `http://10.0.0.10:8081` — you should see the Argus page reporting the backend as `ok`
    and the Zabbix API as **reachable** with its version. That confirms the whole
@@ -122,6 +133,15 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 |---|---|---|
 | `ARGUS_PUBLIC_URL` | *(empty)* | _(UI)_ external base URL, for "Open in Argus" / acknowledge links in alerts |
 | `ARGUS_TZ` | `UTC` | _(UI)_ IANA timezone for timestamps in notifications, e.g. `Europe/Rome` |
+
+**Probe enrollment** (optional; enables the Probes → Add probe wizard when the CA is mounted)
+| Var | Default | Purpose |
+|---|---|---|
+| `ARGUS_CA_CERT_FILE` | *(empty)* | path to the monitoring CA cert (`ca.crt`) mounted into the container |
+| `ARGUS_CA_KEY_FILE` | *(empty)* | path to the CA private key (`ca.key`) — mount **read-only**; both must be set to enable enrollment |
+| `ARGUS_PROBE_CORE_HOST` | *(Public URL host)* | address probes dial for `:10051` (FQDN or LAN IP). Falls back to the Public URL's hostname |
+
+> Enrollment also needs the Zabbix API token to have **super-admin** rights (to run `proxy.create`).
 
 **Passkeys / WebAuthn** (optional; needs HTTPS + a real domain — omit for plain-HTTP/IP)
 | Var | Default | Purpose |

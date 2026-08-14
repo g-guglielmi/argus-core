@@ -11,6 +11,33 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.3.4] - 2026-08-14
+
+**Probe enrollment — one-click, from the GUI.** Adding a site probe no longer needs
+`gen-certs.sh` or manual Zabbix proxy registration.
+
+- **Probes → Add probe** (admin): pick a site name + token TTL → Argus mints a **single-use,
+  time-limited token** and shows a ready-to-run `docker run` for the new **`argus-probe`** image
+  (the token is shown once). Pending/recent tokens are listed with status (pending / enrolled /
+  expired) and can be revoked.
+- **Self-enrolling probe image** (`ghcr.io/<owner>/argus-probe`): on first boot it generates its
+  own key + CSR **locally**, redeems the token against `POST /api/enroll`, receives its signed
+  certificate + `ca.crt`, and starts the stock Zabbix proxy. **The private key never leaves the
+  probe.** Certs persist on the volume, so a restart doesn't re-redeem the single-use token.
+- Argus signs the CSR with the **mounted monitoring CA** (same CA Zabbix already trusts; the leaf
+  subject is forced to the token's proxy name) and registers the proxy in Zabbix via `proxy.create`
+  (active, certificate-pinned by issuer + subject).
+- Enrollment is **off unless the CA is mounted** — new config `ARGUS_CA_CERT_FILE`,
+  `ARGUS_CA_KEY_FILE` (mount read-only), and `ARGUS_PROBE_CORE_HOST` (address probes dial for
+  `:10051`, defaults to the Public URL host). The Zabbix API token needs **super-admin** rights to
+  register proxies. The `/api/enroll` endpoint is IP rate-limited.
+
+New: `internal/pki` (CA load + CSR signing), `enroll_tokens` table, `POST /api/enroll` +
+admin `GET/POST/DELETE /api/probes/tokens`, `zabbix.EnsureActiveProxyCert`, and
+`deploy/probe-image/` (Dockerfile + enrollment entrypoint) built by CI.
+
+---
+
 ## [0.3.3] - 2026-08-14
 
 **Self-service password reset.** Users who forget their password can now recover it themselves

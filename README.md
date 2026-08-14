@@ -27,7 +27,9 @@ SQLite state, no external dependencies beyond a running Zabbix).
   by IP + account.
 - **Mobile-responsive** — off-canvas drawer sidebar, scrollable status chips, stacked card
   layout with labeled fields on small screens.
-- **Live probes** — real Zabbix proxy status (online/offline, last seen, mode).
+- **Live probes + enrollment** — real Zabbix proxy status, plus one-click **token enrollment**:
+  create a token in the GUI, run the generated `docker run` for the self-enrolling `argus-probe`
+  image, and the probe signs its own cert and registers itself (private key never leaves the probe).
 
 Argus is not tied to a specific network vendor or topology. Any setup that runs Zabbix —
 from a homelab to a multi-site enterprise — can layer Argus on top.
@@ -223,6 +225,7 @@ admin **Settings** page — a set env var takes precedence and locks the field.
 | **First-run admin** | `ARGUS_ADMIN_EMAIL`, `ARGUS_ADMIN_PASSWORD` |
 | **Security** | `ARGUS_COOKIE_SECURE`, `ARGUS_SECRET_KEY`, `ARGUS_TRUST_PROXY`, `ARGUS_LOGIN_MAX_ATTEMPTS`, `ARGUS_LOGIN_WINDOW_MINUTES` |
 | **Notifications** | `ARGUS_PUBLIC_URL`, `ARGUS_TZ` |
+| **Probe enrollment** | `ARGUS_CA_CERT_FILE`, `ARGUS_CA_KEY_FILE`, `ARGUS_PROBE_CORE_HOST` |
 | **Passkeys** | `ARGUS_RP_ID`, `ARGUS_RP_DISPLAY_NAME`, `ARGUS_RP_ORIGINS` |
 
 ---
@@ -257,8 +260,9 @@ CORE  [VM]
 ## CI/CD
 
 GitHub Actions (`.github/workflows/build.yml`):
-- **Push to `main`** → builds the multi-stage Docker image → pushes `:latest` + `:sha-xxxxx` to GHCR.
-- **Push a tag `vX.Y.Z`** → builds the versioned image → auto-publishes a GitHub Release
+- **Push to `main`** → builds the app image (`argus`) **and** the self-enrolling probe image
+  (`argus-probe`) → pushes `:latest` + `:sha-xxxxx` to GHCR.
+- **Push a tag `vX.Y.Z`** → builds the versioned images → auto-publishes a GitHub Release
   from the matching `CHANGELOG.md` section.
 
 ---
@@ -274,9 +278,9 @@ GitHub Actions (`.github/workflows/build.yml`):
 - v0.3.1 — Deep-link URLs (view reflected in the address bar; reload/bookmark/share safe)
 - v0.3.2 — Sidebar polish (persist collapsed state; theme moved to Settings/Account)
 - v0.3.3 — Self-service password reset (emailed single-use link)
+- v0.3.4 — Probe enrollment (GUI token → self-enrolling `argus-probe` container)
 
 **Planned:**
-- Probe enrollment — token-based PKI enrollment service (replaces manual `gen-certs.sh`)
 - Auto-discovery — UniFi API sweep + SNMP fingerprinting → automatic host/sensor provisioning
 - Global search — top-bar quick-switcher to jump to a host/sensor by name, IP, or tag
   (server-side, for large deployments; see DESIGN §16)

@@ -106,12 +106,12 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
   A leak is contained to one site; adding a site = sign one new leaf with the existing CA
   (`gen-certs.sh <site>`). `ca.key` stays offline, never on a probe. (Token-over-TLS as a
   fallback where mTLS is impractical.)
-- **Probe enrollment (token-based, preferred):** the core runs a small enrollment/PKI service.
-  Admin creates a short-TTL token in the UI → probe boots with the token → probe generates its
-  own keypair **locally** and sends a CSR → core validates the token, signs the cert, registers
-  the proxy via the Zabbix API, returns cert + `ca.crt`. The **private key never leaves the
-  probe**. This is the fast/scaled path; `gen-certs.sh` is the manual Phase-0 stand-in.
-  (Enrollment service = Phase 1 backend; "Add probe" wizard UI = Phase 4/6.)
+- **Probe enrollment (token-based, preferred): ✅ implemented (v0.3.4).** The core runs a small
+  enrollment/PKI service. Admin creates a short-TTL token in the UI → probe boots with the token →
+  probe generates its own keypair **locally** and sends a CSR → core validates the token, signs the
+  cert, registers the proxy via the Zabbix API, returns cert + `ca.crt`. The **private key never
+  leaves the probe**. Argus signs with the mounted CA (`ARGUS_CA_*`); the self-enrolling
+  `argus-probe` image runs the probe side. `gen-certs.sh` remains the manual fallback.
 - **CSRF / allowed hosts:** allowed-hosts/origins list = `monitoring.example.com` **+ the
   private IP**, with SameSite cookies + CSRF tokens.
 - **Passkey caveat (accepted):** WebAuthn RP IDs must be a domain, not a bare IP.

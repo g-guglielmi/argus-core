@@ -73,7 +73,30 @@ headless):
 If you'd rather follow the docs by hand for the base install, do that, then apply only the
 TimescaleDB block from `setup-core.sh` + the `zabbix_server.conf.snippet`. Same result.
 
-## Adding a new remote site later
+## Adding a new remote site — token enrollment from the Argus GUI (preferred)
+
+Once Argus is running with the CA mounted (`ARGUS_CA_CERT_FILE` / `ARGUS_CA_KEY_FILE`), adding a
+probe no longer needs `gen-certs.sh` or manual proxy registration:
+
+**Prerequisites (one-time):**
+- Mount the CA (`ca.crt` + `ca.key`) read-only into the Argus container and set the two
+  `ARGUS_CA_*` paths; set `ARGUS_PROBE_CORE_HOST` to the address probes dial for `:10051`.
+- The Zabbix API token Argus uses must have **super-admin** rights (to run `proxy.create`).
+- For remote sites with no VPN, publish **TCP 10051** on the core to the internet (HAProxy TCP
+  passthrough / NAT), and make the `ghcr.io/<owner>/argus-probe` package public (or `docker login`).
+
+**Per probe:**
+1. In Argus → **Probes → Add probe**: enter the site name + token TTL. Argus mints a single-use
+   token and shows a ready-to-run `docker run` for `argus-probe` (the token is shown once).
+2. On the site's Docker host, run that command. On first boot the probe generates its own key +
+   CSR, redeems the token (`/api/enroll`), receives its signed cert + `ca.crt`, and starts the
+   proxy. **The private key never leaves the probe.** Certs persist on the mounted volume, so the
+   single-use token isn't re-redeemed on restart.
+3. The proxy appears **online** in the Probes list within a minute.
+
+The manual flow below stays available as a fallback (e.g. before the CA is mounted).
+
+## Adding a new remote site later — manual (fallback)
 
 The CA never changes — you only mint one new leaf:
 1. `cd pki && ./gen-certs.sh <newsite>` — reuses the existing CA, leaves other certs untouched.
@@ -98,6 +121,8 @@ Never copy `ca.key` or another site's key to the probe.
 | `probe/run-probe.sh` | Parametrized `docker run` for a probe (active proxy, mTLS, 7-day buffer) |
 | `unraid/zabbix-proxy-site1.xml` | unRAID Community Applications template for the site1 probe |
 | `unraid/argus.xml` | unRAID Community Applications template for the Argus app (all env vars as fields) |
+| `probe-image/Dockerfile` | Self-enrolling probe image (stock Zabbix proxy + first-boot enrollment) |
+| `probe-image/entrypoint.sh` | Enrollment entrypoint: generate key/CSR, redeem token, write certs, start proxy |
 
 ## Troubleshooting / known issues
 

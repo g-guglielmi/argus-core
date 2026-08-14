@@ -43,6 +43,11 @@
   <Config Name="Public URL" Target="ARGUS_PUBLIC_URL" Default="https://monitoring.example.com" Mode="" Description="External base URL, used for Open/Acknowledge links in notifications." Type="Variable" Display="always" Required="false" Mask="false"></Config>
   <Config Name="Timezone" Target="ARGUS_TZ" Default="Europe/Rome" Mode="" Description="IANA timezone for notification timestamps." Type="Variable" Display="always" Required="false" Mask="false">Europe/Rome</Config>
 
+  <Config Name="CA (probe enrollment)" Target="/ca" Default="/mnt/user/appdata/argus-pki" Mode="ro" Description="Folder holding ca.crt + ca.key (from gen-certs.sh). Mounted read-only; enables the Probes -&gt; Add probe wizard. Leave the enrollment fields blank to keep enrollment off." Type="Path" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="CA cert file" Target="ARGUS_CA_CERT_FILE" Default="/ca/ca.crt" Mode="" Description="Path to the CA certificate inside the container (set only if you mounted the CA above)." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="CA key file" Target="ARGUS_CA_KEY_FILE" Default="/ca/ca.key" Mode="" Description="Path to the CA private key inside the container. Needed to sign probe certs." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="Probe core host" Target="ARGUS_PROBE_CORE_HOST" Default="monitoring.example.com" Mode="" Description="Address probes dial for :10051 (FQDN that publishes 10051, or LAN IP). Defaults to the Public URL host." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+
   <Config Name="Login Max Attempts" Target="ARGUS_LOGIN_MAX_ATTEMPTS" Default="7" Mode="" Description="Failed logins per window before throttling." Type="Variable" Display="advanced" Required="false" Mask="false">7</Config>
   <Config Name="Login Window (minutes)" Target="ARGUS_LOGIN_WINDOW_MINUTES" Default="15" Mode="" Description="Rate-limit sliding window." Type="Variable" Display="advanced" Required="false" Mask="false">15</Config>
 
