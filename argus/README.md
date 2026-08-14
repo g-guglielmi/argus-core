@@ -1,11 +1,14 @@
 # Argus
 
-The custom monitoring "cockpit" — a Go backend that serves an embedded React SPA and talks
-to Zabbix via its JSON-RPC API. App data (users, roles, config, CA, enrollment tokens) lives
-in embedded SQLite; metrics stay in Zabbix/TimescaleDB and are read through the API.
+A self-hosted, PRTG-style monitoring cockpit layered on Zabbix — a Go backend that serves
+an embedded React SPA and talks to Zabbix via its JSON-RPC API. App data (users, sessions,
+notification channels, suppressions) lives in embedded SQLite; metrics stay in
+Zabbix/TimescaleDB and are read through the API. Single distroless container, no external
+dependencies beyond a running Zabbix.
 
-Current state: **Phase 1 walking skeleton** — serves the SPA, exposes health endpoints, and
-checks Zabbix reachability. Auth, PKI/enrollment, dashboards, and notifications come next.
+Current state: **v0.2.8** — monitoring tree with live data and charts, full auth (roles,
+TOTP, passkeys), cross-site overview, Discord/Telegram/email notifications with trend
+graphs, mobile-responsive layout, login rate-limiting, and at-rest encryption.
 
 ## Layout
 ```

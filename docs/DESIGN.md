@@ -2,10 +2,10 @@
 
 Status: **Design locked (v1)** · Last updated: 2026-08-09
 
-A self-hosted, PRTG-style monitoring system for a 5-site UniFi homelab, built as a
-**hybrid**: Zabbix as the collection/transport/buffering engine, plus a custom web
-application ("the cockpit") that owns the UI, authentication, dashboards, and
-per-site notifications.
+A self-hosted, PRTG-style monitoring system built as a **hybrid**: Zabbix as the
+collection/transport/buffering engine, plus a custom web application ("the cockpit")
+that owns the UI, authentication, dashboards, and per-site notifications. Not tied to
+any specific network vendor — any Zabbix deployment can layer this on top.
 
 ---
 
