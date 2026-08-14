@@ -11,6 +11,17 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.3.2] - 2026-08-14
+
+**Sidebar polish.**
+- The desktop sidebar **remembers whether it's collapsed or expanded** across reloads (stored
+  per-device, like the theme).
+- Removed the **theme toggle from the sidebar** now that it lives on the Settings page. To keep
+  it reachable for every role (Settings is admin-only), the theme switch is also on the
+  **Account** page — available to all signed-in users.
+
+---
+
 ## [0.3.1] - 2026-08-14
 
 **Deep-link URLs — the view now lives in the address bar.** Navigation was tracked in React

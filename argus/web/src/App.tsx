@@ -403,8 +403,6 @@ const ic = {
   paused: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>,
   hidden: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M2 12s3.5-7 10-7 10 7 10 7a17 17 0 0 1-2.2 2.9M3 3l18 18M9.5 9.5a3 3 0 0 0 4.2 4.2" /></svg>,
 }
-const sun = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" /></svg>
-const moon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" /></svg>
 
 function useTheme(): ['dark' | 'light', () => void] {
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -454,7 +452,7 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
   // Admin-only views can't be restored from a shared/stale URL by a non-admin.
   const clampView = (v: View): View => ((v === 'users' || v === 'settings') && me.role !== 'admin' ? 'overview' : v)
   const [view, setView] = useState<View>(() => clampView(parseNav().view))
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('argus-collapsed') === '1' } catch { return false } })
   const [navOpen, setNavOpen] = useState(false) // mobile drawer
   const [menuOpen, setMenuOpen] = useState(false)
   const [theme, toggleTheme] = useTheme()
@@ -466,6 +464,8 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
     const load = () => fetch('/api/sensors').then((r) => (r.ok ? r.json() : [])).then((s) => setSensors(s || [])).catch(() => {})
     load(); const t = setInterval(load, 30000); const off = onDataRefresh(load); return () => { clearInterval(t); off() }
   }, [])
+  // Remember the desktop sidebar collapsed/expanded choice across reloads.
+  useEffect(() => { try { localStorage.setItem('argus-collapsed', collapsed ? '1' : '0') } catch { /* ignore */ } }, [collapsed])
   const cnt = (st: string) => sensors.filter((s) => s.state === st).length
   const errN = cnt('error'), warnN = cnt('warning'), ackN = cnt('acked'), pausedN = cnt('paused'), hiddenN = cnt('hidden'), okN = cnt('ok')
 
@@ -547,7 +547,6 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
         {nav('probes', 'Probes', { soon: true })}
         {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('users', 'Users')}{nav('settings', 'Settings')}</>}
         <div className="side-foot">
-          <button className="themebtn" onClick={toggleTheme}>{theme === 'dark' ? moon : sun}<span>Theme</span></button>
           <div className="kebab-wrap" style={{ display: 'block' }}>
             <button className="userbtn" onClick={() => setMenuOpen((o) => !o)}>
               <div className="avatar">{(me.name?.[0] || me.email[0] || '?').toUpperCase()}{(me.surname?.[0] || '').toUpperCase()}</div>
@@ -593,7 +592,7 @@ function AppShell({ me, onLogout, passkeysAvailable }: { me: Me; onLogout: () =>
           {view === 'probes' && <ProbesView />}
           {view === 'users' && me.role === 'admin' && <UsersView />}
           {view === 'settings' && me.role === 'admin' && <SettingsView theme={theme} toggleTheme={toggleTheme} />}
-          {view === 'account' && <AccountView passkeysAvailable={passkeysAvailable} />}
+          {view === 'account' && <AccountView passkeysAvailable={passkeysAvailable} theme={theme} toggleTheme={toggleTheme} />}
         </div>
       </div>
     </div>
@@ -1690,9 +1689,14 @@ function UsersView() {
   )
 }
 
-function AccountView({ passkeysAvailable }: { passkeysAvailable: boolean }) {
+function AccountView({ passkeysAvailable, theme, toggleTheme }: { passkeysAvailable: boolean; theme: 'dark' | 'light'; toggleTheme: () => void }) {
   return (
     <div style={{ display: 'grid', gap: '1rem', maxWidth: 560 }}>
+      <section style={card}>
+        <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Appearance</h2>
+        <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>Theme is remembered on this device. Currently {theme}.</p>
+        <button type="button" style={btn} onClick={toggleTheme}>Switch to {theme === 'dark' ? 'light' : 'dark'} mode</button>
+      </section>
       <PasswordCard />
       <MfaCard />
       {passkeysAvailable && <PasskeyCard />}
