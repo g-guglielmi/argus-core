@@ -31,11 +31,11 @@ func slugify(s string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-// probeCoreHost is the address a probe dials for the Zabbix server (:10051): the explicit
-// ARGUS_PROBE_CORE_HOST, else the Public URL's hostname.
+// probeCoreHost is the address a probe dials for the Zabbix server (:10051): the configured
+// value (Settings / ARGUS_PROBE_CORE_HOST), else the Public URL's hostname.
 func (s *Server) probeCoreHost() string {
-	if s.cfg.ProbeCoreHost != "" {
-		return s.cfg.ProbeCoreHost
+	if h := s.mgr.ProbeCoreHost(); h != "" {
+		return h
 	}
 	if p := s.mgr.PublicURL(); p != "" {
 		if u, err := url.Parse(p); err == nil && u.Hostname() != "" {

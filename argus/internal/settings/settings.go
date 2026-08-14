@@ -25,12 +25,13 @@ import (
 
 // Setting keys (also the JSON keys used by the API and the app_meta suffix).
 const (
-	KeyZabbixURL   = "zabbix_url"
-	KeyZabbixToken = "zabbix_token"
-	KeyPublicURL   = "public_url"
-	KeyTimezone    = "timezone"
-	KeyLoginMax    = "login_max_attempts"
-	KeyLoginWindow = "login_window_minutes"
+	KeyZabbixURL     = "zabbix_url"
+	KeyZabbixToken   = "zabbix_token"
+	KeyPublicURL     = "public_url"
+	KeyTimezone      = "timezone"
+	KeyLoginMax      = "login_max_attempts"
+	KeyLoginWindow   = "login_window_minutes"
+	KeyProbeCoreHost = "probe_core_host"
 )
 
 const metaPrefix = "setting:"
@@ -54,6 +55,7 @@ var defs = []def{
 	{KeyTimezone, "ARGUS_TZ", "Timezone", "General", "tz", false, "UTC", "IANA name for notification timestamps, e.g. Europe/Rome."},
 	{KeyLoginMax, "ARGUS_LOGIN_MAX_ATTEMPTS", "Login max attempts", "Security", "int", false, "7", "Failed sign-ins per window before throttling."},
 	{KeyLoginWindow, "ARGUS_LOGIN_WINDOW_MINUTES", "Login window (minutes)", "Security", "int", false, "15", "Sliding window for the attempt counter."},
+	{KeyProbeCoreHost, "ARGUS_PROBE_CORE_HOST", "Probe core host", "Probe enrollment", "text", false, "", "Address probes dial for :10051 (host or host:port), baked into new enrollments. Falls back to the Public URL host if empty."},
 }
 
 func defFor(key string) (def, bool) {
@@ -94,10 +96,11 @@ type Manager struct {
 	zbx     *zabbix.Client
 	limiter *ratelimit.Limiter
 
-	mu        sync.RWMutex
-	snap      map[string]resolved
-	publicURL string
-	loc       *time.Location
+	mu            sync.RWMutex
+	snap          map[string]resolved
+	publicURL     string
+	loc           *time.Location
+	probeCoreHost string
 }
 
 // New builds the manager, creates the login limiter, loads any stored overrides, and applies
@@ -127,6 +130,14 @@ func (m *Manager) Location() *time.Location {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.loc
+}
+
+// ProbeCoreHost is the address probes should dial for the Zabbix server (:10051), or "" to let
+// the caller fall back to the Public URL host.
+func (m *Manager) ProbeCoreHost() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.probeCoreHost
 }
 
 // List returns every setting's current state for the admin UI.
@@ -227,6 +238,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	}
 	maxN := atoiOr(effective(snap[KeyLoginMax]), 7)
 	winMin := atoiOr(effective(snap[KeyLoginWindow]), 15)
+	pch := effective(snap[KeyProbeCoreHost])
 
 	// Apply to the live subsystems (each is independently lock-guarded).
 	m.zbx.Configure(zURL, zTok)
@@ -236,6 +248,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	m.snap = snap
 	m.publicURL = pub
 	m.loc = loc
+	m.probeCoreHost = pch
 	m.mu.Unlock()
 	return nil
 }

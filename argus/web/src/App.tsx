@@ -774,6 +774,7 @@ function SettingsView({ theme, toggleTheme }: { theme: 'dark' | 'light'; toggleT
     { name: 'Connection', title: 'Zabbix connection', note: 'Where Argus reads monitoring data from.' },
     { name: 'General', title: 'General', note: 'Timezone and the external URL used in notification links.' },
     { name: 'Security', title: 'Login rate limiting', note: 'Brute-force protection thresholds.' },
+    { name: 'Probe enrollment', title: 'Probe enrollment', note: 'The address new probes are told to dial for the Zabbix server (:10051).' },
   ]
 
   return (
