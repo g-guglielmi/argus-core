@@ -372,7 +372,32 @@ views are clamped for non-admins on a shared/stale URL.
 
 ---
 
-## 18. Parking lot / future
+## 18. Probe fleet updates — control plane (planned, after v0.4.0 is validated)
+
+**Constraint.** Sites are outbound-only (probes dial out, nothing inbound), so Argus can't *push*
+into a probe. Updates are therefore **pull-based but Argus-coordinated**: Argus is the control
+plane; the probe checks in and converges.
+
+**Model (decided): control plane + opt-in self-update.**
+- Argus holds a **target probe version** (dashboard-settable: `latest` or a pinned `vX.Y.Z`) and
+  shows each probe's running version vs. target (fleet visibility).
+- The `argus-probe` image gains an optional **self-updater** loop: it polls Argus for the target
+  and, if it differs from its baked-in version, pulls + recreates itself. Enabled per-probe (mount
+  the Docker socket + a flag, e.g. `ARGUS_PROBE_SELFUPDATE=1`); **off by default**.
+- Probes without the updater surface as "outdated — run this" with a one-click command (socket-free
+  manual path).
+
+**Tradeoff acknowledged.** Any automatic in-place container update needs Docker socket access at
+the site (the same mechanism Watchtower uses). The win over Watchtower is **central version control
++ fleet visibility + no third-party container + you decide when**. To isolate the socket, the
+updater can be a minimal sidecar rather than the proxy itself.
+
+**Open detail.** Probe→Argus check-in auth — issue the probe a long-lived credential at enrollment
+(tied to its proxy name) for version check-ins.
+
+---
+
+## 19. Parking lot / future
 - Public status page (Uptime-Kuma-style shareable page).
 - Native mobile apps (only if the responsive web UI proves insufficient).
 - Escalation policies / repeat notifications beyond flap debounce.

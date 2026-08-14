@@ -28,6 +28,7 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 - [x] **Token-based enrollment / PKI service** — mint token → probe self-generates key + CSR → core signs & registers proxy via Zabbix API; private key never leaves the probe — v0.4.0
 - [x] **"Add probe" wizard** UI + self-enrolling `argus-probe` image — v0.4.0
 - [ ] Bring **site2–site5** probes online (now: Probes → Add probe) — _(ops)_ S each
+- [ ] **Probe fleet updates — control plane + opt-in self-update** (Argus sets target version + shows fleet; probe self-updates via mounted socket when enabled, else one-click command). Outbound-only means pull-based, not push. Build **after v0.4.0 is validated**. See DESIGN §18 — _(BE+FE+image)_ M
 - [ ] Golden Debian VM template (Packer) + cloud-init for scaled rollout — _(ops)_ M
 
 ### B. Auto-provisioning / discovery (Phase 4 — "replaces PRTG Add Sensor")
