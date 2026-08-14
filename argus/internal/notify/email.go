@@ -12,38 +12,53 @@ import (
 	"time"
 )
 
-// Email config keys:
+// SMTP describes an SMTP transport (host/port/auth/from/tls), independent of message content —
+// so both alert emails and transactional mail (e.g. password resets) can share one sender.
+//
+// Config keys (from an email channel's config map):
 //   host     — SMTP server hostname
 //   port     — SMTP port (default 587)
 //   username — SMTP auth user ("" = no auth)
 //   password — SMTP auth password
 //   from     — envelope + header From address
-//   to       — comma-separated recipient list
+//   to       — comma-separated recipient list (alerts only; transactional mail passes its own)
 //   tls      — "starttls" (default), "tls" (implicit, e.g. port 465), or "none"
-func sendEmail(ctx context.Context, cfg map[string]string, e Event) error {
-	host := strings.TrimSpace(cfg["host"])
-	from := strings.TrimSpace(cfg["from"])
-	to := splitList(cfg["to"])
-	if host == "" || from == "" || len(to) == 0 {
+type SMTP struct {
+	Host, Port, Username, Password, From, TLS string
+}
+
+// SMTPFromConfig extracts transport settings from an email channel's config map.
+func SMTPFromConfig(cfg map[string]string) SMTP {
+	return SMTP{
+		Host:     strings.TrimSpace(cfg["host"]),
+		Port:     strings.TrimSpace(cfg["port"]),
+		Username: strings.TrimSpace(cfg["username"]),
+		Password: cfg["password"],
+		From:     strings.TrimSpace(cfg["from"]),
+		TLS:      strings.TrimSpace(cfg["tls"]),
+	}
+}
+
+// Send delivers a pre-built RFC 5322 message to the given recipients over this transport.
+func (s SMTP) Send(ctx context.Context, to []string, msg []byte) error {
+	if s.Host == "" || s.From == "" || len(to) == 0 {
 		return fmt.Errorf("email: host, from and to are required")
 	}
-	port := strings.TrimSpace(cfg["port"])
+	port := s.Port
 	if port == "" {
 		port = "587"
 	}
-	mode := strings.TrimSpace(cfg["tls"])
+	mode := s.TLS
 	if mode == "" {
 		mode = "starttls"
 	}
-	addr := net.JoinHostPort(host, port)
-
-	msg := buildMessage(from, to, e)
+	addr := net.JoinHostPort(s.Host, port)
 
 	dialer := &net.Dialer{Timeout: 15 * time.Second}
 	var conn net.Conn
 	var err error
 	if mode == "tls" {
-		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{ServerName: host})
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{ServerName: s.Host})
 	} else {
 		conn, err = dialer.DialContext(ctx, "tcp", addr)
 	}
@@ -52,7 +67,7 @@ func sendEmail(ctx context.Context, cfg map[string]string, e Event) error {
 	}
 	defer conn.Close()
 
-	c, err := smtp.NewClient(conn, host)
+	c, err := smtp.NewClient(conn, s.Host)
 	if err != nil {
 		return fmt.Errorf("email: smtp client: %w", err)
 	}
@@ -60,20 +75,20 @@ func sendEmail(ctx context.Context, cfg map[string]string, e Event) error {
 
 	if mode == "starttls" {
 		if ok, _ := c.Extension("STARTTLS"); ok {
-			if err := c.StartTLS(&tls.Config{ServerName: host}); err != nil {
+			if err := c.StartTLS(&tls.Config{ServerName: s.Host}); err != nil {
 				return fmt.Errorf("email: starttls: %w", err)
 			}
 		}
 	}
 
-	if user := strings.TrimSpace(cfg["username"]); user != "" {
-		auth := smtp.PlainAuth("", user, cfg["password"], host)
+	if s.Username != "" {
+		auth := smtp.PlainAuth("", s.Username, s.Password, s.Host)
 		if err := c.Auth(auth); err != nil {
 			return fmt.Errorf("email: auth: %w", err)
 		}
 	}
 
-	if err := c.Mail(from); err != nil {
+	if err := c.Mail(s.From); err != nil {
 		return fmt.Errorf("email: MAIL FROM: %w", err)
 	}
 	for _, rcpt := range to {
@@ -92,6 +107,35 @@ func sendEmail(ctx context.Context, cfg map[string]string, e Event) error {
 		return fmt.Errorf("email: close: %w", err)
 	}
 	return c.Quit()
+}
+
+// sendEmail delivers an alert Event to an email channel's recipients.
+func sendEmail(ctx context.Context, cfg map[string]string, e Event) error {
+	s := SMTPFromConfig(cfg)
+	to := splitList(cfg["to"])
+	if s.Host == "" || s.From == "" || len(to) == 0 {
+		return fmt.Errorf("email: host, from and to are required")
+	}
+	return s.Send(ctx, to, buildMessage(s.From, to, e))
+}
+
+// SimpleMessage builds a minimal multipart/alternative email (plain + HTML) for transactional
+// mail such as password resets, with a Q-encoded subject.
+func SimpleMessage(from string, to []string, subject, text, html string) []byte {
+	var b strings.Builder
+	b.WriteString("From: Argus <" + from + ">\r\n")
+	b.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
+	b.WriteString("Subject: " + mime.QEncoding.Encode("UTF-8", subject) + "\r\n")
+	b.WriteString("MIME-Version: 1.0\r\n")
+	b.WriteString("Content-Type: multipart/alternative; boundary=\"" + altBoundary + "\"\r\n\r\n")
+	b.WriteString("--" + altBoundary + "\r\n")
+	b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
+	b.WriteString(text)
+	b.WriteString("\r\n\r\n--" + altBoundary + "\r\n")
+	b.WriteString("Content-Type: text/html; charset=UTF-8\r\n\r\n")
+	b.WriteString(html)
+	b.WriteString("\r\n--" + altBoundary + "--\r\n")
+	return []byte(b.String())
 }
 
 const (

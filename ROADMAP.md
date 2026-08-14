@@ -47,7 +47,7 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 - [ ] **Settings expansion** — retention controls, proxy health, allowed-hosts — _(FE+BE)_ S–M
 
 ### E. Auth / account gaps
-- [ ] **Self-service email password reset** (SMTP reset-link flow) — _(BE)_ M
+- [x] **Self-service email password reset** (single-use emailed link; reuses the email channel) — v0.4.0
 - [ ] **Per-user landing page** preference (Overview vs Errors) — _(FE)_ S
 
 ### F. UX / quality-of-life
@@ -70,6 +70,6 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 ## Suggested near-term order
 
 1. ~~Deep-link URLs~~ ✅ (done) — small, felt every day
-2. **Self-service password reset** — closes a real auth gap
+2. ~~Self-service password reset~~ ✅ (done, v0.4.0)
 3. **Probe enrollment** — unblocks the site2–5 fleet
 4. Then the big lift: **discovery + device templates** (B/C) → the real path to a production **1.0**.

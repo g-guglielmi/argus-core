@@ -11,6 +11,29 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.0] - 2026-08-14
+
+**Self-service password reset.** Users who forget their password can now recover it themselves
+via an emailed link — no admin intervention.
+
+- A **"Forgot password?"** link on the sign-in screen takes an email and sends a **single-use,
+  1-hour reset link**; the reset page sets a new password. The link (`/?reset=…`) carries a
+  256-bit token whose **SHA-256 is stored** (never the token itself), consumed on use.
+- **Anti-enumeration**: the request endpoint always responds the same way and does its work in
+  the background, so it never reveals whether an account exists. Requests are **rate-limited** by
+  IP and by email; the reset submission is throttled by IP.
+- On success, **all of that user's sessions are revoked** (sign-out everywhere). **MFA is
+  untouched** — a reset changes only the password, so two-factor is still required at sign-in.
+- **Delivery reuses your existing email notification channel** as the SMTP sender — no separate
+  mail config. The "Forgot password?" link only appears when an email channel is configured
+  (advertised via `/api/features`, like passkeys). The link uses the Public URL when set, else
+  the request's own origin.
+
+New: `password_resets` table + token lifecycle, `POST /api/password-reset/{request,confirm}`,
+a reusable `notify.SMTP` transport (factored out of the alert email sender).
+
+---
+
 ## [0.3.2] - 2026-08-14
 
 **Sidebar polish.**

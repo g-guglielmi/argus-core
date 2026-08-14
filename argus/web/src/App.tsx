@@ -246,16 +246,20 @@ export default function App() {
   const [me, setMe] = useState<Me | null>(null)
   const [loading, setLoading] = useState(true)
   const [passkeysAvailable, setPasskeysAvailable] = useState(false)
+  const [passwordReset, setPasswordReset] = useState(false)
+  // A password-reset link (?reset=…) shows the set-new-password screen, signed in or not.
+  const [resetToken, setResetToken] = useState<string | null>(() => new URLSearchParams(window.location.search).get('reset'))
 
   useEffect(() => {
     fetch('/api/me').then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => setMe(null)).finally(() => setLoading(false))
     // Passkeys require the server to be configured for WebAuthn AND a secure context
     // (HTTPS or localhost) — over a private IP on plain HTTP they can't be used.
-    fetch('/api/features').then((r) => r.json()).then((f) => setPasskeysAvailable(!!f.passkeys && window.isSecureContext)).catch(() => {})
+    fetch('/api/features').then((r) => r.json()).then((f) => { setPasskeysAvailable(!!f.passkeys && window.isSecureContext); setPasswordReset(!!f.password_reset) }).catch(() => {})
   }, [])
 
+  if (resetToken) return <ResetPassword token={resetToken} onDone={() => { window.history.replaceState({}, '', window.location.pathname); setResetToken(null) }} />
   if (loading) return <Frame><p>Loading…</p></Frame>
-  if (!me) return <Login onSuccess={setMe} passkeysAvailable={passkeysAvailable} />
+  if (!me) return <Login onSuccess={setMe} passkeysAvailable={passkeysAvailable} passwordReset={passwordReset} />
   return <AppShell me={me} onLogout={() => setMe(null)} passkeysAvailable={passkeysAvailable} />
 }
 
@@ -269,11 +273,12 @@ function Frame({ children }: { children: ReactNode }) {
   )
 }
 
-function Login({ onSuccess, passkeysAvailable }: { onSuccess: (m: Me) => void; passkeysAvailable: boolean }) {
+function Login({ onSuccess, passkeysAvailable, passwordReset }: { onSuccess: (m: Me) => void; passkeysAvailable: boolean; passwordReset: boolean }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [forgot, setForgot] = useState(false)
 
   async function passkeyLogin() {
     setBusy(true); setError(null)
@@ -309,6 +314,8 @@ function Login({ onSuccess, passkeysAvailable }: { onSuccess: (m: Me) => void; p
       onSuccess(await res.json())
     } catch { setError('Could not reach the server') } finally { setBusy(false) }
   }
+
+  if (forgot) return <ForgotPassword initialEmail={email} onBack={() => setForgot(false)} />
 
   if (mfaToken) {
     return (
@@ -364,11 +371,100 @@ function Login({ onSuccess, passkeysAvailable }: { onSuccess: (m: Me) => void; p
           {error && <p style={{ color: 'crimson', margin: '0 0 0.75rem' }}>{error}</p>}
           <button type="submit" disabled={busy} style={{ ...btn, width: '100%' }}>{busy ? 'Signing in…' : 'Sign in'}</button>
         </form>
+        {passwordReset && (
+          <div style={{ textAlign: 'center', marginTop: '0.7rem' }}>
+            <button type="button" onClick={() => { setForgot(true); setError(null) }} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.85rem', padding: 0 }}>Forgot password?</button>
+          </div>
+        )}
         {passkeysAvailable && (
           <>
             <div style={{ textAlign: 'center', color: '#666', margin: '0.9rem 0 0.6rem', fontSize: '0.85rem' }}>or</div>
             <button onClick={passkeyLogin} disabled={busy} style={{ ...ghost, width: '100%' }}>Sign in with a passkey</button>
           </>
+        )}
+      </section>
+    </Frame>
+  )
+}
+
+function ForgotPassword({ initialEmail, onBack }: { initialEmail: string; onBack: () => void }) {
+  const [email, setEmail] = useState(initialEmail)
+  const [sent, setSent] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault(); setBusy(true)
+    try {
+      await fetch('/api/password-reset/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) }).catch(() => {})
+      setSent(true)
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <Frame>
+      <section style={{ ...card, maxWidth: 380, marginTop: '1.5rem' }}>
+        <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Reset your password</h2>
+        {sent ? (
+          <>
+            <p style={{ color: '#aaa', marginTop: 0 }}>If an account exists for that email, a reset link is on its way. It's valid for 1 hour — check your spam folder if it doesn't arrive.</p>
+            <button onClick={onBack} style={{ ...btn, width: '100%' }}>Back to sign in</button>
+          </>
+        ) : (
+          <form onSubmit={submit}>
+            <p style={{ color: '#aaa', marginTop: 0 }}>Enter your account email and we'll send a reset link.</p>
+            <label style={{ display: 'block', marginBottom: '1rem' }}>Email
+              <input style={{ ...input, width: '100%', marginTop: 4 }} type="email" value={email} autoComplete="username" onChange={(e) => setEmail(e.target.value)} required autoFocus />
+            </label>
+            <button type="submit" disabled={busy} style={{ ...btn, width: '100%' }}>{busy ? 'Sending…' : 'Send reset link'}</button>
+            <button type="button" onClick={onBack} style={{ ...ghost, width: '100%', marginTop: '0.6rem' }}>Back</button>
+          </form>
+        )}
+      </section>
+    </Frame>
+  )
+}
+
+function ResetPassword({ token, onDone }: { token: string; onDone: () => void }) {
+  const [pw, setPw] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e: FormEvent) {
+    e.preventDefault(); setError(null)
+    if (pw !== confirm) { setError('The passwords do not match.'); return }
+    if (pw.length < 8) { setError('Password must be at least 8 characters.'); return }
+    setBusy(true)
+    try {
+      const res = await fetch('/api/password-reset/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, new_password: pw }) })
+      if (!res.ok) { setError(await errText(res, 'Could not reset password')); return }
+      setDone(true)
+    } catch { setError('Could not reach the server') } finally { setBusy(false) }
+  }
+
+  return (
+    <Frame>
+      <section style={{ ...card, maxWidth: 380, marginTop: '1.5rem' }}>
+        <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Set a new password</h2>
+        {done ? (
+          <>
+            <p style={{ color: 'var(--ok)', marginTop: 0 }}>Your password has been updated, and other sessions were signed out. If you use two-factor, you'll still need your code to sign in.</p>
+            <button onClick={onDone} style={{ ...btn, width: '100%' }}>Go to sign in</button>
+          </>
+        ) : (
+          <form onSubmit={submit}>
+            {/* Hidden username so password managers save this against the account. */}
+            <input type="text" name="username" autoComplete="username" tabIndex={-1} aria-hidden="true" readOnly value="" style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }} />
+            <label style={{ display: 'block', marginBottom: '0.75rem' }}>New password (min 8)
+              <input style={{ ...input, width: '100%', marginTop: 4 }} type="password" value={pw} autoComplete="new-password" onChange={(e) => setPw(e.target.value)} required minLength={8} autoFocus />
+            </label>
+            <label style={{ display: 'block', marginBottom: '1rem' }}>Confirm new password
+              <input style={{ ...input, width: '100%', marginTop: 4 }} type="password" value={confirm} autoComplete="new-password" onChange={(e) => setConfirm(e.target.value)} required />
+            </label>
+            {error && <p style={{ color: 'crimson', margin: '0 0 0.75rem' }}>{error}</p>}
+            <button type="submit" disabled={busy} style={{ ...btn, width: '100%' }}>{busy ? 'Updating…' : 'Update password'}</button>
+          </form>
         )}
       </section>
     </Frame>

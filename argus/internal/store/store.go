@@ -100,6 +100,16 @@ CREATE TABLE IF NOT EXISTS mfa_challenges (
   expires_at INTEGER NOT NULL
 );
 
+-- Single-use, short-lived self-service password-reset tokens. id is the SHA-256 of the
+-- token emailed to the user (never stored in the clear); consumed on use.
+CREATE TABLE IF NOT EXISTS password_resets (
+  id         TEXT PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
+
 -- Registered WebAuthn credentials (passkeys). credential is the JSON-serialized
 -- webauthn.Credential; the raw credential ID is the primary key.
 CREATE TABLE IF NOT EXISTS passkeys (
@@ -467,6 +477,46 @@ func (s *Store) MFAChallengeUserID(ctx context.Context, id string) (int64, error
 
 func (s *Store) DeleteMFAChallenge(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM mfa_challenges WHERE id=?`, id)
+	return err
+}
+
+// --- password resets ---
+
+func (s *Store) CreatePasswordReset(ctx context.Context, id string, userID int64, expires time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO password_resets(id,user_id,created_at,expires_at) VALUES(?,?,?,?)`,
+		id, userID, time.Now().Unix(), expires.Unix())
+	return err
+}
+
+// PasswordResetUserID returns the user for a valid, unexpired reset token, deleting it if expired.
+func (s *Store) PasswordResetUserID(ctx context.Context, id string) (int64, error) {
+	var userID, expires int64
+	err := s.db.QueryRowContext(ctx,
+		`SELECT user_id,expires_at FROM password_resets WHERE id=?`, id).Scan(&userID, &expires)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	if time.Now().Unix() > expires {
+		_, _ = s.db.ExecContext(ctx, `DELETE FROM password_resets WHERE id=?`, id)
+		return 0, ErrNotFound
+	}
+	return userID, nil
+}
+
+// DeleteUserPasswordResets clears every outstanding reset token for a user (called after a
+// successful reset, so a second link can't be reused).
+func (s *Store) DeleteUserPasswordResets(ctx context.Context, userID int64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM password_resets WHERE user_id=?`, userID)
+	return err
+}
+
+// DeleteUserSessions signs a user out everywhere (called after a password reset).
+func (s *Store) DeleteUserSessions(ctx context.Context, userID int64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id=?`, userID)
 	return err
 }
 

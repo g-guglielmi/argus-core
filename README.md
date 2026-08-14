@@ -19,7 +19,8 @@ SQLite state, no external dependencies beyond a running Zabbix).
   60-second debounce, recovery notices, rich messages (status icons, value + threshold,
   2-hour trend graph, deep-links, one-click acknowledge).
 - **Auth** — three roles (admin / helpdesk / viewer), argon2id passwords, TOTP two-factor
-  with recovery codes, WebAuthn passkeys, admin user management, login rate-limiting.
+  with recovery codes, WebAuthn passkeys, self-service password reset, admin user management,
+  login rate-limiting.
 - **Admin Settings** — an in-app page to change the Zabbix connection, public URL, timezone,
   and login limits at runtime (no redeploy); env vars, when set, take precedence and lock the field.
 - **Security** — AES-256-GCM encryption at rest for stored secrets, brute-force protection
@@ -271,6 +272,8 @@ GitHub Actions (`.github/workflows/build.yml`):
 - v0.2.7–v0.2.8 — Security hardening (rate limiting, at-rest encryption)
 - v0.3.0 — Admin Settings page (runtime config)
 - v0.3.1 — Deep-link URLs (view reflected in the address bar; reload/bookmark/share safe)
+- v0.3.2 — Sidebar polish (persist collapsed state; theme moved to Settings/Account)
+- v0.4.0 — Self-service password reset (emailed single-use link)
 
 **Planned:**
 - Probe enrollment — token-based PKI enrollment service (replaces manual `gen-certs.sh`)

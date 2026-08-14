@@ -67,6 +67,9 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/features", s.handleFeatures)
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
+	// self-service password reset (public; email-delivered single-use token)
+	mux.HandleFunc("POST /api/password-reset/request", s.handleRequestPasswordReset)
+	mux.HandleFunc("POST /api/password-reset/confirm", s.handleConfirmPasswordReset)
 	// signed one-click acknowledge link from notifications (public; HMAC-verified, GET confirms)
 	mux.HandleFunc("GET /api/alert/ack", s.handleAlertAck)
 	mux.HandleFunc("POST /api/alert/ack", s.handleAlertAck)
@@ -172,8 +175,10 @@ func (s *Server) handleAPIHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleFeatures advertises optional capabilities so the UI can adapt (public).
-func (s *Server) handleFeatures(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]bool{"passkeys": s.wa != nil})
+func (s *Server) handleFeatures(w http.ResponseWriter, r *http.Request) {
+	// Self-service password reset needs an email channel to deliver the link.
+	resetReady := s.firstEmailChannel(r.Context()) != nil
+	writeJSON(w, http.StatusOK, map[string]bool{"passkeys": s.wa != nil, "password_reset": resetReady})
 }
 
 // --- auth ---
