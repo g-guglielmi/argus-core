@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [0.4.0] - 2026-08-14
+## [0.3.3] - 2026-08-14
 
 **Self-service password reset.** Users who forget their password can now recover it themselves
 via an emailed link — no admin intervention.
