@@ -95,6 +95,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 
 	certPEM, err := s.ca.SignCSR([]byte(req.CSR), t.ProxyName, proxyCertTTL)
 	if err != nil {
+		s.logger.Warn("enroll: sign CSR failed", "proxy", t.ProxyName, "err", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not sign CSR: " + err.Error()})
 		return
 	}
@@ -102,6 +103,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	issuer := "CN=" + s.ca.SubjectCN()
 	subject := "CN=" + t.ProxyName
 	if err := s.zbx.EnsureActiveProxyCert(ctx, t.ProxyName, issuer, subject); err != nil {
+		s.logger.Warn("enroll: register proxy in Zabbix failed", "proxy", t.ProxyName, "err", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not register the proxy in Zabbix: " + err.Error()})
 		return
 	}
