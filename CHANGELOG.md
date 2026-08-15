@@ -11,6 +11,18 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.1] - 2026-08-15
+
+Mobile polish:
+- **Probes tables are now responsive** — the tokens and live-proxy tables stack into labelled
+  cards on a phone (like the Users and status lists), instead of a cramped fixed 4-column table
+  with truncated text and wrapped status pills.
+- **Users: the passkeys count lines up** with the other values — it's inset to match the internal
+  padding of the boxed values (2FA badge / role select / inputs) instead of sitting flush past them.
+- Status pills (`.tag`) no longer wrap.
+
+---
+
 ## [0.4.0] - 2026-08-14
 
 **Probe enrollment — one-click, from the GUI.** Adding a site probe no longer needs

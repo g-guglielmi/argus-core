@@ -1078,8 +1078,8 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
             {tokens.map((t) => (
               <tr key={t.id}>
                 <td><strong>{t.proxy_name}</strong></td>
-                <td><span className={'tag ' + (t.status === 'enrolled' ? 'online' : t.status === 'expired' ? 'pending' : 'pending')}>{t.status}</span></td>
-                <td className="mono" style={{ color: 'var(--muted)' }}>{t.status === 'enrolled' ? '—' : relTime(t.expires_at)}</td>
+                <td data-label="Status"><span className={'tag ' + (t.status === 'enrolled' ? 'online' : t.status === 'expired' ? 'pending' : 'pending')}>{t.status}</span></td>
+                <td data-label="Expires" className="mono" style={{ color: 'var(--muted)' }}>{t.status === 'enrolled' ? '—' : relTime(t.expires_at)}</td>
                 <td style={{ textAlign: 'right' }}><button className="btn danger" onClick={() => revoke(t)}>{t.status === 'pending' ? 'Revoke' : 'Remove'}</button></td>
               </tr>
             ))}
@@ -1096,9 +1096,9 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
           {!error && proxies && proxies.map((p) => (
             <tr key={p.name}>
               <td><strong>{p.name}</strong></td>
-              <td>{p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}</td>
-              <td className="mono" style={{ color: p.last_access ? undefined : 'var(--faint)' }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
-              <td className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
+              <td data-label="Status">{p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}</td>
+              <td data-label="Last check-in" className="mono" style={{ color: p.last_access ? undefined : 'var(--faint)' }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
+              <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
             </tr>
           ))}
         </tbody>

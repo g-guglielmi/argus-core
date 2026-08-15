@@ -188,7 +188,7 @@ a { color: var(--accent); }
 .site-head .name { font-weight: 650; }
 .site-head .loc { color: var(--faint); font-size: 12px; }
 .site-head .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-.tag { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border-strong); color: var(--muted); }
+.tag { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border-strong); color: var(--muted); white-space: nowrap; }
 .tag.online { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
 .tag.pending { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
 .pending-note { padding: 8px 16px 12px 42px; color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -350,6 +350,20 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   .utable .cellinput { flex: 1; min-width: 0; width: auto; text-align: right; }
   .utable td:first-child .cellinput { text-align: left; }
   .utable .roleselect { flex-shrink: 0; }
+  /* bare-text values (e.g. the passkeys count) sit flush at the edge; inset to match the ~10px
+     internal padding of the boxed values (badge / select / input) so they line up visually. */
+  .utable td[data-label="Passkeys"] { padding-right: 10px; }
+
+  /* --- probes tables (tokens + live proxies): labelled cards, same as the users table --- */
+  .enroll thead { display: none; }
+  .enroll, .enroll tbody, .enroll tr { display: block; }
+  .enroll tr { padding: 11px 14px; border-bottom: 1px solid var(--border); }
+  .enroll tr:last-child td { border-bottom: none; }
+  .enroll td { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: auto; padding: 5px 0; border: none; overflow: visible; text-overflow: clip; }
+  .enroll td::before { content: attr(data-label); color: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; flex-shrink: 0; }
+  .enroll td:not([data-label])::before { display: none; }
+  .enroll td:first-child { display: block; margin-bottom: 2px; padding: 0; font-size: 14px; }
+  .enroll td:last-child:not([data-label]) { justify-content: flex-end; margin-top: 6px; }
 
   /* --- monitoring tree: drop the trend column, tighten indentation --- */
   table.sensors thead th:nth-child(3), table.sensors td.strend { display: none; }
