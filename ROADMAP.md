@@ -64,8 +64,11 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 
 ### H. Parking lot (maybe)
 - [ ] Public status page (Uptime-Kuma-style shareable)
-- [ ] Native mobile apps (only if responsive web proves insufficient)
 - [ ] Escalation policies / repeat notifications beyond flap debounce
+
+### I. Mobile app (last step)
+- [ ] **Android native app with push notifications** — the app registers a device with Argus; the notifier delivers alerts as **push** (e.g. FCM) via a new "push" notification channel type, alongside Discord/Telegram/email. A PWA + web push is a cheaper fallback if a full native app isn't warranted. — _(app + BE)_ **L**
+- [ ] **iOS app** — _undecided_; would need APNs + an Apple developer account. Decide once the Android app exists.
 
 ---
 
@@ -76,3 +79,4 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 3. ~~Probe enrollment~~ ✅ (done, v0.4.0) — now bring site2–5 online from the GUI
 4. **Configurable session timeouts** (max 12h + optional idle) — hardening ahead of internet exposure (§E)
 5. Then the big lift: **discovery + device templates** (B/C) → the real path to a production **1.0**.
+6. **(last)** **Android native app** with push notifications (§I) — iOS TBD.

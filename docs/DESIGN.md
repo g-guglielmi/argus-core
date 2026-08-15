@@ -402,7 +402,8 @@ updater can be a minimal sidecar rather than the proxy itself.
 
 ## 19. Parking lot / future
 - Public status page (Uptime-Kuma-style shareable page).
-- Native mobile apps (only if the responsive web UI proves insufficient).
+- **Android native app** with push notifications (device registers with Argus → notifier delivers
+  via a "push"/FCM channel) — the planned last step (ROADMAP §I). iOS undecided (would need APNs).
 - Escalation policies / repeat notifications beyond flap debounce.
 - Token-based enrollment service (Phase 1 backend) + "Add probe" wizard (Phase 4/6 UI).
 - Golden probe **VM template** (Packer) + cloud-init for scaled/work rollout (Phase 6).
