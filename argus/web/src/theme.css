@@ -65,7 +65,7 @@ a { color: var(--accent); }
 .sidebar { position: sticky; top: 0; z-index: 20; align-self: flex-start; height: 100vh; width: 232px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; padding: 15px 12px; transition: width 0.16s ease; }
 .sidebar .navlabel, .sidebar .nav .lbl, .sidebar .userbtn .who, .sidebar .brand > div { overflow: hidden; white-space: nowrap; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 12px; white-space: nowrap; }
-.brand .eye { color: var(--accent); flex-shrink: 0; }
+.brand .brand-logo { width: 30px; height: 30px; flex-shrink: 0; object-fit: contain; }
 .brand .word { font-weight: 700; letter-spacing: 0.18em; font-size: 15px; }
 .brand .sub { color: var(--faint); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; margin-top: 1px; }
 

@@ -281,10 +281,11 @@ export default function App() {
 
 function Frame({ children }: { children: ReactNode }) {
   return (
-    <main style={{ maxWidth: 1200, margin: '2.5rem auto', padding: '0 1.25rem' }}>
-      <h1 style={{ marginBottom: 0 }}>Argus</h1>
-      <p style={{ color: '#888', marginTop: 4 }}>Monitoring cockpit</p>
-      {children}
+    <main style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem 1.25rem' }}>
+      <img src="/argus-logo.png" alt="Argus" width={76} height={76} />
+      <h1 style={{ margin: '14px 0 0' }}>Argus</h1>
+      <p style={{ color: 'var(--muted)', margin: '4px 0 18px' }}>Monitoring cockpit</p>
+      <div style={{ width: '100%', maxWidth: 380 }}>{children}</div>
     </main>
   )
 }
@@ -648,7 +649,7 @@ function AppShell({ me, onLogout, passkeysAvailable, probeEnroll }: { me: Me; on
       {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} />}
       <aside className="sidebar">
         <div className="brand">
-          <svg className="eye" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z" /><circle cx="12" cy="12" r="3.2" fill="currentColor" stroke="none" /></svg>
+          <img className="brand-logo" src="/argus-logo.png" alt="" width={30} height={30} />
           <div><div className="word">ARGUS</div><div className="sub">Monitoring</div></div>
         </div>
         <div className="navlabel">Watch</div>

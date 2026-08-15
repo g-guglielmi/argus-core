@@ -11,6 +11,14 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.3] - 2026-08-15
+
+- **Login screen is centered** (vertically + horizontally) instead of top-left anchored, and now
+  shows the **Argus logo** above the title.
+- **Sidebar** uses the logo in place of the old eye glyph.
+
+---
+
 ## [0.4.2] - 2026-08-15
 
 **Branding — the Argus logo.** Added the eagle/radar logo across the project:
