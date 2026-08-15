@@ -282,9 +282,13 @@ export default function App() {
 function Frame({ children }: { children: ReactNode }) {
   return (
     <main style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 'clamp(2.5rem, 9vh, 7rem) 1.25rem 2.5rem' }}>
-      <img src="/argus-logo.png" alt="Argus" width={76} height={76} />
-      <h1 style={{ margin: '14px 0 0' }}>Argus</h1>
-      <p style={{ color: 'var(--muted)', margin: '4px 0 18px' }}>Monitoring cockpit</p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 22 }}>
+        <img src="/argus-logo.png" alt="Argus" width={64} height={64} />
+        <div>
+          <h1 style={{ margin: 0, lineHeight: 1.1 }}>Argus</h1>
+          <p style={{ color: 'var(--muted)', margin: '2px 0 0' }}>Monitoring cockpit</p>
+        </div>
+      </div>
       <div style={{ width: '100%', maxWidth: 380 }}>{children}</div>
     </main>
   )

@@ -14,7 +14,7 @@ GitHub Release from the matching section below.
 ## [0.4.3] - 2026-08-15
 
 - **Login screen** is centered horizontally and anchored in the upper-middle (instead of top-left),
-  and now shows the **Argus logo** above the title.
+  and now shows the **Argus logo** beside the title.
 - **Sidebar** uses the logo in place of the old eye glyph.
 
 ---
