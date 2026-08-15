@@ -11,6 +11,19 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.2] - 2026-08-15
+
+**Branding — the Argus logo.** Added the eagle/radar logo across the project:
+- **Browser tab favicon** (+ apple-touch icon) — served from the app (`web/public/`).
+- **READMEs** (root + `argus/`) show the logo at the top.
+- **unRAID template** `<Icon>` points at the logo (this is also the container's icon in unRAID's
+  Docker tab).
+
+Assets live in `argus/web/public/`: `argus-logo.png` (512², used by the READMEs + unRAID icon),
+`favicon.png` (48²), `apple-touch-icon.png` (180²).
+
+---
+
 ## [0.4.1] - 2026-08-15
 
 Mobile polish:

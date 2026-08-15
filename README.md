@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="argus/web/public/argus-logo.png" alt="Argus" width="150" />
+</p>
+
 # Argus — Monitoring Cockpit over Zabbix
 
 A self-hosted, **PRTG-style monitoring web app** layered on [Zabbix 7.0](https://www.zabbix.com/).

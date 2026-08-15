@@ -1,6 +1,8 @@
 # Normalize line endings. Files executed on Linux MUST stay LF, or they break
 # (e.g. `#!/usr/bin/env bash\r: bad interpreter`).
 * text=auto
+*.png binary
+*.ico binary
 *.sh        text eol=lf
 Dockerfile  text eol=lf
 *.yml       text eol=lf

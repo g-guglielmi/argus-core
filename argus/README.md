@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="web/public/argus-logo.png" alt="Argus" width="150" />
+</p>
+
 # Argus
 
 A self-hosted, PRTG-style monitoring cockpit layered on Zabbix — a Go backend that serves
