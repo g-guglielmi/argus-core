@@ -240,6 +240,9 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   - **Viewer** — view + **acknowledge** only (no pause, no edits).
 - **Auth lives in the custom app** (Zabbix frontend locked down; app uses a service
   account to the Zabbix API).
+- **Sessions:** today a fixed **7-day absolute** cookie (no idle timeout, no sliding renewal).
+  Planned (ROADMAP §E): admin-configurable **max session lifetime** (default 12h) + optional
+  **idle timeout** (disabled by default), both in Settings and env-overridable.
 - **Per-user landing page** preference — default Overview; user can switch to Errors page.
 
 ---

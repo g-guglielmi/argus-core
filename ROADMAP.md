@@ -49,6 +49,7 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 
 ### E. Auth / account gaps
 - [x] **Self-service email password reset** (single-use emailed link; reuses the email channel) — v0.3.3
+- [ ] **Configurable session timeouts** _(next)_ — **max session lifetime** (default **12h**, replacing today's fixed 7-day absolute expiry) + optional **idle timeout** (sliding; **disabled by default**). Both admin-editable in **Settings** (env-overridable). Idle needs a per-session `last_seen` bumped by the auth middleware and re-checked on each request; max caps absolute lifetime. — _(BE+FE)_ M
 - [ ] **Per-user landing page** preference (Overview vs Errors) — _(FE)_ S
 
 ### F. UX / quality-of-life
@@ -73,4 +74,5 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 1. ~~Deep-link URLs~~ ✅ (done) — small, felt every day
 2. ~~Self-service password reset~~ ✅ (done, v0.3.3)
 3. ~~Probe enrollment~~ ✅ (done, v0.4.0) — now bring site2–5 online from the GUI
-4. Then the big lift: **discovery + device templates** (B/C) → the real path to a production **1.0**.
+4. **Configurable session timeouts** (max 12h + optional idle) — hardening ahead of internet exposure (§E)
+5. Then the big lift: **discovery + device templates** (B/C) → the real path to a production **1.0**.
