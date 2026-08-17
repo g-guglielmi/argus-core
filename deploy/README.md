@@ -101,6 +101,27 @@ probe no longer needs `gen-certs.sh` or manual proxy registration:
 
 The manual flow below stays available as a fallback (e.g. before the CA is mounted).
 
+### Migrating a manually-enrolled proxy to `argus-probe`
+
+A proxy you registered by hand (Phase-0 `gen-certs.sh` + the stock `zabbix-proxy` container) keeps
+working — migration is **optional**, only to standardize on the self-enrolling image. It's safe
+because enrolling an **existing proxy name** does a `proxy.update`, not a create, so the Zabbix
+proxy record, its assigned hosts, and history are **preserved** (same `proxyid`). Steps, per site:
+
+1. In Argus → **Probes → Add probe**, use the **same site name** so the proxy name matches exactly
+   (e.g. site `site1` → `proxy-site1`). Copy the `docker run` / unRAID XML.
+2. On the site host, **stop and remove the old** manual proxy container
+   (`docker rm -f zbx-proxy-<site>`). Use a **fresh volume** for the new one (don't reuse the old
+   `/var/lib/zabbix`), so it enrolls cleanly.
+3. Run the new `argus-probe` container. It generates a new key + CSR, gets a fresh cert signed for
+   `proxy-<site>`, and Argus **updates** the existing proxy (same issuer/subject pin) — the probe
+   reconnects as the same proxy.
+4. Confirm it's **online** in Probes. Then delete the old cert files (`ca.crt`, `proxy-<site>.*`)
+   from the host — the new probe made its own.
+
+There's a brief collection gap while you swap containers (two containers can't share one proxy
+name at once). The old cert stays valid but unused; you can leave it or clean it up.
+
 ### Updating a probe (automatic)
 
 The probe runs `ghcr.io/<owner>/argus-probe:latest`. An update is a plain image pull + container
