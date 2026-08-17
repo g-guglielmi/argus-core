@@ -1097,7 +1097,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
         </table>
       )}
 
-      <table className="enroll live">
+      <table className="enroll enroll-probes">
         <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Mode</th><th>Enrolled</th></tr></thead>
         <tbody>
           {error && <tr><td colSpan={5} style={{ color: 'var(--err)' }}>{error}</td></tr>}
