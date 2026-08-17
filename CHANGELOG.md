@@ -11,6 +11,20 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.5] - 2026-08-17
+
+**Probes view tidy-up.**
+- The token list now shows only **actionable** entries (pending / expired) and drops rows once a
+  probe is enrolled — a redeemed token is no longer useful information. Heading is now
+  "Pending enrollments".
+- The live probe row gains an **Enrolled** column showing when each probe self-enrolled via Argus
+  (a `—` for proxies registered by hand in Zabbix). Backed by a new `enrolled_at` field on
+  `/api/proxies`, derived from the enrollment token's redemption time.
+- The generated **unRAID probe template** now includes the Argus `<Icon>` (matching the server
+  template), so the probe container shows the logo in unRAID's Docker tab.
+
+---
+
 ## [0.4.4] - 2026-08-17
 
 - **Probe container naming.** The generated **Docker run** and **unRAID XML** now name the probe

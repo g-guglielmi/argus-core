@@ -77,6 +77,29 @@ func (s *Store) ListEnrollTokens(ctx context.Context) ([]EnrollToken, error) {
 	return out, rows.Err()
 }
 
+// EnrollmentTimes maps proxy_name -> most-recent enrollment (used_at, unix seconds) for probes
+// enrolled through Argus tokens. Proxies registered by hand in Zabbix are absent from the map.
+func (s *Store) EnrollmentTimes(ctx context.Context) (map[string]int64, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT proxy_name, MAX(used_at) FROM enroll_tokens WHERE used_at IS NOT NULL GROUP BY proxy_name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]int64)
+	for rows.Next() {
+		var name string
+		var used sql.NullInt64
+		if err := rows.Scan(&name, &used); err != nil {
+			return nil, err
+		}
+		if used.Valid {
+			out[name] = used.Int64
+		}
+	}
+	return out, rows.Err()
+}
+
 // MarkEnrollTokenUsed stamps a token as redeemed (single-use).
 func (s *Store) MarkEnrollTokenUsed(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE enroll_tokens SET used_at=? WHERE id=?`, time.Now().Unix(), id)

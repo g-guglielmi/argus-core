@@ -8,7 +8,7 @@ type User = { id: number; email: string; name: string; surname: string; role: st
 type Health = { status: string; zabbix: { reachable: boolean; version?: string; error?: string } }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[] }
-type Proxy = { name: string; last_access: number; online: boolean; mode: string }
+type Proxy = { name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number }
 type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; config: Record<string, string> }
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
@@ -1060,6 +1060,10 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
     loadTokens()
   }
 
+  // Enrolled tokens are just noise once a probe is live (its enrollment date shows in the row
+  // below), so the list keeps only what's still actionable: pending and expired tokens.
+  const pendingTokens = (tokens || []).filter((t) => t.status !== 'enrolled')
+
   return (
     <div className="panel">
       <div className="phead">
@@ -1077,15 +1081,15 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
       {isAdmin && enroll && adding && !created && <AddProbeForm onCreated={(c) => { setCreated(c); setAdding(false); loadTokens() }} onCancel={() => setAdding(false)} />}
       {created && <ProbeCommand created={created} onDone={() => setCreated(null)} />}
 
-      {isAdmin && enroll && tokens && tokens.length > 0 && (
+      {isAdmin && enroll && pendingTokens.length > 0 && (
         <table className="enroll">
-          <thead><tr><th>Pending / recent tokens</th><th>Status</th><th>Expires</th><th></th></tr></thead>
+          <thead><tr><th>Pending enrollments</th><th>Status</th><th>Expires</th><th></th></tr></thead>
           <tbody>
-            {tokens.map((t) => (
+            {pendingTokens.map((t) => (
               <tr key={t.id}>
                 <td><strong>{t.proxy_name}</strong></td>
-                <td data-label="Status"><span className={'tag ' + (t.status === 'enrolled' ? 'online' : t.status === 'expired' ? 'pending' : 'pending')}>{t.status}</span></td>
-                <td data-label="Expires" className="mono" style={{ color: 'var(--muted)' }}>{t.status === 'enrolled' ? '—' : relTime(t.expires_at)}</td>
+                <td data-label="Status"><span className="tag pending">{t.status}</span></td>
+                <td data-label="Expires" className="mono" style={{ color: 'var(--muted)' }}>{relTime(t.expires_at)}</td>
                 <td style={{ textAlign: 'right' }}><button className="btn danger" onClick={() => revoke(t)}>{t.status === 'pending' ? 'Revoke' : 'Remove'}</button></td>
               </tr>
             ))}
@@ -1093,18 +1097,19 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
         </table>
       )}
 
-      <table className="enroll">
-        <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Mode</th></tr></thead>
+      <table className="enroll live">
+        <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Mode</th><th>Enrolled</th></tr></thead>
         <tbody>
-          {error && <tr><td colSpan={4} style={{ color: 'var(--err)' }}>{error}</td></tr>}
-          {!error && proxies === null && <tr><td colSpan={4} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
-          {!error && proxies && proxies.length === 0 && <tr><td colSpan={4} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
+          {error && <tr><td colSpan={5} style={{ color: 'var(--err)' }}>{error}</td></tr>}
+          {!error && proxies === null && <tr><td colSpan={5} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
+          {!error && proxies && proxies.length === 0 && <tr><td colSpan={5} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
           {!error && proxies && proxies.map((p) => (
             <tr key={p.name}>
               <td><strong>{p.name}</strong></td>
               <td data-label="Status">{p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}</td>
               <td data-label="Last check-in" className="mono" style={{ color: p.last_access ? undefined : 'var(--faint)' }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
               <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
+              <td data-label="Enrolled" className="mono" style={{ color: p.enrolled_at ? 'var(--muted)' : 'var(--faint)' }} title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>{p.enrolled_at ? new Date(p.enrolled_at * 1000).toLocaleDateString() : '—'}</td>
             </tr>
           ))}
         </tbody>
@@ -1167,6 +1172,7 @@ function probeUnraidXml(c: CreatedToken): string {
   <Name>${name}</Name>
   <Repository>${PROBE_IMAGE}</Repository>
   <Registry>https://github.com/g-guglielmi/argus</Registry>
+  <Icon>https://raw.githubusercontent.com/g-guglielmi/argus/main/argus/web/public/argus-logo.png</Icon>
   <Network>bridge</Network>
   <Privileged>false</Privileged>
   <Overview>Self-enrolling Zabbix active proxy for Argus (site: ${c.site}). Enrolls on first boot; keep the volume persistent so the single-use token isn't re-redeemed.</Overview>

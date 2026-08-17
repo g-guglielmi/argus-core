@@ -8,9 +8,10 @@ import (
 
 type proxyView struct {
 	Name       string `json:"name"`
-	LastAccess int64  `json:"last_access"` // unix seconds, 0 if never seen
-	Online     bool   `json:"online"`      // seen within the last 5 minutes
-	Mode       string `json:"mode"`        // active | passive
+	LastAccess int64  `json:"last_access"`  // unix seconds, 0 if never seen
+	Online     bool   `json:"online"`       // seen within the last 5 minutes
+	Mode       string `json:"mode"`         // active | passive
+	EnrolledAt int64  `json:"enrolled_at"`  // unix seconds a probe self-enrolled via Argus; 0 if manual
 }
 
 // handleProxies lists Zabbix proxies (the per-site collectors) with their last-access time, so
@@ -28,6 +29,10 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return
 	}
+	enrolled, err := s.st.EnrollmentTimes(ctx) // best-effort; a nil map still indexes safely below
+	if err != nil {
+		s.logger.Warn("proxies: enrollment times lookup failed", "err", err)
+	}
 	now := time.Now().Unix()
 	out := make([]proxyView, 0, len(proxies))
 	for _, p := range proxies {
@@ -41,6 +46,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			LastAccess: la,
 			Online:     la > 0 && now-la <= 300,
 			Mode:       mode,
+			EnrolledAt: enrolled[p.Name],
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
