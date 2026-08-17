@@ -78,6 +78,7 @@ jobs:
         with:
           context: ./deploy/probe-image
           file: ./deploy/probe-image/Dockerfile
+          pull: true          # re-resolve the freshest Zabbix base at build time
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

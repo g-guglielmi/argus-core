@@ -141,7 +141,22 @@ recreate — **no re-enrollment**: the signed cert + `ca.crt` live on the persis
   (same command you deployed with — the token env is harmless once certs exist).
 
 Because the probe pins `:latest`, pushing a new `argus-probe` image to GHCR is enough for these to
-pick it up. (Pin a specific `:vX.Y.Z` instead if you'd rather gate probe updates.)
+pick it up. (Pin a specific tag instead if you'd rather gate probe updates — see below.)
+
+**Tracking upstream Zabbix automatically.** The `argus-probe` image is a thin wrapper over
+`zabbix/zabbix-proxy-sqlite3:alpine-7.0-latest`, and that base is baked in at *our* build time — so
+probes only see new Zabbix once we rebuild + publish. A scheduled CI job
+([`probe-base-watch.yml`](../.github/workflows/probe-base-watch.yml)) does this with no manual step:
+it checks the base image daily and, when it changes, rebuilds and pushes `argus-probe:latest`
+(absorbing even same-version Alpine/security rebuilds). When the **Zabbix version number** actually
+bumps (e.g. 7.0.14 → 7.0.15) it also cuts a `probe/vX.Y.Z` tag and a GitHub Release with notes.
+Your probe hosts then pick it up through the same Watchtower / unRAID / manual path above.
+
+- **Gate updates by version:** pin `ghcr.io/<owner>/argus-probe:zabbix-7.0.15` instead of `:latest`
+  and bump it deliberately when you want.
+- **Major upgrades stay manual:** moving to a new Zabbix major/minor (7.2, the next LTS 8.0, …) is a
+  deliberate `FROM` bump in `deploy/probe-image/Dockerfile`, done in lockstep with upgrading the
+  Zabbix **server** (the proxy must match the server's major.minor). The watcher never does that.
 
 ### Security notes (before publishing Argus to the internet)
 
