@@ -1020,9 +1020,10 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
 const PROBE_IMAGE = 'ghcr.io/g-guglielmi/argus-probe:latest'
 
 function probeDockerCmd(c: CreatedToken): string {
+  const name = `argus-${c.proxy_name}`
   const lines = [
-    'docker run -d --name argus-probe --restart unless-stopped \\',
-    `  -v /docker/${c.proxy_name}:/var/lib/zabbix \\`,
+    `docker run -d --name ${name} --restart unless-stopped \\`,
+    `  -v /docker/${name}:/var/lib/zabbix \\`,
     `  -e ARGUS_ENROLL_URL=${c.enroll_url} \\`,
     `  -e ARGUS_ENROLL_TOKEN=${c.token} \\`,
   ]
@@ -1157,12 +1158,13 @@ function slugPreview(s: string): string {
 }
 
 function probeUnraidXml(c: CreatedToken): string {
-  const vol = `/mnt/user/appdata/argus-probe-${c.site}`
+  const name = `argus-${c.proxy_name}`
+  const vol = `/mnt/user/appdata/${name}`
   const serverHost = c.core_host ? '' :
     `\n  <Config Name="Zabbix server host" Target="ZBX_SERVER_HOST" Default="" Mode="" Description="Core address the probe dials for :10051 (set if Argus didn't provide one)." Type="Variable" Display="always" Required="true" Mask="false"></Config>`
   return `<?xml version="1.0"?>
 <Container version="2">
-  <Name>argus-probe-${c.site}</Name>
+  <Name>${name}</Name>
   <Repository>${PROBE_IMAGE}</Repository>
   <Registry>https://github.com/g-guglielmi/argus</Registry>
   <Network>bridge</Network>

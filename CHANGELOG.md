@@ -11,6 +11,16 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.4] - 2026-08-17
+
+- **Probe container naming.** The generated **Docker run** and **unRAID XML** now name the probe
+  container `argus-<proxy_name>` (e.g. `argus-proxy-site5`) with a matching data volume, instead
+  of a fixed `argus-probe`. This makes each site's container self-identifying in the Docker/unRAID
+  UI when several probes run on one host. Updated the Dockerfile example and the probe update/
+  migration runbook to match.
+
+---
+
 ## [0.4.3] - 2026-08-15
 
 - **Login screen** is centered horizontally and anchored in the upper-middle (instead of top-left),

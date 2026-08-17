@@ -134,10 +134,10 @@ recreate — **no re-enrollment**: the signed cert + `ca.crt` live on the persis
   ```bash
   docker run -d --name watchtower --restart unless-stopped \
     -v /var/run/docker.sock:/var/run/docker.sock \
-    containrrr/watchtower --cleanup --interval 3600 argus-probe
+    containrrr/watchtower --cleanup --interval 3600 argus-proxy-<site>
   ```
 - **unRAID**: the built-in *CA Auto Update* plugin updates the container on a schedule.
-- **Manual / cron**: `docker pull …/argus-probe:latest && docker rm -f argus-probe && docker run …`
+- **Manual / cron**: `docker pull …/argus-probe:latest && docker rm -f argus-proxy-<site> && docker run …`
   (same command you deployed with — the token env is harmless once certs exist).
 
 Because the probe pins `:latest`, pushing a new `argus-probe` image to GHCR is enough for these to
