@@ -11,6 +11,15 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.6] - 2026-08-18
+
+- **Removed the duplicate theme toggle.** The dark/light switch existed in both **Account** and the
+  admin-only **Settings** page (with different markup). Theme is a per-device preference, so it now
+  lives only in **Account**, where every role can reach it — Settings is server-wide config and no
+  longer carries it. (Roadmap: a broader UI-standardization pass is now tracked under §F.)
+
+---
+
 ## [0.4.5] - 2026-08-17
 
 **Probes view tidy-up.**

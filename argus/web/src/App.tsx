@@ -708,7 +708,7 @@ function AppShell({ me, onLogout, passkeysAvailable, probeEnroll }: { me: Me; on
           {view === 'notifications' && <NotificationsView />}
           {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} />}
           {view === 'users' && me.role === 'admin' && <UsersView />}
-          {view === 'settings' && me.role === 'admin' && <SettingsView theme={theme} toggleTheme={toggleTheme} />}
+          {view === 'settings' && me.role === 'admin' && <SettingsView />}
           {view === 'account' && <AccountView passkeysAvailable={passkeysAvailable} theme={theme} toggleTheme={toggleTheme} />}
         </div>
       </div>
@@ -721,7 +721,7 @@ type SettingItem = {
   env: string; value: string; source: string; locked: boolean; has_value: boolean
 }
 
-function SettingsView({ theme, toggleTheme }: { theme: 'dark' | 'light'; toggleTheme: () => void }) {
+function SettingsView() {
   const [items, setItems] = useState<SettingItem[] | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
@@ -795,19 +795,8 @@ function SettingsView({ theme, toggleTheme }: { theme: 'dark' | 'light'; toggleT
       {msg && <div style={{ padding: '0.6rem 16px', color: 'var(--ok)' }}>{msg}</div>}
 
       <form onSubmit={save} className="set-body">
-        {/* Appearance — a per-user preference, stored in this browser (not server-side). */}
-        <section className="set-card">
-          <h3>Appearance</h3>
-          <p className="set-note">Theme is remembered on this device.</p>
-          <div className="set-row">
-            <div className="set-head"><span className="flabel">Theme</span></div>
-            <button type="button" className="btn" onClick={toggleTheme} style={{ width: 'fit-content' }}>
-              Switch to {theme === 'dark' ? 'light' : 'dark'} mode
-            </button>
-            <span className="set-hint">Currently {theme}.</span>
-          </div>
-        </section>
-
+        {/* Theme is a per-device preference and lives in Account (reachable by every role), not
+            here in the admin-only server settings. */}
         {items === null ? <p className="set-note" style={{ padding: '0 4px' }}>Loading…</p> : groups.map((g) => {
           const gi = items.filter((it) => it.group === g.name)
           if (gi.length === 0) return null

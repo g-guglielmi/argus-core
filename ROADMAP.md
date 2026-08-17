@@ -54,6 +54,11 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 
 ### F. UX / quality-of-life
 - [x] **Deep-link URLs / reload persistence** — reflect the view in the address bar (DESIGN §17) — _(FE)_
+- [ ] **UI standardization / design system** — the SPA grew organically and the same widgets are
+  built ad-hoc in different places (e.g. the theme toggle once existed in both Account and admin
+  Settings with different markup; buttons/cards/form-rows vary between views). Pull shared,
+  consistently-styled primitives (button, card, form-row, table, status pill) into one set and
+  reuse them across Overview / Account / Settings / Probes so pages look and behave the same. — _(FE)_ M
 - [ ] **Global search** — top-bar quick-switcher by name/IP/tag, server-side (DESIGN §16) — _(FE+BE)_ M
 - [ ] **Per-channel severity filter** — _(FE+BE)_ S
 - [ ] **Labeled graph axes** in alert PNGs (needs a font dep) — _(BE)_ S
