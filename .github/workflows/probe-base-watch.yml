@@ -86,10 +86,13 @@ jobs:
         id: ver
         if: steps.decide.outputs.changed == 'true'
         run: |
-          set -euo pipefail
-          RAW=$(docker run --rm --entrypoint /usr/sbin/zabbix_proxy "$BASE_IMAGE" -V | head -n1)
-          VER=$(printf '%s' "$RAW" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
-          if [ -z "$VER" ]; then echo "Could not parse Zabbix version from: $RAW" >&2; exit 1; fi
+          set -uo pipefail
+          # Capture the full -V output (tolerate a non-zero exit); grep -m1 self-terminates so no
+          # SIGPIPE from an early-closing `head` under pipefail.
+          RAW=$(docker run --rm --entrypoint /usr/sbin/zabbix_proxy "$BASE_IMAGE" -V 2>&1 || true)
+          echo "----- zabbix_proxy -V -----"; printf '%s\n' "$RAW"; echo "---------------------------"
+          VER=$(printf '%s\n' "$RAW" | grep -m1 -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)
+          if [ -z "$VER" ]; then echo "Could not parse Zabbix version (see output above)" >&2; exit 1; fi
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           if [ "$VER" != "${{ steps.last.outputs.version }}" ]; then
             echo "newversion=true" >> "$GITHUB_OUTPUT"
