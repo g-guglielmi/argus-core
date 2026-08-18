@@ -11,6 +11,31 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.8] - 2026-08-18
+
+**Probe fleet updates — control plane + opt-in self-update.** (Roadmap §A; DESIGN §18)
+
+Argus now centrally controls and sees probe versions, over the same outbound-only channel probes
+already use (nothing inbound is opened).
+
+- **Version check-in.** Enrollment issues each probe a long-lived check-in token; the probe reports
+  its running image version (baked in at build, `/etc/argus-probe.version`) every ~5 min and reads
+  the fleet target to converge on (`POST /api/probes/checkin`).
+- **Fleet target.** Admins set the target in **Probes → Fleet target version**: `latest` or an exact
+  pin in the decoupled probe scheme (e.g. `7.0.29-r1`). Stored server-side
+  (`GET`/`PUT /api/probes/target`).
+- **Fleet visibility.** The Probes view gains **Version** and **Update** columns showing each probe
+  as up-to-date / outdated / tracking-latest / unknown, with an **auto** pill when a probe's
+  self-updater is on.
+- **Guided manual update (any deployment).** Drifted probes offer a one-click
+  `docker pull … && docker restart …` — no Docker socket needed.
+- **Opt-in self-updater (compose sidecar).** New `deploy/probe-image/docker-compose.yml` runs an
+  `ARGUS_PROBE_ROLE=updater` sidecar that, with the Docker socket mounted, recreates the proxy to
+  match the target automatically. Off unless deployed; the socket is isolated to the sidecar, never
+  the proxy. The Add-probe wizard gains a **Compose + auto-update** output that generates it.
+
+---
+
 ## [0.4.7] - 2026-08-18
 
 **Configurable session timeouts + per-user landing page.** (Roadmap §E)

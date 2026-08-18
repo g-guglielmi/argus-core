@@ -377,28 +377,36 @@ views are clamped for non-admins on a shared/stale URL.
 
 ---
 
-## 18. Probe fleet updates — control plane (planned, after v0.4.0 is validated)
+## 18. Probe fleet updates — control plane (implemented, v0.4.8)
 
 **Constraint.** Sites are outbound-only (probes dial out, nothing inbound), so Argus can't *push*
 into a probe. Updates are therefore **pull-based but Argus-coordinated**: Argus is the control
 plane; the probe checks in and converges.
 
-**Model (decided): control plane + opt-in self-update.**
-- Argus holds a **target probe version** (dashboard-settable: `latest` or a pinned `vX.Y.Z`) and
-  shows each probe's running version vs. target (fleet visibility).
-- The `argus-probe` image gains an optional **self-updater** loop: it polls Argus for the target
-  and, if it differs from its baked-in version, pulls + recreates itself. Enabled per-probe (mount
-  the Docker socket + a flag, e.g. `ARGUS_PROBE_SELFUPDATE=1`); **off by default**.
-- Probes without the updater surface as "outdated — run this" with a one-click command (socket-free
-  manual path).
+**Model: control plane + opt-in self-update.**
+- **Check-in credential.** Enrollment issues each probe a long-lived token (tied to its proxy
+  name), stored hashed in `probe_agents` and returned alongside a `checkin_url`.
+- **Check-in.** The probe posts `POST /api/probes/checkin` (Bearer probe token) every 5 min with
+  its running image version + self-updater flag, and receives the fleet **target** to converge on.
+  The version is baked into the image at build (`/etc/argus-probe.version`).
+- **Target.** Argus holds a dashboard-settable target in `app_meta` (`GET`/`PUT /api/probes/target`,
+  admin): `latest`, or an exact pin in the **decoupled probe scheme** — `7.0.29-r1`, *not* app
+  semver (see the probe-image versioning in `deploy/README.md`). `/api/proxies` reports each
+  probe's version / target / `update_status` (`unknown | tracking | current | outdated`).
+- **Manual path (always available).** Drifted probes surface in the Probes view with a one-click
+  `docker pull … && docker restart …` command — no Docker socket involved.
+- **Self-updater (opt-in sidecar).** The `argus-probe` image runs an updater role
+  (`ARGUS_PROBE_ROLE=updater`) as a separate container that, with the Docker socket mounted, reads
+  the proxy's check-in credential from the shared volume, polls the target, and recreates the proxy
+  via `docker compose up -d proxy` when the target tag changes. Shipped as
+  `deploy/probe-image/docker-compose.yml`; **off unless you deploy the sidecar**. The "Compose +
+  auto-update" tab of the Add-probe wizard generates it.
 
 **Tradeoff acknowledged.** Any automatic in-place container update needs Docker socket access at
 the site (the same mechanism Watchtower uses). The win over Watchtower is **central version control
-+ fleet visibility + no third-party container + you decide when**. To isolate the socket, the
-updater can be a minimal sidecar rather than the proxy itself.
-
-**Open detail.** Probe→Argus check-in auth — issue the probe a long-lived credential at enrollment
-(tied to its proxy name) for version check-ins.
++ fleet visibility + no third-party container + you decide when**. The socket is isolated to the
+minimal **updater sidecar**, never the proxy. Unraid/`docker run` deployments use the manual
+one-click path (or their own auto-update); the compose sidecar is the hands-off route.
 
 ---
 

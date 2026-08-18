@@ -1030,6 +1030,27 @@ function probeDockerCmd(c: CreatedToken): string {
   return lines.join('\n')
 }
 
+// probeComposeCmd emits a paste-once script that writes a .env, fetches the compose file, and
+// brings up the proxy + the opt-in self-updater sidecar (Argus-coordinated auto-update).
+function probeComposeCmd(c: CreatedToken): string {
+  const dir = `argus-${c.proxy_name}`
+  const envLines = [
+    `ARGUS_PROXY_NAME=${c.proxy_name}`,
+    `ARGUS_ENROLL_URL=${c.enroll_url}`,
+    `ARGUS_ENROLL_TOKEN=${c.token}`,
+    'ARGUS_PROBE_TAG=latest',
+  ]
+  if (!c.core_host) envLines.push('ZBX_SERVER_HOST=<core-host-or-ip:reachable-on-10051>')
+  return [
+    `mkdir -p ${dir} && cd ${dir}`,
+    "cat > .env <<'EOF'",
+    ...envLines,
+    'EOF',
+    'curl -fsSL https://raw.githubusercontent.com/g-guglielmi/argus/main/deploy/probe-image/docker-compose.yml -o docker-compose.yml',
+    'docker compose up -d',
+  ].join('\n')
+}
+
 function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
   const [proxies, setProxies] = useState<Proxy[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -1268,11 +1289,17 @@ function probeUnraidXml(c: CreatedToken): string {
 </Container>`
 }
 
+type ProbeFmt = 'docker' | 'compose' | 'unraid'
 function ProbeCommand({ created, onDone }: { created: CreatedToken; onDone: () => void }) {
-  const [fmt, setFmt] = useState<'docker' | 'unraid'>('docker')
+  const [fmt, setFmt] = useState<ProbeFmt>('docker')
   const [copied, setCopied] = useState(false)
-  const content = fmt === 'docker' ? probeDockerCmd(created) : probeUnraidXml(created)
-  const pick = (f: 'docker' | 'unraid') => { setFmt(f); setCopied(false) }
+  const content = fmt === 'docker' ? probeDockerCmd(created) : fmt === 'compose' ? probeComposeCmd(created) : probeUnraidXml(created)
+  const pick = (f: ProbeFmt) => { setFmt(f); setCopied(false) }
+  const blurb: Record<ProbeFmt, string> = {
+    docker: "Run this on the site's Docker host.",
+    compose: "Run this on the site's Docker host — it also starts an updater sidecar that keeps the probe on the Argus fleet target (needs the Docker socket).",
+    unraid: 'On unRAID: Docker → Add Container → paste into the Template box, or save it as a .xml under /boot/config/plugins/dockerMan/templates-user/.',
+  }
   return (
     <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -1280,15 +1307,14 @@ function ProbeCommand({ created, onDone }: { created: CreatedToken; onDone: () =
         <span className="envpill" title="Shown once">token shown once</span>
         <div className="seg" style={{ marginLeft: 'auto' }}>
           <button className={fmt === 'docker' ? 'on' : ''} onClick={() => pick('docker')}>Docker run</button>
+          <button className={fmt === 'compose' ? 'on' : ''} onClick={() => pick('compose')}>Compose + auto-update</button>
           <button className={fmt === 'unraid' ? 'on' : ''} onClick={() => pick('unraid')}>unRAID XML</button>
         </div>
         <button className="btn" onClick={async () => { if (await copyToClipboard(content)) { setCopied(true); setTimeout(() => setCopied(false), 2000) } }}>{copied ? 'Copied!' : 'Copy'}</button>
         <button className="btn" onClick={onDone}>Done</button>
       </div>
       <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: '0 0 8px' }}>
-        {fmt === 'docker'
-          ? "Run this on the site's Docker host."
-          : 'On unRAID: Docker → Add Container → paste into the Template box, or save it as a .xml under /boot/config/plugins/dockerMan/templates-user/.'}
+        {blurb[fmt]}
         {' '}It self-enrolls on first boot; the token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set the core host (ZBX_SERVER_HOST / ARGUS_PROBE_CORE_HOST) so it can reach :10051.'}
       </p>
       <pre style={{ margin: 0, padding: '11px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12, lineHeight: 1.5 }}><code>{content}</code></pre>

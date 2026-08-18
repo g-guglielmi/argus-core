@@ -143,6 +143,28 @@ recreate — **no re-enrollment**: the signed cert + `ca.crt` live on the persis
 Because the probe pins `:latest`, pushing a new `argus-probe` image to GHCR is enough for these to
 pick it up. (Pin a specific tag instead if you'd rather gate probe updates — see below.)
 
+### Fleet updates — Argus-coordinated (v0.4.8)
+
+Argus is a **control plane** for probe versions: it holds a **fleet target** (Probes → *Fleet
+target version*: `latest` or an exact pin like `7.0.29-r1`) and shows each probe's running version
+against it. Every probe self-reports its baked-in version every ~5 min over an outbound-only
+check-in (a long-lived token issued at enrollment) — nothing inbound is opened.
+
+- **Visibility + manual update (any deployment).** The Probes view flags drift and offers a
+  one-click `docker pull … && docker restart argus-<proxy>` for each outdated probe. No Docker
+  socket involved. This is the supported path for `docker run` / unRAID probes.
+- **Opt-in self-update (compose sidecar).** Deploy the probe with
+  [`deploy/probe-image/docker-compose.yml`](probe-image/docker-compose.yml) (the Add-probe wizard's
+  **Compose + auto-update** tab generates it). It runs an `updater` sidecar
+  (`ARGUS_PROBE_ROLE=updater`) that — with the Docker socket mounted — reads the proxy's check-in
+  credential from the shared volume, polls the target, and recreates the proxy to match when the
+  target tag changes. **Off unless you deploy the sidecar**; the socket is exposed only to it, never
+  to the proxy. Probe env: `ARGUS_PROBE_SELFUPDATE=1` (advertises "auto-update on" to Argus),
+  `ARGUS_UPDATE_INTERVAL` (poll seconds, default 300).
+
+The win over plain Watchtower/unRAID auto-update is **central pinning + fleet visibility + you decide
+when a change rolls out**, with no third-party updater container.
+
 **Versioning & tracking upstream Zabbix automatically.** The `argus-probe` image is a thin wrapper
 over `zabbix/zabbix-proxy-sqlite3:alpine-7.0-latest`, and that base is baked in at *our* build time —
 so probes only see new Zabbix once we rebuild + publish. It is versioned by the **Zabbix version it

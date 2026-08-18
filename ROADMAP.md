@@ -28,7 +28,7 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 - [x] **Token-based enrollment / PKI service** — mint token → probe self-generates key + CSR → core signs & registers proxy via Zabbix API; private key never leaves the probe — v0.4.0
 - [x] **"Add probe" wizard** UI + self-enrolling `argus-probe` image — v0.4.0
 - [ ] Bring **site2–site5** probes online (now: Probes → Add probe) — _(ops)_ S each
-- [ ] **Probe fleet updates — control plane + opt-in self-update** (Argus sets target version + shows fleet; probe self-updates via mounted socket when enabled, else one-click command). Outbound-only means pull-based, not push. Build **after v0.4.0 is validated**. See DESIGN §18 — _(BE+FE+image)_ M
+- [x] **Probe fleet updates — control plane + opt-in self-update** — Argus holds a fleet target (`latest` or a `7.0.29-r1` pin) + shows each probe's version vs target; probes check in outbound; drift gets a one-click manual update; opt-in compose sidecar (`ARGUS_PROBE_ROLE=updater`) self-updates via the Docker socket. See DESIGN §18 — v0.4.8
 - [ ] **Self-configuring probe VM** (VMware / Nutanix / XCP-NG / KVM) — Packer golden image (Debian cloud image + the `argus-probe` container) that self-enrolls via **cloud-init**; the Add-probe flow gains a third output generating the cloud-init user-data / a tiny **NoCloud seed ISO** carrying the enroll token. Distribute as **OVA** (VMware/Nutanix) + **qcow2/XVA** (XCP-NG/KVM). See DESIGN §14. — _(ops+image+FE)_ L
 
 ### B. Auto-provisioning / discovery (Phase 4 — "replaces PRTG Add Sensor")
