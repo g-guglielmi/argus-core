@@ -57,6 +57,8 @@ type enrollResponse struct {
 	CA          string `json:"ca"`          // the CA cert (PEM), the probe's trust anchor
 	ProxyName   string `json:"proxy_name"`
 	CoreHost    string `json:"core_host"`
+	ProbeToken  string `json:"probe_token"` // long-lived credential for version check-ins
+	CheckinURL  string `json:"checkin_url"` // where the probe reports its version / reads the target
 }
 
 // handleEnroll signs a probe's CSR and registers its active proxy in Zabbix, in exchange for a
@@ -108,6 +110,18 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.st.MarkEnrollTokenUsed(ctx, t.ID)
+
+	// Issue a long-lived check-in credential so the probe can report its running version and read
+	// the fleet target version (powers the fleet-update view + opt-in self-updater). Best-effort:
+	// a failure here shouldn't block a successful enrollment, it just leaves the probe invisible to
+	// fleet updates until it re-enrolls.
+	probeToken, probeHash, tErr := auth.NewSessionToken()
+	if tErr != nil {
+		probeToken = ""
+	} else if err := s.st.UpsertProbeCredential(ctx, t.ProxyName, probeHash); err != nil {
+		s.logger.Warn("enroll: could not store probe check-in credential", "proxy", t.ProxyName, "err", err)
+		probeToken = ""
+	}
 	s.logger.Info("probe enrolled", "proxy", t.ProxyName)
 
 	writeJSON(w, http.StatusOK, enrollResponse{
@@ -115,6 +129,8 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		CA:          string(s.ca.CertPEM()),
 		ProxyName:   t.ProxyName,
 		CoreHost:    s.probeCoreHost(),
+		ProbeToken:  probeToken,
+		CheckinURL:  s.baseURL(r) + "/api/probes/checkin",
 	})
 }
 

@@ -7,11 +7,16 @@ import (
 )
 
 type proxyView struct {
-	Name       string `json:"name"`
-	LastAccess int64  `json:"last_access"`  // unix seconds, 0 if never seen
-	Online     bool   `json:"online"`       // seen within the last 5 minutes
-	Mode       string `json:"mode"`         // active | passive
-	EnrolledAt int64  `json:"enrolled_at"`  // unix seconds a probe self-enrolled via Argus; 0 if manual
+	Name         string `json:"name"`
+	LastAccess   int64  `json:"last_access"`   // unix seconds Zabbix last heard data, 0 if never seen
+	Online       bool   `json:"online"`        // seen within the last 5 minutes
+	Mode         string `json:"mode"`          // active | passive
+	EnrolledAt   int64  `json:"enrolled_at"`   // unix seconds a probe self-enrolled via Argus; 0 if manual
+	Version      string `json:"version"`       // running probe image version reported at check-in ("" = unknown)
+	Target       string `json:"target"`        // fleet target version this probe should converge on
+	SelfUpdate   bool   `json:"selfupdate"`    // probe reports its self-updater is enabled
+	UpdateStatus string `json:"update_status"` // unknown | tracking | current | outdated
+	LastCheckin  int64  `json:"last_checkin"`  // unix seconds of the last Argus check-in (0 = never)
 }
 
 // handleProxies lists Zabbix proxies (the per-site collectors) with their last-access time, so
@@ -33,6 +38,15 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Warn("proxies: enrollment times lookup failed", "err", err)
 	}
+	agents, err := s.st.ProbeAgents(ctx) // best-effort fleet-update state (version / self-update)
+	if err != nil {
+		s.logger.Warn("proxies: probe agents lookup failed", "err", err)
+	}
+	target, err := s.st.ProbeTargetVersion(ctx)
+	if err != nil {
+		s.logger.Warn("proxies: probe target lookup failed", "err", err)
+		target = "latest"
+	}
 	now := time.Now().Unix()
 	out := make([]proxyView, 0, len(proxies))
 	for _, p := range proxies {
@@ -41,12 +55,18 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 		if p.Mode == "1" {
 			mode = "passive"
 		}
+		ag := agents[p.Name]
 		out = append(out, proxyView{
-			Name:       p.Name,
-			LastAccess: la,
-			Online:     la > 0 && now-la <= 300,
-			Mode:       mode,
-			EnrolledAt: enrolled[p.Name],
+			Name:         p.Name,
+			LastAccess:   la,
+			Online:       la > 0 && now-la <= 300,
+			Mode:         mode,
+			EnrolledAt:   enrolled[p.Name],
+			Version:      ag.Version,
+			Target:       target,
+			SelfUpdate:   ag.SelfUpdate,
+			UpdateStatus: updateStatus(ag.Version, target),
+			LastCheckin:  ag.LastCheckin,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

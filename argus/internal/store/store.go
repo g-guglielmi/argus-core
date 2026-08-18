@@ -185,6 +185,18 @@ CREATE TABLE IF NOT EXISTS notify_events (
   fired_at   INTEGER
 );
 
+-- Per-probe fleet-update agents. A long-lived check-in credential is issued at enrollment
+-- (token_hash) so the probe can authenticate version check-ins; version/selfupdate/last_checkin
+-- are refreshed on each check-in and power the fleet-update view. Keyed by proxy name.
+CREATE TABLE IF NOT EXISTS probe_agents (
+  proxy_name   TEXT PRIMARY KEY,
+  token_hash   TEXT NOT NULL,
+  created_at   INTEGER NOT NULL,
+  version      TEXT NOT NULL DEFAULT '',   -- last reported image version, e.g. "7.0.29-r1"
+  selfupdate   INTEGER NOT NULL DEFAULT 0, -- probe reports whether its self-updater is enabled
+  last_checkin INTEGER NOT NULL DEFAULT 0  -- unix seconds of the last check-in (0 = never)
+);
+
 -- Small key/value store for app-level flags (e.g. the notifier's one-time baseline marker).
 CREATE TABLE IF NOT EXISTS app_meta (
   key   TEXT PRIMARY KEY,

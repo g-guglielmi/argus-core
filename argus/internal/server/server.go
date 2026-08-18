@@ -82,6 +82,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/password-reset/confirm", s.handleConfirmPasswordReset)
 	// probe enrollment (public; authenticated by a single-use enrollment token)
 	mux.HandleFunc("POST /api/enroll", s.handleEnroll)
+	// probe fleet check-in (public; authenticated by the long-lived probe token from enrollment)
+	mux.HandleFunc("POST /api/probes/checkin", s.handleProbeCheckin)
 	// signed one-click acknowledge link from notifications (public; HMAC-verified, GET confirms)
 	mux.HandleFunc("GET /api/alert/ack", s.handleAlertAck)
 	mux.HandleFunc("POST /api/alert/ack", s.handleAlertAck)
@@ -144,6 +146,10 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/probes/tokens", auth.RequireRole("admin", s.handleListEnrollTokens))
 	mux.HandleFunc("POST /api/probes/tokens", auth.RequireRole("admin", s.handleCreateEnrollToken))
 	mux.HandleFunc("DELETE /api/probes/tokens/{id}", auth.RequireRole("admin", s.handleDeleteEnrollToken))
+
+	// probe fleet target version (admin only) — the version probes should converge on
+	mux.HandleFunc("GET /api/probes/target", auth.RequireRole("admin", s.handleGetProbeTarget))
+	mux.HandleFunc("PUT /api/probes/target", auth.RequireRole("admin", s.handleSetProbeTarget))
 
 	// user management (admin only)
 	mux.HandleFunc("GET /api/users", auth.RequireRole("admin", s.handleListUsers))

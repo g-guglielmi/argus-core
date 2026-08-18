@@ -8,7 +8,7 @@ type User = { id: number; email: string; name: string; surname: string; role: st
 type Health = { status: string; zabbix: { reachable: boolean; version?: string; error?: string } }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[] }
-type Proxy = { name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number }
+type Proxy = { name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number }
 type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; config: Record<string, string> }
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
@@ -1036,12 +1036,14 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
   const [tokens, setTokens] = useState<EnrollTokenRow[] | null>(null)
   const [adding, setAdding] = useState(false)
   const [created, setCreated] = useState<CreatedToken | null>(null)
+  const [target, setTarget] = useState<string | null>(null)
+  const [openCmd, setOpenCmd] = useState<string | null>(null) // proxy name whose update command is expanded
   const isAdmin = role === 'admin'
 
   useEffect(() => {
     const load = () => fetch('/api/proxies')
       .then(async (r) => { if (!r.ok) throw new Error(await errText(r, 'Failed to load probes')); return r.json() })
-      .then((p: Proxy[]) => { setProxies(p || []); setError(null) })
+      .then((p: Proxy[]) => { setProxies(p || []); setError(null); if (p && p.length) setTarget(p[0].target ?? 'latest') })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load probes'))
     load(); const t = setInterval(load, 30000); return () => clearInterval(t)
   }, [])
@@ -1095,23 +1097,108 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
         </table>
       )}
 
+      {isAdmin && <FleetTarget target={target} onSaved={setTarget} />}
+
       <table className="enroll enroll-probes">
-        <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Mode</th><th>Enrolled</th></tr></thead>
+        <thead><tr><th>Probe</th><th>Status</th><th>Version</th><th>Update</th><th>Mode</th><th>Enrolled</th></tr></thead>
         <tbody>
-          {error && <tr><td colSpan={5} style={{ color: 'var(--err)' }}>{error}</td></tr>}
-          {!error && proxies === null && <tr><td colSpan={5} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
-          {!error && proxies && proxies.length === 0 && <tr><td colSpan={5} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
+          {error && <tr><td colSpan={6} style={{ color: 'var(--err)' }}>{error}</td></tr>}
+          {!error && proxies === null && <tr><td colSpan={6} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
+          {!error && proxies && proxies.length === 0 && <tr><td colSpan={6} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
           {!error && proxies && proxies.map((p) => (
-            <tr key={p.name}>
-              <td><strong>{p.name}</strong></td>
-              <td data-label="Status">{p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}</td>
-              <td data-label="Last check-in" className="mono" style={{ color: p.last_access ? undefined : 'var(--faint)' }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
-              <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
-              <td data-label="Enrolled" className="mono" style={{ color: p.enrolled_at ? 'var(--muted)' : 'var(--faint)' }} title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>{p.enrolled_at ? new Date(p.enrolled_at * 1000).toLocaleDateString() : '—'}</td>
-            </tr>
+            <Fragment key={p.name}>
+              <tr>
+                <td><strong>{p.name}</strong></td>
+                <td data-label="Status">{p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}</td>
+                <td data-label="Version" className="mono" title={p.last_checkin ? `Last check-in ${relTime(p.last_checkin)}` : 'No fleet check-in yet'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '—'}</td>
+                <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} /></td>
+                <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
+                <td data-label="Enrolled" className="mono" style={{ color: p.enrolled_at ? 'var(--muted)' : 'var(--faint)' }} title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>{p.enrolled_at ? new Date(p.enrolled_at * 1000).toLocaleDateString() : '—'}</td>
+              </tr>
+              {openCmd === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
+            </Fragment>
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// probeUpdateTag maps a fleet target to the pullable image tag for a manual update.
+function probeUpdateTag(target?: string): string {
+  return target && target !== 'latest' ? target : 'latest'
+}
+
+// UpdateBadge shows a probe's state versus the fleet target, and (for drift) a toggle that reveals
+// the one-click manual update command.
+function UpdateBadge({ p, open, onToggle }: { p: Proxy; open: boolean; onToggle: () => void }) {
+  const auto = p.selfupdate ? <span className="tag" title="Self-updater enabled on this probe" style={{ marginLeft: 6 }}>auto</span> : null
+  switch (p.update_status) {
+    case 'current':
+      return <span><span className="tag online">up to date</span>{auto}</span>
+    case 'tracking':
+      return <span><span className="tag" title="Fleet target is 'latest'; the probe converges on the newest image">tracking latest</span>{auto}</span>
+    case 'outdated':
+      return <span><button className="btn" onClick={onToggle}>{open ? 'Hide' : 'Update…'}</button>{auto}</span>
+    default:
+      return <span style={{ color: 'var(--faint)' }} title="This probe hasn't reported a version — update it to a fleet-aware image, or it was registered manually.">—</span>
+  }
+}
+
+// ProbeUpdateCommand renders the copyable pull+restart command for a single probe (manual path).
+function ProbeUpdateCommand({ p }: { p: Proxy }) {
+  const [copied, setCopied] = useState(false)
+  const cmd = `docker pull ${PROBE_IMAGE.replace(/:latest$/, '')}:${probeUpdateTag(p.target)} && docker restart argus-${p.name}`
+  return (
+    <div style={{ padding: '10px 16px', background: 'var(--elevated)', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+        <span style={{ color: 'var(--muted)', fontSize: 12.5 }}>Run on {p.name}'s Docker host{p.version ? ` (currently ${p.version})` : ''}:</span>
+        <button className="btn" style={{ marginLeft: 'auto' }} onClick={async () => { if (await copyToClipboard(cmd)) { setCopied(true); setTimeout(() => setCopied(false), 2000) } }}>{copied ? 'Copied!' : 'Copy'}</button>
+      </div>
+      <pre style={{ margin: 0, padding: '10px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12 }}><code>{cmd}</code></pre>
+    </div>
+  )
+}
+
+// FleetTarget lets an admin pick the version every probe should converge on: 'latest' (rolling)
+// or an exact pin like '7.0.29-r1'. The self-updater and the manual command both honour it.
+function FleetTarget({ target, onSaved }: { target: string | null; onSaved: (t: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [val, setVal] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  function start() { setVal(target || 'latest'); setError(null); setEditing(true) }
+  const valid = (v: string) => v === 'latest' || /^[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+$/.test(v.trim())
+
+  async function save() {
+    const v = val.trim()
+    if (!valid(v)) { setError('Use "latest" or a pin like 7.0.29-r1'); return }
+    setBusy(true); setError(null)
+    try {
+      const res = await fetch('/api/probes/target', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: v }) })
+      if (!res.ok) { setError(await errText(res, 'Could not save target')); return }
+      const d = await res.json(); onSaved(d.target); setEditing(false)
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
+      <span className="flabel">Fleet target version</span>
+      {!editing ? (
+        <>
+          <code style={{ background: 'var(--elevated)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 8px' }}>{target ?? '…'}</code>
+          <button className="btn" onClick={start}>Change</button>
+          <span style={{ color: 'var(--muted)', fontSize: 12 }}>What every probe should run — <code>latest</code> or a pin like <code>7.0.29-r1</code>.</span>
+        </>
+      ) : (
+        <>
+          <input className="input" style={{ width: 160 }} value={val} autoFocus placeholder="latest" onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }} />
+          <button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+          <button className="btn" disabled={busy} onClick={() => setEditing(false)}>Cancel</button>
+          {error && <span style={{ color: 'var(--err)', fontSize: 12.5 }}>{error}</span>}
+        </>
+      )}
     </div>
   )
 }
