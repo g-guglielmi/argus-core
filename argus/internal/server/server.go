@@ -25,10 +25,7 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 )
 
-const (
-	sessionTTL      = 7 * 24 * time.Hour
-	mfaChallengeTTL = 10 * time.Minute
-)
+const mfaChallengeTTL = 10 * time.Minute
 
 type Server struct {
 	cfg           config.Config
@@ -93,6 +90,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/login/passkey/finish", s.handlePasskeyLoginFinish)
 	mux.HandleFunc("GET /api/me", auth.RequireAuth(s.handleMe))
 	mux.HandleFunc("POST /api/me/password", auth.RequireAuth(s.handleChangeOwnPassword))
+	mux.HandleFunc("POST /api/me/preferences", auth.RequireAuth(s.handleUpdatePreferences))
 
 	// monitoring read path (any signed-in user)
 	mux.HandleFunc("GET /api/problems", auth.RequireAuth(s.handleProblems))
@@ -159,8 +157,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 
 	mux.Handle("/", spaHandler())
 
-	// Every request passes through session resolution first.
-	return auth.Middleware(s.st)(mux)
+	// Every request passes through session resolution first (idle timeout read live from settings).
+	return auth.Middleware(s.st, s.mgr.SessionIdleTimeout)(mux)
 }
 
 // --- health ---
@@ -214,10 +212,20 @@ type userResponse struct {
 	Surname    string `json:"surname"`
 	Role       string `json:"role"`
 	MFAEnabled bool   `json:"mfa_enabled"`
+	Landing    string `json:"landing"`
 }
 
 func toUserResponse(u *store.User) userResponse {
-	return userResponse{Email: u.Email, Name: u.Name, Surname: u.Surname, Role: u.Role, MFAEnabled: u.TOTPEnabled}
+	return userResponse{Email: u.Email, Name: u.Name, Surname: u.Surname, Role: u.Role, MFAEnabled: u.TOTPEnabled, Landing: normalizeLanding(u.Landing)}
+}
+
+// normalizeLanding coerces a stored landing value to a known option (defensive against a blank
+// column on a pre-migration row).
+func normalizeLanding(v string) string {
+	if v == "errors" {
+		return "errors"
+	}
+	return "overview"
 }
 
 // clientIP returns the caller's IP, honouring X-Forwarded-For only when TrustProxy is set
@@ -365,11 +373,12 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, u *store.U
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	if err := s.st.CreateSession(r.Context(), id, u.ID, time.Now().Add(sessionTTL)); err != nil {
+	ttl := s.mgr.SessionMaxLifetime()
+	if err := s.st.CreateSession(r.Context(), id, u.ID, time.Now().Add(ttl)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	auth.SetSessionCookie(w, raw, s.cfg.CookieSecure, sessionTTL)
+	auth.SetSessionCookie(w, raw, s.cfg.CookieSecure, ttl)
 	writeJSON(w, http.StatusOK, toUserResponse(u))
 }
 
@@ -383,6 +392,28 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r.Context()) // guaranteed present by RequireAuth
+	writeJSON(w, http.StatusOK, toUserResponse(u))
+}
+
+// handleUpdatePreferences stores per-user UI preferences (currently just the landing view).
+func (s *Server) handleUpdatePreferences(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r.Context()) // guaranteed present by RequireAuth
+	var req struct {
+		Landing string `json:"landing"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	if req.Landing != "overview" && req.Landing != "errors" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "landing must be 'overview' or 'errors'"})
+		return
+	}
+	if err := s.st.UpdateUserLanding(r.Context(), u.ID, req.Landing); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save preference"})
+		return
+	}
+	u.Landing = req.Landing
 	writeJSON(w, http.StatusOK, toUserResponse(u))
 }
 

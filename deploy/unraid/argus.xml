@@ -50,6 +50,8 @@
 
   <Config Name="Login Max Attempts" Target="ARGUS_LOGIN_MAX_ATTEMPTS" Default="7" Mode="" Description="Failed logins per window before throttling." Type="Variable" Display="advanced" Required="false" Mask="false">7</Config>
   <Config Name="Login Window (minutes)" Target="ARGUS_LOGIN_WINDOW_MINUTES" Default="15" Mode="" Description="Rate-limit sliding window." Type="Variable" Display="advanced" Required="false" Mask="false">15</Config>
+  <Config Name="Max Session (hours)" Target="ARGUS_SESSION_MAX_HOURS" Default="12" Mode="" Description="Absolute lifetime of a sign-in before re-authentication is required." Type="Variable" Display="advanced" Required="false" Mask="false">12</Config>
+  <Config Name="Idle Timeout (minutes)" Target="ARGUS_SESSION_IDLE_MINUTES" Default="0" Mode="" Description="Sign out after this long with no activity. 0 disables the idle timeout." Type="Variable" Display="advanced" Required="false" Mask="false">0</Config>
 
   <Config Name="Passkey RP ID" Target="ARGUS_RP_ID" Default="monitoring.example.com" Mode="" Description="WebAuthn relying-party ID = the FQDN, no scheme. Needs HTTPS + real domain; omit for plain HTTP/IP." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Passkey Display Name" Target="ARGUS_RP_DISPLAY_NAME" Default="Argus" Mode="" Description="Name shown by the authenticator." Type="Variable" Display="advanced" Required="false" Mask="false">Argus</Config>

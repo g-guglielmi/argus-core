@@ -105,7 +105,7 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 
 > **Runtime settings (admin UI).** Several of these can also be set from the admin **Settings**
 > page with no redeploy: the **Zabbix API URL + token**, **`ARGUS_PUBLIC_URL`**, **`ARGUS_TZ`**,
-> and the **login rate-limit** vars. Precedence is **env-wins**: when the variable is set it takes
+> the **login rate-limit** vars, and the **session timeout** vars. Precedence is **env-wins**: when the variable is set it takes
 > effect and the field is read-only in the UI; unset the variable to manage that setting in the
 > GUI (stored in the database, token encrypted at rest). The rows below are marked _(UI)_.
 
@@ -131,6 +131,8 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 | `ARGUS_TRUST_PROXY` | `false` | read the client IP from `X-Forwarded-For` (set `true` behind a reverse proxy) |
 | `ARGUS_LOGIN_MAX_ATTEMPTS` | `7` | _(UI)_ failed logins per window before throttling |
 | `ARGUS_LOGIN_WINDOW_MINUTES` | `15` | _(UI)_ rate-limit sliding window |
+| `ARGUS_SESSION_MAX_HOURS` | `12` | _(UI)_ absolute session lifetime before re-authentication is required |
+| `ARGUS_SESSION_IDLE_MINUTES` | `0` | _(UI)_ sign out after this long with no activity (`0` disables the idle timeout) |
 
 **Notifications**
 | Var | Default | Purpose |

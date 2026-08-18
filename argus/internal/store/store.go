@@ -28,6 +28,7 @@ type User struct {
 	TOTPSecret   string // base32 TOTP secret ("" when MFA not set up)
 	TOTPEnabled  bool   // true once the user has confirmed a code
 	Disabled     bool   // true = account suspended; cannot sign in
+	Landing      string // preferred landing view on a fresh visit: 'overview' | 'errors'
 	CreatedAt    time.Time
 }
 
@@ -79,7 +80,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   id         TEXT PRIMARY KEY,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL
+  expires_at INTEGER NOT NULL,
+  last_seen  INTEGER NOT NULL DEFAULT 0   -- last request time; drives the optional idle timeout
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
@@ -205,6 +207,12 @@ CREATE TABLE IF NOT EXISTS app_meta (
 	if err := s.ensureColumn("users", "disabled INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	if err := s.ensureColumn("users", "landing TEXT NOT NULL DEFAULT 'overview'"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("sessions", "last_seen INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	if err := s.ensureColumn("notify_events", "item_id TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
@@ -238,7 +246,7 @@ func (s *Store) CreateUser(ctx context.Context, u User) (int64, error) {
 	return res.LastInsertId()
 }
 
-const userColumns = `id,email,name,surname,password_hash,role,totp_secret,totp_enabled,disabled,created_at`
+const userColumns = `id,email,name,surname,password_hash,role,totp_secret,totp_enabled,disabled,landing,created_at`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (*User, error) {
 	return s.scanUser(s.db.QueryRowContext(ctx,
@@ -258,7 +266,7 @@ func (s *Store) scanUserRow(row rowScanner) (*User, error) {
 	var u User
 	var created int64
 	var totpEnabled, disabled int
-	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Surname, &u.PasswordHash, &u.Role, &u.TOTPSecret, &totpEnabled, &disabled, &created)
+	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Surname, &u.PasswordHash, &u.Role, &u.TOTPSecret, &totpEnabled, &disabled, &u.Landing, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -316,6 +324,12 @@ func (s *Store) CountAdmins(ctx context.Context) (int, error) {
 
 func (s *Store) UpdatePassword(ctx context.Context, id int64, hash string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash=? WHERE id=?`, hash, id)
+	return err
+}
+
+// UpdateUserLanding stores the user's preferred landing view ('overview' | 'errors').
+func (s *Store) UpdateUserLanding(ctx context.Context, id int64, landing string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET landing=? WHERE id=?`, landing, id)
 	return err
 }
 
@@ -772,26 +786,42 @@ func (s *Store) DeleteWebAuthnSession(ctx context.Context, id string) error {
 // --- sessions ---
 
 func (s *Store) CreateSession(ctx context.Context, id string, userID int64, expires time.Time) error {
+	now := time.Now().Unix()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions(id,user_id,created_at,expires_at) VALUES(?,?,?,?)`,
-		id, userID, time.Now().Unix(), expires.Unix())
+		`INSERT INTO sessions(id,user_id,created_at,expires_at,last_seen) VALUES(?,?,?,?,?)`,
+		id, userID, now, expires.Unix(), now)
 	return err
 }
 
-// SessionUser returns the user for a valid, unexpired session id, deleting it if expired.
-func (s *Store) SessionUser(ctx context.Context, id string) (*User, error) {
-	var userID, expires int64
+// touchThreshold throttles the last_seen write so a busy session doesn't cause a DB write on
+// every request (SQLite is single-writer). Idle resolution is coarse enough that a minute of
+// slack is irrelevant.
+const touchThreshold = 60 // seconds
+
+// SessionUserTouch validates a session against both its absolute expiry and an optional idle
+// timeout, refreshes last_seen (throttled), and returns the user. A session is deleted and
+// treated as not-found once either bound is crossed. idle <= 0 disables the idle check.
+func (s *Store) SessionUserTouch(ctx context.Context, id string, idle time.Duration, now time.Time) (*User, error) {
+	var userID, expires, lastSeen int64
 	err := s.db.QueryRowContext(ctx,
-		`SELECT user_id,expires_at FROM sessions WHERE id=?`, id).Scan(&userID, &expires)
+		`SELECT user_id,expires_at,last_seen FROM sessions WHERE id=?`, id).Scan(&userID, &expires, &lastSeen)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
-	if time.Now().Unix() > expires {
+	nowUnix := now.Unix()
+	if nowUnix > expires {
 		_ = s.DeleteSession(ctx, id)
 		return nil, ErrNotFound
+	}
+	if idle > 0 && lastSeen > 0 && nowUnix-lastSeen > int64(idle.Seconds()) {
+		_ = s.DeleteSession(ctx, id)
+		return nil, ErrNotFound
+	}
+	if nowUnix-lastSeen >= touchThreshold {
+		_, _ = s.db.ExecContext(ctx, `UPDATE sessions SET last_seen=? WHERE id=?`, nowUnix, id)
 	}
 	return s.UserByID(ctx, userID)
 }

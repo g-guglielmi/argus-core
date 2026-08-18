@@ -32,6 +32,8 @@ const (
 	KeyLoginMax      = "login_max_attempts"
 	KeyLoginWindow   = "login_window_minutes"
 	KeyProbeCoreHost = "probe_core_host"
+	KeySessionMax    = "session_max_hours"
+	KeySessionIdle   = "session_idle_minutes"
 )
 
 const metaPrefix = "setting:"
@@ -46,16 +48,19 @@ type def struct {
 	secret bool
 	def    string // built-in default when neither env nor DB provide a value
 	hint   string
+	min    int // minimum for "int" settings (ignored otherwise; 0 allows a disabling zero)
 }
 
 var defs = []def{
-	{KeyZabbixURL, "ARGUS_ZABBIX_API_URL", "Zabbix API URL", "Connection", "url", false, "", "JSON-RPC endpoint, e.g. http://10.0.0.10:8080/api_jsonrpc.php"},
-	{KeyZabbixToken, "ARGUS_ZABBIX_API_TOKEN", "Zabbix API token", "Connection", "text", true, "", "Bearer token with write scope (for acknowledge/pause). Leave blank to keep the current value."},
-	{KeyPublicURL, "ARGUS_PUBLIC_URL", "Public URL", "General", "url", false, "", "External base URL, used for Open/Acknowledge links in notifications."},
-	{KeyTimezone, "ARGUS_TZ", "Timezone", "General", "tz", false, "UTC", "IANA name for notification timestamps, e.g. Europe/Rome."},
-	{KeyLoginMax, "ARGUS_LOGIN_MAX_ATTEMPTS", "Login max attempts", "Security", "int", false, "7", "Failed sign-ins per window before throttling."},
-	{KeyLoginWindow, "ARGUS_LOGIN_WINDOW_MINUTES", "Login window (minutes)", "Security", "int", false, "15", "Sliding window for the attempt counter."},
-	{KeyProbeCoreHost, "ARGUS_PROBE_CORE_HOST", "Probe core host", "Probe enrollment", "text", false, "", "Address probes dial for :10051 (host or host:port), baked into new enrollments. Falls back to the Public URL host if empty."},
+	{KeyZabbixURL, "ARGUS_ZABBIX_API_URL", "Zabbix API URL", "Connection", "url", false, "", "JSON-RPC endpoint, e.g. http://10.0.0.10:8080/api_jsonrpc.php", 0},
+	{KeyZabbixToken, "ARGUS_ZABBIX_API_TOKEN", "Zabbix API token", "Connection", "text", true, "", "Bearer token with write scope (for acknowledge/pause). Leave blank to keep the current value.", 0},
+	{KeyPublicURL, "ARGUS_PUBLIC_URL", "Public URL", "General", "url", false, "", "External base URL, used for Open/Acknowledge links in notifications.", 0},
+	{KeyTimezone, "ARGUS_TZ", "Timezone", "General", "tz", false, "UTC", "IANA name for notification timestamps, e.g. Europe/Rome.", 0},
+	{KeyLoginMax, "ARGUS_LOGIN_MAX_ATTEMPTS", "Login max attempts", "Security", "int", false, "7", "Failed sign-ins per window before throttling.", 1},
+	{KeyLoginWindow, "ARGUS_LOGIN_WINDOW_MINUTES", "Login window (minutes)", "Security", "int", false, "15", "Sliding window for the attempt counter.", 1},
+	{KeySessionMax, "ARGUS_SESSION_MAX_HOURS", "Max session length (hours)", "Sessions", "int", false, "12", "Absolute lifetime of a sign-in before it must re-authenticate.", 1},
+	{KeySessionIdle, "ARGUS_SESSION_IDLE_MINUTES", "Idle timeout (minutes)", "Sessions", "int", false, "0", "Sign out after this long with no activity. 0 disables the idle timeout.", 0},
+	{KeyProbeCoreHost, "ARGUS_PROBE_CORE_HOST", "Probe core host", "Probe enrollment", "text", false, "", "Address probes dial for :10051 (host or host:port), baked into new enrollments. Falls back to the Public URL host if empty.", 0},
 }
 
 func defFor(key string) (def, bool) {
@@ -82,6 +87,7 @@ type View struct {
 	Group    string `json:"group"`
 	Type     string `json:"type"`
 	Secret   bool   `json:"secret"`
+	Min      int    `json:"min"` // minimum for int inputs (0 allows a disabling zero)
 	Hint     string `json:"hint"`
 	Env      string `json:"env"` // backing env var (shown when the field is env-locked)
 	Value    string `json:"value"`
@@ -101,6 +107,8 @@ type Manager struct {
 	publicURL     string
 	loc           *time.Location
 	probeCoreHost string
+	sessionMax    time.Duration
+	sessionIdle   time.Duration
 }
 
 // New builds the manager, creates the login limiter, loads any stored overrides, and applies
@@ -140,6 +148,20 @@ func (m *Manager) ProbeCoreHost() string {
 	return m.probeCoreHost
 }
 
+// SessionMaxLifetime is the absolute lifetime granted to a new session.
+func (m *Manager) SessionMaxLifetime() time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.sessionMax
+}
+
+// SessionIdleTimeout is the sliding inactivity window before a session is dropped (0 = disabled).
+func (m *Manager) SessionIdleTimeout() time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.sessionIdle
+}
+
 // List returns every setting's current state for the admin UI.
 func (m *Manager) List() []View {
 	m.mu.RLock()
@@ -148,7 +170,7 @@ func (m *Manager) List() []View {
 	for _, d := range defs {
 		r := m.snap[d.key]
 		out = append(out, View{
-			Key: d.key, Label: d.label, Group: d.group, Type: d.typ, Secret: d.secret,
+			Key: d.key, Label: d.label, Group: d.group, Type: d.typ, Secret: d.secret, Min: d.min,
 			Hint: d.hint, Env: d.env, Value: r.value, Source: r.source, Locked: r.locked, HasValue: r.hasValue,
 		})
 	}
@@ -239,6 +261,8 @@ func (m *Manager) reload(ctx context.Context) error {
 	maxN := atoiOr(effective(snap[KeyLoginMax]), 7)
 	winMin := atoiOr(effective(snap[KeyLoginWindow]), 15)
 	pch := effective(snap[KeyProbeCoreHost])
+	sessMaxH := atoiClamp(effective(snap[KeySessionMax]), 12, 1)
+	sessIdleMin := atoiClamp(effective(snap[KeySessionIdle]), 0, 0)
 
 	// Apply to the live subsystems (each is independently lock-guarded).
 	m.zbx.Configure(zURL, zTok)
@@ -249,6 +273,8 @@ func (m *Manager) reload(ctx context.Context) error {
 	m.publicURL = pub
 	m.loc = loc
 	m.probeCoreHost = pch
+	m.sessionMax = time.Duration(sessMaxH) * time.Hour
+	m.sessionIdle = time.Duration(sessIdleMin) * time.Minute
 	m.mu.Unlock()
 	return nil
 }
@@ -322,8 +348,8 @@ func validate(d def, v string) error {
 		}
 	case "int":
 		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 {
-			return fmt.Errorf("%s must be a whole number ≥ 1", d.label)
+		if err != nil || n < d.min {
+			return fmt.Errorf("%s must be a whole number ≥ %d", d.label, d.min)
 		}
 	}
 	return nil
@@ -331,6 +357,14 @@ func validate(d def, v string) error {
 
 func atoiOr(s string, def int) int {
 	if n, err := strconv.Atoi(s); err == nil && n >= 1 {
+		return n
+	}
+	return def
+}
+
+// atoiClamp parses s, falling back to def when it isn't a whole number ≥ min.
+func atoiClamp(s string, def, min int) int {
+	if n, err := strconv.Atoi(s); err == nil && n >= min {
 		return n
 	}
 	return def

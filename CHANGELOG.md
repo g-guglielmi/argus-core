@@ -11,6 +11,26 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.5.0] - 2026-08-18
+
+**Configurable session timeouts + per-user landing page.** (Roadmap §E)
+
+- **Max session length** is now configurable and defaults to **12 hours** (previously a fixed
+  7-day absolute expiry). Set in **Settings → Sessions** or via `ARGUS_SESSION_MAX_HOURS`. Applies
+  to sessions created after the change.
+- **Idle timeout** (new, **off by default**): sign out after a period of inactivity. Each request
+  refreshes the session's `last_seen` (throttled to at most once a minute); crossing the window
+  drops the session. Set in **Settings → Sessions** or via `ARGUS_SESSION_IDLE_MINUTES` (`0`
+  disables it). Changes take effect immediately for existing sessions.
+- **Per-user landing page**: choose whether Argus opens on **Overview** or the **Errors** list on
+  sign-in / a fresh visit, from **Account → Landing page**. A deep link or reload still restores
+  the exact screen in the URL. Stored per user (`POST /api/me/preferences`), so it follows you
+  across devices.
+- Both timeout settings honour the usual **env-wins** precedence and are marked _(UI)_ in the
+  README; the Unraid template gains the two `ARGUS_SESSION_*` variables (advanced).
+
+---
+
 ## [0.4.6] - 2026-08-18
 
 - **Removed the duplicate theme toggle.** The dark/light switch existed in both **Account** and the

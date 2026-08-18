@@ -3,7 +3,7 @@ import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { registerPasskey, loginWithPasskey } from './webauthn'
 
-type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean }
+type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; landing?: 'overview' | 'errors' }
 type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean }
 type Health = { status: string; zabbix: { reachable: boolean; version?: string; error?: string } }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
@@ -276,7 +276,7 @@ export default function App() {
   if (resetToken) return <ResetPassword token={resetToken} onDone={() => { window.history.replaceState({}, '', window.location.pathname); setResetToken(null) }} />
   if (loading) return <Frame><p>Loading…</p></Frame>
   if (!me) return <Login onSuccess={setMe} passkeysAvailable={passkeysAvailable} passwordReset={passwordReset} />
-  return <AppShell me={me} onLogout={() => setMe(null)} passkeysAvailable={passkeysAvailable} probeEnroll={probeEnroll} />
+  return <AppShell me={me} onMe={setMe} onLogout={() => setMe(null)} passkeysAvailable={passkeysAvailable} probeEnroll={probeEnroll} />
 }
 
 function Frame({ children }: { children: ReactNode }) {
@@ -565,16 +565,22 @@ function buildNav(s: NavState): string {
   return window.location.pathname + (qs ? '?' + qs : '')
 }
 
-function AppShell({ me, onLogout, passkeysAvailable, probeEnroll }: { me: Me; onLogout: () => void; passkeysAvailable: boolean; probeEnroll: boolean }) {
+function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll }: { me: Me; onMe: (m: Me) => void; onLogout: () => void; passkeysAvailable: boolean; probeEnroll: boolean }) {
   // Admin-only views can't be restored from a shared/stale URL by a non-admin.
   const clampView = (v: View): View => ((v === 'users' || v === 'settings') && me.role !== 'admin' ? 'overview' : v)
-  const [view, setView] = useState<View>(() => clampView(parseNav().view))
+  // A fresh visit to the bare "/" (no query) honours the user's landing preference; any deep
+  // link (?view=…, ?host=…, ?reset=… already handled) is respected as-is.
+  const initialNav = (): NavState => {
+    if (!window.location.search && me.landing === 'errors') return { view: 'list', filter: 'error' }
+    return parseNav()
+  }
+  const [view, setView] = useState<View>(() => clampView(initialNav().view))
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('argus-collapsed') === '1' } catch { return false } })
   const [navOpen, setNavOpen] = useState(false) // mobile drawer
   const [menuOpen, setMenuOpen] = useState(false)
   const [theme, toggleTheme] = useTheme()
   const [sensors, setSensors] = useState<SensorRow[]>([])
-  const [listFilter, setListFilter] = useState<string>(() => parseNav().filter)
+  const [listFilter, setListFilter] = useState<string>(() => initialNav().filter)
   const canPause = me.role === 'admin' || me.role === 'helpdesk'
 
   useEffect(() => {
@@ -617,7 +623,9 @@ function AppShell({ me, onLogout, passkeysAvailable, probeEnroll }: { me: Me; on
   // Keep the address bar and app state in sync: canonicalize the initial URL, and respond to
   // Back/Forward (popstate) by restoring the view the URL describes.
   useEffect(() => {
-    const s = parseNav()
+    // Reflect the resolved initial view (which may come from the landing preference) in the URL,
+    // so a bare "/" that lands on Errors becomes ?view=list&filter=error and Back/Forward is sane.
+    const s = initialNav()
     window.history.replaceState({}, '', buildNav({ ...s, view: clampView(s.view) }))
     const onPop = () => {
       const n = parseNav()
@@ -709,7 +717,7 @@ function AppShell({ me, onLogout, passkeysAvailable, probeEnroll }: { me: Me; on
           {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} />}
           {view === 'users' && me.role === 'admin' && <UsersView />}
           {view === 'settings' && me.role === 'admin' && <SettingsView />}
-          {view === 'account' && <AccountView passkeysAvailable={passkeysAvailable} theme={theme} toggleTheme={toggleTheme} />}
+          {view === 'account' && <AccountView me={me} onMe={onMe} passkeysAvailable={passkeysAvailable} theme={theme} toggleTheme={toggleTheme} />}
         </div>
       </div>
     </div>
@@ -717,7 +725,7 @@ function AppShell({ me, onLogout, passkeysAvailable, probeEnroll }: { me: Me; on
 }
 
 type SettingItem = {
-  key: string; label: string; group: string; type: string; secret: boolean; hint: string
+  key: string; label: string; group: string; type: string; secret: boolean; min?: number; hint: string
   env: string; value: string; source: string; locked: boolean; has_value: boolean
 }
 
@@ -767,7 +775,7 @@ function SettingsView() {
           placeholder={it.locked && it.secret ? '•••••••• (managed by environment)' : ph}
           disabled={it.locked || busy}
           autoComplete={it.secret ? 'new-password' : 'off'}
-          min={it.type === 'int' ? 1 : undefined}
+          min={it.type === 'int' ? (it.min ?? 1) : undefined}
           onChange={(e) => setEdit(it.key, e.target.value)}
         />
         <span className="set-hint">{it.locked ? `Managed via ${it.env} — unset that variable to edit here.` : it.hint}</span>
@@ -779,6 +787,7 @@ function SettingsView() {
     { name: 'Connection', title: 'Zabbix connection', note: 'Where Argus reads monitoring data from.' },
     { name: 'General', title: 'General', note: 'Timezone and the external URL used in notification links.' },
     { name: 'Security', title: 'Login rate limiting', note: 'Brute-force protection thresholds.' },
+    { name: 'Sessions', title: 'Sessions', note: 'How long a sign-in stays valid. Changes apply to sessions created after saving; the idle timeout takes effect immediately.' },
     { name: 'Probe enrollment', title: 'Probe enrollment', note: 'The address new probes are told to dial for the Zabbix server (:10051).' },
   ]
 
@@ -1952,7 +1961,7 @@ function UsersView() {
   )
 }
 
-function AccountView({ passkeysAvailable, theme, toggleTheme }: { passkeysAvailable: boolean; theme: 'dark' | 'light'; toggleTheme: () => void }) {
+function AccountView({ me, onMe, passkeysAvailable, theme, toggleTheme }: { me: Me; onMe: (m: Me) => void; passkeysAvailable: boolean; theme: 'dark' | 'light'; toggleTheme: () => void }) {
   return (
     <div style={{ display: 'grid', gap: '1rem', maxWidth: 560 }}>
       <section style={card}>
@@ -1960,10 +1969,45 @@ function AccountView({ passkeysAvailable, theme, toggleTheme }: { passkeysAvaila
         <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>Theme is remembered on this device. Currently {theme}.</p>
         <button type="button" style={btn} onClick={toggleTheme}>Switch to {theme === 'dark' ? 'light' : 'dark'} mode</button>
       </section>
+      <LandingCard me={me} onMe={onMe} />
       <PasswordCard />
       <MfaCard />
       {passkeysAvailable && <PasskeyCard />}
     </div>
+  )
+}
+
+function LandingCard({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
+  const [landing, setLanding] = useState<'overview' | 'errors'>(me.landing === 'errors' ? 'errors' : 'overview')
+  const [msg, setMsg] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function choose(v: 'overview' | 'errors') {
+    if (v === landing) return
+    const prev = landing
+    setLanding(v); setMsg(null); setError(null); setBusy(true)
+    try {
+      const res = await fetch('/api/me/preferences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ landing: v }) })
+      if (!res.ok) { setLanding(prev); setError(await errText(res, 'Could not save preference')); return }
+      onMe(await res.json()); setMsg('Landing page updated.')
+    } catch { setLanding(prev); setError('Could not save preference') }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <section style={card}>
+      <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Landing page</h2>
+      <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>Which screen Argus opens on when you sign in or visit the app.</p>
+      {error && <p style={{ color: 'var(--err)' }}>{error}</p>}
+      {msg && <p style={{ color: 'var(--ok)' }}>{msg}</p>}
+      <label style={{ display: 'block' }}>Open on
+        <select style={{ ...input, width: '100%', marginTop: 4 }} value={landing} disabled={busy} onChange={(e) => choose(e.target.value as 'overview' | 'errors')}>
+          <option value="overview">Overview — what needs attention right now</option>
+          <option value="errors">Errors — the list of erroring sensors</option>
+        </select>
+      </label>
+    </section>
   )
 }
 

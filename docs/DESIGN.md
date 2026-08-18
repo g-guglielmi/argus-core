@@ -240,10 +240,12 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   - **Viewer** — view + **acknowledge** only (no pause, no edits).
 - **Auth lives in the custom app** (Zabbix frontend locked down; app uses a service
   account to the Zabbix API).
-- **Sessions:** today a fixed **7-day absolute** cookie (no idle timeout, no sliding renewal).
-  Planned (ROADMAP §E): admin-configurable **max session lifetime** (default 12h) + optional
-  **idle timeout** (disabled by default), both in Settings and env-overridable.
-- **Per-user landing page** preference — default Overview; user can switch to Errors page.
+- **Sessions:** admin-configurable **max lifetime** (default **12h**, `ARGUS_SESSION_MAX_HOURS`)
+  plus an optional **idle timeout** (default off, `ARGUS_SESSION_IDLE_MINUTES`; a per-session
+  `last_seen` is bumped by the auth middleware, throttled to ≤1 write/min). Both live in
+  **Settings → Sessions** and honour env-wins precedence.
+- **Per-user landing page** preference — default Overview; user can switch to the Errors list in
+  **Account → Landing page** (stored server-side, `POST /api/me/preferences`).
 
 ---
 
