@@ -143,17 +143,26 @@ recreate — **no re-enrollment**: the signed cert + `ca.crt` live on the persis
 Because the probe pins `:latest`, pushing a new `argus-probe` image to GHCR is enough for these to
 pick it up. (Pin a specific tag instead if you'd rather gate probe updates — see below.)
 
-**Tracking upstream Zabbix automatically.** The `argus-probe` image is a thin wrapper over
-`zabbix/zabbix-proxy-sqlite3:alpine-7.0-latest`, and that base is baked in at *our* build time — so
-probes only see new Zabbix once we rebuild + publish. A scheduled CI job
-([`probe-base-watch.yml`](../.github/workflows/probe-base-watch.yml)) does this with no manual step:
-it checks the base image daily and, when it changes, rebuilds and pushes `argus-probe:latest`
-(absorbing even same-version Alpine/security rebuilds). When the **Zabbix version number** actually
-bumps (e.g. 7.0.14 → 7.0.15) it also cuts a `probe/vX.Y.Z` tag and a GitHub Release with notes.
-Your probe hosts then pick it up through the same Watchtower / unRAID / manual path above.
+**Versioning & tracking upstream Zabbix automatically.** The `argus-probe` image is a thin wrapper
+over `zabbix/zabbix-proxy-sqlite3:alpine-7.0-latest`, and that base is baked in at *our* build time —
+so probes only see new Zabbix once we rebuild + publish. It is versioned by the **Zabbix version it
+ships plus a revision for our own wrapper edits** — `probe/v<zabbix>-r<n>` (e.g. `probe/v7.0.29-r1`,
+then `-r2` for a wrapper fix, then `7.0.30-r1` when Zabbix bumps). This is **decoupled from the app's
+`vX.Y.Z` semver**: an app-only release never rebuilds or re-tags a probe.
 
-- **Gate updates by version:** pin `ghcr.io/<owner>/argus-probe:zabbix-7.0.15` instead of `:latest`
-  and bump it deliberately when you want.
+A single CI job ([`probe-image.yml`](../.github/workflows/probe-image.yml)) owns that lifecycle from
+two triggers, with no manual step:
+
+- **Upstream watch (daily schedule):** checks the base image; when its **digest** moves it rebuilds
+  and pushes the rolling tags `:latest` + `:zabbix-<ver>` (absorbing even same-version Alpine/security
+  rebuilds). It cuts a Release only when the **Zabbix version number** actually changes (→ `-r1`).
+- **Wrapper change (push to `deploy/probe-image/**`):** rebuilds and cuts a revision Release
+  (`-r<prev+1>`) against the same Zabbix version.
+
+Your probe hosts pick any of these up through the same Watchtower / unRAID / manual path above.
+
+- **Gate updates by version:** pin `ghcr.io/<owner>/argus-probe:zabbix-7.0.29` (newest wrapper for
+  that Zabbix line) or `:7.0.29-r1` (fully immutable) instead of `:latest`, and bump deliberately.
 - **Major upgrades stay manual:** moving to a new Zabbix major/minor (7.2, the next LTS 8.0, …) is a
   deliberate `FROM` bump in `deploy/probe-image/Dockerfile`, done in lockstep with upgrading the
   Zabbix **server** (the proxy must match the server's major.minor). The watcher never does that.
