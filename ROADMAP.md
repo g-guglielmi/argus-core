@@ -49,8 +49,8 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 
 ### E. Auth / account gaps
 - [x] **Self-service email password reset** (single-use emailed link; reuses the email channel) — v0.3.3
-- [x] **Configurable session timeouts** — **max session lifetime** (default **12h**, replacing the old fixed 7-day absolute expiry) + optional **idle timeout** (sliding; **disabled by default**). Both admin-editable in **Settings → Sessions** (env-overridable). Idle uses a per-session `last_seen` bumped by the auth middleware (throttled ≤1 write/min); max caps absolute lifetime — v0.5.0
-- [x] **Per-user landing page** preference (Overview vs Errors), in **Account → Landing page** — v0.5.0
+- [x] **Configurable session timeouts** — **max session lifetime** (default **12h**, replacing the old fixed 7-day absolute expiry) + optional **idle timeout** (sliding; **disabled by default**). Both admin-editable in **Settings → Sessions** (env-overridable). Idle uses a per-session `last_seen` bumped by the auth middleware (throttled ≤1 write/min); max caps absolute lifetime — v0.4.7
+- [x] **Per-user landing page** preference (Overview vs Errors), in **Account → Landing page** — v0.4.7
 
 ### F. UX / quality-of-life
 - [x] **Deep-link URLs / reload persistence** — reflect the view in the address bar (DESIGN §17) — _(FE)_
@@ -82,6 +82,6 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 1. ~~Deep-link URLs~~ ✅ (done) — small, felt every day
 2. ~~Self-service password reset~~ ✅ (done, v0.3.3)
 3. ~~Probe enrollment~~ ✅ (done, v0.4.0) — now bring site2–5 online from the GUI
-4. ~~Configurable session timeouts~~ ✅ + ~~per-user landing page~~ ✅ (done, v0.5.0) — §E hardening ahead of internet exposure
+4. ~~Configurable session timeouts~~ ✅ + ~~per-user landing page~~ ✅ (done, v0.4.7) — §E hardening ahead of internet exposure
 5. Then the big lift: **discovery + device templates** (B/C) → the real path to a production **1.0**.
 6. **(last)** **Android native app** with push notifications (§I) — iOS TBD.

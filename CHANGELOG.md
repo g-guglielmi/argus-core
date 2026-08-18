@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [0.5.0] - 2026-08-18
+## [0.4.7] - 2026-08-18
 
 **Configurable session timeouts + per-user landing page.** (Roadmap §E)
 
