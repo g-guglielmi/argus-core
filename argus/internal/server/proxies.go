@@ -17,8 +17,9 @@ type proxyView struct {
 	EnrolledAt   int64  `json:"enrolled_at"`   // unix seconds a probe self-enrolled via Argus; 0 if manual
 	Version      string `json:"version"`       // running probe image version reported at check-in ("" = unknown)
 	Target       string `json:"target"`        // fleet target version this probe should converge on
+	Latest       string `json:"latest"`        // newest version resolved from GHCR ("" if unknown)
 	SelfUpdate   bool   `json:"selfupdate"`    // probe reports its self-updater is enabled
-	UpdateStatus string `json:"update_status"` // unknown | tracking | current | outdated
+	UpdateStatus string `json:"update_status"` // unknown | tracking | current | outdated | external
 	LastCheckin  int64  `json:"last_checkin"`  // unix seconds of the last Argus check-in (0 = never)
 }
 
@@ -50,6 +51,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 		s.logger.Warn("proxies: probe target lookup failed", "err", err)
 		target = "latest"
 	}
+	latest := s.probeLatest.get() // newest published probe version from GHCR ("" if unresolved)
 	now := time.Now().Unix()
 	out := make([]proxyView, 0, len(proxies))
 	for _, p := range proxies {
@@ -63,7 +65,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 		// revision, e.g. 7.0.29-r2). Fall back to the Zabbix-reported proxy version so probes that
 		// don't check in (older images, or ones updated outside Argus like unRAID) still show a
 		// version — just the Zabbix version, without the -rN, and marked as externally managed.
-		version, status := ag.Version, updateStatus(ag.Version, target)
+		version, status := ag.Version, updateStatus(ag.Version, target, latest)
 		if version == "" {
 			if zv := zbxVersionString(p.Version); zv != "" {
 				version, status = zv, "external"
@@ -77,6 +79,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			EnrolledAt:   enrolled[p.Name],
 			Version:      version,
 			Target:       target,
+			Latest:       latest,
 			SelfUpdate:   ag.SelfUpdate,
 			UpdateStatus: status,
 			LastCheckin:  ag.LastCheckin,

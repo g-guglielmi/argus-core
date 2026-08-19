@@ -38,13 +38,17 @@ type Server struct {
 	signingSecret string             // HMAC secret for signed alert links
 	loginLimiter  *ratelimit.Limiter // brute-force protection for login (owned by mgr)
 	ca            *pki.CA            // nil when probe enrollment is not configured
+	probeLatest   *probeLatestCache  // newest published probe version, polled from public GHCR
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {
 	dummy, _ := auth.HashPassword("argus-nonexistent-user")
 	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, mgr: mgr, dummyHash: dummy,
 		signingSecret: GetSigningSecret(context.Background(), st),
-		loginLimiter:  mgr.Limiter()}
+		loginLimiter:  mgr.Limiter(), probeLatest: &probeLatestCache{}}
+	// Poll public GHCR for the newest probe revision so the fleet view can flag "-rN available"
+	// even when the target is "latest". Background; a failure just leaves it unknown.
+	s.startProbeLatestRefresh(context.Background())
 
 	// Probe enrollment is available only when the CA is mounted. A load failure disables it
 	// (logged) rather than blocking startup.

@@ -20,20 +20,25 @@ func validProbeTarget(v string) bool {
 	return v == "latest" || probeTargetPin.MatchString(v)
 }
 
-// updateStatus classifies a probe's reported version against the fleet target.
+// updateStatus classifies a probe's reported version against the fleet target. `latest` is the
+// newest version resolved from GHCR (may be "" if not yet known).
 //   - unknown : the probe hasn't checked in a version yet (or runs an old, pre-fleet image)
-//   - tracking: target is "latest" - drift can't be computed centrally (the probe/updater
-//     converges on the newest digest), so the running version is shown for information only
-//   - current : reported version equals the pinned target
-//   - outdated: reported version differs from the pinned target
-func updateStatus(reported, target string) string {
+//   - tracking: target is "latest" but GHCR hasn't been resolved yet - drift can't be computed, so
+//     the running version is shown for information only
+//   - current : reported version equals the effective target (the pin, or the resolved newest)
+//   - outdated: reported version differs from the effective target
+func updateStatus(reported, target, latest string) string {
 	if reported == "" {
 		return "unknown"
 	}
+	want := target
 	if target == "latest" {
-		return "tracking"
+		if latest == "" {
+			return "tracking"
+		}
+		want = latest
 	}
-	if reported == target {
+	if reported == want {
 		return "current"
 	}
 	return "outdated"

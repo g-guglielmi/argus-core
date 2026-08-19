@@ -8,7 +8,7 @@ type User = { id: number; email: string; name: string; surname: string; role: st
 type Health = { status: string; zabbix: { reachable: boolean; version?: string; error?: string } }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[] }
-type Proxy = { name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number }
+type Proxy = { name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number }
 type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; config: Record<string, string> }
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
@@ -1145,7 +1145,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
         </table>
       )}
 
-      {isAdmin && <FleetTarget target={target} onSaved={setTarget} />}
+      {isAdmin && <FleetTarget target={target} latest={(proxies || []).find((p) => p.latest)?.latest} onSaved={setTarget} />}
 
       <table className="enroll enroll-probes">
         <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Version</th><th>Update</th><th>Mode</th><th>Enrolled</th></tr></thead>
@@ -1195,8 +1195,10 @@ function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, on
       return <span><span className="tag online">up to date</span>{auto}</span>
     case 'tracking':
       return <span><span className="tag" title="Fleet target is 'latest'; the probe converges on the newest image">tracking latest</span>{p.selfupdate ? <> {selfBtn}</> : null}{auto}</span>
-    case 'outdated':
-      return <span>{p.selfupdate ? selfBtn : <button className="btn" onClick={onToggle}>{open ? 'Hide' : 'Update…'}</button>}{auto}</span>
+    case 'outdated': {
+      const avail = p.target === 'latest' ? p.latest : p.target
+      return <span>{p.selfupdate ? selfBtn : <button className="btn" onClick={onToggle}>{open ? 'Hide' : 'Update…'}</button>}{avail ? <span className="mono" style={{ color: 'var(--muted)', marginLeft: 6 }} title="Available version">→ {avail}</span> : null}{auto}</span>
+    }
     case 'external':
     default:
       return reportBtn
@@ -1241,7 +1243,7 @@ function ProbeUpdateCommand({ p }: { p: Proxy }) {
 
 // FleetTarget lets an admin pick the version every probe should converge on: 'latest' (rolling)
 // or an exact pin like '7.0.29-r1'. The self-updater and the manual command both honour it.
-function FleetTarget({ target, onSaved }: { target: string | null; onSaved: (t: string) => void }) {
+function FleetTarget({ target, latest, onSaved }: { target: string | null; latest?: string; onSaved: (t: string) => void }) {
   const [editing, setEditing] = useState(false)
   const [val, setVal] = useState('')
   const [busy, setBusy] = useState(false)
@@ -1268,7 +1270,7 @@ function FleetTarget({ target, onSaved }: { target: string | null; onSaved: (t: 
         <>
           <code style={{ background: 'var(--elevated)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 8px' }}>{target ?? '…'}</code>
           <button className="btn" onClick={start}>Change</button>
-          <span style={{ color: 'var(--muted)', fontSize: 12 }}>What every probe should run - <code>latest</code> or a pin like <code>7.0.29-r1</code>.</span>
+          <span style={{ color: 'var(--muted)', fontSize: 12 }}>What every probe should run - <code>latest</code> or a pin like <code>7.0.29-r1</code>.{latest ? <> Newest published: <code>{latest}</code>.</> : null}</span>
         </>
       ) : (
         <>
