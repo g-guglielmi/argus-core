@@ -62,6 +62,10 @@ on the panel and light `--faint` at ~3.1:1, both below the WCAG AA 4.5:1 target.
   TypeScript errors never failed the build. The web `build` script is now `tsc --noEmit && vite
   build`, making type-checking an enforced gate; fixed two pre-existing latent `tsc` errors it
   surfaced (dead `DashboardView`, an over-wide icon index).
+- **Reproducible builds.** `go.mod` (now with its full `require` set), `go.sum`, and
+  `package-lock.json` are committed, and the Docker build uses the pinned installers
+  (`go mod download` + `npm ci`) instead of resolving/tidying at build time - so an image builds
+  from locked dependency versions rather than whatever floats to the top on build day.
 
 ## [0.4.9] - 2026-08-19
 
