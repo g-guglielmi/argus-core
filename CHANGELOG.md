@@ -26,7 +26,11 @@ already use (nothing inbound is opened).
   (`GET`/`PUT /api/probes/target`).
 - **Fleet visibility.** The Probes view gains **Version** and **Update** columns showing each probe
   as up-to-date / outdated / tracking-latest / unknown, with an **auto** pill when a probe's
-  self-updater is on.
+  self-updater is on. A **Last check-in** time that turns amber once a proxy's data is >1 min stale.
+- **Version always visible.** Probes that don't check in (older images, or ones updated outside
+  Argus like unRAID) still show their installed version, read from the version Zabbix already
+  tracks for every connected 7.0 proxy (without the `-rN` wrapper revision, marked as externally
+  managed). The precise self-reported version wins when a probe checks in.
 - **Guided manual update (any deployment).** Drifted probes offer a one-click
   `docker pull … && docker restart …` - no Docker socket needed.
 - **Opt-in self-updater (compose sidecar).** New `deploy/probe-image/docker-compose.yml` runs an
