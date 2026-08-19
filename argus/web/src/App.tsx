@@ -1131,7 +1131,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
               <tr>
                 <td><strong>{p.name}</strong></td>
                 <td data-label="Status">{p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}</td>
-                <td data-label="Last check-in" className="mono" title="When the core last received data from this proxy" style={{ color: p.last_access ? undefined : 'var(--faint)' }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
+                <td data-label="Last check-in" className="mono" title="When the core last received data from this proxy" style={{ color: !p.last_access ? 'var(--faint)' : (Date.now() / 1000 - p.last_access > 60 ? 'var(--warn)' : undefined), fontWeight: p.last_access && Date.now() / 1000 - p.last_access > 60 ? 600 : undefined }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
                 <td data-label="Version" className="mono" title={p.last_checkin ? `Version reported ${relTime(p.last_checkin)}` : 'No fleet check-in yet'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '-'}</td>
                 <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} /></td>
                 <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
