@@ -6,7 +6,6 @@ import { Button, Card, Field, Banner, Badge, CopyButton } from './ui'
 
 type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; landing?: 'overview' | 'errors' }
 type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean }
-type Health = { status: string; zabbix: { reachable: boolean; version?: string; error?: string } }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[] }
 type Proxy = { name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number }
@@ -613,7 +612,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll }: { me: 
 
   const nav = (id: View, label: string, opts?: { count?: number; soon?: boolean }) => (
     <button className={'nav' + (view === id ? ' active' : '')} onClick={() => goto(id)}>
-      {ic[id]}
+      {ic[id as keyof typeof ic]}
       <span className="lbl">{label}</span>
       {opts?.count ? <span className="count txt-err">{opts.count}</span> : null}
       {opts?.soon ? <span className="soon">Soon</span> : null}
@@ -1423,27 +1422,6 @@ function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; 
         </table>
       )}
     </div>
-  )
-}
-
-function DashboardView() {
-  const [health, setHealth] = useState<Health | null>(null)
-  useEffect(() => { fetch('/api/health').then((r) => r.json()).then(setHealth).catch(() => setHealth(null)) }, [])
-  return (
-    <Card title="System health">
-      {!health && <p>Checking…</p>}
-      {health && (
-        <ul style={{ lineHeight: 1.9, margin: 0, paddingLeft: '1.1rem' }}>
-          <li>Backend: <strong className="txt-ok">{health.status}</strong></li>
-          <li>Zabbix API:{' '}
-            {health.zabbix.reachable
-              ? <strong className="txt-ok">reachable (v{health.zabbix.version})</strong>
-              : <strong className="txt-err">unreachable</strong>}
-          </li>
-          {health.zabbix.error && <li style={{ color: 'var(--err)', listStyle: 'none', marginLeft: '-1.1rem' }}>↳ {health.zabbix.error}</li>}
-        </ul>
-      )}
-    </Card>
   )
 }
 
