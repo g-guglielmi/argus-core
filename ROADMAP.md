@@ -27,6 +27,9 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
 - [x] **Probe fleet updates** (v0.4.8-0.4.9): fleet version visibility, GHCR-resolved drift, dashboard-triggered self-update (sister-container recreate + rollback) + opt-in compose sidecar, "enable reporting" for older probes, single-folder storage
 - [x] **4 of 5 site probes online** and self-reporting (site1, site2, site3, site5)
 - [x] **UI standardization / design system** (v0.4.10): shared `ui.tsx` primitives (Button, Card, Field, Banner, Badge, CopyButton) backed by the CSS tokens; legacy inline-style objects and all hardcoded colors removed so the SPA themes correctly and pages are consistent
+- [x] **Text readability** (v0.4.10): raised `--text`/`--muted`/`--faint` contrast in both themes to clear WCAG AA (faint 3.x -> 5-6:1)
+- [x] **Version indicator** (v0.4.10): build-stamped running version + `GET /api/version`; core resolves the newest published release from GHCR and the sidebar footer shows a "latest" tick or an "update available" pill
+- [x] **Local build toolchain + CI typecheck** (v0.4.10): Node/Go installed for local `tsc`/`vite`/`go build`; the web build now runs `tsc --noEmit` so type errors fail CI (previously `vite build` skipped type-checking)
 
 ---
 

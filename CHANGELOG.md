@@ -34,6 +34,35 @@ across light/dark, and the same widgets were rebuilt ad-hoc per view.
   `.callout-warn`, `.btn.block`, `.badge.err`, and `.field select` styling.
 - No behavior changes - pure markup/style consolidation.
 
+**Text readability - higher contrast in both themes.** (Roadmap §F)
+
+The secondary-text tokens were too weak, especially on a dim display: dark `--faint` sat at ~3.5:1
+on the panel and light `--faint` at ~3.1:1, both below the WCAG AA 4.5:1 target. Lifted
+`--text`/`--muted`/`--faint` in all four token blocks (light `:root`, the dark `@media`, and both
+`[data-theme]` overrides). Measured on the rendered page: dark faint 3.5 -> 5.9:1 and muted
+6.3 -> 9.3:1; light faint 3.1 -> 5.0:1 and muted ~5 -> 6.9:1.
+
+**Version indicator - "are we on the latest release?"**
+
+- The running version is stamped into the binary at build time (`git describe --tags` via
+  `-ldflags`), and a new authenticated `GET /api/version` reports
+  `{version, latest, update_available, status}`.
+- The core polls public GHCR for the newest published release (`vX.Y.Z`) - like the probe fleet
+  already does - and compares only the `X.Y.Z` base, so a `:latest`/dev build ahead of the last
+  release tag reads as **current** and a genuinely newer release reads as **outdated**.
+- The sidebar footer now shows the running build with a green **latest** tick or an amber
+  **↑ vX.Y.Z** update pill, so you can tell at a glance without checking the registry.
+- Fixed a latent GHCR bug along the way: `tags/list` pages at 100, so once a repo passed 100 tags a
+  single fetch missed the newest (the app repo has 167). Tag resolution now follows Link-header
+  pagination for both the app and probe images.
+
+**Dev: local build toolchain + CI now typechecks.**
+
+- The CI Docker build ran only `vite build` (esbuild strips types without checking them), so
+  TypeScript errors never failed the build. The web `build` script is now `tsc --noEmit && vite
+  build`, making type-checking an enforced gate; fixed two pre-existing latent `tsc` errors it
+  surfaced (dead `DashboardView`, an over-wide icon index).
+
 ## [0.4.9] - 2026-08-19
 
 **Dashboard-triggered probe self-update (`docker run`, no compose needed).** (Roadmap §A; DESIGN §18)
