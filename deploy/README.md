@@ -174,6 +174,17 @@ check-in (a long-lived token issued at enrollment) - nothing inbound is opened.
 - **unRAID:** keep unRAID's native auto-update; Argus shows the installed version (from Zabbix) and
   the fleet target so you can see drift.
 
+**Turning on exact version reporting for an older probe.** A probe enrolled before fleet updates has
+no check-in token (enrollment mints it, and enrollment is skipped once the certs exist), so it won't
+report its exact `-rN` version even after you update the image - it only shows the Zabbix version.
+Fix it without re-enrolling: in **Probes**, click **Enable reporting** on that probe, then add the
+one env var it gives you to the container (unRAID: *Edit → Add another variable*) and restart:
+```
+ARGUS_PROBE_TOKEN=<the token shown once>
+```
+The probe derives the check-in URL from its existing `ARGUS_ENROLL_URL`, so that single variable is
+all it needs.
+
 The win over plain Watchtower/unRAID auto-update is **central pinning + fleet visibility + you decide
 when a change rolls out**, with no third-party updater container.
 

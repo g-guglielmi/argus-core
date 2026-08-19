@@ -1065,6 +1065,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
   const [target, setTarget] = useState<string | null>(null)
   const [openCmd, setOpenCmd] = useState<string | null>(null) // proxy name whose update command is expanded
   const [queued, setQueued] = useState<Record<string, string>>({}) // proxy name -> queued self-update tag
+  const [report, setReport] = useState<{ name: string; token: string } | null>(null) // minted check-in token to show
   const isAdmin = role === 'admin'
 
   async function triggerUpdate(p: Proxy) {
@@ -1074,6 +1075,17 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
       const d = await res.json()
       setQueued((q) => ({ ...q, [p.name]: d.tag || 'target' }))
     } catch { window.alert('Could not queue the update') }
+  }
+
+  // Mint a check-in credential for a probe that predates fleet updates; shown once for the operator
+  // to drop into the container as ARGUS_PROBE_TOKEN (GUI), turning on version reporting.
+  async function enableReporting(p: Proxy) {
+    try {
+      const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/checkin-token`, { method: 'POST' })
+      if (!res.ok) { window.alert(await errText(res, 'Could not issue a check-in token')); return }
+      const d = await res.json()
+      setReport({ name: p.name, token: d.token })
+    } catch { window.alert('Could not issue a check-in token') }
   }
 
   useEffect(() => {
@@ -1148,11 +1160,12 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                 <td data-label="Status">{p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}</td>
                 <td data-label="Last check-in" className="mono" title="When the core last received data from this proxy" style={{ color: !p.last_access ? 'var(--faint)' : (Date.now() / 1000 - p.last_access > 60 ? 'var(--warn)' : undefined), fontWeight: p.last_access && Date.now() / 1000 - p.last_access > 60 ? 600 : undefined }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
                 <td data-label="Version" className="mono" title={p.last_checkin ? `Version reported ${relTime(p.last_checkin)}` : p.version ? 'Version from Zabbix (no Argus fleet check-in)' : 'No version reported'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '-'}</td>
-                <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} /></td>
+                <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} /></td>
                 <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
                 <td data-label="Enrolled" className="mono" style={{ color: p.enrolled_at ? 'var(--muted)' : 'var(--faint)' }} title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>{p.enrolled_at ? new Date(p.enrolled_at * 1000).toLocaleDateString() : '-'}</td>
               </tr>
               {openCmd === p.name && <tr><td colSpan={7} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
+              {report?.name === p.name && <tr><td colSpan={7} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
             </Fragment>
           ))}
         </tbody>
@@ -1168,11 +1181,15 @@ function probeUpdateTag(target?: string): string {
 
 // UpdateBadge shows a probe's state versus the fleet target, and (for drift) a toggle that reveals
 // the one-click manual update command.
-function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate }: { p: Proxy; open: boolean; onToggle: () => void; queuedTag?: string; onSelfUpdate: (p: Proxy) => void }) {
+function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, onEnableReporting }: { p: Proxy; open: boolean; onToggle: () => void; queuedTag?: string; onSelfUpdate: (p: Proxy) => void; canReport?: boolean; onEnableReporting: (p: Proxy) => void }) {
   const auto = p.selfupdate ? <span className="tag" title="Self-update enabled (Docker socket mounted); Argus can trigger updates from here" style={{ marginLeft: 6 }}>auto</span> : null
   if (queuedTag) return <span className="tag" title={`Update to ${queuedTag} queued - the probe applies it on its next check-in (within ~5 min)`}>update queued</span>
   // A socket-enabled probe updates itself when triggered; otherwise we expand the manual command.
   const selfBtn = <button className="btn" onClick={() => onSelfUpdate(p)} title="Tell the probe to update itself to the fleet target on its next check-in">Update now</button>
+  // Probes that don't check in (external/unknown) can be turned on with a minted token.
+  const reportBtn = canReport
+    ? <button className="btn" onClick={() => onEnableReporting(p)} title="Issue a check-in token so this probe reports its exact version to Argus">Enable reporting</button>
+    : <span className="mono" style={{ color: 'var(--faint)' }} title="This probe isn't reporting its exact version to Argus (updates handled outside Argus, e.g. unRAID).">-</span>
   switch (p.update_status) {
     case 'current':
       return <span><span className="tag online">up to date</span>{auto}</span>
@@ -1181,10 +1198,30 @@ function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate }: { p: Proxy;
     case 'outdated':
       return <span>{p.selfupdate ? selfBtn : <button className="btn" onClick={onToggle}>{open ? 'Hide' : 'Update…'}</button>}{auto}</span>
     case 'external':
-      return <span className="mono" style={{ color: 'var(--faint)' }} title="Version reported by Zabbix; this probe isn't managed by Argus fleet updates (e.g. unRAID or Watchtower handles its updates).">-</span>
     default:
-      return <span className="mono" style={{ color: 'var(--faint)' }} title="This probe hasn't reported a version - update it to a fleet-aware image, or it was registered manually.">-</span>
+      return reportBtn
   }
+}
+
+// ReportTokenPanel shows a freshly-minted check-in token once, with the single env var to add to
+// the container (via the Docker/unRAID GUI) to turn on version reporting - no re-enrollment.
+function ReportTokenPanel({ token, name, onDone }: { token: string; name: string; onDone: () => void }) {
+  const [copied, setCopied] = useState(false)
+  const envLine = `ARGUS_PROBE_TOKEN=${token}`
+  return (
+    <div style={{ padding: '12px 16px', background: 'var(--elevated)', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+        <strong>Enable version reporting for {name}</strong>
+        <span className="envpill" title="Shown once">token shown once</span>
+        <button className="btn" style={{ marginLeft: 'auto' }} onClick={async () => { if (await copyToClipboard(envLine)) { setCopied(true); setTimeout(() => setCopied(false), 2000) } }}>{copied ? 'Copied!' : 'Copy'}</button>
+        <button className="btn" onClick={onDone}>Done</button>
+      </div>
+      <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: '0 0 8px' }}>
+        Add this environment variable to the <strong>{`argus-${name}`}</strong> container (unRAID: Edit → Add another variable) and restart it. The probe already knows the check-in URL from its enroll URL, so this token is all it needs - no re-enrollment.
+      </p>
+      <pre style={{ margin: 0, padding: '10px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12 }}><code>{envLine}</code></pre>
+    </div>
+  )
 }
 
 // ProbeUpdateCommand renders the copyable pull+restart command for a single probe (manual path).

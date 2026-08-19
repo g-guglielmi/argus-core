@@ -33,6 +33,12 @@ Zabbix release the API exposes.
   Docker-run command prepends `docker rm -f <name>` so a redeploy is a single paste (the data
   volume is a host bind mount, so it's kept and the probe stays enrolled). Compose and unRAID
   already recreate in place, so they're unchanged.
+- **Enable reporting for pre-existing probes.** A probe enrolled before fleet updates has no
+  check-in token (enrollment, which mints it, is skipped once certs exist), so it never reported its
+  version even after a plain image update. The Probes view now offers **Enable reporting** on such
+  probes (`POST /api/probes/{name}/checkin-token`): it mints a token to drop in as a single env var
+  (`ARGUS_PROBE_TOKEN`) via the container's GUI - the check-in URL is derived from the enroll URL, so
+  no re-enrollment is needed.
 
 ---
 

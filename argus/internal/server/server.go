@@ -152,6 +152,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("PUT /api/probes/target", auth.RequireRole("admin", s.handleSetProbeTarget))
 	// trigger a dashboard-driven self-update for one probe (admin; probe must be socket-enabled)
 	mux.HandleFunc("POST /api/probes/{name}/update", auth.RequireRole("admin", s.handleTriggerProbeUpdate))
+	// issue a check-in credential for an already-enrolled probe (admin) - turns on version reporting
+	mux.HandleFunc("POST /api/probes/{name}/checkin-token", auth.RequireRole("admin", s.handleIssueCheckinToken))
 
 	// user management (admin only)
 	mux.HandleFunc("GET /api/users", auth.RequireRole("admin", s.handleListUsers))

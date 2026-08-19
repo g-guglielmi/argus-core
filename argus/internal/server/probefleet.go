@@ -115,6 +115,31 @@ func (s *Server) handleTriggerProbeUpdate(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]string{"status": "queued", "tag": tag})
 }
 
+// handleIssueCheckinToken mints a check-in credential for a probe that predates the fleet-update
+// feature (its enrollment never provisioned one). The admin drops the returned token into the
+// container as ARGUS_PROBE_TOKEN - via the Unraid/docker GUI - to turn on version check-in without
+// a full re-enrollment. Idempotent: re-issuing rotates the credential.
+func (s *Server) handleIssueCheckinToken(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.PathValue("name"))
+	if name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "proxy name required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	raw, hash, err := auth.NewSessionToken()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if err := s.st.UpsertProbeCredential(ctx, name, hash); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not issue token"})
+		return
+	}
+	s.logger.Info("probe check-in token issued", "proxy", name)
+	writeJSON(w, http.StatusOK, map[string]string{"token": raw, "checkin_url": s.baseURL(r) + "/api/probes/checkin"})
+}
+
 // handleGetProbeTarget returns the fleet's target probe version (admin).
 func (s *Server) handleGetProbeTarget(w http.ResponseWriter, r *http.Request) {
 	target, err := s.st.ProbeTargetVersion(r.Context())
