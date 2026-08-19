@@ -82,6 +82,13 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
 ### G. Scale & production readiness
 - [ ] **Sizing pass** before the ~6000-sensor deployment (proxies, DB, caches, NVPS) - analysis
 - [ ] **Server-side census/counts** - move the `/api/sensors` full census server-side at scale - _(BE)_ M
+- [ ] **`testing` channel / release-gated `latest`** - today every push to `main` tags the image
+  `:latest`, so `:latest` means "tip of `main`" (unreleased code). Retag so `main` pushes publish
+  `:testing` (+ `:sha`) and only `v*` tag pushes move `:latest` (alongside `:vX.Y.Z`). Gives a real
+  staging pull target (`:testing`) decoupled from production without manual tagging; pairs with the
+  version indicator (a `:testing` build's `git describe` version shows as ahead of the last release).
+  Pure CI change in `docker/metadata-action` tags; when built, note in deploy docs that prod should
+  pin `:latest`/a version, not `:testing`. - _(ops)_ S
 
 ### H. Parking lot (maybe)
 - [ ] Public status page (Uptime-Kuma-style shareable)
@@ -106,7 +113,8 @@ Re-evaluated from here:
    **per-channel severity filter** (§F), the **Add-probe self-update toggle** (§A), and
    **labeled graph axes** in alert PNGs (§F). Mostly **S**, high polish-per-effort.
 2. **The 1.0 lift - "replaces PRTG Add Sensor" (§C → §B → §D):** build/verify the **device-class templates** (§C, the foundation), then **auto-discovery** (§B: UniFi sweep → fingerprint → LLD → "Discovered - review"), then the **device/threshold management UI** (§D). This is the core work that gets Argus to a production **1.0**.
-3. **Scale & production readiness (§G)** - sizing pass + server-side census before the ~6000-sensor deployment.
+3. **Scale & production readiness (§G)** - sizing pass + server-side census before the ~6000-sensor
+   deployment; and a `testing` channel so `:latest` only tracks real releases (release hygiene).
 4. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
 
 Blocked / deferred: **site4** probe (§A) - its building is under renovation, so it won't come online in the near term; bring it online once that's done.
