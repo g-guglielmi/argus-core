@@ -1163,7 +1163,7 @@ function UpdateBadge({ p, open, onToggle }: { p: Proxy; open: boolean; onToggle:
     case 'outdated':
       return <span><button className="btn" onClick={onToggle}>{open ? 'Hide' : 'Update…'}</button>{auto}</span>
     default:
-      return <span style={{ color: 'var(--faint)' }} title="This probe hasn't reported a version — update it to a fleet-aware image, or it was registered manually.">—</span>
+      return <span className="mono" style={{ color: 'var(--faint)' }} title="This probe hasn't reported a version — update it to a fleet-aware image, or it was registered manually.">—</span>
   }
 }
 
