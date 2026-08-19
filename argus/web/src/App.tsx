@@ -257,7 +257,9 @@ export default function App() {
   }, [])
 
   if (resetToken) return <ResetPassword token={resetToken} onDone={() => { window.history.replaceState({}, '', window.location.pathname); setResetToken(null) }} />
-  if (loading) return <Frame><p>Loading…</p></Frame>
+  // Neutral loader during the initial /api/me check - deliberately NOT the branded Frame, so an
+  // authenticated refresh doesn't flash the login-page chrome before the app mounts.
+  if (loading) return <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', color: 'var(--faint)' }}>Loading…</div>
   if (!me) return <Login onSuccess={setMe} passkeysAvailable={passkeysAvailable} passwordReset={passwordReset} />
   return <AppShell me={me} onMe={setMe} onLogout={() => setMe(null)} passkeysAvailable={passkeysAvailable} probeEnroll={probeEnroll} />
 }

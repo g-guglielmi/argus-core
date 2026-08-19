@@ -11,6 +11,19 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.13] - 2026-08-19
+
+**Fixes.**
+
+- **Self-update channel permissions.** A fresh Docker named volume mounts root-owned (`0755`), so the
+  non-root, distroless core could not write `request.json` ("could not queue the update") nor clear a
+  finished banner ("Dismiss" did nothing) - it could only read the sidecar's status. The
+  `argus-updater` sidecar (root, holds the socket) now makes the shared channel dir writable on
+  startup, self-healing both new and existing volumes. Ships in `argus-updater:latest`.
+- **Login-screen flash on refresh.** The initial-load state reused the branded login `Frame`, so an
+  authenticated page refresh briefly flashed the login chrome before the app mounted. Replaced with a
+  neutral loader.
+
 ## [0.4.12] - 2026-08-19
 
 **One-click core self-update.** (Roadmap §F/§G)
