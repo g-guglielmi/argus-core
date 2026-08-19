@@ -1059,7 +1059,17 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
   const [created, setCreated] = useState<CreatedToken | null>(null)
   const [target, setTarget] = useState<string | null>(null)
   const [openCmd, setOpenCmd] = useState<string | null>(null) // proxy name whose update command is expanded
+  const [queued, setQueued] = useState<Record<string, string>>({}) // proxy name -> queued self-update tag
   const isAdmin = role === 'admin'
+
+  async function triggerUpdate(p: Proxy) {
+    try {
+      const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/update`, { method: 'POST' })
+      if (!res.ok) { window.alert(await errText(res, 'Could not queue the update')); return }
+      const d = await res.json()
+      setQueued((q) => ({ ...q, [p.name]: d.tag || 'target' }))
+    } catch { window.alert('Could not queue the update') }
+  }
 
   useEffect(() => {
     const load = () => fetch('/api/proxies')
@@ -1133,7 +1143,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                 <td data-label="Status">{p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}</td>
                 <td data-label="Last check-in" className="mono" title="When the core last received data from this proxy" style={{ color: !p.last_access ? 'var(--faint)' : (Date.now() / 1000 - p.last_access > 60 ? 'var(--warn)' : undefined), fontWeight: p.last_access && Date.now() / 1000 - p.last_access > 60 ? 600 : undefined }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
                 <td data-label="Version" className="mono" title={p.last_checkin ? `Version reported ${relTime(p.last_checkin)}` : p.version ? 'Version from Zabbix (no Argus fleet check-in)' : 'No version reported'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '-'}</td>
-                <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} /></td>
+                <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} /></td>
                 <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
                 <td data-label="Enrolled" className="mono" style={{ color: p.enrolled_at ? 'var(--muted)' : 'var(--faint)' }} title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>{p.enrolled_at ? new Date(p.enrolled_at * 1000).toLocaleDateString() : '-'}</td>
               </tr>
@@ -1153,15 +1163,18 @@ function probeUpdateTag(target?: string): string {
 
 // UpdateBadge shows a probe's state versus the fleet target, and (for drift) a toggle that reveals
 // the one-click manual update command.
-function UpdateBadge({ p, open, onToggle }: { p: Proxy; open: boolean; onToggle: () => void }) {
-  const auto = p.selfupdate ? <span className="tag" title="Self-updater enabled on this probe" style={{ marginLeft: 6 }}>auto</span> : null
+function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate }: { p: Proxy; open: boolean; onToggle: () => void; queuedTag?: string; onSelfUpdate: (p: Proxy) => void }) {
+  const auto = p.selfupdate ? <span className="tag" title="Self-update enabled (Docker socket mounted); Argus can trigger updates from here" style={{ marginLeft: 6 }}>auto</span> : null
+  if (queuedTag) return <span className="tag" title={`Update to ${queuedTag} queued - the probe applies it on its next check-in (within ~5 min)`}>update queued</span>
+  // A socket-enabled probe updates itself when triggered; otherwise we expand the manual command.
+  const selfBtn = <button className="btn" onClick={() => onSelfUpdate(p)} title="Tell the probe to update itself to the fleet target on its next check-in">Update now</button>
   switch (p.update_status) {
     case 'current':
       return <span><span className="tag online">up to date</span>{auto}</span>
     case 'tracking':
-      return <span><span className="tag" title="Fleet target is 'latest'; the probe converges on the newest image">tracking latest</span>{auto}</span>
+      return <span><span className="tag" title="Fleet target is 'latest'; the probe converges on the newest image">tracking latest</span>{p.selfupdate ? <> {selfBtn}</> : null}{auto}</span>
     case 'outdated':
-      return <span><button className="btn" onClick={onToggle}>{open ? 'Hide' : 'Update…'}</button>{auto}</span>
+      return <span>{p.selfupdate ? selfBtn : <button className="btn" onClick={onToggle}>{open ? 'Hide' : 'Update…'}</button>}{auto}</span>
     case 'external':
       return <span className="mono" style={{ color: 'var(--faint)' }} title="Version reported by Zabbix; this probe isn't managed by Argus fleet updates (e.g. unRAID or Watchtower handles its updates).">-</span>
     default:

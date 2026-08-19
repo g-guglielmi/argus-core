@@ -69,8 +69,50 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target, _ := s.st.ProbeTargetVersion(ctx)
+	resp := map[string]string{"target": target}
+	// Hand out a dashboard-requested self-update exactly once. The probe (with the Docker socket)
+	// converges by spawning a short-lived recreate helper; empty means nothing queued.
+	if tag, _ := s.st.TakeProbeUpdate(ctx, proxyName); tag != "" {
+		resp["update"] = tag
+	}
 	// The probe knows its own image repo; it only needs the tag to converge on.
-	writeJSON(w, http.StatusOK, map[string]string{"target": target})
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// probeTargetTag maps a fleet target to the pullable image tag ("latest" stays "latest"; a pin
+// like "7.0.29-r1" maps to itself).
+func probeTargetTag(target string) string {
+	if target == "" || target == "latest" {
+		return "latest"
+	}
+	return target
+}
+
+// handleTriggerProbeUpdate queues a self-update for one probe (admin). The probe must have reported
+// it's self-update capable (Docker socket mounted); otherwise the caller should use the manual
+// one-click command instead.
+func (s *Server) handleTriggerProbeUpdate(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+
+	ag, err := s.st.ProbeAgentByName(ctx, name)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "this probe hasn't checked in to Argus, so it can't be updated from here"})
+		return
+	}
+	if !ag.SelfUpdate {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "this probe isn't self-update capable (no Docker socket); use the manual update command"})
+		return
+	}
+	target, _ := s.st.ProbeTargetVersion(ctx)
+	tag := probeTargetTag(target)
+	if err := s.st.SetProbeUpdate(ctx, name, tag); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the update"})
+		return
+	}
+	s.logger.Info("probe self-update queued", "proxy", name, "tag", tag)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "queued", "tag": tag})
 }
 
 // handleGetProbeTarget returns the fleet's target probe version (admin).

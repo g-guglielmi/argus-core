@@ -50,6 +50,54 @@ func (s *Store) RecordProbeCheckin(ctx context.Context, proxyName, version strin
 	return err
 }
 
+// ProbeAgentByName returns one probe's fleet-update state, or ErrNotFound if it never enrolled
+// through Argus (no check-in credential).
+func (s *Store) ProbeAgentByName(ctx context.Context, name string) (*ProbeAgent, error) {
+	var a ProbeAgent
+	var su int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT proxy_name,version,selfupdate,last_checkin FROM probe_agents WHERE proxy_name=?`, name).
+		Scan(&a.ProxyName, &a.Version, &su, &a.LastCheckin)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	a.SelfUpdate = su != 0
+	return &a, nil
+}
+
+// SetProbeUpdate queues a self-update for a probe: the target image tag it should converge on,
+// handed to it once at its next check-in. Returns ErrNotFound if the probe isn't known.
+func (s *Store) SetProbeUpdate(ctx context.Context, name, tag string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE probe_agents SET update_to=? WHERE proxy_name=?`, tag, name)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// TakeProbeUpdate returns and clears any pending self-update tag for a probe (one-shot). An empty
+// string means nothing is queued.
+func (s *Store) TakeProbeUpdate(ctx context.Context, name string) (string, error) {
+	var tag string
+	err := s.db.QueryRowContext(ctx, `SELECT update_to FROM probe_agents WHERE proxy_name=?`, name).Scan(&tag)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if tag != "" {
+		_, _ = s.db.ExecContext(ctx, `UPDATE probe_agents SET update_to='' WHERE proxy_name=?`, name)
+	}
+	return tag, nil
+}
+
 // ProbeAgents returns every probe's fleet-update state, keyed by proxy name (for the fleet view).
 func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,version,selfupdate,last_checkin FROM probe_agents`)
