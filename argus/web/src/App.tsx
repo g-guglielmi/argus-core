@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, Fragment, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, Fragment, type FormEvent, type ReactNode } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { registerPasskey, loginWithPasskey } from './webauthn'
+import { Button, Card, Field, Banner, Badge, CopyButton } from './ui'
 
 type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; landing?: 'overview' | 'errors' }
 type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean }
@@ -75,7 +76,7 @@ function DurationButton({ label, onPick, disabled, borderColor }: { label: strin
   }
   return (
     <span style={{ position: 'relative', display: 'inline-block' }}>
-      <button onClick={(e) => { e.stopPropagation(); setCustom(false); setOpen((o) => !o) }} disabled={disabled} style={{ ...ghost, padding: '0.1rem 0.45rem', fontSize: '0.75rem', borderColor: borderColor || 'var(--border)' }}>{label}</button>
+      <Button variant="ghost" onClick={(e) => { e.stopPropagation(); setCustom(false); setOpen((o) => !o) }} disabled={disabled} style={{ padding: '0.1rem 0.45rem', fontSize: '0.75rem', borderColor: borderColor || 'var(--border)' }}>{label}</Button>
       {open && (
         <>
           <div onClick={(e) => { e.stopPropagation(); close() }} style={{ position: 'fixed', inset: 0, zIndex: 20 }} />
@@ -85,11 +86,11 @@ function DurationButton({ label, onPick, disabled, borderColor }: { label: strin
             ))}
             {custom && (
               <div style={{ padding: '0.6rem' }}>
-                <div style={{ fontSize: '0.78rem', color: '#aaa', marginBottom: '0.35rem' }}>Suppress until:</div>
-                <input type="datetime-local" value={val} min={toLocalInput(Date.now())} onChange={(e) => setVal(e.target.value)} style={{ ...input, width: '100%', marginBottom: '0.5rem' }} />
+                <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginBottom: '0.35rem' }}>Suppress until:</div>
+                <input className="input" type="datetime-local" value={val} min={toLocalInput(Date.now())} onChange={(e) => setVal(e.target.value)} style={{ width: '100%', marginBottom: '0.5rem' }} />
                 <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
-                  <button onClick={(e) => { e.stopPropagation(); setCustom(false) }} style={{ ...ghost, padding: '0.15rem 0.5rem', fontSize: '0.78rem' }}>Back</button>
-                  <button onClick={(e) => { e.stopPropagation(); confirmCustom() }} style={{ ...btn, padding: '0.15rem 0.6rem', fontSize: '0.78rem' }}>Set</button>
+                  <Button variant="ghost" onClick={(e) => { e.stopPropagation(); setCustom(false) }} style={{ padding: '0.15rem 0.5rem', fontSize: '0.78rem' }}>Back</Button>
+                  <Button variant="primary" onClick={(e) => { e.stopPropagation(); confirmCustom() }} style={{ padding: '0.15rem 0.6rem', fontSize: '0.78rem' }}>Set</Button>
                 </div>
               </div>
             )}
@@ -187,26 +188,9 @@ function lastVal(u: any, sidx: number): number | null {
 
 const ROLES = ['admin', 'helpdesk', 'viewer']
 
-const card: CSSProperties = { border: '1px solid var(--border)', borderRadius: 12, padding: '1rem 1.25rem', background: 'var(--panel)', boxShadow: 'var(--shadow)' }
-const input: CSSProperties = { padding: '0.5rem 0.6rem', borderRadius: 7, border: '1px solid var(--border-strong)', background: 'var(--elevated)', color: 'var(--text)', boxSizing: 'border-box' }
-const btn: CSSProperties = { padding: '0.5rem 0.9rem', borderRadius: 7, border: '1px solid var(--accent)', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontWeight: 600 }
-const ghost: CSSProperties = { padding: '0.4rem 0.7rem', borderRadius: 7, border: '1px solid var(--border-strong)', background: 'transparent', color: 'var(--text)', cursor: 'pointer' }
-
 async function errText(res: Response, fallback: string) {
   const j = await res.json().catch(() => ({}))
   return (j && j.error) || fallback
-}
-
-// copyToClipboard works over HTTPS (navigator.clipboard) and falls back to execCommand so Copy
-// still works over plain HTTP on a private IP.
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true }
-    const ta = document.createElement('textarea')
-    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'
-    document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
-    return true
-  } catch { return false }
 }
 
 type EnrollTokenRow = { id: number; proxy_name: string; site: string; status: string; created_at: number; expires_at: number }
@@ -341,9 +325,7 @@ function Login({ onSuccess, passkeysAvailable, passwordReset }: { onSuccess: (m:
   if (mfaToken) {
     return (
       <Frame>
-        <section style={{ ...card, maxWidth: 380, marginTop: '1.5rem' }}>
-          <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Two-factor authentication</h2>
-          <p style={{ color: '#aaa', marginTop: 0 }}>Enter the 6-digit code from your authenticator, or a recovery code.</p>
+        <Card style={{ maxWidth: 380, marginTop: '1.5rem' }} title="Two-factor authentication" note="Enter the 6-digit code from your authenticator, or a recovery code.">
           <form onSubmit={submitCode}>
             {/* Hidden username so password managers (Bitwarden) treat this as a login
                 form and offer to autofill the one-time-code field. */}
@@ -358,7 +340,8 @@ function Login({ onSuccess, passkeysAvailable, passwordReset }: { onSuccess: (m:
               style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
             />
             <input
-              style={{ ...input, width: '100%', marginBottom: '1rem', letterSpacing: '0.15em' }}
+              className="input"
+              style={{ width: '100%', marginBottom: '1rem', letterSpacing: '0.15em' }}
               value={code}
               onChange={(e) => setCode(e.target.value)}
               autoComplete="one-time-code"
@@ -369,28 +352,23 @@ function Login({ onSuccess, passkeysAvailable, passwordReset }: { onSuccess: (m:
               autoFocus
               required
             />
-            {error && <p style={{ color: 'crimson', margin: '0 0 0.75rem' }}>{error}</p>}
-            <button type="submit" disabled={busy} style={{ ...btn, width: '100%' }}>{busy ? 'Verifying…' : 'Verify'}</button>
+            <Banner variant="error">{error}</Banner>
+            <Button type="submit" variant="primary" block disabled={busy}>{busy ? 'Verifying…' : 'Verify'}</Button>
           </form>
-          <button onClick={() => { setMfaToken(null); setCode(''); setError(null) }} style={{ ...ghost, width: '100%', marginTop: '0.6rem' }}>Back</button>
-        </section>
+          <Button variant="ghost" block style={{ marginTop: '0.6rem' }} onClick={() => { setMfaToken(null); setCode(''); setError(null) }}>Back</Button>
+        </Card>
       </Frame>
     )
   }
 
   return (
     <Frame>
-      <section style={{ ...card, maxWidth: 380, marginTop: '1.5rem' }}>
-        <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Sign in</h2>
+      <Card style={{ maxWidth: 380, marginTop: '1.5rem' }} title="Sign in">
         <form onSubmit={submitPassword}>
-          <label style={{ display: 'block', marginBottom: '0.75rem' }}>Email
-            <input style={{ ...input, width: '100%', marginTop: 4 }} type="email" value={email} autoComplete="username" onChange={(e) => setEmail(e.target.value)} required />
-          </label>
-          <label style={{ display: 'block', marginBottom: '1rem' }}>Password
-            <input style={{ ...input, width: '100%', marginTop: 4 }} type="password" value={password} autoComplete="current-password" onChange={(e) => setPassword(e.target.value)} required />
-          </label>
-          {error && <p style={{ color: 'crimson', margin: '0 0 0.75rem' }}>{error}</p>}
-          <button type="submit" disabled={busy} style={{ ...btn, width: '100%' }}>{busy ? 'Signing in…' : 'Sign in'}</button>
+          <Field label="Email" type="email" value={email} autoComplete="username" onChange={(e) => setEmail(e.target.value)} required />
+          <Field label="Password" type="password" value={password} autoComplete="current-password" onChange={(e) => setPassword(e.target.value)} required />
+          <Banner variant="error">{error}</Banner>
+          <Button type="submit" variant="primary" block disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</Button>
         </form>
         {passwordReset && (
           <div style={{ textAlign: 'center', marginTop: '0.7rem' }}>
@@ -399,11 +377,11 @@ function Login({ onSuccess, passkeysAvailable, passwordReset }: { onSuccess: (m:
         )}
         {passkeysAvailable && (
           <>
-            <div style={{ textAlign: 'center', color: '#666', margin: '0.9rem 0 0.6rem', fontSize: '0.85rem' }}>or</div>
-            <button onClick={passkeyLogin} disabled={busy} style={{ ...ghost, width: '100%' }}>Sign in with a passkey</button>
+            <div style={{ textAlign: 'center', color: 'var(--faint)', margin: '0.9rem 0 0.6rem', fontSize: '0.85rem' }}>or</div>
+            <Button variant="ghost" block onClick={passkeyLogin} disabled={busy}>Sign in with a passkey</Button>
           </>
         )}
-      </section>
+      </Card>
     </Frame>
   )
 }
@@ -423,24 +401,21 @@ function ForgotPassword({ initialEmail, onBack }: { initialEmail: string; onBack
 
   return (
     <Frame>
-      <section style={{ ...card, maxWidth: 380, marginTop: '1.5rem' }}>
-        <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Reset your password</h2>
+      <Card style={{ maxWidth: 380, marginTop: '1.5rem' }} title="Reset your password">
         {sent ? (
           <>
-            <p style={{ color: '#aaa', marginTop: 0 }}>If an account exists for that email, a reset link is on its way. It's valid for 1 hour - check your spam folder if it doesn't arrive.</p>
-            <button onClick={onBack} style={{ ...btn, width: '100%' }}>Back to sign in</button>
+            <p style={{ color: 'var(--muted)', marginTop: 0 }}>If an account exists for that email, a reset link is on its way. It's valid for 1 hour - check your spam folder if it doesn't arrive.</p>
+            <Button variant="primary" block onClick={onBack}>Back to sign in</Button>
           </>
         ) : (
           <form onSubmit={submit}>
-            <p style={{ color: '#aaa', marginTop: 0 }}>Enter your account email and we'll send a reset link.</p>
-            <label style={{ display: 'block', marginBottom: '1rem' }}>Email
-              <input style={{ ...input, width: '100%', marginTop: 4 }} type="email" value={email} autoComplete="username" onChange={(e) => setEmail(e.target.value)} required autoFocus />
-            </label>
-            <button type="submit" disabled={busy} style={{ ...btn, width: '100%' }}>{busy ? 'Sending…' : 'Send reset link'}</button>
-            <button type="button" onClick={onBack} style={{ ...ghost, width: '100%', marginTop: '0.6rem' }}>Back</button>
+            <p style={{ color: 'var(--muted)', marginTop: 0 }}>Enter your account email and we'll send a reset link.</p>
+            <Field label="Email" type="email" value={email} autoComplete="username" onChange={(e) => setEmail(e.target.value)} required autoFocus />
+            <Button type="submit" variant="primary" block disabled={busy}>{busy ? 'Sending…' : 'Send reset link'}</Button>
+            <Button type="button" variant="ghost" block style={{ marginTop: '0.6rem' }} onClick={onBack}>Back</Button>
           </form>
         )}
-      </section>
+      </Card>
     </Frame>
   )
 }
@@ -466,28 +441,23 @@ function ResetPassword({ token, onDone }: { token: string; onDone: () => void })
 
   return (
     <Frame>
-      <section style={{ ...card, maxWidth: 380, marginTop: '1.5rem' }}>
-        <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Set a new password</h2>
+      <Card style={{ maxWidth: 380, marginTop: '1.5rem' }} title="Set a new password">
         {done ? (
           <>
-            <p style={{ color: 'var(--ok)', marginTop: 0 }}>Your password has been updated, and other sessions were signed out. If you use two-factor, you'll still need your code to sign in.</p>
-            <button onClick={onDone} style={{ ...btn, width: '100%' }}>Go to sign in</button>
+            <Banner variant="success">Your password has been updated, and other sessions were signed out. If you use two-factor, you'll still need your code to sign in.</Banner>
+            <Button variant="primary" block onClick={onDone}>Go to sign in</Button>
           </>
         ) : (
           <form onSubmit={submit}>
             {/* Hidden username so password managers save this against the account. */}
             <input type="text" name="username" autoComplete="username" tabIndex={-1} aria-hidden="true" readOnly value="" style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }} />
-            <label style={{ display: 'block', marginBottom: '0.75rem' }}>New password (min 8)
-              <input style={{ ...input, width: '100%', marginTop: 4 }} type="password" value={pw} autoComplete="new-password" onChange={(e) => setPw(e.target.value)} required minLength={8} autoFocus />
-            </label>
-            <label style={{ display: 'block', marginBottom: '1rem' }}>Confirm new password
-              <input style={{ ...input, width: '100%', marginTop: 4 }} type="password" value={confirm} autoComplete="new-password" onChange={(e) => setConfirm(e.target.value)} required />
-            </label>
-            {error && <p style={{ color: 'crimson', margin: '0 0 0.75rem' }}>{error}</p>}
-            <button type="submit" disabled={busy} style={{ ...btn, width: '100%' }}>{busy ? 'Updating…' : 'Update password'}</button>
+            <Field label="New password (min 8)" type="password" value={pw} autoComplete="new-password" onChange={(e) => setPw(e.target.value)} required minLength={8} autoFocus />
+            <Field label="Confirm new password" type="password" value={confirm} autoComplete="new-password" onChange={(e) => setConfirm(e.target.value)} required />
+            <Banner variant="error">{error}</Banner>
+            <Button type="submit" variant="primary" block disabled={busy}>{busy ? 'Updating…' : 'Update password'}</Button>
           </form>
         )}
-      </section>
+      </Card>
     </Frame>
   )
 }
@@ -1209,15 +1179,14 @@ function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, on
 // ReportTokenPanel shows a freshly-minted check-in token once, with the single env var to add to
 // the container (via the Docker/unRAID GUI) to turn on version reporting - no re-enrollment.
 function ReportTokenPanel({ token, name, onDone }: { token: string; name: string; onDone: () => void }) {
-  const [copied, setCopied] = useState(false)
   const envLine = `ARGUS_PROBE_TOKEN=${token}`
   return (
     <div style={{ padding: '12px 16px', background: 'var(--elevated)', borderBottom: '1px solid var(--border)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
         <strong>Enable version reporting for {name}</strong>
         <span className="envpill" title="Shown once">token shown once</span>
-        <button className="btn" style={{ marginLeft: 'auto' }} onClick={async () => { if (await copyToClipboard(envLine)) { setCopied(true); setTimeout(() => setCopied(false), 2000) } }}>{copied ? 'Copied!' : 'Copy'}</button>
-        <button className="btn" onClick={onDone}>Done</button>
+        <CopyButton text={envLine} variant="default" style={{ marginLeft: 'auto' }} />
+        <Button variant="default" onClick={onDone}>Done</Button>
       </div>
       <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: '0 0 8px' }}>
         Add this environment variable to the <strong>{`argus-${name}`}</strong> container (unRAID: Edit → Add another variable) and restart it. The probe already knows the check-in URL from its enroll URL, so this token is all it needs - no re-enrollment. It's saved to the probe's volume on first boot, so you can remove the variable afterward.
@@ -1229,13 +1198,12 @@ function ReportTokenPanel({ token, name, onDone }: { token: string; name: string
 
 // ProbeUpdateCommand renders the copyable pull+restart command for a single probe (manual path).
 function ProbeUpdateCommand({ p }: { p: Proxy }) {
-  const [copied, setCopied] = useState(false)
   const cmd = `docker pull ${PROBE_IMAGE.replace(/:latest$/, '')}:${probeUpdateTag(p.target)} && docker restart argus-${p.name}`
   return (
     <div style={{ padding: '10px 16px', background: 'var(--elevated)', borderBottom: '1px solid var(--border)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
         <span style={{ color: 'var(--muted)', fontSize: 12.5 }}>Run on {p.name}'s Docker host{p.version ? ` (currently ${p.version})` : ''}:</span>
-        <button className="btn" style={{ marginLeft: 'auto' }} onClick={async () => { if (await copyToClipboard(cmd)) { setCopied(true); setTimeout(() => setCopied(false), 2000) } }}>{copied ? 'Copied!' : 'Copy'}</button>
+        <CopyButton text={cmd} variant="default" style={{ marginLeft: 'auto' }} />
       </div>
       <pre style={{ margin: 0, padding: '10px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12 }}><code>{cmd}</code></pre>
     </div>
@@ -1354,9 +1322,8 @@ function probeUnraidXml(c: CreatedToken): string {
 type ProbeFmt = 'docker' | 'compose' | 'unraid'
 function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; redeploy: boolean; onDone: () => void }) {
   const [fmt, setFmt] = useState<ProbeFmt>('docker')
-  const [copied, setCopied] = useState(false)
   const content = fmt === 'docker' ? probeDockerCmd(created, redeploy) : fmt === 'compose' ? probeComposeCmd(created) : probeUnraidXml(created)
-  const pick = (f: ProbeFmt) => { setFmt(f); setCopied(false) }
+  const pick = (f: ProbeFmt) => { setFmt(f) }
   const blurb: Record<ProbeFmt, string> = {
     docker: redeploy
       ? "Redeploying an existing probe: this removes the old container and starts a fresh one, keeping its data volume (so it stays enrolled). Run it on the site's Docker host."
@@ -1374,8 +1341,8 @@ function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; re
           <button className={fmt === 'compose' ? 'on' : ''} onClick={() => pick('compose')}>Compose + auto-update</button>
           <button className={fmt === 'unraid' ? 'on' : ''} onClick={() => pick('unraid')}>unRAID XML</button>
         </div>
-        <button className="btn" onClick={async () => { if (await copyToClipboard(content)) { setCopied(true); setTimeout(() => setCopied(false), 2000) } }}>{copied ? 'Copied!' : 'Copy'}</button>
-        <button className="btn" onClick={onDone}>Done</button>
+        <CopyButton text={content} variant="default" />
+        <Button variant="default" onClick={onDone}>Done</Button>
       </div>
       <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: '0 0 8px' }}>
         {blurb[fmt]}
@@ -1463,21 +1430,20 @@ function DashboardView() {
   const [health, setHealth] = useState<Health | null>(null)
   useEffect(() => { fetch('/api/health').then((r) => r.json()).then(setHealth).catch(() => setHealth(null)) }, [])
   return (
-    <section style={card}>
-      <h2 style={{ fontSize: '1rem', marginTop: 0 }}>System health</h2>
+    <Card title="System health">
       {!health && <p>Checking…</p>}
       {health && (
         <ul style={{ lineHeight: 1.9, margin: 0, paddingLeft: '1.1rem' }}>
-          <li>Backend: <strong style={{ color: 'seagreen' }}>{health.status}</strong></li>
+          <li>Backend: <strong className="txt-ok">{health.status}</strong></li>
           <li>Zabbix API:{' '}
             {health.zabbix.reachable
-              ? <strong style={{ color: 'seagreen' }}>reachable (v{health.zabbix.version})</strong>
-              : <strong style={{ color: 'crimson' }}>unreachable</strong>}
+              ? <strong className="txt-ok">reachable (v{health.zabbix.version})</strong>
+              : <strong className="txt-err">unreachable</strong>}
           </li>
-          {health.zabbix.error && <li style={{ color: '#c66', listStyle: 'none', marginLeft: '-1.1rem' }}>↳ {health.zabbix.error}</li>}
+          {health.zabbix.error && <li style={{ color: 'var(--err)', listStyle: 'none', marginLeft: '-1.1rem' }}>↳ {health.zabbix.error}</li>}
         </ul>
       )}
-    </section>
+    </Card>
   )
 }
 
@@ -2007,9 +1973,9 @@ function SensorChart({ itemId, units }: { itemId: string; units: string }) {
           <button key={rk} className={'rtab' + (range === rk ? ' on' : '')} onClick={() => setRange(rk)}>{rk}</button>
         ))}
       </div>
-      {loading && <p style={{ color: '#888', margin: '0.3rem 0' }}>Loading…</p>}
-      {error && <p style={{ color: 'crimson', margin: '0.3rem 0' }}>{error}</p>}
-      {!loading && !error && data && data.points.length === 0 && <p style={{ color: '#888', margin: '0.3rem 0' }}>No data in this range.</p>}
+      {loading && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>Loading…</p>}
+      {error && <p style={{ color: 'var(--err)', margin: '0.3rem 0' }}>{error}</p>}
+      {!loading && !error && data && data.points.length === 0 && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>No data in this range.</p>}
       <div ref={host} style={{ width: '100%' }} />
     </div>
   )
@@ -2126,7 +2092,7 @@ function UsersView() {
               <td data-label="Passkeys" className="mono">{u.passkeys || 0}</td>
               <td data-label="Manage" style={{ textAlign: 'right' }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
-                  {u.disabled && <span className="badge" style={{ color: 'var(--err)', borderColor: 'color-mix(in srgb, var(--err) 40%, var(--border))' }}>disabled</span>}
+                  {u.disabled && <Badge tone="err">disabled</Badge>}
                   <Kebab actions={userActions(u)} />
                 </span>
               </td>
@@ -2141,11 +2107,9 @@ function UsersView() {
 function AccountView({ me, onMe, passkeysAvailable, theme, toggleTheme }: { me: Me; onMe: (m: Me) => void; passkeysAvailable: boolean; theme: 'dark' | 'light'; toggleTheme: () => void }) {
   return (
     <div style={{ display: 'grid', gap: '1rem', maxWidth: 560 }}>
-      <section style={card}>
-        <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Appearance</h2>
-        <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>Theme is remembered on this device. Currently {theme}.</p>
-        <button type="button" style={btn} onClick={toggleTheme}>Switch to {theme === 'dark' ? 'light' : 'dark'} mode</button>
-      </section>
+      <Card title="Appearance" note={`Theme is remembered on this device. Currently ${theme}.`}>
+        <Button variant="primary" onClick={toggleTheme}>Switch to {theme === 'dark' ? 'light' : 'dark'} mode</Button>
+      </Card>
       <LandingCard me={me} onMe={onMe} />
       <PasswordCard />
       <MfaCard />
@@ -2173,18 +2137,16 @@ function LandingCard({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
   }
 
   return (
-    <section style={card}>
-      <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Landing page</h2>
-      <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>Which screen Argus opens on when you sign in or visit the app.</p>
-      {error && <p style={{ color: 'var(--err)' }}>{error}</p>}
-      {msg && <p style={{ color: 'var(--ok)' }}>{msg}</p>}
-      <label style={{ display: 'block' }}>Open on
-        <select style={{ ...input, width: '100%', marginTop: 4 }} value={landing} disabled={busy} onChange={(e) => choose(e.target.value as 'overview' | 'errors')}>
+    <Card title="Landing page" note="Which screen Argus opens on when you sign in or visit the app.">
+      <Banner variant="error">{error}</Banner>
+      <Banner variant="success">{msg}</Banner>
+      <Field label="Open on">
+        <select value={landing} disabled={busy} onChange={(e) => choose(e.target.value as 'overview' | 'errors')}>
           <option value="overview">Overview - what needs attention right now</option>
           <option value="errors">Errors - the list of erroring sensors</option>
         </select>
-      </label>
-    </section>
+      </Field>
+    </Card>
   )
 }
 
@@ -2204,23 +2166,16 @@ function PasswordCard() {
   }
 
   return (
-    <section style={card}>
-      <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Change my password</h2>
-      {error && <p style={{ color: 'var(--err)' }}>{error}</p>}
-      {msg && <p style={{ color: 'var(--ok)' }}>{msg}</p>}
+    <Card title="Change my password">
+      <Banner variant="error">{error}</Banner>
+      <Banner variant="success">{msg}</Banner>
       <form onSubmit={submit}>
-        <label style={{ display: 'block', marginBottom: '0.75rem' }}>Current password
-          <input style={{ ...input, width: '100%', marginTop: 4 }} type="password" value={cur} autoComplete="current-password" onChange={(e) => setCur(e.target.value)} required />
-        </label>
-        <label style={{ display: 'block', marginBottom: '0.75rem' }}>New password (min 8)
-          <input style={{ ...input, width: '100%', marginTop: 4 }} type="password" value={next} autoComplete="new-password" onChange={(e) => setNext(e.target.value)} required minLength={8} />
-        </label>
-        <label style={{ display: 'block', marginBottom: '1rem' }}>Confirm new password
-          <input style={{ ...input, width: '100%', marginTop: 4 }} type="password" value={confirm} autoComplete="new-password" onChange={(e) => setConfirm(e.target.value)} required />
-        </label>
-        <button type="submit" style={btn}>Update password</button>
+        <Field label="Current password" type="password" value={cur} autoComplete="current-password" onChange={(e) => setCur(e.target.value)} required />
+        <Field label="New password (min 8)" type="password" value={next} autoComplete="new-password" onChange={(e) => setNext(e.target.value)} required minLength={8} />
+        <Field label="Confirm new password" type="password" value={confirm} autoComplete="new-password" onChange={(e) => setConfirm(e.target.value)} required />
+        <Button type="submit" variant="primary">Update password</Button>
       </form>
-    </section>
+    </Card>
   )
 }
 
@@ -2272,32 +2227,30 @@ function MfaCard() {
   }
 
   return (
-    <section style={card}>
-      <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Two-factor authentication</h2>
-      <p style={{ color: '#aaa', marginTop: 0 }}>Use an authenticator app or a password manager such as Bitwarden. Argus uses standard TOTP, so both scanning the QR and pasting the setup key work.</p>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {msg && <p style={{ color: 'seagreen' }}>{msg}</p>}
+    <Card title="Two-factor authentication" note="Use an authenticator app or a password manager such as Bitwarden. Argus uses standard TOTP, so both scanning the QR and pasting the setup key work.">
+      <Banner variant="error">{error}</Banner>
+      <Banner variant="success">{msg}</Banner>
 
       {enabled === null && <p>Checking…</p>}
 
       {codes && <RecoveryCodes codes={codes} />}
 
       {enabled === false && !enrollment && !codes && (
-        <button onClick={startSetup} style={btn}>Enable two-factor</button>
+        <Button variant="primary" onClick={startSetup}>Enable two-factor</Button>
       )}
 
       {enabled === false && enrollment && (
         <div>
           <p style={{ marginBottom: '0.5rem' }}>1. Scan this QR, or paste the setup key into Bitwarden:</p>
           <img src={enrollment.qr_data_uri} alt="TOTP QR code" style={{ borderRadius: 8, background: 'white', padding: 8 }} width={200} height={200} />
-          <p style={{ margin: '0.75rem 0 0.25rem', color: '#aaa' }}>Setup key</p>
+          <p style={{ margin: '0.75rem 0 0.25rem', color: 'var(--muted)' }}>Setup key</p>
           <code style={{ display: 'block', wordBreak: 'break-all', background: 'var(--elevated)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.5rem', fontSize: '0.9rem' }}>{enrollment.secret}</code>
           <form onSubmit={confirmEnable} style={{ marginTop: '1rem' }}>
             <p style={{ marginBottom: '0.4rem' }}>2. Enter the current 6-digit code to confirm:</p>
-            <input style={{ ...input, width: '100%', marginBottom: '0.75rem', letterSpacing: '0.15em' }} value={code} onChange={(e) => setCode(e.target.value)} autoComplete="one-time-code" inputMode="numeric" name="otp" placeholder="123456" required />
+            <input className="input" style={{ width: '100%', marginBottom: '0.75rem', letterSpacing: '0.15em' }} value={code} onChange={(e) => setCode(e.target.value)} autoComplete="one-time-code" inputMode="numeric" name="otp" placeholder="123456" required />
             <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button type="submit" style={btn}>Confirm & enable</button>
-              <button type="button" onClick={() => { setEnrollment(null); setCode(''); setError(null) }} style={ghost}>Cancel</button>
+              <Button type="submit" variant="primary">Confirm & enable</Button>
+              <Button type="button" variant="ghost" onClick={() => { setEnrollment(null); setCode(''); setError(null) }}>Cancel</Button>
             </div>
           </form>
         </div>
@@ -2305,37 +2258,19 @@ function MfaCard() {
 
       {enabled === true && (
         <div>
-          <p><strong style={{ color: 'seagreen' }}>On.</strong> <span style={{ color: '#aaa' }}>{remaining} recovery code{remaining === 1 ? '' : 's'} remaining.</span></p>
+          <p><strong className="txt-ok">On.</strong> <span style={{ color: 'var(--muted)' }}>{remaining} recovery code{remaining === 1 ? '' : 's'} remaining.</span></p>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <button onClick={regen} style={ghost}>Regenerate recovery codes</button>
-            <button onClick={disable} style={{ ...ghost, borderColor: '#5a2a2a', color: '#e59' }}>Turn off</button>
+            <Button variant="ghost" onClick={regen}>Regenerate recovery codes</Button>
+            <Button variant="danger" onClick={disable}>Turn off</Button>
           </div>
         </div>
       )}
-    </section>
+    </Card>
   )
 }
 
 function RecoveryCodes({ codes }: { codes: string[] }) {
   const text = codes.join('\n')
-  const [copied, setCopied] = useState(false)
-  async function copy() {
-    try {
-      // navigator.clipboard only exists in a secure context (HTTPS/localhost); fall
-      // back to execCommand so Copy still works over plain HTTP on a private IP.
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text)
-      } else {
-        const ta = document.createElement('textarea')
-        ta.value = text
-        ta.style.position = 'fixed'; ta.style.opacity = '0'
-        document.body.appendChild(ta); ta.focus(); ta.select()
-        document.execCommand('copy')
-        document.body.removeChild(ta)
-      }
-      setCopied(true); setTimeout(() => setCopied(false), 2000)
-    } catch { /* ignore */ }
-  }
   function download() {
     const blob = new Blob([text + '\n'], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
@@ -2344,14 +2279,14 @@ function RecoveryCodes({ codes }: { codes: string[] }) {
     URL.revokeObjectURL(url)
   }
   return (
-    <div style={{ border: '1px solid #4a4a2a', background: '#1e1e14', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '1rem' }}>
-      <p style={{ marginTop: 0, color: '#d9d97a' }}>Save these recovery codes now - each works once and they won't be shown again.</p>
+    <div className="callout-warn">
+      <p>Save these recovery codes now - each works once and they won't be shown again.</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.25rem 1rem', fontFamily: 'monospace', fontSize: '0.95rem' }}>
         {codes.map((c) => <span key={c}>{c}</span>)}
       </div>
       <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-        <button onClick={copy} style={ghost}>{copied ? 'Copied!' : 'Copy'}</button>
-        <button onClick={download} style={ghost}>Download</button>
+        <CopyButton text={text} />
+        <Button variant="ghost" onClick={download}>Download</Button>
       </div>
     </div>
   )
@@ -2387,30 +2322,28 @@ function PasskeyCard() {
   }
 
   return (
-    <section style={card}>
-      <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Passkeys</h2>
-      <p style={{ color: '#aaa', marginTop: 0 }}>Sign in without a password using a passkey stored in Bitwarden, your phone, or a security key. Passkeys work when you reach Argus through its HTTPS address.</p>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {msg && <p style={{ color: 'seagreen' }}>{msg}</p>}
+    <Card title="Passkeys" note="Sign in without a password using a passkey stored in Bitwarden, your phone, or a security key. Passkeys work when you reach Argus through its HTTPS address.">
+      <Banner variant="error">{error}</Banner>
+      <Banner variant="success">{msg}</Banner>
 
-      {keys.length === 0 && <p style={{ color: '#888' }}>No passkeys registered yet.</p>}
+      {keys.length === 0 && <p style={{ color: 'var(--muted)' }}>No passkeys registered yet.</p>}
       {keys.length > 0 && (
         <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 1rem' }}>
           {keys.map((k) => (
-            <li key={k.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #2a2a2a', padding: '0.5rem 0' }}>
+            <li key={k.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border)', padding: '0.5rem 0' }}>
               <span>
                 <strong>{k.name}</strong>
-                <span style={{ color: '#777', marginLeft: '0.5rem', fontSize: '0.85rem' }}>
+                <span style={{ color: 'var(--faint)', marginLeft: '0.5rem', fontSize: '0.85rem' }}>
                   added {new Date(k.created).toLocaleDateString()}
                   {k.last_used ? ` · last used ${new Date(k.last_used).toLocaleDateString()}` : ' · never used'}
                 </span>
               </span>
-              <button onClick={() => remove(k)} style={{ ...ghost, borderColor: '#5a2a2a', color: '#e59' }}>Remove</button>
+              <Button variant="danger" onClick={() => remove(k)}>Remove</Button>
             </li>
           ))}
         </ul>
       )}
-      <button onClick={add} disabled={busy} style={btn}>{busy ? 'Waiting for authenticator…' : 'Add a passkey'}</button>
-    </section>
+      <Button variant="primary" onClick={add} disabled={busy}>{busy ? 'Waiting for authenticator…' : 'Add a passkey'}</Button>
+    </Card>
   )
 }

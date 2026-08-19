@@ -132,7 +132,26 @@ a { color: var(--accent); }
 .btn.primary:hover { filter: brightness(1.05); color: #fff; }
 .btn.ghost { border-color: transparent; color: var(--muted); }
 .btn.danger { border-color: color-mix(in srgb, var(--err) 45%, var(--border)); color: var(--err); }
+.btn.danger:hover { border-color: var(--err); color: var(--err); }
+.btn.block { width: 100%; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* shared card (panel-toned) - Account / Dashboard sub-cards, backing <Card> */
+.card { border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; background: var(--panel); box-shadow: var(--shadow); }
+.card-title { font-size: 1rem; margin: 0 0 6px; font-weight: 650; }
+.card-note { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+
+/* status banners - theme-aware, replacing inline crimson/seagreen text (backs <Banner>) */
+.banner { margin: 0 0 12px; font-size: 13px; }
+.banner:last-child { margin-bottom: 0; }
+.banner.error { color: var(--err); }
+.banner.success { color: var(--ok); }
+.banner.info { color: var(--muted); }
+.banner.warn { color: var(--warn); }
+
+/* warn callout box (e.g. recovery codes) - token-based, was hardcoded dark amber */
+.callout-warn { border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); background: color-mix(in srgb, var(--warn) 10%, transparent); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
+.callout-warn > p:first-child { margin-top: 0; color: var(--warn); }
 
 .lnk-host, .lnk-sensor, .sname.sclick, .strend.sclick { cursor: pointer; }
 .lnk-host:hover, .lnk-sensor:hover { color: var(--accent); text-decoration: underline; }
@@ -275,12 +294,13 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .badge { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border-strong); }
 .badge.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
 .badge.off { color: var(--faint); }
+.badge.err { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, var(--border)); }
 .flabel { font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); font-weight: 600; }
 
 .acct-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
 .field { display: block; margin-bottom: 12px; }
 .field > span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
-.field input { width: 100%; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--elevated); color: var(--text); font: inherit; }
+.field input, .field select { width: 100%; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--elevated); color: var(--text); font: inherit; }
 
 /* Settings page */
 .set-body { display: grid; gap: 14px; padding: 14px 16px 18px; }
