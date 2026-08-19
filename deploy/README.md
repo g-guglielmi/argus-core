@@ -183,7 +183,9 @@ one env var it gives you to the container (unRAID: *Edit → Add another variabl
 ARGUS_PROBE_TOKEN=<the token shown once>
 ```
 The probe derives the check-in URL from its existing `ARGUS_ENROLL_URL`, so that single variable is
-all it needs.
+all it needs. On first boot it **saves the token to the data volume**, so you can **remove the env
+var on a later run** and reporting keeps working (a fresh `ARGUS_PROBE_TOKEN` always wins, in case
+you re-mint it).
 
 The win over plain Watchtower/unRAID auto-update is **central pinning + fleet visibility + you decide
 when a change rolls out**, with no third-party updater container.

@@ -38,7 +38,8 @@ Zabbix release the API exposes.
   version even after a plain image update. The Probes view now offers **Enable reporting** on such
   probes (`POST /api/probes/{name}/checkin-token`): it mints a token to drop in as a single env var
   (`ARGUS_PROBE_TOKEN`) via the container's GUI - the check-in URL is derived from the enroll URL, so
-  no re-enrollment is needed.
+  no re-enrollment is needed. The probe **saves the token to its data volume on first boot**, so the
+  env var can be removed on later runs (a fresh env token always wins, for rotation).
 - **Real drift against `latest`.** Argus core now polls the public GHCR tags list anonymously
   (every 3h, no auth) to learn the newest published `X.Y.Z-rN` probe revision, and compares it to
   each probe's reported version. When the fleet target is `latest`, probes behind the newest now

@@ -1219,7 +1219,7 @@ function ReportTokenPanel({ token, name, onDone }: { token: string; name: string
         <button className="btn" onClick={onDone}>Done</button>
       </div>
       <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: '0 0 8px' }}>
-        Add this environment variable to the <strong>{`argus-${name}`}</strong> container (unRAID: Edit → Add another variable) and restart it. The probe already knows the check-in URL from its enroll URL, so this token is all it needs - no re-enrollment.
+        Add this environment variable to the <strong>{`argus-${name}`}</strong> container (unRAID: Edit → Add another variable) and restart it. The probe already knows the check-in URL from its enroll URL, so this token is all it needs - no re-enrollment. It's saved to the probe's volume on first boot, so you can remove the variable afterward.
       </p>
       <pre style={{ margin: 0, padding: '10px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12 }}><code>{envLine}</code></pre>
     </div>
