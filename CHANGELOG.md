@@ -11,6 +11,33 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.12] - 2026-08-19
+
+**One-click core self-update.** (Roadmap §F/§G)
+
+Argus **Settings → About** can now update the core to the newest release with a single click. Because
+the public-facing core is a distroless, non-root container with **no Docker socket**, it cannot
+recreate itself - so a small companion container, **`argus-updater`**, holds the socket and does the
+work on the core's behalf. The core never touches Docker.
+
+- **`argus-updater` sidecar** (new image `ghcr.io/<owner>/argus-updater`): watches a small volume
+  shared with the core. When an admin clicks "Update now", the core drops a request there; the updater
+  pulls the target release, recreates the core cloning its config (binds/mounts, env, restart policy,
+  network, ports), **verifies** the new container stays healthy (crash-loop guard + best-effort
+  `/healthz`), and **rolls back** to the previous container on any failure. It runs no listening
+  service. Reuses the proven `argus-recreate.sh` recreate/rollback approach.
+- **Core endpoints** (`coreupdate.go`): `POST /api/update/start` (admin), `GET /api/update/state`,
+  `POST /api/update/dismiss` (admin). A file-drop channel (`request.json` / `status.json`, atomic
+  writes) - no socket, no network endpoint, no tokens; least-privilege (the sidecar shares only a
+  dedicated `argus-update` volume, not the core's `/data`). New env `ARGUS_UPDATE_DIR` enables it;
+  unset leaves the feature off and Settings shows a manual update note instead.
+- **UI**: an "Update now" button plus a running / success / **failure** banner (with the reason and a
+  "rolled back" note), and the update state is polled so it reconnects across the brief restart.
+- **Deploy**: `deploy/updater/` (Dockerfile + `core-update.sh` + `docker-compose.yml`), a new
+  `argus-updater` Unraid template, `ARGUS_UPDATE_DIR` + shared-volume rows added to the core's Unraid
+  template and the README env table, a README "One-click self-update" section, and a
+  `updater-image.yml` CI workflow.
+
 ## [0.4.11] - 2026-08-19
 
 **Release channels - `:testing` for main, `:latest` for releases.** (Roadmap §G)

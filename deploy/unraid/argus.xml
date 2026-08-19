@@ -56,4 +56,9 @@
   <Config Name="Passkey RP ID" Target="ARGUS_RP_ID" Default="monitoring.example.com" Mode="" Description="WebAuthn relying-party ID = the FQDN, no scheme. Needs HTTPS + real domain; omit for plain HTTP/IP." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Passkey Display Name" Target="ARGUS_RP_DISPLAY_NAME" Default="Argus" Mode="" Description="Name shown by the authenticator." Type="Variable" Display="advanced" Required="false" Mask="false">Argus</Config>
   <Config Name="Passkey Origins" Target="ARGUS_RP_ORIGINS" Default="https://monitoring.example.com" Mode="" Description="Comma-separated origins, e.g. https://monitoring.example.com" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+
+  <!-- One-click self-update (optional): share this folder with the Argus-Updater container (same host
+       path), and add the Argus-Updater template. Leave the folder unmapped to keep self-update off. -->
+  <Config Name="Self-update channel" Target="/update" Default="/mnt/user/appdata/argus-update" Mode="rw" Description="Small folder shared with the Argus-Updater sidecar; the core drops an update request here and reads the result back. Map the SAME host path in both containers. Leave blank to disable one-click self-update." Type="Path" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Self-update dir" Target="ARGUS_UPDATE_DIR" Default="/update" Mode="" Description="In-container path of the shared self-update folder above. Set only if you mapped it and run the Argus-Updater sidecar." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 </Container>

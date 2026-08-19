@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<!--
+  unRAID Community Applications template - Argus-Updater (one-click core self-update helper).
+
+  This is the small, socket-holding sidecar that updates the Argus *core* on its behalf, so the
+  public-facing core never gets the Docker socket. Deploy it ALONGSIDE the Argus container:
+
+    1. In the Argus template, map "Self-update channel" to a host folder (e.g.
+       /mnt/user/appdata/argus-update) and set "Self-update dir" = /update.
+    2. In THIS template, map "Self-update channel" to the SAME host folder, and set
+       "Core container name" to your Argus container's name (default "Argus").
+
+  Then an admin can click "Update now" in Argus - Settings, and this container pulls the newest
+  release, recreates the Argus container on it, verifies it comes up healthy, and rolls back on
+  failure. It needs the Docker socket (read/write) to recreate the core.
+
+  Security note: this container holds the Docker socket (= host-level control). It is NOT web-facing
+  and runs no listening service - it only watches the shared folder. Keep it on this trusted host.
+-->
+<Container version="2">
+  <Name>Argus-Updater</Name>
+  <Repository>ghcr.io/g-guglielmi/argus-updater:latest</Repository>
+  <Registry>https://github.com/g-guglielmi/argus</Registry>
+  <Project>https://github.com/g-guglielmi/argus</Project>
+  <Support>https://github.com/g-guglielmi/argus/issues</Support>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Overview>Optional sidecar for Argus: performs one-click core self-updates on the core's behalf so the public-facing Argus container never needs the Docker socket. Watches a folder shared with Argus; on an admin-triggered update it pulls the newest release, recreates the Argus container cloning its config, verifies health, and rolls back on failure. Runs no web service.</Overview>
+  <Category>Tools: Network:Management</Category>
+  <Icon>https://raw.githubusercontent.com/g-guglielmi/argus/main/argus/web/public/argus-logo.png</Icon>
+
+  <Config Name="Docker Socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="rw" Description="Docker socket - required so the updater can pull the image and recreate the Argus core container. Host-level access; this container is not web-facing." Type="Path" Display="always" Required="true" Mask="false">/var/run/docker.sock</Config>
+  <Config Name="Self-update channel" Target="/update" Default="/mnt/user/appdata/argus-update" Mode="rw" Description="The SAME host folder you mapped as Argus's Self-update channel. The core drops requests here; the updater writes results back." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/argus-update</Config>
+
+  <Config Name="Core container name" Target="ARGUS_CORE_CONTAINER" Default="Argus" Mode="" Description="Name of the Argus container to update (must match its container name exactly)." Type="Variable" Display="always" Required="true" Mask="false">Argus</Config>
+  <Config Name="Core image repo" Target="ARGUS_CORE_IMAGE" Default="ghcr.io/g-guglielmi/argus" Mode="" Description="Argus core image repository (used to pull the new version and, if the name is not found, to locate the container)." Type="Variable" Display="advanced" Required="false" Mask="false">ghcr.io/g-guglielmi/argus</Config>
+  <Config Name="Poll interval (s)" Target="ARGUS_UPDATE_INTERVAL" Default="10" Mode="" Description="How often to check the shared folder for a queued update." Type="Variable" Display="advanced" Required="false" Mask="false">10</Config>
+</Container>

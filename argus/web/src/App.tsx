@@ -535,22 +535,54 @@ function buildNav(s: NavState): string {
 }
 
 type VersionInfo = { version: string; latest?: string; update_available: boolean; status: string }
+type UpdateState = {
+  self_update_enabled: boolean
+  state: string // idle | requested | running | success | failed
+  target?: string
+  from?: string
+  message?: string
+  requested_by?: string
+}
 
 // VersionAbout shows the running build at the top of Settings, with a verdict badge so an admin can
 // tell at a glance whether this instance is on the newest release:
 //   current     -> green "latest" tick (a clean release tag equal to the newest published release)
 //   development -> neutral "development build" tag (a :testing/git-describe build ahead of its tag)
-//   outdated    -> amber "update available" pill + a "What's new" changelog disclosure
-// The core resolves the newest published release (and its notes) from GHCR + the GitHub Releases API.
+//   outdated    -> amber "update available" pill + a "What's new" changelog disclosure + (when the
+//                  argus-updater sidecar is wired up) a one-click "Update now" button
+// The one-click update is performed by the argus-updater sidecar (which holds the Docker socket); the
+// core just drops a request and polls /api/update/state, showing a running / success / failure banner.
 function VersionAbout() {
   const [v, setV] = useState<VersionInfo | null>(null)
   const [notes, setNotes] = useState<string | null>(null)
+  const [upd, setUpd] = useState<UpdateState | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
   useEffect(() => { fetch('/api/version').then((r) => (r.ok ? r.json() : null)).then(setV).catch(() => {}) }, [])
+  // Poll the self-update state so the button + banner track the sidecar (and reconnect after the brief
+  // restart an update causes - a failed fetch keeps the last state rather than clearing it).
+  useEffect(() => {
+    const refresh = () => fetch('/api/update/state').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setUpd(d) }).catch(() => {})
+    refresh()
+    const t = setInterval(refresh, 5000)
+    return () => clearInterval(t)
+  }, [])
+  const refreshUpd = () => fetch('/api/update/state').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setUpd(d) }).catch(() => {})
   const running = v && (v.version || 'development build')
   const loadNotes = () => {
     if (notes !== null) return
     fetch('/api/version/notes').then((r) => (r.ok ? r.json() : null)).then((d) => setNotes((d && d.notes) || '')).catch(() => setNotes(''))
   }
+  const active = upd != null && (upd.state === 'requested' || upd.state === 'running')
+  const startUpdate = () => {
+    setBusy(true); setErr('')
+    fetch('/api/update/start', { method: 'POST' })
+      .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'could not start the update') })
+      .then(refreshUpd)
+      .catch((e) => setErr(String(e.message || e)))
+      .finally(() => setBusy(false))
+  }
+  const dismiss = () => fetch('/api/update/dismiss', { method: 'POST' }).then(refreshUpd).catch(() => {})
   return (
     <section className="set-card">
       <h3>About</h3>
@@ -566,13 +598,36 @@ function VersionAbout() {
           </div>
         )}
       </div>
+
+      {/* Update progress / outcome banner (driven by the argus-updater sidecar). */}
+      {upd && upd.state === 'requested' && <Banner variant="info">Update to {upd.target} queued - waiting for the updater to pick it up…</Banner>}
+      {upd && upd.state === 'running' && <Banner variant="info">Updating to {upd.target}… {upd.message ? `(${upd.message})` : ''} Argus will restart briefly.</Banner>}
+      {upd && upd.state === 'success' && (
+        <Banner variant="success">Updated to {upd.target}. <button className="linkbtn" onClick={dismiss}>Dismiss</button></Banner>
+      )}
+      {upd && upd.state === 'failed' && (
+        <Banner variant="error">Update to {upd.target} failed: {upd.message || 'unknown error'}. The previous version was kept. <button className="linkbtn" onClick={dismiss}>Dismiss</button></Banner>
+      )}
+      {err && <Banner variant="error">{err}</Banner>}
+
       {v && v.update_available && (
-        <details className="set-row" style={{ marginBottom: 0 }} onToggle={loadNotes}>
-          <summary className="set-hint" style={{ cursor: 'pointer' }}>What's new in {v.latest}</summary>
-          {notes === null ? <p className="set-hint">Loading…</p>
-            : notes === '' ? <p className="set-hint">Release notes unavailable.</p>
-            : <pre className="release-notes">{notes}</pre>}
-        </details>
+        <>
+          <details className="set-row" onToggle={loadNotes}>
+            <summary className="set-hint" style={{ cursor: 'pointer' }}>What's new in {v.latest}</summary>
+            {notes === null ? <p className="set-hint">Loading…</p>
+              : notes === '' ? <p className="set-hint">Release notes unavailable.</p>
+              : <pre className="release-notes">{notes}</pre>}
+          </details>
+          <div className="set-row" style={{ marginBottom: 0 }}>
+            {upd && upd.self_update_enabled ? (
+              <Button variant="primary" onClick={startUpdate} disabled={busy || active}>
+                {active ? 'Updating…' : `Update to ${v.latest}`}
+              </Button>
+            ) : (
+              <p className="set-hint">Self-update isn't configured on this instance. Pull the new image and redeploy, or add the <span className="mono">argus-updater</span> sidecar to enable one-click updates (see the README).</p>
+            )}
+          </div>
+        </>
       )}
     </section>
   )

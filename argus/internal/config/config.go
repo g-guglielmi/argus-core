@@ -38,7 +38,17 @@ type Config struct {
 	RPID          string   // ARGUS_RP_ID, e.g. "monitoring.example.com"
 	RPDisplayName string   // ARGUS_RP_DISPLAY_NAME, shown by the authenticator
 	RPOrigins     []string // ARGUS_RP_ORIGINS, comma-separated, e.g. "https://monitoring.example.com"
+
+	// One-click self-update. When set to a directory shared with the argus-updater sidecar (which
+	// alone holds the Docker socket), an admin can trigger a core update from Settings: the core drops
+	// a request file here and reads the sidecar's status/result back. Empty = self-update disabled
+	// (the UI falls back to showing the changelog + a manual update command). The public-facing core
+	// never touches Docker; the sidecar does the work and reports success/failure.
+	UpdateDir string // ARGUS_UPDATE_DIR, e.g. "/update" (a volume shared with argus-updater)
 }
+
+// SelfUpdateEnabled reports whether the argus-updater channel is wired up (a shared dir is set).
+func (c Config) SelfUpdateEnabled() bool { return c.UpdateDir != "" }
 
 // PasskeysEnabled reports whether WebAuthn is configured well enough to offer passkeys.
 func (c Config) PasskeysEnabled() bool {
@@ -65,6 +75,7 @@ func Load() Config {
 		RPID:          env("ARGUS_RP_ID", ""),
 		RPDisplayName: env("ARGUS_RP_DISPLAY_NAME", "Argus"),
 		RPOrigins:     envList("ARGUS_RP_ORIGINS"),
+		UpdateDir:     strings.TrimRight(env("ARGUS_UPDATE_DIR", ""), "/"),
 	}
 }
 

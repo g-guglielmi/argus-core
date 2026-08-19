@@ -8,7 +8,10 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
 
 ---
 
-## ✅ Shipped (through v0.4.11)
+## ✅ Shipped (through v0.4.12)
+
+**v0.4.12 - one-click core self-update**
+- [x] **One-click core self-update** via an `argus-updater` sidecar (holds the Docker socket so the public-facing core never does): pull -> recreate cloning config -> health-verify -> rollback on failure, with a result banner in Settings. New `ARGUS_UPDATE_DIR` channel, `argus-updater` image + Unraid template + compose
 
 **v0.4.11 - release hygiene**
 - [x] **`:testing` channel / release-gated `:latest`** - `main` builds publish `:testing`; `:latest` is reserved for `v*` releases

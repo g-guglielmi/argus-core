@@ -164,6 +164,12 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// issue a check-in credential for an already-enrolled probe (admin) - turns on version reporting
 	mux.HandleFunc("POST /api/probes/{name}/checkin-token", auth.RequireRole("admin", s.handleIssueCheckinToken))
 
+	// one-click core self-update via the argus-updater sidecar (admin triggers; anyone signed in can
+	// read the state, since the banner is shown in the shell). See coreupdate.go.
+	mux.HandleFunc("POST /api/update/start", auth.RequireRole("admin", s.handleUpdateStart))
+	mux.HandleFunc("GET /api/update/state", auth.RequireAuth(s.handleUpdateState))
+	mux.HandleFunc("POST /api/update/dismiss", auth.RequireRole("admin", s.handleUpdateDismiss))
+
 	// user management (admin only)
 	mux.HandleFunc("GET /api/users", auth.RequireRole("admin", s.handleListUsers))
 	mux.HandleFunc("POST /api/users", auth.RequireRole("admin", s.handleCreateUser))
