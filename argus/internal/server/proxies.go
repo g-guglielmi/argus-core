@@ -2,7 +2,10 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -56,18 +59,46 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			mode = "passive"
 		}
 		ag := agents[p.Name]
+		// Prefer the precise version a fleet-aware probe self-reports (includes our wrapper
+		// revision, e.g. 7.0.29-r2). Fall back to the Zabbix-reported proxy version so probes that
+		// don't check in (older images, or ones updated outside Argus like unRAID) still show a
+		// version — just the Zabbix version, without the -rN, and marked as externally managed.
+		version, status := ag.Version, updateStatus(ag.Version, target)
+		if version == "" {
+			if zv := zbxVersionString(p.Version); zv != "" {
+				version, status = zv, "external"
+			}
+		}
 		out = append(out, proxyView{
 			Name:         p.Name,
 			LastAccess:   la,
 			Online:       la > 0 && now-la <= 300,
 			Mode:         mode,
 			EnrolledAt:   enrolled[p.Name],
-			Version:      ag.Version,
+			Version:      version,
 			Target:       target,
 			SelfUpdate:   ag.SelfUpdate,
-			UpdateStatus: updateStatus(ag.Version, target),
+			UpdateStatus: status,
 			LastCheckin:  ag.LastCheckin,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// zbxVersionString normalises Zabbix's proxy version field to a dotted string. Zabbix reports it
+// either already dotted ("7.0.29") or as a packed integer ("70029" = major*10000 + minor*100 +
+// patch); "" and "0" mean the proxy has never connected.
+func zbxVersionString(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "0" {
+		return ""
+	}
+	if strings.Contains(raw, ".") {
+		return raw
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d.%d.%d", n/10000, (n/100)%100, n%100)
 }

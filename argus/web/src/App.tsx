@@ -1132,7 +1132,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                 <td><strong>{p.name}</strong></td>
                 <td data-label="Status">{p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}</td>
                 <td data-label="Last check-in" className="mono" title="When the core last received data from this proxy" style={{ color: !p.last_access ? 'var(--faint)' : (Date.now() / 1000 - p.last_access > 60 ? 'var(--warn)' : undefined), fontWeight: p.last_access && Date.now() / 1000 - p.last_access > 60 ? 600 : undefined }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
-                <td data-label="Version" className="mono" title={p.last_checkin ? `Version reported ${relTime(p.last_checkin)}` : 'No fleet check-in yet'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '-'}</td>
+                <td data-label="Version" className="mono" title={p.last_checkin ? `Version reported ${relTime(p.last_checkin)}` : p.version ? 'Version from Zabbix (no Argus fleet check-in)' : 'No version reported'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '-'}</td>
                 <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} /></td>
                 <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
                 <td data-label="Enrolled" className="mono" style={{ color: p.enrolled_at ? 'var(--muted)' : 'var(--faint)' }} title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>{p.enrolled_at ? new Date(p.enrolled_at * 1000).toLocaleDateString() : '-'}</td>
@@ -1162,6 +1162,8 @@ function UpdateBadge({ p, open, onToggle }: { p: Proxy; open: boolean; onToggle:
       return <span><span className="tag" title="Fleet target is 'latest'; the probe converges on the newest image">tracking latest</span>{auto}</span>
     case 'outdated':
       return <span><button className="btn" onClick={onToggle}>{open ? 'Hide' : 'Update…'}</button>{auto}</span>
+    case 'external':
+      return <span className="mono" style={{ color: 'var(--faint)' }} title="Version reported by Zabbix; this probe isn't managed by Argus fleet updates (e.g. unRAID or Watchtower handles its updates).">-</span>
     default:
       return <span className="mono" style={{ color: 'var(--faint)' }} title="This probe hasn't reported a version - update it to a fleet-aware image, or it was registered manually.">-</span>
   }
