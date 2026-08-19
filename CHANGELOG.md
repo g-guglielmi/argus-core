@@ -13,13 +13,26 @@ GitHub Release from the matching section below.
 
 ## [0.4.13] - 2026-08-19
 
-**Fixes.**
+**Self-update fixes** (from first real-world testing):
 
 - **Self-update channel permissions.** A fresh Docker named volume mounts root-owned (`0755`), so the
   non-root, distroless core could not write `request.json` ("could not queue the update") nor clear a
   finished banner ("Dismiss" did nothing) - it could only read the sidecar's status. The
   `argus-updater` sidecar (root, holds the socket) now makes the shared channel dir writable on
   startup, self-healing both new and existing volumes. Ships in `argus-updater:latest`.
+- **Preserve the release channel instead of pinning.** A `:latest` / `:testing` core self-updated to a
+  fixed `:vX.Y.Z` tag, dropping it off its channel. The updater now re-pulls the core's current tag in
+  place when it's a rolling channel (`:latest` / `:testing`), and only bumps a genuinely pinned
+  (`:vX.Y.Z`) deployment. Ships in `argus-updater:latest`.
+- **"Reload" after a successful update.** The success banner offered only "Dismiss", but the running
+  SPA is still the old bundle (and shows the old version) until reloaded - so it now offers a
+  **Reload** action (which clears the job, then reloads to the new frontend + version).
+- **Dismiss/Reload no longer trip "no settings to update".** Those raw buttons sit inside the Settings
+  `<form>` and defaulted to `type="submit"`, so clicking them submitted the (empty) settings form.
+  Marked them `type="button"`.
+
+**Other fixes:**
+
 - **Login-screen flash on refresh.** The initial-load state reused the branded login `Frame`, so an
   authenticated page refresh briefly flashed the login chrome before the app mounted. Replaced with a
   neutral loader.

@@ -585,6 +585,10 @@ function VersionAbout() {
       .finally(() => setBusy(false))
   }
   const dismiss = () => fetch('/api/update/dismiss', { method: 'POST' }).then(refreshUpd).catch(() => {})
+  // After a successful update the running SPA is still the OLD bundle (and shows the old version):
+  // clear the finished job, then reload to pull the new frontend + version. Dismiss-then-reload so
+  // the success banner doesn't reappear on the fresh load.
+  const reloadNow = () => fetch('/api/update/dismiss', { method: 'POST' }).catch(() => {}).finally(() => window.location.reload())
   return (
     <section className="set-card">
       <h3>About</h3>
@@ -605,10 +609,10 @@ function VersionAbout() {
       {upd && upd.state === 'requested' && <Banner variant="info">Update to {upd.target} queued - waiting for the updater to pick it up…</Banner>}
       {upd && upd.state === 'running' && <Banner variant="info">Updating to {upd.target}… {upd.message ? `(${upd.message})` : ''} Argus will restart briefly.</Banner>}
       {upd && upd.state === 'success' && (
-        <Banner variant="success">Updated to {upd.target}. <button className="linkbtn" onClick={dismiss}>Dismiss</button></Banner>
+        <Banner variant="success">Updated to {upd.target}. Reload to finish loading the new version. <button type="button" className="linkbtn" onClick={reloadNow}>Reload</button></Banner>
       )}
       {upd && upd.state === 'failed' && (
-        <Banner variant="error">Update to {upd.target} failed: {upd.message || 'unknown error'}. The previous version was kept. <button className="linkbtn" onClick={dismiss}>Dismiss</button></Banner>
+        <Banner variant="error">Update to {upd.target} failed: {upd.message || 'unknown error'}. The previous version was kept. <button type="button" className="linkbtn" onClick={dismiss}>Dismiss</button></Banner>
       )}
       {err && <Banner variant="error">{err}</Banner>}
 
