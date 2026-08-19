@@ -11,6 +11,27 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.9] - 2026-08-19
+
+**Dashboard-triggered probe self-update (`docker run`, no compose needed).** (Roadmap §A; DESIGN §18)
+
+Builds on the exact-version check-in: a probe reports its full version *including our wrapper
+revision* (`7.0.29-r2`) over the Argus channel, so the core sees subrelease drift - not just the
+Zabbix release the API exposes.
+
+- **Update now.** Give a probe the Docker socket + `ARGUS_PROBE_SELFUPDATE=1` and the Probes view
+  shows an **Update now** button. It queues the fleet target for that probe
+  (`POST /api/probes/{name}/update`), handed to the probe once at its next check-in.
+- **Sister-container recreate.** Since a container can't `rm -f` itself mid-update, the probe spawns
+  a short-lived `ARGUS_PROBE_ROLE=recreate` helper that clones the proxy's config onto the new image
+  via the Docker Engine API (env, binds/mounts, restart policy, network, labels preserved) and
+  **rolls back to the previous container if the new one fails to create or start** - a bad update
+  never leaves a site without a probe.
+- Only offered when the probe reports it's socket-capable; everything else keeps the read-only
+  visibility + one-click manual command. unRAID probes stay on native auto-update.
+
+---
+
 ## [0.4.8] - 2026-08-18
 
 **Probe fleet updates - control plane + opt-in self-update.** (Roadmap §A; DESIGN §18)

@@ -395,12 +395,19 @@ plane; the probe checks in and converges.
   probe's version / target / `update_status` (`unknown | tracking | current | outdated`).
 - **Manual path (always available).** Drifted probes surface in the Probes view with a one-click
   `docker pull … && docker restart …` command - no Docker socket involved.
-- **Self-updater (opt-in sidecar).** The `argus-probe` image runs an updater role
-  (`ARGUS_PROBE_ROLE=updater`) as a separate container that, with the Docker socket mounted, reads
-  the proxy's check-in credential from the shared volume, polls the target, and recreates the proxy
-  via `docker compose up -d proxy` when the target tag changes. Shipped as
-  `deploy/probe-image/docker-compose.yml`; **off unless you deploy the sidecar**. The "Compose +
-  auto-update" tab of the Add-probe wizard generates it.
+- **Dashboard-triggered self-update (v0.4.9; `docker run`, no compose).** A probe given the Docker
+  socket + `ARGUS_PROBE_SELFUPDATE=1` reports itself self-update-capable; the Probes view shows an
+  **Update now** button that queues the target (`POST /api/probes/{name}/update`), handed to the
+  probe once at its next check-in as `{"update":"<tag>"}`. The probe can't `rm -f` itself, so it
+  spawns a short-lived `ARGUS_PROBE_ROLE=recreate` sister that clones the proxy's config onto the
+  new image via the Docker Engine API (Dockhand-style), **rolling back to the old container on any
+  failure**. Socket lives on the proxy in this mode (the tradeoff for no sidecar); opt-in only.
+- **Self-updater (opt-in compose sidecar).** Alternatively the `argus-probe` image runs an updater
+  role (`ARGUS_PROBE_ROLE=updater`) as a separate container that, with the Docker socket mounted,
+  reads the proxy's check-in credential from the shared volume, polls the target, and recreates the
+  proxy via `docker compose up -d proxy` when the target tag changes. Shipped as
+  `deploy/probe-image/docker-compose.yml`; **off unless you deploy the sidecar** (socket isolated to
+  it). The "Compose + auto-update" tab of the Add-probe wizard generates it.
 
 **Tradeoff acknowledged.** Any automatic in-place container update needs Docker socket access at
 the site (the same mechanism Watchtower uses). The win over Watchtower is **central version control

@@ -152,15 +152,27 @@ check-in (a long-lived token issued at enrollment) - nothing inbound is opened.
 
 - **Visibility + manual update (any deployment).** The Probes view flags drift and offers a
   one-click `docker pull … && docker restart argus-<proxy>` for each outdated probe. No Docker
-  socket involved. This is the supported path for `docker run` / unRAID probes.
+  socket involved. Version is shown even for probes that never check in (read from Zabbix).
+- **Dashboard-triggered self-update (`docker run`, no compose) — v0.4.9.** Give a probe the Docker
+  socket + `ARGUS_PROBE_SELFUPDATE=1` and it reports itself as self-update-capable. The Probes view
+  then shows an **Update now** button; clicking it queues the fleet target, and on its next check-in
+  the probe **spawns a short-lived `recreate` sister container** that clones the proxy's config onto
+  the new image (rolling back if the new one fails to start). The proxy can't `rm -f` itself, hence
+  the sister. Add to your `docker run`:
+  ```
+  -v /var/run/docker.sock:/var/run/docker.sock -e ARGUS_PROBE_SELFUPDATE=1
+  ```
+  The socket is what makes this possible — grant it only if you want Argus to drive updates; the
+  fleet still works read-only without it.
 - **Opt-in self-update (compose sidecar).** Deploy the probe with
   [`deploy/probe-image/docker-compose.yml`](probe-image/docker-compose.yml) (the Add-probe wizard's
   **Compose + auto-update** tab generates it). It runs an `updater` sidecar
   (`ARGUS_PROBE_ROLE=updater`) that - with the Docker socket mounted - reads the proxy's check-in
   credential from the shared volume, polls the target, and recreates the proxy to match when the
   target tag changes. **Off unless you deploy the sidecar**; the socket is exposed only to it, never
-  to the proxy. Probe env: `ARGUS_PROBE_SELFUPDATE=1` (advertises "auto-update on" to Argus),
-  `ARGUS_UPDATE_INTERVAL` (poll seconds, default 300).
+  to the proxy. Probe env: `ARGUS_PROBE_SELFUPDATE=1`, `ARGUS_UPDATE_INTERVAL` (poll seconds, default 300).
+- **unRAID:** keep unRAID's native auto-update; Argus shows the installed version (from Zabbix) and
+  the fleet target so you can see drift.
 
 The win over plain Watchtower/unRAID auto-update is **central pinning + fleet visibility + you decide
 when a change rolls out**, with no third-party updater container.
