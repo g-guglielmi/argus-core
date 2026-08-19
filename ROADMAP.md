@@ -8,7 +8,7 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
 
 ---
 
-## ✅ Shipped (through v0.4.9)
+## ✅ Shipped (through v0.4.10)
 
 **Foundations (through v0.3.0)**
 - [x] **Phase 0 - foundations**: Zabbix 7.0 core + site1 probe over mutual TLS, 7-day offline buffer
@@ -26,6 +26,7 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
 - [x] **Session timeouts + per-user landing page** (v0.4.7); **self-service password reset** (v0.3.3)
 - [x] **Probe fleet updates** (v0.4.8-0.4.9): fleet version visibility, GHCR-resolved drift, dashboard-triggered self-update (sister-container recreate + rollback) + opt-in compose sidecar, "enable reporting" for older probes, single-folder storage
 - [x] **4 of 5 site probes online** and self-reporting (site1, site2, site3, site5)
+- [x] **UI standardization / design system** (v0.4.10): shared `ui.tsx` primitives (Button, Card, Field, Banner, Badge, CopyButton) backed by the CSS tokens; legacy inline-style objects and all hardcoded colors removed so the SPA themes correctly and pages are consistent
 
 ---
 
@@ -34,7 +35,7 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
 ### A. Probe fleet & enrollment
 - [x] **Token-based enrollment / PKI service** - mint token → probe self-generates key + CSR → core signs & registers proxy via Zabbix API; private key never leaves the probe - v0.4.0
 - [x] **"Add probe" wizard** UI + self-enrolling `argus-probe` image - v0.4.0
-- [~] Bring **site2-site5** probes online (Probes → Add probe) - **4/5 done** (site1, site2, site3, site5); **site4** pending its building's maintenance - _(ops)_ S
+- [~] Bring **site2-site5** probes online (Probes → Add probe) - **4/5 done** (site1, site2, site3, site5); **site4** blocked - its building is under renovation, so it won't come online in the near term - _(ops)_ S
 - [x] **Probe fleet updates - control plane + opt-in self-update** - Argus holds a fleet target (`latest` or a `7.0.29-r1` pin) + shows each probe's version vs target; probes check in outbound; drift gets a one-click manual update; opt-in compose sidecar (`ARGUS_PROBE_ROLE=updater`) self-updates via the Docker socket. See DESIGN §18 - v0.4.8
 - [x] **Dashboard-triggered self-update + exact-version reporting** - probes report their exact `X.Y.Z-rN` version over the check-in; a socket-enabled probe self-updates on demand via a short-lived `recreate` sister container (config-cloning, rollback on failure); "Enable reporting" mints a check-in token for older probes (persisted to the volume, one env var); redeploy-aware wizard command; snmptraps bound so no anonymous volume - v0.4.9
 - [x] **Resolve "latest" from the registry for accurate drift** - Argus core polls GHCR anonymously (`ghcr.io/token` → `/v2/<owner>/argus-probe/tags/list`) every 3h, picks the newest `X.Y.Z-rN` tag, and compares to each probe's reported version, so a `latest` target flags "outdated → rN" instead of just "tracking". - v0.4.9
@@ -64,11 +65,13 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
 
 ### F. UX / quality-of-life
 - [x] **Deep-link URLs / reload persistence** - reflect the view in the address bar (DESIGN §17) - _(FE)_
-- [ ] **UI standardization / design system** - the SPA grew organically and the same widgets are
-  built ad-hoc in different places (e.g. the theme toggle once existed in both Account and admin
-  Settings with different markup; buttons/cards/form-rows vary between views). Pull shared,
-  consistently-styled primitives (button, card, form-row, table, status pill) into one set and
-  reuse them across Overview / Account / Settings / Probes so pages look and behave the same. - _(FE)_ M
+- [x] **UI standardization / design system** - the SPA carried two competing styling systems: the
+  token-based CSS classes and a legacy inline-style-object system (`card`/`btn`/`ghost`/`input`)
+  with hardcoded, non-token colors (crimson/seagreen/#aaa...) that ignored the theme. Added
+  `web/src/ui.tsx` with shared primitives (Button, Card, Field, Banner, Badge, CopyButton) backed
+  by the CSS classes, migrated the auth flows / Account family / Dashboard / Users / DurationButton /
+  SensorChart / Probes copy buttons onto them, and removed the legacy objects and all hardcoded
+  colors so pages look and behave the same and theme correctly. - _(FE)_ v0.4.10
 - [ ] **Global search** - top-bar quick-switcher by name/IP/tag, server-side (DESIGN §16) - _(FE+BE)_ M
 - [ ] **Per-channel severity filter** - _(FE+BE)_ S
 - [ ] **Labeled graph axes** in alert PNGs (needs a font dep) - _(BE)_ S
@@ -90,14 +93,17 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
 ## Suggested near-term order
 
 Done: ~~deep-link URLs~~ ✅ · ~~password reset~~ ✅ (v0.3.3) · ~~probe enrollment~~ ✅ (v0.4.0) ·
-~~probe fleet updates + self-update~~ ✅ (v0.4.8-0.4.9) · ~~session timeouts + landing page~~ ✅ (v0.4.7).
+~~probe fleet updates + self-update~~ ✅ (v0.4.8-0.4.9) · ~~session timeouts + landing page~~ ✅ (v0.4.7) ·
+~~UI standardization / design system~~ ✅ (v0.4.10).
 
 Re-evaluated from here:
 
-1. **Finish the probe rollout** - bring **site4** online when its building is back from maintenance (trivial, ops). 4/5 already reporting.
-2. **UI standardization / design system (§F)** _(recommended next)_ - pull shared primitives (button, card, form-row, table, status pill) into one set. Small-ish, and worth doing **before** the big new screens below so discovery/management are built on consistent UI instead of more ad-hoc markup.
-3. **The 1.0 lift - "replaces PRTG Add Sensor" (§C → §B → §D):** build/verify the **device-class templates** (§C, the foundation), then **auto-discovery** (§B: UniFi sweep → fingerprint → LLD → "Discovered - review"), then the **device/threshold management UI** (§D). This is the core work that gets Argus to a production **1.0**.
-4. **Scale & production readiness (§G)** - sizing pass + server-side census before the ~6000-sensor deployment.
-5. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
+1. **Smaller-wins pass (§F / §A)** _(next)_ - now that the shared primitives exist, knock out the
+   quick, self-contained items on top of them: **global search** (top-bar quick-switcher, §F),
+   **per-channel severity filter** (§F), the **Add-probe self-update toggle** (§A), and
+   **labeled graph axes** in alert PNGs (§F). Mostly **S**, high polish-per-effort.
+2. **The 1.0 lift - "replaces PRTG Add Sensor" (§C → §B → §D):** build/verify the **device-class templates** (§C, the foundation), then **auto-discovery** (§B: UniFi sweep → fingerprint → LLD → "Discovered - review"), then the **device/threshold management UI** (§D). This is the core work that gets Argus to a production **1.0**.
+3. **Scale & production readiness (§G)** - sizing pass + server-side census before the ~6000-sensor deployment.
+4. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
 
-Smaller wins that can slot in anytime: **global search** (§F), **per-channel severity filter** (§F), the **Add-probe self-update toggle** (§A), **labeled graph axes** in alert PNGs (§F).
+Blocked / deferred: **site4** probe (§A) - its building is under renovation, so it won't come online in the near term; bring it online once that's done.

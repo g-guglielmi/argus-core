@@ -11,6 +11,29 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.10] - 2026-08-19
+
+**UI standardization / design system.** (Roadmap §F)
+
+The SPA had grown two competing styling systems: the token-based CSS classes
+(`.btn`/`.panel`/`.field`/`.badge`) used by most views, and a legacy inline-style-object system
+(`card`/`btn`/`ghost`/`input`) with **hardcoded, non-token colors** (`crimson`, `seagreen`, `#aaa`,
+`#888`, `#e59`, …) used by the auth flows, the Account cards, Dashboard and a few others. The
+hardcoded colors ignored the theme tokens, so error/success text and muted labels rendered wrong
+across light/dark, and the same widgets were rebuilt ad-hoc per view.
+
+- **New `web/src/ui.tsx`** with shared primitives backed by the existing CSS classes: `Button`
+  (variant/block), `Card` (title/note), `Field` (labeled input/select), `Banner` (theme-aware
+  error/success/info/warn), `Badge` (on/off/err), and `CopyButton` (wraps the shared
+  `copyToClipboard`).
+- **Migrated** Login / ForgotPassword / ResetPassword, the whole Account family
+  (Appearance / Landing / Password / 2FA / Recovery codes / Passkeys), Dashboard, the Users disabled
+  badge, `DurationButton`, `SensorChart`, and the three Probes copy buttons onto the primitives.
+- **Removed** the legacy `card`/`btn`/`ghost`/`input` objects and every hardcoded color, so the app
+  themes correctly and pages look and behave the same. Additive CSS only: `.card`, `.banner`,
+  `.callout-warn`, `.btn.block`, `.badge.err`, and `.field select` styling.
+- No behavior changes - pure markup/style consolidation.
+
 ## [0.4.9] - 2026-08-19
 
 **Dashboard-triggered probe self-update (`docker run`, no compose needed).** (Roadmap §A; DESIGN §18)
