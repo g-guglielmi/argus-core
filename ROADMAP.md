@@ -4,12 +4,13 @@ A living checklist of what's built and what's left. The **design** and rationale
 [`docs/DESIGN.md`](docs/DESIGN.md); this file is the tracking view. Sizes are rough:
 **S** ≈ hours, **M** ≈ a day or few, **L** ≈ a week+ / multi-part.
 
-Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend · _(ops)_ infra/deploy.
+Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend · _(ops)_ infra/deploy.
 
 ---
 
-## ✅ Shipped (through v0.3.0)
+## ✅ Shipped (through v0.4.9)
 
+**Foundations (through v0.3.0)**
 - [x] **Phase 0 - foundations**: Zabbix 7.0 core + site1 probe over mutual TLS, 7-day offline buffer
 - [x] **Auth**: roles (admin/helpdesk/viewer), argon2id + sessions, TOTP + recovery codes, WebAuthn passkeys, admin user management, login rate-limiting
 - [x] **Monitoring**: site→host→sensor tree, curated key sensors, per-sensor charts (2h-1Y, zoom), sparklines
@@ -20,6 +21,12 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 - [x] **Security**: AES-256-GCM at-rest encryption, brute-force protection
 - [x] **Admin Settings** (v0.3.0): runtime Zabbix conn / public URL / timezone / login limits
 
+**v0.4.x - probe fleet & account hardening**
+- [x] **Probe enrollment** (v0.4.0): token-based PKI, Add-probe wizard, self-enrolling `argus-probe` image
+- [x] **Session timeouts + per-user landing page** (v0.4.7); **self-service password reset** (v0.3.3)
+- [x] **Probe fleet updates** (v0.4.8-0.4.9): fleet version visibility, GHCR-resolved drift, dashboard-triggered self-update (sister-container recreate + rollback) + opt-in compose sidecar, "enable reporting" for older probes, single-folder storage
+- [x] **4 of 5 site probes online** and self-reporting (site1, site2, site3, site5)
+
 ---
 
 ## 🚧 Remaining
@@ -27,9 +34,11 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 ### A. Probe fleet & enrollment
 - [x] **Token-based enrollment / PKI service** - mint token → probe self-generates key + CSR → core signs & registers proxy via Zabbix API; private key never leaves the probe - v0.4.0
 - [x] **"Add probe" wizard** UI + self-enrolling `argus-probe` image - v0.4.0
-- [ ] Bring **site2-site5** probes online (now: Probes → Add probe) - _(ops)_ S each
+- [~] Bring **site2-site5** probes online (Probes → Add probe) - **4/5 done** (site1, site2, site3, site5); **site4** pending its building's maintenance - _(ops)_ S
 - [x] **Probe fleet updates - control plane + opt-in self-update** - Argus holds a fleet target (`latest` or a `7.0.29-r1` pin) + shows each probe's version vs target; probes check in outbound; drift gets a one-click manual update; opt-in compose sidecar (`ARGUS_PROBE_ROLE=updater`) self-updates via the Docker socket. See DESIGN §18 - v0.4.8
+- [x] **Dashboard-triggered self-update + exact-version reporting** - probes report their exact `X.Y.Z-rN` version over the check-in; a socket-enabled probe self-updates on demand via a short-lived `recreate` sister container (config-cloning, rollback on failure); "Enable reporting" mints a check-in token for older probes (persisted to the volume, one env var); redeploy-aware wizard command; snmptraps bound so no anonymous volume - v0.4.9
 - [x] **Resolve "latest" from the registry for accurate drift** - Argus core polls GHCR anonymously (`ghcr.io/token` → `/v2/<owner>/argus-probe/tags/list`) every 3h, picks the newest `X.Y.Z-rN` tag, and compares to each probe's reported version, so a `latest` target flags "outdated → rN" instead of just "tracking". - v0.4.9
+- [ ] **Add-probe wizard: self-update toggle** - an optional switch that adds `-v /var/run/docker.sock:…` + `ARGUS_PROBE_SELFUPDATE=1` to the generated command/XML, so socket-enabled probes deploy straight from the wizard (today you add the two flags by hand) - _(FE)_ S
 - [ ] **Self-configuring probe VM** (VMware / Nutanix / XCP-NG / KVM) - Packer golden image (Debian cloud image + the `argus-probe` container) that self-enrolls via **cloud-init**; the Add-probe flow gains a third output generating the cloud-init user-data / a tiny **NoCloud seed ISO** carrying the enroll token. Distribute as **OVA** (VMware/Nutanix) + **qcow2/XVA** (XCP-NG/KVM). See DESIGN §14. - _(ops+image+FE)_ L
 
 ### B. Auto-provisioning / discovery (Phase 4 - "replaces PRTG Add Sensor")
@@ -80,9 +89,15 @@ Legend: `[x]` done · `[ ]` planned · _(FE)_ frontend-only · _(BE)_ backend ·
 
 ## Suggested near-term order
 
-1. ~~Deep-link URLs~~ ✅ (done) - small, felt every day
-2. ~~Self-service password reset~~ ✅ (done, v0.3.3)
-3. ~~Probe enrollment~~ ✅ (done, v0.4.0) - now bring site2-5 online from the GUI
-4. ~~Configurable session timeouts~~ ✅ + ~~per-user landing page~~ ✅ (done, v0.4.7) - §E hardening ahead of internet exposure
-5. Then the big lift: **discovery + device templates** (B/C) → the real path to a production **1.0**.
-6. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
+Done: ~~deep-link URLs~~ ✅ · ~~password reset~~ ✅ (v0.3.3) · ~~probe enrollment~~ ✅ (v0.4.0) ·
+~~probe fleet updates + self-update~~ ✅ (v0.4.8-0.4.9) · ~~session timeouts + landing page~~ ✅ (v0.4.7).
+
+Re-evaluated from here:
+
+1. **Finish the probe rollout** - bring **site4** online when its building is back from maintenance (trivial, ops). 4/5 already reporting.
+2. **UI standardization / design system (§F)** _(recommended next)_ - pull shared primitives (button, card, form-row, table, status pill) into one set. Small-ish, and worth doing **before** the big new screens below so discovery/management are built on consistent UI instead of more ad-hoc markup.
+3. **The 1.0 lift - "replaces PRTG Add Sensor" (§C → §B → §D):** build/verify the **device-class templates** (§C, the foundation), then **auto-discovery** (§B: UniFi sweep → fingerprint → LLD → "Discovered - review"), then the **device/threshold management UI** (§D). This is the core work that gets Argus to a production **1.0**.
+4. **Scale & production readiness (§G)** - sizing pass + server-side census before the ~6000-sensor deployment.
+5. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
+
+Smaller wins that can slot in anytime: **global search** (§F), **per-channel severity filter** (§F), the **Add-probe self-update toggle** (§A), **labeled graph axes** in alert PNGs (§F).
