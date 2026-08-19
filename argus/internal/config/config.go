@@ -28,7 +28,7 @@ type Config struct {
 	TrustProxy       bool          // ARGUS_TRUST_PROXY, use X-Forwarded-For for the client IP
 
 	// Probe enrollment (token-based PKI). When the CA files are mounted, Argus can sign probe
-	// CSRs and register their proxies in Zabbix. CAKeyFile is the crown jewel — mount read-only.
+	// CSRs and register their proxies in Zabbix. CAKeyFile is the crown jewel - mount read-only.
 	// (ARGUS_PROBE_CORE_HOST is resolved by the settings manager, so it can be edited in the UI.)
 	CACertFile string // ARGUS_CA_CERT_FILE, path to the monitoring CA certificate (ca.crt)
 	CAKeyFile  string // ARGUS_CA_KEY_FILE, path to the CA private key (ca.key)

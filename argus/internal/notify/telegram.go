@@ -8,9 +8,9 @@ import (
 )
 
 // Telegram config keys:
-//   bot_token — from @BotFather
-//   chat_id   — target chat/channel/group id (e.g. "-1001234567890")
-//   thread_id — optional forum topic id (message_thread_id) for per-site threads
+//   bot_token - from @BotFather
+//   chat_id   - target chat/channel/group id (e.g. "-1001234567890")
+//   thread_id - optional forum topic id (message_thread_id) for per-site threads
 func sendTelegram(ctx context.Context, cfg map[string]string, e Event) error {
 	token := strings.TrimSpace(cfg["bot_token"])
 	chatID := strings.TrimSpace(cfg["chat_id"])

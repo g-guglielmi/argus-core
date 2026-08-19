@@ -47,7 +47,7 @@ func Load(certFile, keyFile string) (*CA, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Note: we don't hard-require the basicConstraints CA flag here — the operator's ca.crt is
+	// Note: we don't hard-require the basicConstraints CA flag here - the operator's ca.crt is
 	// the same one Zabbix already trusts, and openssl's `req -x509` output varies on that bit.
 	return &CA{cert: cert, key: key, certPEM: certPEM}, nil
 }

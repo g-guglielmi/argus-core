@@ -207,7 +207,7 @@ func (c *Client) EnsureActiveProxyCert(ctx context.Context, name, issuerDN, subj
 	// operating_mode 0 = active (proxy dials the server). TLS values are Zabbix's bitmask:
 	// 1 = no encryption, 2 = PSK, 4 = certificate. tls_accept = 4 (server accepts the proxy's
 	// cert-authenticated connection); tls_connect = 1 (no encryption on the unused, server-
-	// initiated direction — an active proxy is never connected TO).
+	// initiated direction - an active proxy is never connected TO).
 	fields := map[string]any{
 		"tls_accept":  4,
 		"tls_connect": 1,
@@ -500,7 +500,7 @@ func (c *Client) TriggerItems(ctx context.Context, triggerIDs []string) (map[str
 	return out, nil
 }
 
-// SetItemEnabled enables (status 0) or disables (status 1) an item — the "Pause" action.
+// SetItemEnabled enables (status 0) or disables (status 1) an item - the "Pause" action.
 func (c *Client) SetItemEnabled(ctx context.Context, itemID string, enabled bool) error {
 	status := 1
 	if enabled {
@@ -509,7 +509,7 @@ func (c *Client) SetItemEnabled(ctx context.Context, itemID string, enabled bool
 	return c.call(ctx, "item.update", map[string]any{"itemid": itemID, "status": status}, true, nil)
 }
 
-// SetHostEnabled enables (status 0) or disables (status 1) a host — the "Pause" action.
+// SetHostEnabled enables (status 0) or disables (status 1) a host - the "Pause" action.
 func (c *Client) SetHostEnabled(ctx context.Context, hostID string, enabled bool) error {
 	status := 1
 	if enabled {

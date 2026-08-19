@@ -1,4 +1,4 @@
-# Phase 0 — Deployment Kit (Foundations)
+# Phase 0 - Deployment Kit (Foundations)
 
 Goal of Phase 0: stand up the **core** (Zabbix server + web + PostgreSQL/TimescaleDB) and
 **one probe** (site1) that connects to the core over **mutual TLS**, proving one device
@@ -23,9 +23,9 @@ Core VM: zabbix-server + zabbix-web (API) + PostgreSQL+TimescaleDB
 
 ### 1. Generate the PKI  → `pki/gen-certs.sh`
 Run once, anywhere with `openssl` (ideally on the core VM). Produces:
-- `ca.crt` / `ca.key` — your monitoring CA (keep `ca.key` safe/offline).
-- `zabbix-core.crt` / `.key` — server cert for the core.
-- `proxy-<site>.crt` / `.key` — one client cert per site (site1, site2, site3, site4, site5).
+- `ca.crt` / `ca.key` - your monitoring CA (keep `ca.key` safe/offline).
+- `zabbix-core.crt` / `.key` - server cert for the core.
+- `proxy-<site>.crt` / `.key` - one client cert per site (site1, site2, site3, site4, site5).
 
 Copy `ca.crt` + `zabbix-core.*` to the core; copy `ca.crt` + `proxy-<site>.*` to each probe.
 **Never copy `ca.key` or other sites' keys to a probe.**
@@ -36,7 +36,7 @@ TimescaleDB, creates the DB, imports schema, enables Timescale compression/parti
 Then apply the TLS + tuning snippet: `core/zabbix_server.conf.snippet`.
 
 After it's up:
-- Zabbix web UI (admin engine room) on the VM — lock it to the private network / admin only.
+- Zabbix web UI (admin engine room) on the VM - lock it to the private network / admin only.
 - Publish **TCP 10051** to wherever probes will reach it (LAN via Site Magic today; a NAT/
   HAProxy TCP-passthrough rule for future no-VPN sites).
 
@@ -59,7 +59,7 @@ core's network briefly and confirm the proxy buffers + flushes on reconnect.
 
 ## Official docs vs. this script
 
-They do the **same base steps** — the Zabbix installer page (repo → packages → DB → schema)
+They do the **same base steps** - the Zabbix installer page (repo → packages → DB → schema)
 is now confirmed exact for Debian 13 / Zabbix 7.0. `setup-core.sh` automates those *and* adds
 three things the basic doc flow does **not** cover: **TimescaleDB**, the **TLS config** for
 proxies, and **retention** tuning.
@@ -73,14 +73,14 @@ headless):
 If you'd rather follow the docs by hand for the base install, do that, then apply only the
 TimescaleDB block from `setup-core.sh` + the `zabbix_server.conf.snippet`. Same result.
 
-## Adding a new remote site — token enrollment from the Argus GUI (preferred)
+## Adding a new remote site - token enrollment from the Argus GUI (preferred)
 
 Once Argus is running with the CA mounted (`ARGUS_CA_CERT_FILE` / `ARGUS_CA_KEY_FILE`), adding a
 probe no longer needs `gen-certs.sh` or manual proxy registration:
 
 **Prerequisites (one-time):**
 - Mount the CA (`ca.crt` + `ca.key`) read-only into the Argus container and set the two
-  `ARGUS_CA_*` paths; set the **probe core host** (the address probes dial for `:10051`) — either
+  `ARGUS_CA_*` paths; set the **probe core host** (the address probes dial for `:10051`) - either
   via `ARGUS_PROBE_CORE_HOST` or in **Settings → Probe enrollment** (no redeploy). Tip: a
   split-horizon DNS name that resolves to the core's LAN/mesh IP internally and the public IP
   externally lets every probe use one address. A probe can also override its baked-in core host
@@ -104,7 +104,7 @@ The manual flow below stays available as a fallback (e.g. before the CA is mount
 ### Migrating a manually-enrolled proxy to `argus-probe`
 
 A proxy you registered by hand (Phase-0 `gen-certs.sh` + the stock `zabbix-proxy` container) keeps
-working — migration is **optional**, only to standardize on the self-enrolling image. It's safe
+working - migration is **optional**, only to standardize on the self-enrolling image. It's safe
 because enrolling an **existing proxy name** does a `proxy.update`, not a create, so the Zabbix
 proxy record, its assigned hosts, and history are **preserved** (same `proxyid`). Steps, per site:
 
@@ -114,10 +114,10 @@ proxy record, its assigned hosts, and history are **preserved** (same `proxyid`)
    (`docker rm -f zbx-proxy-<site>`). Use a **fresh volume** for the new one (don't reuse the old
    `/var/lib/zabbix`), so it enrolls cleanly.
 3. Run the new `argus-probe` container. It generates a new key + CSR, gets a fresh cert signed for
-   `proxy-<site>`, and Argus **updates** the existing proxy (same issuer/subject pin) — the probe
+   `proxy-<site>`, and Argus **updates** the existing proxy (same issuer/subject pin) - the probe
    reconnects as the same proxy.
 4. Confirm it's **online** in Probes. Then delete the old cert files (`ca.crt`, `proxy-<site>.*`)
-   from the host — the new probe made its own.
+   from the host - the new probe made its own.
 
 There's a brief collection gap while you swap containers (two containers can't share one proxy
 name at once). The old cert stays valid but unused; you can leave it or clean it up.
@@ -125,7 +125,7 @@ name at once). The old cert stays valid but unused; you can leave it or clean it
 ### Updating a probe (automatic)
 
 The probe runs `ghcr.io/<owner>/argus-probe:latest`. An update is a plain image pull + container
-recreate — **no re-enrollment**: the signed cert + `ca.crt` live on the persistent
+recreate - **no re-enrollment**: the signed cert + `ca.crt` live on the persistent
 `/var/lib/zabbix` volume, and the entrypoint skips enrollment whenever those certs already exist
 (so the single-use token is never needed again). Options:
 
@@ -138,17 +138,17 @@ recreate — **no re-enrollment**: the signed cert + `ca.crt` live on the persis
   ```
 - **unRAID**: the built-in *CA Auto Update* plugin updates the container on a schedule.
 - **Manual / cron**: `docker pull …/argus-probe:latest && docker rm -f argus-proxy-<site> && docker run …`
-  (same command you deployed with — the token env is harmless once certs exist).
+  (same command you deployed with - the token env is harmless once certs exist).
 
 Because the probe pins `:latest`, pushing a new `argus-probe` image to GHCR is enough for these to
-pick it up. (Pin a specific tag instead if you'd rather gate probe updates — see below.)
+pick it up. (Pin a specific tag instead if you'd rather gate probe updates - see below.)
 
-### Fleet updates — Argus-coordinated (v0.4.8)
+### Fleet updates - Argus-coordinated (v0.4.8)
 
 Argus is a **control plane** for probe versions: it holds a **fleet target** (Probes → *Fleet
 target version*: `latest` or an exact pin like `7.0.29-r1`) and shows each probe's running version
 against it. Every probe self-reports its baked-in version every ~5 min over an outbound-only
-check-in (a long-lived token issued at enrollment) — nothing inbound is opened.
+check-in (a long-lived token issued at enrollment) - nothing inbound is opened.
 
 - **Visibility + manual update (any deployment).** The Probes view flags drift and offers a
   one-click `docker pull … && docker restart argus-<proxy>` for each outdated probe. No Docker
@@ -156,7 +156,7 @@ check-in (a long-lived token issued at enrollment) — nothing inbound is opened
 - **Opt-in self-update (compose sidecar).** Deploy the probe with
   [`deploy/probe-image/docker-compose.yml`](probe-image/docker-compose.yml) (the Add-probe wizard's
   **Compose + auto-update** tab generates it). It runs an `updater` sidecar
-  (`ARGUS_PROBE_ROLE=updater`) that — with the Docker socket mounted — reads the proxy's check-in
+  (`ARGUS_PROBE_ROLE=updater`) that - with the Docker socket mounted - reads the proxy's check-in
   credential from the shared volume, polls the target, and recreates the proxy to match when the
   target tag changes. **Off unless you deploy the sidecar**; the socket is exposed only to it, never
   to the proxy. Probe env: `ARGUS_PROBE_SELFUPDATE=1` (advertises "auto-update on" to Argus),
@@ -166,9 +166,9 @@ The win over plain Watchtower/unRAID auto-update is **central pinning + fleet vi
 when a change rolls out**, with no third-party updater container.
 
 **Versioning & tracking upstream Zabbix automatically.** The `argus-probe` image is a thin wrapper
-over `zabbix/zabbix-proxy-sqlite3:alpine-7.0-latest`, and that base is baked in at *our* build time —
+over `zabbix/zabbix-proxy-sqlite3:alpine-7.0-latest`, and that base is baked in at *our* build time -
 so probes only see new Zabbix once we rebuild + publish. It is versioned by the **Zabbix version it
-ships plus a revision for our own wrapper edits** — `probe/v<zabbix>-r<n>` (e.g. `probe/v7.0.29-r1`,
+ships plus a revision for our own wrapper edits** - `probe/v<zabbix>-r<n>` (e.g. `probe/v7.0.29-r1`,
 then `-r2` for a wrapper fix, then `7.0.30-r1` when Zabbix bumps). This is **decoupled from the app's
 `vX.Y.Z` semver**: an app-only release never rebuilds or re-tags a probe.
 
@@ -194,25 +194,25 @@ Your probe hosts pick any of these up through the same Watchtower / unRAID / man
 Enrollment was designed to be safe as a public endpoint, but mind these:
 
 - **The enrollment token is a bootstrap secret.** It's 256-bit, single-use, time-limited, and
-  revocable, and it only yields one proxy certificate for the site it's scoped to — but treat the
+  revocable, and it only yields one proxy certificate for the site it's scoped to - but treat the
   generated `docker run` (which embeds it) like a password. Short TTLs are your friend.
 - **`ARGUS_ENROLL_URL` must be HTTPS with a valid certificate.** The probe posts the token over it;
   `curl` verifies the cert (don't use `-k`). Terminate TLS at HAProxy with a real cert.
 - **The CA private key is online** (mounted into Argus so it can sign). That's inherent to
   automated enrollment, but it means a compromise of the Argus host exposes the CA. To limit the
   blast radius, consider signing with an **intermediate CA** (root stays offline; Zabbix trusts the
-  root; Argus holds only the intermediate — revoke/replace it without touching the root). The
+  root; Argus holds only the intermediate - revoke/replace it without touching the root). The
   single-CA setup is fine to start; the intermediate is the hardening step for a public deployment.
 - **Scope the Zabbix API token.** It needs super-admin for `proxy.create`; keep it Argus-only and
   rotate it if leaked (now easy from Settings).
 - **Keep 10051 pinned.** The Zabbix server accepts proxies only by certificate issuer+subject, so
-  exposing 10051 doesn't accept anonymous connections — but only publish it as far as remote sites
+  exposing 10051 doesn't accept anonymous connections - but only publish it as far as remote sites
   need.
 
-## Adding a new remote site later — manual (fallback)
+## Adding a new remote site later - manual (fallback)
 
-The CA never changes — you only mint one new leaf:
-1. `cd pki && ./gen-certs.sh <newsite>` — reuses the existing CA, leaves other certs untouched.
+The CA never changes - you only mint one new leaf:
+1. `cd pki && ./gen-certs.sh <newsite>` - reuses the existing CA, leaves other certs untouched.
 2. Copy `out/ca.crt` + `out/proxy-<newsite>.crt` + `out/proxy-<newsite>.key` to that probe (its key ONLY).
 3. Deploy the probe: `probe/run-probe.sh <newsite> <core-host>` (or duplicate the unRAID XML, swapping the site name).
 4. In the Zabbix UI: register active proxy `proxy-<newsite>`, certificate encryption,
@@ -221,9 +221,9 @@ The CA never changes — you only mint one new leaf:
 Never copy `ca.key` or another site's key to the probe.
 
 ## What Phase 0 deliberately does NOT include
-- Auto-discovery / UniFi sweep (Phase 4) — here we hand-add one host to prove the path.
-- The custom app / UI / notifier (Phases 1–5).
-- The other 4 probes — clone steps 3–4 once site1 works.
+- Auto-discovery / UniFi sweep (Phase 4) - here we hand-add one host to prove the path.
+- The custom app / UI / notifier (Phases 1-5).
+- The other 4 probes - clone steps 3-4 once site1 works.
 
 ## Files
 | File | Purpose |
@@ -263,7 +263,7 @@ but Zabbix still won't manage compression until you're on 2.28).
 **Why the pin as well as the hold.** A `hold` only stops `apt upgrade` / `full-upgrade`; an
 explicit install or a GUI update manager (e.g. Linux Update Dashboard, PackageKit) can still
 pull 2.29. The priority-1001 pin removes 2.29 as a candidate entirely, so *nothing* upgrades
-past 2.28.* — even "Upgrade All". To add it to a box that predates this change:
+past 2.28.* - even "Upgrade All". To add it to a box that predates this change:
 ```bash
 sudo tee /etc/apt/preferences.d/timescaledb-pin.pref >/dev/null <<'PIN'
 Package: timescaledb-2-*
@@ -273,7 +273,7 @@ PIN
 apt-cache policy timescaledb-2-postgresql-17   # Candidate: should read 2.28.x, not 2.29
 ```
 
-**Fix on a live box (what was done here — safe because the DB was empty).**
+**Fix on a live box (what was done here - safe because the DB was empty).**
 Downgrade TimescaleDB to the newest 2.28.x, pin it, then recreate the empty `zabbix` DB so the
 extension is created at the supported version:
 ```bash
@@ -299,7 +299,7 @@ zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz | sudo -u zabbix psq
 sudo systemctl start zabbix-server && sleep 3 && sudo tail -n 20 /var/log/zabbix/zabbix_server.log
 ```
 
-**Aftermath — recreating the DB resets state stored in the DB:**
+**Aftermath - recreating the DB resets state stored in the DB:**
 - Admin login goes back to `Admin` / `zabbix` → log in and change the password again.
 - Per-user + system **timezone and theme** reset → User profile (theme/timezone) and
   Administration → General → GUI (system defaults).

@@ -9,7 +9,7 @@ import (
 
 const recoveryCodeCount = 10
 
-// GET /api/me/mfa — current MFA status for the signed-in user.
+// GET /api/me/mfa - current MFA status for the signed-in user.
 func (s *Server) handleMFAStatus(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r.Context())
 	remaining, _ := s.st.CountUnusedRecoveryCodes(r.Context(), u.ID)
@@ -19,7 +19,7 @@ func (s *Server) handleMFAStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// POST /api/me/mfa/setup — begin enrollment: generate a pending secret + QR.
+// POST /api/me/mfa/setup - begin enrollment: generate a pending secret + QR.
 func (s *Server) handleMFASetup(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r.Context())
 	if u.TOTPEnabled {
@@ -38,7 +38,7 @@ func (s *Server) handleMFASetup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, enr)
 }
 
-// POST /api/me/mfa/enable — confirm a code against the pending secret and turn MFA on.
+// POST /api/me/mfa/enable - confirm a code against the pending secret and turn MFA on.
 func (s *Server) handleMFAEnable(w http.ResponseWriter, r *http.Request) {
 	caller, _ := auth.UserFrom(r.Context())
 	var req struct {
@@ -62,7 +62,7 @@ func (s *Server) handleMFAEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !mfa.Validate(req.Code, u.TOTPSecret) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "that code isn't valid — check your authenticator and try again"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "that code isn't valid - check your authenticator and try again"})
 		return
 	}
 	if err := s.st.EnableTOTP(r.Context(), u.ID); err != nil {
@@ -76,7 +76,7 @@ func (s *Server) handleMFAEnable(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"recovery_codes": codes})
 }
 
-// POST /api/me/mfa/disable — turn MFA off (re-auth with the account password).
+// POST /api/me/mfa/disable - turn MFA off (re-auth with the account password).
 func (s *Server) handleMFADisable(w http.ResponseWriter, r *http.Request) {
 	if !s.reauth(w, r) {
 		return
@@ -89,7 +89,7 @@ func (s *Server) handleMFADisable(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// POST /api/me/mfa/recovery-codes — regenerate recovery codes (re-auth with password).
+// POST /api/me/mfa/recovery-codes - regenerate recovery codes (re-auth with password).
 func (s *Server) handleMFARegenRecovery(w http.ResponseWriter, r *http.Request) {
 	caller, _ := auth.UserFrom(r.Context())
 	u, err := s.st.UserByID(r.Context(), caller.ID)
@@ -111,7 +111,7 @@ func (s *Server) handleMFARegenRecovery(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"recovery_codes": codes})
 }
 
-// POST /api/users/{id}/mfa/reset — admin clears a user's MFA (lockout recovery).
+// POST /api/users/{id}/mfa/reset - admin clears a user's MFA (lockout recovery).
 func (s *Server) handleAdminResetMFA(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {

@@ -189,7 +189,7 @@ func (s *Server) handleHostProblems(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// POST /api/events/{id}/ack — acknowledge a problem (any signed-in user), optional duration.
+// POST /api/events/{id}/ack - acknowledge a problem (any signed-in user), optional duration.
 // Argus records the ack (so it can expire and be undone) and mirrors it to Zabbix best-effort.
 func (s *Server) handleAckEvent(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -224,7 +224,7 @@ func (s *Server) ackEvent(ctx context.Context, eventID string, by int64, note st
 	return nil
 }
 
-// DELETE /api/events/{id}/ack — un-acknowledge (bring the problem back).
+// DELETE /api/events/{id}/ack - un-acknowledge (bring the problem back).
 func (s *Server) handleUnackEvent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	_ = s.st.ClearSuppression(r.Context(), "ack", "event", id)

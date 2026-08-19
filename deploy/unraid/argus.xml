@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!--
-  unRAID Community Applications template — Argus (monitoring cockpit over Zabbix).
+  unRAID Community Applications template - Argus (monitoring cockpit over Zabbix).
   Import via Docker tab -> Add Container -> Template dropdown, or Apps -> paste template.
 
   Before starting:

@@ -138,7 +138,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("DELETE /api/notify/channels/{id}", auth.RequireRole("admin", s.handleDeleteChannel))
 	mux.HandleFunc("GET /api/notify/sites", auth.RequireRole("admin", s.handleNotifySites))
 
-	// system settings (admin only) — runtime-editable config
+	// system settings (admin only) - runtime-editable config
 	mux.HandleFunc("GET /api/settings", auth.RequireRole("admin", s.handleListSettings))
 	mux.HandleFunc("PATCH /api/settings", auth.RequireRole("admin", s.handleUpdateSettings))
 
@@ -147,7 +147,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/probes/tokens", auth.RequireRole("admin", s.handleCreateEnrollToken))
 	mux.HandleFunc("DELETE /api/probes/tokens/{id}", auth.RequireRole("admin", s.handleDeleteEnrollToken))
 
-	// probe fleet target version (admin only) — the version probes should converge on
+	// probe fleet target version (admin only) - the version probes should converge on
 	mux.HandleFunc("GET /api/probes/target", auth.RequireRole("admin", s.handleGetProbeTarget))
 	mux.HandleFunc("PUT /api/probes/target", auth.RequireRole("admin", s.handleSetProbeTarget))
 
@@ -295,7 +295,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
-	// Password correct — clear the failure counters for this IP and account.
+	// Password correct - clear the failure counters for this IP and account.
 	s.loginLimiter.Reset(ipKey)
 	s.loginLimiter.Reset(acctKey)
 

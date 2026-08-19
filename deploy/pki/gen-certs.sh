@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# gen-certs.sh — the monitoring PKI: ONE shared CA, ONE core (server) cert,
+# gen-certs.sh - the monitoring PKI: ONE shared CA, ONE core (server) cert,
 # and ONE UNIQUE client cert per site for mutual-TLS proxy<->server auth.
 #
 # SECURITY MODEL:
-#   - All sites share the same CA (trust root). ca.key is the crown jewel — keep it OFFLINE.
+#   - All sites share the same CA (trust root). ca.key is the crown jewel - keep it OFFLINE.
 #   - Each site gets its OWN cert/key. Never share a leaf cert across sites.
 #   - Only ca.crt (public) + that site's own cert/key ever go to a probe.
 #
@@ -37,13 +37,13 @@ if [[ ! -f ca.key ]]; then
     -days "$DAYS_CA" -subj "/CN=${CA_CN}"
   chmod 600 ca.key
 else
-  echo "   ca.key exists — reusing (this is what keeps the whole fleet trusting each other)"
+  echo "   ca.key exists - reusing (this is what keeps the whole fleet trusting each other)"
 fi
 
 sign_leaf() {
   local name="$1" cn="$2"
   if [[ -f "${name}.crt" && "${FORCE:-0}" != "1" ]]; then
-    echo ">> ${name}: exists — skipping (FORCE=1 to regenerate this one)"
+    echo ">> ${name}: exists - skipping (FORCE=1 to regenerate this one)"
     return
   fi
   echo ">> ${name}: signing (CN=${cn})"

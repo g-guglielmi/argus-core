@@ -146,9 +146,9 @@ CREATE TABLE IF NOT EXISTS webauthn_sessions (
 );
 
 -- Argus-tracked suppression state with optional expiry (until NULL = indefinite):
---   kind 'hide'  scope host|item  — mute in Argus, keep collecting
---   kind 'pause' scope host|item  — expiry bookkeeping for the Zabbix disable (PRTG-style stop)
---   kind 'ack'   scope event      — acknowledged problem (mirrored to Zabbix)
+--   kind 'hide'  scope host|item  - mute in Argus, keep collecting
+--   kind 'pause' scope host|item  - expiry bookkeeping for the Zabbix disable (PRTG-style stop)
+--   kind 'ack'   scope event      - acknowledged problem (mirrored to Zabbix)
 CREATE TABLE IF NOT EXISTS suppressions (
   kind       TEXT NOT NULL,       -- 'hide' | 'pause' | 'ack'
   scope      TEXT NOT NULL,       -- 'host' | 'item' | 'event'

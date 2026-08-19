@@ -1,4 +1,4 @@
-/* Argus design system — tokens + components. Light is the default; dark via
+/* Argus design system - tokens + components. Light is the default; dark via
    prefers-color-scheme and the [data-theme] override the app stamps on <html>. */
 :root {
   --accent: #2ea8c9;
@@ -248,9 +248,9 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .enroll th:nth-child(3) { width: 27%; }
 .enroll th:nth-child(4) { width: 15%; }
 /* the live probes table carries 7 columns (Probe · Status · Last check-in · Version · Update ·
-   Mode · Enrolled) — override the 4-col widths above. Widths sum to 100% so table-layout:fixed
+   Mode · Enrolled) - override the 4-col widths above. Widths sum to 100% so table-layout:fixed
    doesn't starve the trailing columns.
-   NB: the modifier is `enroll-probes`, not `live` — `.live` is the heartbeat pill (display:inline-flex)
+   NB: the modifier is `enroll-probes`, not `live` - `.live` is the heartbeat pill (display:inline-flex)
    and would turn the whole table into a flex box. */
 .enroll.enroll-probes th:nth-child(1) { width: 20%; }
 .enroll.enroll-probes th:nth-child(2) { width: 12%; }

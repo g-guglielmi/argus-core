@@ -76,12 +76,12 @@ func (s *Server) handleRequestPasswordReset(w http.ResponseWriter, r *http.Reque
 		s.loginLimiter.Fail(acctKey)
 		go s.sendPasswordReset(email, s.baseURL(r))
 	}
-	// Generic response either way — never reveal whether the account exists.
+	// Generic response either way - never reveal whether the account exists.
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // sendPasswordReset (background) mints a single-use token and emails the reset link. All failure
-// paths are silent to the caller — the request already returned a generic response.
+// paths are silent to the caller - the request already returned a generic response.
 func (s *Server) sendPasswordReset(email, baseURL string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
@@ -115,12 +115,12 @@ func (s *Server) sendPasswordReset(email, baseURL string) {
 func resetEmailBodies(link string) (text, htmlBody string) {
 	text = "Someone requested a password reset for your Argus account.\r\n\r\n" +
 		"Reset your password (link valid for 1 hour):\r\n" + link + "\r\n\r\n" +
-		"If you didn't request this, you can ignore this email — your password stays unchanged."
+		"If you didn't request this, you can ignore this email - your password stays unchanged."
 	htmlBody = `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto">` +
 		`<h2 style="font-size:17px;color:#111827">Reset your Argus password</h2>` +
 		`<p style="font-size:14px;color:#374151">Someone requested a password reset for your account. The link is valid for <strong>1 hour</strong>.</p>` +
 		`<p style="margin:20px 0"><a href="` + html.EscapeString(link) + `" style="display:inline-block;padding:10px 18px;border-radius:7px;background:#2ea8c9;color:#fff;text-decoration:none;font-size:14px;font-weight:600">Reset password</a></p>` +
-		`<p style="font-size:12px;color:#6b7280">If you didn't request this, you can ignore this email — your password stays unchanged.</p>` +
+		`<p style="font-size:12px;color:#6b7280">If you didn't request this, you can ignore this email - your password stays unchanged.</p>` +
 		`</div>`
 	return text, htmlBody
 }

@@ -1,5 +1,5 @@
 // Package secret provides authenticated encryption (AES-256-GCM) for sensitive values stored at
-// rest — notification channel credentials, TOTP seeds, and the alert-link signing key.
+// rest - notification channel credentials, TOTP seeds, and the alert-link signing key.
 //
 // Encrypted values are stored as "enc:v1:<base64(nonce||ciphertext)>". A nil/disabled cipher is a
 // safe passthrough (returns input unchanged), and Decrypt leaves unmarked (plaintext) values as-is,

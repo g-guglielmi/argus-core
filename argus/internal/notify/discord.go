@@ -12,7 +12,7 @@ import (
 )
 
 // Discord config keys:
-//   webhook_url — the channel webhook (Server Settings → Integrations → Webhooks)
+//   webhook_url - the channel webhook (Server Settings → Integrations → Webhooks)
 func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 	url := strings.TrimSpace(cfg["webhook_url"])
 	if url == "" {

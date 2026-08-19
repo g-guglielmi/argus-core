@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# setup-core.sh — install & configure the monitoring core on a Debian 12 / Ubuntu 24.04 VM:
+# setup-core.sh - install & configure the monitoring core on a Debian 12 / Ubuntu 24.04 VM:
 #   Zabbix 7.0 LTS (server + nginx frontend, which serves the JSON-RPC API)
 #   PostgreSQL 16 + TimescaleDB (Zabbix's history/trends store = your time-series DB)
 #
 # Review before running. Assumes a fresh VM and root/sudo. Idempotent-ish but re-runs
-# may complain on already-created objects — that's fine.
+# may complain on already-created objects - that's fine.
 #
 # Usage:  sudo DBPASS='choose-a-strong-pass' ./setup-core.sh
 set -euo pipefail
@@ -65,7 +65,7 @@ Pin-Priority: 1001
 PIN
   echo "    wrote /etc/apt/preferences.d/timescaledb-pin.pref (locks TimescaleDB to 2.28.*)"
 else
-  echo "    (!) no 2.28.x found; installing latest — Zabbix needs AllowUnsupportedDBVersions=1 and"
+  echo "    (!) no 2.28.x found; installing latest - Zabbix needs AllowUnsupportedDBVersions=1 and"
   echo "        will not manage compression until you downgrade to 2.28."
   apt-get install -y "$TS_META"
 fi
@@ -89,9 +89,9 @@ if ! sudo -u postgres psql -d zabbix -tc "SELECT 1 FROM information_schema.table
   TS_SQL="$(ls /usr/share/zabbix-sql-scripts/postgresql/timescaledb/schema.sql 2>/dev/null || \
             ls /usr/share/zabbix-sql-scripts/postgresql/timescaledb.sql 2>/dev/null || true)"
   [[ -n "$TS_SQL" ]] && cat "$TS_SQL" | sudo -u zabbix psql zabbix || \
-    echo "   (!) TimescaleDB schema file not found — enable it later per Zabbix docs"
+    echo "   (!) TimescaleDB schema file not found - enable it later per Zabbix docs"
 else
-  echo "   schema already present — skipping import"
+  echo "   schema already present - skipping import"
 fi
 
 echo "==> [7/7] Configure zabbix_server.conf"

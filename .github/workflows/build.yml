@@ -49,7 +49,7 @@ jobs:
 
   # The self-enrolling probe image (ghcr.io/<owner>/argus-probe) is built by its OWN workflow
   # (.github/workflows/probe-image.yml), on a different lifecycle: it tracks the upstream Zabbix
-  # version and our probe-wrapper edits, and is versioned probe/v<zabbix>-r<n> — decoupled from this
+  # version and our probe-wrapper edits, and is versioned probe/v<zabbix>-r<n> - decoupled from this
   # app's v* semver. An app release therefore no longer emits an argus-probe image.
 
   # Publishes a GitHub Release for tag pushes (vX.Y.Z), using the matching CHANGELOG section

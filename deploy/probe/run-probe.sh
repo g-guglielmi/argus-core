@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-probe.sh — deploy a Zabbix ACTIVE proxy as a single container (mTLS, 7-day offline buffer).
+# run-probe.sh - deploy a Zabbix ACTIVE proxy as a single container (mTLS, 7-day offline buffer).
 # No inbound port is published: an active proxy DIALS OUT to the core, so remote sites need
 # only outbound access to core:10051.
 #

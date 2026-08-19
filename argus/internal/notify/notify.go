@@ -80,7 +80,7 @@ func (e Event) tag() string {
 
 // subject is the one-line summary (no emoji) used as the email subject and message title.
 func (e Event) subject() string {
-	return fmt.Sprintf("[%s] %s — %s", e.tag(), e.Host, e.Name)
+	return fmt.Sprintf("[%s] %s - %s", e.tag(), e.Host, e.Name)
 }
 
 // title is the subject with its status emoji, for chat channels.

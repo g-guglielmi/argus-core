@@ -74,7 +74,7 @@ func defFor(key string) (def, bool) {
 
 // resolved is the computed state of one setting for display.
 type resolved struct {
-	value    string // effective value (empty for secrets — never exposed)
+	value    string // effective value (empty for secrets - never exposed)
 	source   string // "env" | "stored" | "default"
 	locked   bool   // env-set ⇒ not editable in the UI
 	hasValue bool   // for secrets: whether a value is currently set
@@ -311,7 +311,7 @@ func (m *Manager) resolve(ctx context.Context, d def) (resolved, error) {
 // effective returns the plain effective value for a non-secret resolved setting.
 func effective(r resolved) string { return r.value }
 
-// effectiveSecret fetches the actual secret value (env or decrypted DB) — never surfaced to the UI.
+// effectiveSecret fetches the actual secret value (env or decrypted DB) - never surfaced to the UI.
 func (m *Manager) effectiveSecret(ctx context.Context, key string) string {
 	d, _ := defFor(key)
 	if v, ok := os.LookupEnv(d.env); ok && strings.TrimSpace(v) != "" {

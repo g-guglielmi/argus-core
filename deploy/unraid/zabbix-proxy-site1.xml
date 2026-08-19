@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!--
-  unRAID Community Applications template — Zabbix active proxy for site "site1".
+  unRAID Community Applications template - Zabbix active proxy for site "site1".
   Import via Docker tab -> Add Container -> Template dropdown, or Apps -> paste template.
   Duplicate this file and change site1 -> <site> for other unRAID hosts (e.g. site2).
 
@@ -8,7 +8,7 @@
     1. Put ca.crt + proxy-site1.crt + proxy-site1.key in the Certs path below.
     2. Set "Zabbix Server (core)" to your core's FQDN or IP.
     3. Register an ACTIVE proxy named "proxy-site1" (certificate encryption) in the Zabbix UI.
-  No inbound port is needed — an active proxy dials out to the core.
+  No inbound port is needed - an active proxy dials out to the core.
 -->
 <Container version="2">
   <Name>Zabbix-Proxy-site1</Name>

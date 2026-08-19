@@ -171,7 +171,7 @@ function fmtNum(n: number, units: string): string {
 // checksums) are returned untouched with no unit.
 function readingParts(raw: string, units: string): [string, string] {
   const t = (raw ?? '').trim()
-  if (t === '') return ['—', '']
+  if (t === '') return ['-', '']
   const n = Number(t)
   if (!isFinite(n)) return [raw, '']
   return fmtNumParts(n, units)
@@ -220,7 +220,7 @@ function fireDataRefresh(): void { refreshBus.forEach((f) => f()) }
 
 // Spark draws a tiny inline sparkline from a compact recent value series (from /api/spark).
 function Spark({ values, color }: { values?: number[]; color: string }) {
-  if (!values || values.length < 2) return <span style={{ color: 'var(--faint)', fontSize: 12 }}>—</span>
+  if (!values || values.length < 2) return <span style={{ color: 'var(--faint)', fontSize: 12 }}>-</span>
   const w = 84, h = 20
   let min = values[0], max = values[0]
   for (const v of values) { if (v < min) min = v; if (v > max) max = v }
@@ -269,7 +269,7 @@ export default function App() {
   useEffect(() => {
     fetch('/api/me').then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => setMe(null)).finally(() => setLoading(false))
     // Passkeys require the server to be configured for WebAuthn AND a secure context
-    // (HTTPS or localhost) — over a private IP on plain HTTP they can't be used.
+    // (HTTPS or localhost) - over a private IP on plain HTTP they can't be used.
     fetch('/api/features').then((r) => r.json()).then((f) => { setPasskeysAvailable(!!f.passkeys && window.isSecureContext); setPasswordReset(!!f.password_reset); setProbeEnroll(!!f.probe_enroll) }).catch(() => {})
   }, [])
 
@@ -427,7 +427,7 @@ function ForgotPassword({ initialEmail, onBack }: { initialEmail: string; onBack
         <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Reset your password</h2>
         {sent ? (
           <>
-            <p style={{ color: '#aaa', marginTop: 0 }}>If an account exists for that email, a reset link is on its way. It's valid for 1 hour — check your spam folder if it doesn't arrive.</p>
+            <p style={{ color: '#aaa', marginTop: 0 }}>If an account exists for that email, a reset link is on its way. It's valid for 1 hour - check your spam folder if it doesn't arrive.</p>
             <button onClick={onBack} style={{ ...btn, width: '100%' }}>Back to sign in</button>
           </>
         ) : (
@@ -540,7 +540,7 @@ function useTheme(): ['dark' | 'light', () => void] {
 
 // --- URL <-> navigation state -------------------------------------------------
 // The active view (and its parameters) is mirrored in the address bar so a reload,
-// bookmark, shared link, or Back/Forward restores the exact screen — instead of always
+// bookmark, shared link, or Back/Forward restores the exact screen - instead of always
 // resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
 // (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
 const NAV_VIEWS: View[] = ['overview', 'monitoring', 'notifications', 'probes', 'users', 'settings', 'account', 'list']
@@ -608,7 +608,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll }: { me: 
   function goSensor(hostId: string, itemId: string) { navN.current += 1; setTreeTarget({ hostId, itemId, n: navN.current }); setView('monitoring'); pushNav('monitoring', { host: hostId, item: itemId }); setMenuOpen(false); setNavOpen(false) }
   function openList(st: string) { setListFilter(st); setView('list'); pushNav('list', { filter: st }); setMenuOpen(false); setNavOpen(false) }
 
-  // In-tree drilldown (expand a host, open a chart) refines the URL in place — replaceState so the
+  // In-tree drilldown (expand a host, open a chart) refines the URL in place - replaceState so the
   // Back button steps between screens, not every accordion toggle.
   function onTreeNav(hostId: string | null, itemId: string | null) {
     window.history.replaceState({}, '', buildNav({ view: 'monitoring', filter: listFilter, host: hostId || undefined, item: itemId || undefined }))
@@ -778,7 +778,7 @@ function SettingsView() {
           min={it.type === 'int' ? (it.min ?? 1) : undefined}
           onChange={(e) => setEdit(it.key, e.target.value)}
         />
-        <span className="set-hint">{it.locked ? `Managed via ${it.env} — unset that variable to edit here.` : it.hint}</span>
+        <span className="set-hint">{it.locked ? `Managed via ${it.env} - unset that variable to edit here.` : it.hint}</span>
       </label>
     )
   }
@@ -815,7 +815,7 @@ function SettingsView() {
               {g.note && <p className="set-note">{g.note}</p>}
               {g.name === 'Connection' && zbx && (
                 <div className={'zbx-status ' + (zbx.reachable ? 'ok' : 'bad')}>
-                  {zbx.reachable ? `Connected — Zabbix ${zbx.version}` : `Not reachable${zbx.error ? ': ' + zbx.error : ''}`}
+                  {zbx.reachable ? `Connected - Zabbix ${zbx.version}` : `Not reachable${zbx.error ? ': ' + zbx.error : ''}`}
                 </div>
               )}
               {gi.map(field)}
@@ -898,7 +898,7 @@ function NotificationsView() {
         <div className="tools"><button className="btn primary" onClick={() => { setEditing('new'); setError(null); setMsg(null) }}>+ Add channel</button></div>
       </div>
       <p style={{ color: 'var(--muted)', fontSize: 12.5, padding: '2px 16px 0', margin: 0 }}>
-        Warning and Error events route to the channels below — globally or per site. Acknowledged, paused, and hidden items stay quiet, and a recovery notice follows when things clear.
+        Warning and Error events route to the channels below - globally or per site. Acknowledged, paused, and hidden items stay quiet, and a recovery notice follows when things clear.
       </p>
       {error && <div style={{ padding: '0.6rem 16px', color: 'var(--err)' }}>{error}</div>}
       {msg && <div style={{ padding: '0.6rem 16px', color: 'var(--ok)' }}>{msg}</div>}
@@ -977,7 +977,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
           </select>
         </label>
         <label style={{ display: 'grid', gap: 4, flex: 1, minWidth: 160 }}><span className="flabel">Name</span>
-          <input className="input" placeholder="e.g. Discord — site1" value={name} onChange={(e) => setName(e.target.value)} required />
+          <input className="input" placeholder="e.g. Discord - site1" value={name} onChange={(e) => setName(e.target.value)} required />
         </label>
         <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Site</span>
           <select className="roleselect" value={site} onChange={(e) => setSite(e.target.value)}>
@@ -1132,10 +1132,10 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                 <td><strong>{p.name}</strong></td>
                 <td data-label="Status">{p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}</td>
                 <td data-label="Last check-in" className="mono" title="When the core last received data from this proxy" style={{ color: p.last_access ? undefined : 'var(--faint)' }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
-                <td data-label="Version" className="mono" title={p.last_checkin ? `Version reported ${relTime(p.last_checkin)}` : 'No fleet check-in yet'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '—'}</td>
+                <td data-label="Version" className="mono" title={p.last_checkin ? `Version reported ${relTime(p.last_checkin)}` : 'No fleet check-in yet'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '-'}</td>
                 <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} /></td>
                 <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
-                <td data-label="Enrolled" className="mono" style={{ color: p.enrolled_at ? 'var(--muted)' : 'var(--faint)' }} title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>{p.enrolled_at ? new Date(p.enrolled_at * 1000).toLocaleDateString() : '—'}</td>
+                <td data-label="Enrolled" className="mono" style={{ color: p.enrolled_at ? 'var(--muted)' : 'var(--faint)' }} title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>{p.enrolled_at ? new Date(p.enrolled_at * 1000).toLocaleDateString() : '-'}</td>
               </tr>
               {openCmd === p.name && <tr><td colSpan={7} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
             </Fragment>
@@ -1163,7 +1163,7 @@ function UpdateBadge({ p, open, onToggle }: { p: Proxy; open: boolean; onToggle:
     case 'outdated':
       return <span><button className="btn" onClick={onToggle}>{open ? 'Hide' : 'Update…'}</button>{auto}</span>
     default:
-      return <span className="mono" style={{ color: 'var(--faint)' }} title="This probe hasn't reported a version — update it to a fleet-aware image, or it was registered manually.">—</span>
+      return <span className="mono" style={{ color: 'var(--faint)' }} title="This probe hasn't reported a version - update it to a fleet-aware image, or it was registered manually.">-</span>
   }
 }
 
@@ -1211,7 +1211,7 @@ function FleetTarget({ target, onSaved }: { target: string | null; onSaved: (t: 
         <>
           <code style={{ background: 'var(--elevated)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 8px' }}>{target ?? '…'}</code>
           <button className="btn" onClick={start}>Change</button>
-          <span style={{ color: 'var(--muted)', fontSize: 12 }}>What every probe should run — <code>latest</code> or a pin like <code>7.0.29-r1</code>.</span>
+          <span style={{ color: 'var(--muted)', fontSize: 12 }}>What every probe should run - <code>latest</code> or a pin like <code>7.0.29-r1</code>.</span>
         </>
       ) : (
         <>
@@ -1298,7 +1298,7 @@ function ProbeCommand({ created, onDone }: { created: CreatedToken; onDone: () =
   const pick = (f: ProbeFmt) => { setFmt(f); setCopied(false) }
   const blurb: Record<ProbeFmt, string> = {
     docker: "Run this on the site's Docker host.",
-    compose: "Run this on the site's Docker host — it also starts an updater sidecar that keeps the probe on the Argus fleet target (needs the Docker socket).",
+    compose: "Run this on the site's Docker host - it also starts an updater sidecar that keeps the probe on the Argus fleet target (needs the Docker socket).",
     unraid: 'On unRAID: Docker → Add Container → paste into the Template box, or save it as a .xml under /boot/config/plugins/dockerMan/templates-user/.',
   }
   return (
@@ -1362,7 +1362,7 @@ function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; 
       </div>
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
       {rows === null && !error && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>Loading…</div>}
-      {rows !== null && !error && filtered.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--ok)' }}>✓ All clear — nothing {mode === 'errors' ? 'in error' : 'to report'}.</div>}
+      {rows !== null && !error && filtered.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--ok)' }}>✓ All clear - nothing {mode === 'errors' ? 'in error' : 'to report'}.</div>}
       {filtered.length > 0 && (
         <table className="slist">
           <thead><tr><th>Host</th><th>Problem</th><th>Trend</th><th>Age</th><th /></tr></thead>
@@ -1685,7 +1685,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
         </div>
       )}
       {items.length === 0
-        ? <div style={{ color: 'var(--muted)', padding: '0.2rem 0 0.4rem' }}>{showAll ? 'No sensors.' : 'No recognized sensors — try “All sensors”.'}</div>
+        ? <div style={{ color: 'var(--muted)', padding: '0.2rem 0 0.4rem' }}>{showAll ? 'No sensors.' : 'No recognized sensors - try “All sensors”.'}</div>
         : (
           <table className="sensors">
             <thead><tr><th>Sensor</th><th>Value</th><th>Trend</th><th style={{ textAlign: 'right' }}>Last check</th></tr></thead>
@@ -2117,8 +2117,8 @@ function LandingCard({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
       {msg && <p style={{ color: 'var(--ok)' }}>{msg}</p>}
       <label style={{ display: 'block' }}>Open on
         <select style={{ ...input, width: '100%', marginTop: 4 }} value={landing} disabled={busy} onChange={(e) => choose(e.target.value as 'overview' | 'errors')}>
-          <option value="overview">Overview — what needs attention right now</option>
-          <option value="errors">Errors — the list of erroring sensors</option>
+          <option value="overview">Overview - what needs attention right now</option>
+          <option value="errors">Errors - the list of erroring sensors</option>
         </select>
       </label>
     </section>
@@ -2282,7 +2282,7 @@ function RecoveryCodes({ codes }: { codes: string[] }) {
   }
   return (
     <div style={{ border: '1px solid #4a4a2a', background: '#1e1e14', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '1rem' }}>
-      <p style={{ marginTop: 0, color: '#d9d97a' }}>Save these recovery codes now — each works once and they won't be shown again.</p>
+      <p style={{ marginTop: 0, color: '#d9d97a' }}>Save these recovery codes now - each works once and they won't be shown again.</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.25rem 1rem', fontFamily: 'monospace', fontSize: '0.95rem' }}>
         {codes.map((c) => <span key={c}>{c}</span>)}
       </div>

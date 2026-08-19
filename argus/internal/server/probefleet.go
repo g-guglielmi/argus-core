@@ -22,7 +22,7 @@ func validProbeTarget(v string) bool {
 
 // updateStatus classifies a probe's reported version against the fleet target.
 //   - unknown : the probe hasn't checked in a version yet (or runs an old, pre-fleet image)
-//   - tracking: target is "latest" — drift can't be computed centrally (the probe/updater
+//   - tracking: target is "latest" - drift can't be computed centrally (the probe/updater
 //     converges on the newest digest), so the running version is shown for information only
 //   - current : reported version equals the pinned target
 //   - outdated: reported version differs from the pinned target

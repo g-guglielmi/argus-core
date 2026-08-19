@@ -1,19 +1,19 @@
-# Monitoring System — Design Document
+# Monitoring System - Design Document
 
 Status: **Design locked (v1)** · Last updated: 2026-08-09
 
 A self-hosted, PRTG-style monitoring system built as a **hybrid**: Zabbix as the
 collection/transport/buffering engine, plus a custom web application ("the cockpit")
 that owns the UI, authentication, dashboards, and per-site notifications. Not tied to
-any specific network vendor — any Zabbix deployment can layer this on top.
+any specific network vendor - any Zabbix deployment can layer this on top.
 
 ---
 
 ## 1. Goals & context
 
 - Replace 5× free PRTG instances + 1× Uptime Kuma with one system.
-- 5 sites — `site1` (Site 1), `site2` (Site 2), `site3` (Site 3), `site4` (Site 4),
-  `site5` (Site 5) — connected via UniFi Site Magic.
+- 5 sites - `site1` (Site 1), `site2` (Site 2), `site3` (Site 3), `site4` (Site 4),
+  `site5` (Site 5) - connected via UniFi Site Magic.
 - Each site: UniFi Cloud Gateway, ≥1 UniFi switch, ≥1 UniFi AP, 1 XCP-NG host.
   `site1` and `site2` also have an unRAID server.
 - Keep the **PRTG architecture**: a core server that displays data, with remote
@@ -76,10 +76,10 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
 
 ## 3. Data flow & offline buffering
 
-- Proxies run in **active mode** — they initiate the connection to the core. This
+- Proxies run in **active mode** - they initiate the connection to the core. This
   satisfies "probe sends to core, not the other way around" and supports future remote
   sites with no VPN / no static IP (just publish the core port).
-- Each proxy keeps an **always-on local SQLite spool** (not created-on-demand — simpler
+- Each proxy keeps an **always-on local SQLite spool** (not created-on-demand - simpler
   and more reliable). Configured buffer: **7 days** (`ProxyOfflineBuffer`).
 - On outage, data accumulates in the spool; on reconnect it flushes to the core
   automatically. No data loss up to the buffer window.
@@ -94,12 +94,12 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
 
 - **Public FQDN (human access):** `monitoring.example.com` (custom app via HAProxy, :443).
   This is also the **WebAuthn RP ID**.
-- **Core OS:** Debian 13 (trixie) — PostgreSQL 17, PHP 8.4.
+- **Core OS:** Debian 13 (trixie) - PostgreSQL 17, PHP 8.4.
 - **Probe → core addressing:** the Zabbix server listens on **:10051** (core = **10.0.0.10**).
   Current sites reach it over **UniFi Site Magic**; only **TCP 10051 outbound** (probe→core)
-  is required — active proxies dial out, so nothing inbound is needed at the remote site. Future no-VPN sites reach
+  is required - active proxies dial out, so nothing inbound is needed at the remote site. Future no-VPN sites reach
   `monitoring.example.com:10051` (published). The mTLS server cert uses `CN=zabbix-core`
-  and Zabbix validates by **issuer/subject, not hostname/SAN** — so the FQDN choice does
+  and Zabbix validates by **issuer/subject, not hostname/SAN** - so the FQDN choice does
   not affect the proxy certs.
 - **Probe ↔ core:** mutual TLS. **One shared CA** signs a **unique per-site client cert**
   (never shared across sites); the core trusts the CA but pins each proxy to `CN=proxy-<site>`.
@@ -122,7 +122,7 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
 
 ## 5. Device classes & templates
 
-Every host gets the **Base** template (Ping — latency + loss, always). Then one or more
+Every host gets the **Base** template (Ping - latency + loss, always). Then one or more
 class templates attach automatically by fingerprint. 11 classes:
 
 | Class | Detected by | Metrics beyond Ping | Source | LLD-discovered |
@@ -134,10 +134,10 @@ class templates attach automatically by fingerprint. 11 classes:
 | **unRAID** | sysDescr `Unraid` / tag | CPU load, RAM %, uptime, per-share disk-free, per-disk temp, per-disk I/O, NIC traffic | SNMP host-resources + **unRAID API (disk temp/SMART)** | disks, shares, NICs |
 | **XCP-NG host** | XAPI reachable / sysDescr `XCP-ng` | Host CPU, RAM, per-VM state, pool, CPU temp | **XAPI (RRD)** + SNMP/IPMI (temp) | VMs, PBDs |
 | **Generic Linux/VM** (Home Assistant) | answers host-resources SNMP, unmatched | CPU, RAM, filesystem free, uptime | SNMP (host-resources + UCD) | filesystems, NICs |
-| **Web service / app** (Plex, PiKVM) | answers HTTP(S), thin SNMP | HTTP/HTTPS up + response time + **TLS cert expiry**, custom port | HTTP checks | — |
-| **DNS server** (AdGuard ×2) | :53 + HTTP admin | HTTP admin up + **DNS resolve check** (query known record, verify answer + time) | HTTP + `net.dns` | — |
-| **UPS** (NUT / SNMP) | NUT :3493 or SNMP `.1.3.6.1.2.1.33` | Battery %, on-battery status, runtime, load, input voltage | NUT or UPS-MIB | — |
-| **Printer / pingable** (printers, etc.) | fallback | Ping only | ICMP | — |
+| **Web service / app** (Plex, PiKVM) | answers HTTP(S), thin SNMP | HTTP/HTTPS up + response time + **TLS cert expiry**, custom port | HTTP checks | - |
+| **DNS server** (AdGuard ×2) | :53 + HTTP admin | HTTP admin up + **DNS resolve check** (query known record, verify answer + time) | HTTP + `net.dns` | - |
+| **UPS** (NUT / SNMP) | NUT :3493 or SNMP `.1.3.6.1.2.1.33` | Battery %, on-battery status, runtime, load, input voltage | NUT or UPS-MIB | - |
+| **Printer / pingable** (printers, etc.) | fallback | Ping only | ICMP | - |
 
 ### SNMP gaps (API required)
 - **unRAID disk temps & SMART** → smartctl via Net-SNMP `extend`, or the unRAID API (chosen).
@@ -154,13 +154,13 @@ class templates attach automatically by fingerprint. 11 classes:
 | CPU load | ≥ 80% | ≥ 95% |
 | RAM used | ≥ 85% | ≥ 95% |
 | CPU temp | ≥ 75 °C | ≥ 85 °C |
-| Disk temp — **HDD** | ≥ 40 °C | ≥ 45 °C |
-| Disk temp — **SSD** | ≥ 50 °C | ≥ 60 °C |
+| Disk temp - **HDD** | ≥ 40 °C | ≥ 45 °C |
+| Disk temp - **SSD** | ≥ 50 °C | ≥ 60 °C |
 | Ping | loss ≥ 20% or latency > 150 ms | 100% loss (down) |
 | HTTP/HTTPS | resp > 1 s | non-2xx/3xx or timeout |
 | TLS cert expiry | ≤ 14 days | ≤ 3 days |
 | DNS | resolve > 500 ms | no/incorrect answer |
-| UPS | — | **on battery** / runtime < 5 min / replace battery |
+| UPS | - | **on battery** / runtime < 5 min / replace battery |
 | Printer supply | (not monitored) | (not monitored) |
 
 - Disk-temp thresholds are **type-aware** (HDD vs SSD) via the SMART `rotational` flag
@@ -178,7 +178,7 @@ States (native Zabbix problem events, acknowledgement, maintenance):
 | Warning | past warn threshold |
 | Error | past error threshold |
 | Acknowledged | a Warning/Error a human marked "seen / handling" |
-| Paused | maintenance — not evaluated |
+| Paused | maintenance - not evaluated |
 
 Dashboards (list views, same event stream):
 - **Errors-only** → shows Error; **hides Acknowledged and Paused**.
@@ -196,7 +196,7 @@ Runs per-site on the probe, reports to core for provisioning:
 4. **LLD** creates only instances that exist (disks, filesystems, NICs, temps, PSUs, ports)
    → satisfies "only show fields the device reports."
 5. **Default thresholds** applied; overridable in the UI.
-6. New devices surface in the UI as **"Discovered — review"** (confirm / adjust / ignore).
+6. New devices surface in the UI as **"Discovered - review"** (confirm / adjust / ignore).
 
 ---
 
@@ -233,25 +233,25 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
 - **Fields:** name, surname, email (self-service reset), password. MFA optional (TOTP).
   Passkey (WebAuthn) login optional.
 - **Roles:**
-  - **Admin** — everything, incl. user management + core system settings; can reset other
+  - **Admin** - everything, incl. user management + core system settings; can reset other
     users' password / MFA / passkey.
-  - **Helpdesk** — all device/sensor/threshold/notification/discovery ops + ack + pause;
+  - **Helpdesk** - all device/sensor/threshold/notification/discovery ops + ack + pause;
     **no** user management, **no** core system settings.
-  - **Viewer** — view + **acknowledge** only (no pause, no edits).
+  - **Viewer** - view + **acknowledge** only (no pause, no edits).
 - **Auth lives in the custom app** (Zabbix frontend locked down; app uses a service
   account to the Zabbix API).
 - **Sessions:** admin-configurable **max lifetime** (default **12h**, `ARGUS_SESSION_MAX_HOURS`)
   plus an optional **idle timeout** (default off, `ARGUS_SESSION_IDLE_MINUTES`; a per-session
   `last_seen` is bumped by the auth middleware, throttled to ≤1 write/min). Both live in
   **Settings → Sessions** and honour env-wins precedence.
-- **Per-user landing page** preference — default Overview; user can switch to the Errors list in
+- **Per-user landing page** preference - default Overview; user can switch to the Errors list in
   **Account → Landing page** (stored server-side, `POST /api/me/preferences`).
 
 ---
 
 ## 11. Custom app screens
 
-**Viewing:** 1) Overview (all sites, health rollup — default landing) · 2) Errors-only ·
+**Viewing:** 1) Overview (all sites, health rollup - default landing) · 2) Errors-only ·
 3) Errors + Warnings · 4) Site view (device list) · 5) Device view (sensor tiles) ·
 6) Sensor detail (graphs).
 
@@ -266,8 +266,8 @@ class, threshold overrides, pause, acknowledge) · 9) Thresholds (global + overr
 
 - Tabs: **2h · 2d · 1M · 3M · 6M · 1Y**, with zoom-to-timeframe.
 - Maps onto Zabbix's data split (no custom downsampling needed):
-  - **history** (raw, retain ~7–30 d) → powers **2h / 2d** + zoom.
-  - **trends** (hourly min/avg/max, retain 1–2 y) → powers **1M / 3M / 6M / 1Y**.
+  - **history** (raw, retain ~7-30 d) → powers **2h / 2d** + zoom.
+  - **trends** (hourly min/avg/max, retain 1-2 y) → powers **1M / 3M / 6M / 1Y**.
 - Storage: **PostgreSQL + TimescaleDB** as Zabbix's DB (native integration, partitioning +
   compression). Single source of truth; app data lives in the same instance (separate schema).
 
@@ -283,7 +283,7 @@ class, threshold overrides, pause, acknowledge) · 9) Thresholds (global + overr
 - Core: dedicated VM (Zabbix server + web + Timescale). Custom app: Docker container(s).
 - Probes: single `docker run` container per site + **unRAID template XML**.
 - No docker-compose.
-- **Probe delivery — one artifact, two vehicles:** (a) Docker image (unRAID / any docker host);
+- **Probe delivery - one artifact, two vehicles:** (a) Docker image (unRAID / any docker host);
   (b) a golden **Debian 13 VM template** built with **Packer** that runs the same probe
   container, seeded per-site via **cloud-init** (2 vars: site name + enrollment token). On
   XCP-NG use cloud-init config-drive or an **XVA** template clone → spin up a site in minutes.
@@ -298,33 +298,33 @@ class, threshold overrides, pause, acknowledge) · 9) Thresholds (global + overr
 OS + DB + logs + app + headroom. On XCP-NG: thin-provisioned vDisk on
 SSD storage; grow later if needed.
 
-**Probe (each):** container ≈ 1 vCPU / 0.5–1 GB RAM / 4–8 GB disk (7-day SQLite spool is small).
-As a VM ≈ 1–2 vCPU / 2 GB / ~15 GB.
+**Probe (each):** container ≈ 1 vCPU / 0.5-1 GB RAM / 4-8 GB disk (7-day SQLite spool is small).
+As a VM ≈ 1-2 vCPU / 2 GB / ~15 GB.
 
-**Future ~6000-sensor work deployment (rough; sizing pass TBD):** ~8 vCPU / 16–32 GB RAM /
-DB on fast SSD, likely with PostgreSQL/Timescale split onto its own VM. ~100–200 NVPS =
+**Future ~6000-sensor work deployment (rough; sizing pass TBD):** ~8 vCPU / 16-32 GB RAM /
+DB on fast SSD, likely with PostgreSQL/Timescale split onto its own VM. ~100-200 NVPS =
 moderate Zabbix load; architecture unchanged, resources scaled.
 
 ## 15. Tech stack (confirmed)
 - **App name:** **Argus.** Monorepo: `docs/`, `deploy/`, `argus/` (the app), `.github/` (CI).
 - **Backend / notifier:** **Go** (single static binary, distroless image).
 - **Frontend:** **React + Vite** (uPlot for the dense/zoomable time-series graphs). The Go
-  binary **serves the built SPA** via `go:embed` — one container, one origin (simplifies
+  binary **serves the built SPA** via `go:embed` - one container, one origin (simplifies
   cookies / CSRF / passkeys).
 - **App data:** **embedded SQLite** in a mounted volume (users, roles, config, CA, enrollment
   tokens). Metrics stay in Zabbix/TimescaleDB, read via the **Zabbix JSON-RPC API** (direct
   Timescale reads are a later performance optimization).
 - **Delivery:** GitHub Actions builds a multi-stage image → **`ghcr.io/<owner>/argus`**;
   deployed on the core VM via `docker run` (dev PC has no VM access, so build/test happens
-  through the CI→GHCR pipeline — "walking skeleton" first to validate the pipeline).
+  through the CI→GHCR pipeline - "walking skeleton" first to validate the pipeline).
 
 ---
 
-## 16. Global search (host & sensor) — future phase
+## 16. Global search (host & sensor) - future phase
 
 **Motivation (scale-driven).** At homelab scale (a few hundred items) the site→host→sensor
 tree plus the status chips are enough to find anything. At the target **~6000-sensor** work
-deployment, expanding sites/hosts to locate one device does not scale — you need to jump
+deployment, expanding sites/hosts to locate one device does not scale - you need to jump
 straight to a host or sensor by name. This phase is therefore parked until the production
 rollout; it is low priority for the homelab but important before the large deployment.
 
@@ -333,14 +333,14 @@ rollout; it is low priority for the homelab but important before the large deplo
   opening a quick-switcher palette.
 - **Hosts** searchable by visible name, technical name, interface IP/DNS, host group (site),
   and Zabbix tags.
-- **Sensors/items** searchable by name and key — globally or scoped to a host.
+- **Sensors/items** searchable by name and key - globally or scoped to a host.
 - Results are grouped (Hosts / Sensors); each row **deep-links into the existing tree**
   (reusing the current `goHost` / `goSensor` navigation) and/or opens the sensor's chart.
 
-**Implementation — must be server-side at scale.**
+**Implementation - must be server-side at scale.**
 - Back it with a new endpoint `GET /api/search?q=…` that calls Zabbix `host.get` / `item.get`
   with `search` / `searchByAny` filters and a **result cap** (e.g. top ~50), **debounced** on
-  the client. Do **not** filter a full client-side census — the current `/api/sensors` census
+  the client. Do **not** filter a full client-side census - the current `/api/sensors` census
   is fine for the homelab but would mean shipping thousands of items to the browser at
   production scale.
 - Honour the same **role and suppression** model as the rest of the UI.
@@ -351,7 +351,7 @@ users; fuzzy matching. Pairs naturally with the **sizing pass** (§14b) as part 
 
 ---
 
-## 17. Deep-link URLs & reload persistence — ✅ implemented (v0.3.1)
+## 17. Deep-link URLs & reload persistence - ✅ implemented (v0.3.1)
 
 **Problem.** The SPA tracked the active view in React state only; it never reflected navigation
 in the address bar, and it deliberately strips `?host=&item=` after consuming a notification
@@ -361,13 +361,13 @@ bookmarked or shared.
 
 **Scope.**
 - Encode the current view (and `host`/`item` for the tree, `filter` for the status lists) in the
-  URL — query params or a hash route — and `pushState` on navigation.
+  URL - query params or a hash route - and `pushState` on navigation.
 - Parse the URL on load to restore the exact view (extends the existing `?host=&item=` handler;
   stop stripping it).
 - Handle browser **back/forward** (`popstate`).
 
 **Effort.** Small, **frontend-only** (`web/src/App.tsx`), **no backend change and no new
-dependency** — the native History API is enough (a tiny router could be added but isn't needed).
+dependency** - the native History API is enough (a tiny router could be added but isn't needed).
 Bonus: makes notification deep-links reload-safe and shareable.
 
 **Delivered.** The active view is encoded as `?view=…` (list adds `&filter=…`; monitoring adds
@@ -377,7 +377,7 @@ views are clamped for non-admins on a shared/stale URL.
 
 ---
 
-## 18. Probe fleet updates — control plane (implemented, v0.4.8)
+## 18. Probe fleet updates - control plane (implemented, v0.4.8)
 
 **Constraint.** Sites are outbound-only (probes dial out, nothing inbound), so Argus can't *push*
 into a probe. Updates are therefore **pull-based but Argus-coordinated**: Argus is the control
@@ -390,11 +390,11 @@ plane; the probe checks in and converges.
   its running image version + self-updater flag, and receives the fleet **target** to converge on.
   The version is baked into the image at build (`/etc/argus-probe.version`).
 - **Target.** Argus holds a dashboard-settable target in `app_meta` (`GET`/`PUT /api/probes/target`,
-  admin): `latest`, or an exact pin in the **decoupled probe scheme** — `7.0.29-r1`, *not* app
+  admin): `latest`, or an exact pin in the **decoupled probe scheme** - `7.0.29-r1`, *not* app
   semver (see the probe-image versioning in `deploy/README.md`). `/api/proxies` reports each
   probe's version / target / `update_status` (`unknown | tracking | current | outdated`).
 - **Manual path (always available).** Drifted probes surface in the Probes view with a one-click
-  `docker pull … && docker restart …` command — no Docker socket involved.
+  `docker pull … && docker restart …` command - no Docker socket involved.
 - **Self-updater (opt-in sidecar).** The `argus-probe` image runs an updater role
   (`ARGUS_PROBE_ROLE=updater`) as a separate container that, with the Docker socket mounted, reads
   the proxy's check-in credential from the shared volume, polls the target, and recreates the proxy
@@ -413,7 +413,7 @@ one-click path (or their own auto-update); the compose sidecar is the hands-off 
 ## 19. Parking lot / future
 - Public status page (Uptime-Kuma-style shareable page).
 - **Android native app** with push notifications (device registers with Argus → notifier delivers
-  via a "push"/FCM channel) — the planned last step (ROADMAP §I). iOS undecided (would need APNs).
+  via a "push"/FCM channel) - the planned last step (ROADMAP §I). iOS undecided (would need APNs).
 - Escalation policies / repeat notifications beyond flap debounce.
 - Token-based enrollment service (Phase 1 backend) + "Add probe" wizard (Phase 4/6 UI).
 - Golden probe **VM template** (Packer) + cloud-init for scaled/work rollout (Phase 6).

@@ -48,7 +48,7 @@ func alertSeries(ctx context.Context, zbx *zabbix.Client, itemID string) []float
 }
 
 // alertChart renders a sensor's 2-hour trend PNG in the given state's color, or nil when there's
-// no usable history (non-numeric item, no data, or a fetch error) — the alert then omits the graph.
+// no usable history (non-numeric item, no data, or a fetch error) - the alert then omits the graph.
 func alertChart(ctx context.Context, zbx *zabbix.Client, itemID, state string) []byte {
 	if itemID == "" {
 		return nil
@@ -62,7 +62,7 @@ func alertChart(ctx context.Context, zbx *zabbix.Client, itemID, state string) [
 }
 
 // renderChart draws a compact 2-hour trend as a PNG (white background, filled line in the status
-// color). No text — the message body carries the value/threshold. Returns nil for <2 points.
+// color). No text - the message body carries the value/threshold. Returns nil for <2 points.
 func renderChart(vals []float64, cr, cg, cb uint8) []byte {
 	const w, h = 600, 180
 	const mL, mR, mT, mB = 10, 10, 12, 14

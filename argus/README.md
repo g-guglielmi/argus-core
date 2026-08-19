@@ -4,13 +4,13 @@
 
 # Argus
 
-A self-hosted, PRTG-style monitoring cockpit layered on Zabbix — a Go backend that serves
+A self-hosted, PRTG-style monitoring cockpit layered on Zabbix - a Go backend that serves
 an embedded React SPA and talks to Zabbix via its JSON-RPC API. App data (users, sessions,
 notification channels, suppressions) lives in embedded SQLite; metrics stay in
 Zabbix/TimescaleDB and are read through the API. Single distroless container, no external
 dependencies beyond a running Zabbix.
 
-Current state: **v0.2.8** — monitoring tree with live data and charts, full auth (roles,
+Current state: **v0.2.8** - monitoring tree with live data and charts, full auth (roles,
 TOTP, passkeys), cross-site overview, Discord/Telegram/email notifications with trend
 graphs, mobile-responsive layout, login rate-limiting, and at-rest encryption.
 
@@ -26,14 +26,14 @@ argus/
 ```
 
 ## Endpoints
-- `GET /healthz` — liveness (no dependencies)
-- `GET /api/health` — readiness; includes whether the Zabbix API is reachable + its version
-- `GET /*` — the React SPA
+- `GET /healthz` - liveness (no dependencies)
+- `GET /api/health` - readiness; includes whether the Zabbix API is reachable + its version
+- `GET /*` - the React SPA
 
 ## Build & deploy (via GitHub -> GHCR -> docker run)
 
 > **Prerequisite:** Docker Engine must be installed on the core VM. The Zabbix `setup-core.sh`
-> installs only the Zabbix stack (Zabbix + PostgreSQL/TimescaleDB + nginx), **not** Docker —
+> installs only the Zabbix stack (Zabbix + PostgreSQL/TimescaleDB + nginx), **not** Docker -
 > install it separately (`apt-get install docker.io`, or Docker CE from the official repo).
 
 1. Push this repo to GitHub. The `build` workflow builds the image and pushes it to
@@ -57,7 +57,7 @@ docker run -d \
   -e ARGUS_COOKIE_SECURE=true \
   -e ARGUS_PUBLIC_URL=https://monitoring.example.com \
   -e ARGUS_TZ=Europe/Rome \
-  -e ARGUS_SECRET_KEY=<run: openssl rand -hex 32 — set once, keep stable> \
+  -e ARGUS_SECRET_KEY=<run: openssl rand -hex 32 - set once, keep stable> \
   -e ARGUS_TRUST_PROXY=true \
   -e ARGUS_CA_CERT_FILE=/ca/ca.crt \
   -e ARGUS_CA_KEY_FILE=/ca/ca.key \
@@ -74,7 +74,7 @@ docker run -d \
 > **Port note:** the Zabbix web UI already uses host **8080**, so Argus is published on host
 > **8081** (→ container 8080). Behind a reverse proxy it's served at `monitoring.example.com`.
 >
-> **Passkeys** (`ARGUS_RP_*`) need HTTPS + a real domain — omit them for a plain-HTTP/IP setup and
+> **Passkeys** (`ARGUS_RP_*`) need HTTPS + a real domain - omit them for a plain-HTTP/IP setup and
 > Argus falls back to password + TOTP. **`ARGUS_SECRET_KEY`** encrypts stored secrets at rest;
 > keep it off the volume and **stable** (changing it makes existing encrypted values unreadable).
 > **`ARGUS_TRUST_PROXY=true`** is required behind a reverse proxy for correct client-IP rate
@@ -87,15 +87,15 @@ docker run -d \
 > LAN IP). The Zabbix API token must have **super-admin** rights to register proxies. Omit the CA
 > mount to leave enrollment off (probe status still works).
 
-4. Open `http://10.0.0.10:8081` — you should see the Argus page reporting the backend as `ok`
+4. Open `http://10.0.0.10:8081` - you should see the Argus page reporting the backend as `ok`
    and the Zabbix API as **reachable** with its version. That confirms the whole
    GitHub → GHCR → docker run → Zabbix chain works end to end.
 
 ## Local development (optional, needs Go 1.22+ and Node 20+)
 ```bash
-# terminal 1 — backend
+# terminal 1 - backend
 cd argus && ARGUS_ZABBIX_API_URL=http://<reachable-zabbix>:8080/api_jsonrpc.php go run .
-# terminal 2 — frontend with hot reload (proxies /api to :8080)
+# terminal 2 - frontend with hot reload (proxies /api to :8080)
 cd argus/web && npm install && npm run dev
 ```
 
@@ -144,12 +144,12 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 | Var | Default | Purpose |
 |---|---|---|
 | `ARGUS_CA_CERT_FILE` | *(empty)* | path to the monitoring CA cert (`ca.crt`) mounted into the container |
-| `ARGUS_CA_KEY_FILE` | *(empty)* | path to the CA private key (`ca.key`) — mount **read-only**; both must be set to enable enrollment |
+| `ARGUS_CA_KEY_FILE` | *(empty)* | path to the CA private key (`ca.key`) - mount **read-only**; both must be set to enable enrollment |
 | `ARGUS_PROBE_CORE_HOST` | *(Public URL host)* | _(UI)_ address probes dial for `:10051` (FQDN or LAN IP). Falls back to the Public URL's hostname |
 
 > Enrollment also needs the Zabbix API token to have **super-admin** rights (to run `proxy.create`).
 
-**Passkeys / WebAuthn** (optional; needs HTTPS + a real domain — omit for plain-HTTP/IP)
+**Passkeys / WebAuthn** (optional; needs HTTPS + a real domain - omit for plain-HTTP/IP)
 | Var | Default | Purpose |
 |---|---|---|
 | `ARGUS_RP_ID` | *(empty)* | relying-party ID = the FQDN, no scheme, e.g. `monitoring.example.com` |

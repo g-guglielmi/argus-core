@@ -12,17 +12,17 @@ import (
 	"time"
 )
 
-// SMTP describes an SMTP transport (host/port/auth/from/tls), independent of message content —
+// SMTP describes an SMTP transport (host/port/auth/from/tls), independent of message content -
 // so both alert emails and transactional mail (e.g. password resets) can share one sender.
 //
 // Config keys (from an email channel's config map):
-//   host     — SMTP server hostname
-//   port     — SMTP port (default 587)
-//   username — SMTP auth user ("" = no auth)
-//   password — SMTP auth password
-//   from     — envelope + header From address
-//   to       — comma-separated recipient list (alerts only; transactional mail passes its own)
-//   tls      — "starttls" (default), "tls" (implicit, e.g. port 465), or "none"
+//   host     - SMTP server hostname
+//   port     - SMTP port (default 587)
+//   username - SMTP auth user ("" = no auth)
+//   password - SMTP auth password
+//   from     - envelope + header From address
+//   to       - comma-separated recipient list (alerts only; transactional mail passes its own)
+//   tls      - "starttls" (default), "tls" (implicit, e.g. port 465), or "none"
 type SMTP struct {
 	Host, Port, Username, Password, From, TLS string
 }

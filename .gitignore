@@ -25,5 +25,5 @@ Thumbs.db
 # Local archives / transfer bundles
 *.zip
 
-# Private local crosswalk (real infra values) — never publish
+# Private local crosswalk (real infra values) - never publish
 LOCAL-VALUES.md

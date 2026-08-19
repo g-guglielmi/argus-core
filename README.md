@@ -2,51 +2,51 @@
   <img src="argus/web/public/argus-logo.png" alt="Argus" width="150" />
 </p>
 
-# Argus — Monitoring Cockpit over Zabbix
+# Argus - Monitoring Cockpit over Zabbix
 
 A self-hosted, **PRTG-style monitoring web app** layered on [Zabbix 7.0](https://www.zabbix.com/).
 Zabbix handles collection, transport, and buffering; Argus owns the **UI, authentication,
-and notifications** — a single distroless container (Go backend + embedded React SPA,
+and notifications** - a single distroless container (Go backend + embedded React SPA,
 SQLite state, no external dependencies beyond a running Zabbix).
 
 **What it does today (v0.2.8):**
 
-- **Monitoring tree** — site → host → sensor, grouped by Zabbix host group, with curated
+- **Monitoring tree** - site → host → sensor, grouped by Zabbix host group, with curated
   "key sensor" views, live values, inline sparklines, and per-sensor uPlot charts
   (2h/2d/1M/3M/6M/1Y with drag-to-zoom).
-- **States** — acknowledge (with expiry + undo), pause (stops Zabbix collection), hide
+- **States** - acknowledge (with expiry + undo), pause (stops Zabbix collection), hide
   (Argus-side suppression), each with duration picker and auto-expiry. Host-level states
   inherit to sensors.
-- **Overview** — cross-site active-problem list, deep-linked to the tree, with a six-chip
+- **Overview** - cross-site active-problem list, deep-linked to the tree, with a six-chip
   status summary (OK / Warning / Error / Acknowledged / Paused / Hidden).
-- **Notifications** — Argus-native alerting engine (Discord, Telegram, email) with
+- **Notifications** - Argus-native alerting engine (Discord, Telegram, email) with
   60-second debounce, recovery notices, rich messages (status icons, value + threshold,
   2-hour trend graph, deep-links, one-click acknowledge).
-- **Auth** — three roles (admin / helpdesk / viewer), argon2id passwords, TOTP two-factor
+- **Auth** - three roles (admin / helpdesk / viewer), argon2id passwords, TOTP two-factor
   with recovery codes, WebAuthn passkeys, self-service password reset, admin user management,
   login rate-limiting.
-- **Admin Settings** — an in-app page to change the Zabbix connection, public URL, timezone,
+- **Admin Settings** - an in-app page to change the Zabbix connection, public URL, timezone,
   and login limits at runtime (no redeploy); env vars, when set, take precedence and lock the field.
-- **Security** — AES-256-GCM encryption at rest for stored secrets, brute-force protection
+- **Security** - AES-256-GCM encryption at rest for stored secrets, brute-force protection
   by IP + account.
-- **Mobile-responsive** — off-canvas drawer sidebar, scrollable status chips, stacked card
+- **Mobile-responsive** - off-canvas drawer sidebar, scrollable status chips, stacked card
   layout with labeled fields on small screens.
-- **Live probes + enrollment** — real Zabbix proxy status, plus one-click **token enrollment**:
+- **Live probes + enrollment** - real Zabbix proxy status, plus one-click **token enrollment**:
   create a token in the GUI, run the generated `docker run` for the self-enrolling `argus-probe`
   image, and the probe signs its own cert and registers itself (private key never leaves the probe).
 
-Argus is not tied to a specific network vendor or topology. Any setup that runs Zabbix —
-from a homelab to a multi-site enterprise — can layer Argus on top.
+Argus is not tied to a specific network vendor or topology. Any setup that runs Zabbix -
+from a homelab to a multi-site enterprise - can layer Argus on top.
 
 ## Repository layout
 
 | Path | What |
 |---|---|
-| [`argus/`](argus/README.md) | The app — Go backend + React frontend, packaged as a Docker image to GHCR |
-| [`deploy/`](deploy/README.md) | Deploy kit — Zabbix core install, probe scripts, PKI, unRAID templates, checklist |
+| [`argus/`](argus/README.md) | The app - Go backend + React frontend, packaged as a Docker image to GHCR |
+| [`deploy/`](deploy/README.md) | Deploy kit - Zabbix core install, probe scripts, PKI, unRAID templates, checklist |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Full design document (architecture, device classes, thresholds, roadmap) |
 | [`ROADMAP.md`](ROADMAP.md) | Tracking checklist of what's built and what's left |
-| [`.github/workflows/`](.github/workflows/build.yml) | CI — builds the Argus image, pushes to `ghcr.io/<owner>/argus`, auto-publishes GitHub Releases on tags |
+| [`.github/workflows/`](.github/workflows/build.yml) | CI - builds the Argus image, pushes to `ghcr.io/<owner>/argus`, auto-publishes GitHub Releases on tags |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release-by-release history |
 
 ---
@@ -112,9 +112,9 @@ sudo systemctl enable --now zabbix-server zabbix-agent2 nginx php8.4-fpm
 ```
 
 Two steps are manual:
-1. **Nginx** — uncomment `listen` / `server_name` in `/etc/zabbix/nginx.conf`, then
+1. **Nginx** - uncomment `listen` / `server_name` in `/etc/zabbix/nginx.conf`, then
    restart nginx + php-fpm.
-2. **Frontend wizard** — open `http://<core-ip>:8080` in a browser and complete the
+2. **Frontend wizard** - open `http://<core-ip>:8080` in a browser and complete the
    setup (DB connection, admin password, timezone). Set **Housekeeping** retention:
    history 30d, trends 730d, compression after 7d.
 
@@ -137,14 +137,14 @@ deploy/probe/run-probe.sh <site> <core-ip> [appdata-dir]
 Or import the **unRAID template** (`deploy/unraid/zabbix-proxy-site1.xml`) via the Docker
 tab → Add Container → Template dropdown.
 
-The probe dials out to the core on TCP 10051 — no inbound ports needed at the remote site.
+The probe dials out to the core on TCP 10051 - no inbound ports needed at the remote site.
 It buffers up to 7 days of data if the core is unreachable.
 
 #### 1e. Verify
 
 - Zabbix UI → Proxies → the proxy shows **Last seen** ticking (green).
 - Add a test host (e.g. a gateway, ICMP Ping template, monitored by the proxy).
-- Monitoring → Latest data should show ping values within 1–2 minutes.
+- Monitoring → Latest data should show ping values within 1-2 minutes.
 
 ### 2. Deploy Argus
 
@@ -172,7 +172,7 @@ docker run -d \
   -e ARGUS_COOKIE_SECURE=true \
   -e ARGUS_PUBLIC_URL=https://monitoring.example.com \
   -e ARGUS_TZ=Europe/Rome \
-  -e ARGUS_SECRET_KEY=<run: openssl rand -hex 32 — set once, keep stable> \
+  -e ARGUS_SECRET_KEY=<run: openssl rand -hex 32 - set once, keep stable> \
   -e ARGUS_TRUST_PROXY=true \
   -e ARGUS_RP_ID=monitoring.example.com \
   -e ARGUS_RP_DISPLAY_NAME=Argus \
@@ -186,24 +186,24 @@ docker run -d \
 > **Port note:** the Zabbix web UI usually holds host 8080, so Argus is published on host
 > 8081 (→ container 8080).
 >
-> **Passkeys** (`ARGUS_RP_*`) need HTTPS + a real domain — omit them for a plain-HTTP/IP
+> **Passkeys** (`ARGUS_RP_*`) need HTTPS + a real domain - omit them for a plain-HTTP/IP
 > setup and Argus falls back to password + TOTP.
 >
 > **`ARGUS_SECRET_KEY`** encrypts stored secrets at rest; keep it off the data volume and
-> **stable** — changing it makes existing encrypted values unreadable.
+> **stable** - changing it makes existing encrypted values unreadable.
 >
 > **`ARGUS_TRUST_PROXY=true`** is required behind a reverse proxy for correct client-IP
 > rate limiting (ensure the proxy sends `X-Forwarded-For`).
 
 #### 2c. Verify
 
-Open `http://<core-ip>:8081` — you should see the Argus login page. Sign in with the
+Open `http://<core-ip>:8081` - you should see the Argus login page. Sign in with the
 admin credentials from step 2b. The Monitoring tab should show hosts and live data from
 Zabbix.
 
 ### 3. Updating Argus
 
-Argus uses a rolling `:latest` tag — pushing to `main` builds a new image. To update:
+Argus uses a rolling `:latest` tag - pushing to `main` builds a new image. To update:
 
 ```bash
 docker pull ghcr.io/<your-account>/argus:latest
@@ -219,9 +219,9 @@ across container recreations.
 ## Configuration reference
 
 All Argus configuration is via environment variables. Full table with defaults:
-[`argus/README.md` — Configuration (env vars)](argus/README.md#configuration-env-vars). Several
+[`argus/README.md` - Configuration (env vars)](argus/README.md#configuration-env-vars). Several
 (Zabbix URL + token, Public URL, timezone, login limits) can also be changed at runtime from the
-admin **Settings** page — a set env var takes precedence and locks the field.
+admin **Settings** page - a set env var takes precedence and locks the field.
 
 | Group | Vars |
 |---|---|
@@ -252,7 +252,7 @@ CORE  [VM]
      reverse proxy (optional)      HTTPS + custom FQDN
 ```
 
-- **Probes** are Zabbix active proxies — they dial out to the core, so remote sites need
+- **Probes** are Zabbix active proxies - they dial out to the core, so remote sites need
   only **outbound** TCP 10051. No inbound ports required.
 - **Mutual TLS**: one shared CA, one unique client cert per site. A compromised probe key
   is contained to that site.
@@ -274,19 +274,19 @@ GitHub Actions (`.github/workflows/build.yml`):
 ## Status & roadmap
 
 **Shipped:**
-- v0.1.0 — Feature-complete UI (monitoring tree, states, overview, auth, passkeys, users)
-- v0.2.0–v0.2.3 — Notifications (alerting engine, channels, rich messages, trend graphs)
-- v0.2.4–v0.2.6 — Mobile-responsive layout
-- v0.2.7–v0.2.8 — Security hardening (rate limiting, at-rest encryption)
-- v0.3.0 — Admin Settings page (runtime config)
-- v0.3.1 — Deep-link URLs (view reflected in the address bar; reload/bookmark/share safe)
-- v0.3.2 — Sidebar polish (persist collapsed state; theme moved to Settings/Account)
-- v0.3.3 — Self-service password reset (emailed single-use link)
-- v0.4.0 — Probe enrollment (GUI token → self-enrolling `argus-probe` container)
+- v0.1.0 - Feature-complete UI (monitoring tree, states, overview, auth, passkeys, users)
+- v0.2.0-v0.2.3 - Notifications (alerting engine, channels, rich messages, trend graphs)
+- v0.2.4-v0.2.6 - Mobile-responsive layout
+- v0.2.7-v0.2.8 - Security hardening (rate limiting, at-rest encryption)
+- v0.3.0 - Admin Settings page (runtime config)
+- v0.3.1 - Deep-link URLs (view reflected in the address bar; reload/bookmark/share safe)
+- v0.3.2 - Sidebar polish (persist collapsed state; theme moved to Settings/Account)
+- v0.3.3 - Self-service password reset (emailed single-use link)
+- v0.4.0 - Probe enrollment (GUI token → self-enrolling `argus-probe` container)
 
 **Planned:**
-- Auto-discovery — UniFi API sweep + SNMP fingerprinting → automatic host/sensor provisioning
-- Global search — top-bar quick-switcher to jump to a host/sensor by name, IP, or tag
+- Auto-discovery - UniFi API sweep + SNMP fingerprinting → automatic host/sensor provisioning
+- Global search - top-bar quick-switcher to jump to a host/sensor by name, IP, or tag
   (server-side, for large deployments; see DESIGN §16)
 - Per-channel severity filter, labeled graph axes
 - Scaling pass for large deployments (~6000 sensors)
