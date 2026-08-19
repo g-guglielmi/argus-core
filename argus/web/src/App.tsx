@@ -1017,14 +1017,19 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
 
 const PROBE_IMAGE = 'ghcr.io/g-guglielmi/argus-probe:latest'
 
-function probeDockerCmd(c: CreatedToken): string {
+function probeDockerCmd(c: CreatedToken, redeploy: boolean): string {
   const name = `argus-${c.proxy_name}`
-  const lines = [
+  const lines: string[] = []
+  // On a redeploy (a container by this name already exists), remove it first so the fresh `docker
+  // run` doesn't collide on the name. The data volume is a host bind mount, so `docker rm` never
+  // touches it - the enrolled certs persist and the new container skips enrollment.
+  if (redeploy) lines.push(`docker rm -f ${name}`)
+  lines.push(
     `docker run -d --name ${name} --restart unless-stopped \\`,
     `  -v /docker/${name}:/var/lib/zabbix \\`,
     `  -e ARGUS_ENROLL_URL=${c.enroll_url} \\`,
     `  -e ARGUS_ENROLL_TOKEN=${c.token} \\`,
-  ]
+  )
   if (!c.core_host) lines.push('  -e ZBX_SERVER_HOST=<core-host-or-ip:reachable-on-10051> \\')
   lines.push(`  ${PROBE_IMAGE}`)
   return lines.join('\n')
@@ -1110,7 +1115,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
       )}
 
       {isAdmin && enroll && adding && !created && <AddProbeForm onCreated={(c) => { setCreated(c); setAdding(false); loadTokens() }} onCancel={() => setAdding(false)} />}
-      {created && <ProbeCommand created={created} onDone={() => setCreated(null)} />}
+      {created && <ProbeCommand created={created} redeploy={(proxies || []).some((p) => p.name === created.proxy_name)} onDone={() => setCreated(null)} />}
 
       {isAdmin && enroll && pendingTokens.length > 0 && (
         <table className="enroll">
@@ -1306,15 +1311,17 @@ function probeUnraidXml(c: CreatedToken): string {
 }
 
 type ProbeFmt = 'docker' | 'compose' | 'unraid'
-function ProbeCommand({ created, onDone }: { created: CreatedToken; onDone: () => void }) {
+function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; redeploy: boolean; onDone: () => void }) {
   const [fmt, setFmt] = useState<ProbeFmt>('docker')
   const [copied, setCopied] = useState(false)
-  const content = fmt === 'docker' ? probeDockerCmd(created) : fmt === 'compose' ? probeComposeCmd(created) : probeUnraidXml(created)
+  const content = fmt === 'docker' ? probeDockerCmd(created, redeploy) : fmt === 'compose' ? probeComposeCmd(created) : probeUnraidXml(created)
   const pick = (f: ProbeFmt) => { setFmt(f); setCopied(false) }
   const blurb: Record<ProbeFmt, string> = {
-    docker: "Run this on the site's Docker host.",
-    compose: "Run this on the site's Docker host - it also starts an updater sidecar that keeps the probe on the Argus fleet target (needs the Docker socket).",
-    unraid: 'On unRAID: Docker → Add Container → paste into the Template box, or save it as a .xml under /boot/config/plugins/dockerMan/templates-user/.',
+    docker: redeploy
+      ? "Redeploying an existing probe: this removes the old container and starts a fresh one, keeping its data volume (so it stays enrolled). Run it on the site's Docker host."
+      : "Run this on the site's Docker host.",
+    compose: "Run this on the site's Docker host - it also starts an updater sidecar that keeps the probe on the Argus fleet target (needs the Docker socket). Re-running it recreates the probe in place, so it doubles as the redeploy command.",
+    unraid: 'On unRAID: Docker → Add Container → paste into the Template box, or save it as a .xml under /boot/config/plugins/dockerMan/templates-user/. Re-applying the template in the unRAID UI updates the existing container.',
   }
   return (
     <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)' }}>

@@ -29,6 +29,10 @@ Zabbix release the API exposes.
   never leaves a site without a probe.
 - Only offered when the probe reports it's socket-capable; everything else keeps the read-only
   visibility + one-click manual command. unRAID probes stay on native auto-update.
+- **Redeploy-aware wizard.** When the Add-probe wizard targets a name that already exists, the
+  Docker-run command prepends `docker rm -f <name>` so a redeploy is a single paste (the data
+  volume is a host bind mount, so it's kept and the probe stays enrolled). Compose and unRAID
+  already recreate in place, so they're unchanged.
 
 ---
 
