@@ -37,8 +37,12 @@ jobs:
         with:
           # Pins the image name to "argus" under your account, regardless of the repo name.
           images: ghcr.io/${{ github.repository_owner }}/argus
+          # Channel scheme: pushes to main publish :testing (tip-of-main / staging), while :latest is
+          # reserved for actual v* releases (alongside :vX.Y.Z). So production can safely pin :latest
+          # and a test box can track :testing, without manual tagging. Every build also gets :sha.
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=testing,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
             type=ref,event=tag
             type=sha,format=short
 

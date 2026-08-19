@@ -82,6 +82,8 @@ a { color: var(--accent); }
 .vtag { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border-strong); white-space: nowrap; }
 .vtag.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
 .vtag.upd { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.vtag.dev { color: var(--muted); border-color: var(--border-strong); }
+.release-notes { margin: 8px 0 0; padding: 10px 12px; background: var(--elevated); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; line-height: 1.5; color: var(--muted); white-space: pre-wrap; overflow-x: auto; max-height: 320px; }
 .userbtn { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; cursor: pointer; color: var(--muted); background: none; border: 1px solid transparent; font: inherit; width: 100%; text-align: left; white-space: nowrap; }
 .userbtn:hover { background: var(--elevated); color: var(--text); }
 .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--accent-weak); color: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: 12px; flex-shrink: 0; }

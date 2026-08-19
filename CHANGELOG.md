@@ -11,6 +11,26 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.11] - 2026-08-19
+
+**Release channels - `:testing` for main, `:latest` for releases.** (Roadmap §G)
+
+Pushes to `main` previously published `:latest`, so `:latest` meant "tip of main" (unreleased code).
+Now `main` builds publish **`:testing`** and `:latest` is reserved for actual `v*` releases (alongside
+`:vX.Y.Z`), so production can safely pin `:latest` and a test box can track `:testing` - no manual
+tagging. Every build still gets a `:sha` tag.
+
+**Version indicator - correct "development build" verdict + changelog.** (Roadmap §F)
+
+- The verdict no longer shows a green **LATEST** for a build that is merely *ahead* of the newest
+  release. `appUpdateStatus` now distinguishes a clean release tag equal to the newest release
+  (`current` -> green tick) from a `git describe` build past its tag or a base newer than anything
+  published (`development` -> neutral "development build" tag). Fixes a `:testing`/local build reading
+  as "latest", and drops the redundant "newest release" line next to the badge.
+- **"What's new"**: when an update is available, Settings shows the release notes, fetched from the
+  GitHub Releases API (the CHANGELOG section published as the release body) via `GET
+  /api/version/notes`, cached alongside the GHCR latest-version poll.
+
 ## [0.4.10] - 2026-08-19
 
 **UI standardization / design system.** (Roadmap §F)

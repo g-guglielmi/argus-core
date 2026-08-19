@@ -8,7 +8,12 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
 
 ---
 
-## ✅ Shipped (through v0.4.10)
+## ✅ Shipped (through v0.4.11)
+
+**v0.4.11 - release hygiene**
+- [x] **`:testing` channel / release-gated `:latest`** - `main` builds publish `:testing`; `:latest` is reserved for `v*` releases
+- [x] **Version verdict fix + changelog** - a build ahead of the newest release reads as "development build" (not green LATEST); Settings shows the release notes when an update is available
+
 
 **Foundations (through v0.3.0)**
 - [x] **Phase 0 - foundations**: Zabbix 7.0 core + site1 probe over mutual TLS, 7-day offline buffer
@@ -82,13 +87,10 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
 ### G. Scale & production readiness
 - [ ] **Sizing pass** before the ~6000-sensor deployment (proxies, DB, caches, NVPS) - analysis
 - [ ] **Server-side census/counts** - move the `/api/sensors` full census server-side at scale - _(BE)_ M
-- [ ] **`testing` channel / release-gated `latest`** - today every push to `main` tags the image
-  `:latest`, so `:latest` means "tip of `main`" (unreleased code). Retag so `main` pushes publish
-  `:testing` (+ `:sha`) and only `v*` tag pushes move `:latest` (alongside `:vX.Y.Z`). Gives a real
-  staging pull target (`:testing`) decoupled from production without manual tagging; pairs with the
-  version indicator (a `:testing` build's `git describe` version shows as ahead of the last release).
-  Pure CI change in `docker/metadata-action` tags; when built, note in deploy docs that prod should
-  pin `:latest`/a version, not `:testing`. - _(ops)_ S
+- [x] **`testing` channel / release-gated `latest`** - `main` pushes now publish `:testing` (+ `:sha`)
+  and only `v*` tag pushes move `:latest` (alongside `:vX.Y.Z`), so production can pin `:latest` and a
+  test box tracks `:testing` without manual tagging. Pairs with the version indicator (a `:testing`
+  build reads as "development build"). - v0.4.11
 
 ### H. Parking lot (maybe)
 - [ ] Public status page (Uptime-Kuma-style shareable)

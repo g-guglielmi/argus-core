@@ -536,29 +536,44 @@ function buildNav(s: NavState): string {
 
 type VersionInfo = { version: string; latest?: string; update_available: boolean; status: string }
 
-// VersionAbout shows the running build at the top of Settings, plus a green "latest" tick or an
-// amber "update available" pill so an admin can tell at a glance whether this instance is on the
-// newest release. The core resolves the newest published release from GHCR; a :latest/dev build
-// ahead of the last release tag reads as up to date.
+// VersionAbout shows the running build at the top of Settings, with a verdict badge so an admin can
+// tell at a glance whether this instance is on the newest release:
+//   current     -> green "latest" tick (a clean release tag equal to the newest published release)
+//   development -> neutral "development build" tag (a :testing/git-describe build ahead of its tag)
+//   outdated    -> amber "update available" pill + a "What's new" changelog disclosure
+// The core resolves the newest published release (and its notes) from GHCR + the GitHub Releases API.
 function VersionAbout() {
   const [v, setV] = useState<VersionInfo | null>(null)
+  const [notes, setNotes] = useState<string | null>(null)
   useEffect(() => { fetch('/api/version').then((r) => (r.ok ? r.json() : null)).then(setV).catch(() => {}) }, [])
   const running = v && (v.version || 'development build')
+  const loadNotes = () => {
+    if (notes !== null) return
+    fetch('/api/version/notes').then((r) => (r.ok ? r.json() : null)).then((d) => setNotes((d && d.notes) || '')).catch(() => setNotes(''))
+  }
   return (
     <section className="set-card">
       <h3>About</h3>
       <p className="set-note">The Argus build this instance is running, and whether a newer release has been published.</p>
-      <div className="set-row" style={{ marginBottom: 0 }}>
+      <div className="set-row" style={{ marginBottom: v && v.update_available ? undefined : 0 }}>
         <div className="set-head"><span className="flabel">Version</span></div>
         {!v ? <span className="set-hint">Checking…</span> : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span className="mono">{running}</span>
             {v.update_available && <span className="vtag upd">↑ {v.latest} available</span>}
             {v.status === 'current' && <span className="vtag ok">latest</span>}
-            {v.latest && <span className="set-hint">newest release {v.latest}</span>}
+            {v.status === 'development' && <span className="vtag dev">development build</span>}
           </div>
         )}
       </div>
+      {v && v.update_available && (
+        <details className="set-row" style={{ marginBottom: 0 }} onToggle={loadNotes}>
+          <summary className="set-hint" style={{ cursor: 'pointer' }}>What's new in {v.latest}</summary>
+          {notes === null ? <p className="set-hint">Loading…</p>
+            : notes === '' ? <p className="set-hint">Release notes unavailable.</p>
+            : <pre className="release-notes">{notes}</pre>}
+        </details>
+      )}
     </section>
   )
 }
