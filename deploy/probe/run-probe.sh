@@ -44,6 +44,7 @@ docker run -d \
   -e ZBX_TLSSERVERCERTSUBJECT="CN=zabbix-core" \
   -v "${CERTS}:/certs:ro" \
   -v "${DATA}:/var/lib/zabbix" \
+  -v "${DATA}/snmptraps:/var/lib/zabbix/snmptraps" \
   "${IMAGE}"
 
 echo "Started zbx-proxy-${SITE} -> ${CORE}:10051 (active, mTLS, 7-day buffer)."

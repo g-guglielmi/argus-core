@@ -1027,6 +1027,7 @@ function probeDockerCmd(c: CreatedToken, redeploy: boolean): string {
   lines.push(
     `docker run -d --name ${name} --restart unless-stopped \\`,
     `  -v /docker/${name}:/var/lib/zabbix \\`,
+    `  -v /docker/${name}/snmptraps:/var/lib/zabbix/snmptraps \\`,
     `  -e ARGUS_ENROLL_URL=${c.enroll_url} \\`,
     `  -e ARGUS_ENROLL_TOKEN=${c.token} \\`,
   )
@@ -1346,6 +1347,7 @@ function probeUnraidXml(c: CreatedToken): string {
   <Config Name="Enroll URL" Target="ARGUS_ENROLL_URL" Default="" Mode="" Description="Argus enrollment endpoint." Type="Variable" Display="always" Required="true" Mask="false">${c.enroll_url}</Config>
   <Config Name="Enroll Token" Target="ARGUS_ENROLL_TOKEN" Default="" Mode="" Description="Single-use enrollment token (shown once)." Type="Variable" Display="always" Required="true" Mask="true">${c.token}</Config>${serverHost}
   <Config Name="Data" Target="/var/lib/zabbix" Default="${vol}" Mode="rw" Description="Certs + SQLite spool. Persist this." Type="Path" Display="always" Required="true" Mask="false">${vol}</Config>
+  <Config Name="SNMP traps" Target="/var/lib/zabbix/snmptraps" Default="${vol}/snmptraps" Mode="rw" Description="The base Zabbix image marks this path as a VOLUME; bind it into your appdata so Docker doesn't create an anonymous volume for it." Type="Path" Display="advanced" Required="false" Mask="false">${vol}/snmptraps</Config>
 </Container>`
 }
 

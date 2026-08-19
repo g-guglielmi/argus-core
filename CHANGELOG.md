@@ -40,6 +40,11 @@ Zabbix release the API exposes.
   (`ARGUS_PROBE_TOKEN`) via the container's GUI - the check-in URL is derived from the enroll URL, so
   no re-enrollment is needed. The probe **saves the token to its data volume on first boot**, so the
   env var can be removed on later runs (a fresh env token always wins, for rotation).
+- **No stray anonymous volume on probes.** The stock Zabbix image marks `/var/lib/zabbix/snmptraps`
+  as a `VOLUME`, so Docker created an anonymous volume for it alongside the probe's bind mount. The
+  generated Docker-run command, the compose file, and the unRAID templates now bind that subpath
+  into the probe's data folder too, so everything stays in one place and no anonymous volume is
+  created. The compose file also switches from a named volume to a `./data` bind.
 - **Real drift against `latest`.** Argus core now polls the public GHCR tags list anonymously
   (every 3h, no auth) to learn the newest published `X.Y.Z-rN` probe revision, and compares it to
   each probe's reported version. When the fleet target is `latest`, probes behind the newest now

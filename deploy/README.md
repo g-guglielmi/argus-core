@@ -122,6 +122,13 @@ proxy record, its assigned hosts, and history are **preserved** (same `proxyid`)
 There's a brief collection gap while you swap containers (two containers can't share one proxy
 name at once). The old cert stays valid but unused; you can leave it or clean it up.
 
+> **Storage note — two binds, no anonymous volume.** The stock Zabbix proxy image declares
+> `/var/lib/zabbix/snmptraps` as a `VOLUME`, which Docker fills with an **anonymous volume** unless
+> that exact subpath is mounted. The generated commands/templates therefore bind **both**
+> `…/<probe>:/var/lib/zabbix` **and** `…/<probe>/snmptraps:/var/lib/zabbix/snmptraps`, so everything
+> lands in your appdata folder and no stray volume is created. (A child image can't un-declare a
+> parent's `VOLUME`, so binding the subpath is the fix.)
+
 ### Updating a probe (automatic)
 
 The probe runs `ghcr.io/<owner>/argus-probe:latest`. An update is a plain image pull + container
