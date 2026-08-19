@@ -1121,22 +1121,23 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
       {isAdmin && <FleetTarget target={target} onSaved={setTarget} />}
 
       <table className="enroll enroll-probes">
-        <thead><tr><th>Probe</th><th>Status</th><th>Version</th><th>Update</th><th>Mode</th><th>Enrolled</th></tr></thead>
+        <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Version</th><th>Update</th><th>Mode</th><th>Enrolled</th></tr></thead>
         <tbody>
-          {error && <tr><td colSpan={6} style={{ color: 'var(--err)' }}>{error}</td></tr>}
-          {!error && proxies === null && <tr><td colSpan={6} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
-          {!error && proxies && proxies.length === 0 && <tr><td colSpan={6} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
+          {error && <tr><td colSpan={7} style={{ color: 'var(--err)' }}>{error}</td></tr>}
+          {!error && proxies === null && <tr><td colSpan={7} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
+          {!error && proxies && proxies.length === 0 && <tr><td colSpan={7} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
           {!error && proxies && proxies.map((p) => (
             <Fragment key={p.name}>
               <tr>
                 <td><strong>{p.name}</strong></td>
                 <td data-label="Status">{p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}</td>
-                <td data-label="Version" className="mono" title={p.last_checkin ? `Last check-in ${relTime(p.last_checkin)}` : 'No fleet check-in yet'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '—'}</td>
+                <td data-label="Last check-in" className="mono" title="When the core last received data from this proxy" style={{ color: p.last_access ? undefined : 'var(--faint)' }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
+                <td data-label="Version" className="mono" title={p.last_checkin ? `Version reported ${relTime(p.last_checkin)}` : 'No fleet check-in yet'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '—'}</td>
                 <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} /></td>
                 <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
                 <td data-label="Enrolled" className="mono" style={{ color: p.enrolled_at ? 'var(--muted)' : 'var(--faint)' }} title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>{p.enrolled_at ? new Date(p.enrolled_at * 1000).toLocaleDateString() : '—'}</td>
               </tr>
-              {openCmd === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
+              {openCmd === p.name && <tr><td colSpan={7} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
             </Fragment>
           ))}
         </tbody>

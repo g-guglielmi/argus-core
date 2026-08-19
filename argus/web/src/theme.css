@@ -247,14 +247,18 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .enroll th:nth-child(2) { width: 18%; }
 .enroll th:nth-child(3) { width: 27%; }
 .enroll th:nth-child(4) { width: 15%; }
-/* the live probes table carries a 5th column (Enrolled) — override the 4-col widths above.
+/* the live probes table carries 7 columns (Probe · Status · Last check-in · Version · Update ·
+   Mode · Enrolled) — override the 4-col widths above. Widths sum to 100% so table-layout:fixed
+   doesn't starve the trailing columns.
    NB: the modifier is `enroll-probes`, not `live` — `.live` is the heartbeat pill (display:inline-flex)
    and would turn the whole table into a flex box. */
-.enroll.enroll-probes th:nth-child(1) { width: 30%; }
-.enroll.enroll-probes th:nth-child(2) { width: 16%; }
-.enroll.enroll-probes th:nth-child(3) { width: 22%; }
-.enroll.enroll-probes th:nth-child(4) { width: 14%; }
-.enroll.enroll-probes th:nth-child(5) { width: 18%; }
+.enroll.enroll-probes th:nth-child(1) { width: 20%; }
+.enroll.enroll-probes th:nth-child(2) { width: 12%; }
+.enroll.enroll-probes th:nth-child(3) { width: 16%; }
+.enroll.enroll-probes th:nth-child(4) { width: 15%; }
+.enroll.enroll-probes th:nth-child(5) { width: 15%; }
+.enroll.enroll-probes th:nth-child(6) { width: 10%; }
+.enroll.enroll-probes th:nth-child(7) { width: 12%; }
 .enroll tr:last-child td { border-bottom: none; }
 
 /* ---------- users / forms ---------- */
