@@ -39,16 +39,19 @@ type Server struct {
 	loginLimiter  *ratelimit.Limiter // brute-force protection for login (owned by mgr)
 	ca            *pki.CA            // nil when probe enrollment is not configured
 	probeLatest   *probeLatestCache  // newest published probe version, polled from public GHCR
+	appLatest     *appLatestCache    // newest published app release, polled from public GHCR
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {
 	dummy, _ := auth.HashPassword("argus-nonexistent-user")
 	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, mgr: mgr, dummyHash: dummy,
 		signingSecret: GetSigningSecret(context.Background(), st),
-		loginLimiter:  mgr.Limiter(), probeLatest: &probeLatestCache{}}
+		loginLimiter:  mgr.Limiter(), probeLatest: &probeLatestCache{}, appLatest: &appLatestCache{}}
 	// Poll public GHCR for the newest probe revision so the fleet view can flag "-rN available"
 	// even when the target is "latest". Background; a failure just leaves it unknown.
 	s.startProbeLatestRefresh(context.Background())
+	// Same for the app image, so the UI can show whether this instance is on the newest release.
+	s.startAppLatestRefresh(context.Background())
 
 	// Probe enrollment is available only when the CA is mounted. A load failure disables it
 	// (logged) rather than blocking startup.
@@ -94,6 +97,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/login/totp", s.handleLoginTOTP)
 	mux.HandleFunc("POST /api/login/passkey/begin", s.handlePasskeyLoginBegin)
 	mux.HandleFunc("POST /api/login/passkey/finish", s.handlePasskeyLoginFinish)
+	mux.HandleFunc("GET /api/version", auth.RequireAuth(s.handleVersion))
 	mux.HandleFunc("GET /api/me", auth.RequireAuth(s.handleMe))
 	mux.HandleFunc("POST /api/me/password", auth.RequireAuth(s.handleChangeOwnPassword))
 	mux.HandleFunc("POST /api/me/preferences", auth.RequireAuth(s.handleUpdatePreferences))

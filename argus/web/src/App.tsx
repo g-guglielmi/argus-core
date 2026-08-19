@@ -534,6 +534,35 @@ function buildNav(s: NavState): string {
   return window.location.pathname + (qs ? '?' + qs : '')
 }
 
+type VersionInfo = { version: string; latest?: string; update_available: boolean; status: string }
+
+// VersionLine shows the running build in the sidebar footer, plus a green "latest" tick or an amber
+// "update" pill so you can tell at a glance whether this instance is on the newest release. The
+// core resolves the newest published release from GHCR; a :latest/dev build ahead of the last tag
+// reads as up to date.
+function VersionLine() {
+  const [v, setV] = useState<VersionInfo | null>(null)
+  useEffect(() => { fetch('/api/version').then((r) => (r.ok ? r.json() : null)).then(setV).catch(() => {}) }, [])
+  if (!v) return null
+  const running = v.version || 'dev build'
+  const outdated = v.update_available
+  const current = v.status === 'current'
+  const title = outdated
+    ? `Update available: ${v.latest} - you're running ${running}`
+    : current
+      ? `Up to date${v.latest ? ` (latest release ${v.latest})` : ''}`
+      : v.status === 'dev'
+        ? 'Development build (version not stamped)'
+        : `Running ${running}`
+  return (
+    <div className={'version-line' + (outdated ? ' outdated' : '')} title={title}>
+      <span className="vlabel mono">{running}</span>
+      {outdated && <span className="vtag upd">↑ {v.latest}</span>}
+      {current && <span className="vtag ok">latest</span>}
+    </div>
+  )
+}
+
 function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll }: { me: Me; onMe: (m: Me) => void; onLogout: () => void; passkeysAvailable: boolean; probeEnroll: boolean }) {
   // Admin-only views can't be restored from a shared/stale URL by a non-admin.
   const clampView = (v: View): View => ((v === 'users' || v === 'settings') && me.role !== 'admin' ? 'overview' : v)
@@ -641,6 +670,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll }: { me: 
         {nav('probes', 'Probes')}
         {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('users', 'Users')}{nav('settings', 'Settings')}</>}
         <div className="side-foot">
+          <VersionLine />
           <div className="kebab-wrap" style={{ display: 'block' }}>
             <button className="userbtn" onClick={() => setMenuOpen((o) => !o)}>
               <div className="avatar">{(me.name?.[0] || me.email[0] || '?').toUpperCase()}{(me.surname?.[0] || '').toUpperCase()}</div>

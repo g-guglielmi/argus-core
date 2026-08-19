@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -84,16 +85,14 @@ func resolveLatestProbeVersion(ctx context.Context) (string, error) {
 	if err := ghcrGetJSON(ctx, "https://ghcr.io/token?scope=repository:"+repoPath+":pull", "", &tok); err != nil {
 		return "", err
 	}
-	var tags struct {
-		Tags []string `json:"tags"`
-	}
-	if err := ghcrGetJSON(ctx, "https://ghcr.io/v2/"+repoPath+"/tags/list", tok.Token, &tags); err != nil {
+	tags, err := ghcrListTags(ctx, repoPath, tok.Token)
+	if err != nil {
 		return "", err
 	}
 
 	best := ""
 	var bestKey [4]int
-	for _, t := range tags.Tags {
+	for _, t := range tags {
 		m := probeVerTag.FindStringSubmatch(t)
 		if m == nil {
 			continue
@@ -117,6 +116,51 @@ func versionLess(a, b [4]int) bool {
 		}
 	}
 	return false
+}
+
+// ghcrListTags returns every tag for a repo, following the registry's Link-header pagination. The
+// tags/list endpoint pages (100 by default, and honours ?n= up to a server cap), so a single GET
+// silently misses the newest tags once a repo has more than one page - which would make "latest"
+// resolve to a stale older version. Cursor is the last tag of each page (standard registry paging).
+func ghcrListTags(ctx context.Context, repoPath, bearer string) ([]string, error) {
+	base := "https://ghcr.io/v2/" + repoPath + "/tags/list"
+	var all []string
+	last := ""
+	for {
+		u := base + "?n=1000"
+		if last != "" {
+			u += "&last=" + url.QueryEscape(last)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return nil, err
+		}
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("GET %s: HTTP %d", u, resp.StatusCode)
+		}
+		var page struct {
+			Tags []string `json:"tags"`
+		}
+		derr := json.NewDecoder(resp.Body).Decode(&page)
+		hasNext := strings.Contains(resp.Header.Get("Link"), `rel="next"`)
+		resp.Body.Close()
+		if derr != nil {
+			return nil, derr
+		}
+		all = append(all, page.Tags...)
+		if !hasNext || len(page.Tags) == 0 {
+			return all, nil
+		}
+		last = page.Tags[len(page.Tags)-1]
+	}
 }
 
 func ghcrGetJSON(ctx context.Context, url, bearer string, out any) error {
