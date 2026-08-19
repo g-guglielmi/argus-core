@@ -536,30 +536,30 @@ function buildNav(s: NavState): string {
 
 type VersionInfo = { version: string; latest?: string; update_available: boolean; status: string }
 
-// VersionLine shows the running build in the sidebar footer, plus a green "latest" tick or an amber
-// "update" pill so you can tell at a glance whether this instance is on the newest release. The
-// core resolves the newest published release from GHCR; a :latest/dev build ahead of the last tag
-// reads as up to date.
-function VersionLine() {
+// VersionAbout shows the running build at the top of Settings, plus a green "latest" tick or an
+// amber "update available" pill so an admin can tell at a glance whether this instance is on the
+// newest release. The core resolves the newest published release from GHCR; a :latest/dev build
+// ahead of the last release tag reads as up to date.
+function VersionAbout() {
   const [v, setV] = useState<VersionInfo | null>(null)
   useEffect(() => { fetch('/api/version').then((r) => (r.ok ? r.json() : null)).then(setV).catch(() => {}) }, [])
-  if (!v) return null
-  const running = v.version || 'dev build'
-  const outdated = v.update_available
-  const current = v.status === 'current'
-  const title = outdated
-    ? `Update available: ${v.latest} - you're running ${running}`
-    : current
-      ? `Up to date${v.latest ? ` (latest release ${v.latest})` : ''}`
-      : v.status === 'dev'
-        ? 'Development build (version not stamped)'
-        : `Running ${running}`
+  const running = v && (v.version || 'development build')
   return (
-    <div className={'version-line' + (outdated ? ' outdated' : '')} title={title}>
-      <span className="vlabel mono">{running}</span>
-      {outdated && <span className="vtag upd">↑ {v.latest}</span>}
-      {current && <span className="vtag ok">latest</span>}
-    </div>
+    <section className="set-card">
+      <h3>About</h3>
+      <p className="set-note">The Argus build this instance is running, and whether a newer release has been published.</p>
+      <div className="set-row" style={{ marginBottom: 0 }}>
+        <div className="set-head"><span className="flabel">Version</span></div>
+        {!v ? <span className="set-hint">Checking…</span> : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span className="mono">{running}</span>
+            {v.update_available && <span className="vtag upd">↑ {v.latest} available</span>}
+            {v.status === 'current' && <span className="vtag ok">latest</span>}
+            {v.latest && <span className="set-hint">newest release {v.latest}</span>}
+          </div>
+        )}
+      </div>
+    </section>
   )
 }
 
@@ -670,7 +670,6 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll }: { me: 
         {nav('probes', 'Probes')}
         {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('users', 'Users')}{nav('settings', 'Settings')}</>}
         <div className="side-foot">
-          <VersionLine />
           <div className="kebab-wrap" style={{ display: 'block' }}>
             <button className="userbtn" onClick={() => setMenuOpen((o) => !o)}>
               <div className="avatar">{(me.name?.[0] || me.email[0] || '?').toUpperCase()}{(me.surname?.[0] || '').toUpperCase()}</div>
@@ -803,6 +802,8 @@ function SettingsView() {
       {msg && <div style={{ padding: '0.6rem 16px', color: 'var(--ok)' }}>{msg}</div>}
 
       <form onSubmit={save} className="set-body">
+        {/* Running version + update check, at the top so it's the first thing an admin sees. */}
+        <VersionAbout />
         {/* Theme is a per-device preference and lives in Account (reachable by every role), not
             here in the admin-only server settings. */}
         {items === null ? <p className="set-note" style={{ padding: '0 4px' }}>Loading…</p> : groups.map((g) => {
