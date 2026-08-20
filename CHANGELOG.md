@@ -25,6 +25,14 @@ GitHub Release from the matching section below.
 
 **Update checks:**
 
+- **Switch channel / version from the GUI.** The About card now has a "Change channel or version"
+  control to deliberately move the core between `latest`, `testing`, and the last 5 published releases
+  (pinning). A plain "Update" still preserves the current channel; a switch sends the exact target and
+  the updater converges on it (a new `exact` flag bypasses channel-preserve). Picking a specific
+  version pins the core until you switch back to a channel; the UI confirms first (and warns that a
+  version pin stops channel tracking). **Requires redeploying the `argus-updater` sidecar** to pick up
+  the new script (the updater doesn't self-update). New `GET /api/version/tags`; `POST
+  /api/update/start` accepts an optional `{target}`.
 - **Nightly check + manual "Check for updates".** The automatic GHCR update check now runs once daily
   at 04:00 (in the configured timezone) instead of every 3 hours - releases are rare, so nightly is
   plenty and lighter on the registry. For on-demand checks (e.g. right after publishing a build), the

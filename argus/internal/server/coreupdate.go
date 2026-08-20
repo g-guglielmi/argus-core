@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"argus/internal/auth"
@@ -33,11 +34,12 @@ const (
 // updateRequest is the command the core drops for the sidecar.
 type updateRequest struct {
 	ID            string `json:"id"`
-	Tag           string `json:"tag"`            // image tag to converge on, e.g. "v0.5.0"
-	From          string `json:"from"`           // running version at request time
-	RequestedBy   string `json:"requested_by"`   // admin email, for the audit line
-	RequestedAt   string `json:"requested_at"`   // RFC3339
-	CoreContainer string `json:"core_container"` // hostname hint (= container id by default)
+	Tag           string `json:"tag"`             // image tag to converge on, e.g. "v0.5.0"
+	Exact         bool   `json:"exact,omitempty"` // deliberate channel/version switch: use Tag verbatim (bypass channel-preserve)
+	From          string `json:"from"`            // running version at request time
+	RequestedBy   string `json:"requested_by"`    // admin email, for the audit line
+	RequestedAt   string `json:"requested_at"`    // RFC3339
+	CoreContainer string `json:"core_container"`  // hostname hint (= container id by default)
 }
 
 // coreUpdateStatus is the sidecar's report, overwritten in place through the job's lifecycle.
@@ -145,20 +147,40 @@ func (s *Server) handleUpdateStart(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "self-update is not enabled (no argus-updater sidecar configured); update manually"})
 		return
 	}
+	// An optional {target} body means a deliberate channel/version switch (latest / testing / a
+	// specific vX.Y.Z). Without it, this is a plain in-place update on the current channel.
+	var body struct {
+		Target string `json:"target"`
+	}
+	decodeOptional(w, r, &body)
+	body.Target = strings.TrimSpace(body.Target)
+
 	cur := buildinfo.Version
 	latest := s.appLatest.get()
 	status, updateAvailable := appUpdateStatus(cur, latest)
-	// A :testing (development) build isn't "outdated" against releases, but there may be a newer
-	// testing image - allow the update in that case too. The target tag is the channel word
-	// "testing"; the sidecar's channel-preserve re-pulls the running rolling tag in place.
 	devUpdate := status == "development" && s.appLatest.getDevUpdate()
-	if !updateAvailable && !devUpdate {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no newer release is available to update to", "status": status})
-		return
-	}
-	targetTag := latest
-	if devUpdate {
-		targetTag = "testing"
+
+	var targetTag string
+	var exact bool
+	if body.Target != "" {
+		// Deliberate switch: honour the exact tag (bypassing the updater's channel-preserve), but only
+		// if it's one of the offered targets - never an arbitrary tag.
+		if !s.isAllowedTarget(body.Target) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown update target"})
+			return
+		}
+		targetTag, exact = body.Target, true
+	} else {
+		// Plain in-place update: a :testing build isn't "outdated" against releases but may have a
+		// newer testing image; the target is the channel word and the sidecar re-pulls it in place.
+		if !updateAvailable && !devUpdate {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no newer release is available to update to", "status": status})
+			return
+		}
+		targetTag = latest
+		if devUpdate {
+			targetTag = "testing"
+		}
 	}
 
 	state, err := s.currentUpdateState()
@@ -179,6 +201,7 @@ func (s *Server) handleUpdateStart(w http.ResponseWriter, r *http.Request) {
 	req := updateRequest{
 		ID:            newUpdateID(),
 		Tag:           targetTag,
+		Exact:         exact,
 		From:          cur,
 		RequestedBy:   by,
 		RequestedAt:   time.Now().UTC().Format(time.RFC3339),

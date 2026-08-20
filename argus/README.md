@@ -197,6 +197,15 @@ docker run -d --name argus-updater --restart unless-stopped \
 `/update`, then add the **Argus-Updater** template ([`deploy/unraid/argus-updater.xml`](../deploy/unraid/argus-updater.xml))
 with the **same** host folder and your Argus container's name.
 
+Beyond the plain "Update now" button (which updates in place, preserving the core's `latest` /
+`testing` channel), Settings → About has a **Change channel or version** control to deliberately switch
+the core between `latest`, `testing`, and recent pinned releases. A version pin sticks until you switch
+back to a channel.
+
+> **Keep the sidecar current.** `argus-updater` recreates the core but not itself, so after upgrading
+> Argus pull the newest `argus-updater:latest` and redeploy the sidecar too - otherwise it keeps
+> running an older update script (e.g. one without channel/version switching).
+
 > **Security note.** `argus-updater` has the Docker socket (host-level control), so keep it on the
 > trusted core host. It runs no listening service - it only watches the shared folder - which is why
 > the socket lives here and not on the internet-facing core. Leave `ARGUS_UPDATE_DIR` unset to disable

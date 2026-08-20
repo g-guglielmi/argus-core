@@ -564,8 +564,11 @@ function VersionAbout() {
   const [busy, setBusy] = useState(false)
   const [checking, setChecking] = useState(false)
   const [checkedMsg, setCheckedMsg] = useState('')
+  const [targets, setTargets] = useState<{ channels: string[]; releases: string[] } | null>(null)
+  const [switchTo, setSwitchTo] = useState('')
   const [err, setErr] = useState('')
   useEffect(() => { fetch('/api/version').then((r) => (r.ok ? r.json() : null)).then(setV).catch(() => {}) }, [])
+  useEffect(() => { fetch('/api/version/tags').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setTargets(d) }).catch(() => {}) }, [])
   // Poll the self-update state so the button + banner track the sidecar (and reconnect after the brief
   // restart an update causes - a failed fetch keeps the last state rather than clearing it).
   useEffect(() => {
@@ -590,6 +593,21 @@ function VersionAbout() {
       .finally(() => setBusy(false))
   }
   const dismiss = () => fetch('/api/update/dismiss', { method: 'POST' }).then(refreshUpd).catch(() => {})
+  // Deliberately switch the core to a chosen channel/version (bypassing the in-place channel-preserve).
+  const doSwitch = () => {
+    if (!switchTo) return
+    const isVer = /^v?\d+\.\d+\.\d+$/.test(switchTo)
+    const msg = isVer
+      ? `Switch Argus to ${switchTo}? This pins the core to that exact version - it won't track a channel until you switch back to latest or testing. The core will pull the image and restart briefly.`
+      : `Switch Argus to the "${switchTo}" channel? The core will pull that image and restart briefly.`
+    if (!window.confirm(msg)) return
+    setBusy(true); setErr('')
+    fetch('/api/update/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: switchTo }) })
+      .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'could not start the switch') })
+      .then(refreshUpd)
+      .catch((e) => setErr(String(e.message || e)))
+      .finally(() => setBusy(false))
+  }
   // Force an immediate GHCR re-check (the automatic check is nightly), then reflect the fresh verdict.
   const checkNow = () => {
     setChecking(true); setCheckedMsg(''); setErr('')
@@ -661,6 +679,29 @@ function VersionAbout() {
             )}
           </div>
         </>
+      )}
+
+      {/* Deliberate channel / version switch (latest <-> testing <-> a pinned release). */}
+      {upd && upd.self_update_enabled && upd.state !== 'success' && targets && (
+        <details className="set-row" style={{ marginBottom: 0 }}>
+          <summary className="set-hint" style={{ cursor: 'pointer' }}>Change channel or version</summary>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+            <select className="input" value={switchTo} onChange={(e) => setSwitchTo(e.target.value)} style={{ maxWidth: 240 }}>
+              <option value="">Select a target…</option>
+              <optgroup label="Channels">
+                <option value="latest">latest — stable releases</option>
+                <option value="testing">testing — main, unreleased</option>
+              </optgroup>
+              {targets.releases.length > 0 && (
+                <optgroup label="Recent releases">
+                  {targets.releases.map((t) => <option key={t} value={t}>{t}</option>)}
+                </optgroup>
+              )}
+            </select>
+            <Button variant="default" onClick={doSwitch} disabled={busy || active || !switchTo}>Switch</Button>
+          </div>
+          <p className="set-hint" style={{ marginTop: 6 }}>Switches the running image to the selected channel or version. Picking a specific version pins the core — it won't track a channel until you switch back to <span className="mono">latest</span> or <span className="mono">testing</span>.</p>
+        </details>
       )}
     </section>
   )

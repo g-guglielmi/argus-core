@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,8 +32,23 @@ const appLatestHour = 4
 type appLatestCache struct {
 	mu        sync.RWMutex
 	version   string
-	notes     string // release body (CHANGELOG section) for `version`, "" if not fetched
-	devUpdate bool   // a development (:testing) build is running and a newer :testing image exists
+	notes     string   // release body (CHANGELOG section) for `version`, "" if not fetched
+	devUpdate bool     // a development (:testing) build is running and a newer :testing image exists
+	releases  []string // published vX.Y.Z release tags, newest first (for the version switcher)
+}
+
+func (c *appLatestCache) getReleases() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]string, len(c.releases))
+	copy(out, c.releases)
+	return out
+}
+
+func (c *appLatestCache) setReleases(r []string) {
+	c.mu.Lock()
+	c.releases = r
+	c.mu.Unlock()
 }
 
 func (c *appLatestCache) get() string {
@@ -77,12 +93,14 @@ func (c *appLatestCache) setNotes(v, notes string) {
 func (s *Server) refreshAppLatest(ctx context.Context) {
 	c, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	v, err := resolveLatestAppVersion(c)
+	releases, err := resolveAppReleases(c)
 	if err != nil {
 		s.logger.Warn("app latest: GHCR resolve failed", "err", err)
 		return
 	}
-	if v != "" {
+	s.appLatest.setReleases(releases)
+	if len(releases) > 0 {
+		v := releases[0] // newest, for the "update available" verdict
 		// Best-effort: fetch the release notes so the UI can show what changed. A failure here
 		// (rate limit, no matching release) just leaves notes empty - the version verdict stands.
 		notes, nerr := resolveReleaseNotes(c, v)
@@ -90,7 +108,7 @@ func (s *Server) refreshAppLatest(ctx context.Context) {
 			s.logger.Warn("app latest: release notes fetch failed", "version", v, "err", nerr)
 		}
 		s.appLatest.setNotes(v, notes)
-		s.logger.Info("app latest resolved from GHCR", "version", v, "notes", notes != "")
+		s.logger.Info("app latest resolved from GHCR", "version", v, "releases", len(releases), "notes", notes != "")
 	}
 
 	// Development-channel check: a :testing build reads as "development" against releases (it's
@@ -187,35 +205,36 @@ func resolveDevChannelUpdate(ctx context.Context, cur string) (bool, error) {
 	return testingDigest != runningDigest, nil
 }
 
-// resolveLatestAppVersion returns the newest vX.Y.Z tag published for the app image, read
-// anonymously from the public GHCR registry (token -> tags list). "" if none is found.
-func resolveLatestAppVersion(ctx context.Context) (string, error) {
+// resolveAppReleases returns every published vX.Y.Z release tag for the app image, newest first, read
+// anonymously from the public GHCR registry (token -> tags list). Empty if none are found.
+func resolveAppReleases(ctx context.Context) ([]string, error) {
 	repoPath := strings.TrimPrefix(appImageRepo, "ghcr.io/") // "<owner>/argus"
-
-	var tok struct {
-		Token string `json:"token"`
-	}
-	if err := ghcrGetJSON(ctx, "https://ghcr.io/token?scope=repository:"+repoPath+":pull", "", &tok); err != nil {
-		return "", err
-	}
-	tags, err := ghcrListTags(ctx, repoPath, tok.Token)
+	tok, err := ghcrPullToken(ctx, repoPath)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-
-	best := ""
-	var bestKey [4]int
+	tags, err := ghcrListTags(ctx, repoPath, tok)
+	if err != nil {
+		return nil, err
+	}
+	type rel struct {
+		tag string
+		key [4]int
+	}
+	var rels []rel
 	for _, t := range tags {
 		m := appReleaseTag.FindStringSubmatch(t)
 		if m == nil {
 			continue
 		}
-		k := verKey(m)
-		if best == "" || versionLess(bestKey, k) {
-			best, bestKey = t, k
-		}
+		rels = append(rels, rel{t, verKey(m)})
 	}
-	return best, nil
+	sort.Slice(rels, func(i, j int) bool { return versionLess(rels[j].key, rels[i].key) }) // desc
+	out := make([]string, len(rels))
+	for i, r := range rels {
+		out[i] = r.tag
+	}
+	return out, nil
 }
 
 // resolveReleaseNotes fetches the release body (the CHANGELOG section published as the GitHub Release
@@ -310,6 +329,38 @@ func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleVersionCheck(w http.ResponseWriter, r *http.Request) {
 	s.refreshAppLatest(r.Context())
 	s.handleVersion(w, r)
+}
+
+// appTargetReleases is how many recent releases the version switcher offers (plus the two channels).
+const appTargetReleases = 5
+
+// updateTargets is the set of tags an admin may deliberately switch the core to: the rolling channels
+// plus the most recent releases.
+func (s *Server) updateTargets() (channels, releases []string) {
+	rels := s.appLatest.getReleases()
+	if len(rels) > appTargetReleases {
+		rels = rels[:appTargetReleases]
+	}
+	return []string{"latest", "testing"}, rels
+}
+
+// isAllowedTarget reports whether tag is one of the selectable switch targets (guards against an
+// admin POSTing an arbitrary tag).
+func (s *Server) isAllowedTarget(tag string) bool {
+	channels, releases := s.updateTargets()
+	for _, t := range append(channels, releases...) {
+		if t == tag {
+			return true
+		}
+	}
+	return false
+}
+
+// handleVersionTags lists the channels + recent releases the core can be switched to (for the
+// version/channel picker in Settings). Authenticated.
+func (s *Server) handleVersionTags(w http.ResponseWriter, _ *http.Request) {
+	channels, releases := s.updateTargets()
+	writeJSON(w, http.StatusOK, map[string]any{"channels": channels, "releases": releases})
 }
 
 // handleVersionNotes returns the newest published release's version and its notes (the CHANGELOG

@@ -100,6 +100,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/version", auth.RequireAuth(s.handleVersion))
 	mux.HandleFunc("GET /api/version/notes", auth.RequireAuth(s.handleVersionNotes))
 	mux.HandleFunc("POST /api/version/check", auth.RequireRole("admin", s.handleVersionCheck))
+	mux.HandleFunc("GET /api/version/tags", auth.RequireAuth(s.handleVersionTags))
 	mux.HandleFunc("GET /api/me", auth.RequireAuth(s.handleMe))
 	mux.HandleFunc("POST /api/me/password", auth.RequireAuth(s.handleChangeOwnPassword))
 	mux.HandleFunc("POST /api/me/preferences", auth.RequireAuth(s.handleUpdatePreferences))
