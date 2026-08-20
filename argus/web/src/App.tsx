@@ -789,7 +789,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll }: { me: 
             {chip('hidden', ic.hidden, 'var(--hidden)', hiddenN, 'Hidden')}
           </div>
         </div>
-        <div className="content">
+        <div className="content view-enter" key={`${view}:${listFilter}`}>
           {view === 'overview' && <OverviewView goHost={goHost} goSensor={goSensor} />}
           {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
           {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} onNavigate={onTreeNav} />}
@@ -1841,7 +1841,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                     <tr className={rowClass} onClick={clickable ? () => { const next = open ? null : it.id; setOpenItem(next); onNavigate(hostId, next) } : undefined} style={{ opacity: it.supported ? 1 : 0.55, cursor: clickable ? 'pointer' : 'default' }}>
                       <td className="namecell">
                         <span className={'sname' + (clickable ? ' sclick' : '')} style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: effPaused || effHidden ? 0.6 : 1 }}>
-                          {clickable && <span style={{ color: 'var(--accent)', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none' }}>›</span>}
+                          {clickable && <span className="scaret" style={{ color: 'var(--accent)', display: 'inline-block', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'none' }}>›</span>}
                           {label}
                           {effPaused && <span style={{ color: PAUSED_BLUE, fontSize: 11 }}> (paused · {hostPaused && !it.paused ? 'host' : untilLabel(it.paused_until)})</span>}
                           {effHidden && <span style={{ color: HIDDEN_GREY, fontSize: 11 }}> (hidden · {hostHidden && !it.hidden ? 'host' : untilLabel(it.hidden_until)})</span>}
@@ -1861,7 +1861,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                       </td>
                     </tr>
                     {open && clickable && (
-                      <tr className="chartrow"><td colSpan={4}><SensorChart itemId={it.id} units={it.units} /></td></tr>
+                      <tr className="chartrow"><td colSpan={4}><div className="chart-reveal"><SensorChart itemId={it.id} units={it.units} /></div></td></tr>
                     )}
                   </Fragment>
                 )

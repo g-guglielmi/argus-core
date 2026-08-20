@@ -15,6 +15,11 @@ GitHub Release from the matching section below.
 
 **UI:**
 
+- **Subtle motion pass.** Added short, tasteful transitions so the UI no longer hard-cuts: switching
+  sections fades + rises the content (~180ms), opening a sensor chart and expanding a host reveal with
+  the same fade-rise, banners fade in, and the sensor caret rotates smoothly. Backed by shared
+  `--dur-*` / `--ease-out` motion tokens, and every animation is disabled under
+  `prefers-reduced-motion`.
 - **Green Reload button after an update.** The post-update "Reload to finish updating" button now uses
   a green (success) variant instead of the default accent colour, so it visually matches the success
   banner above it. New `success` Button variant backed by the `--ok` token.
