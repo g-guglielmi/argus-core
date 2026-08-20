@@ -21,6 +21,12 @@ GitHub Release from the matching section below.
   timestamps, so an unsorted series drew lines jumping back and forth in time (the spiky/gappy look);
   short ranges using raw history were unaffected. The history endpoint now sorts every series by
   timestamp before returning it, so trend charts render as a clean, monotonic line.
+- **Core/updater version stamped with the probe's tag.** CI computed the build version with
+  `git describe --tags`, which matches *any* tag - so a `:testing` build cut before a `v*` release tag
+  existed fell back to the nearest tag of any kind, e.g. the automated `probe/v7.0.29-r7` bump
+  (`probe/v7.0.29-r7-5-g0cc2d40` shown as the core's version). The core and updater builds now use
+  `git describe --match 'v*'`, so only app release tags name the build (probe tags start with
+  `probe/` and are excluded). Cosmetic - it never affected behaviour, only the displayed version.
 - **Clearer post-update action.** After a successful self-update the About card kept showing the
   "Update to vX.Y.Z" button (the still-running old bundle thinks it's outdated) alongside a small
   inline "Reload" link - confusing. It now replaces that button with a single primary **"Reload to

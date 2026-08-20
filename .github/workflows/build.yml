@@ -20,7 +20,9 @@ jobs:
 
       - name: Compute version
         id: version
-        run: echo "value=$(git describe --tags --always --dirty)" >> "$GITHUB_OUTPUT"
+        # Match only app release tags (v*), never probe/* (or other) tags - otherwise a recent
+        # automated probe bump like probe/v7.0.29-r7 would stamp the core with the probe's version.
+        run: echo "value=$(git describe --tags --match 'v*' --always --dirty)" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
