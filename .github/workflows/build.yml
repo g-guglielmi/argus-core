@@ -42,8 +42,15 @@ jobs:
           # Channel scheme: pushes to main publish :testing (tip-of-main / staging), while :latest is
           # reserved for actual v* releases (alongside :vX.Y.Z). So production can safely pin :latest
           # and a test box can track :testing, without manual tagging. Every build also gets :sha.
+          #
+          # A v* release build ALSO refreshes :testing. Right after a release, tip-of-main IS the
+          # release commit - but the pre-tag main build stamped :testing as "vPREV-N-g<sha>" (git
+          # describe couldn't see the not-yet-created tag). Re-publishing :testing from the tag build
+          # (cleanly stamped vX.Y.Z, same commit) stops :testing from looking older than the release it
+          # contains; it moves ahead again on the next main push.
           tags: |
             type=raw,value=testing,enable={{is_default_branch}}
+            type=raw,value=testing,enable=${{ github.ref_type == 'tag' }}
             type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
             type=ref,event=tag
             type=sha,format=short

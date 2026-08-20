@@ -15,6 +15,12 @@ GitHub Release from the matching section below.
 
 **Fixes:**
 
+- **`:testing` no longer looks "rolled back" right after a release.** A release tags the commit that is
+  also tip-of-main, but the pre-tag main build had already published `:testing` stamped `vPREV-N-g<sha>`
+  (git describe couldn't see the not-yet-created tag). So switching `latest -> testing` straight after a
+  release swapped to an identically-coded image that merely *read* as an older version. The v* release
+  build now also refreshes `:testing` (cleanly stamped, same commit), so `:testing` is never older than
+  the release it contains; it advances again on the next main push.
 - **Testing build no longer shows a phantom "update to release".** A `:testing` build is named by
   `git describe` from the last tag (e.g. `v0.4.15-9-g0517cd4` is the v0.4.16 commit). The update check
   compared that numeric base (`0.4.15`) against the newest release (`0.4.16`) and reported "outdated -
