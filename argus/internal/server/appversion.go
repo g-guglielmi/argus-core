@@ -34,6 +34,7 @@ type appLatestCache struct {
 	version   string
 	notes     string   // release body (CHANGELOG section) for `version`, "" if not fetched
 	devUpdate bool     // a development (:testing) build is running and a newer :testing image exists
+	devTarget string   // the target :testing build's version (OCI label), "" if unknown
 	releases  []string // published vX.Y.Z release tags, newest first (for the version switcher)
 }
 
@@ -57,15 +58,15 @@ func (c *appLatestCache) get() string {
 	return c.version
 }
 
-func (c *appLatestCache) getDevUpdate() bool {
+func (c *appLatestCache) getDevUpdate() (available bool, target string) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.devUpdate
+	return c.devUpdate, c.devTarget
 }
 
-func (c *appLatestCache) setDevUpdate(v bool) {
+func (c *appLatestCache) setDevUpdate(available bool, target string) {
 	c.mu.Lock()
-	c.devUpdate = v
+	c.devUpdate, c.devTarget = available, target
 	c.mu.Unlock()
 }
 
@@ -115,11 +116,11 @@ func (s *Server) refreshAppLatest(ctx context.Context) {
 	// ahead of the newest v*), so the release comparison alone never flags an update for it. Compare
 	// the running commit's image digest to the current :testing digest so a box tracking :testing
 	// still learns when a newer testing build has been published.
-	dev, derr := resolveDevChannelUpdate(c, buildinfo.Version)
+	dev, target, derr := resolveDevChannelUpdate(c, buildinfo.Version)
 	if derr != nil {
 		s.logger.Warn("app latest: dev-channel update check failed", "err", derr)
 	} else {
-		s.appLatest.setDevUpdate(dev)
+		s.appLatest.setDevUpdate(dev, target)
 	}
 }
 
@@ -173,36 +174,44 @@ var appVerSha = regexp.MustCompile(`-g([0-9a-f]+)`)
 
 // resolveDevChannelUpdate reports whether a newer :testing image exists for a running development
 // build. It compares the digest the :testing tag currently points to against the digest of the
-// running commit's own image (the sha-<short> tag), both read anonymously from public GHCR. Returns
-// false (no error) for non-development builds, an un-extractable commit, or a missing sha-<short> tag
-// (so a locally built image, or one whose tag GHCR doesn't have, never yields a false "update" flag).
-func resolveDevChannelUpdate(ctx context.Context, cur string) (bool, error) {
+// running commit's own image (the sha-<short> tag), both read anonymously from public GHCR. When an
+// update exists it also returns the target build's version (the :testing image's OCI version label,
+// e.g. "v0.4.16-3-gabcdef1") so the UI can name the exact build; "" if the label can't be read (e.g.
+// an older :testing image built before the label was added). Returns (false, "") for non-development
+// builds, an un-extractable commit, or a missing sha-<short> tag, so a locally built image or one GHCR
+// doesn't have never yields a false "update" flag.
+func resolveDevChannelUpdate(ctx context.Context, cur string) (available bool, target string, err error) {
 	if !appVerDev.MatchString(cur) {
-		return false, nil // clean release build - the release comparison already covers it
+		return false, "", nil // clean release build - the release comparison already covers it
 	}
 	m := appVerSha.FindStringSubmatch(cur)
 	if m == nil {
-		return false, nil // e.g. "-dirty" with no commit to resolve
+		return false, "", nil // e.g. "-dirty" with no commit to resolve
 	}
 	sha := m[1]
 
 	repoPath := strings.TrimPrefix(appImageRepo, "ghcr.io/")
 	tok, err := ghcrPullToken(ctx, repoPath)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	testingDigest, err := ghcrManifestDigest(ctx, repoPath, "testing", tok)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	runningDigest, err := ghcrManifestDigest(ctx, repoPath, "sha-"+sha, tok)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
-	if testingDigest == "" || runningDigest == "" {
-		return false, nil // can't compare -> don't claim an update
+	if testingDigest == "" || runningDigest == "" || testingDigest == runningDigest {
+		return false, "", nil // same image (or can't compare) -> no update
 	}
-	return testingDigest != runningDigest, nil
+	// An update exists; best-effort read the target build's version label to name it (empty is fine).
+	target, lerr := ghcrImageVersionLabel(ctx, repoPath, "testing", tok)
+	if lerr != nil {
+		target = ""
+	}
+	return true, target, nil
 }
 
 // resolveAppReleases returns every published vX.Y.Z release tag for the app image, newest first, read
@@ -266,11 +275,12 @@ func verKey(m []string) [4]int {
 }
 
 type versionResponse struct {
-	Version         string `json:"version"`             // running build (git describe), "" if un-stamped
-	Latest          string `json:"latest,omitempty"`    // newest published release, "" until resolved
+	Version         string `json:"version"`              // running build (git describe), "" if un-stamped
+	Latest          string `json:"latest,omitempty"`     // newest published release, "" until resolved
 	UpdateAvailable bool   `json:"update_available"`
-	DevUpdate       bool   `json:"dev_update,omitempty"` // a newer :testing image exists for this dev build
-	Status          string `json:"status"`               // current | development | outdated | dev | unknown
+	DevUpdate       bool   `json:"dev_update,omitempty"`  // a newer :testing image exists for this dev build
+	DevTarget       string `json:"dev_target,omitempty"`  // the target :testing build's version, when known
+	Status          string `json:"status"`                // current | development | outdated | dev | unknown
 }
 
 // appUpdateStatus compares the running version against the newest published release and returns a
@@ -324,10 +334,11 @@ func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 	resp := versionResponse{Version: cur, Latest: latest}
 	resp.Status, resp.UpdateAvailable = appUpdateStatus(cur, latest)
 	// A development (:testing) build reads as "development" against releases; if a newer :testing
-	// image has been published, surface that as an available update too.
-	if resp.Status == "development" && s.appLatest.getDevUpdate() {
+	// image has been published, surface that as an available update too (and name the target build).
+	if devUpd, target := s.appLatest.getDevUpdate(); resp.Status == "development" && devUpd {
 		resp.DevUpdate = true
 		resp.UpdateAvailable = true
+		resp.DevTarget = target
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

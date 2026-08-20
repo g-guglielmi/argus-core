@@ -158,7 +158,8 @@ func (s *Server) handleUpdateStart(w http.ResponseWriter, r *http.Request) {
 	cur := buildinfo.Version
 	latest := s.appLatest.get()
 	status, updateAvailable := appUpdateStatus(cur, latest)
-	devUpdate := status == "development" && s.appLatest.getDevUpdate()
+	devUpd, _ := s.appLatest.getDevUpdate()
+	devUpdate := status == "development" && devUpd
 
 	var targetTag string
 	var exact bool

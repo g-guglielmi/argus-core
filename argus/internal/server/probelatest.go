@@ -208,6 +208,84 @@ func ghcrManifestDigest(ctx context.Context, repoPath, ref, bearer string) (stri
 	return resp.Header.Get("Docker-Content-Digest"), nil
 }
 
+// ghcrManifestAccept is the media-type set to request when GETting a manifest or index.
+const ghcrManifestAccept = "application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json"
+
+// ghcrGetManifestJSON GETs a manifest/index by ref-or-digest and decodes it, sending the manifest
+// Accept header (GHCR returns the config-blob JSON for the wrong Accept otherwise).
+func ghcrGetManifestJSON(ctx context.Context, repoPath, ref, bearer string, out any) error {
+	u := "https://ghcr.io/v2/" + repoPath + "/manifests/" + ref
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return err
+	}
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	req.Header.Set("Accept", ghcrManifestAccept)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET %s: HTTP %d", u, resp.StatusCode)
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+// ghcrImageVersionLabel reads the org.opencontainers.image.version label off the image a tag points
+// to. It drills index -> image manifest -> config blob, skipping the attestation manifest that
+// buildx provenance adds (platform "unknown"). Empty (no error) if the label is absent (e.g. an image
+// built before the label was added).
+func ghcrImageVersionLabel(ctx context.Context, repoPath, ref, bearer string) (string, error) {
+	var top struct {
+		Config    struct{ Digest string `json:"digest"` } `json:"config"` // present on an image manifest
+		Manifests []struct {
+			Digest   string `json:"digest"`
+			Platform struct {
+				OS   string `json:"os"`
+				Arch string `json:"architecture"`
+			} `json:"platform"`
+		} `json:"manifests"` // present on an index
+	}
+	if err := ghcrGetManifestJSON(ctx, repoPath, ref, bearer, &top); err != nil {
+		return "", err
+	}
+	configDigest := top.Config.Digest
+	if configDigest == "" && len(top.Manifests) > 0 {
+		target := ""
+		for _, m := range top.Manifests {
+			if m.Platform.OS != "" && m.Platform.OS != "unknown" { // the real image, not the attestation
+				target = m.Digest
+				break
+			}
+		}
+		if target == "" {
+			target = top.Manifests[0].Digest
+		}
+		var img struct {
+			Config struct{ Digest string `json:"digest"` } `json:"config"`
+		}
+		if err := ghcrGetManifestJSON(ctx, repoPath, target, bearer, &img); err != nil {
+			return "", err
+		}
+		configDigest = img.Config.Digest
+	}
+	if configDigest == "" {
+		return "", nil
+	}
+	var cfg struct {
+		Config struct {
+			Labels map[string]string `json:"Labels"`
+		} `json:"config"`
+	}
+	if err := ghcrGetJSON(ctx, "https://ghcr.io/v2/"+repoPath+"/blobs/"+configDigest, bearer, &cfg); err != nil {
+		return "", err
+	}
+	return cfg.Config.Labels["org.opencontainers.image.version"], nil
+}
+
 func ghcrGetJSON(ctx context.Context, url, bearer string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

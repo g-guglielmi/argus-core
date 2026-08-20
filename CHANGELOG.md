@@ -13,6 +13,15 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Update checks:**
+
+- **Name the exact target of a `:testing` update.** A testing update previously read "new testing
+  build" / "Update to the latest testing build" without saying *which* build. Images are now stamped
+  with their `git describe` version as an OCI label (`org.opencontainers.image.version`), and the core
+  reads the `:testing` image's label so the About card names the target precisely (e.g. "↑
+  v0.4.16-3-gabcdef1" and "Update to v0.4.16-3-gabcdef1"). Falls back to the generic wording if the
+  label isn't present (an image built before this change).
+
 **Fixes:**
 
 - **`:testing` no longer looks "rolled back" right after a release.** A release tags the commit that is

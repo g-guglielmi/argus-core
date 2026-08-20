@@ -64,7 +64,12 @@ jobs:
           build-args: |
             ARGUS_VERSION=${{ steps.version.outputs.value }}
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          # Override the OCI version label with our git-describe stamp (metadata-action would set it to
+          # the tag, e.g. "testing"), so the running core can read the exact build a rolling tag points
+          # to - used to name the target of a :testing self-update.
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            org.opencontainers.image.version=${{ steps.version.outputs.value }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
