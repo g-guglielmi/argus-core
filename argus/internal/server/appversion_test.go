@@ -20,7 +20,11 @@ func TestAppUpdateStatus(t *testing.T) {
 		{"testing build one commit ahead", "v0.4.10-1-g9688545", "v0.4.10", "development", false},
 		{"dirty worktree on the newest tag", "v0.4.10-dirty", "v0.4.10", "development", false},
 		{"dirty build past a tag", "v0.4.10-2-gabc1234-dirty", "v0.4.10", "development", false},
-		{"dev build one release behind", "v0.4.9-2-gdead", "v0.4.10", "outdated", true},
+		// A development build is always "development", never "outdated" - even when its numeric base
+		// trails the newest release (its code is unreleased and an in-place update can't reach the
+		// release tag; the digest-based dev-channel check decides if a newer testing image exists).
+		{"dev build numerically behind a release", "v0.4.9-2-gdead", "v0.4.10", "development", false},
+		{"testing build of the release commit", "v0.4.15-9-g0517cd4", "v0.4.16", "development", false},
 		// A clean base newer than anything published is still ahead of the newest release, not "current".
 		{"ahead of published (newer major)", "v1.0.0", "v0.4.10", "development", false},
 	}

@@ -11,6 +11,19 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Fixes:**
+
+- **Testing build no longer shows a phantom "update to release".** A `:testing` build is named by
+  `git describe` from the last tag (e.g. `v0.4.15-9-g0517cd4` is the v0.4.16 commit). The update check
+  compared that numeric base (`0.4.15`) against the newest release (`0.4.16`) and reported "outdated -
+  update to v0.4.16" - but an in-place update channel-preserves `:testing` (the same commit), so it
+  could never reach the clean release tag, leaving a permanent update prompt that did nothing.
+  `appUpdateStatus` now classifies any development build as "development" up front and never compares
+  its base against releases; whether a *newer testing image* exists is decided solely by the
+  digest-based dev-channel check. To move onto a clean release, use "Change channel or version".
+
 ## [0.4.16] - 2026-08-20
 
 **Fixes:**

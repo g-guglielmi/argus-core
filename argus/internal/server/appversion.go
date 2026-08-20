@@ -276,21 +276,27 @@ type versionResponse struct {
 // appUpdateStatus compares the running version against the newest published release and returns a
 // verdict:
 //   - "dev"         - the running build has no semver base (un-stamped or a bare SHA);
-//   - "unknown"     - the newest release has not been resolved from GHCR yet;
-//   - "outdated"    - the running base is older than the newest release (update available);
-//   - "development" - the running build is ahead of the newest release: either a `git describe`
-//     build past its own tag (e.g. "v0.4.10-3-gabc1234", a :testing/main build) or a base newer
-//     than anything published. Unreleased code, so NOT flagged as the latest release;
+//   - "development" - the running build carries a `git describe` suffix (e.g. "v0.4.15-9-gabc1234",
+//     a :testing/main build) or -dirty: unreleased code. Its numeric base is NOT compared against
+//     the newest release, because on our model :testing == main tip (its code is at least the newest
+//     release's), and an in-place update on a rolling channel can't converge on a clean release tag
+//     anyway. Whether a *newer testing image* exists is decided separately by the digest-based
+//     dev-channel check (dev_update), not here - so this never offers an unreachable release update;
+//   - "unknown"     - the newest release has not been resolved from GHCR yet (clean build only);
+//   - "outdated"    - a clean release build older than the newest release (update available);
 //   - "current"     - a clean release tag equal to the newest published release.
-//
-// Only the X.Y.Z base is compared for ordering; the `git describe` suffix (appVerDev) distinguishes
-// "exactly the newest release" (current) from "one commit past it" (development).
 func appUpdateStatus(cur, latest string) (status string, updateAvailable bool) {
 	mc := appVerPrefix.FindStringSubmatch(cur)
-	switch {
-	case mc == nil:
+	if mc == nil {
 		return "dev", false
-	case latest == "":
+	}
+	// A development build (git-describe suffix or -dirty) is unreleased code; classify it as such up
+	// front so a base-vs-release comparison never mislabels it "outdated" and offers a release update
+	// it can't reach in place. Its update signal is the digest-based dev-channel check.
+	if appVerDev.MatchString(cur) {
+		return "development", false
+	}
+	if latest == "" {
 		return "unknown", false
 	}
 	ml := appVerPrefix.FindStringSubmatch(latest)
@@ -301,7 +307,9 @@ func appUpdateStatus(cur, latest string) (status string, updateAvailable bool) {
 	switch {
 	case versionLess(kc, kl):
 		return "outdated", true
-	case versionLess(kl, kc) || appVerDev.MatchString(cur):
+	case versionLess(kl, kc):
+		// A clean release build whose base is newer than anything published (e.g. a hand-built
+		// v1.0.0 ahead of the newest release) - unreleased, so not "current".
 		return "development", false
 	default:
 		return "current", false
