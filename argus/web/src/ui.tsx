@@ -16,7 +16,7 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   } catch { return false }
 }
 
-type Variant = 'default' | 'primary' | 'ghost' | 'danger'
+type Variant = 'default' | 'primary' | 'ghost' | 'danger' | 'success'
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; block?: boolean }
 

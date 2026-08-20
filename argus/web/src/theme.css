@@ -136,6 +136,8 @@ a { color: var(--accent); }
 .btn:hover { border-color: var(--accent); color: var(--accent); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:hover { filter: brightness(1.05); color: #fff; }
+.btn.success { background: var(--ok); border-color: var(--ok); color: #fff; }
+.btn.success:hover { filter: brightness(1.05); color: #fff; }
 .btn.ghost { border-color: transparent; color: var(--muted); }
 .btn.danger { border-color: color-mix(in srgb, var(--err) 45%, var(--border)); color: var(--err); }
 .btn.danger:hover { border-color: var(--err); color: var(--err); }

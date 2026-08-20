@@ -620,7 +620,7 @@ function VersionAbout() {
         // The update landed; the running SPA is still the old bundle. Replace the "Update" button with
         // a Reload button so the only action offered is the one that actually finishes the update.
         <div className="set-row" style={{ marginBottom: 0 }}>
-          <Button variant="primary" onClick={reloadNow}>Reload to finish updating</Button>
+          <Button variant="success" onClick={reloadNow}>Reload to finish updating</Button>
         </div>
       ) : v && v.update_available && (
         <>

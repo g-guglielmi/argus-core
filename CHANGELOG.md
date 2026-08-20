@@ -11,6 +11,14 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**UI:**
+
+- **Green Reload button after an update.** The post-update "Reload to finish updating" button now uses
+  a green (success) variant instead of the default accent colour, so it visually matches the success
+  banner above it. New `success` Button variant backed by the `--ok` token.
+
 ## [0.4.15] - 2026-08-20
 
 **Fixes:**
