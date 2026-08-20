@@ -303,6 +303,38 @@ A single golden image (Packer: Debian 13 + the `argus-probe` container, no baked
 once and carries the **first-boot enrollment service** described below, so the *same* image works
 whether it's seeded automatically, configured by hand, or restored to bare metal.
 
+### Golden image build - unattended install (preseed)
+Packer drives `debian-installer` fully unattended via a **preseed** file (`preseed.cfg`, served over
+HTTP or on the boot media) so the base OS is built with zero prompts. Target answers (site-invariant -
+these are baked into the image; the per-site secret is injected later at enrollment):
+
+| Installer step | Value | Preseed key (approx.) |
+| --- | --- | --- |
+| Language | English | `debian-installer/language = en` |
+| Country / location | Italy (region: Europe) | `debian-installer/country = IT` |
+| Locale | `en_US.UTF-8` | `debian-installer/locale = en_US.UTF-8` |
+| Keyboard | Italian | `keyboard-configuration/xkb-keymap = it` |
+| Timezone | `Europe/Rome` | `time/zone = Europe/Rome` |
+| Hostname | placeholder (set per-site at enrollment) | `netcfg/get_hostname` |
+| Domain | placeholder (set per-site at enrollment) | `netcfg/get_domain` |
+| Root account | enabled, password set at build | `passwd/root-login = true`, `passwd/root-password[-crypted]` |
+| Partitioning | guided, entire disk, all files in one partition | `partman-auto/method = regular`, `partman-auto/choose_recipe = atomic` |
+| Extra install media | none (don't scan another CD/DVD) | `apt-setup/cdrom/set-first = false` |
+| Mirror country | Italy | `mirror/country = manual` + `mirror/http/hostname` |
+| Mirror host | `deb.debian.org` | `mirror/http/hostname = deb.debian.org`, `mirror/http/directory = /debian` |
+| Proxy | none | `mirror/http/proxy =` (empty) |
+| Package usage survey (popcon) | disabled | `popularity-contest/participate = false` |
+| Software selection | **standard system utilities + SSH server only** (no desktop) | `tasksel/first = standard, ssh-server` |
+
+Notes:
+- Hostname/domain are placeholders in the image; the **enrollment** step (cloud-init or the first-boot
+  service) sets the real per-site values, so one image serves every site.
+- The root password baked at build is a bootstrap credential; the golden image should **rotate/lock it
+  and rely on cloud-init / the enrollment step** for real access (SSH key or a per-VM password) rather
+  than shipping a shared root password to every site. Revisit at implementation.
+- Timezone is `Europe/Rome` (the "Italy" location from the installer); locale stays `en_US.UTF-8` per
+  the request (English UI, US formatting) even though the country is Italy.
+
 ### Enrollment - cloud-init primary, first-boot wizard fallback
 - **Primary: cloud-init (zero-touch).** The Add-probe flow mints a token and emits **cloud-init
   user-data** (site name + enroll token), delivered as a **NoCloud seed ISO** or pasted into the
