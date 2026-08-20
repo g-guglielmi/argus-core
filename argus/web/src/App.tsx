@@ -2023,6 +2023,8 @@ function SensorChart({ itemId, units }: { itemId: string; units: string }) {
   const [data, setData] = useState<Series | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  // Reveal the "Loading…" text only if a fetch is genuinely slow, so a fast open doesn't flash it.
+  const [showLoading, setShowLoading] = useState(false)
   const [tick, setTick] = useState(0)
   const host = useRef<HTMLDivElement>(null)
   const plot = useRef<uPlot | null>(null)
@@ -2035,14 +2037,19 @@ function SensorChart({ itemId, units }: { itemId: string; units: string }) {
     let cancelled = false
     // Show the loading state on an item/range change, but not on background refreshes.
     const key = `${itemId}|${range}`
-    if (lastKey.current !== key) { setLoading(true); lastKey.current = key }
+    const fresh = lastKey.current !== key
+    if (fresh) { setLoading(true); lastKey.current = key }
+    // Defer the visible "Loading…" text: only surface it if the fetch outlasts the grace window,
+    // so quick opens (the common case) never flash it.
+    let slowTimer: ReturnType<typeof setTimeout> | undefined
+    if (fresh) slowTimer = setTimeout(() => { if (!cancelled) setShowLoading(true) }, 300)
     setError(null)
     fetch(`/api/items/${itemId}/history?range=${range}`)
       .then(async (r) => { if (!r.ok) throw new Error(await errText(r, 'Failed to load history')); return r.json() })
       .then((d: Series) => { if (!cancelled) setData(d) })
       .catch((e) => { if (!cancelled) { setError(e.message || 'Failed to load history'); setData(null) } })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
+      .finally(() => { if (slowTimer) clearTimeout(slowTimer); if (!cancelled) { setLoading(false); setShowLoading(false) } })
+    return () => { cancelled = true; if (slowTimer) clearTimeout(slowTimer) }
   }, [itemId, range, tick])
 
   useEffect(() => {
@@ -2067,7 +2074,7 @@ function SensorChart({ itemId, units }: { itemId: string; units: string }) {
           <button key={rk} className={'rtab' + (range === rk ? ' on' : '')} onClick={() => setRange(rk)}>{rk}</button>
         ))}
       </div>
-      {loading && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>Loading…</p>}
+      {showLoading && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>Loading…</p>}
       {error && <p style={{ color: 'var(--err)', margin: '0.3rem 0' }}>{error}</p>}
       {!loading && !error && data && data.points.length === 0 && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>No data in this range.</p>}
       <div ref={host} style={{ width: '100%' }} />
