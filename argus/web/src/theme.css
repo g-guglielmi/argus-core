@@ -167,7 +167,9 @@ a { color: var(--accent); }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 .view-enter { animation: fade-rise var(--dur-base) var(--ease-out) both; }
 .chart-reveal { animation: fade-rise var(--dur-base) var(--ease-out) both; }
-.host-body { animation: fade-rise var(--dur-base) var(--ease-out) both; }
+/* Plain fade (no rise): the host body loads its sensor table + sparklines asynchronously, so it
+   resizes just after mount - animating a translateY at the same time reads as choppy. */
+.host-body { animation: fade-in var(--dur-base) var(--ease-out) both; }
 /* Full-page entrance right after sign-in (the biggest, most noticeable cut) - a plain fade so the
    whole shell doesn't appear to jump. */
 .app-enter { animation: fade-in var(--dur-slow) var(--ease-out) both; }
