@@ -248,6 +248,9 @@ export default function App() {
   const [probeEnroll, setProbeEnroll] = useState(false)
   // A password-reset link (?reset=…) shows the set-new-password screen, signed in or not.
   const [resetToken, setResetToken] = useState<string | null>(() => new URLSearchParams(window.location.search).get('reset'))
+  // True only when the shell mounts right after a sign-in (not on an authenticated reload), so the
+  // login -> app transition fades in instead of hard-cutting.
+  const [justLoggedIn, setJustLoggedIn] = useState(false)
 
   useEffect(() => {
     fetch('/api/me').then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => setMe(null)).finally(() => setLoading(false))
@@ -260,8 +263,8 @@ export default function App() {
   // Neutral loader during the initial /api/me check - deliberately NOT the branded Frame, so an
   // authenticated refresh doesn't flash the login-page chrome before the app mounts.
   if (loading) return <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', color: 'var(--faint)' }}>Loading…</div>
-  if (!me) return <Login onSuccess={setMe} passkeysAvailable={passkeysAvailable} passwordReset={passwordReset} />
-  return <AppShell me={me} onMe={setMe} onLogout={() => setMe(null)} passkeysAvailable={passkeysAvailable} probeEnroll={probeEnroll} />
+  if (!me) return <Login onSuccess={(m) => { setJustLoggedIn(true); setMe(m) }} passkeysAvailable={passkeysAvailable} passwordReset={passwordReset} />
+  return <AppShell me={me} onMe={setMe} onLogout={() => { setJustLoggedIn(false); setMe(null) }} passkeysAvailable={passkeysAvailable} probeEnroll={probeEnroll} enter={justLoggedIn} />
 }
 
 function Frame({ children }: { children: ReactNode }) {
@@ -645,7 +648,7 @@ function VersionAbout() {
   )
 }
 
-function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll }: { me: Me; onMe: (m: Me) => void; onLogout: () => void; passkeysAvailable: boolean; probeEnroll: boolean }) {
+function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }: { me: Me; onMe: (m: Me) => void; onLogout: () => void; passkeysAvailable: boolean; probeEnroll: boolean; enter?: boolean }) {
   // Admin-only views can't be restored from a shared/stale URL by a non-admin.
   const clampView = (v: View): View => ((v === 'users' || v === 'settings') && me.role !== 'admin' ? 'overview' : v)
   // A fresh visit to the bare "/" (no query) honours the user's landing preference; any deep
@@ -737,7 +740,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll }: { me: 
 
   const [title, sub] = view === 'list' ? [`${STATE_LABEL[listFilter]} sensors`, 'Filtered across all sites'] : VIEW_TITLES[view]
   return (
-    <div className={'app-shell' + (collapsed ? ' collapsed' : '') + (navOpen ? ' nav-open' : '')}>
+    <div className={'app-shell' + (collapsed ? ' collapsed' : '') + (navOpen ? ' nav-open' : '') + (enter ? ' app-enter' : '')}>
       {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} />}
       <aside className="sidebar">
         <div className="brand">

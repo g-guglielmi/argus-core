@@ -12,6 +12,7 @@
   /* Motion - subtle & quick; every consumer is disabled under prefers-reduced-motion. */
   --dur-fast: 120ms;
   --dur-base: 180ms;
+  --dur-slow: 260ms;
   --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
 
   --bg: #eaeef4;
@@ -124,7 +125,7 @@ a { color: var(--accent); }
   .live .beat { animation: none; }
   .sidebar { transition: none; }
   .chev { transition: none; }
-  .view-enter, .chart-reveal, .host-body, .banner { animation: none; }
+  .view-enter, .chart-reveal, .host-body, .banner, .app-enter { animation: none; }
   .scaret { transition: none; }
 }
 
@@ -167,6 +168,9 @@ a { color: var(--accent); }
 .view-enter { animation: fade-rise var(--dur-base) var(--ease-out) both; }
 .chart-reveal { animation: fade-rise var(--dur-base) var(--ease-out) both; }
 .host-body { animation: fade-rise var(--dur-base) var(--ease-out) both; }
+/* Full-page entrance right after sign-in (the biggest, most noticeable cut) - a plain fade so the
+   whole shell doesn't appear to jump. */
+.app-enter { animation: fade-in var(--dur-slow) var(--ease-out) both; }
 
 /* status banners - theme-aware, replacing inline crimson/seagreen text (backs <Banner>) */
 .banner { margin: 0 0 12px; font-size: 13px; animation: fade-in var(--dur-fast) var(--ease-out) both; }

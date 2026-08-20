@@ -15,7 +15,8 @@ GitHub Release from the matching section below.
 
 **UI:**
 
-- **Subtle motion pass.** Added short, tasteful transitions so the UI no longer hard-cuts: switching
+- **Subtle motion pass.** Added short, tasteful transitions so the UI no longer hard-cuts: the app
+  fades in right after sign-in (the biggest, most noticeable cut), switching
   sections fades + rises the content (~180ms), opening a sensor chart and expanding a host reveal with
   the same fade-rise, banners fade in, and the sensor caret rotates smoothly. Backed by shared
   `--dur-*` / `--ease-out` motion tokens, and every animation is disabled under
