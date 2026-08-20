@@ -287,6 +287,49 @@ class, threshold overrides, pause, acknowledge) · 9) Thresholds (global + overr
   (b) a golden **Debian 13 VM template** built with **Packer** that runs the same probe
   container, seeded per-site via **cloud-init** (2 vars: site name + enrollment token). On
   XCP-NG use cloud-init config-drive or an **XVA** template clone → spin up a site in minutes.
+  Full delivery/enrollment model (cloud-init primary + first-boot fallback, and an optional
+  bare-metal Clonezilla wrapper) in **§14a**.
+
+---
+
+## 14a. Self-configuring probe VM - delivery vs. enrollment
+
+Two **independent** concerns, deliberately decoupled so one golden image serves every target:
+
+1. **Image delivery** - how the bits land on the VM's disk.
+2. **Enrollment** - how the per-instance secret (the site name + one-time enroll token) gets in.
+
+A single golden image (Packer: Debian 13 + the `argus-probe` container, no baked-in token) is built
+once and carries the **first-boot enrollment service** described below, so the *same* image works
+whether it's seeded automatically, configured by hand, or restored to bare metal.
+
+### Enrollment - cloud-init primary, first-boot wizard fallback
+- **Primary: cloud-init (zero-touch).** The Add-probe flow mints a token and emits **cloud-init
+  user-data** (site name + enroll token), delivered as a **NoCloud seed ISO** or pasted into the
+  hypervisor's cloud-init field. Native on every target here - VMware (guestinfo/OVF datasource),
+  Nutanix, XCP-NG (config-drive / NoCloud), libvirt/KVM. First boot self-enrolls with no interaction.
+- **Fallback: first-boot enrollment service (no datasource needed).** A tiny service that runs on
+  first boot and, **only when no token was supplied by cloud-init**, serves a one-field setup page
+  (paste the enroll command / claim code) on the VM's IP. This removes the hard dependency on a
+  working cloud-init datasource (XCP-NG can be fiddly) and gives a graceful manual path. Idea borrowed
+  from the [adsb-feeder](https://github.com/dirkhh/adsb-feeder-image) first-boot web wizard. Once a
+  token is present (either way), the service is inert on subsequent boots.
+- **Never** bake a token into the image (one-token-per-image, non-reusable, leaks the secret) - the
+  image stays generic; the secret is always external.
+
+### Image delivery - hypervisor import primary, Clonezilla for bare metal only
+- **Primary (VMs): native disk-image import.** Distribute the golden image as **OVA** (VMware/Nutanix)
+  + **qcow2/XVA** (KVM/XCP-NG). Hypervisors import these directly - thin, fast, standard.
+- **Bare-metal only: Clonezilla-wrapped restore ISO.** For appliance-style installs with *no*
+  hypervisor (a mini-PC / SBC at a site), optionally ship the same image inside a Clonezilla live ISO
+  that asks only which disk to restore onto, à la adsb-feeder. This is a **later, optional SKU** - it
+  buys nothing inside a hypervisor (where you'd be booting a live ISO to write a disk you could just
+  import), so it's reserved for bare metal. Because delivery and enrollment are decoupled, the
+  bare-metal image reuses the *same* first-boot enrollment service - no per-image token, no extra
+  wizard to build.
+
+**Net:** cloud-init + OVA/qcow2/XVA is the backbone for the hypervisor fleet; the first-boot service is
+the everywhere-fallback that also unlocks the bare-metal Clonezilla path for free.
 
 ---
 
