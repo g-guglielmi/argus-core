@@ -814,13 +814,18 @@ func (s *Store) CreateSession(ctx context.Context, id string, userID int64, expi
 // slack is irrelevant.
 const touchThreshold = 60 // seconds
 
-// SessionUserTouch validates a session against both its absolute expiry and an optional idle
-// timeout, refreshes last_seen (throttled), and returns the user. A session is deleted and
-// treated as not-found once either bound is crossed. idle <= 0 disables the idle check.
-func (s *Store) SessionUserTouch(ctx context.Context, id string, idle time.Duration, now time.Time) (*User, error) {
-	var userID, expires, lastSeen int64
+// SessionUserTouch validates a session against its absolute expiry, a live max-lifetime cap, and an
+// optional idle timeout, refreshes last_seen (throttled), and returns the user. A session is deleted
+// and treated as not-found once any bound is crossed. idle <= 0 disables the idle check.
+//
+// The effective expiry is min(stored expires_at, created_at + maxLifetime): the stored expiry is
+// frozen at login, but maxLifetime is read live each request, so lowering it in Settings shortens
+// existing sessions immediately (raising it never retroactively extends them - the stored expiry
+// still caps). maxLifetime <= 0 disables the live cap.
+func (s *Store) SessionUserTouch(ctx context.Context, id string, idle, maxLifetime time.Duration, now time.Time) (*User, error) {
+	var userID, created, expires, lastSeen int64
 	err := s.db.QueryRowContext(ctx,
-		`SELECT user_id,expires_at,last_seen FROM sessions WHERE id=?`, id).Scan(&userID, &expires, &lastSeen)
+		`SELECT user_id,created_at,expires_at,last_seen FROM sessions WHERE id=?`, id).Scan(&userID, &created, &expires, &lastSeen)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -829,6 +834,10 @@ func (s *Store) SessionUserTouch(ctx context.Context, id string, idle time.Durat
 	}
 	nowUnix := now.Unix()
 	if nowUnix > expires {
+		_ = s.DeleteSession(ctx, id)
+		return nil, ErrNotFound
+	}
+	if maxLifetime > 0 && nowUnix > created+int64(maxLifetime.Seconds()) {
 		_ = s.DeleteSession(ctx, id)
 		return nil, ErrNotFound
 	}

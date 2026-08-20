@@ -11,6 +11,19 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Fixes:**
+
+- **Max session length is now enforced live.** The absolute session lifetime was written into the
+  session at login and only ever checked against that frozen value, so changing "Max session length"
+  in Settings only affected sessions created *after* the change - an existing sign-in kept running for
+  its original lifetime (e.g. a session issued when the max was higher could stay valid for days).
+  The middleware now also enforces `created_at + current max` on every request (effective expiry =
+  `min(stored expiry, created_at + current max)`), matching the idle timeout's live behaviour:
+  lowering the max signs affected users out on their next request; raising it never retroactively
+  extends an existing session. Settings note updated accordingly.
+
 ## [0.4.13] - 2026-08-19
 
 **Self-update fixes** (from first real-world testing):

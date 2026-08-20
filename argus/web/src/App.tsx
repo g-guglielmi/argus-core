@@ -861,7 +861,7 @@ function SettingsView() {
     { name: 'Connection', title: 'Zabbix connection', note: 'Where Argus reads monitoring data from.' },
     { name: 'General', title: 'General', note: 'Timezone and the external URL used in notification links.' },
     { name: 'Security', title: 'Login rate limiting', note: 'Brute-force protection thresholds.' },
-    { name: 'Sessions', title: 'Sessions', note: 'How long a sign-in stays valid. Changes apply to sessions created after saving; the idle timeout takes effect immediately.' },
+    { name: 'Sessions', title: 'Sessions', note: 'How long a sign-in stays valid. Changes take effect immediately, including for existing sessions: lowering the max length can sign users out on their next request.' },
     { name: 'Probe enrollment', title: 'Probe enrollment', note: 'The address new probes are told to dial for the Zabbix server (:10051).' },
   ]
 

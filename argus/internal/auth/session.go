@@ -36,13 +36,13 @@ func HashToken(raw string) string {
 }
 
 // Middleware loads the session user into the request context when a valid cookie is present.
-// idle returns the currently-configured idle timeout (0 = disabled); it is read per request so
-// an admin's change in Settings takes effect immediately.
-func Middleware(st *store.Store, idle func() time.Duration) func(http.Handler) http.Handler {
+// idle and maxLife return the currently-configured idle timeout and absolute max lifetime (0 =
+// disabled); both are read per request so an admin's change in Settings takes effect immediately.
+func Middleware(st *store.Store, idle, maxLife func() time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if c, err := r.Cookie(CookieName); err == nil && c.Value != "" {
-				if u, err := st.SessionUserTouch(r.Context(), HashToken(c.Value), idle(), time.Now()); err == nil {
+				if u, err := st.SessionUserTouch(r.Context(), HashToken(c.Value), idle(), maxLife(), time.Now()); err == nil {
 					r = r.WithContext(context.WithValue(r.Context(), userKey, u))
 				}
 			}
