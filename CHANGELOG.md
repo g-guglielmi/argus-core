@@ -23,6 +23,14 @@ GitHub Release from the matching section below.
   surfaces "new testing build" with an "Update to the latest testing build" button. The updater's
   existing channel-preserve re-pulls `:testing` in place. Release-channel behaviour is unchanged.
 
+**Update checks:**
+
+- **Nightly check + manual "Check for updates".** The automatic GHCR update check now runs once daily
+  at 04:00 (in the configured timezone) instead of every 3 hours - releases are rare, so nightly is
+  plenty and lighter on the registry. For on-demand checks (e.g. right after publishing a build), the
+  About card gained a **Check for updates** button that forces an immediate re-check and reflects the
+  fresh verdict.
+
 **UI:**
 
 - **Subtle motion pass.** Added short, tasteful transitions so the UI no longer hard-cuts: the app

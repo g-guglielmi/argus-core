@@ -562,6 +562,8 @@ function VersionAbout() {
   const [notes, setNotes] = useState<string | null>(null)
   const [upd, setUpd] = useState<UpdateState | null>(null)
   const [busy, setBusy] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const [checkedMsg, setCheckedMsg] = useState('')
   const [err, setErr] = useState('')
   useEffect(() => { fetch('/api/version').then((r) => (r.ok ? r.json() : null)).then(setV).catch(() => {}) }, [])
   // Poll the self-update state so the button + banner track the sidecar (and reconnect after the brief
@@ -588,6 +590,15 @@ function VersionAbout() {
       .finally(() => setBusy(false))
   }
   const dismiss = () => fetch('/api/update/dismiss', { method: 'POST' }).then(refreshUpd).catch(() => {})
+  // Force an immediate GHCR re-check (the automatic check is nightly), then reflect the fresh verdict.
+  const checkNow = () => {
+    setChecking(true); setCheckedMsg(''); setErr('')
+    fetch('/api/version/check', { method: 'POST' })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('check failed'))))
+      .then((d: VersionInfo) => { setV(d); setNotes(null); if (!d.update_available) setCheckedMsg("You're on the latest available build.") })
+      .catch(() => setErr('Update check failed'))
+      .finally(() => setChecking(false))
+  }
   // After a successful update the running SPA is still the OLD bundle (and shows the old version):
   // clear the finished job, then reload to pull the new frontend + version. Dismiss-then-reload so
   // the success banner doesn't reappear on the fresh load.
@@ -605,9 +616,11 @@ function VersionAbout() {
             {v.dev_update && <span className="vtag upd">↑ new testing build</span>}
             {v.status === 'current' && <span className="vtag ok">latest</span>}
             {v.status === 'development' && <span className="vtag dev">development build</span>}
+            <button type="button" className="linkbtn" style={{ marginLeft: 'auto' }} onClick={checkNow} disabled={checking}>{checking ? 'Checking…' : 'Check for updates'}</button>
           </div>
         )}
       </div>
+      {checkedMsg && <p className="set-hint" style={{ margin: '0 0 8px' }}>{checkedMsg}</p>}
 
       {/* Update progress / outcome banner (driven by the argus-updater sidecar). */}
       {upd && upd.state === 'requested' && <Banner variant="info">Update to {upd.target} queued - waiting for the updater to pick it up…</Banner>}

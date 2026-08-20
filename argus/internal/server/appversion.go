@@ -20,8 +20,10 @@ const appImageRepo = "ghcr.io/g-guglielmi/argus"
 // CHANGELOG section published as the GitHub Release body). Kept in step with appImageRepo.
 const appGitHubRepo = "g-guglielmi/argus"
 
-// appLatestRefresh is how often we re-poll GHCR for the newest published release.
-const appLatestRefresh = 3 * time.Hour
+// appLatestHour is the local hour (in the configured timezone) at which the daily GHCR update check
+// runs. A release is a rare event, so a nightly check plus the manual "Check for updates" button is
+// plenty; nightly avoids hammering the registry and keeps the check off peak hours.
+const appLatestHour = 4
 
 // appLatestCache holds the newest published app release (vX.Y.Z) plus its release notes, resolved from
 // public GHCR (tags) + the GitHub Releases API and refreshed periodically, so the UI can flag "update
@@ -70,51 +72,65 @@ func (c *appLatestCache) setNotes(v, notes string) {
 	c.mu.Unlock()
 }
 
-// startAppLatestRefresh kicks off a background poller: an immediate resolve, then every few hours.
-// Non-blocking (startup never waits on GHCR); failures leave the cache empty and the UI shows the
-// running version without an up-to-date verdict.
+// refreshAppLatest re-resolves the newest release (+ its notes) and the dev-channel update flag from
+// GHCR, updating the cache. Shared by the nightly scheduler and the manual "Check for updates" button.
+func (s *Server) refreshAppLatest(ctx context.Context) {
+	c, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	v, err := resolveLatestAppVersion(c)
+	if err != nil {
+		s.logger.Warn("app latest: GHCR resolve failed", "err", err)
+		return
+	}
+	if v != "" {
+		// Best-effort: fetch the release notes so the UI can show what changed. A failure here
+		// (rate limit, no matching release) just leaves notes empty - the version verdict stands.
+		notes, nerr := resolveReleaseNotes(c, v)
+		if nerr != nil {
+			s.logger.Warn("app latest: release notes fetch failed", "version", v, "err", nerr)
+		}
+		s.appLatest.setNotes(v, notes)
+		s.logger.Info("app latest resolved from GHCR", "version", v, "notes", notes != "")
+	}
+
+	// Development-channel check: a :testing build reads as "development" against releases (it's
+	// ahead of the newest v*), so the release comparison alone never flags an update for it. Compare
+	// the running commit's image digest to the current :testing digest so a box tracking :testing
+	// still learns when a newer testing build has been published.
+	dev, derr := resolveDevChannelUpdate(c, buildinfo.Version)
+	if derr != nil {
+		s.logger.Warn("app latest: dev-channel update check failed", "err", derr)
+	} else {
+		s.appLatest.setDevUpdate(dev)
+	}
+}
+
+// nextDailyCheck returns the next occurrence of appLatestHour:00 in loc, strictly after now.
+func nextDailyCheck(now time.Time, loc *time.Location) time.Time {
+	n := now.In(loc)
+	next := time.Date(n.Year(), n.Month(), n.Day(), appLatestHour, 0, 0, 0, loc)
+	if !next.After(n) {
+		next = next.AddDate(0, 0, 1)
+	}
+	return next
+}
+
+// startAppLatestRefresh kicks off the background update poller: an immediate resolve at startup, then
+// once daily at appLatestHour (local time). Non-blocking (startup never waits on GHCR); failures leave
+// the cache as-is and the UI shows the running version without an up-to-date verdict. The next-check
+// time is recomputed each night so it tracks DST and any timezone change.
 func (s *Server) startAppLatestRefresh(ctx context.Context) {
 	go func() {
-		refresh := func() {
-			c, cancel := context.WithTimeout(ctx, 20*time.Second)
-			defer cancel()
-			v, err := resolveLatestAppVersion(c)
-			if err != nil {
-				s.logger.Warn("app latest: GHCR resolve failed", "err", err)
-				return
-			}
-			if v == "" {
-				return
-			}
-			// Best-effort: fetch the release notes so the UI can show what changed. A failure here
-			// (rate limit, no matching release) just leaves notes empty - the version verdict stands.
-			notes, nerr := resolveReleaseNotes(c, v)
-			if nerr != nil {
-				s.logger.Warn("app latest: release notes fetch failed", "version", v, "err", nerr)
-			}
-			s.appLatest.setNotes(v, notes)
-			s.logger.Info("app latest resolved from GHCR", "version", v, "notes", notes != "")
-
-			// Development-channel check: a :testing build reads as "development" against releases
-			// (it's ahead of the newest v*), so the release comparison alone never flags an update
-			// for it. Compare the running commit's image digest to the current :testing digest so a
-			// box tracking :testing still learns when a newer testing build has been published.
-			dev, derr := resolveDevChannelUpdate(c, buildinfo.Version)
-			if derr != nil {
-				s.logger.Warn("app latest: dev-channel update check failed", "err", derr)
-			} else {
-				s.appLatest.setDevUpdate(dev)
-			}
-		}
-		refresh()
-		t := time.NewTicker(appLatestRefresh)
-		defer t.Stop()
+		s.refreshAppLatest(ctx)
 		for {
+			next := nextDailyCheck(time.Now(), s.mgr.Location())
+			t := time.NewTimer(time.Until(next))
 			select {
 			case <-ctx.Done():
+				t.Stop()
 				return
 			case <-t.C:
-				refresh()
+				s.refreshAppLatest(ctx)
 			}
 		}
 	}()
@@ -287,6 +303,13 @@ func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 		resp.UpdateAvailable = true
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleVersionCheck forces an immediate GHCR re-check (instead of waiting for the nightly poll) and
+// returns the refreshed version verdict, so an admin can pull in a just-published build on demand.
+func (s *Server) handleVersionCheck(w http.ResponseWriter, r *http.Request) {
+	s.refreshAppLatest(r.Context())
+	s.handleVersion(w, r)
 }
 
 // handleVersionNotes returns the newest published release's version and its notes (the CHANGELOG
