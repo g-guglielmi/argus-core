@@ -11,6 +11,17 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Fixes:**
+
+- **Long-range charts (1M/3M/6M/1Y) rendered as a shattered "comb".** These ranges read Zabbix
+  *trends*, and `trend.get` - unlike `history.get`, which we sort ascending - has no reliable sort
+  order, so points could arrive out of chronological order. uPlot requires strictly-increasing
+  timestamps, so an unsorted series drew lines jumping back and forth in time (the spiky/gappy look);
+  short ranges using raw history were unaffected. The history endpoint now sorts every series by
+  timestamp before returning it, so trend charts render as a clean, monotonic line.
+
 ## [0.4.14] - 2026-08-20
 
 **Fixes:**

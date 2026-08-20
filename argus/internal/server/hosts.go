@@ -457,6 +457,10 @@ func (s *Server) handleItemHistory(w http.ResponseWriter, r *http.Request) {
 			resp.Points = append(resp.Points, seriesPoint{T: atoi64(p.Clock), V: pf(p.Value)})
 		}
 	}
+	// uPlot requires strictly-increasing timestamps; trend.get (unlike history.get) has no reliable
+	// sort order, so points can come back out of order and shatter the plotted line. Sort by clock
+	// here so the frontend always gets a monotonic series regardless of what Zabbix returns.
+	sort.Slice(resp.Points, func(i, j int) bool { return resp.Points[i].T < resp.Points[j].T })
 	writeJSON(w, http.StatusOK, resp)
 }
 
