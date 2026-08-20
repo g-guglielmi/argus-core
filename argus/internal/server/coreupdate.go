@@ -148,9 +148,17 @@ func (s *Server) handleUpdateStart(w http.ResponseWriter, r *http.Request) {
 	cur := buildinfo.Version
 	latest := s.appLatest.get()
 	status, updateAvailable := appUpdateStatus(cur, latest)
-	if !updateAvailable {
+	// A :testing (development) build isn't "outdated" against releases, but there may be a newer
+	// testing image - allow the update in that case too. The target tag is the channel word
+	// "testing"; the sidecar's channel-preserve re-pulls the running rolling tag in place.
+	devUpdate := status == "development" && s.appLatest.getDevUpdate()
+	if !updateAvailable && !devUpdate {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no newer release is available to update to", "status": status})
 		return
+	}
+	targetTag := latest
+	if devUpdate {
+		targetTag = "testing"
 	}
 
 	state, err := s.currentUpdateState()
@@ -170,7 +178,7 @@ func (s *Server) handleUpdateStart(w http.ResponseWriter, r *http.Request) {
 	host, _ := os.Hostname()
 	req := updateRequest{
 		ID:            newUpdateID(),
-		Tag:           latest,
+		Tag:           targetTag,
 		From:          cur,
 		RequestedBy:   by,
 		RequestedAt:   time.Now().UTC().Format(time.RFC3339),

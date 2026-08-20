@@ -13,6 +13,16 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Fixes:**
+
+- **Detect updates on the `:testing` channel.** A development build (e.g. `v0.4.15-4-g1098b9e`) reads
+  as "ahead of the newest release", so the update check - which only compared against `v*` releases -
+  never flagged an update for it, even when a newer `:testing` image had been published (a container
+  manager would show the drift; Argus wouldn't). The core now also compares, via GHCR image digests,
+  the running commit's image (`sha-<short>`) against the current `:testing` digest; when they differ it
+  surfaces "new testing build" with an "Update to the latest testing build" button. The updater's
+  existing channel-preserve re-pulls `:testing` in place. Release-channel behaviour is unchanged.
+
 **UI:**
 
 - **Subtle motion pass.** Added short, tasteful transitions so the UI no longer hard-cuts: the app

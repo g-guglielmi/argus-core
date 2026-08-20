@@ -27,15 +27,28 @@ const appLatestRefresh = 3 * time.Hour
 // public GHCR (tags) + the GitHub Releases API and refreshed periodically, so the UI can flag "update
 // available" and show what changed instead of guessing.
 type appLatestCache struct {
-	mu      sync.RWMutex
-	version string
-	notes   string // release body (CHANGELOG section) for `version`, "" if not fetched
+	mu        sync.RWMutex
+	version   string
+	notes     string // release body (CHANGELOG section) for `version`, "" if not fetched
+	devUpdate bool   // a development (:testing) build is running and a newer :testing image exists
 }
 
 func (c *appLatestCache) get() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.version
+}
+
+func (c *appLatestCache) getDevUpdate() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.devUpdate
+}
+
+func (c *appLatestCache) setDevUpdate(v bool) {
+	c.mu.Lock()
+	c.devUpdate = v
+	c.mu.Unlock()
 }
 
 // getNotes returns the cached release version and its notes together, so the two are always consistent.
@@ -81,6 +94,17 @@ func (s *Server) startAppLatestRefresh(ctx context.Context) {
 			}
 			s.appLatest.setNotes(v, notes)
 			s.logger.Info("app latest resolved from GHCR", "version", v, "notes", notes != "")
+
+			// Development-channel check: a :testing build reads as "development" against releases
+			// (it's ahead of the newest v*), so the release comparison alone never flags an update
+			// for it. Compare the running commit's image digest to the current :testing digest so a
+			// box tracking :testing still learns when a newer testing build has been published.
+			dev, derr := resolveDevChannelUpdate(c, buildinfo.Version)
+			if derr != nil {
+				s.logger.Warn("app latest: dev-channel update check failed", "err", derr)
+			} else {
+				s.appLatest.setDevUpdate(dev)
+			}
 		}
 		refresh()
 		t := time.NewTicker(appLatestRefresh)
@@ -107,6 +131,45 @@ var appVerPrefix = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)`)
 // ("-3-gabc1234", i.e. N commits past the nearest tag) or a "-dirty" worktree marker. Their presence
 // means the build is ahead of its own tag - unreleased code, not a clean release.
 var appVerDev = regexp.MustCompile(`-[0-9]+-g[0-9a-f]+|-dirty`)
+
+// appVerSha pulls the abbreviated commit out of a `git describe` version's "-g<sha>" marker
+// (e.g. "v0.4.15-4-g1098b9e" -> "1098b9e"). This is the commit whose image is published to GHCR as
+// the "sha-<short>" tag by build.yml, letting us resolve the running build's digest from the registry.
+var appVerSha = regexp.MustCompile(`-g([0-9a-f]+)`)
+
+// resolveDevChannelUpdate reports whether a newer :testing image exists for a running development
+// build. It compares the digest the :testing tag currently points to against the digest of the
+// running commit's own image (the sha-<short> tag), both read anonymously from public GHCR. Returns
+// false (no error) for non-development builds, an un-extractable commit, or a missing sha-<short> tag
+// (so a locally built image, or one whose tag GHCR doesn't have, never yields a false "update" flag).
+func resolveDevChannelUpdate(ctx context.Context, cur string) (bool, error) {
+	if !appVerDev.MatchString(cur) {
+		return false, nil // clean release build - the release comparison already covers it
+	}
+	m := appVerSha.FindStringSubmatch(cur)
+	if m == nil {
+		return false, nil // e.g. "-dirty" with no commit to resolve
+	}
+	sha := m[1]
+
+	repoPath := strings.TrimPrefix(appImageRepo, "ghcr.io/")
+	tok, err := ghcrPullToken(ctx, repoPath)
+	if err != nil {
+		return false, err
+	}
+	testingDigest, err := ghcrManifestDigest(ctx, repoPath, "testing", tok)
+	if err != nil {
+		return false, err
+	}
+	runningDigest, err := ghcrManifestDigest(ctx, repoPath, "sha-"+sha, tok)
+	if err != nil {
+		return false, err
+	}
+	if testingDigest == "" || runningDigest == "" {
+		return false, nil // can't compare -> don't claim an update
+	}
+	return testingDigest != runningDigest, nil
+}
 
 // resolveLatestAppVersion returns the newest vX.Y.Z tag published for the app image, read
 // anonymously from the public GHCR registry (token -> tags list). "" if none is found.
@@ -168,10 +231,11 @@ func verKey(m []string) [4]int {
 }
 
 type versionResponse struct {
-	Version         string `json:"version"`          // running build (git describe), "" if un-stamped
-	Latest          string `json:"latest,omitempty"` // newest published release, "" until resolved
+	Version         string `json:"version"`             // running build (git describe), "" if un-stamped
+	Latest          string `json:"latest,omitempty"`    // newest published release, "" until resolved
 	UpdateAvailable bool   `json:"update_available"`
-	Status          string `json:"status"` // current | development | outdated | dev | unknown
+	DevUpdate       bool   `json:"dev_update,omitempty"` // a newer :testing image exists for this dev build
+	Status          string `json:"status"`               // current | development | outdated | dev | unknown
 }
 
 // appUpdateStatus compares the running version against the newest published release and returns a
@@ -216,6 +280,12 @@ func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 	latest := s.appLatest.get()
 	resp := versionResponse{Version: cur, Latest: latest}
 	resp.Status, resp.UpdateAvailable = appUpdateStatus(cur, latest)
+	// A development (:testing) build reads as "development" against releases; if a newer :testing
+	// image has been published, surface that as an available update too.
+	if resp.Status == "development" && s.appLatest.getDevUpdate() {
+		resp.DevUpdate = true
+		resp.UpdateAvailable = true
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 

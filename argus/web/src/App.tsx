@@ -539,7 +539,7 @@ function buildNav(s: NavState): string {
   return window.location.pathname + (qs ? '?' + qs : '')
 }
 
-type VersionInfo = { version: string; latest?: string; update_available: boolean; status: string }
+type VersionInfo = { version: string; latest?: string; update_available: boolean; dev_update?: boolean; status: string }
 type UpdateState = {
   self_update_enabled: boolean
   state: string // idle | requested | running | success | failed
@@ -601,7 +601,8 @@ function VersionAbout() {
         {!v ? <span className="set-hint">Checking…</span> : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span className="mono">{running}</span>
-            {v.update_available && <span className="vtag upd">↑ {v.latest} available</span>}
+            {v.update_available && !v.dev_update && <span className="vtag upd">↑ {v.latest} available</span>}
+            {v.dev_update && <span className="vtag upd">↑ new testing build</span>}
             {v.status === 'current' && <span className="vtag ok">latest</span>}
             {v.status === 'development' && <span className="vtag dev">development build</span>}
           </div>
@@ -627,16 +628,20 @@ function VersionAbout() {
         </div>
       ) : v && v.update_available && (
         <>
-          <details className="set-row" onToggle={loadNotes}>
-            <summary className="set-hint" style={{ cursor: 'pointer' }}>What's new in {v.latest}</summary>
-            {notes === null ? <p className="set-hint">Loading…</p>
-              : notes === '' ? <p className="set-hint">Release notes unavailable.</p>
-              : <pre className="release-notes">{notes}</pre>}
-          </details>
+          {v.dev_update ? (
+            <p className="set-row set-hint" style={{ marginBottom: 8 }}>A newer <span className="mono">:testing</span> build has been published (unreleased changes past {running}). Updating re-pulls the testing channel in place.</p>
+          ) : (
+            <details className="set-row" onToggle={loadNotes}>
+              <summary className="set-hint" style={{ cursor: 'pointer' }}>What's new in {v.latest}</summary>
+              {notes === null ? <p className="set-hint">Loading…</p>
+                : notes === '' ? <p className="set-hint">Release notes unavailable.</p>
+                : <pre className="release-notes">{notes}</pre>}
+            </details>
+          )}
           <div className="set-row" style={{ marginBottom: 0 }}>
             {upd && upd.self_update_enabled ? (
               <Button variant="primary" onClick={startUpdate} disabled={busy || active}>
-                {active ? 'Updating…' : `Update to ${v.latest}`}
+                {active ? 'Updating…' : v.dev_update ? 'Update to the latest testing build' : `Update to ${v.latest}`}
               </Button>
             ) : (
               <p className="set-hint">Self-update isn't configured on this instance. Pull the new image and redeploy, or add the <span className="mono">argus-updater</span> sidecar to enable one-click updates (see the README).</p>

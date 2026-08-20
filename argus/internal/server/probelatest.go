@@ -163,6 +163,51 @@ func ghcrListTags(ctx context.Context, repoPath, bearer string) ([]string, error
 	}
 }
 
+// ghcrPullToken fetches an anonymous pull-scoped bearer token for a public GHCR repo.
+func ghcrPullToken(ctx context.Context, repoPath string) (string, error) {
+	var tok struct {
+		Token string `json:"token"`
+	}
+	if err := ghcrGetJSON(ctx, "https://ghcr.io/token?scope=repository:"+repoPath+":pull", "", &tok); err != nil {
+		return "", err
+	}
+	return tok.Token, nil
+}
+
+// ghcrManifestDigest returns the content digest a tag currently points to (the registry's
+// Docker-Content-Digest header), so two tags can be compared for "same image or not" without pulling.
+// A 404 (tag absent) returns ("", nil) so callers can treat "no such tag" as "can't compare" rather
+// than an error. Accepts OCI/Docker manifest + index media types (multi-arch tags resolve to their
+// index digest, which is stable for the comparison).
+func ghcrManifestDigest(ctx context.Context, repoPath, ref, bearer string) (string, error) {
+	u := "https://ghcr.io/v2/" + repoPath + "/manifests/" + ref
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return "", err
+	}
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	req.Header.Set("Accept", strings.Join([]string{
+		"application/vnd.oci.image.index.v1+json",
+		"application/vnd.oci.image.manifest.v1+json",
+		"application/vnd.docker.distribution.manifest.list.v2+json",
+		"application/vnd.docker.distribution.manifest.v2+json",
+	}, ", "))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return "", nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GET %s: HTTP %d", u, resp.StatusCode)
+	}
+	return resp.Header.Get("Docker-Content-Digest"), nil
+}
+
 func ghcrGetJSON(ctx context.Context, url, bearer string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
