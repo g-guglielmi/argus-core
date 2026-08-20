@@ -21,6 +21,10 @@ GitHub Release from the matching section below.
   timestamps, so an unsorted series drew lines jumping back and forth in time (the spiky/gappy look);
   short ranges using raw history were unaffected. The history endpoint now sorts every series by
   timestamp before returning it, so trend charts render as a clean, monotonic line.
+- **Clearer post-update action.** After a successful self-update the About card kept showing the
+  "Update to vX.Y.Z" button (the still-running old bundle thinks it's outdated) alongside a small
+  inline "Reload" link - confusing. It now replaces that button with a single primary **"Reload to
+  finish updating"** button, so the only offered action is the one that actually completes the update.
 
 ## [0.4.14] - 2026-08-20
 

@@ -609,14 +609,20 @@ function VersionAbout() {
       {upd && upd.state === 'requested' && <Banner variant="info">Update to {upd.target} queued - waiting for the updater to pick it up…</Banner>}
       {upd && upd.state === 'running' && <Banner variant="info">Updating to {upd.target}… {upd.message ? `(${upd.message})` : ''} Argus will restart briefly.</Banner>}
       {upd && upd.state === 'success' && (
-        <Banner variant="success">Updated to {upd.target}. Reload to finish loading the new version. <button type="button" className="linkbtn" onClick={reloadNow}>Reload</button></Banner>
+        <Banner variant="success">Updated to {upd.target}. Reload to finish loading the new version.</Banner>
       )}
       {upd && upd.state === 'failed' && (
         <Banner variant="error">Update to {upd.target} failed: {upd.message || 'unknown error'}. The previous version was kept. <button type="button" className="linkbtn" onClick={dismiss}>Dismiss</button></Banner>
       )}
       {err && <Banner variant="error">{err}</Banner>}
 
-      {v && v.update_available && (
+      {upd && upd.state === 'success' ? (
+        // The update landed; the running SPA is still the old bundle. Replace the "Update" button with
+        // a Reload button so the only action offered is the one that actually finishes the update.
+        <div className="set-row" style={{ marginBottom: 0 }}>
+          <Button variant="primary" onClick={reloadNow}>Reload to finish updating</Button>
+        </div>
+      ) : v && v.update_available && (
         <>
           <details className="set-row" onToggle={loadNotes}>
             <summary className="set-hint" style={{ cursor: 'pointer' }}>What's new in {v.latest}</summary>
