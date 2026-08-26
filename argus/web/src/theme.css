@@ -306,7 +306,7 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
    reflects its real content; the flex-wrap on the Update cell itself stays as the narrow-view fallback.
    NB: the modifier is `enroll-probes`, not `live` - `.live` is the heartbeat pill (display:inline-flex)
    and would turn the whole table into a flex box. */
-.enroll.enroll-probes { table-layout: auto; }
+.enroll.enroll-probes { table-layout: auto; width: auto; }
 .enroll.enroll-probes th, .enroll.enroll-probes td { white-space: nowrap; overflow: visible; text-overflow: clip; }
 .enroll tr:last-child td { border-bottom: none; }
 
