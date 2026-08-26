@@ -11,6 +11,19 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.18] - 2026-08-26
+
+**Probes table:**
+
+- **Update column no longer wraps or splits a version.** In the probes fleet table the "Update" cell
+  could break mid-version (e.g. `7.0.30-` on one line, `r1` on the next). The button, the `-> version`
+  chip and the `auto` tag now sit on one rigid line.
+- **Columns size to their content.** The 7-column probes table had been inheriting the 4-column
+  enrollment table's fixed widths (column 1 = 40%), which ballooned the Probe column and starved the
+  Update column (forcing the wrap above). The table now uses content-based auto-layout - every column
+  sizes to its text, the table fills the card width, and a horizontal-scroll wrapper covers very narrow
+  windows instead of wrapping a cell.
+
 ## [0.4.17] - 2026-08-20
 
 **Update checks:**
