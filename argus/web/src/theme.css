@@ -300,17 +300,14 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .enroll th:nth-child(3) { width: 27%; }
 .enroll th:nth-child(4) { width: 15%; }
 /* the live probes table carries 7 columns (Probe · Status · Last check-in · Version · Update ·
-   Mode · Enrolled) - override the 4-col widths above. Widths sum to 100% so table-layout:fixed
-   doesn't starve the trailing columns.
+   Mode · Enrolled) whose content is short and uneven (a probe name, a version, the update chip),
+   so let the browser size each column to its content instead of the fixed 4-col percentages above.
+   nowrap keeps every cell (incl. the "Update... -> x.y.z-rN" chip) on one line so a column's width
+   reflects its real content; the flex-wrap on the Update cell itself stays as the narrow-view fallback.
    NB: the modifier is `enroll-probes`, not `live` - `.live` is the heartbeat pill (display:inline-flex)
    and would turn the whole table into a flex box. */
-.enroll.enroll-probes th:nth-child(1) { width: 20%; }
-.enroll.enroll-probes th:nth-child(2) { width: 12%; }
-.enroll.enroll-probes th:nth-child(3) { width: 16%; }
-.enroll.enroll-probes th:nth-child(4) { width: 15%; }
-.enroll.enroll-probes th:nth-child(5) { width: 15%; }
-.enroll.enroll-probes th:nth-child(6) { width: 10%; }
-.enroll.enroll-probes th:nth-child(7) { width: 12%; }
+.enroll.enroll-probes { table-layout: auto; }
+.enroll.enroll-probes th, .enroll.enroll-probes td { white-space: nowrap; overflow: visible; text-overflow: clip; }
 .enroll tr:last-child td { border-bottom: none; }
 
 /* ---------- users / forms ---------- */
