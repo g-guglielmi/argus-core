@@ -1292,6 +1292,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
 
       {isAdmin && <FleetTarget target={target} latest={(proxies || []).find((p) => p.latest)?.latest} onSaved={setTarget} />}
 
+      <div className="enroll-scroll">
       <table className="enroll enroll-probes">
         <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Version</th><th>Update</th><th>Mode</th><th>Enrolled</th></tr></thead>
         <tbody>
@@ -1315,6 +1316,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
@@ -1327,9 +1329,11 @@ function probeUpdateTag(target?: string): string {
 // UpdateBadge shows a probe's state versus the fleet target, and (for drift) a toggle that reveals
 // the one-click manual update command.
 function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, onEnableReporting }: { p: Proxy; open: boolean; onToggle: () => void; queuedTag?: string; onSelfUpdate: (p: Proxy) => void; canReport?: boolean; onEnableReporting: (p: Proxy) => void }) {
-  // One shared row so the button, the "→ version" chip, and the auto tag stay aligned and wrap only
-  // between whole items - never mid-version (the hyphen in "7.0.30-r1" must not break across rows).
-  const wrap: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }
+  // One shared row: the button, the "→ version" chip and the auto tag stay on a single line so the
+  // Update column reports an honest one-line width to the auto-sized table (a wrapping cell would
+  // collapse to its widest item and let the column starve). The table's scroll wrapper handles the
+  // rare too-narrow desktop instead of wrapping mid-cell.
+  const wrap: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }
   const auto = p.selfupdate ? <span className="tag" title="Self-update enabled (Docker socket mounted); Argus can trigger updates from here">auto</span> : null
   if (queuedTag) return <span className="tag" title={`Update to ${queuedTag} queued - the probe applies it on its next check-in (within ~5 min)`}>update queued</span>
   // A socket-enabled probe updates itself when triggered; otherwise we expand the manual command.
