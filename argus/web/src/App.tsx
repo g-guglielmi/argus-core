@@ -1327,7 +1327,10 @@ function probeUpdateTag(target?: string): string {
 // UpdateBadge shows a probe's state versus the fleet target, and (for drift) a toggle that reveals
 // the one-click manual update command.
 function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, onEnableReporting }: { p: Proxy; open: boolean; onToggle: () => void; queuedTag?: string; onSelfUpdate: (p: Proxy) => void; canReport?: boolean; onEnableReporting: (p: Proxy) => void }) {
-  const auto = p.selfupdate ? <span className="tag" title="Self-update enabled (Docker socket mounted); Argus can trigger updates from here" style={{ marginLeft: 6 }}>auto</span> : null
+  // One shared row so the button, the "→ version" chip, and the auto tag stay aligned and wrap only
+  // between whole items - never mid-version (the hyphen in "7.0.30-r1" must not break across rows).
+  const wrap: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }
+  const auto = p.selfupdate ? <span className="tag" title="Self-update enabled (Docker socket mounted); Argus can trigger updates from here">auto</span> : null
   if (queuedTag) return <span className="tag" title={`Update to ${queuedTag} queued - the probe applies it on its next check-in (within ~5 min)`}>update queued</span>
   // A socket-enabled probe updates itself when triggered; otherwise we expand the manual command.
   const selfBtn = <button className="btn" onClick={() => onSelfUpdate(p)} title="Tell the probe to update itself to the fleet target on its next check-in">Update now</button>
@@ -1337,12 +1340,12 @@ function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, on
     : <span className="mono" style={{ color: 'var(--faint)' }} title="This probe isn't reporting its exact version to Argus (updates handled outside Argus, e.g. unRAID).">-</span>
   switch (p.update_status) {
     case 'current':
-      return <span><span className="tag online">up to date</span>{auto}</span>
+      return <span style={wrap}><span className="tag online">up to date</span>{auto}</span>
     case 'tracking':
-      return <span><span className="tag" title="Fleet target is 'latest'; the probe converges on the newest image">tracking latest</span>{p.selfupdate ? <> {selfBtn}</> : null}{auto}</span>
+      return <span style={wrap}><span className="tag" title="Fleet target is 'latest'; the probe converges on the newest image">tracking latest</span>{p.selfupdate ? selfBtn : null}{auto}</span>
     case 'outdated': {
       const avail = p.target === 'latest' ? p.latest : p.target
-      return <span>{p.selfupdate ? selfBtn : <button className="btn" onClick={onToggle}>{open ? 'Hide' : 'Update…'}</button>}{avail ? <span className="mono" style={{ color: 'var(--muted)', marginLeft: 6 }} title="Available version">→ {avail}</span> : null}{auto}</span>
+      return <span style={wrap}>{p.selfupdate ? selfBtn : <button className="btn" onClick={onToggle}>{open ? 'Hide' : 'Update…'}</button>}{avail ? <span className="mono" style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }} title="Available version">→ {avail}</span> : null}{auto}</span>
     }
     case 'external':
     default:
