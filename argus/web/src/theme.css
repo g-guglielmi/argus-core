@@ -311,6 +311,11 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
    and would turn the whole table into a flex box. */
 .enroll-scroll { overflow-x: auto; }
 .enroll.enroll-probes { table-layout: auto; }
+/* Reset the 4-col percentage widths the base .enroll rules above set for the tokens table
+   (nth-child 1..4 = 40/18/27/15%). Without this, the 7-col probes table inherits them - col 1 = 40%
+   balloons the Probe column and columns 5-7 (Update/Mode/Enrolled) starve - which is exactly the
+   "huge Probe, cramped Update" bug. width:auto lets auto-layout size every column to its content. */
+.enroll.enroll-probes th:nth-child(n) { width: auto; }
 .enroll.enroll-probes th, .enroll.enroll-probes td { white-space: nowrap; overflow: visible; text-overflow: clip; }
 .enroll tr:last-child td { border-bottom: none; }
 
