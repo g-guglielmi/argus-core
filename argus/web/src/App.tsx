@@ -27,6 +27,24 @@ const STATE_LABEL: Record<string, string> = { ok: 'OK', warning: 'Warning', erro
 const PAUSED_BLUE = 'var(--paused)'
 const HIDDEN_GREY = 'var(--hidden)'
 
+// Zabbix trigger severity (0..5) -> label + colour. Colours echo Zabbix's own severity palette so
+// they read as familiar to anyone who knows Zabbix. Used by the Priority column.
+const SEVERITY: { label: string; color: string }[] = [
+  { label: 'Not classified', color: 'var(--muted)' },
+  { label: 'Information', color: '#7499ff' },
+  { label: 'Warning', color: '#ffc039' },
+  { label: 'Average', color: '#ffa059' },
+  { label: 'High', color: '#e97659' },
+  { label: 'Disaster', color: '#e45959' },
+]
+function sevInfo(sev: number) { return SEVERITY[sev] ?? SEVERITY[0] }
+
+// SevPill renders a severity as a compact coloured chip (the Priority column cell).
+function SevPill({ sev }: { sev: number }) {
+  const s = sevInfo(sev)
+  return <span className="sevpill" style={{ ['--sev' as string]: s.color }} title={`Zabbix severity ${sev}`}>{s.label}</span>
+}
+
 // healthColor: acknowledged problems get the dedicated "acknowledged" colour (washed red),
 // otherwise the state colour. Keeps an acked sensor visibly flagged rather than clearing it.
 function healthColor(state: string, acked: boolean): string {
@@ -1575,14 +1593,15 @@ function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; 
       {rows === null && !error && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>Loading…</div>}
       {rows !== null && !error && filtered.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--ok)' }}>✓ All clear - nothing {mode === 'errors' ? 'in error' : 'to report'}.</div>}
       {filtered.length > 0 && (
-        <table className="slist">
-          <thead><tr><th>Host</th><th>Problem</th><th>Trend</th><th>Age</th><th /></tr></thead>
+        <table className="slist slist-problems">
+          <thead><tr><th>Priority</th><th>Host</th><th>Problem</th><th>Trend</th><th>Age</th><th /></tr></thead>
           <tbody>
             {filtered.map((p) => {
               const c = healthColor(p.state, p.acknowledged)
               const hasItem = p.item_ids && p.item_ids.length > 0
               return (
                 <tr key={p.event_id} style={{ opacity: p.acknowledged ? 0.72 : 1 }}>
+                  <td className="slsev" data-label="Priority"><SevPill sev={p.severity} /></td>
                   <td className="slhost" style={{ borderLeftColor: c }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ width: 9, height: 9, borderRadius: '50%', background: c, flexShrink: 0 }} />
@@ -2055,7 +2074,7 @@ function buildPlot(data: Series, units: string, width: number): [uPlot.Options, 
   const xVal = (u: any, v: number | null) => { const t = v ?? lastVal(u, 0); return t == null ? '--' : new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const yVal = (sidx: number) => (u: any, v: number | null) => { const n = v ?? lastVal(u, sidx); return n == null ? '--' : fmtNum(n, units) }
-  const base: Partial<uPlot.Options> = { width, height: 260, scales: { x: { time: true } }, axes: [xAxis, yAxis], legend: { show: true } }
+  const base: Partial<uPlot.Options> = { width, height: 320, scales: { x: { time: true } }, axes: [xAxis, yAxis], legend: { show: true } }
 
   if (data.kind === 'trend') {
     const avg = data.points.map((p) => (p.avg ?? null))
@@ -2128,7 +2147,7 @@ function SensorChart({ itemId, units }: { itemId: string; units: string }) {
   }, [data, units])
 
   useEffect(() => {
-    function onResize() { if (plot.current && host.current) plot.current.setSize({ width: host.current.clientWidth, height: 260 }) }
+    function onResize() { if (plot.current && host.current) plot.current.setSize({ width: host.current.clientWidth, height: 320 }) }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
