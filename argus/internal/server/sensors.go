@@ -20,6 +20,7 @@ type sensorRow struct {
 	State     string   `json:"state"` // ok | warning | error | acked | paused | hidden
 	Numeric   bool     `json:"numeric"`
 	Supported bool     `json:"supported"`
+	Priority  int      `json:"priority"`  // PRTG-style display priority 1..5 (Argus-only)
 	EventIDs  []string `json:"event_ids"` // problem events on this sensor (for ack / unack from a list)
 }
 
@@ -75,6 +76,7 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 
 	hideItem, _ := s.st.ActiveSuppressionMap(ctx, "hide", "item")
 	hideHost, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
+	prioMap, _ := s.st.ItemPriorities(ctx)
 
 	out := make([]sensorRow, 0, len(items))
 	for _, it := range items {
@@ -111,7 +113,8 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 		out = append(out, sensorRow{
 			HostID: host.HostID, HostName: host.Name, ItemID: it.ItemID, Name: it.Name,
 			Label: label, Category: cat, Value: it.LastValue, Units: it.Units, LastClock: atoi64(it.LastClock),
-			State: state, Numeric: numericValueType(it.ValueType), Supported: supported, EventIDs: itemEvents[it.ItemID],
+			State: state, Numeric: numericValueType(it.ValueType), Supported: supported,
+			Priority: priorityOf(prioMap, it.ItemID), EventIDs: itemEvents[it.ItemID],
 		})
 	}
 	sort.SliceStable(out, func(i, j int) bool {

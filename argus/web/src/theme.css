@@ -229,7 +229,7 @@ a { color: var(--accent); }
 .slist .dur { color: var(--muted); }
 .slist td.act { text-align: right; width: 44px; }
 .slist .trend { width: 108px; }
-/* Priority column (Active problems): keep it hugging its chip so the Host/Problem columns get the room. */
+/* Severity column (Active problems): keep it hugging its chip so the Host/Problem columns get the room. */
 .slist-problems th:first-child, .slist-problems td.slsev { width: 1%; white-space: nowrap; }
 
 /* Severity chip (Zabbix priority 0..5). Colour comes from an inline --sev custom property so one rule
@@ -273,6 +273,14 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .sensors tr.acked td.namecell { border-left-color: var(--acked); }
 .sensors tr.paused td.namecell { border-left-color: var(--paused); }
 .sensors tr.hidden td.namecell { border-left-color: var(--hidden); }
+.sensors td.prio-cell, .sensors thead th:nth-child(4) { width: 1%; white-space: nowrap; }
+
+/* PRTG-style priority stars (1..5). Editable stars are buttons; filled stars use a warm amber. */
+.prio { display: inline-flex; align-items: center; gap: 1px; white-space: nowrap; line-height: 1; }
+.prio-star { font: inherit; font-size: 13px; color: var(--faint); background: none; border: none; padding: 0 1px; line-height: 1; }
+.prio-star.on { color: #f5b301; }
+.prio.editable .prio-star { cursor: pointer; border-radius: 3px; }
+.prio.editable .prio-star:hover { color: #f5b301; background: color-mix(in srgb, #f5b301 16%, transparent); }
 .lccell { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .lccell .when { color: var(--faint); white-space: nowrap; }
 
@@ -405,7 +413,7 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   .slist td { display: block; width: auto; padding: 2px 0; border: none; text-align: left !important; }
   .slist td.slhost { border-left: 3px solid transparent; padding-left: 10px; font-size: 14px; margin-bottom: 2px; }
   .slist td:nth-child(2) { color: var(--muted); }
-  /* Problems table has a leading Priority column, so its Host is nth-child(2) (keep prominent) and the
+  /* Problems table has a leading Severity column, so its Host is nth-child(2) (keep prominent) and the
      dimmed "muted" name is the Problem in nth-child(3). */
   .slist-problems td:nth-child(2) { color: inherit; }
   .slist-problems td:nth-child(3) { color: var(--muted); }

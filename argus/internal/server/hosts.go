@@ -58,10 +58,23 @@ type itemView struct {
 	HiddenUntil *int64 `json:"hidden_until,omitempty"`
 	Category    string `json:"category,omitempty"` // set in curated mode
 	Label       string `json:"label,omitempty"`    // friendly name in curated mode
+	Priority    int    `json:"priority"`           // PRTG-style display priority 1..5 (Argus-only)
 }
 
 // numericValueType reports whether a Zabbix value_type is graphable (0 float, 3 unsigned).
 func numericValueType(vt string) bool { return vt == "0" || vt == "3" }
+
+// defaultItemPriority mirrors store.DefaultItemPriority - the PRTG-style display priority a sensor has
+// until an admin/helpdesk sets one. Kept in step with the store constant.
+const defaultItemPriority = 3
+
+// priorityOf returns a sensor's effective priority: its override if set, else the default.
+func priorityOf(m map[string]int, itemID string) int {
+	if p, ok := m[itemID]; ok {
+		return p
+	}
+	return defaultItemPriority
+}
 
 func atoi(s string) int { n, _ := strconv.Atoi(s); return n }
 
@@ -325,6 +338,7 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 	all := r.URL.Query().Get("all") == "1"
 	hideMap, _ := s.st.ActiveSuppressionMap(ctx, "hide", "item")
 	pauseMap, _ := s.st.ActiveSuppressionMap(ctx, "pause", "item")
+	prioMap, _ := s.st.ItemPriorities(ctx)
 	out := make([]itemView, 0, len(items))
 	for _, it := range items {
 		var clock int64
@@ -341,6 +355,7 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			Supported: it.State == "0",
 			Numeric:   numericValueType(it.ValueType),
 			Paused:    it.Status == "1", // disabled in Zabbix
+			Priority:  priorityOf(prioMap, it.ItemID),
 		}
 		if iv.Paused {
 			iv.PausedUntil = pauseMap[it.ItemID]
@@ -367,6 +382,31 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// handleItemPriority sets a sensor's PRTG-style display priority (1..5). Argus-only - it reorders the
+// overview and status lists and never touches Zabbix. Admin/helpdesk only (wired in server.go).
+func (s *Server) handleItemPriority(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Priority int `json:"priority"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if req.Priority < 1 || req.Priority > 5 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "priority must be between 1 and 5"})
+		return
+	}
+	var by int64
+	if caller, _ := auth.UserFrom(r.Context()); caller != nil {
+		by = caller.ID
+	}
+	if err := s.st.SetItemPriority(r.Context(), r.PathValue("id"), req.Priority, by); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save the priority"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // timeRange maps a UI range key to a lookback window and whether to read trends vs history.

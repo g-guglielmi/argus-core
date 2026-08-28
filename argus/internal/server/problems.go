@@ -16,6 +16,7 @@ type problemRow struct {
 	Acknowledged bool     `json:"acknowledged"`
 	AckUntil     *int64   `json:"ack_until,omitempty"`
 	Clock        int64    `json:"clock"`
+	Priority     int      `json:"priority"` // PRTG-style: max display priority of the trigger's sensors (Argus-only)
 	ItemIDs      []string `json:"item_ids"` // sensors the trigger references (for deep-linking)
 }
 
@@ -43,6 +44,7 @@ func (s *Server) handleProblems(w http.ResponseWriter, r *http.Request) {
 	hiddenHosts, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 	hiddenItems, _ := s.st.ActiveSuppressionMap(ctx, "hide", "item")
 	acked, _ := s.st.ActiveSuppressionMap(ctx, "ack", "event")
+	prioMap, _ := s.st.ItemPriorities(ctx)
 
 	out := make([]problemRow, 0, len(problems))
 	for _, p := range problems {
@@ -69,8 +71,12 @@ func (s *Server) handleProblems(w http.ResponseWriter, r *http.Request) {
 		}
 		sev := atoi(p.Severity)
 		itemIDs := make([]string, 0, len(t.Items))
+		prio := defaultItemPriority
 		for _, it := range t.Items {
 			itemIDs = append(itemIDs, it.ItemID)
+			if ep := priorityOf(prioMap, it.ItemID); ep > prio {
+				prio = ep // the problem inherits its most-important sensor's priority
+			}
 		}
 		row := problemRow{
 			EventID:  p.EventID,
@@ -80,6 +86,7 @@ func (s *Server) handleProblems(w http.ResponseWriter, r *http.Request) {
 			Severity: sev,
 			State:    severityState(sev),
 			Clock:    atoi64(p.Clock),
+			Priority: prio,
 			ItemIDs:  itemIDs,
 		}
 		if u, ok := acked[p.EventID]; ok {

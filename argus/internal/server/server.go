@@ -126,6 +126,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("DELETE /api/hosts/{id}/hide", auth.RequireRoles(s.unhideHandler("host"), "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/items/{id}/hide", auth.RequireRoles(s.hideHandler("item"), "admin", "helpdesk"))
 	mux.HandleFunc("DELETE /api/items/{id}/hide", auth.RequireRoles(s.unhideHandler("item"), "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/items/{id}/priority", auth.RequireRoles(s.handleItemPriority, "admin", "helpdesk"))
 
 	// self-service MFA (any signed-in user)
 	mux.HandleFunc("GET /api/me/mfa", auth.RequireAuth(s.handleMFAStatus))

@@ -203,6 +203,16 @@ CREATE TABLE IF NOT EXISTS app_meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- PRTG-style per-sensor display priority (1..5, higher = more important). Argus-only: it reorders the
+-- overview and status lists and touches nothing in Zabbix. Only real overrides live here - a sensor
+-- absent from this table takes DefaultItemPriority.
+CREATE TABLE IF NOT EXISTS item_priority (
+  item_id    TEXT PRIMARY KEY,
+  priority   INTEGER NOT NULL,   -- 1..5
+  by_user    INTEGER,            -- who last set it
+  updated_at INTEGER NOT NULL
+);
 `); err != nil {
 		return err
 	}
@@ -613,6 +623,45 @@ func (s *Store) ActiveSuppressionMap(ctx context.Context, kind, scope string) (m
 		}
 	}
 	return out, rows.Err()
+}
+
+// --- per-sensor display priority (PRTG-style, Argus-only) ---
+
+// DefaultItemPriority is the priority a sensor has until someone sets one (1..5, middle of the range).
+const DefaultItemPriority = 3
+
+// ItemPriorities returns every explicitly-set sensor priority (item_id -> 1..5). Sensors absent from
+// the map take DefaultItemPriority.
+func (s *Store) ItemPriorities(ctx context.Context) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT item_id, priority FROM item_priority`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var id string
+		var p int
+		if err := rows.Scan(&id, &p); err != nil {
+			return nil, err
+		}
+		out[id] = p
+	}
+	return out, rows.Err()
+}
+
+// SetItemPriority upserts a sensor's priority. Setting it back to the default deletes the row, so the
+// table only ever holds genuine overrides.
+func (s *Store) SetItemPriority(ctx context.Context, itemID string, priority int, byUser int64) error {
+	if priority == DefaultItemPriority {
+		_, err := s.db.ExecContext(ctx, `DELETE FROM item_priority WHERE item_id=?`, itemID)
+		return err
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO item_priority(item_id,priority,by_user,updated_at) VALUES(?,?,?,?)
+		 ON CONFLICT(item_id) DO UPDATE SET priority=excluded.priority, by_user=excluded.by_user, updated_at=excluded.updated_at`,
+		itemID, priority, byUser, time.Now().Unix())
+	return err
 }
 
 // ExpiredPauses returns pause suppressions whose expiry has passed (for the re-enable sweeper).

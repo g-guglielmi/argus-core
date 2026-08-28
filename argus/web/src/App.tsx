@@ -10,10 +10,10 @@ type Passkey = { id: string; name: string; created: string; last_used: string | 
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[] }
 type Proxy = { name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number }
 type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; config: Record<string, string> }
-type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string }
+type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; priority: number }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
-type ProblemRow = { event_id: string; name: string; host_id: string; host_name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; clock: number; item_ids: string[] }
-type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; event_ids: string[] }
+type ProblemRow = { event_id: string; name: string; host_id: string; host_name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; clock: number; priority: number; item_ids: string[] }
+type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; event_ids: string[] }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
 type Series = { name: string; units: string; kind: 'history' | 'trend'; points: SeriesPoint[] }
 
@@ -39,10 +39,24 @@ const SEVERITY: { label: string; color: string }[] = [
 ]
 function sevInfo(sev: number) { return SEVERITY[sev] ?? SEVERITY[0] }
 
-// SevPill renders a severity as a compact coloured chip (the Priority column cell).
+// SevPill renders a severity as a compact coloured chip (the Severity column cell).
 function SevPill({ sev }: { sev: number }) {
   const s = sevInfo(sev)
   return <span className="sevpill" style={{ ['--sev' as string]: s.color }} title={`Zabbix severity ${sev}`}>{s.label}</span>
+}
+
+// PriorityStars shows a sensor's PRTG-style display priority (1..5) as five stars. When canEdit,
+// clicking a star sets that priority (admin/helpdesk); otherwise it's read-only. Clicks never bubble
+// to the row (which would open the chart).
+function PriorityStars({ value, canEdit, onSet }: { value: number; canEdit: boolean; onSet?: (p: number) => void }) {
+  const stars = [1, 2, 3, 4, 5]
+  return (
+    <span className={'prio' + (canEdit ? ' editable' : '')} title={`Priority ${value} of 5`} onClick={(e) => e.stopPropagation()}>
+      {stars.map((n) => canEdit
+        ? <button key={n} type="button" className={'prio-star' + (n <= value ? ' on' : '')} aria-label={`Set priority ${n}`} onClick={(e) => { e.stopPropagation(); onSet?.(n) }}>★</button>
+        : <span key={n} className={'prio-star' + (n <= value ? ' on' : '')}>★</span>)}
+    </span>
+  )
 }
 
 // healthColor: acknowledged problems get the dedicated "acknowledged" colour (washed red),
@@ -1575,7 +1589,8 @@ function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; 
 
   const filtered = (rows || [])
     .filter((p) => (mode === 'errors' ? p.state === 'error' && !p.acknowledged : p.state === 'error' || p.state === 'warning'))
-    .sort((a, b) => (stateRank[b.state] - stateRank[a.state]) || (Number(a.acknowledged) - Number(b.acknowledged)) || (b.clock - a.clock))
+    // Priority (PRTG-style, admin-set) leads the ordering; severity/state, ack and recency break ties.
+    .sort((a, b) => (b.priority - a.priority) || (stateRank[b.state] - stateRank[a.state]) || (Number(a.acknowledged) - Number(b.acknowledged)) || (b.clock - a.clock))
   const sparks = useSparks(filtered.flatMap((p) => (p.item_ids && p.item_ids.length ? [p.item_ids[0]] : [])))
 
   return (
@@ -1594,14 +1609,14 @@ function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; 
       {rows !== null && !error && filtered.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--ok)' }}>✓ All clear - nothing {mode === 'errors' ? 'in error' : 'to report'}.</div>}
       {filtered.length > 0 && (
         <table className="slist slist-problems">
-          <thead><tr><th>Priority</th><th>Host</th><th>Problem</th><th>Trend</th><th>Age</th><th /></tr></thead>
+          <thead><tr><th>Severity</th><th>Host</th><th>Problem</th><th>Trend</th><th>Age</th><th /></tr></thead>
           <tbody>
             {filtered.map((p) => {
               const c = healthColor(p.state, p.acknowledged)
               const hasItem = p.item_ids && p.item_ids.length > 0
               return (
                 <tr key={p.event_id} style={{ opacity: p.acknowledged ? 0.72 : 1 }}>
-                  <td className="slsev" data-label="Priority"><SevPill sev={p.severity} /></td>
+                  <td className="slsev" data-label="Severity"><SevPill sev={p.severity} /></td>
                   <td className="slhost" style={{ borderLeftColor: c }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ width: 9, height: 9, borderRadius: '50%', background: c, flexShrink: 0 }} />
@@ -1840,6 +1855,15 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
     setBusyItem(null)
     loadItems(false); fireDataRefresh()
   }
+  // Set a sensor's PRTG-style display priority (Argus-only, admin/helpdesk). Optimistic; reverts to
+  // server truth on failure, and nudges the overview/status lists to re-sort on success.
+  async function setItemPriority(it: SensorItem, priority: number) {
+    if (priority === it.priority) return
+    setItems((its) => (its ? its.map((x) => (x.id === it.id ? { ...x, priority } : x)) : its))
+    const res = await fetch(`/api/items/${it.id}/priority`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ priority }) }).catch(() => null)
+    if (!res || !res.ok) loadItems(false)
+    else fireDataRefresh()
+  }
 
   function loadProblems() {
     fetch(`/api/hosts/${hostId}/problems`).then((r) => (r.ok ? r.json() : [])).then((p) => setProblems(p || [])).catch(() => {})
@@ -1896,7 +1920,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
         ? <div style={{ color: 'var(--muted)', padding: '0.2rem 0 0.4rem' }}>{showAll ? 'No sensors.' : 'No recognized sensors - try “All sensors”.'}</div>
         : (
           <table className="sensors">
-            <thead><tr><th>Sensor</th><th>Value</th><th>Trend</th><th style={{ textAlign: 'right' }}>Last check</th></tr></thead>
+            <thead><tr><th>Sensor</th><th>Value</th><th>Trend</th><th>Priority</th><th style={{ textAlign: 'right' }}>Last check</th></tr></thead>
             <tbody>
               {items.map((it, idx) => {
                 const st = itemState[it.id]
@@ -1925,7 +1949,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                 const trendColor = st ? healthColor(st, itemAcked[it.id]) : 'var(--accent)'
                 return (
                   <Fragment key={it.id}>
-                    {newGroup && <tr className="cat"><td colSpan={4}>{it.category}</td></tr>}
+                    {newGroup && <tr className="cat"><td colSpan={5}>{it.category}</td></tr>}
                     <tr className={rowClass} onClick={clickable ? () => { const next = open ? null : it.id; setOpenItem(next); onNavigate(hostId, next) } : undefined} style={{ opacity: it.supported ? 1 : 0.55, cursor: clickable ? 'pointer' : 'default' }}>
                       <td className="namecell">
                         <span className={'sname' + (clickable ? ' sclick' : '')} style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: effPaused || effHidden ? 0.6 : 1 }}>
@@ -1941,6 +1965,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                           : <span style={{ color: 'var(--err)' }}>not supported</span>}
                       </td>
                       <td className="strend">{it.numeric && it.supported ? <Spark values={sparks[it.id]} color={trendColor} /> : null}</td>
+                      <td className="prio-cell" data-label="Priority"><PriorityStars value={it.priority} canEdit={canPause} onSet={(p) => setItemPriority(it, p)} /></td>
                       <td>
                         <div className="lccell">
                           <span className="when">{relTime(it.last_clock)}</span>
@@ -1949,7 +1974,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                       </td>
                     </tr>
                     {open && clickable && (
-                      <tr className="chartrow"><td colSpan={4}><div className="chart-reveal"><SensorChart itemId={it.id} units={it.units} /></div></td></tr>
+                      <tr className="chartrow"><td colSpan={5}><div className="chart-reveal"><SensorChart itemId={it.id} units={it.units} /></div></td></tr>
                     )}
                   </Fragment>
                 )
@@ -1966,6 +1991,9 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
 function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }: { filter: string; sensors: SensorRow[]; canPause: boolean; goHost: (h: string) => void; goSensor: (h: string, i: string) => void; onBack: () => void }) {
   const [busy, setBusy] = useState<string | null>(null)
   const rows = sensors.filter((s) => s.state === filter)
+  // Priority reorders every status list except OK (where it'd just shuffle healthy sensors); the
+  // backend already returns them host/name-sorted, which stands as the tie-breaker.
+  if (filter !== 'ok') rows.sort((a, b) => (b.priority - a.priority) || a.host_name.localeCompare(b.host_name) || a.name.localeCompare(b.name))
   const sparks = useSparks(rows.filter((s) => s.numeric && s.supported).map((s) => s.item_id))
 
   async function itemAction(s: SensorRow, action: 'pause' | 'hide', seconds: number | null) {
