@@ -215,16 +215,6 @@ func (s *Server) handleUpdateStart(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the update"})
 		return
 	}
-	// Record the channel a deliberate switch selects, so a later clean-aligned build (identical on
-	// :latest and :testing) still knows which channel it tracks. A specific vX.Y.Z pins to the release
-	// line, which the update check treats as :latest.
-	if body.Target != "" {
-		ch := "latest"
-		if body.Target == "testing" {
-			ch = "testing"
-		}
-		_ = s.st.MetaSet(r.Context(), updateChannelKey, ch)
-	}
 	s.logger.Info("core self-update queued", "tag", req.Tag, "from", req.From, "by", by)
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued", "tag": req.Tag})
 }

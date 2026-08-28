@@ -116,7 +116,7 @@ func (s *Server) refreshAppLatest(ctx context.Context) {
 	// release on :latest keeps to the release comparison above. This must be gated on the channel
 	// because a clean release image is byte-identical on :latest and :testing, so right after a release
 	// the running version alone can't tell them apart (see resolveChannel).
-	if s.resolveChannel(c) == "testing" {
+	if s.resolveChannel() == "testing" {
 		dev, target, derr := resolveTestingUpdate(c, buildinfo.Version)
 		if derr != nil {
 			s.logger.Warn("app latest: testing-channel update check failed", "err", derr)
@@ -128,25 +128,44 @@ func (s *Server) refreshAppLatest(ctx context.Context) {
 	}
 }
 
-// updateChannelKey is the app_meta key recording the channel a GUI switch selected, so a later
-// clean-aligned build (identical on :latest and :testing) still knows which channel it tracks.
-const updateChannelKey = "update_channel"
-
-// resolveChannel returns the release channel this instance tracks: "testing" or "latest". Precedence:
-// the ARGUS_UPDATE_CHANNEL override; a dev-stamped running build (a "-N-gsha"/"-dirty" image only ever
-// comes from a :testing/main build); a channel recorded by a GUI switch; else "latest" (the safe
-// default, so a production box on :latest is never offered a :testing build).
-func (s *Server) resolveChannel(ctx context.Context) string {
-	if c := s.cfg.UpdateChannel; c == "testing" || c == "latest" {
-		return c
+// resolveChannel returns the release channel this instance tracks: "testing" or "latest". A clean
+// release image is byte-identical on :latest and :testing, so the running version alone can't tell the
+// channels apart right after a release. The authoritative signal is the tag the core container is
+// actually running under, which the argus-updater sidecar (it holds the Docker socket) reports into
+// the shared update dir; a :testing tag means the testing channel, anything else tracks the release
+// line. Without a sidecar report we fall back to the version stamp: a dev-stamped build only ever comes
+// from :testing, otherwise assume latest (the safe default, so a :latest box is never offered testing).
+func (s *Server) resolveChannel() string {
+	if tag, ok := s.reportedCoreTag(); ok {
+		if tag == "testing" {
+			return "testing"
+		}
+		return "latest"
 	}
 	if appVerDev.MatchString(buildinfo.Version) {
 		return "testing"
 	}
-	if v, ok, _ := s.st.MetaGet(ctx, updateChannelKey); ok && (v == "testing" || v == "latest") {
-		return v
-	}
 	return "latest"
+}
+
+// coreImageFile is where the argus-updater sidecar records the tag the core container runs under.
+const coreImageFile = "core-image.json"
+
+// reportedCoreTag returns the image tag the sidecar last reported for the core container (e.g.
+// "testing", "latest", "v0.4.18"), and whether a report was available. Only meaningful when the
+// self-update channel (shared dir) is wired; absent/unreadable yields ("", false).
+func (s *Server) reportedCoreTag() (string, bool) {
+	if !s.cfg.SelfUpdateEnabled() {
+		return "", false
+	}
+	var rec struct {
+		Tag string `json:"tag"`
+	}
+	ok, err := readUpdateJSON(s.updatePath(coreImageFile), &rec)
+	if err != nil || !ok || rec.Tag == "" {
+		return "", false
+	}
+	return rec.Tag, true
 }
 
 // nextDailyCheck returns the next occurrence of appLatestHour:00 in loc, strictly after now.

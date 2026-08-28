@@ -160,7 +160,6 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 | Var | Default | Purpose |
 |---|---|---|
 | `ARGUS_UPDATE_DIR` | *(empty)* | path of a volume shared with the `argus-updater` sidecar. Set (e.g. `/update`) to enable admin-triggered self-update; empty leaves it off (Settings then shows a manual update command instead). The core never gets the Docker socket - the sidecar does |
-| `ARGUS_UPDATE_CHANNEL` | *(empty)* | which release channel this box tracks for the update check: `testing` or `latest`. Set `testing` on an instance running the `:testing` image so it's still offered newer testing builds after a release (when `:testing` and `:latest` momentarily point to the same clean `vX.Y.Z`, the core otherwise can't tell them apart). Empty = auto: a dev-stamped build is treated as testing, a clean build defaults to latest unless a Settings channel switch recorded otherwise |
 
 ## One-click self-update (optional)
 
@@ -202,6 +201,12 @@ Beyond the plain "Update now" button (which updates in place, preserving the cor
 `testing` channel), Settings → About has a **Change channel or version** control to deliberately switch
 the core between `latest`, `testing`, and recent pinned releases. A version pin sticks until you switch
 back to a channel.
+
+The sidecar also reports which tag the core container runs under (into the shared folder), so a box on
+`:testing` is correctly offered newer testing builds even right after a release - when `:testing` and
+`:latest` momentarily point to the same clean `vX.Y.Z` image and the core otherwise couldn't tell which
+channel it's on. Without the sidecar, a build carrying a `git describe` suffix is treated as testing and
+a clean release as latest.
 
 > **Keep the sidecar current.** `argus-updater` recreates the core but not itself, so after upgrading
 > Argus pull the newest `argus-updater:latest` and redeploy the sidecar too - otherwise it keeps

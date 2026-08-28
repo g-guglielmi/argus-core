@@ -45,13 +45,6 @@ type Config struct {
 	// (the UI falls back to showing the changelog + a manual update command). The public-facing core
 	// never touches Docker; the sidecar does the work and reports success/failure.
 	UpdateDir string // ARGUS_UPDATE_DIR, e.g. "/update" (a volume shared with argus-updater)
-
-	// Which release channel this instance tracks, for the update check. A clean release image (vX.Y.Z)
-	// is byte-identical whether it was pulled as :latest or :testing, so right after a release the core
-	// can't tell which channel it's on - set this to "testing" on a box that tracks :testing so it still
-	// gets offered newer :testing builds. Empty = auto (a dev-stamped build is treated as testing; a
-	// clean build defaults to latest unless a GUI channel switch recorded otherwise).
-	UpdateChannel string // ARGUS_UPDATE_CHANNEL: "" | "latest" | "testing"
 }
 
 // SelfUpdateEnabled reports whether the argus-updater channel is wired up (a shared dir is set).
@@ -83,7 +76,6 @@ func Load() Config {
 		RPDisplayName: env("ARGUS_RP_DISPLAY_NAME", "Argus"),
 		RPOrigins:     envList("ARGUS_RP_ORIGINS"),
 		UpdateDir:     strings.TrimRight(env("ARGUS_UPDATE_DIR", ""), "/"),
-		UpdateChannel: strings.ToLower(strings.TrimSpace(env("ARGUS_UPDATE_CHANNEL", ""))),
 	}
 }
 
