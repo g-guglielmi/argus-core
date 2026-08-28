@@ -112,16 +112,41 @@ func (s *Server) refreshAppLatest(ctx context.Context) {
 		s.logger.Info("app latest resolved from GHCR", "version", v, "releases", len(releases), "notes", notes != "")
 	}
 
-	// Development-channel check: a :testing build reads as "development" against releases (it's
-	// ahead of the newest v*), so the release comparison alone never flags an update for it. Compare
-	// the running commit's image digest to the current :testing digest so a box tracking :testing
-	// still learns when a newer testing build has been published.
-	dev, target, derr := resolveDevChannelUpdate(c, buildinfo.Version)
-	if derr != nil {
-		s.logger.Warn("app latest: dev-channel update check failed", "err", derr)
+	// Testing-channel check: only a box that tracks :testing is offered newer :testing builds; a clean
+	// release on :latest keeps to the release comparison above. This must be gated on the channel
+	// because a clean release image is byte-identical on :latest and :testing, so right after a release
+	// the running version alone can't tell them apart (see resolveChannel).
+	if s.resolveChannel(c) == "testing" {
+		dev, target, derr := resolveTestingUpdate(c, buildinfo.Version)
+		if derr != nil {
+			s.logger.Warn("app latest: testing-channel update check failed", "err", derr)
+		} else {
+			s.appLatest.setDevUpdate(dev, target)
+		}
 	} else {
-		s.appLatest.setDevUpdate(dev, target)
+		s.appLatest.setDevUpdate(false, "")
 	}
+}
+
+// updateChannelKey is the app_meta key recording the channel a GUI switch selected, so a later
+// clean-aligned build (identical on :latest and :testing) still knows which channel it tracks.
+const updateChannelKey = "update_channel"
+
+// resolveChannel returns the release channel this instance tracks: "testing" or "latest". Precedence:
+// the ARGUS_UPDATE_CHANNEL override; a dev-stamped running build (a "-N-gsha"/"-dirty" image only ever
+// comes from a :testing/main build); a channel recorded by a GUI switch; else "latest" (the safe
+// default, so a production box on :latest is never offered a :testing build).
+func (s *Server) resolveChannel(ctx context.Context) string {
+	if c := s.cfg.UpdateChannel; c == "testing" || c == "latest" {
+		return c
+	}
+	if appVerDev.MatchString(buildinfo.Version) {
+		return "testing"
+	}
+	if v, ok, _ := s.st.MetaGet(ctx, updateChannelKey); ok && (v == "testing" || v == "latest") {
+		return v
+	}
+	return "latest"
 }
 
 // nextDailyCheck returns the next occurrence of appLatestHour:00 in loc, strictly after now.
@@ -172,23 +197,34 @@ var appVerDev = regexp.MustCompile(`-[0-9]+-g[0-9a-f]+|-dirty`)
 // the "sha-<short>" tag by build.yml, letting us resolve the running build's digest from the registry.
 var appVerSha = regexp.MustCompile(`-g([0-9a-f]+)`)
 
-// resolveDevChannelUpdate reports whether a newer :testing image exists for a running development
-// build. It compares the digest the :testing tag currently points to against the digest of the
-// running commit's own image (the sha-<short> tag), both read anonymously from public GHCR. When an
-// update exists it also returns the target build's version (the :testing image's OCI version label,
-// e.g. "v0.4.16-3-gabcdef1") so the UI can name the exact build; "" if the label can't be read (e.g.
-// an older :testing image built before the label was added). Returns (false, "") for non-development
-// builds, an un-extractable commit, or a missing sha-<short> tag, so a locally built image or one GHCR
-// doesn't have never yields a false "update" flag.
-func resolveDevChannelUpdate(ctx context.Context, cur string) (available bool, target string, err error) {
-	if !appVerDev.MatchString(cur) {
-		return false, "", nil // clean release build - the release comparison already covers it
+// runningImageRef returns the GHCR tag that identifies the running build's own image, so its digest
+// can be compared with the :testing tag's: the sha-<short> tag for a dev build ("-N-gsha"), or the
+// clean vX.Y.Z release tag for a clean build (which build.yml also publishes). "" when the build can't
+// be identified (un-stamped, or "-dirty" with no commit) - the caller then reports no update.
+func runningImageRef(cur string) string {
+	if m := appVerSha.FindStringSubmatch(cur); m != nil {
+		return "sha-" + m[1]
 	}
-	m := appVerSha.FindStringSubmatch(cur)
-	if m == nil {
-		return false, "", nil // e.g. "-dirty" with no commit to resolve
+	if appReleaseTag.MatchString(cur) {
+		return cur
 	}
-	sha := m[1]
+	return ""
+}
+
+// resolveTestingUpdate reports whether a newer :testing image exists for a box tracking :testing. It
+// compares the digest the :testing tag currently points to against the running image's own digest,
+// both read anonymously from public GHCR. The running image is identified by whichever tag build.yml
+// published it under: the sha-<short> tag for a dev build ("-N-gsha"), or the clean vX.Y.Z release tag
+// for a clean build - which is what a just-released :testing box runs until it next updates, and the
+// exact case where the running version alone can't tell :latest from :testing. Different digests mean
+// an update; target is the :testing image's OCI version label (best-effort, "" if unreadable). Returns
+// (false, "") when the running image can't be identified (un-stamped, or "-dirty" with no sha), so a
+// locally built image never yields a false "update".
+func resolveTestingUpdate(ctx context.Context, cur string) (available bool, target string, err error) {
+	runningRef := runningImageRef(cur)
+	if runningRef == "" {
+		return false, "", nil // can't identify the running image
+	}
 
 	repoPath := strings.TrimPrefix(appImageRepo, "ghcr.io/")
 	tok, err := ghcrPullToken(ctx, repoPath)
@@ -199,7 +235,7 @@ func resolveDevChannelUpdate(ctx context.Context, cur string) (available bool, t
 	if err != nil {
 		return false, "", err
 	}
-	runningDigest, err := ghcrManifestDigest(ctx, repoPath, "sha-"+sha, tok)
+	runningDigest, err := ghcrManifestDigest(ctx, repoPath, runningRef, tok)
 	if err != nil {
 		return false, "", err
 	}
@@ -333,12 +369,15 @@ func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 	latest := s.appLatest.get()
 	resp := versionResponse{Version: cur, Latest: latest}
 	resp.Status, resp.UpdateAvailable = appUpdateStatus(cur, latest)
-	// A development (:testing) build reads as "development" against releases; if a newer :testing
-	// image has been published, surface that as an available update too (and name the target build).
-	if devUpd, target := s.appLatest.getDevUpdate(); resp.Status == "development" && devUpd {
+	// A box tracking :testing is offered the newer :testing image when one exists. This also covers the
+	// "aligned" case: right after a release the running build is a clean vX.Y.Z (so appUpdateStatus says
+	// "current"), yet :testing has since advanced - the testing check flags it, and we flip the verdict
+	// to "development" so the UI shows the dev pill and names the target instead of a green LATEST badge.
+	if devUpd, target := s.appLatest.getDevUpdate(); devUpd && (resp.Status == "development" || resp.Status == "current") {
 		resp.DevUpdate = true
 		resp.UpdateAvailable = true
 		resp.DevTarget = target
+		resp.Status = "development"
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

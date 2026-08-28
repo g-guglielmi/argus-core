@@ -160,6 +160,7 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 | Var | Default | Purpose |
 |---|---|---|
 | `ARGUS_UPDATE_DIR` | *(empty)* | path of a volume shared with the `argus-updater` sidecar. Set (e.g. `/update`) to enable admin-triggered self-update; empty leaves it off (Settings then shows a manual update command instead). The core never gets the Docker socket - the sidecar does |
+| `ARGUS_UPDATE_CHANNEL` | *(empty)* | which release channel this box tracks for the update check: `testing` or `latest`. Set `testing` on an instance running the `:testing` image so it's still offered newer testing builds after a release (when `:testing` and `:latest` momentarily point to the same clean `vX.Y.Z`, the core otherwise can't tell them apart). Empty = auto: a dev-stamped build is treated as testing, a clean build defaults to latest unless a Settings channel switch recorded otherwise |
 
 ## One-click self-update (optional)
 

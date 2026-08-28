@@ -38,3 +38,23 @@ func TestAppUpdateStatus(t *testing.T) {
 		})
 	}
 }
+
+// TestRunningImageRef checks which GHCR tag identifies the running build for the :testing digest
+// compare - especially a clean release tag, the "aligned" case where :testing == :latest right after a
+// release and the running version alone can't distinguish the channels.
+func TestRunningImageRef(t *testing.T) {
+	cases := []struct{ cur, want string }{
+		{"v0.4.18-6-g1baec4b", "sha-1baec4b"},   // dev build -> its commit image
+		{"v0.4.15-9-g0517cd4", "sha-0517cd4"},   // dev build
+		{"v0.4.18", "v0.4.18"},                  // clean release (aligned case) -> the release tag
+		{"0.4.18", "0.4.18"},                    // clean, no leading v
+		{"v0.4.18-dirty", ""},                   // dirty, no commit -> unidentifiable
+		{"", ""},                                // un-stamped
+		{"abc1234", ""},                         // bare sha, no semver base
+	}
+	for _, c := range cases {
+		if got := runningImageRef(c.cur); got != c.want {
+			t.Errorf("runningImageRef(%q) = %q, want %q", c.cur, got, c.want)
+		}
+	}
+}
