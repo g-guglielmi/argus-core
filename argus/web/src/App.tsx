@@ -1609,15 +1609,13 @@ function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; 
       {rows !== null && !error && filtered.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--ok)' }}>✓ All clear - nothing {mode === 'errors' ? 'in error' : 'to report'}.</div>}
       {filtered.length > 0 && (
         <table className="slist">
-          <thead><tr><th className="slprio">Priority</th><th className="slsev">Severity</th><th>Host</th><th className="slgrow">Problem</th><th>Trend</th><th>Age</th><th /></tr></thead>
+          <thead><tr><th>Host</th><th className="slgrow">Problem</th><th>Trend</th><th>Age</th><th className="slprio">Priority</th><th className="slsev">Severity</th><th /></tr></thead>
           <tbody>
             {filtered.map((p) => {
               const c = healthColor(p.state, p.acknowledged)
               const hasItem = p.item_ids && p.item_ids.length > 0
               return (
                 <tr key={p.event_id} style={{ opacity: p.acknowledged ? 0.72 : 1 }}>
-                  <td className="slprio" data-label="Priority"><PriorityStars value={p.priority} canEdit={false} /></td>
-                  <td className="slsev" data-label="Severity"><SevPill sev={p.severity} /></td>
                   <td className="slhost" style={{ borderLeftColor: c }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ width: 9, height: 9, borderRadius: '50%', background: c, flexShrink: 0 }} />
@@ -1627,6 +1625,8 @@ function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; 
                   <td className="slgrow">{hasItem ? <span className="lnk-sensor" onClick={() => goSensor(p.host_id, p.item_ids[0])}>{p.name}</span> : p.name}</td>
                   <td className="trend">{hasItem ? <Spark values={sparks[p.item_ids[0]]} color={c} /> : null}</td>
                   <td className="mono dur" data-label="Age" style={{ whiteSpace: 'nowrap' }}>{relTime(p.clock)}</td>
+                  <td className="slprio" data-label="Priority"><PriorityStars value={p.priority} canEdit={false} /></td>
+                  <td className="slsev" data-label="Severity"><SevPill sev={p.severity} /></td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {p.acknowledged
                       ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}><span className="acktag">✓ acked · {untilLabel(p.ack_until)}</span><button className="btn ghost" onClick={() => unack(p)}>Unacknowledge</button></span>
@@ -2038,18 +2038,18 @@ function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }:
         ? <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>No {STATE_LABEL[filter].toLowerCase()} sensors.</div>
         : (
           <table className="slist">
-            <thead><tr><th className="slprio">Priority</th><th>Host</th><th className="slgrow">Sensor</th><th>Value</th><th>Trend</th><th>{durCol}</th><th /></tr></thead>
+            <thead><tr><th>Host</th><th className="slgrow">Sensor</th><th>Value</th><th>Trend</th><th>{durCol}</th><th className="slprio">Priority</th><th /></tr></thead>
             <tbody>
               {rows.map((s) => {
                 const clickable = s.numeric && s.supported
                 return (
                   <tr key={s.item_id}>
-                    <td className="slprio" data-label="Priority"><PriorityStars value={s.priority} canEdit={false} /></td>
                     <td className="slhost" style={{ borderLeftColor: STATE_VAR[s.state] || 'var(--border)' }}><span className="lnk-host" onClick={() => goHost(s.host_id)}>{s.host_name}</span></td>
                     <td className="slgrow">{clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id)}>{s.label || s.name}</span> : (s.label || s.name)}</td>
                     <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })() : <span style={{ color: 'var(--err)' }}>not supported</span>}</td>
                     <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} /> : null}</td>
                     <td className="mono dur" data-label={durCol}>{relTime(s.last_clock)}</td>
+                    <td className="slprio" data-label="Priority"><PriorityStars value={s.priority} canEdit={false} /></td>
                     <td className="act">{canPause && <Kebab disabled={busy === s.item_id} actions={actionsFor(s)} />}</td>
                   </tr>
                 )
