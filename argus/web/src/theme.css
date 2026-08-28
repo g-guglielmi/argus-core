@@ -229,8 +229,11 @@ a { color: var(--accent); }
 .slist .dur { color: var(--muted); }
 .slist td.act { text-align: right; width: 44px; }
 .slist .trend { width: 108px; }
-/* Severity column (Active problems): keep it hugging its chip so the Host/Problem columns get the room. */
-.slist-problems th:first-child, .slist-problems td.slsev { width: 1%; white-space: nowrap; }
+/* slist tables (Overview problems + status-chip lists): let the name column (Problem/Sensor, class
+   slgrow) absorb the slack so the row fills evenly, and keep the small columns - priority stars and the
+   severity chip - hugging their content instead of the auto-layout drifting them apart. */
+.slist td.slgrow, .slist th.slgrow { width: 100%; }
+.slist td.slprio, .slist th.slprio, .slist td.slsev, .slist th.slsev { width: 1%; white-space: nowrap; }
 
 /* Severity chip (Zabbix priority 0..5). Colour comes from an inline --sev custom property so one rule
    covers all six levels; text/border/fill are all derived from it. */
@@ -412,11 +415,7 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   .slist tr:last-child { border-bottom: none; }
   .slist td { display: block; width: auto; padding: 2px 0; border: none; text-align: left !important; }
   .slist td.slhost { border-left: 3px solid transparent; padding-left: 10px; font-size: 14px; margin-bottom: 2px; }
-  .slist td:nth-child(2) { color: var(--muted); }
-  /* Problems table has a leading Severity column, so its Host is nth-child(2) (keep prominent) and the
-     dimmed "muted" name is the Problem in nth-child(3). */
-  .slist-problems td:nth-child(2) { color: inherit; }
-  .slist-problems td:nth-child(3) { color: var(--muted); }
+  .slist td.slgrow { color: var(--muted); } /* dim the sensor/problem name under the host card title */
   .slist td.trend { display: flex; width: auto; justify-content: space-between; align-items: center; padding: 3px 0; }
   .slist td.trend:empty { display: none; } /* problems/sensors with no graphable series */
   .slist td.trend::before { content: "Trend"; color: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
