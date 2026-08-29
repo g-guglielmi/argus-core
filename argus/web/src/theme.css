@@ -228,12 +228,13 @@ a { color: var(--accent); }
 .slist td.slhost { border-left: 3px solid transparent; font-weight: 650; }
 .slist .dur { color: var(--muted); }
 .slist td.act { text-align: right; width: 44px; }
-.slist .trend { width: 108px; }
-/* slist tables (Overview problems + status-chip lists): let the name column (Problem/Sensor, class
-   slgrow) absorb the slack so the row fills evenly, and keep the small columns - priority stars and the
-   severity chip - hugging their content instead of the auto-layout drifting them apart. */
-.slist td.slgrow, .slist th.slgrow { width: 100%; }
-.slist td.slprio, .slist th.slprio, .slist td.slsev, .slist th.slsev { width: 1%; white-space: nowrap; }
+.slist .trend { width: 216px; }
+/* slist tables (Overview problems + status-chip lists): plain auto layout, so the leftover width is
+   spread proportionally across every column - on a wide screen no single column balloons into a big
+   gap (concentrating the slack in the name column left an obvious hole between it and the right group).
+   The priority stars and severity chip just keep their content on one line. (slgrow now only marks the
+   name column for the mobile dim rule below.) */
+.slist td.slprio, .slist td.slsev { white-space: nowrap; }
 
 /* Severity chip (Zabbix priority 0..5). Colour comes from an inline --sev custom property so one rule
    covers all six levels; text/border/fill are all derived from it. */

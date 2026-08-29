@@ -233,10 +233,12 @@ const refreshBus = new Set<() => void>()
 function onDataRefresh(fn: () => void): () => void { refreshBus.add(fn); return () => { refreshBus.delete(fn) } }
 function fireDataRefresh(): void { refreshBus.forEach((f) => f()) }
 
-// Spark draws a tiny inline sparkline from a compact recent value series (from /api/spark).
-function Spark({ values, color }: { values?: number[]; color: string }) {
+// Spark draws a tiny inline sparkline from a compact recent value series (from /api/spark). width
+// defaults to the compact 84px used in the dense monitoring tree; the roomier overview/status lists
+// pass a wider value for a more readable trace.
+function Spark({ values, color, width = 84 }: { values?: number[]; color: string; width?: number }) {
   if (!values || values.length < 2) return <span style={{ color: 'var(--faint)', fontSize: 12 }}>-</span>
-  const w = 84, h = 20
+  const w = width, h = 20
   let min = values[0], max = values[0]
   for (const v of values) { if (v < min) min = v; if (v > max) max = v }
   const rng = max - min || 1
@@ -1623,7 +1625,7 @@ function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; 
                     </span>
                   </td>
                   <td className="slgrow">{hasItem ? <span className="lnk-sensor" onClick={() => goSensor(p.host_id, p.item_ids[0])}>{p.name}</span> : p.name}</td>
-                  <td className="trend">{hasItem ? <Spark values={sparks[p.item_ids[0]]} color={c} /> : null}</td>
+                  <td className="trend">{hasItem ? <Spark values={sparks[p.item_ids[0]]} color={c} width={168} /> : null}</td>
                   <td className="mono dur" data-label="Age" style={{ whiteSpace: 'nowrap' }}>{relTime(p.clock)}</td>
                   <td className="slprio" data-label="Priority"><PriorityStars value={p.priority} canEdit={false} /></td>
                   <td className="slsev" data-label="Severity"><SevPill sev={p.severity} /></td>
@@ -2047,7 +2049,7 @@ function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }:
                     <td className="slhost" style={{ borderLeftColor: STATE_VAR[s.state] || 'var(--border)' }}><span className="lnk-host" onClick={() => goHost(s.host_id)}>{s.host_name}</span></td>
                     <td className="slgrow">{clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id)}>{s.label || s.name}</span> : (s.label || s.name)}</td>
                     <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })() : <span style={{ color: 'var(--err)' }}>not supported</span>}</td>
-                    <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} /> : null}</td>
+                    <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} width={168} /> : null}</td>
                     <td className="mono dur" data-label={durCol}>{relTime(s.last_clock)}</td>
                     <td className="slprio" data-label="Priority"><PriorityStars value={s.priority} canEdit={false} /></td>
                     <td className="act">{canPause && <Kebab disabled={busy === s.item_id} actions={actionsFor(s)} />}</td>
