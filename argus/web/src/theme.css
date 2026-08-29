@@ -227,14 +227,19 @@ a { color: var(--accent); }
 .slist tr:last-child td { border-bottom: none; }
 .slist td.slhost { border-left: 3px solid transparent; font-weight: 650; }
 .slist .dur { color: var(--muted); }
-.slist td.act { text-align: right; width: 44px; }
-.slist .trend { width: 216px; }
-/* slist tables (Overview problems + status-chip lists): plain auto layout, so the leftover width is
-   spread proportionally across every column - on a wide screen no single column balloons into a big
-   gap (concentrating the slack in the name column left an obvious hole between it and the right group).
-   The priority stars and severity chip just keep their content on one line. (slgrow now only marks the
-   name column for the mobile dim rule below.) */
+.slist td.act { text-align: right; }
+/* Fixed column layout so every status-chip list and the overview keep the SAME column widths no matter
+   how many rows are showing - a 1-row Error list lines up with the busy OK list instead of the browser
+   re-sizing columns to whatever sparse content one row happens to have. Widths are per-table (the two
+   have different columns); they roughly match the proportions the rich OK list settles into. The name
+   column (Sensor/Problem) takes the largest share and the Trend column is generous so the sparkline
+   (which scales to fill it) is readable. */
+.slist-sensors, .slist-problems { table-layout: fixed; }
+.slist-sensors  th:nth-child(1){width:16%} .slist-sensors  th:nth-child(2){width:25%} .slist-sensors  th:nth-child(3){width:13%} .slist-sensors  th:nth-child(4){width:15%} .slist-sensors  th:nth-child(5){width:13%} .slist-sensors  th:nth-child(6){width:14%} .slist-sensors  th:nth-child(7){width:4%}
+.slist-problems th:nth-child(1){width:12%} .slist-problems th:nth-child(2){width:30%} .slist-problems th:nth-child(3){width:15%} .slist-problems th:nth-child(4){width:9%}  .slist-problems th:nth-child(5){width:11%} .slist-problems th:nth-child(6){width:10%} .slist-problems th:nth-child(7){width:13%}
 .slist td.slprio, .slist td.slsev { white-space: nowrap; }
+/* the acked action (tag + Unacknowledge) can wrap within its fixed column instead of overflowing */
+.slist-problems td:last-child .acktag { white-space: normal; }
 
 /* Severity chip (Zabbix priority 0..5). Colour comes from an inline --sev custom property so one rule
    covers all six levels; text/border/fill are all derived from it. */

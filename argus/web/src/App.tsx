@@ -233,10 +233,11 @@ const refreshBus = new Set<() => void>()
 function onDataRefresh(fn: () => void): () => void { refreshBus.add(fn); return () => { refreshBus.delete(fn) } }
 function fireDataRefresh(): void { refreshBus.forEach((f) => f()) }
 
-// Spark draws a tiny inline sparkline from a compact recent value series (from /api/spark). width
-// defaults to the compact 84px used in the dense monitoring tree; the roomier overview/status lists
-// pass a wider value for a more readable trace.
-function Spark({ values, color, width = 84 }: { values?: number[]; color: string; width?: number }) {
+// Spark draws a tiny inline sparkline from a compact recent value series (from /api/spark). width is
+// the drawing resolution (the dense monitoring tree keeps the compact 84px); fill makes the SVG scale
+// to its cell's width, so the roomy fixed-width Trend column in the overview/status lists gets a big,
+// column-filling trace at any screen size.
+function Spark({ values, color, width = 84, fill = false }: { values?: number[]; color: string; width?: number; fill?: boolean }) {
   if (!values || values.length < 2) return <span style={{ color: 'var(--faint)', fontSize: 12 }}>-</span>
   const w = width, h = 20
   let min = values[0], max = values[0]
@@ -248,7 +249,7 @@ function Spark({ values, color, width = 84 }: { values?: number[]; color: string
   values.forEach((v, i) => { d += (i ? 'L' : 'M') + px(i).toFixed(1) + ' ' + py(v).toFixed(1) + ' ' })
   const area = `M1 ${h - 1} ${d.replace('M', 'L').trim()} L${w - 1} ${h - 1} Z`
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block', width: fill ? '100%' : undefined }}>
       <path d={area} fill={color} opacity={0.13} />
       <path d={d.trim()} fill="none" stroke={color} strokeWidth={1.4} />
       <circle cx={w - 1} cy={py(values[values.length - 1])} r={1.8} fill={color} />
@@ -1610,7 +1611,7 @@ function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; 
       {rows === null && !error && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>Loading…</div>}
       {rows !== null && !error && filtered.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--ok)' }}>✓ All clear - nothing {mode === 'errors' ? 'in error' : 'to report'}.</div>}
       {filtered.length > 0 && (
-        <table className="slist">
+        <table className="slist slist-problems">
           <thead><tr><th>Host</th><th className="slgrow">Problem</th><th>Trend</th><th>Age</th><th className="slprio">Priority</th><th className="slsev">Severity</th><th /></tr></thead>
           <tbody>
             {filtered.map((p) => {
@@ -1625,7 +1626,7 @@ function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; 
                     </span>
                   </td>
                   <td className="slgrow">{hasItem ? <span className="lnk-sensor" onClick={() => goSensor(p.host_id, p.item_ids[0])}>{p.name}</span> : p.name}</td>
-                  <td className="trend">{hasItem ? <Spark values={sparks[p.item_ids[0]]} color={c} width={168} /> : null}</td>
+                  <td className="trend">{hasItem ? <Spark values={sparks[p.item_ids[0]]} color={c} width={168} fill /> : null}</td>
                   <td className="mono dur" data-label="Age" style={{ whiteSpace: 'nowrap' }}>{relTime(p.clock)}</td>
                   <td className="slprio" data-label="Priority"><PriorityStars value={p.priority} canEdit={false} /></td>
                   <td className="slsev" data-label="Severity"><SevPill sev={p.severity} /></td>
@@ -2039,7 +2040,7 @@ function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }:
       {rows.length === 0
         ? <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>No {STATE_LABEL[filter].toLowerCase()} sensors.</div>
         : (
-          <table className="slist">
+          <table className="slist slist-sensors">
             <thead><tr><th>Host</th><th className="slgrow">Sensor</th><th>Value</th><th>Trend</th><th>{durCol}</th><th className="slprio">Priority</th><th /></tr></thead>
             <tbody>
               {rows.map((s) => {
@@ -2049,7 +2050,7 @@ function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }:
                     <td className="slhost" style={{ borderLeftColor: STATE_VAR[s.state] || 'var(--border)' }}><span className="lnk-host" onClick={() => goHost(s.host_id)}>{s.host_name}</span></td>
                     <td className="slgrow">{clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id)}>{s.label || s.name}</span> : (s.label || s.name)}</td>
                     <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })() : <span style={{ color: 'var(--err)' }}>not supported</span>}</td>
-                    <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} width={168} /> : null}</td>
+                    <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} width={168} fill /> : null}</td>
                     <td className="mono dur" data-label={durCol}>{relTime(s.last_clock)}</td>
                     <td className="slprio" data-label="Priority"><PriorityStars value={s.priority} canEdit={false} /></td>
                     <td className="act">{canPause && <Kebab disabled={busy === s.item_id} actions={actionsFor(s)} />}</td>
