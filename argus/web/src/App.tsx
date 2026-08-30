@@ -1723,12 +1723,14 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
       <div className="phead">
         <h2>Sites &amp; hosts</h2>
         <span className="hint">{siteNames.length} group{siteNames.length === 1 ? '' : 's'} · {hosts.length} host{hosts.length === 1 ? '' : 's'}</span>
-        <div className="tools">
-          <div className="seg">
-            <button className={!showAll ? 'on' : ''} onClick={() => setShowAll(false)}>Key sensors</button>
-            <button className={showAll ? 'on' : ''} onClick={() => setShowAll(true)}>All sensors</button>
+        {focus.level === 'root' && (
+          <div className="tools">
+            <div className="seg">
+              <button className={!showAll ? 'on' : ''} onClick={() => setShowAll(false)}>Key sensors</button>
+              <button className={showAll ? 'on' : ''} onClick={() => setShowAll(true)}>All sensors</button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
       {focus.level !== 'root' && (
         <div className="crumbs">
