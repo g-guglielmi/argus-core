@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -133,6 +134,7 @@ func (c *Client) APIVersion(ctx context.Context) (string, error) {
 type HostGroup struct {
 	GroupID string `json:"groupid"`
 	Name    string `json:"name"`
+	Hosts   int    `json:"-"` // host count, populated only by HostGroups()
 }
 
 type Host struct {
@@ -575,4 +577,63 @@ func (c *Client) AcknowledgeEvent(ctx context.Context, eventID, message string) 
 // UnacknowledgeEvent removes the acknowledgement from a Zabbix problem event.
 func (c *Client) UnacknowledgeEvent(ctx context.Context, eventID string) error {
 	return c.call(ctx, "event.acknowledge", map[string]any{"eventids": eventID, "action": 16}, true, nil)
+}
+
+// --- host-group management (config writes; require a super-admin token) ---
+
+// HostGroups lists every Zabbix host group with the number of hosts in each - the data behind the
+// Monitoring tree's group management (including empty groups, which the host-derived tree omits).
+func (c *Client) HostGroups(ctx context.Context) ([]HostGroup, error) {
+	var raw []struct {
+		GroupID string `json:"groupid"`
+		Name    string `json:"name"`
+		Hosts   string `json:"hosts"` // count string, from selectHosts:"count"
+	}
+	params := map[string]any{
+		"output":      []string{"groupid", "name"},
+		"selectHosts": "count",
+		"sortfield":   "name",
+	}
+	if err := c.call(ctx, "hostgroup.get", params, true, &raw); err != nil {
+		return nil, err
+	}
+	out := make([]HostGroup, len(raw))
+	for i, g := range raw {
+		n, _ := strconv.Atoi(g.Hosts)
+		out[i] = HostGroup{GroupID: g.GroupID, Name: g.Name, Hosts: n}
+	}
+	return out, nil
+}
+
+// CreateHostGroup creates a new host group and returns its id.
+func (c *Client) CreateHostGroup(ctx context.Context, name string) (string, error) {
+	var res struct {
+		GroupIDs []string `json:"groupids"`
+	}
+	if err := c.call(ctx, "hostgroup.create", map[string]any{"name": name}, true, &res); err != nil {
+		return "", err
+	}
+	if len(res.GroupIDs) == 0 {
+		return "", fmt.Errorf("Zabbix returned no group id")
+	}
+	return res.GroupIDs[0], nil
+}
+
+// RenameHostGroup renames an existing host group.
+func (c *Client) RenameHostGroup(ctx context.Context, groupID, name string) error {
+	return c.call(ctx, "hostgroup.update", map[string]any{"groupid": groupID, "name": name}, true, nil)
+}
+
+// DeleteHostGroup deletes a host group. Zabbix refuses if it would leave any host without a group.
+func (c *Client) DeleteHostGroup(ctx context.Context, groupID string) error {
+	return c.call(ctx, "hostgroup.delete", []string{groupID}, true, nil)
+}
+
+// SetHostGroups replaces a host's full group membership. Zabbix requires at least one group.
+func (c *Client) SetHostGroups(ctx context.Context, hostID string, groupIDs []string) error {
+	groups := make([]map[string]string, len(groupIDs))
+	for i, id := range groupIDs {
+		groups[i] = map[string]string{"groupid": id}
+	}
+	return c.call(ctx, "host.update", map[string]any{"hostid": hostID, "groups": groups}, true, nil)
 }

@@ -113,7 +113,7 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 | Var | Default | Purpose |
 |---|---|---|
 | `ARGUS_ZABBIX_API_URL` | *(empty)* | _(UI)_ Zabbix JSON-RPC endpoint, e.g. `http://10.0.0.10:8080/api_jsonrpc.php` |
-| `ARGUS_ZABBIX_API_TOKEN` | *(empty)* | _(UI)_ Zabbix API token (Bearer). Needs **write** scope for acknowledge/pause |
+| `ARGUS_ZABBIX_API_TOKEN` | *(empty)* | _(UI)_ Zabbix API token (Bearer). Needs **write** scope for acknowledge/pause; **super-admin** to manage tree groups (create/rename/delete host groups, move hosts). A read-only token returns a 502 on those actions. |
 | `ARGUS_DATA_DIR` | `/data` | SQLite DB + encryption keyfile location (mount a volume) |
 | `ARGUS_LISTEN` | `:8080` | address the server listens on inside the container |
 

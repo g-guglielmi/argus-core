@@ -129,6 +129,14 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("DELETE /api/items/{id}/hide", auth.RequireRoles(s.unhideHandler("item"), "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/items/{id}/priority", auth.RequireRoles(s.handleItemPriority, "admin", "helpdesk"))
 
+	// tree groups (Zabbix host groups): list is read-only; create/rename/delete + host membership
+	// are config writes, so helpdesk/admin only.
+	mux.HandleFunc("GET /api/groups", auth.RequireAuth(s.handleGroups))
+	mux.HandleFunc("POST /api/groups", auth.RequireRoles(s.handleCreateGroup, "admin", "helpdesk"))
+	mux.HandleFunc("PATCH /api/groups/{id}", auth.RequireRoles(s.handleRenameGroup, "admin", "helpdesk"))
+	mux.HandleFunc("DELETE /api/groups/{id}", auth.RequireRoles(s.handleDeleteGroup, "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/hosts/{id}/groups", auth.RequireRoles(s.handleSetHostGroups, "admin", "helpdesk"))
+
 	// self-service MFA (any signed-in user)
 	mux.HandleFunc("GET /api/me/mfa", auth.RequireAuth(s.handleMFAStatus))
 	mux.HandleFunc("POST /api/me/mfa/setup", auth.RequireAuth(s.handleMFASetup))

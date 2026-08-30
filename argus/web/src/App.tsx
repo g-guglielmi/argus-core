@@ -8,6 +8,7 @@ type Me = { email: string; name: string; surname: string; role: string; mfa_enab
 type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[] }
+type Group = { id: string; name: string; hosts: number }
 type Proxy = { name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number }
 type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; config: Record<string, string> }
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; priority: number }
@@ -214,7 +215,8 @@ function lastVal(u: any, sidx: number): number | null {
 
 const ROLES = ['admin', 'helpdesk', 'viewer']
 
-async function errText(res: Response, fallback: string) {
+async function errText(res: Response | null, fallback: string) {
+  if (!res) return fallback
   const j = await res.json().catch(() => ({}))
   return (j && j.error) || fallback
 }
@@ -1575,6 +1577,9 @@ const kbIcon = {
   resume: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M7 5l12 7-12 7z" /></svg>,
   show: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>,
   ack: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M22 11.2V12a10 10 0 1 1-5.9-9.1" /><path d="M22 4 12 14.5l-3-3" /></svg>,
+  edit: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>,
+  folder: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>,
+  trash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" /></svg>,
 }
 // icons for the per-user kebab actions
 const uIcon = {
@@ -1644,11 +1649,13 @@ type Focus =
 
 function MonitoringView({ role, target, onNavigate }: { role: string; target: { hostId: string; itemId?: string; itemName?: string; n: number } | null; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
   const [hosts, setHosts] = useState<Host[]>([])
+  const [groups, setGroups] = useState<Group[]>([])
   const [focus, setFocus] = useState<Focus>({ level: 'root' })
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const [openHost, setOpenHost] = useState<string | null>(null)
+  const [editGroupsHost, setEditGroupsHost] = useState<string | null>(null) // host id with the "Edit groups…" band open
   const [showAll, setShowAll] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const canPause = role === 'admin' || role === 'helpdesk'
@@ -1659,8 +1666,37 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
       .then(async (r) => { if (!r.ok) { setError(await errText(r, 'Failed to load hosts')); return } setHosts(await r.json()); setError(null) })
       .catch(() => setError('Failed to load hosts'))
       .finally(() => { if (initial) setLoading(false) })
+    fetch('/api/groups').then((r) => (r.ok ? r.json() : [])).then((g) => setGroups(g || [])).catch(() => {})
   }
   useEffect(() => { load(true); const t = setInterval(() => load(false), 30000); const off = onDataRefresh(() => load(false)); return () => { clearInterval(t); off() } }, [])
+
+  // Group management (create/rename/delete + move a host between groups). All are admin/helpdesk-gated
+  // config writes to Zabbix host groups; on success we reload so the tree reflects the change.
+  async function createGroup() {
+    const name = window.prompt('New group name')?.trim()
+    if (!name) return
+    const res = await fetch('/api/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }).catch(() => null)
+    if (!res || !res.ok) { setError(await errText(res, 'Could not create the group')); return }
+    setError(null); load(); fireDataRefresh()
+  }
+  async function renameGroup(g: Group) {
+    const name = window.prompt('Rename group', g.name)?.trim()
+    if (!name || name === g.name) return
+    const res = await fetch(`/api/groups/${g.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }).catch(() => null)
+    if (!res || !res.ok) { setError(await errText(res, 'Could not rename the group')); return }
+    setError(null); load(); fireDataRefresh()
+  }
+  async function deleteGroup(g: Group) {
+    if (!window.confirm(`Delete the group "${g.name}"?`)) return
+    const res = await fetch(`/api/groups/${g.id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res || !res.ok) { setError(await errText(res, 'Could not delete the group')); return }
+    setError(null); load(); fireDataRefresh()
+  }
+  async function setHostGroups(hostId: string, groupIds: string[]) {
+    const res = await fetch(`/api/hosts/${hostId}/groups`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ group_ids: groupIds }) }).catch(() => null)
+    if (!res || !res.ok) { setError(await errText(res, 'Could not move the host')); return }
+    setError(null); setEditGroupsHost(null); load(); fireDataRefresh()
+  }
 
   // Respond to a deep-link from the Overview/lists/Triggers: drill the focus onto the target host
   // (or sensor), and expand its site + host so the tree underneath is consistent. HostItems opens
@@ -1707,6 +1743,10 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
     const gs = h.groups && h.groups.length ? h.groups : ['Ungrouped']
     for (const g of gs) { (sites[g] = sites[g] || []).push(h) }
   }
+  // Include empty groups (from /api/groups) so a freshly-created group is visible and manageable, and
+  // map group name -> {id, host count} for the rename/delete/move actions.
+  const groupByName: Record<string, Group> = {}
+  for (const g of groups) { groupByName[g.name] = g; if (!sites[g.name]) sites[g.name] = [] }
   const siteNames = Object.keys(sites).sort((a, b) => a.localeCompare(b))
   function siteWorst(hs: Host[]): string { let s = 'ok'; for (const h of hs) if (!h.paused && !h.hidden && stateRank[h.state] > stateRank[s]) s = h.state; return s }
   function toggleSite(name: string) { setCollapsed((c) => { const n = new Set(c); if (n.has(name)) n.delete(name); else n.add(name); return n }) }
@@ -1725,6 +1765,7 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
         <span className="hint">{siteNames.length} group{siteNames.length === 1 ? '' : 's'} · {hosts.length} host{hosts.length === 1 ? '' : 's'}</span>
         {focus.level !== 'sensor' && (
           <div className="tools">
+            {canPause && focus.level !== 'host' && <button className="btn" onClick={createGroup}>+ New group</button>}
             <div className="seg">
               <button className={!showAll ? 'on' : ''} onClick={() => setShowAll(false)}>Key sensors</button>
               <button className={showAll ? 'on' : ''} onClick={() => setShowAll(true)}>All sensors</button>
@@ -1766,7 +1807,15 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
                 <svg className={'chev' + (open ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
                 <span className="name lnk-host" onClick={(e) => { e.stopPropagation(); drillGroup(name) }}>{name}</span>
                 <span className="loc">{allHs.length} host{allHs.length === 1 ? '' : 's'}</span>
-                <div className="right"><span style={{ width: 9, height: 9, borderRadius: '50%', background: stateColor[siteWorst(allHs)] || 'var(--muted)' }} /></div>
+                <div className="right">
+                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: stateColor[siteWorst(allHs)] || 'var(--muted)' }} />
+                  {canPause && groupByName[name] && (
+                    <Kebab actions={[
+                      { label: 'Rename…', icon: kbIcon.edit, onClick: () => renameGroup(groupByName[name]) },
+                      { label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => { if (allHs.length) { setError(`Move the ${allHs.length} host${allHs.length === 1 ? '' : 's'} out of "${name}" before deleting it.`); return } deleteGroup(groupByName[name]) } },
+                    ]} />
+                  )}
+                </div>
               </div>
             )}
             {open && hs.map((h) => {
@@ -1786,10 +1835,13 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
                         <Kebab disabled={busyId === h.id} actions={[
                           h.paused ? { label: 'Resume', icon: kbIcon.resume, onClick: () => clearHostState(h, 'pause') } : { label: 'Pause', icon: kbIcon.pause, onPick: (s) => setHostState(h, 'pause', s) },
                           h.hidden ? { label: 'Show', icon: kbIcon.show, onClick: () => clearHostState(h, 'hide') } : { label: 'Hide', icon: kbIcon.hide, onPick: (s) => setHostState(h, 'hide', s) },
+                          { sep: true, label: '' },
+                          { label: 'Edit groups…', icon: kbIcon.folder, onClick: () => setEditGroupsHost((cur) => (cur === h.id ? null : h.id)) },
                         ]} />
                       )}
                     </div>
                   </div>
+                  {editGroupsHost === h.id && <GroupEditor current={h.groups || []} groups={groups} onSave={(ids) => setHostGroups(h.id, ids)} onCancel={() => setEditGroupsHost(null)} />}
                   {hopen && <div className="host-body"><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAll} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(name, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} /></div>}
                 </div>
               )
@@ -1797,6 +1849,35 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// GroupEditor is the inline band under a host row for moving it between tree groups: a checkbox per
+// group (current membership pre-checked), enforcing at least one. Save replaces the host's full group
+// set. Mirrors the inline-editor idiom (ChannelEditor) rather than a modal.
+function GroupEditor({ current, groups, onSave, onCancel }: { current: string[]; groups: Group[]; onSave: (ids: string[]) => Promise<void> | void; onCancel: () => void }) {
+  const [sel, setSel] = useState<Set<string>>(() => new Set(groups.filter((g) => current.includes(g.name)).map((g) => g.id)))
+  const [busy, setBusy] = useState(false)
+  function toggle(id: string) { setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n }) }
+  const sorted = [...groups].sort((a, b) => a.name.localeCompare(b.name))
+  return (
+    <div className="group-edit">
+      <div className="ge-title">Groups for this host</div>
+      {sorted.length === 0
+        ? <div style={{ color: 'var(--muted)', fontSize: 13 }}>No groups yet - create one first.</div>
+        : <div className="ge-list">
+            {sorted.map((g) => (
+              <label key={g.id} className="ge-row">
+                <input type="checkbox" checked={sel.has(g.id)} onChange={() => toggle(g.id)} />
+                <span>{g.name}</span>
+              </label>
+            ))}
+          </div>}
+      <div className="ge-foot">
+        <Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
+        <Button variant="primary" disabled={sel.size === 0 || busy} onClick={async () => { setBusy(true); await onSave([...sel]); setBusy(false) }}>Save</Button>
+      </div>
     </div>
   )
 }
