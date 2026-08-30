@@ -1644,19 +1644,25 @@ function Kebab({ actions, disabled, up }: { actions: KAction[]; disabled?: boole
 }
 
 // Focus is the PRTG-style drill-down state layered over the expandable tree: from the whole tree
-// (root) you can narrow to a single group, a single host, or a single sensor. The chevrons still
-// expand inline for a quick peek; clicking a name drills the focus and updates the breadcrumb.
+// (root) you can narrow to a group node, a single host, or a single sensor. `path` is the full group
+// path (Zabbix nests groups by name with "/", e.g. "site1/Network"), so it can address any node in the
+// hierarchy. The chevrons still expand inline for a quick peek; clicking a name drills the focus.
 type Focus =
   | { level: 'root' }
-  | { level: 'group'; group: string }
-  | { level: 'host'; group: string; hostId: string }
-  | { level: 'sensor'; group: string; hostId: string; itemId: string; itemName?: string }
+  | { level: 'group'; path: string }
+  | { level: 'host'; path: string; hostId: string }
+  | { level: 'sensor'; path: string; hostId: string; itemId: string; itemName?: string }
+
+// A node in the nested group tree, derived from the "/"-separated group names. A node may be a real
+// Zabbix group (has `group`) or a virtual parent (e.g. "site1" when only "site1/Network" exists).
+type GNode = { path: string; name: string; group?: Group; children: GNode[]; hosts: Host[] }
 
 function MonitoringView({ role, target, onNavigate }: { role: string; target: { hostId: string; itemId?: string; itemName?: string; n: number } | null; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
   const [hosts, setHosts] = useState<Host[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const [creating, setCreating] = useState(false) // "+ New group" inline band open
   const [gAction, setGAction] = useState<{ id: string; mode: 'rename' | 'delete' } | null>(null) // per-group rename/delete band
+  const [newSubPath, setNewSubPath] = useState<string | null>(null) // group path under which a "New subgroup" band is open
   const [focus, setFocus] = useState<Focus>({ level: 'root' })
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1685,7 +1691,7 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
     if (!name) return
     const res = await fetch('/api/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }).catch(() => null)
     if (!res || !res.ok) { setError(await errText(res, 'Could not create the group')); return }
-    setError(null); setCreating(false); load(); fireDataRefresh()
+    setError(null); setCreating(false); setNewSubPath(null); load(); fireDataRefresh()
   }
   async function renameGroup(g: Group, name: string) {
     name = name.trim()
@@ -1712,21 +1718,22 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
     if (!target) return
     const h = hosts.find((x) => x.id === target.hostId)
     if (!h) return
-    const g = (h.groups && h.groups.length ? h.groups : ['Ungrouped'])[0]
-    setCollapsed((c) => { const n = new Set(c); n.delete(g); return n })
-    setOpenHost(g + '::' + target.hostId)
+    const p = (h.groups && h.groups.length ? h.groups : ['Ungrouped'])[0]
+    // Un-collapse the target group and all its ancestor paths so the host is reachable in the tree.
+    setCollapsed((c) => { const n = new Set(c); let a = ''; for (const seg of p.split('/')) { a = a ? a + '/' + seg : seg; n.delete(a) } return n })
+    setOpenHost(p + '::' + target.hostId)
     setFocus(target.itemId
-      ? { level: 'sensor', group: g, hostId: target.hostId, itemId: target.itemId, itemName: target.itemName }
-      : { level: 'host', group: g, hostId: target.hostId })
+      ? { level: 'sensor', path: p, hostId: target.hostId, itemId: target.itemId, itemName: target.itemName }
+      : { level: 'host', path: p, hostId: target.hostId })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target?.n, hosts.length])
 
   // Drill helpers - narrow the focus and refine the URL so Back steps between screens. A group focus
   // isn't URL-persisted (host/sensor are, via ?host=&item=); reloading a group focus lands at root.
   function drillRoot() { setFocus({ level: 'root' }); onNavigate(null, null) }
-  function drillGroup(group: string) { setFocus({ level: 'group', group }); onNavigate(null, null) }
-  function drillHost(group: string, hostId: string) { setFocus({ level: 'host', group, hostId }); setOpenHost(group + '::' + hostId); onNavigate(hostId, null) }
-  function drillSensor(group: string, hostId: string, itemId: string, itemName: string) { setFocus({ level: 'sensor', group, hostId, itemId, itemName }); onNavigate(hostId, itemId) }
+  function drillGroup(path: string) { setFocus({ level: 'group', path }); onNavigate(null, null) }
+  function drillHost(path: string, hostId: string) { setFocus({ level: 'host', path, hostId }); setOpenHost(path + '::' + hostId); onNavigate(hostId, null) }
+  function drillSensor(path: string, hostId: string, itemId: string, itemName: string) { setFocus({ level: 'sensor', path, hostId, itemId, itemName }); onNavigate(hostId, itemId) }
 
   async function setHostState(h: Host, action: 'pause' | 'hide', seconds: number | null) {
     setBusyId(h.id)
@@ -1743,33 +1750,129 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
     load(); fireDataRefresh()
   }
 
-  // Build the site tree: site = Zabbix host group. A host in several groups appears under each;
-  // hosts with no group fall under "Ungrouped".
-  const sites: Record<string, Host[]> = {}
+  // Build the nested group tree from the "/"-separated group names: each path segment is a node, so
+  // "site1/Network" nests "Network" under "site1". A node is a real Zabbix group (has .group) or a
+  // virtual parent (e.g. "site1" when only "site1/Network" exists). Hosts attach to their exact group
+  // path; hosts with no group fall under a synthetic "Ungrouped" node.
+  const byPath = new Map<string, GNode>()
+  const roots: GNode[] = []
+  function ensureNode(path: string): GNode {
+    const found = byPath.get(path)
+    if (found) return found
+    const idx = path.lastIndexOf('/')
+    const n: GNode = { path, name: idx >= 0 ? path.slice(idx + 1) : path, children: [], hosts: [] }
+    byPath.set(path, n)
+    if (idx >= 0) ensureNode(path.slice(0, idx)).children.push(n)
+    else roots.push(n)
+    return n
+  }
+  for (const g of groups) ensureNode(g.name).group = g
   for (const h of hosts) {
     const gs = h.groups && h.groups.length ? h.groups : ['Ungrouped']
-    for (const g of gs) { (sites[g] = sites[g] || []).push(h) }
+    for (const gp of gs) ensureNode(gp).hosts.push(h)
   }
-  // Include every group (from /api/groups) in the tree - empty ones too, so they can be seen and
-  // removed if unwanted - and map group name -> {id, host count} for the rename/delete/move actions.
-  const groupByName: Record<string, Group> = {}
-  for (const g of groups) { groupByName[g.name] = g; if (!sites[g.name]) sites[g.name] = [] }
-  const siteNames = Object.keys(sites).sort((a, b) => a.localeCompare(b))
-  function siteWorst(hs: Host[]): string { let s = 'ok'; for (const h of hs) if (!h.paused && !h.hidden && stateRank[h.state] > stateRank[s]) s = h.state; return s }
-  function toggleSite(name: string) { setCollapsed((c) => { const n = new Set(c); if (n.has(name)) n.delete(name); else n.add(name); return n }) }
+  const sortNodes = (ns: GNode[]) => { ns.sort((a, b) => a.name.localeCompare(b.name)); for (const n of ns) sortNodes(n.children) }
+  sortNodes(roots)
 
-  // Focus narrows what the tree renders. A host/sensor focus shows only that host's card (no site
-  // head - the breadcrumb carries the path); a group focus shows only that group.
+  // Rolled-up hosts of a node (its own + all descendants), de-duplicated - drives the node's host
+  // count and worst-state dot.
+  function subtreeHosts(n: GNode): Host[] {
+    const seen = new Set<string>(); const out: Host[] = []
+    const walk = (x: GNode) => { for (const h of x.hosts) if (!seen.has(h.id)) { seen.add(h.id); out.push(h) } for (const c of x.children) walk(c) }
+    walk(n); return out
+  }
+  function nodeWorst(hs: Host[]): string { let s = 'ok'; for (const h of hs) if (!h.paused && !h.hidden && stateRank[h.state] > stateRank[s]) s = h.state; return s }
+  function toggleNode(path: string) { setCollapsed((c) => { const n = new Set(c); n.has(path) ? n.delete(path) : n.add(path); return n }) }
+
   const focusHostId = focus.level === 'host' || focus.level === 'sensor' ? focus.hostId : null
   const focusItemId = focus.level === 'sensor' ? focus.itemId : null
-  const focusHostName = focusHostId ? (hosts.find((x) => x.id === focusHostId)?.name || focusHostId) : ''
-  const visibleSites = focus.level === 'root' ? siteNames : siteNames.filter((n) => n === focus.group)
+  const focusHost = focusHostId ? hosts.find((x) => x.id === focusHostId) : undefined
+  const focusHostName = focusHost?.name || focusHostId || ''
+  const indent = (d: number) => 16 + d * 18
+
+  // Recursive host card: head (drill on name) + optional "Edit groups…" band + expanded sensor table.
+  function renderHost(h: Host, path: string, depth: number) {
+    const key = path + '::' + h.id
+    const hopen = openHost === key || focusHostId === h.id
+    return (
+      <div className="host" key={key}>
+        <div className="host-head" style={{ paddingLeft: indent(depth) + 22 }} onClick={() => { const next = hopen ? null : key; setOpenHost(next); onNavigate(next ? h.id : null, null) }}>
+          <svg className={'chev' + (hopen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
+          <span style={{ width: 9, height: 9, borderRadius: '50%', flexShrink: 0, background: dotColor(h.paused, h.hidden, h.state) }} />
+          <span className="hn lnk-host" onClick={(e) => { e.stopPropagation(); drillHost(path, h.id) }}>{h.name}</span>
+          {h.paused && <span className="kind" style={{ color: PAUSED_BLUE }}>· paused {untilLabel(h.paused_until)}</span>}
+          {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
+          <div className="right">
+            {!h.paused && !h.hidden && h.problems > 0 && <span style={{ color: stateColor[h.state], fontSize: 12 }}>{h.problems} problem{h.problems === 1 ? '' : 's'}</span>}
+            {canPause && (
+              <Kebab disabled={busyId === h.id} actions={[
+                h.paused ? { label: 'Resume', icon: kbIcon.resume, onClick: () => clearHostState(h, 'pause') } : { label: 'Pause', icon: kbIcon.pause, onPick: (s) => setHostState(h, 'pause', s) },
+                h.hidden ? { label: 'Show', icon: kbIcon.show, onClick: () => clearHostState(h, 'hide') } : { label: 'Hide', icon: kbIcon.hide, onPick: (s) => setHostState(h, 'hide', s) },
+                { sep: true, label: '' },
+                { label: 'Edit groups…', icon: kbIcon.folder, onClick: () => setEditGroupsHost((cur) => (cur === h.id ? null : h.id)) },
+              ]} />
+            )}
+          </div>
+        </div>
+        {editGroupsHost === h.id && <GroupEditor current={h.groups || []} groups={groups} onSave={(ids) => setHostGroups(h.id, ids)} onCancel={() => setEditGroupsHost(null)} />}
+        {hopen && <div className="host-body" style={{ paddingLeft: indent(depth) + 22 }}><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAll} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(path, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} /></div>}
+      </div>
+    )
+  }
+
+  // Recursive group node: header (drill on name, kebab New subgroup/Rename/Delete) + inline bands +
+  // child nodes + this node's own direct hosts.
+  function renderNode(node: GNode, depth: number) {
+    const sub = subtreeHosts(node)
+    const expanded = (focus.level === 'group' && focus.path === node.path) ? true : !collapsed.has(node.path)
+    const g = node.group
+    return (
+      <div className="site" key={node.path}>
+        <div className="site-head" style={{ paddingLeft: indent(depth) }} onClick={() => toggleNode(node.path)}>
+          <svg className={'chev' + (expanded ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
+          <span className="name lnk-host" onClick={(e) => { e.stopPropagation(); drillGroup(node.path) }}>{node.name}</span>
+          <span className="loc">{sub.length} host{sub.length === 1 ? '' : 's'}</span>
+          <div className="right">
+            <span style={{ width: 9, height: 9, borderRadius: '50%', background: stateColor[nodeWorst(sub)] || 'var(--muted)' }} />
+            {canPause && g && (
+              <Kebab actions={[
+                { label: 'New subgroup…', icon: kbIcon.folder, onClick: () => { setError(null); setGAction(null); setNewSubPath(node.path); setCollapsed((c) => { const n = new Set(c); n.delete(node.path); return n }) } },
+                { label: 'Rename…', icon: kbIcon.edit, onClick: () => { setError(null); setNewSubPath(null); setGAction({ id: g.id, mode: 'rename' }) } },
+                { label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => { setError(null); setNewSubPath(null); if (node.hosts.length) { setError(`Move the ${node.hosts.length} host${node.hosts.length === 1 ? '' : 's'} out of "${node.path}" before deleting it.`); return } setGAction({ id: g.id, mode: 'delete' }) } },
+              ]} />
+            )}
+          </div>
+        </div>
+        {g && gAction?.id === g.id && (
+          gAction.mode === 'rename'
+            ? <GroupNameBand initial={node.path} placeholder="Group path" confirmLabel="Rename" onConfirm={(v) => renameGroup(g, v)} onCancel={() => setGAction(null)} />
+            : <div className="group-band">
+                <span className="gb-msg">Delete the group “{node.path}”? This can’t be undone.</span>
+                <div className="gb-foot">
+                  <Button variant="ghost" onClick={() => setGAction(null)}>Cancel</Button>
+                  <Button variant="danger" onClick={() => deleteGroup(g)}>Delete</Button>
+                </div>
+              </div>
+        )}
+        {newSubPath === node.path && <GroupNameBand prefix={node.path + '/'} placeholder="Subgroup name" confirmLabel="Create" onConfirm={(v) => createGroup(v)} onCancel={() => setNewSubPath(null)} />}
+        {expanded && <>
+          {node.children.map((c) => renderNode(c, depth + 1))}
+          {node.hosts.map((h) => renderHost(h, node.path, depth + 1))}
+        </>}
+      </div>
+    )
+  }
+
+  // What to render: root -> all top-level nodes; group focus -> just that node's subtree; host/sensor
+  // focus -> only the focused host card (the breadcrumb carries the path).
+  const focusNode = focus.level === 'group' ? byPath.get(focus.path) : undefined
+  const pathSegs = focus.level !== 'root' ? focus.path.split('/') : []
 
   return (
     <div className="panel">
       <div className="phead">
         <h2>Sites &amp; hosts</h2>
-        <span className="hint">{siteNames.length} group{siteNames.length === 1 ? '' : 's'} · {hosts.length} host{hosts.length === 1 ? '' : 's'}</span>
+        <span className="hint">{groups.length} group{groups.length === 1 ? '' : 's'} · {hosts.length} host{hosts.length === 1 ? '' : 's'}</span>
         {focus.level !== 'sensor' && (
           <div className="tools">
             {canPause && focus.level !== 'host' && <button className="btn" onClick={() => { setError(null); setCreating((v) => !v) }}>+ New group</button>}
@@ -1783,15 +1886,16 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
       {focus.level !== 'root' && (
         <div className="crumbs">
           <span className="crumb" onClick={drillRoot}>Sites &amp; hosts</span>
-          <span className="sep">/</span>
-          {focus.level === 'group'
-            ? <span className="crumb cur">{focus.group}</span>
-            : <span className="crumb" onClick={() => drillGroup(focus.group)}>{focus.group}</span>}
+          {pathSegs.map((seg, i) => {
+            const p = pathSegs.slice(0, i + 1).join('/')
+            const isCur = focus.level === 'group' && i === pathSegs.length - 1
+            return <Fragment key={p}><span className="sep">/</span>{isCur ? <span className="crumb cur">{seg}</span> : <span className="crumb" onClick={() => drillGroup(p)}>{seg}</span>}</Fragment>
+          })}
           {(focus.level === 'host' || focus.level === 'sensor') && <>
             <span className="sep">/</span>
             {focus.level === 'host'
               ? <span className="crumb cur">{focusHostName}</span>
-              : <span className="crumb" onClick={() => drillHost(focus.group, focus.hostId)}>{focusHostName}</span>}
+              : <span className="crumb" onClick={() => drillHost(focus.path, focus.hostId)}>{focusHostName}</span>}
           </>}
           {focus.level === 'sensor' && <>
             <span className="sep">/</span>
@@ -1799,87 +1903,26 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
           </>}
         </div>
       )}
-      {creating && <GroupNameBand placeholder="New group name" confirmLabel="Create" onConfirm={(name) => createGroup(name)} onCancel={() => setCreating(false)} />}
+      {creating && <GroupNameBand placeholder="New group name (use / for nesting, e.g. site1/Network)" confirmLabel="Create" onConfirm={(name) => createGroup(name)} onCancel={() => setCreating(false)} />}
       {loading && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>Loading…</div>}
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
       {!loading && !error && hosts.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>No hosts found.</div>}
-      {visibleSites.map((name) => {
-        const allHs = sites[name]
-        const hs = focusHostId ? allHs.filter((h) => h.id === focusHostId) : allHs
-        const showHead = focus.level === 'root' || focus.level === 'group'
-        const open = showHead ? !collapsed.has(name) : true
-        return (
-          <div className="site" key={name}>
-            {showHead && (
-              <div className="site-head" onClick={() => toggleSite(name)}>
-                <svg className={'chev' + (open ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
-                <span className="name lnk-host" onClick={(e) => { e.stopPropagation(); drillGroup(name) }}>{name}</span>
-                <span className="loc">{allHs.length} host{allHs.length === 1 ? '' : 's'}</span>
-                <div className="right">
-                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: stateColor[siteWorst(allHs)] || 'var(--muted)' }} />
-                  {canPause && groupByName[name] && (
-                    <Kebab actions={[
-                      { label: 'Rename…', icon: kbIcon.edit, onClick: () => { setError(null); setGAction({ id: groupByName[name].id, mode: 'rename' }) } },
-                      { label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => { setError(null); if (allHs.length) { setError(`Move the ${allHs.length} host${allHs.length === 1 ? '' : 's'} out of "${name}" before deleting it.`); return } setGAction({ id: groupByName[name].id, mode: 'delete' }) } },
-                    ]} />
-                  )}
-                </div>
-              </div>
-            )}
-            {showHead && groupByName[name] && gAction?.id === groupByName[name].id && (
-              gAction.mode === 'rename'
-                ? <GroupNameBand initial={name} placeholder="Group name" confirmLabel="Rename" onConfirm={(v) => renameGroup(groupByName[name], v)} onCancel={() => setGAction(null)} />
-                : <div className="group-band">
-                    <span className="gb-msg">Delete the group “{name}”? This can’t be undone.</span>
-                    <div className="gb-foot">
-                      <Button variant="ghost" onClick={() => setGAction(null)}>Cancel</Button>
-                      <Button variant="danger" onClick={() => deleteGroup(groupByName[name])}>Delete</Button>
-                    </div>
-                  </div>
-            )}
-            {open && hs.map((h) => {
-              const key = name + '::' + h.id
-              const hopen = openHost === key || focusHostId === h.id
-              return (
-                <div className="host" key={key}>
-                  <div className="host-head" onClick={() => { const next = hopen ? null : key; setOpenHost(next); onNavigate(next ? h.id : null, null) }}>
-                    <svg className={'chev' + (hopen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
-                    <span style={{ width: 9, height: 9, borderRadius: '50%', flexShrink: 0, background: dotColor(h.paused, h.hidden, h.state) }} />
-                    <span className="hn lnk-host" onClick={(e) => { e.stopPropagation(); drillHost(name, h.id) }}>{h.name}</span>
-                    {h.paused && <span className="kind" style={{ color: PAUSED_BLUE }}>· paused {untilLabel(h.paused_until)}</span>}
-                    {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
-                    <div className="right">
-                      {!h.paused && !h.hidden && h.problems > 0 && <span style={{ color: stateColor[h.state], fontSize: 12 }}>{h.problems} problem{h.problems === 1 ? '' : 's'}</span>}
-                      {canPause && (
-                        <Kebab disabled={busyId === h.id} actions={[
-                          h.paused ? { label: 'Resume', icon: kbIcon.resume, onClick: () => clearHostState(h, 'pause') } : { label: 'Pause', icon: kbIcon.pause, onPick: (s) => setHostState(h, 'pause', s) },
-                          h.hidden ? { label: 'Show', icon: kbIcon.show, onClick: () => clearHostState(h, 'hide') } : { label: 'Hide', icon: kbIcon.hide, onPick: (s) => setHostState(h, 'hide', s) },
-                          { sep: true, label: '' },
-                          { label: 'Edit groups…', icon: kbIcon.folder, onClick: () => setEditGroupsHost((cur) => (cur === h.id ? null : h.id)) },
-                        ]} />
-                      )}
-                    </div>
-                  </div>
-                  {editGroupsHost === h.id && <GroupEditor current={h.groups || []} groups={groups} onSave={(ids) => setHostGroups(h.id, ids)} onCancel={() => setEditGroupsHost(null)} />}
-                  {hopen && <div className="host-body"><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAll} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(name, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} /></div>}
-                </div>
-              )
-            })}
-          </div>
-        )
-      })}
+      {focus.level === 'root' && roots.map((n) => renderNode(n, 0))}
+      {focus.level === 'group' && (focusNode ? renderNode(focusNode, 0) : <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>This group no longer exists.</div>)}
+      {(focus.level === 'host' || focus.level === 'sensor') && (focusHost ? renderHost(focusHost, focus.path, 0) : null)}
     </div>
   )
 }
 
 // GroupNameBand is the inline name editor used for "New group" and "Rename group" (replacing the
 // browser prompt): a text field with Enter-to-confirm / Esc-to-cancel and explicit buttons.
-function GroupNameBand({ initial = '', placeholder, confirmLabel, onConfirm, onCancel }: { initial?: string; placeholder?: string; confirmLabel: string; onConfirm: (name: string) => void | Promise<void>; onCancel: () => void }) {
+function GroupNameBand({ initial = '', prefix, placeholder, confirmLabel, onConfirm, onCancel }: { initial?: string; prefix?: string; placeholder?: string; confirmLabel: string; onConfirm: (name: string) => void | Promise<void>; onCancel: () => void }) {
   const [v, setV] = useState(initial)
   const [busy, setBusy] = useState(false)
-  const submit = async () => { if (!v.trim() || busy) return; setBusy(true); await onConfirm(v); setBusy(false) }
+  const submit = async () => { if (!v.trim() || busy) return; setBusy(true); await onConfirm((prefix || '') + v); setBusy(false) }
   return (
     <div className="group-band">
+      {prefix && <span className="gb-prefix">{prefix}</span>}
       <input className="input" autoFocus placeholder={placeholder} value={v}
         onChange={(e) => setV(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') submit(); else if (e.key === 'Escape') onCancel() }} />
