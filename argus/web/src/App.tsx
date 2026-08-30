@@ -3,6 +3,7 @@ import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { registerPasskey, loginWithPasskey } from './webauthn'
 import { Button, Card, Field, Banner, Badge, CopyButton } from './ui'
+import { useConfirm, usePrompt, useAlert } from './dialog'
 
 type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; landing?: 'overview' | 'errors' }
 type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean }
@@ -592,6 +593,7 @@ type UpdateState = {
 // The one-click update is performed by the argus-updater sidecar (which holds the Docker socket); the
 // core just drops a request and polls /api/update/state, showing a running / success / failure banner.
 function VersionAbout() {
+  const confirm = useConfirm()
   const [v, setV] = useState<VersionInfo | null>(null)
   const [notes, setNotes] = useState<string | null>(null)
   const [upd, setUpd] = useState<UpdateState | null>(null)
@@ -628,13 +630,13 @@ function VersionAbout() {
   }
   const dismiss = () => fetch('/api/update/dismiss', { method: 'POST' }).then(refreshUpd).catch(() => {})
   // Deliberately switch the core to a chosen channel/version (bypassing the in-place channel-preserve).
-  const doSwitch = () => {
+  const doSwitch = async () => {
     if (!switchTo) return
     const isVer = /^v?\d+\.\d+\.\d+$/.test(switchTo)
     const msg = isVer
       ? `Switch Argus to ${switchTo}? This pins the core to that exact version - it won't track a channel until you switch back to latest or testing. The core will pull the image and restart briefly.`
       : `Switch Argus to the "${switchTo}" channel? The core will pull that image and restart briefly.`
-    if (!window.confirm(msg)) return
+    if (!(await confirm({ title: 'Switch version', message: msg, confirmLabel: 'Switch' }))) return
     setBusy(true); setErr('')
     fetch('/api/update/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: switchTo }) })
       .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'could not start the switch') })
@@ -1033,6 +1035,7 @@ const CH_FIELDS: Record<string, ChField[]> = {
 }
 
 function NotificationsView() {
+  const confirm = useConfirm()
   const [channels, setChannels] = useState<Channel[] | null>(null)
   const [sites, setSites] = useState<string[]>([])
   const [editing, setEditing] = useState<Channel | 'new' | null>(null)
@@ -1064,7 +1067,7 @@ function NotificationsView() {
   }
   async function del(c: Channel) {
     setError(null); setMsg(null)
-    if (!window.confirm(`Delete channel “${c.name}”? Alerts will stop routing here.`)) return
+    if (!(await confirm({ title: 'Delete channel', message: `Delete channel “${c.name}”? Alerts will stop routing here.`, confirmLabel: 'Delete', danger: true }))) return
     const res = await fetch(`/api/notify/channels/${c.id}`, { method: 'DELETE' })
     if (!res.ok) { setError(await errText(res, 'Could not delete channel')); return }
     load()
@@ -1238,6 +1241,8 @@ function probeComposeCmd(c: CreatedToken): string {
 }
 
 function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
+  const confirm = useConfirm()
+  const alert = useAlert()
   const [proxies, setProxies] = useState<Proxy[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tokens, setTokens] = useState<EnrollTokenRow[] | null>(null)
@@ -1252,10 +1257,10 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
   async function triggerUpdate(p: Proxy) {
     try {
       const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/update`, { method: 'POST' })
-      if (!res.ok) { window.alert(await errText(res, 'Could not queue the update')); return }
+      if (!res.ok) { alert({ title: 'Update', message: await errText(res, 'Could not queue the update'), danger: true }); return }
       const d = await res.json()
       setQueued((q) => ({ ...q, [p.name]: d.tag || 'target' }))
-    } catch { window.alert('Could not queue the update') }
+    } catch { alert({ title: 'Update', message: 'Could not queue the update', danger: true }) }
   }
 
   // Mint a check-in credential for a probe that predates fleet updates; shown once for the operator
@@ -1263,10 +1268,10 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
   async function enableReporting(p: Proxy) {
     try {
       const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/checkin-token`, { method: 'POST' })
-      if (!res.ok) { window.alert(await errText(res, 'Could not issue a check-in token')); return }
+      if (!res.ok) { alert({ title: 'Check-in token', message: await errText(res, 'Could not issue a check-in token'), danger: true }); return }
       const d = await res.json()
       setReport({ name: p.name, token: d.token })
-    } catch { window.alert('Could not issue a check-in token') }
+    } catch { alert({ title: 'Check-in token', message: 'Could not issue a check-in token', danger: true }) }
   }
 
   useEffect(() => {
@@ -1284,7 +1289,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
   useEffect(() => { loadTokens() }, [isAdmin, enroll]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function revoke(t: EnrollTokenRow) {
-    if (!window.confirm(`Revoke the enrollment token for ${t.proxy_name}?`)) return
+    if (!(await confirm({ title: 'Revoke token', message: `Revoke the enrollment token for ${t.proxy_name}?`, confirmLabel: 'Revoke', danger: true }))) return
     await fetch(`/api/probes/tokens/${t.id}`, { method: 'DELETE' }).catch(() => {})
     loadTokens()
   }
@@ -2429,6 +2434,8 @@ function SensorChart({ itemId, units }: { itemId: string; units: string }) {
 }
 
 function UsersView() {
+  const confirm = useConfirm()
+  const prompt = usePrompt()
   const [users, setUsers] = useState<User[]>([])
   const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
@@ -2459,7 +2466,7 @@ function UsersView() {
   }
   async function resetPw(u: User) {
     setError(null); setMsg(null)
-    const pw = window.prompt(`New password for ${u.email} (min 8 characters):`)
+    const pw = await prompt({ title: 'Reset password', label: `New password for ${u.email} (min 8 characters)`, type: 'password', confirmLabel: 'Set password', required: true })
     if (!pw) return
     const res = await fetch(`/api/users/${u.id}/password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) })
     if (!res.ok) return fail(res)
@@ -2467,28 +2474,28 @@ function UsersView() {
   }
   async function resetMfa(u: User) {
     setError(null); setMsg(null)
-    if (!window.confirm(`Remove two-factor for ${u.email}? They'll sign in with just their password until they set it up again.`)) return
+    if (!(await confirm({ title: 'Remove two-factor', message: `Remove two-factor for ${u.email}? They'll sign in with just their password until they set it up again.`, confirmLabel: 'Remove', danger: true }))) return
     const res = await fetch(`/api/users/${u.id}/mfa/reset`, { method: 'POST' })
     if (!res.ok) return fail(res)
     setMsg(`Two-factor removed for ${u.email}`); load()
   }
   async function resetPasskeys(u: User) {
     setError(null); setMsg(null)
-    if (!window.confirm(`Remove all passkeys for ${u.email}?`)) return
+    if (!(await confirm({ title: 'Remove passkeys', message: `Remove all passkeys for ${u.email}?`, confirmLabel: 'Remove', danger: true }))) return
     const res = await fetch(`/api/users/${u.id}/passkeys/reset`, { method: 'POST' })
     if (!res.ok) return fail(res)
     setMsg(`Passkeys removed for ${u.email}`); load()
   }
   async function setDisabled(u: User, disabled: boolean) {
     setError(null); setMsg(null)
-    if (disabled && !window.confirm(`Disable ${u.email}? They won't be able to sign in until re-enabled.`)) return
+    if (disabled && !(await confirm({ title: 'Disable user', message: `Disable ${u.email}? They won't be able to sign in until re-enabled.`, confirmLabel: 'Disable', danger: true }))) return
     const res = await fetch(`/api/users/${u.id}/disabled`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ disabled }) })
     if (!res.ok) return fail(res)
     setMsg(`${u.email} ${disabled ? 'disabled' : 'enabled'}`); load()
   }
   async function del(u: User) {
     setError(null); setMsg(null)
-    if (!window.confirm(`Remove ${u.email}? This permanently deletes the account.`)) return
+    if (!(await confirm({ title: 'Remove user', message: `Remove ${u.email}? This permanently deletes the account.`, confirmLabel: 'Remove', danger: true }))) return
     const res = await fetch(`/api/users/${u.id}`, { method: 'DELETE' })
     if (!res.ok) return fail(res)
     setMsg(`${u.email} removed`); load()
@@ -2629,6 +2636,7 @@ function PasswordCard() {
 type Enrollment = { secret: string; otpauth_url: string; qr_data_uri: string }
 
 function MfaCard() {
+  const prompt = usePrompt()
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [remaining, setRemaining] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -2657,7 +2665,7 @@ function MfaCard() {
   }
   async function disable() {
     setError(null); setMsg(null); setCodes(null)
-    const pw = window.prompt('Confirm your password to turn off two-factor:')
+    const pw = await prompt({ title: 'Turn off two-factor', label: 'Confirm your password', type: 'password', confirmLabel: 'Turn off', required: true })
     if (!pw) return
     const res = await fetch('/api/me/mfa/disable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) })
     if (!res.ok) { setError(await errText(res, 'Could not disable 2FA')); return }
@@ -2665,7 +2673,7 @@ function MfaCard() {
   }
   async function regen() {
     setError(null); setMsg(null); setCodes(null)
-    const pw = window.prompt('Confirm your password to generate new recovery codes:')
+    const pw = await prompt({ title: 'New recovery codes', label: 'Confirm your password', type: 'password', confirmLabel: 'Generate', required: true })
     if (!pw) return
     const res = await fetch('/api/me/mfa/recovery-codes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) })
     if (!res.ok) { setError(await errText(res, 'Could not regenerate codes')); return }
@@ -2740,6 +2748,8 @@ function RecoveryCodes({ codes }: { codes: string[] }) {
 }
 
 function PasskeyCard() {
+  const confirm = useConfirm()
+  const prompt = usePrompt()
   const [keys, setKeys] = useState<Passkey[]>([])
   const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
@@ -2750,7 +2760,7 @@ function PasskeyCard() {
 
   async function add() {
     setError(null); setMsg(null)
-    const name = window.prompt('Name this passkey (e.g. "Bitwarden", "Phone", "YubiKey"):', 'Bitwarden')
+    const name = await prompt({ title: 'Add a passkey', label: 'Name this passkey (e.g. "Bitwarden", "Phone", "YubiKey")', initial: 'Bitwarden', confirmLabel: 'Continue' })
     if (name === null) return
     setBusy(true)
     try {
@@ -2762,7 +2772,7 @@ function PasskeyCard() {
   }
   async function remove(k: Passkey) {
     setError(null); setMsg(null)
-    if (!window.confirm(`Remove passkey "${k.name}"?`)) return
+    if (!(await confirm({ title: 'Remove passkey', message: `Remove passkey "${k.name}"?`, confirmLabel: 'Remove', danger: true }))) return
     const res = await fetch(`/api/me/passkeys/${k.id}`, { method: 'DELETE' })
     if (!res.ok) { setError(await errText(res, 'Could not remove passkey')); return }
     setMsg('Passkey removed'); load()
