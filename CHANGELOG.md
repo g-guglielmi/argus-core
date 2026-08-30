@@ -11,6 +11,36 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.21] - 2026-08-31
+
+**Manage tree groups from Argus (first Zabbix *config* writes):**
+
+- **Create, rename, delete groups and move hosts between them** from the Monitoring tree
+  (admin/helpdesk). New group CRUD (`/api/groups`) + per-host membership (`/api/hosts/{id}/groups`),
+  backed by new Zabbix host-group client methods. Deleting a non-empty group is refused; a host always
+  keeps at least one group. Requires the Zabbix API token to have **super-admin** rights.
+- **Nested groups render as a real hierarchy.** Zabbix nests host groups by name with `/`
+  (`site1/Network`); the tree now draws that as `site1` › `Network`, with rolled-up host counts and
+  status per node. There are **no virtual parents** - only real groups are nodes; a group with no real
+  ancestor sits at the top level under its full name.
+- **A host group per probe.** Enrolling a probe now also creates its site's top-level group (named
+  after the site). Probes enrolled before this are seeded once, at startup.
+
+**Everything in the web UI - no browser popups:**
+
+- Replaced every native `window.confirm` / `window.prompt` / `window.alert` with an in-app,
+  theme-aware dialog (`useConfirm` / `usePrompt` / `useAlert`): version/channel switch, delete channel,
+  revoke probe token, user reset-password / reset-MFA / reset-passkeys / disable / delete, MFA disable +
+  recovery-code regen, passkey add/remove, and probe update/check-in errors. Group create/rename/delete
+  use inline editor bands.
+
+**Fixes:**
+
+- **Self-update on a clean-tag testing box.** A box running a clean `vX.Y.Z` image that tracks
+  `:testing` showed the "Update" button but the click was refused ("no newer release available") because
+  the action gated on `status=="development"` while the button used a broader rule. The button and the
+  click now share one predicate, so the in-place testing update applies.
+
 ## [0.4.20] - 2026-08-30
 
 **Monitoring drill-down (PRTG-style):**
