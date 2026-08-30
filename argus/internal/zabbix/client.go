@@ -138,10 +138,11 @@ type HostGroup struct {
 }
 
 type Host struct {
-	HostID string      `json:"hostid"`
-	Name   string      `json:"name"`
-	Status string      `json:"status"` // "0" monitored, "1" not monitored
-	Groups []HostGroup `json:"hostgroups"`
+	HostID  string      `json:"hostid"`
+	Name    string      `json:"name"`
+	Status  string      `json:"status"`  // "0" monitored, "1" not monitored
+	ProxyID string      `json:"proxyid"` // "0" = monitored by the server
+	Groups  []HostGroup `json:"hostgroups"`
 }
 
 type Item struct {
@@ -170,9 +171,9 @@ type Trigger struct {
 // site -> host -> sensor tree; site = host group).
 func (c *Client) Hosts(ctx context.Context) ([]Host, error) {
 	params := map[string]any{
-		"output":          []string{"hostid", "name", "status"},
+		"output":           []string{"hostid", "name", "status", "proxyid"},
 		"selectHostGroups": []string{"groupid", "name"},
-		"sortfield":       "name",
+		"sortfield":        "name",
 	}
 	var hosts []Host
 	return hosts, c.call(ctx, "host.get", params, true, &hosts)
@@ -684,22 +685,24 @@ type HostInterface struct {
 
 // HostDetail is a host's identity + interfaces, for the settings editor.
 type HostDetail struct {
-	HostID     string          `json:"hostid"`
-	Host       string          `json:"host"` // technical name
-	Name       string          `json:"name"` // visible name
-	ProxyID    string          `json:"proxyid"`
-	Interfaces []HostInterface `json:"interfaces"`
+	HostID      string          `json:"hostid"`
+	Host        string          `json:"host"` // technical name
+	Name        string          `json:"name"` // visible name
+	ProxyID     string          `json:"proxyid"`
+	MonitoredBy int             `json:"monitored_by"` // 0 server, 1 proxy, 2 proxy group
+	Interfaces  []HostInterface `json:"interfaces"`
 }
 
 // HostDetail fetches a host's names, proxy and interfaces. The Zabbix `details` field is polymorphic
 // (`[]` for non-SNMP, `{…}` for SNMP), so it's decoded via RawMessage and parsed only when an object.
 func (c *Client) HostDetail(ctx context.Context, hostID string) (*HostDetail, error) {
 	var raw []struct {
-		HostID     string `json:"hostid"`
-		Host       string `json:"host"`
-		Name       string `json:"name"`
-		ProxyID    string `json:"proxyid"`
-		Interfaces []struct {
+		HostID      string `json:"hostid"`
+		Host        string `json:"host"`
+		Name        string `json:"name"`
+		ProxyID     string `json:"proxyid"`
+		MonitoredBy string `json:"monitored_by"`
+		Interfaces  []struct {
 			InterfaceID string          `json:"interfaceid"`
 			Type        string          `json:"type"`
 			Main        string          `json:"main"`
@@ -711,7 +714,7 @@ func (c *Client) HostDetail(ctx context.Context, hostID string) (*HostDetail, er
 		} `json:"interfaces"`
 	}
 	params := map[string]any{
-		"output":           []string{"hostid", "host", "name", "status", "proxyid"},
+		"output":           []string{"hostid", "host", "name", "status", "proxyid", "monitored_by"},
 		"selectInterfaces": []string{"interfaceid", "type", "main", "useip", "ip", "dns", "port", "details"},
 		"hostids":          hostID,
 	}
@@ -722,7 +725,7 @@ func (c *Client) HostDetail(ctx context.Context, hostID string) (*HostDetail, er
 		return nil, fmt.Errorf("host not found")
 	}
 	h := raw[0]
-	hd := &HostDetail{HostID: h.HostID, Host: h.Host, Name: h.Name, ProxyID: h.ProxyID}
+	hd := &HostDetail{HostID: h.HostID, Host: h.Host, Name: h.Name, ProxyID: h.ProxyID, MonitoredBy: atoiSafe(h.MonitoredBy)}
 	for _, i := range h.Interfaces {
 		iface := HostInterface{InterfaceID: i.InterfaceID, Type: atoiSafe(i.Type), Main: atoiSafe(i.Main), UseIP: atoiSafe(i.UseIP), IP: i.IP, DNS: i.DNS, Port: i.Port}
 		if iface.Type == 2 && len(i.Details) > 0 && i.Details[0] == '{' {
@@ -750,6 +753,18 @@ func (c *Client) HostDetail(ctx context.Context, hostID string) (*HostDetail, er
 // UpdateHost sets a host's technical and visible name.
 func (c *Client) UpdateHost(ctx context.Context, hostID, host, name string) error {
 	return c.call(ctx, "host.update", map[string]any{"hostid": hostID, "host": host, "name": name}, true, nil)
+}
+
+// SetHostProxy sets which collector monitors a host: server (monitoredBy 0, proxyid cleared) or a
+// specific proxy (monitoredBy 1 + proxyID). Proxy groups (2) aren't managed here.
+func (c *Client) SetHostProxy(ctx context.Context, hostID string, monitoredBy int, proxyID string) error {
+	params := map[string]any{"hostid": hostID, "monitored_by": monitoredBy}
+	if monitoredBy == 1 {
+		params["proxyid"] = proxyID
+	} else {
+		params["proxyid"] = "0"
+	}
+	return c.call(ctx, "host.update", params, true, nil)
 }
 
 // ifaceParams builds the hostinterface.create/update params for an interface, including the SNMP

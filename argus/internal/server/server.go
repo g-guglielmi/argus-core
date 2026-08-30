@@ -140,6 +140,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// host settings editor: read the identity + interfaces (any user), reconcile-save them (config write).
 	mux.HandleFunc("GET /api/hosts/{id}/config", auth.RequireAuth(s.handleHostConfig))
 	mux.HandleFunc("PATCH /api/hosts/{id}/config", auth.RequireRoles(s.handleUpdateHostConfig, "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/hosts/{id}/proxy", auth.RequireRoles(s.handleSetHostProxy, "admin", "helpdesk"))
 
 	// self-service MFA (any signed-in user)
 	mux.HandleFunc("GET /api/me/mfa", auth.RequireAuth(s.handleMFAStatus))

@@ -8,12 +8,12 @@ import { useConfirm, usePrompt, useAlert } from './dialog'
 type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; landing?: 'overview' | 'errors' }
 type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
-type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[] }
+type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string }
 type Group = { id: string; name: string; hosts: number }
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg }
-type HostCfg = { hostid: string; host: string; name: string; proxy_id?: string; proxy_name?: string; interfaces: Iface[] }
-type Proxy = { name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number }
+type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; interfaces: Iface[] }
+type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number }
 type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; config: Record<string, string> }
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; priority: number }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
@@ -1664,8 +1664,10 @@ type Focus =
 type GNode = { path: string; name: string; group?: Group; parentPath?: string; children: GNode[]; hosts: Host[] }
 
 function MonitoringView({ role, target, onNavigate }: { role: string; target: { hostId: string; itemId?: string; itemName?: string; n: number } | null; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
+  const confirm = useConfirm()
   const [hosts, setHosts] = useState<Host[]>([])
   const [groups, setGroups] = useState<Group[]>([])
+  const [proxies, setProxies] = useState<Proxy[]>([])
   const [creating, setCreating] = useState(false) // "+ New group" inline band open
   const [gAction, setGAction] = useState<{ id: string; mode: 'rename' | 'delete' } | null>(null) // per-group rename/delete band
   const [newSubPath, setNewSubPath] = useState<string | null>(null) // group path under which a "New subgroup" band is open
@@ -1687,6 +1689,7 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
       .catch(() => setError('Failed to load hosts'))
       .finally(() => { if (initial) setLoading(false) })
     fetch('/api/groups').then((r) => (r.ok ? r.json() : [])).then((g) => setGroups(g || [])).catch(() => {})
+    fetch('/api/proxies').then((r) => (r.ok ? r.json() : [])).then((p) => setProxies(p || [])).catch(() => {})
   }
   useEffect(() => { load(true); const t = setInterval(() => load(false), 30000); const off = onDataRefresh(() => load(false)); return () => { clearInterval(t); off() } }, [])
 
@@ -1716,6 +1719,26 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
     const res = await fetch(`/api/hosts/${hostId}/groups`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ group_ids: groupIds }) }).catch(() => null)
     if (!res || !res.ok) { setError(await errText(res, 'Could not move the host')); return }
     setError(null); setEditGroupsHost(null); load(); fireDataRefresh()
+    await maybeOfferProxySwitch(hostId, groupIds)
+  }
+  // After a group move, if the host landed in exactly one site group that matches a proxy (proxy
+  // "proxy-<site>" ↔ top-level group "<site>") and it isn't already on that proxy, offer to switch its
+  // "Monitored by" collector too - keeping the site=proxy=group model in sync (confirmed, not silent).
+  function siteOfProxy(name: string) { return name.startsWith('proxy-') ? name.slice(6) : name }
+  async function maybeOfferProxySwitch(hostId: string, groupIds: string[]) {
+    const host = hosts.find((h) => h.id === hostId)
+    if (!host) return
+    const idToName = new Map(groups.map((g) => [g.id, g.name]))
+    const topSegs = new Set(groupIds.map((id) => (idToName.get(id) || '').split('/')[0]).filter(Boolean))
+    const matched = proxies.filter((p) => topSegs.has(siteOfProxy(p.name)))
+    if (matched.length !== 1) return
+    const target = matched[0]
+    if ((host.proxy_id || '0') === target.id) return
+    const curLabel = host.proxy_id && host.proxy_id !== '0' ? (proxies.find((p) => p.id === host.proxy_id)?.name || 'another proxy') : 'the server'
+    if (!(await confirm({ title: 'Switch collector?', message: `${host.name} is now in the “${siteOfProxy(target.name)}” group. Also set its collector to ${target.name}? (currently ${curLabel})`, confirmLabel: 'Switch proxy' }))) return
+    const r = await fetch(`/api/hosts/${hostId}/proxy`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ monitored_by: 1, proxy_id: target.id }) }).catch(() => null)
+    if (!r || !r.ok) { setError(await errText(r, 'Could not switch the collector proxy')); return }
+    setError(null); load(); fireDataRefresh()
   }
 
   // Respond to a deep-link from the Overview/lists/Triggers: drill the focus onto the target host
@@ -1961,10 +1984,12 @@ function blankSnmp(): SnmpCfg { return { version: 2, community: 'public', bulk: 
 function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; canEdit: boolean; onClose: () => void; onSaved: () => void }) {
   const confirm = useConfirm()
   const [cfg, setCfg] = useState<HostCfg | null>(null)
+  const [proxies, setProxies] = useState<Proxy[]>([])
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : Promise.reject())).then(setCfg).catch(() => setErr('Could not load host settings'))
+    fetch('/api/proxies').then((r) => (r.ok ? r.json() : [])).then((p) => setProxies(p || [])).catch(() => {})
   }, [hostId])
 
   function patch(p: Partial<HostCfg>) { setCfg((c) => (c ? { ...c, ...p } : c)) }
@@ -1979,7 +2004,7 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
   async function save() {
     if (!cfg) return
     setBusy(true); setErr(null)
-    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: cfg.host, name: cfg.name, interfaces: cfg.interfaces }) }).catch(() => null)
+    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces }) }).catch(() => null)
     setBusy(false)
     if (!res || !res.ok) { setErr(await errText(res, 'Could not save host settings')); return }
     onSaved()
@@ -1995,6 +2020,20 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
         <label className="field"><span>Technical name</span><input className="input" value={cfg.host} disabled={!canEdit} onChange={(e) => patch({ host: e.target.value })} /></label>
       </div>
       <div className="hs-note">Renaming the technical name is safe in Zabbix (references update automatically) — avoid it only if external scripts reference this host.</div>
+
+      <div className="hs-mon">
+        <span className="hs-monlabel">Monitored by</span>
+        <div className="seg">
+          <button className={cfg.monitored_by === 0 ? 'on' : ''} disabled={!canEdit} onClick={() => patch({ monitored_by: 0 })}>Server</button>
+          <button className={cfg.monitored_by === 1 ? 'on' : ''} disabled={!canEdit} onClick={() => patch({ monitored_by: 1, proxy_id: cfg.proxy_id || proxies[0]?.id })}>Proxy</button>
+        </div>
+        {cfg.monitored_by === 1 && (
+          <select className="input" value={cfg.proxy_id || ''} disabled={!canEdit} onChange={(e) => patch({ proxy_id: e.target.value })}>
+            <option value="" disabled>Select a proxy…</option>
+            {proxies.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        )}
+      </div>
 
       <div className="hs-title">Interfaces</div>
       {cfg.interfaces.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13 }}>No interfaces.</div>}

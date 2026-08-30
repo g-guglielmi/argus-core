@@ -36,12 +36,13 @@ type ifaceView struct {
 }
 
 type hostConfigView struct {
-	HostID     string      `json:"hostid"`
-	Host       string      `json:"host"` // technical name
-	Name       string      `json:"name"` // visible name
-	ProxyID    string      `json:"proxy_id,omitempty"`
-	ProxyName  string      `json:"proxy_name,omitempty"`
-	Interfaces []ifaceView `json:"interfaces"`
+	HostID      string      `json:"hostid"`
+	Host        string      `json:"host"`         // technical name
+	Name        string      `json:"name"`         // visible name
+	MonitoredBy int         `json:"monitored_by"` // 0 server, 1 proxy, 2 proxy group
+	ProxyID     string      `json:"proxy_id,omitempty"`
+	ProxyName   string      `json:"proxy_name,omitempty"`
+	Interfaces  []ifaceView `json:"interfaces"`
 }
 
 // snmpToView converts client SNMP details to the browser shape, masking v3 passphrases.
@@ -71,7 +72,7 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return
 	}
-	out := hostConfigView{HostID: hd.HostID, Host: hd.Host, Name: hd.Name, ProxyID: hd.ProxyID, Interfaces: make([]ifaceView, 0, len(hd.Interfaces))}
+	out := hostConfigView{HostID: hd.HostID, Host: hd.Host, Name: hd.Name, MonitoredBy: hd.MonitoredBy, ProxyID: hd.ProxyID, Interfaces: make([]ifaceView, 0, len(hd.Interfaces))}
 	if hd.ProxyID != "" && hd.ProxyID != "0" {
 		if proxies, perr := s.zbx.Proxies(ctx); perr == nil {
 			for _, p := range proxies {
@@ -95,9 +96,11 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var req struct {
-		Host       string      `json:"host"`
-		Name       string      `json:"name"`
-		Interfaces []ifaceView `json:"interfaces"`
+		Host        string      `json:"host"`
+		Name        string      `json:"name"`
+		MonitoredBy int         `json:"monitored_by"`
+		ProxyID     string      `json:"proxy_id"`
+		Interfaces  []ifaceView `json:"interfaces"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -107,6 +110,10 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Host == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the technical host name is required"})
+		return
+	}
+	if req.MonitoredBy == 1 && strings.TrimSpace(req.ProxyID) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a proxy is required when monitored by a proxy"})
 		return
 	}
 	for _, i := range req.Interfaces {
@@ -143,6 +150,10 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := s.zbx.UpdateHost(ctx, cur.HostID, req.Host, req.Name); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		return
+	}
+	if err := s.zbx.SetHostProxy(ctx, cur.HostID, req.MonitoredBy, strings.TrimSpace(req.ProxyID)); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return
 	}
@@ -183,6 +194,34 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleSetHostProxy sets a host's collector (Server or a Proxy) - used both by the settings editor
+// and the auto-switch offered after a host is moved into a site's group. Admin/helpdesk.
+func (s *Server) handleSetHostProxy(w http.ResponseWriter, r *http.Request) {
+	if !s.zbx.Authenticated() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured (set ARGUS_ZABBIX_API_TOKEN)"})
+		return
+	}
+	var req struct {
+		MonitoredBy int    `json:"monitored_by"`
+		ProxyID     string `json:"proxy_id"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if req.MonitoredBy == 1 && strings.TrimSpace(req.ProxyID) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a proxy is required when monitored by a proxy"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancel()
+	if err := s.zbx.SetHostProxy(ctx, r.PathValue("id"), req.MonitoredBy, strings.TrimSpace(req.ProxyID)); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

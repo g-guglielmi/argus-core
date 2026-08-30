@@ -10,6 +10,7 @@ import (
 )
 
 type proxyView struct {
+	ID           string `json:"id"` // Zabbix proxyid, for "Monitored by" assignment
 	Name         string `json:"name"`
 	LastAccess   int64  `json:"last_access"`   // unix seconds Zabbix last heard data, 0 if never seen
 	Online       bool   `json:"online"`        // seen within the last 5 minutes
@@ -72,6 +73,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		out = append(out, proxyView{
+			ID:           p.ProxyID,
 			Name:         p.Name,
 			LastAccess:   la,
 			Online:       la > 0 && now-la <= 300,

@@ -39,7 +39,8 @@ type hostView struct {
 	Hidden      bool     `json:"hidden"` // Argus-side suppression (still collecting)
 	PausedUntil *int64   `json:"paused_until,omitempty"`
 	HiddenUntil *int64   `json:"hidden_until,omitempty"`
-	Groups      []string `json:"groups"` // host groups (drive the site tree)
+	Groups      []string `json:"groups"`             // host groups (drive the site tree)
+	ProxyID     string   `json:"proxy_id,omitempty"` // "" / "0" = monitored by the server
 }
 
 type itemView struct {
@@ -129,7 +130,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 		for _, g := range h.Groups {
 			groups = append(groups, g.Name)
 		}
-		hv := hostView{ID: h.HostID, Name: h.Name, Severity: -1, State: "ok", Groups: groups}
+		hv := hostView{ID: h.HostID, Name: h.Name, Severity: -1, State: "ok", Groups: groups, ProxyID: h.ProxyID}
 		if n := count[h.HostID]; n > 0 {
 			hv.Problems = n
 			hv.Severity = worst[h.HostID]
