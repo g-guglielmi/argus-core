@@ -20,8 +20,10 @@ type sensorRow struct {
 	State     string   `json:"state"` // ok | warning | error | acked | paused | hidden
 	Numeric   bool     `json:"numeric"`
 	Supported bool     `json:"supported"`
-	Priority  int      `json:"priority"`  // PRTG-style display priority 1..5 (Argus-only)
-	EventIDs  []string `json:"event_ids"` // problem events on this sensor (for ack / unack from a list)
+	Priority  int      `json:"priority"`         // PRTG-style display priority 1..5 (Argus-only)
+	Severity  int      `json:"severity"`         // worst Zabbix trigger severity 0..5 (0 = none)
+	Reason    string   `json:"reason,omitempty"` // name of the worst trigger, i.e. why the sensor is unhappy
+	EventIDs  []string `json:"event_ids"`        // problem events on this sensor (for ack / unack from a list)
 }
 
 // handleSensors returns a census of the curated ("key") sensors across every host, each tagged
@@ -53,6 +55,8 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 	unackedRank := map[string]int{} // 1 = warning, 2 = error
 	hasAcked := map[string]bool{}
 	itemEvents := map[string][]string{}
+	itemSev := map[string]int{}       // worst Zabbix trigger severity (0..5) firing on the item
+	itemReason := map[string]string{} // name of that worst trigger, so the sensor can show *why* it's unhappy
 	for _, p := range problems {
 		rank := 0
 		switch severityState(atoi(p.Severity)) {
@@ -63,6 +67,7 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 		default:
 			continue
 		}
+		sev := atoi(p.Severity)
 		_, isAcked := acked[p.EventID]
 		for _, itemID := range itemsByTrigger[p.ObjectID] {
 			itemEvents[itemID] = append(itemEvents[itemID], p.EventID)
@@ -70,6 +75,10 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 				hasAcked[itemID] = true
 			} else if rank > unackedRank[itemID] {
 				unackedRank[itemID] = rank
+			}
+			if sev > itemSev[itemID] { // track the highest-severity trigger + its name for this item
+				itemSev[itemID] = sev
+				itemReason[itemID] = p.Name
 			}
 		}
 	}
@@ -114,7 +123,8 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 			HostID: host.HostID, HostName: host.Name, ItemID: it.ItemID, Name: it.Name,
 			Label: label, Category: cat, Value: it.LastValue, Units: it.Units, LastClock: atoi64(it.LastClock),
 			State: state, Numeric: numericValueType(it.ValueType), Supported: supported,
-			Priority: priorityOf(prioMap, it.ItemID), EventIDs: itemEvents[it.ItemID],
+			Priority: priorityOf(prioMap, it.ItemID), Severity: itemSev[it.ItemID], Reason: itemReason[it.ItemID],
+			EventIDs: itemEvents[it.ItemID],
 		})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
