@@ -381,6 +381,15 @@ func appUpdateStatus(cur, latest string) (status string, updateAvailable bool) {
 	}
 }
 
+// devUpdateOffered reports whether a newer :testing image should be offered to this box: the cache
+// flags one (devUpd) AND the running build is either a development build or a clean release ("current")
+// that tracks the testing channel (the just-released/"aligned" box). Both handleVersion (which shows the
+// button) and handleUpdateStart (which acts on the click) use this predicate so they never disagree -
+// gating the action on status=="development" alone silently refused the update on a clean-tag testing box.
+func devUpdateOffered(status string, devUpd bool) bool {
+	return devUpd && (status == "development" || status == "current")
+}
+
 // handleVersion reports the running version and whether a newer release has been published, so the
 // UI can show at a glance whether this instance is up to date. Authenticated (shown in the shell).
 func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
@@ -392,7 +401,7 @@ func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 	// "aligned" case: right after a release the running build is a clean vX.Y.Z (so appUpdateStatus says
 	// "current"), yet :testing has since advanced - the testing check flags it, and we flip the verdict
 	// to "development" so the UI shows the dev pill and names the target instead of a green LATEST badge.
-	if devUpd, target := s.appLatest.getDevUpdate(); devUpd && (resp.Status == "development" || resp.Status == "current") {
+	if devUpd, target := s.appLatest.getDevUpdate(); devUpdateOffered(resp.Status, devUpd) {
 		resp.DevUpdate = true
 		resp.UpdateAvailable = true
 		resp.DevTarget = target

@@ -58,3 +58,23 @@ func TestRunningImageRef(t *testing.T) {
 		}
 	}
 }
+
+func TestDevUpdateOffered(t *testing.T) {
+	cases := []struct {
+		status string
+		devUpd bool
+		want   bool
+	}{
+		{"development", true, true},          // dev build with a newer testing image
+		{"current", true, true},              // clean release on :testing with a newer testing image (the bug case)
+		{"development", false, false},        // dev build, no newer testing image
+		{"current", false, false},            // aligned clean release, nothing newer
+		{"outdated", true, false},            // a release-channel box is never offered the testing image here
+		{"unknown", true, false},             // can't compare -> don't offer
+	}
+	for _, c := range cases {
+		if got := devUpdateOffered(c.status, c.devUpd); got != c.want {
+			t.Errorf("devUpdateOffered(%q, %v) = %v, want %v", c.status, c.devUpd, got, c.want)
+		}
+	}
+}

@@ -159,7 +159,8 @@ func (s *Server) handleUpdateStart(w http.ResponseWriter, r *http.Request) {
 	latest := s.appLatest.get()
 	status, updateAvailable := appUpdateStatus(cur, latest)
 	devUpd, _ := s.appLatest.getDevUpdate()
-	devUpdate := status == "development" && devUpd
+	// Same predicate handleVersion uses to show the button, so the click never disagrees with it.
+	devUpdate := devUpdateOffered(status, devUpd)
 
 	var targetTag string
 	var exact bool
