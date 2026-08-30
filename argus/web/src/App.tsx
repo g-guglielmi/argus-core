@@ -780,6 +780,9 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
     return s.view === 'monitoring' && s.host ? { hostId: s.host, itemId: s.item, n: 0 } : null
   })
   const navN = useRef(0)
+  // Bumped when the Monitoring tab is clicked, so MonitoringView resets its drill-down to the root
+  // even when it's already the active view (no remount would otherwise happen).
+  const [monHome, setMonHome] = useState(0)
 
   // Push a new history entry for a top-level navigation (tab switch, deep-link jump).
   function pushNav(v: View, opts?: { host?: string; item?: string; filter?: string }) {
@@ -820,7 +823,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   }, [])
 
   async function logout() { await fetch('/api/logout', { method: 'POST' }).catch(() => {}); onLogout() }
-  function goto(v: View) { if (v !== 'monitoring') setTreeTarget(null); setView(v); pushNav(v); setMenuOpen(false); setNavOpen(false) }
+  function goto(v: View) { setTreeTarget(null); if (v === 'monitoring') setMonHome((n) => n + 1); setView(v); pushNav(v); setMenuOpen(false); setNavOpen(false) }
 
   const nav = (id: View, label: string, opts?: { count?: number; soon?: boolean }) => (
     <button className={'nav' + (view === id ? ' active' : '')} onClick={() => goto(id)}>
@@ -895,7 +898,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           {view === 'overview' && <StatusListView filter="attention" sensors={sensors} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => {}} />}
           {view === 'triggers' && <TriggersView goHost={goHost} />}
           {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
-          {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} onNavigate={onTreeNav} />}
+          {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} />}
           {view === 'notifications' && <NotificationsView />}
           {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} />}
           {view === 'users' && me.role === 'admin' && <UsersView />}
@@ -1663,7 +1666,7 @@ type Focus =
 // remainder below its real parent, or the full path at the top level); `path` is the full group name.
 type GNode = { path: string; name: string; group?: Group; parentPath?: string; children: GNode[]; hosts: Host[] }
 
-function MonitoringView({ role, target, onNavigate }: { role: string; target: { hostId: string; itemId?: string; itemName?: string; n: number } | null; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
+function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string; target: { hostId: string; itemId?: string; itemName?: string; n: number } | null; homeSignal: number; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
   const confirm = useConfirm()
   const [hosts, setHosts] = useState<Host[]>([])
   const [groups, setGroups] = useState<Group[]>([])
@@ -1757,6 +1760,16 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
       : { level: 'host', path: p, hostId: target.hostId })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target?.n, hosts.length])
+
+  // Clicking the Monitoring tab (even when it's already active) returns the tree to the root. The ref
+  // skips the initial mount so a deep-link's focus isn't clobbered; it only fires on a real nav click.
+  const lastHome = useRef(homeSignal)
+  useEffect(() => {
+    if (homeSignal === lastHome.current) return
+    lastHome.current = homeSignal
+    setFocus({ level: 'root' }); setOpenHost(null); setEditGroupsHost(null); setSettingsHost(null); setCreating(false); setGAction(null); setNewSubPath(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [homeSignal])
 
   // Drill helpers - narrow the focus and refine the URL so Back steps between screens. A group focus
   // isn't URL-persisted (host/sensor are, via ?host=&item=); reloading a group focus lands at root.
