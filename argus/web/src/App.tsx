@@ -1650,6 +1650,7 @@ type Focus =
 function MonitoringView({ role, target, onNavigate }: { role: string; target: { hostId: string; itemId?: string; itemName?: string; n: number } | null; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
   const [hosts, setHosts] = useState<Host[]>([])
   const [groups, setGroups] = useState<Group[]>([])
+  const [newGroups, setNewGroups] = useState<Set<string>>(() => new Set()) // groups created here this session (shown while still empty)
   const [focus, setFocus] = useState<Focus>({ level: 'root' })
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1677,6 +1678,7 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
     if (!name) return
     const res = await fetch('/api/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }).catch(() => null)
     if (!res || !res.ok) { setError(await errText(res, 'Could not create the group')); return }
+    setNewGroups((s) => new Set(s).add(name)) // keep the new (empty) group visible in the tree
     setError(null); load(); fireDataRefresh()
   }
   async function renameGroup(g: Group) {
@@ -1684,12 +1686,14 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
     if (!name || name === g.name) return
     const res = await fetch(`/api/groups/${g.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }).catch(() => null)
     if (!res || !res.ok) { setError(await errText(res, 'Could not rename the group')); return }
+    setNewGroups((s) => { if (!s.has(g.name)) return s; const n = new Set(s); n.delete(g.name); n.add(name); return n })
     setError(null); load(); fireDataRefresh()
   }
   async function deleteGroup(g: Group) {
     if (!window.confirm(`Delete the group "${g.name}"?`)) return
     const res = await fetch(`/api/groups/${g.id}`, { method: 'DELETE' }).catch(() => null)
     if (!res || !res.ok) { setError(await errText(res, 'Could not delete the group')); return }
+    setNewGroups((s) => { if (!s.has(g.name)) return s; const n = new Set(s); n.delete(g.name); return n })
     setError(null); load(); fireDataRefresh()
   }
   async function setHostGroups(hostId: string, groupIds: string[]) {
@@ -1743,10 +1747,12 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
     const gs = h.groups && h.groups.length ? h.groups : ['Ungrouped']
     for (const g of gs) { (sites[g] = sites[g] || []).push(h) }
   }
-  // Include empty groups (from /api/groups) so a freshly-created group is visible and manageable, and
-  // map group name -> {id, host count} for the rename/delete/move actions.
+  // Map group name -> {id, host count} for the rename/delete/move actions. Empty groups are NOT shown
+  // in the tree by default (Zabbix ships several built-in empty groups - Applications, Databases, … -
+  // that would just clutter it); the only empty groups shown are ones the user just created here, so
+  // the create -> populate flow still works. Every group stays selectable in the "Edit groups…" picker.
   const groupByName: Record<string, Group> = {}
-  for (const g of groups) { groupByName[g.name] = g; if (!sites[g.name]) sites[g.name] = [] }
+  for (const g of groups) { groupByName[g.name] = g; if (!sites[g.name] && newGroups.has(g.name)) sites[g.name] = [] }
   const siteNames = Object.keys(sites).sort((a, b) => a.localeCompare(b))
   function siteWorst(hs: Host[]): string { let s = 'ok'; for (const h of hs) if (!h.paused && !h.hidden && stateRank[h.state] > stateRank[s]) s = h.state; return s }
   function toggleSite(name: string) { setCollapsed((c) => { const n = new Set(c); if (n.has(name)) n.delete(name); else n.add(name); return n }) }
