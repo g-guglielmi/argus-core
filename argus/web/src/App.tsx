@@ -10,6 +10,9 @@ type User = { id: number; email: string; name: string; surname: string; role: st
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[] }
 type Group = { id: string; name: string; hosts: number }
+type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
+type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg }
+type HostCfg = { hostid: string; host: string; name: string; proxy_id?: string; proxy_name?: string; interfaces: Iface[] }
 type Proxy = { name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number }
 type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; config: Record<string, string> }
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; priority: number }
@@ -1584,6 +1587,7 @@ const kbIcon = {
   ack: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M22 11.2V12a10 10 0 1 1-5.9-9.1" /><path d="M22 4 12 14.5l-3-3" /></svg>,
   edit: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>,
   folder: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>,
+  gear: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
   trash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" /></svg>,
 }
 // icons for the per-user kebab actions
@@ -1671,6 +1675,7 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const [openHost, setOpenHost] = useState<string | null>(null)
   const [editGroupsHost, setEditGroupsHost] = useState<string | null>(null) // host id with the "Edit groups…" band open
+  const [settingsHost, setSettingsHost] = useState<string | null>(null) // host id with the "Settings…" band open
   const [showAll, setShowAll] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const canPause = role === 'admin' || role === 'helpdesk'
@@ -1822,11 +1827,13 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
                 h.paused ? { label: 'Resume', icon: kbIcon.resume, onClick: () => clearHostState(h, 'pause') } : { label: 'Pause', icon: kbIcon.pause, onPick: (s) => setHostState(h, 'pause', s) },
                 h.hidden ? { label: 'Show', icon: kbIcon.show, onClick: () => clearHostState(h, 'hide') } : { label: 'Hide', icon: kbIcon.hide, onPick: (s) => setHostState(h, 'hide', s) },
                 { sep: true, label: '' },
-                { label: 'Edit groups…', icon: kbIcon.folder, onClick: () => setEditGroupsHost((cur) => (cur === h.id ? null : h.id)) },
+                { label: 'Settings…', icon: kbIcon.gear, onClick: () => { setEditGroupsHost(null); setSettingsHost((cur) => (cur === h.id ? null : h.id)) } },
+                { label: 'Edit groups…', icon: kbIcon.folder, onClick: () => { setSettingsHost(null); setEditGroupsHost((cur) => (cur === h.id ? null : h.id)) } },
               ]} />
             )}
           </div>
         </div>
+        {settingsHost === h.id && <HostSettings hostId={h.id} canEdit={canPause} onClose={() => setSettingsHost(null)} onSaved={() => { setSettingsHost(null); load(); fireDataRefresh() }} />}
         {editGroupsHost === h.id && <GroupEditor current={h.groups || []} groups={groups} onSave={(ids) => setHostGroups(h.id, ids)} onCancel={() => setEditGroupsHost(null)} />}
         {hopen && <div className="host-body" style={{ paddingLeft: indent(depth) + 22 }}><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAll} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(path, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} /></div>}
       </div>
@@ -1941,6 +1948,110 @@ function GroupNameBand({ initial = '', prefix, placeholder, confirmLabel, onConf
       <div className="gb-foot">
         <Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
         <Button variant="primary" onClick={submit} disabled={!v.trim() || busy}>{confirmLabel}</Button>
+      </div>
+    </div>
+  )
+}
+
+const IFTYPE: Record<number, string> = { 1: 'Agent', 2: 'SNMP', 3: 'IPMI', 4: 'JMX' }
+function blankSnmp(): SnmpCfg { return { version: 2, community: 'public', bulk: 1, security_name: '', security_level: 0, auth_protocol: 0, auth_passphrase: '', priv_protocol: 0, priv_passphrase: '', context_name: '' } }
+
+// HostSettings is the inline band under a host row for editing its identity + interfaces (Zabbix
+// host.update + hostinterface CRUD). One "Save" reconciles the whole desired state on the server.
+function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; canEdit: boolean; onClose: () => void; onSaved: () => void }) {
+  const confirm = useConfirm()
+  const [cfg, setCfg] = useState<HostCfg | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : Promise.reject())).then(setCfg).catch(() => setErr('Could not load host settings'))
+  }, [hostId])
+
+  function patch(p: Partial<HostCfg>) { setCfg((c) => (c ? { ...c, ...p } : c)) }
+  function setIface(idx: number, p: Partial<Iface>) { setCfg((c) => (c ? { ...c, interfaces: c.interfaces.map((i, n) => (n === idx ? { ...i, ...p } : i)) } : c)) }
+  function setSnmp(idx: number, p: Partial<SnmpCfg>) { setCfg((c) => (c ? { ...c, interfaces: c.interfaces.map((i, n) => (n === idx ? { ...i, snmp: { ...(i.snmp || blankSnmp()), ...p } } : i)) } : c)) }
+  function addIface(type: number) { setCfg((c) => (c ? { ...c, interfaces: [...c.interfaces, { type, useip: 1, ip: '', dns: '', port: type === 2 ? '161' : '10050', snmp: type === 2 ? blankSnmp() : undefined }] } : c)) }
+  async function removeIface(idx: number) {
+    const it = cfg?.interfaces[idx]
+    if (it?.interfaceid && !(await confirm({ title: 'Remove interface', message: 'Remove this interface? If items still use it, Zabbix will refuse and nothing changes.', confirmLabel: 'Remove', danger: true }))) return
+    setCfg((c) => (c ? { ...c, interfaces: c.interfaces.filter((_, n) => n !== idx) } : c))
+  }
+  async function save() {
+    if (!cfg) return
+    setBusy(true); setErr(null)
+    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: cfg.host, name: cfg.name, interfaces: cfg.interfaces }) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { setErr(await errText(res, 'Could not save host settings')); return }
+    onSaved()
+  }
+
+  if (err && !cfg) return <div className="host-settings"><div style={{ color: 'var(--err)', fontSize: 13 }}>{err}</div><div className="hs-foot"><Button variant="ghost" onClick={onClose}>Close</Button></div></div>
+  if (!cfg) return <div className="host-settings"><span style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</span></div>
+
+  return (
+    <div className="host-settings">
+      <div className="hs-grid">
+        <label className="field"><span>Visible name</span><input className="input" value={cfg.name} disabled={!canEdit} onChange={(e) => patch({ name: e.target.value })} /></label>
+        <label className="field"><span>Technical name</span><input className="input" value={cfg.host} disabled={!canEdit} onChange={(e) => patch({ host: e.target.value })} /></label>
+      </div>
+      <div className="hs-note">Renaming the technical name is safe in Zabbix (references update automatically) — avoid it only if external scripts reference this host.</div>
+
+      <div className="hs-title">Interfaces</div>
+      {cfg.interfaces.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13 }}>No interfaces.</div>}
+      {cfg.interfaces.map((i, idx) => (
+        <div className="iface-row" key={i.interfaceid || 'new' + idx}>
+          <div className="if-head">
+            <span className="if-type">{IFTYPE[i.type] || 'Type ' + i.type}</span>
+            <div className="seg">
+              <button className={i.useip === 1 ? 'on' : ''} disabled={!canEdit} onClick={() => setIface(idx, { useip: 1 })}>IP</button>
+              <button className={i.useip === 0 ? 'on' : ''} disabled={!canEdit} onClick={() => setIface(idx, { useip: 0 })}>DNS</button>
+            </div>
+            {canEdit && <button className="btn ghost if-remove" onClick={() => removeIface(idx)}>Remove</button>}
+          </div>
+          <div className="if-fields">
+            <label className="field"><span>IP address</span><input className="input" value={i.ip} disabled={!canEdit} onChange={(e) => setIface(idx, { ip: e.target.value })} /></label>
+            <label className="field"><span>DNS name</span><input className="input" value={i.dns} disabled={!canEdit} onChange={(e) => setIface(idx, { dns: e.target.value })} /></label>
+            <label className="field"><span>Port</span><input className="input" value={i.port} disabled={!canEdit} onChange={(e) => setIface(idx, { port: e.target.value })} /></label>
+          </div>
+          {i.type === 2 && (
+            <div className="if-snmp">
+              <label className="field"><span>SNMP version</span>
+                <select className="input" value={i.snmp?.version ?? 2} disabled={!canEdit} onChange={(e) => setSnmp(idx, { version: Number(e.target.value) })}>
+                  <option value={1}>v1</option><option value={2}>v2c</option><option value={3}>v3</option>
+                </select>
+              </label>
+              {(i.snmp?.version ?? 2) !== 3
+                ? <label className="field"><span>Community</span><input className="input" value={i.snmp?.community || ''} disabled={!canEdit} onChange={(e) => setSnmp(idx, { community: e.target.value })} /></label>
+                : <>
+                    <label className="field"><span>Security name</span><input className="input" value={i.snmp?.security_name || ''} disabled={!canEdit} onChange={(e) => setSnmp(idx, { security_name: e.target.value })} /></label>
+                    <label className="field"><span>Security level</span>
+                      <select className="input" value={i.snmp?.security_level ?? 0} disabled={!canEdit} onChange={(e) => setSnmp(idx, { security_level: Number(e.target.value) })}>
+                        <option value={0}>noAuthNoPriv</option><option value={1}>authNoPriv</option><option value={2}>authPriv</option>
+                      </select>
+                    </label>
+                    <label className="field"><span>Auth protocol</span>
+                      <select className="input" value={i.snmp?.auth_protocol ?? 0} disabled={!canEdit} onChange={(e) => setSnmp(idx, { auth_protocol: Number(e.target.value) })}>
+                        <option value={0}>MD5</option><option value={1}>SHA1</option><option value={3}>SHA256</option>
+                      </select>
+                    </label>
+                    <label className="field"><span>Auth passphrase</span><input className="input" type="password" placeholder="unchanged" value={i.snmp?.auth_passphrase || ''} disabled={!canEdit} onChange={(e) => setSnmp(idx, { auth_passphrase: e.target.value })} /></label>
+                    <label className="field"><span>Priv protocol</span>
+                      <select className="input" value={i.snmp?.priv_protocol ?? 0} disabled={!canEdit} onChange={(e) => setSnmp(idx, { priv_protocol: Number(e.target.value) })}>
+                        <option value={0}>DES</option><option value={1}>AES128</option><option value={3}>AES256</option>
+                      </select>
+                    </label>
+                    <label className="field"><span>Priv passphrase</span><input className="input" type="password" placeholder="unchanged" value={i.snmp?.priv_passphrase || ''} disabled={!canEdit} onChange={(e) => setSnmp(idx, { priv_passphrase: e.target.value })} /></label>
+                  </>}
+            </div>
+          )}
+        </div>
+      ))}
+      {canEdit && <div className="hs-add"><button className="btn" onClick={() => addIface(1)}>+ Agent interface</button><button className="btn" onClick={() => addIface(2)}>+ SNMP interface</button></div>}
+
+      {err && <div style={{ color: 'var(--err)', fontSize: 13, marginTop: 8 }}>{err}</div>}
+      <div className="hs-foot">
+        <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+        {canEdit && <Button variant="primary" onClick={save} disabled={busy || !cfg.host.trim()}>Save</Button>}
       </div>
     </div>
   )

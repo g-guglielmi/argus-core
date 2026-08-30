@@ -137,6 +137,10 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("DELETE /api/groups/{id}", auth.RequireRoles(s.handleDeleteGroup, "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/hosts/{id}/groups", auth.RequireRoles(s.handleSetHostGroups, "admin", "helpdesk"))
 
+	// host settings editor: read the identity + interfaces (any user), reconcile-save them (config write).
+	mux.HandleFunc("GET /api/hosts/{id}/config", auth.RequireAuth(s.handleHostConfig))
+	mux.HandleFunc("PATCH /api/hosts/{id}/config", auth.RequireRoles(s.handleUpdateHostConfig, "admin", "helpdesk"))
+
 	// self-service MFA (any signed-in user)
 	mux.HandleFunc("GET /api/me/mfa", auth.RequireAuth(s.handleMFAStatus))
 	mux.HandleFunc("POST /api/me/mfa/setup", auth.RequireAuth(s.handleMFASetup))

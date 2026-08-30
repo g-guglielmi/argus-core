@@ -651,3 +651,153 @@ func (c *Client) SetHostGroups(ctx context.Context, hostID string, groupIDs []st
 	}
 	return c.call(ctx, "host.update", map[string]any{"hostid": hostID, "groups": groups}, true, nil)
 }
+
+// --- host identity + interface management (config writes; require a super-admin token) ---
+
+func atoiSafe(s string) int { n, _ := strconv.Atoi(s); return n }
+
+// SNMPDetails holds a Zabbix SNMP interface's credentials (the interface `details` object).
+type SNMPDetails struct {
+	Version        int    `json:"version"` // 1, 2 (v2c), 3
+	Community      string `json:"community"`
+	Bulk           int    `json:"bulk"`
+	SecurityName   string `json:"security_name"`
+	SecurityLevel  int    `json:"security_level"` // 0 noAuthNoPriv, 1 authNoPriv, 2 authPriv
+	AuthProtocol   int    `json:"auth_protocol"`
+	AuthPassphrase string `json:"auth_passphrase"`
+	PrivProtocol   int    `json:"priv_protocol"`
+	PrivPassphrase string `json:"priv_passphrase"`
+	ContextName    string `json:"context_name"`
+}
+
+// HostInterface is one network interface of a host (Argus edits Agent=1 and SNMP=2).
+type HostInterface struct {
+	InterfaceID string       `json:"interfaceid"`
+	Type        int          `json:"type"`  // 1 agent, 2 snmp, 3 ipmi, 4 jmx
+	Main        int          `json:"main"`  // 1 = default interface of its type
+	UseIP       int          `json:"useip"` // 0 connect via DNS, 1 via IP
+	IP          string       `json:"ip"`
+	DNS         string       `json:"dns"`
+	Port        string       `json:"port"`
+	SNMP        *SNMPDetails `json:"snmp,omitempty"`
+}
+
+// HostDetail is a host's identity + interfaces, for the settings editor.
+type HostDetail struct {
+	HostID     string          `json:"hostid"`
+	Host       string          `json:"host"` // technical name
+	Name       string          `json:"name"` // visible name
+	ProxyID    string          `json:"proxyid"`
+	Interfaces []HostInterface `json:"interfaces"`
+}
+
+// HostDetail fetches a host's names, proxy and interfaces. The Zabbix `details` field is polymorphic
+// (`[]` for non-SNMP, `{…}` for SNMP), so it's decoded via RawMessage and parsed only when an object.
+func (c *Client) HostDetail(ctx context.Context, hostID string) (*HostDetail, error) {
+	var raw []struct {
+		HostID     string `json:"hostid"`
+		Host       string `json:"host"`
+		Name       string `json:"name"`
+		ProxyID    string `json:"proxyid"`
+		Interfaces []struct {
+			InterfaceID string          `json:"interfaceid"`
+			Type        string          `json:"type"`
+			Main        string          `json:"main"`
+			UseIP       string          `json:"useip"`
+			IP          string          `json:"ip"`
+			DNS         string          `json:"dns"`
+			Port        string          `json:"port"`
+			Details     json.RawMessage `json:"details"`
+		} `json:"interfaces"`
+	}
+	params := map[string]any{
+		"output":           []string{"hostid", "host", "name", "status", "proxyid"},
+		"selectInterfaces": []string{"interfaceid", "type", "main", "useip", "ip", "dns", "port", "details"},
+		"hostids":          hostID,
+	}
+	if err := c.call(ctx, "host.get", params, true, &raw); err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("host not found")
+	}
+	h := raw[0]
+	hd := &HostDetail{HostID: h.HostID, Host: h.Host, Name: h.Name, ProxyID: h.ProxyID}
+	for _, i := range h.Interfaces {
+		iface := HostInterface{InterfaceID: i.InterfaceID, Type: atoiSafe(i.Type), Main: atoiSafe(i.Main), UseIP: atoiSafe(i.UseIP), IP: i.IP, DNS: i.DNS, Port: i.Port}
+		if iface.Type == 2 && len(i.Details) > 0 && i.Details[0] == '{' {
+			var d struct {
+				Version        string `json:"version"`
+				Community      string `json:"community"`
+				Bulk           string `json:"bulk"`
+				SecurityName   string `json:"securityname"`
+				SecurityLevel  string `json:"securitylevel"`
+				AuthProtocol   string `json:"authprotocol"`
+				AuthPassphrase string `json:"authpassphrase"`
+				PrivProtocol   string `json:"privprotocol"`
+				PrivPassphrase string `json:"privpassphrase"`
+				ContextName    string `json:"contextname"`
+			}
+			if json.Unmarshal(i.Details, &d) == nil {
+				iface.SNMP = &SNMPDetails{Version: atoiSafe(d.Version), Community: d.Community, Bulk: atoiSafe(d.Bulk), SecurityName: d.SecurityName, SecurityLevel: atoiSafe(d.SecurityLevel), AuthProtocol: atoiSafe(d.AuthProtocol), AuthPassphrase: d.AuthPassphrase, PrivProtocol: atoiSafe(d.PrivProtocol), PrivPassphrase: d.PrivPassphrase, ContextName: d.ContextName}
+			}
+		}
+		hd.Interfaces = append(hd.Interfaces, iface)
+	}
+	return hd, nil
+}
+
+// UpdateHost sets a host's technical and visible name.
+func (c *Client) UpdateHost(ctx context.Context, hostID, host, name string) error {
+	return c.call(ctx, "host.update", map[string]any{"hostid": hostID, "host": host, "name": name}, true, nil)
+}
+
+// ifaceParams builds the hostinterface.create/update params for an interface, including the SNMP
+// `details` object for type 2.
+func ifaceParams(i HostInterface) map[string]any {
+	p := map[string]any{"type": i.Type, "main": i.Main, "useip": i.UseIP, "ip": i.IP, "dns": i.DNS, "port": i.Port}
+	if i.Type == 2 && i.SNMP != nil {
+		d := map[string]any{"version": i.SNMP.Version, "bulk": i.SNMP.Bulk}
+		if i.SNMP.Version == 3 {
+			d["securityname"] = i.SNMP.SecurityName
+			d["securitylevel"] = i.SNMP.SecurityLevel
+			d["authprotocol"] = i.SNMP.AuthProtocol
+			d["authpassphrase"] = i.SNMP.AuthPassphrase
+			d["privprotocol"] = i.SNMP.PrivProtocol
+			d["privpassphrase"] = i.SNMP.PrivPassphrase
+			d["contextname"] = i.SNMP.ContextName
+		} else {
+			d["community"] = i.SNMP.Community
+		}
+		p["details"] = d
+	}
+	return p
+}
+
+// CreateHostInterface adds an interface to a host and returns its id.
+func (c *Client) CreateHostInterface(ctx context.Context, hostID string, i HostInterface) (string, error) {
+	p := ifaceParams(i)
+	p["hostid"] = hostID
+	var res struct {
+		InterfaceIDs []string `json:"interfaceids"`
+	}
+	if err := c.call(ctx, "hostinterface.create", p, true, &res); err != nil {
+		return "", err
+	}
+	if len(res.InterfaceIDs) == 0 {
+		return "", fmt.Errorf("Zabbix returned no interface id")
+	}
+	return res.InterfaceIDs[0], nil
+}
+
+// UpdateHostInterface updates an existing interface (identified by InterfaceID).
+func (c *Client) UpdateHostInterface(ctx context.Context, i HostInterface) error {
+	p := ifaceParams(i)
+	p["interfaceid"] = i.InterfaceID
+	return c.call(ctx, "hostinterface.update", p, true, nil)
+}
+
+// DeleteHostInterface removes an interface. Zabbix refuses if items still reference it.
+func (c *Client) DeleteHostInterface(ctx context.Context, interfaceID string) error {
+	return c.call(ctx, "hostinterface.delete", []string{interfaceID}, true, nil)
+}
