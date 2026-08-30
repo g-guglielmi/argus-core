@@ -11,6 +11,46 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.19] - 2026-08-30
+
+**Sensor priority (PRTG-style):**
+
+- **Per-sensor priority (1-5).** Set a priority on each sensor from the Monitoring tree (a star column,
+  editable by admin/helpdesk). It's stored in Argus and never touches Zabbix. Higher priority sorts
+  first in the Overview and the status-chip lists, and is shown read-only in those lists.
+
+**The Overview is now sensor-centric (one unified list):**
+
+- The Overview and the status-chip lists are the **same** sensor list with different filters: the
+  Overview is the "needs attention" (not-OK) filter with an Errors / Errors+Warnings toggle, and each
+  top-bar chip is a single-state filter. They share the same fixed-width columns, so every list lines
+  up (a 1-row list matches a busy one) instead of the browser re-sizing columns per row count.
+- Each unhappy sensor shows a coloured **"why" line** under its name - the worst trigger's severity and
+  name, and how long it's been firing, e.g. "High · Unavailable by ICMP ping · 17d". Severity is
+  therefore visible in every list, without an empty column on the OK list.
+- The old problem-centric overview is gone; its actions moved into a per-row **kebab** (acknowledge for
+  any user; pause/hide the host for admin+helpdesk), matching the sensor lists.
+
+**New Triggers tab:**
+
+- A trigger-centric view with a **Firing / All** toggle. *Firing* is a flat cross-host table of the
+  triggers currently in problem; *All* groups every monitored trigger by host with OK / firing state.
+  Both list the sensor(s) each trigger's expression watches, so **multi-sensor triggers are visible**.
+  Backed by a new `GET /api/triggers`.
+
+**Update system:**
+
+- **Testing-channel updates are detected on a clean "aligned" build.** Right after a release, `:testing`
+  and `:latest` are the same clean `vX.Y.Z` image, so the core couldn't tell which channel it tracked
+  and stopped offering newer `:testing` builds. The `argus-updater` sidecar now reports the tag the core
+  container actually runs under (into the shared dir), so a box on `:testing` keeps getting testing
+  updates - no configuration needed.
+
+**Polish:**
+
+- Priority and severity columns in the Overview/status lists, evened-out column spacing, and a taller,
+  wider trend sparkline for readability. Sensor graph height 260 -> 320.
+
 ## [0.4.18] - 2026-08-26
 
 **Probes table:**
