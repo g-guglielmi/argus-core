@@ -1650,7 +1650,8 @@ type Focus =
 function MonitoringView({ role, target, onNavigate }: { role: string; target: { hostId: string; itemId?: string; itemName?: string; n: number } | null; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
   const [hosts, setHosts] = useState<Host[]>([])
   const [groups, setGroups] = useState<Group[]>([])
-  const [newGroups, setNewGroups] = useState<Set<string>>(() => new Set()) // groups created here this session (shown while still empty)
+  const [creating, setCreating] = useState(false) // "+ New group" inline band open
+  const [gAction, setGAction] = useState<{ id: string; mode: 'rename' | 'delete' } | null>(null) // per-group rename/delete band
   const [focus, setFocus] = useState<Focus>({ level: 'root' })
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1672,29 +1673,26 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
   useEffect(() => { load(true); const t = setInterval(() => load(false), 30000); const off = onDataRefresh(() => load(false)); return () => { clearInterval(t); off() } }, [])
 
   // Group management (create/rename/delete + move a host between groups). All are admin/helpdesk-gated
-  // config writes to Zabbix host groups; on success we reload so the tree reflects the change.
-  async function createGroup() {
-    const name = window.prompt('New group name')?.trim()
+  // config writes to Zabbix host groups, driven by inline bands (no browser prompts); on success we
+  // reload so the tree reflects the change.
+  async function createGroup(name: string) {
+    name = name.trim()
     if (!name) return
     const res = await fetch('/api/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }).catch(() => null)
     if (!res || !res.ok) { setError(await errText(res, 'Could not create the group')); return }
-    setNewGroups((s) => new Set(s).add(name)) // keep the new (empty) group visible in the tree
-    setError(null); load(); fireDataRefresh()
+    setError(null); setCreating(false); load(); fireDataRefresh()
   }
-  async function renameGroup(g: Group) {
-    const name = window.prompt('Rename group', g.name)?.trim()
-    if (!name || name === g.name) return
+  async function renameGroup(g: Group, name: string) {
+    name = name.trim()
+    if (!name || name === g.name) { setGAction(null); return }
     const res = await fetch(`/api/groups/${g.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }).catch(() => null)
     if (!res || !res.ok) { setError(await errText(res, 'Could not rename the group')); return }
-    setNewGroups((s) => { if (!s.has(g.name)) return s; const n = new Set(s); n.delete(g.name); n.add(name); return n })
-    setError(null); load(); fireDataRefresh()
+    setError(null); setGAction(null); load(); fireDataRefresh()
   }
   async function deleteGroup(g: Group) {
-    if (!window.confirm(`Delete the group "${g.name}"?`)) return
     const res = await fetch(`/api/groups/${g.id}`, { method: 'DELETE' }).catch(() => null)
     if (!res || !res.ok) { setError(await errText(res, 'Could not delete the group')); return }
-    setNewGroups((s) => { if (!s.has(g.name)) return s; const n = new Set(s); n.delete(g.name); return n })
-    setError(null); load(); fireDataRefresh()
+    setError(null); setGAction(null); load(); fireDataRefresh()
   }
   async function setHostGroups(hostId: string, groupIds: string[]) {
     const res = await fetch(`/api/hosts/${hostId}/groups`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ group_ids: groupIds }) }).catch(() => null)
@@ -1747,12 +1745,10 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
     const gs = h.groups && h.groups.length ? h.groups : ['Ungrouped']
     for (const g of gs) { (sites[g] = sites[g] || []).push(h) }
   }
-  // Map group name -> {id, host count} for the rename/delete/move actions. Empty groups are NOT shown
-  // in the tree by default (Zabbix ships several built-in empty groups - Applications, Databases, … -
-  // that would just clutter it); the only empty groups shown are ones the user just created here, so
-  // the create -> populate flow still works. Every group stays selectable in the "Edit groups…" picker.
+  // Include every group (from /api/groups) in the tree - empty ones too, so they can be seen and
+  // removed if unwanted - and map group name -> {id, host count} for the rename/delete/move actions.
   const groupByName: Record<string, Group> = {}
-  for (const g of groups) { groupByName[g.name] = g; if (!sites[g.name] && newGroups.has(g.name)) sites[g.name] = [] }
+  for (const g of groups) { groupByName[g.name] = g; if (!sites[g.name]) sites[g.name] = [] }
   const siteNames = Object.keys(sites).sort((a, b) => a.localeCompare(b))
   function siteWorst(hs: Host[]): string { let s = 'ok'; for (const h of hs) if (!h.paused && !h.hidden && stateRank[h.state] > stateRank[s]) s = h.state; return s }
   function toggleSite(name: string) { setCollapsed((c) => { const n = new Set(c); if (n.has(name)) n.delete(name); else n.add(name); return n }) }
@@ -1771,7 +1767,7 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
         <span className="hint">{siteNames.length} group{siteNames.length === 1 ? '' : 's'} · {hosts.length} host{hosts.length === 1 ? '' : 's'}</span>
         {focus.level !== 'sensor' && (
           <div className="tools">
-            {canPause && focus.level !== 'host' && <button className="btn" onClick={createGroup}>+ New group</button>}
+            {canPause && focus.level !== 'host' && <button className="btn" onClick={() => { setError(null); setCreating((v) => !v) }}>+ New group</button>}
             <div className="seg">
               <button className={!showAll ? 'on' : ''} onClick={() => setShowAll(false)}>Key sensors</button>
               <button className={showAll ? 'on' : ''} onClick={() => setShowAll(true)}>All sensors</button>
@@ -1798,6 +1794,7 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
           </>}
         </div>
       )}
+      {creating && <GroupNameBand placeholder="New group name" confirmLabel="Create" onConfirm={(name) => createGroup(name)} onCancel={() => setCreating(false)} />}
       {loading && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>Loading…</div>}
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
       {!loading && !error && hosts.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>No hosts found.</div>}
@@ -1817,12 +1814,23 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
                   <span style={{ width: 9, height: 9, borderRadius: '50%', background: stateColor[siteWorst(allHs)] || 'var(--muted)' }} />
                   {canPause && groupByName[name] && (
                     <Kebab actions={[
-                      { label: 'Rename…', icon: kbIcon.edit, onClick: () => renameGroup(groupByName[name]) },
-                      { label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => { if (allHs.length) { setError(`Move the ${allHs.length} host${allHs.length === 1 ? '' : 's'} out of "${name}" before deleting it.`); return } deleteGroup(groupByName[name]) } },
+                      { label: 'Rename…', icon: kbIcon.edit, onClick: () => { setError(null); setGAction({ id: groupByName[name].id, mode: 'rename' }) } },
+                      { label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => { setError(null); if (allHs.length) { setError(`Move the ${allHs.length} host${allHs.length === 1 ? '' : 's'} out of "${name}" before deleting it.`); return } setGAction({ id: groupByName[name].id, mode: 'delete' }) } },
                     ]} />
                   )}
                 </div>
               </div>
+            )}
+            {showHead && groupByName[name] && gAction?.id === groupByName[name].id && (
+              gAction.mode === 'rename'
+                ? <GroupNameBand initial={name} placeholder="Group name" confirmLabel="Rename" onConfirm={(v) => renameGroup(groupByName[name], v)} onCancel={() => setGAction(null)} />
+                : <div className="group-band">
+                    <span className="gb-msg">Delete the group “{name}”? This can’t be undone.</span>
+                    <div className="gb-foot">
+                      <Button variant="ghost" onClick={() => setGAction(null)}>Cancel</Button>
+                      <Button variant="danger" onClick={() => deleteGroup(groupByName[name])}>Delete</Button>
+                    </div>
+                  </div>
             )}
             {open && hs.map((h) => {
               const key = name + '::' + h.id
@@ -1855,6 +1863,25 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// GroupNameBand is the inline name editor used for "New group" and "Rename group" (replacing the
+// browser prompt): a text field with Enter-to-confirm / Esc-to-cancel and explicit buttons.
+function GroupNameBand({ initial = '', placeholder, confirmLabel, onConfirm, onCancel }: { initial?: string; placeholder?: string; confirmLabel: string; onConfirm: (name: string) => void | Promise<void>; onCancel: () => void }) {
+  const [v, setV] = useState(initial)
+  const [busy, setBusy] = useState(false)
+  const submit = async () => { if (!v.trim() || busy) return; setBusy(true); await onConfirm(v); setBusy(false) }
+  return (
+    <div className="group-band">
+      <input className="input" autoFocus placeholder={placeholder} value={v}
+        onChange={(e) => setV(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') submit(); else if (e.key === 'Escape') onCancel() }} />
+      <div className="gb-foot">
+        <Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
+        <Button variant="primary" onClick={submit} disabled={!v.trim() || busy}>{confirmLabel}</Button>
+      </div>
     </div>
   )
 }
