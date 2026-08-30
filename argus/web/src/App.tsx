@@ -12,7 +12,7 @@ type Proxy = { name: string; last_access: number; online: boolean; mode: string;
 type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; config: Record<string, string> }
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; priority: number }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
-type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; event_ids: string[] }
+type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; since?: number; event_ids: string[] }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
 type Series = { name: string; units: string; kind: 'history' | 'trend'; points: SeriesPoint[] }
 
@@ -1981,7 +1981,7 @@ function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }:
                     <td className="slhost" style={{ borderLeftColor: STATE_VAR[s.state] || 'var(--border)' }}><span className="lnk-host" onClick={() => goHost(s.host_id)}>{s.host_name}</span></td>
                     <td className="slgrow">
                       {clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id)}>{s.label || s.name}</span> : (s.label || s.name)}
-                      {s.reason && <div className="sreason"><span style={{ color: sevInfo(s.severity).color, fontWeight: 600 }}>{sevInfo(s.severity).label}</span> · {s.reason}</div>}
+                      {s.reason && <div className="sreason"><span style={{ color: sevInfo(s.severity).color, fontWeight: 600 }}>{sevInfo(s.severity).label}</span> · {s.reason}{s.since ? <span title={`Firing since ${new Date(s.since * 1000).toLocaleString()}`}> · {relTime(s.since)}</span> : null}</div>}
                     </td>
                     <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })() : <span style={{ color: 'var(--err)' }}>not supported</span>}</td>
                     <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} width={168} fill /> : null}</td>

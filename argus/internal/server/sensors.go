@@ -23,6 +23,7 @@ type sensorRow struct {
 	Priority  int      `json:"priority"`         // PRTG-style display priority 1..5 (Argus-only)
 	Severity  int      `json:"severity"`         // worst Zabbix trigger severity 0..5 (0 = none)
 	Reason    string   `json:"reason,omitempty"` // name of the worst trigger, i.e. why the sensor is unhappy
+	Since     int64    `json:"since,omitempty"`  // unix time the worst problem started firing (for its age)
 	EventIDs  []string `json:"event_ids"`        // problem events on this sensor (for ack / unack from a list)
 }
 
@@ -57,6 +58,7 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 	itemEvents := map[string][]string{}
 	itemSev := map[string]int{}       // worst Zabbix trigger severity (0..5) firing on the item
 	itemReason := map[string]string{} // name of that worst trigger, so the sensor can show *why* it's unhappy
+	itemSince := map[string]int64{}   // when that worst problem started firing (unix), for the "how long" age
 	for _, p := range problems {
 		rank := 0
 		switch severityState(atoi(p.Severity)) {
@@ -76,9 +78,10 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 			} else if rank > unackedRank[itemID] {
 				unackedRank[itemID] = rank
 			}
-			if sev > itemSev[itemID] { // track the highest-severity trigger + its name for this item
+			if sev > itemSev[itemID] { // track the highest-severity trigger + its name/start for this item
 				itemSev[itemID] = sev
 				itemReason[itemID] = p.Name
+				itemSince[itemID] = atoi64(p.Clock)
 			}
 		}
 	}
@@ -124,7 +127,7 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 			Label: label, Category: cat, Value: it.LastValue, Units: it.Units, LastClock: atoi64(it.LastClock),
 			State: state, Numeric: numericValueType(it.ValueType), Supported: supported,
 			Priority: priorityOf(prioMap, it.ItemID), Severity: itemSev[it.ItemID], Reason: itemReason[it.ItemID],
-			EventIDs: itemEvents[it.ItemID],
+			Since: itemSince[it.ItemID], EventIDs: itemEvents[it.ItemID],
 		})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
