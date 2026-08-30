@@ -12,7 +12,6 @@ type Proxy = { name: string; last_access: number; online: boolean; mode: string;
 type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; config: Record<string, string> }
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; priority: number }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
-type ProblemRow = { event_id: string; name: string; host_id: string; host_name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; clock: number; priority: number; item_ids: string[] }
 type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; event_ids: string[] }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
 type Series = { name: string; units: string; kind: 'history' | 'trend'; points: SeriesPoint[] }
@@ -38,12 +37,6 @@ const SEVERITY: { label: string; color: string }[] = [
   { label: 'Disaster', color: '#e45959' },
 ]
 function sevInfo(sev: number) { return SEVERITY[sev] ?? SEVERITY[0] }
-
-// SevPill renders a severity as a compact coloured chip (the Severity column cell).
-function SevPill({ sev }: { sev: number }) {
-  const s = sevInfo(sev)
-  return <span className="sevpill" style={{ ['--sev' as string]: s.color }} title={`Zabbix severity ${sev}`}>{s.label}</span>
-}
 
 // PriorityStars shows a sensor's PRTG-style display priority (1..5) as five stars. When canEdit,
 // clicking a star sets that priority (admin/helpdesk); otherwise it's read-only. Clicks never bubble
@@ -887,7 +880,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           </div>
         </div>
         <div className="content view-enter" key={`${view}:${listFilter}`}>
-          {view === 'overview' && <OverviewView role={me.role} goHost={goHost} goSensor={goSensor} />}
+          {view === 'overview' && <StatusListView filter="attention" sensors={sensors} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => {}} />}
           {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
           {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} onNavigate={onTreeNav} />}
           {view === 'notifications' && <NotificationsView />}
@@ -1569,102 +1562,6 @@ function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; re
   )
 }
 
-function OverviewView({ role, goHost, goSensor }: { role: string; goHost: (hostId: string) => void; goSensor: (hostId: string, itemId: string) => void }) {
-  const [rows, setRows] = useState<ProblemRow[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [mode, setMode] = useState<'errors' | 'both'>('errors')
-  const [busy, setBusy] = useState<string | null>(null)
-  const canPause = role === 'admin' || role === 'helpdesk'
-
-  function load() {
-    fetch('/api/problems')
-      .then(async (r) => { if (!r.ok) { setError(await errText(r, 'Failed to load problems')); return } setRows(await r.json()); setError(null) })
-      .catch(() => setError('Failed to load problems'))
-  }
-  useEffect(() => { load(); const t = setInterval(load, 30000); const off = onDataRefresh(load); return () => { clearInterval(t); off() } }, [])
-
-  async function ack(p: ProblemRow, seconds: number | null) {
-    setBusy(p.event_id)
-    await fetch(`/api/events/${p.event_id}/ack`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration_seconds: seconds ?? 0 }) }).catch(() => {})
-    setBusy(null); load(); fireDataRefresh()
-  }
-  async function unack(p: ProblemRow) {
-    setBusy(p.event_id)
-    await fetch(`/api/events/${p.event_id}/ack`, { method: 'DELETE' }).catch(() => {})
-    setBusy(null); load(); fireDataRefresh()
-  }
-  // Silence the problem's whole host (admin/helpdesk). A problem never shows for an already
-  // paused/hidden host, so only the "set" direction is offered here.
-  async function hostAction(p: ProblemRow, action: 'pause' | 'hide', seconds: number | null) {
-    setBusy(p.event_id)
-    await fetch(`/api/hosts/${p.host_id}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration_seconds: seconds ?? 0 }) }).catch(() => {})
-    setBusy(null); load(); fireDataRefresh()
-  }
-  // Problem-row actions, mirroring the sensor lists' kebab: acknowledge (any user), plus pause/hide the
-  // host for admin/helpdesk.
-  function actionsFor(p: ProblemRow): KAction[] {
-    const acts: KAction[] = []
-    if (p.acknowledged) acts.push({ label: 'Unacknowledge', icon: kbIcon.ack, onClick: () => unack(p) })
-    else acts.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => ack(p, s) })
-    if (canPause) acts.push({ sep: true, label: '' },
-      { label: 'Pause host', icon: kbIcon.pause, onPick: (s) => hostAction(p, 'pause', s) },
-      { label: 'Hide host', icon: kbIcon.hide, onPick: (s) => hostAction(p, 'hide', s) })
-    return acts
-  }
-
-  const filtered = (rows || [])
-    .filter((p) => (mode === 'errors' ? p.state === 'error' && !p.acknowledged : p.state === 'error' || p.state === 'warning'))
-    // Priority (PRTG-style, admin-set) leads the ordering; severity/state, ack and recency break ties.
-    .sort((a, b) => (b.priority - a.priority) || (stateRank[b.state] - stateRank[a.state]) || (Number(a.acknowledged) - Number(b.acknowledged)) || (b.clock - a.clock))
-  const sparks = useSparks(filtered.flatMap((p) => (p.item_ids && p.item_ids.length ? [p.item_ids[0]] : [])))
-
-  return (
-    <div className="panel">
-      <div className="phead">
-        <h2>Active problems</h2><span className="hint">across all sites</span>
-        <div className="tools">
-          <div className="seg">
-            <button className={mode === 'errors' ? 'on' : ''} onClick={() => setMode('errors')}>Errors</button>
-            <button className={mode === 'both' ? 'on' : ''} onClick={() => setMode('both')}>Errors + Warnings</button>
-          </div>
-        </div>
-      </div>
-      {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
-      {rows === null && !error && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>Loading…</div>}
-      {rows !== null && !error && filtered.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--ok)' }}>✓ All clear - nothing {mode === 'errors' ? 'in error' : 'to report'}.</div>}
-      {filtered.length > 0 && (
-        <table className="slist slist-problems">
-          <thead><tr><th>Host</th><th className="slgrow">Problem</th><th>Trend</th><th>Age</th><th className="slprio">Priority</th><th className="slsev">Severity</th><th /></tr></thead>
-          <tbody>
-            {filtered.map((p) => {
-              const c = healthColor(p.state, p.acknowledged)
-              const hasItem = p.item_ids && p.item_ids.length > 0
-              return (
-                <tr key={p.event_id} style={{ opacity: p.acknowledged ? 0.72 : 1 }}>
-                  <td className="slhost" style={{ borderLeftColor: c }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ width: 9, height: 9, borderRadius: '50%', background: c, flexShrink: 0 }} />
-                      <span className="lnk-host" onClick={() => goHost(p.host_id)}>{p.host_name}</span>
-                    </span>
-                  </td>
-                  <td className="slgrow">{hasItem ? <span className="lnk-sensor" onClick={() => goSensor(p.host_id, p.item_ids[0])}>{p.name}</span> : p.name}</td>
-                  <td className="trend">{hasItem ? <Spark values={sparks[p.item_ids[0]]} color={c} width={168} fill /> : null}</td>
-                  <td className="mono dur" data-label="Age" style={{ whiteSpace: 'nowrap' }}>{relTime(p.clock)}</td>
-                  <td className="slprio" data-label="Priority"><PriorityStars value={p.priority} canEdit={false} /></td>
-                  <td className="slsev" data-label="Severity"><SevPill sev={p.severity} /></td>
-                  <td className="act">
-                    {p.acknowledged && <span className="acktag" title={`Acknowledged · ${untilLabel(p.ack_until)}`}>✓ acked</span>}
-                    <Kebab disabled={busy === p.event_id} actions={actionsFor(p)} />
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      )}
-    </div>
-  )
-}
 
 const kbIcon = {
   pause: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>,
@@ -2015,10 +1912,16 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
 // the chosen state, with deep-links to its host/chart and a per-row kebab.
 function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }: { filter: string; sensors: SensorRow[]; canPause: boolean; goHost: (h: string) => void; goSensor: (h: string, i: string) => void; onBack: () => void }) {
   const [busy, setBusy] = useState<string | null>(null)
-  const rows = sensors.filter((s) => s.state === filter)
-  // Priority reorders every status list except OK (where it'd just shuffle healthy sensors); the
-  // backend already returns them host/name-sorted, which stands as the tie-breaker.
-  if (filter !== 'ok') rows.sort((a, b) => (b.priority - a.priority) || a.host_name.localeCompare(b.host_name) || a.name.localeCompare(b.name))
+  // The "attention" filter is the home Overview: every sensor that isn't OK (a PRTG-style unified list),
+  // with a mode toggle. A concrete state (error/warning/…) is a top-bar status-chip drill-down.
+  const attention = filter === 'attention'
+  const [attMode, setAttMode] = useState<'errors' | 'both'>('errors')
+  const rows = sensors.filter((s) => attention
+    ? (attMode === 'errors' ? s.state === 'error' : (s.state === 'error' || s.state === 'warning' || s.state === 'acked'))
+    : s.state === filter)
+  // Priority leads the ordering (except the OK list, where it'd just shuffle healthy sensors); severity
+  // and host/name break ties. The backend already returns them host/name-sorted as a final fallback.
+  if (attention || filter !== 'ok') rows.sort((a, b) => (b.priority - a.priority) || (b.severity - a.severity) || a.host_name.localeCompare(b.host_name) || a.name.localeCompare(b.name))
   const sparks = useSparks(rows.filter((s) => s.numeric && s.supported).map((s) => s.item_id))
 
   async function itemAction(s: SensorRow, action: 'pause' | 'hide', seconds: number | null) {
@@ -2054,12 +1957,19 @@ function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }:
   return (
     <div className="panel">
       <div className="phead">
-        <h2>{STATE_LABEL[filter]} sensors</h2>
+        <h2>{attention ? 'Active problems' : `${STATE_LABEL[filter]} sensors`}</h2>
         <span className="hint">{rows.length} sensor{rows.length === 1 ? '' : 's'} · across all sites</span>
-        <div className="tools"><button className="btn ghost" onClick={onBack}>← Back to overview</button></div>
+        <div className="tools">
+          {attention
+            ? <div className="seg">
+                <button className={attMode === 'errors' ? 'on' : ''} onClick={() => setAttMode('errors')}>Errors</button>
+                <button className={attMode === 'both' ? 'on' : ''} onClick={() => setAttMode('both')}>Errors + Warnings</button>
+              </div>
+            : <button className="btn ghost" onClick={onBack}>← Back to overview</button>}
+        </div>
       </div>
       {rows.length === 0
-        ? <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>No {STATE_LABEL[filter].toLowerCase()} sensors.</div>
+        ? <div style={{ padding: '0.9rem 16px', color: attention ? 'var(--ok)' : 'var(--muted)' }}>{attention ? `✓ All clear - nothing ${attMode === 'errors' ? 'in error' : 'to report'}.` : `No ${STATE_LABEL[filter].toLowerCase()} sensors.`}</div>
         : (
           <table className="slist slist-sensors">
             <thead><tr><th>Host</th><th className="slgrow">Sensor</th><th>Value</th><th>Trend</th><th>{durCol}</th><th className="slprio">Priority</th><th /></tr></thead>
@@ -2067,9 +1977,12 @@ function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }:
               {rows.map((s) => {
                 const clickable = s.numeric && s.supported
                 return (
-                  <tr key={s.item_id}>
+                  <tr key={s.item_id} style={{ opacity: s.state === 'acked' ? 0.72 : 1 }}>
                     <td className="slhost" style={{ borderLeftColor: STATE_VAR[s.state] || 'var(--border)' }}><span className="lnk-host" onClick={() => goHost(s.host_id)}>{s.host_name}</span></td>
-                    <td className="slgrow">{clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id)}>{s.label || s.name}</span> : (s.label || s.name)}</td>
+                    <td className="slgrow">
+                      {clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id)}>{s.label || s.name}</span> : (s.label || s.name)}
+                      {s.reason && <div className="sreason"><span style={{ color: sevInfo(s.severity).color, fontWeight: 600 }}>{sevInfo(s.severity).label}</span> · {s.reason}</div>}
+                    </td>
                     <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })() : <span style={{ color: 'var(--err)' }}>not supported</span>}</td>
                     <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} width={168} fill /> : null}</td>
                     <td className="mono dur" data-label={durCol}>{relTime(s.last_clock)}</td>

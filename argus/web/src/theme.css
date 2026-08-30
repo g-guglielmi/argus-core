@@ -239,12 +239,11 @@ a { color: var(--accent); }
 .slist-problems th:nth-child(1){width:12%} .slist-problems th:nth-child(2){width:37%} .slist-problems th:nth-child(3){width:15%} .slist-problems th:nth-child(4){width:9%}  .slist-problems th:nth-child(5){width:11%} .slist-problems th:nth-child(6){width:10%} .slist-problems th:nth-child(7){width:6%}
 .slist td.slprio, .slist td.slsev { white-space: nowrap; }
 .slist td.act .acktag { margin-right: 6px; }
+/* the "why" line under a sensor name: severity label + trigger reason (only when the sensor has one) */
+.slist .sreason { font-size: 11.5px; color: var(--muted); margin-top: 2px; line-height: 1.35; }
 /* the acked action (tag + Unacknowledge) can wrap within its fixed column instead of overflowing */
 .slist-problems td:last-child .acktag { white-space: normal; }
 
-/* Severity chip (Zabbix priority 0..5). Colour comes from an inline --sev custom property so one rule
-   covers all six levels; text/border/fill are all derived from it. */
-.sevpill { display: inline-flex; align-items: center; white-space: nowrap; font-size: 11.5px; font-weight: 600; line-height: 1.5; color: var(--sev); padding: 1px 9px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--sev) 45%, transparent); background: color-mix(in srgb, var(--sev) 14%, transparent); }
 
 /* ---------- monitoring tree ---------- */
 .site { border-bottom: 1px solid var(--border); }
