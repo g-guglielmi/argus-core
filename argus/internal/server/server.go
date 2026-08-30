@@ -108,6 +108,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// monitoring read path (any signed-in user)
 	mux.HandleFunc("GET /api/problems", auth.RequireAuth(s.handleProblems))
 	mux.HandleFunc("GET /api/sensors", auth.RequireAuth(s.handleSensors))
+	mux.HandleFunc("GET /api/triggers", auth.RequireAuth(s.handleTriggers))
 	mux.HandleFunc("GET /api/spark", auth.RequireAuth(s.handleSpark))
 	mux.HandleFunc("GET /api/proxies", auth.RequireAuth(s.handleProxies))
 	mux.HandleFunc("GET /api/hosts", auth.RequireAuth(s.handleHosts))

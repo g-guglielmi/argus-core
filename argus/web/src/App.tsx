@@ -12,6 +12,8 @@ type Proxy = { name: string; last_access: number; online: boolean; mode: string;
 type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; config: Record<string, string> }
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; priority: number }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
+type TriggerHost = { id: string; name: string }
+type Trigger = { id: string; description: string; severity: number; enabled: boolean; problem: boolean; since: number; hosts: TriggerHost[]; sensors: string[] }
 type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; since?: number; event_ids: string[] }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
 type Series = { name: string; units: string; kind: 'history' | 'trend'; points: SeriesPoint[] }
@@ -494,9 +496,11 @@ function ResetPassword({ token, onDone }: { token: string; onDone: () => void })
   )
 }
 
-type View = 'overview' | 'monitoring' | 'notifications' | 'probes' | 'users' | 'settings' | 'account' | 'list'
+type View = 'overview' | 'firing' | 'triggers' | 'monitoring' | 'notifications' | 'probes' | 'users' | 'settings' | 'account' | 'list'
 const VIEW_TITLES: Record<View, [string, string]> = {
   overview: ['Overview', 'What needs attention right now'],
+  firing: ['Firing triggers', 'Alert rules currently in problem'],
+  triggers: ['Triggers', 'All alert rules, grouped by host'],
   monitoring: ['Monitoring', 'Sites, hosts and sensors'],
   notifications: ['Notifications', 'Alert routing and channels'],
   probes: ['Probes', 'Site probe enrollment'],
@@ -508,6 +512,8 @@ const VIEW_TITLES: Record<View, [string, string]> = {
 
 const ic = {
   overview: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 12a9 9 0 0 1 18 0" /><path d="M12 12l4-2" /><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" /></svg>,
+  firing: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" /></svg>,
+  triggers: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="4" cy="6" r="1.4" fill="currentColor" stroke="none" /><circle cx="4" cy="12" r="1.4" fill="currentColor" stroke="none" /><circle cx="4" cy="18" r="1.4" fill="currentColor" stroke="none" /><path d="M9 6h12M9 12h12M9 18h12" /></svg>,
   monitoring: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="7" rx="2" /><rect x="3" y="13" width="18" height="7" rx="2" /><path d="M7 7.5h.01M7 16.5h.01" /></svg>,
   notifications: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>,
   probes: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5" /></svg>,
@@ -545,7 +551,7 @@ function useTheme(): ['dark' | 'light', () => void] {
 // bookmark, shared link, or Back/Forward restores the exact screen - instead of always
 // resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
 // (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
-const NAV_VIEWS: View[] = ['overview', 'monitoring', 'notifications', 'probes', 'users', 'settings', 'account', 'list']
+const NAV_VIEWS: View[] = ['overview', 'firing', 'triggers', 'monitoring', 'notifications', 'probes', 'users', 'settings', 'account', 'list']
 type NavState = { view: View; filter: string; host?: string; item?: string }
 
 function parseNav(): NavState {
@@ -836,6 +842,8 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         </div>
         <div className="navlabel">Watch</div>
         {nav('overview', 'Overview', { count: errN })}
+        {nav('firing', 'Firing')}
+        {nav('triggers', 'Triggers')}
         {nav('monitoring', 'Monitoring')}
         <div className="navlabel">Configure</div>
         {nav('notifications', 'Notifications')}
@@ -881,6 +889,8 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         </div>
         <div className="content view-enter" key={`${view}:${listFilter}`}>
           {view === 'overview' && <StatusListView filter="attention" sensors={sensors} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => {}} />}
+          {view === 'firing' && <FiringView goHost={goHost} />}
+          {view === 'triggers' && <TriggersView goHost={goHost} />}
           {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
           {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} onNavigate={onTreeNav} />}
           {view === 'notifications' && <NotificationsView />}
@@ -1994,6 +2004,117 @@ function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }:
             </tbody>
           </table>
         )}
+    </div>
+  )
+}
+
+// useTriggers loads the monitored triggers (alert rules) and keeps them fresh. Shared by both
+// trigger tabs; the firing tab filters problem=true, the all tab groups by host.
+function useTriggers(): [Trigger[] | null, string | null] {
+  const [rows, setRows] = useState<Trigger[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    function load() {
+      fetch('/api/triggers')
+        .then(async (r) => { if (!r.ok) { setError(await errText(r, 'Failed to load triggers')); return } setRows(await r.json()); setError(null) })
+        .catch(() => setError('Failed to load triggers'))
+    }
+    load(); const t = setInterval(load, 30000); const off = onDataRefresh(load)
+    return () => { clearInterval(t); off() }
+  }, [])
+  return [rows, error]
+}
+
+// SevText renders a severity as a small coloured label (the trigger tabs' lightweight severity mark).
+function SevText({ sev }: { sev: number }) {
+  const s = sevInfo(sev)
+  return <span style={{ color: s.color, fontWeight: 600 }}>{s.label}</span>
+}
+
+// FiringView is the flat, cross-host list of triggers currently in the problem state - the trigger-side
+// view of "what's alerting", where a multi-sensor trigger shows all the sensors it watches.
+function FiringView({ goHost }: { goHost: (h: string) => void }) {
+  const [rows, error] = useTriggers()
+  const firing = (rows || []).filter((t) => t.problem)
+    .sort((a, b) => (b.severity - a.severity) || (a.since - b.since))
+  return (
+    <div className="panel">
+      <div className="phead"><h2>Firing triggers</h2><span className="hint">{firing.length} firing · across all sites</span></div>
+      {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
+      {rows === null && !error && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>Loading…</div>}
+      {rows !== null && !error && firing.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--ok)' }}>✓ No triggers firing.</div>}
+      {firing.length > 0 && (
+        <div className="enroll-scroll">
+        <table className="slist slist-trig">
+          <thead><tr><th className="slgrow">Trigger</th><th>Severity</th><th>Host</th><th>Sensors</th><th>Firing</th></tr></thead>
+          <tbody>
+            {firing.map((t) => (
+              <tr key={t.id}>
+                <td className="slgrow" style={{ borderLeft: `3px solid ${sevInfo(t.severity).color}`, paddingLeft: 13 }}>{t.description}</td>
+                <td data-label="Severity"><SevText sev={t.severity} /></td>
+                <td data-label="Host">{t.hosts.map((h, i) => <span key={h.id}>{i ? ', ' : ''}<span className="lnk-host" onClick={() => goHost(h.id)}>{h.name}</span></span>)}</td>
+                <td className="tsensors" data-label="Sensors">{t.sensors.join(', ') || '-'}</td>
+                <td className="mono dur" data-label="Firing" title={`Firing since ${new Date(t.since * 1000).toLocaleString()}`}>{relTime(t.since)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// TriggersView lists every monitored trigger grouped by host: expand a host to see its rules, each with
+// its severity, current state (OK / firing + age) and the sensor(s) its expression watches.
+function TriggersView({ goHost }: { goHost: (h: string) => void }) {
+  const [rows, error] = useTriggers()
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+  function toggle(id: string) { setCollapsed((c) => { const n = new Set(c); n.has(id) ? n.delete(id) : n.add(id); return n }) }
+
+  const byHost: Record<string, { name: string; trigs: Trigger[] }> = {}
+  for (const t of rows || []) for (const h of t.hosts) { (byHost[h.id] = byHost[h.id] || { name: h.name, trigs: [] }).trigs.push(t) }
+  const hostIds = Object.keys(byHost).sort((a, b) => byHost[a].name.localeCompare(byHost[b].name))
+
+  return (
+    <div className="panel">
+      <div className="phead"><h2>All triggers</h2><span className="hint">{(rows || []).length} trigger{(rows || []).length === 1 ? '' : 's'} · {hostIds.length} host{hostIds.length === 1 ? '' : 's'}</span></div>
+      {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
+      {rows === null && !error && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>Loading…</div>}
+      {rows !== null && !error && hostIds.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>No triggers found.</div>}
+      {hostIds.map((hid) => {
+        const h = byHost[hid]
+        const open = !collapsed.has(hid)
+        const firing = h.trigs.filter((t) => t.problem).length
+        const trigs = [...h.trigs].sort((a, b) => (Number(b.problem) - Number(a.problem)) || (b.severity - a.severity) || a.description.localeCompare(b.description))
+        return (
+          <div className="site" key={hid}>
+            <div className="host-head" onClick={() => toggle(hid)}>
+              <svg className={'chev' + (open ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
+              <span className="hn lnk-host" onClick={(e) => { e.stopPropagation(); goHost(hid) }}>{h.name}</span>
+              <div className="right">
+                {firing > 0 && <span style={{ color: 'var(--err)', fontSize: 12 }}>{firing} firing</span>}
+                <span className="loc">{h.trigs.length} trigger{h.trigs.length === 1 ? '' : 's'}</span>
+              </div>
+            </div>
+            {open && (
+              <div className="host-body">
+                <table className="sensors trig-list">
+                  <tbody>
+                    {trigs.map((t) => (
+                      <tr key={t.id}>
+                        <td className="namecell"><span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, display: 'inline-block', marginRight: 8, background: t.problem ? sevInfo(t.severity).color : 'var(--ok)' }} />{t.description}</td>
+                        <td className="tsensors mono">{t.sensors.join(', ')}</td>
+                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap', color: t.problem ? sevInfo(t.severity).color : 'var(--muted)' }} title={t.problem ? `Firing since ${new Date(t.since * 1000).toLocaleString()}` : ''}>{t.problem ? <>{sevInfo(t.severity).label} · {relTime(t.since)}</> : 'OK'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

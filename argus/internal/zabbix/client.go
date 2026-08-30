@@ -282,6 +282,44 @@ func (c *Client) AllItems(ctx context.Context) ([]ItemWithHosts, error) {
 	return items, c.call(ctx, "item.get", params, true, &items)
 }
 
+// TriggerFull is a trigger with everything the Triggers tab needs: its name, severity, current
+// problem/enabled state, when it last changed state, and the host(s) + item(s) it references (so a
+// multi-sensor trigger shows all the sensors its expression watches).
+type TriggerFull struct {
+	TriggerID   string `json:"triggerid"`
+	Description string `json:"description"`
+	Priority    string `json:"priority"`   // severity 0..5
+	Status      string `json:"status"`     // "0" enabled
+	Value       string `json:"value"`      // "1" == problem
+	LastChange  string `json:"lastchange"` // unix time it entered its current state
+	Hosts       []struct {
+		HostID string `json:"hostid"`
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	} `json:"hosts"`
+	Items []struct {
+		ItemID string `json:"itemid"`
+		Name   string `json:"name"`
+		Key    string `json:"key_"`
+	} `json:"items"`
+}
+
+// AllTriggers returns every enabled trigger on a monitored host, with its host(s) and item(s), so the
+// UI can list the alert rules and which sensors each one watches (including multi-sensor triggers).
+func (c *Client) AllTriggers(ctx context.Context) ([]TriggerFull, error) {
+	params := map[string]any{
+		"output":            []string{"triggerid", "description", "priority", "status", "value", "lastchange"},
+		"selectHosts":       []string{"hostid", "name", "status"},
+		"selectItems":       []string{"itemid", "name", "key_"},
+		"monitored":         true,
+		"expandDescription": true,
+		"skipDependent":     true,
+		"sortfield":         "description",
+	}
+	var triggers []TriggerFull
+	return triggers, c.call(ctx, "trigger.get", params, true, &triggers)
+}
+
 // ActiveTriggers returns triggers currently in the problem state, with their host(s).
 func (c *Client) ActiveTriggers(ctx context.Context) ([]Trigger, error) {
 	params := map[string]any{
