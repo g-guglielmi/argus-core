@@ -236,8 +236,9 @@ a { color: var(--accent); }
    (which scales to fill it) is readable. */
 .slist-sensors, .slist-problems { table-layout: fixed; }
 .slist-sensors  th:nth-child(1){width:16%} .slist-sensors  th:nth-child(2){width:25%} .slist-sensors  th:nth-child(3){width:13%} .slist-sensors  th:nth-child(4){width:15%} .slist-sensors  th:nth-child(5){width:13%} .slist-sensors  th:nth-child(6){width:14%} .slist-sensors  th:nth-child(7){width:4%}
-.slist-problems th:nth-child(1){width:12%} .slist-problems th:nth-child(2){width:30%} .slist-problems th:nth-child(3){width:15%} .slist-problems th:nth-child(4){width:9%}  .slist-problems th:nth-child(5){width:11%} .slist-problems th:nth-child(6){width:10%} .slist-problems th:nth-child(7){width:13%}
+.slist-problems th:nth-child(1){width:12%} .slist-problems th:nth-child(2){width:37%} .slist-problems th:nth-child(3){width:15%} .slist-problems th:nth-child(4){width:9%}  .slist-problems th:nth-child(5){width:11%} .slist-problems th:nth-child(6){width:10%} .slist-problems th:nth-child(7){width:6%}
 .slist td.slprio, .slist td.slsev { white-space: nowrap; }
+.slist td.act .acktag { margin-right: 6px; }
 /* the acked action (tag + Unacknowledge) can wrap within its fixed column instead of overflowing */
 .slist-problems td:last-child .acktag { white-space: normal; }
 

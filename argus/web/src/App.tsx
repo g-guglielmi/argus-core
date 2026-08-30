@@ -887,7 +887,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           </div>
         </div>
         <div className="content view-enter" key={`${view}:${listFilter}`}>
-          {view === 'overview' && <OverviewView goHost={goHost} goSensor={goSensor} />}
+          {view === 'overview' && <OverviewView role={me.role} goHost={goHost} goSensor={goSensor} />}
           {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
           {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} onNavigate={onTreeNav} />}
           {view === 'notifications' && <NotificationsView />}
@@ -1569,10 +1569,12 @@ function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; re
   )
 }
 
-function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; goSensor: (hostId: string, itemId: string) => void }) {
+function OverviewView({ role, goHost, goSensor }: { role: string; goHost: (hostId: string) => void; goSensor: (hostId: string, itemId: string) => void }) {
   const [rows, setRows] = useState<ProblemRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [mode, setMode] = useState<'errors' | 'both'>('errors')
+  const [busy, setBusy] = useState<string | null>(null)
+  const canPause = role === 'admin' || role === 'helpdesk'
 
   function load() {
     fetch('/api/problems')
@@ -1582,12 +1584,32 @@ function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; 
   useEffect(() => { load(); const t = setInterval(load, 30000); const off = onDataRefresh(load); return () => { clearInterval(t); off() } }, [])
 
   async function ack(p: ProblemRow, seconds: number | null) {
+    setBusy(p.event_id)
     await fetch(`/api/events/${p.event_id}/ack`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration_seconds: seconds ?? 0 }) }).catch(() => {})
-    load(); fireDataRefresh()
+    setBusy(null); load(); fireDataRefresh()
   }
   async function unack(p: ProblemRow) {
+    setBusy(p.event_id)
     await fetch(`/api/events/${p.event_id}/ack`, { method: 'DELETE' }).catch(() => {})
-    load(); fireDataRefresh()
+    setBusy(null); load(); fireDataRefresh()
+  }
+  // Silence the problem's whole host (admin/helpdesk). A problem never shows for an already
+  // paused/hidden host, so only the "set" direction is offered here.
+  async function hostAction(p: ProblemRow, action: 'pause' | 'hide', seconds: number | null) {
+    setBusy(p.event_id)
+    await fetch(`/api/hosts/${p.host_id}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration_seconds: seconds ?? 0 }) }).catch(() => {})
+    setBusy(null); load(); fireDataRefresh()
+  }
+  // Problem-row actions, mirroring the sensor lists' kebab: acknowledge (any user), plus pause/hide the
+  // host for admin/helpdesk.
+  function actionsFor(p: ProblemRow): KAction[] {
+    const acts: KAction[] = []
+    if (p.acknowledged) acts.push({ label: 'Unacknowledge', icon: kbIcon.ack, onClick: () => unack(p) })
+    else acts.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => ack(p, s) })
+    if (canPause) acts.push({ sep: true, label: '' },
+      { label: 'Pause host', icon: kbIcon.pause, onPick: (s) => hostAction(p, 'pause', s) },
+      { label: 'Hide host', icon: kbIcon.hide, onPick: (s) => hostAction(p, 'hide', s) })
+    return acts
   }
 
   const filtered = (rows || [])
@@ -1630,10 +1652,9 @@ function OverviewView({ goHost, goSensor }: { goHost: (hostId: string) => void; 
                   <td className="mono dur" data-label="Age" style={{ whiteSpace: 'nowrap' }}>{relTime(p.clock)}</td>
                   <td className="slprio" data-label="Priority"><PriorityStars value={p.priority} canEdit={false} /></td>
                   <td className="slsev" data-label="Severity"><SevPill sev={p.severity} /></td>
-                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    {p.acknowledged
-                      ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}><span className="acktag">✓ acked · {untilLabel(p.ack_until)}</span><button className="btn ghost" onClick={() => unack(p)}>Unacknowledge</button></span>
-                      : <DurationButton label="Acknowledge" onPick={(s) => ack(p, s)} />}
+                  <td className="act">
+                    {p.acknowledged && <span className="acktag" title={`Acknowledged · ${untilLabel(p.ack_until)}`}>✓ acked</span>}
+                    <Kebab disabled={busy === p.event_id} actions={actionsFor(p)} />
                   </td>
                 </tr>
               )
