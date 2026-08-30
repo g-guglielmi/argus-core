@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -10,7 +11,48 @@ import (
 	"time"
 
 	"argus/internal/auth"
+	"argus/internal/store"
+	"argus/internal/zabbix"
 )
+
+// siteGroupsBackfilledKey guards the one-time backfill that gives each already-enrolled proxy a
+// matching site host group (see EnsureSiteGroups).
+const siteGroupsBackfilledKey = "site_groups_backfilled"
+
+// EnsureSiteGroups makes sure every already-enrolled proxy has a matching top-level host group named
+// after its site (proxy "proxy-site1" -> group "site1"). It runs ONCE, guarded by an app_meta flag, so
+// it seeds groups for probes enrolled before this feature existed without ever recreating a group the
+// operator later deletes. New enrollments get their group inline in handleEnroll. Best-effort.
+func EnsureSiteGroups(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger) {
+	if !zbx.Authenticated() {
+		return
+	}
+	if _, done, _ := st.MetaGet(ctx, siteGroupsBackfilledKey); done {
+		return
+	}
+	c, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	proxies, err := zbx.Proxies(c)
+	if err != nil {
+		logger.Warn("site-group backfill: could not list proxies", "err", err)
+		return // leave the flag unset so it retries on the next start
+	}
+	for _, p := range proxies {
+		site := strings.TrimPrefix(p.Name, "proxy-")
+		if site == "" {
+			continue
+		}
+		if err := zbx.EnsureHostGroup(c, site); err != nil {
+			logger.Warn("site-group backfill: could not ensure group", "site", site, "err", err)
+			return
+		}
+	}
+	if err := st.MetaSet(ctx, siteGroupsBackfilledKey, "1"); err != nil {
+		logger.Warn("site-group backfill: could not persist completion flag", "err", err)
+		return
+	}
+	logger.Info("site-group backfill complete", "proxies", len(proxies))
+}
 
 // Signed probe certificates last as long as the manual gen-certs.sh leaves (5 years), capped by
 // the CA's own expiry inside pki.SignCSR.
@@ -110,6 +152,15 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.st.MarkEnrollTokenUsed(ctx, t.ID)
+
+	// Give the site its own top-level host group (named after the site, e.g. "site1"), so each probe
+	// gets its own group in the Monitoring tree. Best-effort + idempotent - a failure here shouldn't
+	// block enrollment, and an operator who deletes the group won't see it recreated by this path.
+	if t.Site != "" {
+		if err := s.zbx.EnsureHostGroup(ctx, t.Site); err != nil {
+			s.logger.Warn("enroll: could not ensure the site host group", "site", t.Site, "err", err)
+		}
+	}
 
 	// Issue a long-lived check-in credential so the probe can report its running version and read
 	// the fleet target version (powers the fleet-update view + opt-in self-updater). Best-effort:

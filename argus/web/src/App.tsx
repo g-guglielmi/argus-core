@@ -1653,9 +1653,11 @@ type Focus =
   | { level: 'host'; path: string; hostId: string }
   | { level: 'sensor'; path: string; hostId: string; itemId: string; itemName?: string }
 
-// A node in the nested group tree, derived from the "/"-separated group names. A node may be a real
-// Zabbix group (has `group`) or a virtual parent (e.g. "site1" when only "site1/Network" exists).
-type GNode = { path: string; name: string; group?: Group; children: GNode[]; hosts: Host[] }
+// A node in the group tree. Only REAL Zabbix groups become nodes (plus a synthetic "Ungrouped" for
+// hosts with no group) - there are no virtual parents: a group named "a/b" whose parent "a" isn't a
+// real group renders at the top level with its full name. `name` is the display label (the path
+// remainder below its real parent, or the full path at the top level); `path` is the full group name.
+type GNode = { path: string; name: string; group?: Group; parentPath?: string; children: GNode[]; hosts: Host[] }
 
 function MonitoringView({ role, target, onNavigate }: { role: string; target: { hostId: string; itemId?: string; itemName?: string; n: number } | null; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
   const [hosts, setHosts] = useState<Host[]>([])
@@ -1750,29 +1752,40 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
     load(); fireDataRefresh()
   }
 
-  // Build the nested group tree from the "/"-separated group names: each path segment is a node, so
-  // "site1/Network" nests "Network" under "site1". A node is a real Zabbix group (has .group) or a
-  // virtual parent (e.g. "site1" when only "site1/Network" exists). Hosts attach to their exact group
-  // path; hosts with no group fall under a synthetic "Ungrouped" node.
+  // Build the group tree WITHOUT virtual parents: only real Zabbix groups (from /api/groups) become
+  // nodes. A group nests under the real group that is the longest strict prefix of its path; a group
+  // with no real ancestor sits at the top level under its full name. Hosts attach to their exact group
+  // node; hosts with no group fall under a synthetic "Ungrouped" root.
+  const realNames = new Set(groups.map((g) => g.name))
+  function realParent(name: string): string | null {
+    const segs = name.split('/')
+    for (let i = segs.length - 1; i >= 1; i--) { const pre = segs.slice(0, i).join('/'); if (realNames.has(pre)) return pre }
+    return null
+  }
   const byPath = new Map<string, GNode>()
   const roots: GNode[] = []
-  function ensureNode(path: string): GNode {
-    const found = byPath.get(path)
-    if (found) return found
-    const idx = path.lastIndexOf('/')
-    const n: GNode = { path, name: idx >= 0 ? path.slice(idx + 1) : path, children: [], hosts: [] }
-    byPath.set(path, n)
-    if (idx >= 0) ensureNode(path.slice(0, idx)).children.push(n)
-    else roots.push(n)
-    return n
+  for (const g of groups) {
+    const parent = realParent(g.name)
+    byPath.set(g.name, { path: g.name, name: parent ? g.name.slice(parent.length + 1) : g.name, group: g, parentPath: parent || undefined, children: [], hosts: [] })
   }
-  for (const g of groups) ensureNode(g.name).group = g
+  for (const n of byPath.values()) { if (n.parentPath) byPath.get(n.parentPath)!.children.push(n); else roots.push(n) }
   for (const h of hosts) {
     const gs = h.groups && h.groups.length ? h.groups : ['Ungrouped']
-    for (const gp of gs) ensureNode(gp).hosts.push(h)
+    for (const gp of gs) {
+      let n = byPath.get(gp)
+      if (!n) { n = { path: gp, name: gp, children: [], hosts: [] }; byPath.set(gp, n); roots.push(n) } // Ungrouped, or a stray group not in /api/groups
+      n.hosts.push(h)
+    }
   }
   const sortNodes = (ns: GNode[]) => { ns.sort((a, b) => a.name.localeCompare(b.name)); for (const n of ns) sortNodes(n.children) }
   sortNodes(roots)
+  // Breadcrumb chain for a group path: walk real parents up to the top-level node.
+  function crumbChain(path: string): { path: string; label: string }[] {
+    const out: { path: string; label: string }[] = []
+    let p: string | undefined = path
+    while (p) { const n = byPath.get(p); if (!n) { out.unshift({ path: p, label: p }); break } out.unshift({ path: n.path, label: n.name }); p = n.parentPath }
+    return out
+  }
 
   // Rolled-up hosts of a node (its own + all descendants), de-duplicated - drives the node's host
   // count and worst-state dot.
@@ -1866,7 +1879,7 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
   // What to render: root -> all top-level nodes; group focus -> just that node's subtree; host/sensor
   // focus -> only the focused host card (the breadcrumb carries the path).
   const focusNode = focus.level === 'group' ? byPath.get(focus.path) : undefined
-  const pathSegs = focus.level !== 'root' ? focus.path.split('/') : []
+  const crumbs = focus.level !== 'root' ? crumbChain(focus.path) : []
 
   return (
     <div className="panel">
@@ -1886,10 +1899,9 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
       {focus.level !== 'root' && (
         <div className="crumbs">
           <span className="crumb" onClick={drillRoot}>Sites &amp; hosts</span>
-          {pathSegs.map((seg, i) => {
-            const p = pathSegs.slice(0, i + 1).join('/')
-            const isCur = focus.level === 'group' && i === pathSegs.length - 1
-            return <Fragment key={p}><span className="sep">/</span>{isCur ? <span className="crumb cur">{seg}</span> : <span className="crumb" onClick={() => drillGroup(p)}>{seg}</span>}</Fragment>
+          {crumbs.map((c, i) => {
+            const isCur = focus.level === 'group' && i === crumbs.length - 1
+            return <Fragment key={c.path}><span className="sep">/</span>{isCur ? <span className="crumb cur">{c.label}</span> : <span className="crumb" onClick={() => drillGroup(c.path)}>{c.label}</span>}</Fragment>
           })}
           {(focus.level === 'host' || focus.level === 'sensor') && <>
             <span className="sep">/</span>

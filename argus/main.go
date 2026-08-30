@@ -70,6 +70,9 @@ func main() {
 	notifySecret := server.GetSigningSecret(context.Background(), st)
 	go server.StartNotifier(sweepCtx, st, zbx, logger, mgr, notifySecret)
 
+	// One-time backfill: give each already-enrolled proxy its own site host group.
+	go server.EnsureSiteGroups(sweepCtx, st, zbx, logger)
+
 	srv := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           server.New(cfg, zbx, st, logger, mgr),

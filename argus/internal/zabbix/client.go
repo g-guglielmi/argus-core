@@ -605,6 +605,20 @@ func (c *Client) HostGroups(ctx context.Context) ([]HostGroup, error) {
 	return out, nil
 }
 
+// EnsureHostGroup creates a host group with this name if one doesn't already exist. Idempotent, so
+// it's safe to call on every probe enrollment / backfill.
+func (c *Client) EnsureHostGroup(ctx context.Context, name string) error {
+	var existing []HostGroup
+	if err := c.call(ctx, "hostgroup.get", map[string]any{"output": []string{"groupid"}, "filter": map[string]any{"name": []string{name}}}, true, &existing); err != nil {
+		return err
+	}
+	if len(existing) > 0 {
+		return nil
+	}
+	_, err := c.CreateHostGroup(ctx, name)
+	return err
+}
+
 // CreateHostGroup creates a new host group and returns its id.
 func (c *Client) CreateHostGroup(ctx context.Context, name string) (string, error) {
 	var res struct {
