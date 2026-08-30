@@ -11,6 +11,19 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.20] - 2026-08-30
+
+**Monitoring drill-down (PRTG-style):**
+
+- **Click through the tree.** The group, host and sensor names in the Monitoring tree are now links
+  that narrow the view to just that level, with a breadcrumb (`Sites & hosts / Group / Host / Sensor`)
+  to step back up. The chevrons still expand inline for a quick peek - name = drill in, chevron = peek.
+- **Deep-links land focused.** Opening a host or sensor from the Overview, a status-chip list or the
+  Triggers tab now drops you straight into that focused view; the address bar, the Back button and a
+  reload all restore it.
+- **Key sensors / All sensors** toggle is hidden at the single-sensor level (where it does nothing) and
+  kept at the group and host levels, so you can still switch modes while focused on one host.
+
 ## [0.4.19] - 2026-08-30
 
 **Sensor priority (PRTG-style):**
