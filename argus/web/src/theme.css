@@ -139,6 +139,14 @@ a { color: var(--accent); }
 .phead .hint { color: var(--muted); font-size: 12px; }
 .phead .tools { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
 
+/* Drill-down breadcrumb (Monitoring): Sites & hosts / Group / Host / Sensor */
+.crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 9px 16px; font-size: 13px; border-bottom: 1px solid var(--border); }
+.crumbs .crumb { color: var(--accent); cursor: pointer; }
+.crumbs .crumb:hover { text-decoration: underline; }
+.crumbs .crumb.cur { color: var(--text); cursor: default; font-weight: 600; }
+.crumbs .crumb.cur:hover { text-decoration: none; }
+.crumbs .sep { color: var(--faint); }
+
 .seg { display: inline-flex; background: var(--elevated); border: 1px solid var(--border); border-radius: 8px; padding: 2px; gap: 2px; }
 .seg button { font: inherit; font-size: 12px; font-weight: 600; color: var(--muted); background: none; border: none; padding: 4px 11px; border-radius: 6px; cursor: pointer; }
 .seg button.on { background: var(--panel); color: var(--text); box-shadow: var(--shadow); }

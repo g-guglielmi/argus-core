@@ -768,7 +768,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
 
   // Deep-link target: Overview / lists / a shared URL ask the tree to open a host (and optionally
   // a sensor's chart). Seeded from the URL so a reload restores the open host/sensor.
-  const [treeTarget, setTreeTarget] = useState<{ hostId: string; itemId?: string; n: number } | null>(() => {
+  const [treeTarget, setTreeTarget] = useState<{ hostId: string; itemId?: string; itemName?: string; n: number } | null>(() => {
     const s = parseNav()
     return s.view === 'monitoring' && s.host ? { hostId: s.host, itemId: s.item, n: 0 } : null
   })
@@ -779,7 +779,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
     window.history.pushState({}, '', buildNav({ view: v, filter: opts?.filter ?? listFilter, host: opts?.host, item: opts?.item }))
   }
   function goHost(hostId: string) { navN.current += 1; setTreeTarget({ hostId, n: navN.current }); setView('monitoring'); pushNav('monitoring', { host: hostId }); setMenuOpen(false); setNavOpen(false) }
-  function goSensor(hostId: string, itemId: string) { navN.current += 1; setTreeTarget({ hostId, itemId, n: navN.current }); setView('monitoring'); pushNav('monitoring', { host: hostId, item: itemId }); setMenuOpen(false); setNavOpen(false) }
+  function goSensor(hostId: string, itemId: string, itemName?: string) { navN.current += 1; setTreeTarget({ hostId, itemId, itemName, n: navN.current }); setView('monitoring'); pushNav('monitoring', { host: hostId, item: itemId }); setMenuOpen(false); setNavOpen(false) }
   function openList(st: string) { setListFilter(st); setView('list'); pushNav('list', { filter: st }); setMenuOpen(false); setNavOpen(false) }
 
   // In-tree drilldown (expand a host, open a chart) refines the URL in place - replaceState so the
@@ -1633,8 +1633,18 @@ function Kebab({ actions, disabled, up }: { actions: KAction[]; disabled?: boole
   )
 }
 
-function MonitoringView({ role, target, onNavigate }: { role: string; target: { hostId: string; itemId?: string; n: number } | null; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
+// Focus is the PRTG-style drill-down state layered over the expandable tree: from the whole tree
+// (root) you can narrow to a single group, a single host, or a single sensor. The chevrons still
+// expand inline for a quick peek; clicking a name drills the focus and updates the breadcrumb.
+type Focus =
+  | { level: 'root' }
+  | { level: 'group'; group: string }
+  | { level: 'host'; group: string; hostId: string }
+  | { level: 'sensor'; group: string; hostId: string; itemId: string; itemName?: string }
+
+function MonitoringView({ role, target, onNavigate }: { role: string; target: { hostId: string; itemId?: string; itemName?: string; n: number } | null; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
   const [hosts, setHosts] = useState<Host[]>([])
+  const [focus, setFocus] = useState<Focus>({ level: 'root' })
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
@@ -1652,8 +1662,9 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
   }
   useEffect(() => { load(true); const t = setInterval(() => load(false), 30000); const off = onDataRefresh(() => load(false)); return () => { clearInterval(t); off() } }, [])
 
-  // Respond to a deep-link from the Overview: expand the target host's site and open the host
-  // (its sensor chart is opened by HostItems via autoOpenItem). Re-runs once hosts have loaded.
+  // Respond to a deep-link from the Overview/lists/Triggers: drill the focus onto the target host
+  // (or sensor), and expand its site + host so the tree underneath is consistent. HostItems opens
+  // the sensor chart via autoOpenItem. Re-runs once hosts have loaded.
   useEffect(() => {
     if (!target) return
     const h = hosts.find((x) => x.id === target.hostId)
@@ -1661,8 +1672,18 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
     const g = (h.groups && h.groups.length ? h.groups : ['Ungrouped'])[0]
     setCollapsed((c) => { const n = new Set(c); n.delete(g); return n })
     setOpenHost(g + '::' + target.hostId)
+    setFocus(target.itemId
+      ? { level: 'sensor', group: g, hostId: target.hostId, itemId: target.itemId, itemName: target.itemName }
+      : { level: 'host', group: g, hostId: target.hostId })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target?.n, hosts.length])
+
+  // Drill helpers - narrow the focus and refine the URL so Back steps between screens. A group focus
+  // isn't URL-persisted (host/sensor are, via ?host=&item=); reloading a group focus lands at root.
+  function drillRoot() { setFocus({ level: 'root' }); onNavigate(null, null) }
+  function drillGroup(group: string) { setFocus({ level: 'group', group }); onNavigate(null, null) }
+  function drillHost(group: string, hostId: string) { setFocus({ level: 'host', group, hostId }); setOpenHost(group + '::' + hostId); onNavigate(hostId, null) }
+  function drillSensor(group: string, hostId: string, itemId: string, itemName: string) { setFocus({ level: 'sensor', group, hostId, itemId, itemName }); onNavigate(hostId, itemId) }
 
   async function setHostState(h: Host, action: 'pause' | 'hide', seconds: number | null) {
     setBusyId(h.id)
@@ -1690,6 +1711,13 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
   function siteWorst(hs: Host[]): string { let s = 'ok'; for (const h of hs) if (!h.paused && !h.hidden && stateRank[h.state] > stateRank[s]) s = h.state; return s }
   function toggleSite(name: string) { setCollapsed((c) => { const n = new Set(c); if (n.has(name)) n.delete(name); else n.add(name); return n }) }
 
+  // Focus narrows what the tree renders. A host/sensor focus shows only that host's card (no site
+  // head - the breadcrumb carries the path); a group focus shows only that group.
+  const focusHostId = focus.level === 'host' || focus.level === 'sensor' ? focus.hostId : null
+  const focusItemId = focus.level === 'sensor' ? focus.itemId : null
+  const focusHostName = focusHostId ? (hosts.find((x) => x.id === focusHostId)?.name || focusHostId) : ''
+  const visibleSites = focus.level === 'root' ? siteNames : siteNames.filter((n) => n === focus.group)
+
   return (
     <div className="panel">
       <div className="phead">
@@ -1702,29 +1730,52 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
           </div>
         </div>
       </div>
+      {focus.level !== 'root' && (
+        <div className="crumbs">
+          <span className="crumb" onClick={drillRoot}>Sites &amp; hosts</span>
+          <span className="sep">/</span>
+          {focus.level === 'group'
+            ? <span className="crumb cur">{focus.group}</span>
+            : <span className="crumb" onClick={() => drillGroup(focus.group)}>{focus.group}</span>}
+          {(focus.level === 'host' || focus.level === 'sensor') && <>
+            <span className="sep">/</span>
+            {focus.level === 'host'
+              ? <span className="crumb cur">{focusHostName}</span>
+              : <span className="crumb" onClick={() => drillHost(focus.group, focus.hostId)}>{focusHostName}</span>}
+          </>}
+          {focus.level === 'sensor' && <>
+            <span className="sep">/</span>
+            <span className="crumb cur">{focus.itemName || 'Sensor'}</span>
+          </>}
+        </div>
+      )}
       {loading && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>Loading…</div>}
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
       {!loading && !error && hosts.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>No hosts found.</div>}
-      {siteNames.map((name) => {
-        const hs = sites[name]
-        const open = !collapsed.has(name)
+      {visibleSites.map((name) => {
+        const allHs = sites[name]
+        const hs = focusHostId ? allHs.filter((h) => h.id === focusHostId) : allHs
+        const showHead = focus.level === 'root' || focus.level === 'group'
+        const open = showHead ? !collapsed.has(name) : true
         return (
           <div className="site" key={name}>
-            <div className="site-head" onClick={() => toggleSite(name)}>
-              <svg className={'chev' + (open ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
-              <span className="name">{name}</span>
-              <span className="loc">{hs.length} host{hs.length === 1 ? '' : 's'}</span>
-              <div className="right"><span style={{ width: 9, height: 9, borderRadius: '50%', background: stateColor[siteWorst(hs)] || 'var(--muted)' }} /></div>
-            </div>
+            {showHead && (
+              <div className="site-head" onClick={() => toggleSite(name)}>
+                <svg className={'chev' + (open ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
+                <span className="name lnk-host" onClick={(e) => { e.stopPropagation(); drillGroup(name) }}>{name}</span>
+                <span className="loc">{allHs.length} host{allHs.length === 1 ? '' : 's'}</span>
+                <div className="right"><span style={{ width: 9, height: 9, borderRadius: '50%', background: stateColor[siteWorst(allHs)] || 'var(--muted)' }} /></div>
+              </div>
+            )}
             {open && hs.map((h) => {
               const key = name + '::' + h.id
-              const hopen = openHost === key
+              const hopen = openHost === key || focusHostId === h.id
               return (
                 <div className="host" key={key}>
                   <div className="host-head" onClick={() => { const next = hopen ? null : key; setOpenHost(next); onNavigate(next ? h.id : null, null) }}>
                     <svg className={'chev' + (hopen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
                     <span style={{ width: 9, height: 9, borderRadius: '50%', flexShrink: 0, background: dotColor(h.paused, h.hidden, h.state) }} />
-                    <span className="hn">{h.name}</span>
+                    <span className="hn lnk-host" onClick={(e) => { e.stopPropagation(); drillHost(name, h.id) }}>{h.name}</span>
                     {h.paused && <span className="kind" style={{ color: PAUSED_BLUE }}>· paused {untilLabel(h.paused_until)}</span>}
                     {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
                     <div className="right">
@@ -1737,7 +1788,7 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
                       )}
                     </div>
                   </div>
-                  {hopen && <div className="host-body"><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAll} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onNavigate={onNavigate} /></div>}
+                  {hopen && <div className="host-body"><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAll} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(name, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} /></div>}
                 </div>
               )
             })}
@@ -1748,7 +1799,7 @@ function MonitoringView({ role, target, onNavigate }: { role: string; target: { 
   )
 }
 
-function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpenItem, onNavigate }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; showAll: boolean; autoOpenItem?: string; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
+function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpenItem, onlyItem, onDrillSensor, onItemName, onNavigate }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; showAll: boolean; autoOpenItem?: string; onlyItem?: string; onDrillSensor?: (itemId: string, itemName: string) => void; onItemName?: (itemId: string, itemName: string) => void; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
   const [items, setItems] = useState<SensorItem[] | null>(null)
   const [problems, setProblems] = useState<Problem[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -1769,6 +1820,17 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
     if (autoOpenItem && items && items.some((i) => i.id === autoOpenItem)) setOpenItem(autoOpenItem)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenItem, items])
+
+  // When focused on a single sensor, force its chart open and report its display name up so the
+  // breadcrumb can label the crumb (needed after a reload, where only the item id survives the URL).
+  useEffect(() => {
+    if (!onlyItem || !items) return
+    const it = items.find((i) => i.id === onlyItem)
+    if (!it) return
+    setOpenItem(onlyItem)
+    onItemName?.(onlyItem, it.label || it.name)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onlyItem, items])
 
   const [busyItem, setBusyItem] = useState<string | null>(null)
   async function setItemState(it: SensorItem, action: 'pause' | 'hide', seconds: number | null) {
@@ -1850,7 +1912,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
           <table className="sensors">
             <thead><tr><th>Sensor</th><th>Value</th><th>Trend</th><th>Priority</th><th style={{ textAlign: 'right' }}>Last check</th></tr></thead>
             <tbody>
-              {items.map((it, idx) => {
+              {(onlyItem ? items.filter((i) => i.id === onlyItem) : items).map((it, idx, shown) => {
                 const st = itemState[it.id]
                 const open = openItem === it.id
                 const clickable = it.numeric && it.supported
@@ -1859,7 +1921,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                 // the host controls it.
                 const effPaused = it.paused || hostPaused
                 const effHidden = it.hidden || hostHidden
-                const newGroup = !showAll && it.category && it.category !== items[idx - 1]?.category
+                const newGroup = !onlyItem && !showAll && it.category && it.category !== shown[idx - 1]?.category
                 const rowClass = effHidden ? 'hidden' : effPaused ? 'paused' : st ? (itemAcked[it.id] ? 'acked' : (st === 'error' ? 'err' : 'warn')) : ''
                 const unacked = problems.filter((p) => p.item_ids.includes(it.id) && !p.acknowledged)
                 // Pause/Hide are offered only when the host isn't already controlling that state
@@ -1882,7 +1944,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                       <td className="namecell">
                         <span className={'sname' + (clickable ? ' sclick' : '')} style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: effPaused || effHidden ? 0.6 : 1 }}>
                           {clickable && <span className="scaret" style={{ color: 'var(--accent)', display: 'inline-block', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'none' }}>›</span>}
-                          {label}
+                          {onDrillSensor ? <span className="lnk-sensor" onClick={(e) => { e.stopPropagation(); onDrillSensor(it.id, label) }}>{label}</span> : label}
                           {effPaused && <span style={{ color: PAUSED_BLUE, fontSize: 11 }}> (paused · {hostPaused && !it.paused ? 'host' : untilLabel(it.paused_until)})</span>}
                           {effHidden && <span style={{ color: HIDDEN_GREY, fontSize: 11 }}> (hidden · {hostHidden && !it.hidden ? 'host' : untilLabel(it.hidden_until)})</span>}
                         </span>
@@ -1916,7 +1978,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
 
 // StatusListView is the flat cross-site list opened from a top-bar status chip: every sensor in
 // the chosen state, with deep-links to its host/chart and a per-row kebab.
-function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }: { filter: string; sensors: SensorRow[]; canPause: boolean; goHost: (h: string) => void; goSensor: (h: string, i: string) => void; onBack: () => void }) {
+function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }: { filter: string; sensors: SensorRow[]; canPause: boolean; goHost: (h: string) => void; goSensor: (h: string, i: string, name?: string) => void; onBack: () => void }) {
   const [busy, setBusy] = useState<string | null>(null)
   // The "attention" filter is the home Overview: every sensor that isn't OK (a PRTG-style unified list),
   // with a mode toggle. A concrete state (error/warning/…) is a top-bar status-chip drill-down.
@@ -1986,7 +2048,7 @@ function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }:
                   <tr key={s.item_id} style={{ opacity: s.state === 'acked' ? 0.72 : 1 }}>
                     <td className="slhost" style={{ borderLeftColor: STATE_VAR[s.state] || 'var(--border)' }}><span className="lnk-host" onClick={() => goHost(s.host_id)}>{s.host_name}</span></td>
                     <td className="slgrow">
-                      {clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id)}>{s.label || s.name}</span> : (s.label || s.name)}
+                      {clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id, s.label || s.name)}>{s.label || s.name}</span> : (s.label || s.name)}
                       {s.reason && <div className="sreason"><span style={{ color: sevInfo(s.severity).color, fontWeight: 600 }}>{sevInfo(s.severity).label}</span> · {s.reason}{s.since ? <span title={`Firing since ${new Date(s.since * 1000).toLocaleString()}`}> · {relTime(s.since)}</span> : null}</div>}
                     </td>
                     <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })() : <span style={{ color: 'var(--err)' }}>not supported</span>}</td>
