@@ -2074,11 +2074,12 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
               {cfg.monitored_by === 1 && (
                 <label className="field if-inherit"><span>SNMP credentials</span>
                   <div className="seg">
-                    <button className={i.inherit ? 'on' : ''} disabled={!canEdit || !cfg.proxy_default} title={cfg.proxy_default ? '' : 'No SNMP default set for this proxy yet'} onClick={() => setIface(idx, { inherit: true })}>Inherit from {cfg.proxy_name || 'proxy'}</button>
+                    <button className={i.inherit ? 'on' : ''} disabled={!canEdit || !cfg.proxy_default} onClick={() => setIface(idx, { inherit: true })}>Inherit from {cfg.proxy_name || 'proxy'}</button>
                     <button className={!i.inherit ? 'on' : ''} disabled={!canEdit} onClick={() => setIface(idx, { inherit: false })}>Override</button>
                   </div>
                 </label>
               )}
+              {cfg.monitored_by === 1 && !cfg.proxy_default && <div className="if-inherit-note">No SNMP default is set for {cfg.proxy_name || 'this proxy'} yet — set one in the Probes tab (its “Defaults” button) to enable inheritance.</div>}
               {i.inherit
                 ? <div className="if-inherit-note">Using {cfg.proxy_name || 'the proxy'}’s SNMP default{cfg.proxy_default ? ` (v${cfg.proxy_default.version === 2 ? '2c' : cfg.proxy_default.version}${cfg.proxy_default.version !== 3 ? `, community “${cfg.proxy_default.community}”` : ''})` : ''} — change it in the Probes tab.</div>
                 : <>
