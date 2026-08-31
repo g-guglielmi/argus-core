@@ -817,6 +817,29 @@ func (c *Client) DeleteHostInterface(ctx context.Context, interfaceID string) er
 	return c.call(ctx, "hostinterface.delete", []string{interfaceID}, true, nil)
 }
 
+// ItemsOnInterface returns the ids of items bound to an interface (Zabbix refuses to delete an
+// interface while items reference it, so these must be moved first).
+func (c *Client) ItemsOnInterface(ctx context.Context, interfaceID string) ([]string, error) {
+	var items []struct {
+		ItemID string `json:"itemid"`
+	}
+	params := map[string]any{"output": []string{"itemid"}, "interfaceids": interfaceID}
+	if err := c.call(ctx, "item.get", params, true, &items); err != nil {
+		return nil, err
+	}
+	out := make([]string, len(items))
+	for i, it := range items {
+		out[i] = it.ItemID
+	}
+	return out, nil
+}
+
+// SetItemInterface moves an item to a different interface. Zabbix still enforces type compatibility
+// (an Agent item can't move to an SNMP-only interface), returning an error the caller surfaces.
+func (c *Client) SetItemInterface(ctx context.Context, itemID, interfaceID string) error {
+	return c.call(ctx, "item.update", map[string]any{"itemid": itemID, "interfaceid": interfaceID}, true, nil)
+}
+
 // HostsByProxy returns the hosts monitored by a proxy with their interfaces (connection fields only,
 // SNMP details omitted) - used to propagate a proxy's SNMP default to every inheriting interface.
 func (c *Client) HostsByProxy(ctx context.Context, proxyID string) ([]HostDetail, error) {

@@ -180,6 +180,8 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 	// Exactly one main interface per type: the first of each type in the submitted order.
 	mainSeen := map[int]bool{}
 	keep := map[string]bool{}
+	survivorByType := map[int]string{} // a surviving interface id per type, to move items onto before a delete
+	anySurvivor := ""
 	for _, iv := range req.Interfaces {
 		iface := zabbix.HostInterface{InterfaceID: iv.InterfaceID, Type: iv.Type, UseIP: iv.UseIP, IP: strings.TrimSpace(iv.IP), DNS: strings.TrimSpace(iv.DNS), Port: strings.TrimSpace(iv.Port)}
 		if !mainSeen[iv.Type] {
@@ -223,10 +225,35 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		if iv.Type == 2 {
 			_ = s.st.SetSNMPInherit(ctx, id, iv.Inherit)
 		}
+		if _, ok := survivorByType[iv.Type]; !ok {
+			survivorByType[iv.Type] = id
+		}
+		if anySurvivor == "" {
+			anySurvivor = id
+		}
 	}
-	// Delete interfaces the client dropped (and forget any inherit state).
+	// Delete interfaces the client dropped. Zabbix refuses to delete an interface with items still on
+	// it, so first move those items to a surviving interface (same type if possible, else any) - this
+	// is what lets you, e.g., swap a host's Agent interface for an SNMP one without stranding ICMP ping.
 	for _, i := range cur.Interfaces {
 		if !keep[i.InterfaceID] {
+			target := survivorByType[i.Type]
+			if target == "" {
+				target = anySurvivor
+			}
+			if target != "" {
+				items, ierr := s.zbx.ItemsOnInterface(ctx, i.InterfaceID)
+				if ierr != nil {
+					writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + ierr.Error()})
+					return
+				}
+				for _, itemID := range items {
+					if err := s.zbx.SetItemInterface(ctx, itemID, target); err != nil {
+						writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: could not move an item off the interface being removed (it may need an interface of the same type): " + err.Error()})
+						return
+					}
+				}
+			}
 			if err := s.zbx.DeleteHostInterface(ctx, i.InterfaceID); err != nil {
 				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 				return

@@ -2015,7 +2015,7 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
   function addIface(type: number) { setCfg((c) => (c ? { ...c, interfaces: [...c.interfaces, { type, useip: 1, ip: '', dns: '', port: type === 2 ? '161' : '10050', snmp: type === 2 ? blankSnmp() : undefined, inherit: type === 2 ? !!c.proxy_default : undefined }] } : c)) }
   async function removeIface(idx: number) {
     const it = cfg?.interfaces[idx]
-    if (it?.interfaceid && !(await confirm({ title: 'Remove interface', message: 'Remove this interface? If items still use it, Zabbix will refuse and nothing changes.', confirmLabel: 'Remove', danger: true }))) return
+    if (it?.interfaceid && !(await confirm({ title: 'Remove interface', message: 'Remove this interface? Any checks still using it will be moved to another interface on this host. If a check needs an interface of the same type (e.g. a Zabbix-agent check), the removal is refused and nothing changes.', confirmLabel: 'Remove', danger: true }))) return
     setCfg((c) => (c ? { ...c, interfaces: c.interfaces.filter((_, n) => n !== idx) } : c))
   }
   async function save() {
