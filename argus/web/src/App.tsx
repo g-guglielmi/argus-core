@@ -1906,14 +1906,23 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     const next = ids.slice();[next[index], next[j]] = [next[j], next[index]]
     reorderSiblings(scope, kind, next)
   }
-  // Hide or unhide a group from the tree (Argus-local; the group stays in Zabbix). Optimistic, reverts
-  // on failure. Gated on canPause via the controls that call it.
-  async function toggleHidden(path: string) {
-    const willHide = !hidden.has(path)
+  // Hide or unhide a group in the tree (Argus-local; the group stays in Zabbix). Optimistic, reverts on
+  // failure. Admin-gated via the controls that call it (see the kebab, gated on advanced ⇒ admin).
+  async function setGroupHidden(path: string, hide: boolean) {
     const prev = hidden
-    setHidden((h) => { const n = new Set(h); willHide ? n.add(path) : n.delete(path); return n })
-    const res = await fetch('/api/tree/hidden', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, hidden: willHide }) }).catch(() => null)
+    setHidden((h) => { const n = new Set(h); hide ? n.add(path) : n.delete(path); return n })
+    const res = await fetch('/api/tree/hidden', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, hidden: hide }) }).catch(() => null)
     if (!res || !res.ok) { setHidden(prev); setError(await errText(res, 'Could not update group visibility')) }
+  }
+  // Hiding is confirmed (it can tuck a group - and any hosts that live only in it - out of everyone's
+  // view); unhiding is an obvious, safe one-click undo so it skips the prompt.
+  async function hideGroup(node: GNode) {
+    const ok = await confirm({
+      title: 'Hide from tree?',
+      message: `Hide “${node.path}” from the monitoring tree? The group stays in Zabbix — use “Show hidden” in the toolbar to bring it back.`,
+      confirmLabel: 'Hide',
+    })
+    if (ok) setGroupHidden(node.path, true)
   }
   // Breadcrumb chain for a group path: walk real parents up to the top-level node.
   function crumbChain(path: string): { path: string; label: string }[] {
@@ -2010,10 +2019,14 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
                 { label: 'New subgroup…', icon: kbIcon.folder, onClick: () => { setError(null); setGAction(null); setNewSubPath(node.path); setCollapsed((c) => { const n = new Set(c); n.delete(node.path); return n }) } },
                 { label: 'Rename…', icon: kbIcon.edit, onClick: () => { setError(null); setNewSubPath(null); setGAction({ id: g.id, mode: 'rename' }) } },
                 { label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => { setError(null); setNewSubPath(null); if (node.hosts.length) { setError(`Move the ${node.hosts.length} host${node.hosts.length === 1 ? '' : 's'} out of "${node.path}" before deleting it.`); return } setGAction({ id: g.id, mode: 'delete' }) } },
-                { sep: true, label: '' },
-                hidden.has(node.path)
-                  ? { label: 'Show in tree', icon: kbIcon.show, onClick: () => toggleHidden(node.path) }
-                  : { label: 'Hide from tree', icon: kbIcon.hide, onClick: () => toggleHidden(node.path) },
+                // Hide/unhide is an admin, advanced-mode capability (unhiding needs "Show hidden", which
+                // only appears in advanced mode) - so the hide action only shows there too.
+                ...(advanced ? [
+                  { sep: true, label: '' },
+                  hidden.has(node.path)
+                    ? { label: 'Show in tree', icon: kbIcon.show, onClick: () => setGroupHidden(node.path, false) }
+                    : { label: 'Hide from tree', icon: kbIcon.hide, onClick: () => hideGroup(node) },
+                ] : []),
               ]} />
             )}
           </div>

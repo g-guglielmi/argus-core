@@ -65,8 +65,9 @@ func (s *Server) handleHiddenGroups(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, paths)
 }
 
-// handleSetHiddenGroup hides or unhides one group path in the monitoring tree. Config write,
-// admin/helpdesk only. The group is untouched in Zabbix - this only affects the Argus tree.
+// handleSetHiddenGroup hides or unhides one group path in the monitoring tree. Admin only: unhiding is
+// only reachable in advanced mode (an admin-only preference), so hiding is admin-gated too, keeping the
+// two operations together. The group is untouched in Zabbix - this only affects the Argus tree.
 func (s *Server) handleSetHiddenGroup(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Path   string `json:"path"`

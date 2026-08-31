@@ -23,6 +23,11 @@ GitHub Release from the matching section below.
   toolbar is just **+ New group** and **Reorder**.
 - **"+ New group" is now the primary (blue) button**, matching "+ Add channel" and "+ Add probe" on the
   other tabs.
+- **Hiding a group is now admin-only and asks for confirmation.** Unhiding a group is only reachable in
+  advanced mode (an admin-only preference), so the **Hide from tree** / **Show in tree** actions now
+  appear only there too — closing a gap where a helpdesk user could hide a group and then have no way to
+  bring it back. Hiding also now shows an in-app confirm (it can tuck a group out of everyone's view),
+  and the write endpoint (`PUT /api/tree/hidden`) is restricted to admins.
 
 ---
 
