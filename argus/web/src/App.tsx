@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, Fragment, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, Fragment, type FormEvent, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { registerPasskey, loginWithPasskey } from './webauthn'
@@ -14,6 +14,7 @@ type SnmpCfg = { version: number; community: string; bulk: number; security_name
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[] }
 type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number }
+type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; min_severity: number; config: Record<string, string> }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
 const SEVERITIES: { v: number; label: string }[] = [
@@ -798,6 +799,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   // Bumped when the Monitoring tab is clicked, so MonitoringView resets its drill-down to the root
   // even when it's already the active view (no remount would otherwise happen).
   const [monHome, setMonHome] = useState(0)
+  const [searchOpen, setSearchOpen] = useState(false)
 
   // Push a new history entry for a top-level navigation (tab switch, deep-link jump).
   function pushNav(v: View, opts?: { host?: string; item?: string; filter?: string }) {
@@ -806,6 +808,14 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   function goHost(hostId: string) { navN.current += 1; setTreeTarget({ hostId, n: navN.current }); setView('monitoring'); pushNav('monitoring', { host: hostId }); setMenuOpen(false); setNavOpen(false) }
   function goSensor(hostId: string, itemId: string, itemName?: string) { navN.current += 1; setTreeTarget({ hostId, itemId, itemName, n: navN.current }); setView('monitoring'); pushNav('monitoring', { host: hostId, item: itemId }); setMenuOpen(false); setNavOpen(false) }
   function openList(st: string) { setListFilter(st); setView('list'); pushNav('list', { filter: st }); setMenuOpen(false); setNavOpen(false) }
+  function goGroup(path: string) { navN.current += 1; setTreeTarget({ groupPath: path, n: navN.current }); setView('monitoring'); window.history.pushState({}, '', buildNav({ view: 'monitoring', filter: listFilter, group: path })); setMenuOpen(false); setNavOpen(false) }
+  // Dispatch a quick-switcher hit to the right navigation.
+  function goSearch(r: SearchHit) {
+    if (r.type === 'sensor' && r.host_id && r.item_id) goSensor(r.host_id, r.item_id, r.label)
+    else if (r.type === 'group' && r.group) goGroup(r.group)
+    else if (r.host_id) goHost(r.host_id)
+    setSearchOpen(false)
+  }
 
   // In-tree drilldown (expand a host, open a chart) refines the URL in place - replaceState so the
   // Back button steps between screens, not every accordion toggle.
@@ -844,6 +854,17 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Ctrl/Cmd-K opens the global quick-switcher from anywhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault(); setSearchOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   async function logout() { await fetch('/api/logout', { method: 'POST' }).catch(() => {}); onLogout() }
   function goto(v: View) { setTreeTarget(null); if (v === 'monitoring') setMonHome((n) => n + 1); setView(v); pushNav(v); setMenuOpen(false); setNavOpen(false) }
 
@@ -865,6 +886,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   return (
     <div className={'app-shell' + (collapsed ? ' collapsed' : '') + (navOpen ? ' nav-open' : '') + (enter ? ' app-enter' : '')}>
       {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} />}
+      {searchOpen && <SearchPalette onClose={() => setSearchOpen(false)} onPick={goSearch} />}
       <aside className="sidebar">
         <div className="brand">
           <img className="brand-logo" src="/argus-logo.png" alt="" width={30} height={30} />
@@ -904,6 +926,9 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         <div className="topbar">
           <button className="iconbtn" title="Toggle sidebar" aria-label="Toggle sidebar" onClick={toggleNav}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M3.5 6h17M3.5 12h17M3.5 18h17" /></svg>
+          </button>
+          <button className="iconbtn" title="Search (Ctrl-K)" aria-label="Search" onClick={() => setSearchOpen(true)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
           </button>
           <div><h1>{title}</h1><div className="sub">{sub}</div></div>
           <div className="summary">
@@ -1061,6 +1086,78 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
         {/* Native submit so Enter works; the header button submits too. */}
         <button type="submit" style={{ display: 'none' }} aria-hidden />
       </form>
+    </div>
+  )
+}
+
+// SearchPalette is the Ctrl-K global quick-switcher: type to search hosts, sensors and groups;
+// arrow keys + Enter to jump. Results come from GET /api/search (debounced, latest-wins).
+const SEARCH_ICON: Record<SearchHit['type'], ReactNode> = {
+  host: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>,
+  sensor: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 12h4l2-6 4 12 2-6h6" /></svg>,
+  group: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>,
+}
+function SearchPalette({ onClose, onPick }: { onClose: () => void; onPick: (r: SearchHit) => void }) {
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState<SearchHit[]>([])
+  const [active, setActive] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  useEffect(() => {
+    const term = q.trim()
+    if (!term) { setResults([]); setLoading(false); return }
+    setLoading(true)
+    const ctrl = new AbortController()
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(term)}`, { signal: ctrl.signal })
+        if (!res.ok) { setResults([]); return }
+        const data: SearchHit[] = await res.json()
+        setResults(data); setActive(0)
+      } catch { /* aborted or network: ignore */ }
+      finally { setLoading(false) }
+    }, 180)
+    return () => { clearTimeout(t); ctrl.abort() }
+  }, [q])
+
+  function onKey(e: ReactKeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => Math.min(i + 1, results.length - 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)) }
+    else if (e.key === 'Enter') { e.preventDefault(); if (results[active]) onPick(results[active]) }
+    else if (e.key === 'Escape') { e.preventDefault(); onClose() }
+  }
+
+  const typeLabel: Record<SearchHit['type'], string> = { host: 'Host', sensor: 'Sensor', group: 'Group' }
+  return (
+    <div className="cmdk-overlay" onMouseDown={onClose}>
+      <div className="cmdk" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="cmdk-head">
+          <svg className="cmdk-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
+          <input ref={inputRef} className="cmdk-input" placeholder="Search hosts, sensors, groups…" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} />
+          <kbd className="cmdk-esc">Esc</kbd>
+        </div>
+        {q.trim() && (
+          <div className="cmdk-list">
+            {results.map((r, i) => (
+              <button
+                key={r.type + (r.item_id || r.host_id || r.group || i)}
+                className={'cmdk-item' + (i === active ? ' active' : '')}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => onPick(r)}
+              >
+                <span className="cmdk-ic">{SEARCH_ICON[r.type]}</span>
+                <span className="cmdk-label">{r.label}</span>
+                {r.sub && <span className="cmdk-sub">{r.sub}</span>}
+                <span className="cmdk-kind">{typeLabel[r.type]}</span>
+              </button>
+            ))}
+            {!results.length && <div className="cmdk-empty">{loading ? 'Searching…' : 'No matches'}</div>}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

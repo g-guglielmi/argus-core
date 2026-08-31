@@ -179,6 +179,37 @@ func (c *Client) Hosts(ctx context.Context) ([]Host, error) {
 	return hosts, c.call(ctx, "host.get", params, true, &hosts)
 }
 
+// HostIPs returns each host's primary IP address (the main interface, else any interface), keyed by
+// host id. Best-effort and used only to make hosts searchable by IP; a host with no IP is omitted.
+func (c *Client) HostIPs(ctx context.Context) (map[string]string, error) {
+	params := map[string]any{
+		"output":           []string{"hostid"},
+		"selectInterfaces": []string{"ip", "main"},
+	}
+	var rows []struct {
+		HostID     string `json:"hostid"`
+		Interfaces []struct {
+			IP   string `json:"ip"`
+			Main string `json:"main"`
+		} `json:"interfaces"`
+	}
+	if err := c.call(ctx, "host.get", params, true, &rows); err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(rows))
+	for _, h := range rows {
+		for _, i := range h.Interfaces {
+			if i.IP == "" {
+				continue
+			}
+			if _, ok := out[h.HostID]; !ok || i.Main == "1" {
+				out[h.HostID] = i.IP // prefer the main interface, else the first with an IP
+			}
+		}
+	}
+	return out, nil
+}
+
 type Proxy struct {
 	ProxyID    string `json:"proxyid"`
 	Name       string `json:"name"`
