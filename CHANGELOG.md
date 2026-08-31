@@ -19,6 +19,10 @@ GitHub Release from the matching section below.
   group name or a breadcrumb) now updates the address bar to `?view=monitoring&group=<path>`, so a
   reload, bookmark, shared link, or Back/Forward restores that group view instead of dropping back to
   the tree root. Host and sensor focus were already URL-persisted; group focus was the gap.
+- **Browser Back/Forward now step through the tree's drill levels.** Explicit drills (clicking a
+  group/host/sensor name or a breadcrumb) push history entries, so Back walks back up root ← group ←
+  host ← sensor and Forward re-drills — instead of Back jumping straight out of the Monitoring tab.
+  Inline accordion toggles (expanding a host card or sensor row) still don't add history entries.
 
 ---
 
