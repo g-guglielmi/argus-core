@@ -162,6 +162,12 @@ a { color: var(--accent); }
 .btn.danger:hover { border-color: var(--err); color: var(--err); }
 .btn.block { width: 100%; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn.on { background: var(--accent-weak); border-color: var(--accent); color: var(--accent); }
+.ord-ctrl { display: inline-flex; gap: 3px; }
+.ord-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--panel); color: var(--muted); cursor: pointer; }
+.ord-btn svg { width: 15px; height: 15px; }
+.ord-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.ord-btn:disabled { opacity: 0.3; cursor: default; }
 
 /* shared card (panel-toned) - Account / Dashboard sub-cards, backing <Card> */
 .card { border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; background: var(--panel); box-shadow: var(--shadow); }

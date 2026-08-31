@@ -1669,6 +1669,9 @@ type Focus =
 // real group renders at the top level with its full name. `name` is the display label (the path
 // remainder below its real parent, or the full path at the top level); `path` is the full group name.
 type GNode = { path: string; name: string; group?: Group; parentPath?: string; children: GNode[]; hosts: Host[] }
+// One saved sibling ordering: the children of `scope` (a parent group path, '' for top-level roots) of
+// one `kind`, listed in manual order (group paths, or host ids). Unlisted siblings fall back to alpha.
+type OrderSet = { scope: string; kind: 'group' | 'host'; items: string[] }
 
 function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string; target: { hostId: string; itemId?: string; itemName?: string; n: number } | null; homeSignal: number; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
   const confirm = useConfirm()
@@ -1687,6 +1690,8 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
   const [settingsHost, setSettingsHost] = useState<string | null>(null) // host id with the "Settings…" band open
   const [showAll, setShowAll] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [order, setOrder] = useState<OrderSet[]>([]) // saved manual sibling orderings
+  const [reorder, setReorder] = useState(false)      // "Reorder" mode: show inline up/down arrows
   const canPause = role === 'admin' || role === 'helpdesk'
 
   function load(initial = false) {
@@ -1696,6 +1701,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
       .catch(() => setError('Failed to load hosts'))
       .finally(() => { if (initial) setLoading(false) })
     fetch('/api/groups').then((r) => (r.ok ? r.json() : [])).then((g) => setGroups(g || [])).catch(() => {})
+    fetch('/api/tree/order').then((r) => (r.ok ? r.json() : [])).then((o) => setOrder(o || [])).catch(() => {})
     fetch('/api/proxies').then((r) => (r.ok ? r.json() : [])).then((p) => setProxies(p || [])).catch(() => {})
   }
   useEffect(() => { load(true); const t = setInterval(() => load(false), 30000); const off = onDataRefresh(() => load(false)); return () => { clearInterval(t); off() } }, [])
@@ -1822,8 +1828,41 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
       n.hosts.push(h)
     }
   }
-  const sortNodes = (ns: GNode[]) => { ns.sort((a, b) => a.name.localeCompare(b.name)); for (const n of ns) sortNodes(n.children) }
-  sortNodes(roots)
+  // Sort a sibling set: alphabetical by default; when a manual order is saved for it, listed items take
+  // that order and any unlisted (newly added) ones fall to the end, still alphabetical. Relies on a
+  // stable Array.sort so the alpha pre-sort survives as the tiebreak among equal (Infinity) positions.
+  const orderMap = new Map<string, string[]>()
+  for (const o of order) orderMap.set(o.scope + ' ' + o.kind, o.items)
+  const orderOf = (scope: string, kind: 'group' | 'host') => orderMap.get(scope + ' ' + kind)
+  function applyOrder<T>(items: T[], orderKey: (t: T) => string, alphaKey: (t: T) => string, ordered?: string[]): T[] {
+    const base = [...items].sort((a, b) => alphaKey(a).localeCompare(alphaKey(b)))
+    if (!ordered || ordered.length === 0) return base
+    const pos = new Map(ordered.map((id, i) => [id, i]))
+    return base.sort((a, b) => (pos.get(orderKey(a)) ?? Infinity) - (pos.get(orderKey(b)) ?? Infinity))
+  }
+  const orderTree = (ns: GNode[], scope: string) => {
+    const sorted = applyOrder(ns, (n) => n.path, (n) => n.name, orderOf(scope, 'group'))
+    ns.length = 0; ns.push(...sorted)
+    for (const n of ns) { n.hosts = applyOrder(n.hosts, (h) => h.id, (h) => h.name, orderOf(n.path, 'host')); orderTree(n.children, n.path) }
+  }
+  orderTree(roots, '')
+
+  // Persist a sibling set's new order (optimistic; revert + surface the error on failure). Admin/helpdesk
+  // only - the button that calls this is gated on canPause.
+  async function reorderSiblings(scope: string, kind: 'group' | 'host', items: string[]) {
+    const prev = order
+    setOrder((o) => [...o.filter((s) => !(s.scope === scope && s.kind === kind)), { scope, kind, items }])
+    const res = await fetch('/api/tree/order', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope, kind, items }) }).catch(() => null)
+    if (!res || !res.ok) { setOrder(prev); setError(await errText(res, 'Could not save the new order')) }
+  }
+  // Move a group node (or host) by one slot within its displayed siblings, materializing the whole set's
+  // order on the first move so a previously-alphabetical set becomes explicitly ordered.
+  function moveWithin(ids: string[], index: number, dir: -1 | 1, scope: string, kind: 'group' | 'host') {
+    const j = index + dir
+    if (j < 0 || j >= ids.length) return
+    const next = ids.slice();[next[index], next[j]] = [next[j], next[index]]
+    reorderSiblings(scope, kind, next)
+  }
   // Breadcrumb chain for a group path: walk real parents up to the top-level node.
   function crumbChain(path: string): { path: string; label: string }[] {
     const out: { path: string; label: string }[] = []
@@ -1848,8 +1887,24 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
   const focusHostName = focusHost?.name || focusHostId || ''
   const indent = (d: number) => 16 + d * 18
 
+  // Up/down arrows shown in reorder mode within a sibling set (nothing when the set has <2 members, or
+  // for a viewer). Clicks stop propagation so they don't toggle/drill the row they sit on.
+  function orderArrows(ids: string[], index: number, scope: string, kind: 'group' | 'host') {
+    if (!reorder || !canPause || ids.length < 2) return null
+    return (
+      <span className="ord-ctrl" onClick={(e) => e.stopPropagation()}>
+        <button className="ord-btn" disabled={index === 0} title="Move up" onClick={() => moveWithin(ids, index, -1, scope, kind)}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M6 15l6-6 6 6" /></svg>
+        </button>
+        <button className="ord-btn" disabled={index === ids.length - 1} title="Move down" onClick={() => moveWithin(ids, index, 1, scope, kind)}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M6 9l6 6 6-6" /></svg>
+        </button>
+      </span>
+    )
+  }
+
   // Recursive host card: head (drill on name) + optional "Edit groups…" band + expanded sensor table.
-  function renderHost(h: Host, path: string, depth: number) {
+  function renderHost(h: Host, path: string, depth: number, sibIds: string[] = [h.id], index = 0) {
     const key = path + '::' + h.id
     const hopen = openHost === key || focusHostId === h.id
     return (
@@ -1862,7 +1917,8 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
           {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
           <div className="right">
             {!h.paused && !h.hidden && h.problems > 0 && <span style={{ color: stateColor[h.state], fontSize: 12 }}>{h.problems} problem{h.problems === 1 ? '' : 's'}</span>}
-            {canPause && (
+            {orderArrows(sibIds, index, path, 'host')}
+            {canPause && !reorder && (
               <Kebab disabled={busyId === h.id} actions={[
                 h.paused ? { label: 'Resume', icon: kbIcon.resume, onClick: () => clearHostState(h, 'pause') } : { label: 'Pause', icon: kbIcon.pause, onPick: (s) => setHostState(h, 'pause', s) },
                 h.hidden ? { label: 'Show', icon: kbIcon.show, onClick: () => clearHostState(h, 'hide') } : { label: 'Hide', icon: kbIcon.hide, onPick: (s) => setHostState(h, 'hide', s) },
@@ -1882,7 +1938,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
 
   // Recursive group node: header (drill on name, kebab New subgroup/Rename/Delete) + inline bands +
   // child nodes + this node's own direct hosts.
-  function renderNode(node: GNode, depth: number) {
+  function renderNode(node: GNode, depth: number, sibIds: string[] = [node.path], index = 0, scope = node.parentPath ?? '') {
     const sub = subtreeHosts(node)
     const expanded = (focus.level === 'group' && focus.path === node.path) ? true : !collapsed.has(node.path)
     const g = node.group
@@ -1894,7 +1950,8 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
           <span className="loc">{sub.length} host{sub.length === 1 ? '' : 's'}</span>
           <div className="right">
             <span style={{ width: 9, height: 9, borderRadius: '50%', background: stateColor[nodeWorst(sub)] || 'var(--muted)' }} />
-            {canPause && g && (
+            {orderArrows(sibIds, index, scope, 'group')}
+            {canPause && g && !reorder && (
               <Kebab actions={[
                 { label: 'New subgroup…', icon: kbIcon.folder, onClick: () => { setError(null); setGAction(null); setNewSubPath(node.path); setCollapsed((c) => { const n = new Set(c); n.delete(node.path); return n }) } },
                 { label: 'Rename…', icon: kbIcon.edit, onClick: () => { setError(null); setNewSubPath(null); setGAction({ id: g.id, mode: 'rename' }) } },
@@ -1916,8 +1973,8 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
         )}
         {newSubPath === node.path && <GroupNameBand prefix={node.path + '/'} placeholder="Subgroup name" confirmLabel="Create" onConfirm={(v) => createGroup(v)} onCancel={() => setNewSubPath(null)} />}
         {expanded && <>
-          {node.children.map((c) => renderNode(c, depth + 1))}
-          {node.hosts.map((h) => renderHost(h, node.path, depth + 1))}
+          {(() => { const gids = node.children.map((c) => c.path); return node.children.map((c, i) => renderNode(c, depth + 1, gids, i, node.path)) })()}
+          {(() => { const hids = node.hosts.map((h) => h.id); return node.hosts.map((h, i) => renderHost(h, node.path, depth + 1, hids, i)) })()}
         </>}
       </div>
     )
@@ -1935,7 +1992,8 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
         <span className="hint">{groups.length} group{groups.length === 1 ? '' : 's'} · {hosts.length} host{hosts.length === 1 ? '' : 's'}</span>
         {focus.level !== 'sensor' && (
           <div className="tools">
-            {canPause && focus.level !== 'host' && <button className="btn" onClick={() => { setError(null); setCreating((v) => !v) }}>+ New group</button>}
+            {canPause && focus.level !== 'host' && !reorder && <button className="btn" onClick={() => { setError(null); setCreating((v) => !v) }}>+ New group</button>}
+            {canPause && focus.level !== 'host' && <button className={'btn' + (reorder ? ' on' : '')} onClick={() => { setError(null); setCreating(false); setReorder((v) => !v) }}>{reorder ? 'Done' : 'Reorder'}</button>}
             <div className="seg">
               <button className={!showAll ? 'on' : ''} onClick={() => setShowAll(false)}>Key sensors</button>
               <button className={showAll ? 'on' : ''} onClick={() => setShowAll(true)}>All sensors</button>
@@ -1966,7 +2024,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
       {loading && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>Loading…</div>}
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
       {!loading && !error && hosts.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>No hosts found.</div>}
-      {focus.level === 'root' && roots.map((n) => renderNode(n, 0))}
+      {focus.level === 'root' && (() => { const rids = roots.map((n) => n.path); return roots.map((n, i) => renderNode(n, 0, rids, i, '')) })()}
       {focus.level === 'group' && (focusNode ? renderNode(focusNode, 0) : <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>This group no longer exists.</div>)}
       {(focus.level === 'host' || focus.level === 'sensor') && (focusHost ? renderHost(focusHost, focus.path, 0) : null)}
     </div>

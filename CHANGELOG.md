@@ -11,6 +11,18 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Features:**
+
+- **Manually reorder the monitoring tree.** The tree defaulted to alphabetical; a **Reorder** button in
+  the Sites & hosts toolbar now reveals inline up/down arrows on every group and host so their order can
+  be set by hand (e.g. put Network above Infrastructure). The order is stored in Argus (Zabbix has no
+  group/host ordering) and applies per sibling set; groups or hosts added later fall to the end,
+  alphabetically, until moved. Admin/helpdesk only. New endpoints `GET`/`PUT /api/tree/order`.
+
+---
+
 ## [0.4.23] - 2026-08-31
 
 **Fixes:**

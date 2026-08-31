@@ -237,6 +237,17 @@ CREATE TABLE IF NOT EXISTS snmp_iface (
   interface_id TEXT PRIMARY KEY,
   inherit      INTEGER NOT NULL
 );
+
+-- Manual sibling ordering for the monitoring tree. scope is the parent group's full path ('' for the
+-- top-level roots); kind is 'group' or 'host'; item is the child group's full path or the host id;
+-- ord is its 0-based position among its siblings. A sibling set with no rows sorts alphabetically.
+CREATE TABLE IF NOT EXISTS tree_order (
+  scope TEXT NOT NULL,
+  kind  TEXT NOT NULL,
+  item  TEXT NOT NULL,
+  ord   INTEGER NOT NULL,
+  PRIMARY KEY (scope, kind, item)
+);
 `); err != nil {
 		return err
 	}
