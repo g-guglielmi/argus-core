@@ -556,23 +556,28 @@ function useTheme(): ['dark' | 'light', () => void] {
 // resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
 // (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
 const NAV_VIEWS: View[] = ['overview', 'triggers', 'monitoring', 'notifications', 'probes', 'users', 'settings', 'account', 'list']
-type NavState = { view: View; filter: string; host?: string; item?: string }
+type NavState = { view: View; filter: string; host?: string; item?: string; group?: string }
 
 function parseNav(): NavState {
   const p = new URLSearchParams(window.location.search)
   const host = p.get('host') || undefined
   const item = p.get('item') || undefined
+  const group = p.get('group') || undefined
   const raw = p.get('view')
-  // Fall back to monitoring for a legacy ?host=&item= link that predates ?view=.
-  const view: View = raw && (NAV_VIEWS as string[]).includes(raw) ? (raw as View) : host ? 'monitoring' : 'overview'
-  return { view, filter: p.get('filter') || 'error', host, item }
+  // Fall back to monitoring for a legacy ?host=&item= (or ?group=) link that predates ?view=.
+  const view: View = raw && (NAV_VIEWS as string[]).includes(raw) ? (raw as View) : (host || group) ? 'monitoring' : 'overview'
+  return { view, filter: p.get('filter') || 'error', host, item, group }
 }
 
 function buildNav(s: NavState): string {
   const p = new URLSearchParams()
   if (s.view !== 'overview') p.set('view', s.view)
   if (s.view === 'list') p.set('filter', s.filter)
-  if (s.view === 'monitoring') { if (s.host) p.set('host', s.host); if (s.item) p.set('item', s.item) }
+  // Host/sensor and group focus are mutually exclusive; host is the more specific, so it wins.
+  if (s.view === 'monitoring') {
+    if (s.host) { p.set('host', s.host); if (s.item) p.set('item', s.item) }
+    else if (s.group) p.set('group', s.group)
+  }
   const qs = p.toString()
   return window.location.pathname + (qs ? '?' + qs : '')
 }
@@ -775,9 +780,12 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
 
   // Deep-link target: Overview / lists / a shared URL ask the tree to open a host (and optionally
   // a sensor's chart). Seeded from the URL so a reload restores the open host/sensor.
-  const [treeTarget, setTreeTarget] = useState<{ hostId: string; itemId?: string; itemName?: string; n: number } | null>(() => {
+  const [treeTarget, setTreeTarget] = useState<{ hostId?: string; itemId?: string; itemName?: string; groupPath?: string; n: number } | null>(() => {
     const s = parseNav()
-    return s.view === 'monitoring' && s.host ? { hostId: s.host, itemId: s.item, n: 0 } : null
+    if (s.view !== 'monitoring') return null
+    if (s.host) return { hostId: s.host, itemId: s.item, n: 0 }
+    if (s.group) return { groupPath: s.group, n: 0 }
+    return null
   })
   const navN = useRef(0)
   // Bumped when the Monitoring tab is clicked, so MonitoringView resets its drill-down to the root
@@ -794,8 +802,8 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
 
   // In-tree drilldown (expand a host, open a chart) refines the URL in place - replaceState so the
   // Back button steps between screens, not every accordion toggle.
-  function onTreeNav(hostId: string | null, itemId: string | null) {
-    window.history.replaceState({}, '', buildNav({ view: 'monitoring', filter: listFilter, host: hostId || undefined, item: itemId || undefined }))
+  function onTreeNav(hostId: string | null, itemId: string | null, group?: string | null) {
+    window.history.replaceState({}, '', buildNav({ view: 'monitoring', filter: listFilter, host: hostId || undefined, item: itemId || undefined, group: group || undefined }))
   }
 
   // The header ☰ opens the drawer on mobile, and collapses the rail on desktop.
@@ -815,6 +823,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
       const n = parseNav()
       setView(clampView(n.view)); setListFilter(n.filter); setMenuOpen(false); setNavOpen(false)
       if (n.view === 'monitoring' && n.host) { navN.current += 1; setTreeTarget({ hostId: n.host, itemId: n.item, n: navN.current }) }
+      else if (n.view === 'monitoring' && n.group) { navN.current += 1; setTreeTarget({ groupPath: n.group, n: navN.current }) }
       else setTreeTarget(null)
     }
     window.addEventListener('popstate', onPop)
@@ -1699,7 +1708,7 @@ type GNode = { path: string; name: string; group?: Group; parentPath?: string; c
 // one `kind`, listed in manual order (group paths, or host ids). Unlisted siblings fall back to alpha.
 type OrderSet = { scope: string; kind: 'group' | 'host'; items: string[] }
 
-function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { role: string; target: { hostId: string; itemId?: string; itemName?: string; n: number } | null; homeSignal: number; onNavigate: (hostId: string | null, itemId: string | null) => void; advanced: boolean }) {
+function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { role: string; target: { hostId?: string; itemId?: string; itemName?: string; groupPath?: string; n: number } | null; homeSignal: number; onNavigate: (hostId: string | null, itemId: string | null, group?: string | null) => void; advanced: boolean }) {
   const confirm = useConfirm()
   const [hosts, setHosts] = useState<Host[]>([])
   const [groups, setGroups] = useState<Group[]>([])
@@ -1792,15 +1801,24 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   // the sensor chart via autoOpenItem. Re-runs once hosts have loaded.
   useEffect(() => {
     if (!target) return
-    const h = hosts.find((x) => x.id === target.hostId)
+    // A group deep-link (?group=…) focuses the group node directly - no host needed.
+    if (target.groupPath && !target.hostId) {
+      const p = target.groupPath
+      setCollapsed((c) => { const n = new Set(c); let a = ''; for (const seg of p.split('/')) { a = a ? a + '/' + seg : seg; n.delete(a) } return n })
+      setFocus({ level: 'group', path: p })
+      return
+    }
+    const hid = target.hostId
+    if (!hid) return
+    const h = hosts.find((x) => x.id === hid)
     if (!h) return
     const p = (h.groups && h.groups.length ? h.groups : ['Ungrouped'])[0]
     // Un-collapse the target group and all its ancestor paths so the host is reachable in the tree.
     setCollapsed((c) => { const n = new Set(c); let a = ''; for (const seg of p.split('/')) { a = a ? a + '/' + seg : seg; n.delete(a) } return n })
-    setOpenHost(p + '::' + target.hostId)
+    setOpenHost(p + '::' + hid)
     setFocus(target.itemId
-      ? { level: 'sensor', path: p, hostId: target.hostId, itemId: target.itemId, itemName: target.itemName }
-      : { level: 'host', path: p, hostId: target.hostId })
+      ? { level: 'sensor', path: p, hostId: hid, itemId: target.itemId, itemName: target.itemName }
+      : { level: 'host', path: p, hostId: hid })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target?.n, hosts.length])
 
@@ -1814,10 +1832,11 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [homeSignal])
 
-  // Drill helpers - narrow the focus and refine the URL so Back steps between screens. A group focus
-  // isn't URL-persisted (host/sensor are, via ?host=&item=); reloading a group focus lands at root.
-  function drillRoot() { setFocus({ level: 'root' }); onNavigate(null, null) }
-  function drillGroup(path: string) { setFocus({ level: 'group', path }); onNavigate(null, null) }
+  // Drill helpers - narrow the focus and refine the URL so Back steps between screens. Each level is
+  // URL-persisted: group focus as ?group=<path>, host/sensor as ?host=&item=, so a reload or shared
+  // link restores the same screen.
+  function drillRoot() { setFocus({ level: 'root' }); onNavigate(null, null, null) }
+  function drillGroup(path: string) { setFocus({ level: 'group', path }); onNavigate(null, null, path) }
   function drillHost(path: string, hostId: string) { setFocus({ level: 'host', path, hostId }); setOpenHost(path + '::' + hostId); onNavigate(hostId, null) }
   function drillSensor(path: string, hostId: string, itemId: string, itemName: string) { setFocus({ level: 'sensor', path, hostId, itemId, itemName }); onNavigate(hostId, itemId) }
 

@@ -11,6 +11,17 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Fixes:**
+
+- **Group drill-down is now reflected in the URL.** Focusing a group in the monitoring tree (clicking a
+  group name or a breadcrumb) now updates the address bar to `?view=monitoring&group=<path>`, so a
+  reload, bookmark, shared link, or Back/Forward restores that group view instead of dropping back to
+  the tree root. Host and sensor focus were already URL-persisted; group focus was the gap.
+
+---
+
 ## [0.4.25] - 2026-08-31
 
 **Changes:**
