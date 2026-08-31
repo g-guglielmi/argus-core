@@ -11,6 +11,21 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Fixes:**
+
+- **Self-update no longer loops on a just-released build.** Cutting a release rebuilds the release
+  commit twice (the main-push build and the tag build), producing two images with the same code but
+  different digests; whichever `:testing` push landed last could differ from the `vX.Y.Z` tag, and the
+  digest-only update check then offered a "newer `:testing`" update to the box's own commit forever.
+  The check is now **commit-aware**: if `:testing` and the running image share a git revision
+  (`org.opencontainers.image.revision`), it's the same code and no update is offered. CI also
+  **serializes image builds** (a `concurrency` group) so the tag build is the last writer of the
+  rolling tags and leaves `:testing` cleanly stamped `vX.Y.Z`.
+
+---
+
 ## [0.4.22] - 2026-08-31
 
 **Host settings editor (phase 2b) — manage a host's identity + connection from Argus:**

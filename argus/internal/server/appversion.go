@@ -261,12 +261,48 @@ func resolveTestingUpdate(ctx context.Context, cur string) (available bool, targ
 	if testingDigest == "" || runningDigest == "" || testingDigest == runningDigest {
 		return false, "", nil // same image (or can't compare) -> no update
 	}
+	// Digests differ - but that alone is NOT a real update. The same commit rebuilt (a release tag
+	// build and a main-push build of the identical commit; or any non-reproducible rebuild) yields a
+	// different digest while carrying the same code. Comparing the git revision the two images were
+	// built from (the org.opencontainers.image.revision label build.yml stamps) tells same-code apart
+	// from newer-code: equal revisions -> same source -> no update, which stops a just-released box
+	// from being offered a phantom ":testing" update to its own commit forever. If either revision is
+	// unreadable (an image built before the label existed) we fall back to the digest verdict.
+	if sameRevision(ctx, repoPath, tok, runningRef) {
+		return false, "", nil
+	}
 	// An update exists; best-effort read the target build's version label to name it (empty is fine).
 	target, lerr := ghcrImageVersionLabel(ctx, repoPath, "testing", tok)
 	if lerr != nil {
 		target = ""
 	}
 	return true, target, nil
+}
+
+// ociRevisionLabel is the OCI label build.yml stamps with the git commit an image was built from.
+const ociRevisionLabel = "org.opencontainers.image.revision"
+
+// sameRevision reports whether the :testing image and the running image (identified by runningRef)
+// were built from the same git commit. Used to distinguish a same-commit rebuild (different digest,
+// identical code) from a genuinely newer :testing build. Returns false when either revision label is
+// missing or unreadable, so a real update is never suppressed on incomplete data.
+func sameRevision(ctx context.Context, repoPath, tok, runningRef string) bool {
+	testingLabels, err := ghcrImageLabels(ctx, repoPath, "testing", tok)
+	if err != nil {
+		return false
+	}
+	runningLabels, err := ghcrImageLabels(ctx, repoPath, runningRef, tok)
+	if err != nil {
+		return false
+	}
+	return revisionsMatch(testingLabels[ociRevisionLabel], runningLabels[ociRevisionLabel])
+}
+
+// revisionsMatch reports whether two image git-revision labels identify the same commit. Both must be
+// present and equal; a missing revision (empty) yields false so an update is never suppressed when the
+// build source can't be established.
+func revisionsMatch(testingRev, runningRev string) bool {
+	return testingRev != "" && runningRev != "" && testingRev == runningRev
 }
 
 // resolveAppReleases returns every published vX.Y.Z release tag for the app image, newest first, read

@@ -234,11 +234,11 @@ func ghcrGetManifestJSON(ctx context.Context, repoPath, ref, bearer string, out 
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-// ghcrImageVersionLabel reads the org.opencontainers.image.version label off the image a tag points
-// to. It drills index -> image manifest -> config blob, skipping the attestation manifest that
-// buildx provenance adds (platform "unknown"). Empty (no error) if the label is absent (e.g. an image
-// built before the label was added).
-func ghcrImageVersionLabel(ctx context.Context, repoPath, ref, bearer string) (string, error) {
+// ghcrImageLabels reads the OCI config labels off the image a tag (or digest) points to. It drills
+// index -> image manifest -> config blob, skipping the attestation manifest that buildx provenance
+// adds (platform "unknown"). Returns an empty (non-nil) map when the image carries no labels. Callers
+// pick out individual labels (org.opencontainers.image.version / .revision).
+func ghcrImageLabels(ctx context.Context, repoPath, ref, bearer string) (map[string]string, error) {
 	var top struct {
 		Config    struct{ Digest string `json:"digest"` } `json:"config"` // present on an image manifest
 		Manifests []struct {
@@ -250,7 +250,7 @@ func ghcrImageVersionLabel(ctx context.Context, repoPath, ref, bearer string) (s
 		} `json:"manifests"` // present on an index
 	}
 	if err := ghcrGetManifestJSON(ctx, repoPath, ref, bearer, &top); err != nil {
-		return "", err
+		return nil, err
 	}
 	configDigest := top.Config.Digest
 	if configDigest == "" && len(top.Manifests) > 0 {
@@ -268,12 +268,12 @@ func ghcrImageVersionLabel(ctx context.Context, repoPath, ref, bearer string) (s
 			Config struct{ Digest string `json:"digest"` } `json:"config"`
 		}
 		if err := ghcrGetManifestJSON(ctx, repoPath, target, bearer, &img); err != nil {
-			return "", err
+			return nil, err
 		}
 		configDigest = img.Config.Digest
 	}
 	if configDigest == "" {
-		return "", nil
+		return map[string]string{}, nil
 	}
 	var cfg struct {
 		Config struct {
@@ -281,9 +281,22 @@ func ghcrImageVersionLabel(ctx context.Context, repoPath, ref, bearer string) (s
 		} `json:"config"`
 	}
 	if err := ghcrGetJSON(ctx, "https://ghcr.io/v2/"+repoPath+"/blobs/"+configDigest, bearer, &cfg); err != nil {
+		return nil, err
+	}
+	if cfg.Config.Labels == nil {
+		return map[string]string{}, nil
+	}
+	return cfg.Config.Labels, nil
+}
+
+// ghcrImageVersionLabel reads the org.opencontainers.image.version label off the image a tag points
+// to. Empty (no error) if the label is absent (e.g. an image built before the label was added).
+func ghcrImageVersionLabel(ctx context.Context, repoPath, ref, bearer string) (string, error) {
+	labels, err := ghcrImageLabels(ctx, repoPath, ref, bearer)
+	if err != nil {
 		return "", err
 	}
-	return cfg.Config.Labels["org.opencontainers.image.version"], nil
+	return labels["org.opencontainers.image.version"], nil
 }
 
 func ghcrGetJSON(ctx context.Context, url, bearer string, out any) error {

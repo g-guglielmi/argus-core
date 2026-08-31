@@ -10,6 +10,16 @@ permissions:
   contents: write   # required to publish Releases on tag builds
   packages: write   # required to push images to GHCR
 
+# Serialize image builds so two runs never push the rolling tags (:testing/:latest) concurrently.
+# When a release is cut the usual way - push main, then push the tag - the main-push run queues first
+# and the tag-push run queues second; with a shared group (and no cancellation) they run in that order,
+# so the tag build is the LAST writer of :testing and leaves it cleanly stamped vX.Y.Z. Without this,
+# the two runs race and the main build can clobber :testing back to a same-commit rebuild with a
+# different digest, which used to surface as a phantom "update available" on a just-released box.
+concurrency:
+  group: build-image
+  cancel-in-progress: false
+
 jobs:
   docker:
     runs-on: ubuntu-latest

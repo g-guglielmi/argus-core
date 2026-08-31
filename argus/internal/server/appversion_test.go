@@ -78,3 +78,26 @@ func TestDevUpdateOffered(t *testing.T) {
 		}
 	}
 }
+
+// TestRevisionsMatch guards the commit-aware suppression that stops a same-commit rebuild (a release
+// tag build and a main-push build of the identical commit produce different digests) from surfacing
+// as a phantom ":testing" update on a just-released box.
+func TestRevisionsMatch(t *testing.T) {
+	const sha = "0a5d0420e7e86af60a4fee0ed0f315b445e372f7"
+	cases := []struct {
+		name                string
+		testingRev, running string
+		want                bool
+	}{
+		{"same commit, rebuilt", sha, sha, true},                 // the loop case: different digest, same code
+		{"different commits", sha, "deadbeefcafebabe", false},    // a genuinely newer :testing build
+		{"testing revision missing", "", sha, false},             // can't establish -> don't suppress
+		{"running revision missing", sha, "", false},             // can't establish -> don't suppress
+		{"both missing", "", "", false},                          // pre-label images -> fall back to digest
+	}
+	for _, c := range cases {
+		if got := revisionsMatch(c.testingRev, c.running); got != c.want {
+			t.Errorf("revisionsMatch(%q, %q) = %v, want %v", c.testingRev, c.running, got, c.want)
+		}
+	}
+}
