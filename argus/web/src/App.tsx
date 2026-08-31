@@ -1247,7 +1247,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
 
 const PROBE_IMAGE = 'ghcr.io/g-guglielmi/argus-probe:latest'
 
-function probeDockerCmd(c: CreatedToken, redeploy: boolean): string {
+function probeDockerCmd(c: CreatedToken, redeploy: boolean, selfupdate: boolean): string {
   const name = `argus-${c.proxy_name}`
   const lines: string[] = []
   // On a redeploy (a container by this name already exists), remove it first so the fresh `docker
@@ -1258,6 +1258,14 @@ function probeDockerCmd(c: CreatedToken, redeploy: boolean): string {
     `docker run -d --name ${name} --restart unless-stopped \\`,
     `  -v /docker/${name}:/var/lib/zabbix \\`,
     `  -v /docker/${name}/snmptraps:/var/lib/zabbix/snmptraps \\`,
+  )
+  // Self-update: the entrypoint enables it only when SELFUPDATE=1 AND the Docker socket is present
+  // (it recreates itself via a short-lived sister container, which needs the socket read-write).
+  if (selfupdate) lines.push(
+    `  -v /var/run/docker.sock:/var/run/docker.sock \\`,
+    `  -e ARGUS_PROBE_SELFUPDATE=1 \\`,
+  )
+  lines.push(
     `  -e ARGUS_ENROLL_URL=${c.enroll_url} \\`,
     `  -e ARGUS_ENROLL_TOKEN=${c.token} \\`,
   )
@@ -1570,11 +1578,15 @@ function slugPreview(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
-function probeUnraidXml(c: CreatedToken): string {
+function probeUnraidXml(c: CreatedToken, selfupdate: boolean): string {
   const name = `argus-${c.proxy_name}`
   const vol = `/mnt/user/appdata/${name}`
   const serverHost = c.core_host ? '' :
     `\n  <Config Name="Zabbix server host" Target="ZBX_SERVER_HOST" Default="" Mode="" Description="Core address the probe dials for :10051 (set if Argus didn't provide one)." Type="Variable" Display="always" Required="true" Mask="false"></Config>`
+  // Self-update needs the Docker socket (to recreate the proxy via a sister container) plus the flag.
+  const selfUpd = selfupdate ?
+    `\n  <Config Name="Self-update" Target="ARGUS_PROBE_SELFUPDATE" Default="1" Mode="" Description="Let Argus trigger in-place updates to the fleet target (requires the Docker socket below)." Type="Variable" Display="always" Required="false" Mask="false">1</Config>` +
+    `\n  <Config Name="Docker socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="rw" Description="Needed only for self-update: the probe recreates itself via a short-lived sister container." Type="Path" Display="always" Required="false" Mask="false">/var/run/docker.sock</Config>` : ''
   return `<?xml version="1.0"?>
 <Container version="2">
   <Name>${name}</Name>
@@ -1588,14 +1600,18 @@ function probeUnraidXml(c: CreatedToken): string {
   <Config Name="Enroll URL" Target="ARGUS_ENROLL_URL" Default="" Mode="" Description="Argus enrollment endpoint." Type="Variable" Display="always" Required="true" Mask="false">${c.enroll_url}</Config>
   <Config Name="Enroll Token" Target="ARGUS_ENROLL_TOKEN" Default="" Mode="" Description="Single-use enrollment token (shown once)." Type="Variable" Display="always" Required="true" Mask="true">${c.token}</Config>${serverHost}
   <Config Name="Data" Target="/var/lib/zabbix" Default="${vol}" Mode="rw" Description="Certs + SQLite spool. Persist this." Type="Path" Display="always" Required="true" Mask="false">${vol}</Config>
-  <Config Name="SNMP traps" Target="/var/lib/zabbix/snmptraps" Default="${vol}/snmptraps" Mode="rw" Description="The base Zabbix image marks this path as a VOLUME; bind it into your appdata so Docker doesn't create an anonymous volume for it." Type="Path" Display="advanced" Required="false" Mask="false">${vol}/snmptraps</Config>
+  <Config Name="SNMP traps" Target="/var/lib/zabbix/snmptraps" Default="${vol}/snmptraps" Mode="rw" Description="The base Zabbix image marks this path as a VOLUME; bind it into your appdata so Docker doesn't create an anonymous volume for it." Type="Path" Display="advanced" Required="false" Mask="false">${vol}/snmptraps</Config>${selfUpd}
 </Container>`
 }
 
 type ProbeFmt = 'docker' | 'compose' | 'unraid'
 function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; redeploy: boolean; onDone: () => void }) {
   const [fmt, setFmt] = useState<ProbeFmt>('docker')
-  const content = fmt === 'docker' ? probeDockerCmd(created, redeploy) : fmt === 'compose' ? probeComposeCmd(created) : probeUnraidXml(created)
+  const [selfupdate, setSelfupdate] = useState(false)
+  // Compose always ships the updater sidecar, so the toggle only applies to the single-container
+  // docker/unRAID formats. For compose it reads as always-on.
+  const selfEff = fmt === 'compose' ? true : selfupdate
+  const content = fmt === 'docker' ? probeDockerCmd(created, redeploy, selfupdate) : fmt === 'compose' ? probeComposeCmd(created) : probeUnraidXml(created, selfupdate)
   const pick = (f: ProbeFmt) => { setFmt(f) }
   const blurb: Record<ProbeFmt, string> = {
     docker: redeploy
@@ -1617,9 +1633,15 @@ function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; re
         <CopyButton text={content} variant="default" />
         <Button variant="default" onClick={onDone}>Done</Button>
       </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: fmt === 'compose' ? 'var(--faint)' : 'var(--muted)', marginBottom: 8, cursor: fmt === 'compose' ? 'default' : 'pointer' }}>
+        <input type="checkbox" checked={selfEff} disabled={fmt === 'compose'} onChange={(e) => setSelfupdate(e.target.checked)} />
+        Enable self-update (mounts the Docker socket so Argus can update this probe in place)
+        {fmt === 'compose' && <span className="tag" title="The Compose format always includes the updater sidecar">always on</span>}
+      </label>
       <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: '0 0 8px' }}>
         {blurb[fmt]}
         {' '}It self-enrolls on first boot; the token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set the core host (ZBX_SERVER_HOST / ARGUS_PROBE_CORE_HOST) so it can reach :10051.'}
+        {selfEff && fmt !== 'compose' && ' Self-update is on: the probe recreates itself via a short-lived sister container when the fleet target changes.'}
       </p>
       <pre style={{ margin: 0, padding: '11px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12, lineHeight: 1.5 }}><code>{content}</code></pre>
     </div>
