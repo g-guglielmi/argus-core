@@ -99,10 +99,14 @@ a { color: var(--accent); }
 .userbtn .car { color: var(--faint); flex-shrink: 0; }
 
 .app-shell.collapsed .sidebar { width: 62px; padding: 15px 8px; }
-.app-shell.collapsed .brand .word, .app-shell.collapsed .brand .sub, .app-shell.collapsed .nav .lbl, .app-shell.collapsed .navlabel, .app-shell.collapsed .nav .count, .app-shell.collapsed .nav .soon, .app-shell.collapsed .userbtn .who, .app-shell.collapsed .userbtn .car { display: none; }
+.app-shell.collapsed .brand .word, .app-shell.collapsed .brand .sub, .app-shell.collapsed .nav .lbl, .app-shell.collapsed .nav .count, .app-shell.collapsed .nav .soon, .app-shell.collapsed .userbtn .who, .app-shell.collapsed .userbtn .car { display: none; }
 .app-shell.collapsed .nav, .app-shell.collapsed .userbtn, .app-shell.collapsed .brand { justify-content: center; }
 .app-shell.collapsed .brand { padding-left: 0; padding-right: 0; gap: 0; }
 .app-shell.collapsed .brand > div { display: none; }
+/* Collapsed: the section labels can't show their text, so render them as a thin divider that keeps the
+   Watch/Configure/Admin grouping legible. The first one (right under the logo) is dropped as redundant. */
+.app-shell.collapsed .navlabel { height: 1px; padding: 0; margin: 6px 6px; background: var(--border); font-size: 0; overflow: hidden; }
+.app-shell.collapsed .brand + .navlabel { display: none; }
 
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar { position: sticky; top: 0; z-index: 12; background: color-mix(in srgb, var(--bg) 84%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px; padding: 11px 22px; }

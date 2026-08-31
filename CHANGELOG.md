@@ -28,6 +28,9 @@ GitHub Release from the matching section below.
   spike instead of a generic list. Also fixed the Settings gear, whose hand-rounded path left a misshapen
   tooth in the lower-right, by swapping in the clean canonical gear; and vertically centered the Overview
   gauge (it was top-weighted, which made the space below it in the collapsed rail look like an uneven gap).
+- **Group separators in the collapsed sidebar.** When the rail is collapsed to icons, the
+  Watch/Configure/Admin section labels can't show their text, so they now render as thin divider lines —
+  keeping the same grouping the expanded sidebar shows.
 - **Hiding a group is now admin-only and asks for confirmation.** Unhiding a group is only reachable in
   advanced mode (an admin-only preference), so the **Hide from tree** / **Show in tree** actions now
   appear only there too — closing a gap where a helpdesk user could hide a group and then have no way to
