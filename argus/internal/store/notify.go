@@ -10,13 +10,14 @@ import (
 
 // NotifyChannel is a stored alert delivery target. Config holds type-specific keys.
 type NotifyChannel struct {
-	ID        int64
-	Type      string
-	Name      string
-	Enabled   bool
-	Site      string
-	Config    map[string]string
-	CreatedAt time.Time
+	ID          int64
+	Type        string
+	Name        string
+	Enabled     bool
+	Site        string
+	MinSeverity int // Zabbix severity floor (0..5); a problem below this doesn't reach this channel
+	Config      map[string]string
+	CreatedAt   time.Time
 }
 
 // NotifyState is one row of the notifier state machine (keyed by Zabbix event id).
@@ -39,7 +40,7 @@ func (s *Store) scanChannel(row rowScanner) (*NotifyChannel, error) {
 	var enabled int
 	var cfg string
 	var created int64
-	if err := row.Scan(&c.ID, &c.Type, &c.Name, &enabled, &c.Site, &cfg, &created); err != nil {
+	if err := row.Scan(&c.ID, &c.Type, &c.Name, &enabled, &c.Site, &c.MinSeverity, &cfg, &created); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -52,7 +53,7 @@ func (s *Store) scanChannel(row rowScanner) (*NotifyChannel, error) {
 	return &c, nil
 }
 
-const channelColumns = `id,type,name,enabled,site,config,created_at`
+const channelColumns = `id,type,name,enabled,site,min_severity,config,created_at`
 
 func (s *Store) ListNotifyChannels(ctx context.Context) ([]NotifyChannel, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+channelColumns+` FROM notify_channels ORDER BY site, name`)
@@ -97,8 +98,8 @@ func (s *Store) CreateNotifyChannel(ctx context.Context, c NotifyChannel) (int64
 		enabled = 1
 	}
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO notify_channels(type,name,enabled,site,config,created_at) VALUES(?,?,?,?,?,?)`,
-		c.Type, c.Name, enabled, c.Site, s.cipher.Encrypt(string(cfg)), time.Now().Unix())
+		`INSERT INTO notify_channels(type,name,enabled,site,min_severity,config,created_at) VALUES(?,?,?,?,?,?,?)`,
+		c.Type, c.Name, enabled, c.Site, c.MinSeverity, s.cipher.Encrypt(string(cfg)), time.Now().Unix())
 	if err != nil {
 		return 0, err
 	}
@@ -112,8 +113,8 @@ func (s *Store) UpdateNotifyChannel(ctx context.Context, c NotifyChannel) error 
 		enabled = 1
 	}
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE notify_channels SET type=?,name=?,enabled=?,site=?,config=? WHERE id=?`,
-		c.Type, c.Name, enabled, c.Site, s.cipher.Encrypt(string(cfg)), c.ID)
+		`UPDATE notify_channels SET type=?,name=?,enabled=?,site=?,min_severity=?,config=? WHERE id=?`,
+		c.Type, c.Name, enabled, c.Site, c.MinSeverity, s.cipher.Encrypt(string(cfg)), c.ID)
 	return err
 }
 

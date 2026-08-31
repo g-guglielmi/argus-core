@@ -161,9 +161,9 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		if now.Sub(time.Unix(stt.FirstSeen, 0)) < notifyDebounce {
 			continue // still within the flap-debounce window
 		}
-		matches := matchingChannels(channels, hostGroups[hostID])
+		matches := matchingChannels(channels, hostGroups[hostID], sev)
 		if len(matches) == 0 {
-			continue // no channel serves this site yet; stay pending so it alerts once one is added
+			continue // no channel serves this site+severity yet; stay pending so it alerts once one is added
 		}
 		value := ""
 		if itemID != "" {
@@ -217,10 +217,14 @@ func isAlertable(t zabbix.TriggerTarget, hiddenHosts, hiddenItems, acked map[str
 	return true
 }
 
-// matchingChannels returns the channels that serve a host's groups ("" site = all sites).
-func matchingChannels(channels []store.NotifyChannel, groups []string) []store.NotifyChannel {
+// matchingChannels returns the channels that serve a host's groups ("" site = all sites) and whose
+// per-channel severity floor is at or below the problem's severity.
+func matchingChannels(channels []store.NotifyChannel, groups []string, sev int) []store.NotifyChannel {
 	var out []store.NotifyChannel
 	for _, c := range channels {
+		if c.MinSeverity > sev {
+			continue
+		}
 		if c.Site == "" || contains(groups, c.Site) {
 			out = append(out, c)
 		}
@@ -229,7 +233,9 @@ func matchingChannels(channels []store.NotifyChannel, groups []string) []store.N
 }
 
 func dispatch(ctx context.Context, channels []store.NotifyChannel, groups []string, ev notify.Event, logger *slog.Logger) {
-	sendAll(ctx, matchingChannels(channels, groups), ev, logger)
+	// Recoveries follow the same routing as the problem would have: a channel that never wanted this
+	// severity shouldn't receive its recovery either.
+	sendAll(ctx, matchingChannels(channels, groups, ev.Severity), ev, logger)
 }
 
 func sendAll(ctx context.Context, channels []store.NotifyChannel, ev notify.Event, logger *slog.Logger) {

@@ -13,12 +13,13 @@ import (
 )
 
 type channelView struct {
-	ID      int64             `json:"id"`
-	Type    string            `json:"type"`
-	Name    string            `json:"name"`
-	Enabled bool              `json:"enabled"`
-	Site    string            `json:"site"`
-	Config  map[string]string `json:"config"`
+	ID          int64             `json:"id"`
+	Type        string            `json:"type"`
+	Name        string            `json:"name"`
+	Enabled     bool              `json:"enabled"`
+	Site        string            `json:"site"`
+	MinSeverity int               `json:"min_severity"`
+	Config      map[string]string `json:"config"`
 }
 
 func toChannelView(c store.NotifyChannel) channelView {
@@ -26,7 +27,7 @@ func toChannelView(c store.NotifyChannel) channelView {
 	if cfg == nil {
 		cfg = map[string]string{}
 	}
-	return channelView{ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Site: c.Site, Config: cfg}
+	return channelView{ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Site: c.Site, MinSeverity: c.MinSeverity, Config: cfg}
 }
 
 var validChannelTypes = map[string]bool{"discord": true, "telegram": true, "email": true}
@@ -46,11 +47,12 @@ func (s *Server) handleListChannels(w http.ResponseWriter, r *http.Request) {
 
 // channelRequest is the create/update body.
 type channelRequest struct {
-	Type    string            `json:"type"`
-	Name    string            `json:"name"`
-	Enabled bool              `json:"enabled"`
-	Site    string            `json:"site"`
-	Config  map[string]string `json:"config"`
+	Type        string            `json:"type"`
+	Name        string            `json:"name"`
+	Enabled     bool              `json:"enabled"`
+	Site        string            `json:"site"`
+	MinSeverity int               `json:"min_severity"`
+	Config      map[string]string `json:"config"`
 }
 
 func (req channelRequest) validate() (store.NotifyChannel, string) {
@@ -66,8 +68,15 @@ func (req channelRequest) validate() (store.NotifyChannel, string) {
 	if cfg == nil {
 		cfg = map[string]string{}
 	}
+	// The notifier never alerts below Warning, so clamp the floor to 2..5 (Warning..Disaster).
+	sev := req.MinSeverity
+	if sev < 2 {
+		sev = 2
+	} else if sev > 5 {
+		sev = 5
+	}
 	return store.NotifyChannel{
-		Type: t, Name: name, Enabled: req.Enabled, Site: strings.TrimSpace(req.Site), Config: cfg,
+		Type: t, Name: name, Enabled: req.Enabled, Site: strings.TrimSpace(req.Site), MinSeverity: sev, Config: cfg,
 	}, ""
 }
 

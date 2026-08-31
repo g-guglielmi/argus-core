@@ -288,6 +288,10 @@ CREATE TABLE IF NOT EXISTS tree_hidden (
 	if err := s.ensureColumn("notify_events", "item_id TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// Per-channel minimum severity (Zabbix 0..5); default 2 = Warning, matching the old global floor.
+	if err := s.ensureColumn("notify_channels", "min_severity INTEGER NOT NULL DEFAULT 2"); err != nil {
+		return err
+	}
 	return nil
 }
 

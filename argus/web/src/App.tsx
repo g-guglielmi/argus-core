@@ -14,7 +14,14 @@ type SnmpCfg = { version: number; community: string; bulk: number; security_name
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[] }
 type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number }
-type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; config: Record<string, string> }
+type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; min_severity: number; config: Record<string, string> }
+// Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
+const SEVERITIES: { v: number; label: string }[] = [
+  { v: 2, label: 'Warning & up' },
+  { v: 3, label: 'Average & up' },
+  { v: 4, label: 'High & up' },
+  { v: 5, label: 'Disaster only' },
+]
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; priority: number }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
 type TriggerHost = { id: string; name: string }
@@ -1128,7 +1135,7 @@ function NotificationsView() {
         <div className="tools"><button className="btn primary" onClick={() => { setEditing('new'); setError(null); setMsg(null) }}>+ Add channel</button></div>
       </div>
       <p style={{ color: 'var(--muted)', fontSize: 12.5, padding: '2px 16px 0', margin: 0 }}>
-        Warning and Error events route to the channels below - globally or per site. Acknowledged, paused, and hidden items stay quiet, and a recovery notice follows when things clear.
+        Problems route to the channels below - globally or per site, and each channel can set its own severity floor (Warning by default). Acknowledged, paused, and hidden items stay quiet, and a recovery notice follows when things clear.
       </p>
       {error && <div style={{ padding: '0.6rem 16px', color: 'var(--err)' }}>{error}</div>}
       {msg && <div style={{ padding: '0.6rem 16px', color: 'var(--ok)' }}>{msg}</div>}
@@ -1162,7 +1169,7 @@ function NotificationsView() {
                   <span style={{ flex: 1 }}>{c.name}</span>
                   <span className={'badge ' + (c.enabled ? 'on' : 'off')}>{c.enabled ? 'on' : 'off'}</span>
                 </div>
-                <p style={{ marginBottom: 10 }}>{m.label} · {c.site ? c.site : 'All sites'}</p>
+                <p style={{ marginBottom: 10 }}>{m.label} · {c.site ? c.site : 'All sites'}{c.min_severity > 2 ? ` · ${(SEVERITIES.find((s) => s.v === c.min_severity)?.label) || 'Warning & up'}` : ''}</p>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   <button className="btn" disabled={busy === c.id} onClick={() => test(c)}>{busy === c.id ? 'Sending…' : 'Test'}</button>
                   <button className="btn" onClick={() => { setEditing(c); setError(null); setMsg(null) }}>Edit</button>
@@ -1184,13 +1191,14 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   const [type, setType] = useState(initial?.type || 'discord')
   const [name, setName] = useState(initial?.name || '')
   const [site, setSite] = useState(initial?.site || '')
+  const [minSev, setMinSev] = useState(initial?.min_severity || 2)
   const [enabled, setEnabled] = useState(initial ? initial.enabled : true)
   const [config, setConfig] = useState<Record<string, string>>(initial?.config || {})
   const setCfg = (k: string, v: string) => setConfig((c) => ({ ...c, [k]: v }))
 
   async function save(e: FormEvent) {
     e.preventDefault(); onError('')
-    const body = { type, name, site, enabled, config }
+    const body = { type, name, site, min_severity: minSev, enabled, config }
     const url = initial ? `/api/notify/channels/${initial.id}` : '/api/notify/channels'
     const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
@@ -1213,6 +1221,11 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
           <select className="roleselect" value={site} onChange={(e) => setSite(e.target.value)}>
             <option value="">All sites</option>
             {sites.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+        <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Severity</span>
+          <select className="roleselect" value={minSev} onChange={(e) => setMinSev(Number(e.target.value))} title="Only problems at or above this severity reach this channel">
+            {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
           </select>
         </label>
       </div>
