@@ -100,10 +100,14 @@ func (s *Server) handleSetProxySNMP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	details := defaultToDetails(def)
-	updated, failed := 0, 0
+	updated, failed, overrides := 0, 0, 0
 	for _, h := range hosts {
 		for _, i := range h.Interfaces {
-			if i.Type != 2 || !inherit[i.InterfaceID] {
+			if i.Type != 2 {
+				continue
+			}
+			if !inherit[i.InterfaceID] {
+				overrides++ // an SNMP interface with its own creds - a candidate to adopt this default
 				continue
 			}
 			i.SNMP = details
@@ -115,9 +119,50 @@ func (s *Server) handleSetProxySNMP(w http.ResponseWriter, r *http.Request) {
 			updated++
 		}
 	}
-	resp := map[string]any{"status": "ok", "updated": updated}
+	resp := map[string]any{"status": "ok", "updated": updated, "overrides": overrides}
 	if failed > 0 {
 		resp["warning"] = "some interfaces could not be updated"
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleAdoptProxySNMP switches every override SNMP interface on a proxy's hosts to inherit the proxy
+// default (offered after a default is first set). Admin/helpdesk.
+func (s *Server) handleAdoptProxySNMP(w http.ResponseWriter, r *http.Request) {
+	if !s.zbx.Authenticated() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured (set ARGUS_ZABBIX_API_TOKEN)"})
+		return
+	}
+	proxyID := r.PathValue("id")
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+
+	def, ok, err := s.st.SNMPDefaultFor(ctx, proxyID)
+	if err != nil || !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "set an SNMP default for this proxy first"})
+		return
+	}
+	inherit, _ := s.st.SNMPInheritMap(ctx)
+	hosts, err := s.zbx.HostsByProxy(ctx, proxyID)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		return
+	}
+	details := defaultToDetails(def)
+	flipped := 0
+	for _, h := range hosts {
+		for _, i := range h.Interfaces {
+			if i.Type != 2 || inherit[i.InterfaceID] {
+				continue // already inheriting - leave it
+			}
+			i.SNMP = details
+			if err := s.zbx.UpdateHostInterface(ctx, i); err != nil {
+				s.logger.Warn("snmp adopt: interface update failed", "interface", i.InterfaceID, "err", err)
+				continue
+			}
+			_ = s.st.SetSNMPInherit(ctx, i.InterfaceID, true)
+			flipped++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "adopted": flipped})
 }

@@ -2129,6 +2129,7 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
 // ProxySNMP is the per-proxy SNMP-defaults band in the Probes tab. Saving stores the default and
 // propagates it to every host on the proxy whose SNMP interface is set to inherit.
 function ProxySNMP({ proxyId, proxyName, onClose }: { proxyId: string; proxyName: string; onClose: () => void }) {
+  const confirm = useConfirm()
   const [snmp, setSnmp] = useState<SnmpCfg | null>(null)
   const [isSet, setIsSet] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -2144,9 +2145,20 @@ function ProxySNMP({ proxyId, proxyName, onClose }: { proxyId: string; proxyName
     const res = await fetch(`/api/proxies/${proxyId}/snmp`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(snmp) }).catch(() => null)
     setBusy(false)
     if (!res || !res.ok) { setErr(await errText(res, 'Could not save the SNMP default')); return }
-    const d = await res.json().catch(() => ({} as { updated?: number; warning?: string }))
+    const d = await res.json().catch(() => ({} as { updated?: number; overrides?: number; warning?: string }))
     setIsSet(true)
-    setMsg(`Saved${typeof d.updated === 'number' ? ` — updated ${d.updated} inheriting host${d.updated === 1 ? '' : 's'}` : ''}${d.warning ? ` (${d.warning})` : ''}`)
+    const base = `Saved${typeof d.updated === 'number' ? ` — updated ${d.updated} inheriting host${d.updated === 1 ? '' : 's'}` : ''}${d.warning ? ` (${d.warning})` : ''}`
+    setMsg(base)
+    // Offer to switch existing per-host (override) SNMP interfaces on this proxy to inherit this default.
+    if (d.overrides && d.overrides > 0) {
+      const n = d.overrides
+      if (await confirm({ title: 'Switch existing hosts to inherit?', message: `${n} SNMP interface${n === 1 ? '' : 's'} on ${proxyName}'s hosts ${n === 1 ? 'has its' : 'have their'} own credentials. Switch ${n === 1 ? 'it' : 'them'} to inherit this default too?`, confirmLabel: 'Switch to inherit' })) {
+        const ar = await fetch(`/api/proxies/${proxyId}/snmp/adopt`, { method: 'POST' }).catch(() => null)
+        if (!ar || !ar.ok) { setErr(await errText(ar, 'Could not switch the overrides')); return }
+        const ad = await ar.json().catch(() => ({} as { adopted?: number }))
+        setMsg(`${base} · switched ${ad.adopted ?? 0} to inherit`)
+      }
+    }
   }
   if (err && !snmp) return <div className="host-settings"><div style={{ color: 'var(--err)', fontSize: 13 }}>{err}</div></div>
   if (!snmp) return <div className="host-settings"><span style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</span></div>
