@@ -8,9 +8,13 @@ import (
 	"image/draw"
 	"image/png"
 	"math"
+	"strconv"
 	"time"
 
 	"argus/internal/zabbix"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/math/fixed"
 )
 
 // demoSeries is a synthetic 2-hour trend used to preview the graph from the Test button.
@@ -62,10 +66,12 @@ func alertChart(ctx context.Context, zbx *zabbix.Client, itemID, state string) [
 }
 
 // renderChart draws a compact 2-hour trend as a PNG (white background, filled line in the status
-// color). No text - the message body carries the value/threshold. Returns nil for <2 points.
+// color) with labeled axes: min/mid/max on the Y axis and relative time (2h ago → now) on the X
+// axis. The message body still carries the exact value/threshold. Returns nil for <2 points.
 func renderChart(vals []float64, cr, cg, cb uint8) []byte {
-	const w, h = 600, 180
-	const mL, mR, mT, mB = 10, 10, 12, 14
+	const w, h = 600, 200
+	// Room on the left for Y labels and along the bottom for X labels.
+	const mL, mR, mT, mB = 52, 12, 12, 26
 	pw, ph := w-mL-mR, h-mT-mB
 
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
@@ -92,7 +98,23 @@ func renderChart(vals []float64, cr, cg, cb uint8) []byte {
 
 	line := color.RGBA{cr, cg, cb, 255}
 	fill := blendWhite(cr, cg, cb, 0.16)
+	grid := color.RGBA{236, 236, 236, 255}
+	axis := color.RGBA{206, 206, 206, 255}
+	label := color.RGBA{120, 120, 120, 255}
 	baseY := h - mB
+
+	// Horizontal gridlines at max / mid / min, each with its value label to the left.
+	for _, gl := range []struct {
+		v float64
+		y int
+	}{{max, mT}, {(min + max) / 2, mT + ph/2}, {min, baseY}} {
+		for x := mL; x < w-mR; x++ {
+			img.Set(x, gl.y, grid)
+		}
+		s := axisNum(gl.v)
+		tw := textWidth(s)
+		drawText(img, mL-6-tw, gl.y+4, s, label)
+	}
 
 	for i := 0; i < n-1; i++ {
 		x0, y0 := xAt(i), yAt(vals[i])
@@ -121,12 +143,48 @@ func renderChart(vals []float64, cr, cg, cb uint8) []byte {
 			}
 		}
 	}
-	// baseline
-	base := color.RGBA{224, 224, 224, 255}
+	// baseline (x axis)
 	for x := mL; x < w-mR; x++ {
-		img.Set(x, baseY, base)
+		img.Set(x, baseY, axis)
+	}
+	// X labels: the series spans ~2 hours ending now, so label thirds by elapsed time.
+	xTicks := []struct {
+		frac float64
+		s    string
+	}{{0, "2h ago"}, {0.5, "1h ago"}, {1, "now"}}
+	for _, xt := range xTicks {
+		cx := mL + int(xt.frac*float64(pw))
+		tw := textWidth(xt.s)
+		tx := cx - tw/2
+		if tx < mL {
+			tx = mL
+		} else if tx+tw > w-mR {
+			tx = w - mR - tw
+		}
+		drawText(img, tx, baseY+16, xt.s, label)
 	}
 	return encodePNG(img)
+}
+
+// axisNum formats a value for an axis tick: up to 4 significant digits, trailing zeros trimmed.
+func axisNum(v float64) string {
+	return strconv.FormatFloat(v, 'g', 4, 64)
+}
+
+// textWidth returns the pixel width of s in the basicfont face used for labels.
+func textWidth(s string) int {
+	return font.MeasureString(basicfont.Face7x13, s).Round()
+}
+
+// drawText draws s with its left edge at x and text baseline at y, in the given color.
+func drawText(img *image.RGBA, x, y int, s string, col color.Color) {
+	d := &font.Drawer{
+		Dst:  img,
+		Src:  image.NewUniform(col),
+		Face: basicfont.Face7x13,
+		Dot:  fixed.P(x, y),
+	}
+	d.DrawString(s)
 }
 
 // blendWhite mixes a color with white at the given alpha (0..1) → an opaque light tint.
