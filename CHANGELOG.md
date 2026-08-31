@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.4.25] - 2026-08-31
 
 **Changes:**
 
