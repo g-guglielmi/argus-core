@@ -11,6 +11,34 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.22] - 2026-08-31
+
+**Host settings editor (phase 2b) — manage a host's identity + connection from Argus:**
+
+- A **"Settings…"** action on each host (admin/helpdesk) edits the **visible + technical name**,
+  **Monitored by** (Server / Proxy with a proxy picker), and the host's **Agent and SNMP interfaces**
+  — add, edit and remove, with connect-via IP/DNS, port, and SNMP version/community (v1/v2c/v3).
+  One Save reconciles the whole desired state.
+- **Removing an interface no longer strands its checks.** If items still use the interface, Argus
+  moves them to a surviving interface first (so you can swap an Agent interface for SNMP without
+  losing ICMP ping). A check that needs an interface of the same type still surfaces a clear refusal.
+- **Group moves can keep the collector in sync.** Moving a host into a site group that matches a proxy
+  (`proxy-<site>` ↔ group `<site>`) offers to switch its **Monitored by** to that proxy too.
+
+**PRTG-style SNMP inheritance:**
+
+- Each proxy holds a **default** SNMP credential set — edit it in the Probes tab (the proxy's
+  **Defaults** button). Community and v3 passphrases are encrypted at rest.
+- A host's SNMP interface can **Inherit** its proxy's default or **Override** per host. New SNMP
+  interfaces default to Inherit when a default exists.
+- Changing a proxy default **propagates live** to every inheriting host, and setting a default
+  **offers to adopt** existing per-host overrides. Both report how many hosts were updated.
+
+**Fixes:**
+
+- Clicking the **Monitoring** tab now returns the tree to the root even when it's already the active
+  view and you're drilled into a group/host/sensor.
+
 ## [0.4.21] - 2026-08-31
 
 **Manage tree groups from Argus (first Zabbix *config* writes):**
