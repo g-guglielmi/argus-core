@@ -11,8 +11,8 @@ type Passkey = { id: string; name: string; created: string; last_used: string | 
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string }
 type Group = { id: string; name: string; hosts: number }
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
-type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg }
-type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; interfaces: Iface[] }
+type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
+type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[] }
 type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number }
 type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; config: Record<string, string> }
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; priority: number }
@@ -1258,6 +1258,8 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
   const [openCmd, setOpenCmd] = useState<string | null>(null) // proxy name whose update command is expanded
   const [queued, setQueued] = useState<Record<string, string>>({}) // proxy name -> queued self-update tag
   const [report, setReport] = useState<{ name: string; token: string } | null>(null) // minted check-in token to show
+  const [openSnmp, setOpenSnmp] = useState<string | null>(null) // proxy name whose SNMP-defaults band is open
+  const canEdit = role === 'admin' || role === 'helpdesk'
   const isAdmin = role === 'admin'
 
   async function triggerUpdate(p: Proxy) {
@@ -1341,11 +1343,11 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
 
       <div className="enroll-scroll">
       <table className="enroll enroll-probes">
-        <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Version</th><th>Update</th><th>Mode</th><th>Enrolled</th></tr></thead>
+        <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Version</th><th>Update</th><th>Mode</th><th>Enrolled</th><th>SNMP</th></tr></thead>
         <tbody>
-          {error && <tr><td colSpan={7} style={{ color: 'var(--err)' }}>{error}</td></tr>}
-          {!error && proxies === null && <tr><td colSpan={7} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
-          {!error && proxies && proxies.length === 0 && <tr><td colSpan={7} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
+          {error && <tr><td colSpan={8} style={{ color: 'var(--err)' }}>{error}</td></tr>}
+          {!error && proxies === null && <tr><td colSpan={8} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
+          {!error && proxies && proxies.length === 0 && <tr><td colSpan={8} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
           {!error && proxies && proxies.map((p) => (
             <Fragment key={p.name}>
               <tr>
@@ -1356,9 +1358,11 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                 <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} /></td>
                 <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
                 <td data-label="Enrolled" className="mono" style={{ color: p.enrolled_at ? 'var(--muted)' : 'var(--faint)' }} title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>{p.enrolled_at ? new Date(p.enrolled_at * 1000).toLocaleDateString() : '-'}</td>
+                <td data-label="SNMP">{canEdit && p.id && <button className="btn" onClick={() => setOpenSnmp((n) => (n === p.name ? null : p.name))}>Defaults</button>}</td>
               </tr>
-              {openCmd === p.name && <tr><td colSpan={7} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
-              {report?.name === p.name && <tr><td colSpan={7} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
+              {openCmd === p.name && <tr><td colSpan={8} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
+              {report?.name === p.name && <tr><td colSpan={8} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
+              {openSnmp === p.name && <tr><td colSpan={8} style={{ padding: 0 }}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></td></tr>}
             </Fragment>
           ))}
         </tbody>
@@ -2008,7 +2012,7 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
   function patch(p: Partial<HostCfg>) { setCfg((c) => (c ? { ...c, ...p } : c)) }
   function setIface(idx: number, p: Partial<Iface>) { setCfg((c) => (c ? { ...c, interfaces: c.interfaces.map((i, n) => (n === idx ? { ...i, ...p } : i)) } : c)) }
   function setSnmp(idx: number, p: Partial<SnmpCfg>) { setCfg((c) => (c ? { ...c, interfaces: c.interfaces.map((i, n) => (n === idx ? { ...i, snmp: { ...(i.snmp || blankSnmp()), ...p } } : i)) } : c)) }
-  function addIface(type: number) { setCfg((c) => (c ? { ...c, interfaces: [...c.interfaces, { type, useip: 1, ip: '', dns: '', port: type === 2 ? '161' : '10050', snmp: type === 2 ? blankSnmp() : undefined }] } : c)) }
+  function addIface(type: number) { setCfg((c) => (c ? { ...c, interfaces: [...c.interfaces, { type, useip: 1, ip: '', dns: '', port: type === 2 ? '161' : '10050', snmp: type === 2 ? blankSnmp() : undefined, inherit: type === 2 ? !!c.proxy_default : undefined }] } : c)) }
   async function removeIface(idx: number) {
     const it = cfg?.interfaces[idx]
     if (it?.interfaceid && !(await confirm({ title: 'Remove interface', message: 'Remove this interface? If items still use it, Zabbix will refuse and nothing changes.', confirmLabel: 'Remove', danger: true }))) return
@@ -2067,6 +2071,17 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
           </div>
           {i.type === 2 && (
             <div className="if-snmp">
+              {cfg.monitored_by === 1 && (
+                <label className="field if-inherit"><span>SNMP credentials</span>
+                  <div className="seg">
+                    <button className={i.inherit ? 'on' : ''} disabled={!canEdit || !cfg.proxy_default} title={cfg.proxy_default ? '' : 'No SNMP default set for this proxy yet'} onClick={() => setIface(idx, { inherit: true })}>Inherit from {cfg.proxy_name || 'proxy'}</button>
+                    <button className={!i.inherit ? 'on' : ''} disabled={!canEdit} onClick={() => setIface(idx, { inherit: false })}>Override</button>
+                  </div>
+                </label>
+              )}
+              {i.inherit
+                ? <div className="if-inherit-note">Using {cfg.proxy_name || 'the proxy'}’s SNMP default{cfg.proxy_default ? ` (v${cfg.proxy_default.version === 2 ? '2c' : cfg.proxy_default.version}${cfg.proxy_default.version !== 3 ? `, community “${cfg.proxy_default.community}”` : ''})` : ''} — change it in the Probes tab.</div>
+                : <>
               <label className="field"><span>SNMP version</span>
                 <select className="input" value={i.snmp?.version ?? 2} disabled={!canEdit} onChange={(e) => setSnmp(idx, { version: Number(e.target.value) })}>
                   <option value={1}>v1</option><option value={2}>v2c</option><option value={3}>v3</option>
@@ -2094,6 +2109,7 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
                     </label>
                     <label className="field"><span>Priv passphrase</span><input className="input" type="password" placeholder="unchanged" value={i.snmp?.priv_passphrase || ''} disabled={!canEdit} onChange={(e) => setSnmp(idx, { priv_passphrase: e.target.value })} /></label>
                   </>}
+                </>}
             </div>
           )}
         </div>
@@ -2104,6 +2120,73 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
       <div className="hs-foot">
         <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
         {canEdit && <Button variant="primary" onClick={save} disabled={busy || !cfg.host.trim()}>Save</Button>}
+      </div>
+    </div>
+  )
+}
+
+// ProxySNMP is the per-proxy SNMP-defaults band in the Probes tab. Saving stores the default and
+// propagates it to every host on the proxy whose SNMP interface is set to inherit.
+function ProxySNMP({ proxyId, proxyName, onClose }: { proxyId: string; proxyName: string; onClose: () => void }) {
+  const [snmp, setSnmp] = useState<SnmpCfg | null>(null)
+  const [isSet, setIsSet] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    fetch(`/api/proxies/${proxyId}/snmp`).then((r) => (r.ok ? r.json() : Promise.reject())).then((d) => { setSnmp(d.snmp); setIsSet(!!d.set) }).catch(() => setErr('Could not load the SNMP default'))
+  }, [proxyId])
+  function set(p: Partial<SnmpCfg>) { setSnmp((s) => (s ? { ...s, ...p } : s)) }
+  async function save() {
+    if (!snmp) return
+    setBusy(true); setErr(null); setMsg(null)
+    const res = await fetch(`/api/proxies/${proxyId}/snmp`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(snmp) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { setErr(await errText(res, 'Could not save the SNMP default')); return }
+    const d = await res.json().catch(() => ({} as { updated?: number; warning?: string }))
+    setIsSet(true)
+    setMsg(`Saved${typeof d.updated === 'number' ? ` — updated ${d.updated} inheriting host${d.updated === 1 ? '' : 's'}` : ''}${d.warning ? ` (${d.warning})` : ''}`)
+  }
+  if (err && !snmp) return <div className="host-settings"><div style={{ color: 'var(--err)', fontSize: 13 }}>{err}</div></div>
+  if (!snmp) return <div className="host-settings"><span style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</span></div>
+  return (
+    <div className="host-settings">
+      <div className="hs-title">SNMP default · {proxyName}</div>
+      <div className="hs-note">Hosts on this proxy set to “inherit” use these credentials. Saving applies them to every inheriting host.{isSet ? '' : ' No default is set yet.'}</div>
+      <div className="if-snmp" style={{ borderTop: 'none', marginTop: 4, paddingTop: 0 }}>
+        <label className="field"><span>SNMP version</span>
+          <select className="input" value={snmp.version} onChange={(e) => set({ version: Number(e.target.value) })}>
+            <option value={1}>v1</option><option value={2}>v2c</option><option value={3}>v3</option>
+          </select>
+        </label>
+        {snmp.version !== 3
+          ? <label className="field"><span>Community</span><input className="input" value={snmp.community || ''} onChange={(e) => set({ community: e.target.value })} /></label>
+          : <>
+              <label className="field"><span>Security name</span><input className="input" value={snmp.security_name || ''} onChange={(e) => set({ security_name: e.target.value })} /></label>
+              <label className="field"><span>Security level</span>
+                <select className="input" value={snmp.security_level} onChange={(e) => set({ security_level: Number(e.target.value) })}>
+                  <option value={0}>noAuthNoPriv</option><option value={1}>authNoPriv</option><option value={2}>authPriv</option>
+                </select>
+              </label>
+              <label className="field"><span>Auth protocol</span>
+                <select className="input" value={snmp.auth_protocol} onChange={(e) => set({ auth_protocol: Number(e.target.value) })}>
+                  <option value={0}>MD5</option><option value={1}>SHA1</option><option value={3}>SHA256</option>
+                </select>
+              </label>
+              <label className="field"><span>Auth passphrase</span><input className="input" type="password" placeholder="unchanged" value={snmp.auth_passphrase || ''} onChange={(e) => set({ auth_passphrase: e.target.value })} /></label>
+              <label className="field"><span>Priv protocol</span>
+                <select className="input" value={snmp.priv_protocol} onChange={(e) => set({ priv_protocol: Number(e.target.value) })}>
+                  <option value={0}>DES</option><option value={1}>AES128</option><option value={3}>AES256</option>
+                </select>
+              </label>
+              <label className="field"><span>Priv passphrase</span><input className="input" type="password" placeholder="unchanged" value={snmp.priv_passphrase || ''} onChange={(e) => set({ priv_passphrase: e.target.value })} /></label>
+            </>}
+      </div>
+      {err && <div style={{ color: 'var(--err)', fontSize: 13, marginTop: 8 }}>{err}</div>}
+      {msg && <div style={{ color: 'var(--ok)', fontSize: 13, marginTop: 8 }}>{msg}</div>}
+      <div className="hs-foot">
+        <Button variant="ghost" onClick={onClose} disabled={busy}>Close</Button>
+        <Button variant="primary" onClick={save} disabled={busy}>Save</Button>
       </div>
     </div>
   )

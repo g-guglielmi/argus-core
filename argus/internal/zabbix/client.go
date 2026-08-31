@@ -816,3 +816,37 @@ func (c *Client) UpdateHostInterface(ctx context.Context, i HostInterface) error
 func (c *Client) DeleteHostInterface(ctx context.Context, interfaceID string) error {
 	return c.call(ctx, "hostinterface.delete", []string{interfaceID}, true, nil)
 }
+
+// HostsByProxy returns the hosts monitored by a proxy with their interfaces (connection fields only,
+// SNMP details omitted) - used to propagate a proxy's SNMP default to every inheriting interface.
+func (c *Client) HostsByProxy(ctx context.Context, proxyID string) ([]HostDetail, error) {
+	var raw []struct {
+		HostID     string `json:"hostid"`
+		Interfaces []struct {
+			InterfaceID string `json:"interfaceid"`
+			Type        string `json:"type"`
+			Main        string `json:"main"`
+			UseIP       string `json:"useip"`
+			IP          string `json:"ip"`
+			DNS         string `json:"dns"`
+			Port        string `json:"port"`
+		} `json:"interfaces"`
+	}
+	params := map[string]any{
+		"output":           []string{"hostid"},
+		"selectInterfaces": []string{"interfaceid", "type", "main", "useip", "ip", "dns", "port"},
+		"proxyids":         proxyID,
+	}
+	if err := c.call(ctx, "host.get", params, true, &raw); err != nil {
+		return nil, err
+	}
+	out := make([]HostDetail, 0, len(raw))
+	for _, h := range raw {
+		hd := HostDetail{HostID: h.HostID}
+		for _, i := range h.Interfaces {
+			hd.Interfaces = append(hd.Interfaces, HostInterface{InterfaceID: i.InterfaceID, Type: atoiSafe(i.Type), Main: atoiSafe(i.Main), UseIP: atoiSafe(i.UseIP), IP: i.IP, DNS: i.DNS, Port: i.Port})
+		}
+		out = append(out, hd)
+	}
+	return out, nil
+}

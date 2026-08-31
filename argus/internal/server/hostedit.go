@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"argus/internal/store"
 	"argus/internal/zabbix"
 )
 
@@ -33,16 +34,18 @@ type ifaceView struct {
 	DNS         string    `json:"dns"`
 	Port        string    `json:"port"`
 	SNMP        *snmpView `json:"snmp,omitempty"`
+	Inherit     bool      `json:"inherit"` // SNMP interface: creds managed by the proxy default
 }
 
 type hostConfigView struct {
-	HostID      string      `json:"hostid"`
-	Host        string      `json:"host"`         // technical name
-	Name        string      `json:"name"`         // visible name
-	MonitoredBy int         `json:"monitored_by"` // 0 server, 1 proxy, 2 proxy group
-	ProxyID     string      `json:"proxy_id,omitempty"`
-	ProxyName   string      `json:"proxy_name,omitempty"`
-	Interfaces  []ifaceView `json:"interfaces"`
+	HostID       string      `json:"hostid"`
+	Host         string      `json:"host"`         // technical name
+	Name         string      `json:"name"`         // visible name
+	MonitoredBy  int         `json:"monitored_by"` // 0 server, 1 proxy, 2 proxy group
+	ProxyID      string      `json:"proxy_id,omitempty"`
+	ProxyName    string      `json:"proxy_name,omitempty"`
+	ProxyDefault *snmpView   `json:"proxy_default,omitempty"` // the host's proxy SNMP default (masked), if set
+	Interfaces   []ifaceView `json:"interfaces"`
 }
 
 // snmpToView converts client SNMP details to the browser shape, masking v3 passphrases.
@@ -82,9 +85,13 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		if def, ok, _ := s.st.SNMPDefaultFor(ctx, hd.ProxyID); ok {
+			out.ProxyDefault = defaultToView(def)
+		}
 	}
+	inherit, _ := s.st.SNMPInheritMap(ctx)
 	for _, i := range hd.Interfaces {
-		out.Interfaces = append(out.Interfaces, ifaceView{InterfaceID: i.InterfaceID, Type: i.Type, UseIP: i.UseIP, IP: i.IP, DNS: i.DNS, Port: i.Port, SNMP: snmpToView(i.SNMP)})
+		out.Interfaces = append(out.Interfaces, ifaceView{InterfaceID: i.InterfaceID, Type: i.Type, UseIP: i.UseIP, IP: i.IP, DNS: i.DNS, Port: i.Port, SNMP: snmpToView(i.SNMP), Inherit: i.Type == 2 && inherit[i.InterfaceID]})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -129,7 +136,7 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a DNS name is required when connecting by DNS"})
 			return
 		}
-		if i.Type == 2 && (i.SNMP == nil || i.SNMP.Version < 1 || i.SNMP.Version > 3) {
+		if i.Type == 2 && !i.Inherit && (i.SNMP == nil || i.SNMP.Version < 1 || i.SNMP.Version > 3) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "an SNMP interface needs a version (1, 2 or 3)"})
 			return
 		}
@@ -158,6 +165,18 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// SNMP inheritance: an interface set to "inherit" takes its creds from the host's (effective) proxy
+	// default rather than the submitted values.
+	effProxyID := ""
+	if req.MonitoredBy == 1 {
+		effProxyID = strings.TrimSpace(req.ProxyID)
+	}
+	var proxyDef store.SNMPDefault
+	hasProxyDef := false
+	if effProxyID != "" {
+		proxyDef, hasProxyDef, _ = s.st.SNMPDefaultFor(ctx, effProxyID)
+	}
+
 	// Exactly one main interface per type: the first of each type in the submitted order.
 	mainSeen := map[int]bool{}
 	keep := map[string]bool{}
@@ -170,29 +189,49 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		if iface.Port == "" {
 			iface.Port = defaultPort(iv.Type)
 		}
-		if iv.Type == 2 && iv.SNMP != nil {
-			iface.SNMP = viewToSNMP(iv.SNMP, curByID[iv.InterfaceID].SNMP)
+		if iv.Type == 2 {
+			if iv.Inherit {
+				if effProxyID == "" {
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the host must be monitored by a proxy to inherit SNMP defaults"})
+					return
+				}
+				if !hasProxyDef {
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no SNMP default is set for this host's proxy — set one in the Probes tab, or override on the host"})
+					return
+				}
+				iface.SNMP = defaultToDetails(proxyDef)
+			} else if iv.SNMP != nil {
+				iface.SNMP = viewToSNMP(iv.SNMP, curByID[iv.InterfaceID].SNMP)
+			}
 		}
-		if iv.InterfaceID != "" {
-			keep[iv.InterfaceID] = true
+		id := iv.InterfaceID
+		if id != "" {
+			keep[id] = true
 			if err := s.zbx.UpdateHostInterface(ctx, iface); err != nil {
 				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 				return
 			}
 		} else {
-			if _, err := s.zbx.CreateHostInterface(ctx, cur.HostID, iface); err != nil {
+			newID, err := s.zbx.CreateHostInterface(ctx, cur.HostID, iface)
+			if err != nil {
 				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 				return
 			}
+			id = newID
+			keep[id] = true
+		}
+		if iv.Type == 2 {
+			_ = s.st.SetSNMPInherit(ctx, id, iv.Inherit)
 		}
 	}
-	// Delete interfaces the client dropped.
+	// Delete interfaces the client dropped (and forget any inherit state).
 	for _, i := range cur.Interfaces {
 		if !keep[i.InterfaceID] {
 			if err := s.zbx.DeleteHostInterface(ctx, i.InterfaceID); err != nil {
 				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 				return
 			}
+			_ = s.st.DeleteSNMPInherit(ctx, i.InterfaceID)
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

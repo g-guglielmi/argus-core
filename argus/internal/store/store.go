@@ -213,6 +213,30 @@ CREATE TABLE IF NOT EXISTS item_priority (
   by_user    INTEGER,            -- who last set it
   updated_at INTEGER NOT NULL
 );
+
+-- Per-proxy SNMP defaults (PRTG-style inheritance). community + the v3 passphrases are encrypted at
+-- rest. Hosts inheriting from a proxy take these values; changing them propagates to inheriting hosts.
+CREATE TABLE IF NOT EXISTS snmp_defaults (
+  proxy_id     TEXT PRIMARY KEY,
+  version      INTEGER NOT NULL,
+  community    TEXT,             -- encrypted
+  bulk         INTEGER NOT NULL DEFAULT 1,
+  sec_name     TEXT,
+  sec_level    INTEGER NOT NULL DEFAULT 0,
+  auth_proto   INTEGER NOT NULL DEFAULT 0,
+  auth_pass    TEXT,             -- encrypted
+  priv_proto   INTEGER NOT NULL DEFAULT 0,
+  priv_pass    TEXT,             -- encrypted
+  context_name TEXT,
+  updated_at   INTEGER NOT NULL
+);
+
+-- Which host SNMP interfaces are managed by their proxy's default (inherit=1) vs overridden (0). An
+-- interface absent here is treated as an override and never touched by propagation.
+CREATE TABLE IF NOT EXISTS snmp_iface (
+  interface_id TEXT PRIMARY KEY,
+  inherit      INTEGER NOT NULL
+);
 `); err != nil {
 		return err
 	}

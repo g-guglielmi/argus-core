@@ -142,6 +142,10 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("PATCH /api/hosts/{id}/config", auth.RequireRoles(s.handleUpdateHostConfig, "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/hosts/{id}/proxy", auth.RequireRoles(s.handleSetHostProxy, "admin", "helpdesk"))
 
+	// per-proxy SNMP defaults (PRTG-style inheritance): read (any user), save + propagate (config write).
+	mux.HandleFunc("GET /api/proxies/{id}/snmp", auth.RequireAuth(s.handleGetProxySNMP))
+	mux.HandleFunc("PUT /api/proxies/{id}/snmp", auth.RequireRoles(s.handleSetProxySNMP, "admin", "helpdesk"))
+
 	// self-service MFA (any signed-in user)
 	mux.HandleFunc("GET /api/me/mfa", auth.RequireAuth(s.handleMFAStatus))
 	mux.HandleFunc("POST /api/me/mfa/setup", auth.RequireAuth(s.handleMFASetup))
