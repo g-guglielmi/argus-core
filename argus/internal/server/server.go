@@ -264,10 +264,11 @@ type userResponse struct {
 	Role       string `json:"role"`
 	MFAEnabled bool   `json:"mfa_enabled"`
 	Landing    string `json:"landing"`
+	Advanced   bool   `json:"advanced"`
 }
 
 func toUserResponse(u *store.User) userResponse {
-	return userResponse{Email: u.Email, Name: u.Name, Surname: u.Surname, Role: u.Role, MFAEnabled: u.TOTPEnabled, Landing: normalizeLanding(u.Landing)}
+	return userResponse{Email: u.Email, Name: u.Name, Surname: u.Surname, Role: u.Role, MFAEnabled: u.TOTPEnabled, Landing: normalizeLanding(u.Landing), Advanced: u.Advanced}
 }
 
 // normalizeLanding coerces a stored landing value to a known option (defensive against a blank
@@ -446,25 +447,36 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toUserResponse(u))
 }
 
-// handleUpdatePreferences stores per-user UI preferences (currently just the landing view).
+// handleUpdatePreferences stores per-user UI preferences (landing view, advanced mode). Fields are
+// optional pointers so a caller can update one without touching the other.
 func (s *Server) handleUpdatePreferences(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r.Context()) // guaranteed present by RequireAuth
 	var req struct {
-		Landing string `json:"landing"`
+		Landing  *string `json:"landing"`
+		Advanced *bool   `json:"advanced"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
-	if req.Landing != "overview" && req.Landing != "errors" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "landing must be 'overview' or 'errors'"})
-		return
+	if req.Landing != nil {
+		if *req.Landing != "overview" && *req.Landing != "errors" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "landing must be 'overview' or 'errors'"})
+			return
+		}
+		if err := s.st.UpdateUserLanding(r.Context(), u.ID, *req.Landing); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save preference"})
+			return
+		}
+		u.Landing = *req.Landing
 	}
-	if err := s.st.UpdateUserLanding(r.Context(), u.ID, req.Landing); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save preference"})
-		return
+	if req.Advanced != nil {
+		if err := s.st.UpdateUserAdvanced(r.Context(), u.ID, *req.Advanced); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save preference"})
+			return
+		}
+		u.Advanced = *req.Advanced
 	}
-	u.Landing = req.Landing
 	writeJSON(w, http.StatusOK, toUserResponse(u))
 }
 

@@ -11,6 +11,21 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Changes:**
+
+- **Advanced mode declutters the monitoring toolbar.** The Sites & hosts toolbar had grown crowded, so
+  the two rarely-used controls — the **All sensors** view toggle and **hidden-group management** (Show
+  hidden / per-group hide) — now appear only when **Advanced mode** is on. It's a per-user preference
+  (like the landing page), toggled from the admin-only **Settings → Interface** tab, so only an admin
+  can enable it and only for their own view — no one else is affected. Off by default; with it off the
+  toolbar is just **+ New group** and **Reorder**.
+- **"+ New group" is now the primary (blue) button**, matching "+ Add channel" and "+ Add probe" on the
+  other tabs.
+
+---
+
 ## [0.4.24] - 2026-08-31
 
 **Features:**

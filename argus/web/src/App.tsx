@@ -5,7 +5,7 @@ import { registerPasskey, loginWithPasskey } from './webauthn'
 import { Button, Card, Field, Banner, Badge, CopyButton } from './ui'
 import { useConfirm, usePrompt, useAlert } from './dialog'
 
-type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; landing?: 'overview' | 'errors' }
+type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; landing?: 'overview' | 'errors'; advanced?: boolean }
 type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string }
@@ -898,11 +898,11 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           {view === 'overview' && <StatusListView filter="attention" sensors={sensors} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => {}} />}
           {view === 'triggers' && <TriggersView goHost={goHost} />}
           {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
-          {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} />}
+          {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} advanced={!!me.advanced} />}
           {view === 'notifications' && <NotificationsView />}
           {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} />}
           {view === 'users' && me.role === 'admin' && <UsersView />}
-          {view === 'settings' && me.role === 'admin' && <SettingsView />}
+          {view === 'settings' && me.role === 'admin' && <SettingsView me={me} onMe={onMe} />}
           {view === 'account' && <AccountView me={me} onMe={onMe} passkeysAvailable={passkeysAvailable} theme={theme} toggleTheme={toggleTheme} />}
         </div>
       </div>
@@ -915,13 +915,25 @@ type SettingItem = {
   env: string; value: string; source: string; locked: boolean; has_value: boolean
 }
 
-function SettingsView() {
+function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
   const [items, setItems] = useState<SettingItem[] | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [advBusy, setAdvBusy] = useState(false)
   const [zbx, setZbx] = useState<{ reachable: boolean; version?: string; error?: string } | null>(null)
+
+  // Advanced mode is a per-user preference (saved on the admin's own account, like the landing page),
+  // NOT a server-wide setting - enabling it never changes what anyone else sees.
+  async function setAdvanced(next: boolean) {
+    setAdvBusy(true); setError(null); setMsg(null)
+    try {
+      const res = await fetch('/api/me/preferences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ advanced: next }) })
+      if (!res.ok) { setError(await errText(res, 'Could not save preference')); return }
+      onMe(await res.json()); setMsg(`Advanced mode ${next ? 'enabled' : 'disabled'}.`)
+    } catch { setError('Could not save preference') } finally { setAdvBusy(false) }
+  }
 
   function load() {
     fetch('/api/settings').then((r) => r.json()).then((s) => { setItems(s || []); setEdits({}) }).catch(() => setError('Failed to load settings'))
@@ -992,8 +1004,22 @@ function SettingsView() {
       <form onSubmit={save} className="set-body">
         {/* Running version + update check, at the top so it's the first thing an admin sees. */}
         <VersionAbout />
-        {/* Theme is a per-device preference and lives in Account (reachable by every role), not
-            here in the admin-only server settings. */}
+        {/* Advanced mode - a per-user preference (saved on this admin's account), kept here so only an
+            admin can turn it on, and only for their own view. Theme is likewise a per-device preference,
+            but lives in Account (reachable by every role) rather than this admin-only server-settings tab. */}
+        <section className="set-card">
+          <h3>Interface</h3>
+          <p className="set-note">Personal to your account - other users aren't affected.</p>
+          <div className="set-row set-toggle">
+            <div className="set-head"><span className="flabel">Advanced mode</span></div>
+            <label className="switch">
+              <input type="checkbox" checked={!!me.advanced} disabled={advBusy} onChange={(e) => setAdvanced(e.target.checked)} />
+              <span className="switch-track" aria-hidden="true"><span className="switch-thumb" /></span>
+              <span className="switch-label">{me.advanced ? 'On' : 'Off'}</span>
+            </label>
+            <span className="set-hint">Reveals power-user controls in the monitoring tree: the “All sensors” view and hidden-group management (hide groups / show hidden).</span>
+          </div>
+        </section>
         {items === null ? <p className="set-note" style={{ padding: '0 4px' }}>Loading…</p> : groups.map((g) => {
           const gi = items.filter((it) => it.group === g.name)
           if (gi.length === 0) return null
@@ -1673,7 +1699,7 @@ type GNode = { path: string; name: string; group?: Group; parentPath?: string; c
 // one `kind`, listed in manual order (group paths, or host ids). Unlisted siblings fall back to alpha.
 type OrderSet = { scope: string; kind: 'group' | 'host'; items: string[] }
 
-function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string; target: { hostId: string; itemId?: string; itemName?: string; n: number } | null; homeSignal: number; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
+function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { role: string; target: { hostId: string; itemId?: string; itemName?: string; n: number } | null; homeSignal: number; onNavigate: (hostId: string | null, itemId: string | null) => void; advanced: boolean }) {
   const confirm = useConfirm()
   const [hosts, setHosts] = useState<Host[]>([])
   const [groups, setGroups] = useState<Group[]>([])
@@ -1694,6 +1720,10 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
   const [reorder, setReorder] = useState(false)      // "Reorder" mode: show inline up/down arrows
   const [hidden, setHidden] = useState<Set<string>>(() => new Set()) // group paths hidden from the tree
   const [showHidden, setShowHidden] = useState(false) // reveal hidden groups (to manage them)
+  // "All sensors" and hidden-group management are advanced-only; when advanced mode is off they stay
+  // hidden and their effect is forced off, even if a stale toggle was left on.
+  const showAllEff = advanced && showAll
+  const showHiddenEff = advanced && showHidden
   const canPause = role === 'admin' || role === 'helpdesk'
 
   function load(initial = false) {
@@ -1854,7 +1884,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
   // shows there. Mutates children arrays in place (shared with byPath, so focus views prune too).
   const pruneHidden = (ns: GNode[]) => {
     for (let i = ns.length - 1; i >= 0; i--) {
-      if (!showHidden && hidden.has(ns[i].path)) { ns.splice(i, 1); continue }
+      if (!showHiddenEff && hidden.has(ns[i].path)) { ns.splice(i, 1); continue }
       pruneHidden(ns[i].children)
     }
   }
@@ -1953,7 +1983,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
         </div>
         {settingsHost === h.id && <HostSettings hostId={h.id} canEdit={canPause} onClose={() => setSettingsHost(null)} onSaved={() => { setSettingsHost(null); load(); fireDataRefresh() }} />}
         {editGroupsHost === h.id && <GroupEditor current={h.groups || []} groups={groups} onSave={(ids) => setHostGroups(h.id, ids)} onCancel={() => setEditGroupsHost(null)} />}
-        {hopen && <div className="host-body" style={{ paddingLeft: indent(depth) + 22 }}><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAll} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(path, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} /></div>}
+        {hopen && <div className="host-body" style={{ paddingLeft: indent(depth) + 22 }}><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAllEff} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(path, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} /></div>}
       </div>
     )
   }
@@ -2017,16 +2047,18 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
     <div className="panel">
       <div className="phead">
         <h2>Sites &amp; hosts</h2>
-        <span className="hint">{(showHidden ? groups.length : groups.filter((g) => !hidden.has(g.name)).length)} group{groups.length === 1 ? '' : 's'}{!showHidden && hidden.size > 0 ? ` (${hidden.size} hidden)` : ''} · {hosts.length} host{hosts.length === 1 ? '' : 's'}</span>
+        <span className="hint">{(showHiddenEff ? groups.length : groups.filter((g) => !hidden.has(g.name)).length)} group{groups.length === 1 ? '' : 's'}{!showHiddenEff && hidden.size > 0 ? ` (${hidden.size} hidden)` : ''} · {hosts.length} host{hosts.length === 1 ? '' : 's'}</span>
         {focus.level !== 'sensor' && (
           <div className="tools">
-            {canPause && focus.level !== 'host' && !reorder && <button className="btn" onClick={() => { setError(null); setCreating((v) => !v) }}>+ New group</button>}
-            {canPause && focus.level !== 'host' && hidden.size > 0 && !reorder && <button className={'btn' + (showHidden ? ' on' : '')} onClick={() => setShowHidden((v) => !v)}>{showHidden ? 'Hide hidden' : `Show hidden (${hidden.size})`}</button>}
+            {canPause && focus.level !== 'host' && !reorder && <button className="btn primary" onClick={() => { setError(null); setCreating((v) => !v) }}>+ New group</button>}
+            {advanced && canPause && focus.level !== 'host' && hidden.size > 0 && !reorder && <button className={'btn' + (showHidden ? ' on' : '')} onClick={() => setShowHidden((v) => !v)}>{showHidden ? 'Hide hidden' : `Show hidden (${hidden.size})`}</button>}
             {canPause && focus.level !== 'host' && <button className={'btn' + (reorder ? ' on' : '')} onClick={() => { setError(null); setCreating(false); setReorder((v) => !v) }}>{reorder ? 'Done' : 'Reorder'}</button>}
-            <div className="seg">
-              <button className={!showAll ? 'on' : ''} onClick={() => setShowAll(false)}>Key sensors</button>
-              <button className={showAll ? 'on' : ''} onClick={() => setShowAll(true)}>All sensors</button>
-            </div>
+            {advanced && (
+              <div className="seg">
+                <button className={!showAll ? 'on' : ''} onClick={() => setShowAll(false)}>Key sensors</button>
+                <button className={showAll ? 'on' : ''} onClick={() => setShowAll(true)}>All sensors</button>
+              </div>
+            )}
           </div>
         )}
       </div>

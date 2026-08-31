@@ -29,6 +29,7 @@ type User struct {
 	TOTPEnabled  bool   // true once the user has confirmed a code
 	Disabled     bool   // true = account suspended; cannot sign in
 	Landing      string // preferred landing view on a fresh visit: 'overview' | 'errors'
+	Advanced     bool   // show power-user controls in the monitoring tree (per-user opt-in)
 	CreatedAt    time.Time
 }
 
@@ -275,6 +276,9 @@ CREATE TABLE IF NOT EXISTS tree_hidden (
 	if err := s.ensureColumn("users", "landing TEXT NOT NULL DEFAULT 'overview'"); err != nil {
 		return err
 	}
+	if err := s.ensureColumn("users", "advanced INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	if err := s.ensureColumn("sessions", "last_seen INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
@@ -314,7 +318,7 @@ func (s *Store) CreateUser(ctx context.Context, u User) (int64, error) {
 	return res.LastInsertId()
 }
 
-const userColumns = `id,email,name,surname,password_hash,role,totp_secret,totp_enabled,disabled,landing,created_at`
+const userColumns = `id,email,name,surname,password_hash,role,totp_secret,totp_enabled,disabled,landing,advanced,created_at`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (*User, error) {
 	return s.scanUser(s.db.QueryRowContext(ctx,
@@ -333,8 +337,8 @@ type rowScanner interface {
 func (s *Store) scanUserRow(row rowScanner) (*User, error) {
 	var u User
 	var created int64
-	var totpEnabled, disabled int
-	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Surname, &u.PasswordHash, &u.Role, &u.TOTPSecret, &totpEnabled, &disabled, &u.Landing, &created)
+	var totpEnabled, disabled, advanced int
+	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Surname, &u.PasswordHash, &u.Role, &u.TOTPSecret, &totpEnabled, &disabled, &u.Landing, &advanced, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -344,6 +348,7 @@ func (s *Store) scanUserRow(row rowScanner) (*User, error) {
 	u.TOTPSecret = s.cipher.Decrypt(u.TOTPSecret)
 	u.TOTPEnabled = totpEnabled != 0
 	u.Disabled = disabled != 0
+	u.Advanced = advanced != 0
 	u.CreatedAt = time.Unix(created, 0)
 	return &u, nil
 }
@@ -398,6 +403,16 @@ func (s *Store) UpdatePassword(ctx context.Context, id int64, hash string) error
 // UpdateUserLanding stores the user's preferred landing view ('overview' | 'errors').
 func (s *Store) UpdateUserLanding(ctx context.Context, id int64, landing string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE users SET landing=? WHERE id=?`, landing, id)
+	return err
+}
+
+// UpdateUserAdvanced stores the user's advanced-mode opt-in (power-user tree controls).
+func (s *Store) UpdateUserAdvanced(ctx context.Context, id int64, advanced bool) error {
+	v := 0
+	if advanced {
+		v = 1
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET advanced=? WHERE id=?`, v, id)
 	return err
 }
 
