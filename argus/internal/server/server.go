@@ -137,6 +137,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("DELETE /api/groups/{id}", auth.RequireRoles(s.handleDeleteGroup, "admin", "helpdesk"))
 	mux.HandleFunc("GET /api/tree/order", auth.RequireAuth(s.handleTreeOrder))
 	mux.HandleFunc("PUT /api/tree/order", auth.RequireRoles(s.handleSetTreeOrder, "admin", "helpdesk"))
+	mux.HandleFunc("GET /api/tree/hidden", auth.RequireAuth(s.handleHiddenGroups))
+	mux.HandleFunc("PUT /api/tree/hidden", auth.RequireRoles(s.handleSetHiddenGroup, "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/hosts/{id}/groups", auth.RequireRoles(s.handleSetHostGroups, "admin", "helpdesk"))
 
 	// host settings editor: read the identity + interfaces (any user), reconcile-save them (config write).

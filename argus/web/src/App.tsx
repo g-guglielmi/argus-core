@@ -1692,6 +1692,8 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
   const [busyId, setBusyId] = useState<string | null>(null)
   const [order, setOrder] = useState<OrderSet[]>([]) // saved manual sibling orderings
   const [reorder, setReorder] = useState(false)      // "Reorder" mode: show inline up/down arrows
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set()) // group paths hidden from the tree
+  const [showHidden, setShowHidden] = useState(false) // reveal hidden groups (to manage them)
   const canPause = role === 'admin' || role === 'helpdesk'
 
   function load(initial = false) {
@@ -1702,6 +1704,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
       .finally(() => { if (initial) setLoading(false) })
     fetch('/api/groups').then((r) => (r.ok ? r.json() : [])).then((g) => setGroups(g || [])).catch(() => {})
     fetch('/api/tree/order').then((r) => (r.ok ? r.json() : [])).then((o) => setOrder(o || [])).catch(() => {})
+    fetch('/api/tree/hidden').then((r) => (r.ok ? r.json() : [])).then((h) => setHidden(new Set(h || []))).catch(() => {})
     fetch('/api/proxies').then((r) => (r.ok ? r.json() : [])).then((p) => setProxies(p || [])).catch(() => {})
   }
   useEffect(() => { load(true); const t = setInterval(() => load(false), 30000); const off = onDataRefresh(() => load(false)); return () => { clearInterval(t); off() } }, [])
@@ -1846,6 +1849,16 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
     for (const n of ns) { n.hosts = applyOrder(n.hosts, (h) => h.id, (h) => h.name, orderOf(n.path, 'host')); orderTree(n.children, n.path) }
   }
   orderTree(roots, '')
+  // Drop hidden groups (and their whole subtree) from the tree unless we're revealing them to manage
+  // them. A host that's only in hidden groups disappears with them; a host also in a visible group still
+  // shows there. Mutates children arrays in place (shared with byPath, so focus views prune too).
+  const pruneHidden = (ns: GNode[]) => {
+    for (let i = ns.length - 1; i >= 0; i--) {
+      if (!showHidden && hidden.has(ns[i].path)) { ns.splice(i, 1); continue }
+      pruneHidden(ns[i].children)
+    }
+  }
+  if (hidden.size > 0) pruneHidden(roots)
 
   // Persist a sibling set's new order (optimistic; revert + surface the error on failure). Admin/helpdesk
   // only - the button that calls this is gated on canPause.
@@ -1862,6 +1875,15 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
     if (j < 0 || j >= ids.length) return
     const next = ids.slice();[next[index], next[j]] = [next[j], next[index]]
     reorderSiblings(scope, kind, next)
+  }
+  // Hide or unhide a group from the tree (Argus-local; the group stays in Zabbix). Optimistic, reverts
+  // on failure. Gated on canPause via the controls that call it.
+  async function toggleHidden(path: string) {
+    const willHide = !hidden.has(path)
+    const prev = hidden
+    setHidden((h) => { const n = new Set(h); willHide ? n.add(path) : n.delete(path); return n })
+    const res = await fetch('/api/tree/hidden', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, hidden: willHide }) }).catch(() => null)
+    if (!res || !res.ok) { setHidden(prev); setError(await errText(res, 'Could not update group visibility')) }
   }
   // Breadcrumb chain for a group path: walk real parents up to the top-level node.
   function crumbChain(path: string): { path: string; label: string }[] {
@@ -1942,11 +1964,13 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
     const sub = subtreeHosts(node)
     const expanded = (focus.level === 'group' && focus.path === node.path) ? true : !collapsed.has(node.path)
     const g = node.group
+    const isHidden = hidden.has(node.path)
     return (
-      <div className="site" key={node.path}>
+      <div className={'site' + (isHidden ? ' ghost' : '')} key={node.path}>
         <div className="site-head" style={{ paddingLeft: indent(depth) }} onClick={() => toggleNode(node.path)}>
           <svg className={'chev' + (expanded ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
           <span className="name lnk-host" onClick={(e) => { e.stopPropagation(); drillGroup(node.path) }}>{node.name}</span>
+          {isHidden && <span className="tag-hidden">hidden</span>}
           <span className="loc">{sub.length} host{sub.length === 1 ? '' : 's'}</span>
           <div className="right">
             <span style={{ width: 9, height: 9, borderRadius: '50%', background: stateColor[nodeWorst(sub)] || 'var(--muted)' }} />
@@ -1956,6 +1980,10 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
                 { label: 'New subgroup…', icon: kbIcon.folder, onClick: () => { setError(null); setGAction(null); setNewSubPath(node.path); setCollapsed((c) => { const n = new Set(c); n.delete(node.path); return n }) } },
                 { label: 'Rename…', icon: kbIcon.edit, onClick: () => { setError(null); setNewSubPath(null); setGAction({ id: g.id, mode: 'rename' }) } },
                 { label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => { setError(null); setNewSubPath(null); if (node.hosts.length) { setError(`Move the ${node.hosts.length} host${node.hosts.length === 1 ? '' : 's'} out of "${node.path}" before deleting it.`); return } setGAction({ id: g.id, mode: 'delete' }) } },
+                { sep: true, label: '' },
+                hidden.has(node.path)
+                  ? { label: 'Show in tree', icon: kbIcon.show, onClick: () => toggleHidden(node.path) }
+                  : { label: 'Hide from tree', icon: kbIcon.hide, onClick: () => toggleHidden(node.path) },
               ]} />
             )}
           </div>
@@ -1989,10 +2017,11 @@ function MonitoringView({ role, target, homeSignal, onNavigate }: { role: string
     <div className="panel">
       <div className="phead">
         <h2>Sites &amp; hosts</h2>
-        <span className="hint">{groups.length} group{groups.length === 1 ? '' : 's'} · {hosts.length} host{hosts.length === 1 ? '' : 's'}</span>
+        <span className="hint">{(showHidden ? groups.length : groups.filter((g) => !hidden.has(g.name)).length)} group{groups.length === 1 ? '' : 's'}{!showHidden && hidden.size > 0 ? ` (${hidden.size} hidden)` : ''} · {hosts.length} host{hosts.length === 1 ? '' : 's'}</span>
         {focus.level !== 'sensor' && (
           <div className="tools">
             {canPause && focus.level !== 'host' && !reorder && <button className="btn" onClick={() => { setError(null); setCreating((v) => !v) }}>+ New group</button>}
+            {canPause && focus.level !== 'host' && hidden.size > 0 && !reorder && <button className={'btn' + (showHidden ? ' on' : '')} onClick={() => setShowHidden((v) => !v)}>{showHidden ? 'Hide hidden' : `Show hidden (${hidden.size})`}</button>}
             {canPause && focus.level !== 'host' && <button className={'btn' + (reorder ? ' on' : '')} onClick={() => { setError(null); setCreating(false); setReorder((v) => !v) }}>{reorder ? 'Done' : 'Reorder'}</button>}
             <div className="seg">
               <button className={!showAll ? 'on' : ''} onClick={() => setShowAll(false)}>Key sensors</button>

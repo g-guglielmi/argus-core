@@ -168,6 +168,8 @@ a { color: var(--accent); }
 .ord-btn svg { width: 15px; height: 15px; }
 .ord-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
 .ord-btn:disabled { opacity: 0.3; cursor: default; }
+.site.ghost > .site-head .name, .site.ghost > .site-head .loc { opacity: 0.5; }
+.tag-hidden { font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border-strong); border-radius: 999px; padding: 1px 6px; }
 
 /* shared card (panel-toned) - Account / Dashboard sub-cards, backing <Card> */
 .card { border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; background: var(--panel); box-shadow: var(--shadow); }

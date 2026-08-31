@@ -74,3 +74,31 @@ func (s *Store) SetTreeOrder(ctx context.Context, scope, kind string, items []st
 	}
 	return tx.Commit()
 }
+
+// HiddenGroups returns the group paths hidden from the monitoring tree.
+func (s *Store) HiddenGroups(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT path FROM tree_hidden ORDER BY path`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// SetGroupHidden hides (hidden=true) or unhides a group path in the monitoring tree.
+func (s *Store) SetGroupHidden(ctx context.Context, path string, hidden bool) error {
+	if hidden {
+		_, err := s.db.ExecContext(ctx, `INSERT INTO tree_hidden(path) VALUES(?) ON CONFLICT(path) DO NOTHING`, path)
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM tree_hidden WHERE path=?`, path)
+	return err
+}

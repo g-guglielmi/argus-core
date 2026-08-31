@@ -49,3 +49,42 @@ func (s *Server) handleSetTreeOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
+
+// handleHiddenGroups returns the group paths hidden from the monitoring tree. Read-only.
+func (s *Server) handleHiddenGroups(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancel()
+	paths, err := s.st.HiddenGroups(ctx)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not read hidden groups"})
+		return
+	}
+	if paths == nil {
+		paths = []string{}
+	}
+	writeJSON(w, http.StatusOK, paths)
+}
+
+// handleSetHiddenGroup hides or unhides one group path in the monitoring tree. Config write,
+// admin/helpdesk only. The group is untouched in Zabbix - this only affects the Argus tree.
+func (s *Server) handleSetHiddenGroup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Path   string `json:"path"`
+		Hidden bool   `json:"hidden"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if req.Path == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a group path is required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancel()
+	if err := s.st.SetGroupHidden(ctx, req.Path, req.Hidden); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not update group visibility"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}

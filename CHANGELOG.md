@@ -20,6 +20,11 @@ GitHub Release from the matching section below.
   be set by hand (e.g. put Network above Infrastructure). The order is stored in Argus (Zabbix has no
   group/host ordering) and applies per sibling set; groups or hosts added later fall to the end,
   alphabetically, until moved. Admin/helpdesk only. New endpoints `GET`/`PUT /api/tree/order`.
+- **Hide groups from the monitoring tree.** A group's kebab now has **Hide from tree** (and **Show in
+  tree**), tucking a group and its subtree out of view without touching Zabbix - handy for the stock
+  Zabbix groups (Applications, Databases, …) that can't be deleted because a host prototype references
+  them. Hidden groups are hidden for everyone; admin/helpdesk can reveal and manage them with the
+  **Show hidden** toolbar toggle. Argus-local, new endpoints `GET`/`PUT /api/tree/hidden`.
 
 ---
 

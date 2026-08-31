@@ -248,6 +248,13 @@ CREATE TABLE IF NOT EXISTS tree_order (
   ord   INTEGER NOT NULL,
   PRIMARY KEY (scope, kind, item)
 );
+
+-- Group paths hidden from the monitoring tree (Argus-local curation - the group still exists in Zabbix,
+-- it's just tucked out of view, subtree and all). Used mainly to hide the stock Zabbix groups that can't
+-- be deleted because a host prototype references them.
+CREATE TABLE IF NOT EXISTS tree_hidden (
+  path TEXT PRIMARY KEY
+);
 `); err != nil {
 		return err
 	}

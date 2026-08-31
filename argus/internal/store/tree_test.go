@@ -68,3 +68,36 @@ func TestTreeOrder(t *testing.T) {
 		t.Fatalf("expected error for invalid kind")
 	}
 }
+
+// TestHiddenGroups covers hide/unhide of tree groups, including idempotent hide and unhide of an
+// absent path.
+func TestHiddenGroups(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	if h, err := st.HiddenGroups(ctx); err != nil || len(h) != 0 {
+		t.Fatalf("expected none hidden, got %v err=%v", h, err)
+	}
+	if err := st.SetGroupHidden(ctx, "Applications", true); err != nil {
+		t.Fatalf("hide: %v", err)
+	}
+	if err := st.SetGroupHidden(ctx, "Applications", true); err != nil { // idempotent
+		t.Fatalf("re-hide: %v", err)
+	}
+	if err := st.SetGroupHidden(ctx, "Databases", true); err != nil {
+		t.Fatalf("hide 2: %v", err)
+	}
+	h, err := st.HiddenGroups(ctx)
+	if err != nil || len(h) != 2 || h[0] != "Applications" || h[1] != "Databases" {
+		t.Fatalf("hidden set mismatch: %v err=%v", h, err)
+	}
+	if err := st.SetGroupHidden(ctx, "Applications", false); err != nil {
+		t.Fatalf("unhide: %v", err)
+	}
+	if err := st.SetGroupHidden(ctx, "Nonexistent", false); err != nil { // unhide of absent is a no-op
+		t.Fatalf("unhide absent: %v", err)
+	}
+	if h, _ = st.HiddenGroups(ctx); len(h) != 1 || h[0] != "Databases" {
+		t.Fatalf("after unhide mismatch: %v", h)
+	}
+}
