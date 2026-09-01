@@ -279,6 +279,9 @@ GitHub Actions (`.github/workflows/build.yml`):
 - **Push a tag `vX.Y.Z`** → builds the versioned images → auto-publishes a GitHub Release
   from the matching `CHANGELOG.md` section.
 
+See [`docs/RELEASING.md`](docs/RELEASING.md) for the step-by-step release checklist (and the
+concurrency gotcha that can silently cancel a tag build).
+
 ---
 
 ## Status & roadmap
