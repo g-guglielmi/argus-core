@@ -1604,7 +1604,7 @@ function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, on
       return <span style={wrap}><span className="tag" title="Fleet target is 'latest'; the probe converges on the newest image">tracking latest</span>{p.selfupdate ? selfBtn : null}{auto}</span>
     case 'outdated': {
       const avail = p.target === 'latest' ? p.latest : p.target
-      return <span style={wrap}>{p.selfupdate ? selfBtn : <button className="btn" onClick={onToggle}>{open ? 'Hide' : 'Update…'}</button>}{avail ? <span className="mono" style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }} title="Available version">→ {avail}</span> : null}{auto}</span>
+      return <span style={wrap}>{p.selfupdate ? selfBtn : <button className="btn avail" onClick={onToggle}>{open ? 'Hide' : 'Update…'}</button>}{avail ? <span className="tag avail" title="Update available">→ {avail}</span> : null}{auto}</span>
     }
     case 'external':
     default:
