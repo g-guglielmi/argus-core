@@ -19,7 +19,7 @@ const appImageRepo = "ghcr.io/g-guglielmi/argus"
 
 // appGitHubRepo is the "owner/repo" the app image is built from, used to fetch a release's notes (the
 // CHANGELOG section published as the GitHub Release body). Kept in step with appImageRepo.
-const appGitHubRepo = "g-guglielmi/argus"
+const appGitHubRepo = "g-guglielmi/argus-core"
 
 // appLatestHour is the local hour (in the configured timezone) at which the daily GHCR update check
 // runs. A release is a rare event, so a nightly check plus the manual "Check for updates" button is

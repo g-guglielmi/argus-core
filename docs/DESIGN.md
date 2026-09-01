@@ -436,7 +436,7 @@ boot. **Major-version upgrades (Debian 13 -> 14) are a deliberate manual / re-im
 unattended.
 
 ## 15. Tech stack (confirmed)
-- **App name:** **Argus.** Monorepo: `docs/`, `deploy/`, `argus/` (the app), `.github/` (CI).
+- **App name:** **Argus.** Split across three repos: **argus-core** (this repo — the app in `argus/`, docs, core deploy kit), **argus-probe** (the probe Docker image + self-configuring golden VM), and **argus-updater** (the core self-update sidecar). Image names stay `argus` / `argus-probe` / `argus-updater` regardless of repo names.
 - **Backend / notifier:** **Go** (single static binary, distroless image).
 - **Frontend:** **React + Vite** (uPlot for the dense/zoomable time-series graphs). The Go
   binary **serves the built SPA** via `go:embed` - one container, one origin (simplifies

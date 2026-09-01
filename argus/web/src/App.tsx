@@ -1400,7 +1400,7 @@ function probeComposeCmd(c: CreatedToken): string {
     "cat > .env <<'EOF'",
     ...envLines,
     'EOF',
-    'curl -fsSL https://raw.githubusercontent.com/g-guglielmi/argus/main/deploy/probe-image/docker-compose.yml -o docker-compose.yml',
+    'curl -fsSL https://raw.githubusercontent.com/g-guglielmi/argus-probe/main/deploy/probe-image/docker-compose.yml -o docker-compose.yml',
     'docker compose up -d',
   ].join('\n')
 }
