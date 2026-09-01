@@ -1562,11 +1562,11 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
 
       <div className="enroll-scroll">
       <table className="enroll enroll-probes">
-        <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Version</th><th>Update</th><th>Mode</th><th>Enrolled</th><th>SNMP</th><th></th></tr></thead>
+        <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Version</th><th>Update</th><th>Updater</th><th>Mode</th><th>Enrolled</th><th>SNMP</th><th></th></tr></thead>
         <tbody>
-          {error && <tr><td colSpan={9} style={{ color: 'var(--err)' }}>{error}</td></tr>}
-          {!error && proxies === null && <tr><td colSpan={9} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
-          {!error && proxies && proxies.length === 0 && <tr><td colSpan={9} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
+          {error && <tr><td colSpan={10} style={{ color: 'var(--err)' }}>{error}</td></tr>}
+          {!error && proxies === null && <tr><td colSpan={10} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
+          {!error && proxies && proxies.length === 0 && <tr><td colSpan={10} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
           {!error && proxies && proxies.map((p) => (
             <Fragment key={p.name}>
               <tr>
@@ -1574,15 +1574,16 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                 <td data-label="Status">{p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}</td>
                 <td data-label="Last check-in" className="mono" title="When the core last received data from this proxy" style={{ color: !p.last_access ? 'var(--faint)' : (Date.now() / 1000 - p.last_access > 60 ? 'var(--warn)' : undefined), fontWeight: p.last_access && Date.now() / 1000 - p.last_access > 60 ? 600 : undefined }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
                 <td data-label="Version" className="mono" title={p.last_checkin ? `Version reported ${relTime(p.last_checkin)}` : p.version ? 'Version from Zabbix (no Argus fleet check-in)' : 'No version reported'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '-'}</td>
-                <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} onUpdaterUpdate={isAdmin ? triggerUpdaterUpdate : undefined} /></td>
+                <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} /></td>
+                <td data-label="Updater"><UpdaterCell p={p} onUpdaterUpdate={isAdmin ? triggerUpdaterUpdate : undefined} /></td>
                 <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
                 <td data-label="Enrolled" className="mono" style={{ color: p.enrolled_at ? 'var(--muted)' : 'var(--faint)' }} title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>{p.enrolled_at ? new Date(p.enrolled_at * 1000).toLocaleDateString() : '-'}</td>
                 <td data-label="SNMP">{canEdit && p.id && <button className="btn" onClick={() => setOpenSnmp((n) => (n === p.name ? null : p.name))}>Defaults</button>}</td>
                 <td data-label="" style={{ textAlign: 'right' }}>{isAdmin && p.id && <button className="btn danger" title="Delete this proxy from Zabbix + clean up its Argus records" onClick={() => del(p)}>Delete</button>}</td>
               </tr>
-              {openCmd === p.name && <tr><td colSpan={9} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
-              {report?.name === p.name && <tr><td colSpan={9} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
-              {openSnmp === p.name && <tr><td colSpan={9} style={{ padding: 0 }}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></td></tr>}
+              {openCmd === p.name && <tr><td colSpan={10} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
+              {report?.name === p.name && <tr><td colSpan={10} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
+              {openSnmp === p.name && <tr><td colSpan={10} style={{ padding: 0 }}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></td></tr>}
             </Fragment>
           ))}
         </tbody>
@@ -1599,21 +1600,15 @@ function probeUpdateTag(target?: string): string {
 
 // UpdateBadge shows a probe's state versus the fleet target, and (for drift) a toggle that reveals
 // the one-click manual update command.
-function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, onEnableReporting, onUpdaterUpdate }: { p: Proxy; open: boolean; onToggle: () => void; queuedTag?: string; onSelfUpdate: (p: Proxy) => void; canReport?: boolean; onEnableReporting: (p: Proxy) => void; onUpdaterUpdate?: (p: Proxy) => void }) {
+function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, onEnableReporting }: { p: Proxy; open: boolean; onToggle: () => void; queuedTag?: string; onSelfUpdate: (p: Proxy) => void; canReport?: boolean; onEnableReporting: (p: Proxy) => void }) {
   // One shared row: the button, the "→ version" chip and the auto tag stay on a single line so the
   // Update column reports an honest one-line width to the auto-sized table (a wrapping cell would
   // collapse to its widest item and let the column starve). The table's scroll wrapper handles the
   // rare too-narrow desktop instead of wrapping mid-cell.
   const wrap: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }
-  // "auto" = an argus-updater sidecar manages this probe (Argus can drive updates). Its version shows
-  // in the tooltip; admins get a compact ⟳ to update the sidecar itself.
-  const uv = p.updater_version ? ` (updater ${p.updater_version})` : ''
-  const auto = p.selfupdate ? (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-      <span className="tag" title={`Managed by an argus-updater sidecar${uv}; Argus can trigger updates from here`}>auto</span>
-      {onUpdaterUpdate ? <button className="linkbtn" style={{ fontSize: 12, color: 'var(--faint)' }} onClick={() => onUpdaterUpdate(p)} title={`Update the argus-updater sidecar itself${uv}`}>⟳</button> : null}
-    </span>
-  ) : null
+  // "auto" = an argus-updater sidecar manages this probe (Argus can drive updates). The sidecar's own
+  // version + its self-update control live in the separate "Updater" column.
+  const auto = p.selfupdate ? <span className="tag" title="Managed by an argus-updater sidecar; Argus can trigger updates from here">auto</span> : null
   if (queuedTag) return <span className="tag" title={`Update to ${queuedTag} queued - the probe applies it on its next check-in (within ~5 min)`}>update queued</span>
   // A socket-enabled probe updates itself when triggered; otherwise we expand the manual command.
   const selfBtn = <button className="btn" onClick={() => onSelfUpdate(p)} title="Tell the probe to update itself to the fleet target on its next check-in">Update now</button>
@@ -1634,6 +1629,17 @@ function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, on
     default:
       return reportBtn
   }
+}
+
+// UpdaterCell is the "Updater" column: the version of the argus-updater sidecar managing this probe,
+// plus (admin) a button to update the sidecar itself. A dash means no sidecar is present.
+function UpdaterCell({ p, onUpdaterUpdate }: { p: Proxy; onUpdaterUpdate?: (p: Proxy) => void }) {
+  if (!p.selfupdate) return <span className="mono" style={{ color: 'var(--faint)' }} title="No argus-updater sidecar is managing this probe">-</span>
+  const wrap: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }
+  const ver = p.updater_version
+    ? <span className="mono" title="Version of the argus-updater sidecar">{p.updater_version}</span>
+    : <span className="mono" style={{ color: 'var(--faint)' }} title="Sidecar present; version not reported yet">?</span>
+  return <span style={wrap}>{ver}{onUpdaterUpdate ? <button className="btn" onClick={() => onUpdaterUpdate(p)} title="Update the argus-updater sidecar itself to the latest version">Update</button> : null}</span>
 }
 
 // ReportTokenPanel shows a freshly-minted check-in token once, with the single env var to add to
