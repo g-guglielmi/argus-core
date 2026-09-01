@@ -27,3 +27,7 @@ Thumbs.db
 
 # Private local crosswalk (real infra values) - never publish
 LOCAL-VALUES.md
+
+# Python bytecode
+__pycache__/
+*.pyc
