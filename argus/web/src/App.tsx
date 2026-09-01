@@ -1484,6 +1484,24 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
     loadTokens()
   }
 
+  // Delete a proxy from Zabbix and clean up its Argus-side records. Zabbix refuses if hosts still
+  // reference it - that error is surfaced.
+  async function del(p: Proxy) {
+    if (!(await confirm({ title: 'Delete probe', message: `Remove “${p.name}” from Zabbix and delete its Argus records (enrollment tokens, check-in state, SNMP default)? Zabbix won't allow this while hosts are still monitored by it. Its host group is left in place.`, confirmLabel: 'Delete', danger: true }))) return
+    const res = await fetch(`/api/proxies/${encodeURIComponent(p.id)}`, { method: 'DELETE' })
+    if (!res.ok) { alert({ title: 'Delete probe', message: await errText(res, 'Could not delete the proxy'), danger: true }); return }
+    setProxies((ps) => (ps || []).filter((x) => x.id !== p.id))
+    loadTokens()
+  }
+
+  // Prune Argus records orphaned by proxies deleted directly in Zabbix (out of band).
+  async function reconcile() {
+    const res = await fetch('/api/proxies/reconcile', { method: 'POST' })
+    if (!res.ok) { alert({ title: 'Clean up', message: await errText(res, 'Cleanup failed'), danger: true }); return }
+    const d = await res.json()
+    alert({ title: 'Clean up', message: d.pruned > 0 ? `Removed ${d.pruned} orphaned record${d.pruned === 1 ? '' : 's'} left by proxies deleted in Zabbix.` : 'No orphaned records — everything is in sync with Zabbix.' })
+  }
+
   // Enrolled tokens are just noise once a probe is live (its enrollment date shows in the row
   // below), so the list keeps only what's still actionable: pending and expired tokens.
   const pendingTokens = (tokens || []).filter((t) => t.status !== 'enrolled')
@@ -1493,7 +1511,10 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
       <div className="phead">
         <h2>Site probes</h2>
         <span className="hint">{proxies ? `${proxies.length} known to the core` : '…'}</span>
-        {isAdmin && enroll && <div className="tools"><button className="btn primary" onClick={() => { setAdding((v) => !v); setCreated(null) }}>+ Add probe</button></div>}
+        {isAdmin && <div className="tools">
+          <button className="btn" onClick={reconcile} title="Prune Argus records left behind by proxies deleted directly in Zabbix">Clean up</button>
+          {enroll && <button className="btn primary" onClick={() => { setAdding((v) => !v); setCreated(null) }}>+ Add probe</button>}
+        </div>}
       </div>
 
       {isAdmin && !enroll && (
@@ -1525,11 +1546,11 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
 
       <div className="enroll-scroll">
       <table className="enroll enroll-probes">
-        <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Version</th><th>Update</th><th>Mode</th><th>Enrolled</th><th>SNMP</th></tr></thead>
+        <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Version</th><th>Update</th><th>Mode</th><th>Enrolled</th><th>SNMP</th><th></th></tr></thead>
         <tbody>
-          {error && <tr><td colSpan={8} style={{ color: 'var(--err)' }}>{error}</td></tr>}
-          {!error && proxies === null && <tr><td colSpan={8} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
-          {!error && proxies && proxies.length === 0 && <tr><td colSpan={8} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
+          {error && <tr><td colSpan={9} style={{ color: 'var(--err)' }}>{error}</td></tr>}
+          {!error && proxies === null && <tr><td colSpan={9} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
+          {!error && proxies && proxies.length === 0 && <tr><td colSpan={9} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
           {!error && proxies && proxies.map((p) => (
             <Fragment key={p.name}>
               <tr>
@@ -1541,10 +1562,11 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                 <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
                 <td data-label="Enrolled" className="mono" style={{ color: p.enrolled_at ? 'var(--muted)' : 'var(--faint)' }} title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>{p.enrolled_at ? new Date(p.enrolled_at * 1000).toLocaleDateString() : '-'}</td>
                 <td data-label="SNMP">{canEdit && p.id && <button className="btn" onClick={() => setOpenSnmp((n) => (n === p.name ? null : p.name))}>Defaults</button>}</td>
+                <td data-label="" style={{ textAlign: 'right' }}>{isAdmin && p.id && <button className="btn danger" title="Delete this proxy from Zabbix + clean up its Argus records" onClick={() => del(p)}>Delete</button>}</td>
               </tr>
-              {openCmd === p.name && <tr><td colSpan={8} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
-              {report?.name === p.name && <tr><td colSpan={8} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
-              {openSnmp === p.name && <tr><td colSpan={8} style={{ padding: 0 }}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></td></tr>}
+              {openCmd === p.name && <tr><td colSpan={9} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
+              {report?.name === p.name && <tr><td colSpan={9} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
+              {openSnmp === p.name && <tr><td colSpan={9} style={{ padding: 0 }}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></td></tr>}
             </Fragment>
           ))}
         </tbody>

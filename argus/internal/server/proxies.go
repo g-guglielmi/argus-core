@@ -107,3 +107,71 @@ func zbxVersionString(raw string) string {
 	}
 	return fmt.Sprintf("%d.%d.%d", n/10000, (n/100)%100, n%100)
 }
+
+// handleDeleteProxy removes a proxy from Zabbix (proxy.delete) and cleans up the Argus-side records
+// it leaves behind (enroll tokens, check-in/version state, SNMP default). Admin only. Zabbix refuses
+// to delete a proxy that still monitors hosts - that error is surfaced so the operator can reassign
+// them first. The proxy's host group (proxy-<site>) is left in place; delete or hide it from the tree.
+func (s *Server) handleDeleteProxy(w http.ResponseWriter, r *http.Request) {
+	if !s.zbx.Authenticated() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured"})
+		return
+	}
+	id := r.PathValue("id")
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	// Resolve the proxy's name (name-keyed Argus records need it).
+	proxies, err := s.zbx.Proxies(ctx)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		return
+	}
+	name := ""
+	for _, p := range proxies {
+		if p.ProxyID == id {
+			name = p.Name
+			break
+		}
+	}
+	if name == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "proxy not found"})
+		return
+	}
+	if err := s.zbx.DeleteProxy(ctx, id); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		return
+	}
+	if err := s.st.DeleteProxyRecords(ctx, id, name); err != nil {
+		s.logger.Warn("delete proxy: record cleanup failed", "proxy", name, "err", err)
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "deleted": name})
+}
+
+// handleReconcileProxies prunes Argus records orphaned by proxies deleted directly in Zabbix (out of
+// band). Admin only. Returns how many rows were pruned.
+func (s *Server) handleReconcileProxies(w http.ResponseWriter, r *http.Request) {
+	if !s.zbx.Authenticated() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	proxies, err := s.zbx.Proxies(ctx)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		return
+	}
+	names := make(map[string]bool, len(proxies))
+	ids := make(map[string]bool, len(proxies))
+	for _, p := range proxies {
+		names[p.Name] = true
+		ids[p.ProxyID] = true
+	}
+	pruned, err := s.st.ReconcileProxies(ctx, names, ids)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cleanup failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"pruned": pruned})
+}

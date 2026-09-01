@@ -151,6 +151,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/proxies/{id}/snmp", auth.RequireAuth(s.handleGetProxySNMP))
 	mux.HandleFunc("PUT /api/proxies/{id}/snmp", auth.RequireRoles(s.handleSetProxySNMP, "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/proxies/{id}/snmp/adopt", auth.RequireRoles(s.handleAdoptProxySNMP, "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/proxies/reconcile", auth.RequireRole("admin", s.handleReconcileProxies))
+	mux.HandleFunc("DELETE /api/proxies/{id}", auth.RequireRole("admin", s.handleDeleteProxy))
 
 	// self-service MFA (any signed-in user)
 	mux.HandleFunc("GET /api/me/mfa", auth.RequireAuth(s.handleMFAStatus))

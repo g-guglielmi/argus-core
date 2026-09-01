@@ -264,6 +264,13 @@ func (c *Client) EnsureActiveProxyCert(ctx context.Context, name, issuerDN, subj
 	return c.call(ctx, "proxy.create", fields, true, &res)
 }
 
+// DeleteProxy removes a proxy by id. Zabbix refuses (and returns a descriptive error) if any host is
+// still monitored by it, so the caller surfaces that message. Requires a super-admin token.
+func (c *Client) DeleteProxy(ctx context.Context, id string) error {
+	// proxy.delete takes a bare array of proxyids as its params.
+	return c.call(ctx, "proxy.delete", []string{id}, true, nil)
+}
+
 // proxyIDByName returns the proxyid for a proxy name, or "" if none exists.
 func (c *Client) proxyIDByName(ctx context.Context, name string) (string, error) {
 	params := map[string]any{
