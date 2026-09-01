@@ -50,7 +50,7 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
 - [x] **Probe fleet updates - control plane + opt-in self-update** - Argus holds a fleet target (`latest` or a `7.0.29-r1` pin) + shows each probe's version vs target; probes check in outbound; drift gets a one-click manual update; opt-in compose sidecar (`ARGUS_PROBE_ROLE=updater`) self-updates via the Docker socket. See DESIGN §18 - v0.4.8
 - [x] **Dashboard-triggered self-update + exact-version reporting** - probes report their exact `X.Y.Z-rN` version over the check-in; a socket-enabled probe self-updates on demand via a short-lived `recreate` sister container (config-cloning, rollback on failure); "Enable reporting" mints a check-in token for older probes (persisted to the volume, one env var); redeploy-aware wizard command; snmptraps bound so no anonymous volume - v0.4.9
 - [x] **Resolve "latest" from the registry for accurate drift** - Argus core polls GHCR anonymously (`ghcr.io/token` → `/v2/<owner>/argus-probe/tags/list`) every 3h, picks the newest `X.Y.Z-rN` tag, and compares to each probe's reported version, so a `latest` target flags "outdated → rN" instead of just "tracking". - v0.4.9
-- [ ] **Add-probe wizard: self-update toggle** - an optional switch that adds `-v /var/run/docker.sock:…` + `ARGUS_PROBE_SELFUPDATE=1` to the generated command/XML, so socket-enabled probes deploy straight from the wizard (today you add the two flags by hand) - _(FE)_ S
+- [x] **Add-probe wizard: self-update toggle** - an "Enable self-update" switch in the deploy panel adds `-v /var/run/docker.sock` + `ARGUS_PROBE_SELFUPDATE=1` to the generated Docker-run command (and the socket volume + variable to the unRAID XML), so socket-enabled probes deploy straight from the wizard; Compose already bundles the updater sidecar, so it reads as always-on there - v0.4.27
 - [ ] **Self-configuring probe VM** (VMware / Nutanix / XCP-NG / KVM) - one Packer golden image (Debian + the `argus-probe` container, no baked-in token) with **delivery and enrollment decoupled** so it serves every target. **Enrollment:** cloud-init primary (Add-probe emits user-data / a **NoCloud seed ISO** with site name + enroll token → zero-touch self-enroll) with a **first-boot enrollment service** fallback (serves a one-field setup page only when no token was supplied - removes the cloud-init datasource dependency; idea from adsb-feeder). **Delivery:** native import as **OVA** (VMware/Nutanix) + **qcow2/XVA** (KVM/XCP-NG). See DESIGN §14a. - _(ops+image+FE)_ L
 - [ ] **Bare-metal probe SKU** (optional, later) - the *same* golden image wrapped in a **Clonezilla restore ISO** (boot → pick disk → restore, à la adsb-feeder) for appliance-style installs with no hypervisor. Reuses the first-boot enrollment service, so no per-image token. Reserved for bare metal - buys nothing inside a hypervisor. See DESIGN §14a. - _(ops+image)_ M
 - [ ] **OS patching & lifecycle** (core + probe VMs) - bake `unattended-upgrades` (security-suite only, respects the core's Timescale hold) + `needrestart` into the golden image and enable on the core. **Probes** auto-reboot in a weekly ~03:00 window (they buffer offline); **core** reboot is operator-scheduled via a new Settings mask (pick day+time, or notify-only). Core **reports** pending-security-update count + `reboot-required` per probe (extend the check-in) and for itself; patching stays **local, never remote-triggered** (no clean apt rollback). Refresh the golden image ~quarterly. See DESIGN §14c. - _(ops+BE+FE)_ M-L
@@ -85,9 +85,9 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
   by the CSS classes, migrated the auth flows / Account family / Dashboard / Users / DurationButton /
   SensorChart / Probes copy buttons onto them, and removed the legacy objects and all hardcoded
   colors so pages look and behave the same and theme correctly. - _(FE)_ v0.4.10
-- [ ] **Global search** - top-bar quick-switcher by name/IP/tag, server-side (DESIGN §16) - _(FE+BE)_ M
-- [ ] **Per-channel severity filter** - _(FE+BE)_ S
-- [ ] **Labeled graph axes** in alert PNGs (needs a font dep) - _(BE)_ S
+- [x] **Global search** - top-bar quick-switcher (and Ctrl/Cmd-K) searching hosts by name/IP, sensors by name, and groups by name; a hit opens the tree host, its chart, or the group focus. `GET /api/search` with prefix/word-boundary/substring ranking (DESIGN §16) - v0.4.27
+- [x] **Per-channel severity filter** - each notification channel sets its own floor (Warning / Average / High / Disaster, default Warning); a problem below the floor - and its recovery - skips that channel - v0.4.27
+- [x] **Labeled graph axes** in alert PNGs - min/mid/max Y gridlines + relative-time X labels, rendered with the built-in basicfont face (adds golang.org/x/image, no TTF shipped) - v0.4.27
 
 ### G. Scale & production readiness
 - [ ] **Sizing pass** before the ~6000-sensor deployment (proxies, DB, caches, NVPS) - analysis
@@ -111,17 +111,14 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
 
 Done: ~~deep-link URLs~~ ✅ · ~~password reset~~ ✅ (v0.3.3) · ~~probe enrollment~~ ✅ (v0.4.0) ·
 ~~probe fleet updates + self-update~~ ✅ (v0.4.8-0.4.9) · ~~session timeouts + landing page~~ ✅ (v0.4.7) ·
-~~UI standardization / design system~~ ✅ (v0.4.10).
+~~UI standardization / design system~~ ✅ (v0.4.10) ·
+~~smaller-wins pass: global search + per-channel severity + self-update toggle + labeled axes~~ ✅ (v0.4.27).
 
 Re-evaluated from here:
 
-1. **Smaller-wins pass (§F / §A)** _(next)_ - now that the shared primitives exist, knock out the
-   quick, self-contained items on top of them: **global search** (top-bar quick-switcher, §F),
-   **per-channel severity filter** (§F), the **Add-probe self-update toggle** (§A), and
-   **labeled graph axes** in alert PNGs (§F). Mostly **S**, high polish-per-effort.
-2. **The 1.0 lift - "replaces PRTG Add Sensor" (§C → §B → §D):** build/verify the **device-class templates** (§C, the foundation), then **auto-discovery** (§B: UniFi sweep → fingerprint → LLD → "Discovered - review"), then the **device/threshold management UI** (§D). This is the core work that gets Argus to a production **1.0**.
-3. **Scale & production readiness (§G)** - sizing pass + server-side census before the ~6000-sensor
-   deployment; and a `testing` channel so `:latest` only tracks real releases (release hygiene).
-4. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
+1. **The 1.0 lift - "replaces PRTG Add Sensor" (§C → §B → §D)** _(next)_ **:** build/verify the **device-class templates** (§C, the foundation), then **auto-discovery** (§B: UniFi sweep → fingerprint → LLD → "Discovered - review"), then the **device/threshold management UI** (§D). This is the core work that gets Argus to a production **1.0**. Start with §C: nail down one or two class templates end-to-end (e.g. UniFi gateway/switch) so discovery and the threshold UI have a concrete shape to build against.
+2. **Scale & production readiness (§G)** - sizing pass + server-side census before the ~6000-sensor
+   deployment.
+3. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
 
 Blocked / deferred: **site4** probe (§A) - its building is under renovation, so it won't come online in the near term; bring it online once that's done.
