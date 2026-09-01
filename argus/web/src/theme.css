@@ -280,10 +280,10 @@ a { color: var(--accent); }
 .tag { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border-strong); color: var(--muted); white-space: nowrap; }
 .tag.online { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
 .tag.pending { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
-/* update-available: an accent-tinted chip so an outdated probe stands out at a glance */
-.tag.avail { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.btn.avail { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); color: var(--accent); }
-.btn.avail:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+/* update-available: an amber-tinted chip so an outdated probe stands out as needing attention */
+.tag.avail { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, var(--border)); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.btn.avail { border-color: color-mix(in srgb, var(--warn) 55%, var(--border)); color: var(--warn); }
+.btn.avail:hover { background: color-mix(in srgb, var(--warn) 14%, transparent); }
 .pending-note { padding: 8px 16px 12px 42px; color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
 .host { border-top: 1px solid var(--border); }
