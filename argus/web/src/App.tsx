@@ -13,7 +13,7 @@ type Group = { id: string; name: string; hosts: number }
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[] }
-type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number }
+type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number; updater_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; min_severity: number; config: Record<string, string> }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
@@ -1356,6 +1356,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
 }
 
 const PROBE_IMAGE = 'ghcr.io/g-guglielmi/argus-probe:latest'
+const UPDATER_IMAGE = 'ghcr.io/g-guglielmi/argus-updater:latest'
 
 function probeDockerCmd(c: CreatedToken, redeploy: boolean, selfupdate: boolean): string {
   const name = `argus-${c.proxy_name}`
@@ -1363,24 +1364,28 @@ function probeDockerCmd(c: CreatedToken, redeploy: boolean, selfupdate: boolean)
   // On a redeploy (a container by this name already exists), remove it first so the fresh `docker
   // run` doesn't collide on the name. The data volume is a host bind mount, so `docker rm` never
   // touches it - the enrolled certs persist and the new container skips enrollment.
-  if (redeploy) lines.push(`docker rm -f ${name}`)
+  if (redeploy) lines.push(`docker rm -f ${name} ${name}-updater`)
+  // The proxy container: a pure reporter, never gets the Docker socket.
   lines.push(
     `docker run -d --name ${name} --restart unless-stopped \\`,
     `  -v /docker/${name}:/var/lib/zabbix \\`,
     `  -v /docker/${name}/snmptraps:/var/lib/zabbix/snmptraps \\`,
-  )
-  // Self-update: the entrypoint enables it only when SELFUPDATE=1 AND the Docker socket is present
-  // (it recreates itself via a short-lived sister container, which needs the socket read-write).
-  if (selfupdate) lines.push(
-    `  -v /var/run/docker.sock:/var/run/docker.sock \\`,
-    `  -e ARGUS_PROBE_SELFUPDATE=1 \\`,
-  )
-  lines.push(
     `  -e ARGUS_ENROLL_URL=${c.enroll_url} \\`,
     `  -e ARGUS_ENROLL_TOKEN=${c.token} \\`,
   )
   if (!c.core_host) lines.push('  -e ZBX_SERVER_HOST=<core-host-or-ip:reachable-on-10051> \\')
   lines.push(`  ${PROBE_IMAGE}`)
+  // The argus-updater sidecar: the ONLY container with the socket. It recreates the proxy via the
+  // Docker Engine API when Argus signals an update - so the proxy stays socket-free.
+  if (selfupdate) lines.push(
+    '',
+    `docker run -d --name ${name}-updater --restart unless-stopped \\`,
+    `  -v /var/run/docker.sock:/var/run/docker.sock \\`,
+    `  -v /docker/${name}:/probe:ro \\`,
+    `  -e ARGUS_UPDATER_MODE=probe-watch \\`,
+    `  -e ARGUS_PROXY_CONTAINER=${name} \\`,
+    `  ${UPDATER_IMAGE}`,
+  )
   return lines.join('\n')
 }
 
@@ -1451,6 +1456,17 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
       const d = await res.json()
       setQueued((q) => ({ ...q, [p.name]: d.tag || 'target' }))
     } catch { alert({ title: 'Update', message: 'Could not queue the update', danger: true }) }
+  }
+
+  // Update the argus-updater sidecar itself. It recreates itself (via an ephemeral probe-recreate
+  // copy) onto the latest argus-updater image at its next check-in.
+  async function triggerUpdaterUpdate(p: Proxy) {
+    if (!(await confirm({ title: 'Update the updater', message: `Recreate the argus-updater sidecar managing ${p.name} onto the latest version? It rolls back if the new one fails.`, confirmLabel: 'Update updater' }))) return
+    try {
+      const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/updater-update`, { method: 'POST' })
+      if (!res.ok) { alert({ title: 'Update updater', message: await errText(res, 'Could not queue the updater update'), danger: true }); return }
+      alert({ title: 'Update updater', message: 'Queued - the sidecar recreates itself on its next check-in (within ~5 min).' })
+    } catch { alert({ title: 'Update updater', message: 'Could not queue the updater update', danger: true }) }
   }
 
   // Mint a check-in credential for a probe that predates fleet updates; shown once for the operator
@@ -1558,7 +1574,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                 <td data-label="Status">{p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}</td>
                 <td data-label="Last check-in" className="mono" title="When the core last received data from this proxy" style={{ color: !p.last_access ? 'var(--faint)' : (Date.now() / 1000 - p.last_access > 60 ? 'var(--warn)' : undefined), fontWeight: p.last_access && Date.now() / 1000 - p.last_access > 60 ? 600 : undefined }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
                 <td data-label="Version" className="mono" title={p.last_checkin ? `Version reported ${relTime(p.last_checkin)}` : p.version ? 'Version from Zabbix (no Argus fleet check-in)' : 'No version reported'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '-'}</td>
-                <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} /></td>
+                <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} onUpdaterUpdate={isAdmin ? triggerUpdaterUpdate : undefined} /></td>
                 <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
                 <td data-label="Enrolled" className="mono" style={{ color: p.enrolled_at ? 'var(--muted)' : 'var(--faint)' }} title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>{p.enrolled_at ? new Date(p.enrolled_at * 1000).toLocaleDateString() : '-'}</td>
                 <td data-label="SNMP">{canEdit && p.id && <button className="btn" onClick={() => setOpenSnmp((n) => (n === p.name ? null : p.name))}>Defaults</button>}</td>
@@ -1583,13 +1599,21 @@ function probeUpdateTag(target?: string): string {
 
 // UpdateBadge shows a probe's state versus the fleet target, and (for drift) a toggle that reveals
 // the one-click manual update command.
-function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, onEnableReporting }: { p: Proxy; open: boolean; onToggle: () => void; queuedTag?: string; onSelfUpdate: (p: Proxy) => void; canReport?: boolean; onEnableReporting: (p: Proxy) => void }) {
+function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, onEnableReporting, onUpdaterUpdate }: { p: Proxy; open: boolean; onToggle: () => void; queuedTag?: string; onSelfUpdate: (p: Proxy) => void; canReport?: boolean; onEnableReporting: (p: Proxy) => void; onUpdaterUpdate?: (p: Proxy) => void }) {
   // One shared row: the button, the "→ version" chip and the auto tag stay on a single line so the
   // Update column reports an honest one-line width to the auto-sized table (a wrapping cell would
   // collapse to its widest item and let the column starve). The table's scroll wrapper handles the
   // rare too-narrow desktop instead of wrapping mid-cell.
   const wrap: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }
-  const auto = p.selfupdate ? <span className="tag" title="Self-update enabled (Docker socket mounted); Argus can trigger updates from here">auto</span> : null
+  // "auto" = an argus-updater sidecar manages this probe (Argus can drive updates). Its version shows
+  // in the tooltip; admins get a compact ⟳ to update the sidecar itself.
+  const uv = p.updater_version ? ` (updater ${p.updater_version})` : ''
+  const auto = p.selfupdate ? (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span className="tag" title={`Managed by an argus-updater sidecar${uv}; Argus can trigger updates from here`}>auto</span>
+      {onUpdaterUpdate ? <button className="linkbtn" style={{ fontSize: 12, color: 'var(--faint)' }} onClick={() => onUpdaterUpdate(p)} title={`Update the argus-updater sidecar itself${uv}`}>⟳</button> : null}
+    </span>
+  ) : null
   if (queuedTag) return <span className="tag" title={`Update to ${queuedTag} queued - the probe applies it on its next check-in (within ~5 min)`}>update queued</span>
   // A socket-enabled probe updates itself when triggered; otherwise we expand the manual command.
   const selfBtn = <button className="btn" onClick={() => onSelfUpdate(p)} title="Tell the probe to update itself to the fleet target on its next check-in">Update now</button>
@@ -1733,15 +1757,14 @@ function slugPreview(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
-function probeUnraidXml(c: CreatedToken, selfupdate: boolean): string {
+function probeUnraidXml(c: CreatedToken): string {
   const name = `argus-${c.proxy_name}`
   const vol = `/mnt/user/appdata/${name}`
   const serverHost = c.core_host ? '' :
     `\n  <Config Name="Zabbix server host" Target="ZBX_SERVER_HOST" Default="" Mode="" Description="Core address the probe dials for :10051 (set if Argus didn't provide one)." Type="Variable" Display="always" Required="true" Mask="false"></Config>`
-  // Self-update needs the Docker socket (to recreate the proxy via a sister container) plus the flag.
-  const selfUpd = selfupdate ?
-    `\n  <Config Name="Self-update" Target="ARGUS_PROBE_SELFUPDATE" Default="1" Mode="" Description="Let Argus trigger in-place updates to the fleet target (requires the Docker socket below)." Type="Variable" Display="always" Required="false" Mask="false">1</Config>` +
-    `\n  <Config Name="Docker socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="rw" Description="Needed only for self-update: the probe recreates itself via a short-lived sister container." Type="Path" Display="always" Required="false" Mask="false">/var/run/docker.sock</Config>` : ''
+  // On unRAID, keep the native auto-update as the updater (no socket on the proxy, no sidecar app);
+  // Argus shows drift + the manual update command.
+  const selfUpd = ''
   return `<?xml version="1.0"?>
 <Container version="2">
   <Name>${name}</Name>
@@ -1762,20 +1785,20 @@ function probeUnraidXml(c: CreatedToken, selfupdate: boolean): string {
 type ProbeFmt = 'docker' | 'compose' | 'unraid' | 'vm'
 function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; redeploy: boolean; onDone: () => void }) {
   const [fmt, setFmt] = useState<ProbeFmt>('docker')
-  const [selfupdate, setSelfupdate] = useState(false)
-  // The self-update toggle applies only to the single-container docker/unRAID formats. Compose bundles
-  // the updater sidecar (always-on); the VM manages the container under systemd (toggle hidden).
+  const [selfupdate, setSelfupdate] = useState(true)
+  // The updater-sidecar toggle applies to the docker format; Compose always bundles it; the VM
+  // installs it as a second systemd unit; unRAID uses its own native auto-update (no sidecar).
   const selfEff = fmt === 'compose' ? true : selfupdate
-  const content = fmt === 'docker' ? probeDockerCmd(created, redeploy, selfupdate) : fmt === 'compose' ? probeComposeCmd(created) : fmt === 'vm' ? probeCloudInit(created) : probeUnraidXml(created, selfupdate)
+  const content = fmt === 'docker' ? probeDockerCmd(created, redeploy, selfupdate) : fmt === 'compose' ? probeComposeCmd(created) : fmt === 'vm' ? probeCloudInit(created) : probeUnraidXml(created)
   const pick = (f: ProbeFmt) => { setFmt(f) }
-  const showSelfToggle = fmt === 'docker' || fmt === 'unraid' || fmt === 'compose'
+  const showSelfToggle = fmt === 'docker' || fmt === 'compose'
   const blurb: Record<ProbeFmt, string> = {
     docker: redeploy
-      ? "Redeploying an existing probe: this removes the old container and starts a fresh one, keeping its data volume (so it stays enrolled). Run it on the site's Docker host."
-      : "Run this on the site's Docker host.",
-    compose: "Run this on the site's Docker host - it also starts an updater sidecar that keeps the probe on the Argus fleet target (needs the Docker socket). Re-running it recreates the probe in place, so it doubles as the redeploy command.",
-    unraid: 'On unRAID: Docker → Add Container → paste into the Template box, or save it as a .xml under /boot/config/plugins/dockerMan/templates-user/. Re-applying the template in the unRAID UI updates the existing container.',
-    vm: "For the Argus probe VM (deploy/probe-vm). Paste this into the hypervisor's cloud-init / Cloud Config field (Xen Orchestra, libvirt, VMware) when creating the VM, or drop it in a NoCloud seed as user-data. The VM self-enrolls on first boot - no shell access needed.",
+      ? "Redeploying an existing probe: this removes the old containers and starts fresh ones, keeping the data volume (so it stays enrolled). Run it on the site's Docker host."
+      : "Run this on the site's Docker host - it starts the proxy plus the argus-updater sidecar (the sidecar holds the socket; the proxy never does).",
+    compose: "Run this on the site's Docker host - two services: the proxy and the argus-updater sidecar (probe-watch) that keeps it on the Argus fleet target. Re-running it recreates the probe in place, so it doubles as the redeploy command.",
+    unraid: 'On unRAID: Docker → Add Container → paste into the Template box, or save it as a .xml under /boot/config/plugins/dockerMan/templates-user/. Re-applying the template updates the container. Keep unRAID’s native auto-update on; Argus shows drift + the manual update command.',
+    vm: "For the Argus probe VM (deploy/probe-vm). Paste this into the hypervisor's cloud-init / Cloud Config field (Xen Orchestra, libvirt, VMware) when creating the VM, or drop it in a NoCloud seed as user-data. It runs the proxy + the argus-updater sidecar and self-enrolls on first boot - no shell access needed.",
   }
   return (
     <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)' }}>
@@ -1794,7 +1817,7 @@ function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; re
       {showSelfToggle && (
       <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: fmt === 'compose' ? 'var(--faint)' : 'var(--muted)', marginBottom: 8, cursor: fmt === 'compose' ? 'default' : 'pointer' }}>
         <input type="checkbox" checked={selfEff} disabled={fmt === 'compose'} onChange={(e) => setSelfupdate(e.target.checked)} />
-        Enable self-update (mounts the Docker socket so Argus can update this probe in place)
+        Add the argus-updater sidecar (a 2nd container; holds the socket so Argus can update this probe - the proxy stays socket-free)
         {fmt === 'compose' && <span className="tag" title="The Compose format always includes the updater sidecar">always on</span>}
       </label>
       )}

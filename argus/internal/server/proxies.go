@@ -19,9 +19,10 @@ type proxyView struct {
 	Version      string `json:"version"`       // running probe image version reported at check-in ("" = unknown)
 	Target       string `json:"target"`        // fleet target version this probe should converge on
 	Latest       string `json:"latest"`        // newest version resolved from GHCR ("" if unknown)
-	SelfUpdate   bool   `json:"selfupdate"`    // probe reports its self-updater is enabled
-	UpdateStatus string `json:"update_status"` // unknown | tracking | current | outdated | external
-	LastCheckin  int64  `json:"last_checkin"`  // unix seconds of the last Argus check-in (0 = never)
+	SelfUpdate     bool   `json:"selfupdate"`      // an argus-updater sidecar is managing this probe
+	UpdateStatus   string `json:"update_status"`   // unknown | tracking | current | outdated | external
+	LastCheckin    int64  `json:"last_checkin"`    // unix seconds of the last Argus check-in (0 = never)
+	UpdaterVersion string `json:"updater_version"` // version of the managing argus-updater sidecar ("" = none)
 }
 
 // handleProxies lists Zabbix proxies (the per-site collectors) with their last-access time, so
@@ -82,9 +83,10 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			Version:      version,
 			Target:       target,
 			Latest:       latest,
-			SelfUpdate:   ag.SelfUpdate,
-			UpdateStatus: status,
-			LastCheckin:  ag.LastCheckin,
+			SelfUpdate:     ag.SelfUpdate,
+			UpdateStatus:   status,
+			LastCheckin:    ag.LastCheckin,
+			UpdaterVersion: ag.UpdaterVersion,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

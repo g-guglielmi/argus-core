@@ -160,12 +160,13 @@ check-in (a long-lived token issued at enrollment) - nothing inbound is opened.
 - **Visibility + manual update (any deployment).** The Probes view flags drift and offers a
   one-click `docker pull … && docker restart argus-<proxy>` for each outdated probe. No Docker
   socket involved. Version is shown even for probes that never check in (read from Zabbix).
-- **Sidecar self-update (`docker run` / Dockhand, no compose) — recommended.** Run the shared
-  **[argus-updater](https://github.com/g-guglielmi/argus-updater)** image in `probe-watch` mode as a
-  tiny sidecar next to the proxy. It holds the socket and recreates the proxy via the Docker Engine
-  API on an **Update now** or a fleet-target change (rolling back if the new one fails), so **the
-  proxy container never gets the socket** — the same principle as the core's updater. The proxy stays
-  a plain `docker run` with no socket and no `ARGUS_PROBE_SELFUPDATE`. Deploy the sidecar:
+- **Two containers: proxy + updater sidecar (the one self-update model).** Every Argus-driven probe
+  is the proxy plus the shared **[argus-updater](https://github.com/g-guglielmi/argus-updater)** image
+  in `probe-watch` mode as a sidecar. The sidecar holds the socket and recreates the proxy via the
+  Docker Engine API on an **Update now** or a fleet-target change (rolling back if the new one fails),
+  so **the proxy container never gets the socket** — the same principle as the core's updater. The
+  Add-probe wizard's **Docker run** and **Compose** tabs both emit the two containers. Deploy the
+  sidecar by hand next to a `docker run` proxy:
   ```
   docker run -d --name <proxy>-updater --restart unless-stopped \
     -v /var/run/docker.sock:/var/run/docker.sock \
@@ -175,27 +176,15 @@ check-in (a long-lived token issued at enrollment) - nothing inbound is opened.
   ```
   `<proxy-data-dir>` is the proxy's `/var/lib/zabbix` host path (holds the enrollment + check-in
   credential). Sidecar env: `ARGUS_UPDATE_INTERVAL` (poll seconds, default 300).
-- **Dashboard-triggered self-update (socket on the proxy) — v0.4.9.** Alternatively give the *proxy*
-  the Docker socket + `ARGUS_PROBE_SELFUPDATE=1`; it reports itself self-update-capable and, on
-  **Update now**, spawns a short-lived argus-updater `probe-recreate` sister that clones its config
-  onto the new image (rolling back on failure). Simpler (no sidecar) but puts the socket on the proxy:
-  ```
-  -v /var/run/docker.sock:/var/run/docker.sock -e ARGUS_PROBE_SELFUPDATE=1
-  ```
-  Prefer the sidecar above if you'd rather keep the socket off the proxy. Either way the fleet still
-  works read-only with no socket at all.
-- **Opt-in self-update (compose sidecar).** For compose deployments, use
-  [`docker-compose.yml`](https://github.com/g-guglielmi/argus-probe/blob/main/deploy/probe-image/docker-compose.yml)
-  from the **[argus-probe](https://github.com/g-guglielmi/argus-probe)** repo (the Add-probe wizard's
-  **Compose + auto-update** tab generates it). It runs the shared
-  **[argus-updater](https://github.com/g-guglielmi/argus-updater)** image as an `updater` sidecar in
-  `probe-poll` mode (`ARGUS_UPDATER_MODE=probe-poll`) that - with the Docker socket mounted - reads
-  the proxy's check-in credential from the shared volume, polls the target, and recreates the proxy
-  to match when the target tag changes. **Off unless you deploy the sidecar**; the socket is exposed
-  only to it, never to the proxy. Sidecar env: `ARGUS_UPDATE_INTERVAL` (poll seconds, default 300),
-  `ARGUS_UPDATER_TAG` (pin the updater image; default `latest`).
-- **unRAID:** keep unRAID's native auto-update; Argus shows the installed version (from Zabbix) and
-  the fleet target so you can see drift.
+- **Updating the updater itself.** The sidecar can recreate itself too (via an ephemeral
+  `probe-recreate` copy): the **⟳** control next to a probe's **auto** tag queues it, or your platform
+  (Dockhand / `docker compose pull` / the VM's systemd unit) updates the small image. Its version
+  shows on the **auto** tag's tooltip.
+- **VM probes** run the same two containers as two systemd units (`argus-probe` + `argus-updater`),
+  installed by the golden image and enabled together at enrollment - so a VM probe is Argus-managed
+  like any other. See the argus-probe `deploy/probe-vm` README.
+- **unRAID:** keep unRAID's native auto-update as the updater there (no sidecar app); Argus shows the
+  installed version (from Zabbix) and the fleet target so you can see drift.
 
 **Turning on exact version reporting for an older probe.** A probe enrolled before fleet updates has
 no check-in token (enrollment mints it, and enrollment is skipped once the certs exist), so it won't

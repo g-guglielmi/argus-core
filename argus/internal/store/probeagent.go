@@ -11,10 +11,11 @@ import (
 // ProbeAgent is a probe's fleet-update state: the version it last reported, whether its
 // self-updater is enabled, and when it last checked in. Keyed by proxy name.
 type ProbeAgent struct {
-	ProxyName   string
-	Version     string
-	SelfUpdate  bool
-	LastCheckin int64 // unix seconds, 0 if never
+	ProxyName      string
+	Version        string
+	SelfUpdate     bool
+	LastCheckin    int64  // unix seconds, 0 if never
+	UpdaterVersion string // version of the argus-updater sidecar managing this probe, "" if none
 }
 
 // UpsertProbeCredential issues (or rotates) a probe's long-lived check-in credential at
@@ -71,8 +72,8 @@ func (s *Store) ProbeAgentByName(ctx context.Context, name string) (*ProbeAgent,
 	var a ProbeAgent
 	var su int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT proxy_name,version,selfupdate,last_checkin FROM probe_agents WHERE proxy_name=?`, name).
-		Scan(&a.ProxyName, &a.Version, &su, &a.LastCheckin)
+		`SELECT proxy_name,version,selfupdate,last_checkin,updater_version FROM probe_agents WHERE proxy_name=?`, name).
+		Scan(&a.ProxyName, &a.Version, &su, &a.LastCheckin, &a.UpdaterVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -115,7 +116,7 @@ func (s *Store) TakeProbeUpdate(ctx context.Context, name string) (string, error
 
 // ProbeAgents returns every probe's fleet-update state, keyed by proxy name (for the fleet view).
 func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,version,selfupdate,last_checkin FROM probe_agents`)
+	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,version,selfupdate,last_checkin,updater_version FROM probe_agents`)
 	if err != nil {
 		return nil, err
 	}
@@ -124,13 +125,53 @@ func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) 
 	for rows.Next() {
 		var a ProbeAgent
 		var su int
-		if err := rows.Scan(&a.ProxyName, &a.Version, &su, &a.LastCheckin); err != nil {
+		if err := rows.Scan(&a.ProxyName, &a.Version, &su, &a.LastCheckin, &a.UpdaterVersion); err != nil {
 			return nil, err
 		}
 		a.SelfUpdate = su != 0
 		out[a.ProxyName] = a
 	}
 	return out, rows.Err()
+}
+
+// SetUpdaterVersion records the version reported by the argus-updater sidecar managing this probe.
+// Empty is ignored (sticky), so a check-in that omits it never erases the last known value.
+func (s *Store) SetUpdaterVersion(ctx context.Context, name, version string) error {
+	if strings.TrimSpace(version) == "" {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE probe_agents SET updater_version=? WHERE proxy_name=?`, version, name)
+	return err
+}
+
+// SetUpdaterUpdate queues a self-update for a probe's updater sidecar: the argus-updater image tag it
+// should recreate ITSELF onto, handed to it once at its next check-in. ErrNotFound if unknown.
+func (s *Store) SetUpdaterUpdate(ctx context.Context, name, tag string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE probe_agents SET updater_update_to=? WHERE proxy_name=?`, tag, name)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// TakeUpdaterUpdate returns and clears any pending updater self-update tag (one-shot). Empty means
+// nothing queued.
+func (s *Store) TakeUpdaterUpdate(ctx context.Context, name string) (string, error) {
+	var tag string
+	err := s.db.QueryRowContext(ctx, `SELECT updater_update_to FROM probe_agents WHERE proxy_name=?`, name).Scan(&tag)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if tag != "" {
+		_, _ = s.db.ExecContext(ctx, `UPDATE probe_agents SET updater_update_to='' WHERE proxy_name=?`, name)
+	}
+	return tag, nil
 }
 
 // --- probe fleet target version (app_meta) ---

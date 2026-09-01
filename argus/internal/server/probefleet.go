@@ -62,8 +62,9 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Version    string `json:"version"`
-		SelfUpdate *bool  `json:"selfupdate"` // pointer: omitted keeps the stored flag (two-reporter model)
+		Version        string `json:"version"`
+		SelfUpdate     *bool  `json:"selfupdate"`      // pointer: omitted keeps the stored flag (two-reporter model)
+		UpdaterVersion string `json:"updater_version"` // the sidecar reports its own version here
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -73,15 +74,20 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record check-in"})
 		return
 	}
+	_ = s.st.SetUpdaterVersion(ctx, proxyName, strings.TrimSpace(req.UpdaterVersion))
 	target, _ := s.st.ProbeTargetVersion(ctx)
 	resp := map[string]string{"target": target}
-	// Hand out (and clear) a dashboard-requested self-update exactly once - but ONLY to a caller that
-	// advertises self-update capability. Otherwise a socket-less proxy's version-report check-in would
-	// consume the one-shot before the socket-holding updater sidecar (which polls the same token)
-	// could act on it, and the update would be silently lost.
+	// Hand out (and clear) the one-shot updates exactly once - but ONLY to a caller that advertises
+	// self-update capability (the socket-holding updater sidecar). Otherwise a socket-less proxy's
+	// version-report check-in would consume the one-shot before the sidecar could act, losing it.
+	//   update         -> recreate the PROXY onto this tag
+	//   updater_update -> the sidecar recreates ITSELF onto this argus-updater tag
 	if req.SelfUpdate != nil && *req.SelfUpdate {
 		if tag, _ := s.st.TakeProbeUpdate(ctx, proxyName); tag != "" {
 			resp["update"] = tag
+		}
+		if tag, _ := s.st.TakeUpdaterUpdate(ctx, proxyName); tag != "" {
+			resp["updater_update"] = tag
 		}
 	}
 	// The probe knows its own image repo; it only needs the tag to converge on.
@@ -121,6 +127,40 @@ func (s *Server) handleTriggerProbeUpdate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.logger.Info("probe self-update queued", "proxy", name, "tag", tag)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "queued", "tag": tag})
+}
+
+// handleTriggerUpdaterUpdate queues a self-update of the probe's argus-updater sidecar (admin). The
+// sidecar recreates itself (via an ephemeral probe-recreate copy) onto the requested argus-updater
+// tag - defaulting to the rolling "latest" - at its next check-in. Requires a sidecar to be present
+// (the probe advertises self-update capability).
+func (s *Server) handleTriggerUpdaterUpdate(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+
+	ag, err := s.st.ProbeAgentByName(ctx, name)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "this probe hasn't checked in to Argus"})
+		return
+	}
+	if !ag.SelfUpdate {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no argus-updater sidecar is managing this probe"})
+		return
+	}
+	// Optional {"tag":"..."} pins a specific argus-updater version; default to the rolling latest.
+	tag := "latest"
+	var body struct {
+		Tag string `json:"tag"`
+	}
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 512)).Decode(&body) == nil && strings.TrimSpace(body.Tag) != "" {
+		tag = strings.TrimSpace(body.Tag)
+	}
+	if err := s.st.SetUpdaterUpdate(ctx, name, tag); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the updater update"})
+		return
+	}
+	s.logger.Info("updater self-update queued", "proxy", name, "tag", tag)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "queued", "tag": tag})
 }
 

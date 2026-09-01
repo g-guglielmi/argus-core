@@ -196,7 +196,9 @@ CREATE TABLE IF NOT EXISTS probe_agents (
   version      TEXT NOT NULL DEFAULT '',   -- last reported image version, e.g. "7.0.29-r1"
   selfupdate   INTEGER NOT NULL DEFAULT 0, -- probe reports whether its self-updater is enabled
   last_checkin INTEGER NOT NULL DEFAULT 0, -- unix seconds of the last check-in (0 = never)
-  update_to    TEXT NOT NULL DEFAULT ''    -- pending self-update target tag; handed out once at next check-in
+  update_to    TEXT NOT NULL DEFAULT '',   -- pending self-update target tag; handed out once at next check-in
+  updater_version   TEXT NOT NULL DEFAULT '', -- version of the argus-updater sidecar managing this probe
+  updater_update_to TEXT NOT NULL DEFAULT ''  -- pending updater self-update tag; handed out once at next check-in
 );
 
 -- Small key/value store for app-level flags (e.g. the notifier's one-time baseline marker).
@@ -283,6 +285,14 @@ CREATE TABLE IF NOT EXISTS tree_hidden (
 		return err
 	}
 	if err := s.ensureColumn("probe_agents", "update_to TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	// The argus-updater sidecar managing this probe: its reported version + a pending self-update tag
+	// (the updater recreates itself onto it via the probe-recreate primitive).
+	if err := s.ensureColumn("probe_agents", "updater_version TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("probe_agents", "updater_update_to TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("notify_events", "item_id TEXT NOT NULL DEFAULT ''"); err != nil {

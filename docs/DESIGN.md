@@ -525,43 +525,37 @@ plane; the probe checks in and converges.
   probe's version / target / `update_status` (`unknown | tracking | current | outdated`).
 - **Manual path (always available).** Drifted probes surface in the Probes view with a one-click
   `docker pull … && docker restart …` command - no Docker socket involved.
-- **Dashboard-triggered self-update (v0.4.9; `docker run`, no compose).** A probe given the Docker
-  socket + `ARGUS_PROBE_SELFUPDATE=1` reports itself self-update-capable; the Probes view shows an
-  **Update now** button that queues the target (`POST /api/probes/{name}/update`), handed to the
-  probe once at its next check-in as `{"update":"<tag>"}`. The probe can't `rm -f` itself, so it
-  spawns a short-lived **argus-updater** sister in `probe-recreate` mode that clones the proxy's
-  config onto the new image via the Docker Engine API (Dockhand-style), **rolling back to the old
-  container on any failure**. Socket lives on the proxy in this mode (the tradeoff for no sidecar);
-  opt-in only.
-- **Socket-holding sidecar, no compose (v0.4.30; recommended for `docker run` / Dockhand).** The
-  shared **argus-updater** image in `probe-watch` mode runs as a tiny per-proxy sidecar that holds
-  the socket and recreates the proxy via the Engine API on a dashboard "Update now" or a fleet-target
-  change - so the **proxy container never gets the socket** (the same principle as the core). It
-  reports self-update capability on the proxy's behalf and reads the proxy's check-in credential from
-  the proxy's data volume (`-v <data>:/probe:ro`); the proxy keeps reporting its own version.
-  Deploy: `-e ARGUS_UPDATER_MODE=probe-watch -e ARGUS_PROXY_CONTAINER=<name>` + the socket. **Off
-  unless you deploy the sidecar.**
-- **Self-updater (opt-in compose sidecar).** For compose deployments, the shared **argus-updater**
-  image runs in `probe-poll` mode (`ARGUS_UPDATER_MODE=probe-poll`), converging the proxy via
-  `docker compose up -d proxy` (keeps the compose `.env` authoritative). Shipped as
-  `deploy/probe-image/docker-compose.yml`; **off unless you deploy the sidecar**. The "Compose +
-  auto-update" tab of the Add-probe wizard generates it.
-- **One updater for all of them (v0.4.30).** The core self-updater and every probe path above are the
-  same image, `ghcr.io/g-guglielmi/argus-updater` (its own version line), sharing one recreate engine
-  (`lib/recreate.sh`) selected by `ARGUS_UPDATER_MODE` (`core` | `probe-recreate` | `probe-watch` |
-  `probe-poll`) - so pull → config-clone → verify → rollback can never drift. The probe image no
-  longer bundles its own `updater.sh`/`recreate.sh`; it just spawns the updater image. **Two-reporter
-  model:** a socket-less proxy reports its version but omits self-update capability, while the sidecar
-  advertises capability but reports no version - the check-in fields are sticky (an omitted field
-  keeps the stored value), and the one-shot "Update now" is handed only to a capability-advertising
-  caller, so the two never clobber each other or race for the update. See the
-  [argus-updater](https://github.com/g-guglielmi/argus-updater) repo.
+- **One self-update model: proxy + updater sidecar (v0.4.30).** Every Argus-driven probe is **two
+  containers** - the proxy (a pure reporter; never gets the socket, no `docker-cli` in its image) and
+  the shared **argus-updater** image in `probe-watch` mode. The sidecar holds the socket and recreates
+  the proxy via the Docker Engine API on an **Update now** (`POST /api/probes/{name}/update`, handed
+  to the sidecar once at its next check-in as `{"update":"<tag>"}`) or a fleet-target change, cloning
+  the proxy's config onto the new image and **rolling back on any failure**. This is the same
+  principle as the core's updater - the socket is isolated to the minimal sidecar, never on the
+  public/service container. The wizard's **Docker run**, **Compose**, and **VM** tabs all emit the two
+  containers; on the VM they're two systemd units (`argus-probe` + `argus-updater`). Deploy a sidecar
+  by hand with `-e ARGUS_UPDATER_MODE=probe-watch -e ARGUS_PROXY_CONTAINER=<name>` + the socket +
+  `-v <proxy-data>:/probe:ro`. (The socket-on-proxy `ARGUS_PROBE_SELFUPDATE` path and the compose
+  `probe-poll` mode were retired in favour of this one model.)
+- **The updater updates itself.** A long-running updater can't `rm -f` itself, so on request it spawns
+  an ephemeral `argus-updater --rm` copy in `probe-recreate` mode targeting its own container (the
+  self-update **primitive**). Argus drives it: the sidecar reports its own version at check-in
+  (stored as `probe_agents.updater_version`), and **⟳** next to a probe's **auto** tag queues a
+  one-shot (`POST /api/probes/{name}/updater-update`) handed back as `{"updater_update":"<tag>"}`.
+- **One image, one engine.** The core self-updater and both probe roles are the same image,
+  `ghcr.io/g-guglielmi/argus-updater` (its own version line), sharing one recreate engine
+  (`lib/recreate.sh`) selected by `ARGUS_UPDATER_MODE` (`core` | `probe-watch` | `probe-recreate`) -
+  so pull → config-clone → verify → rollback can never drift. **Two-reporter model:** the proxy
+  reports its version but omits self-update capability, while the sidecar advertises capability but
+  reports no proxy version - the check-in fields are sticky (an omitted field keeps the stored value),
+  and one-shots are handed only to a capability-advertising caller, so the two never clobber each
+  other or race. See the [argus-updater](https://github.com/g-guglielmi/argus-updater) repo.
 
 **Tradeoff acknowledged.** Any automatic in-place container update needs Docker socket access at
 the site (the same mechanism Watchtower uses). The win over Watchtower is **central version control
 + fleet visibility + no third-party container + you decide when**. The socket is isolated to the
-minimal **updater sidecar**, never the proxy. Unraid/`docker run` deployments use the manual
-one-click path (or their own auto-update); the compose sidecar is the hands-off route.
+minimal **updater sidecar**, never the proxy. Unraid probes use their own native auto-update (Argus
+shows drift + the manual one-click command).
 
 ---
 
