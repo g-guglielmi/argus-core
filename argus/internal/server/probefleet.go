@@ -63,7 +63,7 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Version    string `json:"version"`
-		SelfUpdate bool   `json:"selfupdate"`
+		SelfUpdate *bool  `json:"selfupdate"` // pointer: omitted keeps the stored flag (two-reporter model)
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -75,10 +75,14 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 	}
 	target, _ := s.st.ProbeTargetVersion(ctx)
 	resp := map[string]string{"target": target}
-	// Hand out a dashboard-requested self-update exactly once. The probe (with the Docker socket)
-	// converges by spawning a short-lived recreate helper; empty means nothing queued.
-	if tag, _ := s.st.TakeProbeUpdate(ctx, proxyName); tag != "" {
-		resp["update"] = tag
+	// Hand out (and clear) a dashboard-requested self-update exactly once - but ONLY to a caller that
+	// advertises self-update capability. Otherwise a socket-less proxy's version-report check-in would
+	// consume the one-shot before the socket-holding updater sidecar (which polls the same token)
+	// could act on it, and the update would be silently lost.
+	if req.SelfUpdate != nil && *req.SelfUpdate {
+		if tag, _ := s.st.TakeProbeUpdate(ctx, proxyName); tag != "" {
+			resp["update"] = tag
+		}
 	}
 	// The probe knows its own image repo; it only needs the tag to converge on.
 	writeJSON(w, http.StatusOK, resp)

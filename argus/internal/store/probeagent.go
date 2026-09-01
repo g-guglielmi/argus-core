@@ -40,23 +40,28 @@ func (s *Store) ProbeNameByToken(ctx context.Context, tokenHash string) (string,
 }
 
 // RecordProbeCheckin refreshes a probe's reported version, self-updater flag, and check-in time.
-func (s *Store) RecordProbeCheckin(ctx context.Context, proxyName, version string, selfUpdate bool) error {
-	su := 0
-	if selfUpdate {
-		su = 1
+// Both fields are "sticky when omitted", because a probe can be reported by two check-ins with
+// complementary knowledge: the proxy container reports its real version but (when it holds no socket)
+// omits self-update capability, while a socket-holding updater sidecar advertises capability but
+// reports no version. An empty version keeps the last known version; a nil selfUpdate keeps the last
+// known flag - so the two never clobber each other. last_checkin is always refreshed.
+func (s *Store) RecordProbeCheckin(ctx context.Context, proxyName, version string, selfUpdate *bool) error {
+	set := "last_checkin=?"
+	args := []any{time.Now().Unix()}
+	if strings.TrimSpace(version) != "" {
+		set += ", version=?"
+		args = append(args, version)
 	}
-	// An empty version means the caller isn't reporting one (e.g. the compose poll sidecar, which
-	// only checks in to advertise self-update capability + read the fleet target). Don't let that
-	// erase the authoritative version the proxy container itself reports - keep the last known.
-	if strings.TrimSpace(version) == "" {
-		_, err := s.db.ExecContext(ctx,
-			`UPDATE probe_agents SET selfupdate=?, last_checkin=? WHERE proxy_name=?`,
-			su, time.Now().Unix(), proxyName)
-		return err
+	if selfUpdate != nil {
+		su := 0
+		if *selfUpdate {
+			su = 1
+		}
+		set += ", selfupdate=?"
+		args = append(args, su)
 	}
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE probe_agents SET version=?, selfupdate=?, last_checkin=? WHERE proxy_name=?`,
-		version, su, time.Now().Unix(), proxyName)
+	args = append(args, proxyName)
+	_, err := s.db.ExecContext(ctx, `UPDATE probe_agents SET `+set+` WHERE proxy_name=?`, args...)
 	return err
 }
 

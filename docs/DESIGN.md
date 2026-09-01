@@ -533,18 +533,29 @@ plane; the probe checks in and converges.
   config onto the new image via the Docker Engine API (Dockhand-style), **rolling back to the old
   container on any failure**. Socket lives on the proxy in this mode (the tradeoff for no sidecar);
   opt-in only.
-- **Self-updater (opt-in compose sidecar).** Alternatively the shared **argus-updater** image runs
-  in `probe-poll` mode (`ARGUS_UPDATER_MODE=probe-poll`) as a separate container that, with the
-  Docker socket mounted, reads the proxy's check-in credential from the shared volume, polls the
-  target, and recreates the proxy via `docker compose up -d proxy` when the target tag changes.
-  Shipped as `deploy/probe-image/docker-compose.yml`; **off unless you deploy the sidecar** (socket
-  isolated to it). The "Compose + auto-update" tab of the Add-probe wizard generates it.
-- **One updater for both (v0.4.30).** The core self-updater and both probe paths above are the same
-  image, `ghcr.io/g-guglielmi/argus-updater` (its own version line), sharing one recreate engine
-  (`lib/recreate.sh`) selected by `ARGUS_UPDATER_MODE` (`core` | `probe-recreate` | `probe-poll`) -
-  so pull → config-clone → verify → rollback can never drift between core and probes. The probe
-  image no longer bundles its own `updater.sh`/`recreate.sh`; it just spawns the updater image. See
-  the [argus-updater](https://github.com/g-guglielmi/argus-updater) repo.
+- **Socket-holding sidecar, no compose (v0.4.30; recommended for `docker run` / Dockhand).** The
+  shared **argus-updater** image in `probe-watch` mode runs as a tiny per-proxy sidecar that holds
+  the socket and recreates the proxy via the Engine API on a dashboard "Update now" or a fleet-target
+  change - so the **proxy container never gets the socket** (the same principle as the core). It
+  reports self-update capability on the proxy's behalf and reads the proxy's check-in credential from
+  the proxy's data volume (`-v <data>:/probe:ro`); the proxy keeps reporting its own version.
+  Deploy: `-e ARGUS_UPDATER_MODE=probe-watch -e ARGUS_PROXY_CONTAINER=<name>` + the socket. **Off
+  unless you deploy the sidecar.**
+- **Self-updater (opt-in compose sidecar).** For compose deployments, the shared **argus-updater**
+  image runs in `probe-poll` mode (`ARGUS_UPDATER_MODE=probe-poll`), converging the proxy via
+  `docker compose up -d proxy` (keeps the compose `.env` authoritative). Shipped as
+  `deploy/probe-image/docker-compose.yml`; **off unless you deploy the sidecar**. The "Compose +
+  auto-update" tab of the Add-probe wizard generates it.
+- **One updater for all of them (v0.4.30).** The core self-updater and every probe path above are the
+  same image, `ghcr.io/g-guglielmi/argus-updater` (its own version line), sharing one recreate engine
+  (`lib/recreate.sh`) selected by `ARGUS_UPDATER_MODE` (`core` | `probe-recreate` | `probe-watch` |
+  `probe-poll`) - so pull → config-clone → verify → rollback can never drift. The probe image no
+  longer bundles its own `updater.sh`/`recreate.sh`; it just spawns the updater image. **Two-reporter
+  model:** a socket-less proxy reports its version but omits self-update capability, while the sidecar
+  advertises capability but reports no version - the check-in fields are sticky (an omitted field
+  keeps the stored value), and the one-shot "Update now" is handed only to a capability-advertising
+  caller, so the two never clobber each other or race for the update. See the
+  [argus-updater](https://github.com/g-guglielmi/argus-updater) repo.
 
 **Tradeoff acknowledged.** Any automatic in-place container update needs Docker socket access at
 the site (the same mechanism Watchtower uses). The win over Watchtower is **central version control

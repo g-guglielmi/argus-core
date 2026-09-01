@@ -160,18 +160,31 @@ check-in (a long-lived token issued at enrollment) - nothing inbound is opened.
 - **Visibility + manual update (any deployment).** The Probes view flags drift and offers a
   one-click `docker pull … && docker restart argus-<proxy>` for each outdated probe. No Docker
   socket involved. Version is shown even for probes that never check in (read from Zabbix).
-- **Dashboard-triggered self-update (`docker run`, no compose) — v0.4.9.** Give a probe the Docker
-  socket + `ARGUS_PROBE_SELFUPDATE=1` and it reports itself as self-update-capable. The Probes view
-  then shows an **Update now** button; clicking it queues the fleet target, and on its next check-in
-  the probe **spawns a short-lived `recreate` sister container** that clones the proxy's config onto
-  the new image (rolling back if the new one fails to start). The proxy can't `rm -f` itself, hence
-  the sister. Add to your `docker run`:
+- **Sidecar self-update (`docker run` / Dockhand, no compose) — recommended.** Run the shared
+  **[argus-updater](https://github.com/g-guglielmi/argus-updater)** image in `probe-watch` mode as a
+  tiny sidecar next to the proxy. It holds the socket and recreates the proxy via the Docker Engine
+  API on an **Update now** or a fleet-target change (rolling back if the new one fails), so **the
+  proxy container never gets the socket** — the same principle as the core's updater. The proxy stays
+  a plain `docker run` with no socket and no `ARGUS_PROBE_SELFUPDATE`. Deploy the sidecar:
+  ```
+  docker run -d --name <proxy>-updater --restart unless-stopped \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v <proxy-data-dir>:/probe:ro \
+    -e ARGUS_UPDATER_MODE=probe-watch -e ARGUS_PROXY_CONTAINER=<proxy-container-name> \
+    ghcr.io/g-guglielmi/argus-updater:latest
+  ```
+  `<proxy-data-dir>` is the proxy's `/var/lib/zabbix` host path (holds the enrollment + check-in
+  credential). Sidecar env: `ARGUS_UPDATE_INTERVAL` (poll seconds, default 300).
+- **Dashboard-triggered self-update (socket on the proxy) — v0.4.9.** Alternatively give the *proxy*
+  the Docker socket + `ARGUS_PROBE_SELFUPDATE=1`; it reports itself self-update-capable and, on
+  **Update now**, spawns a short-lived argus-updater `probe-recreate` sister that clones its config
+  onto the new image (rolling back on failure). Simpler (no sidecar) but puts the socket on the proxy:
   ```
   -v /var/run/docker.sock:/var/run/docker.sock -e ARGUS_PROBE_SELFUPDATE=1
   ```
-  The socket is what makes this possible — grant it only if you want Argus to drive updates; the
-  fleet still works read-only without it.
-- **Opt-in self-update (compose sidecar).** Deploy the probe with
+  Prefer the sidecar above if you'd rather keep the socket off the proxy. Either way the fleet still
+  works read-only with no socket at all.
+- **Opt-in self-update (compose sidecar).** For compose deployments, use
   [`docker-compose.yml`](https://github.com/g-guglielmi/argus-probe/blob/main/deploy/probe-image/docker-compose.yml)
   from the **[argus-probe](https://github.com/g-guglielmi/argus-probe)** repo (the Add-probe wizard's
   **Compose + auto-update** tab generates it). It runs the shared
