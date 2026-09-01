@@ -11,6 +11,23 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.28] - 2026-09-01
+
+**Improved:**
+
+- **Alert trend graphs now scale the Y axis by the sensor's units**, matching the app. Byte counters
+  read as KB/MB/GB (1024-based), bit rates as Kbps/Mbps/Gbps, and uptime as a duration (e.g. `817.1d`,
+  `4.1h`, `45s`) — instead of raw or scientific-notation values like `7.06e+05`. Unitless values keep a
+  compact SI form (`70.6M`).
+
+**Added:**
+
+- **Add probe → "VM (cloud-init)"** deploy output: emits cloud-init user-data for the self-configuring
+  probe VM, so a VM enrolls with zero touch (paste it into the hypervisor's cloud-init field). The
+  golden image itself is built and released separately under `probe-vm/vX.Y.Z`.
+
+---
+
 ## [0.4.27] - 2026-09-01
 
 **Added:**
