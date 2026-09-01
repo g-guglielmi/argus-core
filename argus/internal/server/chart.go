@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"argus/internal/zabbix"
@@ -166,9 +167,41 @@ func renderChart(vals []float64, cr, cg, cb uint8) []byte {
 	return encodePNG(img)
 }
 
-// axisNum formats a value for an axis tick: up to 4 significant digits, trailing zeros trimmed.
+// axisNum formats a value for an axis tick in compact, human-readable form - never scientific
+// notation. Magnitudes >= 1000 get SI suffixes (706k, 70.6M, 1.2G); smaller values keep ~3
+// significant figures with trailing zeros trimmed. This keeps the Y axis legible for large counters
+// (e.g. uptime seconds) that would otherwise render as "7.06e+05".
 func axisNum(v float64) string {
-	return strconv.FormatFloat(v, 'g', 4, 64)
+	if v == 0 {
+		return "0"
+	}
+	a := math.Abs(v)
+	sign := ""
+	if v < 0 {
+		sign = "-"
+	}
+	suffix := ""
+	for _, s := range []string{"k", "M", "G", "T", "P"} {
+		if a < 1000 {
+			break
+		}
+		a /= 1000
+		suffix = s
+	}
+	dec := 0 // decimals scaled to hold ~3 significant figures
+	switch {
+	case a < 1:
+		dec = 3
+	case a < 10:
+		dec = 2
+	case a < 100:
+		dec = 1
+	}
+	s := strconv.FormatFloat(a, 'f', dec, 64)
+	if strings.ContainsRune(s, '.') {
+		s = strings.TrimRight(strings.TrimRight(s, "0"), ".")
+	}
+	return sign + s + suffix
 }
 
 // textWidth returns the pixel width of s in the basicfont face used for labels.
