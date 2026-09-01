@@ -11,6 +11,29 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.29] - 2026-09-01
+
+**Added:**
+
+- **Delete a proxy from the Probes page.** Admins can remove a decommissioned probe: it's deleted from
+  Zabbix (`proxy.delete`) and its Argus-side records (enrollment tokens, check-in/version state, SNMP
+  default) are cleaned up. Zabbix's "still monitored by hosts" error is surfaced so you can reassign
+  them first; the `proxy-<site>` host group is left in place.
+- **"Clean up" on the Probes page** prunes Argus records orphaned by proxies deleted directly in the
+  Zabbix UI (out of band), keeping pending enrollment tokens whose proxy doesn't exist yet.
+
+**Changed:**
+
+- **The update-available state on the Probes page is now highlighted in amber** (the button + the
+  "→ version" chip), so an outdated probe stands out at a glance instead of rendering muted like the
+  other states.
+- **Project split into three repositories** — `argus-core` (this app), `argus-probe` (the probe Docker
+  image + self-configuring golden VM), and `argus-updater` (the self-update sidecar). Image names are
+  unchanged, so deployments are unaffected; the Add-probe **Compose** command now fetches its compose
+  file from the argus-probe repo.
+
+---
+
 ## [0.4.28] - 2026-09-01
 
 **Improved:**
