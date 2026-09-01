@@ -43,11 +43,21 @@ from a homelab to a multi-site enterprise - can layer Argus on top.
 | Path | What |
 |---|---|
 | [`argus/`](argus/README.md) | The app - Go backend + React frontend, packaged as a Docker image to GHCR |
-| [`deploy/`](deploy/README.md) | Deploy kit - Zabbix core install, probe scripts, PKI, unRAID templates, checklist |
+| [`deploy/`](deploy/README.md) | Deploy kit - Zabbix core install, PKI, unRAID templates, checklist |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Full design document (architecture, device classes, thresholds, roadmap) |
 | [`ROADMAP.md`](ROADMAP.md) | Tracking checklist of what's built and what's left |
 | [`.github/workflows/`](.github/workflows/build.yml) | CI - builds the Argus image, pushes to `ghcr.io/<owner>/argus`, auto-publishes GitHub Releases on tags |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release-by-release history |
+
+### Related repositories
+
+Argus is split across three repos (image names stay the same regardless):
+
+| Repo | What | Image |
+|---|---|---|
+| **argus-core** (this repo) | The app + docs + deploy kit | `ghcr.io/<owner>/argus` |
+| [**argus-probe**](https://github.com/g-guglielmi/argus-probe) | The monitoring probe - self-enrolling Docker image + self-configuring golden VM | `ghcr.io/<owner>/argus-probe` |
+| [**argus-updater**](https://github.com/g-guglielmi/argus-updater) | The core self-update sidecar | `ghcr.io/<owner>/argus-updater` |
 
 ---
 

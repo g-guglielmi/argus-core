@@ -99,6 +99,10 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
   and only `v*` tag pushes move `:latest` (alongside `:vX.Y.Z`), so production can pin `:latest` and a
   test box tracks `:testing` without manual tagging. Pairs with the version indicator (a `:testing`
   build reads as "development build"). - v0.4.11
+- [x] **Repo split** (2026-09-01) - the monorepo became three repos so each deployable owns its own
+  release list + versioning: **argus-core** (app), **[argus-probe](https://github.com/g-guglielmi/argus-probe)**
+  (probe image + golden VM), **[argus-updater](https://github.com/g-guglielmi/argus-updater)** (self-update
+  sidecar). Image names unchanged. History preserved via `git filter-repo`.
 
 ### H. Parking lot (maybe)
 - [ ] Public status page (Uptime-Kuma-style shareable)

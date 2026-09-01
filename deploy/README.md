@@ -172,7 +172,8 @@ check-in (a long-lived token issued at enrollment) - nothing inbound is opened.
   The socket is what makes this possible — grant it only if you want Argus to drive updates; the
   fleet still works read-only without it.
 - **Opt-in self-update (compose sidecar).** Deploy the probe with
-  [`deploy/probe-image/docker-compose.yml`](probe-image/docker-compose.yml) (the Add-probe wizard's
+  [`docker-compose.yml`](https://github.com/g-guglielmi/argus-probe/blob/main/deploy/probe-image/docker-compose.yml)
+  from the **[argus-probe](https://github.com/g-guglielmi/argus-probe)** repo (the Add-probe wizard's
   **Compose + auto-update** tab generates it). It runs an `updater` sidecar
   (`ARGUS_PROBE_ROLE=updater`) that - with the Docker socket mounted - reads the proxy's check-in
   credential from the shared volume, polls the target, and recreates the proxy to match when the
@@ -204,8 +205,8 @@ ships plus a revision for our own wrapper edits** - `probe/v<zabbix>-r<n>` (e.g.
 then `-r2` for a wrapper fix, then `7.0.30-r1` when Zabbix bumps). This is **decoupled from the app's
 `vX.Y.Z` semver**: an app-only release never rebuilds or re-tags a probe.
 
-A single CI job ([`probe-image.yml`](../.github/workflows/probe-image.yml)) owns that lifecycle from
-two triggers, with no manual step:
+A single CI job ([`probe-image.yml`](https://github.com/g-guglielmi/argus-probe/blob/main/.github/workflows/probe-image.yml),
+in the **argus-probe** repo) owns that lifecycle from two triggers, with no manual step:
 
 - **Upstream watch (daily schedule):** checks the base image; when its **digest** moves it rebuilds
   and pushes the rolling tags `:latest` + `:zabbix-<ver>` (absorbing even same-version Alpine/security
