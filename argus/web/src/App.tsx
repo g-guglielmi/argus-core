@@ -1405,6 +1405,29 @@ function probeComposeCmd(c: CreatedToken): string {
   ].join('\n')
 }
 
+// probeCloudInit emits cloud-init user-data for the self-configuring probe VM (deploy/probe-vm). The
+// VM's first boot writes these enrollment inputs to /etc/argus-probe/probe.env and starts the probe -
+// zero-touch. Paste it into the hypervisor's cloud-init / Cloud Config field (Xen Orchestra, libvirt,
+// VMware guestinfo), or drop it in a NoCloud seed as user-data.
+function probeCloudInit(c: CreatedToken): string {
+  const env = [
+    `      ARGUS_ENROLL_URL=${c.enroll_url}`,
+    `      ARGUS_ENROLL_TOKEN=${c.token}`,
+  ]
+  if (!c.core_host) env.push('      ZBX_SERVER_HOST=<core-host-or-ip:reachable-on-10051>')
+  return [
+    '#cloud-config',
+    'write_files:',
+    '  - path: /etc/argus-probe/probe.env',
+    "    permissions: '0600'",
+    '    owner: root:root',
+    '    content: |',
+    ...env,
+    'runcmd:',
+    '  - [ systemctl, enable, --now, argus-probe.service ]',
+  ].join('\n')
+}
+
 function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
   const confirm = useConfirm()
   const alert = useAlert()
@@ -1714,21 +1737,23 @@ function probeUnraidXml(c: CreatedToken, selfupdate: boolean): string {
 </Container>`
 }
 
-type ProbeFmt = 'docker' | 'compose' | 'unraid'
+type ProbeFmt = 'docker' | 'compose' | 'unraid' | 'vm'
 function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; redeploy: boolean; onDone: () => void }) {
   const [fmt, setFmt] = useState<ProbeFmt>('docker')
   const [selfupdate, setSelfupdate] = useState(false)
-  // Compose always ships the updater sidecar, so the toggle only applies to the single-container
-  // docker/unRAID formats. For compose it reads as always-on.
+  // The self-update toggle applies only to the single-container docker/unRAID formats. Compose bundles
+  // the updater sidecar (always-on); the VM manages the container under systemd (toggle hidden).
   const selfEff = fmt === 'compose' ? true : selfupdate
-  const content = fmt === 'docker' ? probeDockerCmd(created, redeploy, selfupdate) : fmt === 'compose' ? probeComposeCmd(created) : probeUnraidXml(created, selfupdate)
+  const content = fmt === 'docker' ? probeDockerCmd(created, redeploy, selfupdate) : fmt === 'compose' ? probeComposeCmd(created) : fmt === 'vm' ? probeCloudInit(created) : probeUnraidXml(created, selfupdate)
   const pick = (f: ProbeFmt) => { setFmt(f) }
+  const showSelfToggle = fmt === 'docker' || fmt === 'unraid' || fmt === 'compose'
   const blurb: Record<ProbeFmt, string> = {
     docker: redeploy
       ? "Redeploying an existing probe: this removes the old container and starts a fresh one, keeping its data volume (so it stays enrolled). Run it on the site's Docker host."
       : "Run this on the site's Docker host.",
     compose: "Run this on the site's Docker host - it also starts an updater sidecar that keeps the probe on the Argus fleet target (needs the Docker socket). Re-running it recreates the probe in place, so it doubles as the redeploy command.",
     unraid: 'On unRAID: Docker → Add Container → paste into the Template box, or save it as a .xml under /boot/config/plugins/dockerMan/templates-user/. Re-applying the template in the unRAID UI updates the existing container.',
+    vm: "For the Argus probe VM (deploy/probe-vm). Paste this into the hypervisor's cloud-init / Cloud Config field (Xen Orchestra, libvirt, VMware) when creating the VM, or drop it in a NoCloud seed as user-data. The VM self-enrolls on first boot - no shell access needed.",
   }
   return (
     <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)' }}>
@@ -1739,19 +1764,22 @@ function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; re
           <button className={fmt === 'docker' ? 'on' : ''} onClick={() => pick('docker')}>Docker run</button>
           <button className={fmt === 'compose' ? 'on' : ''} onClick={() => pick('compose')}>Compose + auto-update</button>
           <button className={fmt === 'unraid' ? 'on' : ''} onClick={() => pick('unraid')}>unRAID XML</button>
+          <button className={fmt === 'vm' ? 'on' : ''} onClick={() => pick('vm')}>VM (cloud-init)</button>
         </div>
         <CopyButton text={content} variant="default" />
         <Button variant="default" onClick={onDone}>Done</Button>
       </div>
+      {showSelfToggle && (
       <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: fmt === 'compose' ? 'var(--faint)' : 'var(--muted)', marginBottom: 8, cursor: fmt === 'compose' ? 'default' : 'pointer' }}>
         <input type="checkbox" checked={selfEff} disabled={fmt === 'compose'} onChange={(e) => setSelfupdate(e.target.checked)} />
         Enable self-update (mounts the Docker socket so Argus can update this probe in place)
         {fmt === 'compose' && <span className="tag" title="The Compose format always includes the updater sidecar">always on</span>}
       </label>
+      )}
       <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: '0 0 8px' }}>
         {blurb[fmt]}
         {' '}It self-enrolls on first boot; the token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set the core host (ZBX_SERVER_HOST / ARGUS_PROBE_CORE_HOST) so it can reach :10051.'}
-        {selfEff && fmt !== 'compose' && ' Self-update is on: the probe recreates itself via a short-lived sister container when the fleet target changes.'}
+        {selfEff && (fmt === 'docker' || fmt === 'unraid') && ' Self-update is on: the probe recreates itself via a short-lived sister container when the fleet target changes.'}
       </p>
       <pre style={{ margin: 0, padding: '11px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12, lineHeight: 1.5 }}><code>{content}</code></pre>
     </div>
