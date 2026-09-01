@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -43,6 +44,15 @@ func (s *Store) RecordProbeCheckin(ctx context.Context, proxyName, version strin
 	su := 0
 	if selfUpdate {
 		su = 1
+	}
+	// An empty version means the caller isn't reporting one (e.g. the compose poll sidecar, which
+	// only checks in to advertise self-update capability + read the fleet target). Don't let that
+	// erase the authoritative version the proxy container itself reports - keep the last known.
+	if strings.TrimSpace(version) == "" {
+		_, err := s.db.ExecContext(ctx,
+			`UPDATE probe_agents SET selfupdate=?, last_checkin=? WHERE proxy_name=?`,
+			su, time.Now().Unix(), proxyName)
+		return err
 	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE probe_agents SET version=?, selfupdate=?, last_checkin=? WHERE proxy_name=?`,

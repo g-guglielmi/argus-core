@@ -174,11 +174,13 @@ check-in (a long-lived token issued at enrollment) - nothing inbound is opened.
 - **Opt-in self-update (compose sidecar).** Deploy the probe with
   [`docker-compose.yml`](https://github.com/g-guglielmi/argus-probe/blob/main/deploy/probe-image/docker-compose.yml)
   from the **[argus-probe](https://github.com/g-guglielmi/argus-probe)** repo (the Add-probe wizard's
-  **Compose + auto-update** tab generates it). It runs an `updater` sidecar
-  (`ARGUS_PROBE_ROLE=updater`) that - with the Docker socket mounted - reads the proxy's check-in
-  credential from the shared volume, polls the target, and recreates the proxy to match when the
-  target tag changes. **Off unless you deploy the sidecar**; the socket is exposed only to it, never
-  to the proxy. Probe env: `ARGUS_PROBE_SELFUPDATE=1`, `ARGUS_UPDATE_INTERVAL` (poll seconds, default 300).
+  **Compose + auto-update** tab generates it). It runs the shared
+  **[argus-updater](https://github.com/g-guglielmi/argus-updater)** image as an `updater` sidecar in
+  `probe-poll` mode (`ARGUS_UPDATER_MODE=probe-poll`) that - with the Docker socket mounted - reads
+  the proxy's check-in credential from the shared volume, polls the target, and recreates the proxy
+  to match when the target tag changes. **Off unless you deploy the sidecar**; the socket is exposed
+  only to it, never to the proxy. Sidecar env: `ARGUS_UPDATE_INTERVAL` (poll seconds, default 300),
+  `ARGUS_UPDATER_TAG` (pin the updater image; default `latest`).
 - **unRAID:** keep unRAID's native auto-update; Argus shows the installed version (from Zabbix) and
   the fleet target so you can see drift.
 
