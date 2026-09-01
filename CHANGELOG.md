@@ -11,6 +11,31 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.27] - 2026-09-01
+
+**Added:**
+
+- **Global quick-switcher (Ctrl-K).** A new search box in the top bar — and the **Ctrl/Cmd-K**
+  shortcut from anywhere — opens a palette that searches **hosts** (by name or IP), **sensors** (by
+  name), and **host groups** (by name). Arrow keys move, Enter jumps: a host opens in the tree, a
+  sensor opens its chart, a group focuses the tree on it. Matches rank prefix and word-boundary hits
+  above mid-word ones.
+- **Per-channel notification severity floor.** Each notification channel can now set its own minimum
+  severity — **Warning & up**, **Average & up**, **High & up**, or **Disaster only** — in the channel
+  editor (next to Site), with the floor shown on the channel card when it's above the default. A
+  problem below a channel's floor no longer routes to it, and its recovery notice follows the same
+  rule. Defaults to Warning, matching the previous behavior, so existing channels are unchanged.
+- **Add-probe self-update toggle.** The "Add probe" deploy panel gained an **Enable self-update**
+  checkbox that adds the Docker-socket mount and `ARGUS_PROBE_SELFUPDATE=1` to the generated
+  Docker-run command (and the equivalent socket volume + variable to the unRAID XML), so a
+  socket-enabled probe deploys straight from the wizard instead of hand-editing the command. The
+  Compose format already bundles the updater sidecar, so there it's always on.
+- **Labeled axes on alert trend graphs.** The 2-hour trend PNG in every problem and recovery alert now
+  carries axis labels — min/mid/max value gridlines on the Y axis and relative time (2h ago → now) on
+  the X axis — for at-a-glance scale without opening the app.
+
+---
+
 ## [0.4.26] - 2026-08-31
 
 **Fixes:**
