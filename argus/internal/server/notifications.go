@@ -162,7 +162,7 @@ func (s *Server) handleTestChannel(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	ev := notify.SampleEvent(time.Now().In(s.mgr.Location()), s.mgr.PublicURL())
 	dr, dg, db := statusRGB(ev.State)
-	ev.ChartPNG = renderChart(demoSeries(), dr, dg, db) // preview the graph too
+	ev.ChartPNG = renderChart(demoSeries(), dr, dg, db, "") // preview the graph too
 	if err := notify.Send(ctx, toNotifyChannel(*ch), ev); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return

@@ -27,19 +27,11 @@ func demoSeries() []float64 {
 	return out
 }
 
-// alertSeries fetches ~2 hours of history for one numeric item, oldest→newest, downsampled for
-// a compact chart. Returns nil for non-numeric items or on error (the alert then omits the graph).
-func alertSeries(ctx context.Context, zbx *zabbix.Client, itemID string) []float64 {
-	types, err := zbx.ItemValueTypes(ctx, []string{itemID})
-	if err != nil {
-		return nil
-	}
-	vt := types[itemID]
-	if vt != "0" && vt != "3" {
-		return nil
-	}
+// alertSeries fetches ~2 hours of history for one numeric item (value type 0/3), oldest→newest,
+// downsampled for a compact chart. Returns nil on error.
+func alertSeries(ctx context.Context, zbx *zabbix.Client, itemID, valueType string) []float64 {
 	from := time.Now().Add(-2 * time.Hour).Unix()
-	pts, err := zbx.HistoryMulti(ctx, []string{itemID}, atoi(vt), from)
+	pts, err := zbx.HistoryMulti(ctx, []string{itemID}, atoi(valueType), from)
 	if err != nil {
 		return nil
 	}
@@ -54,25 +46,34 @@ func alertSeries(ctx context.Context, zbx *zabbix.Client, itemID string) []float
 
 // alertChart renders a sensor's 2-hour trend PNG in the given state's color, or nil when there's
 // no usable history (non-numeric item, no data, or a fetch error) - the alert then omits the graph.
+// It reads the item's units so the Y axis scales them like the app (bytes, bits, uptime).
 func alertChart(ctx context.Context, zbx *zabbix.Client, itemID, state string) []byte {
 	if itemID == "" {
 		return nil
 	}
-	series := alertSeries(ctx, zbx, itemID)
+	items, err := zbx.ItemsByIDs(ctx, []string{itemID})
+	if err != nil {
+		return nil
+	}
+	it, ok := items[itemID]
+	if !ok || (it.ValueType != "0" && it.ValueType != "3") {
+		return nil // non-numeric item: no chart
+	}
+	series := alertSeries(ctx, zbx, itemID, it.ValueType)
 	if len(series) < 2 {
 		return nil
 	}
 	r, g, b := statusRGB(state)
-	return renderChart(series, r, g, b)
+	return renderChart(series, r, g, b, it.Units)
 }
 
 // renderChart draws a compact 2-hour trend as a PNG (white background, filled line in the status
-// color) with labeled axes: min/mid/max on the Y axis and relative time (2h ago → now) on the X
-// axis. The message body still carries the exact value/threshold. Returns nil for <2 points.
-func renderChart(vals []float64, cr, cg, cb uint8) []byte {
+// color) with labeled axes: min/mid/max on the Y axis (scaled by the item's units, like the app)
+// and relative time (2h ago → now) on the X axis. Returns nil for <2 points.
+func renderChart(vals []float64, cr, cg, cb uint8, units string) []byte {
 	const w, h = 600, 200
-	// Room on the left for Y labels and along the bottom for X labels.
-	const mL, mR, mT, mB = 52, 12, 12, 26
+	// Room on the left for Y labels (wider, to fit unit suffixes like "5.2GBps") and along the bottom.
+	const mL, mR, mT, mB = 60, 12, 12, 26
 	pw, ph := w-mL-mR, h-mT-mB
 
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
@@ -112,7 +113,7 @@ func renderChart(vals []float64, cr, cg, cb uint8) []byte {
 		for x := mL; x < w-mR; x++ {
 			img.Set(x, gl.y, grid)
 		}
-		s := axisNum(gl.v)
+		s := axisLabel(gl.v, units)
 		tw := textWidth(s)
 		drawText(img, mL-6-tw, gl.y+4, s, label)
 	}
@@ -167,10 +168,17 @@ func renderChart(vals []float64, cr, cg, cb uint8) []byte {
 	return encodePNG(img)
 }
 
-// axisNum formats a value for an axis tick in compact, human-readable form - never scientific
-// notation. Magnitudes >= 1000 get SI suffixes (706k, 70.6M, 1.2G); smaller values keep ~3
-// significant figures with trailing zeros trimmed. This keeps the Y axis legible for large counters
-// (e.g. uptime seconds) that would otherwise render as "7.06e+05".
+// trimFloat formats v with up to dec decimals, trailing zeros (and a bare dot) trimmed.
+func trimFloat(v float64, dec int) string {
+	s := strconv.FormatFloat(v, 'f', dec, 64)
+	if strings.ContainsRune(s, '.') {
+		s = strings.TrimRight(strings.TrimRight(s, "0"), ".")
+	}
+	return s
+}
+
+// axisNum formats a unitless value for an axis tick in compact form - never scientific notation.
+// Magnitudes >= 1000 get SI suffixes (706k, 70.6M, 1.2G); smaller values keep ~3 significant figures.
 func axisNum(v float64) string {
 	if v == 0 {
 		return "0"
@@ -197,11 +205,62 @@ func axisNum(v float64) string {
 	case a < 100:
 		dec = 1
 	}
-	s := strconv.FormatFloat(a, 'f', dec, 64)
-	if strings.ContainsRune(s, '.') {
-		s = strings.TrimRight(strings.TrimRight(s, "0"), ".")
+	return sign + trimFloat(a, dec) + suffix
+}
+
+// Unit families mirror the app (web/src/App.tsx): bytes scale by 1024, bits by 1000.
+var byteAxisUnits = []string{"B", "KB", "MB", "GB", "TB", "PB"}
+var bitAxisUnits = []string{"bps", "Kbps", "Mbps", "Gbps", "Tbps"}
+
+// scaleUnit reduces n by base until it fits a unit; returns "<value><unit>" (compact, no space),
+// mirroring the app's scaleBy: integer at the base unit, else up to 2 decimals trimmed.
+func scaleUnit(n, base float64, units []string) (string, string) {
+	v, i := n, 0
+	for math.Abs(v) >= base && i < len(units)-1 {
+		v /= base
+		i++
 	}
-	return sign + s + suffix
+	if i == 0 {
+		return trimFloat(math.Round(v), 0), units[i]
+	}
+	return trimFloat(v, 2), units[i]
+}
+
+// axisDuration renders seconds as a single decimal unit for the axis (817d, 8.2d, 4.1h, 45m, 11s).
+func axisDuration(sec float64) string {
+	a := math.Abs(sec)
+	switch {
+	case a >= 86400:
+		return trimFloat(sec/86400, 1) + "d"
+	case a >= 3600:
+		return trimFloat(sec/3600, 1) + "h"
+	case a >= 60:
+		return trimFloat(sec/60, 1) + "m"
+	default:
+		return trimFloat(sec, 0) + "s"
+	}
+}
+
+// axisLabel formats an axis tick using the app's unit scaling: bytes (1024), bits (1000), and uptime
+// as a duration; other units fall back to a compact SI magnitude with the raw unit appended.
+func axisLabel(v float64, units string) string {
+	switch units {
+	case "uptime":
+		return axisDuration(v)
+	case "B":
+		val, u := scaleUnit(v, 1024, byteAxisUnits)
+		return val + u
+	case "Bps":
+		val, u := scaleUnit(v, 1024, byteAxisUnits)
+		return val + u + "ps"
+	case "bps":
+		val, u := scaleUnit(v, 1000, bitAxisUnits)
+		return val + u
+	case "":
+		return axisNum(v)
+	default:
+		return axisNum(v) + units
+	}
 }
 
 // textWidth returns the pixel width of s in the basicfont face used for labels.
