@@ -200,6 +200,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/update/start", auth.RequireRole("admin", s.handleUpdateStart))
 	mux.HandleFunc("GET /api/update/state", auth.RequireAuth(s.handleUpdateState))
 	mux.HandleFunc("POST /api/update/dismiss", auth.RequireRole("admin", s.handleUpdateDismiss))
+	// update the core's argus-updater sidecar itself (admin)
+	mux.HandleFunc("POST /api/update/updater", auth.RequireRole("admin", s.handleUpdaterSelfUpdate))
 
 	// user management (admin only)
 	mux.HandleFunc("GET /api/users", auth.RequireRole("admin", s.handleListUsers))

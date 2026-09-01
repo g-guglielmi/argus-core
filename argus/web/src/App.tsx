@@ -598,6 +598,8 @@ type UpdateState = {
   from?: string
   message?: string
   requested_by?: string
+  updater_version?: string // the core's argus-updater sidecar version
+  updater_pending?: boolean // a sidecar self-update is queued
 }
 
 // VersionAbout shows the running build at the top of Settings, with a verdict badge so an admin can
@@ -636,6 +638,14 @@ function VersionAbout() {
     fetch('/api/version/notes').then((r) => (r.ok ? r.json() : null)).then((d) => setNotes((d && d.notes) || '')).catch(() => setNotes(''))
   }
   const active = upd != null && (upd.state === 'requested' || upd.state === 'running')
+  const updateSidecar = async () => {
+    if (!(await confirm({ title: 'Update the updater sidecar', message: 'Recreate the argus-updater sidecar onto the latest version? It rolls back if the new one fails. The core is not affected.', confirmLabel: 'Update sidecar' }))) return
+    setErr('')
+    fetch('/api/update/updater', { method: 'POST' })
+      .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'could not queue the sidecar update') })
+      .then(refreshUpd)
+      .catch((e) => setErr(String(e.message || e)))
+  }
   const startUpdate = () => {
     setBusy(true); setErr('')
     fetch('/api/update/start', { method: 'POST' })
@@ -754,6 +764,20 @@ function VersionAbout() {
           </div>
           <p className="set-hint" style={{ marginTop: 6 }}>Switches the running image to the selected channel or version. Picking a specific version pins the core — it won't track a channel until you switch back to <span className="mono">latest</span> or <span className="mono">testing</span>.</p>
         </details>
+      )}
+
+      {/* The argus-updater sidecar itself (the container that performs the updates above). */}
+      {upd && upd.self_update_enabled && (
+        <div className="set-row" style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)', marginBottom: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <strong style={{ fontSize: 13 }}>Updater sidecar</strong>
+            <span className="mono" style={{ color: 'var(--muted)' }} title="Version of the argus-updater container that performs core updates">{upd.updater_version || 'version unknown'}</span>
+            {upd.updater_pending
+              ? <span className="tag" title="A sidecar self-update is queued; it applies on the sidecar's next poll">update queued</span>
+              : <Button variant="default" onClick={updateSidecar}>Update sidecar</Button>}
+          </div>
+          <p className="set-hint" style={{ marginTop: 6 }}>The <span className="mono">argus-updater</span> sidecar holds the Docker socket and performs the updates above. It can update itself — it recreates itself onto the latest image (rolling back on failure). The core keeps running throughout.</p>
+        </div>
       )}
     </section>
   )

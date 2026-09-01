@@ -27,8 +27,10 @@ import (
 // reads a half-written file; both files carry the same `id` so a stale status is ignored.
 
 const (
-	updateRequestFile = "request.json"
-	updateStatusFile  = "status.json"
+	updateRequestFile  = "request.json"
+	updateStatusFile   = "status.json"
+	updaterInfoFile    = "updater.json"         // the sidecar reports its OWN version here
+	updaterRequestFile = "updater-request.json" // the core drops this to update the sidecar itself
 )
 
 // updateRequest is the command the core drops for the sidecar.
@@ -63,6 +65,9 @@ type updateStateResponse struct {
 	RequestedBy       string `json:"requested_by,omitempty"`
 	StartedAt         string `json:"started_at,omitempty"`
 	FinishedAt        string `json:"finished_at,omitempty"`
+	// The argus-updater sidecar itself (independent of the core-update job above).
+	UpdaterVersion string `json:"updater_version,omitempty"` // version the sidecar reports for itself
+	UpdaterPending bool   `json:"updater_pending,omitempty"` // a sidecar self-update is queued, not yet consumed
 }
 
 func (s *Server) updatePath(name string) string { return filepath.Join(s.cfg.UpdateDir, name) }
@@ -105,6 +110,17 @@ func (s *Server) currentUpdateState() (updateStateResponse, error) {
 	resp := updateStateResponse{SelfUpdateEnabled: s.cfg.SelfUpdateEnabled(), State: "idle"}
 	if !s.cfg.SelfUpdateEnabled() {
 		return resp, nil
+	}
+	// The sidecar's own version + whether a sidecar self-update is queued - independent of the
+	// core-update job state below.
+	var ui struct {
+		Version string `json:"version"`
+	}
+	if ok, _ := readUpdateJSON(s.updatePath(updaterInfoFile), &ui); ok {
+		resp.UpdaterVersion = ui.Version
+	}
+	if _, err := os.Stat(s.updatePath(updaterRequestFile)); err == nil {
+		resp.UpdaterPending = true
 	}
 	var req updateRequest
 	hasReq, err := readUpdateJSON(s.updatePath(updateRequestFile), &req)
@@ -218,6 +234,41 @@ func (s *Server) handleUpdateStart(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logger.Info("core self-update queued", "tag", req.Tag, "from", req.From, "by", by)
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued", "tag": req.Tag})
+}
+
+// handleUpdaterSelfUpdate queues a self-update of the core's argus-updater sidecar (admin). The
+// sidecar recreates itself (via an ephemeral probe-recreate copy) onto the requested argus-updater
+// tag - default "latest" - which it consumes on its next poll. Requires the update channel wired.
+func (s *Server) handleUpdaterSelfUpdate(w http.ResponseWriter, r *http.Request) {
+	if !s.cfg.SelfUpdateEnabled() {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "self-update is not enabled (no argus-updater sidecar configured)"})
+		return
+	}
+	var body struct {
+		Tag string `json:"tag"`
+	}
+	decodeOptional(w, r, &body)
+	tag := strings.TrimSpace(body.Tag)
+	if tag == "" {
+		tag = "latest"
+	}
+	by := ""
+	if u, ok := auth.UserFrom(r.Context()); ok {
+		by = u.Email
+	}
+	req := struct {
+		ID          string `json:"id"`
+		Tag         string `json:"tag"`
+		RequestedBy string `json:"requested_by"`
+		RequestedAt string `json:"requested_at"`
+	}{newUpdateID(), tag, by, time.Now().UTC().Format(time.RFC3339)}
+	if err := s.writeUpdateJSONAtomic(updaterRequestFile, req); err != nil {
+		s.logger.Error("updater self-update: could not write request", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the updater update"})
+		return
+	}
+	s.logger.Info("updater self-update queued", "tag", tag, "by", by)
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued", "tag": tag})
 }
 
 // handleUpdateState returns the current self-update state so the UI can drive the button and banner.
