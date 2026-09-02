@@ -36,6 +36,11 @@ type appLatestCache struct {
 	devUpdate bool     // a development (:testing) build is running and a newer :testing image exists
 	devTarget string   // the target :testing build's version (OCI label), "" if unknown
 	releases  []string // published vX.Y.Z release tags, newest first (for the version switcher)
+	// Check status, so the UI can tell "up to date" apart from "couldn't reach the registry": lastOK is
+	// when the check last completed successfully (the verdict above is as-of then); lastErr is set when
+	// the most recent attempt couldn't reach GHCR (and is cleared on the next success).
+	lastOK  time.Time
+	lastErr string
 }
 
 func (c *appLatestCache) getReleases() []string {
@@ -70,6 +75,29 @@ func (c *appLatestCache) setDevUpdate(available bool, target string) {
 	c.mu.Unlock()
 }
 
+// setCheckOK marks a fully successful check: the verdict is fresh as of now, and any prior error clears.
+func (c *appLatestCache) setCheckOK() {
+	c.mu.Lock()
+	c.lastOK, c.lastErr = time.Now(), ""
+	c.mu.Unlock()
+}
+
+// setCheckFailed records that the most recent check couldn't reach the registry. lastOK is left as-is,
+// so the UI can still say when the shown verdict was last confirmed.
+func (c *appLatestCache) setCheckFailed(msg string) {
+	c.mu.Lock()
+	c.lastErr = msg
+	c.mu.Unlock()
+}
+
+// checkStatus returns the last successful-check time (zero if never) and the most recent attempt's
+// error ("" if it succeeded).
+func (c *appLatestCache) checkStatus() (lastOK time.Time, lastErr string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.lastOK, c.lastErr
+}
+
 // getNotes returns the cached release version and its notes together, so the two are always consistent.
 func (c *appLatestCache) getNotes() (version, notes string) {
 	c.mu.RLock()
@@ -100,6 +128,7 @@ func (s *Server) refreshAppLatest(ctx context.Context) {
 	releases, err := resolveAppReleases(c)
 	if err != nil {
 		s.logger.Warn("app latest: GHCR resolve failed", "err", err)
+		s.appLatest.setCheckFailed("Couldn't reach the registry")
 		return
 	}
 	s.appLatest.setReleases(releases)
@@ -122,13 +151,17 @@ func (s *Server) refreshAppLatest(ctx context.Context) {
 	if s.resolveChannel() == "testing" {
 		dev, target, derr := resolveTestingUpdate(c, buildinfo.Version)
 		if derr != nil {
+			// Releases resolved but the digest check couldn't - for a :testing box that IS the verdict,
+			// so treat it as a failed check rather than silently keeping the stale (maybe "up to date") one.
 			s.logger.Warn("app latest: testing-channel update check failed", "err", derr)
-		} else {
-			s.appLatest.setDevUpdate(dev, target)
+			s.appLatest.setCheckFailed("Couldn't reach the registry")
+			return
 		}
+		s.appLatest.setDevUpdate(dev, target)
 	} else {
 		s.appLatest.setDevUpdate(false, "")
 	}
+	s.appLatest.setCheckOK()
 }
 
 // resolveChannel returns the release channel this instance tracks: "testing" or "latest". A clean
@@ -386,6 +419,8 @@ type versionResponse struct {
 	DevUpdate       bool   `json:"dev_update,omitempty"`  // a newer :testing image exists for this dev build
 	DevTarget       string `json:"dev_target,omitempty"`  // the target :testing build's version, when known
 	Status          string `json:"status"`                // current | development | outdated | dev | unknown
+	CheckedAt       int64  `json:"checked_at,omitempty"`  // unix secs the update check last succeeded (verdict is as-of this)
+	CheckError      string `json:"check_error,omitempty"` // set when the last check couldn't reach the registry
 }
 
 // appUpdateStatus compares the running version against the newest published release and returns a
@@ -457,6 +492,13 @@ func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 		resp.DevTarget = target
 		resp.Status = "development"
 	}
+	// Surface whether the last check actually reached the registry, so the UI can tell "up to date" apart
+	// from "couldn't check" (a failed GHCR query otherwise leaves a stale, falsely-reassuring verdict).
+	lastOK, errMsg := s.appLatest.checkStatus()
+	if !lastOK.IsZero() {
+		resp.CheckedAt = lastOK.Unix()
+	}
+	resp.CheckError = errMsg
 	writeJSON(w, http.StatusOK, resp)
 }
 

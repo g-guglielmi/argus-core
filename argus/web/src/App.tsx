@@ -590,7 +590,7 @@ function buildNav(s: NavState): string {
   return window.location.pathname + (qs ? '?' + qs : '')
 }
 
-type VersionInfo = { version: string; latest?: string; update_available: boolean; dev_update?: boolean; dev_target?: string; status: string }
+type VersionInfo = { version: string; latest?: string; update_available: boolean; dev_update?: boolean; dev_target?: string; status: string; checked_at?: number; check_error?: string }
 type UpdateState = {
   self_update_enabled: boolean
   state: string // idle | requested | running | success | failed
@@ -675,7 +675,7 @@ function VersionAbout() {
     setChecking(true); setCheckedMsg(''); setErr('')
     fetch('/api/version/check', { method: 'POST' })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('check failed'))))
-      .then((d: VersionInfo) => { setV(d); setNotes(null); if (!d.update_available) setCheckedMsg("You're on the latest available build.") })
+      .then((d: VersionInfo) => { setV(d); setNotes(null); setCheckedMsg(!d.check_error && !d.update_available ? "You're on the latest available build." : '') })
       .catch(() => setErr('Update check failed'))
       .finally(() => setChecking(false))
   }
@@ -694,12 +694,14 @@ function VersionAbout() {
             <span className="mono">{running}</span>
             {v.update_available && !v.dev_update && <span className="vtag upd">↑ {v.latest} available</span>}
             {v.dev_update && <span className="vtag upd">↑ {v.dev_target || 'new testing build'}</span>}
-            {v.status === 'current' && <span className="vtag ok">latest</span>}
+            {v.status === 'current' && !v.check_error && <span className="vtag ok">latest</span>}
             {v.status === 'development' && <span className="vtag dev">development build</span>}
+            {v.check_error && !v.update_available && <span className="vtag dev" title="The last update check couldn't reach the registry — the verdict may be out of date">check failed</span>}
             <Button variant="default" style={{ marginLeft: 'auto' }} onClick={checkNow} disabled={checking}>{checking ? 'Checking…' : 'Check for updates'}</Button>
           </div>
         )}
       </div>
+      {v?.check_error && <p className="set-hint" style={{ margin: '0 0 8px', color: 'var(--warn)' }}>{v.check_error} to check for updates — {v.checked_at ? `showing the result from ${relTime(v.checked_at)}` : 'no successful check yet'}. Retry in a moment.</p>}
       {checkedMsg && <p className="set-hint" style={{ margin: '0 0 8px' }}>{checkedMsg}</p>}
 
       {/* Update progress / outcome banner (driven by the argus-updater sidecar). */}

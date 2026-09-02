@@ -53,6 +53,12 @@ Completes DESIGN §14a's delivery-vs-enrollment matrix and the break-glass item.
   4 GB RAM.
 
 **Fixed:**
+- **A failed update check no longer masquerades as "up to date."** When the core couldn't reach GHCR,
+  the check bailed out and left the previous verdict in place, so "Check for updates" showed a
+  falsely-reassuring "You're on the latest available build" — indistinguishable from an actual up-to-date
+  result (as a GHCR outage made obvious). `/api/version` now reports the last successful-check time and
+  whether the most recent attempt reached the registry; the About panel shows a **check failed** tag +
+  "Couldn't reach the registry — showing the result from N ago" instead of the green "latest" verdict.
 - **Core "Check for updates" missed newer `:testing` builds.** Channel resolution let the argus-updater
   sidecar's reported image tag override the version stamp, so if the sidecar reported anything but
   `testing` a development build (which can only come from `:testing`) was treated as the `latest`
