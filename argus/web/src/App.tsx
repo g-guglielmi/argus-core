@@ -1440,8 +1440,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
   const [proxies, setProxies] = useState<Proxy[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tokens, setTokens] = useState<EnrollTokenRow[] | null>(null)
-  const [adding, setAdding] = useState(false)
-  const [created, setCreated] = useState<CreatedToken | null>(null)
+  const [wizardOpen, setWizardOpen] = useState(false)
   const [target, setTarget] = useState<string | null>(null)
   const [openCmd, setOpenCmd] = useState<string | null>(null) // proxy name whose update command is expanded
   const [queued, setQueued] = useState<Record<string, string>>({}) // proxy name -> queued self-update tag
@@ -1503,13 +1502,11 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
     } catch { alert({ title: 'Check-in token', message: 'Could not issue a check-in token', danger: true }) }
   }
 
-  useEffect(() => {
-    const load = () => fetch('/api/proxies')
-      .then(async (r) => { if (!r.ok) throw new Error(await errText(r, 'Failed to load probes')); return r.json() })
-      .then((p: Proxy[]) => { setProxies(p || []); setError(null); if (p && p.length) setTarget(p[0].target ?? 'latest') })
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load probes'))
-    load(); const t = setInterval(load, 30000); return () => clearInterval(t)
-  }, [])
+  const loadProxies = () => fetch('/api/proxies')
+    .then(async (r) => { if (!r.ok) throw new Error(await errText(r, 'Failed to load probes')); return r.json() })
+    .then((p: Proxy[]) => { setProxies(p || []); setError(null); if (p && p.length) setTarget(p[0].target ?? 'latest') })
+    .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load probes'))
+  useEffect(() => { loadProxies(); const t = setInterval(loadProxies, 30000); return () => clearInterval(t) }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function loadTokens() {
     if (!isAdmin || !enroll) return
@@ -1552,7 +1549,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
         <span className="hint">{proxies ? `${proxies.length} known to the core` : '…'}</span>
         {isAdmin && <div className="tools">
           <button className="btn" onClick={reconcile} title="Prune Argus records left behind by proxies deleted directly in Zabbix">Clean up</button>
-          {enroll && <button className="btn primary" onClick={() => { setAdding((v) => !v); setCreated(null) }}>+ Add probe</button>}
+          {enroll && <button className="btn primary" onClick={() => setWizardOpen(true)}>+ Add probe</button>}
         </div>}
       </div>
 
@@ -1562,8 +1559,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
         </p>
       )}
 
-      {isAdmin && enroll && adding && !created && <AddProbeForm onCreated={(c) => { setCreated(c); setAdding(false); loadTokens() }} onCancel={() => setAdding(false)} />}
-      {created && <ProbeCommand created={created} redeploy={(proxies || []).some((p) => p.name === created.proxy_name)} onDone={() => setCreated(null)} />}
+      {isAdmin && enroll && wizardOpen && <AddProbeWizard existingNames={(proxies || []).map((p) => p.name)} onClose={() => { setWizardOpen(false); loadTokens(); loadProxies() }} onEnrolled={() => { loadTokens(); loadProxies() }} />}
 
       {isAdmin && enroll && pendingTokens.length > 0 && (
         <table className="enroll">
@@ -1745,46 +1741,6 @@ function FleetTarget({ target, latest, onSaved }: { target: string | null; lates
   )
 }
 
-function AddProbeForm({ onCreated, onCancel }: { onCreated: (c: CreatedToken) => void; onCancel: () => void }) {
-  const [site, setSite] = useState('')
-  const [ttl, setTtl] = useState(24)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function submit(e: FormEvent) {
-    e.preventDefault(); setError(null); setBusy(true)
-    try {
-      const res = await fetch('/api/probes/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ site, ttl_hours: ttl }) })
-      if (!res.ok) { setError(await errText(res, 'Could not create token')); return }
-      onCreated(await res.json())
-    } finally { setBusy(false) }
-  }
-
-  return (
-    <form onSubmit={submit} style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)', display: 'grid', gap: 12, maxWidth: 460 }}>
-      <label style={{ display: 'grid', gap: 4 }}>
-        <span className="flabel">Site name</span>
-        <input className="input" placeholder="e.g. site1" value={site} onChange={(e) => setSite(e.target.value)} required autoFocus />
-        <span className="set-hint">The proxy will be named <strong>proxy-{slugPreview(site) || '<site>'}</strong>.</span>
-      </label>
-      <label style={{ display: 'grid', gap: 4 }}>
-        <span className="flabel">Token valid for</span>
-        <select className="roleselect" value={ttl} onChange={(e) => setTtl(Number(e.target.value))}>
-          <option value={1}>1 hour</option>
-          <option value={24}>24 hours</option>
-          <option value={168}>7 days</option>
-          <option value={720}>30 days</option>
-        </select>
-      </label>
-      {error && <div style={{ color: 'var(--err)', fontSize: 12.5 }}>{error}</div>}
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button type="submit" className="btn primary" disabled={busy || !site.trim()}>{busy ? 'Creating…' : 'Create token'}</button>
-        <button type="button" className="btn" onClick={onCancel}>Cancel</button>
-      </div>
-    </form>
-  )
-}
-
 function slugPreview(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
 }
@@ -1822,118 +1778,210 @@ const VM_KEYMAPS: [string, string][] = [
   ['fr', 'French'], ['es', 'Spanish'], ['pt-latin1', 'Portuguese'],
 ]
 const vmNetInput = { padding: '6px 8px', fontSize: 12.5, color: 'var(--text)', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 6 }
-function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; redeploy: boolean; onDone: () => void }) {
-  const alert = useAlert()
-  const [fmt, setFmt] = useState<ProbeFmt>('docker')
+// AddProbeWizard is the guided "Add a probe" modal: name -> method + settings -> deploy -> an
+// optional live wait for enrollment. The token is minted only when leaving the method step, and only
+// re-minted if the name changes, so Back (to fix a misclick or change method) never wastes a token.
+function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames: string[]; onClose: () => void; onEnrolled: () => void }) {
+  const [step, setStep] = useState(1)
+  const [site, setSite] = useState('')
+  const [ttl, setTtl] = useState(24)
+  const [advanced, setAdvanced] = useState(false)
+  const [method, setMethod] = useState<ProbeFmt>('docker')
   const [selfupdate, setSelfupdate] = useState(true)
-  const [seeding, setSeeding] = useState(false)
   const [keymap, setKeymap] = useState('us')
   const [staticNet, setStaticNet] = useState(false)
   const [netIp, setNetIp] = useState('')
   const [netPrefix, setNetPrefix] = useState('24')
   const [netGw, setNetGw] = useState('')
   const [netDns, setNetDns] = useState('')
+  const [created, setCreated] = useState<CreatedToken | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [seeding, setSeeding] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [enrolled, setEnrolled] = useState<{ name: string; online: boolean } | null>(null)
 
-  // Build + download a first-boot seed ISO (label ARGUSSEED / ARGUS.ENV) for the probe VM. The image
-  // carries the single-use token, so it streams straight to a download - never persisted server-side.
-  async function downloadSeedISO() {
-    setSeeding(true)
+  const slug = slugPreview(site)
+  const proxyName = slug ? `proxy-${slug}` : ''
+  const redeploy = existingNames.includes(created?.proxy_name || proxyName)
+
+  async function mint(): Promise<CreatedToken | null> {
+    setErr(null); setBusy(true)
     try {
-      const res = await fetch('/api/probes/seed-iso', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: created.token, enroll_url: created.enroll_url, core_host: created.core_host, keymap, name: created.proxy_name, ...(staticNet ? { static_ip: netIp, prefix: netPrefix, gateway: netGw, dns: netDns } : {}) }),
-      })
-      if (!res.ok) { alert({ title: 'Seed ISO', message: await errText(res, 'Could not build the seed ISO'), danger: true }); return }
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `argus-seed-${created.proxy_name}.iso`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
-    } catch {
-      alert({ title: 'Seed ISO', message: 'Could not build the seed ISO', danger: true })
-    } finally {
-      setSeeding(false)
-    }
+      const res = await fetch('/api/probes/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ site, ttl_hours: ttl }) })
+      if (!res.ok) { setErr(await errText(res, 'Could not create the enrollment token')); return null }
+      return await res.json()
+    } catch { setErr('Could not create the enrollment token'); return null }
+    finally { setBusy(false) }
   }
 
-  // The updater-sidecar toggle applies to the docker format; Compose always bundles it; the VM
-  // installs it as a second systemd unit; unRAID uses its own native auto-update (no sidecar).
-  const selfEff = fmt === 'compose' ? true : selfupdate
-  const content = fmt === 'docker' ? probeDockerCmd(created, redeploy, selfupdate) : fmt === 'compose' ? probeComposeCmd(created) : fmt === 'unraid' ? probeUnraidXml(created) : ''
-  const pick = (f: ProbeFmt) => { setFmt(f) }
-  const showSelfToggle = fmt === 'docker' || fmt === 'compose'
-  const blurb: Record<ProbeFmt, string> = {
-    docker: redeploy
-      ? "Redeploying an existing probe: this removes the old containers and starts fresh ones, keeping the data volume (so it stays enrolled). Run it on the site's Docker host."
-      : "Run this on the site's Docker host - it starts the proxy plus the argus-updater sidecar (the sidecar holds the socket; the proxy never does).",
-    compose: "Run this on the site's Docker host - two services: the proxy and the argus-updater sidecar (probe-watch) that keeps it on the Argus fleet target. Re-running it recreates the probe in place, so it doubles as the redeploy command.",
-    unraid: 'On unRAID: Docker → Add Container → paste into the Template box, or save it as a .xml under /boot/config/plugins/dockerMan/templates-user/. Re-applying the template updates the container. Keep unRAID’s native auto-update on; Argus shows drift + the manual update command.',
-    vm: '',
+  function next1() {
+    if (!slug) { setErr('Enter a site name (letters, digits and hyphens).'); return }
+    // A token minted for a different name is now stale - drop it so the next step re-mints.
+    if (created && created.site !== slug) { fetch(`/api/probes/tokens/${created.id}`, { method: 'DELETE' }).catch(() => {}); setCreated(null) }
+    setErr(null); setStep(2)
   }
+
+  async function next2() {
+    let c = created
+    if (!c || c.site !== slug) { c = await mint(); if (!c) return; setCreated(c) }
+    setErr(null); setStep(3)
+  }
+
+  async function downloadSeedISO() {
+    if (!created) return
+    setSeeding(true); setErr(null)
+    try {
+      const res = await fetch('/api/probes/seed-iso', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: created.token, enroll_url: created.enroll_url, core_host: created.core_host, keymap, name: created.proxy_name, ...(staticNet ? { static_ip: netIp, prefix: netPrefix, gateway: netGw, dns: netDns } : {}) }) })
+      if (!res.ok) { setErr(await errText(res, 'Could not build the seed ISO')); return }
+      const blob = await res.blob(); const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url; a.download = `argus-seed-${created.proxy_name}.iso`
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+    } catch { setErr('Could not build the seed ISO') } finally { setSeeding(false) }
+  }
+
+  const content = created ? (method === 'docker' ? probeDockerCmd(created, redeploy, selfupdate) : method === 'compose' ? probeComposeCmd(created) : method === 'unraid' ? probeUnraidXml(created) : '') : ''
+
+  // Optional final step: poll until this token is redeemed, then show success.
+  useEffect(() => {
+    if (step !== 4 || !created) return
+    let alive = true
+    let timer: ReturnType<typeof setTimeout>
+    const tick = async () => {
+      try {
+        const rows: EnrollTokenRow[] = await (await fetch('/api/probes/tokens')).json()
+        const row = (rows || []).find((r) => r.id === created.id)
+        if (row && row.status === 'enrolled') {
+          let online = false
+          try { const px: Proxy[] = await (await fetch('/api/proxies')).json(); online = (px || []).some((p) => p.name === created.proxy_name && p.online) } catch { /* ignore */ }
+          if (alive) { setEnrolled({ name: created.proxy_name, online }); onEnrolled() }
+          return
+        }
+      } catch { /* keep polling */ }
+      if (alive) timer = setTimeout(tick, 3000)
+    }
+    timer = setTimeout(tick, 1200)
+    return () => { alive = false; clearTimeout(timer) }
+  }, [step, created]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const METHODS: { id: ProbeFmt; label: string; hint: string }[] = [
+    { id: 'docker', label: 'Docker run', hint: 'One command on the site Docker host.' },
+    { id: 'compose', label: 'Docker Compose', hint: 'A compose file (proxy + updater sidecar).' },
+    { id: 'unraid', label: 'unRAID', hint: 'A template for the unRAID Docker manager.' },
+    { id: 'vm', label: 'Virtual machine', hint: 'A downloadable appliance image (OVA / qcow2 / VHD).' },
+  ]
+
+  function addAnother() { setEnrolled(null); setCreated(null); setStep(1); setSite(''); setStaticNet(false); setErr(null) }
+
   return (
-    <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
-        <strong>Deploy {created.proxy_name}</strong>
-        <span className="envpill" title="Shown once">token shown once</span>
-        <div className="seg" style={{ marginLeft: 'auto' }}>
-          <button className={fmt === 'docker' ? 'on' : ''} onClick={() => pick('docker')}>Docker run</button>
-          <button className={fmt === 'compose' ? 'on' : ''} onClick={() => pick('compose')}>Compose + auto-update</button>
-          <button className={fmt === 'unraid' ? 'on' : ''} onClick={() => pick('unraid')}>unRAID XML</button>
-          <button className={fmt === 'vm' ? 'on' : ''} onClick={() => pick('vm')}>VM</button>
-        </div>
-        {fmt === 'vm' && <Button variant="default" onClick={downloadSeedISO} disabled={seeding}>{seeding ? 'Building…' : 'Download seed ISO'}</Button>}
-        {fmt !== 'vm' && <CopyButton text={content} variant="default" />}
-        <Button variant="default" onClick={onDone}>Done</Button>
-      </div>
-      {showSelfToggle && (
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: fmt === 'compose' ? 'var(--faint)' : 'var(--muted)', marginBottom: 8, cursor: fmt === 'compose' ? 'default' : 'pointer' }}>
-        <input type="checkbox" checked={selfEff} disabled={fmt === 'compose'} onChange={(e) => setSelfupdate(e.target.checked)} />
-        Add the argus-updater sidecar (a 2nd container; holds the socket so Argus can update this probe - the proxy stays socket-free)
-        {fmt === 'compose' && <span className="tag" title="The Compose format always includes the updater sidecar">always on</span>}
-      </label>
-      )}
-      {fmt === 'vm' ? (
-        <div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>
-            Console keyboard layout
-            <select value={keymap} onChange={(e) => setKeymap(e.target.value)} style={{ padding: '4px 8px', background: 'var(--panel)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 6 }}>
-              {VM_KEYMAPS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-            <span style={{ color: 'var(--faint)' }}>for the VM console / break-glass login</span>
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--muted)', marginBottom: staticNet ? 8 : 10, cursor: 'pointer' }}>
-            <input type="checkbox" checked={staticNet} onChange={(e) => setStaticNet(e.target.checked)} />
-            Static IP <span style={{ color: 'var(--faint)' }}>(for sites with no DHCP; baked into the seed ISO)</span>
-          </label>
-          {staticNet && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 8, marginBottom: 10, maxWidth: 440 }}>
-              <input value={netIp} onChange={(e) => setNetIp(e.target.value)} placeholder="IP address (e.g. 10.0.0.50)" style={vmNetInput} />
-              <input value={netPrefix} onChange={(e) => setNetPrefix(e.target.value)} placeholder="Prefix (24)" title="CIDR prefix (24) or a netmask (255.255.255.0)" style={vmNetInput} />
-              <input value={netGw} onChange={(e) => setNetGw(e.target.value)} placeholder="Gateway (e.g. 10.0.0.1)" style={vmNetInput} />
-              <input value={netDns} onChange={(e) => setNetDns(e.target.value)} placeholder="DNS (e.g. 10.0.0.10)" title="One or more DNS servers, comma separated" style={vmNetInput} />
+    <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 560, maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto' }}>
+        <div className="dlg-title">Add a probe{step < 4 && <span style={{ color: 'var(--faint)', fontWeight: 400, fontSize: 12 }}> &middot; step {step} of 3</span>}</div>
+        {err && <div style={{ color: 'var(--err)', fontSize: 13, marginBottom: 8 }}>{err}</div>}
+
+        {step === 1 && (
+          <div style={{ display: 'grid', gap: 14 }}>
+            <label style={{ display: 'grid', gap: 4 }}>
+              <span className="flabel">Site name</span>
+              <input className="input" placeholder="e.g. site1" value={site} autoFocus onChange={(e) => setSite(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') next1() }} />
+              <span className="set-hint">The proxy will be named <strong>proxy-{slug || '<site>'}</strong>.</span>
+            </label>
+            <button type="button" onClick={() => setAdvanced((v) => !v)} style={{ justifySelf: 'start', background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 12.5, padding: 0 }}>{advanced ? 'Hide options' : 'Advanced'}</button>
+            {advanced && (
+              <label style={{ display: 'grid', gap: 4 }}>
+                <span className="flabel">Enrollment token valid for</span>
+                <select className="roleselect" value={ttl} onChange={(e) => setTtl(Number(e.target.value))}>
+                  <option value={1}>1 hour</option><option value={24}>24 hours</option><option value={168}>7 days</option><option value={720}>30 days</option>
+                </select>
+              </label>
+            )}
+          </div>
+        )}
+
+        {step === 2 && (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {METHODS.map((m) => (
+                <button key={m.id} type="button" onClick={() => setMethod(m.id)} style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 8, cursor: 'pointer', border: `1px solid ${method === m.id ? 'var(--accent)' : 'var(--border)'}`, background: method === m.id ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'var(--elevated)' }}>
+                  <div style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--text)' }}>{m.label}</div>
+                  <div style={{ color: 'var(--muted)', fontSize: 12 }}>{m.hint}</div>
+                </button>
+              ))}
             </div>
-          )}
-          <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.6 }}>
-            For the Argus probe VM (import the OVA / qcow2 / VHD). Zero-touch: <strong>Download seed ISO</strong> and attach it as a CD when you create the VM — it runs the proxy + the argus-updater sidecar and self-enrols on first boot, no cloud-init needed.
-            {' '}No CD? Boot the VM (with DHCP) and open the first-boot setup page at its IP.
-            {' '}The token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set the core host so it can reach :10051.'}
-          </p>
+            {method === 'docker' && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--muted)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={selfupdate} onChange={(e) => setSelfupdate(e.target.checked)} />
+                Add the argus-updater sidecar (lets Argus update this probe)
+              </label>
+            )}
+            {method === 'compose' && <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0 }}>Includes the argus-updater sidecar (two services).</p>}
+            {method === 'unraid' && <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0 }}>Uses unRAID native auto-update; Argus shows drift and a manual update command.</p>}
+            {method === 'vm' && (
+              <div style={{ display: 'grid', gap: 10 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--muted)' }}>
+                  Console keyboard layout
+                  <select value={keymap} onChange={(e) => setKeymap(e.target.value)} style={{ padding: '4px 8px', background: 'var(--panel)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                    {VM_KEYMAPS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--muted)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={staticNet} onChange={(e) => setStaticNet(e.target.checked)} />
+                  Static IP <span style={{ color: 'var(--faint)' }}>(sites with no DHCP)</span>
+                </label>
+                {staticNet && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 8 }}>
+                    <input value={netIp} onChange={(e) => setNetIp(e.target.value)} placeholder="IP (10.0.0.50)" style={vmNetInput} />
+                    <input value={netPrefix} onChange={(e) => setNetPrefix(e.target.value)} placeholder="Prefix (24)" title="CIDR prefix (24) or a netmask (255.255.255.0)" style={vmNetInput} />
+                    <input value={netGw} onChange={(e) => setNetGw(e.target.value)} placeholder="Gateway (10.0.0.1)" style={vmNetInput} />
+                    <input value={netDns} onChange={(e) => setNetDns(e.target.value)} placeholder="DNS (10.0.0.10)" title="One or more DNS servers, comma separated" style={vmNetInput} />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {step === 3 && created && (
+          <div style={{ display: 'grid', gap: 10 }}>
+            <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0 }}>Deploy <strong>{created.proxy_name}</strong>. The token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set the core host so it can reach :10051.'}</p>
+            {method === 'vm' ? (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.6 }}>Import the appliance (OVA / qcow2 / VHD), then attach the seed ISO as a CD for zero-touch enrollment - or boot it (with DHCP) and open the first-boot page at its IP.</p>
+                <div><Button variant="primary" onClick={downloadSeedISO} disabled={seeding}>{seeding ? 'Building the ISO...' : 'Download seed ISO'}</Button></div>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}><CopyButton text={content} variant="default" /></div>
+                <pre style={{ margin: 0, padding: '11px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12, lineHeight: 1.5, maxHeight: 280 }}><code>{content}</code></pre>
+              </>
+            )}
+          </div>
+        )}
+
+        {step === 4 && (
+          <div style={{ display: 'grid', gap: 10, padding: '6px 0' }}>
+            {!enrolled ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text)', fontSize: 13.5 }}>
+                  <span className="spinner" /> Waiting for <strong>{created?.proxy_name}</strong> to enrol...
+                </div>
+                <p style={{ color: 'var(--faint)', fontSize: 12, margin: 0 }}>You can close this - the probe will still appear in the list once it enrols.</p>
+              </>
+            ) : (
+              <div style={{ color: 'var(--ok)', fontSize: 14, fontWeight: 600 }}>&#10003; {enrolled.name} enrolled{enrolled.online ? ' and online' : ''}.</div>
+            )}
+          </div>
+        )}
+
+        <div className="dlg-foot">
+          {step === 1 && <><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" onClick={next1}>Next</Button></>}
+          {step === 2 && <><Button variant="ghost" onClick={() => { setErr(null); setStep(1) }}>Back</Button><Button variant="primary" onClick={next2} disabled={busy}>{busy ? 'Creating...' : 'Next'}</Button></>}
+          {step === 3 && <><Button variant="ghost" onClick={() => { setErr(null); setStep(2) }}>Back</Button><Button variant="ghost" onClick={onClose}>Done</Button><Button variant="primary" onClick={() => { setErr(null); setStep(4) }}>Watch for it</Button></>}
+          {step === 4 && (enrolled
+            ? <><Button variant="ghost" onClick={addAnother}>Add another</Button><Button variant="primary" onClick={onClose}>Done</Button></>
+            : <><Button variant="ghost" onClick={() => setStep(3)}>Back</Button><Button variant="primary" onClick={onClose}>Done</Button></>)}
         </div>
-      ) : (
-        <>
-          <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: '0 0 8px' }}>
-            {blurb[fmt]}
-            {' '}It self-enrolls on first boot; the token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set the core host (ZBX_SERVER_HOST / ARGUS_PROBE_CORE_HOST) so it can reach :10051.'}
-            {selfEff && (fmt === 'docker' || fmt === 'unraid') && ' Self-update is on: the probe recreates itself via a short-lived sister container when the fleet target changes.'}
-          </p>
-          <pre style={{ margin: 0, padding: '11px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12, lineHeight: 1.5 }}><code>{content}</code></pre>
-        </>
-      )}
+      </div>
     </div>
   )
 }

@@ -185,6 +185,8 @@ a { color: var(--accent); }
    prefers-reduced-motion below. */
 @keyframes fade-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes argus-spin { to { transform: rotate(360deg); } }
+.spinner { width: 15px; height: 15px; border: 2px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: argus-spin 0.7s linear infinite; display: inline-block; flex: none; }
 .view-enter { animation: fade-rise var(--dur-base) var(--ease-out) both; }
 .chart-reveal { animation: fade-rise var(--dur-base) var(--ease-out) both; }
 /* Plain fade (no rise): the host body loads its sensor table + sparklines asynchronously, so it

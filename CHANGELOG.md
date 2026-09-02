@@ -42,8 +42,13 @@ Completes DESIGN §14a's delivery-vs-enrollment matrix and the break-glass item.
   stuck VM is recoverable by re-attaching a corrected seed.
 
 **Changed:**
+- **Reworked "Add probe" into a guided modal wizard** - name → deploy method (+ only that method's
+  settings) → deploy instructions → an optional live "waiting for enrolment ✓". Replaces the crowded
+  inline panel that showed every method and setting at once. Back navigation between steps doesn't
+  waste a token (it's minted once, on leaving the method step, and only re-minted if the name changes);
+  the wait step polls the token status and is purely a visual aid (closing it changes nothing).
 - **Dropped cloud-init from the probe VM.** The golden image purges cloud-init after the build; the
-  appliance self-configures via systemd-networkd + the first-boot service. The wizard's VM tab is now
+  appliance self-configures via systemd-networkd + the first-boot service. The wizard's VM option is now
   seed ISO + first-boot page (the cloud-init paste path is retired). VM defaults bumped to 30 GB disk /
   4 GB RAM.
 
