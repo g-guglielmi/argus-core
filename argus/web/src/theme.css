@@ -346,7 +346,7 @@ a { color: var(--accent); }
 .dlg-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 /* A dialog can pin its title + footer and scroll only the middle: set the .dlg to a max-height flex
    column and wrap the body in .dlg-scroll. The small padding keeps focus rings from being clipped. */
-.dlg-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 2px; margin: -2px; }
+.dlg-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px; margin: -6px; }
 
 table.sensors { width: 100%; border-collapse: collapse; font-size: 13px; }
 table.sensors thead th { text-align: left; color: var(--faint); font-weight: 600; font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; padding: 6px 10px; }

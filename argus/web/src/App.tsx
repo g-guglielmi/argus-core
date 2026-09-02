@@ -688,7 +688,10 @@ function VersionAbout() {
       <h3>About</h3>
       <p className="set-note">The Argus components running on this instance — the core app, and its updater sidecar when wired up — and whether newer versions are available.</p>
       <div className="set-row" style={{ marginBottom: v && v.update_available ? undefined : 0 }}>
-        <div className="set-head"><span className="complabel">Core</span></div>
+        <div className="set-head">
+          <span className="complabel">Core</span>
+          {v && <Button variant="default" style={{ marginLeft: 'auto' }} onClick={checkNow} disabled={checking}>{checking ? 'Checking…' : 'Check for updates'}</Button>}
+        </div>
         {!v ? <span className="set-hint">Checking…</span> : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span className="mono">{running}</span>
@@ -697,7 +700,6 @@ function VersionAbout() {
             {v.status === 'current' && !v.check_error && <span className="vtag ok">latest</span>}
             {v.status === 'development' && <span className="vtag dev">development build</span>}
             {v.check_error && !v.update_available && <span className="vtag dev" title="The last update check couldn't reach the registry — the verdict may be out of date">check failed</span>}
-            <Button variant="default" style={{ marginLeft: 'auto' }} onClick={checkNow} disabled={checking}>{checking ? 'Checking…' : 'Check for updates'}</Button>
           </div>
         )}
       </div>
@@ -771,12 +773,14 @@ function VersionAbout() {
       {/* The argus-updater sidecar - same row layout as Core, so the two components read in parallel. */}
       {upd && upd.self_update_enabled && (
         <div className="set-row" style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)', marginBottom: 0 }}>
-          <div className="set-head"><span className="complabel">Updater sidecar</span></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span className="mono" title="Version of the argus-updater container that performs the updates above">{upd.updater_version || '—'}</span>
+          <div className="set-head">
+            <span className="complabel">Updater sidecar</span>
             {upd.updater_pending
               ? <span className="vtag upd" style={{ marginLeft: 'auto' }} title="A sidecar self-update is queued; it applies on the sidecar's next poll">update queued</span>
               : <Button variant="default" style={{ marginLeft: 'auto' }} onClick={updateSidecar}>Update sidecar</Button>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span className="mono" title="Version of the argus-updater container that performs the updates above">{upd.updater_version || '—'}</span>
           </div>
           <p className="set-hint" style={{ marginTop: 6 }}>Holds the Docker socket and performs the core updates above. <strong>Update sidecar</strong> recreates it onto the latest image (rolling back on failure); the core keeps running throughout.</p>
         </div>
