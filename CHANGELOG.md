@@ -11,6 +11,36 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.30] - 2026-09-02
+
+Unify self-update on one model across the core and the whole probe fleet: **two containers**
+everywhere - the main container (a pure reporter, never holding the Docker socket) plus the shared
+**argus-updater** sidecar that recreates it via the Docker Engine API and rolls back on failure.
+
+**Added:**
+- **One updater for everything.** The core self-updater and every probe now use the same
+  `ghcr.io/g-guglielmi/argus-updater` image (its own version line), sharing one recreate engine, with
+  modes `core` (file-channel), `probe-watch` (socket-holding probe sidecar, no compose), and
+  `probe-recreate` (the one-shot self-update primitive). The probe image dropped `docker-cli` and is a
+  pure reporter; the socket is only ever on the sidecar.
+- **Update the updater.** The sidecar can update itself (via an ephemeral `probe-recreate` copy). A
+  new **Updater** column on the Probes page (per-probe sidecar version + an admin Update button) and
+  an **Updater sidecar** section in Settings → About (version + Update sidecar) drive it. New
+  `POST /api/probes/{name}/updater-update` and `POST /api/update/updater`.
+- **Two-container deploys from the wizard.** The Add-probe wizard's Docker-run and Compose tabs now
+  emit both containers (proxy + `probe-watch` sidecar); the probe VM installs them as two systemd
+  units (`argus-probe` + `argus-updater`); unRAID keeps its native auto-update.
+
+**Changed:**
+- **Retired the socket-on-proxy self-update path** (`ARGUS_PROBE_SELFUPDATE`) and the compose-specific
+  `probe-poll` updater mode in favour of the single sidecar model.
+- Two-reporter check-in: a socket-less proxy reports its version but omits self-update capability
+  while the sidecar advertises capability but omits a version; the fields are sticky (an omitted field
+  keeps the stored value) and one-shots are handed only to a capability-advertising caller, so the two
+  never clobber each other or race. `RecordProbeCheckin` takes `selfupdate *bool`.
+- Settings → About standardized: parallel **Core** / **Updater sidecar** rows with prominent labels
+  and real (bordered) buttons.
+
 ## [0.4.29] - 2026-09-01
 
 **Added:**
