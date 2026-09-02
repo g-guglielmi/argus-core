@@ -1786,7 +1786,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
   const [site, setSite] = useState('')
   const [ttl, setTtl] = useState(24)
   const [advanced, setAdvanced] = useState(false)
-  const [method, setMethod] = useState<ProbeFmt>('docker')
+  const [method, setMethod] = useState<ProbeFmt>('vm')
   const [selfupdate, setSelfupdate] = useState(true)
   const [keymap, setKeymap] = useState('us')
   const [staticNet, setStaticNet] = useState(false)
@@ -1865,10 +1865,10 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
   }, [step, created]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const METHODS: { id: ProbeFmt; label: string; hint: string }[] = [
+    { id: 'vm', label: 'Virtual machine', hint: 'A downloadable appliance image (OVA / qcow2 / VHD).' },
+    { id: 'unraid', label: 'unRAID', hint: 'A template for the unRAID Docker manager.' },
     { id: 'docker', label: 'Docker run', hint: 'One command on the site Docker host.' },
     { id: 'compose', label: 'Docker Compose', hint: 'A compose file (proxy + updater sidecar).' },
-    { id: 'unraid', label: 'unRAID', hint: 'A template for the unRAID Docker manager.' },
-    { id: 'vm', label: 'Virtual machine', hint: 'A downloadable appliance image (OVA / qcow2 / VHD).' },
   ]
 
   function addAnother() { setEnrolled(null); setCreated(null); setStep(1); setSite(''); setStaticNet(false); setErr(null) }
