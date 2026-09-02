@@ -1454,6 +1454,7 @@ function probeCloudInit(c: CreatedToken): string {
     ...env,
     'runcmd:',
     '  - [ systemctl, enable, --now, argus-probe.service ]',
+    '  - [ systemctl, enable, --now, argus-updater.service ]',
   ].join('\n')
 }
 
@@ -1814,8 +1815,38 @@ function probeUnraidXml(c: CreatedToken): string {
 
 type ProbeFmt = 'docker' | 'compose' | 'unraid' | 'vm'
 function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; redeploy: boolean; onDone: () => void }) {
+  const alert = useAlert()
   const [fmt, setFmt] = useState<ProbeFmt>('docker')
   const [selfupdate, setSelfupdate] = useState(true)
+  const [seeding, setSeeding] = useState(false)
+
+  // Build + download a first-boot seed ISO (label ARGUSSEED / ARGUS.ENV) for the probe VM. The image
+  // carries the single-use token, so it streams straight to a download - never persisted server-side.
+  async function downloadSeedISO() {
+    setSeeding(true)
+    try {
+      const res = await fetch('/api/probes/seed-iso', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: created.token, enroll_url: created.enroll_url, core_host: created.core_host, name: created.proxy_name }),
+      })
+      if (!res.ok) { alert({ title: 'Seed ISO', message: await errText(res, 'Could not build the seed ISO'), danger: true }); return }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `argus-seed-${created.proxy_name}.iso`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      alert({ title: 'Seed ISO', message: 'Could not build the seed ISO', danger: true })
+    } finally {
+      setSeeding(false)
+    }
+  }
+
   // The updater-sidecar toggle applies to the docker format; Compose always bundles it; the VM
   // installs it as a second systemd unit; unRAID uses its own native auto-update (no sidecar).
   const selfEff = fmt === 'compose' ? true : selfupdate
@@ -1828,7 +1859,7 @@ function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; re
       : "Run this on the site's Docker host - it starts the proxy plus the argus-updater sidecar (the sidecar holds the socket; the proxy never does).",
     compose: "Run this on the site's Docker host - two services: the proxy and the argus-updater sidecar (probe-watch) that keeps it on the Argus fleet target. Re-running it recreates the probe in place, so it doubles as the redeploy command.",
     unraid: 'On unRAID: Docker → Add Container → paste into the Template box, or save it as a .xml under /boot/config/plugins/dockerMan/templates-user/. Re-applying the template updates the container. Keep unRAID’s native auto-update on; Argus shows drift + the manual update command.',
-    vm: "For the Argus probe VM (deploy/probe-vm). Paste this into the hypervisor's cloud-init / Cloud Config field (Xen Orchestra, libvirt, VMware) when creating the VM, or drop it in a NoCloud seed as user-data. It runs the proxy + the argus-updater sidecar and self-enrolls on first boot - no shell access needed.",
+    vm: "For the Argus probe VM (deploy/probe-vm). Two zero-touch options: paste this into the hypervisor's cloud-init / Cloud Config field (Xen Orchestra, libvirt, VMware), or - for hypervisors with no cloud-init field - Download seed ISO and attach it as a CD when creating the VM. Either way it runs the proxy + the argus-updater sidecar and self-enrolls on first boot; no shell access needed. No cloud-init and no ISO? Boot it and use the first-boot setup page at the VM's IP.",
   }
   return (
     <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)' }}>
@@ -1841,6 +1872,7 @@ function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; re
           <button className={fmt === 'unraid' ? 'on' : ''} onClick={() => pick('unraid')}>unRAID XML</button>
           <button className={fmt === 'vm' ? 'on' : ''} onClick={() => pick('vm')}>VM (cloud-init)</button>
         </div>
+        {fmt === 'vm' && <Button variant="default" onClick={downloadSeedISO} disabled={seeding}>{seeding ? 'Building…' : 'Download seed ISO'}</Button>}
         <CopyButton text={content} variant="default" />
         <Button variant="default" onClick={onDone}>Done</Button>
       </div>

@@ -11,6 +11,32 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.31] - 2026-09-02
+
+Finish the **self-configuring probe VM** (roadmap §A): two more zero-touch delivery paths on top of
+cloud-init, plus a full-fleet OVA. Completes DESIGN §14a's delivery-vs-enrollment matrix.
+
+**Added:**
+- **Downloadable seed ISO.** Add probe → **VM (cloud-init)** gains a **Download seed ISO** button for
+  hypervisors with no cloud-init field: `POST /api/probes/seed-iso` (admin) streams a small ISO the
+  probe VM's first-boot service reads to self-enroll. It's an Argus-owned image (volume label
+  `ARGUSSEED`, one 8.3-safe `ARGUS.ENV`) - deliberately **not** a cloud-init NoCloud seed (which would
+  need Joliet/Rock-Ridge to keep the `user-data`/`meta-data` names), so it sidesteps cloud-init's
+  NoCloud datasource detection (fiddly on XCP-NG). The token is never persisted - the ISO is built on
+  demand and streamed.
+- **OVA delivery** (in `argus-probe`'s golden-image CI): the VM ships as an **OVA** (stream-optimized
+  VMDK + OVF) for VMware/Nutanix/VirtualBox and Xen Orchestra (*Import → OVA*), alongside qcow2 and VHD.
+  The image base moved to Debian 13 **`generic`** (full drivers) so it boots on non-virtio hypervisors
+  and can read the seed CD.
+
+**Changed:**
+- The wizard's cloud-init user-data now starts **both** systemd units (`argus-probe` +
+  `argus-updater`), matching the two-container model.
+
+**Dependencies:** adds `github.com/kdomanski/iso9660` (pure-Go, builds the seed image).
+
+---
+
 ## [0.4.30] - 2026-09-02
 
 Unify self-update on one model across the core and the whole probe fleet: **two containers**

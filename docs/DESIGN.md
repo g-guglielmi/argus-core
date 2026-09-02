@@ -381,6 +381,18 @@ different things:
 **Net:** cloud-init + OVA/qcow2/XVA is the backbone for the hypervisor fleet; the first-boot service is
 the everywhere-fallback that also unlocks the bare-metal Clonezilla path for free.
 
+**Status (shipped).** The golden image (`argus-probe`'s `deploy/probe-vm/`) is built with Packer from
+the Debian 13 **`generic`** cloud image (full driver set — needed so the OVA boots on non-virtio
+hypervisors and the seed CD's isofs/CD-ROM works). **Delivery:** CI publishes **OVA** (stream-optimized
+VMDK + a hand-written OVF; imports on VMware/Nutanix/VirtualBox and, via *Import → OVA*, Xen Orchestra),
+**qcow2** (KVM/libvirt), and **VHD** (Hyper-V; VDI-import on XCP-NG). **Enrollment**, three ways, all
+from *Add probe → VM (cloud-init)*: pasted cloud-init user-data; a **downloadable seed ISO**; or the
+first-boot setup page. The seed ISO is deliberately **not** a cloud-init NoCloud seed — NoCloud needs
+the `user-data`/`meta-data` names, which plain ISO9660 mangles and only Joliet/Rock-Ridge preserve.
+Instead it's an **Argus-owned** image (label `ARGUSSEED`, one 8.3-safe `ARGUS.ENV`) read by our own
+first-boot service, which sidesteps cloud-init's NoCloud datasource detection (fiddly on XCP-NG)
+entirely. Still open: the bare-metal Clonezilla SKU and the break-glass per-VM credential.
+
 ---
 
 ## 14b. Resource sizing

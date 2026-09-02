@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/go-webauthn/webauthn v0.17.4
+	github.com/kdomanski/iso9660 v0.4.0
 	github.com/pquerna/otp v1.5.0
 	golang.org/x/crypto v0.55.0
 	golang.org/x/image v0.45.0
