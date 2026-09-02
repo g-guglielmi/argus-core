@@ -101,3 +101,25 @@ func TestRevisionsMatch(t *testing.T) {
 		}
 	}
 }
+
+// TestChannelFor covers the fix where a dev-stamped build is the testing channel regardless of a
+// sidecar's reported tag - a build ahead of the newest release can only be :testing.
+func TestChannelFor(t *testing.T) {
+	cases := []struct {
+		name, version, tag string
+		hasReport          bool
+		want               string
+	}{
+		{"dev build, sidecar wrongly reports latest", "v0.4.30-1-g572be7b", "latest", true, "testing"},
+		{"dev build, no sidecar report", "v0.4.30-1-g572be7b", "", false, "testing"},
+		{"dev build, sidecar reports testing", "v0.4.30-1-g572be7b", "testing", true, "testing"},
+		{"clean build on testing", "v0.4.30", "testing", true, "testing"},
+		{"clean build on latest", "v0.4.30", "latest", true, "latest"},
+		{"clean build, no report -> safe default", "v0.4.30", "", false, "latest"},
+	}
+	for _, c := range cases {
+		if got := channelFor(c.version, c.tag, c.hasReport); got != c.want {
+			t.Errorf("%s: channelFor(%q,%q,%v)=%q want %q", c.name, c.version, c.tag, c.hasReport, got, c.want)
+		}
+	}
+}

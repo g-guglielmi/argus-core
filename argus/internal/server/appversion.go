@@ -136,14 +136,25 @@ func (s *Server) refreshAppLatest(ctx context.Context) {
 // line. Without a sidecar report we fall back to the version stamp: a dev-stamped build only ever comes
 // from :testing, otherwise assume latest (the safe default, so a :latest box is never offered testing).
 func (s *Server) resolveChannel() string {
-	if tag, ok := s.reportedCoreTag(); ok {
-		if tag == "testing" {
+	tag, ok := s.reportedCoreTag()
+	return channelFor(buildinfo.Version, tag, ok)
+}
+
+// channelFor is the pure channel-resolution logic behind resolveChannel (extracted so it can be
+// unit-tested without a running container / sidecar). A dev-stamped version is checked FIRST and wins:
+// a build ahead of the newest release can only come from :testing (a clean :latest release is never
+// dev-stamped), so it's authoritatively the testing channel whatever tag a sidecar happens to report.
+// The sidecar tag only disambiguates a CLEAN build, which is byte-identical on :latest and :testing and
+// so can't be told apart from its version alone.
+func channelFor(version, reportedTag string, hasReport bool) string {
+	if appVerDev.MatchString(version) {
+		return "testing"
+	}
+	if hasReport {
+		if reportedTag == "testing" {
 			return "testing"
 		}
 		return "latest"
-	}
-	if appVerDev.MatchString(buildinfo.Version) {
-		return "testing"
 	}
 	return "latest"
 }

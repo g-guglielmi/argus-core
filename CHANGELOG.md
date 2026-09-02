@@ -52,6 +52,15 @@ Completes DESIGN §14a's delivery-vs-enrollment matrix and the break-glass item.
   seed ISO + first-boot page (the cloud-init paste path is retired). VM defaults bumped to 30 GB disk /
   4 GB RAM.
 
+**Fixed:**
+- **Core "Check for updates" missed newer `:testing` builds.** Channel resolution let the argus-updater
+  sidecar's reported image tag override the version stamp, so if the sidecar reported anything but
+  `testing` a development build (which can only come from `:testing`) was treated as the `latest`
+  channel and never offered newer `:testing` images - the in-app check found nothing while Dockhand
+  correctly saw the newer digest. A dev-stamped build is now authoritatively the testing channel
+  regardless of the reported tag (the tag still disambiguates a clean build). Pure `channelFor` helper,
+  unit-tested.
+
 **Dependencies:** adds `github.com/kdomanski/iso9660` (pure-Go, builds the seed image).
 
 ---
