@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, Fragment, type FormEvent, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { registerPasskey, loginWithPasskey } from './webauthn'
@@ -1887,7 +1888,11 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
 
   function addAnother() { setEnrolled(null); setCreated(null); setStep(1); setSite(''); setStaticNet(false); setErr(null) }
 
-  return (
+  // Portal to <body>: the wizard renders inside `.content.view-enter`, whose transform animation makes
+  // a fixed-position ancestor, so `.dlg-backdrop` (position:fixed) would size to that element instead of
+  // the viewport - the dialog then can't cap at viewport height and the page scrolls. Rendering at the
+  // body root keeps the backdrop viewport-relative so the pinned footer works.
+  return createPortal(
     <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 560, maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
         <div className="dlg-title">Add a probe{step < 4 && <span style={{ color: 'var(--faint)', fontWeight: 400, fontSize: 12 }}> &middot; step {step} of 3</span>}</div>
@@ -2007,7 +2012,8 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
             : <><Button variant="ghost" onClick={() => setStep(3)}>Back</Button><Button variant="primary" onClick={onClose}>Done</Button></>)}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
