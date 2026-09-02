@@ -1885,7 +1885,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
 
   return (
     <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 560, maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto' }}>
+      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 560 }}>
         <div className="dlg-title">Add a probe{step < 4 && <span style={{ color: 'var(--faint)', fontWeight: 400, fontSize: 12 }}> &middot; step {step} of 3</span>}</div>
         {err && <div style={{ color: 'var(--err)', fontSize: 13, marginBottom: 8 }}>{err}</div>}
 
