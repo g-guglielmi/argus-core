@@ -16,6 +16,11 @@ type ProbeAgent struct {
 	SelfUpdate     bool
 	LastCheckin    int64  // unix seconds, 0 if never
 	UpdaterVersion string // version of the argus-updater sidecar managing this probe, "" if none
+	// Break-glass console credential (VM probes). The secret itself is never carried here - only
+	// whether one exists + its username + when it was last reported; reveal it via BreakGlass().
+	BreakGlassUser string
+	BreakGlassSet  bool
+	BreakGlassAt   int64
 }
 
 // UpsertProbeCredential issues (or rotates) a probe's long-lived check-in credential at
@@ -70,10 +75,11 @@ func (s *Store) RecordProbeCheckin(ctx context.Context, proxyName, version strin
 // through Argus (no check-in credential).
 func (s *Store) ProbeAgentByName(ctx context.Context, name string) (*ProbeAgent, error) {
 	var a ProbeAgent
-	var su int
+	var su, bg int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT proxy_name,version,selfupdate,last_checkin,updater_version FROM probe_agents WHERE proxy_name=?`, name).
-		Scan(&a.ProxyName, &a.Version, &su, &a.LastCheckin, &a.UpdaterVersion)
+		`SELECT proxy_name,version,selfupdate,last_checkin,updater_version,bg_user,(bg_secret != ''),bg_updated_at
+		 FROM probe_agents WHERE proxy_name=?`, name).
+		Scan(&a.ProxyName, &a.Version, &su, &a.LastCheckin, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -81,6 +87,7 @@ func (s *Store) ProbeAgentByName(ctx context.Context, name string) (*ProbeAgent,
 		return nil, err
 	}
 	a.SelfUpdate = su != 0
+	a.BreakGlassSet = bg != 0
 	return &a, nil
 }
 
@@ -116,7 +123,7 @@ func (s *Store) TakeProbeUpdate(ctx context.Context, name string) (string, error
 
 // ProbeAgents returns every probe's fleet-update state, keyed by proxy name (for the fleet view).
 func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,version,selfupdate,last_checkin,updater_version FROM probe_agents`)
+	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,version,selfupdate,last_checkin,updater_version,bg_user,(bg_secret != ''),bg_updated_at FROM probe_agents`)
 	if err != nil {
 		return nil, err
 	}
@@ -124,14 +131,47 @@ func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) 
 	out := make(map[string]ProbeAgent)
 	for rows.Next() {
 		var a ProbeAgent
-		var su int
-		if err := rows.Scan(&a.ProxyName, &a.Version, &su, &a.LastCheckin, &a.UpdaterVersion); err != nil {
+		var su, bg int
+		if err := rows.Scan(&a.ProxyName, &a.Version, &su, &a.LastCheckin, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt); err != nil {
 			return nil, err
 		}
 		a.SelfUpdate = su != 0
+		a.BreakGlassSet = bg != 0
 		out[a.ProxyName] = a
 	}
 	return out, rows.Err()
+}
+
+// SetBreakGlass stores (or rotates) a probe's break-glass console credential - the per-VM admin
+// username + password a probe VM generates and reports at first boot. The password is encrypted at
+// rest with the existing cipher. ErrNotFound if the probe never enrolled through Argus.
+func (s *Store) SetBreakGlass(ctx context.Context, proxyName, user, secretPlain string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE probe_agents SET bg_user=?, bg_secret=?, bg_updated_at=? WHERE proxy_name=?`,
+		user, s.cipher.Encrypt(secretPlain), time.Now().Unix(), proxyName)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// BreakGlass returns a probe's decrypted break-glass credential for an admin reveal. The password is
+// empty if none has been reported. ErrNotFound if the probe isn't known to Argus.
+func (s *Store) BreakGlass(ctx context.Context, proxyName string) (user, secret string, updatedAt int64, err error) {
+	var enc string
+	err = s.db.QueryRowContext(ctx,
+		`SELECT bg_user,bg_secret,bg_updated_at FROM probe_agents WHERE proxy_name=?`, proxyName).
+		Scan(&user, &enc, &updatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", 0, ErrNotFound
+	}
+	if err != nil {
+		return "", "", 0, err
+	}
+	return user, s.cipher.Decrypt(enc), updatedAt, nil
 }
 
 // SetUpdaterVersion records the version reported by the argus-updater sidecar managing this probe.

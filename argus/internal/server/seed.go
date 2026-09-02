@@ -25,7 +25,8 @@ func (s *Server) handleSeedISO(w http.ResponseWriter, r *http.Request) {
 		Token     string `json:"token"`
 		EnrollURL string `json:"enroll_url"`
 		CoreHost  string `json:"core_host"`
-		Name      string `json:"name"` // proxy name, for the download filename only
+		Keymap    string `json:"keymap"` // console keyboard layout, e.g. "it" (default "us" on the VM)
+		Name      string `json:"name"`   // proxy name, for the download filename only
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -46,6 +47,9 @@ func (s *Server) handleSeedISO(w http.ResponseWriter, r *http.Request) {
 	if h := strings.TrimSpace(req.CoreHost); h != "" {
 		env.WriteString("ZBX_SERVER_HOST=" + h + "\n")
 	}
+	if km := validKeymap(req.Keymap); km != "" {
+		env.WriteString("ARGUS_KEYMAP=" + km + "\n")
+	}
 
 	iso, err := s.buildSeedISO(env.String())
 	if err != nil {
@@ -64,6 +68,22 @@ func (s *Server) handleSeedISO(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(iso)
+}
+
+// validKeymap returns a sanitized console keymap code (e.g. "it", "de", "gb"), or "" if the input
+// isn't a plausible layout name. The probe VM's first-boot service feeds this to console tooling, so
+// constrain it to the characters a keymap name uses.
+func validKeymap(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" || len(s) > 16 {
+		return ""
+	}
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
+			return ""
+		}
+	}
+	return s
 }
 
 // buildSeedISO packages the probe.env content into a plain ISO9660 image (label ARGUSSEED, file

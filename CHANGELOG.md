@@ -13,25 +13,34 @@ GitHub Release from the matching section below.
 
 ## [0.4.31] - 2026-09-02
 
-Finish the **self-configuring probe VM** (roadmap §A): two more zero-touch delivery paths on top of
-cloud-init, plus a full-fleet OVA. Completes DESIGN §14a's delivery-vs-enrollment matrix.
+Finish the **self-configuring probe VM** (roadmap §A): full-fleet OVA delivery, a downloadable seed
+ISO, **break-glass** console access, a configurable keyboard layout, and dropping cloud-init entirely.
+Completes DESIGN §14a's delivery-vs-enrollment matrix and the break-glass item.
 
 **Added:**
-- **Downloadable seed ISO.** Add probe → **VM (cloud-init)** gains a **Download seed ISO** button for
-  hypervisors with no cloud-init field: `POST /api/probes/seed-iso` (admin) streams a small ISO the
-  probe VM's first-boot service reads to self-enroll. It's an Argus-owned image (volume label
-  `ARGUSSEED`, one 8.3-safe `ARGUS.ENV`) - deliberately **not** a cloud-init NoCloud seed (which would
-  need Joliet/Rock-Ridge to keep the `user-data`/`meta-data` names), so it sidesteps cloud-init's
-  NoCloud datasource detection (fiddly on XCP-NG). The token is never persisted - the ISO is built on
-  demand and streamed.
+- **Downloadable seed ISO.** Add probe → **VM** gains a **Download seed ISO** button for hypervisors
+  with no cloud-init field: `POST /api/probes/seed-iso` (admin) streams a small ISO the probe VM's
+  first-boot service reads to self-enroll. It's an Argus-owned image (volume label `ARGUSSEED`, one
+  8.3-safe `ARGUS.ENV`) - deliberately **not** a cloud-init NoCloud seed (which would need
+  Joliet/Rock-Ridge to keep the `user-data`/`meta-data` names), so it sidesteps cloud-init's NoCloud
+  datasource detection (fiddly on XCP-NG). The token is never persisted - the ISO is built on demand.
 - **OVA delivery** (in `argus-probe`'s golden-image CI): the VM ships as an **OVA** (stream-optimized
   VMDK + OVF) for VMware/Nutanix/VirtualBox and Xen Orchestra (*Import → OVA*), alongside qcow2 and VHD.
   The image base moved to Debian 13 **`generic`** (full drivers) so it boots on non-virtio hypervisors
   and can read the seed CD.
+- **Break-glass console access.** The probe VM generates a per-VM `argus` sudo user with a random
+  password on first boot and reports it to Argus (`POST /api/probes/break-glass`, authenticated by the
+  probe check-in token); Argus stores it **encrypted at rest** and reveals it to admins on the Probes
+  page (a **Console** button;  `GET /api/probes/{name}/break-glass`). For hypervisor-console or
+  VPN-SSH access when something's wrong.
+- **Configurable console keyboard layout** for the probe VM - a picker in Add probe → VM and on the
+  first-boot page; applied to `/etc/vconsole.conf` on first boot (default `us`).
 
 **Changed:**
-- The wizard's cloud-init user-data now starts **both** systemd units (`argus-probe` +
-  `argus-updater`), matching the two-container model.
+- **Dropped cloud-init from the probe VM.** The golden image purges cloud-init after the build; the
+  appliance self-configures via systemd-networkd + the first-boot service. The wizard's VM tab is now
+  seed ISO + first-boot page (the cloud-init paste path is retired). VM defaults bumped to 30 GB disk /
+  4 GB RAM.
 
 **Dependencies:** adds `github.com/kdomanski/iso9660` (pure-Go, builds the seed image).
 

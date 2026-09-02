@@ -89,6 +89,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/password-reset/confirm", s.handleConfirmPasswordReset)
 	// probe enrollment (public; authenticated by a single-use enrollment token)
 	mux.HandleFunc("POST /api/enroll", s.handleEnroll)
+	// probe VM break-glass credential report (public; authenticated by the probe token, like check-in)
+	mux.HandleFunc("POST /api/probes/break-glass", s.handleReportBreakGlass)
 	// probe fleet check-in (public; authenticated by the long-lived probe token from enrollment)
 	mux.HandleFunc("POST /api/probes/checkin", s.handleProbeCheckin)
 	// signed one-click acknowledge link from notifications (public; HMAC-verified, GET confirms)
@@ -196,6 +198,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/probes/{name}/updater-update", auth.RequireRole("admin", s.handleTriggerUpdaterUpdate))
 	// issue a check-in credential for an already-enrolled probe (admin) - turns on version reporting
 	mux.HandleFunc("POST /api/probes/{name}/checkin-token", auth.RequireRole("admin", s.handleIssueCheckinToken))
+	// reveal a probe VM's break-glass console credential (admin; decrypted on demand)
+	mux.HandleFunc("GET /api/probes/{name}/break-glass", auth.RequireRole("admin", s.handleRevealBreakGlass))
 
 	// one-click core self-update via the argus-updater sidecar (admin triggers; anyone signed in can
 	// read the state, since the banner is shown in the shell). See coreupdate.go.

@@ -391,7 +391,17 @@ first-boot setup page. The seed ISO is deliberately **not** a cloud-init NoCloud
 the `user-data`/`meta-data` names, which plain ISO9660 mangles and only Joliet/Rock-Ridge preserve.
 Instead it's an **Argus-owned** image (label `ARGUSSEED`, one 8.3-safe `ARGUS.ENV`) read by our own
 first-boot service, which sidesteps cloud-init's NoCloud datasource detection (fiddly on XCP-NG)
-entirely. Still open: the bare-metal Clonezilla SKU and the break-glass per-VM credential.
+entirely.
+
+**cloud-init is dropped from the deployed image** (it does its build-time job — build user + root-FS
+grow — then `provision.sh` purges it), so the appliance self-configures through systemd-networkd +
+the first-boot service alone; the enrollment matrix is now seed ISO / first-boot page (the cloud-init
+paste path is retired). **Break-glass (§14a credential lifecycle) is implemented**: the first-boot
+service creates a per-VM `argus` sudo user with a generated password, reports it over the probe
+check-in channel to `POST /api/probes/break-glass`, and Argus stores it encrypted and reveals it to
+admins on the Probes page (**Console** button). SSH host keys regenerate on first boot
+(`argus-hostkeys.service`); the **console keyboard layout** is configurable per-VM (Add-probe → VM, or
+the setup page → `/etc/vconsole.conf`). Still open: the bare-metal Clonezilla SKU.
 
 ---
 

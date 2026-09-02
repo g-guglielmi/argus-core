@@ -198,7 +198,10 @@ CREATE TABLE IF NOT EXISTS probe_agents (
   last_checkin INTEGER NOT NULL DEFAULT 0, -- unix seconds of the last check-in (0 = never)
   update_to    TEXT NOT NULL DEFAULT '',   -- pending self-update target tag; handed out once at next check-in
   updater_version   TEXT NOT NULL DEFAULT '', -- version of the argus-updater sidecar managing this probe
-  updater_update_to TEXT NOT NULL DEFAULT ''  -- pending updater self-update tag; handed out once at next check-in
+  updater_update_to TEXT NOT NULL DEFAULT '', -- pending updater self-update tag; handed out once at next check-in
+  bg_user           TEXT NOT NULL DEFAULT '', -- break-glass console username (VM probes report one at first boot)
+  bg_secret         TEXT NOT NULL DEFAULT '', -- break-glass password, ENCRYPTED at rest (the existing cipher)
+  bg_updated_at     INTEGER NOT NULL DEFAULT 0 -- unix seconds the break-glass credential was last reported
 );
 
 -- Small key/value store for app-level flags (e.g. the notifier's one-time baseline marker).
@@ -293,6 +296,16 @@ CREATE TABLE IF NOT EXISTS tree_hidden (
 		return err
 	}
 	if err := s.ensureColumn("probe_agents", "updater_update_to TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	// Break-glass console credential a probe VM generates + reports at first boot (bg_secret encrypted).
+	if err := s.ensureColumn("probe_agents", "bg_user TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("probe_agents", "bg_secret TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("probe_agents", "bg_updated_at INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("notify_events", "item_id TEXT NOT NULL DEFAULT ''"); err != nil {

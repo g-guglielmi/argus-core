@@ -13,7 +13,7 @@ type Group = { id: string; name: string; hosts: number }
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[] }
-type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number; updater_version?: string }
+type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; break_glass?: boolean; break_glass_user?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; min_severity: number; config: Record<string, string> }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
@@ -1434,30 +1434,6 @@ function probeComposeCmd(c: CreatedToken): string {
   ].join('\n')
 }
 
-// probeCloudInit emits cloud-init user-data for the self-configuring probe VM (deploy/probe-vm). The
-// VM's first boot writes these enrollment inputs to /etc/argus-probe/probe.env and starts the probe -
-// zero-touch. Paste it into the hypervisor's cloud-init / Cloud Config field (Xen Orchestra, libvirt,
-// VMware guestinfo), or drop it in a NoCloud seed as user-data.
-function probeCloudInit(c: CreatedToken): string {
-  const env = [
-    `      ARGUS_ENROLL_URL=${c.enroll_url}`,
-    `      ARGUS_ENROLL_TOKEN=${c.token}`,
-  ]
-  if (!c.core_host) env.push('      ZBX_SERVER_HOST=<core-host-or-ip:reachable-on-10051>')
-  return [
-    '#cloud-config',
-    'write_files:',
-    '  - path: /etc/argus-probe/probe.env',
-    "    permissions: '0600'",
-    '    owner: root:root',
-    '    content: |',
-    ...env,
-    'runcmd:',
-    '  - [ systemctl, enable, --now, argus-probe.service ]',
-    '  - [ systemctl, enable, --now, argus-updater.service ]',
-  ].join('\n')
-}
-
 function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
   const confirm = useConfirm()
   const alert = useAlert()
@@ -1492,6 +1468,28 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
       if (!res.ok) { alert({ title: 'Update updater', message: await errText(res, 'Could not queue the updater update'), danger: true }); return }
       alert({ title: 'Update updater', message: 'Queued - the sidecar recreates itself on its next check-in (within ~5 min).' })
     } catch { alert({ title: 'Update updater', message: 'Could not queue the updater update', danger: true }) }
+  }
+
+  // Reveal a probe VM's break-glass console credential (admin). Fetched on demand - it's never part
+  // of the /api/proxies list - and shown in an in-app dialog with copy buttons.
+  async function revealBreakGlass(p: Proxy) {
+    try {
+      const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/break-glass`)
+      if (!res.ok) { alert({ title: 'Console access', message: await errText(res, 'Could not read the credential'), danger: true }); return }
+      const d = await res.json()
+      alert({
+        title: `Console access — ${p.name}`,
+        message: (
+          <div>
+            <p style={{ margin: '0 0 12px', color: 'var(--muted)', fontSize: 13 }}>Break-glass login for the hypervisor console (or SSH over the VPN):</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '8px 10px', alignItems: 'center' }}>
+              <span style={{ color: 'var(--muted)' }}>Username</span><span className="mono">{d.username}</span><CopyButton text={d.username} />
+              <span style={{ color: 'var(--muted)' }}>Password</span><span className="mono" style={{ wordBreak: 'break-all' }}>{d.password}</span><CopyButton text={d.password} />
+            </div>
+          </div>
+        ),
+      })
+    } catch { alert({ title: 'Console access', message: 'Could not read the credential', danger: true }) }
   }
 
   // Mint a check-in credential for a probe that predates fleet updates; shown once for the operator
@@ -1604,7 +1602,10 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                 <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
                 <td data-label="Enrolled" className="mono" style={{ color: p.enrolled_at ? 'var(--muted)' : 'var(--faint)' }} title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>{p.enrolled_at ? new Date(p.enrolled_at * 1000).toLocaleDateString() : '-'}</td>
                 <td data-label="SNMP">{canEdit && p.id && <button className="btn" onClick={() => setOpenSnmp((n) => (n === p.name ? null : p.name))}>Defaults</button>}</td>
-                <td data-label="" style={{ textAlign: 'right' }}>{isAdmin && p.id && <button className="btn danger" title="Delete this proxy from Zabbix + clean up its Argus records" onClick={() => del(p)}>Delete</button>}</td>
+                <td data-label="" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  {isAdmin && p.break_glass && <button className="btn" style={{ marginRight: 6 }} title={`Reveal the break-glass console credential${p.break_glass_user ? ` (user ${p.break_glass_user})` : ''}`} onClick={() => revealBreakGlass(p)}>Console</button>}
+                  {isAdmin && p.id && <button className="btn danger" title="Delete this proxy from Zabbix + clean up its Argus records" onClick={() => del(p)}>Delete</button>}
+                </td>
               </tr>
               {openCmd === p.name && <tr><td colSpan={10} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
               {report?.name === p.name && <tr><td colSpan={10} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
@@ -1814,11 +1815,18 @@ function probeUnraidXml(c: CreatedToken): string {
 }
 
 type ProbeFmt = 'docker' | 'compose' | 'unraid' | 'vm'
+// Console keyboard layouts offered for the probe VM (value = the console keymap applied to
+// /etc/vconsole.conf on first boot; matters for the hypervisor console + break-glass login). US default.
+const VM_KEYMAPS: [string, string][] = [
+  ['us', 'US English'], ['uk', 'UK English'], ['it', 'Italian'], ['de', 'German'],
+  ['fr', 'French'], ['es', 'Spanish'], ['pt-latin1', 'Portuguese'],
+]
 function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; redeploy: boolean; onDone: () => void }) {
   const alert = useAlert()
   const [fmt, setFmt] = useState<ProbeFmt>('docker')
   const [selfupdate, setSelfupdate] = useState(true)
   const [seeding, setSeeding] = useState(false)
+  const [keymap, setKeymap] = useState('us')
 
   // Build + download a first-boot seed ISO (label ARGUSSEED / ARGUS.ENV) for the probe VM. The image
   // carries the single-use token, so it streams straight to a download - never persisted server-side.
@@ -1828,7 +1836,7 @@ function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; re
       const res = await fetch('/api/probes/seed-iso', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: created.token, enroll_url: created.enroll_url, core_host: created.core_host, name: created.proxy_name }),
+        body: JSON.stringify({ token: created.token, enroll_url: created.enroll_url, core_host: created.core_host, keymap, name: created.proxy_name }),
       })
       if (!res.ok) { alert({ title: 'Seed ISO', message: await errText(res, 'Could not build the seed ISO'), danger: true }); return }
       const blob = await res.blob()
@@ -1850,7 +1858,7 @@ function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; re
   // The updater-sidecar toggle applies to the docker format; Compose always bundles it; the VM
   // installs it as a second systemd unit; unRAID uses its own native auto-update (no sidecar).
   const selfEff = fmt === 'compose' ? true : selfupdate
-  const content = fmt === 'docker' ? probeDockerCmd(created, redeploy, selfupdate) : fmt === 'compose' ? probeComposeCmd(created) : fmt === 'vm' ? probeCloudInit(created) : probeUnraidXml(created)
+  const content = fmt === 'docker' ? probeDockerCmd(created, redeploy, selfupdate) : fmt === 'compose' ? probeComposeCmd(created) : fmt === 'unraid' ? probeUnraidXml(created) : ''
   const pick = (f: ProbeFmt) => { setFmt(f) }
   const showSelfToggle = fmt === 'docker' || fmt === 'compose'
   const blurb: Record<ProbeFmt, string> = {
@@ -1859,7 +1867,7 @@ function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; re
       : "Run this on the site's Docker host - it starts the proxy plus the argus-updater sidecar (the sidecar holds the socket; the proxy never does).",
     compose: "Run this on the site's Docker host - two services: the proxy and the argus-updater sidecar (probe-watch) that keeps it on the Argus fleet target. Re-running it recreates the probe in place, so it doubles as the redeploy command.",
     unraid: 'On unRAID: Docker → Add Container → paste into the Template box, or save it as a .xml under /boot/config/plugins/dockerMan/templates-user/. Re-applying the template updates the container. Keep unRAID’s native auto-update on; Argus shows drift + the manual update command.',
-    vm: "For the Argus probe VM (deploy/probe-vm). Two zero-touch options: paste this into the hypervisor's cloud-init / Cloud Config field (Xen Orchestra, libvirt, VMware), or - for hypervisors with no cloud-init field - Download seed ISO and attach it as a CD when creating the VM. Either way it runs the proxy + the argus-updater sidecar and self-enrolls on first boot; no shell access needed. No cloud-init and no ISO? Boot it and use the first-boot setup page at the VM's IP.",
+    vm: '',
   }
   return (
     <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)' }}>
@@ -1870,10 +1878,10 @@ function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; re
           <button className={fmt === 'docker' ? 'on' : ''} onClick={() => pick('docker')}>Docker run</button>
           <button className={fmt === 'compose' ? 'on' : ''} onClick={() => pick('compose')}>Compose + auto-update</button>
           <button className={fmt === 'unraid' ? 'on' : ''} onClick={() => pick('unraid')}>unRAID XML</button>
-          <button className={fmt === 'vm' ? 'on' : ''} onClick={() => pick('vm')}>VM (cloud-init)</button>
+          <button className={fmt === 'vm' ? 'on' : ''} onClick={() => pick('vm')}>VM</button>
         </div>
         {fmt === 'vm' && <Button variant="default" onClick={downloadSeedISO} disabled={seeding}>{seeding ? 'Building…' : 'Download seed ISO'}</Button>}
-        <CopyButton text={content} variant="default" />
+        {fmt !== 'vm' && <CopyButton text={content} variant="default" />}
         <Button variant="default" onClick={onDone}>Done</Button>
       </div>
       {showSelfToggle && (
@@ -1883,12 +1891,31 @@ function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; re
         {fmt === 'compose' && <span className="tag" title="The Compose format always includes the updater sidecar">always on</span>}
       </label>
       )}
-      <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: '0 0 8px' }}>
-        {blurb[fmt]}
-        {' '}It self-enrolls on first boot; the token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set the core host (ZBX_SERVER_HOST / ARGUS_PROBE_CORE_HOST) so it can reach :10051.'}
-        {selfEff && (fmt === 'docker' || fmt === 'unraid') && ' Self-update is on: the probe recreates itself via a short-lived sister container when the fleet target changes.'}
-      </p>
-      <pre style={{ margin: 0, padding: '11px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12, lineHeight: 1.5 }}><code>{content}</code></pre>
+      {fmt === 'vm' ? (
+        <div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>
+            Console keyboard layout
+            <select value={keymap} onChange={(e) => setKeymap(e.target.value)} style={{ padding: '4px 8px', background: 'var(--panel)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 6 }}>
+              {VM_KEYMAPS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <span style={{ color: 'var(--faint)' }}>for the VM console / break-glass login</span>
+          </label>
+          <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.6 }}>
+            For the Argus probe VM (import the OVA / qcow2 / VHD). Zero-touch: <strong>Download seed ISO</strong> and attach it as a CD when you create the VM — it runs the proxy + the argus-updater sidecar and self-enrols on first boot, no cloud-init needed.
+            {' '}No CD? Boot the VM and open the first-boot setup page at its IP.
+            {' '}The token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set the core host so it can reach :10051.'}
+          </p>
+        </div>
+      ) : (
+        <>
+          <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: '0 0 8px' }}>
+            {blurb[fmt]}
+            {' '}It self-enrolls on first boot; the token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set the core host (ZBX_SERVER_HOST / ARGUS_PROBE_CORE_HOST) so it can reach :10051.'}
+            {selfEff && (fmt === 'docker' || fmt === 'unraid') && ' Self-update is on: the probe recreates itself via a short-lived sister container when the fleet target changes.'}
+          </p>
+          <pre style={{ margin: 0, padding: '11px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12, lineHeight: 1.5 }}><code>{content}</code></pre>
+        </>
+      )}
     </div>
   )
 }

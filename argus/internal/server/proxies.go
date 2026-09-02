@@ -23,6 +23,8 @@ type proxyView struct {
 	UpdateStatus   string `json:"update_status"`   // unknown | tracking | current | outdated | external
 	LastCheckin    int64  `json:"last_checkin"`    // unix seconds of the last Argus check-in (0 = never)
 	UpdaterVersion string `json:"updater_version"` // version of the managing argus-updater sidecar ("" = none)
+	BreakGlass     bool   `json:"break_glass"`      // a break-glass console credential exists (VM probes); reveal it via its own endpoint
+	BreakGlassUser string `json:"break_glass_user"` // the break-glass username ("" if none)
 }
 
 // handleProxies lists Zabbix proxies (the per-site collectors) with their last-access time, so
@@ -87,6 +89,8 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			UpdateStatus:   status,
 			LastCheckin:    ag.LastCheckin,
 			UpdaterVersion: ag.UpdaterVersion,
+			BreakGlass:     ag.BreakGlassSet,
+			BreakGlassUser: ag.BreakGlassUser,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
