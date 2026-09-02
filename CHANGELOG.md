@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [0.4.31] - 2026-09-02
+## [0.4.31] - 2026-09-03
 
 Finish the **self-configuring probe VM** (roadmap §A): full-fleet OVA delivery, a downloadable seed
 ISO, **break-glass** console access, a configurable keyboard layout, and dropping cloud-init entirely.
