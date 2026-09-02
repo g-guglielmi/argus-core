@@ -92,7 +92,10 @@ func (c *appLatestCache) setNotes(v, notes string) {
 // refreshAppLatest re-resolves the newest release (+ its notes) and the dev-channel update flag from
 // GHCR, updating the cache. Shared by the nightly scheduler and the manual "Check for updates" button.
 func (s *Server) refreshAppLatest(ctx context.Context) {
-	c, cancel := context.WithTimeout(ctx, 20*time.Second)
+	// One budget for the whole chain: list releases, a pull token, then several manifest/label fetches
+	// for the dev-channel check. GHCR can be slow, so keep it generous - this runs in the background or
+	// behind an explicit "Check for updates" click, neither latency-sensitive.
+	c, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	releases, err := resolveAppReleases(c)
 	if err != nil {
