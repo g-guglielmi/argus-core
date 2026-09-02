@@ -35,11 +35,15 @@ Completes DESIGN §14a's delivery-vs-enrollment matrix and the break-glass item.
   VPN-SSH access when something's wrong.
 - **Configurable console keyboard layout** for the probe VM - a picker in Add probe → VM and on the
   first-boot page; applied to `/etc/vconsole.conf` on first boot (default `us`).
-- **Static networking for no-DHCP sites** - an optional Static IP section in Add probe → VM (address /
-  prefix or netmask / gateway / DNS, all validated) baked into the seed ISO (`ARGUS_IP` etc.); the
-  first-boot service writes a static `systemd-networkd` file before enrollment, so the VM enrolls on a
-  fixed address with no interaction. Seed-only (the first-boot page needs an IP to be reachable); a
-  stuck VM is recoverable by re-attaching a corrected seed.
+- **Static networking for no-DHCP sites** - an optional Static IP section in Add probe → VM (address, a
+  **subnet-mask dropdown** showing both the /prefix and dotted mask, gateway, and **two DNS** fields for
+  redundancy, all validated) baked into the seed ISO (`ARGUS_IP` etc.); the first-boot service writes a
+  static `systemd-networkd` file before enrollment, so the VM enrolls on a fixed address with no
+  interaction. Seed-only (the first-boot page needs an IP to be reachable); a stuck VM is recoverable by
+  re-attaching a corrected seed.
+- **The probe VM takes the proxy name as its hostname** (e.g. `proxy-site5`) on enrollment, matching the
+  container's Zabbix hostname; and the break-glass `argus` user is added to the `docker` group so it can
+  run `docker` without sudo.
 
 **Changed:**
 - **Reworked "Add probe" into a guided modal wizard** - name → deploy method (+ only that method's

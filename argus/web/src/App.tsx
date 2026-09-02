@@ -1780,6 +1780,13 @@ const VM_KEYMAPS: [string, string][] = [
   ['fr', 'French'], ['es', 'Spanish'], ['pt-latin1', 'Portuguese'],
 ]
 const vmNetInput = { padding: '6px 8px', fontSize: 12.5, color: 'var(--text)', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 6 }
+// CIDR prefix -> dotted subnet mask, for the Static IP dropdown (label shows both so "the /24 is the
+// subnet mask" is self-evident). Server-side staticCIDR accepts the prefix number.
+const CIDR_PREFIXES: [string, string][] = [
+  ['30', '255.255.255.252'], ['29', '255.255.255.248'], ['28', '255.255.255.240'], ['27', '255.255.255.224'],
+  ['26', '255.255.255.192'], ['25', '255.255.255.128'], ['24', '255.255.255.0'], ['23', '255.255.254.0'],
+  ['22', '255.255.252.0'], ['21', '255.255.248.0'], ['20', '255.255.240.0'], ['16', '255.255.0.0'], ['8', '255.0.0.0'],
+]
 // AddProbeWizard is the guided "Add a probe" modal: name -> method + settings -> deploy -> an
 // optional live wait for enrollment. The token is minted only when leaving the method step, and only
 // re-minted if the name changes, so Back (to fix a misclick or change method) never wastes a token.
@@ -1796,6 +1803,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
   const [netPrefix, setNetPrefix] = useState('24')
   const [netGw, setNetGw] = useState('')
   const [netDns, setNetDns] = useState('')
+  const [netDns2, setNetDns2] = useState('')
   const [created, setCreated] = useState<CreatedToken | null>(null)
   const [busy, setBusy] = useState(false)
   const [seeding, setSeeding] = useState(false)
@@ -1834,7 +1842,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
     setSeeding(true); setErr(null)
     try {
       const res = await fetch('/api/probes/seed-iso', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: created.token, enroll_url: created.enroll_url, core_host: created.core_host, keymap, name: created.proxy_name, ...(staticNet ? { static_ip: netIp, prefix: netPrefix, gateway: netGw, dns: netDns } : {}) }) })
+        body: JSON.stringify({ token: created.token, enroll_url: created.enroll_url, core_host: created.core_host, keymap, name: created.proxy_name, ...(staticNet ? { static_ip: netIp, prefix: netPrefix, gateway: netGw, dns: [netDns, netDns2].map((s) => s.trim()).filter(Boolean).join(',') } : {}) }) })
       if (!res.ok) { setErr(await errText(res, 'Could not build the seed ISO')); return }
       const blob = await res.blob(); const url = URL.createObjectURL(blob)
       const a = document.createElement('a'); a.href = url; a.download = `argus-seed-${created.proxy_name}.iso`
@@ -1931,11 +1939,19 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
                   Static IP <span style={{ color: 'var(--faint)' }}>(sites with no DHCP)</span>
                 </label>
                 {staticNet && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 8 }}>
-                    <input value={netIp} onChange={(e) => setNetIp(e.target.value)} placeholder="IP (10.0.0.50)" style={vmNetInput} />
-                    <input value={netPrefix} onChange={(e) => setNetPrefix(e.target.value)} placeholder="Prefix (24)" title="CIDR prefix (24) or a netmask (255.255.255.0)" style={vmNetInput} />
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 205px', gap: 8 }}>
+                      <input value={netIp} onChange={(e) => setNetIp(e.target.value)} placeholder="IP address (10.0.0.50)" style={vmNetInput} />
+                      <select value={netPrefix} onChange={(e) => setNetPrefix(e.target.value)} title="Subnet mask" style={vmNetInput}>
+                        {CIDR_PREFIXES.map(([p, mask]) => <option key={p} value={p}>/{p} — {mask}</option>)}
+                      </select>
+                    </div>
                     <input value={netGw} onChange={(e) => setNetGw(e.target.value)} placeholder="Gateway (10.0.0.1)" style={vmNetInput} />
-                    <input value={netDns} onChange={(e) => setNetDns(e.target.value)} placeholder="DNS (10.0.0.10)" title="One or more DNS servers, comma separated" style={vmNetInput} />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <input value={netDns} onChange={(e) => setNetDns(e.target.value)} placeholder="DNS 1 (10.0.0.10)" style={vmNetInput} />
+                      <input value={netDns2} onChange={(e) => setNetDns2(e.target.value)} placeholder="DNS 2 (optional)" style={vmNetInput} />
+                    </div>
+                    <span style={{ color: 'var(--faint)', fontSize: 11.5 }}>The dropdown is the subnet mask (/24 = 255.255.255.0). A second DNS is optional, for redundancy.</span>
                   </div>
                 )}
               </div>
