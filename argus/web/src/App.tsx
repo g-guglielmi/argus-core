@@ -1821,12 +1821,18 @@ const VM_KEYMAPS: [string, string][] = [
   ['us', 'US English'], ['uk', 'UK English'], ['it', 'Italian'], ['de', 'German'],
   ['fr', 'French'], ['es', 'Spanish'], ['pt-latin1', 'Portuguese'],
 ]
+const vmNetInput = { padding: '6px 8px', fontSize: 12.5, color: 'var(--text)', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 6 }
 function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; redeploy: boolean; onDone: () => void }) {
   const alert = useAlert()
   const [fmt, setFmt] = useState<ProbeFmt>('docker')
   const [selfupdate, setSelfupdate] = useState(true)
   const [seeding, setSeeding] = useState(false)
   const [keymap, setKeymap] = useState('us')
+  const [staticNet, setStaticNet] = useState(false)
+  const [netIp, setNetIp] = useState('')
+  const [netPrefix, setNetPrefix] = useState('24')
+  const [netGw, setNetGw] = useState('')
+  const [netDns, setNetDns] = useState('')
 
   // Build + download a first-boot seed ISO (label ARGUSSEED / ARGUS.ENV) for the probe VM. The image
   // carries the single-use token, so it streams straight to a download - never persisted server-side.
@@ -1836,7 +1842,7 @@ function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; re
       const res = await fetch('/api/probes/seed-iso', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: created.token, enroll_url: created.enroll_url, core_host: created.core_host, keymap, name: created.proxy_name }),
+        body: JSON.stringify({ token: created.token, enroll_url: created.enroll_url, core_host: created.core_host, keymap, name: created.proxy_name, ...(staticNet ? { static_ip: netIp, prefix: netPrefix, gateway: netGw, dns: netDns } : {}) }),
       })
       if (!res.ok) { alert({ title: 'Seed ISO', message: await errText(res, 'Could not build the seed ISO'), danger: true }); return }
       const blob = await res.blob()
@@ -1900,9 +1906,21 @@ function ProbeCommand({ created, redeploy, onDone }: { created: CreatedToken; re
             </select>
             <span style={{ color: 'var(--faint)' }}>for the VM console / break-glass login</span>
           </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--muted)', marginBottom: staticNet ? 8 : 10, cursor: 'pointer' }}>
+            <input type="checkbox" checked={staticNet} onChange={(e) => setStaticNet(e.target.checked)} />
+            Static IP <span style={{ color: 'var(--faint)' }}>(for sites with no DHCP; baked into the seed ISO)</span>
+          </label>
+          {staticNet && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 8, marginBottom: 10, maxWidth: 440 }}>
+              <input value={netIp} onChange={(e) => setNetIp(e.target.value)} placeholder="IP address (e.g. 10.0.0.50)" style={vmNetInput} />
+              <input value={netPrefix} onChange={(e) => setNetPrefix(e.target.value)} placeholder="Prefix (24)" title="CIDR prefix (24) or a netmask (255.255.255.0)" style={vmNetInput} />
+              <input value={netGw} onChange={(e) => setNetGw(e.target.value)} placeholder="Gateway (e.g. 10.0.0.1)" style={vmNetInput} />
+              <input value={netDns} onChange={(e) => setNetDns(e.target.value)} placeholder="DNS (e.g. 10.0.0.10)" title="One or more DNS servers, comma separated" style={vmNetInput} />
+            </div>
+          )}
           <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.6 }}>
             For the Argus probe VM (import the OVA / qcow2 / VHD). Zero-touch: <strong>Download seed ISO</strong> and attach it as a CD when you create the VM — it runs the proxy + the argus-updater sidecar and self-enrols on first boot, no cloud-init needed.
-            {' '}No CD? Boot the VM and open the first-boot setup page at its IP.
+            {' '}No CD? Boot the VM (with DHCP) and open the first-boot setup page at its IP.
             {' '}The token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set the core host so it can reach :10051.'}
           </p>
         </div>

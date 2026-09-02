@@ -35,6 +35,11 @@ Completes DESIGN §14a's delivery-vs-enrollment matrix and the break-glass item.
   VPN-SSH access when something's wrong.
 - **Configurable console keyboard layout** for the probe VM - a picker in Add probe → VM and on the
   first-boot page; applied to `/etc/vconsole.conf` on first boot (default `us`).
+- **Static networking for no-DHCP sites** - an optional Static IP section in Add probe → VM (address /
+  prefix or netmask / gateway / DNS, all validated) baked into the seed ISO (`ARGUS_IP` etc.); the
+  first-boot service writes a static `systemd-networkd` file before enrollment, so the VM enrolls on a
+  fixed address with no interaction. Seed-only (the first-boot page needs an IP to be reachable); a
+  stuck VM is recoverable by re-attaching a corrected seed.
 
 **Changed:**
 - **Dropped cloud-init from the probe VM.** The golden image purges cloud-init after the build; the

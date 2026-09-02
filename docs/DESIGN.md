@@ -401,7 +401,10 @@ service creates a per-VM `argus` sudo user with a generated password, reports it
 check-in channel to `POST /api/probes/break-glass`, and Argus stores it encrypted and reveals it to
 admins on the Probes page (**Console** button). SSH host keys regenerate on first boot
 (`argus-hostkeys.service`); the **console keyboard layout** is configurable per-VM (Add-probe → VM, or
-the setup page → `/etc/vconsole.conf`). Still open: the bare-metal Clonezilla SKU.
+the setup page → `/etc/vconsole.conf`). **Static networking** for no-DHCP sites rides the seed too
+(`ARGUS_IP`/`ARGUS_GATEWAY`/`ARGUS_DNS` from Add-probe → VM → a static systemd-networkd file applied
+before enrollment); it's seed-only, since the first-boot page needs an IP to be reachable, and a stuck
+VM re-reads a corrected seed on reboot. Still open: the bare-metal Clonezilla SKU.
 
 ---
 

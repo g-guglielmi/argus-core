@@ -65,3 +65,33 @@ func TestBuildSeedISO(t *testing.T) {
 		t.Fatalf("ARGUS.ENV content mismatch:\n got: %q\nwant: %q", got, env)
 	}
 }
+
+func TestStaticCIDR(t *testing.T) {
+	cases := []struct {
+		ip, prefix, want string
+		ok               bool
+	}{
+		{"", "24", "", true},                             // no static IP -> DHCP, no error
+		{"10.0.0.50", "24", "10.0.0.50/24", true},        // CIDR prefix
+		{"10.0.0.50", "255.255.255.0", "10.0.0.50/24", true}, // dotted netmask
+		{"10.0.0.50", "", "10.0.0.50/24", true},          // default /24
+		{"10.0.0.50", "33", "", false},                   // prefix out of range
+		{"not-an-ip", "24", "", false},                   // bad address
+		{"10.0.0.50", "255.0.255.0", "", false},          // non-contiguous mask
+	}
+	for _, c := range cases {
+		got, err := staticCIDR(c.ip, c.prefix)
+		if c.ok && (err != nil || got != c.want) {
+			t.Errorf("staticCIDR(%q,%q) = %q,%v; want %q,nil", c.ip, c.prefix, got, err, c.want)
+		}
+		if !c.ok && err == nil {
+			t.Errorf("staticCIDR(%q,%q) = %q; want an error", c.ip, c.prefix, got)
+		}
+	}
+}
+
+func TestCleanDNS(t *testing.T) {
+	if got := cleanDNS("10.0.0.10, 1.1.1.1 not-an-ip"); got != "10.0.0.10,1.1.1.1" {
+		t.Errorf("cleanDNS = %q; want 10.0.0.10,1.1.1.1", got)
+	}
+}

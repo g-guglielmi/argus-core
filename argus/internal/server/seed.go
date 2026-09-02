@@ -3,6 +3,8 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -26,7 +28,11 @@ func (s *Server) handleSeedISO(w http.ResponseWriter, r *http.Request) {
 		EnrollURL string `json:"enroll_url"`
 		CoreHost  string `json:"core_host"`
 		Keymap    string `json:"keymap"` // console keyboard layout, e.g. "it" (default "us" on the VM)
-		Name      string `json:"name"`   // proxy name, for the download filename only
+		StaticIP  string `json:"static_ip"` // static networking (no DHCP); blank = DHCP
+		Prefix    string `json:"prefix"`    // "24" or a dotted mask "255.255.255.0"
+		Gateway   string `json:"gateway"`
+		DNS       string `json:"dns"` // comma/space separated
+		Name      string `json:"name"` // proxy name, for the download filename only
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -49,6 +55,21 @@ func (s *Server) handleSeedISO(w http.ResponseWriter, r *http.Request) {
 	}
 	if km := validKeymap(req.Keymap); km != "" {
 		env.WriteString("ARGUS_KEYMAP=" + km + "\n")
+	}
+	// Static networking (for sites with no DHCP). Omitted -> the VM DHCPs as usual. Validated here so a
+	// bad address never reaches the VM's network config; the first-boot service writes a static
+	// systemd-networkd file from these before enrollment.
+	if cidr, err := staticCIDR(req.StaticIP, req.Prefix); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	} else if cidr != "" {
+		env.WriteString("ARGUS_IP=" + cidr + "\n")
+		if gw := validIP(req.Gateway); gw != "" {
+			env.WriteString("ARGUS_GATEWAY=" + gw + "\n")
+		}
+		if dns := cleanDNS(req.DNS); dns != "" {
+			env.WriteString("ARGUS_DNS=" + dns + "\n")
+		}
 	}
 
 	iso, err := s.buildSeedISO(env.String())
@@ -84,6 +105,68 @@ func validKeymap(s string) string {
 		}
 	}
 	return s
+}
+
+// validIP returns a trimmed IP if it parses, else "".
+func validIP(s string) string {
+	s = strings.TrimSpace(s)
+	if net.ParseIP(s) == nil {
+		return ""
+	}
+	return s
+}
+
+// staticCIDR combines a static IP and a prefix/netmask into "ip/prefix" for systemd-networkd's
+// Address=. An empty ip means DHCP (returns "" with no error). prefix accepts a CIDR length ("24") or
+// a dotted mask ("255.255.255.0"), defaulting to /24 when blank.
+func staticCIDR(ip, prefix string) (string, error) {
+	ip = strings.TrimSpace(ip)
+	if ip == "" {
+		return "", nil // DHCP
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return "", errors.New("static IP is not a valid address")
+	}
+	v4 := parsed.To4() != nil
+	prefix = strings.TrimSpace(prefix)
+	var ones int
+	switch {
+	case prefix == "":
+		ones = 24
+	case strings.Contains(prefix, "."):
+		m := net.ParseIP(prefix).To4()
+		if m == nil {
+			return "", errors.New("subnet mask is not valid")
+		}
+		var bits int
+		ones, bits = net.IPMask(m).Size()
+		if bits == 0 {
+			return "", errors.New("subnet mask is not a valid contiguous mask")
+		}
+	default:
+		n, err := strconv.Atoi(prefix)
+		max := 32
+		if !v4 {
+			max = 128
+		}
+		if err != nil || n < 0 || n > max {
+			return "", errors.New("subnet prefix must be a number (0-32) or a netmask")
+		}
+		ones = n
+	}
+	return ip + "/" + strconv.Itoa(ones), nil
+}
+
+// cleanDNS keeps the valid IPs from a comma/space separated list and rejoins them with commas.
+func cleanDNS(s string) string {
+	var out []string
+	for _, f := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' }) {
+		if ip := validIP(f); ip != "" {
+			out = append(out, ip)
+		}
+	}
+	return strings.Join(out, ",")
 }
 
 // buildSeedISO packages the probe.env content into a plain ISO9660 image (label ARGUSSEED, file
