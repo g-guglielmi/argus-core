@@ -431,6 +431,9 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .badge.off { color: var(--faint); }
 .badge.err { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, var(--border)); }
 .flabel { font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); font-weight: 600; }
+/* A prominent component label (e.g. the Core / Updater sidecar rows in About): stands out as a
+   sub-heading rather than a faint form label. */
+.complabel { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text); font-weight: 700; }
 
 .acct-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
 .field { display: block; margin-bottom: 12px; }
