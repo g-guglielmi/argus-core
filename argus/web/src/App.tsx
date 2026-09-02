@@ -1885,9 +1885,11 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
 
   return (
     <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 560 }}>
+      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 560, maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
         <div className="dlg-title">Add a probe{step < 4 && <span style={{ color: 'var(--faint)', fontWeight: 400, fontSize: 12 }}> &middot; step {step} of 3</span>}</div>
         {err && <div style={{ color: 'var(--err)', fontSize: 13, marginBottom: 8 }}>{err}</div>}
+        <div className="dlg-scroll">
+
 
         {step === 1 && (
           <div style={{ display: 'grid', gap: 14 }}>
@@ -1991,6 +1993,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
           </div>
         )}
 
+        </div>
         <div className="dlg-foot">
           {step === 1 && <><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" onClick={next1}>Next</Button></>}
           {step === 2 && <><Button variant="ghost" onClick={() => { setErr(null); setStep(1) }}>Back</Button><Button variant="primary" onClick={next2} disabled={busy}>{busy ? 'Creating...' : 'Next'}</Button></>}
