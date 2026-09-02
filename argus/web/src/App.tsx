@@ -1550,7 +1550,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
         <h2>Site probes</h2>
         <span className="hint">{proxies ? `${proxies.length} known to the core` : '…'}</span>
         {isAdmin && <div className="tools">
-          <button className="btn" onClick={reconcile} title="Prune Argus records left behind by proxies deleted directly in Zabbix">Clean up</button>
+          <button className="btn" onClick={reconcile} title="Prune Argus records left behind by probes deleted directly in Zabbix">Clean up</button>
           {enroll && <button className="btn primary" onClick={() => setWizardOpen(true)}>+ Add probe</button>}
         </div>}
       </div>
@@ -1593,7 +1593,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
               <tr>
                 <td><strong>{p.name}</strong></td>
                 <td data-label="Status">{p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}</td>
-                <td data-label="Last check-in" className="mono" title="When the core last received data from this proxy" style={{ color: !p.last_access ? 'var(--faint)' : (Date.now() / 1000 - p.last_access > 60 ? 'var(--warn)' : undefined), fontWeight: p.last_access && Date.now() / 1000 - p.last_access > 60 ? 600 : undefined }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
+                <td data-label="Last check-in" className="mono" title="When the core last received data from this probe" style={{ color: !p.last_access ? 'var(--faint)' : (Date.now() / 1000 - p.last_access > 60 ? 'var(--warn)' : undefined), fontWeight: p.last_access && Date.now() / 1000 - p.last_access > 60 ? 600 : undefined }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
                 <td data-label="Version" className="mono" title={p.last_checkin ? `Version reported ${relTime(p.last_checkin)}` : p.version ? 'Version from Zabbix (no Argus fleet check-in)' : 'No version reported'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '-'}</td>
                 <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} /></td>
                 <td data-label="Updater"><UpdaterCell p={p} onUpdaterUpdate={isAdmin ? triggerUpdaterUpdate : undefined} /></td>
@@ -1602,7 +1602,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                 <td data-label="SNMP">{canEdit && p.id && <button className="btn" onClick={() => setOpenSnmp((n) => (n === p.name ? null : p.name))}>Defaults</button>}</td>
                 <td data-label="" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                   {isAdmin && p.break_glass && <button className="btn" style={{ marginRight: 6 }} title={`Reveal the break-glass console credential${p.break_glass_user ? ` (user ${p.break_glass_user})` : ''}`} onClick={() => revealBreakGlass(p)}>Console</button>}
-                  {isAdmin && p.id && <button className="btn danger" title="Delete this proxy from Zabbix + clean up its Argus records" onClick={() => del(p)}>Delete</button>}
+                  {isAdmin && p.id && <button className="btn danger" title="Delete this probe from Zabbix (removes its proxy) + clean up its Argus records" onClick={() => del(p)}>Delete</button>}
                 </td>
               </tr>
               {openCmd === p.name && <tr><td colSpan={10} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
@@ -1896,7 +1896,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
             <label style={{ display: 'grid', gap: 4 }}>
               <span className="flabel">Site name</span>
               <input className="input" placeholder="e.g. site1" value={site} autoFocus onChange={(e) => setSite(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') next1() }} />
-              <span className="set-hint">The proxy will be named <strong>proxy-{slug || '<site>'}</strong>.</span>
+              <span className="set-hint">Registered in Zabbix as <strong>proxy-{slug || '<site>'}</strong>.</span>
             </label>
             <button type="button" onClick={() => setAdvanced((v) => !v)} style={{ justifySelf: 'start', background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 12.5, padding: 0 }}>{advanced ? 'Hide options' : 'Advanced'}</button>
             {advanced && (

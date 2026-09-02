@@ -41,9 +41,11 @@ Completes DESIGN §14a's delivery-vs-enrollment matrix and the break-glass item.
   static `systemd-networkd` file before enrollment, so the VM enrolls on a fixed address with no
   interaction. Seed-only (the first-boot page needs an IP to be reachable); a stuck VM is recoverable by
   re-attaching a corrected seed.
-- **The probe VM takes the proxy name as its hostname** (e.g. `proxy-site5`) on enrollment, matching the
-  container's Zabbix hostname; and the break-glass `argus` user is added to the `docker` group so it can
-  run `docker` without sudo.
+- **The probe VM takes the hostname `argus-probe-<site>`** (e.g. `argus-probe-site5`) on enrollment — the
+  VM is the probe appliance; the container it runs is the Zabbix proxy (`proxy-<site>`). The break-glass
+  `argus` user is also added to the `docker` group so it can run `docker` without sudo.
+- **Terminology tidy-up:** the operator-facing copy consistently calls the deployable a **probe**;
+  **proxy** is reserved for the Zabbix entity (the `proxy-<site>` name, the "Monitored by" assignment).
 
 **Changed:**
 - **Reworked "Add probe" into a guided modal wizard** - name → deploy method (+ only that method's
