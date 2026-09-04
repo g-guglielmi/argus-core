@@ -132,7 +132,9 @@ mkdir -p /etc/needrestart/conf.d
 echo "\$nrconf{restart} = 'a';" > /etc/needrestart/conf.d/99argus.conf
 
 # Host reporter: pending security-update count + reboot-required flag -> os-status.json in the shared dir.
-install -d -m 0755 "$ARGUS_STATE_DIR"
+# Only create it if missing - NEVER reset an existing dir's owner/mode: the core container writes its
+# self-update request.json here and may run as a non-root UID that owns the dir.
+[ -d "$ARGUS_STATE_DIR" ] || install -d -m 0755 "$ARGUS_STATE_DIR"
 cat > /usr/local/sbin/argus-os-report <<'REPORT'
 #!/usr/bin/env bash
 # Report the core VM's OS patch status for Argus (DESIGN §14c). Writes os-status.json into the shared
@@ -143,7 +145,7 @@ sec="$(apt-get -s -o Debug::NoLocking=true upgrade 2>/dev/null | awk '/^Inst/ &&
 [ -n "$sec" ] || sec=-1
 reboot=false; [ -f /var/run/reboot-required ] && reboot=true
 os="$( . /etc/os-release 2>/dev/null && printf '%s' "${PRETTY_NAME:-Linux}" )"
-install -d -m 0755 "$DIR"
+[ -d "$DIR" ] || install -d -m 0755 "$DIR"
 umask 022  # so the new file is created world-readable, not mktemp's default 0600
 tmp="$(mktemp "$DIR/.os-status.XXXXXX")"
 printf '{"sec_updates":%d,"reboot_required":%s,"reported_at":%d,"os":"%s"}\n' "$sec" "$reboot" "$(date +%s)" "$os" > "$tmp"
