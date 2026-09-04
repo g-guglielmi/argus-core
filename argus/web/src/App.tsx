@@ -1682,32 +1682,51 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
 
       <div className="enroll-scroll">
       <table className="enroll enroll-probes">
-        <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Version</th><th>Update</th><th>Updater</th><th>OS</th><th>Mode</th><th>Enrolled</th><th>SNMP</th><th></th></tr></thead>
+        <thead><tr><th>Probe</th><th>Health</th><th>Software</th><th>OS</th><th></th></tr></thead>
         <tbody>
-          {error && <tr><td colSpan={11} style={{ color: 'var(--err)' }}>{error}</td></tr>}
-          {!error && proxies === null && <tr><td colSpan={11} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
-          {!error && proxies && proxies.length === 0 && <tr><td colSpan={11} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
+          {error && <tr><td colSpan={5} style={{ color: 'var(--err)' }}>{error}</td></tr>}
+          {!error && proxies === null && <tr><td colSpan={5} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
+          {!error && proxies && proxies.length === 0 && <tr><td colSpan={5} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
           {!error && proxies && proxies.map((p) => (
             <Fragment key={p.name}>
               <tr>
-                <td><strong>{p.name}</strong></td>
-                <td data-label="Status">{p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}</td>
-                <td data-label="Last check-in" className="mono" title="When the core last received data from this probe" style={{ color: !p.last_access ? 'var(--faint)' : (Date.now() / 1000 - p.last_access > 60 ? 'var(--warn)' : undefined), fontWeight: p.last_access && Date.now() / 1000 - p.last_access > 60 ? 600 : undefined }}>{p.last_access ? relTime(p.last_access) : 'never'}</td>
-                <td data-label="Version" className="mono" title={p.last_checkin ? `Version reported ${relTime(p.last_checkin)}` : p.version ? 'Version from Zabbix (no Argus fleet check-in)' : 'No version reported'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '-'}</td>
-                <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} /></td>
-                <td data-label="Updater"><UpdaterCell p={p} onUpdaterUpdate={isAdmin ? triggerUpdaterUpdate : undefined} /></td>
+                <td data-label="Probe">
+                  <div className="cell-stack">
+                    <strong>{p.name}</strong>
+                    <span className="sub-line" title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>
+                      {p.mode}{p.enrolled_at ? ` · enrolled ${new Date(p.enrolled_at * 1000).toLocaleDateString()}` : ' · manual'}
+                    </span>
+                  </div>
+                </td>
+                <td data-label="Health">
+                  <div className="cell-stack">
+                    {p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}
+                    <span className="sub-line mono" title="When the core last received data from this probe" style={{ color: !p.last_access ? 'var(--faint)' : (Date.now() / 1000 - p.last_access > 60 ? 'var(--warn)' : undefined) }}>{p.last_access ? relTime(p.last_access) : 'never'}</span>
+                  </div>
+                </td>
+                <td data-label="Software">
+                  <div className="cell-stack">
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span className="mono" title={p.last_checkin ? `Version reported ${relTime(p.last_checkin)}` : p.version ? 'Version from Zabbix (no Argus fleet check-in)' : 'No version reported'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '-'}</span>
+                      <UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} />
+                    </span>
+                    {p.selfupdate && <span className="sub-line mono" title="Version of the argus-updater sidecar managing this probe">updater {p.updater_version || '?'}</span>}
+                  </div>
+                </td>
                 <td data-label="OS"><OSCell p={p} /></td>
-                <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
-                <td data-label="Enrolled" className="mono" style={{ color: p.enrolled_at ? 'var(--muted)' : 'var(--faint)' }} title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>{p.enrolled_at ? new Date(p.enrolled_at * 1000).toLocaleDateString() : '-'}</td>
-                <td data-label="SNMP">{canEdit && p.id && <button className="btn" onClick={() => setOpenSnmp((n) => (n === p.name ? null : p.name))}>Defaults</button>}</td>
-                <td data-label="" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  {isAdmin && p.break_glass && <button className="btn" style={{ marginRight: 6 }} title={`Reveal the break-glass console credential${p.break_glass_user ? ` (user ${p.break_glass_user})` : ''}`} onClick={() => revealBreakGlass(p)}>Console</button>}
-                  {isAdmin && p.id && <button className="btn danger" title="Delete this probe from Zabbix (removes its proxy) + clean up its Argus records" onClick={() => del(p)}>Delete</button>}
+                <td data-label="" className="row-actions">
+                  <ProbeRowMenu items={[
+                    canEdit && p.id ? { label: 'SNMP defaults', onClick: () => setOpenSnmp((n) => (n === p.name ? null : p.name)) } : null,
+                    isAdmin && p.break_glass ? { label: p.break_glass_user ? `Console (${p.break_glass_user})` : 'Console', onClick: () => revealBreakGlass(p) } : null,
+                    isAdmin && p.selfupdate ? { label: 'Update sidecar', onClick: () => triggerUpdaterUpdate(p) } : null,
+                    'sep',
+                    isAdmin && p.id ? { label: 'Delete probe', onClick: () => del(p), danger: true } : null,
+                  ]} />
                 </td>
               </tr>
-              {openCmd === p.name && <tr><td colSpan={11} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
-              {report?.name === p.name && <tr><td colSpan={11} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
-              {openSnmp === p.name && <tr><td colSpan={11} style={{ padding: 0 }}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></td></tr>}
+              {openCmd === p.name && <tr><td colSpan={5} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
+              {report?.name === p.name && <tr><td colSpan={5} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
+              {openSnmp === p.name && <tr><td colSpan={5} style={{ padding: 0 }}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></td></tr>}
             </Fragment>
           ))}
         </tbody>
@@ -1755,17 +1774,6 @@ function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, on
   }
 }
 
-// UpdaterCell is the "Updater" column: the version of the argus-updater sidecar managing this probe,
-// plus (admin) a button to update the sidecar itself. A dash means no sidecar is present.
-function UpdaterCell({ p, onUpdaterUpdate }: { p: Proxy; onUpdaterUpdate?: (p: Proxy) => void }) {
-  if (!p.selfupdate) return <span className="mono" style={{ color: 'var(--faint)' }} title="No argus-updater sidecar is managing this probe">-</span>
-  const wrap: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }
-  const ver = p.updater_version
-    ? <span className="mono" title="Version of the argus-updater sidecar">{p.updater_version}</span>
-    : <span className="mono" style={{ color: 'var(--faint)' }} title="Sidecar present; version not reported yet">?</span>
-  return <span style={wrap}>{ver}{onUpdaterUpdate ? <button className="btn" onClick={() => onUpdaterUpdate(p)} title="Update the argus-updater sidecar itself to the latest version">Update</button> : null}</span>
-}
-
 // OSCell is the "OS" column: a VM probe's Debian patch status (DESIGN §14c). The OS patches itself
 // (unattended-upgrades, security only) and auto-reboots in a weekly window; this only *reports*. A
 // dash means no report (a container probe, or a VM that hasn't reported yet).
@@ -1781,6 +1789,46 @@ function OSCell({ p }: { p: Proxy }) {
       {sec === 0 && !p.reboot_required && <span className="tag online" title={`No pending security updates. ${when}`}>patched</span>}
       {sec < 0 && !p.reboot_required && <span className="mono" style={{ color: 'var(--faint)' }} title={`Security-update count unknown. ${when}`}>?</span>}
     </span>
+  )
+}
+
+// ProbeRowMenu is the per-row "⋯" actions menu on the Probes table: the low-frequency, action-only
+// controls (SNMP defaults, Console, Update sidecar, Delete) that used to each be a column. Portaled to
+// <body> with fixed positioning so the table's horizontal scroll container can't clip it. Falsy items
+// are dropped and stray separators trimmed, so the caller can pass role-gated items inline.
+type ProbeMenuItem = { label: string; onClick: () => void; danger?: boolean }
+function ProbeRowMenu({ items }: { items: Array<ProbeMenuItem | 'sep' | false | null | undefined> }) {
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
+  const list: (ProbeMenuItem | 'sep')[] = []
+  for (const it of items) {
+    if (!it) continue
+    if (it === 'sep') { if (list.length && list[list.length - 1] !== 'sep') list.push('sep'); continue }
+    list.push(it)
+  }
+  while (list.length && list[list.length - 1] === 'sep') list.pop()
+  if (list.length === 0) return null
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 5, right: Math.max(8, window.innerWidth - r.right) })
+    }
+    setOpen((o) => !o)
+  }
+  return (
+    <div className="kebab-wrap">
+      <button ref={btnRef} className={'kebab' + (open ? ' open' : '')} aria-label="Actions" title="Actions" onClick={toggle}>⋮</button>
+      {open && pos && createPortal(
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 59 }} />
+          <div className="menu" style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 60 }}>
+            {list.map((it, i) => it === 'sep'
+              ? <div key={i} className="sep" />
+              : <button key={i} className={it.danger ? 'danger' : undefined} onClick={() => { setOpen(false); it.onClick() }}>{it.label}</button>)}
+          </div>
+        </>, document.body)}
+    </div>
   )
 }
 

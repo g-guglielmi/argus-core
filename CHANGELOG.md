@@ -35,6 +35,13 @@ remotely (there's no clean rollback; hypervisor snapshots are the safety net).
   `POST /api/probes/os-status` (probe report). New `probe_agents` columns `sec_updates` /
   `reboot_required` / `os_reported_at` (additive migration).
 
+**Changed:**
+- **Probes table decluttered.** Adding the OS column pushed it to 11 columns; regrouped into 5 —
+  **Probe** (name + `mode · enrolled` subline), **Health** (online/offline + last check-in), **Software**
+  (version + update badge + `updater vX.Y.Z` subline), **OS**, and a per-row **⋯ menu** (SNMP defaults,
+  Console, Update sidecar, Delete). Nothing removed, just grouped by concept and the row actions folded
+  into the menu. The menu is portaled to `<body>` so the table's scroll container can't clip it.
+
 **Deploy:**
 - `setup-core.sh` gains an OS-patching step: `unattended-upgrades` (auto-reboot **off**), a host
   reporter writing `os-status.json`, and a reboot watcher reading `reboot-window.json` — both under

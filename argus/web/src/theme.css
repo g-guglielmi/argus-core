@@ -227,6 +227,12 @@ a { color: var(--accent); }
 .menu .sep { height: 1px; background: var(--border); margin: 4px 4px; }
 .menu .mlabel { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); padding: 6px 10px 2px; }
 
+/* Two-line table cells: a primary value with a muted secondary line under it (Probes table). */
+.cell-stack { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.cell-stack .sub-line { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
+.sub-line { font-size: 11.5px; color: var(--muted); }
+.enroll-probes .row-actions { text-align: right; white-space: nowrap; width: 1%; }
+
 /* ---------- problem rows ---------- */
 .rows { display: flex; flex-direction: column; }
 .row { display: flex; align-items: center; gap: 11px; padding: 9px 16px; border-bottom: 1px solid var(--border); position: relative; }
