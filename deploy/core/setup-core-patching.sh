@@ -58,10 +58,11 @@ sec="$(apt-get -s -o Debug::NoLocking=true upgrade 2>/dev/null | awk '/^Inst/ &&
 reboot=false; [ -f /var/run/reboot-required ] && reboot=true
 os="$( . /etc/os-release 2>/dev/null && printf '%s' "${PRETTY_NAME:-Linux}" )"
 install -d -m 0755 "$DIR"
+umask 022  # so the new file is created world-readable, not mktemp's default 0600
 tmp="$(mktemp "$DIR/.os-status.XXXXXX")"
 printf '{"sec_updates":%d,"reboot_required":%s,"reported_at":%d,"os":"%s"}\n' "$sec" "$reboot" "$(date +%s)" "$os" > "$tmp"
-chmod 0644 "$tmp"  # world-readable: the Argus container (possibly non-root) reads it via the bind mount
 mv -f "$tmp" "$DIR/os-status.json"
+chmod 0644 "$DIR/os-status.json"  # bulletproof: the Argus container (possibly non-root) reads it via the bind mount
 REPORT
 chmod +x /usr/local/sbin/argus-os-report
 
