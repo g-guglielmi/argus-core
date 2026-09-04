@@ -42,6 +42,10 @@ into `ARGUS_STATE_DIR` (default `/opt/argus/update`) — set that to the **same 
 Argus container's `ARGUS_UPDATE_DIR`, so the core shows its own status and the chosen reboot window is
 honoured locally. Probe VMs patch + reboot themselves (weekly ~03:00) and report status the same way.
 
+> On an **already-running core**, don't re-run the whole installer just for this — run the standalone
+> `core/setup-core-patching.sh` instead: `sudo ARGUS_STATE_DIR=/docker/argus-update ./setup-core-patching.sh`
+> (the host path bound to the core container's `/update`). It installs only the patching + reporter bits.
+
 After it's up:
 - Zabbix web UI (admin engine room) on the VM - lock it to the private network / admin only.
 - Publish **TCP 10051** to wherever probes will reach it (LAN via Site Magic today; a NAT/
