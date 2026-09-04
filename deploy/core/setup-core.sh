@@ -146,6 +146,7 @@ os="$( . /etc/os-release 2>/dev/null && printf '%s' "${PRETTY_NAME:-Linux}" )"
 install -d -m 0755 "$DIR"
 tmp="$(mktemp "$DIR/.os-status.XXXXXX")"
 printf '{"sec_updates":%d,"reboot_required":%s,"reported_at":%d,"os":"%s"}\n' "$sec" "$reboot" "$(date +%s)" "$os" > "$tmp"
+chmod 0644 "$tmp"  # world-readable: the Argus container (possibly non-root) reads it via the bind mount
 mv -f "$tmp" "$DIR/os-status.json"
 REPORT
 chmod +x /usr/local/sbin/argus-os-report
