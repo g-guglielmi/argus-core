@@ -14,7 +14,7 @@ type Group = { id: string; name: string; hosts: number }
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[] }
-type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; break_glass?: boolean; break_glass_user?: string }
+type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; min_severity: number; config: Record<string, string> }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
@@ -611,6 +611,94 @@ type UpdateState = {
 //                  argus-updater sidecar is wired up) a one-click "Update now" button
 // The one-click update is performed by the argus-updater sidecar (which holds the Docker socket); the
 // core just drops a request and polls /api/update/state, showing a running / success / failure banner.
+type OSStatus = {
+  core: { available: boolean; sec_updates: number; reboot_required: boolean; reported_at: number; os?: string }
+  reboot_window: { mode: string; weekday: number; hour: number; minute: number }
+}
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+// OSUpdates is the Settings card for OS patching & lifecycle (DESIGN §14c). The Debian OS under the
+// core VM and every probe VM patches itself locally (unattended-upgrades, security suite only) - Argus
+// never triggers apt remotely. This card shows the core's own patch status and lets an admin schedule
+// the core's reboot (a pet that must not bounce unannounced), which a host timer honours locally.
+function OSUpdates() {
+  const [os, setOs] = useState<OSStatus | null>(null)
+  const [mode, setMode] = useState('notify')
+  const [weekday, setWeekday] = useState(0)
+  const [time, setTime] = useState('03:00')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState('')
+
+  const timeStr = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  const load = () => fetch('/api/os/status').then((r) => (r.ok ? r.json() : null)).then((d: OSStatus | null) => {
+    if (!d) return
+    setOs(d)
+    setMode(d.reboot_window.mode)
+    setWeekday(d.reboot_window.weekday)
+    setTime(timeStr(d.reboot_window.hour, d.reboot_window.minute))
+  }).catch(() => {})
+  useEffect(() => { load() }, [])
+
+  const dirty = !!os && (mode !== os.reboot_window.mode || (mode === 'auto' && (weekday !== os.reboot_window.weekday || time !== timeStr(os.reboot_window.hour, os.reboot_window.minute))))
+  const save = async () => {
+    const [h, m] = time.split(':').map((n) => parseInt(n, 10))
+    const body = mode === 'auto' ? { mode, weekday, hour: h || 0, minute: m || 0 } : { mode: 'notify' }
+    setBusy(true); setErr(''); setMsg('')
+    try {
+      const res = await fetch('/api/os/reboot-window', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      if (!res.ok) { setErr(await errText(res, 'Could not save the reboot window')); return }
+      setMsg('Reboot window saved.'); await load()
+    } finally { setBusy(false) }
+  }
+
+  const c = os?.core
+  const sec = c ? c.sec_updates : -1
+  return (
+    <section className="set-card">
+      <h3>OS updates</h3>
+      <p className="set-note">The Debian OS under the core and probe VMs patches itself locally — security updates only, applied automatically. Argus reports status and schedules the core's reboot; it never runs apt remotely (there's no clean rollback). Per-probe status is on the <strong>Probes</strong> page.</p>
+
+      <div className="set-row">
+        <div className="set-head"><span className="complabel">Core</span></div>
+        {!c?.available ? (
+          <p className="set-hint">The core's OS patch status isn't wired up yet. Run the host reporter from <span className="mono">deploy/core/setup-core.sh</span> and share the self-update dir with the core container.</p>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            {c.os && <span className="mono">{c.os}</span>}
+            {c.reboot_required && <span className="tag avail" title="The core needs a reboot to finish applying updates — schedule it below">reboot needed</span>}
+            {sec > 0 && <span className="tag avail">{sec} security update{sec === 1 ? '' : 's'}</span>}
+            {sec === 0 && !c.reboot_required && <span className="tag online">patched</span>}
+            {sec < 0 && !c.reboot_required && <span className="mono" style={{ color: 'var(--faint)' }}>count unknown</span>}
+            {c.reported_at > 0 && <span className="set-hint" style={{ margin: 0 }}>reported {relTime(c.reported_at)}</span>}
+          </div>
+        )}
+      </div>
+
+      <div className="set-row" style={{ marginBottom: 0 }}>
+        <div className="set-head"><span className="complabel">Core reboot window</span></div>
+        <p className="set-hint" style={{ marginTop: 0 }}>Security patches apply automatically, but the core hosts the database and Zabbix, so its <strong>reboot</strong> is never unattended by default. Probe VMs reboot themselves in a weekly ~03:00 window.</p>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <select className="input" value={mode} onChange={(e) => setMode(e.target.value)} style={{ maxWidth: 320 }}>
+            <option value="notify">Notify only — never reboot automatically</option>
+            <option value="auto">Auto-reboot weekly when needed</option>
+          </select>
+          {mode === 'auto' && <>
+            <select className="input" value={weekday} onChange={(e) => setWeekday(parseInt(e.target.value, 10))} style={{ maxWidth: 160 }}>
+              {WEEKDAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
+            </select>
+            <input className="input" type="time" value={time} onChange={(e) => setTime(e.target.value)} style={{ maxWidth: 130 }} />
+          </>}
+          <Button variant="default" onClick={save} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save'}</Button>
+        </div>
+        {mode === 'auto' && <p className="set-hint" style={{ marginBottom: 0 }}>The core reboots only when an update requires it, on <strong>{WEEKDAYS[weekday]}</strong> at <strong>{time}</strong> (local). Take a hypervisor snapshot as your safety net.</p>}
+        {err && <p className="set-hint" style={{ color: 'var(--err)', marginBottom: 0 }}>{err}</p>}
+        {msg && <p className="set-hint" style={{ color: 'var(--ok)', marginBottom: 0 }}>{msg}</p>}
+      </div>
+    </section>
+  )
+}
+
 function VersionAbout() {
   const confirm = useConfirm()
   const [v, setV] = useState<VersionInfo | null>(null)
@@ -1082,6 +1170,8 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
       <form onSubmit={save} className="set-body">
         {/* Running version + update check, at the top so it's the first thing an admin sees. */}
         <VersionAbout />
+        {/* OS patching & lifecycle (DESIGN §14c): core patch status + the operator-scheduled reboot window. */}
+        <OSUpdates />
         {/* Advanced mode - a per-user preference (saved on this admin's account), kept here so only an
             admin can turn it on, and only for their own view. Theme is likewise a per-device preference,
             but lives in Account (reachable by every role) rather than this admin-only server-settings tab. */}
@@ -1554,6 +1644,10 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
       <div className="phead">
         <h2>Site probes</h2>
         <span className="hint">{proxies ? `${proxies.length} known to the core` : '…'}</span>
+        {(() => {
+          const needReboot = (proxies || []).filter((p) => p.reboot_required).length
+          return needReboot > 0 ? <span className="tag avail" title="These probe VMs need a reboot to finish applying OS updates; each reboots in its weekly ~03:00 window">{needReboot} need a reboot</span> : null
+        })()}
         {isAdmin && <div className="tools">
           <button className="btn" onClick={reconcile} title="Prune Argus records left behind by probes deleted directly in Zabbix">Clean up</button>
           {enroll && <button className="btn primary" onClick={() => setWizardOpen(true)}>+ Add probe</button>}
@@ -1588,11 +1682,11 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
 
       <div className="enroll-scroll">
       <table className="enroll enroll-probes">
-        <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Version</th><th>Update</th><th>Updater</th><th>Mode</th><th>Enrolled</th><th>SNMP</th><th></th></tr></thead>
+        <thead><tr><th>Probe</th><th>Status</th><th>Last check-in</th><th>Version</th><th>Update</th><th>Updater</th><th>OS</th><th>Mode</th><th>Enrolled</th><th>SNMP</th><th></th></tr></thead>
         <tbody>
-          {error && <tr><td colSpan={10} style={{ color: 'var(--err)' }}>{error}</td></tr>}
-          {!error && proxies === null && <tr><td colSpan={10} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
-          {!error && proxies && proxies.length === 0 && <tr><td colSpan={10} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
+          {error && <tr><td colSpan={11} style={{ color: 'var(--err)' }}>{error}</td></tr>}
+          {!error && proxies === null && <tr><td colSpan={11} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
+          {!error && proxies && proxies.length === 0 && <tr><td colSpan={11} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
           {!error && proxies && proxies.map((p) => (
             <Fragment key={p.name}>
               <tr>
@@ -1602,6 +1696,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                 <td data-label="Version" className="mono" title={p.last_checkin ? `Version reported ${relTime(p.last_checkin)}` : p.version ? 'Version from Zabbix (no Argus fleet check-in)' : 'No version reported'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '-'}</td>
                 <td data-label="Update"><UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} /></td>
                 <td data-label="Updater"><UpdaterCell p={p} onUpdaterUpdate={isAdmin ? triggerUpdaterUpdate : undefined} /></td>
+                <td data-label="OS"><OSCell p={p} /></td>
                 <td data-label="Mode" className="mono" style={{ color: 'var(--muted)' }}>{p.mode}</td>
                 <td data-label="Enrolled" className="mono" style={{ color: p.enrolled_at ? 'var(--muted)' : 'var(--faint)' }} title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>{p.enrolled_at ? new Date(p.enrolled_at * 1000).toLocaleDateString() : '-'}</td>
                 <td data-label="SNMP">{canEdit && p.id && <button className="btn" onClick={() => setOpenSnmp((n) => (n === p.name ? null : p.name))}>Defaults</button>}</td>
@@ -1610,9 +1705,9 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                   {isAdmin && p.id && <button className="btn danger" title="Delete this probe from Zabbix (removes its proxy) + clean up its Argus records" onClick={() => del(p)}>Delete</button>}
                 </td>
               </tr>
-              {openCmd === p.name && <tr><td colSpan={10} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
-              {report?.name === p.name && <tr><td colSpan={10} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
-              {openSnmp === p.name && <tr><td colSpan={10} style={{ padding: 0 }}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></td></tr>}
+              {openCmd === p.name && <tr><td colSpan={11} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
+              {report?.name === p.name && <tr><td colSpan={11} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
+              {openSnmp === p.name && <tr><td colSpan={11} style={{ padding: 0 }}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></td></tr>}
             </Fragment>
           ))}
         </tbody>
@@ -1669,6 +1764,24 @@ function UpdaterCell({ p, onUpdaterUpdate }: { p: Proxy; onUpdaterUpdate?: (p: P
     ? <span className="mono" title="Version of the argus-updater sidecar">{p.updater_version}</span>
     : <span className="mono" style={{ color: 'var(--faint)' }} title="Sidecar present; version not reported yet">?</span>
   return <span style={wrap}>{ver}{onUpdaterUpdate ? <button className="btn" onClick={() => onUpdaterUpdate(p)} title="Update the argus-updater sidecar itself to the latest version">Update</button> : null}</span>
+}
+
+// OSCell is the "OS" column: a VM probe's Debian patch status (DESIGN §14c). The OS patches itself
+// (unattended-upgrades, security only) and auto-reboots in a weekly window; this only *reports*. A
+// dash means no report (a container probe, or a VM that hasn't reported yet).
+function OSCell({ p }: { p: Proxy }) {
+  if (!p.os_reported_at) return <span className="mono" style={{ color: 'var(--faint)' }} title="No OS patch report — a container probe, or a VM probe that hasn't reported yet">-</span>
+  const when = `Reported ${relTime(p.os_reported_at)}`
+  const sec = typeof p.sec_updates === 'number' ? p.sec_updates : -1
+  const wrap: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }
+  return (
+    <span style={wrap}>
+      {p.reboot_required && <span className="tag avail" title={`This VM needs a reboot to finish applying updates; it reboots in its weekly ~03:00 window. ${when}`}>reboot</span>}
+      {sec > 0 && <span className="tag avail" title={`${sec} pending security update${sec === 1 ? '' : 's'}; applied automatically (security suite only). ${when}`}>{sec} security</span>}
+      {sec === 0 && !p.reboot_required && <span className="tag online" title={`No pending security updates. ${when}`}>patched</span>}
+      {sec < 0 && !p.reboot_required && <span className="mono" style={{ color: 'var(--faint)' }} title={`Security-update count unknown. ${when}`}>?</span>}
+    </span>
+  )
 }
 
 // ReportTokenPanel shows a freshly-minted check-in token once, with the single env var to add to

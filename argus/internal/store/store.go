@@ -201,7 +201,10 @@ CREATE TABLE IF NOT EXISTS probe_agents (
   updater_update_to TEXT NOT NULL DEFAULT '', -- pending updater self-update tag; handed out once at next check-in
   bg_user           TEXT NOT NULL DEFAULT '', -- break-glass console username (VM probes report one at first boot)
   bg_secret         TEXT NOT NULL DEFAULT '', -- break-glass password, ENCRYPTED at rest (the existing cipher)
-  bg_updated_at     INTEGER NOT NULL DEFAULT 0 -- unix seconds the break-glass credential was last reported
+  bg_updated_at     INTEGER NOT NULL DEFAULT 0, -- unix seconds the break-glass credential was last reported
+  sec_updates       INTEGER NOT NULL DEFAULT -1, -- pending OS security-update count a probe VM reports (-1 = never reported)
+  reboot_required   INTEGER NOT NULL DEFAULT 0,  -- the probe VM's OS flagged /var/run/reboot-required
+  os_reported_at    INTEGER NOT NULL DEFAULT 0   -- unix seconds the OS patch status was last reported
 );
 
 -- Small key/value store for app-level flags (e.g. the notifier's one-time baseline marker).
@@ -306,6 +309,17 @@ CREATE TABLE IF NOT EXISTS tree_hidden (
 		return err
 	}
 	if err := s.ensureColumn("probe_agents", "bg_updated_at INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	// OS patch status a probe VM's host-side reporter posts (security-update count + reboot-required),
+	// so the fleet view can show which sites carry pending CVEs / need a reboot. See DESIGN §14c.
+	if err := s.ensureColumn("probe_agents", "sec_updates INTEGER NOT NULL DEFAULT -1"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("probe_agents", "reboot_required INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("probe_agents", "os_reported_at INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("notify_events", "item_id TEXT NOT NULL DEFAULT ''"); err != nil {

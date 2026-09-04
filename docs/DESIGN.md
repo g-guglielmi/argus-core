@@ -460,6 +460,17 @@ release) so newly deployed probes ship already-patched instead of installing mon
 boot. **Major-version upgrades (Debian 13 -> 14) are a deliberate manual / re-image event** - never
 unattended.
 
+**Status: implemented (v0.4.32 / probe-vm v0.4.0).** The probe golden image bakes `unattended-upgrades`
+(security only) + `needrestart` with a weekly ~03:00 auto-reboot, and an hourly `argus-os-report.timer`
+posts its security-update count + reboot-required flag to `POST /api/probes/os-status` (probe-token
+auth). `setup-core.sh` installs the same on the core with **auto-reboot off** (it respects the
+TimescaleDB 2.28 hold), a host reporter that writes `os-status.json` into the shared self-update dir,
+and a reboot watcher that honours the operator window. Argus surfaces per-probe status on the **Probes**
+page (the **OS** column + a "N need a reboot" rollup) and the core's own status + the reboot-window mask
+in **Settings -> OS updates** (`GET /api/os/status`, `PUT /api/os/reboot-window`, default **notify
+only**). The window is mirrored to `reboot-window.json` for the core's host watcher; patching stays
+strictly local (Argus never runs `apt` remotely).
+
 ## 15. Tech stack (confirmed)
 - **App name:** **Argus.** Split across three repos: **argus-core** (this repo — the app in `argus/`, docs, core deploy kit), **argus-probe** (the probe Docker image + self-configuring golden VM), and **argus-updater** (the core self-update sidecar). Image names stay `argus` / `argus-probe` / `argus-updater` regardless of repo names.
 - **Backend / notifier:** **Go** (single static binary, distroless image).

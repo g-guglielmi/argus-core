@@ -52,6 +52,9 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	s.startProbeLatestRefresh(context.Background())
 	// Same for the app image, so the UI can show whether this instance is on the newest release.
 	s.startAppLatestRefresh(context.Background())
+	// Mirror the stored core reboot window to the shared update dir so the host reboot timer sees it
+	// even if the setting is never touched after this boot (DESIGN §14c). Best-effort.
+	s.syncRebootWindowFile(context.Background())
 
 	// Probe enrollment is available only when the CA is mounted. A load failure disables it
 	// (logged) rather than blocking startup.
@@ -91,6 +94,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/enroll", s.handleEnroll)
 	// probe VM break-glass credential report (public; authenticated by the probe token, like check-in)
 	mux.HandleFunc("POST /api/probes/break-glass", s.handleReportBreakGlass)
+	// probe VM OS patch status report (public; authenticated by the probe token, like check-in). See osstatus.go.
+	mux.HandleFunc("POST /api/probes/os-status", s.handleReportProbeOSStatus)
 	// probe fleet check-in (public; authenticated by the long-lived probe token from enrollment)
 	mux.HandleFunc("POST /api/probes/checkin", s.handleProbeCheckin)
 	// signed one-click acknowledge link from notifications (public; HMAC-verified, GET confirms)
@@ -208,6 +213,11 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/update/dismiss", auth.RequireRole("admin", s.handleUpdateDismiss))
 	// update the core's argus-updater sidecar itself (admin)
 	mux.HandleFunc("POST /api/update/updater", auth.RequireRole("admin", s.handleUpdaterSelfUpdate))
+
+	// OS patching & lifecycle (DESIGN §14c): the core's own patch status + the fleet reboot rollup, plus
+	// the operator-scheduled core reboot window (admin sets it; a host timer honours it locally).
+	mux.HandleFunc("GET /api/os/status", auth.RequireAuth(s.handleOSStatus))
+	mux.HandleFunc("PUT /api/os/reboot-window", auth.RequireRole("admin", s.handleSetRebootWindow))
 
 	// user management (admin only)
 	mux.HandleFunc("GET /api/users", auth.RequireRole("admin", s.handleListUsers))

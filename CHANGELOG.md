@@ -11,6 +11,35 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.32] - 2026-09-04
+
+**OS patching & lifecycle** (roadmap §A, DESIGN §14c): keep the Debian OS under the core and probe VMs
+patched without accumulating CVEs, while leaving the reboot policy appropriate to each role. The OS
+patches itself locally — Argus reports status and schedules the core's reboot, but never runs `apt`
+remotely (there's no clean rollback; hypervisor snapshots are the safety net).
+
+**Added:**
+- **Automatic security patching on both roles.** The probe golden image (`argus-probe`
+  `probe-vm/v0.4.0`) and the core (`deploy/core/setup-core.sh`) install `unattended-upgrades`
+  (**security suite only**, so the core's TimescaleDB 2.28 hold is safe) + `needrestart` (auto-restart
+  services after a libc/openssl bump, so most updates need no reboot).
+- **Role-appropriate reboots.** **Probe VMs** (cattle) auto-reboot in a weekly ~03:00 window — they
+  buffer 7 days offline, so a ~60 s reboot is invisible. The **core** (a pet hosting the DB + Zabbix)
+  never reboots unattended by default: a new **Settings → OS updates** mask picks a day + time, or
+  "notify only" (the default). A host-side watcher honours the window locally.
+- **Fleet patch visibility.** Probe VMs report their pending **security-update count** + **reboot-
+  required** flag hourly (`POST /api/probes/os-status`, probe-token auth); the core reports its own via
+  a host timer into the shared self-update dir. The **Probes** page gains an **OS** column and a
+  "N need a reboot" header rollup; **Settings → OS updates** shows the core's status.
+- Endpoints: `GET /api/os/status` (core status + reboot window), `PUT /api/os/reboot-window` (admin),
+  `POST /api/probes/os-status` (probe report). New `probe_agents` columns `sec_updates` /
+  `reboot_required` / `os_reported_at` (additive migration).
+
+**Deploy:**
+- `setup-core.sh` gains an OS-patching step: `unattended-upgrades` (auto-reboot **off**), a host
+  reporter writing `os-status.json`, and a reboot watcher reading `reboot-window.json` — both under
+  `ARGUS_STATE_DIR` (the host path you map as the core container's `ARGUS_UPDATE_DIR`).
+
 ## [0.4.31] - 2026-09-03
 
 Finish the **self-configuring probe VM** (roadmap §A): full-fleet OVA delivery, a downloadable seed
