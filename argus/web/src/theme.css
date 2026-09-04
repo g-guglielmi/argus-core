@@ -338,6 +338,11 @@ a { color: var(--accent); }
 .host-settings .hs-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .host-settings select.input { cursor: pointer; }
 @media (max-width: 640px) { .host-settings .hs-grid, .host-settings .if-fields, .host-settings .if-snmp { grid-template-columns: 1fr; } }
+/* Proxy SNMP-default band under a Probes row: a centered card with balanced two-column fields
+   (the shared host-settings grid is 3-col, which leaves v2c's two fields lopsided). */
+.snmp-band { margin: 8px auto 16px; max-width: 640px; }
+.snmp-band .if-snmp { grid-template-columns: 1fr 1fr; }
+@media (max-width: 640px) { .snmp-band .if-snmp { grid-template-columns: 1fr; } }
 
 /* In-app dialog (confirm / prompt) - replaces native browser popups */
 /* flex + margin:auto (not place-items:center) so a dialog taller than the viewport scrolls with its

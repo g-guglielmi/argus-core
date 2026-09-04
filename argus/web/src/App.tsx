@@ -1701,24 +1701,21 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                 <td data-label="Health">
                   <div className="cell-stack">
                     {p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}
-                    <span className="sub-line mono" title="When the core last received data from this probe" style={{ color: !p.last_access ? 'var(--faint)' : (Date.now() / 1000 - p.last_access > 60 ? 'var(--warn)' : undefined) }}>{p.last_access ? relTime(p.last_access) : 'never'}</span>
+                    <span className="sub-line mono" title="When the core last received data from this probe" style={{ paddingLeft: 10, color: !p.last_access ? 'var(--faint)' : (Date.now() / 1000 - p.last_access > 60 ? 'var(--warn)' : undefined) }}>{p.last_access ? relTime(p.last_access) : 'never'}</span>
                   </div>
                 </td>
                 <td data-label="Software">
-                  <div className="cell-stack">
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span className="mono" title={p.last_checkin ? `Version reported ${relTime(p.last_checkin)}` : p.version ? 'Version from Zabbix (no Argus fleet check-in)' : 'No version reported'} style={{ color: p.version ? undefined : 'var(--faint)' }}>{p.version || '-'}</span>
-                      <UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} />
-                    </span>
-                    {p.selfupdate && <span className="sub-line mono" title="Version of the argus-updater sidecar managing this probe">updater {p.updater_version || '?'}</span>}
-                  </div>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span className="mono" style={{ fontWeight: 600, color: p.version ? undefined : 'var(--faint)' }} title="Zabbix proxy version running on this probe">{p.version || '-'}</span>
+                    <UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} />
+                  </span>
                 </td>
                 <td data-label="OS"><OSCell p={p} /></td>
                 <td data-label="" className="row-actions">
                   <ProbeRowMenu items={[
                     canEdit && p.id ? { label: 'SNMP defaults', onClick: () => setOpenSnmp((n) => (n === p.name ? null : p.name)) } : null,
                     isAdmin && p.break_glass ? { label: p.break_glass_user ? `Console (${p.break_glass_user})` : 'Console', onClick: () => revealBreakGlass(p) } : null,
-                    isAdmin && p.selfupdate ? { label: 'Update sidecar', onClick: () => triggerUpdaterUpdate(p) } : null,
+                    isAdmin && p.selfupdate ? { label: `Update sidecar${p.updater_version ? ` (updater ${p.updater_version})` : ''}`, onClick: () => triggerUpdaterUpdate(p) } : null,
                     'sep',
                     isAdmin && p.id ? { label: 'Delete probe', onClick: () => del(p), danger: true } : null,
                   ]} />
@@ -2872,7 +2869,7 @@ function ProxySNMP({ proxyId, proxyName, onClose }: { proxyId: string; proxyName
   if (err && !snmp) return <div className="host-settings"><div style={{ color: 'var(--err)', fontSize: 13 }}>{err}</div></div>
   if (!snmp) return <div className="host-settings"><span style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</span></div>
   return (
-    <div className="host-settings">
+    <div className="host-settings snmp-band">
       <div className="hs-title">SNMP default · {proxyName}</div>
       <div className="hs-note">Hosts on this proxy set to “inherit” use these credentials. Saving applies them to every inheriting host.{isSet ? '' : ' No default is set yet.'}</div>
       <div className="if-snmp" style={{ borderTop: 'none', marginTop: 4, paddingTop: 0 }}>
