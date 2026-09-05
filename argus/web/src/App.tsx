@@ -1712,7 +1712,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                 </td>
                 <td data-label="Argus-Updater Version"><UpdaterVersionCell p={p} onUpdate={isAdmin ? triggerUpdaterUpdate : undefined} /></td>
                 <td data-label="Argus-VM OS Version"><OSCell p={p} /></td>
-                <td data-label="" className="row-actions">
+                <td className="row-actions">
                   <ProbeRowMenu items={[
                     canEdit && p.id ? { label: 'SNMP defaults', onClick: () => setOpenSnmp((n) => (n === p.name ? null : p.name)) } : null,
                     isAdmin && p.break_glass ? { label: p.break_glass_user ? `Console (${p.break_glass_user})` : 'Console', onClick: () => revealBreakGlass(p) } : null,
