@@ -320,6 +320,9 @@ a { color: var(--accent); }
 .pending-note { padding: 8px 16px 12px 42px; color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
 .host { border-top: 1px solid var(--border); }
+/* Groups divide with a bottom border, hosts with a top border - so an interleaved host→subgroup
+   transition falls in the gap. Give a subgroup a top border when it directly follows a host row. */
+.host + .site { border-top: 1px solid var(--border); }
 .host-head { display: flex; align-items: center; gap: 10px; padding: 8px 16px 8px 38px; cursor: pointer; user-select: none; }
 .host-head:hover { background: var(--elevated); }
 .host-head .hn { font-weight: 600; }
