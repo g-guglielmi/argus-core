@@ -11,6 +11,63 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.34] - 2026-09-05
+
+A whole-app **UI and notifications polish pass**, driven by a review of every screen at desktop and
+phone widths: a handful of real defects, a denser and more legible phone layout, proper feedback
+primitives (toasts, skeletons, empty states), a reworked Notifications page with per-channel delivery
+health, one consistent set of controls, and clearer alert messages on every channel. Companion:
+`argus-probe` **probe-vm/v0.3.2** restyles the VM's first-boot setup page to match.
+
+**Fixed:**
+- **Overview / status lists:** the per-row ⋯ button spilled outside the card once the panel was narrower
+  than ~1100px (the fixed-layout table gave the actions column a 4% share). It is now a fixed 48px
+  column; narrow desktops also trim cell padding and show the compact `★4` priority.
+- **Phone drill-down:** the expanded host's sensor table overflowed its card (Last check and the ⋯
+  clipped, values wrapping mid-number). Compact priority, nowrap values, tighter cells, and the tree
+  indent no longer eats the card width.
+- **Future times read "in 22h"** (pending-enrollment expiries, the wizard's token expiry) instead of the
+  misleading "0s ago".
+- **Sensor chart colours** come from the theme tokens (the hard-coded white-alpha grid was invisible on
+  the light theme) and the series takes the sensor's state colour, matching its sparkline; the chart
+  repaints when the theme flips.
+- **Phone touch targets:** ⋯ buttons 36px, buttons/chips/segments/nav rows enlarged, 16px inputs so
+  iOS stops zooming the page on focus. Probe cards align every value - text, ✓ states, pill boxes and
+  the ⋯ - on one right edge.
+
+**Changed:**
+- **Phone header** drops the subtitle (it repeated the panel header underneath) and keeps the tools
+  beside the panel title; **Overview cards** are a compact 4-row grid - host + ⋯, sensor + reason,
+  sparkline beside the value, "last check 1m ago" beside the priority - about 30% shorter. The smallest
+  phone text moved up to 11px labels / 12.5px sub-lines.
+- **Notifications page:** each channel card has an enable switch, a single **Send test** button,
+  Edit/Delete in a ⋯, and a **delivery-health line** - "Last sent 2h ago · 42 delivered", "Last delivery
+  failed 5m ago · HTTP 400 …", or "Nothing sent yet". Every send attempt (alert, recovery, test) is now
+  recorded on the channel, so a broken webhook or SMTP password is visible in the UI, not only in the
+  core log. (New `notify_channels` columns, added by the idempotent migration.)
+- **Alert messages carry the Zabbix severity** - subjects/titles read `[HIGH]`, `[DISASTER]`,
+  `[WARNING]` (what the UI shows) instead of the coarse `[ERROR]`/`[WARNING]` state; recoveries stay
+  `[RESOLVED]`. Discord gains a Severity field; the plain-text and email bodies name it too.
+- **Email** is a single HTML card with a plain-text alternative: severity-coloured header, no duplicated
+  trigger name, buttons that wrap on narrow screens, a footer linking back to the Notifications page,
+  and a dark-mode override for clients that honour `prefers-color-scheme`.
+- **Telegram** is a compact card (title, site · host, reading, since) with **Open in Argus** and
+  **Acknowledge** as inline-keyboard buttons; non-http links fall back to inline anchors.
+- **One set of controls:** the channel editor, user roles and the Add-probe wizard use the shared
+  Select / Switch / input skin (three select styles, bare checkboxes and an inline style object are
+  gone); native checkboxes take the accent colour. The Monitoring toolbar on phones folds Reorder / Show
+  hidden / Key-All sensors into a ⋯. Read-only priority stars are slightly muted.
+
+**Added:**
+- **Toasts** for action outcomes (Saved, Test sent, Could not delete …) that auto-dismiss, replacing
+  persistent inline text lines; contextual form errors stay inline.
+- **Loading skeletons** on every list while it fetches, and the Overview no longer flashes "All clear"
+  before the first data arrives.
+- **Designed empty states** - a green all-clear on the Overview and Triggers, muted "nothing here"
+  blocks with an action where one makes sense (Probes, Notifications).
+- **Sidebar version tag** (amber "update available" when Settings has an update) and tooltips on the
+  collapsed rail.
+
 ## [0.4.33] - 2026-09-05
 
 A readability pass over the **Probes** and **Users** tables (both the same labelled-card pattern —
