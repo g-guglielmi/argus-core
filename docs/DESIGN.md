@@ -226,6 +226,19 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   Model supports flipping either to shared/dedicated with no code change.
 - Secrets entered in the UI later (placeholders for now).
 
+**Status (2026-09).** Channels are managed in the **Notifications** tab (Discord webhook / Telegram
+bot + chat (+ forum topic) / SMTP), each with a site scope and a severity floor. Every send attempt -
+alert, recovery, or the **Send test** button - is recorded on the channel (`last_sent_at` /
+`sent_count` on success, `last_error` / `last_error_at` on failure) and shown on its card, so a broken
+webhook or SMTP password is visible in the UI rather than only in the core log. The message format is
+shared across channels: `[SEVERITY] host - trigger` with the status emoji (the Zabbix severity, e.g.
+`[HIGH]`; `[RESOLVED]` for recoveries), the reading + threshold, the site, the time, and deep links -
+**Open in Argus** and, for problems, a signed one-click **Acknowledge**. Email is a single-card HTML
+message with a plain-text alternative, the inline 2-hour chart, a dark-mode override for clients that
+honour it, and a footer linking back to the channel page; Telegram is a compact card whose links are
+inline-keyboard buttons (a photo message when a chart is attached); Discord is an embed with
+Severity / Host / Site / Reading fields.
+
 ---
 
 ## 10. Users, roles & authentication
