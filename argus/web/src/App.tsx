@@ -3006,9 +3006,11 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
       {loading && <Skeleton rows={5} cols={3} />}
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
       {!loading && !error && hosts.length === 0 && <EmptyState icon={ic.monitoring} title="No hosts yet" text="Hosts monitored in Zabbix appear here, grouped by site. If you expected some, check the Zabbix connection in Settings." />}
-      {focus.level === 'root' && (() => { const kids = mergedChildren([], roots, ''); const keys = kids.map((k) => k.key); return kids.map((k, i) => renderNode(k.group!, 0, keys, i, '')) })()}
-      {focus.level === 'group' && (focusNode ? renderNode(focusNode, 0) : <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>This group no longer exists.</div>)}
-      {(focus.level === 'host' || focus.level === 'sensor') && (focusHost ? renderHost(focusHost, focus.path, 0) : null)}
+      <div className="tree">
+        {focus.level === 'root' && (() => { const kids = mergedChildren([], roots, ''); const keys = kids.map((k) => k.key); return kids.map((k, i) => renderNode(k.group!, 0, keys, i, '')) })()}
+        {focus.level === 'group' && (focusNode ? renderNode(focusNode, 0) : <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>This group no longer exists.</div>)}
+        {(focus.level === 'host' || focus.level === 'sensor') && (focusHost ? renderHost(focusHost, focus.path, 0) : null)}
+      </div>
     </div>
   )
 }
