@@ -37,8 +37,8 @@ func (s *Server) handleSetTreeOrder(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if req.Kind != "group" && req.Kind != "host" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": `kind must be "group" or "host"`})
+	if req.Kind != "group" && req.Kind != "host" && req.Kind != "sibling" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": `kind must be "group", "host" or "sibling"`})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)

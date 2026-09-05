@@ -51,7 +51,7 @@ func (s *Store) TreeOrder(ctx context.Context) ([]OrderSet, error) {
 // SetTreeOrder replaces the saved ordering of one sibling set (Scope+Kind) with items, in the given
 // order. An empty items list clears the set, reverting those siblings to alphabetical.
 func (s *Store) SetTreeOrder(ctx context.Context, scope, kind string, items []string) error {
-	if kind != "group" && kind != "host" {
+	if kind != "group" && kind != "host" && kind != "sibling" {
 		return fmt.Errorf("invalid tree order kind %q", kind)
 	}
 	tx, err := s.db.BeginTx(ctx, nil)

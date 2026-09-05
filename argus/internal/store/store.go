@@ -268,8 +268,9 @@ CREATE TABLE IF NOT EXISTS snmp_iface (
 );
 
 -- Manual sibling ordering for the monitoring tree. scope is the parent group's full path ('' for the
--- top-level roots); kind is 'group' or 'host'; item is the child group's full path or the host id;
--- ord is its 0-based position among its siblings. A sibling set with no rows sorts alphabetically.
+-- top-level roots); kind is 'group'/'host' (a per-kind order) or 'sibling' (one interleaved order over
+-- a parent's hosts AND subgroups, item prefixed g:<path> / h:<id>); item is the child group's full path
+-- or the host id; ord is its 0-based position. A sibling set with no rows sorts alphabetically.
 CREATE TABLE IF NOT EXISTS tree_order (
   scope TEXT NOT NULL,
   kind  TEXT NOT NULL,

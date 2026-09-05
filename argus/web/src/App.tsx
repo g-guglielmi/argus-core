@@ -2563,7 +2563,7 @@ type Focus =
 type GNode = { path: string; name: string; group?: Group; parentPath?: string; children: GNode[]; hosts: Host[] }
 // One saved sibling ordering: the children of `scope` (a parent group path, '' for top-level roots) of
 // one `kind`, listed in manual order (group paths, or host ids). Unlisted siblings fall back to alpha.
-type OrderSet = { scope: string; kind: 'group' | 'host'; items: string[] }
+type OrderSet = { scope: string; kind: 'group' | 'host' | 'sibling'; items: string[] }
 
 function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { role: string; target: { hostId?: string; itemId?: string; itemName?: string; groupPath?: string; n: number } | null; homeSignal: number; onNavigate: (hostId: string | null, itemId: string | null, group?: string | null, push?: boolean) => void; advanced: boolean }) {
   const confirm = useConfirm()
@@ -2742,7 +2742,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   // stable Array.sort so the alpha pre-sort survives as the tiebreak among equal (Infinity) positions.
   const orderMap = new Map<string, string[]>()
   for (const o of order) orderMap.set(o.scope + ' ' + o.kind, o.items)
-  const orderOf = (scope: string, kind: 'group' | 'host') => orderMap.get(scope + ' ' + kind)
+  const orderOf = (scope: string, kind: 'group' | 'host' | 'sibling') => orderMap.get(scope + ' ' + kind)
   function applyOrder<T>(items: T[], orderKey: (t: T) => string, alphaKey: (t: T) => string, ordered?: string[]): T[] {
     const base = [...items].sort((a, b) => alphaKey(a).localeCompare(alphaKey(b)))
     if (!ordered || ordered.length === 0) return base
@@ -2755,6 +2755,20 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     for (const n of ns) { n.hosts = applyOrder(n.hosts, (h) => h.id, (h) => h.name, orderOf(n.path, 'host')); orderTree(n.children, n.path) }
   }
   orderTree(roots, '')
+  // One ordered list of a parent's children — its direct hosts and its subgroups together — so a manual
+  // 'sibling' order can interleave them (put a host above or below the subgroups). Base order is hosts
+  // then groups (each already sorted by orderTree); a saved 'sibling' order, when present, overrides it.
+  type Sibling = { host?: Host; group?: GNode; key: string }
+  const mergedChildren = (hs: Host[], children: GNode[], scope: string): Sibling[] => {
+    const base: Sibling[] = [
+      ...hs.map((h) => ({ host: h, key: 'h:' + h.id })),
+      ...children.map((n) => ({ group: n, key: 'g:' + n.path })),
+    ]
+    const sib = orderOf(scope, 'sibling')
+    if (!sib || sib.length === 0) return base
+    const pos = new Map(sib.map((k, i) => [k, i]))
+    return [...base].sort((a, b) => (pos.get(a.key) ?? Infinity) - (pos.get(b.key) ?? Infinity))
+  }
   // Drop hidden groups (and their whole subtree) from the tree unless we're revealing them to manage
   // them. A host that's only in hidden groups disappears with them; a host also in a visible group still
   // shows there. Mutates children arrays in place (shared with byPath, so focus views prune too).
@@ -2768,7 +2782,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
 
   // Persist a sibling set's new order (optimistic; revert + surface the error on failure). Admin/helpdesk
   // only - the button that calls this is gated on canPause.
-  async function reorderSiblings(scope: string, kind: 'group' | 'host', items: string[]) {
+  async function reorderSiblings(scope: string, kind: 'group' | 'host' | 'sibling', items: string[]) {
     const prev = order
     setOrder((o) => [...o.filter((s) => !(s.scope === scope && s.kind === kind)), { scope, kind, items }])
     const res = await fetch('/api/tree/order', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope, kind, items }) }).catch(() => null)
@@ -2776,7 +2790,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   }
   // Move a group node (or host) by one slot within its displayed siblings, materializing the whole set's
   // order on the first move so a previously-alphabetical set becomes explicitly ordered.
-  function moveWithin(ids: string[], index: number, dir: -1 | 1, scope: string, kind: 'group' | 'host') {
+  function moveWithin(ids: string[], index: number, dir: -1 | 1, scope: string, kind: 'group' | 'host' | 'sibling') {
     const j = index + dir
     if (j < 0 || j >= ids.length) return
     const next = ids.slice();[next[index], next[j]] = [next[j], next[index]]
@@ -2826,7 +2840,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
 
   // Up/down arrows shown in reorder mode within a sibling set (nothing when the set has <2 members, or
   // for a viewer). Clicks stop propagation so they don't toggle/drill the row they sit on.
-  function orderArrows(ids: string[], index: number, scope: string, kind: 'group' | 'host') {
+  function orderArrows(ids: string[], index: number, scope: string, kind: 'group' | 'host' | 'sibling') {
     if (!reorder || !canPause || ids.length < 2) return null
     return (
       <span className="ord-ctrl" onClick={(e) => e.stopPropagation()}>
@@ -2854,7 +2868,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
           {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
           <div className="right">
             {!h.paused && !h.hidden && h.problems > 0 && <span style={{ color: stateColor[h.state], fontSize: 12 }}>{h.problems} problem{h.problems === 1 ? '' : 's'}</span>}
-            {orderArrows(sibIds, index, path, 'host')}
+            {orderArrows(sibIds, index, path, 'sibling')}
             {canPause && !reorder && (
               <Kebab disabled={busyId === h.id} actions={[
                 h.paused ? { label: 'Resume', icon: kbIcon.resume, onClick: () => clearHostState(h, 'pause') } : { label: 'Pause', icon: kbIcon.pause, onPick: (s) => setHostState(h, 'pause', s) },
@@ -2890,7 +2904,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
           <span className="loc">{sub.length} host{sub.length === 1 ? '' : 's'}</span>
           <div className="right">
             <span style={{ width: 9, height: 9, borderRadius: '50%', background: stateColor[nodeWorst(sub)] || 'var(--muted)' }} />
-            {orderArrows(sibIds, index, scope, 'group')}
+            {orderArrows(sibIds, index, scope, 'sibling')}
             {canPause && g && !reorder && (
               <Kebab actions={[
                 { label: 'New subgroup…', icon: kbIcon.folder, onClick: () => { setError(null); setGAction(null); setNewSubPath(node.path); setCollapsed((c) => { const n = new Set(c); n.delete(node.path); return n }) } },
@@ -2920,10 +2934,13 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
               </div>
         )}
         {newSubPath === node.path && <GroupNameBand prefix={node.path + '/'} placeholder="Subgroup name" confirmLabel="Create" onConfirm={(v) => createGroup(v)} onCancel={() => setNewSubPath(null)} />}
-        {expanded && <>
-          {(() => { const hids = node.hosts.map((h) => h.id); return node.hosts.map((h, i) => renderHost(h, node.path, depth + 1, hids, i)) })()}
-          {(() => { const gids = node.children.map((c) => c.path); return node.children.map((c, i) => renderNode(c, depth + 1, gids, i, node.path)) })()}
-        </>}
+        {expanded && (() => {
+          const kids = mergedChildren(node.hosts, node.children, node.path)
+          const keys = kids.map((k) => k.key)
+          return kids.map((k, i) => k.host
+            ? renderHost(k.host, node.path, depth + 1, keys, i)
+            : renderNode(k.group!, depth + 1, keys, i, node.path))
+        })()}
       </div>
     )
   }
@@ -2989,7 +3006,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
       {loading && <Skeleton rows={5} cols={3} />}
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
       {!loading && !error && hosts.length === 0 && <EmptyState icon={ic.monitoring} title="No hosts yet" text="Hosts monitored in Zabbix appear here, grouped by site. If you expected some, check the Zabbix connection in Settings." />}
-      {focus.level === 'root' && (() => { const rids = roots.map((n) => n.path); return roots.map((n, i) => renderNode(n, 0, rids, i, '')) })()}
+      {focus.level === 'root' && (() => { const kids = mergedChildren([], roots, ''); const keys = kids.map((k) => k.key); return kids.map((k, i) => renderNode(k.group!, 0, keys, i, '')) })()}
       {focus.level === 'group' && (focusNode ? renderNode(focusNode, 0) : <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>This group no longer exists.</div>)}
       {(focus.level === 'host' || focus.level === 'sensor') && (focusHost ? renderHost(focusHost, focus.path, 0) : null)}
     </div>
