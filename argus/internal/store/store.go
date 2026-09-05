@@ -173,6 +173,25 @@ CREATE TABLE IF NOT EXISTS notify_channels (
   created_at INTEGER NOT NULL
 );
 
+-- Personal (per-user) alert channels: a user's own Telegram/Discord destination, self-managed from
+-- Account settings. Same shape as notify_channels (encrypted config, site + severity routing, delivery
+-- health) but owned by a user and never type 'email'. Deleting the user removes their channels.
+CREATE TABLE IF NOT EXISTS user_notify_channels (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type          TEXT NOT NULL,               -- 'telegram' | 'discord'
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  site          TEXT NOT NULL DEFAULT '',    -- host-group name; '' = all sites
+  min_severity  INTEGER NOT NULL DEFAULT 2,
+  config        TEXT NOT NULL DEFAULT '{}',  -- encrypted JSON of type-specific keys
+  created_at    INTEGER NOT NULL,
+  last_sent_at  INTEGER NOT NULL DEFAULT 0,
+  last_error    TEXT NOT NULL DEFAULT '',
+  last_error_at INTEGER NOT NULL DEFAULT 0,
+  sent_count    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_user_notify_channels_user ON user_notify_channels(user_id);
+
 -- Per-problem notifier state machine. state: 'baseline' (present at first startup, never
 -- alerted), 'pending' (waiting out the debounce), 'firing' (a problem alert was sent).
 CREATE TABLE IF NOT EXISTS notify_events (

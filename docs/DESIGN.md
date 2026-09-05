@@ -239,6 +239,19 @@ honour it, and a footer linking back to the channel page; Telegram is a compact 
 inline-keyboard buttons (a photo message when a chart is attached); Discord is an embed with
 Severity / Host / Site / Reading fields.
 
+**Personal channels + email-to-users (2026-09).** Two per-recipient additions sit alongside the global
+channels above. (1) **Personal channels** let any signed-in user (any role) register their own Telegram
+(their own @BotFather bot: token + chat id) or Discord (webhook URL) in **Account → Personal
+notifications** and receive alerts there, scoped by the same site + severity floor as a global channel.
+They are self-service and self-owned (`user_notify_channels`, config encrypted at rest, managed under
+`/api/me/notify/*`); a user only ever sees and edits their own. The notifier routes a problem to global
+**and** matching personal channels, and now fires as soon as *either* matches — so a personal-only setup
+alerts. This is the foundation for future mobile (Android/iOS) push, which becomes just another personal
+channel type. (2) An **email channel** can deliver to **each active user's registered email** instead of
+a fixed `to` (a `recipients` mode on the channel, admin-controlled): the notifier fans it out to one
+private per-user message. Per-user email opt-out and a shared one-tap Telegram-link bot are left for
+later.
+
 ---
 
 ## 10. Users, roles & authentication

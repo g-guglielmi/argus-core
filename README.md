@@ -21,7 +21,9 @@ SQLite state, no external dependencies beyond a running Zabbix).
   status summary (OK / Warning / Error / Acknowledged / Paused / Hidden).
 - **Notifications** - Argus-native alerting engine (Discord, Telegram, email) with
   60-second debounce, recovery notices, rich messages (status icons, value + threshold,
-  2-hour trend graph, deep-links, one-click acknowledge).
+  2-hour trend graph, deep-links, one-click acknowledge). Shared channels are admin-managed;
+  each user can also add their **own** Telegram/Discord in Account settings, and an email
+  channel can fan out to every registered user's address.
 - **Auth** - three roles (admin / helpdesk / viewer), argon2id passwords, TOTP two-factor
   with recovery codes, WebAuthn passkeys, self-service password reset, admin user management,
   login rate-limiting.

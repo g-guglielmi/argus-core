@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -97,6 +98,12 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	}
 
 	channels, _ := st.EnabledNotifyChannels(ctx)
+	userChannels, _ := st.EnabledUserNotifyChannels(ctx)
+	// Only pay for the user-email lookup when an email channel is actually set to fan out to users.
+	var userEmails []string
+	if anyEmailToUsers(channels) {
+		userEmails, _ = st.NotifyUserEmails(ctx)
+	}
 	states, err := st.NotifyStates(ctx)
 	if err != nil {
 		logger.Warn("notifier: load states", "err", err)
@@ -121,7 +128,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 				SinceSecs: since, OpenURL: OpenLink(publicURL, stt.HostID, stt.ItemID),
 				ChartPNG: alertChart(ctx, zbx, stt.ItemID, "ok"),
 			}
-			dispatch(ctx, st, channels, hostGroups[stt.HostID], ev, logger)
+			dispatch(ctx, st, channels, userChannels, userEmails, hostGroups[stt.HostID], ev, logger)
 		}
 		_ = st.DeleteNotifyState(ctx, eid)
 	}
@@ -161,9 +168,10 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		if now.Sub(time.Unix(stt.FirstSeen, 0)) < notifyDebounce {
 			continue // still within the flap-debounce window
 		}
-		matches := matchingChannels(channels, hostGroups[hostID], sev)
-		if len(matches) == 0 {
-			continue // no channel serves this site+severity yet; stay pending so it alerts once one is added
+		gMatches := matchingChannels(channels, hostGroups[hostID], sev)
+		uMatches := matchingUserChannels(userChannels, hostGroups[hostID], sev)
+		if len(gMatches) == 0 && len(uMatches) == 0 {
+			continue // nobody serves this site+severity yet; stay pending so it alerts once someone does
 		}
 		value := ""
 		if itemID != "" {
@@ -180,7 +188,8 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			OpenURL: OpenLink(publicURL, hostID, itemID), AckURL: AckLink(publicURL, secret, p.EventID),
 			ChartPNG: alertChart(ctx, zbx, itemID, severityState(sev)),
 		}
-		sendAll(ctx, st, matches, ev, logger)
+		sendAll(ctx, st, gMatches, userEmails, ev, logger)
+		sendUserChannels(ctx, st, uMatches, ev, logger)
 		firedAt := now.Unix()
 		_ = st.UpsertNotifyState(ctx, store.NotifyState{
 			EventID: p.EventID, HostID: hostID, ItemID: itemID, HostName: hostName, Name: p.Name,
@@ -217,35 +226,59 @@ func isAlertable(t zabbix.TriggerTarget, hiddenHosts, hiddenItems, acked map[str
 	return true
 }
 
-// matchingChannels returns the channels that serve a host's groups ("" site = all sites) and whose
-// per-channel severity floor is at or below the problem's severity.
+// channelMatches reports whether a channel serving host-group `site` with severity floor `min` should
+// receive a problem in `groups` at severity `sev`: "" site = all sites, and the floor must be at or
+// below the severity. Shared by global and personal channel routing.
+func channelMatches(site string, min int, groups []string, sev int) bool {
+	if min > sev {
+		return false
+	}
+	return site == "" || contains(groups, site)
+}
+
+// matchingChannels returns the global channels that serve a host's groups and severity.
 func matchingChannels(channels []store.NotifyChannel, groups []string, sev int) []store.NotifyChannel {
 	var out []store.NotifyChannel
 	for _, c := range channels {
-		if c.MinSeverity > sev {
-			continue
-		}
-		if c.Site == "" || contains(groups, c.Site) {
+		if channelMatches(c.Site, c.MinSeverity, groups, sev) {
 			out = append(out, c)
 		}
 	}
 	return out
 }
 
-func dispatch(ctx context.Context, st *store.Store, channels []store.NotifyChannel, groups []string, ev notify.Event, logger *slog.Logger) {
-	// Recoveries follow the same routing as the problem would have: a channel that never wanted this
-	// severity shouldn't receive its recovery either.
-	sendAll(ctx, st, matchingChannels(channels, groups, ev.Severity), ev, logger)
+// matchingUserChannels is matchingChannels for personal (per-user) channels — same site/severity rule.
+func matchingUserChannels(channels []store.UserNotifyChannel, groups []string, sev int) []store.UserNotifyChannel {
+	var out []store.UserNotifyChannel
+	for _, c := range channels {
+		if channelMatches(c.Site, c.MinSeverity, groups, sev) {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
-// sendAll delivers ev to every channel and records each outcome on the channel (the Notifications cards
-// show "last sent" / "last failure"), so a broken webhook or SMTP password is visible in the UI rather
-// than only in the core's log. st may be nil in tests.
-func sendAll(ctx context.Context, st *store.Store, channels []store.NotifyChannel, ev notify.Event, logger *slog.Logger) {
+// dispatch routes a recovery the same way its problem would have gone: global channels (including the
+// email-to-users fan-out) and personal channels that serve this site+severity.
+func dispatch(ctx context.Context, st *store.Store, channels []store.NotifyChannel, userChannels []store.UserNotifyChannel, userEmails []string, groups []string, ev notify.Event, logger *slog.Logger) {
+	sendAll(ctx, st, matchingChannels(channels, groups, ev.Severity), userEmails, ev, logger)
+	sendUserChannels(ctx, st, matchingUserChannels(userChannels, groups, ev.Severity), ev, logger)
+}
+
+// sendAll delivers ev to every global channel and records each outcome on the channel (the
+// Notifications cards show "last sent" / "last failure"), so a broken webhook or SMTP password is
+// visible in the UI rather than only in the core's log. An email channel set to deliver to registered
+// users is fanned out to each active user's address. st may be nil in tests.
+func sendAll(ctx context.Context, st *store.Store, channels []store.NotifyChannel, userEmails []string, ev notify.Event, logger *slog.Logger) {
 	for _, c := range channels {
-		err := notify.Send(ctx, toNotifyChannel(c), ev)
-		if err != nil {
-			logger.Warn("notifier: send failed", "channel", c.Name, "type", c.Type, "kind", ev.Kind, "err", err)
+		var err error
+		if c.Type == "email" && c.Config["recipients"] == "users" {
+			err = sendEmailToUsers(ctx, c, userEmails, ev, logger)
+		} else {
+			err = notify.Send(ctx, toNotifyChannel(c), ev)
+			if err != nil {
+				logger.Warn("notifier: send failed", "channel", c.Name, "type", c.Type, "kind", ev.Kind, "err", err)
+			}
 		}
 		if st != nil {
 			if rerr := st.RecordNotifyDelivery(ctx, c.ID, err); rerr != nil {
@@ -253,6 +286,66 @@ func sendAll(ctx context.Context, st *store.Store, channels []store.NotifyChanne
 			}
 		}
 	}
+}
+
+// sendEmailToUsers delivers ev to each active user's registered email as a separate, private message
+// (one recipient per send, so no address is exposed to the others). It attempts every recipient and
+// returns an error only when none succeeded, so one bad address doesn't suppress the rest — the
+// channel's health line then flags a failure only on a total outage.
+func sendEmailToUsers(ctx context.Context, c store.NotifyChannel, emails []string, ev notify.Event, logger *slog.Logger) error {
+	if len(emails) == 0 {
+		return fmt.Errorf("email: no active users to deliver to")
+	}
+	nc := toNotifyChannel(c)
+	cfg := make(map[string]string, len(nc.Config)+1)
+	for k, v := range nc.Config {
+		cfg[k] = v
+	}
+	nc.Config = cfg
+	var firstErr error
+	sent := 0
+	for _, addr := range emails {
+		cfg["to"] = addr
+		if err := notify.Send(ctx, nc, ev); err != nil {
+			logger.Warn("notifier: send failed", "channel", c.Name, "type", "email", "to", addr, "kind", ev.Kind, "err", err)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		sent++
+	}
+	if sent == 0 {
+		return firstErr
+	}
+	return nil
+}
+
+// sendUserChannels delivers ev to personal (per-user) channels, recording each outcome on the channel
+// so a user sees their own delivery health. Reuses the leaf notify.Send with the channel's own config.
+func sendUserChannels(ctx context.Context, st *store.Store, channels []store.UserNotifyChannel, ev notify.Event, logger *slog.Logger) {
+	for _, c := range channels {
+		err := notify.Send(ctx, notify.Channel{ID: c.ID, Type: c.Type, Name: "personal", Enabled: c.Enabled, Site: c.Site, Config: c.Config}, ev)
+		if err != nil {
+			logger.Warn("notifier: personal send failed", "channel", c.ID, "user", c.UserID, "type", c.Type, "kind", ev.Kind, "err", err)
+		}
+		if st != nil {
+			if rerr := st.RecordUserNotifyDelivery(ctx, c.ID, err); rerr != nil {
+				logger.Warn("notifier: record personal delivery", "channel", c.ID, "err", rerr)
+			}
+		}
+	}
+}
+
+// anyEmailToUsers reports whether any channel is an email channel set to deliver to registered users
+// (so notifyTick only loads the user-email list when it's actually needed).
+func anyEmailToUsers(channels []store.NotifyChannel) bool {
+	for _, c := range channels {
+		if c.Type == "email" && c.Config["recipients"] == "users" {
+			return true
+		}
+	}
+	return false
 }
 
 func toNotifyChannel(c store.NotifyChannel) notify.Channel {

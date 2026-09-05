@@ -11,6 +11,26 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.35] - 2026-09-05
+
+**Per-user notifications.** Everyone can now get alerts on their *own* Telegram or Discord, and email
+can fan out to every registered user — additively, without changing the existing shared channels.
+
+**Added:**
+- **Personal notifications (Account tab).** Any signed-in user (any role) can register their own
+  Telegram (their own @BotFather bot token + chat ID) or Discord (webhook URL) and receive alerts there,
+  scoped by site and severity like a global channel — with the same per-channel delivery-health line and
+  a **Send test** button. Self-service and private: everything is under `/api/me/notify/*`, a user only
+  ever sees their own channels (`user_notify_channels`, config encrypted at rest). Groundwork for the
+  future mobile apps, where a phone is just another personal channel.
+- **Email → registered users.** An email channel can now deliver to **each active user's registered
+  email** instead of a fixed address — a "Send to" choice on the channel (admin-controlled), alongside
+  the existing fixed-address mode. Each recipient gets a private, individual message.
+
+**Changed:**
+- The notifier fires a problem as soon as a **global or personal** channel matches its site + severity
+  (previously a problem stayed pending until a *global* channel existed), so personal-only setups alert.
+
 ## [0.4.34] - 2026-09-05
 
 A whole-app **UI and notifications polish pass**, driven by a review of every screen at desktop and

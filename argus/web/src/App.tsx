@@ -1398,7 +1398,7 @@ function NotificationsView() {
                   <span className="chan-name">{c.name}</span>
                   <Switch checked={c.enabled} onChange={() => toggle(c)} title={c.enabled ? 'Enabled — switch off to pause alerts to this channel' : 'Disabled — switch on to resume alerts'} />
                 </div>
-                <p className="chan-meta">{m.label} · {c.site ? c.site : 'All sites'} · {sev}</p>
+                <p className="chan-meta">{m.label} · {c.site ? c.site : 'All sites'} · {sev}{c.type === 'email' && c.config?.recipients === 'users' ? ' · to all users' : ''}</p>
                 <ChannelDelivery c={c} />
                 <div className="chan-actions">
                   <Button disabled={busy === c.id} onClick={() => test(c)}>{busy === c.id ? 'Sending…' : 'Send test'}</Button>
@@ -1419,7 +1419,7 @@ function NotificationsView() {
 
 // ChannelDelivery is the one-line health of a channel: when it last delivered, or the last failure and
 // why. Recorded by the notifier per send (alerts and the Send test button alike).
-function ChannelDelivery({ c }: { c: Channel }) {
+function ChannelDelivery({ c }: { c: { last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number } }) {
   const failed = !!c.last_error_at && (!c.last_sent_at || c.last_error_at >= c.last_sent_at)
   if (failed) return <div className="chan-status err" title={c.last_error || ''}>Last delivery failed {relTime(c.last_error_at!)}{c.last_error ? ` · ${c.last_error}` : ''}</div>
   if (c.last_sent_at) return <div className="chan-status ok">Last sent {relTime(c.last_sent_at)}{c.sent_count ? ` · ${c.sent_count} delivered` : ''}</div>
@@ -1471,7 +1471,15 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
         </label>
       </div>
       <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-        {fields.map((f) => (
+        {type === 'email' && (
+          <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Send to</span>
+            <Select value={config.recipients || 'fixed'} onChange={(e) => setCfg('recipients', e.target.value)}>
+              <option value="fixed">A fixed address</option>
+              <option value="users">Each user’s registered email</option>
+            </Select>
+          </label>
+        )}
+        {fields.filter((f) => !(type === 'email' && f.key === 'to' && (config.recipients || 'fixed') === 'users')).map((f) => (
           <label key={f.key} style={{ display: 'grid', gap: 4 }}><span className="flabel">{f.label}</span>
             <input className="input" type={f.type || 'text'} placeholder={f.ph} value={config[f.key] || ''} onChange={(e) => setCfg(f.key, e.target.value)} required={!f.opt} />
           </label>
@@ -1486,6 +1494,165 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
           </label>
         )}
       </div>
+      {type === 'email' && (config.recipients || 'fixed') === 'users' && (
+        <p className="set-note">Sends to every active user’s account email. The “To” field is ignored.</p>
+      )}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <Switch checked={enabled} onChange={setEnabled} label="Enabled" />
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          <button type="button" className="btn" onClick={onCancel}>Cancel</button>
+          <button type="submit" className="btn primary">{initial ? 'Save changes' : 'Add channel'}</button>
+        </div>
+      </div>
+    </form>
+  )
+}
+
+type UserChannel = { id: number; type: string; enabled: boolean; site: string; min_severity: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
+
+// PersonalNotifyCard lets any signed-in user manage their own Telegram/Discord alert destinations,
+// separate from the shared channels an admin configures in the Notifications tab. Self-service:
+// everything here hits /api/me/notify/* and only ever touches the caller's own channels.
+function PersonalNotifyCard() {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [channels, setChannels] = useState<UserChannel[] | null>(null)
+  const [sites, setSites] = useState<string[]>([])
+  const [editing, setEditing] = useState<UserChannel | 'new' | null>(null)
+  const [busy, setBusy] = useState<number | null>(null)
+
+  function load() {
+    fetch('/api/me/notify/channels').then((r) => r.json()).then((c) => setChannels(c || [])).catch(() => toast.error('Failed to load your channels'))
+  }
+  useEffect(() => {
+    load()
+    fetch('/api/me/notify/sites').then((r) => r.json()).then((s) => setSites(s || [])).catch(() => {})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function toggle(c: UserChannel) {
+    const res = await fetch(`/api/me/notify/channels/${c.id}/enabled`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !c.enabled }) })
+    if (!res.ok) { toast.error(await errText(res, 'Could not update channel')); return }
+    load()
+  }
+  async function test(c: UserChannel) {
+    setBusy(c.id)
+    try {
+      const res = await fetch(`/api/me/notify/channels/${c.id}/test`, { method: 'POST' })
+      if (!res.ok) { toast.error('Test failed: ' + await errText(res, 'delivery error')); return }
+      toast.success('Test notification sent.')
+    } finally { setBusy(null); load() }
+  }
+  async function del(c: UserChannel) {
+    if (!(await confirm({ title: 'Remove channel', message: `Stop sending your alerts to this ${CH_META[c.type]?.label || c.type} destination?`, confirmLabel: 'Remove', danger: true }))) return
+    const res = await fetch(`/api/me/notify/channels/${c.id}`, { method: 'DELETE' })
+    if (!res.ok) { toast.error(await errText(res, 'Could not remove channel')); return }
+    toast.success('Channel removed.')
+    load()
+  }
+
+  return (
+    <Card title="Personal notifications" note="Get alerts on your own Telegram or Discord. Only you receive these — they’re separate from the shared channels an admin manages.">
+      {editing && (
+        <PersonalChannelEditor
+          initial={editing === 'new' ? null : editing}
+          sites={sites}
+          onCancel={() => setEditing(null)}
+          onSaved={() => { setEditing(null); toast.success('Channel saved.'); load() }}
+          onError={(m) => { if (m) toast.error(m) }}
+        />
+      )}
+      {channels === null && <Skeleton rows={1} cols={2} />}
+      {channels && channels.length === 0 && !editing && (
+        <p className="set-note">No personal channels yet. Add your Telegram or Discord to get your own alerts.</p>
+      )}
+      {channels && channels.length > 0 && (
+        <div className="chan-grid">
+          {channels.map((c) => {
+            const m = CH_META[c.type] || { c: '#6b7686', l: '?', label: c.type }
+            const sev = SEVERITIES.find((s) => s.v === c.min_severity)?.label || 'Warning & up'
+            return (
+              <div className={'chan' + (c.enabled ? '' : ' off')} key={c.id}>
+                <div className="ct">
+                  <span className="ci" style={{ background: m.c }}>{m.l}</span>
+                  <span className="chan-name">{m.label}</span>
+                  <Switch checked={c.enabled} onChange={() => toggle(c)} title={c.enabled ? 'Enabled — switch off to pause your alerts here' : 'Disabled — switch on to resume'} />
+                </div>
+                <p className="chan-meta">{c.site ? c.site : 'All sites'} · {sev}</p>
+                <ChannelDelivery c={c} />
+                <div className="chan-actions">
+                  <Button disabled={busy === c.id} onClick={() => test(c)}>{busy === c.id ? 'Sending…' : 'Send test'}</Button>
+                  <Kebab actions={[
+                    { label: 'Edit…', icon: kbIcon.edit, onClick: () => setEditing(c) },
+                    { sep: true, label: '' },
+                    { label: 'Remove', icon: kbIcon.trash, danger: true, onClick: () => del(c) },
+                  ]} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {!editing && (
+        <div style={{ marginTop: 12 }}>
+          <Button variant="primary" onClick={() => setEditing('new')}>+ Add channel</Button>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
+  initial: UserChannel | null; sites: string[]; onCancel: () => void; onSaved: () => void; onError: (m: string) => void
+}) {
+  const [type, setType] = useState(initial?.type || 'telegram')
+  const [site, setSite] = useState(initial?.site || '')
+  const [minSev, setMinSev] = useState(initial?.min_severity || 2)
+  const [enabled, setEnabled] = useState(initial ? initial.enabled : true)
+  const [config, setConfig] = useState<Record<string, string>>(initial?.config || {})
+  const setCfg = (k: string, v: string) => setConfig((c) => ({ ...c, [k]: v }))
+
+  async function save(e: FormEvent) {
+    e.preventDefault(); onError('')
+    const body = { type, site, min_severity: minSev, enabled, config }
+    const url = initial ? `/api/me/notify/channels/${initial.id}` : '/api/me/notify/channels'
+    const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
+    onSaved()
+  }
+
+  const fields = CH_FIELDS[type] || []
+  const hint = type === 'telegram'
+    ? 'Create your own bot with @BotFather for the token, and message the bot once so it’s allowed to reach you.'
+    : 'Paste a Discord channel webhook URL (Server Settings → Integrations → Webhooks).'
+  return (
+    <form onSubmit={save} style={{ display: 'grid', gap: 10, marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Type</span>
+          <Select value={type} onChange={(e) => setType(e.target.value)} disabled={!!initial}>
+            <option value="telegram">Telegram</option>
+            <option value="discord">Discord</option>
+          </Select>
+        </label>
+        <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Site</span>
+          <Select value={site} onChange={(e) => setSite(e.target.value)}>
+            <option value="">All sites</option>
+            {sites.map((s) => <option key={s} value={s}>{s}</option>)}
+          </Select>
+        </label>
+        <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Severity</span>
+          <Select value={minSev} onChange={(e) => setMinSev(Number(e.target.value))} title="Only problems at or above this severity reach you">
+            {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
+          </Select>
+        </label>
+      </div>
+      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+        {fields.map((f) => (
+          <label key={f.key} style={{ display: 'grid', gap: 4 }}><span className="flabel">{f.label}</span>
+            <input className="input" type={f.type || 'text'} placeholder={f.ph} value={config[f.key] || ''} onChange={(e) => setCfg(f.key, e.target.value)} required={!f.opt} />
+          </label>
+        ))}
+      </div>
+      <p className="set-note">{hint}</p>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         <Switch checked={enabled} onChange={setEnabled} label="Enabled" />
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
@@ -3686,6 +3853,7 @@ function AccountView({ me, onMe, passkeysAvailable, theme, toggleTheme }: { me: 
         <Button variant="primary" onClick={toggleTheme}>Switch to {theme === 'dark' ? 'light' : 'dark'} mode</Button>
       </Card>
       <LandingCard me={me} onMe={onMe} />
+      <PersonalNotifyCard />
       <PasswordCard />
       <MfaCard />
       {passkeysAvailable && <PasskeyCard />}

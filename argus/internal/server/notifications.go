@@ -76,6 +76,15 @@ func (req channelRequest) validate() (store.NotifyChannel, string) {
 	if cfg == nil {
 		cfg = map[string]string{}
 	}
+	// Email channels pick a recipients mode: "fixed" (the set `to` address, default) or "users" (fan
+	// out to every active user's registered email). Other types ignore the key.
+	if t == "email" {
+		switch cfg["recipients"] {
+		case "", "fixed", "users":
+		default:
+			return store.NotifyChannel{}, "recipients must be 'fixed' or 'users'"
+		}
+	}
 	// The notifier never alerts below Warning, so clamp the floor to 2..5 (Warning..Disaster).
 	sev := req.MinSeverity
 	if sev < 2 {

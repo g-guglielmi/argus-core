@@ -114,6 +114,14 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/me", auth.RequireAuth(s.handleMe))
 	mux.HandleFunc("POST /api/me/password", auth.RequireAuth(s.handleChangeOwnPassword))
 	mux.HandleFunc("POST /api/me/preferences", auth.RequireAuth(s.handleUpdatePreferences))
+	// Personal (per-user) alert channels: a user's own Telegram/Discord, self-managed from Account.
+	mux.HandleFunc("GET /api/me/notify/channels", auth.RequireAuth(s.handleListMyChannels))
+	mux.HandleFunc("POST /api/me/notify/channels", auth.RequireAuth(s.handleCreateMyChannel))
+	mux.HandleFunc("PATCH /api/me/notify/channels/{id}", auth.RequireAuth(s.handleUpdateMyChannel))
+	mux.HandleFunc("POST /api/me/notify/channels/{id}/enabled", auth.RequireAuth(s.handleSetMyChannelEnabled))
+	mux.HandleFunc("POST /api/me/notify/channels/{id}/test", auth.RequireAuth(s.handleTestMyChannel))
+	mux.HandleFunc("DELETE /api/me/notify/channels/{id}", auth.RequireAuth(s.handleDeleteMyChannel))
+	mux.HandleFunc("GET /api/me/notify/sites", auth.RequireAuth(s.handleNotifySites))
 
 	// monitoring read path (any signed-in user)
 	mux.HandleFunc("GET /api/problems", auth.RequireAuth(s.handleProblems))
