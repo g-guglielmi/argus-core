@@ -199,16 +199,28 @@ function fmtDuration(sec: number): string {
 // scaledUnit reports whether a unit gets special scaling/formatting (so the chart axis and
 // legend format it, and the "(unit)" suffix is dropped since the value already carries it).
 function scaledUnit(units: string): boolean {
-  return units === 'B' || units === 'Bps' || units === 'bps' || units === 'uptime'
+  return units === 'B' || units === 'Bps' || units === 'bps' || units === 'uptime' || units === 's'
 }
 
-// fmtNumParts formats a numeric reading into [value, unit], scaling byte/bit units and
+// scaleSeconds renders a value in seconds at a human-friendly magnitude: sub-second latencies as
+// ms / µs / ns, otherwise seconds. (Long-running durations should carry the 'uptime' unit instead.)
+function scaleSeconds(n: number): [string, string] {
+  const a = Math.abs(n)
+  if (a === 0) return ['0', 's']
+  if (a < 1e-6) return [roundNum(n * 1e9), 'ns']
+  if (a < 1e-3) return [roundNum(n * 1e6), 'µs']
+  if (a < 1) return [roundNum(n * 1e3), 'ms']
+  return [roundNum(n), 's']
+}
+
+// fmtNumParts formats a numeric reading into [value, unit], scaling byte/bit units, seconds, and
 // rendering uptime as a duration.
 function fmtNumParts(n: number, units: string): [string, string] {
   if (units === 'B') return scaleBy(n, 1024, BYTE_UNITS)
   if (units === 'Bps') { const [v, u] = scaleBy(n, 1024, BYTE_UNITS); return [v, u + 'ps'] }
   if (units === 'bps') return scaleBy(n, 1000, BIT_UNITS)
   if (units === 'uptime') return [fmtDuration(n), '']
+  if (units === 's') return scaleSeconds(n)
   return [roundNum(n), units || '']
 }
 
