@@ -333,6 +333,18 @@ CREATE TABLE IF NOT EXISTS tree_hidden (
 	if err := s.ensureColumn("notify_channels", "min_severity INTEGER NOT NULL DEFAULT 2"); err != nil {
 		return err
 	}
+	// Per-channel delivery health (last successful send / last failure + reason / sent count), shown on
+	// the Notifications cards. Recorded by RecordNotifyDelivery after every send attempt.
+	for _, ddl := range []string{
+		"last_sent_at INTEGER NOT NULL DEFAULT 0",
+		"last_error TEXT NOT NULL DEFAULT ''",
+		"last_error_at INTEGER NOT NULL DEFAULT 0",
+		"sent_count INTEGER NOT NULL DEFAULT 0",
+	} {
+		if err := s.ensureColumn("notify_channels", ddl); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

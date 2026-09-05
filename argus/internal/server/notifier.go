@@ -121,7 +121,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 				SinceSecs: since, OpenURL: OpenLink(publicURL, stt.HostID, stt.ItemID),
 				ChartPNG: alertChart(ctx, zbx, stt.ItemID, "ok"),
 			}
-			dispatch(ctx, channels, hostGroups[stt.HostID], ev, logger)
+			dispatch(ctx, st, channels, hostGroups[stt.HostID], ev, logger)
 		}
 		_ = st.DeleteNotifyState(ctx, eid)
 	}
@@ -180,7 +180,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			OpenURL: OpenLink(publicURL, hostID, itemID), AckURL: AckLink(publicURL, secret, p.EventID),
 			ChartPNG: alertChart(ctx, zbx, itemID, severityState(sev)),
 		}
-		sendAll(ctx, matches, ev, logger)
+		sendAll(ctx, st, matches, ev, logger)
 		firedAt := now.Unix()
 		_ = st.UpsertNotifyState(ctx, store.NotifyState{
 			EventID: p.EventID, HostID: hostID, ItemID: itemID, HostName: hostName, Name: p.Name,
@@ -232,16 +232,25 @@ func matchingChannels(channels []store.NotifyChannel, groups []string, sev int) 
 	return out
 }
 
-func dispatch(ctx context.Context, channels []store.NotifyChannel, groups []string, ev notify.Event, logger *slog.Logger) {
+func dispatch(ctx context.Context, st *store.Store, channels []store.NotifyChannel, groups []string, ev notify.Event, logger *slog.Logger) {
 	// Recoveries follow the same routing as the problem would have: a channel that never wanted this
 	// severity shouldn't receive its recovery either.
-	sendAll(ctx, matchingChannels(channels, groups, ev.Severity), ev, logger)
+	sendAll(ctx, st, matchingChannels(channels, groups, ev.Severity), ev, logger)
 }
 
-func sendAll(ctx context.Context, channels []store.NotifyChannel, ev notify.Event, logger *slog.Logger) {
+// sendAll delivers ev to every channel and records each outcome on the channel (the Notifications cards
+// show "last sent" / "last failure"), so a broken webhook or SMTP password is visible in the UI rather
+// than only in the core's log. st may be nil in tests.
+func sendAll(ctx context.Context, st *store.Store, channels []store.NotifyChannel, ev notify.Event, logger *slog.Logger) {
 	for _, c := range channels {
-		if err := notify.Send(ctx, toNotifyChannel(c), ev); err != nil {
+		err := notify.Send(ctx, toNotifyChannel(c), ev)
+		if err != nil {
 			logger.Warn("notifier: send failed", "channel", c.Name, "type", c.Type, "kind", ev.Kind, "err", err)
+		}
+		if st != nil {
+			if rerr := st.RecordNotifyDelivery(ctx, c.ID, err); rerr != nil {
+				logger.Warn("notifier: record delivery", "channel", c.Name, "err", rerr)
+			}
 		}
 	}
 }

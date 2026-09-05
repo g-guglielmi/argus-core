@@ -18,6 +18,12 @@ type NotifyChannel struct {
 	MinSeverity int // Zabbix severity floor (0..5); a problem below this doesn't reach this channel
 	Config      map[string]string
 	CreatedAt   time.Time
+	// Delivery health, recorded per send (alerts and the Send-test button alike) and shown on the
+	// Notifications cards: when the channel last delivered, and the last failure with its reason.
+	LastSentAt  int64
+	LastError   string
+	LastErrorAt int64
+	SentCount   int64
 }
 
 // NotifyState is one row of the notifier state machine (keyed by Zabbix event id).
@@ -40,7 +46,7 @@ func (s *Store) scanChannel(row rowScanner) (*NotifyChannel, error) {
 	var enabled int
 	var cfg string
 	var created int64
-	if err := row.Scan(&c.ID, &c.Type, &c.Name, &enabled, &c.Site, &c.MinSeverity, &cfg, &created); err != nil {
+	if err := row.Scan(&c.ID, &c.Type, &c.Name, &enabled, &c.Site, &c.MinSeverity, &cfg, &created, &c.LastSentAt, &c.LastError, &c.LastErrorAt, &c.SentCount); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -53,7 +59,7 @@ func (s *Store) scanChannel(row rowScanner) (*NotifyChannel, error) {
 	return &c, nil
 }
 
-const channelColumns = `id,type,name,enabled,site,min_severity,config,created_at`
+const channelColumns = `id,type,name,enabled,site,min_severity,config,created_at,last_sent_at,last_error,last_error_at,sent_count`
 
 func (s *Store) ListNotifyChannels(ctx context.Context) ([]NotifyChannel, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+channelColumns+` FROM notify_channels ORDER BY site, name`)
@@ -129,6 +135,24 @@ func (s *Store) SetNotifyChannelEnabled(ctx context.Context, id int64, enabled b
 
 func (s *Store) DeleteNotifyChannel(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM notify_channels WHERE id=?`, id)
+	return err
+}
+
+// RecordNotifyDelivery updates a channel's delivery health after a send attempt: a success stamps
+// last_sent_at and bumps sent_count; a failure records the error text and time (the previous success
+// is kept, so the card can say "last sent 2h ago, last failure 5m ago"). The error is truncated so a
+// long SMTP transcript can't bloat the row.
+func (s *Store) RecordNotifyDelivery(ctx context.Context, id int64, sendErr error) error {
+	now := time.Now().Unix()
+	if sendErr == nil {
+		_, err := s.db.ExecContext(ctx, `UPDATE notify_channels SET last_sent_at=?, sent_count=sent_count+1 WHERE id=?`, now, id)
+		return err
+	}
+	msg := sendErr.Error()
+	if r := []rune(msg); len(r) > 300 {
+		msg = string(r[:300]) + "…"
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE notify_channels SET last_error=?, last_error_at=? WHERE id=?`, msg, now, id)
 	return err
 }
 

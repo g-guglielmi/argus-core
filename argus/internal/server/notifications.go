@@ -20,6 +20,11 @@ type channelView struct {
 	Site        string            `json:"site"`
 	MinSeverity int               `json:"min_severity"`
 	Config      map[string]string `json:"config"`
+	// Delivery health for the channel card: last successful send, last failure (+ reason), sent count.
+	LastSentAt  int64  `json:"last_sent_at,omitempty"`
+	LastError   string `json:"last_error,omitempty"`
+	LastErrorAt int64  `json:"last_error_at,omitempty"`
+	SentCount   int64  `json:"sent_count,omitempty"`
 }
 
 func toChannelView(c store.NotifyChannel) channelView {
@@ -27,7 +32,10 @@ func toChannelView(c store.NotifyChannel) channelView {
 	if cfg == nil {
 		cfg = map[string]string{}
 	}
-	return channelView{ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Site: c.Site, MinSeverity: c.MinSeverity, Config: cfg}
+	return channelView{
+		ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Site: c.Site, MinSeverity: c.MinSeverity, Config: cfg,
+		LastSentAt: c.LastSentAt, LastError: c.LastError, LastErrorAt: c.LastErrorAt, SentCount: c.SentCount,
+	}
 }
 
 var validChannelTypes = map[string]bool{"discord": true, "telegram": true, "email": true}
@@ -163,7 +171,10 @@ func (s *Server) handleTestChannel(w http.ResponseWriter, r *http.Request) {
 	ev := notify.SampleEvent(time.Now().In(s.mgr.Location()), s.mgr.PublicURL())
 	dr, dg, db := statusRGB(ev.State)
 	ev.ChartPNG = renderChart(demoSeries(), dr, dg, db, "") // preview the graph too
-	if err := notify.Send(ctx, toNotifyChannel(*ch), ev); err != nil {
+	err = notify.Send(ctx, toNotifyChannel(*ch), ev)
+	// A test counts as a delivery attempt too, so the card's health line reflects it either way.
+	_ = s.st.RecordNotifyDelivery(ctx, id, err)
+	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
