@@ -428,9 +428,9 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .enroll th:nth-child(2) { width: 18%; }
 .enroll th:nth-child(3) { width: 27%; }
 .enroll th:nth-child(4) { width: 15%; }
-/* Group divider: a faint vertical rule before the software-version columns (3rd cell = Proxy Version),
-   so Health reads apart from the version group. Probes table only. */
-.enroll-probes th:nth-child(3), .enroll-probes td:nth-child(3) { border-left: 1px solid var(--border); padding-left: 20px; }
+/* Faint vertical dividers between every column (probes table only). The colSpan expand rows are a
+   single first-child cell, so they never pick up a border. */
+.enroll-probes th:not(:first-child), .enroll-probes td:not(:first-child) { border-left: 1px solid var(--border); }
 /* the live probes table carries 7 columns (Probe · Status · Last check-in · Version · Update ·
    Mode · Enrolled) whose content is short and uneven (a probe name, a version, the update chip),
    so let the browser size each column to its content (table-layout:auto) instead of the fixed 4-col
@@ -597,10 +597,10 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
      while pills/badges inset their text by ~10px of box padding. Inset the bare values to match so all
      value TEXT lines up down one edge (same fix the users table uses for the passkeys count). */
   .enroll-probes td[data-label]:not(:first-child) .mono { padding-right: 10px; }
-  /* the desktop vertical group divider makes no sense in the stacked card — turn it into a horizontal
-     rule between Health and the version group instead. */
-  .enroll-probes td:nth-child(3) { border-left: none; padding-left: 0; }
-  .enroll-probes td[data-label="Proxy Version"] { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 6px; }
+  /* the desktop vertical column dividers make no sense in the stacked card — turn them into horizontal
+     rules between each field row instead. */
+  .enroll-probes td:not(:first-child) { border-left: none; }
+  .enroll-probes td[data-label]:not(:first-child), .enroll-probes td.row-actions { border-top: 1px solid var(--border); padding-top: 12px; }
 
   /* --- monitoring tree: drop the trend column, tighten indentation --- */
   table.sensors thead th:nth-child(3), table.sensors td.strend { display: none; }
