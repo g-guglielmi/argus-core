@@ -230,6 +230,9 @@ a { color: var(--accent); }
 /* Two-line table cells: a primary value with a muted secondary line under it (Probes table). */
 .cell-stack { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
 .cell-stack .sub-line { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
+/* Version/OS value cell: value + status pill. Inline (side by side) on desktop; the mobile card
+   layout stacks it (value over pill) and right-aligns it — see the responsive block. */
+.vcell { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sub-line { font-size: 11.5px; color: var(--muted); }
 .enroll-probes .row-actions { text-align: right; white-space: nowrap; width: 1%; }
 
@@ -565,19 +568,22 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   .enroll, .enroll tbody, .enroll tr { display: block; }
   .enroll tr { padding: 11px 14px; border-bottom: 1px solid var(--border); }
   .enroll tr:last-child td { border-bottom: none; }
-  /* align-items:flex-start so a long value (OS name) that wraps flows *below* the label instead of
-     straddling a vertically-centred label. */
-  .enroll td { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; width: auto; padding: 5px 0; border: none; overflow: visible; text-overflow: clip; }
-  .enroll td::before { content: attr(data-label); color: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; flex-shrink: 0; padding-top: 2px; }
+  /* Values stack (value over pill), so each cell is a fixed 1-2 lines — align-items:center then keeps
+     the label vertically centred against that stack (rather than pinned to the top). */
+  .enroll td { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: auto; padding: 5px 0; border: none; overflow: visible; text-overflow: clip; }
+  .enroll td::before { content: attr(data-label); color: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; flex-shrink: 0; }
   .enroll td:not([data-label])::before { display: none; }
   .enroll td:first-child { display: block; margin-bottom: 2px; padding: 0; font-size: 14px; }
   .enroll td:last-child:not([data-label]) { justify-content: flex-end; margin-top: 6px; }
   /* the actions cell carries a desktop `width:1%` (auto-size the column); reset it so the flex card
      cell can hold the kebab flush-right instead of collapsing to 1% and shoving it to the left. */
   .enroll-probes td.row-actions { width: auto; justify-content: flex-end; margin-top: 4px; }
-  /* right-align each value cell (and its multi-line stack) so values line up down the card's right edge
-     — but NOT the first cell (the probe name), which stays a left-aligned card title. */
-  .enroll-probes td[data-label]:not(:first-child) > span, .enroll-probes td[data-label]:not(:first-child) > .cell-stack { justify-content: flex-end; align-items: flex-end; text-align: right; margin-left: auto; }
+  /* right-align each value cell (and its multi-line stack) down the card's right edge — but NOT the
+     first cell (the probe name), which stays a left-aligned card title. */
+  .enroll-probes td[data-label]:not(:first-child) > .vcell, .enroll-probes td[data-label]:not(:first-child) > .cell-stack { align-items: flex-end; text-align: right; margin-left: auto; }
+  /* stack the version/OS value over its status pill (value on top, pill below), mirroring the health
+     stack — narrow cards read cleaner as two short lines than one wide wrapping line. */
+  .enroll-probes td[data-label] .vcell { flex-direction: column; gap: 3px; }
   .enroll-probes td[data-label]:not(:first-child) .sub-line { padding-left: 0 !important; }
 
   /* --- monitoring tree: drop the trend column, tighten indentation --- */

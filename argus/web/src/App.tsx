@@ -1705,7 +1705,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                   </div>
                 </td>
                 <td data-label="Argus-Proxy Version">
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span className="vcell">
                     <span className="mono" style={{ fontWeight: 600, color: p.version ? undefined : 'var(--faint)' }} title="Zabbix proxy version running on this probe">{p.version || '-'}</span>
                     <UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} hideAuto />
                   </span>
@@ -1787,7 +1787,7 @@ function OSCell({ p }: { p: Proxy }) {
     : sec === 0 ? <span className="tag online" title={`No pending security updates. ${when}`}>patched</span>
     : <span className="mono" style={{ color: 'var(--faint)' }} title={`Security-update count unknown. ${when}`}>?</span>
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+    <span className="vcell">
       {osName && <span className="mono" style={{ fontWeight: 600 }} title="Operating system reported by the VM">{osName}</span>}
       {chip}
     </span>
@@ -1799,16 +1799,15 @@ function OSCell({ p }: { p: Proxy }) {
 // as the proxy-version cell. A dash means no sidecar manages this probe (e.g. an unRAID-native probe).
 function UpdaterVersionCell({ p, onUpdate }: { p: Proxy; onUpdate?: (p: Proxy) => void }) {
   if (!p.selfupdate) return <span className="mono" style={{ color: 'var(--faint)' }} title="No argus-updater sidecar manages this probe">-</span>
-  const wrap: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }
   const ver = <span className="mono" style={{ fontWeight: 600 }} title="Version of the argus-updater sidecar managing this probe">{p.updater_version || '?'}</span>
   const updateBtn = onUpdate ? <button className="btn" onClick={() => onUpdate(p)} title="Update the argus-updater sidecar to the newest version (it recreates itself)">Update</button> : null
   switch (p.updater_status) {
     case 'current':
-      return <span style={wrap}>{ver}<span className="tag online">up to date</span></span>
+      return <span className="vcell">{ver}<span className="tag online">up to date</span></span>
     case 'outdated':
-      return <span style={wrap}>{ver}{p.updater_latest ? <span className="tag avail" title="A newer argus-updater has been published">→ {p.updater_latest}</span> : null}{updateBtn}</span>
+      return <span className="vcell">{ver}{p.updater_latest ? <span className="tag avail" title="A newer argus-updater has been published">→ {p.updater_latest}</span> : null}{updateBtn}</span>
     default: // unknown: version reported but GHCR not resolved yet, or version not reported
-      return <span style={wrap}>{ver}{updateBtn}</span>
+      return <span className="vcell">{ver}{updateBtn}</span>
   }
 }
 
