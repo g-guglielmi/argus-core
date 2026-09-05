@@ -714,10 +714,13 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
      stack — narrow cards read cleaner as two short lines than one wide wrapping line. */
   .enroll-probes td[data-label] .vcell { flex-direction: column; gap: 3px; }
   .enroll-probes td[data-label]:not(:first-child) .sub-line { padding-left: 0 !important; }
-  /* Bare-text values (versions, OS name, "Ns ago", the "-" placeholder) sit flush at the card edge,
-     while pills/badges inset their text by ~10px of box padding. Inset the bare values to match so all
-     value TEXT lines up down one edge (same fix the users table uses for the passkeys count). */
-  .enroll-probes td[data-label]:not(:first-child) .mono { padding-right: 10px; }
+  /* Every value - bare text (versions, OS name, "Ns ago"), the quiet ✓ states and the pills' boxes -
+     ends on the same right edge. (An earlier rule inset the bare text by 10px to line up with pill
+     TEXT; once the common states became plain ✓ text that left the versions short of the edge.) */
+  .enroll-probes td[data-label]:not(:first-child) .mono { padding-right: 0; }
+  /* The ⋮ glyph is centred in its 36px touch target; pull the button out by the slack so the dots sit on
+     the same edge as the values above them instead of ~15px inside it. */
+  .enroll-probes td.row-actions .kebab-wrap { margin-right: -12px; }
   /* the desktop vertical column dividers make no sense in the stacked card — turn them into horizontal
      rules between each field row instead. */
   .enroll-probes td:not(:first-child) { border-left: none; }
