@@ -22,6 +22,26 @@ func sampleRecovery() Event {
 	return e
 }
 
+// FormatReading scales a reading the way the UI does (seconds → ms/µs/ns, bytes, etc.).
+func TestFormatReading(t *testing.T) {
+	cases := []struct{ val, units, want string }{
+		{"0.0138", "s", "13.8 ms"},
+		{"0.0000138", "s", "13.8 µs"},
+		{"0.0000005", "s", "500 ns"},
+		{"1.5", "s", "1.5 s"},
+		{"0", "s", "0 s"},
+		{"1073741824", "B", "1 GB"},
+		{"96", "%", "96 %"},
+		{"0", "%", "0 %"},
+		{"up", "", "up"},
+	}
+	for _, c := range cases {
+		if got := FormatReading(c.val, c.units); got != c.want {
+			t.Errorf("FormatReading(%q,%q)=%q want %q", c.val, c.units, got, c.want)
+		}
+	}
+}
+
 // The subject carries the Zabbix severity (what the UI shows), not the coarse ERROR/WARNING state.
 func TestSubjectUsesSeverity(t *testing.T) {
 	if got := sampleProblem().subject(); got != "[HIGH] sw-site2 - Unavailable by ICMP ping" {

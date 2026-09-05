@@ -177,7 +177,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		if itemID != "" {
 			if items, e := zbx.ItemsByIDs(ctx, []string{itemID}); e == nil {
 				if it, ok := items[itemID]; ok {
-					value = strings.TrimSpace(it.LastValue + " " + it.Units)
+					value = notify.FormatReading(it.LastValue, it.Units)
 				}
 			}
 		}
