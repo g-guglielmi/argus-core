@@ -2846,7 +2846,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     const hopen = openHost === key || focusHostId === h.id
     return (
       <div className="host" key={key}>
-        <div className="host-head" style={{ paddingLeft: indent(depth) + 22 }} onClick={() => { const next = hopen ? null : key; setOpenHost(next); onNavigate(next ? h.id : null, null) }}>
+        <div className="host-head" style={{ paddingLeft: indent(depth) }} onClick={() => { const next = hopen ? null : key; setOpenHost(next); onNavigate(next ? h.id : null, null) }}>
           <svg className={'chev' + (hopen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
           <span style={{ width: 9, height: 9, borderRadius: '50%', flexShrink: 0, background: dotColor(h.paused, h.hidden, h.state) }} />
           <span className="hn lnk-host" onClick={(e) => { e.stopPropagation(); drillHost(path, h.id) }}>{h.name}</span>
@@ -2868,13 +2868,14 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
         </div>
         {settingsHost === h.id && <HostSettings hostId={h.id} canEdit={canPause} onClose={() => setSettingsHost(null)} onSaved={() => { setSettingsHost(null); load(); fireDataRefresh() }} />}
         {editGroupsHost === h.id && <GroupEditor current={h.groups || []} groups={groups} onSave={(ids) => setHostGroups(h.id, ids)} onCancel={() => setEditGroupsHost(null)} />}
-        {hopen && <div className="host-body" style={{ paddingLeft: indent(depth) + 22 }}><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAllEff} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(path, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} /></div>}
+        {hopen && <div className="host-body" style={{ paddingLeft: indent(depth) }}><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAllEff} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(path, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} /></div>}
       </div>
     )
   }
 
   // Recursive group node: header (drill on name, kebab New subgroup/Rename/Delete) + inline bands +
-  // child nodes + this node's own direct hosts.
+  // this node's own direct hosts (rendered at the same indent as, and above, the child subgroups, so a
+  // host that belongs to this group isn't mistaken for a member of one of its subgroups).
   function renderNode(node: GNode, depth: number, sibIds: string[] = [node.path], index = 0, scope = node.parentPath ?? '') {
     const sub = subtreeHosts(node)
     const expanded = (focus.level === 'group' && focus.path === node.path) ? true : !collapsed.has(node.path)
@@ -2920,8 +2921,8 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
         )}
         {newSubPath === node.path && <GroupNameBand prefix={node.path + '/'} placeholder="Subgroup name" confirmLabel="Create" onConfirm={(v) => createGroup(v)} onCancel={() => setNewSubPath(null)} />}
         {expanded && <>
-          {(() => { const gids = node.children.map((c) => c.path); return node.children.map((c, i) => renderNode(c, depth + 1, gids, i, node.path)) })()}
           {(() => { const hids = node.hosts.map((h) => h.id); return node.hosts.map((h, i) => renderHost(h, node.path, depth + 1, hids, i)) })()}
+          {(() => { const gids = node.children.map((c) => c.path); return node.children.map((c, i) => renderNode(c, depth + 1, gids, i, node.path)) })()}
         </>}
       </div>
     )
