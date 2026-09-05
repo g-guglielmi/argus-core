@@ -20,7 +20,7 @@ remotely (there's no clean rollback; hypervisor snapshots are the safety net).
 
 **Added:**
 - **Automatic security patching on both roles.** The probe golden image (`argus-probe`
-  `probe-vm/v0.4.0`) and the core (`deploy/core/setup-core.sh`) install `unattended-upgrades`
+  `probe-vm/v0.3.1`) and the core (`deploy/core/setup-core.sh`) install `unattended-upgrades`
   (**security suite only**, so the core's TimescaleDB 2.28 hold is safe) + `needrestart` (auto-restart
   services after a libc/openssl bump, so most updates need no reboot).
 - **Role-appropriate reboots.** **Probe VMs** (cattle) auto-reboot in a weekly ~03:00 window — they

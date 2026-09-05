@@ -460,7 +460,7 @@ release) so newly deployed probes ship already-patched instead of installing mon
 boot. **Major-version upgrades (Debian 13 -> 14) are a deliberate manual / re-image event** - never
 unattended.
 
-**Status: implemented (v0.4.32 / probe-vm v0.4.0).** The probe golden image bakes `unattended-upgrades`
+**Status: implemented (v0.4.32 / probe-vm v0.3.1).** The probe golden image bakes `unattended-upgrades`
 (security only) + `needrestart` with a weekly ~03:00 auto-reboot, and an hourly `argus-os-report.timer`
 posts its security-update count + reboot-required flag to `POST /api/probes/os-status` (probe-token
 auth). `setup-core.sh` installs the same on the core with **auto-reboot off** (it respects the
