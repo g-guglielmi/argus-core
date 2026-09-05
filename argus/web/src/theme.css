@@ -457,8 +457,11 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 /* ---------- users / forms ---------- */
 .utable { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .utable th { text-align: left; color: var(--faint); font-weight: 600; font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; padding: 9px 16px; border-bottom: 1px solid var(--border); }
-.utable td { padding: 8px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.utable td { padding: 8px 16px; border-bottom: 1px solid var(--border-strong); vertical-align: middle; }
 .utable tr:last-child td { border-bottom: none; }
+/* faint vertical column dividers; the row dividers above use the stronger border, so rows read apart
+   while the column grid stays subtle (mirrors the probes table). */
+.utable th:not(:first-child), .utable td:not(:first-child) { border-left: 1px solid var(--border); }
 .cellinput { width: 100%; padding: 5px 8px; border-radius: 6px; border: 1px solid transparent; background: transparent; color: var(--text); font: inherit; }
 .cellinput:hover { border-color: var(--border); background: var(--elevated); }
 .cellinput:focus { border-color: var(--accent); background: var(--panel); outline: none; }
@@ -555,16 +558,22 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   .slist td.act, .slist td:last-child:not([data-label]) { width: auto; text-align: right !important; margin-top: 8px; }
   .slist td:last-child > span { justify-content: flex-end !important; }
 
-  /* --- users table: labelled cards --- */
+  /* --- users table: labelled cards (same refinements as the probes cards) --- */
   .utable thead { display: none; }
   .utable, .utable tbody, .utable tr { display: block; }
-  .utable tr { padding: 11px 14px; border-bottom: 1px solid var(--border); }
-  .utable td { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: auto; padding: 5px 0; border: none; }
+  .utable tr { padding: 6px 14px; border-bottom: 2px solid var(--border-strong); }
+  .utable tr:last-child { border-bottom: none; }
+  .utable td { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: auto; padding: 8px 0; border: none; }
   .utable td::before { content: attr(data-label); color: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; flex-shrink: 0; }
-  .utable td:first-child { display: block; margin-bottom: 2px; padding: 0; }
+  /* the desktop vertical column dividers make no sense in the stacked card; turn them into horizontal
+     rules between each field row (not the email title, not the actions cell). */
+  .utable td:not(:first-child) { border-left: none; }
+  .utable td[data-label]:not(:first-child):not(:last-child) { border-top: 1px solid var(--border); padding-top: 12px; }
+  .utable td:first-child { display: block; margin-bottom: 2px; padding: 10px 0; }
   .utable td:first-child::before { display: none; }
   .utable td:first-child .cellinput { width: 100%; font-size: 14px; }
-  .utable td:last-child { justify-content: flex-end; }
+  /* the actions cell (kebab) tucks under the last field with no divider of its own. */
+  .utable td:last-child { justify-content: flex-end; margin-top: 0; padding: 4px 0 2px; }
   .utable td:last-child::before { display: none; }
   .utable .cellinput { flex: 1; min-width: 0; width: auto; text-align: right; }
   .utable td:first-child .cellinput { text-align: left; }
