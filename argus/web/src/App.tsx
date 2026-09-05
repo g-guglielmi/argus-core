@@ -1322,19 +1322,56 @@ const CH_FIELDS: Record<string, ChField[]> = {
   ],
 }
 
-// SitePicker is a multi-select for a channel's site scope: an "All sites" chip plus one chip per
-// host-group. Selecting nothing (or All sites) means every site; otherwise the channel serves the
-// union of the chosen sites. Used by both the admin and personal channel editors.
+// SitePicker is a multi-select for a channel's site scope: a compact dropdown that summarizes the
+// selection and opens a scrollable, filterable checklist of host-groups, so it scales past a handful
+// of sites. Empty selection ("All sites") means every site; otherwise the union of the chosen sites.
+// Used by both the admin and personal channel editors.
 function SitePicker({ options, value, onChange }: { options: string[]; value: string[]; onChange: (v: string[]) => void }) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
+  }, [open])
+
   const all = value.length === 0
   const toggle = (s: string) => onChange(value.includes(s) ? value.filter((x) => x !== s) : [...value, s])
+  const summary = all ? 'All sites' : value.length <= 2 ? value.join(', ') : `${value.length} sites selected`
+  const needle = q.trim().toLowerCase()
+  const shown = needle ? options.filter((o) => o.toLowerCase().includes(needle)) : options
+
   return (
-    <div className="sitepick">
-      <button type="button" className={'sitechip' + (all ? ' on' : '')} onClick={() => onChange([])} aria-pressed={all}>All sites</button>
-      {options.map((s) => {
-        const on = value.includes(s)
-        return <button type="button" key={s} className={'sitechip' + (on ? ' on' : '')} onClick={() => toggle(s)} aria-pressed={on}>{s}</button>
-      })}
+    <div className="msel" ref={ref}>
+      <button type="button" className="msel-btn" onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open}>
+        <span className="msel-sum">{summary}</span>
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </button>
+      {open && (
+        <div className="msel-pop" role="listbox" aria-multiselectable="true">
+          {options.length > 8 && (
+            <input className="input msel-search" placeholder="Filter sites…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+          )}
+          <div className="msel-list">
+            <button type="button" role="option" aria-selected={all} className={'msel-opt' + (all ? ' on' : '')} onClick={() => onChange([])}>
+              <span className="msel-check">{all ? '✓' : ''}</span>All sites
+            </button>
+            {shown.map((s) => {
+              const on = value.includes(s)
+              return (
+                <button type="button" role="option" aria-selected={on} key={s} className={'msel-opt' + (on ? ' on' : '')} onClick={() => toggle(s)}>
+                  <span className="msel-check">{on ? '✓' : ''}</span>{s}
+                </button>
+              )
+            })}
+            {shown.length === 0 && <div className="msel-empty">No matching sites</div>}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
