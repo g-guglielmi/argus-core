@@ -11,6 +11,27 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.33] - 2026-09-05
+
+A readability pass over the **Probes** and **Users** tables (both the same labelled-card pattern —
+a data table on desktop, stacked cards on mobile). No functional changes; UI only.
+
+**Changed:**
+- **Probes table restructured for scannability.** Dropped the `Argus-` prefix from the version headers
+  (`Proxy Version` / `Updater Version` / `VM OS Version`). The all-good states — `up to date` and
+  `patched` — are now a quiet green ✓ + muted text instead of a full pill, so colored pills are reserved
+  for things that need attention (drift → `Update`, `reboot`, `offline`) and the eye lands on the probes
+  that need action.
+- **Grid dividers** on both tables: faint vertical rules between columns and stronger horizontal rules
+  between rows on desktop; on mobile, faint dividers between each field and a stronger boundary between
+  cards, so rows/cards read apart from the fainter within-row/field dividers.
+- **Mobile cards tidied:** values stack (value over status pill), every value lines up down the right
+  edge (bare text inset to match pill text), labels vertically centered, roomier/centered card padding,
+  and the kebab tucked under the last field.
+- The per-row **⋯ menu now flips upward** when there isn't room below the button, so the last row's menu
+  stays on-screen (both the Probes and Users menus).
+- Applied the **same treatment to the Users table** for consistency.
+
 ## [0.4.32] - 2026-09-05
 
 **OS patching & lifecycle** (roadmap §A, DESIGN §14c): keep the Debian OS under the core and probe VMs
