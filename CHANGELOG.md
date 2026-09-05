@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [0.4.32] - 2026-09-04
+## [0.4.32] - 2026-09-05
 
 **OS patching & lifecycle** (roadmap §A, DESIGN §14c): keep the Debian OS under the core and probe VMs
 patched without accumulating CVEs, while leaving the reboot policy appropriate to each role. The OS
@@ -46,8 +46,9 @@ remotely (there's no clean rollback; hypervisor snapshots are the safety net).
   the probe image) so each probe's sidecar shows up-to-date / behind, not just its version.
 - **Probes report their OS name** (`os` in `POST /api/probes/os-status`, new `os_version` column) so the
   VM's Debian version shows alongside the patch status.
-- The proxy SNMP-default band is a centered card with balanced fields; fixed a grid overflow that let a
-  wide input spill past the card edge.
+- The proxy SNMP-default band is a centered card with balanced fields; fixed its prose spilling past the
+  card — the probes table forces `white-space: nowrap` on cells and the inline panel inherited it, so its
+  note couldn't wrap (reset to `normal`; also guarded the field grid against `min-width: auto` overflow).
 
 **Deploy:**
 - `setup-core.sh` gains an OS-patching step: `unattended-upgrades` (auto-reboot **off**), a host
