@@ -1682,7 +1682,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
 
       <div className="enroll-scroll">
       <table className="enroll enroll-probes">
-        <thead><tr><th>Probe</th><th>Health</th><th>Argus-Proxy Version</th><th>Argus-Updater Version</th><th>Argus-VM OS Version</th><th></th></tr></thead>
+        <thead><tr><th>Probe</th><th>Health</th><th>Proxy Version</th><th>Updater Version</th><th>VM OS Version</th><th></th></tr></thead>
         <tbody>
           {error && <tr><td colSpan={6} style={{ color: 'var(--err)' }}>{error}</td></tr>}
           {!error && proxies === null && <tr><td colSpan={6} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
@@ -1704,14 +1704,14 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                     <span className="sub-line mono" title="When the core last received data from this probe" style={{ paddingLeft: 10, color: !p.last_access ? 'var(--faint)' : (Date.now() / 1000 - p.last_access > 60 ? 'var(--warn)' : undefined) }}>{p.last_access ? relTime(p.last_access) : 'never'}</span>
                   </div>
                 </td>
-                <td data-label="Argus-Proxy Version">
+                <td data-label="Proxy Version">
                   <span className="vcell">
                     <span className="mono" style={{ fontWeight: 600, color: p.version ? undefined : 'var(--faint)' }} title="Zabbix proxy version running on this probe">{p.version || '-'}</span>
                     <UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} hideAuto />
                   </span>
                 </td>
-                <td data-label="Argus-Updater Version"><UpdaterVersionCell p={p} onUpdate={isAdmin ? triggerUpdaterUpdate : undefined} /></td>
-                <td data-label="Argus-VM OS Version"><OSCell p={p} /></td>
+                <td data-label="Updater Version"><UpdaterVersionCell p={p} onUpdate={isAdmin ? triggerUpdaterUpdate : undefined} /></td>
+                <td data-label="VM OS Version"><OSCell p={p} /></td>
                 <td className="row-actions">
                   <ProbeRowMenu items={[
                     canEdit && p.id ? { label: 'SNMP defaults', onClick: () => setOpenSnmp((n) => (n === p.name ? null : p.name)) } : null,
@@ -1758,7 +1758,7 @@ function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, on
     : <span className="mono" style={{ color: 'var(--faint)' }} title="This probe isn't reporting its exact version to Argus (updates handled outside Argus, e.g. unRAID).">-</span>
   switch (p.update_status) {
     case 'current':
-      return <span style={wrap}><span className="tag online">up to date</span>{auto}</span>
+      return <span style={wrap}><span className="okquiet" title="Running the fleet target version">up to date</span>{auto}</span>
     case 'tracking':
       return <span style={wrap}><span className="tag" title="Fleet target is 'latest'; the probe converges on the newest image">tracking latest</span>{p.selfupdate ? selfBtn : null}{auto}</span>
     case 'outdated': {
@@ -1784,7 +1784,7 @@ function OSCell({ p }: { p: Proxy }) {
   const chip = p.reboot_required
     ? <span className="tag avail" title={`This VM needs a reboot to finish applying updates; it reboots in its weekly ~03:00 window. ${when}`}>reboot</span>
     : sec > 0 ? <span className="tag avail" title={`${sec} pending security update${sec === 1 ? '' : 's'}; applied automatically (security suite only). ${when}`}>{sec} security</span>
-    : sec === 0 ? <span className="tag online" title={`No pending security updates. ${when}`}>patched</span>
+    : sec === 0 ? <span className="okquiet" title={`No pending security updates. ${when}`}>patched</span>
     : <span className="mono" style={{ color: 'var(--faint)' }} title={`Security-update count unknown. ${when}`}>?</span>
   return (
     <span className="vcell">
@@ -1803,7 +1803,7 @@ function UpdaterVersionCell({ p, onUpdate }: { p: Proxy; onUpdate?: (p: Proxy) =
   const updateBtn = onUpdate ? <button className="btn" onClick={() => onUpdate(p)} title="Update the argus-updater sidecar to the newest version (it recreates itself)">Update</button> : null
   switch (p.updater_status) {
     case 'current':
-      return <span className="vcell">{ver}<span className="tag online">up to date</span></span>
+      return <span className="vcell">{ver}<span className="okquiet" title="Running the newest published argus-updater">up to date</span></span>
     case 'outdated':
       return <span className="vcell">{ver}{p.updater_latest ? <span className="tag avail" title="A newer argus-updater has been published">→ {p.updater_latest}</span> : null}{updateBtn}</span>
     default: // unknown: version reported but GHCR not resolved yet, or version not reported

@@ -233,6 +233,10 @@ a { color: var(--accent); }
 /* Version/OS value cell: value + status pill. Inline (side by side) on desktop; the mobile card
    layout stacks it (value over pill) and right-aligns it — see the responsive block. */
 .vcell { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* Quiet "everything's fine" state (up to date / patched): a small green check + muted text, so the
+   common all-good case recedes and colored pills are reserved for things that need attention. */
+.okquiet { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.okquiet::before { content: "\2713"; color: var(--ok); font-weight: 800; }
 .sub-line { font-size: 11.5px; color: var(--muted); }
 .enroll-probes .row-actions { text-align: right; white-space: nowrap; width: 1%; }
 
@@ -424,6 +428,9 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .enroll th:nth-child(2) { width: 18%; }
 .enroll th:nth-child(3) { width: 27%; }
 .enroll th:nth-child(4) { width: 15%; }
+/* Group divider: a faint vertical rule before the software-version columns (3rd cell = Proxy Version),
+   so Health reads apart from the version group. Probes table only. */
+.enroll-probes th:nth-child(3), .enroll-probes td:nth-child(3) { border-left: 1px solid var(--border); padding-left: 20px; }
 /* the live probes table carries 7 columns (Probe · Status · Last check-in · Version · Update ·
    Mode · Enrolled) whose content is short and uneven (a probe name, a version, the update chip),
    so let the browser size each column to its content (table-layout:auto) instead of the fixed 4-col
@@ -590,6 +597,10 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
      while pills/badges inset their text by ~10px of box padding. Inset the bare values to match so all
      value TEXT lines up down one edge (same fix the users table uses for the passkeys count). */
   .enroll-probes td[data-label]:not(:first-child) .mono { padding-right: 10px; }
+  /* the desktop vertical group divider makes no sense in the stacked card — turn it into a horizontal
+     rule between Health and the version group instead. */
+  .enroll-probes td:nth-child(3) { border-left: none; padding-left: 0; }
+  .enroll-probes td[data-label="Proxy Version"] { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 6px; }
 
   /* --- monitoring tree: drop the trend column, tighten indentation --- */
   table.sensors thead th:nth-child(3), table.sensors td.strend { display: none; }
