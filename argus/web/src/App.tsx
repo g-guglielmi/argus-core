@@ -2235,7 +2235,23 @@ function Kebab({ actions, disabled, up }: { actions: KAction[]; disabled?: boole
   const [dur, setDur] = useState<KAction | null>(null)
   const [custom, setCustom] = useState(false)
   const [val, setVal] = useState('')
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [autoUp, setAutoUp] = useState(false)
   function close() { setOpen(false); setDur(null); setCustom(false) }
+  // Open the menu upward when there isn't room below the button (the last row of a mobile card would
+  // otherwise render off the bottom of the screen). Caller's `up` still forces it.
+  function toggleOpen() {
+    if (!open) {
+      setDur(null); setCustom(false)
+      const r = btnRef.current?.getBoundingClientRect()
+      if (r) {
+        const estH = actions.length * 36 + 24
+        const spaceBelow = window.innerHeight - r.bottom
+        setAutoUp(spaceBelow < estH && r.top > spaceBelow)
+      }
+    }
+    setOpen((o) => !o)
+  }
   function choose(a: KAction) { if (a.onPick) { setDur(a) } else { const fn = a.onClick; close(); fn?.() } }
   function pickPreset(s: number | null | 'custom') {
     if (s === 'custom') { setVal(toLocalInput(Date.now() + 3600_000)); setCustom(true); return }
@@ -2247,11 +2263,11 @@ function Kebab({ actions, disabled, up }: { actions: KAction[]; disabled?: boole
   }
   return (
     <span className="kebab-wrap" onClick={(e) => e.stopPropagation()}>
-      <button className={'kebab' + (open ? ' open' : '')} title="Actions" disabled={disabled} onClick={() => { if (!open) { setDur(null); setCustom(false) } setOpen((o) => !o) }}>⋮</button>
+      <button ref={btnRef} className={'kebab' + (open ? ' open' : '')} title="Actions" disabled={disabled} onClick={toggleOpen}>⋮</button>
       {open && (
         <>
           <div onClick={close} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
-          <div className={'menu' + (up ? ' up' : '')} style={{ zIndex: 31, minWidth: dur && custom ? 240 : 180 }} onClick={(e) => e.stopPropagation()}>
+          <div className={'menu' + ((up || autoUp) ? ' up' : '')} style={{ zIndex: 31, minWidth: dur && custom ? 240 : 180 }} onClick={(e) => e.stopPropagation()}>
             {!dur && actions.map((a, i) => a.sep
               ? <div key={i} className="sep" />
               : <button key={i} className={a.danger ? 'danger' : ''} onClick={() => choose(a)}>{a.icon}{a.label}</button>)}
