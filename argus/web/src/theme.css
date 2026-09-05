@@ -129,7 +129,7 @@ a { color: var(--accent); }
   .live .beat { animation: none; }
   .sidebar { transition: none; }
   .chev { transition: none; }
-  .view-enter, .chart-reveal, .host-body, .banner, .app-enter { animation: none; }
+  .view-enter, .chart-reveal, .host-body, .banner, .app-enter, .toast, .skel::after { animation: none; }
   .scaret { transition: none; }
 }
 
@@ -142,6 +142,8 @@ a { color: var(--accent); }
 .phead h2 { font-size: 14px; margin: 0; font-weight: 650; }
 .phead .hint { color: var(--muted); font-size: 12px; }
 .phead .tools { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+/* One-paragraph explainer under a panel header (Notifications, Probes). */
+.panel-intro { color: var(--muted); font-size: 12.5px; line-height: 1.5; padding: 10px 16px 0; margin: 0; max-width: 90ch; }
 
 /* Drill-down breadcrumb (Monitoring): Sites & hosts / Group / Host / Sensor */
 .crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 9px 16px; font-size: 13px; border-bottom: 1px solid var(--border); }
@@ -418,18 +420,56 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .rtab:hover { color: var(--text); } .rtab.on { background: var(--panel); border-color: var(--border); color: var(--text); }
 .chartsvg { position: relative; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
 
-/* ---------- placeholders ---------- */
+/* ---------- placeholders / empty states ---------- */
 .ph-hero { text-align: center; padding: 36px 24px 26px; }
 .ph-hero .ico { width: 44px; height: 44px; color: var(--accent); margin: 0 auto 14px; }
+.ph-hero .ico svg { width: 100%; height: 100%; }
 .ph-hero h2 { font-size: 19px; margin: 0 0 6px; letter-spacing: -0.01em; }
 .ph-hero p { color: var(--muted); max-width: 54ch; margin: 0 auto; }
+/* EmptyState (backs <EmptyState>): the panel's "nothing here" block. `muted` for genuinely empty lists,
+   `ok` for the positive all-clear (green check). */
+.empty-state { padding: 30px 24px 26px; }
+.empty-state h2 { font-size: 17px; }
+.empty-state.muted .ico { color: var(--faint); }
+.empty-state.ok .ico, .empty-state.ok h2 { color: var(--ok); }
+.empty-state .empty-action { margin-top: 14px; }
+
+/* ---------- loading skeleton (backs <Skeleton>) ---------- */
+@keyframes skel-shimmer { to { transform: translateX(100%); } }
+.skel-rows { display: grid; gap: 18px; padding: 18px 16px; }
+.skel-row { display: grid; gap: 16px; align-items: center; }
+.skel { position: relative; overflow: hidden; display: block; height: 12px; border-radius: 6px; background: var(--elevated); }
+.skel::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text) 7%, transparent), transparent); animation: skel-shimmer 1.4s infinite; }
+
+/* ---------- toasts (backs <ToastProvider>) ---------- */
+.toasts { position: fixed; right: 18px; bottom: 18px; z-index: 120; display: flex; flex-direction: column; gap: 8px; width: min(380px, calc(100vw - 24px)); pointer-events: none; }
+.toast { pointer-events: auto; display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--border-strong); box-shadow: var(--shadow); font-size: 13px; line-height: 1.4; color: var(--text); animation: fade-rise var(--dur-base) var(--ease-out) both; }
+.toast-ic { display: inline-flex; flex-shrink: 0; margin-top: 1px; }
+.toast-ic svg { width: 16px; height: 16px; }
+.toast.success .toast-ic { color: var(--ok); }
+.toast.error .toast-ic { color: var(--err); }
+.toast.error { border-color: color-mix(in srgb, var(--err) 45%, var(--border)); }
+.toast.info .toast-ic { color: var(--accent); }
+.toast-msg { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.toast-x { margin-left: 4px; flex-shrink: 0; background: none; border: none; color: var(--faint); font-size: 17px; line-height: 1; cursor: pointer; padding: 0 3px; border-radius: 4px; }
+.toast-x:hover { color: var(--text); background: var(--elevated); }
 .soon-badge { display: inline-block; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); background: var(--accent-weak); border-radius: 999px; padding: 3px 12px; font-weight: 700; margin-bottom: 14px; }
 .chan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; padding: 4px 16px 20px; }
-.chan { border: 1px solid var(--border); border-radius: 12px; padding: 15px; background: var(--elevated); }
+.chan { border: 1px solid var(--border); border-radius: 12px; padding: 15px; background: var(--elevated); display: flex; flex-direction: column; }
 .chan .ct { display: flex; align-items: center; gap: 10px; font-weight: 650; margin-bottom: 6px; }
 .chan .ci { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: #fff; flex-shrink: 0; font-weight: 700; }
-.chan p { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
-.chan .st { font-size: 11.5px; color: var(--faint); }
+.chan .chan-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chan .chan-meta { color: var(--muted); font-size: 12.5px; margin: 0 0 8px; }
+/* One-line channel health: neutral (never sent), green (last delivery ok), red (last delivery failed). */
+.chan-status { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--faint); margin-bottom: 12px; line-height: 1.4; }
+.chan-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--border-strong); flex-shrink: 0; }
+.chan-status.ok::before { background: var(--ok); }
+.chan-status.err { color: var(--err); }
+.chan-status.err::before { background: var(--err); }
+.chan-actions { display: flex; align-items: center; gap: 8px; margin-top: auto; }
+.chan-actions .kebab-wrap { margin-left: auto; }
+/* A switched-off channel dims its identity, not its controls. */
+.chan.off .ci, .chan.off .chan-name, .chan.off .chan-meta { opacity: 0.55; }
 
 /* table-layout:fixed + shared column widths so the tokens table and the live-proxy table
    line up column-for-column (name · status · detail · action). */
@@ -479,7 +519,9 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .cellinput:focus { border-color: var(--accent); background: var(--panel); outline: none; }
 .cellinput.mono { font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; }
 .roleselect, .input { padding: 6px 9px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--elevated); color: var(--text); font: inherit; }
-.roleselect { font-size: 12.5px; cursor: pointer; }
+.roleselect, select.input { cursor: pointer; }
+/* Native checkboxes (group picker, wizard options) take the accent so they match the switch/inputs. */
+input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
 .badge { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border-strong); }
 .badge.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
 .badge.off { color: var(--faint); }
@@ -553,9 +595,13 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 
   /* --- topbar: title + ☰ on row one, status chips on row two. The subtitle is dropped: it repeats the
      panel header right underneath, and on a phone the two headers were ~180px before any data. --- */
-  .topbar { flex-wrap: wrap; gap: 6px 10px; padding: 6px 12px 8px; }
+  .topbar { flex-wrap: wrap; gap: 4px 10px; padding: 4px 12px 6px; }
   .topbar h1 { font-size: 15px; }
   .topbar .sub { display: none; }
+  .topbar .iconbtn { width: 36px; height: 36px; }
+  /* Panel header: keep the tools beside the title and drop the hint to its own line underneath. */
+  .phead .tools { order: 1; margin-left: auto; }
+  .phead .hint { order: 2; flex-basis: 100%; }
   .summary { width: 100%; margin-left: 0; flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; gap: 5px; padding-bottom: 2px; scrollbar-width: none; }
   .summary::-webkit-scrollbar { display: none; }
   .stat { flex-shrink: 0; }
@@ -685,7 +731,8 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   .iconbtn { width: 40px; height: 40px; }
   .btn { padding: 8px 14px; font-size: 13px; }
   .btn.compact { padding: 7px 12px; font-size: 13px; }
-  .stat { padding: 6px 9px; }
+  .stat { padding: 5px 9px; }
+  .toasts { left: 12px; right: 12px; bottom: 12px; width: auto; }
   .seg button { padding: 7px 12px; font-size: 13px; }
   .rtab { padding: 6px 11px; font-size: 12.5px; }
   .menu button { padding: 11px 12px; font-size: 14px; }

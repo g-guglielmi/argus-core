@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { registerPasskey, loginWithPasskey } from './webauthn'
-import { Button, Card, Field, Banner, Badge, CopyButton } from './ui'
+import { Button, Card, Field, Banner, Badge, CopyButton, Switch, Select, Skeleton, EmptyState } from './ui'
 import { useConfirm, usePrompt, useAlert } from './dialog'
+import { useToast } from './toast'
 
 type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; landing?: 'overview' | 'errors'; advanced?: boolean }
 type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean }
@@ -16,7 +17,7 @@ type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dn
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[] }
 type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
-type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; min_severity: number; config: Record<string, string> }
+type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; min_severity: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
 const SEVERITIES: { v: number; label: string }[] = [
   { v: 2, label: 'Warning & up' },
@@ -549,6 +550,8 @@ const ic = {
   paused: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>,
   hidden: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M2 12s3.5-7 10-7 10 7 10 7a17 17 0 0 1-2.2 2.9M3 3l18 18M9.5 9.5a3 3 0 0 0 4.2 4.2" /></svg>,
 }
+// Sensor state -> its status-chip icon (for the empty states of the filtered lists).
+const STATE_ICON: Record<string, ReactNode> = { ok: ic.ok, warning: ic.warn, error: ic.err, acked: ic.acked, paused: ic.paused, hidden: ic.hidden }
 
 function useTheme(): ['dark' | 'light', () => void] {
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -630,13 +633,12 @@ const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frida
 // never triggers apt remotely. This card shows the core's own patch status and lets an admin schedule
 // the core's reboot (a pet that must not bounce unannounced), which a host timer honours locally.
 function OSUpdates() {
+  const toast = useToast()
   const [os, setOs] = useState<OSStatus | null>(null)
   const [mode, setMode] = useState('notify')
   const [weekday, setWeekday] = useState(0)
   const [time, setTime] = useState('03:00')
   const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState('')
-  const [err, setErr] = useState('')
 
   const timeStr = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
   const load = () => fetch('/api/os/status').then((r) => (r.ok ? r.json() : null)).then((d: OSStatus | null) => {
@@ -652,11 +654,11 @@ function OSUpdates() {
   const save = async () => {
     const [h, m] = time.split(':').map((n) => parseInt(n, 10))
     const body = mode === 'auto' ? { mode, weekday, hour: h || 0, minute: m || 0 } : { mode: 'notify' }
-    setBusy(true); setErr(''); setMsg('')
+    setBusy(true)
     try {
       const res = await fetch('/api/os/reboot-window', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      if (!res.ok) { setErr(await errText(res, 'Could not save the reboot window')); return }
-      setMsg('Reboot window saved.'); await load()
+      if (!res.ok) { toast.error(await errText(res, 'Could not save the reboot window')); return }
+      toast.success('Reboot window saved.'); await load()
     } finally { setBusy(false) }
   }
 
@@ -700,8 +702,6 @@ function OSUpdates() {
           <Button variant="default" onClick={save} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save'}</Button>
         </div>
         {mode === 'auto' && <p className="set-hint" style={{ marginBottom: 0 }}>The core reboots only when an update requires it, on <strong>{WEEKDAYS[weekday]}</strong> at <strong>{time}</strong> (local). Take a hypervisor snapshot as your safety net.</p>}
-        {err && <p className="set-hint" style={{ color: 'var(--err)', marginBottom: 0 }}>{err}</p>}
-        {msg && <p className="set-hint" style={{ color: 'var(--ok)', marginBottom: 0 }}>{msg}</p>}
       </div>
     </section>
   )
@@ -901,11 +901,13 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   const [menuOpen, setMenuOpen] = useState(false)
   const [theme, toggleTheme] = useTheme()
   const [sensors, setSensors] = useState<SensorRow[]>([])
+  // False until the first /api/sensors response: the lists show a skeleton instead of flashing "All clear".
+  const [sensorsLoaded, setSensorsLoaded] = useState(false)
   const [listFilter, setListFilter] = useState<string>(() => initialNav().filter)
   const canPause = me.role === 'admin' || me.role === 'helpdesk'
 
   useEffect(() => {
-    const load = () => fetch('/api/sensors').then((r) => (r.ok ? r.json() : [])).then((s) => setSensors(s || [])).catch(() => {})
+    const load = () => fetch('/api/sensors').then((r) => (r.ok ? r.json() : [])).then((s) => { setSensors(s || []); setSensorsLoaded(true) }).catch(() => setSensorsLoaded(true))
     load(); const t = setInterval(load, 30000); const off = onDataRefresh(load); return () => { clearInterval(t); off() }
   }, [])
   // Remember the desktop sidebar collapsed/expanded choice across reloads.
@@ -1069,9 +1071,9 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           </div>
         </div>
         <div className="content view-enter" key={`${view}:${listFilter}`}>
-          {view === 'overview' && <StatusListView filter="attention" sensors={sensors} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => {}} />}
+          {view === 'overview' && <StatusListView filter="attention" sensors={sensors} loading={!sensorsLoaded} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => {}} />}
           {view === 'triggers' && <TriggersView goHost={goHost} />}
-          {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
+          {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} loading={!sensorsLoaded} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
           {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} advanced={!!me.advanced} />}
           {view === 'notifications' && <NotificationsView />}
           {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} />}
@@ -1090,10 +1092,9 @@ type SettingItem = {
 }
 
 function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
+  const toast = useToast()
   const [items, setItems] = useState<SettingItem[] | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
-  const [error, setError] = useState<string | null>(null)
-  const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [advBusy, setAdvBusy] = useState(false)
   const [zbx, setZbx] = useState<{ reachable: boolean; version?: string; error?: string } | null>(null)
@@ -1101,16 +1102,16 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
   // Advanced mode is a per-user preference (saved on the admin's own account, like the landing page),
   // NOT a server-wide setting - enabling it never changes what anyone else sees.
   async function setAdvanced(next: boolean) {
-    setAdvBusy(true); setError(null); setMsg(null)
+    setAdvBusy(true)
     try {
       const res = await fetch('/api/me/preferences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ advanced: next }) })
-      if (!res.ok) { setError(await errText(res, 'Could not save preference')); return }
-      onMe(await res.json()); setMsg(`Advanced mode ${next ? 'enabled' : 'disabled'}.`)
-    } catch { setError('Could not save preference') } finally { setAdvBusy(false) }
+      if (!res.ok) { toast.error(await errText(res, 'Could not save preference')); return }
+      onMe(await res.json()); toast.success(`Advanced mode ${next ? 'enabled' : 'disabled'}.`)
+    } catch { toast.error('Could not save preference') } finally { setAdvBusy(false) }
   }
 
   function load() {
-    fetch('/api/settings').then((r) => r.json()).then((s) => { setItems(s || []); setEdits({}) }).catch(() => setError('Failed to load settings'))
+    fetch('/api/settings').then((r) => r.json()).then((s) => { setItems(s || []); setEdits({}) }).catch(() => toast.error('Failed to load settings'))
   }
   function checkHealth() {
     fetch('/api/health').then((r) => r.json()).then((h) => setZbx(h.zabbix)).catch(() => setZbx(null))
@@ -1121,11 +1122,11 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
   const setEdit = (k: string, v: string) => setEdits((e) => ({ ...e, [k]: v }))
 
   async function save(e?: FormEvent) {
-    e?.preventDefault(); setError(null); setMsg(null); setBusy(true)
+    e?.preventDefault(); setBusy(true)
     try {
       const res = await fetch('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: edits }) })
-      if (!res.ok) { setError(await errText(res, 'Could not save settings')); return }
-      setItems(await res.json()); setEdits({}); setMsg('Settings saved and applied.'); checkHealth()
+      if (!res.ok) { toast.error(await errText(res, 'Could not save settings')); return }
+      setItems(await res.json()); setEdits({}); toast.success('Settings saved and applied.'); checkHealth()
     } finally { setBusy(false) }
   }
 
@@ -1172,8 +1173,6 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
           <button className="btn primary" disabled={!dirty || busy} onClick={() => save()}>{busy ? 'Saving…' : 'Save changes'}</button>
         </div>
       </div>
-      {error && <div style={{ padding: '0.6rem 16px', color: 'var(--err)' }}>{error}</div>}
-      {msg && <div style={{ padding: '0.6rem 16px', color: 'var(--ok)' }}>{msg}</div>}
 
       <form onSubmit={save} className="set-body">
         {/* Running version + update check, at the top so it's the first thing an admin sees. */}
@@ -1188,15 +1187,11 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
           <p className="set-note">Personal to your account - other users aren't affected.</p>
           <div className="set-row set-toggle">
             <div className="set-head"><span className="flabel">Advanced mode</span></div>
-            <label className="switch">
-              <input type="checkbox" checked={!!me.advanced} disabled={advBusy} onChange={(e) => setAdvanced(e.target.checked)} />
-              <span className="switch-track" aria-hidden="true"><span className="switch-thumb" /></span>
-              <span className="switch-label">{me.advanced ? 'On' : 'Off'}</span>
-            </label>
+            <Switch checked={!!me.advanced} disabled={advBusy} onChange={setAdvanced} label={me.advanced ? 'On' : 'Off'} />
             <span className="set-hint">Reveals power-user controls in the monitoring tree: the “All sensors” view and hidden-group management (hide groups / show hidden).</span>
           </div>
         </section>
-        {items === null ? <p className="set-note" style={{ padding: '0 4px' }}>Loading…</p> : groups.map((g) => {
+        {items === null ? <Skeleton rows={4} cols={2} /> : groups.map((g) => {
           const gi = items.filter((it) => it.group === g.name)
           if (gi.length === 0) return null
           return (
@@ -1316,40 +1311,38 @@ const CH_FIELDS: Record<string, ChField[]> = {
 
 function NotificationsView() {
   const confirm = useConfirm()
+  const toast = useToast()
   const [channels, setChannels] = useState<Channel[] | null>(null)
   const [sites, setSites] = useState<string[]>([])
   const [editing, setEditing] = useState<Channel | 'new' | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState<number | null>(null)
 
   function load() {
-    fetch('/api/notify/channels').then((r) => r.json()).then((c) => setChannels(c || [])).catch(() => setError('Failed to load channels'))
+    fetch('/api/notify/channels').then((r) => r.json()).then((c) => setChannels(c || [])).catch(() => toast.error('Failed to load channels'))
   }
   useEffect(() => {
     load()
     fetch('/api/notify/sites').then((r) => r.json()).then((s) => setSites(s || [])).catch(() => {})
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function toggle(c: Channel) {
-    setError(null); setMsg(null)
     const res = await fetch(`/api/notify/channels/${c.id}/enabled`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !c.enabled }) })
-    if (!res.ok) { setError(await errText(res, 'Could not update channel')); return }
+    if (!res.ok) { toast.error(await errText(res, 'Could not update channel')); return }
     load()
   }
   async function test(c: Channel) {
-    setError(null); setMsg(null); setBusy(c.id)
+    setBusy(c.id)
     try {
       const res = await fetch(`/api/notify/channels/${c.id}/test`, { method: 'POST' })
-      if (!res.ok) { setError(`Test failed for ${c.name}: ` + await errText(res, 'delivery error')); return }
-      setMsg(`Test notification sent to ${c.name}.`)
-    } finally { setBusy(null) }
+      if (!res.ok) { toast.error(`Test failed for ${c.name}: ` + await errText(res, 'delivery error')); return }
+      toast.success(`Test notification sent to ${c.name}.`)
+    } finally { setBusy(null); load() }
   }
   async function del(c: Channel) {
-    setError(null); setMsg(null)
     if (!(await confirm({ title: 'Delete channel', message: `Delete channel “${c.name}”? Alerts will stop routing here.`, confirmLabel: 'Delete', danger: true }))) return
     const res = await fetch(`/api/notify/channels/${c.id}`, { method: 'DELETE' })
-    if (!res.ok) { setError(await errText(res, 'Could not delete channel')); return }
+    if (!res.ok) { toast.error(await errText(res, 'Could not delete channel')); return }
+    toast.success(`Channel “${c.name}” deleted.`)
     load()
   }
 
@@ -1358,49 +1351,49 @@ function NotificationsView() {
       <div className="phead">
         <h2>Notifications</h2>
         <span className="hint">{channels ? `${channels.length} channel${channels.length === 1 ? '' : 's'}` : '…'}</span>
-        <div className="tools"><button className="btn primary" onClick={() => { setEditing('new'); setError(null); setMsg(null) }}>+ Add channel</button></div>
+        <div className="tools"><button className="btn primary" onClick={() => setEditing('new')}>+ Add channel</button></div>
       </div>
-      <p style={{ color: 'var(--muted)', fontSize: 12.5, padding: '2px 16px 0', margin: 0 }}>
-        Problems route to the channels below - globally or per site, and each channel can set its own severity floor (Warning by default). Acknowledged, paused, and hidden items stay quiet, and a recovery notice follows when things clear.
+      <p className="panel-intro">
+        Problems route to the channels below - globally or per site, each with its own severity floor (Warning by default). Acknowledged, paused and hidden items stay quiet; a recovery notice follows when things clear.
       </p>
-      {error && <div style={{ padding: '0.6rem 16px', color: 'var(--err)' }}>{error}</div>}
-      {msg && <div style={{ padding: '0.6rem 16px', color: 'var(--ok)' }}>{msg}</div>}
 
       {editing && (
         <ChannelEditor
           initial={editing === 'new' ? null : editing}
           sites={sites}
           onCancel={() => setEditing(null)}
-          onSaved={() => { setEditing(null); setMsg('Channel saved.'); load() }}
-          onError={setError}
+          onSaved={() => { setEditing(null); toast.success('Channel saved.'); load() }}
+          onError={(m) => { if (m) toast.error(m) }}
         />
       )}
 
+      {channels === null && <Skeleton rows={2} cols={3} />}
       {channels && channels.length === 0 && !editing && (
-        <div className="ph-hero">
-          <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
-          <h2>No channels yet</h2>
-          <p>Add a Discord webhook, a Telegram bot, or an email target to start receiving alerts.</p>
-        </div>
+        <EmptyState icon={ic.notifications} title="No channels yet" text="Add a Discord webhook, a Telegram bot, or an email target to start receiving alerts."
+          action={<Button variant="primary" onClick={() => setEditing('new')}>+ Add channel</Button>} />
       )}
 
       {channels && channels.length > 0 && (
         <div className="chan-grid">
           {channels.map((c) => {
             const m = CH_META[c.type] || { c: '#6b7686', l: '?', label: c.type }
+            const sev = SEVERITIES.find((s) => s.v === c.min_severity)?.label || 'Warning & up'
             return (
-              <div className="chan" key={c.id} style={{ opacity: c.enabled ? 1 : 0.6 }}>
+              <div className={'chan' + (c.enabled ? '' : ' off')} key={c.id}>
                 <div className="ct">
                   <span className="ci" style={{ background: m.c }}>{m.l}</span>
-                  <span style={{ flex: 1 }}>{c.name}</span>
-                  <span className={'badge ' + (c.enabled ? 'on' : 'off')}>{c.enabled ? 'on' : 'off'}</span>
+                  <span className="chan-name">{c.name}</span>
+                  <Switch checked={c.enabled} onChange={() => toggle(c)} title={c.enabled ? 'Enabled — switch off to pause alerts to this channel' : 'Disabled — switch on to resume alerts'} />
                 </div>
-                <p style={{ marginBottom: 10 }}>{m.label} · {c.site ? c.site : 'All sites'}{c.min_severity > 2 ? ` · ${(SEVERITIES.find((s) => s.v === c.min_severity)?.label) || 'Warning & up'}` : ''}</p>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  <button className="btn" disabled={busy === c.id} onClick={() => test(c)}>{busy === c.id ? 'Sending…' : 'Test'}</button>
-                  <button className="btn" onClick={() => { setEditing(c); setError(null); setMsg(null) }}>Edit</button>
-                  <button className="btn" onClick={() => toggle(c)}>{c.enabled ? 'Disable' : 'Enable'}</button>
-                  <button className="btn danger" onClick={() => del(c)}>Delete</button>
+                <p className="chan-meta">{m.label} · {c.site ? c.site : 'All sites'} · {sev}</p>
+                <ChannelDelivery c={c} />
+                <div className="chan-actions">
+                  <Button disabled={busy === c.id} onClick={() => test(c)}>{busy === c.id ? 'Sending…' : 'Send test'}</Button>
+                  <Kebab actions={[
+                    { label: 'Edit…', icon: kbIcon.edit, onClick: () => setEditing(c) },
+                    { sep: true, label: '' },
+                    { label: 'Delete channel', icon: kbIcon.trash, danger: true, onClick: () => del(c) },
+                  ]} />
                 </div>
               </div>
             )
@@ -1409,6 +1402,15 @@ function NotificationsView() {
       )}
     </div>
   )
+}
+
+// ChannelDelivery is the one-line health of a channel: when it last delivered, or the last failure and
+// why. Recorded by the notifier per send (alerts and the Send test button alike).
+function ChannelDelivery({ c }: { c: Channel }) {
+  const failed = !!c.last_error_at && (!c.last_sent_at || c.last_error_at >= c.last_sent_at)
+  if (failed) return <div className="chan-status err" title={c.last_error || ''}>Last delivery failed {relTime(c.last_error_at!)}{c.last_error ? ` · ${c.last_error}` : ''}</div>
+  if (c.last_sent_at) return <div className="chan-status ok">Last sent {relTime(c.last_sent_at)}{c.sent_count ? ` · ${c.sent_count} delivered` : ''}</div>
+  return <div className="chan-status">Nothing sent yet — use “Send test” to check the setup.</div>
 }
 
 function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
@@ -1693,8 +1695,10 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
         <thead><tr><th>Probe</th><th>Health</th><th>Proxy Version</th><th>Updater Version</th><th>VM OS Version</th><th></th></tr></thead>
         <tbody>
           {error && <tr><td colSpan={6} style={{ color: 'var(--err)' }}>{error}</td></tr>}
-          {!error && proxies === null && <tr><td colSpan={6} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
-          {!error && proxies && proxies.length === 0 && <tr><td colSpan={6} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
+          {!error && proxies === null && <tr><td colSpan={6} style={{ padding: 0 }}><div style={{ flex: 1, width: '100%' }}><Skeleton rows={3} cols={5} /></div></td></tr>}
+          {!error && proxies && proxies.length === 0 && <tr><td colSpan={6} style={{ padding: 0 }}><div style={{ flex: 1, width: '100%' }}>
+            <EmptyState icon={ic.probes} title="No probes yet" text="A probe appears here once it enrolls and checks in with the core." action={isAdmin && enroll ? <Button variant="primary" onClick={() => setWizardOpen(true)}>+ Add probe</Button> : undefined} />
+          </div></td></tr>}
           {!error && proxies && proxies.map((p) => (
             <Fragment key={p.name}>
               <tr>
@@ -2722,9 +2726,9 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
         </div>
       )}
       {creating && <GroupNameBand placeholder="New group name (use / for nesting, e.g. site1/Network)" confirmLabel="Create" onConfirm={(name) => createGroup(name)} onCancel={() => setCreating(false)} />}
-      {loading && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>Loading…</div>}
+      {loading && <Skeleton rows={5} cols={3} />}
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
-      {!loading && !error && hosts.length === 0 && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>No hosts found.</div>}
+      {!loading && !error && hosts.length === 0 && <EmptyState icon={ic.monitoring} title="No hosts yet" text="Hosts monitored in Zabbix appear here, grouped by site. If you expected some, check the Zabbix connection in Settings." />}
       {focus.level === 'root' && (() => { const rids = roots.map((n) => n.path); return roots.map((n, i) => renderNode(n, 0, rids, i, '')) })()}
       {focus.level === 'group' && (focusNode ? renderNode(focusNode, 0) : <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>This group no longer exists.</div>)}
       {(focus.level === 'host' || focus.level === 'sensor') && (focusHost ? renderHost(focusHost, focus.path, 0) : null)}
@@ -2889,10 +2893,10 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
 // propagates it to every host on the proxy whose SNMP interface is set to inherit.
 function ProxySNMP({ proxyId, proxyName, onClose }: { proxyId: string; proxyName: string; onClose: () => void }) {
   const confirm = useConfirm()
+  const toast = useToast()
   const [snmp, setSnmp] = useState<SnmpCfg | null>(null)
   const [isSet, setIsSet] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     fetch(`/api/proxies/${proxyId}/snmp`).then((r) => (r.ok ? r.json() : Promise.reject())).then((d) => { setSnmp(d.snmp); setIsSet(!!d.set) }).catch(() => setErr('Could not load the SNMP default'))
@@ -2900,22 +2904,22 @@ function ProxySNMP({ proxyId, proxyName, onClose }: { proxyId: string; proxyName
   function set(p: Partial<SnmpCfg>) { setSnmp((s) => (s ? { ...s, ...p } : s)) }
   async function save() {
     if (!snmp) return
-    setBusy(true); setErr(null); setMsg(null)
+    setBusy(true); setErr(null)
     const res = await fetch(`/api/proxies/${proxyId}/snmp`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(snmp) }).catch(() => null)
     setBusy(false)
-    if (!res || !res.ok) { setErr(await errText(res, 'Could not save the SNMP default')); return }
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the SNMP default')); return }
     const d = await res.json().catch(() => ({} as { updated?: number; overrides?: number; warning?: string }))
     setIsSet(true)
-    const base = `Saved${typeof d.updated === 'number' ? ` — updated ${d.updated} inheriting host${d.updated === 1 ? '' : 's'}` : ''}${d.warning ? ` (${d.warning})` : ''}`
-    setMsg(base)
+    const base = `SNMP default saved${typeof d.updated === 'number' ? ` — updated ${d.updated} inheriting host${d.updated === 1 ? '' : 's'}` : ''}${d.warning ? ` (${d.warning})` : ''}`
+    toast.success(base)
     // Offer to switch existing per-host (override) SNMP interfaces on this proxy to inherit this default.
     if (d.overrides && d.overrides > 0) {
       const n = d.overrides
       if (await confirm({ title: 'Switch existing hosts to inherit?', message: `${n} SNMP interface${n === 1 ? '' : 's'} on ${proxyName}'s hosts ${n === 1 ? 'has its' : 'have their'} own credentials. Switch ${n === 1 ? 'it' : 'them'} to inherit this default too?`, confirmLabel: 'Switch to inherit' })) {
         const ar = await fetch(`/api/proxies/${proxyId}/snmp/adopt`, { method: 'POST' }).catch(() => null)
-        if (!ar || !ar.ok) { setErr(await errText(ar, 'Could not switch the overrides')); return }
+        if (!ar || !ar.ok) { toast.error(await errText(ar, 'Could not switch the overrides')); return }
         const ad = await ar.json().catch(() => ({} as { adopted?: number }))
-        setMsg(`${base} · switched ${ad.adopted ?? 0} to inherit`)
+        toast.success(`Switched ${ad.adopted ?? 0} host${ad.adopted === 1 ? '' : 's'} to inherit the default.`)
       }
     }
   }
@@ -2955,7 +2959,6 @@ function ProxySNMP({ proxyId, proxyName, onClose }: { proxyId: string; proxyName
             </>}
       </div>
       {err && <div style={{ color: 'var(--err)', fontSize: 13, marginTop: 8 }}>{err}</div>}
-      {msg && <div style={{ color: 'var(--ok)', fontSize: 13, marginTop: 8 }}>{msg}</div>}
       <div className="hs-foot">
         <Button variant="ghost" onClick={onClose} disabled={busy}>Close</Button>
         <Button variant="primary" onClick={save} disabled={busy}>Save</Button>
@@ -3068,7 +3071,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
   const sparks = useSparks((items || []).filter((i) => i.numeric && i.supported).map((i) => i.id))
 
   if (error) return <div style={{ color: 'var(--err)', padding: '0.4rem 0' }}>{error}</div>
-  if (!items) return <div style={{ color: 'var(--muted)', padding: '0.4rem 0' }}>Loading sensors…</div>
+  if (!items) return <Skeleton rows={3} cols={4} />
 
   // Map each problem-referenced item to its worst state (and whether every problem on it is
   // acknowledged, so the highlight fades).
@@ -3172,7 +3175,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
 
 // StatusListView is the flat cross-site list opened from a top-bar status chip: every sensor in
 // the chosen state, with deep-links to its host/chart and a per-row kebab.
-function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }: { filter: string; sensors: SensorRow[]; canPause: boolean; goHost: (h: string) => void; goSensor: (h: string, i: string, name?: string) => void; onBack: () => void }) {
+function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, onBack }: { filter: string; sensors: SensorRow[]; loading?: boolean; canPause: boolean; goHost: (h: string) => void; goSensor: (h: string, i: string, name?: string) => void; onBack: () => void }) {
   const [busy, setBusy] = useState<string | null>(null)
   // The "attention" filter is the home Overview: every sensor that isn't OK (a PRTG-style unified list),
   // with a mode toggle. A concrete state (error/warning/…) is a top-bar status-chip drill-down.
@@ -3230,8 +3233,12 @@ function StatusListView({ filter, sensors, canPause, goHost, goSensor, onBack }:
             : <button className="btn ghost" onClick={onBack}>← Back to overview</button>}
         </div>
       </div>
-      {rows.length === 0
-        ? <div style={{ padding: '0.9rem 16px', color: attention ? 'var(--ok)' : 'var(--muted)' }}>{attention ? `✓ All clear - nothing ${attMode === 'errors' ? 'in error' : 'to report'}.` : `No ${STATE_LABEL[filter].toLowerCase()} sensors.`}</div>
+      {loading
+        ? <Skeleton rows={4} cols={5} />
+        : rows.length === 0
+        ? (attention
+          ? <EmptyState tone="ok" icon={ic.ok} title="All clear" text={attMode === 'errors' ? 'No sensor is in error right now.' : 'No errors or warnings right now.'} />
+          : <EmptyState icon={STATE_ICON[filter]} title={`No ${STATE_LABEL[filter].toLowerCase()} sensors`} text="Nothing on any site is in this state at the moment." />)
         : (
           <table className="slist slist-sensors">
             <thead><tr><th>Host</th><th className="slgrow">Sensor</th><th>Value</th><th>Trend</th><th>{durCol}</th><th className="slprio">Priority</th><th /></tr></thead>
@@ -3308,11 +3315,11 @@ function TriggersView({ goHost }: { goHost: (h: string) => void }) {
         </div></div>
       </div>
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
-      {rows === null && !error && <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>Loading…</div>}
+      {rows === null && !error && <Skeleton rows={4} cols={5} />}
 
       {mode === 'firing'
         ? (rows !== null && !error && (firing.length === 0
-          ? <div style={{ padding: '0.9rem 16px', color: 'var(--ok)' }}>✓ No triggers firing.</div>
+          ? <EmptyState tone="ok" icon={ic.ok} title="No triggers firing" text="Every alert rule is quiet right now." />
           : (
             <div className="enroll-scroll">
             <table className="slist slist-trig">
@@ -3332,7 +3339,7 @@ function TriggersView({ goHost }: { goHost: (h: string) => void }) {
             </div>
           )))
         : (rows !== null && !error && (hostIds.length === 0
-          ? <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>No triggers found.</div>
+          ? <EmptyState icon={ic.triggers} title="No triggers" text="Argus lists the alert rules (triggers) defined on your Zabbix hosts. None are visible yet." />
           : hostIds.map((hid) => {
             const h = byHost[hid]
             const open = !collapsed.has(hid)
@@ -3533,69 +3540,63 @@ function SensorChart({ itemId, units, color = 'var(--accent)' }: { itemId: strin
 function UsersView() {
   const confirm = useConfirm()
   const prompt = usePrompt()
+  const toast = useToast()
   const [users, setUsers] = useState<User[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [msg, setMsg] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
   const [adding, setAdding] = useState(false)
   const [nu, setNu] = useState({ email: '', name: '', surname: '', role: 'viewer', password: '' })
   const usersRef = useRef<User[]>([])
   usersRef.current = users
 
-  function load() { fetch('/api/users').then((r) => r.json()).then((u) => setUsers(u || [])).catch(() => setError('Failed to load users')) }
-  useEffect(() => { load() }, [])
+  function load() { fetch('/api/users').then((r) => r.json()).then((u) => { setUsers(u || []); setLoaded(true) }).catch(() => toast.error('Failed to load users')) }
+  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function fail(res: Response) { setError(await errText(res, 'Request failed')); load() }
+  async function fail(res: Response) { toast.error(await errText(res, 'Request failed')); load() }
   function edit(id: number, patch: Partial<User>) { setUsers((us) => us.map((x) => (x.id === id ? { ...x, ...patch } : x))) }
 
   // Persist the row's email/name/surname/role (called on blur of a field or role change).
   async function saveUser(id: number) {
     const u = usersRef.current.find((x) => x.id === id); if (!u) return
-    setError(null); setMsg(null)
     const res = await fetch(`/api/users/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: u.email, name: u.name, surname: u.surname, role: u.role }) })
     if (!res.ok) return fail(res)
-    setMsg('Saved')
+    toast.success('Saved')
   }
   async function create(e: FormEvent) {
-    e.preventDefault(); setError(null); setMsg(null)
+    e.preventDefault()
     const res = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(nu) })
-    if (!res.ok) return setError(await errText(res, 'Request failed'))
-    setNu({ email: '', name: '', surname: '', role: 'viewer', password: '' }); setAdding(false); setMsg('User created'); load()
+    if (!res.ok) return toast.error(await errText(res, 'Request failed'))
+    setNu({ email: '', name: '', surname: '', role: 'viewer', password: '' }); setAdding(false); toast.success('User created'); load()
   }
   async function resetPw(u: User) {
-    setError(null); setMsg(null)
     const pw = await prompt({ title: 'Reset password', label: `New password for ${u.email} (min 8 characters)`, type: 'password', confirmLabel: 'Set password', required: true })
     if (!pw) return
     const res = await fetch(`/api/users/${u.id}/password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) })
     if (!res.ok) return fail(res)
-    setMsg(`Password reset for ${u.email}`)
+    toast.success(`Password reset for ${u.email}`)
   }
   async function resetMfa(u: User) {
-    setError(null); setMsg(null)
     if (!(await confirm({ title: 'Remove two-factor', message: `Remove two-factor for ${u.email}? They'll sign in with just their password until they set it up again.`, confirmLabel: 'Remove', danger: true }))) return
     const res = await fetch(`/api/users/${u.id}/mfa/reset`, { method: 'POST' })
     if (!res.ok) return fail(res)
-    setMsg(`Two-factor removed for ${u.email}`); load()
+    toast.success(`Two-factor removed for ${u.email}`); load()
   }
   async function resetPasskeys(u: User) {
-    setError(null); setMsg(null)
     if (!(await confirm({ title: 'Remove passkeys', message: `Remove all passkeys for ${u.email}?`, confirmLabel: 'Remove', danger: true }))) return
     const res = await fetch(`/api/users/${u.id}/passkeys/reset`, { method: 'POST' })
     if (!res.ok) return fail(res)
-    setMsg(`Passkeys removed for ${u.email}`); load()
+    toast.success(`Passkeys removed for ${u.email}`); load()
   }
   async function setDisabled(u: User, disabled: boolean) {
-    setError(null); setMsg(null)
     if (disabled && !(await confirm({ title: 'Disable user', message: `Disable ${u.email}? They won't be able to sign in until re-enabled.`, confirmLabel: 'Disable', danger: true }))) return
     const res = await fetch(`/api/users/${u.id}/disabled`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ disabled }) })
     if (!res.ok) return fail(res)
-    setMsg(`${u.email} ${disabled ? 'disabled' : 'enabled'}`); load()
+    toast.success(`${u.email} ${disabled ? 'disabled' : 'enabled'}`); load()
   }
   async function del(u: User) {
-    setError(null); setMsg(null)
     if (!(await confirm({ title: 'Remove user', message: `Remove ${u.email}? This permanently deletes the account.`, confirmLabel: 'Remove', danger: true }))) return
     const res = await fetch(`/api/users/${u.id}`, { method: 'DELETE' })
     if (!res.ok) return fail(res)
-    setMsg(`${u.email} removed`); load()
+    toast.success(`${u.email} removed`); load()
   }
 
   function userActions(u: User): KAction[] {
@@ -3616,21 +3617,20 @@ function UsersView() {
         <h2>Users</h2><span className="hint">{users.length} account{users.length === 1 ? '' : 's'}</span>
         <div className="tools"><button className="btn primary" onClick={() => setAdding((v) => !v)}>{adding ? 'Cancel' : '+ Add user'}</button></div>
       </div>
-      {error && <div style={{ padding: '0.6rem 16px', color: 'var(--err)' }}>{error}</div>}
-      {msg && <div style={{ padding: '0.6rem 16px', color: 'var(--ok)' }}>{msg}</div>}
 
       {adding && (
         <form onSubmit={create} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)' }}>
           <input className="input" type="email" placeholder="email" value={nu.email} onChange={(e) => setNu({ ...nu, email: e.target.value })} required />
           <input className="input" placeholder="name" value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} />
           <input className="input" placeholder="surname" value={nu.surname} onChange={(e) => setNu({ ...nu, surname: e.target.value })} />
-          <select className="roleselect" value={nu.role} onChange={(e) => setNu({ ...nu, role: e.target.value })}>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select>
+          <Select value={nu.role} onChange={(e) => setNu({ ...nu, role: e.target.value })}>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</Select>
           <input className="input" type="password" placeholder="password (min 8)" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} required />
           <button type="submit" className="btn primary">Add</button>
         </form>
       )}
 
-      <table className="utable">
+      {!loaded && <Skeleton rows={3} cols={6} />}
+      {loaded && <table className="utable">
         <thead><tr><th style={{ width: '28%' }}>Email</th><th style={{ width: '18%' }}>Name</th><th style={{ width: '18%' }}>Surname</th><th>Role</th><th>2FA</th><th>Passkeys</th><th style={{ textAlign: 'right' }}>Manage</th></tr></thead>
         <tbody>
           {users.map((u) => (
@@ -3650,7 +3650,7 @@ function UsersView() {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table>}
     </div>
   )
 }
@@ -3670,27 +3670,24 @@ function AccountView({ me, onMe, passkeysAvailable, theme, toggleTheme }: { me: 
 }
 
 function LandingCard({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
+  const toast = useToast()
   const [landing, setLanding] = useState<'overview' | 'errors'>(me.landing === 'errors' ? 'errors' : 'overview')
-  const [msg, setMsg] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   async function choose(v: 'overview' | 'errors') {
     if (v === landing) return
     const prev = landing
-    setLanding(v); setMsg(null); setError(null); setBusy(true)
+    setLanding(v); setBusy(true)
     try {
       const res = await fetch('/api/me/preferences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ landing: v }) })
-      if (!res.ok) { setLanding(prev); setError(await errText(res, 'Could not save preference')); return }
-      onMe(await res.json()); setMsg('Landing page updated.')
-    } catch { setLanding(prev); setError('Could not save preference') }
+      if (!res.ok) { setLanding(prev); toast.error(await errText(res, 'Could not save preference')); return }
+      onMe(await res.json()); toast.success('Landing page updated.')
+    } catch { setLanding(prev); toast.error('Could not save preference') }
     finally { setBusy(false) }
   }
 
   return (
     <Card title="Landing page" note="Which screen Argus opens on when you sign in or visit the app.">
-      <Banner variant="error">{error}</Banner>
-      <Banner variant="success">{msg}</Banner>
       <Field label="Open on">
         <select value={landing} disabled={busy} onChange={(e) => choose(e.target.value as 'overview' | 'errors')}>
           <option value="overview">Overview - what needs attention right now</option>
@@ -3702,24 +3699,23 @@ function LandingCard({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
 }
 
 function PasswordCard() {
+  const toast = useToast()
   const [cur, setCur] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [msg, setMsg] = useState<string | null>(null)
 
   async function submit(e: FormEvent) {
-    e.preventDefault(); setError(null); setMsg(null)
+    e.preventDefault(); setError(null)
     if (next !== confirm) { setError('The new passwords do not match.'); return }
     const res = await fetch('/api/me/password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ current_password: cur, new_password: next }) })
     if (!res.ok) { setError(await errText(res, 'Request failed')); return }
-    setCur(''); setNext(''); setConfirm(''); setMsg('Password changed')
+    setCur(''); setNext(''); setConfirm(''); toast.success('Password changed.')
   }
 
   return (
     <Card title="Change my password">
       <Banner variant="error">{error}</Banner>
-      <Banner variant="success">{msg}</Banner>
       <form onSubmit={submit}>
         <Field label="Current password" type="password" value={cur} autoComplete="current-password" onChange={(e) => setCur(e.target.value)} required />
         <Field label="New password (min 8)" type="password" value={next} autoComplete="new-password" onChange={(e) => setNext(e.target.value)} required minLength={8} />
@@ -3734,10 +3730,10 @@ type Enrollment = { secret: string; otpauth_url: string; qr_data_uri: string }
 
 function MfaCard() {
   const prompt = usePrompt()
+  const toast = useToast()
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [remaining, setRemaining] = useState(0)
   const [error, setError] = useState<string | null>(null)
-  const [msg, setMsg] = useState<string | null>(null)
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null)
   const [code, setCode] = useState('')
   const [codes, setCodes] = useState<string[] | null>(null)
@@ -3748,40 +3744,39 @@ function MfaCard() {
   useEffect(() => { loadStatus() }, [])
 
   async function startSetup() {
-    setError(null); setMsg(null); setCodes(null)
+    setError(null); setCodes(null)
     const res = await fetch('/api/me/mfa/setup', { method: 'POST' })
     if (!res.ok) { setError(await errText(res, 'Could not start setup')); return }
     setEnrollment(await res.json())
   }
   async function confirmEnable(e: FormEvent) {
-    e.preventDefault(); setError(null); setMsg(null)
+    e.preventDefault(); setError(null)
     const res = await fetch('/api/me/mfa/enable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) })
     if (!res.ok) { setError(await errText(res, 'Could not enable 2FA')); return }
     const d = await res.json()
-    setEnrollment(null); setCode(''); setCodes(d.recovery_codes); setMsg('Two-factor is now on. Save your recovery codes.'); loadStatus()
+    setEnrollment(null); setCode(''); setCodes(d.recovery_codes); toast.success('Two-factor is now on. Save your recovery codes.'); loadStatus()
   }
   async function disable() {
-    setError(null); setMsg(null); setCodes(null)
+    setError(null); setCodes(null)
     const pw = await prompt({ title: 'Turn off two-factor', label: 'Confirm your password', type: 'password', confirmLabel: 'Turn off', required: true })
     if (!pw) return
     const res = await fetch('/api/me/mfa/disable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) })
     if (!res.ok) { setError(await errText(res, 'Could not disable 2FA')); return }
-    setMsg('Two-factor has been turned off.'); loadStatus()
+    toast.success('Two-factor has been turned off.'); loadStatus()
   }
   async function regen() {
-    setError(null); setMsg(null); setCodes(null)
+    setError(null); setCodes(null)
     const pw = await prompt({ title: 'New recovery codes', label: 'Confirm your password', type: 'password', confirmLabel: 'Generate', required: true })
     if (!pw) return
     const res = await fetch('/api/me/mfa/recovery-codes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) })
     if (!res.ok) { setError(await errText(res, 'Could not regenerate codes')); return }
     const d = await res.json()
-    setCodes(d.recovery_codes); setMsg('New recovery codes generated. The old ones no longer work.'); loadStatus()
+    setCodes(d.recovery_codes); toast.success('New recovery codes generated. The old ones no longer work.'); loadStatus()
   }
 
   return (
     <Card title="Two-factor authentication" note="Use an authenticator app or a password manager such as Bitwarden. Argus uses standard TOTP, so both scanning the QR and pasting the setup key work.">
       <Banner variant="error">{error}</Banner>
-      <Banner variant="success">{msg}</Banner>
 
       {enabled === null && <p>Checking…</p>}
 
@@ -3847,38 +3842,37 @@ function RecoveryCodes({ codes }: { codes: string[] }) {
 function PasskeyCard() {
   const confirm = useConfirm()
   const prompt = usePrompt()
+  const toast = useToast()
   const [keys, setKeys] = useState<Passkey[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   function load() { fetch('/api/me/passkeys').then((r) => r.json()).then(setKeys).catch(() => setError('Failed to load passkeys')) }
   useEffect(() => { load() }, [])
 
   async function add() {
-    setError(null); setMsg(null)
+    setError(null)
     const name = await prompt({ title: 'Add a passkey', label: 'Name this passkey (e.g. "Bitwarden", "Phone", "YubiKey")', initial: 'Bitwarden', confirmLabel: 'Continue' })
     if (name === null) return
     setBusy(true)
     try {
       await registerPasskey(name || 'Passkey')
-      setMsg('Passkey added'); load()
+      toast.success('Passkey added.'); load()
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : 'Could not add passkey')
     } finally { setBusy(false) }
   }
   async function remove(k: Passkey) {
-    setError(null); setMsg(null)
+    setError(null)
     if (!(await confirm({ title: 'Remove passkey', message: `Remove passkey "${k.name}"?`, confirmLabel: 'Remove', danger: true }))) return
     const res = await fetch(`/api/me/passkeys/${k.id}`, { method: 'DELETE' })
     if (!res.ok) { setError(await errText(res, 'Could not remove passkey')); return }
-    setMsg('Passkey removed'); load()
+    toast.success('Passkey removed.'); load()
   }
 
   return (
     <Card title="Passkeys" note="Sign in without a password using a passkey stored in Bitwarden, your phone, or a security key. Passkeys work when you reach Argus through its HTTPS address.">
       <Banner variant="error">{error}</Banner>
-      <Banner variant="success">{msg}</Banner>
 
       {keys.length === 0 && <p style={{ color: 'var(--muted)' }}>No passkeys registered yet.</p>}
       {keys.length > 0 && (
