@@ -566,11 +566,12 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   /* --- probes tables (tokens + live proxies): labelled cards, same as the users table --- */
   .enroll thead { display: none; }
   .enroll, .enroll tbody, .enroll tr { display: block; }
-  .enroll tr { padding: 11px 14px; border-bottom: 1px solid var(--border); }
+  .enroll tr { padding: 16px 14px; border-bottom: 1px solid var(--border); }
   .enroll tr:last-child td { border-bottom: none; }
   /* Values stack (value over pill), so each cell is a fixed 1-2 lines — align-items:center then keeps
-     the label vertically centred against that stack (rather than pinned to the top). */
-  .enroll td { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: auto; padding: 5px 0; border: none; overflow: visible; text-overflow: clip; }
+     the label vertically centred against that stack (rather than pinned to the top). Roomy row padding
+     for readability on the narrow card. */
+  .enroll td { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: auto; padding: 8px 0; border: none; overflow: visible; text-overflow: clip; }
   .enroll td::before { content: attr(data-label); color: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; flex-shrink: 0; }
   .enroll td:not([data-label])::before { display: none; }
   .enroll td:first-child { display: block; margin-bottom: 2px; padding: 0; font-size: 14px; }
@@ -585,6 +586,10 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
      stack — narrow cards read cleaner as two short lines than one wide wrapping line. */
   .enroll-probes td[data-label] .vcell { flex-direction: column; gap: 3px; }
   .enroll-probes td[data-label]:not(:first-child) .sub-line { padding-left: 0 !important; }
+  /* Bare-text values (versions, OS name, "Ns ago", the "-" placeholder) sit flush at the card edge,
+     while pills/badges inset their text by ~10px of box padding. Inset the bare values to match so all
+     value TEXT lines up down one edge (same fix the users table uses for the passkeys count). */
+  .enroll-probes td[data-label]:not(:first-child) .mono { padding-right: 10px; }
 
   /* --- monitoring tree: drop the trend column, tighten indentation --- */
   table.sensors thead th:nth-child(3), table.sensors td.strend { display: none; }
