@@ -11,6 +11,21 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.36] - 2026-09-06
+
+**Monitoring tree** fixes for hosts that belong directly to a parent group (alongside its subgroups).
+
+**Fixed:**
+- A host that belongs directly to a group (e.g. a host in `site2` while `site2` also has subgroups) was
+  drawn indented under — and after — its sibling subgroups, so it looked like a member of one of them.
+  It now sits at the group's own level, above the subgroups.
+- Row dividers were inconsistent once hosts and subgroups interleaved: some boundaries drew a double
+  line, others none. Every tree row now draws exactly one divider, in any order.
+
+**Added:**
+- **Reorder hosts and subgroups together.** In the tree's Reorder mode a group's direct hosts and its
+  subgroups are now one list, so a host can be moved above or below the subgroups (saved per parent).
+
 ## [0.4.35] - 2026-09-06
 
 **Per-user notifications.** Everyone can now get alerts on their *own* Telegram or Discord, and email
