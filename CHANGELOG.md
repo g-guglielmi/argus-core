@@ -26,6 +26,9 @@ can fan out to every registered user — additively, without changing the existi
 - **Email → registered users.** An email channel can now deliver to **each active user's registered
   email** instead of a fixed address — a "Send to" choice on the channel (admin-controlled), alongside
   the existing fixed-address mode. Each recipient gets a private, individual message.
+- **Multi-site channels.** Any channel — global or personal — can target **several sites at once**
+  (a multi-select of host-groups) rather than only one site or all; it fires when any of its sites
+  matches the host.
 
 **Changed:**
 - The notifier fires a problem as soon as a **global or personal** channel matches its site + severity

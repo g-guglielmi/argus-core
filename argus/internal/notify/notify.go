@@ -16,7 +16,6 @@ type Channel struct {
 	Type    string // "discord" | "telegram" | "email"
 	Name    string
 	Enabled bool
-	Site    string            // host-group name this channel serves; "" = all sites
 	Config  map[string]string // type-specific keys (see each dispatcher)
 }
 

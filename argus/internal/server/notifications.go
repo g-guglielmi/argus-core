@@ -17,7 +17,7 @@ type channelView struct {
 	Type        string            `json:"type"`
 	Name        string            `json:"name"`
 	Enabled     bool              `json:"enabled"`
-	Site        string            `json:"site"`
+	Sites       []string          `json:"sites"`
 	MinSeverity int               `json:"min_severity"`
 	Config      map[string]string `json:"config"`
 	// Delivery health for the channel card: last successful send, last failure (+ reason), sent count.
@@ -33,12 +33,24 @@ func toChannelView(c store.NotifyChannel) channelView {
 		cfg = map[string]string{}
 	}
 	return channelView{
-		ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Site: c.Site, MinSeverity: c.MinSeverity, Config: cfg,
+		ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Sites: c.Sites, MinSeverity: c.MinSeverity, Config: cfg,
 		LastSentAt: c.LastSentAt, LastError: c.LastError, LastErrorAt: c.LastErrorAt, SentCount: c.SentCount,
 	}
 }
 
 var validChannelTypes = map[string]bool{"discord": true, "telegram": true, "email": true}
+
+// cleanSites trims and drops empty entries from a submitted site list. An empty result means the
+// channel serves all sites. Shared by the admin and personal channel editors.
+func cleanSites(sites []string) []string {
+	out := make([]string, 0, len(sites))
+	for _, s := range sites {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
 
 func (s *Server) handleListChannels(w http.ResponseWriter, r *http.Request) {
 	chans, err := s.st.ListNotifyChannels(r.Context())
@@ -58,7 +70,7 @@ type channelRequest struct {
 	Type        string            `json:"type"`
 	Name        string            `json:"name"`
 	Enabled     bool              `json:"enabled"`
-	Site        string            `json:"site"`
+	Sites       []string          `json:"sites"`
 	MinSeverity int               `json:"min_severity"`
 	Config      map[string]string `json:"config"`
 }
@@ -93,7 +105,7 @@ func (req channelRequest) validate() (store.NotifyChannel, string) {
 		sev = 5
 	}
 	return store.NotifyChannel{
-		Type: t, Name: name, Enabled: req.Enabled, Site: strings.TrimSpace(req.Site), MinSeverity: sev, Config: cfg,
+		Type: t, Name: name, Enabled: req.Enabled, Sites: cleanSites(req.Sites), MinSeverity: sev, Config: cfg,
 	}, ""
 }
 

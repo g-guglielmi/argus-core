@@ -21,7 +21,7 @@ type userChannelView struct {
 	ID          int64             `json:"id"`
 	Type        string            `json:"type"`
 	Enabled     bool              `json:"enabled"`
-	Site        string            `json:"site"`
+	Sites       []string          `json:"sites"`
 	MinSeverity int               `json:"min_severity"`
 	Config      map[string]string `json:"config"`
 	// Delivery health for the card: last successful send, last failure (+ reason), sent count.
@@ -37,7 +37,7 @@ func toUserChannelView(c store.UserNotifyChannel) userChannelView {
 		cfg = map[string]string{}
 	}
 	return userChannelView{
-		ID: c.ID, Type: c.Type, Enabled: c.Enabled, Site: c.Site, MinSeverity: c.MinSeverity, Config: cfg,
+		ID: c.ID, Type: c.Type, Enabled: c.Enabled, Sites: c.Sites, MinSeverity: c.MinSeverity, Config: cfg,
 		LastSentAt: c.LastSentAt, LastError: c.LastError, LastErrorAt: c.LastErrorAt, SentCount: c.SentCount,
 	}
 }
@@ -47,7 +47,7 @@ var userChannelTypes = map[string]bool{"telegram": true, "discord": true}
 type userChannelRequest struct {
 	Type        string            `json:"type"`
 	Enabled     bool              `json:"enabled"`
-	Site        string            `json:"site"`
+	Sites       []string          `json:"sites"`
 	MinSeverity int               `json:"min_severity"`
 	Config      map[string]string `json:"config"`
 }
@@ -80,7 +80,7 @@ func (req userChannelRequest) validate() (store.UserNotifyChannel, string) {
 		sev = 5
 	}
 	return store.UserNotifyChannel{
-		Type: t, Enabled: req.Enabled, Site: strings.TrimSpace(req.Site), MinSeverity: sev, Config: cfg,
+		Type: t, Enabled: req.Enabled, Sites: cleanSites(req.Sites), MinSeverity: sev, Config: cfg,
 	}, ""
 }
 
@@ -199,7 +199,7 @@ func (s *Server) handleTestMyChannel(w http.ResponseWriter, r *http.Request) {
 	ev := notify.SampleEvent(time.Now().In(s.mgr.Location()), s.mgr.PublicURL())
 	dr, dg, db := statusRGB(ev.State)
 	ev.ChartPNG = renderChart(demoSeries(), dr, dg, db, "")
-	err := notify.Send(ctx, notify.Channel{ID: ch.ID, Type: ch.Type, Name: "personal", Enabled: ch.Enabled, Site: ch.Site, Config: ch.Config}, ev)
+	err := notify.Send(ctx, notify.Channel{ID: ch.ID, Type: ch.Type, Name: "personal", Enabled: ch.Enabled, Config: ch.Config}, ev)
 	_ = s.st.RecordUserNotifyDelivery(ctx, ch.ID, err)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})

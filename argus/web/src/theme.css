@@ -483,6 +483,12 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 /* A switched-off channel dims its identity, not its controls. */
 .chan.off .ci, .chan.off .chan-name, .chan.off .chan-meta { opacity: 0.55; }
 
+/* Multi-select site scope: toggle pills. Empty selection ("All sites" active) = every site. */
+.sitepick { display: flex; flex-wrap: wrap; gap: 6px; }
+.sitechip { font: inherit; font-size: 12px; font-weight: 600; color: var(--muted); background: var(--panel); border: 1px solid var(--border-strong); padding: 5px 11px; border-radius: 999px; cursor: pointer; }
+.sitechip:hover { border-color: var(--accent); color: var(--accent); }
+.sitechip.on { background: var(--accent-weak); border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--text); }
+
 /* table-layout:fixed + shared column widths so the tokens table and the live-proxy table
    line up column-for-column (name · status · detail · action). */
 .enroll { width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -751,6 +757,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   .stat { padding: 5px 9px; }
   .toasts { left: 12px; right: 12px; bottom: 12px; width: auto; }
   .seg button { padding: 7px 12px; font-size: 13px; }
+  .sitechip { padding: 8px 13px; font-size: 13px; }
   .rtab { padding: 6px 11px; font-size: 12.5px; }
   .menu button { padding: 11px 12px; font-size: 14px; }
   .nav { padding: 10px 12px; }

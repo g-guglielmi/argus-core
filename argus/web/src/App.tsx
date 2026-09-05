@@ -17,7 +17,7 @@ type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dn
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[] }
 type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
-type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; min_severity: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
+type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
 const SEVERITIES: { v: number; label: string }[] = [
   { v: 2, label: 'Warning & up' },
@@ -1322,6 +1322,30 @@ const CH_FIELDS: Record<string, ChField[]> = {
   ],
 }
 
+// SitePicker is a multi-select for a channel's site scope: an "All sites" chip plus one chip per
+// host-group. Selecting nothing (or All sites) means every site; otherwise the channel serves the
+// union of the chosen sites. Used by both the admin and personal channel editors.
+function SitePicker({ options, value, onChange }: { options: string[]; value: string[]; onChange: (v: string[]) => void }) {
+  const all = value.length === 0
+  const toggle = (s: string) => onChange(value.includes(s) ? value.filter((x) => x !== s) : [...value, s])
+  return (
+    <div className="sitepick">
+      <button type="button" className={'sitechip' + (all ? ' on' : '')} onClick={() => onChange([])} aria-pressed={all}>All sites</button>
+      {options.map((s) => {
+        const on = value.includes(s)
+        return <button type="button" key={s} className={'sitechip' + (on ? ' on' : '')} onClick={() => toggle(s)} aria-pressed={on}>{s}</button>
+      })}
+    </div>
+  )
+}
+
+// sitesLabel summarizes a channel's site scope for its card (empty = all sites).
+function sitesLabel(sites?: string[]): string {
+  if (!sites || sites.length === 0) return 'All sites'
+  if (sites.length <= 2) return sites.join(', ')
+  return `${sites.length} sites`
+}
+
 function NotificationsView() {
   const confirm = useConfirm()
   const toast = useToast()
@@ -1398,7 +1422,7 @@ function NotificationsView() {
                   <span className="chan-name">{c.name}</span>
                   <Switch checked={c.enabled} onChange={() => toggle(c)} title={c.enabled ? 'Enabled — switch off to pause alerts to this channel' : 'Disabled — switch on to resume alerts'} />
                 </div>
-                <p className="chan-meta">{m.label} · {c.site ? c.site : 'All sites'} · {sev}{c.type === 'email' && c.config?.recipients === 'users' ? ' · to all users' : ''}</p>
+                <p className="chan-meta">{m.label} · {sitesLabel(c.sites)} · {sev}{c.type === 'email' && c.config?.recipients === 'users' ? ' · to all users' : ''}</p>
                 <ChannelDelivery c={c} />
                 <div className="chan-actions">
                   <Button disabled={busy === c.id} onClick={() => test(c)}>{busy === c.id ? 'Sending…' : 'Send test'}</Button>
@@ -1431,7 +1455,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
 }) {
   const [type, setType] = useState(initial?.type || 'discord')
   const [name, setName] = useState(initial?.name || '')
-  const [site, setSite] = useState(initial?.site || '')
+  const [selSites, setSelSites] = useState<string[]>(initial?.sites || [])
   const [minSev, setMinSev] = useState(initial?.min_severity || 2)
   const [enabled, setEnabled] = useState(initial ? initial.enabled : true)
   const [config, setConfig] = useState<Record<string, string>>(initial?.config || {})
@@ -1439,7 +1463,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
 
   async function save(e: FormEvent) {
     e.preventDefault(); onError('')
-    const body = { type, name, site, min_severity: minSev, enabled, config }
+    const body = { type, name, sites: selSites, min_severity: minSev, enabled, config }
     const url = initial ? `/api/notify/channels/${initial.id}` : '/api/notify/channels'
     const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
@@ -1458,18 +1482,15 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
         <label style={{ display: 'grid', gap: 4, flex: 1, minWidth: 160 }}><span className="flabel">Name</span>
           <input className="input" placeholder="e.g. Discord - site1" value={name} onChange={(e) => setName(e.target.value)} required />
         </label>
-        <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Site</span>
-          <Select value={site} onChange={(e) => setSite(e.target.value)}>
-            <option value="">All sites</option>
-            {sites.map((s) => <option key={s} value={s}>{s}</option>)}
-          </Select>
-        </label>
         <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Severity</span>
           <Select value={minSev} onChange={(e) => setMinSev(Number(e.target.value))} title="Only problems at or above this severity reach this channel">
             {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
           </Select>
         </label>
       </div>
+      <label style={{ display: 'grid', gap: 6 }}><span className="flabel">Sites</span>
+        <SitePicker options={sites} value={selSites} onChange={setSelSites} />
+      </label>
       <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
         {type === 'email' && (
           <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Send to</span>
@@ -1508,7 +1529,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   )
 }
 
-type UserChannel = { id: number; type: string; enabled: boolean; site: string; min_severity: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
+type UserChannel = { id: number; type: string; enabled: boolean; sites: string[]; min_severity: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 
 // PersonalNotifyCard lets any signed-in user manage their own Telegram/Discord alert destinations,
 // separate from the shared channels an admin configures in the Notifications tab. Self-service:
@@ -1577,7 +1598,7 @@ function PersonalNotifyCard() {
                   <span className="chan-name">{m.label}</span>
                   <Switch checked={c.enabled} onChange={() => toggle(c)} title={c.enabled ? 'Enabled — switch off to pause your alerts here' : 'Disabled — switch on to resume'} />
                 </div>
-                <p className="chan-meta">{c.site ? c.site : 'All sites'} · {sev}</p>
+                <p className="chan-meta">{sitesLabel(c.sites)} · {sev}</p>
                 <ChannelDelivery c={c} />
                 <div className="chan-actions">
                   <Button disabled={busy === c.id} onClick={() => test(c)}>{busy === c.id ? 'Sending…' : 'Send test'}</Button>
@@ -1605,7 +1626,7 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   initial: UserChannel | null; sites: string[]; onCancel: () => void; onSaved: () => void; onError: (m: string) => void
 }) {
   const [type, setType] = useState(initial?.type || 'telegram')
-  const [site, setSite] = useState(initial?.site || '')
+  const [selSites, setSelSites] = useState<string[]>(initial?.sites || [])
   const [minSev, setMinSev] = useState(initial?.min_severity || 2)
   const [enabled, setEnabled] = useState(initial ? initial.enabled : true)
   const [config, setConfig] = useState<Record<string, string>>(initial?.config || {})
@@ -1613,7 +1634,7 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
 
   async function save(e: FormEvent) {
     e.preventDefault(); onError('')
-    const body = { type, site, min_severity: minSev, enabled, config }
+    const body = { type, sites: selSites, min_severity: minSev, enabled, config }
     const url = initial ? `/api/me/notify/channels/${initial.id}` : '/api/me/notify/channels'
     const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
@@ -1633,18 +1654,15 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
             <option value="discord">Discord</option>
           </Select>
         </label>
-        <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Site</span>
-          <Select value={site} onChange={(e) => setSite(e.target.value)}>
-            <option value="">All sites</option>
-            {sites.map((s) => <option key={s} value={s}>{s}</option>)}
-          </Select>
-        </label>
         <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Severity</span>
           <Select value={minSev} onChange={(e) => setMinSev(Number(e.target.value))} title="Only problems at or above this severity reach you">
             {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
           </Select>
         </label>
       </div>
+      <label style={{ display: 'grid', gap: 6 }}><span className="flabel">Sites</span>
+        <SitePicker options={sites} value={selSites} onChange={setSelSites} />
+      </label>
       <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         {fields.map((f) => (
           <label key={f.key} style={{ display: 'grid', gap: 4 }}><span className="flabel">{f.label}</span>

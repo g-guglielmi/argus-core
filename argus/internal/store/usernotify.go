@@ -17,7 +17,7 @@ type UserNotifyChannel struct {
 	UserID      int64
 	Type        string // "telegram" | "discord"
 	Enabled     bool
-	Site        string
+	Sites       []string // host-group names this channel serves; empty = all sites
 	MinSeverity int
 	Config      map[string]string
 	CreatedAt   time.Time
@@ -34,14 +34,16 @@ func (s *Store) scanUserChannel(row rowScanner) (*UserNotifyChannel, error) {
 	var c UserNotifyChannel
 	var enabled int
 	var cfg string
+	var site string
 	var created int64
-	if err := row.Scan(&c.ID, &c.UserID, &c.Type, &enabled, &c.Site, &c.MinSeverity, &cfg, &created, &c.LastSentAt, &c.LastError, &c.LastErrorAt, &c.SentCount); err != nil {
+	if err := row.Scan(&c.ID, &c.UserID, &c.Type, &enabled, &site, &c.MinSeverity, &cfg, &created, &c.LastSentAt, &c.LastError, &c.LastErrorAt, &c.SentCount); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err
 	}
 	c.Enabled = enabled != 0
+	c.Sites = decodeSites(site)
 	c.CreatedAt = time.Unix(created, 0)
 	c.Config = map[string]string{}
 	_ = json.Unmarshal([]byte(s.cipher.Decrypt(cfg)), &c.Config)
@@ -96,7 +98,7 @@ func (s *Store) CreateUserNotifyChannel(ctx context.Context, c UserNotifyChannel
 	}
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO user_notify_channels(user_id,type,enabled,site,min_severity,config,created_at) VALUES(?,?,?,?,?,?,?)`,
-		c.UserID, c.Type, enabled, c.Site, c.MinSeverity, s.cipher.Encrypt(string(cfg)), time.Now().Unix())
+		c.UserID, c.Type, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), time.Now().Unix())
 	if err != nil {
 		return 0, err
 	}
@@ -111,7 +113,7 @@ func (s *Store) UpdateUserNotifyChannel(ctx context.Context, c UserNotifyChannel
 	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE user_notify_channels SET type=?,enabled=?,site=?,min_severity=?,config=? WHERE id=?`,
-		c.Type, enabled, c.Site, c.MinSeverity, s.cipher.Encrypt(string(cfg)), c.ID)
+		c.Type, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), c.ID)
 	return err
 }
 

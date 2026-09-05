@@ -226,21 +226,30 @@ func isAlertable(t zabbix.TriggerTarget, hiddenHosts, hiddenItems, acked map[str
 	return true
 }
 
-// channelMatches reports whether a channel serving host-group `site` with severity floor `min` should
-// receive a problem in `groups` at severity `sev`: "" site = all sites, and the floor must be at or
-// below the severity. Shared by global and personal channel routing.
-func channelMatches(site string, min int, groups []string, sev int) bool {
+// channelMatches reports whether a channel scoped to `sites` (host-group names; empty = all sites) with
+// severity floor `min` should receive a problem in `groups` at severity `sev`: the floor must be at or
+// below the severity, and either the channel serves all sites or one of its sites is among the host's
+// groups. Shared by global and personal channel routing.
+func channelMatches(sites []string, min int, groups []string, sev int) bool {
 	if min > sev {
 		return false
 	}
-	return site == "" || contains(groups, site)
+	if len(sites) == 0 {
+		return true
+	}
+	for _, s := range sites {
+		if contains(groups, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // matchingChannels returns the global channels that serve a host's groups and severity.
 func matchingChannels(channels []store.NotifyChannel, groups []string, sev int) []store.NotifyChannel {
 	var out []store.NotifyChannel
 	for _, c := range channels {
-		if channelMatches(c.Site, c.MinSeverity, groups, sev) {
+		if channelMatches(c.Sites, c.MinSeverity, groups, sev) {
 			out = append(out, c)
 		}
 	}
@@ -251,7 +260,7 @@ func matchingChannels(channels []store.NotifyChannel, groups []string, sev int) 
 func matchingUserChannels(channels []store.UserNotifyChannel, groups []string, sev int) []store.UserNotifyChannel {
 	var out []store.UserNotifyChannel
 	for _, c := range channels {
-		if channelMatches(c.Site, c.MinSeverity, groups, sev) {
+		if channelMatches(c.Sites, c.MinSeverity, groups, sev) {
 			out = append(out, c)
 		}
 	}
@@ -325,7 +334,7 @@ func sendEmailToUsers(ctx context.Context, c store.NotifyChannel, emails []strin
 // so a user sees their own delivery health. Reuses the leaf notify.Send with the channel's own config.
 func sendUserChannels(ctx context.Context, st *store.Store, channels []store.UserNotifyChannel, ev notify.Event, logger *slog.Logger) {
 	for _, c := range channels {
-		err := notify.Send(ctx, notify.Channel{ID: c.ID, Type: c.Type, Name: "personal", Enabled: c.Enabled, Site: c.Site, Config: c.Config}, ev)
+		err := notify.Send(ctx, notify.Channel{ID: c.ID, Type: c.Type, Name: "personal", Enabled: c.Enabled, Config: c.Config}, ev)
 		if err != nil {
 			logger.Warn("notifier: personal send failed", "channel", c.ID, "user", c.UserID, "type", c.Type, "kind", ev.Kind, "err", err)
 		}
@@ -349,7 +358,7 @@ func anyEmailToUsers(channels []store.NotifyChannel) bool {
 }
 
 func toNotifyChannel(c store.NotifyChannel) notify.Channel {
-	return notify.Channel{ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Site: c.Site, Config: c.Config}
+	return notify.Channel{ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Config: c.Config}
 }
 
 var thresholdRe = regexp.MustCompile(`([<>]=?)\s*([0-9]+(?:\.[0-9]+)?)`)

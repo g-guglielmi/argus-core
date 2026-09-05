@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -14,8 +15,8 @@ type NotifyChannel struct {
 	Type        string
 	Name        string
 	Enabled     bool
-	Site        string
-	MinSeverity int // Zabbix severity floor (0..5); a problem below this doesn't reach this channel
+	Sites       []string // host-group names this channel serves; empty = all sites
+	MinSeverity int      // Zabbix severity floor (0..5); a problem below this doesn't reach this channel
 	Config      map[string]string
 	CreatedAt   time.Time
 	// Delivery health, recorded per send (alerts and the Send-test button alike) and shown on the
@@ -41,18 +42,51 @@ type NotifyState struct {
 
 // --- channels ---
 
+// encodeSites serializes a channel's site scope for the `site` column: a JSON array of host-group
+// names, or "" for the empty set (= all sites). decodeSites reads it back, tolerating the legacy
+// single-value form (a bare group name written before channels could serve multiple sites).
+func encodeSites(sites []string) string {
+	clean := make([]string, 0, len(sites))
+	for _, s := range sites {
+		if s = strings.TrimSpace(s); s != "" {
+			clean = append(clean, s)
+		}
+	}
+	if len(clean) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(clean)
+	return string(b)
+}
+
+func decodeSites(v string) []string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	if strings.HasPrefix(v, "[") {
+		var out []string
+		if err := json.Unmarshal([]byte(v), &out); err == nil {
+			return out
+		}
+	}
+	return []string{v}
+}
+
 func (s *Store) scanChannel(row rowScanner) (*NotifyChannel, error) {
 	var c NotifyChannel
 	var enabled int
 	var cfg string
+	var site string
 	var created int64
-	if err := row.Scan(&c.ID, &c.Type, &c.Name, &enabled, &c.Site, &c.MinSeverity, &cfg, &created, &c.LastSentAt, &c.LastError, &c.LastErrorAt, &c.SentCount); err != nil {
+	if err := row.Scan(&c.ID, &c.Type, &c.Name, &enabled, &site, &c.MinSeverity, &cfg, &created, &c.LastSentAt, &c.LastError, &c.LastErrorAt, &c.SentCount); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err
 	}
 	c.Enabled = enabled != 0
+	c.Sites = decodeSites(site)
 	c.CreatedAt = time.Unix(created, 0)
 	c.Config = map[string]string{}
 	_ = json.Unmarshal([]byte(s.cipher.Decrypt(cfg)), &c.Config)
@@ -105,7 +139,7 @@ func (s *Store) CreateNotifyChannel(ctx context.Context, c NotifyChannel) (int64
 	}
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO notify_channels(type,name,enabled,site,min_severity,config,created_at) VALUES(?,?,?,?,?,?,?)`,
-		c.Type, c.Name, enabled, c.Site, c.MinSeverity, s.cipher.Encrypt(string(cfg)), time.Now().Unix())
+		c.Type, c.Name, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), time.Now().Unix())
 	if err != nil {
 		return 0, err
 	}
@@ -120,7 +154,7 @@ func (s *Store) UpdateNotifyChannel(ctx context.Context, c NotifyChannel) error 
 	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE notify_channels SET type=?,name=?,enabled=?,site=?,min_severity=?,config=? WHERE id=?`,
-		c.Type, c.Name, enabled, c.Site, c.MinSeverity, s.cipher.Encrypt(string(cfg)), c.ID)
+		c.Type, c.Name, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), c.ID)
 	return err
 }
 

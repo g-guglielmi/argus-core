@@ -12,7 +12,7 @@ func TestUserNotifyChannelCRUD(t *testing.T) {
 	uid := newTestUser(t, st)
 
 	id, err := st.CreateUserNotifyChannel(ctx, UserNotifyChannel{
-		UserID: uid, Type: "telegram", Enabled: true, Site: "site1", MinSeverity: 3,
+		UserID: uid, Type: "telegram", Enabled: true, Sites: []string{"site1", "site2"}, MinSeverity: 3,
 		Config: map[string]string{"bot_token": "T", "chat_id": "42"},
 	})
 	if err != nil {
@@ -23,7 +23,7 @@ func TestUserNotifyChannelCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if got.UserID != uid || got.Type != "telegram" || got.Site != "site1" || got.MinSeverity != 3 {
+	if got.UserID != uid || got.Type != "telegram" || len(got.Sites) != 2 || got.Sites[0] != "site1" || got.Sites[1] != "site2" || got.MinSeverity != 3 {
 		t.Fatalf("unexpected row: %+v", got)
 	}
 	if got.Config["bot_token"] != "T" || got.Config["chat_id"] != "42" {
@@ -38,7 +38,7 @@ func TestUserNotifyChannelCRUD(t *testing.T) {
 		t.Fatalf("list: len=%d err=%v", len(list), err)
 	}
 
-	got.Site = "site2"
+	got.Sites = []string{"site2"}
 	got.Config["chat_id"] = "99"
 	if err := st.UpdateUserNotifyChannel(ctx, *got); err != nil {
 		t.Fatalf("update: %v", err)
@@ -47,7 +47,7 @@ func TestUserNotifyChannelCRUD(t *testing.T) {
 		t.Fatalf("toggle: %v", err)
 	}
 	got2, _ := st.GetUserNotifyChannel(ctx, id)
-	if got2.Site != "site2" || got2.Config["chat_id"] != "99" || got2.Enabled {
+	if len(got2.Sites) != 1 || got2.Sites[0] != "site2" || got2.Config["chat_id"] != "99" || got2.Enabled {
 		t.Fatalf("update/toggle not applied: %+v", got2)
 	}
 

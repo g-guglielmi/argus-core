@@ -13,30 +13,32 @@ import (
 func TestChannelMatches(t *testing.T) {
 	groups := []string{"site1", "site2"}
 	cases := []struct {
-		name string
-		site string
-		min  int
-		sev  int
-		want bool
+		name  string
+		sites []string
+		min   int
+		sev   int
+		want  bool
 	}{
-		{"all-sites, sev at floor", "", 3, 3, true},
-		{"all-sites, sev below floor", "", 4, 3, false},
-		{"matching site", "site1", 2, 5, true},
-		{"other site", "site9", 2, 5, false},
-		{"matching site but below floor", "site2", 5, 3, false},
+		{"all-sites, sev at floor", nil, 3, 3, true},
+		{"all-sites, sev below floor", nil, 4, 3, false},
+		{"one matching site", []string{"site1"}, 2, 5, true},
+		{"other site", []string{"site9"}, 2, 5, false},
+		{"multi-site, one matches", []string{"site9", "site2"}, 2, 5, true},
+		{"multi-site, none match", []string{"site8", "site9"}, 2, 5, false},
+		{"matching site but below floor", []string{"site2"}, 5, 3, false},
 	}
 	for _, c := range cases {
-		if got := channelMatches(c.site, c.min, groups, c.sev); got != c.want {
-			t.Errorf("%s: channelMatches(%q,%d,%v,%d)=%v want %v", c.name, c.site, c.min, groups, c.sev, got, c.want)
+		if got := channelMatches(c.sites, c.min, groups, c.sev); got != c.want {
+			t.Errorf("%s: channelMatches(%v,%d,%v,%d)=%v want %v", c.name, c.sites, c.min, groups, c.sev, got, c.want)
 		}
 	}
 }
 
 func TestMatchingUserChannels(t *testing.T) {
 	chans := []store.UserNotifyChannel{
-		{ID: 1, Type: "telegram", Site: "", MinSeverity: 2},     // all sites, low floor -> matches
-		{ID: 2, Type: "discord", Site: "site1", MinSeverity: 4}, // site match but floor too high for sev 3
-		{ID: 3, Type: "discord", Site: "siteX", MinSeverity: 2}, // wrong site
+		{ID: 1, Type: "telegram", Sites: nil, MinSeverity: 2},              // all sites, low floor -> matches
+		{ID: 2, Type: "discord", Sites: []string{"site1"}, MinSeverity: 4}, // site match but floor too high for sev 3
+		{ID: 3, Type: "discord", Sites: []string{"siteX"}, MinSeverity: 2}, // wrong site
 	}
 	got := matchingUserChannels(chans, []string{"site1"}, 3)
 	if len(got) != 1 || got[0].ID != 1 {
