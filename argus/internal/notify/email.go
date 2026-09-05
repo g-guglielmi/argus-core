@@ -213,30 +213,62 @@ func htmlColor(e Event) string {
 	}
 }
 
+// settingsURL derives the Notifications-page link from a sensor deep link: same origin and path, with
+// ?view=notifications instead of the sensor query. "" when there is no public URL.
+func settingsURL(openURL string) string {
+	if openURL == "" {
+		return ""
+	}
+	base := openURL
+	if i := strings.IndexAny(base, "?#"); i >= 0 {
+		base = base[:i]
+	}
+	return base + "?view=notifications"
+}
+
+// htmlBody renders the styled HTML part as a full document: one card with a severity-coloured header
+// carrying the subject, a detail table (severity, host, site, reading, time), the inline chart, the
+// action buttons, and a footer linking back to the channel settings. Inline styles give every client
+// the light look; the <style> block adds a dark override for clients that honour prefers-color-scheme
+// (Apple Mail, iOS Mail, Outlook mobile), keyed on the class names. A problem's header already names
+// the trigger, so the body no longer repeats it as its first line.
 func htmlBody(e Event) string {
 	var rows strings.Builder
-	row := func(k, v string) {
-		rows.WriteString(`<tr><td style="padding:4px 0;color:#6b7280;width:110px">` + htmlEscape(k) + `</td><td style="padding:4px 0;color:#111827">` + htmlEscape(v) + `</td></tr>`)
+	row := func(k, v, color string) {
+		vs := "color:#111827"
+		if color != "" {
+			vs = "color:" + color + ";font-weight:600"
+		}
+		rows.WriteString(`<tr><td class="mut" style="padding:4px 0;color:#6b7280;width:110px;vertical-align:top">` + htmlEscape(k) + `</td><td class="txt" style="padding:4px 0;` + vs + `">` + htmlEscape(v) + `</td></tr>`)
 	}
-	row("Host", e.Host)
+	c := htmlColor(e)
+	if e.Kind != "recovery" {
+		row("Severity", severityLabel(e.Severity), c)
+	}
+	row("Host", e.Host, "")
 	if e.Site != "" {
-		row("Site", e.Site)
+		row("Site", e.Site, "")
 	}
 	if v := e.valueLine(); v != "" && e.Kind != "recovery" {
-		row("Reading", strings.TrimPrefix(v, "Value: "))
+		row("Reading", strings.TrimPrefix(v, "Value: "), "")
 	}
 	if e.Kind == "recovery" && e.SinceSecs > 0 {
-		row("Duration", fmtDur(e.SinceSecs))
+		row("Duration", fmtDur(e.SinceSecs), "")
 	}
 	when := "Problem since"
 	if e.Kind == "recovery" {
 		when = "Recovered at"
 	}
-	row(when, e.When.Format("2006-01-02 15:04:05 MST"))
+	row(when, e.When.Format("2006-01-02 15:04:05 MST"), "")
+
+	lead := ""
+	if e.Kind == "recovery" {
+		lead = `<div class="txt" style="font-size:14px;color:#111827;margin-bottom:12px">` + htmlEscape(e.bodyLines()[0]) + `</div>`
+	}
 
 	var buttons strings.Builder
 	btn := func(label, href, bg string) {
-		buttons.WriteString(`<a href="` + htmlEscape(href) + `" style="display:inline-block;padding:8px 16px;margin-right:8px;border-radius:7px;background:` + bg + `;color:#fff;text-decoration:none;font-size:13px;font-weight:600">` + label + `</a>`)
+		buttons.WriteString(`<a href="` + htmlEscape(href) + `" style="display:inline-block;padding:8px 16px;margin:0 8px 8px 0;border-radius:7px;background:` + bg + `;color:#fff;text-decoration:none;font-size:13px;font-weight:600">` + label + `</a>`)
 	}
 	if e.OpenURL != "" {
 		btn("Open in Argus", e.OpenURL, "#2ea8c9")
@@ -247,18 +279,25 @@ func htmlBody(e Event) string {
 
 	chart := ""
 	if len(e.ChartPNG) > 0 {
-		chart = `<img src="cid:chart@argus" alt="2-hour trend" style="width:100%;max-width:524px;margin-top:14px;border:1px solid #e5e7eb;border-radius:8px">`
+		chart = `<img class="chart" src="cid:chart@argus" alt="2-hour trend" style="display:block;width:100%;max-width:524px;margin-top:14px;border:1px solid #e5e7eb;border-radius:8px">`
 	}
 
-	c := htmlColor(e)
-	return `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden">` +
+	foot := `<div class="foot mut" style="padding:10px 18px;border-top:1px solid #e5e7eb;font-size:11px;color:#6b7280">Sent by Argus`
+	if u := settingsURL(e.OpenURL); u != "" {
+		foot += ` · <a href="` + htmlEscape(u) + `" style="color:#6b7280">Manage channels</a>`
+	}
+	foot += `</div>`
+
+	return `<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark">` +
+		`<style>@media (prefers-color-scheme: dark){body,.bg{background:#0e1218!important}.card{background:#151b23!important;border-color:#262f3b!important}.txt{color:#eef2f8!important}.mut{color:#8b98a8!important}.foot,.chart{border-color:#262f3b!important}}</style></head>` +
+		`<body class="bg" style="margin:0;padding:16px;background:#f3f4f6">` +
+		`<div class="card" style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;background:#ffffff">` +
 		`<div style="background:` + c + `;color:#fff;padding:14px 18px;font-size:16px;font-weight:600">` + e.emoji() + " " + htmlEscape(e.subject()) + `</div>` +
-		`<div style="padding:16px 18px">` +
-		`<div style="font-size:14px;color:#111827;margin-bottom:12px">` + htmlEscape(e.bodyLines()[0]) + `</div>` +
+		`<div style="padding:16px 18px">` + lead +
 		`<table style="width:100%;font-size:13px;border-collapse:collapse">` + rows.String() + `</table>` +
 		chart +
 		`<div style="margin-top:16px">` + buttons.String() + `</div>` +
-		`</div></div>`
+		`</div>` + foot + `</div></body></html>`
 }
 
 // splitList parses a comma-separated list into trimmed, non-empty values.

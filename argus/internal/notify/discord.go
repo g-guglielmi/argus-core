@@ -19,8 +19,12 @@ func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 		return fmt.Errorf("discord: webhook_url is not set")
 	}
 
-	// Structured fields for the at-a-glance context.
-	fields := []map[string]any{{"name": "Host", "value": e.Host, "inline": true}}
+	// Structured fields for the at-a-glance context. Severity leads (the same label the UI shows).
+	var fields []map[string]any
+	if e.Kind != "recovery" {
+		fields = append(fields, map[string]any{"name": "Severity", "value": severityLabel(e.Severity), "inline": true})
+	}
+	fields = append(fields, map[string]any{"name": "Host", "value": e.Host, "inline": true})
 	if e.Site != "" {
 		fields = append(fields, map[string]any{"name": "Site", "value": e.Site, "inline": true})
 	}

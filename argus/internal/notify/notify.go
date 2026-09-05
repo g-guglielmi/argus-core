@@ -70,17 +70,45 @@ func (e Event) emoji() string {
 	}
 }
 
-// tag is the bracketed status prefix, e.g. "ERROR" or "RESOLVED".
+// severityLabel is the Zabbix severity name (0..5) - the same labels the UI shows next to a problem.
+func severityLabel(sev int) string {
+	switch sev {
+	case 1:
+		return "Information"
+	case 2:
+		return "Warning"
+	case 3:
+		return "Average"
+	case 4:
+		return "High"
+	case 5:
+		return "Disaster"
+	default:
+		return "Not classified"
+	}
+}
+
+// tag is the bracketed prefix of the subject: the Zabbix severity for a problem ("HIGH", "DISASTER") and
+// "RESOLVED" for a recovery. It used to be the coarse ERROR/WARNING state; the UI has always shown the
+// severity, so the messages now say the same thing the screen does.
 func (e Event) tag() string {
 	if e.Kind == "recovery" {
 		return "RESOLVED"
 	}
-	return strings.ToUpper(e.State)
+	return strings.ToUpper(severityLabel(e.Severity))
 }
 
 // subject is the one-line summary (no emoji) used as the email subject and message title.
 func (e Event) subject() string {
 	return fmt.Sprintf("[%s] %s - %s", e.tag(), e.Host, e.Name)
+}
+
+// whereLine is the compact "site · host" location line for the chat channels.
+func (e Event) whereLine() string {
+	if e.Site != "" {
+		return e.Site + " · " + e.Host
+	}
+	return e.Host
 }
 
 // title is the subject with its status emoji, for chat channels.
@@ -108,6 +136,7 @@ func (e Event) bodyLines() []string {
 		}
 	} else {
 		lines = append(lines, e.Name)
+		lines = append(lines, "Severity: "+severityLabel(e.Severity))
 	}
 	lines = append(lines, "Host: "+e.Host)
 	if e.Site != "" {
