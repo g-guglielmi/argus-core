@@ -431,6 +431,9 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 /* Faint vertical dividers between every column (probes table only). The colSpan expand rows are a
    single first-child cell, so they never pick up a border. */
 .enroll-probes th:not(:first-child), .enroll-probes td:not(:first-child) { border-left: 1px solid var(--border); }
+/* Make the horizontal row dividers stronger than the vertical column dividers, so probe rows read
+   apart while the column grid stays subtle. */
+.enroll-probes td { border-bottom-color: var(--border-strong); }
 /* the live probes table carries 7 columns (Probe · Status · Last check-in · Version · Update ·
    Mode · Enrolled) whose content is short and uneven (a probe name, a version, the update chip),
    so let the browser size each column to its content (table-layout:auto) instead of the fixed 4-col
@@ -573,8 +576,12 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   /* --- probes tables (tokens + live proxies): labelled cards, same as the users table --- */
   .enroll thead { display: none; }
   .enroll, .enroll tbody, .enroll tr { display: block; }
-  .enroll tr { padding: 16px 14px; border-bottom: 1px solid var(--border); }
+  .enroll tr { padding: 6px 14px; border-bottom: 1px solid var(--border); }
   .enroll tr:last-child td { border-bottom: none; }
+  /* Highlight the boundary between probe cards (stronger than the faint within-card field dividers), so
+     one probe reads clearly apart from the next. The last card needs none — the panel edge closes it. */
+  .enroll-probes tr { border-bottom: 2px solid var(--border-strong); }
+  .enroll-probes tr:last-child { border-bottom: none; }
   /* Values stack (value over pill), so each cell is a fixed 1-2 lines — align-items:center then keeps
      the label vertically centred against that stack (rather than pinned to the top). Roomy row padding
      for readability on the narrow card. */
@@ -585,10 +592,12 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   .enroll td:last-child:not([data-label]) { justify-content: flex-end; margin-top: 6px; }
   /* the actions cell carries a desktop `width:1%` (auto-size the column); reset it so the flex card
      cell can hold the kebab flush-right instead of collapsing to 1% and shoving it to the left. */
-  .enroll-probes td.row-actions { width: auto; justify-content: flex-end; margin-top: 4px; }
+  /* the kebab tucks under the last field with no divider of its own (a divider there reads as an empty
+     extra row against the card's closing edge). */
+  .enroll-probes td.row-actions { width: auto; justify-content: flex-end; margin-top: 0; padding: 4px 0 2px; }
   /* the probe (first) cell reads like every other row: "PROBE" label left, name + enrolled stacked on
      the right (not a full-width left-aligned title). */
-  .enroll-probes td:first-child { display: flex; align-items: center; margin-bottom: 0; padding: 12px 0; font-size: 14px; }
+  .enroll-probes td:first-child { display: flex; align-items: center; margin-bottom: 0; padding: 10px 0; font-size: 14px; }
   /* right-align each value cell (and its multi-line stack) down the card's right edge. */
   .enroll-probes td[data-label] > .vcell, .enroll-probes td[data-label] > .cell-stack { align-items: flex-end; text-align: right; margin-left: auto; }
   /* stack the version/OS value over its status pill (value on top, pill below), mirroring the health
@@ -602,7 +611,7 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   /* the desktop vertical column dividers make no sense in the stacked card — turn them into horizontal
      rules between each field row instead. */
   .enroll-probes td:not(:first-child) { border-left: none; }
-  .enroll-probes td[data-label]:not(:first-child), .enroll-probes td.row-actions { border-top: 1px solid var(--border); padding-top: 12px; }
+  .enroll-probes td[data-label]:not(:first-child) { border-top: 1px solid var(--border); padding-top: 12px; }
 
   /* --- monitoring tree: drop the trend column, tighten indentation --- */
   table.sensors thead th:nth-child(3), table.sensors td.strend { display: none; }
