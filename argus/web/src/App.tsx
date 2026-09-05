@@ -1323,9 +1323,9 @@ const CH_FIELDS: Record<string, ChField[]> = {
 }
 
 // SitePicker is a multi-select for a channel's site scope: a compact dropdown that summarizes the
-// selection and opens a scrollable, filterable checklist of host-groups, so it scales past a handful
-// of sites. Empty selection ("All sites") means every site; otherwise the union of the chosen sites.
-// Used by both the admin and personal channel editors.
+// selection and opens a scrollable, filterable, indented checklist of host-groups. Groups are
+// '/'-hierarchical, so selecting a root (site1) covers its subgroups (which then show as inherited).
+// Empty selection ("All sites") means every site. Used by the admin and personal channel editors.
 function SitePicker({ options, value, onChange }: { options: string[]; value: string[]; onChange: (v: string[]) => void }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -1339,8 +1339,14 @@ function SitePicker({ options, value, onChange }: { options: string[]; value: st
     return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
   }, [open])
 
+  // Selecting a root (site1) covers its subgroups (site1/Network): coveredBy finds a selected ancestor,
+  // and toggling a group drops any now-redundant descendants already in the selection.
+  const coveredBy = (p: string) => value.find((s) => p.startsWith(s + '/'))
+  const toggle = (p: string) => {
+    if (value.includes(p)) { onChange(value.filter((x) => x !== p)); return }
+    onChange(value.filter((x) => !x.startsWith(p + '/')).concat(p))
+  }
   const all = value.length === 0
-  const toggle = (s: string) => onChange(value.includes(s) ? value.filter((x) => x !== s) : [...value, s])
   const summary = all ? 'All sites' : value.length <= 2 ? value.join(', ') : `${value.length} sites selected`
   const needle = q.trim().toLowerCase()
   const shown = needle ? options.filter((o) => o.toLowerCase().includes(needle)) : options
@@ -1362,9 +1368,16 @@ function SitePicker({ options, value, onChange }: { options: string[]; value: st
             </button>
             {shown.map((s) => {
               const on = value.includes(s)
+              const parent = on ? undefined : coveredBy(s)
+              const covered = !!parent
+              const depth = needle ? 0 : s.split('/').length - 1
+              const label = needle ? s : s.slice(s.lastIndexOf('/') + 1)
               return (
-                <button type="button" role="option" aria-selected={on} key={s} className={'msel-opt' + (on ? ' on' : '')} onClick={() => toggle(s)}>
-                  <span className="msel-check">{on ? '✓' : ''}</span>{s}
+                <button type="button" role="option" aria-selected={on || covered} key={s}
+                  className={'msel-opt' + (on ? ' on' : '') + (covered ? ' covered' : '')}
+                  style={{ paddingLeft: 9 + depth * 16 }} title={covered ? `Included via ${parent}` : s}
+                  onClick={() => { if (!covered) toggle(s) }}>
+                  <span className="msel-check">{on || covered ? '✓' : ''}</span>{label}
                 </button>
               )
             })}

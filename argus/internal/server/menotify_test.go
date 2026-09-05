@@ -34,6 +34,38 @@ func TestChannelMatches(t *testing.T) {
 	}
 }
 
+func TestChannelMatchesInherit(t *testing.T) {
+	groups := []string{"site1/Network"} // a host in the subgroup
+	cases := []struct {
+		name  string
+		sites []string
+		want  bool
+	}{
+		{"root covers subgroup", []string{"site1"}, true},
+		{"exact subgroup", []string{"site1/Network"}, true},
+		{"sibling subgroup", []string{"site1/Infrastructure"}, false},
+		{"other root", []string{"site2"}, false},
+		{"prefix without slash boundary", []string{"myb"}, false},
+	}
+	for _, c := range cases {
+		if got := channelMatches(c.sites, 2, groups, 5); got != c.want {
+			t.Errorf("%s: channelMatches(%v, [site1/Network])=%v want %v", c.name, c.sites, got, c.want)
+		}
+	}
+}
+
+func TestGroupAncestors(t *testing.T) {
+	if a := groupAncestors("site1/Infrastructure"); len(a) != 1 || a[0] != "site1" {
+		t.Fatalf("site1/Infrastructure -> %v, want [site1]", a)
+	}
+	if a := groupAncestors("a/b/c"); len(a) != 2 || a[0] != "a" || a[1] != "a/b" {
+		t.Fatalf("a/b/c -> %v, want [a a/b]", a)
+	}
+	if a := groupAncestors("Zabbix servers"); len(a) != 0 {
+		t.Fatalf("top-level -> %v, want []", a)
+	}
+}
+
 func TestMatchingUserChannels(t *testing.T) {
 	chans := []store.UserNotifyChannel{
 		{ID: 1, Type: "telegram", Sites: nil, MinSeverity: 2},              // all sites, low floor -> matches

@@ -27,8 +27,9 @@ can fan out to every registered user — additively, without changing the existi
   email** instead of a fixed address — a "Send to" choice on the channel (admin-controlled), alongside
   the existing fixed-address mode. Each recipient gets a private, individual message.
 - **Multi-site channels.** Any channel — global or personal — can target **several sites at once**
-  (a multi-select of host-groups) rather than only one site or all; it fires when any of its sites
-  matches the host.
+  (a multi-select of host-groups) rather than only one site or all. The picker is hierarchical:
+  selecting a probe's root group (e.g. `site1`) covers all its subgroups (`site1/Network`, …), and a
+  channel fires when any of its sites matches — or is an ancestor of — one of the host's groups.
 
 **Changed:**
 - The notifier fires a problem as soon as a **global or personal** channel matches its site + severity

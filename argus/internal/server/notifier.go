@@ -238,11 +238,20 @@ func channelMatches(sites []string, min int, groups []string, sev int) bool {
 		return true
 	}
 	for _, s := range sites {
-		if contains(groups, s) {
-			return true
+		for _, g := range groups {
+			if siteCovers(s, g) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// siteCovers reports whether a channel's site scope `s` covers host-group `g`: an exact match, or `g`
+// nested under `s`. Zabbix host groups are '/'-hierarchical, so a probe's root ("site1") covers every
+// subgroup under it ("site1/Infrastructure", "site1/Network", …).
+func siteCovers(s, g string) bool {
+	return g == s || strings.HasPrefix(g, s+"/")
 }
 
 // matchingChannels returns the global channels that serve a host's groups and severity.
@@ -378,13 +387,4 @@ func primarySite(groups []string) string {
 		return groups[0]
 	}
 	return ""
-}
-
-func contains(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }

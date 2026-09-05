@@ -242,8 +242,8 @@ Severity / Host / Site / Reading fields.
 **Personal channels + email-to-users (2026-09).** Two per-recipient additions sit alongside the global
 channels above. (1) **Personal channels** let any signed-in user (any role) register their own Telegram
 (their own @BotFather bot: token + chat id) or Discord (webhook URL) in **Account → Personal
-notifications** and receive alerts there, scoped by one or more sites (a multi-select of host-groups) and a severity
-floor, exactly like a global channel.
+notifications** and receive alerts there, scoped by one or more sites (a multi-select of host-groups; selecting a
+probe's root group covers its subgroups) and a severity floor, exactly like a global channel.
 They are self-service and self-owned (`user_notify_channels`, config encrypted at rest, managed under
 `/api/me/notify/*`); a user only ever sees and edits their own. The notifier routes a problem to global
 **and** matching personal channels, and now fires as soon as *either* matches — so a personal-only setup

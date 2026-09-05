@@ -202,7 +202,21 @@ func (s *Server) handleTestChannel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
 }
 
-// handleNotifySites returns the distinct Zabbix host-group names, for the channel "site" picker.
+// groupAncestors returns the ancestor paths of a '/'-hierarchical Zabbix host-group name: "a/b/c"
+// yields ["a", "a/b"]. A top-level name (no "/") has none.
+func groupAncestors(name string) []string {
+	var out []string
+	for i := 0; i < len(name); i++ {
+		if name[i] == '/' {
+			out = append(out, name[:i])
+		}
+	}
+	return out
+}
+
+// handleNotifySites returns the Zabbix host-group names for the channel "site" picker: every group
+// that has hosts, plus each group's ancestor paths — so a probe's root group (e.g. "site1") is
+// selectable even when only its subgroups hold hosts, and selecting it covers them (see siteCovers).
 func (s *Server) handleNotifySites(w http.ResponseWriter, r *http.Request) {
 	if !s.zbx.Authenticated() {
 		writeJSON(w, http.StatusOK, []string{})
@@ -219,6 +233,9 @@ func (s *Server) handleNotifySites(w http.ResponseWriter, r *http.Request) {
 	for _, h := range hosts {
 		for _, g := range h.Groups {
 			seen[g.Name] = true
+			for _, anc := range groupAncestors(g.Name) {
+				seen[anc] = true
+			}
 		}
 	}
 	out := make([]string, 0, len(seen))
