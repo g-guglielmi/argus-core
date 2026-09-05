@@ -586,9 +586,11 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   /* the actions cell carries a desktop `width:1%` (auto-size the column); reset it so the flex card
      cell can hold the kebab flush-right instead of collapsing to 1% and shoving it to the left. */
   .enroll-probes td.row-actions { width: auto; justify-content: flex-end; margin-top: 4px; }
-  /* right-align each value cell (and its multi-line stack) down the card's right edge — but NOT the
-     first cell (the probe name), which stays a left-aligned card title. */
-  .enroll-probes td[data-label]:not(:first-child) > .vcell, .enroll-probes td[data-label]:not(:first-child) > .cell-stack { align-items: flex-end; text-align: right; margin-left: auto; }
+  /* the probe (first) cell reads like every other row: "PROBE" label left, name + enrolled stacked on
+     the right (not a full-width left-aligned title). */
+  .enroll-probes td:first-child { display: flex; align-items: center; margin-bottom: 0; padding: 12px 0; font-size: 14px; }
+  /* right-align each value cell (and its multi-line stack) down the card's right edge. */
+  .enroll-probes td[data-label] > .vcell, .enroll-probes td[data-label] > .cell-stack { align-items: flex-end; text-align: right; margin-left: auto; }
   /* stack the version/OS value over its status pill (value on top, pill below), mirroring the health
      stack — narrow cards read cleaner as two short lines than one wide wrapping line. */
   .enroll-probes td[data-label] .vcell { flex-direction: column; gap: 3px; }

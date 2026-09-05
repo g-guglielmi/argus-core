@@ -1819,7 +1819,7 @@ type ProbeMenuItem = { label: string; onClick: () => void; danger?: boolean }
 function ProbeRowMenu({ items }: { items: Array<ProbeMenuItem | 'sep' | false | null | undefined> }) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
-  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null)
   const list: (ProbeMenuItem | 'sep')[] = []
   for (const it of items) {
     if (!it) continue
@@ -1831,7 +1831,14 @@ function ProbeRowMenu({ items }: { items: Array<ProbeMenuItem | 'sep' | false | 
   const toggle = () => {
     if (!open && btnRef.current) {
       const r = btnRef.current.getBoundingClientRect()
-      setPos({ top: r.bottom + 5, right: Math.max(8, window.innerWidth - r.right) })
+      const right = Math.max(8, window.innerWidth - r.right)
+      // Estimate the menu height and flip it above the button when there isn't room below (last row on
+      // a mobile card would otherwise render off the bottom of the screen).
+      const estH = list.length * 36 + 12
+      const spaceBelow = window.innerHeight - r.bottom
+      setPos(spaceBelow < estH && r.top > spaceBelow
+        ? { bottom: Math.round(window.innerHeight - r.top) + 5, right }
+        : { top: Math.round(r.bottom) + 5, right })
     }
     setOpen((o) => !o)
   }
@@ -1841,7 +1848,7 @@ function ProbeRowMenu({ items }: { items: Array<ProbeMenuItem | 'sep' | false | 
       {open && pos && createPortal(
         <>
           <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 59 }} />
-          <div className="menu" style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 60 }}>
+          <div className="menu" style={{ position: 'fixed', top: pos.top ?? 'auto', bottom: pos.bottom ?? 'auto', right: pos.right, zIndex: 60 }}>
             {list.map((it, i) => it === 'sep'
               ? <div key={i} className="sep" />
               : <button key={i} className={it.danger ? 'danger' : undefined} onClick={() => { setOpen(false); it.onClick() }}>{it.label}</button>)}
