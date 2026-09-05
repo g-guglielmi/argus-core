@@ -84,6 +84,15 @@ a { color: var(--accent); }
 .nav .soon { margin-left: auto; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); border: 1px solid var(--border-strong); border-radius: 999px; padding: 1px 7px; }
 
 .side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 4px; padding-top: 10px; border-top: 1px solid var(--border); }
+/* Running version in the sidebar footer; amber + "update available" when Settings has something to do. */
+.side-ver { display: flex; align-items: center; gap: 8px; width: 100%; padding: 2px 10px 6px; background: none; border: none; font: inherit; font-size: 11px; color: var(--faint); text-align: left; cursor: default; }
+.side-ver:not(:disabled) { cursor: pointer; }
+.side-ver:not(:disabled):hover .side-ver-txt { text-decoration: underline; color: var(--text); }
+.side-ver .side-ver-txt { color: var(--warn); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-shell.collapsed .side-ver { display: none; }
+/* Toolbar variants: the secondary Monitoring controls inline on desktop, folded into a ⋯ on phones. */
+.tools-desktop { display: contents; }
+.tools-mobile { display: none; }
 .vtag { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border-strong); white-space: nowrap; }
 .vtag.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
 .vtag.upd { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); background: color-mix(in srgb, var(--warn) 10%, transparent); }
@@ -368,6 +377,9 @@ a { color: var(--accent); }
 .snmp-band .if-snmp { grid-template-columns: 1fr 1fr; }
 @media (max-width: 640px) { .snmp-band .if-snmp { grid-template-columns: 1fr; } }
 
+/* Add-probe wizard: the static-IP fields fill their grid tracks. */
+.wiz-net .input { width: 100%; min-width: 0; }
+
 /* In-app dialog (confirm / prompt) - replaces native browser popups */
 /* flex + margin:auto (not place-items:center) so a dialog taller than the viewport scrolls with its
    top reachable, instead of being clipped and unscrollable; short dialogs still center. */
@@ -602,6 +614,8 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   /* Panel header: keep the tools beside the title and drop the hint to its own line underneath. */
   .phead .tools { order: 1; margin-left: auto; }
   .phead .hint { order: 2; flex-basis: 100%; }
+  .tools-desktop { display: none; }
+  .tools-mobile { display: inline-flex; align-items: center; }
   .summary { width: 100%; margin-left: 0; flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; gap: 5px; padding-bottom: 2px; scrollbar-width: none; }
   .summary::-webkit-scrollbar { display: none; }
   .stat { flex-shrink: 0; }

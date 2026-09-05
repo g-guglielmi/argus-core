@@ -997,8 +997,13 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   async function logout() { await fetch('/api/logout', { method: 'POST' }).catch(() => {}); onLogout() }
   function goto(v: View) { setTreeTarget(null); if (v === 'monitoring') setMonHome((n) => n + 1); setView(v); pushNav(v); setMenuOpen(false); setNavOpen(false) }
 
+  // Running version for the sidebar footer (the full About card lives in Settings). Fetched once.
+  const [ver, setVer] = useState<VersionInfo | null>(null)
+  useEffect(() => { fetch('/api/version').then((r) => (r.ok ? r.json() : null)).then((v) => { if (v) setVer(v) }).catch(() => {}) }, [])
+
+  // title doubles as the tooltip for the collapsed (icon-only) rail.
   const nav = (id: View, label: string, opts?: { count?: number; soon?: boolean }) => (
-    <button className={'nav' + (view === id ? ' active' : '')} onClick={() => goto(id)}>
+    <button className={'nav' + (view === id ? ' active' : '')} title={label} onClick={() => goto(id)}>
       {ic[id as keyof typeof ic]}
       <span className="lbl">{label}</span>
       {opts?.count ? <span className="count txt-err">{opts.count}</span> : null}
@@ -1030,6 +1035,14 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         {nav('probes', 'Probes')}
         {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('users', 'Users')}{nav('settings', 'Settings')}</>}
         <div className="side-foot">
+          {ver && (
+            <button type="button" className={'side-ver' + (ver.update_available ? ' upd' : '')} disabled={me.role !== 'admin'}
+              title={ver.update_available ? `Update available${ver.latest ? `: ${ver.latest}` : ''} — open Settings` : `Argus ${ver.version || 'development build'}`}
+              onClick={() => goto('settings')}>
+              <span className={'vtag ' + (ver.update_available ? 'upd' : ver.status === 'current' ? 'ok' : 'dev')}>{ver.version || 'dev'}</span>
+              {ver.update_available && <span className="side-ver-txt">update available</span>}
+            </button>
+          )}
           <div className="kebab-wrap" style={{ display: 'block' }}>
             <button className="userbtn" onClick={() => setMenuOpen((o) => !o)}>
               <div className="avatar">{(me.name?.[0] || me.email[0] || '?').toUpperCase()}{(me.surname?.[0] || '').toUpperCase()}</div>
@@ -1438,23 +1451,23 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
     <form onSubmit={save} style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)', display: 'grid', gap: 12 }}>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Type</span>
-          <select className="roleselect" value={type} onChange={(e) => setType(e.target.value)} disabled={!!initial}>
+          <Select value={type} onChange={(e) => setType(e.target.value)} disabled={!!initial}>
             {Object.keys(CH_META).map((t) => <option key={t} value={t}>{CH_META[t].label}</option>)}
-          </select>
+          </Select>
         </label>
         <label style={{ display: 'grid', gap: 4, flex: 1, minWidth: 160 }}><span className="flabel">Name</span>
           <input className="input" placeholder="e.g. Discord - site1" value={name} onChange={(e) => setName(e.target.value)} required />
         </label>
         <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Site</span>
-          <select className="roleselect" value={site} onChange={(e) => setSite(e.target.value)}>
+          <Select value={site} onChange={(e) => setSite(e.target.value)}>
             <option value="">All sites</option>
             {sites.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
+          </Select>
         </label>
         <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Severity</span>
-          <select className="roleselect" value={minSev} onChange={(e) => setMinSev(Number(e.target.value))} title="Only problems at or above this severity reach this channel">
+          <Select value={minSev} onChange={(e) => setMinSev(Number(e.target.value))} title="Only problems at or above this severity reach this channel">
             {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
-          </select>
+          </Select>
         </label>
       </div>
       <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
@@ -1465,18 +1478,16 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
         ))}
         {type === 'email' && (
           <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Encryption</span>
-            <select className="roleselect" value={config.tls || 'starttls'} onChange={(e) => setCfg('tls', e.target.value)}>
+            <Select value={config.tls || 'starttls'} onChange={(e) => setCfg('tls', e.target.value)}>
               <option value="starttls">STARTTLS (587)</option>
               <option value="tls">Implicit TLS (465)</option>
               <option value="none">None</option>
-            </select>
+            </Select>
           </label>
         )}
       </div>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, color: 'var(--muted)' }}>
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enabled
-        </label>
+        <Switch checked={enabled} onChange={setEnabled} label="Enabled" />
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
           <button type="button" className="btn" onClick={onCancel}>Cancel</button>
           <button type="submit" className="btn primary">{initial ? 'Save changes' : 'Add channel'}</button>
@@ -1983,7 +1994,6 @@ const VM_KEYMAPS: [string, string][] = [
   ['us', 'US English'], ['uk', 'UK English'], ['it', 'Italian'], ['de', 'German'],
   ['fr', 'French'], ['es', 'Spanish'], ['pt-latin1', 'Portuguese'],
 ]
-const vmNetInput = { padding: '6px 8px', fontSize: 12.5, color: 'var(--text)', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 6 }
 // CIDR prefix -> dotted subnet mask, for the Static IP dropdown (label shows both so "the /24 is the
 // subnet mask" is self-evident). Server-side staticCIDR accepts the prefix number.
 const CIDR_PREFIXES: [string, string][] = [
@@ -2110,9 +2120,9 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
             {advanced && (
               <label style={{ display: 'grid', gap: 4 }}>
                 <span className="flabel">Enrollment token valid for</span>
-                <select className="roleselect" value={ttl} onChange={(e) => setTtl(Number(e.target.value))}>
+                <Select value={ttl} onChange={(e) => setTtl(Number(e.target.value))}>
                   <option value={1}>1 hour</option><option value={24}>24 hours</option><option value={168}>7 days</option><option value={720}>30 days</option>
-                </select>
+                </Select>
               </label>
             )}
           </div>
@@ -2140,26 +2150,26 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
               <div style={{ display: 'grid', gap: 10 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--muted)' }}>
                   Console keyboard layout
-                  <select value={keymap} onChange={(e) => setKeymap(e.target.value)} style={{ padding: '4px 8px', background: 'var(--panel)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                  <Select value={keymap} onChange={(e) => setKeymap(e.target.value)}>
                     {VM_KEYMAPS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
+                  </Select>
                 </label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--muted)', cursor: 'pointer' }}>
                   <input type="checkbox" checked={staticNet} onChange={(e) => setStaticNet(e.target.checked)} />
                   Static IP <span style={{ color: 'var(--faint)' }}>(sites with no DHCP)</span>
                 </label>
                 {staticNet && (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 205px', gap: 8 }}>
-                      <input value={netIp} onChange={(e) => setNetIp(e.target.value)} placeholder="IP address (10.0.0.50)" style={vmNetInput} />
-                      <select value={netPrefix} onChange={(e) => setNetPrefix(e.target.value)} title="Subnet mask" style={vmNetInput}>
+                  <div className="wiz-net" style={{ display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 205px)', gap: 8 }}>
+                      <input className="input" value={netIp} onChange={(e) => setNetIp(e.target.value)} placeholder="IP address (10.0.0.50)" />
+                      <Select value={netPrefix} onChange={(e) => setNetPrefix(e.target.value)} title="Subnet mask">
                         {CIDR_PREFIXES.map(([p, mask]) => <option key={p} value={p}>/{p} — {mask}</option>)}
-                      </select>
+                      </Select>
                     </div>
-                    <input value={netGw} onChange={(e) => setNetGw(e.target.value)} placeholder="Gateway (10.0.0.1)" style={vmNetInput} />
+                    <input className="input" value={netGw} onChange={(e) => setNetGw(e.target.value)} placeholder="Gateway (10.0.0.1)" />
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      <input value={netDns} onChange={(e) => setNetDns(e.target.value)} placeholder="DNS 1 (10.0.0.10)" style={vmNetInput} />
-                      <input value={netDns2} onChange={(e) => setNetDns2(e.target.value)} placeholder="DNS 2 (optional)" style={vmNetInput} />
+                      <input className="input" value={netDns} onChange={(e) => setNetDns(e.target.value)} placeholder="DNS 1 (10.0.0.10)" />
+                      <input className="input" value={netDns2} onChange={(e) => setNetDns2(e.target.value)} placeholder="DNS 2 (optional)" />
                     </div>
                     <span style={{ color: 'var(--faint)', fontSize: 11.5 }}>The dropdown is the subnet mask (/24 = 255.255.255.0). A second DNS is optional, for redundancy.</span>
                   </div>
@@ -2695,13 +2705,27 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
         {focus.level !== 'sensor' && (
           <div className="tools">
             {canPause && focus.level !== 'host' && !reorder && <button className="btn primary" onClick={() => { setError(null); setCreating((v) => !v) }}>+ New group</button>}
-            {advanced && canPause && focus.level !== 'host' && hidden.size > 0 && !reorder && <button className={'btn' + (showHidden ? ' on' : '')} onClick={() => setShowHidden((v) => !v)}>{showHidden ? 'Hide hidden' : `Show hidden (${hidden.size})`}</button>}
-            {canPause && focus.level !== 'host' && <button className={'btn' + (reorder ? ' on' : '')} onClick={() => { setError(null); setCreating(false); setReorder((v) => !v) }}>{reorder ? 'Done' : 'Reorder'}</button>}
-            {advanced && (
-              <div className="seg">
-                <button className={!showAll ? 'on' : ''} onClick={() => setShowAll(false)}>Key sensors</button>
-                <button className={showAll ? 'on' : ''} onClick={() => setShowAll(true)}>All sensors</button>
-              </div>
+            {/* Desktop: the secondary controls inline. Phone: the same actions in a ⋯ menu (plus a visible
+                Done while reordering), so the toolbar stays one row on a narrow card. */}
+            <span className="tools-desktop">
+              {advanced && canPause && focus.level !== 'host' && hidden.size > 0 && !reorder && <button className={'btn' + (showHidden ? ' on' : '')} onClick={() => setShowHidden((v) => !v)}>{showHidden ? 'Hide hidden' : `Show hidden (${hidden.size})`}</button>}
+              {canPause && focus.level !== 'host' && <button className={'btn' + (reorder ? ' on' : '')} onClick={() => { setError(null); setCreating(false); setReorder((v) => !v) }}>{reorder ? 'Done' : 'Reorder'}</button>}
+              {advanced && (
+                <div className="seg">
+                  <button className={!showAll ? 'on' : ''} onClick={() => setShowAll(false)}>Key sensors</button>
+                  <button className={showAll ? 'on' : ''} onClick={() => setShowAll(true)}>All sensors</button>
+                </div>
+              )}
+            </span>
+            {reorder && <button className="btn on tools-mobile" onClick={() => setReorder(false)}>Done</button>}
+            {(canPause || advanced) && focus.level !== 'host' && (
+              <span className="tools-mobile">
+                <Kebab actions={[
+                  ...(canPause ? [{ label: reorder ? 'Done reordering' : 'Reorder groups & hosts', onClick: () => { setError(null); setCreating(false); setReorder((v) => !v) } }] : []),
+                  ...(advanced && canPause && hidden.size > 0 ? [{ label: showHidden ? 'Hide hidden groups' : `Show hidden groups (${hidden.size})`, onClick: () => setShowHidden((v) => !v) }] : []),
+                  ...(advanced ? [{ label: showAll ? 'Show key sensors only' : 'Show all sensors', onClick: () => setShowAll((v) => !v) }] : []),
+                ]} />
+              </span>
             )}
           </div>
         )}
@@ -3638,7 +3662,7 @@ function UsersView() {
               <td data-label="Email"><input className="cellinput mono" value={u.email} onChange={(e) => edit(u.id, { email: e.target.value })} onBlur={() => saveUser(u.id)} /></td>
               <td data-label="Name"><input className="cellinput" value={u.name} placeholder="Name" onChange={(e) => edit(u.id, { name: e.target.value })} onBlur={() => saveUser(u.id)} /></td>
               <td data-label="Surname"><input className="cellinput" value={u.surname} placeholder="Surname" onChange={(e) => edit(u.id, { surname: e.target.value })} onBlur={() => saveUser(u.id)} /></td>
-              <td data-label="Role"><select className="roleselect" value={u.role} onChange={(e) => { edit(u.id, { role: e.target.value }); setTimeout(() => saveUser(u.id), 0) }}>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select></td>
+              <td data-label="Role"><Select className="roleselect" value={u.role} onChange={(e) => { edit(u.id, { role: e.target.value }); setTimeout(() => saveUser(u.id), 0) }}>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</Select></td>
               <td data-label="2FA">{u.mfa_enabled ? <span className="badge on">on</span> : <span className="badge off">off</span>}</td>
               <td data-label="Passkeys" className="mono">{u.passkeys || 0}</td>
               <td data-label="Manage" style={{ textAlign: 'right' }}>
