@@ -64,6 +64,8 @@ function PriorityStars({ value, canEdit, onSet }: { value: number; canEdit: bool
       {stars.map((n) => canEdit
         ? <button key={n} type="button" className={'prio-star' + (n <= value ? ' on' : '')} aria-label={`Set priority ${n}`} onClick={(e) => { e.stopPropagation(); onSet?.(n) }}>★</button>
         : <span key={n} className={'prio-star' + (n <= value ? ' on' : '')}>★</span>)}
+      {/* Compact "★4" twin for dense/narrow layouts (the phone sensor table); CSS swaps it in for the five stars. */}
+      <span className="prio-compact" aria-hidden="true"><span className="prio-star on">★</span>{value}</span>
     </span>
   )
 }
@@ -116,7 +118,7 @@ function DurationButton({ label, onPick, disabled, borderColor }: { label: strin
   }
   return (
     <span style={{ position: 'relative', display: 'inline-block' }}>
-      <Button variant="ghost" onClick={(e) => { e.stopPropagation(); setCustom(false); setOpen((o) => !o) }} disabled={disabled} style={{ padding: '0.1rem 0.45rem', fontSize: '0.75rem', borderColor: borderColor || 'var(--border)' }}>{label}</Button>
+      <Button variant="ghost" className="compact" onClick={(e) => { e.stopPropagation(); setCustom(false); setOpen((o) => !o) }} disabled={disabled} style={{ borderColor: borderColor || 'var(--border)' }}>{label}</Button>
       {open && (
         <>
           <div onClick={(e) => { e.stopPropagation(); close() }} style={{ position: 'fixed', inset: 0, zIndex: 20 }} />
@@ -129,8 +131,8 @@ function DurationButton({ label, onPick, disabled, borderColor }: { label: strin
                 <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginBottom: '0.35rem' }}>Suppress until:</div>
                 <input className="input" type="datetime-local" value={val} min={toLocalInput(Date.now())} onChange={(e) => setVal(e.target.value)} style={{ width: '100%', marginBottom: '0.5rem' }} />
                 <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
-                  <Button variant="ghost" onClick={(e) => { e.stopPropagation(); setCustom(false) }} style={{ padding: '0.15rem 0.5rem', fontSize: '0.78rem' }}>Back</Button>
-                  <Button variant="primary" onClick={(e) => { e.stopPropagation(); confirmCustom() }} style={{ padding: '0.15rem 0.6rem', fontSize: '0.78rem' }}>Set</Button>
+                  <Button variant="ghost" className="compact" onClick={(e) => { e.stopPropagation(); setCustom(false) }}>Back</Button>
+                  <Button variant="primary" className="compact" onClick={(e) => { e.stopPropagation(); confirmCustom() }}>Set</Button>
                 </div>
               </div>
             )}
@@ -147,13 +149,19 @@ function untilLabel(u?: number): string {
   return `until ${new Date(u * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
 }
 
+// relSpan renders a number of seconds as the compact "54s" / "3m" / "2h" / "5d".
+function relSpan(s: number): string {
+  if (s < 60) return `${s}s`
+  if (s < 3600) return `${Math.floor(s / 60)}m`
+  if (s < 86400) return `${Math.floor(s / 3600)}h`
+  return `${Math.floor(s / 86400)}d`
+}
+// relTime renders a unix time relative to now: "3m ago" for the past, "in 22h" for the future (token
+// expiries), "never" when unset. A future time used to clamp to "0s ago", which read as already expired.
 function relTime(unix: number): string {
   if (!unix) return 'never'
-  const s = Math.max(0, Math.floor(Date.now() / 1000) - unix)
-  if (s < 60) return `${s}s ago`
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
-  return `${Math.floor(s / 86400)}d ago`
+  const s = Math.floor(Date.now() / 1000) - unix
+  return s < 0 ? `in ${relSpan(-s)}` : `${relSpan(s)} ago`
 }
 
 // roundNum rounds to 2 decimals for |v|>=1 and 4 for small values (so sub-second timings
@@ -3150,7 +3158,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                       </td>
                     </tr>
                     {open && clickable && (
-                      <tr className="chartrow"><td colSpan={5}><div className="chart-reveal"><SensorChart itemId={it.id} units={it.units} /></div></td></tr>
+                      <tr className="chartrow"><td colSpan={5}><div className="chart-reveal"><SensorChart itemId={it.id} units={it.units} color={trendColor} /></div></td></tr>
                     )}
                   </Fragment>
                 )
@@ -3362,7 +3370,25 @@ function TriggersView({ goHost }: { goHost: (h: string) => void }) {
   )
 }
 
-const GREEN = '#4fa06f'
+type ChartColors = { line: string; fill: string; soft: string; axis: string; grid: string }
+
+// withAlpha turns a #rrggbb token value into an rgba() with the given opacity (other formats pass through).
+function withAlpha(color: string, a: number): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(color)
+  if (!m) return color
+  const n = parseInt(m[1], 16)
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
+}
+
+// chartColors resolves the chart palette from the live theme tokens: axes and grid from the text/border
+// tokens (visible on light AND dark - the old hard-coded white-alpha grid vanished on light), and the
+// series in the sensor's state colour, so the big chart agrees with the row's sparkline next to it.
+function chartColors(color: string): ChartColors {
+  const css = getComputedStyle(document.documentElement)
+  const tok = (v: string) => { const m = /^var\((--[\w-]+)\)$/.exec(v.trim()); return (m ? css.getPropertyValue(m[1]) : v).trim() }
+  const line = tok(color) || '#2ea8c9'
+  return { line, fill: withAlpha(line, 0.12), soft: withAlpha(line, 0.4), axis: tok('var(--faint)') || '#8a8a8a', grid: tok('var(--border)') || 'rgba(128,128,128,0.25)' }
+}
 
 // insertGaps breaks the line where sampling stopped (e.g. a paused sensor): where the time
 // between two consecutive points exceeds ~1.75x the typical interval, it inserts a null so
@@ -3387,17 +3413,16 @@ function insertGaps(xs: number[], series: (number | null)[][]): [number[], (numb
   return [nx, ns]
 }
 
-function buildPlot(data: Series, units: string, width: number): [uPlot.Options, uPlot.AlignedData] {
+function buildPlot(data: Series, units: string, width: number, c: ChartColors): [uPlot.Options, uPlot.AlignedData] {
   const xs = data.points.map((p) => p.t)
-  const axisStroke = '#8a8a8a'
-  const grid = { stroke: 'rgba(255,255,255,0.06)', width: 1 }
-  const ticks = { stroke: 'rgba(255,255,255,0.06)', width: 1 }
+  const grid = { stroke: c.grid, width: 1 }
+  const ticks = { stroke: c.grid, width: 1 }
   const scaled = scaledUnit(units)
   // Scaled y-axis ticks (bytes/bits/uptime); otherwise default numeric.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const yValues = scaled ? ((_u: any, splits: number[]) => splits.map((v) => fmtNum(v, units))) : undefined
-  const yAxis: uPlot.Axis = { stroke: axisStroke, grid, ticks, size: 64, values: yValues as unknown as uPlot.Axis['values'] }
-  const xAxis: uPlot.Axis = { stroke: axisStroke, grid, ticks }
+  const yAxis: uPlot.Axis = { stroke: c.axis, grid, ticks, size: 64, values: yValues as unknown as uPlot.Axis['values'] }
+  const xAxis: uPlot.Axis = { stroke: c.axis, grid, ticks }
   // Legend cells: show the hovered point, or fall back to the latest value when idle (so the
   // legend is never blank). unitLabel is dropped for scaled units since the value carries it.
   const unitLabel = scaled ? '' : units ? ` (${units})` : ''
@@ -3415,11 +3440,11 @@ function buildPlot(data: Series, units: string, width: number): [uPlot.Options, 
       ...base,
       series: [
         { value: xVal },
-        { label: `avg${unitLabel}`, stroke: GREEN, width: 1.5, value: yVal(1) },
-        { label: 'min', stroke: 'rgba(79,160,111,0.4)', width: 1, value: yVal(2) },
-        { label: 'max', stroke: 'rgba(79,160,111,0.4)', width: 1, value: yVal(3) },
+        { label: `avg${unitLabel}`, stroke: c.line, width: 1.5, value: yVal(1) },
+        { label: 'min', stroke: c.soft, width: 1, value: yVal(2) },
+        { label: 'max', stroke: c.soft, width: 1, value: yVal(3) },
       ],
-      bands: [{ series: [3, 2], fill: 'rgba(79,160,111,0.12)' }],
+      bands: [{ series: [3, 2], fill: c.fill }],
     } as uPlot.Options
     const [gx, [ga, gmin, gmax]] = insertGaps(xs, [avg, min, max])
     return [opts, [gx, ga, gmin, gmax] as uPlot.AlignedData]
@@ -3428,13 +3453,13 @@ function buildPlot(data: Series, units: string, width: number): [uPlot.Options, 
   const vs = data.points.map((p) => (p.v ?? null))
   const opts: uPlot.Options = {
     ...base,
-    series: [{ value: xVal }, { label: `value${unitLabel}`, stroke: GREEN, width: 1.5, fill: 'rgba(79,160,111,0.10)', value: yVal(1) }],
+    series: [{ value: xVal }, { label: `value${unitLabel}`, stroke: c.line, width: 1.5, fill: c.fill, value: yVal(1) }],
   } as uPlot.Options
   const [gx, [gv]] = insertGaps(xs, [vs])
   return [opts, [gx, gv] as uPlot.AlignedData]
 }
 
-function SensorChart({ itemId, units }: { itemId: string; units: string }) {
+function SensorChart({ itemId, units, color = 'var(--accent)' }: { itemId: string; units: string; color?: string }) {
   const [range, setRange] = useState('2h')
   const [data, setData] = useState<Series | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -3442,12 +3467,19 @@ function SensorChart({ itemId, units }: { itemId: string; units: string }) {
   // Reveal the "Loading…" text only if a fetch is genuinely slow, so a fast open doesn't flash it.
   const [showLoading, setShowLoading] = useState(false)
   const [tick, setTick] = useState(0)
+  // Bumped when the theme flips (data-theme on <html>), so the chart repaints with the new tokens.
+  const [themeTick, setThemeTick] = useState(0)
   const host = useRef<HTMLDivElement>(null)
   const plot = useRef<uPlot | null>(null)
   const lastKey = useRef('')
 
   // Refresh the open chart periodically so it stays live.
   useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 60000); return () => clearInterval(t) }, [])
+  useEffect(() => {
+    const mo = new MutationObserver(() => setThemeTick((x) => x + 1))
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => mo.disconnect()
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -3472,10 +3504,10 @@ function SensorChart({ itemId, units }: { itemId: string; units: string }) {
     if (plot.current) { plot.current.destroy(); plot.current = null }
     if (!host.current || !data || data.points.length === 0) return
     const width = host.current.clientWidth || 600
-    const [opts, aligned] = buildPlot(data, units, width)
+    const [opts, aligned] = buildPlot(data, units, width, chartColors(color))
     plot.current = new uPlot(opts, aligned, host.current)
     return () => { if (plot.current) { plot.current.destroy(); plot.current = null } }
-  }, [data, units])
+  }, [data, units, color, themeTick])
 
   useEffect(() => {
     function onResize() { if (plot.current && host.current) plot.current.setSize({ width: host.current.clientWidth, height: 320 }) }

@@ -165,6 +165,9 @@ a { color: var(--accent); }
 .btn.danger { border-color: color-mix(in srgb, var(--err) 45%, var(--border)); color: var(--err); }
 .btn.danger:hover { border-color: var(--err); color: var(--err); }
 .btn.block { width: 100%; }
+/* Compact variant for inline row actions (Acknowledge, the duration picker's Back/Set). A class rather
+   than inline sizing so the phone touch-target rules below can still enlarge it. */
+.btn.compact { padding: 2px 7px; font-size: 12px; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn.on { background: var(--accent-weak); border-color: var(--accent); color: var(--accent); }
 .ord-ctrl { display: inline-flex; gap: 3px; }
@@ -272,7 +275,11 @@ a { color: var(--accent); }
 .slist-sensors, .slist-problems, .slist-trig { table-layout: fixed; }
 .slist-trig th:nth-child(1){width:36%} .slist-trig th:nth-child(2){width:12%} .slist-trig th:nth-child(3){width:18%} .slist-trig th:nth-child(4){width:22%} .slist-trig th:nth-child(5){width:12%}
 .slist td.tsensors, .trig-list td.tsensors { color: var(--muted); }
-.slist-sensors  th:nth-child(1){width:16%} .slist-sensors  th:nth-child(2){width:25%} .slist-sensors  th:nth-child(3){width:13%} .slist-sensors  th:nth-child(4){width:15%} .slist-sensors  th:nth-child(5){width:13%} .slist-sensors  th:nth-child(6){width:14%} .slist-sensors  th:nth-child(7){width:4%}
+/* The actions column is a fixed 48px (the 26px kebab + its cell padding) rather than a percentage: at a
+   4% share the button no longer fit once the panel was under ~1100px and spilled outside the card. The
+   other six columns share the remainder. */
+.slist-sensors  th:nth-child(1){width:calc(17% - 8px)} .slist-sensors  th:nth-child(2){width:calc(26% - 8px)} .slist-sensors  th:nth-child(3){width:calc(13% - 8px)} .slist-sensors  th:nth-child(4){width:calc(16% - 8px)} .slist-sensors  th:nth-child(5){width:calc(14% - 8px)} .slist-sensors  th:nth-child(6){width:calc(14% - 8px)} .slist-sensors  th:nth-child(7){width:48px}
+.slist-sensors td.act, .slist-sensors th:nth-child(7) { padding-left: 6px; padding-right: 12px; }
 .slist-problems th:nth-child(1){width:12%} .slist-problems th:nth-child(2){width:37%} .slist-problems th:nth-child(3){width:15%} .slist-problems th:nth-child(4){width:9%}  .slist-problems th:nth-child(5){width:11%} .slist-problems th:nth-child(6){width:10%} .slist-problems th:nth-child(7){width:6%}
 .slist td.slprio, .slist td.slsev { white-space: nowrap; }
 .slist td.act .acktag { margin-right: 6px; }
@@ -396,6 +403,11 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .prio-star.on { color: #f5b301; }
 .prio.editable .prio-star { cursor: pointer; border-radius: 3px; }
 .prio.editable .prio-star:hover { color: #f5b301; background: color-mix(in srgb, #f5b301 16%, transparent); }
+/* Compact "★4" form of the priority (swapped in where five stars don't fit); hidden by default. */
+.prio-compact { display: none; align-items: center; gap: 2px; font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* Read-only stars (overview/status lists) sit a notch quieter than the editable ones, so five gold stars
+   per row don't out-shout the state colours. */
+.prio:not(.editable) .prio-star.on { opacity: 0.8; }
 .lccell { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .lccell .when { color: var(--faint); white-space: nowrap; }
 
@@ -516,6 +528,15 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 
 .nav-backdrop { display: none; }
 
+/* Narrow desktop (small laptop / half-screen window with the sidebar open): the status lists get tight, so
+   trim the cell padding and swap the five priority stars for the compact "★4" before anything overflows. */
+@media (min-width: 769px) and (max-width: 1100px) {
+  .slist th, .slist td { padding-left: 10px; padding-right: 10px; }
+  .slist .prio .prio-star { display: none; }
+  .slist .prio .prio-compact { display: inline-flex; }
+  .slist .prio .prio-compact .prio-star { display: inline; }
+}
+
 @media (max-width: 768px) {
   .live { display: none; }
 
@@ -622,11 +643,36 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   .enroll-probes td:not(:first-child) { border-left: none; }
   .enroll-probes td[data-label]:not(:first-child) { border-top: 1px solid var(--border); padding-top: 12px; }
 
-  /* --- monitoring tree: drop the trend column, tighten indentation --- */
+  /* --- monitoring tree: drop the trend column, compact the priority, tighten indentation ---
+     The expanded host's sensor table used to overflow the card (Last check + kebab clipped, values
+     wrapping mid-number): five star buttons and 10px cell padding don't fit four columns in ~350px. */
   table.sensors thead th:nth-child(3), table.sensors td.strend { display: none; }
+  table.sensors thead th, table.sensors > tbody > tr > td { padding-left: 6px; padding-right: 6px; }
+  .sensors .val { white-space: nowrap; }
+  .sensors .prio .prio-star { display: none; }
+  .sensors .prio .prio-compact { display: inline-flex; }
+  .sensors .prio .prio-compact .prio-star { display: inline; font-size: 13px; }
+  .lccell { gap: 3px; }
+  .lccell .when { font-size: 12px; }
   .site-head, .pending-note { padding-left: 14px; }
   .host-head { padding-left: 22px; }
-  .host-body { padding-left: 20px; padding-right: 10px; }
+  /* The host body carries its tree indent as an inline style (16px + 18px per level + 22px), which on a
+     phone eats up to 74px of a ~350px card; !important is the only way to reclaim it from CSS. */
+  .host-body { padding-left: 8px !important; padding-right: 4px !important; overflow-x: auto; }
+
+  /* --- touch targets: bring the compact desktop controls up to ~40px on phones --- */
+  .kebab { width: 36px; height: 36px; font-size: 19px; }
+  .iconbtn { width: 40px; height: 40px; }
+  .btn { padding: 8px 14px; font-size: 13px; }
+  .btn.compact { padding: 7px 12px; font-size: 13px; }
+  .stat { padding: 6px 11px; }
+  .seg button { padding: 7px 12px; font-size: 13px; }
+  .rtab { padding: 6px 11px; font-size: 12.5px; }
+  .menu button { padding: 11px 12px; font-size: 14px; }
+  .nav { padding: 10px 12px; }
+  .prio.editable .prio-star { font-size: 18px; padding: 0 3px; }
+  /* 16px inputs stop iOS Safari zooming the page when a field is focused. */
+  .input, .cellinput, .roleselect, .field input, .field select, .cmdk-input { font-size: 16px; }
 
   .chan-grid { grid-template-columns: 1fr; padding: 4px 14px 18px; }
 }
