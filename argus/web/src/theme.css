@@ -338,9 +338,13 @@ a { color: var(--accent); }
 .host-settings .hs-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .host-settings select.input { cursor: pointer; }
 @media (max-width: 640px) { .host-settings .hs-grid, .host-settings .if-fields, .host-settings .if-snmp { grid-template-columns: 1fr; } }
+/* Grid items default to min-width:auto, so a wide input/select can't shrink below its intrinsic size
+   and overflows the card. Let the fields shrink to their track so content never spills past the box. */
+.host-settings .field { min-width: 0; }
+.host-settings .hs-note { overflow-wrap: break-word; }
 /* Proxy SNMP-default band under a Probes row: a centered card with balanced two-column fields
    (the shared host-settings grid is 3-col, which leaves v2c's two fields lopsided). */
-.snmp-band { margin: 8px auto 16px; max-width: 640px; }
+.snmp-band { margin: 8px auto 16px; max-width: 660px; }
 .snmp-band .if-snmp { grid-template-columns: 1fr 1fr; }
 @media (max-width: 640px) { .snmp-band .if-snmp { grid-template-columns: 1fr; } }
 

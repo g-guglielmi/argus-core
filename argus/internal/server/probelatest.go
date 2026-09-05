@@ -72,6 +72,89 @@ func (s *Server) startProbeLatestRefresh(ctx context.Context) {
 	}()
 }
 
+// updaterImageRepo is the public GHCR repository for the argus-updater sidecar image (semver-tagged
+// X.Y.Z, unlike the probe image's X.Y.Z-rN). Used to resolve the newest updater version for drift.
+const updaterImageRepo = "ghcr.io/g-guglielmi/argus-updater"
+
+// startUpdaterLatestRefresh polls GHCR for the newest published argus-updater version, so the Probes
+// view can flag whether each probe's updater sidecar is up to date (like it does for the proxy). Same
+// cadence + best-effort semantics as the probe poll.
+func (s *Server) startUpdaterLatestRefresh(ctx context.Context) {
+	go func() {
+		refresh := func() {
+			c, cancel := context.WithTimeout(ctx, 20*time.Second)
+			defer cancel()
+			v, err := resolveLatestUpdaterVersion(c)
+			if err != nil {
+				s.logger.Warn("updater latest: GHCR resolve failed", "err", err)
+				return
+			}
+			if v != "" {
+				s.updaterLatest.set(v)
+				s.logger.Info("updater latest resolved from GHCR", "version", v)
+			}
+		}
+		refresh()
+		t := time.NewTicker(probeLatestRefresh)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				refresh()
+			}
+		}
+	}()
+}
+
+var updaterVerTag = regexp.MustCompile(`^([0-9]+)\.([0-9]+)\.([0-9]+)$`)
+
+// resolveLatestUpdaterVersion returns the newest X.Y.Z tag published for the argus-updater image, read
+// anonymously from public GHCR. "" if none found.
+func resolveLatestUpdaterVersion(ctx context.Context) (string, error) {
+	repoPath := strings.TrimPrefix(updaterImageRepo, "ghcr.io/")
+	tok, err := ghcrPullToken(ctx, repoPath)
+	if err != nil {
+		return "", err
+	}
+	tags, err := ghcrListTags(ctx, repoPath, tok)
+	if err != nil {
+		return "", err
+	}
+	best := ""
+	var bestKey [4]int
+	for _, t := range tags {
+		m := updaterVerTag.FindStringSubmatch(t)
+		if m == nil {
+			continue
+		}
+		var k [4]int
+		for i := 0; i < 3; i++ {
+			k[i], _ = strconv.Atoi(m[i+1])
+		}
+		if best == "" || versionLess(bestKey, k) {
+			best, bestKey = t, k
+		}
+	}
+	return best, nil
+}
+
+// updaterStatus classifies a probe's reported updater-sidecar version against the newest published
+// updater version. Leading "v" is ignored on both. "unknown" when either is unknown, "current" when
+// equal, "outdated" otherwise (a mismatch — the sidecar can self-update to close it).
+func updaterStatus(reported, latest string) string {
+	r := strings.TrimPrefix(strings.TrimSpace(reported), "v")
+	l := strings.TrimPrefix(strings.TrimSpace(latest), "v")
+	if r == "" || l == "" {
+		return "unknown"
+	}
+	if r == l {
+		return "current"
+	}
+	return "outdated"
+}
+
 var probeVerTag = regexp.MustCompile(`^([0-9]+)\.([0-9]+)\.([0-9]+)-r([0-9]+)$`)
 
 // resolveLatestProbeVersion returns the newest X.Y.Z-rN tag published for the probe image, read
@@ -240,7 +323,9 @@ func ghcrGetManifestJSON(ctx context.Context, repoPath, ref, bearer string, out 
 // pick out individual labels (org.opencontainers.image.version / .revision).
 func ghcrImageLabels(ctx context.Context, repoPath, ref, bearer string) (map[string]string, error) {
 	var top struct {
-		Config    struct{ Digest string `json:"digest"` } `json:"config"` // present on an image manifest
+		Config struct {
+			Digest string `json:"digest"`
+		} `json:"config"` // present on an image manifest
 		Manifests []struct {
 			Digest   string `json:"digest"`
 			Platform struct {
@@ -265,7 +350,9 @@ func ghcrImageLabels(ctx context.Context, repoPath, ref, bearer string) (map[str
 			target = top.Manifests[0].Digest
 		}
 		var img struct {
-			Config struct{ Digest string `json:"digest"` } `json:"config"`
+			Config struct {
+				Digest string `json:"digest"`
+			} `json:"config"`
 		}
 		if err := ghcrGetManifestJSON(ctx, repoPath, target, bearer, &img); err != nil {
 			return nil, err

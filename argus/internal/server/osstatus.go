@@ -97,8 +97,9 @@ func (s *Server) handleReportProbeOSStatus(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	var req struct {
-		SecUpdates     *int `json:"sec_updates"`
-		RebootRequired bool `json:"reboot_required"`
+		SecUpdates     *int   `json:"sec_updates"`
+		RebootRequired bool   `json:"reboot_required"`
+		OS             string `json:"os"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -108,7 +109,7 @@ func (s *Server) handleReportProbeOSStatus(w http.ResponseWriter, r *http.Reques
 	if req.SecUpdates != nil {
 		count = *req.SecUpdates
 	}
-	if err := s.st.SetProbeOSStatus(ctx, proxyName, count, req.RebootRequired); err != nil {
+	if err := s.st.SetProbeOSStatus(ctx, proxyName, count, req.RebootRequired, req.OS); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not store OS status"})
 		return
 	}

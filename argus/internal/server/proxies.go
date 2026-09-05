@@ -25,13 +25,16 @@ type proxyView struct {
 	UpdateStatus   string `json:"update_status"`    // unknown | tracking | current | outdated | external
 	LastCheckin    int64  `json:"last_checkin"`     // unix seconds of the last Argus check-in (0 = never)
 	UpdaterVersion string `json:"updater_version"`  // version of the managing argus-updater sidecar ("" = none)
+	UpdaterLatest  string `json:"updater_latest"`   // newest argus-updater version resolved from GHCR ("" if unknown)
+	UpdaterStatus  string `json:"updater_status"`   // unknown | current | outdated (updater drift; "" when no sidecar)
 	BreakGlass     bool   `json:"break_glass"`      // a break-glass console credential exists (VM probes); reveal it via its own endpoint
 	BreakGlassUser string `json:"break_glass_user"` // the break-glass username ("" if none)
 	// OS patch status a VM probe's host-side reporter posts (DESIGN §14c). SecUpdates is -1 until first
 	// reported; OSReportedAt is 0 when the probe has never reported (non-VM probes never will).
-	SecUpdates     int   `json:"sec_updates"`
-	RebootRequired bool  `json:"reboot_required"`
-	OSReportedAt   int64 `json:"os_reported_at"`
+	SecUpdates     int    `json:"sec_updates"`
+	RebootRequired bool   `json:"reboot_required"`
+	OSReportedAt   int64  `json:"os_reported_at"`
+	OSVersion      string `json:"os_version"` // the probe VM's OS pretty-name ("" if not reported)
 }
 
 // handleProxies lists Zabbix proxies (the per-site collectors) with their last-access time, so
@@ -62,7 +65,8 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 		s.logger.Warn("proxies: probe target lookup failed", "err", err)
 		target = "latest"
 	}
-	latest := s.probeLatest.get() // newest published probe version from GHCR ("" if unresolved)
+	latest := s.probeLatest.get()          // newest published probe version from GHCR ("" if unresolved)
+	updaterLatest := s.updaterLatest.get() // newest published argus-updater version from GHCR
 	now := time.Now().Unix()
 	out := make([]proxyView, 0, len(proxies))
 	for _, p := range proxies {
@@ -96,11 +100,14 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			UpdateStatus:   status,
 			LastCheckin:    ag.LastCheckin,
 			UpdaterVersion: ag.UpdaterVersion,
+			UpdaterLatest:  updaterLatest,
+			UpdaterStatus:  updaterViewStatus(ag, updaterLatest),
 			BreakGlass:     ag.BreakGlassSet,
 			BreakGlassUser: ag.BreakGlassUser,
 			SecUpdates:     osSecUpdates(ag),
 			RebootRequired: ag.RebootRequired,
 			OSReportedAt:   ag.OSReportedAt,
+			OSVersion:      ag.OSVersion,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -114,6 +121,15 @@ func osSecUpdates(ag store.ProbeAgent) int {
 		return -1
 	}
 	return ag.SecUpdates
+}
+
+// updaterViewStatus returns the updater-drift status for the proxy view: "" when no argus-updater
+// sidecar manages this probe (nothing to show), otherwise updaterStatus (unknown/current/outdated).
+func updaterViewStatus(ag store.ProbeAgent, latest string) string {
+	if !ag.SelfUpdate {
+		return ""
+	}
+	return updaterStatus(ag.UpdaterVersion, latest)
 }
 
 // zbxVersionString normalises Zabbix's proxy version field to a dotted string. Zabbix reports it

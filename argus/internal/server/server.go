@@ -39,6 +39,7 @@ type Server struct {
 	loginLimiter  *ratelimit.Limiter // brute-force protection for login (owned by mgr)
 	ca            *pki.CA            // nil when probe enrollment is not configured
 	probeLatest   *probeLatestCache  // newest published probe version, polled from public GHCR
+	updaterLatest *probeLatestCache  // newest published argus-updater version, polled from public GHCR
 	appLatest     *appLatestCache    // newest published app release, polled from public GHCR
 }
 
@@ -46,10 +47,12 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	dummy, _ := auth.HashPassword("argus-nonexistent-user")
 	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, mgr: mgr, dummyHash: dummy,
 		signingSecret: GetSigningSecret(context.Background(), st),
-		loginLimiter:  mgr.Limiter(), probeLatest: &probeLatestCache{}, appLatest: &appLatestCache{}}
+		loginLimiter:  mgr.Limiter(), probeLatest: &probeLatestCache{}, updaterLatest: &probeLatestCache{}, appLatest: &appLatestCache{}}
 	// Poll public GHCR for the newest probe revision so the fleet view can flag "-rN available"
 	// even when the target is "latest". Background; a failure just leaves it unknown.
 	s.startProbeLatestRefresh(context.Background())
+	// Same for the argus-updater sidecar, so the Probes view can flag updater drift.
+	s.startUpdaterLatestRefresh(context.Background())
 	// Same for the app image, so the UI can show whether this instance is on the newest release.
 	s.startAppLatestRefresh(context.Background())
 	// Mirror the stored core reboot window to the shared update dir so the host reboot timer sees it

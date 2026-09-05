@@ -14,7 +14,7 @@ type Group = { id: string; name: string; hosts: number }
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[] }
-type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number }
+type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; site: string; min_severity: number; config: Record<string, string> }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
@@ -1682,11 +1682,11 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
 
       <div className="enroll-scroll">
       <table className="enroll enroll-probes">
-        <thead><tr><th>Probe</th><th>Health</th><th>Software</th><th>OS</th><th></th></tr></thead>
+        <thead><tr><th>Probe</th><th>Health</th><th>Argus-Proxy Version</th><th>Argus-Updater Version</th><th>Argus-VM OS Version</th><th></th></tr></thead>
         <tbody>
-          {error && <tr><td colSpan={5} style={{ color: 'var(--err)' }}>{error}</td></tr>}
-          {!error && proxies === null && <tr><td colSpan={5} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
-          {!error && proxies && proxies.length === 0 && <tr><td colSpan={5} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
+          {error && <tr><td colSpan={6} style={{ color: 'var(--err)' }}>{error}</td></tr>}
+          {!error && proxies === null && <tr><td colSpan={6} style={{ color: 'var(--muted)' }}>Loading…</td></tr>}
+          {!error && proxies && proxies.length === 0 && <tr><td colSpan={6} style={{ color: 'var(--muted)' }}>No probes have reported to the core yet.</td></tr>}
           {!error && proxies && proxies.map((p) => (
             <Fragment key={p.name}>
               <tr>
@@ -1704,26 +1704,26 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                     <span className="sub-line mono" title="When the core last received data from this probe" style={{ paddingLeft: 10, color: !p.last_access ? 'var(--faint)' : (Date.now() / 1000 - p.last_access > 60 ? 'var(--warn)' : undefined) }}>{p.last_access ? relTime(p.last_access) : 'never'}</span>
                   </div>
                 </td>
-                <td data-label="Software">
+                <td data-label="Argus-Proxy Version">
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span className="mono" style={{ fontWeight: 600, color: p.version ? undefined : 'var(--faint)' }} title="Zabbix proxy version running on this probe">{p.version || '-'}</span>
-                    <UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} />
+                    <UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} hideAuto />
                   </span>
                 </td>
-                <td data-label="OS"><OSCell p={p} /></td>
+                <td data-label="Argus-Updater Version"><UpdaterVersionCell p={p} onUpdate={isAdmin ? triggerUpdaterUpdate : undefined} /></td>
+                <td data-label="Argus-VM OS Version"><OSCell p={p} /></td>
                 <td data-label="" className="row-actions">
                   <ProbeRowMenu items={[
                     canEdit && p.id ? { label: 'SNMP defaults', onClick: () => setOpenSnmp((n) => (n === p.name ? null : p.name)) } : null,
                     isAdmin && p.break_glass ? { label: p.break_glass_user ? `Console (${p.break_glass_user})` : 'Console', onClick: () => revealBreakGlass(p) } : null,
-                    isAdmin && p.selfupdate ? { label: `Update sidecar${p.updater_version ? ` (updater ${p.updater_version})` : ''}`, onClick: () => triggerUpdaterUpdate(p) } : null,
-                    'sep',
+                    isAdmin && p.id ? 'sep' : null,
                     isAdmin && p.id ? { label: 'Delete probe', onClick: () => del(p), danger: true } : null,
                   ]} />
                 </td>
               </tr>
-              {openCmd === p.name && <tr><td colSpan={5} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
-              {report?.name === p.name && <tr><td colSpan={5} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
-              {openSnmp === p.name && <tr><td colSpan={5} style={{ padding: 0 }}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></td></tr>}
+              {openCmd === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
+              {report?.name === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
+              {openSnmp === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></td></tr>}
             </Fragment>
           ))}
         </tbody>
@@ -1740,7 +1740,7 @@ function probeUpdateTag(target?: string): string {
 
 // UpdateBadge shows a probe's state versus the fleet target, and (for drift) a toggle that reveals
 // the one-click manual update command.
-function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, onEnableReporting }: { p: Proxy; open: boolean; onToggle: () => void; queuedTag?: string; onSelfUpdate: (p: Proxy) => void; canReport?: boolean; onEnableReporting: (p: Proxy) => void }) {
+function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, onEnableReporting, hideAuto }: { p: Proxy; open: boolean; onToggle: () => void; queuedTag?: string; onSelfUpdate: (p: Proxy) => void; canReport?: boolean; onEnableReporting: (p: Proxy) => void; hideAuto?: boolean }) {
   // One shared row: the button, the "→ version" chip and the auto tag stay on a single line so the
   // Update column reports an honest one-line width to the auto-sized table (a wrapping cell would
   // collapse to its widest item and let the column starve). The table's scroll wrapper handles the
@@ -1748,7 +1748,7 @@ function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, on
   const wrap: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }
   // "auto" = an argus-updater sidecar manages this probe (Argus can drive updates). The sidecar's own
   // version + its self-update control live in the separate "Updater" column.
-  const auto = p.selfupdate ? <span className="tag" title="Managed by an argus-updater sidecar; Argus can trigger updates from here">auto</span> : null
+  const auto = p.selfupdate && !hideAuto ? <span className="tag" title="Managed by an argus-updater sidecar; Argus can trigger updates from here">auto</span> : null
   if (queuedTag) return <span className="tag" title={`Update to ${queuedTag} queued - the probe applies it on its next check-in (within ~5 min)`}>update queued</span>
   // A socket-enabled probe updates itself when triggered; otherwise we expand the manual command.
   const selfBtn = <button className="btn" onClick={() => onSelfUpdate(p)} title="Tell the probe to update itself to the fleet target on its next check-in">Update now</button>
@@ -1778,15 +1778,38 @@ function OSCell({ p }: { p: Proxy }) {
   if (!p.os_reported_at) return <span className="mono" style={{ color: 'var(--faint)' }} title="No OS patch report — a container probe, or a VM probe that hasn't reported yet">-</span>
   const when = `Reported ${relTime(p.os_reported_at)}`
   const sec = typeof p.sec_updates === 'number' ? p.sec_updates : -1
-  const wrap: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }
+  // The reporter sends the full PRETTY_NAME (e.g. "Debian GNU/Linux 13 (trixie)"); trim the "GNU/Linux"
+  // filler so the cell reads "Debian 13 (trixie)".
+  const osName = (p.os_version || '').replace('GNU/Linux ', '')
+  const chip = p.reboot_required
+    ? <span className="tag avail" title={`This VM needs a reboot to finish applying updates; it reboots in its weekly ~03:00 window. ${when}`}>reboot</span>
+    : sec > 0 ? <span className="tag avail" title={`${sec} pending security update${sec === 1 ? '' : 's'}; applied automatically (security suite only). ${when}`}>{sec} security</span>
+    : sec === 0 ? <span className="tag online" title={`No pending security updates. ${when}`}>patched</span>
+    : <span className="mono" style={{ color: 'var(--faint)' }} title={`Security-update count unknown. ${when}`}>?</span>
   return (
-    <span style={wrap}>
-      {p.reboot_required && <span className="tag avail" title={`This VM needs a reboot to finish applying updates; it reboots in its weekly ~03:00 window. ${when}`}>reboot</span>}
-      {sec > 0 && <span className="tag avail" title={`${sec} pending security update${sec === 1 ? '' : 's'}; applied automatically (security suite only). ${when}`}>{sec} security</span>}
-      {sec === 0 && !p.reboot_required && <span className="tag online" title={`No pending security updates. ${when}`}>patched</span>}
-      {sec < 0 && !p.reboot_required && <span className="mono" style={{ color: 'var(--faint)' }} title={`Security-update count unknown. ${when}`}>?</span>}
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      {osName && <span className="mono" style={{ fontWeight: 600 }} title="Operating system reported by the VM">{osName}</span>}
+      {chip}
     </span>
   )
+}
+
+// UpdaterVersionCell is the "Argus-Updater Version" column: the argus-updater sidecar's version, its
+// drift vs the newest published updater, and (admin) an Update button when it's behind — the same shape
+// as the proxy-version cell. A dash means no sidecar manages this probe (e.g. an unRAID-native probe).
+function UpdaterVersionCell({ p, onUpdate }: { p: Proxy; onUpdate?: (p: Proxy) => void }) {
+  if (!p.selfupdate) return <span className="mono" style={{ color: 'var(--faint)' }} title="No argus-updater sidecar manages this probe">-</span>
+  const wrap: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }
+  const ver = <span className="mono" style={{ fontWeight: 600 }} title="Version of the argus-updater sidecar managing this probe">{p.updater_version || '?'}</span>
+  const updateBtn = onUpdate ? <button className="btn" onClick={() => onUpdate(p)} title="Update the argus-updater sidecar to the newest version (it recreates itself)">Update</button> : null
+  switch (p.updater_status) {
+    case 'current':
+      return <span style={wrap}>{ver}<span className="tag online">up to date</span></span>
+    case 'outdated':
+      return <span style={wrap}>{ver}{p.updater_latest ? <span className="tag avail" title="A newer argus-updater has been published">→ {p.updater_latest}</span> : null}{updateBtn}</span>
+    default: // unknown: version reported but GHCR not resolved yet, or version not reported
+      return <span style={wrap}>{ver}{updateBtn}</span>
+  }
 }
 
 // ProbeRowMenu is the per-row "⋯" actions menu on the Probes table: the low-frequency, action-only

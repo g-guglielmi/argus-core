@@ -204,7 +204,8 @@ CREATE TABLE IF NOT EXISTS probe_agents (
   bg_updated_at     INTEGER NOT NULL DEFAULT 0, -- unix seconds the break-glass credential was last reported
   sec_updates       INTEGER NOT NULL DEFAULT -1, -- pending OS security-update count a probe VM reports (-1 = never reported)
   reboot_required   INTEGER NOT NULL DEFAULT 0,  -- the probe VM's OS flagged /var/run/reboot-required
-  os_reported_at    INTEGER NOT NULL DEFAULT 0   -- unix seconds the OS patch status was last reported
+  os_reported_at    INTEGER NOT NULL DEFAULT 0,  -- unix seconds the OS patch status was last reported
+  os_version        TEXT NOT NULL DEFAULT ''     -- the probe VM's OS pretty-name (e.g. "Debian GNU/Linux 13 (trixie)")
 );
 
 -- Small key/value store for app-level flags (e.g. the notifier's one-time baseline marker).
@@ -320,6 +321,9 @@ CREATE TABLE IF NOT EXISTS tree_hidden (
 		return err
 	}
 	if err := s.ensureColumn("probe_agents", "os_reported_at INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("probe_agents", "os_version TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("notify_events", "item_id TEXT NOT NULL DEFAULT ''"); err != nil {

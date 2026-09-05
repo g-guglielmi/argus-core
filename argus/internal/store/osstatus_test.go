@@ -11,7 +11,7 @@ func TestSetProbeOSStatus(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
 
-	if err := st.SetProbeOSStatus(ctx, "proxy-missing", 3, true); err != ErrNotFound {
+	if err := st.SetProbeOSStatus(ctx, "proxy-missing", 3, true, "Debian GNU/Linux 13 (trixie)"); err != ErrNotFound {
 		t.Fatalf("SetProbeOSStatus on an unknown probe = %v, want ErrNotFound", err)
 	}
 
@@ -27,16 +27,16 @@ func TestSetProbeOSStatus(t *testing.T) {
 		t.Fatalf("fresh agent OS status = {%d,%v,%d}, want {-1,false,0}", ag.SecUpdates, ag.RebootRequired, ag.OSReportedAt)
 	}
 
-	if err := st.SetProbeOSStatus(ctx, "proxy-a", 5, true); err != nil {
+	if err := st.SetProbeOSStatus(ctx, "proxy-a", 5, true, "Debian GNU/Linux 13 (trixie)"); err != nil {
 		t.Fatal(err)
 	}
 	ag, _ = st.ProbeAgentByName(ctx, "proxy-a")
-	if ag.SecUpdates != 5 || !ag.RebootRequired || ag.OSReportedAt == 0 {
-		t.Fatalf("after report = {%d,%v,%d}, want {5,true,>0}", ag.SecUpdates, ag.RebootRequired, ag.OSReportedAt)
+	if ag.SecUpdates != 5 || !ag.RebootRequired || ag.OSReportedAt == 0 || ag.OSVersion != "Debian GNU/Linux 13 (trixie)" {
+		t.Fatalf("after report = {%d,%v,%d,%q}, want {5,true,>0,Debian…}", ag.SecUpdates, ag.RebootRequired, ag.OSReportedAt, ag.OSVersion)
 	}
 
 	// A later report overwrites; a negative count clamps to -1 (unknown), reboot clears.
-	if err := st.SetProbeOSStatus(ctx, "proxy-a", -7, false); err != nil {
+	if err := st.SetProbeOSStatus(ctx, "proxy-a", -7, false, "Debian GNU/Linux 13 (trixie)"); err != nil {
 		t.Fatal(err)
 	}
 	ag, _ = st.ProbeAgentByName(ctx, "proxy-a")

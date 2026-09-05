@@ -36,11 +36,18 @@ remotely (there's no clean rollback; hypervisor snapshots are the safety net).
   `reboot_required` / `os_reported_at` (additive migration).
 
 **Changed:**
-- **Probes table decluttered.** Adding the OS column pushed it to 11 columns; regrouped into 5 —
-  **Probe** (name + `mode · enrolled` subline), **Health** (online/offline + last check-in), **Software**
-  (version + update badge + `updater vX.Y.Z` subline), **OS**, and a per-row **⋯ menu** (SNMP defaults,
-  Console, Update sidecar, Delete). Nothing removed, just grouped by concept and the row actions folded
-  into the menu. The menu is portaled to `<body>` so the table's scroll container can't clip it.
+- **Probes table reworked.** Adding the OS column pushed it to 11 columns; regrouped into a clearer
+  layout — **Probe** (name + `mode · enrolled` subline), **Health** (online/offline + last check-in),
+  **Argus-Proxy Version** (Zabbix proxy version + up-to-date/update), **Argus-Updater Version** (the
+  argus-updater sidecar's version + drift + an Update button when behind), **Argus-VM OS Version** (the
+  OS name + patch chip), and a per-row **⋯ menu** (SNMP defaults, Console, Delete). The menu is portaled
+  to `<body>` so the table's scroll container can't clip it.
+- **Updater drift.** Argus now resolves the newest `argus-updater` version from GHCR (like it does for
+  the probe image) so each probe's sidecar shows up-to-date / behind, not just its version.
+- **Probes report their OS name** (`os` in `POST /api/probes/os-status`, new `os_version` column) so the
+  VM's Debian version shows alongside the patch status.
+- The proxy SNMP-default band is a centered card with balanced fields; fixed a grid overflow that let a
+  wide input spill past the card edge.
 
 **Deploy:**
 - `setup-core.sh` gains an OS-patching step: `unattended-upgrades` (auto-reboot **off**), a host

@@ -26,6 +26,7 @@ type ProbeAgent struct {
 	SecUpdates     int
 	RebootRequired bool
 	OSReportedAt   int64
+	OSVersion      string
 }
 
 // UpsertProbeCredential issues (or rotates) a probe's long-lived check-in credential at
@@ -82,9 +83,9 @@ func (s *Store) ProbeAgentByName(ctx context.Context, name string) (*ProbeAgent,
 	var a ProbeAgent
 	var su, bg, rr int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT proxy_name,version,selfupdate,last_checkin,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at
+		`SELECT proxy_name,version,selfupdate,last_checkin,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version
 		 FROM probe_agents WHERE proxy_name=?`, name).
-		Scan(&a.ProxyName, &a.Version, &su, &a.LastCheckin, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt)
+		Scan(&a.ProxyName, &a.Version, &su, &a.LastCheckin, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -129,7 +130,7 @@ func (s *Store) TakeProbeUpdate(ctx context.Context, name string) (string, error
 
 // ProbeAgents returns every probe's fleet-update state, keyed by proxy name (for the fleet view).
 func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,version,selfupdate,last_checkin,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at FROM probe_agents`)
+	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,version,selfupdate,last_checkin,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version FROM probe_agents`)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +139,7 @@ func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) 
 	for rows.Next() {
 		var a ProbeAgent
 		var su, bg, rr int
-		if err := rows.Scan(&a.ProxyName, &a.Version, &su, &a.LastCheckin, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt); err != nil {
+		if err := rows.Scan(&a.ProxyName, &a.Version, &su, &a.LastCheckin, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion); err != nil {
 			return nil, err
 		}
 		a.SelfUpdate = su != 0
@@ -149,10 +150,10 @@ func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) 
 	return out, rows.Err()
 }
 
-// SetProbeOSStatus records a probe VM's OS patch status - the pending security-update count and
-// whether the OS needs a reboot - reported by the VM's host-side timer (DESIGN §14c). A negative
-// count is clamped to -1 (unknown). ErrNotFound if the probe never enrolled through Argus.
-func (s *Store) SetProbeOSStatus(ctx context.Context, proxyName string, secUpdates int, rebootRequired bool) error {
+// SetProbeOSStatus records a probe VM's OS patch status - the pending security-update count, whether
+// the OS needs a reboot, and the OS pretty-name - reported by the VM's host-side timer (DESIGN §14c).
+// A negative count is clamped to -1 (unknown). ErrNotFound if the probe never enrolled through Argus.
+func (s *Store) SetProbeOSStatus(ctx context.Context, proxyName string, secUpdates int, rebootRequired bool, osVersion string) error {
 	if secUpdates < 0 {
 		secUpdates = -1
 	}
@@ -161,8 +162,8 @@ func (s *Store) SetProbeOSStatus(ctx context.Context, proxyName string, secUpdat
 		rr = 1
 	}
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE probe_agents SET sec_updates=?, reboot_required=?, os_reported_at=? WHERE proxy_name=?`,
-		secUpdates, rr, time.Now().Unix(), proxyName)
+		`UPDATE probe_agents SET sec_updates=?, reboot_required=?, os_reported_at=?, os_version=? WHERE proxy_name=?`,
+		secUpdates, rr, time.Now().Unix(), strings.TrimSpace(osVersion), proxyName)
 	if err != nil {
 		return err
 	}
