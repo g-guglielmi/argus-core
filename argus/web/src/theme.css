@@ -551,16 +551,18 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   .nav-backdrop { display: block; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 49; }
   .main { width: 100%; }
 
-  /* --- topbar: title + ☰ on row one, status chips scroll on row two --- */
-  .topbar { flex-wrap: wrap; gap: 8px 10px; padding: 9px 12px; }
+  /* --- topbar: title + ☰ on row one, status chips on row two. The subtitle is dropped: it repeats the
+     panel header right underneath, and on a phone the two headers were ~180px before any data. --- */
+  .topbar { flex-wrap: wrap; gap: 6px 10px; padding: 6px 12px 8px; }
   .topbar h1 { font-size: 15px; }
-  .topbar .sub { font-size: 11px; }
-  .summary { width: 100%; margin-left: 0; flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; gap: 6px; padding-bottom: 2px; scrollbar-width: none; }
+  .topbar .sub { display: none; }
+  .summary { width: 100%; margin-left: 0; flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; gap: 5px; padding-bottom: 2px; scrollbar-width: none; }
   .summary::-webkit-scrollbar { display: none; }
   .stat { flex-shrink: 0; }
 
-  .content { padding: 14px 12px 48px; }
-  .phead { padding: 12px 14px; }
+  .content { padding: 12px 12px 48px; }
+  .phead { padding: 10px 14px; gap: 6px 10px; }
+  .phead h2 { font-size: 15px; }
   .menu { max-width: calc(100vw - 24px); } /* keep kebab menus on-screen */
 
   /* --- problem/status lists: stack each row into a labelled card (no side-scroll) --- */
@@ -578,6 +580,24 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   .slist td[data-label]::before { content: attr(data-label); color: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
   .slist td.act, .slist td:last-child:not([data-label]) { width: auto; text-align: right !important; margin-top: 8px; }
   .slist td:last-child > span { justify-content: flex-end !important; }
+
+  /* --- Overview / status-list card (the sensors list): a compact 4-row grid instead of one labelled
+     field per line. Host + ⋮ on the title row (the kebab used to sit alone on its own row), sensor +
+     reason under it, sparkline beside the value, then "last check 1m ago" beside the priority. --- */
+  .slist-sensors tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "host act" "sensor sensor" "trend value" "dur prio"; align-items: center; column-gap: 12px; row-gap: 3px; padding: 10px 14px; }
+  .slist-sensors td { padding: 0; }
+  .slist-sensors td.slhost { grid-area: host; margin: 0; }
+  .slist-sensors td.act { grid-area: act; margin: 0; }
+  .slist-sensors td.slgrow, .slist-sensors td.trend, .slist-sensors td.dur { padding-left: 13px; } /* align with the host text past the 3px stripe */
+  .slist-sensors td.slgrow { grid-area: sensor; }
+  .slist-sensors td.trend { grid-area: trend; display: block; padding-top: 2px; }
+  .slist-sensors td.trend::before { display: none; }
+  .slist-sensors td.val { grid-area: value; display: block; text-align: right !important; }
+  .slist-sensors td.val::before { display: none; }
+  .slist-sensors td.dur { grid-area: dur; display: block; color: var(--faint); font-size: 12px; }
+  .slist-sensors td.dur::before { content: attr(data-label) " "; text-transform: lowercase; font: inherit; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; letter-spacing: 0; color: var(--faint); }
+  .slist-sensors td.slprio { grid-area: prio; display: block; text-align: right !important; }
+  .slist-sensors td.slprio::before { display: none; }
 
   /* --- users table: labelled cards (same refinements as the probes cards) --- */
   .utable thead { display: none; }
@@ -665,7 +685,7 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   .iconbtn { width: 40px; height: 40px; }
   .btn { padding: 8px 14px; font-size: 13px; }
   .btn.compact { padding: 7px 12px; font-size: 13px; }
-  .stat { padding: 6px 11px; }
+  .stat { padding: 6px 9px; }
   .seg button { padding: 7px 12px; font-size: 13px; }
   .rtab { padding: 6px 11px; font-size: 12.5px; }
   .menu button { padding: 11px 12px; font-size: 14px; }
@@ -675,6 +695,10 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
   .input, .cellinput, .roleselect, .field input, .field select, .cmdk-input { font-size: 16px; }
 
   .chan-grid { grid-template-columns: 1fr; padding: 4px 14px 18px; }
+
+  /* --- type: the smallest text sizes were at the edge on a phone (10px labels, 11.5px sub-lines) --- */
+  .slist td[data-label]::before, .slist td.trend::before, .utable td::before, .enroll td::before { font-size: 11px; letter-spacing: 0.03em; }
+  .sub-line, .cell-stack .sub-line, .slist .sreason, .set-hint, .host-head .kind, .site-head .loc, .card-note, .set-note, .phead .hint { font-size: 12.5px; }
 }
 
 /* Global quick-switcher (Ctrl-K) */
