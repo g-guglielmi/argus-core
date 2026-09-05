@@ -91,6 +91,7 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
 - [x] **Global search** - top-bar quick-switcher (and Ctrl/Cmd-K) searching hosts by name/IP, sensors by name, and groups by name; a hit opens the tree host, its chart, or the group focus. `GET /api/search` with prefix/word-boundary/substring ranking (DESIGN §16) - v0.4.27
 - [x] **Per-channel severity filter** - each notification channel sets its own floor (Warning / Average / High / Disaster, default Warning); a problem below the floor - and its recovery - skips that channel - v0.4.27
 - [x] **Labeled graph axes** in alert PNGs - min/mid/max Y gridlines + relative-time X labels, rendered with the built-in basicfont face (adds golang.org/x/image, no TTF shipped) - v0.4.27
+- [x] **Per-user + multi-site notifications** - personal Telegram/Discord channels each user self-manages in **Account** (their own @BotFather bot / webhook, `/api/me/notify/*`, encrypted at rest); an email channel can deliver to **every registered user's** address; and channels (global + personal) can target **multiple sites** via a hierarchical picker where selecting a probe's root group covers its subgroups. Lays the groundwork for the mobile push channel (§I). - v0.4.35
 
 ### G. Scale & production readiness
 - [ ] **Sizing pass** before the ~6000-sensor deployment (proxies, DB, caches, NVPS) - analysis

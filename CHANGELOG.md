@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [0.4.35] - 2026-09-05
+## [0.4.35] - 2026-09-06
 
 **Per-user notifications.** Everyone can now get alerts on their *own* Telegram or Discord, and email
 can fan out to every registered user — additively, without changing the existing shared channels.
