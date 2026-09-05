@@ -1525,9 +1525,9 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
           </Select>
         </label>
       </div>
-      <label style={{ display: 'grid', gap: 6 }}><span className="flabel">Sites</span>
+      <div style={{ display: 'grid', gap: 6 }}><span className="flabel">Sites</span>
         <SitePicker options={sites} value={selSites} onChange={setSelSites} />
-      </label>
+      </div>
       <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
         {type === 'email' && (
           <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Send to</span>
@@ -1697,9 +1697,9 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
           </Select>
         </label>
       </div>
-      <label style={{ display: 'grid', gap: 6 }}><span className="flabel">Sites</span>
+      <div style={{ display: 'grid', gap: 6 }}><span className="flabel">Sites</span>
         <SitePicker options={sites} value={selSites} onChange={setSelSites} />
-      </label>
+      </div>
       <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         {fields.map((f) => (
           <label key={f.key} style={{ display: 'grid', gap: 4 }}><span className="flabel">{f.label}</span>
