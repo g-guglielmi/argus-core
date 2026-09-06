@@ -1,10 +1,10 @@
 zabbix_export:
   version: '7.0'
   template_groups:
-    - uuid: ca79927b22bdae2eb36221784793bc58
+    - uuid: b0123beba96045ada8542647604ac6ca
       name: Templates/Argus
   templates:
-    - uuid: 7c59b335f7e7f19c4da46c441ccaf18b
+    - uuid: d8677d3352914b3291e6316f7b6fff6f
       template: 'Argus HTTP Endpoint'
       name: 'Argus HTTP Endpoint'
       description: |
@@ -14,7 +14,7 @@ zabbix_export:
       groups:
         - name: Templates/Argus
       items:
-        - uuid: 15107999ec9cdb0cc84b99b3eed30c10
+        - uuid: afc6aea4e1d24ca29f61dfe17976bf78
           name: 'HTTP/HTTPS reachable'
           type: SIMPLE
           key: 'net.tcp.service[{$HTTP.SCHEME},,{$HTTP.PORT}]'
@@ -24,12 +24,12 @@ zabbix_export:
           value_type: UNSIGNED
           description: '1 = the service accepted a connection on the configured port, 0 = it did not.'
           triggers:
-            - uuid: ff3227fce8a0316c367735fcae4a5250
+            - uuid: 99500d285b1143e8833ca51e971ddf42
               expression: 'max(/Argus HTTP Endpoint/net.tcp.service[{$HTTP.SCHEME},,{$HTTP.PORT}],#3)=0'
               name: 'HTTP/HTTPS endpoint down'
               priority: AVERAGE
               description: 'No connection accepted on the configured port for the last 3 checks.'
-        - uuid: 1ba06b4bf733072e2ba6ab52b73745e7
+        - uuid: 119c856845e347fcb643a3ab0a0bce4c
           name: 'HTTP/HTTPS response time'
           type: SIMPLE
           key: 'net.tcp.service.perf[{$HTTP.SCHEME},,{$HTTP.PORT}]'
@@ -39,7 +39,7 @@ zabbix_export:
           value_type: FLOAT
           units: s
           triggers:
-            - uuid: 79bb5cbf2c5416686450392456a3232b
+            - uuid: 643105a64ad949d89e85ef7ef6d3a8d8
               expression: 'min(/Argus HTTP Endpoint/net.tcp.service.perf[{$HTTP.SCHEME},,{$HTTP.PORT}],#3)>{$HTTP.RESPONSE.WARN}'
               name: 'HTTP/HTTPS slow response'
               priority: WARNING
