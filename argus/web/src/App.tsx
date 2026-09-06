@@ -3072,12 +3072,25 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
   const [snmpVersion, setSnmpVersion] = useState(2)
   const [community, setCommunity] = useState('public')
   const [snmpPort, setSnmpPort] = useState('161')
+  const [snmpOverride, setSnmpOverride] = useState(false) // enter creds for this host instead of inheriting
+  const [proxySnmp, setProxySnmp] = useState<{ set: boolean } | null>(null) // does the chosen proxy have a default?
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   const cls = classes.find((c) => c.id === classId)
   const needsSnmp = cls?.iface === 'snmp'
   const offersHttp = !!cls?.offers_http
+  const proxyName = proxies.find((p) => p.id === proxyId)?.name || 'the proxy'
+  const canInherit = needsSnmp && proxyId !== '' && !!proxySnmp?.set
+  const showSnmpFields = needsSnmp && proxySnmp !== null && (!canInherit || snmpOverride)
+
+  // For an SNMP class, check whether the chosen proxy has an SNMP default to inherit, so the form can
+  // hide the credential fields (the common case) and only ask when overriding or when none is set.
+  useEffect(() => {
+    if (!needsSnmp || proxyId === '') { setProxySnmp({ set: false }); return }
+    setProxySnmp(null)
+    fetch(`/api/proxies/${encodeURIComponent(proxyId)}/snmp`).then((r) => (r.ok ? r.json() : { set: false })).then((d) => setProxySnmp({ set: !!d.set })).catch(() => setProxySnmp({ set: false }))
+  }, [needsSnmp, proxyId])
 
   async function submit() {
     if (busy) return
@@ -3085,10 +3098,12 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
     if (!site.trim()) { setErr('Pick a site'); return }
     if (useIp && !ip.trim()) { setErr('An IP address is required'); return }
     if (!useIp && !dns.trim()) { setErr('A DNS name is required'); return }
+    if (showSnmpFields && !community.trim()) { setErr('An SNMP community is required'); return }
     setBusy(true); setErr(null)
     const body: Record<string, unknown> = { name: name.trim(), ip: ip.trim(), dns: dns.trim(), use_ip: useIp, site: site.trim(), proxy_id: proxyId, class_id: classId }
     if (offersHttp && http) { body.http = true; body.http_scheme = httpScheme; if (httpPort.trim()) body.http_port = httpPort.trim() }
-    if (needsSnmp) body.snmp = { version: snmpVersion, community, port: snmpPort }
+    // Omit snmp to inherit the proxy default; send it only when overriding or no default exists.
+    if (showSnmpFields) body.snmp = { version: snmpVersion, community: community.trim(), port: snmpPort.trim() || '161' }
     const res = await fetch('/api/hosts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null)
     setBusy(false)
     if (!res || !res.ok) { setErr(await errText(res, 'Could not create the device')); return }
@@ -3112,10 +3127,24 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
           <Field label={' '}><div style={{ display: 'flex', alignItems: 'center', minHeight: 37 }}><Switch checked={useIp} onChange={setUseIp} label={useIp ? 'Connect by IP' : 'Connect by DNS'} /></div></Field>
         </div>
         {needsSnmp && (
-          <div style={grid}>
-            <Field label="SNMP version"><Select value={String(snmpVersion)} onChange={(e) => setSnmpVersion(Number(e.target.value))}><option value="1">v1</option><option value="2">v2c</option></Select></Field>
-            <Field label="Community" value={community} onChange={(e) => setCommunity(e.target.value)} />
-            <Field label="SNMP port" value={snmpPort} onChange={(e) => setSnmpPort(e.target.value)} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+            {proxySnmp === null && <span style={{ fontSize: 13, color: 'var(--muted)' }}>Checking {proxyName}'s SNMP settings…</span>}
+            {canInherit && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, color: 'var(--muted)' }}>Uses {proxyName}'s SNMP settings.</span>
+                <Switch checked={snmpOverride} onChange={setSnmpOverride} label="Override for this host" />
+              </div>
+            )}
+            {proxySnmp !== null && !proxySnmp.set && (
+              <span style={{ fontSize: 13, color: 'var(--muted)' }}>{proxyId === '' ? 'Hosts on the core server have' : `${proxyName} has`} no SNMP default — enter settings below{proxyId !== '' ? ', or set one in Probes to reuse it' : ''}.</span>
+            )}
+            {showSnmpFields && (
+              <div style={grid}>
+                <Field label="SNMP version"><Select value={String(snmpVersion)} onChange={(e) => setSnmpVersion(Number(e.target.value))}><option value="1">v1</option><option value="2">v2c</option></Select></Field>
+                <Field label="Community" value={community} onChange={(e) => setCommunity(e.target.value)} />
+                <Field label="SNMP port" value={snmpPort} onChange={(e) => setSnmpPort(e.target.value)} />
+              </div>
+            )}
           </div>
         )}
         {offersHttp && (

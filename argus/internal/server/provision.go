@@ -111,11 +111,6 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connect-by-DNS needs a DNS name"})
 		return
 	}
-	if class.Iface == provision.IfaceSNMP && req.SNMP == nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "this class needs SNMP settings"})
-		return
-	}
-
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
@@ -157,12 +152,20 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 		monitoredBy, proxyID = 1, req.ProxyID
 	}
 
+	// Build the interface. For SNMP classes the credentials inherit the proxy's SNMP default (like
+	// the rest of Argus) unless the request carries an explicit override.
+	ifaces, inheritSNMP, ifErr := s.resolveInterface(ctx, class, req, useIP, proxyID)
+	if ifErr != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": ifErr})
+		return
+	}
+
 	hostID, err := s.zbx.CreateHost(ctx, zabbix.CreateHostParams{
 		Host:        req.Name,
 		Name:        req.Visible,
 		GroupIDs:    []string{groupID},
 		TemplateIDs: tmplIDs,
-		Interfaces:  buildInterface(class, req, useIP),
+		Interfaces:  ifaces,
 		Macros:      buildMacros(req),
 		MonitoredBy: monitoredBy,
 		ProxyID:     proxyID,
@@ -180,35 +183,58 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 	if err := s.st.SetDeviceClass(ctx, hostID, class.ID, "manual"); err != nil {
 		s.logger.Error("provision: could not record device-class overlay", "host", hostID, "err", err)
 	}
+	// Mark the SNMP interface as inheriting its proxy default, so a later change to that default
+	// propagates here like every other inheriting interface (server/snmp.go).
+	if inheritSNMP {
+		if hd, err := s.zbx.HostDetail(ctx, hostID); err == nil {
+			for _, i := range hd.Interfaces {
+				if i.Type == 2 {
+					_ = s.st.SetSNMPInherit(ctx, i.InterfaceID, true)
+				}
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"id": hostID, "class": class.ID})
 }
 
-// buildInterface builds the host's Zabbix interface for its class: SNMP (type 2) for SNMP classes,
-// otherwise an agent interface (type 1) that ICMP/simple checks resolve their target from.
-func buildInterface(class provision.Class, req createHostRequest, useIP bool) []zabbix.HostInterface {
+// resolveInterface builds the host's Zabbix interface for its class. For SNMP classes the credentials
+// inherit the selected proxy's SNMP default (defaultToDetails, like the rest of Argus) unless the
+// request carries an explicit override; the bool reports whether to track the interface as inheriting.
+// The string is a user-facing error (an SNMP host with neither a proxy default nor an override) or "".
+func (s *Server) resolveInterface(ctx context.Context, class provision.Class, req createHostRequest, useIP bool, proxyID string) ([]zabbix.HostInterface, bool, string) {
 	if class.Iface == provision.IfaceNone {
-		return nil
+		return nil, false, ""
 	}
 	u := 0
 	if useIP {
 		u = 1
 	}
-	if class.Iface == provision.IfaceSNMP {
-		port := "161"
-		var snmp *zabbix.SNMPDetails
-		if req.SNMP != nil {
-			if req.SNMP.Port != "" {
-				port = req.SNMP.Port
-			}
-			v := req.SNMP.Version
-			if v == 0 {
-				v = 2
-			}
-			snmp = &zabbix.SNMPDetails{Version: v, Community: req.SNMP.Community, Bulk: 1}
-		}
-		return []zabbix.HostInterface{{Type: 2, Main: 1, UseIP: u, IP: req.IP, DNS: req.DNS, Port: port, SNMP: snmp}}
+	if class.Iface != provision.IfaceSNMP {
+		return []zabbix.HostInterface{{Type: 1, Main: 1, UseIP: u, IP: req.IP, DNS: req.DNS, Port: "10050"}}, false, ""
 	}
-	return []zabbix.HostInterface{{Type: 1, Main: 1, UseIP: u, IP: req.IP, DNS: req.DNS, Port: "10050"}}
+	port := "161"
+	if req.SNMP != nil && req.SNMP.Port != "" {
+		port = req.SNMP.Port
+	}
+	var details *zabbix.SNMPDetails
+	inherit := false
+	switch {
+	case req.SNMP != nil: // explicit override entered in the form
+		v := req.SNMP.Version
+		if v == 0 {
+			v = 2
+		}
+		details = &zabbix.SNMPDetails{Version: v, Community: req.SNMP.Community, Bulk: 1}
+	case proxyID != "": // the common case: inherit the proxy's SNMP default
+		if def, ok, _ := s.st.SNMPDefaultFor(ctx, proxyID); ok {
+			details = defaultToDetails(def)
+			inherit = true
+		}
+	}
+	if details == nil {
+		return nil, false, "no SNMP settings: this host's proxy has no SNMP default (set one in Probes), or switch on the override and enter them here"
+	}
+	return []zabbix.HostInterface{{Type: 2, Main: 1, UseIP: u, IP: req.IP, DNS: req.DNS, Port: port, SNMP: details}}, inherit, ""
 }
 
 // buildMacros turns the request's HTTP add-on port/scheme and any extra overrides into host macros.
