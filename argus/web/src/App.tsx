@@ -3106,9 +3106,10 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
           <Field label="Site"><Select value={site} onChange={(e) => setSite(e.target.value)}><option value="">Choose a site…</option>{groups.map((g) => <option key={g.id} value={g.name}>{g.name}</option>)}</Select></Field>
           <Field label="Monitored by"><Select value={proxyId} onChange={(e) => setProxyId(e.target.value)}><option value="">Core server</option>{proxies.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
         </div>
-        <div style={{ ...grid, alignItems: 'end' }}>
+        <div style={grid}>
           <Field label={useIp ? 'IP address' : 'DNS name'} placeholder={useIp ? '10.0.0.10' : 'host.example.lan'} value={useIp ? ip : dns} onChange={(e) => (useIp ? setIp(e.target.value) : setDns(e.target.value))} />
-          <Switch checked={useIp} onChange={setUseIp} label={useIp ? 'Connect by IP' : 'Connect by DNS'} />
+          {/* Blank label + input-height box so the toggle lines up with the address input, not its label. */}
+          <Field label={' '}><div style={{ display: 'flex', alignItems: 'center', minHeight: 37 }}><Switch checked={useIp} onChange={setUseIp} label={useIp ? 'Connect by IP' : 'Connect by DNS'} /></div></Field>
         </div>
         {needsSnmp && (
           <div style={grid}>
