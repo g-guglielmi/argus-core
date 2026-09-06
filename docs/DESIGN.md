@@ -126,9 +126,9 @@ Every host gets the **Base** template (Ping - latency + loss, always) and, optio
 **HTTP/HTTPS** add-on (up + response time + TLS-cert expiry on a configurable `{$HTTP.PORT}` -
 attachable to any host, not a class). On top, one or more **class templates** attach - manually
 in the first cut (§C), automatically by fingerprint once discovery lands (§8, §B). Templates are
-hand-authored Zabbix YAML, version-controlled under `deploy/zabbix/templates/` and imported into
-zabbix-server via `configuration.import` (Argus reconciles the set on startup, so templates track
-the app version). Thresholds are Zabbix **user-macros** carrying the §6 defaults, overridable
+hand-authored Zabbix YAML, version-controlled under `argus/internal/provision/templates/` (in-module
+so they can be embedded) and imported into zabbix-server via `configuration.import` (Argus reconciles
+the set on startup, so templates track the app version). Thresholds are Zabbix **user-macros** carrying the §6 defaults, overridable
 per-host/sensor (§D).
 
 **Fleet reality:** 400+ servers with **SNMP already configured**; deploying an agent that widely

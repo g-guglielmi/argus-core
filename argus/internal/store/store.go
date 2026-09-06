@@ -285,6 +285,17 @@ CREATE TABLE IF NOT EXISTS tree_order (
 CREATE TABLE IF NOT EXISTS tree_hidden (
   path TEXT PRIMARY KEY
 );
+
+-- Argus overlay: which device class a host was provisioned as (§C). Keyed by Zabbix host id like the
+-- other overlays. class_id is an Argus registry id (e.g. 'linux-snmp'); source is 'manual' (attach
+-- UI) or 'discovered' (the future §B pipeline).
+CREATE TABLE IF NOT EXISTS device_class (
+  host_id    TEXT PRIMARY KEY,
+  class_id   TEXT NOT NULL,
+  source     TEXT NOT NULL DEFAULT 'manual',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 `); err != nil {
 		return err
 	}

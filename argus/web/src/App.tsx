@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, Fragment, type FormEvent, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useRef, useState, Fragment, type FormEvent, type ReactNode, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
@@ -12,6 +12,7 @@ type User = { id: number; email: string; name: string; surname: string; role: st
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string }
 type Group = { id: string; name: string; hosts: number }
+type DeviceClass = { id: string; label: string; family: string; pattern: string; iface: string; offers_http: boolean }
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[] }
@@ -2583,6 +2584,8 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   const [groups, setGroups] = useState<Group[]>([])
   const [proxies, setProxies] = useState<Proxy[]>([])
   const [creating, setCreating] = useState(false) // "+ New group" inline band open
+  const [addingDevice, setAddingDevice] = useState(false) // "+ Add device" inline band open (admin)
+  const [classes, setClasses] = useState<DeviceClass[]>([]) // device-class catalog for the attach band
   const [gAction, setGAction] = useState<{ id: string; mode: 'rename' | 'delete' } | null>(null) // per-group rename/delete band
   const [newSubPath, setNewSubPath] = useState<string | null>(null) // group path under which a "New subgroup" band is open
   const [focus, setFocus] = useState<Focus>({ level: 'root' })
@@ -2616,6 +2619,8 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     fetch('/api/proxies').then((r) => (r.ok ? r.json() : [])).then((p) => setProxies(p || [])).catch(() => {})
   }
   useEffect(() => { load(true); const t = setInterval(() => load(false), 30000); const off = onDataRefresh(() => load(false)); return () => { clearInterval(t); off() } }, [])
+  // Device-class catalog is static; fetch once for the "+ Add device" band.
+  useEffect(() => { fetch('/api/classes').then((r) => (r.ok ? r.json() : [])).then((c) => setClasses(c || [])).catch(() => {}) }, [])
 
   // Group management (create/rename/delete + move a host between groups). All are admin/helpdesk-gated
   // config writes to Zabbix host groups, driven by inline bands (no browser prompts); on success we
@@ -2970,6 +2975,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
         {focus.level !== 'sensor' && (
           <div className="tools">
             {canPause && focus.level !== 'host' && !reorder && <button className="btn primary" onClick={() => { setError(null); setCreating((v) => !v) }}>+ New group</button>}
+            {role === 'admin' && (focus.level === 'root' || focus.level === 'group') && !reorder && <button className="btn primary" onClick={() => { setError(null); setCreating(false); setAddingDevice((v) => !v) }}>+ Add device</button>}
             {/* Desktop: the secondary controls inline. Phone: the same actions in a ⋯ menu (plus a visible
                 Done while reordering), so the toolbar stays one row on a narrow card. */}
             <span className="tools-desktop">
@@ -3015,6 +3021,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
         </div>
       )}
       {creating && <GroupNameBand placeholder="New group name (use / for nesting, e.g. mybz/Network)" confirmLabel="Create" onConfirm={(name) => createGroup(name)} onCancel={() => setCreating(false)} />}
+      {addingDevice && <AddDeviceBand classes={classes} groups={groups} proxies={proxies} defaultSite={focus.level === 'group' ? focus.path : ''} onCancel={() => setAddingDevice(false)} onCreated={() => { setAddingDevice(false); setError(null); load(); fireDataRefresh() }} />}
       {loading && <Skeleton rows={5} cols={3} />}
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
       {!loading && !error && hosts.length === 0 && <EmptyState icon={ic.monitoring} title="No hosts yet" text="Hosts monitored in Zabbix appear here, grouped by site. If you expected some, check the Zabbix connection in Settings." />}
@@ -3043,6 +3050,88 @@ function GroupNameBand({ initial = '', prefix, placeholder, confirmLabel, onConf
         <Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
         <Button variant="primary" onClick={submit} disabled={!v.trim() || busy}>{confirmLabel}</Button>
       </div>
+    </div>
+  )
+}
+
+// AddDeviceBand is the inline "+ Add device" form (admin): pick a device class, name it, place it in a
+// site + proxy, and (optionally) add the HTTP/HTTPS check. It POSTs /api/hosts, which creates the
+// Zabbix host wired to the class's templates (Base Ping is always attached). The minimal manual-attach
+// path (ROADMAP §C, phase C0) the discovery pipeline (§B) later automates.
+function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCreated }: { classes: DeviceClass[]; groups: Group[]; proxies: Proxy[]; defaultSite: string; onCancel: () => void; onCreated: (hostId: string) => void }) {
+  const [classId, setClassId] = useState('base')
+  const [name, setName] = useState('')
+  const [ip, setIp] = useState('')
+  const [dns, setDns] = useState('')
+  const [useIp, setUseIp] = useState(true)
+  const [site, setSite] = useState(defaultSite || '')
+  const [proxyId, setProxyId] = useState('')
+  const [http, setHttp] = useState(false)
+  const [httpScheme, setHttpScheme] = useState('https')
+  const [httpPort, setHttpPort] = useState('')
+  const [snmpVersion, setSnmpVersion] = useState(2)
+  const [community, setCommunity] = useState('public')
+  const [snmpPort, setSnmpPort] = useState('161')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const cls = classes.find((c) => c.id === classId)
+  const needsSnmp = cls?.iface === 'snmp'
+  const offersHttp = !!cls?.offers_http
+
+  async function submit() {
+    if (busy) return
+    if (!name.trim()) { setErr('A host name is required'); return }
+    if (!site.trim()) { setErr('Pick a site'); return }
+    if (useIp && !ip.trim()) { setErr('An IP address is required'); return }
+    if (!useIp && !dns.trim()) { setErr('A DNS name is required'); return }
+    setBusy(true); setErr(null)
+    const body: Record<string, unknown> = { name: name.trim(), ip: ip.trim(), dns: dns.trim(), use_ip: useIp, site: site.trim(), proxy_id: proxyId, class_id: classId }
+    if (offersHttp && http) { body.http = true; body.http_scheme = httpScheme; if (httpPort.trim()) body.http_port = httpPort.trim() }
+    if (needsSnmp) body.snmp = { version: snmpVersion, community, port: snmpPort }
+    const res = await fetch('/api/hosts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { setErr(await errText(res, 'Could not create the device')); return }
+    const d = await res.json().catch(() => ({} as { id?: string }))
+    onCreated(d.id || '')
+  }
+
+  const grid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.7rem' }
+  return (
+    <div className="group-band" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '0.7rem' }}>
+      {classes.length === 0 ? <Banner variant="info">Loading device classes…</Banner> : <>
+        <div style={grid}>
+          <Field label="Device class"><Select value={classId} onChange={(e) => setClassId(e.target.value)}>{classes.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</Select></Field>
+          <Field label="Name" placeholder="e.g. core-switch-01" value={name} onChange={(e) => setName(e.target.value)} />
+          <Field label="Site"><Select value={site} onChange={(e) => setSite(e.target.value)}><option value="">Choose a site…</option>{groups.map((g) => <option key={g.id} value={g.name}>{g.name}</option>)}</Select></Field>
+          <Field label="Monitored by"><Select value={proxyId} onChange={(e) => setProxyId(e.target.value)}><option value="">Core server</option>{proxies.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
+        </div>
+        <div style={{ ...grid, alignItems: 'end' }}>
+          <Field label={useIp ? 'IP address' : 'DNS name'} placeholder={useIp ? '10.0.0.10' : 'host.example.lan'} value={useIp ? ip : dns} onChange={(e) => (useIp ? setIp(e.target.value) : setDns(e.target.value))} />
+          <Switch checked={useIp} onChange={setUseIp} label={useIp ? 'Connect by IP' : 'Connect by DNS'} />
+        </div>
+        {needsSnmp && (
+          <div style={grid}>
+            <Field label="SNMP version"><Select value={String(snmpVersion)} onChange={(e) => setSnmpVersion(Number(e.target.value))}><option value="1">v1</option><option value="2">v2c</option></Select></Field>
+            <Field label="Community" value={community} onChange={(e) => setCommunity(e.target.value)} />
+            <Field label="SNMP port" value={snmpPort} onChange={(e) => setSnmpPort(e.target.value)} />
+          </div>
+        )}
+        {offersHttp && (
+          <div style={{ display: 'flex', gap: '0.9rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <Switch checked={http} onChange={setHttp} label="Also check HTTP/HTTPS" />
+            {http && <>
+              <Select value={httpScheme} onChange={(e) => setHttpScheme(e.target.value)} style={{ width: 'auto' }}><option value="https">HTTPS</option><option value="http">HTTP</option></Select>
+              <input className="input" style={{ width: 120 }} placeholder="port (443)" value={httpPort} onChange={(e) => setHttpPort(e.target.value)} />
+            </>}
+          </div>
+        )}
+        {err && <Banner variant="error">{err}</Banner>}
+        <div className="gb-foot">
+          <Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
+          <Button variant="primary" onClick={submit} disabled={busy}>{busy ? 'Creating…' : 'Add device'}</Button>
+        </div>
+      </>}
     </div>
   )
 }

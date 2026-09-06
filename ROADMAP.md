@@ -66,13 +66,13 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
 - [ ] **"Discovered - review"** screen (confirm / adjust / ignore) - _(FE)_ M
 
 ### C. Device classes & templates
-Zabbix templates (hand-authored YAML under `deploy/zabbix/templates/`, imported via
+Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`, imported via
 `configuration.import` on Argus startup) + an Argus class registry/overlay. Catalog = DESIGN §5
 (**SNMP-first**; ~23 classes across 5 patterns). Built in three phases:
 
 **C0 - Framework (unblocks all):**
 - [ ] Zabbix client: add `configuration.import`, `template.get`, `host.create`, template/group/macro attach, `usermacro.*` - _(BE)_ M
-- [ ] Startup template-reconcile (version the set, import if changed) + `deploy/zabbix/templates/` home - _(BE)_ S-M
+- [ ] Startup template-reconcile (version the set, import if changed) + `argus/internal/provision/templates/` home - _(BE)_ S-M
 - [ ] Class **registry** (generalize `classifyItem` → class catalog) + `device_class` overlay table keyed by `host_id` - _(BE)_ M
 - [ ] Minimal **manual attach** path (`POST /api/hosts` → create host, attach class templates/macros/interface) - _(BE)_ M
 - [ ] **Base/Ping** template + **HTTP/HTTPS-custom-port** add-on (the universal slice, end-to-end) - _(BE)_ S
