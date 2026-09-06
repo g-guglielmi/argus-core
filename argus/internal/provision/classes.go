@@ -43,9 +43,9 @@ type Class struct {
 	OffersHTTP bool      `json:"offers_http"` // the HTTP/HTTPS add-on may be attached to this class
 }
 
-// registry is the catalog. C0 ships only the universal "base" class (Ping only) so the manual-attach
-// path is exercisable end-to-end; C1 adds Generic Linux (SNMP) and UniFi Switch, then C2 the rest
-// (DESIGN §5). Adding a class here means shipping its template under templates/ and re-importing.
+// registry is the catalog. C0 shipped the universal "base" class (Ping only); C1 adds Generic Linux
+// (SNMP) and UniFi Switch; C2 the rest (DESIGN §5). Adding a class here means shipping its template
+// under templates/ and re-importing (the startup reconcile handles that when the file set changes).
 var registry = []Class{
 	{
 		ID:         "base",
@@ -54,6 +54,15 @@ var registry = []Class{
 		Pattern:    PatternBase,
 		Iface:      IfaceAgent, // ICMP simple checks resolve the target from the host's interface
 		Templates:  nil,        // Base Ping is attached to every host automatically
+		OffersHTTP: true,
+	},
+	{
+		ID:         "linux-snmp",
+		Label:      "Generic Linux (SNMP)",
+		Family:     "Linux",
+		Pattern:    PatternSNMP,
+		Iface:      IfaceSNMP,
+		Templates:  []string{"Argus Linux by SNMP"},
 		OffersHTTP: true,
 	},
 }
