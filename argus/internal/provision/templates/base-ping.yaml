@@ -1,0 +1,68 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: ca79927b22bdae2eb36221784793bc58
+      name: Templates/Argus
+  templates:
+    - uuid: 45b226b21e0a9f36c6161a0ecac1af85
+      template: 'Argus Base Ping'
+      name: 'Argus Base Ping'
+      description: |
+        Base reachability for every Argus-managed host: ICMP up/down, packet loss and
+        round-trip time. Attached automatically to every provisioned host (DESIGN section 5).
+        Thresholds are user macros so they can be overridden per host.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: 1675c67c5b8f444ebe1e63571643af39
+          name: 'Reachable (ICMP ping)'
+          type: SIMPLE
+          key: icmpping
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = the host answered ICMP, 0 = no answer.'
+          triggers:
+            - uuid: 51b80117583e991a858843a6c293093d
+              expression: 'max(/Argus Base Ping/icmpping,#3)=0'
+              name: 'Unavailable by ICMP ping'
+              priority: HIGH
+              description: 'No ICMP answer on the last 3 checks.'
+        - uuid: cfc2431c9b6ccbd6ddc2d9c169805d49
+          name: 'ICMP loss'
+          type: SIMPLE
+          key: icmppingloss
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          triggers:
+            - uuid: 8a90d433d37b5d48715a5589931a7bcf
+              expression: 'min(/Argus Base Ping/icmppingloss,#3)>={$PING.LOSS.WARN}'
+              name: 'High ICMP packet loss'
+              priority: WARNING
+              description: 'Sustained packet loss at or above the warning threshold.'
+        - uuid: 72bb9adaaa798feeb293ee8b961b2619
+          name: 'ICMP response time'
+          type: SIMPLE
+          key: icmppingsec
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: s
+          triggers:
+            - uuid: 8f6fd73fcdc19d2f8fe43005c4da2ef2
+              expression: 'min(/Argus Base Ping/icmppingsec,#3)>{$PING.RESP.WARN}'
+              name: 'Slow ICMP response'
+              priority: WARNING
+              description: 'Round-trip time above the warning threshold on the last 3 checks.'
+      macros:
+        - macro: '{$PING.LOSS.WARN}'
+          value: '20'
+          description: 'ICMP packet-loss percentage that raises a warning.'
+        - macro: '{$PING.RESP.WARN}'
+          value: '0.15'
+          description: 'ICMP round-trip time (seconds) that raises a warning.'

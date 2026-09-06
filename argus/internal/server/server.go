@@ -58,6 +58,9 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// Mirror the stored core reboot window to the shared update dir so the host reboot timer sees it
 	// even if the setting is never touched after this boot (DESIGN §14c). Best-effort.
 	s.syncRebootWindowFile(context.Background())
+	// Import the device-class templates into Zabbix (§C). Background + idempotent; soft-skips
+	// until a Zabbix token is configured, and the create path re-checks before it needs them.
+	s.startTemplateReconcile(context.Background())
 
 	// Probe enrollment is available only when the CA is mounted. A load failure disables it
 	// (logged) rather than blocking startup.
@@ -131,6 +134,9 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/spark", auth.RequireAuth(s.handleSpark))
 	mux.HandleFunc("GET /api/proxies", auth.RequireAuth(s.handleProxies))
 	mux.HandleFunc("GET /api/hosts", auth.RequireAuth(s.handleHosts))
+	// device classes (§C): read the catalog (any user); create a host from a class (admin only).
+	mux.HandleFunc("GET /api/classes", auth.RequireAuth(s.handleClasses))
+	mux.HandleFunc("POST /api/hosts", auth.RequireRole("admin", s.handleCreateHost))
 	mux.HandleFunc("GET /api/hosts/{id}/items", auth.RequireAuth(s.handleHostItems))
 	mux.HandleFunc("GET /api/hosts/{id}/problems", auth.RequireAuth(s.handleHostProblems))
 	mux.HandleFunc("GET /api/items/{id}/history", auth.RequireAuth(s.handleItemHistory))

@@ -1,0 +1,56 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: ca79927b22bdae2eb36221784793bc58
+      name: Templates/Argus
+  templates:
+    - uuid: 7c59b335f7e7f19c4da46c441ccaf18b
+      template: 'Argus HTTP Endpoint'
+      name: 'Argus HTTP Endpoint'
+      description: |
+        Optional HTTP/HTTPS reachability add-on: service up plus response time on a
+        configurable port ({$HTTP.PORT}). Agentless simple checks, run by the host's proxy.
+        Attach to any host (DESIGN section 5). TLS-cert expiry is a later enhancement.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: 15107999ec9cdb0cc84b99b3eed30c10
+          name: 'HTTP/HTTPS reachable'
+          type: SIMPLE
+          key: 'net.tcp.service[{$HTTP.SCHEME},,{$HTTP.PORT}]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = the service accepted a connection on the configured port, 0 = it did not.'
+          triggers:
+            - uuid: ff3227fce8a0316c367735fcae4a5250
+              expression: 'max(/Argus HTTP Endpoint/net.tcp.service[{$HTTP.SCHEME},,{$HTTP.PORT}],#3)=0'
+              name: 'HTTP/HTTPS endpoint down'
+              priority: AVERAGE
+              description: 'No connection accepted on the configured port for the last 3 checks.'
+        - uuid: 1ba06b4bf733072e2ba6ab52b73745e7
+          name: 'HTTP/HTTPS response time'
+          type: SIMPLE
+          key: 'net.tcp.service.perf[{$HTTP.SCHEME},,{$HTTP.PORT}]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: s
+          triggers:
+            - uuid: 79bb5cbf2c5416686450392456a3232b
+              expression: 'min(/Argus HTTP Endpoint/net.tcp.service.perf[{$HTTP.SCHEME},,{$HTTP.PORT}],#3)>{$HTTP.RESPONSE.WARN}'
+              name: 'HTTP/HTTPS slow response'
+              priority: WARNING
+              description: 'Response time above the warning threshold on the last 3 checks.'
+      macros:
+        - macro: '{$HTTP.SCHEME}'
+          value: https
+          description: 'Service to check: http or https.'
+        - macro: '{$HTTP.PORT}'
+          value: '443'
+          description: 'TCP port of the HTTP/HTTPS service.'
+        - macro: '{$HTTP.RESPONSE.WARN}'
+          value: '1'
+          description: 'Response time (seconds) that raises a warning.'
