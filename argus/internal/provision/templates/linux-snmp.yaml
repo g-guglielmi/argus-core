@@ -1,0 +1,127 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: d1f0580b0bea4b319a761b0e495589f3
+      template: 'Argus Linux by SNMP'
+      name: 'Argus Linux by SNMP'
+      description: |
+        Generic Linux over SNMP (UCD-SNMP-MIB + HOST-RESOURCES-MIB): CPU utilization, memory use
+        and uptime, with thresholds as user macros. Needs snmpd exposing the UCD + host-resources
+        modules. Filesystem and interface discovery (LLD) are added in a follow-up. DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: 82314225081042d693f5a3521fd0fc38
+          name: 'CPU idle'
+          type: SNMP_AGENT
+          snmp_oid: '.1.3.6.1.4.1.2021.11.11.0'
+          key: 'system.cpu.idle[snmp]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'UCD-SNMP ssCpuIdle: percentage of CPU time idle (feeds CPU utilization).'
+        - uuid: 9065fb3b100145648c9418f5dcd64f65
+          name: 'CPU utilization'
+          type: CALCULATED
+          key: 'system.cpu.util[snmp]'
+          params: '100-last(//system.cpu.idle[snmp])'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          triggers:
+            - uuid: 674010d8c3a74449a3f84740eb6018b2
+              expression: 'min(/Argus Linux by SNMP/system.cpu.util[snmp],#3)>={$CPU.UTIL.WARN} and min(/Argus Linux by SNMP/system.cpu.util[snmp],#3)<{$CPU.UTIL.HIGH}'
+              name: 'High CPU utilization'
+              priority: WARNING
+              description: 'CPU utilization at/above the warning threshold on the last 3 checks.'
+            - uuid: cb80958726c44574ac0ea6b93c8fa801
+              expression: 'min(/Argus Linux by SNMP/system.cpu.util[snmp],#3)>={$CPU.UTIL.HIGH}'
+              name: 'Very high CPU utilization'
+              priority: HIGH
+              description: 'CPU utilization at/above the high threshold on the last 3 checks.'
+        - uuid: 36d1419085414e5bada09c21b1d914e9
+          name: 'Total memory'
+          type: SNMP_AGENT
+          snmp_oid: '.1.3.6.1.4.1.2021.4.5.0'
+          key: 'vm.memory.size[total]'
+          delay: 5m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: B
+          description: 'UCD-SNMP memTotalReal (KB), scaled to bytes.'
+          preprocessing:
+            - type: MULTIPLIER
+              parameters:
+                - '1024'
+        - uuid: dc9a09bf8b68438592353cd798fe956d
+          name: 'Available memory'
+          type: SNMP_AGENT
+          snmp_oid: '.1.3.6.1.4.1.2021.4.6.0'
+          key: 'vm.memory.size[available]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: B
+          description: 'UCD-SNMP memAvailReal (KB), scaled to bytes.'
+          preprocessing:
+            - type: MULTIPLIER
+              parameters:
+                - '1024'
+        - uuid: 01edcc1dad1b4799a3be05e398b8afc5
+          name: 'Memory utilization'
+          type: CALCULATED
+          key: 'vm.memory.utilization[snmp]'
+          params: '100*(last(//vm.memory.size[total])-last(//vm.memory.size[available]))/last(//vm.memory.size[total])'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          triggers:
+            - uuid: 44ec860e6a6b4d55b69d87ced935811b
+              expression: 'min(/Argus Linux by SNMP/vm.memory.utilization[snmp],#3)>={$MEM.USED.WARN} and min(/Argus Linux by SNMP/vm.memory.utilization[snmp],#3)<{$MEM.USED.HIGH}'
+              name: 'High memory utilization'
+              priority: WARNING
+              description: 'Memory use at/above the warning threshold on the last 3 checks.'
+            - uuid: 7ea18238f2664652b939b1ac4cda76cb
+              expression: 'min(/Argus Linux by SNMP/vm.memory.utilization[snmp],#3)>={$MEM.USED.HIGH}'
+              name: 'Very high memory utilization'
+              priority: HIGH
+              description: 'Memory use at/above the high threshold on the last 3 checks.'
+        - uuid: 7ce217f526164cc680eccb21fc023d0c
+          name: 'Uptime'
+          type: SNMP_AGENT
+          snmp_oid: '.1.3.6.1.2.1.25.1.1.0'
+          key: 'system.uptime[snmp]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: uptime
+          description: 'HOST-RESOURCES hrSystemUptime in TimeTicks (1/100 s), scaled to seconds.'
+          preprocessing:
+            - type: MULTIPLIER
+              parameters:
+                - '0.01'
+      macros:
+        - macro: '{$CPU.UTIL.WARN}'
+          value: '80'
+          description: 'CPU utilization percentage that raises a warning.'
+        - macro: '{$CPU.UTIL.HIGH}'
+          value: '95'
+          description: 'CPU utilization percentage that raises a high-severity alert.'
+        - macro: '{$MEM.USED.WARN}'
+          value: '85'
+          description: 'Memory-used percentage that raises a warning.'
+        - macro: '{$MEM.USED.HIGH}'
+          value: '95'
+          description: 'Memory-used percentage that raises a high-severity alert.'
