@@ -3098,7 +3098,7 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
 
   const grid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.7rem' }
   return (
-    <div className="group-band" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '0.7rem' }}>
+    <div style={{ margin: '8px 16px', padding: '12px 14px', background: 'var(--elevated)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
       {classes.length === 0 ? <Banner variant="info">Loading device classes…</Banner> : <>
         <div style={grid}>
           <Field label="Device class"><Select value={classId} onChange={(e) => setClassId(e.target.value)}>{classes.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</Select></Field>
@@ -3127,7 +3127,7 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
           </div>
         )}
         {err && <Banner variant="error">{err}</Banner>}
-        <div className="gb-foot">
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
           <Button variant="primary" onClick={submit} disabled={busy}>{busy ? 'Creating…' : 'Add device'}</Button>
         </div>

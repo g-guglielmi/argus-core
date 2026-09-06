@@ -23,12 +23,13 @@ var cpuUtilKeep = map[string]bool{
 // categoryOrder controls how categories are grouped/sorted in the curated view.
 var categoryOrder = map[string]int{
 	"Ping":        0,
-	"CPU":         1,
-	"Memory":      2,
-	"Disk":        3,
-	"Network":     4,
-	"Temperature": 5,
-	"Uptime":      6,
+	"Web":         1,
+	"CPU":         2,
+	"Memory":      3,
+	"Disk":        4,
+	"Network":     5,
+	"Temperature": 6,
+	"Uptime":      7,
 }
 
 // splitKey returns the base key and its parameters, e.g. vfs.fs.size[/,pused] ->
@@ -136,6 +137,13 @@ func classifyItem(key, name string) (string, string, bool) {
 
 	case "system.uptime":
 		return "Uptime", "Uptime", true
+
+	// HTTP/HTTPS endpoint add-on (Argus HTTP Endpoint template). The key params are macros
+	// ({$HTTP.SCHEME}/{$HTTP.PORT}), so the label is fixed rather than derived from them.
+	case "net.tcp.service":
+		return "Web", "HTTP/HTTPS reachable", true
+	case "net.tcp.service.perf":
+		return "Web", "HTTP/HTTPS response time", true
 	}
 
 	// Heuristic fallback for temperature sensors, whose keys vary widely by template/SNMP.
