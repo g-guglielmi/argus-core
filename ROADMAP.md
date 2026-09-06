@@ -66,8 +66,30 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
 - [ ] **"Discovered - review"** screen (confirm / adjust / ignore) - _(FE)_ M
 
 ### C. Device classes & templates
-- [ ] Build/verify the **11 class templates** + Base ping (UniFi gw/switch/AP, MikroTik, unRAID, XCP-NG, generic Linux, web/app, DNS, UPS, printer) - _(BE)_ **L**
-- [ ] **SNMP-gap API integrations**: unRAID API (disk temp/SMART), XCP-NG XAPI (per-VM/host + temp), UniFi API (per-port/PoE/WAN) - _(BE)_ **L**
+Zabbix templates (hand-authored YAML under `deploy/zabbix/templates/`, imported via
+`configuration.import` on Argus startup) + an Argus class registry/overlay. Catalog = DESIGN §5
+(**SNMP-first**; ~23 classes across 5 patterns). Built in three phases:
+
+**C0 - Framework (unblocks all):**
+- [ ] Zabbix client: add `configuration.import`, `template.get`, `host.create`, template/group/macro attach, `usermacro.*` - _(BE)_ M
+- [ ] Startup template-reconcile (version the set, import if changed) + `deploy/zabbix/templates/` home - _(BE)_ S-M
+- [ ] Class **registry** (generalize `classifyItem` → class catalog) + `device_class` overlay table keyed by `host_id` - _(BE)_ M
+- [ ] Minimal **manual attach** path (`POST /api/hosts` → create host, attach class templates/macros/interface) - _(BE)_ M
+- [ ] **Base/Ping** template + **HTTP/HTTPS-custom-port** add-on (the universal slice, end-to-end) - _(BE)_ S
+
+**C1 - Vertical slice (prove both dominant patterns):**
+- [ ] **Generic Linux SNMP** template (host-resources+UCD+IF-MIB, fs/NIC LLD, §6 macros) - _(BE)_ M
+- [ ] **UniFi Switch** HTTP-API template (self-hosted controller; master+dependent items, port LLD) - _(BE)_ M
+- [ ] Done = host created via Argus → template attached → sensors show with right labels/units → §6 triggers fire → LLD only-real instances → a per-host threshold override works
+
+**C2 - Breadth by pattern (ROI order):**
+- [ ] Finish **SNMP family**: Aruba CX, InstantOn 1960, QNAP, Ugreen UGOS, unRAID, Sophos XGS, NetScaler, Libraesva, Windows (SNMP + LANMGR services), Hyper-V (host) - _(BE)_ **L**
+- [ ] Finish **UniFi family**: Gateway, AP, OS Console (+ cloud-gateway access mode) - _(BE)_ M
+- [ ] **Agentless**: DNS/AdGuard, NUT UPS (upsd :3493), Linux SSH (no-SNMP fallback) - _(BE)_ M
+- [ ] **API-source heavies** (register-endpoint + host-prototype LLD): Nutanix Prism, XCP-NG (XAPI collector), Citrix farm (OData) - _(BE)_ **L**
+- [ ] **vSphere** (native VMware collector) - **low priority, production-only** (not the lab) - _(BE)_ M
+
+**SNMP gaps** (DESIGN §5) - unRAID disk-temp/SMART, Hyper-V per-VM (WMI), XCP-NG XAPI, UniFi PoE/WAN, AdGuard stats, NUT protocol - are handled inside the per-class work above, not a separate track.
 
 ### D. Management UI screens
 - [ ] **Device management** - add/edit, assign site+proxy, class, per-device threshold overrides - _(FE+BE)_ M
@@ -126,7 +148,7 @@ Done: ~~deep-link URLs~~ ✅ · ~~password reset~~ ✅ (v0.3.3) · ~~probe enrol
 
 Re-evaluated from here:
 
-1. **The 1.0 lift - "replaces PRTG Add Sensor" (§C → §B → §D)** _(next)_ **:** build/verify the **device-class templates** (§C, the foundation), then **auto-discovery** (§B: UniFi sweep → fingerprint → LLD → "Discovered - review"), then the **device/threshold management UI** (§D). This is the core work that gets Argus to a production **1.0**. Start with §C: nail down one or two class templates end-to-end (e.g. UniFi gateway/switch) so discovery and the threshold UI have a concrete shape to build against.
+1. **The 1.0 lift - "replaces PRTG Add Sensor" (§C → §B → §D)** _(next)_ **:** build/verify the **device-class templates** (§C, the foundation), then **auto-discovery** (§B: UniFi sweep → fingerprint → LLD → "Discovered - review"), then the **device/threshold management UI** (§D). This is the core work that gets Argus to a production **1.0**. Start with §C phase **C1**: **Generic Linux SNMP + UniFi Switch** end-to-end (SNMP-first fleet; templates are hand-authored Zabbix YAML imported at bootstrap) so discovery and the threshold UI have a concrete shape to build against. See §C for the C0/C1/C2 breakdown.
 2. **Scale & production readiness (§G)** - sizing pass + server-side census before the ~6000-sensor
    deployment.
 3. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
