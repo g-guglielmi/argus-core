@@ -1,10 +1,10 @@
 zabbix_export:
   version: '7.0'
   template_groups:
-    - uuid: ca79927b22bdae2eb36221784793bc58
+    - uuid: b0123beba96045ada8542647604ac6ca
       name: Templates/Argus
   templates:
-    - uuid: 45b226b21e0a9f36c6161a0ecac1af85
+    - uuid: f62d8856d68e4819b43fee52f9b5bc54
       template: 'Argus Base Ping'
       name: 'Argus Base Ping'
       description: |
@@ -14,7 +14,7 @@ zabbix_export:
       groups:
         - name: Templates/Argus
       items:
-        - uuid: 1675c67c5b8f444ebe1e63571643af39
+        - uuid: 71b354459ac943f7a9ae63828646a446
           name: 'Reachable (ICMP ping)'
           type: SIMPLE
           key: icmpping
@@ -24,12 +24,12 @@ zabbix_export:
           value_type: UNSIGNED
           description: '1 = the host answered ICMP, 0 = no answer.'
           triggers:
-            - uuid: 51b80117583e991a858843a6c293093d
+            - uuid: 0fa61e50a7c14b81b0f92483714c4aa2
               expression: 'max(/Argus Base Ping/icmpping,#3)=0'
               name: 'Unavailable by ICMP ping'
               priority: HIGH
               description: 'No ICMP answer on the last 3 checks.'
-        - uuid: cfc2431c9b6ccbd6ddc2d9c169805d49
+        - uuid: 80c5e73e36fc44bc8087162872ffb8ed
           name: 'ICMP loss'
           type: SIMPLE
           key: icmppingloss
@@ -39,12 +39,12 @@ zabbix_export:
           value_type: FLOAT
           units: '%'
           triggers:
-            - uuid: 8a90d433d37b5d48715a5589931a7bcf
+            - uuid: a10e72bdf10c4aeea89fdbf2898f0602
               expression: 'min(/Argus Base Ping/icmppingloss,#3)>={$PING.LOSS.WARN}'
               name: 'High ICMP packet loss'
               priority: WARNING
               description: 'Sustained packet loss at or above the warning threshold.'
-        - uuid: 72bb9adaaa798feeb293ee8b961b2619
+        - uuid: 4942125d163e458e95f0ab1083e3ac8a
           name: 'ICMP response time'
           type: SIMPLE
           key: icmppingsec
@@ -54,7 +54,7 @@ zabbix_export:
           value_type: FLOAT
           units: s
           triggers:
-            - uuid: 8f6fd73fcdc19d2f8fe43005c4da2ef2
+            - uuid: df73b7e8643c45ee972c89a0380408b9
               expression: 'min(/Argus Base Ping/icmppingsec,#3)>{$PING.RESP.WARN}'
               name: 'Slow ICMP response'
               priority: WARNING
