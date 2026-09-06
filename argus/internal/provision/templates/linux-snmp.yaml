@@ -112,6 +112,90 @@ zabbix_export:
             - type: MULTIPLIER
               parameters:
                 - '0.01'
+      discovery_rules:
+        - uuid: e898b32bb4b94486a40ef37d0d4b5bf4
+          name: 'Filesystem discovery'
+          type: SNMP_AGENT
+          snmp_oid: 'discovery[{#FSNAME},1.3.6.1.2.1.25.2.3.1.3,{#FSTYPE},1.3.6.1.2.1.25.2.3.1.2]'
+          key: 'vfs.fs.discovery[snmp]'
+          delay: 1h
+          description: 'HOST-RESOURCES hrStorageTable, filtered to fixed disks.'
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#FSTYPE}'
+                value: '1\.3\.6\.1\.2\.1\.25\.2\.1\.4$'
+                formulaid: A
+          item_prototypes:
+            - uuid: e4560e9356ef446a9170d983a55cfb8b
+              name: 'Storage allocation units ({#FSNAME})'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.2.1.25.2.3.1.4.{#SNMPINDEX}'
+              key: 'snmp.storage.units[{#SNMPINDEX}]'
+              delay: 1h
+              history: 7d
+              trends: '0'
+              value_type: FLOAT
+              description: 'hrStorageAllocationUnits: block size in bytes (feeds the byte totals).'
+            - uuid: d15ac8f42eb2481ab41ecd42ca8e8ef3
+              name: 'Storage size in blocks ({#FSNAME})'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.2.1.25.2.3.1.5.{#SNMPINDEX}'
+              key: 'snmp.storage.size[{#SNMPINDEX}]'
+              delay: 1h
+              history: 7d
+              trends: '0'
+              value_type: FLOAT
+            - uuid: e0eddc2e6cbf4331af907962ead5f64e
+              name: 'Storage used in blocks ({#FSNAME})'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.2.1.25.2.3.1.6.{#SNMPINDEX}'
+              key: 'snmp.storage.used[{#SNMPINDEX}]'
+              delay: 5m
+              history: 7d
+              trends: '0'
+              value_type: FLOAT
+            - uuid: 135bdc90477e427797b662724cff1382
+              name: 'Disk total ({#FSNAME})'
+              type: CALCULATED
+              key: 'vfs.fs.size[{#FSNAME},total]'
+              params: 'last(//snmp.storage.size[{#SNMPINDEX}])*last(//snmp.storage.units[{#SNMPINDEX}])'
+              delay: 5m
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: B
+            - uuid: 4ce100fce3894caaad2dec17f2280817
+              name: 'Disk used ({#FSNAME})'
+              type: CALCULATED
+              key: 'vfs.fs.size[{#FSNAME},used]'
+              params: 'last(//snmp.storage.used[{#SNMPINDEX}])*last(//snmp.storage.units[{#SNMPINDEX}])'
+              delay: 5m
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: B
+            - uuid: d4d1a26f750c4cc29e5154f1055a5b57
+              name: 'Disk used percent ({#FSNAME})'
+              type: CALCULATED
+              key: 'vfs.fs.size[{#FSNAME},pused]'
+              params: '100*last(//snmp.storage.used[{#SNMPINDEX}])/last(//snmp.storage.size[{#SNMPINDEX}])'
+              delay: 5m
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '%'
+              trigger_prototypes:
+                - uuid: f55a56a47fd944359c9b9b20f9c8931a
+                  expression: 'min(/Argus Linux by SNMP/vfs.fs.size[{#FSNAME},pused],#3)>={$DISK.PUSED.WARN} and min(/Argus Linux by SNMP/vfs.fs.size[{#FSNAME},pused],#3)<{$DISK.PUSED.HIGH}'
+                  name: 'Disk space low: {#FSNAME}'
+                  priority: WARNING
+                  description: 'Filesystem usage at/above the warning threshold.'
+                - uuid: 570ef8d5c45a4f2184c17de4e8a7b350
+                  expression: 'min(/Argus Linux by SNMP/vfs.fs.size[{#FSNAME},pused],#3)>={$DISK.PUSED.HIGH}'
+                  name: 'Disk space critical: {#FSNAME}'
+                  priority: HIGH
+                  description: 'Filesystem usage at/above the high threshold.'
       macros:
         - macro: '{$CPU.UTIL.WARN}'
           value: '80'
@@ -125,3 +209,9 @@ zabbix_export:
         - macro: '{$MEM.USED.HIGH}'
           value: '95'
           description: 'Memory-used percentage that raises a high-severity alert.'
+        - macro: '{$DISK.PUSED.WARN}'
+          value: '90'
+          description: 'Filesystem used percentage that raises a warning (10% free).'
+        - macro: '{$DISK.PUSED.HIGH}'
+          value: '95'
+          description: 'Filesystem used percentage that raises a high-severity alert (5% free).'
