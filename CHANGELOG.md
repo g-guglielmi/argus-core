@@ -11,6 +11,17 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.37] - 2026-09-06
+
+**Human-readable time units.** Second-based readings now auto-scale to a sensible magnitude.
+
+**Fixed:**
+- A seconds metric like ICMP response time showed as `0.0138 s`, and its chart's y-axis labels all
+  collapsed to `0.014`/`0.015`. Seconds now scale to `ms` / `µs` / `ns` (staying `s` at ≥ 1 s) in the
+  sensor value, the chart axis, and the chart legend, with the duplicate `(s)` legend suffix dropped.
+- Alert messages scale to match: the "Value:" line reads e.g. `13.8 ms` instead of `0.0138 s` (bytes,
+  bits and uptime format the same way the UI does).
+
 ## [0.4.36] - 2026-09-06
 
 **Monitoring tree** fixes for hosts that belong directly to a parent group (alongside its subgroups).
