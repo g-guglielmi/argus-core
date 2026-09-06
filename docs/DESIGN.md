@@ -122,27 +122,68 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
 
 ## 5. Device classes & templates
 
-Every host gets the **Base** template (Ping - latency + loss, always). Then one or more
-class templates attach automatically by fingerprint. 11 classes:
+Every host gets the **Base** template (Ping - latency + loss, always) and, optionally, the
+**HTTP/HTTPS** add-on (up + response time + TLS-cert expiry on a configurable `{$HTTP.PORT}` -
+attachable to any host, not a class). On top, one or more **class templates** attach - manually
+in the first cut (§C), automatically by fingerprint once discovery lands (§8, §B). Templates are
+hand-authored Zabbix YAML, version-controlled under `deploy/zabbix/templates/` and imported into
+zabbix-server via `configuration.import` (Argus reconciles the set on startup, so templates track
+the app version). Thresholds are Zabbix **user-macros** carrying the §6 defaults, overridable
+per-host/sensor (§D).
 
-| Class | Detected by | Metrics beyond Ping | Source | LLD-discovered |
+**Fleet reality:** 400+ servers with **SNMP already configured**; deploying an agent that widely
+is impractical, so classes are **SNMP-first** wherever the device supports it. Agents/vendor APIs
+are used only where SNMP genuinely can't reach the data (per-VM state, PoE, app-level metrics).
+
+Each class is built by one of a few **patterns** (build the pattern once, replicate):
+- **SNMP** - SNMP template + `sysObjectID`/`sysDescr` fingerprint + IF-MIB interface LLD. The bulk.
+- **HTTP-API** - Zabbix HTTP-agent items (proxy-executed, no custom code): a master item pulls the
+  vendor REST JSON, dependent items via JSONPath, LLD over the JSON. UniFi, Nutanix, Citrix farm.
+- **Native VMware** - Zabbix's built-in VMware collector + stock templates. vSphere only.
+- **Collector/script** - the true SNMP-gaps Zabbix can't HTTP-agent cleanly: XCP-NG (XAPI),
+  NUT (upsd :3493). A probe-side sidecar or Zabbix script item.
+- **Agentless** - server/proxy-run checks with no agent: DNS (`net.dns`), Linux-over-SSH (`ssh.run`).
+
+**Two host models.** Most classes are **per-host** (one pingable device = one Zabbix host). A few
+are **API-endpoint sources** (✦): you register one endpoint (vCenter, Prism, Citrix Monitor, a
+UniFi controller) and host-prototype **LLD spawns** the child hosts it manages.
+
+| Class | Pattern | Detected by | Metrics beyond Ping | LLD |
 |---|---|---|---|---|
-| **UniFi Gateway** (any UniFi-managed gateway) | UniFi API type `ugw/udm` | Uptime, WAN up/down, per-port traffic, PoE, clients, CPU/mem | UniFi API (SNMP fallback) | ports |
-| **UniFi Switch** (USW / Flex) | UniFi API type `usw` | Uptime, per-port traffic, PoE per-port, CPU/mem | UniFi API (SNMP fallback) | ports |
-| **UniFi AP** (U6-PRO) | UniFi API type `uap` | Uptime, per-radio traffic, clients, channel util | UniFi API (SNMP fallback) | radios |
-| **MikroTik** (CRS305) | sysObjectID `.1.3.6.1.4.1.14988` | Uptime, CPU load, board/CPU temp, per-port traffic | SNMP (MIKROTIK-MIB `…1.1.3` + IF-MIB) | interfaces |
-| **unRAID** | sysDescr `Unraid` / tag | CPU load, RAM %, uptime, per-share disk-free, per-disk temp, per-disk I/O, NIC traffic | SNMP host-resources + **unRAID API (disk temp/SMART)** | disks, shares, NICs |
-| **XCP-NG host** | XAPI reachable / sysDescr `XCP-ng` | Host CPU, RAM, per-VM state, pool, CPU temp | **XAPI (RRD)** + SNMP/IPMI (temp) | VMs, PBDs |
-| **Generic Linux/VM** (Home Assistant) | answers host-resources SNMP, unmatched | CPU, RAM, filesystem free, uptime | SNMP (host-resources + UCD) | filesystems, NICs |
-| **Web service / app** (Plex, PiKVM) | answers HTTP(S), thin SNMP | HTTP/HTTPS up + response time + **TLS cert expiry**, custom port | HTTP checks | - |
-| **DNS server** (AdGuard ×2) | :53 + HTTP admin | HTTP admin up + **DNS resolve check** (query known record, verify answer + time) | HTTP + `net.dns` | - |
-| **UPS** (NUT / SNMP) | NUT :3493 or SNMP `.1.3.6.1.2.1.33` | Battery %, on-battery status, runtime, load, input voltage | NUT or UPS-MIB | - |
-| **Printer / pingable** (printers, etc.) | fallback | Ping only | ICMP | - |
+| **Generic Linux SNMP** | SNMP | host-resources / UCD | CPU, RAM, disk, net, uptime | fs, NICs |
+| **HPE Aruba CX** | SNMP | sysObjectID (Aruba/HPE) | CPU, mem, temp, PSU/fan, per-port, PoE | ifaces, sensors |
+| **Aruba InstantOn 1960** | SNMP | sysObjectID | CPU, mem, per-port traffic, PoE | ports |
+| **Sophos XGS** | SNMP | sysObjectID `.2604` | CPU, mem, disk, ifaces, HA, live users, VPN | ifaces |
+| **Citrix NetScaler** | SNMP (+Nitro opt.) | sysObjectID `.5951` | CPU, mem, throughput, vserver state/health, SSL, HA | vservers |
+| **QNAP** | SNMP | sysObjectID `.24681` | CPU, mem, volume/disk, temp, fan, RAID, SMART | disks, volumes |
+| **Ugreen UGOS** | SNMP † | sysDescr (UGOS/Linux) | CPU, RAM, disk, temp, net, uptime | fs, disks, NICs |
+| **unRAID** | SNMP | sysDescr `Unraid` | CPU load, RAM %, uptime, per-share free, NIC; **disk temp/SMART = gap** | shares, disks, NICs |
+| **Libraesva ESG** | SNMP (+HTTPS) | sysObjectID/sysDescr | host CPU/RAM/disk + mail-queue + admin-cert | fs |
+| **Windows server** | SNMP | sysObjectID (Windows) | CPU, RAM, disk, net, uptime + **selected services** (LANMGR `svSvcTable`) | disks, NICs, services |
+| **Generic Linux SSH** | Agentless | SSH reachable (no-SNMP fallback) | CPU, RAM, disk, net via `ssh.run` | fs, NICs |
+| **DNS server** (incl. **AdGuard**) | Agentless (+HTTP-API) | :53 + admin | `net.dns` resolve+verify answer/time; admin up; AdGuard stats via its API | - |
+| **NUT UPS server** | Collector/script | upsd :3493 | battery %, on-battery, runtime, load, input V | UPSes |
+| **UniFi Switch** ✦src | HTTP-API | UniFi controller | uptime, CPU/mem, per-port traffic + PoE, clients | ports |
+| **UniFi Gateway** ✦src | HTTP-API | UniFi controller | + WAN up/down + throughput | ports, WANs |
+| **UniFi AP** ✦src | HTTP-API | UniFi controller | + per-radio traffic, clients, channel util | radios |
+| **UniFi OS Console** ✦ | HTTP-API | the controller host | console CPU/mem/temp/disk, adoption count, version | - |
+| **Nutanix AHV** ✦ | HTTP-API | Prism v3/v4 REST | cluster/host/VM CPU/mem/storage, VM state | hosts, VMs |
+| **Hyper-V** | SNMP | sysObjectID (Windows) | host CPU/RAM/disk/net/uptime; **per-VM state = gap (WMI/agent)** | disks, NICs |
+| **XCP-NG** | Collector | XAPI reachable | host CPU/mem, per-VM state, pool, temp | VMs, PBDs |
+| **vSphere ESXi + vCenter** ✦ | Native VMware | register vCenter | hypervisor CPU/mem, datastore, per-VM state/CPU/mem | hypervisors, VMs, datastores |
+| **Citrix farm** ✦ | HTTP-API | Monitor OData | registered-machine count/state, **failed logons**, sessions, load | delivery groups |
 
-### SNMP gaps (API required)
-- **unRAID disk temps & SMART** → smartctl via Net-SNMP `extend`, or the unRAID API (chosen).
-- **XCP-NG per-VM + host temp** → XAPI/RRD; host CPU temp via IPMI/lm-sensors.
-- **UniFi per-port / PoE / WAN throughput** → controller API (SNMP is thin).
+✦src = per-host today, but its metrics come *through* the registered UniFi controller (an API
+source; **both** self-hosted Network controllers **and** cloud gateways are in the fleet, so the
+UniFi template carries a controller-access mode). ✦ = API-endpoint source (register once → LLD
+spawns children). † Ugreen UGOS SNMP support is firmware-dependent; SSH is the fallback.
+
+### SNMP gaps (need more than SNMP)
+- **UniFi** per-port/PoE/WAN/clients → controller API (self-hosted Network app **or** cloud gateway;
+  SNMP is thin). **Nutanix / Citrix farm / vSphere** → API/VMware collector (app-level, no SNMP).
+- **XCP-NG** per-VM + host temp → XAPI/RRD (+ IPMI/lm-sensors for temp). **NUT** → upsd :3493.
+- **unRAID** disk temp & SMART → smartctl via Net-SNMP `extend`, or the unRAID API. **Hyper-V**
+  per-VM → WMI/agent (host stays SNMP). **AdGuard** block/query stats → AdGuard HTTP API.
 
 ---
 
@@ -187,6 +228,10 @@ Dashboards (list views, same event stream):
 ---
 
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")
+
+> Sequencing: **§C** builds the class templates (§5) plus a **manual** attach path; **§B**
+> automates steps 1-6 below (fingerprint → attach → LLD → review). Separate roadmap items -
+> templates first, then discovery on top of them.
 
 Runs per-site on the probe, reports to core for provisioning:
 1. **UniFi API sweep** → managed inventory (gateway/switches/APs + known clients) with
