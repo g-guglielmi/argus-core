@@ -4034,40 +4034,42 @@ function SensorChart({ itemId, units, color = 'var(--accent)' }: { itemId: strin
 
 // Distinct series colours for the multi-channel graph (mid-tones that read in light and dark).
 const SERIES_COLORS = ['#2ea8c9', '#e0803a', '#7d5bd6', '#3aa856', '#c9564f', '#b8a032']
+// Lookback window per range key (seconds), so the group graph can pin its x-axis to the window.
+const RANGE_SECS: Record<string, number> = { '2h': 7200, '2d': 172800, '1M': 2592000, '3M': 7776000, '6M': 15552000, '1Y': 31536000 }
 
 type GroupChan = { id: string; label: string; units: string }
 
-// buildMultiPlot overlays several channels on one uPlot: timestamps are unioned, series sharing a
-// unit share a y-scale, and a second unit gets the right-hand axis (up to two). uPlot's legend lists
-// each channel with its live value and toggles it on click - the "select what to see" part.
-function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null }[] }[], width: number, c: ChartColors): [uPlot.Options, uPlot.AlignedData] {
+// buildMultiPlot overlays several channels on one uPlot: timestamps are unioned, each distinct unit
+// gets its own scale (axes drawn for the first two, left/right), and the legend lists every channel
+// with its live value and toggles it on click. xrange pins the x-axis to the requested window.
+function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null }[] }[], width: number, c: ChartColors, xrange?: [number, number]): [uPlot.Options, uPlot.AlignedData] {
   const tset = new Set<number>()
   series.forEach((s) => s.points.forEach((p) => tset.add(p.t)))
   const xs = [...tset].sort((a, b) => a - b)
   const xi = new Map(xs.map((t, i) => [t, i]))
   const ys = series.map((s) => { const a: (number | null)[] = new Array(xs.length).fill(null); s.points.forEach((p) => { const i = xi.get(p.t); if (i !== undefined) a[i] = p.v }); return a })
   const units = [...new Set(series.map((s) => s.units))]
-  // A scale per distinct unit ('y0','y1',…); axes are drawn for the first two units (left/right), and
-  // any further units still plot (auto-ranged) so a 3-unit group like Ping shows every channel.
   const scaleKey = (u: string) => 'y' + units.indexOf(u)
   const grid = { stroke: c.grid, width: 1 }
   const ticks = { stroke: c.grid, width: 1 }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const yv = (u: string) => ((_up: any, splits: number[]) => splits.map((v) => fmtNum(v, u))) as unknown as uPlot.Axis['values']
-  const axes: uPlot.Axis[] = [{ stroke: c.axis, grid, ticks }, { scale: scaleKey(units[0]), stroke: c.axis, grid, ticks, size: 60, values: yv(units[0]) }]
-  if (units.length > 1) axes.push({ scale: scaleKey(units[1]), side: 1, stroke: c.axis, ticks, size: 60, values: yv(units[1]) })
+  const axes: uPlot.Axis[] = [{ stroke: c.axis, grid, ticks }, { scale: scaleKey(units[0]), stroke: c.axis, grid, ticks, size: 76, values: yv(units[0]) }]
+  if (units.length > 1) axes.push({ scale: scaleKey(units[1]), side: 1, stroke: c.axis, ticks, size: 76, values: yv(units[1]) })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const xVal = (u: any, v: number | null) => { const t = v ?? lastVal(u, 0); return t == null ? '--' : new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
   const uplotSeries: uPlot.Series[] = [{ value: xVal }]
   series.forEach((s, i) => {
-    // The legend value carries the unit (fmtNum), so the label is just the channel name.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const val = (u: any, v: number | null) => { const n = v ?? lastVal(u, i + 1); return n == null ? '--' : fmtNum(n, s.units) }
-    uplotSeries.push({ label: s.label, stroke: SERIES_COLORS[i % SERIES_COLORS.length], width: 1.5, scale: scaleKey(s.units), value: val })
+    // spanGaps joins each channel's points across the nulls the timestamp-union leaves between
+    // channels that sample at slightly different clocks (otherwise the line renders as dots).
+    uplotSeries.push({ label: s.label, stroke: SERIES_COLORS[i % SERIES_COLORS.length], width: 1.5, scale: scaleKey(s.units), spanGaps: true, value: val })
   })
-  const opts = { width, height: 320, scales: { x: { time: true } }, axes, series: uplotSeries, legend: { show: true } } as uPlot.Options
-  const [gx, gy] = insertGaps(xs, ys)
-  return [opts, [gx, ...gy] as uPlot.AlignedData]
+  // Pin the x-axis to the requested window; a near-empty range (a brand-new item with one point)
+  // otherwise makes uPlot pad a zero-span time axis by a fraction of the epoch - i.e. years out.
+  const opts = { width, height: 320, scales: { x: xrange ? { time: true, range: xrange } : { time: true } }, axes, series: uplotSeries, legend: { show: true } } as uPlot.Options
+  return [opts, [xs, ...ys] as uPlot.AlignedData]
 }
 
 // SensorGroupChart overlays the channels of one instance (a disk mount, a NIC) in a single graph with
@@ -4106,10 +4108,12 @@ function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
     if (plot.current) { plot.current.destroy(); plot.current = null }
     if (!host.current || !series || !series.some((s) => s.points.length > 0)) return
     const width = host.current.clientWidth || 600
-    const [opts, aligned] = buildMultiPlot(series, width, chartColors('var(--accent)'))
+    const to = Math.floor(Date.now() / 1000)
+    const from = to - (RANGE_SECS[range] || 7200)
+    const [opts, aligned] = buildMultiPlot(series, width, chartColors('var(--accent)'), [from, to])
     plot.current = new uPlot(opts, aligned, host.current)
     return () => { if (plot.current) { plot.current.destroy(); plot.current = null } }
-  }, [series, themeTick])
+  }, [series, themeTick, range])
 
   useEffect(() => {
     function onResize() { if (plot.current && host.current) plot.current.setSize({ width: host.current.clientWidth, height: 320 }) }
