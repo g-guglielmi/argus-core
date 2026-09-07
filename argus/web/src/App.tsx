@@ -3948,9 +3948,9 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
       ...base,
       series: [
         { value: xVal },
-        { label: `avg${unitLabel}`, stroke: c.line, width: 1.5, value: yVal(1) },
-        { label: 'min', stroke: c.soft, width: 1, value: yVal(2) },
-        { label: 'max', stroke: c.soft, width: 1, value: yVal(3) },
+        { label: `avg${unitLabel}`, stroke: c.line, width: 1.5, points: { show: false }, value: yVal(1) },
+        { label: 'min', stroke: c.soft, width: 1, points: { show: false }, value: yVal(2) },
+        { label: 'max', stroke: c.soft, width: 1, points: { show: false }, value: yVal(3) },
       ],
       bands: [{ series: [3, 2], fill: c.fill }],
     } as uPlot.Options
@@ -3961,7 +3961,7 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
   const vs = data.points.map((p) => (p.v ?? null))
   const opts: uPlot.Options = {
     ...base,
-    series: [{ value: xVal }, { label: `value${unitLabel}`, stroke: c.line, width: 1.5, fill: c.fill, value: yVal(1) }],
+    series: [{ value: xVal }, { label: `value${unitLabel}`, stroke: c.line, width: 1.5, fill: c.fill, points: { show: false }, value: yVal(1) }],
   } as uPlot.Options
   const [gx, [gv]] = insertGaps(xs, [vs])
   return [opts, [gx, gv] as uPlot.AlignedData]
@@ -4101,7 +4101,7 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
       stroke: s.downtime ? DOWNTIME_STROKE : SERIES_COLORS[i % SERIES_COLORS.length],
       fill: s.downtime ? DOWNTIME_FILL : undefined,
       width: s.downtime ? 1 : i === 0 ? 2 : 1.5,
-      points: s.downtime ? { show: false } : undefined,
+      points: { show: false }, // lines-only, consistent across ranges/zoom (uPlot else shows dots on sparse data)
       scale: scaleKey(s.units),
       value: val,
     } as uPlot.Series)
