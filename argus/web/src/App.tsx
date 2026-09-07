@@ -2616,8 +2616,12 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   const [focus, setFocus] = useState<Focus>({ level: 'root' })
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
-  const [openHost, setOpenHost] = useState<string | null>(null)
+  // Tree collapse/expand state persists for the browser session (sessionStorage): remembered across
+  // reloads and navigation, cleared when the tab/session ends — not forever. The first visit of a
+  // session starts fully collapsed (default applied once the group list arrives, below).
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => { try { const s = sessionStorage.getItem('argus.tree.collapsed'); if (s) return new Set<string>(JSON.parse(s)) } catch { /* ignore */ } return new Set() })
+  const collapseReady = useRef<boolean>((() => { try { return sessionStorage.getItem('argus.tree.collapsed') != null } catch { return false } })())
+  const [openHost, setOpenHost] = useState<string | null>(() => { try { return sessionStorage.getItem('argus.tree.openhost') } catch { return null } })
   const [editGroupsHost, setEditGroupsHost] = useState<string | null>(null) // host id with the "Edit groups…" band open
   const [settingsHost, setSettingsHost] = useState<string | null>(null) // host id with the "Settings…" band open
   const [showAll, setShowAll] = useState(false)
@@ -2646,6 +2650,17 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     fetch('/api/proxies').then((r) => (r.ok ? r.json() : [])).then((p) => setProxies(p || [])).catch(() => {})
   }
   useEffect(() => { load(true); const t = setInterval(() => load(false), 30000); const off = onDataRefresh(() => load(false)); return () => { clearInterval(t); off() } }, [])
+  // First session visit (nothing persisted yet): start with every group collapsed. Runs once, after
+  // the group list first arrives; later refreshes are ignored (collapseReady is latched).
+  useEffect(() => {
+    if (collapseReady.current || groups.length === 0) return
+    setCollapsed(new Set(groups.map((g) => g.name)))
+    collapseReady.current = true
+  }, [groups])
+  // Persist the collapse + open-host state for the session (skip the transient empty set before the
+  // default above has been applied).
+  useEffect(() => { if (collapseReady.current) { try { sessionStorage.setItem('argus.tree.collapsed', JSON.stringify([...collapsed])) } catch { /* ignore */ } } }, [collapsed])
+  useEffect(() => { try { if (openHost == null) sessionStorage.removeItem('argus.tree.openhost'); else sessionStorage.setItem('argus.tree.openhost', openHost) } catch { /* ignore */ } }, [openHost])
   // Device-class catalog is static; fetch once for the "+ Add device" band.
   useEffect(() => { fetch('/api/classes').then((r) => (r.ok ? r.json() : [])).then((c) => setClasses(c || [])).catch(() => {}) }, [])
 
@@ -2910,22 +2925,23 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
       <div className="host" key={key}>
         <div className="host-head" style={{ paddingLeft: indent(depth) }} onClick={() => { const next = hopen ? null : key; setOpenHost(next); onNavigate(next ? h.id : null, null) }}>
           {guides(depth)}
-          <svg className={'chev' + (hopen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
-          <span className="dev-ico" title={h.class_id || undefined}>{hostGlyph(h.icon)}<span className="dev-badge" style={{ background: dotColor(h.paused, h.hidden, h.state) }} /></span>
-          <span className="hn lnk-host" onClick={(e) => { e.stopPropagation(); drillHost(path, h.id) }}>{h.name}</span>
-          {h.paused && <span className="kind" style={{ color: PAUSED_BLUE }}>· paused {untilLabel(h.paused_until)}</span>}
-          {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
-          {h.icmp_item && (
-            <span className="hmetric" title="ICMP response time">
-              {icmpSparks[h.icmp_item] && icmpSparks[h.icmp_item].length > 1 && (
-                <span className="hspark"><Spark values={icmpSparks[h.icmp_item]} color={h.state === 'ok' ? 'var(--accent)' : (STATE_VAR[h.state] || 'var(--accent)')} width={130} /></span>
-              )}
-              {typeof h.icmp_ms === 'number' && <span className="hms">{fmtLatency(h.icmp_ms)}</span>}
-            </span>
-          )}
-          <div className="right">
-            {!h.paused && !h.hidden && h.problems > 0 && <span style={{ color: stateColor[h.state], fontSize: 12 }}>{h.problems} problem{h.problems === 1 ? '' : 's'}</span>}
-            {orderArrows(sibIds, index, path, 'sibling')}
+          <div className="c-name">
+            <svg className={'chev' + (hopen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
+            <span className="dev-ico" title={h.class_id || undefined}>{hostGlyph(h.icon)}<span className="dev-badge" style={{ background: dotColor(h.paused, h.hidden, h.state) }} /></span>
+            <span className="hn lnk-host" onClick={(e) => { e.stopPropagation(); drillHost(path, h.id) }}>{h.name}</span>
+            {h.paused && <span className="kind" style={{ color: PAUSED_BLUE }}>· paused {untilLabel(h.paused_until)}</span>}
+            {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
+            {!h.paused && !h.hidden && h.problems > 0 && <span className="probpill" title={`${h.problems} problem${h.problems === 1 ? '' : 's'}`}>{h.problems}</span>}
+          </div>
+          <div className="c-graph">
+            {h.icmp_item && icmpSparks[h.icmp_item] && icmpSparks[h.icmp_item].length > 1 && (
+              <span className="hspark"><Spark values={icmpSparks[h.icmp_item]} color={h.state === 'ok' ? 'var(--accent)' : (STATE_VAR[h.state] || 'var(--accent)')} width={130} /></span>
+            )}
+          </div>
+          <div className="c-val" title="ICMP response time">
+            {reorder ? orderArrows(sibIds, index, path, 'sibling') : (typeof h.icmp_ms === 'number' ? <span className="hms">{fmtLatency(h.icmp_ms)}</span> : null)}
+          </div>
+          <div className="c-act">
             {canPause && !reorder && (
               <Kebab disabled={busyId === h.id} actions={[
                 h.paused ? { label: 'Resume', icon: kbIcon.resume, onClick: () => clearHostState(h, 'pause') } : { label: 'Pause', icon: kbIcon.pause, onPick: (s) => setHostState(h, 'pause', s) },
@@ -2956,14 +2972,18 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
       <div className={'site' + (isHidden ? ' ghost' : '')} key={node.path}>
         <div className="site-head" style={{ paddingLeft: indent(depth) }} onClick={() => toggleNode(node.path)}>
           {guides(depth)}
-          <svg className={'chev' + (expanded ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
-          <span className="fold-ico">{expanded ? kbIcon.folderOpen : kbIcon.folder}</span>
-          <span className="name lnk-host" onClick={(e) => { e.stopPropagation(); drillGroup(node.path) }}>{node.name}</span>
-          {isHidden && <span className="tag-hidden">hidden</span>}
-          <span className="loc">{sub.length} host{sub.length === 1 ? '' : 's'}</span>
-          <div className="right">
-            <span style={{ width: 9, height: 9, borderRadius: '50%', background: stateColor[nodeWorst(sub)] || 'var(--muted)' }} />
-            {orderArrows(sibIds, index, scope, 'sibling')}
+          <div className="c-name">
+            <svg className={'chev' + (expanded ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
+            <span className="fold-ico">{expanded ? kbIcon.folderOpen : kbIcon.folder}</span>
+            <span className="name lnk-host" onClick={(e) => { e.stopPropagation(); drillGroup(node.path) }}>{node.name}</span>
+            {isHidden && <span className="tag-hidden">hidden</span>}
+            <span className="loc">{sub.length} host{sub.length === 1 ? '' : 's'}</span>
+          </div>
+          <div className="c-graph" />
+          <div className="c-val">
+            {reorder ? orderArrows(sibIds, index, scope, 'sibling') : <span className="grpdot" style={{ background: stateColor[nodeWorst(sub)] || 'var(--muted)' }} />}
+          </div>
+          <div className="c-act">
             {canPause && g && !reorder && (
               <Kebab actions={[
                 { label: 'New subgroup…', icon: kbIcon.folder, onClick: () => { setError(null); setGAction(null); setNewSubPath(node.path); setCollapsed((c) => { const n = new Set(c); n.delete(node.path); return n }) } },
