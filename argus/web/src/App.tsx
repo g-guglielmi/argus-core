@@ -10,9 +10,9 @@ import { useToast } from './toast'
 type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; landing?: 'overview' | 'errors'; advanced?: boolean }
 type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
-type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string }
+type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string }
 type Group = { id: string; name: string; hosts: number }
-type DeviceClass = { id: string; label: string; family: string; pattern: string; iface: string; offers_http: boolean }
+type DeviceClass = { id: string; label: string; family: string; pattern: string; iface: string; offers_http: boolean; icon?: string }
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[] }
@@ -2483,9 +2483,27 @@ const kbIcon = {
   ack: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M22 11.2V12a10 10 0 1 1-5.9-9.1" /><path d="M22 4 12 14.5l-3-3" /></svg>,
   edit: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>,
   folder: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>,
+  folderOpen: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 8V6.2a1.8 1.8 0 0 1 1.8-1.8h3.9l2 2h6.5A1.8 1.8 0 0 1 20 8.2V9" /><path d="M3 9.2h17.8l-1.9 8.2a1.8 1.8 0 0 1-1.8 1.4H6.4a1.8 1.8 0 0 1-1.8-1.4z" /></svg>,
   gear: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
   trash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" /></svg>,
 }
+
+// devIcon: the per-host tree glyph, keyed by the `icon` name the backend resolves from a host's device
+// class (or a best-effort name guess for the unclassified fleet). Same hand-drawn stroke style as
+// kbIcon. `hostGlyph` falls back to a generic device for any unknown name.
+const devIcon: Record<string, JSX.Element> = {
+  device: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="4" width="18" height="12.5" rx="2" /><path d="M8.5 20.5h7M12 16.5v4" /></svg>,
+  server: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="4" width="18" height="7" rx="1.6" /><rect x="3" y="13" width="18" height="7" rx="1.6" /><path d="M6.6 7.5h.01M6.6 16.5h.01M10 7.5h4M10 16.5h4" /></svg>,
+  switch: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="2.5" y="7.5" width="19" height="9" rx="1.6" /><path d="M6 10.5h2.4M6 16.5v1.7M9.6 16.5v1.7M13.2 16.5v1.7M16.8 16.5v1.7" /></svg>,
+  shield: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M12 3.2l7.5 2.7v5.6c0 4.3-3.2 7.4-7.5 8.8-4.3-1.4-7.5-4.5-7.5-8.8V5.9z" /></svg>,
+  router: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="12.5" width="18" height="6.6" rx="1.6" /><path d="M6.6 15.8h.01M17.4 15.8h.01M12 12.5V8m0 0l-2.4 2.2M12 8l2.4 2.2" /></svg>,
+  wifi: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M4.2 10.4a11 11 0 0 1 15.6 0M7.4 13.6a6.5 6.5 0 0 1 9.2 0" /><circle cx="12" cy="17.4" r="1.2" /></svg>,
+  nas: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><ellipse cx="12" cy="6.2" rx="6.8" ry="2.6" /><path d="M5.2 6.2v11.6c0 1.4 3 2.6 6.8 2.6s6.8-1.2 6.8-2.6V6.2M5.2 12c0 1.4 3 2.6 6.8 2.6s6.8-1.2 6.8-2.6" /></svg>,
+  cloud: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M7.4 18.5a4.3 4.3 0 0 1-.4-8.6 5.1 5.1 0 0 1 9.8-1.1 3.8 3.8 0 0 1 .4 7.6z" /></svg>,
+  globe: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="8.4" /><path d="M3.6 12h16.8M12 3.6c2.5 2.4 2.5 14.4 0 16.8M12 3.6c-2.5 2.4-2.5 14.4 0 16.8" /></svg>,
+  battery: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="8" width="15" height="8.5" rx="1.6" /><path d="M21 11.2v2.6" /><path d="M11 10.2l-2 3.2h2.6l-2 3.2" /></svg>,
+}
+const hostGlyph = (name?: string): JSX.Element => devIcon[name || 'device'] || devIcon.device
 // icons for the per-user kebab actions
 const uIcon = {
   key: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="8" cy="15" r="4" /><path d="M10.8 12.2 20 3M17 6l2 2M14 9l2 2" /></svg>,
@@ -2854,6 +2872,10 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   const focusHost = focusHostId ? hosts.find((x) => x.id === focusHostId) : undefined
   const focusHostName = focusHost?.name || focusHostId || ''
   const indent = (d: number) => 16 + d * 18
+  // Vertical indent guides: one full-height hairline per ancestor level, overlaid (absolute) so they
+  // don't shift the row's own padding. A row at depth d draws guides at the left edge of each shallower
+  // level, connecting a group header to the rows nested under it.
+  const guides = (d: number) => Array.from({ length: d }, (_, i) => <span key={i} className="tguide" style={{ left: 16 + i * 18 }} />)
 
   // Up/down arrows shown in reorder mode within a sibling set (nothing when the set has <2 members, or
   // for a viewer). Clicks stop propagation so they don't toggle/drill the row they sit on.
@@ -2878,8 +2900,9 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     return (
       <div className="host" key={key}>
         <div className="host-head" style={{ paddingLeft: indent(depth) }} onClick={() => { const next = hopen ? null : key; setOpenHost(next); onNavigate(next ? h.id : null, null) }}>
+          {guides(depth)}
           <svg className={'chev' + (hopen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
-          <span style={{ width: 9, height: 9, borderRadius: '50%', flexShrink: 0, background: dotColor(h.paused, h.hidden, h.state) }} />
+          <span className="dev-ico" title={h.class_id || undefined}>{hostGlyph(h.icon)}<span className="dev-badge" style={{ background: dotColor(h.paused, h.hidden, h.state) }} /></span>
           <span className="hn lnk-host" onClick={(e) => { e.stopPropagation(); drillHost(path, h.id) }}>{h.name}</span>
           {h.paused && <span className="kind" style={{ color: PAUSED_BLUE }}>· paused {untilLabel(h.paused_until)}</span>}
           {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
@@ -2915,7 +2938,9 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     return (
       <div className={'site' + (isHidden ? ' ghost' : '')} key={node.path}>
         <div className="site-head" style={{ paddingLeft: indent(depth) }} onClick={() => toggleNode(node.path)}>
+          {guides(depth)}
           <svg className={'chev' + (expanded ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
+          <span className="fold-ico">{expanded ? kbIcon.folderOpen : kbIcon.folder}</span>
           <span className="name lnk-host" onClick={(e) => { e.stopPropagation(); drillGroup(node.path) }}>{node.name}</span>
           {isHidden && <span className="tag-hidden">hidden</span>}
           <span className="loc">{sub.length} host{sub.length === 1 ? '' : 's'}</span>

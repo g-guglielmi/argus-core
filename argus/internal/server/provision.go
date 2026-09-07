@@ -35,13 +35,14 @@ type classView struct {
 	Pattern    string `json:"pattern"`
 	Iface      string `json:"iface"`
 	OffersHTTP bool   `json:"offers_http"`
+	Icon       string `json:"icon"`
 }
 
 // GET /api/classes - the device-class catalog for the attach UI (any signed-in user).
 func (s *Server) handleClasses(w http.ResponseWriter, r *http.Request) {
 	out := make([]classView, 0)
 	for _, c := range provision.Classes() {
-		out = append(out, classView{ID: c.ID, Label: c.Label, Family: c.Family, Pattern: string(c.Pattern), Iface: string(c.Iface), OffersHTTP: c.OffersHTTP})
+		out = append(out, classView{ID: c.ID, Label: c.Label, Family: c.Family, Pattern: string(c.Pattern), Iface: string(c.Iface), OffersHTTP: c.OffersHTTP, Icon: c.Icon})
 	}
 	writeJSON(w, http.StatusOK, out)
 }

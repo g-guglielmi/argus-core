@@ -148,6 +148,11 @@ Each class is built by one of a few **patterns** (build the pattern once, replic
 are **API-endpoint sources** (✦): you register one endpoint (vCenter, Prism, Citrix Monitor, a
 UniFi controller) and host-prototype **LLD spawns** the child hosts it manages.
 
+**Tree glyph.** Each class carries an `Icon` (server, switch, shield, router, wifi, nas, cloud,
+globe, battery, device) that drives its leading icon in the sites tree; groups render as folders,
+hosts as their class icon with a small health-coloured status badge. A host with no class (the
+pre-§C fleet) falls back to a best-effort guess from its name, else a generic device.
+
 | Class | Pattern | Detected by | Metrics beyond Ping | LLD |
 |---|---|---|---|---|
 | **Generic Linux SNMP** | SNMP | host-resources / UCD | CPU, RAM, disk, net, uptime | fs, NICs |
