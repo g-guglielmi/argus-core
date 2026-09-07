@@ -3560,7 +3560,13 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                   const gkey = 'g:' + row.cat + '|' + row.instance
                   const open = openItem === gkey
                   const { node: headline, primary } = groupHeadline(row.cat, row.items)
-                  const channels: GroupChan[] = row.items.filter((i) => i.numeric && i.supported).map((i) => ({ id: i.id, label: i.channel || i.label || i.name, units: i.units }))
+                  let channels: GroupChan[] = row.items.filter((i) => i.numeric && i.supported).map((i) =>
+                    row.cat === 'Ping' && i.channel === 'Reachable'
+                      ? { id: i.id, label: 'Downtime', units: '', invert: true } // show only when unreachable (PRTG-style)
+                      : { id: i.id, label: i.channel || i.label || i.name, units: i.units })
+                  // Put the primary/headline channel first so it owns the left axis + the accent colour.
+                  const pIdx = channels.findIndex((cc) => cc.id === primary.id)
+                  if (pIdx > 0) channels = [channels[pIdx], ...channels.slice(0, pIdx), ...channels.slice(pIdx + 1)]
                   const clickable = channels.length > 0
                   const gState = row.items.reduce((w, i) => { const s = itemState[i.id]; return s && (!w || stateRank[s] > stateRank[w]) ? s : w }, '')
                   const gAcked = !row.items.some((i) => itemState[i.id] && itemAcked[i.id] === false)
@@ -4036,13 +4042,17 @@ function SensorChart({ itemId, units, color = 'var(--accent)' }: { itemId: strin
 const SERIES_COLORS = ['#2ea8c9', '#e0803a', '#7d5bd6', '#3aa856', '#c9564f', '#b8a032']
 // Lookback window per range key (seconds), so the group graph can pin its x-axis to the window.
 const RANGE_SECS: Record<string, number> = { '2h': 7200, '2d': 172800, '1M': 2592000, '3M': 7776000, '6M': 15552000, '1Y': 31536000 }
+// Downtime channel (inverted reachability): a red band that only rises when the target is unreachable.
+const DOWNTIME_STROKE = '#d64550'
+const DOWNTIME_FILL = 'rgba(214, 69, 80, 0.30)'
 
-type GroupChan = { id: string; label: string; units: string }
+// invert turns a reachable (1=up) channel into downtime (spikes to 1 when down), drawn as a red band.
+type GroupChan = { id: string; label: string; units: string; invert?: boolean }
 
 // buildMultiPlot overlays several channels on one uPlot: timestamps are unioned, each distinct unit
 // gets its own scale (axes drawn for the first two, left/right), and the legend lists every channel
 // with its live value and toggles it on click. xrange pins the x-axis to the requested window.
-function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null }[] }[], width: number, c: ChartColors, xrange?: [number, number]): [uPlot.Options, uPlot.AlignedData] {
+function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null }[]; downtime?: boolean }[], width: number, c: ChartColors, xrange?: [number, number]): [uPlot.Options, uPlot.AlignedData] {
   const tset = new Set<number>()
   series.forEach((s) => s.points.forEach((p) => tset.add(p.t)))
   const xs = [...tset].sort((a, b) => a - b)
@@ -4058,17 +4068,30 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   if (units.length > 1) axes.push({ scale: scaleKey(units[1]), side: 1, stroke: c.axis, ticks, size: 76, values: yv(units[1]) })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const xVal = (u: any, v: number | null) => { const t = v ?? lastVal(u, 0); return t == null ? '--' : new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const scaleCfg: Record<string, any> = { x: xrange ? { time: true, range: xrange } : { time: true } }
   const uplotSeries: uPlot.Series[] = [{ value: xVal }]
   series.forEach((s, i) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const val = (u: any, v: number | null) => { const n = v ?? lastVal(u, i + 1); return n == null ? '--' : fmtNum(n, s.units) }
+    const val = (u: any, v: number | null) => { const n = v ?? lastVal(u, i + 1); return n == null ? '--' : s.downtime ? (n > 0 ? 'down' : 'up') : fmtNum(n, s.units) }
+    if (s.downtime) scaleCfg[scaleKey(s.units)] = { range: [0, 1] } // pin the status band to the bottom
     // spanGaps joins each channel's points across the nulls the timestamp-union leaves between
-    // channels that sample at slightly different clocks (otherwise the line renders as dots).
-    uplotSeries.push({ label: s.label, stroke: SERIES_COLORS[i % SERIES_COLORS.length], width: 1.5, scale: scaleKey(s.units), spanGaps: true, value: val })
+    // channels that sample at slightly different clocks (otherwise the line renders as dots). The
+    // first (primary) channel is drawn a touch heavier so it reads as the main field.
+    uplotSeries.push({
+      label: s.label,
+      stroke: s.downtime ? DOWNTIME_STROKE : SERIES_COLORS[i % SERIES_COLORS.length],
+      fill: s.downtime ? DOWNTIME_FILL : undefined,
+      width: s.downtime ? 1 : i === 0 ? 2 : 1.5,
+      points: s.downtime ? { show: false } : undefined,
+      scale: scaleKey(s.units),
+      spanGaps: true,
+      value: val,
+    } as uPlot.Series)
   })
   // Pin the x-axis to the requested window; a near-empty range (a brand-new item with one point)
   // otherwise makes uPlot pad a zero-span time axis by a fraction of the epoch - i.e. years out.
-  const opts = { width, height: 320, scales: { x: xrange ? { time: true, range: xrange } : { time: true } }, axes, series: uplotSeries, legend: { show: true } } as uPlot.Options
+  const opts = { width, height: 320, scales: scaleCfg, axes, series: uplotSeries, legend: { show: true } } as uPlot.Options
   return [opts, [xs, ...ys] as uPlot.AlignedData]
 }
 
@@ -4076,7 +4099,7 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
 // a click-to-toggle legend - the PRTG "sensor with channels" view. Long ranges use each channel's avg.
 function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
   const [range, setRange] = useState('2h')
-  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null }[] }[] | null>(null)
+  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null }[]; downtime?: boolean }[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
   const [themeTick, setThemeTick] = useState(0)
@@ -4096,9 +4119,10 @@ function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
     setError(null)
     Promise.all(channels.map((ch) =>
       fetch(`/api/items/${ch.id}/history?range=${range}`).then((r) => (r.ok ? r.json() : null)).then((d: Series | null) => ({
-        label: ch.label, units: ch.units,
-        points: d ? d.points.map((p) => ({ t: p.t, v: p.v ?? p.avg ?? null })) : [] as { t: number; v: number | null }[],
-      })).catch(() => ({ label: ch.label, units: ch.units, points: [] as { t: number; v: number | null }[] }))
+        label: ch.label, units: ch.units, downtime: !!ch.invert,
+        // invert reachability into downtime: up (>0) -> 0, down -> 1.
+        points: d ? d.points.map((p) => { let v = p.v ?? p.avg ?? null; if (ch.invert && v != null) v = v > 0 ? 0 : 1; return { t: p.t, v } }) : [] as { t: number; v: number | null }[],
+      })).catch(() => ({ label: ch.label, units: ch.units, downtime: !!ch.invert, points: [] as { t: number; v: number | null }[] }))
     )).then((res) => { if (!cancelled) setSeries(res) }).catch(() => { if (!cancelled) setError('Failed to load history') })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
