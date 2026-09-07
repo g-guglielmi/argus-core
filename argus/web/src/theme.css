@@ -302,11 +302,12 @@ a { color: var(--accent); }
 
 /* ---------- monitoring tree ---------- */
 .site { border-top: 1px solid var(--border); }
-/* Group rows are compact header bands (folder icon + a solid raised fill), deliberately shorter than
-   the device-icon host rows nested under them: the height gap + folder-vs-device glyph read apart at a
-   glance, and the tighter rows keep a big tree dense. */
-.site-head { position: relative; display: flex; align-items: center; gap: 9px; padding: 5px 16px; cursor: pointer; user-select: none; background: var(--elevated); }
-.site-head:hover { background: var(--border-strong); }
+/* Group rows are compact header bands: an accent-tinted fill (a hue, so it reads apart from the plain
+   host rows in any theme - a lighter/darker shade is too subtle in dark mode) + the folder icon, and
+   deliberately shorter than the device-icon host rows nested under them. Tighter rows keep a big tree
+   dense. */
+.site-head { position: relative; display: flex; align-items: center; gap: 9px; padding: 5px 16px; cursor: pointer; user-select: none; background: color-mix(in srgb, var(--accent) 14%, var(--panel)); }
+.site-head:hover { background: color-mix(in srgb, var(--accent) 22%, var(--panel)); }
 .fold-ico { display: inline-flex; flex-shrink: 0; color: var(--accent); }
 .fold-ico svg { width: 16px; height: 16px; }
 /* Vertical indent guides (overlaid, full row height) — stack across rows into continuous lines. */
@@ -341,10 +342,11 @@ a { color: var(--accent); }
 .dev-ico svg { width: 18px; height: 18px; }
 .dev-badge { position: absolute; right: -3px; bottom: -3px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--panel); box-sizing: border-box; }
 .host-head:hover .dev-badge { border-color: var(--elevated); }
-/* Host row ICMP latency + inline sparkline (right side) — the per-host data that groups don't carry. */
-.hmetric { display: inline-flex; align-items: center; gap: 8px; }
-.hspark { display: inline-flex; width: 62px; }
-.hms { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 54px; text-align: right; }
+/* Host row ICMP latency + inline sparkline, sitting just after the host name — the per-host data that
+   groups don't carry (another group/host tell). */
+.hmetric { display: inline-flex; align-items: center; gap: 9px; margin-left: 6px; }
+.hspark { display: inline-flex; width: 130px; }
+.hms { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* Inline "Edit groups…" band under a host row */
 .group-edit { margin: 0 16px 10px 38px; padding: 12px 14px; background: var(--elevated); border: 1px solid var(--border); border-radius: 8px; }
