@@ -4103,7 +4103,10 @@ function SensorChart({ itemId, units, color = 'var(--accent)' }: { itemId: strin
 }
 
 // Distinct series colours for the multi-channel graph (mid-tones that read in light and dark).
-const SERIES_COLORS = ['#2ea8c9', '#e0803a', '#7d5bd6', '#3aa856', '#c9564f', '#b8a032']
+// Channel line colours (by series index). Purple sits at index 1 so the ICMP group's second channel
+// (Loss) doesn't collide with the red downtime band; the warm orange is pushed later. Ordered so no
+// 2- or 3-channel group (ICMP, Network in/out, Disk total/used/used%) gets two similar lines.
+const SERIES_COLORS = ['#2ea8c9', '#7d5bd6', '#3aa856', '#e0803a', '#c9564f', '#b8a032']
 // Lookback window per range key (seconds), so the group graph can pin its x-axis to the window.
 const RANGE_SECS: Record<string, number> = { '2h': 7200, '2d': 172800, '1M': 2592000, '3M': 7776000, '6M': 15552000, '1Y': 31536000 }
 // Downtime channel (inverted reachability): a red band that only rises when the target is unreachable.

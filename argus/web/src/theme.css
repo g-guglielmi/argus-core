@@ -348,7 +348,9 @@ a { color: var(--accent); }
 .host-head:hover { background: var(--elevated); }
 .host-head .hn { font-weight: 600; }
 .host-head .kind { color: var(--faint); font-size: 12px; }
-.host-body { padding: 2px 16px 10px 38px; }
+/* Divider between an expanded host's header row and its sensor panel, so the header still reads as a
+   complete row (the body only exists when expanded, so the border only shows then). */
+.host-body { padding: 8px 16px 10px 38px; border-top: 1px solid var(--border); }
 /* Host device icon (type) with a small health-coloured status badge in the corner. */
 .dev-ico { position: relative; display: inline-flex; flex-shrink: 0; color: var(--muted); }
 .dev-ico svg { width: 18px; height: 18px; }
