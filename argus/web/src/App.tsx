@@ -3526,6 +3526,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
   function groupHeadline(cat: string, gi: SensorItem[]): { node: ReactNode; primary: SensorItem } {
     if (cat === 'Network') { const inn = gi.find((x) => x.channel === 'In'), out = gi.find((x) => x.channel === 'Out'); return { node: <span>↓ {reading(inn) ?? '—'} &nbsp;&nbsp; ↑ {reading(out) ?? '—'}</span>, primary: inn || gi[0] } }
     if (cat === 'Disk') { const pu = gi.find((x) => (x.channel || '').startsWith('Used %')) || gi[0]; return { node: reading(pu), primary: pu } }
+    if (cat === 'Ping') { const rt = gi.find((x) => x.channel === 'Response time') || gi[0]; return { node: reading(rt), primary: rt } }
     return { node: reading(gi[0]), primary: gi[0] }
   }
 
@@ -4046,12 +4047,15 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   const xi = new Map(xs.map((t, i) => [t, i]))
   const ys = series.map((s) => { const a: (number | null)[] = new Array(xs.length).fill(null); s.points.forEach((p) => { const i = xi.get(p.t); if (i !== undefined) a[i] = p.v }); return a })
   const units = [...new Set(series.map((s) => s.units))]
+  // A scale per distinct unit ('y0','y1',…); axes are drawn for the first two units (left/right), and
+  // any further units still plot (auto-ranged) so a 3-unit group like Ping shows every channel.
+  const scaleKey = (u: string) => 'y' + units.indexOf(u)
   const grid = { stroke: c.grid, width: 1 }
   const ticks = { stroke: c.grid, width: 1 }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const yv = (u: string) => ((_up: any, splits: number[]) => splits.map((v) => fmtNum(v, u))) as unknown as uPlot.Axis['values']
-  const axes: uPlot.Axis[] = [{ stroke: c.axis, grid, ticks }, { scale: 'y', stroke: c.axis, grid, ticks, size: 60, values: yv(units[0]) }]
-  if (units.length > 1) axes.push({ scale: 'y2', side: 1, stroke: c.axis, ticks, size: 60, values: yv(units[1]) })
+  const axes: uPlot.Axis[] = [{ stroke: c.axis, grid, ticks }, { scale: scaleKey(units[0]), stroke: c.axis, grid, ticks, size: 60, values: yv(units[0]) }]
+  if (units.length > 1) axes.push({ scale: scaleKey(units[1]), side: 1, stroke: c.axis, ticks, size: 60, values: yv(units[1]) })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const xVal = (u: any, v: number | null) => { const t = v ?? lastVal(u, 0); return t == null ? '--' : new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
   const uplotSeries: uPlot.Series[] = [{ value: xVal }]
@@ -4059,7 +4063,7 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
     // The legend value carries the unit (fmtNum), so the label is just the channel name.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const val = (u: any, v: number | null) => { const n = v ?? lastVal(u, i + 1); return n == null ? '--' : fmtNum(n, s.units) }
-    uplotSeries.push({ label: s.label, stroke: SERIES_COLORS[i % SERIES_COLORS.length], width: 1.5, scale: s.units === units[0] ? 'y' : 'y2', value: val })
+    uplotSeries.push({ label: s.label, stroke: SERIES_COLORS[i % SERIES_COLORS.length], width: 1.5, scale: scaleKey(s.units), value: val })
   })
   const opts = { width, height: 320, scales: { x: { time: true } }, axes, series: uplotSeries, legend: { show: true } } as uPlot.Options
   const [gx, gy] = insertGaps(xs, ys)

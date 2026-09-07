@@ -88,11 +88,11 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 
 	switch base {
 	case "icmpping":
-		return "Ping", "Reachable (ICMP)", "", "", true
+		return "Ping", "Reachable (ICMP)", "ICMP", "Reachable", true
 	case "icmppingloss":
-		return "Ping", "ICMP loss", "", "", true
+		return "Ping", "ICMP loss", "ICMP", "Loss", true
 	case "icmppingsec":
-		return "Ping", "ICMP response time", "", "", true
+		return "Ping", "ICMP response time", "ICMP", "Response time", true
 
 	case "system.cpu.util":
 		// The Linux template has one item per CPU state, most of them near-zero noise. Keep
