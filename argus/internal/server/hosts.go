@@ -113,7 +113,7 @@ func deviceIcon(name, classID string) string {
 		return "switch"
 	case has("access point", "accesspoint", "uap", "u6-", "u7-", "nanohd", "wifi", "wi-fi", "wlan"):
 		return "wifi"
-	case has("nas", "unraid", "qnap", "synology", "truenas", "freenas", "ugreen", "haproxy", "proxy"):
+	case has("nas", "unraid", "qnap", "synology", "truenas", "freenas", "ugreen"):
 		return "nas"
 	case has("dns", "adguard", "pihole", "pi-hole", "bind", "unbound", "libraesva"):
 		return "globe"
