@@ -308,7 +308,7 @@ a { color: var(--accent); }
    dense. */
 /* Group + host rows share one grid so the graph, latency and kebab line up in columns down the whole
    tree at any nesting depth — indentation only ever squeezes the name column (col 1) on the left. */
-.site-head, .host-head { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 150px 66px 40px; align-items: center; cursor: pointer; user-select: none; }
+.site-head, .host-head { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 150px 84px 40px; align-items: center; cursor: pointer; user-select: none; }
 .site-head { padding: 5px 16px; background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
 .site-head:hover { background: color-mix(in srgb, var(--accent) 15%, var(--panel)); }
 /* Row cells. The name flexes + truncates; the last three are fixed-width so they align across rows. */
@@ -358,7 +358,7 @@ a { color: var(--accent); }
 .host-head:hover .dev-badge { border-color: var(--elevated); }
 /* Host row ICMP latency + sparkline — the per-host data groups don't carry, in aligned columns. */
 .hspark { display: inline-flex; width: 130px; }
-.hms { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.hms { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Inline "Edit groups…" band under a host row */
 .group-edit { margin: 0 16px 10px 38px; padding: 12px 14px; background: var(--elevated); border: 1px solid var(--border); border-radius: 8px; }
@@ -802,7 +802,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
      phone eats up to 74px of a ~350px card; !important is the only way to reclaim it from CSS. */
   .host-body { padding-left: 8px !important; padding-right: 4px !important; overflow-x: auto; }
   /* Drop the graph column on phones (keep the aligned latency number); rows become 3 columns. */
-  .site-head, .host-head { grid-template-columns: minmax(0, 1fr) 58px 36px; }
+  .site-head, .host-head { grid-template-columns: minmax(0, 1fr) 78px 34px; }
   .c-graph { display: none; }
 
   /* --- touch targets: bring the compact desktop controls up to ~40px on phones --- */
