@@ -2915,15 +2915,15 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
           <span className="hn lnk-host" onClick={(e) => { e.stopPropagation(); drillHost(path, h.id) }}>{h.name}</span>
           {h.paused && <span className="kind" style={{ color: PAUSED_BLUE }}>· paused {untilLabel(h.paused_until)}</span>}
           {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
+          {h.icmp_item && (
+            <span className="hmetric" title="ICMP response time">
+              {icmpSparks[h.icmp_item] && icmpSparks[h.icmp_item].length > 1 && (
+                <span className="hspark"><Spark values={icmpSparks[h.icmp_item]} color={h.state === 'ok' ? 'var(--accent)' : (STATE_VAR[h.state] || 'var(--accent)')} width={130} /></span>
+              )}
+              {typeof h.icmp_ms === 'number' && <span className="hms">{fmtLatency(h.icmp_ms)}</span>}
+            </span>
+          )}
           <div className="right">
-            {h.icmp_item && (
-              <span className="hmetric" title="ICMP response time">
-                {icmpSparks[h.icmp_item] && icmpSparks[h.icmp_item].length > 1 && (
-                  <span className="hspark"><Spark values={icmpSparks[h.icmp_item]} color={h.state === 'ok' ? 'var(--accent)' : (STATE_VAR[h.state] || 'var(--accent)')} width={62} /></span>
-                )}
-                {typeof h.icmp_ms === 'number' && <span className="hms">{fmtLatency(h.icmp_ms)}</span>}
-              </span>
-            )}
             {!h.paused && !h.hidden && h.problems > 0 && <span style={{ color: stateColor[h.state], fontSize: 12 }}>{h.problems} problem{h.problems === 1 ? '' : 's'}</span>}
             {orderArrows(sibIds, index, path, 'sibling')}
             {canPause && !reorder && (
