@@ -45,6 +45,8 @@ type hostView struct {
 	ProxyID     string   `json:"proxy_id,omitempty"` // "" / "0" = monitored by the server
 	ClassID     string   `json:"class_id,omitempty"` // device class overlay id, "" when unclassified
 	Icon        string   `json:"icon"`               // tree glyph name (device/server/switch/…); see web devIcon
+	IcmpItem    string   `json:"icmp_item,omitempty"` // icmppingsec item id (for the row's sparkline), "" if none
+	IcmpMs      *float64 `json:"icmp_ms,omitempty"`   // last ICMP response time in ms, nil when unknown
 }
 
 type itemView struct {
@@ -172,6 +174,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 	hideMap, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 	pauseMap, _ := s.st.ActiveSuppressionMap(ctx, "pause", "host")
 	classMap, _ := s.st.DeviceClasses(ctx) // host id -> device-class id (drives the tree icon)
+	pingItems, _ := s.zbx.PingLatencyItems(ctx) // host id -> icmppingsec item (drives the row latency + sparkline)
 
 	out := make([]hostView, 0, len(hosts))
 	for _, h := range hosts {
@@ -181,6 +184,13 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 		}
 		classID := classMap[h.HostID]
 		hv := hostView{ID: h.HostID, Name: h.Name, Severity: -1, State: "ok", Groups: groups, ProxyID: h.ProxyID, ClassID: classID, Icon: deviceIcon(h.Name, classID)}
+		if it, ok := pingItems[h.HostID]; ok {
+			hv.IcmpItem = it.ItemID
+			if sec, err := strconv.ParseFloat(it.LastValue, 64); err == nil && it.LastValue != "" {
+				ms := sec * 1000
+				hv.IcmpMs = &ms
+			}
+		}
 		if n := count[h.HostID]; n > 0 {
 			hv.Problems = n
 			hv.Severity = worst[h.HostID]

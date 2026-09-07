@@ -287,6 +287,27 @@ func (c *Client) proxyIDByName(ctx context.Context, name string) (string, error)
 	return "", nil
 }
 
+// PingLatencyItems returns each host's ICMP response-time item (icmppingsec), keyed by host id, with
+// its last value - one item.get with a key search (matches both the bare key and a parameterised
+// icmppingsec[...]). Drives the per-host latency + sparkline in the sites tree. First match per host.
+func (c *Client) PingLatencyItems(ctx context.Context) (map[string]Item, error) {
+	params := map[string]any{
+		"output": []string{"itemid", "hostid", "key_", "lastvalue", "units", "value_type"},
+		"search": map[string]any{"key_": "icmppingsec"},
+	}
+	var items []Item
+	if err := c.call(ctx, "item.get", params, true, &items); err != nil {
+		return nil, err
+	}
+	out := make(map[string]Item, len(items))
+	for _, it := range items {
+		if _, ok := out[it.HostID]; !ok {
+			out[it.HostID] = it
+		}
+	}
+	return out, nil
+}
+
 // Items returns the items of one host, sorted by name.
 func (c *Client) Items(ctx context.Context, hostID string) ([]Item, error) {
 	params := map[string]any{

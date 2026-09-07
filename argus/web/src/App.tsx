@@ -10,7 +10,7 @@ import { useToast } from './toast'
 type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; landing?: 'overview' | 'errors'; advanced?: boolean }
 type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
-type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string }
+type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number }
 type Group = { id: string; name: string; hosts: number }
 type DeviceClass = { id: string; label: string; family: string; pattern: string; iface: string; offers_http: boolean; icon?: string }
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
@@ -2504,6 +2504,13 @@ const devIcon: Record<string, JSX.Element> = {
   battery: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="8" width="15" height="8.5" rx="1.6" /><path d="M21 11.2v2.6" /><path d="M11 10.2l-2 3.2h2.6l-2 3.2" /></svg>,
 }
 const hostGlyph = (name?: string): JSX.Element => devIcon[name || 'device'] || devIcon.device
+
+// fmtLatency renders an ICMP response time (milliseconds) compactly for the host row.
+function fmtLatency(ms: number): string {
+  if (ms >= 100) return Math.round(ms) + ' ms'
+  if (ms >= 10) return ms.toFixed(1) + ' ms'
+  return ms.toFixed(2) + ' ms'
+}
 // icons for the per-user kebab actions
 const uIcon = {
   key: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="8" cy="15" r="4" /><path d="M10.8 12.2 20 3M17 6l2 2M14 9l2 2" /></svg>,
@@ -2624,6 +2631,8 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   const showAllEff = advanced && showAll
   const showHiddenEff = advanced && showHidden
   const canPause = role === 'admin' || role === 'helpdesk'
+  // Per-host ICMP latency sparklines: batch the icmppingsec item ids from the host list, auto-refreshed.
+  const icmpSparks = useSparks(hosts.map((h) => h.icmp_item || '').filter(Boolean))
 
   function load(initial = false) {
     if (initial) setLoading(true)
@@ -2907,6 +2916,14 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
           {h.paused && <span className="kind" style={{ color: PAUSED_BLUE }}>· paused {untilLabel(h.paused_until)}</span>}
           {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
           <div className="right">
+            {h.icmp_item && (
+              <span className="hmetric" title="ICMP response time">
+                {icmpSparks[h.icmp_item] && icmpSparks[h.icmp_item].length > 1 && (
+                  <span className="hspark"><Spark values={icmpSparks[h.icmp_item]} color={h.state === 'ok' ? 'var(--accent)' : (STATE_VAR[h.state] || 'var(--accent)')} width={62} /></span>
+                )}
+                {typeof h.icmp_ms === 'number' && <span className="hms">{fmtLatency(h.icmp_ms)}</span>}
+              </span>
+            )}
             {!h.paused && !h.hidden && h.problems > 0 && <span style={{ color: stateColor[h.state], fontSize: 12 }}>{h.problems} problem{h.problems === 1 ? '' : 's'}</span>}
             {orderArrows(sibIds, index, path, 'sibling')}
             {canPause && !reorder && (
