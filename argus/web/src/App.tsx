@@ -3983,6 +3983,40 @@ function insertGaps(xs: number[], series: (number | null)[][]): [number[], (numb
   return [nx, ns]
 }
 
+// Window min/avg/max of a fetched series: from the raw values on history ranges, and from the per-
+// bucket min/max on trend ranges (so the readout is the true range, not a range of hourly averages).
+function statsOf(points: SeriesPoint[], kind: 'history' | 'trend'): { min: number; avg: number; max: number } | null {
+  let mn = Infinity, mx = -Infinity, sum = 0, n = 0
+  for (const p of points) {
+    if (kind === 'trend') {
+      if (p.min != null) mn = Math.min(mn, p.min)
+      if (p.max != null) mx = Math.max(mx, p.max)
+      if (p.avg != null) { sum += p.avg; n++ }
+    } else if (p.v != null) { mn = Math.min(mn, p.v); mx = Math.max(mx, p.v); sum += p.v; n++ }
+  }
+  if (!n) return null
+  const avg = sum / n
+  return { min: isFinite(mn) ? mn : avg, max: isFinite(mx) ? mx : avg, avg }
+}
+
+// StatsRow renders a compact "min · avg · max" readout under a chart's range tabs. Skipped for
+// monotonic counters (uptime), where the three collapse to one meaningless value.
+function StatsRow({ st, units, label }: { st: { min: number; avg: number; max: number } | null; units: string; label?: string }) {
+  if (!st || units === 'uptime') return null
+  return (
+    <div className="cstats">
+      {label && <span className="cstats-lbl">{label}</span>}
+      <span>min <b>{fmtNum(st.min, units)}</b></span>
+      <span>avg <b>{fmtNum(st.avg, units)}</b></span>
+      <span>max <b>{fmtNum(st.max, units)}</b></span>
+    </div>
+  )
+}
+// ChartStats computes the readout from a single sensor's fetched points (single-sensor charts).
+function ChartStats({ points, kind, units }: { points: SeriesPoint[]; kind: 'history' | 'trend'; units: string }) {
+  return <StatsRow st={statsOf(points, kind)} units={units} />
+}
+
 function buildPlot(data: Series, units: string, width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
   const xs = data.points.map((p) => p.t)
   const grid = { stroke: c.grid, width: 1 }
@@ -4002,7 +4036,9 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
   const yVal = (sidx: number) => (u: any, v: number | null) => { const n = v ?? lastVal(u, sidx); return n == null ? '--' : fmtNum(n, units) }
   const base: Partial<uPlot.Options> = { width, height: 320, scales: { x: { time: true } }, axes: [xAxis, yAxis], legend: { show: true }, ...zoomHook(onZoom, xs.length ? [xs[0], xs[xs.length - 1]] : undefined) }
 
-  if (data.kind === 'trend') {
+  // Uptime is a monotonic counter — min ≈ avg ≈ max, so its band is meaningless; fall through to a
+  // single line (drawn from avg on trend ranges).
+  if (data.kind === 'trend' && units !== 'uptime') {
     const avg = data.points.map((p) => (p.avg ?? null))
     const min = data.points.map((p) => (p.min ?? null))
     const max = data.points.map((p) => (p.max ?? null))
@@ -4020,7 +4056,7 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
     return [opts, [gx, ga, gmin, gmax] as uPlot.AlignedData]
   }
 
-  const vs = data.points.map((p) => (p.v ?? null))
+  const vs = data.points.map((p) => (p.v ?? p.avg ?? null))
   const opts: uPlot.Options = {
     ...base,
     series: [{ value: xVal }, { label: `value${unitLabel}`, stroke: c.line, width: 1.5, fill: c.fill, points: { show: false }, value: yVal(1) }],
@@ -4094,6 +4130,7 @@ function SensorChart({ itemId, units, color = 'var(--accent)' }: { itemId: strin
           <button key={rk} className={'rtab' + (range === rk ? ' on' : '')} onClick={() => setRange(rk)}>{rk}</button>
         ))}
       </div>
+      {data && data.points.length > 0 && <ChartStats points={data.points} kind={data.kind} units={units} />}
       {showLoading && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>Loading…</p>}
       {error && <p style={{ color: 'var(--err)', margin: '0.3rem 0' }}>{error}</p>}
       {!loading && !error && data && data.points.length === 0 && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>No data in this range.</p>}
@@ -4191,7 +4228,7 @@ function zoomHook(onZoom: ((z: boolean) => void) | undefined, xrange: [number, n
 // a click-to-toggle legend - the PRTG "sensor with channels" view. Long ranges use each channel's avg.
 function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
   const [range, setRange] = useState('2h')
-  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null }[]; downtime?: boolean }[] | null>(null)
+  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null }[]; downtime?: boolean; stats?: { min: number; avg: number; max: number } | null }[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
   const [themeTick, setThemeTick] = useState(0)
@@ -4215,7 +4252,9 @@ function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
         label: ch.label, units: ch.units, downtime: !!ch.invert,
         // invert reachability into downtime: up (>0) -> 0, down -> 1.
         points: d ? d.points.map((p) => { let v = p.v ?? p.avg ?? null; if (ch.invert && v != null) v = v > 0 ? 0 : 1; return { t: p.t, v } }) : [] as { t: number; v: number | null }[],
-      })).catch(() => ({ label: ch.label, units: ch.units, downtime: !!ch.invert, points: [] as { t: number; v: number | null }[] }))
+        // stats from the raw fetch (before flattening min/max away), for the min/avg/max readout.
+        stats: d && !ch.invert ? statsOf(d.points, d.kind) : null,
+      })).catch(() => ({ label: ch.label, units: ch.units, downtime: !!ch.invert, points: [] as { t: number; v: number | null }[], stats: null }))
     )).then((res) => { if (!cancelled) setSeries(res) }).catch(() => { if (!cancelled) setError('Failed to load history') })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4245,6 +4284,7 @@ function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
       <div className="rtabs">
         {RANGES.map((rk) => <button key={rk} className={'rtab' + (range === rk ? ' on' : '')} onClick={() => setRange(rk)}>{rk}</button>)}
       </div>
+      {(() => { const p = series && series.find((s) => !s.downtime && s.stats); return p && p.stats ? <StatsRow st={p.stats} units={p.units} label={p.label} /> : null })()}
       {error && <p style={{ color: 'var(--err)', margin: '0.3rem 0' }}>{error}</p>}
       {empty && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>No data in this range.</p>}
       <div ref={host} style={{ width: '100%' }} />
