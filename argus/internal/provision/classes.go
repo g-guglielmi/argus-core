@@ -41,6 +41,7 @@ type Class struct {
 	Iface      IfaceKind `json:"iface"`      // interface the host needs (agent/snmp/none)
 	Templates  []string  `json:"templates"`  // Zabbix templates to attach (Base Ping is added on top)
 	OffersHTTP bool      `json:"offers_http"` // the HTTP/HTTPS add-on may be attached to this class
+	Icon       string    `json:"icon"`       // tree glyph name (server, switch, shield, …); see web devIcon map
 }
 
 // registry is the catalog. C0 shipped the universal "base" class (Ping only); C1 adds Generic Linux
@@ -55,6 +56,7 @@ var registry = []Class{
 		Iface:      IfaceAgent, // ICMP simple checks resolve the target from the host's interface
 		Templates:  nil,        // Base Ping is attached to every host automatically
 		OffersHTTP: true,
+		Icon:       "device",
 	},
 	{
 		ID:         "linux-snmp",
@@ -64,6 +66,7 @@ var registry = []Class{
 		Iface:      IfaceSNMP,
 		Templates:  []string{"Argus Linux by SNMP"},
 		OffersHTTP: true,
+		Icon:       "server",
 	},
 }
 

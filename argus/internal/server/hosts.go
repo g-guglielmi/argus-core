@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"argus/internal/auth"
+	"argus/internal/provision"
 )
 
 // decodeOptional decodes a small JSON body if present, ignoring an empty/absent body.
@@ -41,6 +43,8 @@ type hostView struct {
 	HiddenUntil *int64   `json:"hidden_until,omitempty"`
 	Groups      []string `json:"groups"`             // host groups (drive the site tree)
 	ProxyID     string   `json:"proxy_id,omitempty"` // "" / "0" = monitored by the server
+	ClassID     string   `json:"class_id,omitempty"` // device class overlay id, "" when unclassified
+	Icon        string   `json:"icon"`               // tree glyph name (device/server/switch/…); see web devIcon
 }
 
 type itemView struct {
@@ -80,6 +84,48 @@ func priorityOf(m map[string]int, itemID string) int {
 }
 
 func atoi(s string) int { n, _ := strconv.Atoi(s); return n }
+
+// deviceIcon picks a host's tree glyph (purely cosmetic - the leading icon in the sites tree). A
+// classified host uses its class icon (authoritative); otherwise we best-effort guess a device kind
+// from the host name so the existing, pre-§C fleet still gets meaningful icons. Unknown -> "device".
+// Keep the keyword sets generic (no site-specific names - this is a public repo).
+func deviceIcon(name, classID string) string {
+	if classID != "" {
+		if c, ok := provision.ClassByID(classID); ok && c.Icon != "" {
+			return c.Icon
+		}
+	}
+	n := strings.ToLower(name)
+	has := func(subs ...string) bool {
+		for _, s := range subs {
+			if strings.Contains(n, s) {
+				return true
+			}
+		}
+		return false
+	}
+	switch {
+	case has("firewall", "pfsense", "opnsense", "sophos", "fortigate", "fortinet", "palo alto", "checkpoint"):
+		return "shield"
+	case has("gateway", "router", "mikrotik", "edgerouter", "pf-"):
+		return "router"
+	case has("switch", "usw", "netgear", "catalyst", "nexus", "aruba", "instanton", "instant on"):
+		return "switch"
+	case has("access point", "accesspoint", "uap", "u6-", "u7-", "nanohd", "wifi", "wi-fi", "wlan"):
+		return "wifi"
+	case has("nas", "unraid", "qnap", "synology", "truenas", "freenas", "ugreen", "haproxy", "proxy"):
+		return "nas"
+	case has("dns", "adguard", "pihole", "pi-hole", "bind", "unbound", "libraesva"):
+		return "globe"
+	case has("vps", "cloud", "ovh", "hetzner", "vultr", "linode", "netbird", "droplet", "ec2"):
+		return "cloud"
+	case has("esxi", "vcenter", "vmware", "proxmox", "hyper-v", "hyperv", "xcp", "nutanix", "kvm", "netscaler"):
+		return "server"
+	case has(" ups", "-ups", "nut ", "battery"):
+		return "battery"
+	}
+	return "device"
+}
 
 // untilFrom converts a duration in seconds to an absolute expiry unix time; 0/negative means
 // indefinite (nil).
@@ -125,6 +171,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 
 	hideMap, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 	pauseMap, _ := s.st.ActiveSuppressionMap(ctx, "pause", "host")
+	classMap, _ := s.st.DeviceClasses(ctx) // host id -> device-class id (drives the tree icon)
 
 	out := make([]hostView, 0, len(hosts))
 	for _, h := range hosts {
@@ -132,7 +179,8 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 		for _, g := range h.Groups {
 			groups = append(groups, g.Name)
 		}
-		hv := hostView{ID: h.HostID, Name: h.Name, Severity: -1, State: "ok", Groups: groups, ProxyID: h.ProxyID}
+		classID := classMap[h.HostID]
+		hv := hostView{ID: h.HostID, Name: h.Name, Severity: -1, State: "ok", Groups: groups, ProxyID: h.ProxyID, ClassID: classID, Icon: deviceIcon(h.Name, classID)}
 		if n := count[h.HostID]; n > 0 {
 			hv.Problems = n
 			hv.Severity = worst[h.HostID]

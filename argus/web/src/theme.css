@@ -302,8 +302,14 @@ a { color: var(--accent); }
 
 /* ---------- monitoring tree ---------- */
 .site { border-top: 1px solid var(--border); }
-.site-head { display: flex; align-items: center; gap: 10px; padding: 10px 16px; cursor: pointer; user-select: none; }
+/* Group header row: a faint band + a folder icon mark it as a container (vs the device-icon host rows
+   nested under it), so the two read apart at a glance. The band sits below the hover tint. */
+.site-head { position: relative; display: flex; align-items: center; gap: 9px; padding: 10px 16px; cursor: pointer; user-select: none; background: color-mix(in srgb, var(--elevated) 55%, transparent); }
 .site-head:hover { background: var(--elevated); }
+.fold-ico { display: inline-flex; flex-shrink: 0; color: var(--accent); }
+.fold-ico svg { width: 17px; height: 17px; }
+/* Vertical indent guides (overlaid, full row height) — stack across rows into continuous lines. */
+.tguide { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--border); pointer-events: none; }
 .chev { width: 15px; height: 15px; color: var(--faint); transition: transform 0.15s; flex-shrink: 0; }
 .chev.open { transform: rotate(90deg); }
 .site-head .name { font-weight: 650; }
@@ -323,12 +329,17 @@ a { color: var(--accent); }
    order with exactly one line between any two rows. The first row drops it — the panel/crumbs header
    above already draws that boundary. */
 .tree > .site:first-child, .tree > .host:first-child { border-top: none; }
-.host-head { display: flex; align-items: center; gap: 10px; padding: 8px 16px 8px 38px; cursor: pointer; user-select: none; }
+.host-head { position: relative; display: flex; align-items: center; gap: 9px; padding: 8px 16px 8px 38px; cursor: pointer; user-select: none; }
 .host-head:hover { background: var(--elevated); }
 .host-head .hn { font-weight: 600; }
 .host-head .kind { color: var(--faint); font-size: 12px; }
 .host-head .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .host-body { padding: 2px 16px 10px 38px; }
+/* Host device icon (type) with a small health-coloured status badge in the corner. */
+.dev-ico { position: relative; display: inline-flex; flex-shrink: 0; color: var(--muted); }
+.dev-ico svg { width: 18px; height: 18px; }
+.dev-badge { position: absolute; right: -3px; bottom: -3px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--panel); box-sizing: border-box; }
+.host-head:hover .dev-badge { border-color: var(--elevated); }
 
 /* Inline "Edit groups…" band under a host row */
 .group-edit { margin: 0 16px 10px 38px; padding: 12px 14px; background: var(--elevated); border: 1px solid var(--border); border-radius: 8px; }
