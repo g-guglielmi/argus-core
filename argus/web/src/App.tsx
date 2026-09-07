@@ -4054,7 +4054,9 @@ type GroupChan = { id: string; label: string; units: string; invert?: boolean }
 // colorLegendChecks tints each legend row's check (the ::after from theme.css) with that series'
 // colour, by copying the marker's border colour into a --mk custom property uPlot doesn't expose.
 function colorLegendChecks(u: uPlot) {
-  u.root.querySelectorAll('.u-legend .u-marker').forEach((m) => { const el = m as HTMLElement; el.style.setProperty('--mk', getComputedStyle(el).borderTopColor || '#fff') })
+  // Clear the swatch fill (a filled series like downtime otherwise gets a solid box while the rest are
+  // outlines) so every swatch is a consistent coloured outline + coloured check.
+  u.root.querySelectorAll('.u-legend .u-marker').forEach((m) => { const el = m as HTMLElement; el.style.setProperty('--mk', getComputedStyle(el).borderTopColor || '#fff'); el.style.background = 'transparent' })
 }
 
 // buildMultiPlot overlays several channels on one uPlot: timestamps are unioned, each distinct unit
