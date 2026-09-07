@@ -27,7 +27,7 @@ func TestLoadTemplates(t *testing.T) {
 	for _, d := range docs {
 		all += d.content
 	}
-	for _, want := range []string{TemplateBasePing, TemplateHTTP, "Argus Linux by SNMP", "icmpping", "{$HTTP.PORT}", "{$PING.LOSS.WARN}", "{$CPU.UTIL.WARN}"} {
+	for _, want := range []string{TemplateBasePing, TemplateHTTP, "Argus Linux by SNMP", "icmpping", "{$HTTP.PORT}", "{$PING.LOSS.WARN}", "{$CPU.UTIL.WARN}", "vfs.fs.discovery", "net.if.discovery"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("templates missing %q", want)
 		}
