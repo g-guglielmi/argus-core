@@ -3963,6 +3963,13 @@ function chartColors(color: string): ChartColors {
 // insertGaps breaks the line where sampling stopped (e.g. a paused sensor): where the time
 // between two consecutive points exceeds ~1.75x the typical interval, it inserts a null so
 // uPlot draws a gap instead of a straight line across the missing period.
+// dropIsolated nulls out any single-point segment (a value with a gap on both sides). uPlot draws
+// such lone points as dots even with points.show:false (a line needs two points), which showed up as
+// a stray dot at the chart's edge next to the window-boundary/gap nulls. Lines-only stays lines-only.
+function dropIsolated(series: (number | null)[][]): (number | null)[][] {
+  return series.map((a) => a.map((v, i) => (v != null && (i === 0 || a[i - 1] == null) && (i === a.length - 1 || a[i + 1] == null) ? null : v)))
+}
+
 function insertGaps(xs: number[], series: (number | null)[][]): [number[], (number | null)[][]] {
   if (xs.length < 3) return [xs, series]
   const deltas: number[] = []
@@ -3981,40 +3988,6 @@ function insertGaps(xs: number[], series: (number | null)[][]): [number[], (numb
     series.forEach((s, si) => ns[si].push(s[i]))
   }
   return [nx, ns]
-}
-
-// Window min/avg/max of a fetched series: from the raw values on history ranges, and from the per-
-// bucket min/max on trend ranges (so the readout is the true range, not a range of hourly averages).
-function statsOf(points: SeriesPoint[], kind: 'history' | 'trend'): { min: number; avg: number; max: number } | null {
-  let mn = Infinity, mx = -Infinity, sum = 0, n = 0
-  for (const p of points) {
-    if (kind === 'trend') {
-      if (p.min != null) mn = Math.min(mn, p.min)
-      if (p.max != null) mx = Math.max(mx, p.max)
-      if (p.avg != null) { sum += p.avg; n++ }
-    } else if (p.v != null) { mn = Math.min(mn, p.v); mx = Math.max(mx, p.v); sum += p.v; n++ }
-  }
-  if (!n) return null
-  const avg = sum / n
-  return { min: isFinite(mn) ? mn : avg, max: isFinite(mx) ? mx : avg, avg }
-}
-
-// StatsRow renders a compact "min · avg · max" readout under a chart's range tabs. Skipped for
-// monotonic counters (uptime), where the three collapse to one meaningless value.
-function StatsRow({ st, units, label }: { st: { min: number; avg: number; max: number } | null; units: string; label?: string }) {
-  if (!st || units === 'uptime') return null
-  return (
-    <div className="cstats">
-      {label && <span className="cstats-lbl">{label}</span>}
-      <span>min <b>{fmtNum(st.min, units)}</b></span>
-      <span>avg <b>{fmtNum(st.avg, units)}</b></span>
-      <span>max <b>{fmtNum(st.max, units)}</b></span>
-    </div>
-  )
-}
-// ChartStats computes the readout from a single sensor's fetched points (single-sensor charts).
-function ChartStats({ points, kind, units }: { points: SeriesPoint[]; kind: 'history' | 'trend'; units: string }) {
-  return <StatsRow st={statsOf(points, kind)} units={units} />
 }
 
 function buildPlot(data: Series, units: string, width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
@@ -4052,7 +4025,8 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
       ],
       bands: [{ series: [3, 2], fill: c.fill }],
     } as uPlot.Options
-    const [gx, [ga, gmin, gmax]] = insertGaps(xs, [avg, min, max])
+    const [gx, gy] = insertGaps(xs, [avg, min, max])
+    const [ga, gmin, gmax] = dropIsolated(gy)
     return [opts, [gx, ga, gmin, gmax] as uPlot.AlignedData]
   }
 
@@ -4061,7 +4035,8 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
     ...base,
     series: [{ value: xVal }, { label: `value${unitLabel}`, stroke: c.line, width: 1.5, fill: c.fill, points: { show: false }, value: yVal(1) }],
   } as uPlot.Options
-  const [gx, [gv]] = insertGaps(xs, [vs])
+  const [gx, gy] = insertGaps(xs, [vs])
+  const [gv] = dropIsolated(gy)
   return [opts, [gx, gv] as uPlot.AlignedData]
 }
 
@@ -4130,7 +4105,6 @@ function SensorChart({ itemId, units, color = 'var(--accent)' }: { itemId: strin
           <button key={rk} className={'rtab' + (range === rk ? ' on' : '')} onClick={() => setRange(rk)}>{rk}</button>
         ))}
       </div>
-      {data && data.points.length > 0 && <ChartStats points={data.points} kind={data.kind} units={units} />}
       {showLoading && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>Loading…</p>}
       {error && <p style={{ color: 'var(--err)', margin: '0.3rem 0' }}>{error}</p>}
       {!loading && !error && data && data.points.length === 0 && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>No data in this range.</p>}
@@ -4140,10 +4114,10 @@ function SensorChart({ itemId, units, color = 'var(--accent)' }: { itemId: strin
 }
 
 // Distinct series colours for the multi-channel graph (mid-tones that read in light and dark).
-// Channel line colours (by series index). Purple sits at index 1 so the ICMP group's second channel
-// (Loss) doesn't collide with the red downtime band; the warm orange is pushed later. Ordered so no
-// 2- or 3-channel group (ICMP, Network in/out, Disk total/used/used%) gets two similar lines.
-const SERIES_COLORS = ['#2ea8c9', '#7d5bd6', '#3aa856', '#e0803a', '#c9564f', '#b8a032']
+// Channel line colours (by series index). Amber-gold sits at index 1 so the ICMP group's second
+// channel (Loss) is clearly apart from the red downtime band and the cyan primary (orange read too
+// close to red, purple clashed with it). Ordered so no 2- or 3-channel group gets two similar lines.
+const SERIES_COLORS = ['#2ea8c9', '#e0b53a', '#3aa856', '#e0803a', '#c9564f', '#b8a032']
 // Lookback window per range key (seconds), so the group graph can pin its x-axis to the window.
 const RANGE_SECS: Record<string, number> = { '2h': 7200, '2d': 172800, '1M': 2592000, '3M': 7776000, '6M': 15552000, '1Y': 31536000 }
 // Downtime channel (inverted reachability): a red band that only rises when the target is unreachable.
@@ -4164,7 +4138,7 @@ function colorLegendChecks(u: uPlot) {
 // buildMultiPlot overlays several channels on one uPlot: timestamps are unioned, each distinct unit
 // gets its own scale (axes drawn for the first two, left/right), and the legend lists every channel
 // with its live value and toggles it on click. xrange pins the x-axis to the requested window.
-function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null }[]; downtime?: boolean }[], width: number, c: ChartColors, xrange?: [number, number], onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
+function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean }[], width: number, c: ChartColors, xrange?: [number, number], onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
   // Bucket timestamps to the typical sampling interval so channels sampled at slightly offset clocks
   // land on the same x (else the line renders as dots) while a genuine gap still breaks the line.
   const deltas: number[] = []
@@ -4180,6 +4154,16 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   const xs = [...tset].sort((a, b) => a - b)
   const xi = new Map(xs.map((t, i) => [t, i]))
   const ys = series.map((s) => { const a: (number | null)[] = new Array(xs.length).fill(null); s.points.forEach((p) => { const i = xi.get(round(p.t)); if (i !== undefined) a[i] = p.v }); return a })
+  // Extend each line flat to the window-edge boundary x's instead of leaving a null there: a null
+  // boundary point renders as a stray dot at the plot edge, and a flat edge reads better than a line
+  // that starts mid-plot (it also spans the x-axis for a single-point series).
+  if (xrange) {
+    const fi = xi.get(xrange[0]), ti = xi.get(xrange[1])
+    ys.forEach((a) => {
+      if (fi !== undefined && a[fi] == null) { for (let k = fi + 1; k < a.length; k++) if (a[k] != null) { a[fi] = a[k]; break } }
+      if (ti !== undefined && a[ti] == null) { for (let k = ti - 1; k >= 0; k--) if (a[k] != null) { a[ti] = a[k]; break } }
+    })
+  }
   const units = [...new Set(series.map((s) => s.units))]
   const scaleKey = (u: string) => 'y' + units.indexOf(u)
   const grid = { stroke: c.grid, width: 1 }
@@ -4208,11 +4192,28 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
       value: val,
     } as uPlot.Series)
   })
-  const opts = { width, height: 320, scales: scaleCfg, axes, series: uplotSeries, legend: { show: true }, ...zoomHook(onZoom, xrange) } as uPlot.Options
+  // Primary channel min/max envelope (a shaded band), when it carries trend min/max — long ranges
+  // only; short ranges are raw history (no min/max), so the band simply doesn't appear there.
+  const p0 = series[0]
+  const extraYs: (number | null)[][] = []
+  const bands: uPlot.Band[] = []
+  if (p0 && !p0.downtime && p0.points.some((p) => p.lo != null && p.hi != null)) {
+    const lo: (number | null)[] = new Array(xs.length).fill(null)
+    const hi: (number | null)[] = new Array(xs.length).fill(null)
+    p0.points.forEach((p) => { const i = xi.get(round(p.t)); if (i !== undefined) { lo[i] = p.lo ?? null; hi[i] = p.hi ?? null } })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const softVal = (_u: any, v: number | null) => (v == null ? '--' : fmtNum(v, p0.units))
+    const minIdx = uplotSeries.length // series-array index (x is at 0)
+    uplotSeries.push({ label: 'min', stroke: c.soft, width: 0.75, points: { show: false }, scale: scaleKey(p0.units), value: softVal } as uPlot.Series)
+    uplotSeries.push({ label: 'max', stroke: c.soft, width: 0.75, points: { show: false }, scale: scaleKey(p0.units), value: softVal } as uPlot.Series)
+    extraYs.push(lo, hi)
+    bands.push({ series: [minIdx + 1, minIdx], fill: c.fill }) // fill between max and min
+  }
+  const opts = { width, height: 320, scales: scaleCfg, axes, series: uplotSeries, legend: { show: true }, bands, ...zoomHook(onZoom, xrange) } as uPlot.Options
   // insertGaps breaks the line where sampling actually stopped (a real outage) instead of drawing a
   // straight segment across it; bucketing above keeps offset-but-regular channels connected.
-  const [gx, gy] = insertGaps(xs, ys)
-  return [opts, [gx, ...gy] as uPlot.AlignedData]
+  const [gx, gy] = insertGaps(xs, [...ys, ...extraYs])
+  return [opts, [gx, ...dropIsolated(gy)] as uPlot.AlignedData]
 }
 
 // zoomHook reports (via onZoom) whether the x view is narrower than the full window - so the caller
@@ -4228,7 +4229,7 @@ function zoomHook(onZoom: ((z: boolean) => void) | undefined, xrange: [number, n
 // a click-to-toggle legend - the PRTG "sensor with channels" view. Long ranges use each channel's avg.
 function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
   const [range, setRange] = useState('2h')
-  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null }[]; downtime?: boolean; stats?: { min: number; avg: number; max: number } | null }[] | null>(null)
+  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean }[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
   const [themeTick, setThemeTick] = useState(0)
@@ -4250,11 +4251,10 @@ function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
     Promise.all(channels.map((ch) =>
       fetch(`/api/items/${ch.id}/history?range=${range}`).then((r) => (r.ok ? r.json() : null)).then((d: Series | null) => ({
         label: ch.label, units: ch.units, downtime: !!ch.invert,
-        // invert reachability into downtime: up (>0) -> 0, down -> 1.
-        points: d ? d.points.map((p) => { let v = p.v ?? p.avg ?? null; if (ch.invert && v != null) v = v > 0 ? 0 : 1; return { t: p.t, v } }) : [] as { t: number; v: number | null }[],
-        // stats from the raw fetch (before flattening min/max away), for the min/avg/max readout.
-        stats: d && !ch.invert ? statsOf(d.points, d.kind) : null,
-      })).catch(() => ({ label: ch.label, units: ch.units, downtime: !!ch.invert, points: [] as { t: number; v: number | null }[], stats: null }))
+        // invert reachability into downtime: up (>0) -> 0, down -> 1. lo/hi carry the trend min/max
+        // (present only on long ranges) so the primary channel can draw a shaded envelope.
+        points: d ? d.points.map((p) => { let v = p.v ?? p.avg ?? null; if (ch.invert && v != null) v = v > 0 ? 0 : 1; return { t: p.t, v, lo: ch.invert ? null : (p.min ?? null), hi: ch.invert ? null : (p.max ?? null) } }) : [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[],
+      })).catch(() => ({ label: ch.label, units: ch.units, downtime: !!ch.invert, points: [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[] }))
     )).then((res) => { if (!cancelled) setSeries(res) }).catch(() => { if (!cancelled) setError('Failed to load history') })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4284,7 +4284,6 @@ function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
       <div className="rtabs">
         {RANGES.map((rk) => <button key={rk} className={'rtab' + (range === rk ? ' on' : '')} onClick={() => setRange(rk)}>{rk}</button>)}
       </div>
-      {(() => { const p = series && series.find((s) => !s.downtime && s.stats); return p && p.stats ? <StatsRow st={p.stats} units={p.units} label={p.label} /> : null })()}
       {error && <p style={{ color: 'var(--err)', margin: '0.3rem 0' }}>{error}</p>}
       {empty && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>No data in this range.</p>}
       <div ref={host} style={{ width: '100%' }} />
