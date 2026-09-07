@@ -99,7 +99,7 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 		if host.Status != "0" && host.Status != "1" { // skip template items
 			continue
 		}
-		cat, label, ok := classifyItem(it.Key, it.Name)
+		cat, label, _, _, ok := classifyItem(it.Key, it.Name)
 		if !ok { // curated key sensors only
 			continue
 		}

@@ -26,7 +26,7 @@ const SEVERITIES: { v: number; label: string }[] = [
   { v: 4, label: 'High & up' },
   { v: 5, label: 'Disaster only' },
 ]
-type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; priority: number }
+type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
 type TriggerHost = { id: string; name: string }
 type Trigger = { id: string; description: string; severity: number; enabled: boolean; problem: boolean; since: number; hosts: TriggerHost[]; sensors: string[] }
@@ -3495,6 +3495,40 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
     }
   }
 
+  // Group per-instance sensors (disk mounts, NICs) into one collapsible "channel group" row, so a
+  // host with many LLD sensors reads like PRTG instead of a flat wall. Curated view only; "All
+  // sensors" and single-sensor focus stay flat.
+  const grouped = !onlyItem && !showAll
+  type Row = { cat: string; showCat?: boolean } & ({ kind: 'item'; item: SensorItem } | { kind: 'group'; instance: string; items: SensorItem[] })
+  const shownItems = onlyItem ? items.filter((i) => i.id === onlyItem) : items
+  const rows: Row[] = []
+  if (!grouped) {
+    shownItems.forEach((it) => rows.push({ kind: 'item', cat: it.category || '', item: it }))
+  } else {
+    const at = new Map<string, number>()
+    for (const it of shownItems) {
+      if (it.instance) {
+        const k = (it.category || '') + '|' + it.instance
+        const i = at.get(k)
+        if (i === undefined) { at.set(k, rows.length); rows.push({ kind: 'group', cat: it.category || '', instance: it.instance, items: [it] }) }
+        else { const r = rows[i]; if (r.kind === 'group') r.items.push(it) }
+      } else {
+        rows.push({ kind: 'item', cat: it.category || '', item: it })
+      }
+    }
+  }
+  // A one-member group is just a single sensor.
+  const finalRows: Row[] = rows.map((r) => (r.kind === 'group' && r.items.length === 1 ? { kind: 'item', cat: r.cat, item: r.items[0] } : r))
+  { let prev = ''; finalRows.forEach((r) => { r.showCat = grouped && !!r.cat && r.cat !== prev; prev = r.cat || prev }) }
+
+  // Headline reading for a collapsed group: disk shows Used %, network shows down/up, else the first.
+  const reading = (it?: SensorItem): ReactNode => { if (!it || !it.supported) return null; const [dv, du] = readingParts(it.last_value, it.units); return <>{dv}{du ? <span className="unit"> {du}</span> : null}</> }
+  function groupHeadline(cat: string, gi: SensorItem[]): { node: ReactNode; primary: SensorItem } {
+    if (cat === 'Network') { const inn = gi.find((x) => x.channel === 'In'), out = gi.find((x) => x.channel === 'Out'); return { node: <span>↓ {reading(inn) ?? '—'} &nbsp;&nbsp; ↑ {reading(out) ?? '—'}</span>, primary: inn || gi[0] } }
+    if (cat === 'Disk') { const pu = gi.find((x) => (x.channel || '').startsWith('Used %')) || gi[0]; return { node: reading(pu), primary: pu } }
+    return { node: reading(gi[0]), primary: gi[0] }
+  }
+
   return (
     <div>
       {problems.length > 0 && (
@@ -3519,7 +3553,58 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
           <table className="sensors">
             <thead><tr><th>Sensor</th><th>Value</th><th>Trend</th><th>Priority</th><th style={{ textAlign: 'right' }}>Last check</th></tr></thead>
             <tbody>
-              {(onlyItem ? items.filter((i) => i.id === onlyItem) : items).map((it, idx, shown) => {
+              {finalRows.map((row) => {
+                const catRow = row.showCat ? <tr className="cat"><td colSpan={5}>{row.cat}</td></tr> : null
+                if (row.kind === 'group') {
+                  const gkey = 'g:' + row.cat + '|' + row.instance
+                  const open = openItem === gkey
+                  const { node: headline, primary } = groupHeadline(row.cat, row.items)
+                  const channels: GroupChan[] = row.items.filter((i) => i.numeric && i.supported).map((i) => ({ id: i.id, label: i.channel || i.label || i.name, units: i.units }))
+                  const clickable = channels.length > 0
+                  const gState = row.items.reduce((w, i) => { const s = itemState[i.id]; return s && (!w || stateRank[s] > stateRank[w]) ? s : w }, '')
+                  const gAcked = !row.items.some((i) => itemState[i.id] && itemAcked[i.id] === false)
+                  const gPaused = hostPaused || row.items.every((i) => i.paused)
+                  const gHidden = hostHidden || row.items.every((i) => i.hidden)
+                  const rowClass = gHidden ? 'hidden' : gPaused ? 'paused' : gState ? (gAcked ? 'acked' : (gState === 'error' ? 'err' : 'warn')) : ''
+                  const trendColor = gState ? healthColor(gState, gAcked) : 'var(--accent)'
+                  const gPrio = Math.max(...row.items.map((i) => i.priority))
+                  // Pause/Hide/Ack act on every channel of the instance (you pause a disk, not one metric).
+                  const acts: KAction[] = []
+                  if (!hostPaused) acts.push(row.items.every((i) => i.paused)
+                    ? { label: 'Resume', icon: kbIcon.resume, onClick: () => row.items.forEach((i) => i.paused && clearItemState(i, 'pause')) }
+                    : { label: 'Pause', icon: kbIcon.pause, onPick: (s) => row.items.forEach((i) => setItemState(i, 'pause', s)) })
+                  if (!hostHidden) acts.push(row.items.every((i) => i.hidden)
+                    ? { label: 'Show', icon: kbIcon.show, onClick: () => row.items.forEach((i) => i.hidden && clearItemState(i, 'hide')) }
+                    : { label: 'Hide', icon: kbIcon.hide, onPick: (s) => row.items.forEach((i) => setItemState(i, 'hide', s)) })
+                  const gUnacked = problems.filter((p) => !p.acknowledged && p.item_ids.some((id) => row.items.some((i) => i.id === id)))
+                  const actions: KAction[] = []
+                  if (gUnacked.length) { actions.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => gUnacked.forEach((p) => ack(p, s)) }); if (acts.length) actions.push({ sep: true, label: '' }) }
+                  actions.push(...acts)
+                  return (
+                    <Fragment key={gkey}>
+                      {catRow}
+                      <tr className={rowClass} onClick={clickable ? () => setOpenItem(open ? null : gkey) : undefined} style={{ cursor: clickable ? 'pointer' : 'default' }}>
+                        <td className="namecell">
+                          <span className={'sname' + (clickable ? ' sclick' : '')} style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: gPaused || gHidden ? 0.6 : 1 }}>
+                            {clickable && <span className="scaret" style={{ color: 'var(--accent)', display: 'inline-block', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'none' }}>›</span>}
+                            <span>{row.instance}</span>
+                            <span style={{ color: 'var(--faint)', fontSize: 11 }}> · {row.items.length} channels</span>
+                            {gPaused && <span style={{ color: PAUSED_BLUE, fontSize: 11 }}> (paused)</span>}
+                            {gHidden && <span style={{ color: HIDDEN_GREY, fontSize: 11 }}> (hidden)</span>}
+                          </span>
+                        </td>
+                        <td className="mono val">{headline ?? <span style={{ color: 'var(--muted)' }}>—</span>}</td>
+                        <td className="strend">{clickable ? <Spark values={sparks[primary.id]} color={trendColor} /> : null}</td>
+                        <td className="prio-cell" data-label="Priority"><PriorityStars value={gPrio} canEdit={canPause} onSet={(p) => row.items.forEach((i) => setItemPriority(i, p))} /></td>
+                        <td><div className="lccell"><span className="when">{relTime(primary.last_clock)}</span>{canPause && actions.length > 0 && <Kebab actions={actions} />}</div></td>
+                      </tr>
+                      {open && clickable && (
+                        <tr className="chartrow"><td colSpan={5}><div className="chart-reveal"><SensorGroupChart channels={channels} /></div></td></tr>
+                      )}
+                    </Fragment>
+                  )
+                }
+                const it = row.item
                 const st = itemState[it.id]
                 const open = openItem === it.id
                 const clickable = it.numeric && it.supported
@@ -3528,7 +3613,6 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                 // the host controls it.
                 const effPaused = it.paused || hostPaused
                 const effHidden = it.hidden || hostHidden
-                const newGroup = !onlyItem && !showAll && it.category && it.category !== shown[idx - 1]?.category
                 const rowClass = effHidden ? 'hidden' : effPaused ? 'paused' : st ? (itemAcked[it.id] ? 'acked' : (st === 'error' ? 'err' : 'warn')) : ''
                 const unacked = problems.filter((p) => p.item_ids.includes(it.id) && !p.acknowledged)
                 // Pause/Hide are offered only when the host isn't already controlling that state
@@ -3546,7 +3630,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                 const trendColor = st ? healthColor(st, itemAcked[it.id]) : 'var(--accent)'
                 return (
                   <Fragment key={it.id}>
-                    {newGroup && <tr className="cat"><td colSpan={5}>{it.category}</td></tr>}
+                    {catRow}
                     <tr className={rowClass} onClick={clickable ? () => { const next = open ? null : it.id; setOpenItem(next); onNavigate(hostId, next) } : undefined} style={{ opacity: it.supported ? 1 : 0.55, cursor: clickable ? 'pointer' : 'default' }}>
                       <td className="namecell">
                         <span className={'sname' + (clickable ? ' sclick' : '')} style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: effPaused || effHidden ? 0.6 : 1 }}>
@@ -3942,6 +4026,101 @@ function SensorChart({ itemId, units, color = 'var(--accent)' }: { itemId: strin
       {showLoading && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>Loading…</p>}
       {error && <p style={{ color: 'var(--err)', margin: '0.3rem 0' }}>{error}</p>}
       {!loading && !error && data && data.points.length === 0 && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>No data in this range.</p>}
+      <div ref={host} style={{ width: '100%' }} />
+    </div>
+  )
+}
+
+// Distinct series colours for the multi-channel graph (mid-tones that read in light and dark).
+const SERIES_COLORS = ['#2ea8c9', '#e0803a', '#7d5bd6', '#3aa856', '#c9564f', '#b8a032']
+
+type GroupChan = { id: string; label: string; units: string }
+
+// buildMultiPlot overlays several channels on one uPlot: timestamps are unioned, series sharing a
+// unit share a y-scale, and a second unit gets the right-hand axis (up to two). uPlot's legend lists
+// each channel with its live value and toggles it on click - the "select what to see" part.
+function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null }[] }[], width: number, c: ChartColors): [uPlot.Options, uPlot.AlignedData] {
+  const tset = new Set<number>()
+  series.forEach((s) => s.points.forEach((p) => tset.add(p.t)))
+  const xs = [...tset].sort((a, b) => a - b)
+  const xi = new Map(xs.map((t, i) => [t, i]))
+  const ys = series.map((s) => { const a: (number | null)[] = new Array(xs.length).fill(null); s.points.forEach((p) => { const i = xi.get(p.t); if (i !== undefined) a[i] = p.v }); return a })
+  const units = [...new Set(series.map((s) => s.units))]
+  const grid = { stroke: c.grid, width: 1 }
+  const ticks = { stroke: c.grid, width: 1 }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const yv = (u: string) => ((_up: any, splits: number[]) => splits.map((v) => fmtNum(v, u))) as unknown as uPlot.Axis['values']
+  const axes: uPlot.Axis[] = [{ stroke: c.axis, grid, ticks }, { scale: 'y', stroke: c.axis, grid, ticks, size: 60, values: yv(units[0]) }]
+  if (units.length > 1) axes.push({ scale: 'y2', side: 1, stroke: c.axis, ticks, size: 60, values: yv(units[1]) })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const xVal = (u: any, v: number | null) => { const t = v ?? lastVal(u, 0); return t == null ? '--' : new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
+  const uplotSeries: uPlot.Series[] = [{ value: xVal }]
+  series.forEach((s, i) => {
+    // The legend value carries the unit (fmtNum), so the label is just the channel name.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const val = (u: any, v: number | null) => { const n = v ?? lastVal(u, i + 1); return n == null ? '--' : fmtNum(n, s.units) }
+    uplotSeries.push({ label: s.label, stroke: SERIES_COLORS[i % SERIES_COLORS.length], width: 1.5, scale: s.units === units[0] ? 'y' : 'y2', value: val })
+  })
+  const opts = { width, height: 320, scales: { x: { time: true } }, axes, series: uplotSeries, legend: { show: true } } as uPlot.Options
+  const [gx, gy] = insertGaps(xs, ys)
+  return [opts, [gx, ...gy] as uPlot.AlignedData]
+}
+
+// SensorGroupChart overlays the channels of one instance (a disk mount, a NIC) in a single graph with
+// a click-to-toggle legend - the PRTG "sensor with channels" view. Long ranges use each channel's avg.
+function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
+  const [range, setRange] = useState('2h')
+  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null }[] }[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
+  const [themeTick, setThemeTick] = useState(0)
+  const host = useRef<HTMLDivElement>(null)
+  const plot = useRef<uPlot | null>(null)
+  const key = channels.map((c) => c.id).join(',')
+
+  useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 60000); return () => clearInterval(t) }, [])
+  useEffect(() => {
+    const mo = new MutationObserver(() => setThemeTick((x) => x + 1))
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => mo.disconnect()
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    setError(null)
+    Promise.all(channels.map((ch) =>
+      fetch(`/api/items/${ch.id}/history?range=${range}`).then((r) => (r.ok ? r.json() : null)).then((d: Series | null) => ({
+        label: ch.label, units: ch.units,
+        points: d ? d.points.map((p) => ({ t: p.t, v: p.v ?? p.avg ?? null })) : [] as { t: number; v: number | null }[],
+      })).catch(() => ({ label: ch.label, units: ch.units, points: [] as { t: number; v: number | null }[] }))
+    )).then((res) => { if (!cancelled) setSeries(res) }).catch(() => { if (!cancelled) setError('Failed to load history') })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, range, tick])
+
+  useEffect(() => {
+    if (plot.current) { plot.current.destroy(); plot.current = null }
+    if (!host.current || !series || !series.some((s) => s.points.length > 0)) return
+    const width = host.current.clientWidth || 600
+    const [opts, aligned] = buildMultiPlot(series, width, chartColors('var(--accent)'))
+    plot.current = new uPlot(opts, aligned, host.current)
+    return () => { if (plot.current) { plot.current.destroy(); plot.current = null } }
+  }, [series, themeTick])
+
+  useEffect(() => {
+    function onResize() { if (plot.current && host.current) plot.current.setSize({ width: host.current.clientWidth, height: 320 }) }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  const empty = series && !series.some((s) => s.points.length > 0)
+  return (
+    <div>
+      <div className="rtabs">
+        {RANGES.map((rk) => <button key={rk} className={'rtab' + (range === rk ? ' on' : '')} onClick={() => setRange(rk)}>{rk}</button>)}
+      </div>
+      {error && <p style={{ color: 'var(--err)', margin: '0.3rem 0' }}>{error}</p>}
+      {empty && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>No data in this range.</p>}
       <div ref={host} style={{ width: '100%' }} />
     </div>
   )
