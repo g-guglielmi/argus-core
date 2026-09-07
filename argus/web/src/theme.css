@@ -302,17 +302,18 @@ a { color: var(--accent); }
 
 /* ---------- monitoring tree ---------- */
 .site { border-top: 1px solid var(--border); }
-/* Group header row: a faint band + a folder icon mark it as a container (vs the device-icon host rows
-   nested under it), so the two read apart at a glance. The band sits below the hover tint. */
-.site-head { position: relative; display: flex; align-items: center; gap: 9px; padding: 10px 16px; cursor: pointer; user-select: none; background: color-mix(in srgb, var(--elevated) 55%, transparent); }
-.site-head:hover { background: var(--elevated); }
+/* Group rows are compact header bands (folder icon + a solid raised fill), deliberately shorter than
+   the device-icon host rows nested under them: the height gap + folder-vs-device glyph read apart at a
+   glance, and the tighter rows keep a big tree dense. */
+.site-head { position: relative; display: flex; align-items: center; gap: 9px; padding: 5px 16px; cursor: pointer; user-select: none; background: var(--elevated); }
+.site-head:hover { background: var(--border-strong); }
 .fold-ico { display: inline-flex; flex-shrink: 0; color: var(--accent); }
-.fold-ico svg { width: 17px; height: 17px; }
+.fold-ico svg { width: 16px; height: 16px; }
 /* Vertical indent guides (overlaid, full row height) — stack across rows into continuous lines. */
 .tguide { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--border); pointer-events: none; }
 .chev { width: 15px; height: 15px; color: var(--faint); transition: transform 0.15s; flex-shrink: 0; }
 .chev.open { transform: rotate(90deg); }
-.site-head .name { font-weight: 650; }
+.site-head .name { font-weight: 650; font-size: 13px; }
 .site-head .loc { color: var(--faint); font-size: 12px; }
 .site-head .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .tag { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border-strong); color: var(--muted); white-space: nowrap; }
@@ -340,6 +341,10 @@ a { color: var(--accent); }
 .dev-ico svg { width: 18px; height: 18px; }
 .dev-badge { position: absolute; right: -3px; bottom: -3px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--panel); box-sizing: border-box; }
 .host-head:hover .dev-badge { border-color: var(--elevated); }
+/* Host row ICMP latency + inline sparkline (right side) — the per-host data that groups don't carry. */
+.hmetric { display: inline-flex; align-items: center; gap: 8px; }
+.hspark { display: inline-flex; width: 62px; }
+.hms { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 54px; text-align: right; }
 
 /* Inline "Edit groups…" band under a host row */
 .group-edit { margin: 0 16px 10px 38px; padding: 12px 14px; background: var(--elevated); border: 1px solid var(--border); border-radius: 8px; }
@@ -782,6 +787,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   /* The host body carries its tree indent as an inline style (16px + 18px per level + 22px), which on a
      phone eats up to 74px of a ~350px card; !important is the only way to reclaim it from CSS. */
   .host-body { padding-left: 8px !important; padding-right: 4px !important; overflow-x: auto; }
+  .hspark { display: none; } /* keep the latency number, drop the sparkline to save width on phones */
 
   /* --- touch targets: bring the compact desktop controls up to ~40px on phones --- */
   .kebab { width: 36px; height: 36px; font-size: 19px; }
