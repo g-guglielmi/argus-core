@@ -4148,22 +4148,19 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   const round = (t: number) => Math.round(t / bucket) * bucket
   const tset = new Set<number>()
   series.forEach((s) => s.points.forEach((p) => tset.add(round(p.t))))
-  // Boundary points so the axis spans the whole window (and a drag-zoom resets back to it) even for a
-  // single-point series - without pinning the scale, which would disable zoom.
-  if (xrange) { tset.add(xrange[0]); tset.add(xrange[1]) }
+  // Extend the axis to the window edges, but ONLY where an edge lies outside the data. Adding a
+  // boundary x that falls *inside* the data range inserts a null column mid-line, which uPlot then
+  // paints as a stray dot at the plot edge — and the window 'from' lands inside the data whenever the
+  // last poll lags 'now' (the usual case). With no data, still span the window.
+  if (xrange) {
+    let dmin = Infinity, dmax = -Infinity
+    tset.forEach((t) => { if (t < dmin) dmin = t; if (t > dmax) dmax = t })
+    if (!isFinite(dmin) || xrange[0] < dmin) tset.add(xrange[0])
+    if (!isFinite(dmax) || xrange[1] > dmax) tset.add(xrange[1])
+  }
   const xs = [...tset].sort((a, b) => a - b)
   const xi = new Map(xs.map((t, i) => [t, i]))
   const ys = series.map((s) => { const a: (number | null)[] = new Array(xs.length).fill(null); s.points.forEach((p) => { const i = xi.get(round(p.t)); if (i !== undefined) a[i] = p.v }); return a })
-  // Extend each line flat to the window-edge boundary x's instead of leaving a null there: a null
-  // boundary point renders as a stray dot at the plot edge, and a flat edge reads better than a line
-  // that starts mid-plot (it also spans the x-axis for a single-point series).
-  if (xrange) {
-    const fi = xi.get(xrange[0]), ti = xi.get(xrange[1])
-    ys.forEach((a) => {
-      if (fi !== undefined && a[fi] == null) { for (let k = fi + 1; k < a.length; k++) if (a[k] != null) { a[fi] = a[k]; break } }
-      if (ti !== undefined && a[ti] == null) { for (let k = ti - 1; k >= 0; k--) if (a[k] != null) { a[ti] = a[k]; break } }
-    })
-  }
   const units = [...new Set(series.map((s) => s.units))]
   const scaleKey = (u: string) => 'y' + units.indexOf(u)
   const grid = { stroke: c.grid, width: 1 }
