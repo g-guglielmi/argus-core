@@ -4019,9 +4019,9 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
       ...base,
       series: [
         { value: xVal },
-        { label: `avg${unitLabel}`, stroke: c.line, width: 1.5, points: { show: false }, value: yVal(1) },
-        { label: 'min', stroke: c.soft, width: 1, points: { show: false }, value: yVal(2) },
-        { label: 'max', stroke: c.soft, width: 1, points: { show: false }, value: yVal(3) },
+        { label: `avg${unitLabel}`, stroke: c.line, width: 1.5, points: { show: false, size: 0 }, value: yVal(1) },
+        { label: 'min', stroke: c.soft, width: 1, points: { show: false, size: 0 }, value: yVal(2) },
+        { label: 'max', stroke: c.soft, width: 1, points: { show: false, size: 0 }, value: yVal(3) },
       ],
       bands: [{ series: [3, 2], fill: c.fill }],
     } as uPlot.Options
@@ -4033,7 +4033,7 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
   const vs = data.points.map((p) => (p.v ?? p.avg ?? null))
   const opts: uPlot.Options = {
     ...base,
-    series: [{ value: xVal }, { label: `value${unitLabel}`, stroke: c.line, width: 1.5, fill: c.fill, points: { show: false }, value: yVal(1) }],
+    series: [{ value: xVal }, { label: `value${unitLabel}`, stroke: c.line, width: 1.5, fill: c.fill, points: { show: false, size: 0 }, value: yVal(1) }],
   } as uPlot.Options
   const [gx, gy] = insertGaps(xs, [vs])
   const [gv] = dropIsolated(gy)
@@ -4187,7 +4187,7 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
       stroke: s.downtime ? DOWNTIME_STROKE : SERIES_COLORS[i % SERIES_COLORS.length],
       fill: s.downtime ? DOWNTIME_FILL : undefined,
       width: s.downtime ? 1 : i === 0 ? 2 : 1.5,
-      points: { show: false }, // lines-only, consistent across ranges/zoom (uPlot else shows dots on sparse data)
+      points: { show: false, size: 0 }, // lines-only, consistent across ranges/zoom (uPlot else shows dots on sparse data)
       scale: scaleKey(s.units),
       value: val,
     } as uPlot.Series)
@@ -4204,8 +4204,8 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const softVal = (_u: any, v: number | null) => (v == null ? '--' : fmtNum(v, p0.units))
     const minIdx = uplotSeries.length // series-array index (x is at 0)
-    uplotSeries.push({ label: 'min', stroke: c.soft, width: 0.75, points: { show: false }, scale: scaleKey(p0.units), value: softVal } as uPlot.Series)
-    uplotSeries.push({ label: 'max', stroke: c.soft, width: 0.75, points: { show: false }, scale: scaleKey(p0.units), value: softVal } as uPlot.Series)
+    uplotSeries.push({ label: 'min', stroke: c.soft, width: 0.75, points: { show: false, size: 0 }, scale: scaleKey(p0.units), value: softVal } as uPlot.Series)
+    uplotSeries.push({ label: 'max', stroke: c.soft, width: 0.75, points: { show: false, size: 0 }, scale: scaleKey(p0.units), value: softVal } as uPlot.Series)
     extraYs.push(lo, hi)
     bands.push({ series: [minIdx + 1, minIdx], fill: c.fill }) // fill between max and min
   }
