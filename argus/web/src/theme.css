@@ -602,8 +602,9 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 /* uPlot legend readability, themed */
 .u-legend { color: var(--muted); font-size: 0.8rem; }
 .u-legend .u-marker { border-radius: 2px; position: relative; }
-/* A check in the colour swatch when the series is on; uPlot dims the whole row (.u-off) when off. */
-.u-legend .u-series:not(.u-off) .u-marker::after { content: '✓'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; color: #fff; text-shadow: 0 0 2px rgba(0, 0, 0, 0.55); }
+/* A check (in the series colour) in the swatch when the series is on; uPlot dims the row (.u-off)
+   when off. The first legend row is the time/x series - it has no data toggle, so no check. */
+.u-legend .u-series:not(:first-child):not(.u-off) .u-marker::after { content: '✓'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; color: var(--mk, #fff); text-shadow: 0 0 2px rgba(0, 0, 0, 0.45); }
 
 .nav-backdrop { display: none; }
 

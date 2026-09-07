@@ -4014,6 +4014,7 @@ function SensorChart({ itemId, units, color = 'var(--accent)' }: { itemId: strin
     const width = host.current.clientWidth || 600
     const [opts, aligned] = buildPlot(data, units, width, chartColors(color))
     plot.current = new uPlot(opts, aligned, host.current)
+    colorLegendChecks(plot.current)
     return () => { if (plot.current) { plot.current.destroy(); plot.current = null } }
   }, [data, units, color, themeTick])
 
@@ -4049,15 +4050,31 @@ const DOWNTIME_FILL = 'rgba(214, 69, 80, 0.30)'
 // invert turns a reachable (1=up) channel into downtime (spikes to 1 when down), drawn as a red band.
 type GroupChan = { id: string; label: string; units: string; invert?: boolean }
 
+// colorLegendChecks tints each legend row's check (the ::after from theme.css) with that series'
+// colour, by copying the marker's border colour into a --mk custom property uPlot doesn't expose.
+function colorLegendChecks(u: uPlot) {
+  u.root.querySelectorAll('.u-legend .u-marker').forEach((m) => { const el = m as HTMLElement; el.style.setProperty('--mk', getComputedStyle(el).borderTopColor || '#fff') })
+}
+
 // buildMultiPlot overlays several channels on one uPlot: timestamps are unioned, each distinct unit
 // gets its own scale (axes drawn for the first two, left/right), and the legend lists every channel
 // with its live value and toggles it on click. xrange pins the x-axis to the requested window.
 function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null }[]; downtime?: boolean }[], width: number, c: ChartColors, xrange?: [number, number]): [uPlot.Options, uPlot.AlignedData] {
+  // Bucket timestamps to the typical sampling interval so channels sampled at slightly offset clocks
+  // land on the same x (else the line renders as dots) while a genuine gap still breaks the line.
+  const deltas: number[] = []
+  series.forEach((s) => { const ts = s.points.map((p) => p.t).sort((a, b) => a - b); for (let k = 1; k < ts.length; k++) deltas.push(ts[k] - ts[k - 1]) })
+  deltas.sort((a, b) => a - b)
+  const bucket = deltas.length ? Math.max(1, deltas[Math.floor(deltas.length / 2)]) : 60
+  const round = (t: number) => Math.round(t / bucket) * bucket
   const tset = new Set<number>()
-  series.forEach((s) => s.points.forEach((p) => tset.add(p.t)))
+  series.forEach((s) => s.points.forEach((p) => tset.add(round(p.t))))
+  // Boundary points so the axis spans the whole window (and a drag-zoom resets back to it) even for a
+  // single-point series - without pinning the scale, which would disable zoom.
+  if (xrange) { tset.add(xrange[0]); tset.add(xrange[1]) }
   const xs = [...tset].sort((a, b) => a - b)
   const xi = new Map(xs.map((t, i) => [t, i]))
-  const ys = series.map((s) => { const a: (number | null)[] = new Array(xs.length).fill(null); s.points.forEach((p) => { const i = xi.get(p.t); if (i !== undefined) a[i] = p.v }); return a })
+  const ys = series.map((s) => { const a: (number | null)[] = new Array(xs.length).fill(null); s.points.forEach((p) => { const i = xi.get(round(p.t)); if (i !== undefined) a[i] = p.v }); return a })
   const units = [...new Set(series.map((s) => s.units))]
   const scaleKey = (u: string) => 'y' + units.indexOf(u)
   const grid = { stroke: c.grid, width: 1 }
@@ -4069,15 +4086,13 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const xVal = (u: any, v: number | null) => { const t = v ?? lastVal(u, 0); return t == null ? '--' : new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const scaleCfg: Record<string, any> = { x: xrange ? { time: true, range: xrange } : { time: true } }
+  const scaleCfg: Record<string, any> = { x: { time: true } }
   const uplotSeries: uPlot.Series[] = [{ value: xVal }]
   series.forEach((s, i) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const val = (u: any, v: number | null) => { const n = v ?? lastVal(u, i + 1); return n == null ? '--' : s.downtime ? (n > 0 ? 'down' : 'up') : fmtNum(n, s.units) }
     if (s.downtime) scaleCfg[scaleKey(s.units)] = { range: [0, 1] } // pin the status band to the bottom
-    // spanGaps joins each channel's points across the nulls the timestamp-union leaves between
-    // channels that sample at slightly different clocks (otherwise the line renders as dots). The
-    // first (primary) channel is drawn a touch heavier so it reads as the main field.
+    // The first (primary) channel is drawn a touch heavier so it reads as the main field.
     uplotSeries.push({
       label: s.label,
       stroke: s.downtime ? DOWNTIME_STROKE : SERIES_COLORS[i % SERIES_COLORS.length],
@@ -4085,14 +4100,14 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
       width: s.downtime ? 1 : i === 0 ? 2 : 1.5,
       points: s.downtime ? { show: false } : undefined,
       scale: scaleKey(s.units),
-      spanGaps: true,
       value: val,
     } as uPlot.Series)
   })
-  // Pin the x-axis to the requested window; a near-empty range (a brand-new item with one point)
-  // otherwise makes uPlot pad a zero-span time axis by a fraction of the epoch - i.e. years out.
   const opts = { width, height: 320, scales: scaleCfg, axes, series: uplotSeries, legend: { show: true } } as uPlot.Options
-  return [opts, [xs, ...ys] as uPlot.AlignedData]
+  // insertGaps breaks the line where sampling actually stopped (a real outage) instead of drawing a
+  // straight segment across it; bucketing above keeps offset-but-regular channels connected.
+  const [gx, gy] = insertGaps(xs, ys)
+  return [opts, [gx, ...gy] as uPlot.AlignedData]
 }
 
 // SensorGroupChart overlays the channels of one instance (a disk mount, a NIC) in a single graph with
@@ -4136,6 +4151,7 @@ function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
     const from = to - (RANGE_SECS[range] || 7200)
     const [opts, aligned] = buildMultiPlot(series, width, chartColors('var(--accent)'), [from, to])
     plot.current = new uPlot(opts, aligned, host.current)
+    colorLegendChecks(plot.current)
     return () => { if (plot.current) { plot.current.destroy(); plot.current = null } }
   }, [series, themeTick, range])
 
