@@ -309,8 +309,8 @@ a { color: var(--accent); }
 /* Group + host rows share one grid so the graph, latency and kebab line up in columns down the whole
    tree at any nesting depth — indentation only ever squeezes the name column (col 1) on the left. */
 .site-head, .host-head { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 150px 66px 40px; align-items: center; cursor: pointer; user-select: none; }
-.site-head { padding: 5px 16px; background: color-mix(in srgb, var(--accent) 14%, var(--panel)); }
-.site-head:hover { background: color-mix(in srgb, var(--accent) 22%, var(--panel)); }
+.site-head { padding: 5px 16px; background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
+.site-head:hover { background: color-mix(in srgb, var(--accent) 15%, var(--panel)); }
 /* Row cells. The name flexes + truncates; the last three are fixed-width so they align across rows. */
 .c-name { display: flex; align-items: center; gap: 9px; min-width: 0; padding-right: 12px; }
 .c-name .name, .c-name .hn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
