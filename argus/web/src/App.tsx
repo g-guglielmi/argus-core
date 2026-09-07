@@ -3921,7 +3921,7 @@ function insertGaps(xs: number[], series: (number | null)[][]): [number[], (numb
   return [nx, ns]
 }
 
-function buildPlot(data: Series, units: string, width: number, c: ChartColors): [uPlot.Options, uPlot.AlignedData] {
+function buildPlot(data: Series, units: string, width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
   const xs = data.points.map((p) => p.t)
   const grid = { stroke: c.grid, width: 1 }
   const ticks = { stroke: c.grid, width: 1 }
@@ -3938,7 +3938,7 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors): 
   const xVal = (u: any, v: number | null) => { const t = v ?? lastVal(u, 0); return t == null ? '--' : new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const yVal = (sidx: number) => (u: any, v: number | null) => { const n = v ?? lastVal(u, sidx); return n == null ? '--' : fmtNum(n, units) }
-  const base: Partial<uPlot.Options> = { width, height: 320, scales: { x: { time: true } }, axes: [xAxis, yAxis], legend: { show: true } }
+  const base: Partial<uPlot.Options> = { width, height: 320, scales: { x: { time: true } }, axes: [xAxis, yAxis], legend: { show: true }, ...zoomHook(onZoom, xs.length ? [xs[0], xs[xs.length - 1]] : undefined) }
 
   if (data.kind === 'trend') {
     const avg = data.points.map((p) => (p.avg ?? null))
@@ -3979,10 +3979,11 @@ function SensorChart({ itemId, units, color = 'var(--accent)' }: { itemId: strin
   const [themeTick, setThemeTick] = useState(0)
   const host = useRef<HTMLDivElement>(null)
   const plot = useRef<uPlot | null>(null)
+  const zoomedRef = useRef(false) // true while the user has zoomed in; pauses auto-refresh
   const lastKey = useRef('')
 
   // Refresh the open chart periodically so it stays live.
-  useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 60000); return () => clearInterval(t) }, [])
+  useEffect(() => { const t = setInterval(() => { if (!zoomedRef.current) setTick((x) => x + 1) }, 60000); return () => clearInterval(t) }, [])
   useEffect(() => {
     const mo = new MutationObserver(() => setThemeTick((x) => x + 1))
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
@@ -4012,7 +4013,7 @@ function SensorChart({ itemId, units, color = 'var(--accent)' }: { itemId: strin
     if (plot.current) { plot.current.destroy(); plot.current = null }
     if (!host.current || !data || data.points.length === 0) return
     const width = host.current.clientWidth || 600
-    const [opts, aligned] = buildPlot(data, units, width, chartColors(color))
+    const [opts, aligned] = buildPlot(data, units, width, chartColors(color), (z) => { zoomedRef.current = z })
     plot.current = new uPlot(opts, aligned, host.current)
     colorLegendChecks(plot.current)
     return () => { if (plot.current) { plot.current.destroy(); plot.current = null } }
@@ -4059,7 +4060,7 @@ function colorLegendChecks(u: uPlot) {
 // buildMultiPlot overlays several channels on one uPlot: timestamps are unioned, each distinct unit
 // gets its own scale (axes drawn for the first two, left/right), and the legend lists every channel
 // with its live value and toggles it on click. xrange pins the x-axis to the requested window.
-function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null }[]; downtime?: boolean }[], width: number, c: ChartColors, xrange?: [number, number]): [uPlot.Options, uPlot.AlignedData] {
+function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null }[]; downtime?: boolean }[], width: number, c: ChartColors, xrange?: [number, number], onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
   // Bucket timestamps to the typical sampling interval so channels sampled at slightly offset clocks
   // land on the same x (else the line renders as dots) while a genuine gap still breaks the line.
   const deltas: number[] = []
@@ -4103,11 +4104,20 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
       value: val,
     } as uPlot.Series)
   })
-  const opts = { width, height: 320, scales: scaleCfg, axes, series: uplotSeries, legend: { show: true } } as uPlot.Options
+  const opts = { width, height: 320, scales: scaleCfg, axes, series: uplotSeries, legend: { show: true }, ...zoomHook(onZoom, xrange) } as uPlot.Options
   // insertGaps breaks the line where sampling actually stopped (a real outage) instead of drawing a
   // straight segment across it; bucketing above keeps offset-but-regular channels connected.
   const [gx, gy] = insertGaps(xs, ys)
   return [opts, [gx, ...gy] as uPlot.AlignedData]
+}
+
+// zoomHook reports (via onZoom) whether the x view is narrower than the full window - so the caller
+// can pause auto-refresh while the user is zoomed in. uPlot fires setScale on init (full = not
+// zoomed), on a drag-zoom, and on a double-click reset.
+function zoomHook(onZoom: ((z: boolean) => void) | undefined, xrange: [number, number] | undefined): Partial<uPlot.Options> {
+  if (!onZoom || !xrange) return {}
+  const full = xrange[1] - xrange[0]
+  return { hooks: { setScale: [(u: uPlot, key: string) => { if (key === 'x' && u.scales.x.min != null && u.scales.x.max != null) onZoom(u.scales.x.max - u.scales.x.min < full * 0.985) }] } }
 }
 
 // SensorGroupChart overlays the channels of one instance (a disk mount, a NIC) in a single graph with
@@ -4120,9 +4130,10 @@ function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
   const [themeTick, setThemeTick] = useState(0)
   const host = useRef<HTMLDivElement>(null)
   const plot = useRef<uPlot | null>(null)
+  const zoomedRef = useRef(false) // true while the user has zoomed in; pauses auto-refresh
   const key = channels.map((c) => c.id).join(',')
 
-  useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 60000); return () => clearInterval(t) }, [])
+  useEffect(() => { const t = setInterval(() => { if (!zoomedRef.current) setTick((x) => x + 1) }, 60000); return () => clearInterval(t) }, [])
   useEffect(() => {
     const mo = new MutationObserver(() => setThemeTick((x) => x + 1))
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
@@ -4149,7 +4160,7 @@ function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
     const width = host.current.clientWidth || 600
     const to = Math.floor(Date.now() / 1000)
     const from = to - (RANGE_SECS[range] || 7200)
-    const [opts, aligned] = buildMultiPlot(series, width, chartColors('var(--accent)'), [from, to])
+    const [opts, aligned] = buildMultiPlot(series, width, chartColors('var(--accent)'), [from, to], (z) => { zoomedRef.current = z })
     plot.current = new uPlot(opts, aligned, host.current)
     colorLegendChecks(plot.current)
     return () => { if (plot.current) { plot.current.destroy(); plot.current = null } }
