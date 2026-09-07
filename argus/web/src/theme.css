@@ -306,8 +306,21 @@ a { color: var(--accent); }
    host rows in any theme - a lighter/darker shade is too subtle in dark mode) + the folder icon, and
    deliberately shorter than the device-icon host rows nested under them. Tighter rows keep a big tree
    dense. */
-.site-head { position: relative; display: flex; align-items: center; gap: 9px; padding: 5px 16px; cursor: pointer; user-select: none; background: color-mix(in srgb, var(--accent) 14%, var(--panel)); }
+/* Group + host rows share one grid so the graph, latency and kebab line up in columns down the whole
+   tree at any nesting depth — indentation only ever squeezes the name column (col 1) on the left. */
+.site-head, .host-head { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 150px 66px 40px; align-items: center; cursor: pointer; user-select: none; }
+.site-head { padding: 5px 16px; background: color-mix(in srgb, var(--accent) 14%, var(--panel)); }
 .site-head:hover { background: color-mix(in srgb, var(--accent) 22%, var(--panel)); }
+/* Row cells. The name flexes + truncates; the last three are fixed-width so they align across rows. */
+.c-name { display: flex; align-items: center; gap: 9px; min-width: 0; padding-right: 12px; }
+.c-name .name, .c-name .hn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-name .loc, .c-name .kind, .c-name .tag-hidden, .c-name .probpill { flex: none; }
+.c-graph { display: flex; align-items: center; min-width: 0; padding-left: 12px; }
+.host-head .c-graph { border-left: 1px solid var(--border); } /* divider before the graph — hosts only */
+.c-val { display: flex; align-items: center; justify-content: flex-end; padding: 0 10px; }
+.c-act { display: flex; align-items: center; justify-content: center; border-left: 1px solid var(--border); } /* divider before the kebab — every row */
+.grpdot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.probpill { min-width: 18px; height: 17px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; font-size: 11px; font-weight: 700; background: color-mix(in srgb, var(--err) 20%, transparent); color: var(--err); }
 .fold-ico { display: inline-flex; flex-shrink: 0; color: var(--accent); }
 .fold-ico svg { width: 16px; height: 16px; }
 /* Vertical indent guides (overlaid, full row height) — stack across rows into continuous lines. */
@@ -331,20 +344,17 @@ a { color: var(--accent); }
    order with exactly one line between any two rows. The first row drops it — the panel/crumbs header
    above already draws that boundary. */
 .tree > .site:first-child, .tree > .host:first-child { border-top: none; }
-.host-head { position: relative; display: flex; align-items: center; gap: 9px; padding: 8px 16px 8px 38px; cursor: pointer; user-select: none; }
+.host-head { padding: 8px 16px; }
 .host-head:hover { background: var(--elevated); }
 .host-head .hn { font-weight: 600; }
 .host-head .kind { color: var(--faint); font-size: 12px; }
-.host-head .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .host-body { padding: 2px 16px 10px 38px; }
 /* Host device icon (type) with a small health-coloured status badge in the corner. */
 .dev-ico { position: relative; display: inline-flex; flex-shrink: 0; color: var(--muted); }
 .dev-ico svg { width: 18px; height: 18px; }
 .dev-badge { position: absolute; right: -3px; bottom: -3px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--panel); box-sizing: border-box; }
 .host-head:hover .dev-badge { border-color: var(--elevated); }
-/* Host row ICMP latency + inline sparkline, sitting just after the host name — the per-host data that
-   groups don't carry (another group/host tell). */
-.hmetric { display: inline-flex; align-items: center; gap: 9px; margin-left: 6px; }
+/* Host row ICMP latency + sparkline — the per-host data groups don't carry, in aligned columns. */
 .hspark { display: inline-flex; width: 130px; }
 .hms { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
@@ -789,7 +799,9 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   /* The host body carries its tree indent as an inline style (16px + 18px per level + 22px), which on a
      phone eats up to 74px of a ~350px card; !important is the only way to reclaim it from CSS. */
   .host-body { padding-left: 8px !important; padding-right: 4px !important; overflow-x: auto; }
-  .hspark { display: none; } /* keep the latency number, drop the sparkline to save width on phones */
+  /* Drop the graph column on phones (keep the aligned latency number); rows become 3 columns. */
+  .site-head, .host-head { grid-template-columns: minmax(0, 1fr) 58px 36px; }
+  .c-graph { display: none; }
 
   /* --- touch targets: bring the compact desktop controls up to ~40px on phones --- */
   .kebab { width: 36px; height: 36px; font-size: 19px; }
