@@ -59,6 +59,8 @@ type itemView struct {
 	HiddenUntil *int64 `json:"hidden_until,omitempty"`
 	Category    string `json:"category,omitempty"` // set in curated mode
 	Label       string `json:"label,omitempty"`    // friendly name in curated mode
+	Instance    string `json:"instance,omitempty"` // groups per-target sensors (a mount, a NIC) for stacking
+	Channel     string `json:"channel,omitempty"`  // the metric within an instance (Used %, In, …)
 	Priority    int    `json:"priority"`           // PRTG-style display priority 1..5 (Argus-only)
 }
 
@@ -366,11 +368,12 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			iv.HiddenUntil = u
 		}
 		if !all {
-			cat, label, ok := classifyItem(it.Key, it.Name)
+			cat, label, inst, ch, ok := classifyItem(it.Key, it.Name)
 			if !ok {
 				continue // hide un-curated "noise" in the default view
 			}
 			iv.Category, iv.Label = cat, label
+			iv.Instance, iv.Channel = inst, ch
 		}
 		out = append(out, iv)
 	}

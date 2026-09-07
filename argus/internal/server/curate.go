@@ -70,86 +70,98 @@ func trafficLabel(base string, p []string) string {
 	return label
 }
 
-// classifyItem returns (category, label, matched) for a Zabbix item key/name.
-func classifyItem(key, name string) (string, string, bool) {
+// chanMode names a network channel (In/Out) including a non-byte mode (errors, dropped, …).
+func chanMode(dir string, p []string) string {
+	if mode := param(p, 1); mode != "" && mode != "bytes" {
+		return dir + " " + mode
+	}
+	return dir
+}
+
+// classifyItem returns (category, label, instance, channel, matched) for a Zabbix item key/name.
+// instance groups the per-target sensors of one thing - a disk mount, a network interface - so the
+// UI can stack them PRTG-style; channel is the metric within that instance. Sensors that aren't part
+// of a multi-instance set return instance "" (and render individually). label is the full flat name
+// (kept for the "All sensors" / overview lists), e.g. "Disk used % (/)".
+func classifyItem(key, name string) (category, label, instance, channel string, matched bool) {
 	base, p := splitKey(key)
 
 	switch base {
 	case "icmpping":
-		return "Ping", "Reachable (ICMP)", true
+		return "Ping", "Reachable (ICMP)", "", "", true
 	case "icmppingloss":
-		return "Ping", "ICMP loss", true
+		return "Ping", "ICMP loss", "", "", true
 	case "icmppingsec":
-		return "Ping", "ICMP response time", true
+		return "Ping", "ICMP response time", "", "", true
 
 	case "system.cpu.util":
 		// The Linux template has one item per CPU state, most of them near-zero noise. Keep
 		// only the meaningful states in the curated view; the rest fall under "All sensors".
 		state := param(p, 1)
 		if !cpuUtilKeep[state] {
-			return "", "", false
+			return "", "", "", "", false
 		}
 		if state != "" {
-			return "CPU", "CPU utilization (" + state + ")", true
+			return "CPU", "CPU utilization (" + state + ")", "", "", true
 		}
-		return "CPU", "CPU utilization", true
+		return "CPU", "CPU utilization", "", "", true
 	case "system.cpu.load":
 		if a := param(p, 1); a != "" {
-			return "CPU", "CPU load (" + a + ")", true
+			return "CPU", "CPU load (" + a + ")", "", "", true
 		}
-		return "CPU", "CPU load", true
+		return "CPU", "CPU load", "", "", true
 
 	case "vm.memory.utilization":
-		return "Memory", "Memory utilization", true
+		return "Memory", "Memory utilization", "", "", true
 	case "vm.memory.size", "vm.memory.dependent.size":
 		switch param(p, 0) {
 		case "pavailable":
-			return "Memory", "Available memory %", true
+			return "Memory", "Available memory %", "", "", true
 		case "available":
-			return "Memory", "Available memory", true
+			return "Memory", "Available memory", "", "", true
 		case "pused":
-			return "Memory", "Used memory %", true
+			return "Memory", "Used memory %", "", "", true
 		case "used":
-			return "Memory", "Used memory", true
+			return "Memory", "Used memory", "", "", true
 		case "total":
-			return "Memory", "Total memory", true
+			return "Memory", "Total memory", "", "", true
 		}
 
 	case "vfs.fs.size", "vfs.fs.dependent.size":
 		mount := param(p, 0)
 		switch param(p, 1) {
 		case "pused":
-			return "Disk", "Disk used % (" + mount + ")", true
+			return "Disk", "Disk used % (" + mount + ")", mount, "Used %", true
 		case "used":
-			return "Disk", "Disk used (" + mount + ")", true
+			return "Disk", "Disk used (" + mount + ")", mount, "Used", true
 		case "total":
-			return "Disk", "Disk total (" + mount + ")", true
+			return "Disk", "Disk total (" + mount + ")", mount, "Total", true
 		case "pfree":
-			return "Disk", "Disk free % (" + mount + ")", true
+			return "Disk", "Disk free % (" + mount + ")", mount, "Free %", true
 		case "free":
-			return "Disk", "Disk free (" + mount + ")", true
+			return "Disk", "Disk free (" + mount + ")", mount, "Free", true
 		}
 
 	case "net.if.in", "net.if.dependent.in":
-		return "Network", trafficLabel("Traffic in", p), true
+		return "Network", trafficLabel("Traffic in", p), param(p, 0), chanMode("In", p), true
 	case "net.if.out", "net.if.dependent.out":
-		return "Network", trafficLabel("Traffic out", p), true
+		return "Network", trafficLabel("Traffic out", p), param(p, 0), chanMode("Out", p), true
 
 	case "system.uptime":
-		return "Uptime", "Uptime", true
+		return "Uptime", "Uptime", "", "", true
 
 	// HTTP/HTTPS endpoint add-on (Argus HTTP Endpoint template). The key params are macros
 	// ({$HTTP.SCHEME}/{$HTTP.PORT}), so the label is fixed rather than derived from them.
 	case "net.tcp.service":
-		return "Web", "HTTP/HTTPS reachable", true
+		return "Web", "HTTP/HTTPS reachable", "", "", true
 	case "net.tcp.service.perf":
-		return "Web", "HTTP/HTTPS response time", true
+		return "Web", "HTTP/HTTPS response time", "", "", true
 	}
 
 	// Heuristic fallback for temperature sensors, whose keys vary widely by template/SNMP.
 	low := strings.ToLower(name)
 	if strings.Contains(low, "temperature") || strings.Contains(low, " temp") {
-		return "Temperature", name, true
+		return "Temperature", name, "", "", true
 	}
-	return "", "", false
+	return "", "", "", "", false
 }
