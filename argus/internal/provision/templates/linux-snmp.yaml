@@ -123,9 +123,17 @@ zabbix_export:
           filter:
             evaltype: AND
             conditions:
+              # Keep fixed disks whether the proxy reports the type numerically (…25.2.1.4) or
+              # symbolically (HOST-RESOURCES-TYPES::hrStorageFixedDisk, when MIBs are loaded).
               - macro: '{#FSTYPE}'
-                value: '1\.3\.6\.1\.2\.1\.25\.2\.1\.4$'
+                value: 'FixedDisk$|25\.2\.1\.4$'
+                operator: MATCHES_REGEX
                 formulaid: A
+              # Drop pseudo-/tmpfs mounts that systemd reports as fixed disks (/run, /dev/shm, …).
+              - macro: '{#FSNAME}'
+                value: '{$FS.NAME.SKIP}'
+                operator: NOT_MATCHES_REGEX
+                formulaid: B
           item_prototypes:
             - uuid: e4560e9356ef446a9170d983a55cfb8b
               name: 'Storage allocation units ({#FSNAME})'
@@ -215,3 +223,6 @@ zabbix_export:
         - macro: '{$DISK.PUSED.HIGH}'
           value: '95'
           description: 'Filesystem used percentage that raises a high-severity alert (5% free).'
+        - macro: '{$FS.NAME.SKIP}'
+          value: '^(/run|/dev|/sys|/proc)($|/)'
+          description: 'Mount paths matching this regex are not discovered (tmpfs / pseudo-filesystems).'
