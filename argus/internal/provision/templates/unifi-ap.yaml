@@ -1,0 +1,364 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: 9d6683b8a8034be3a23bb7346476fe27
+      template: 'Argus UniFi AP by HTTP'
+      name: 'Argus UniFi AP by HTTP'
+      description: |
+        UniFi access point polled from its controller with an API key (one request per poll, addressed
+        by MAC): state, CPU/memory, uptime, firmware, temperature (models that report it), uplink
+        traffic, connected clients, experience score, and per-radio discovery - clients and channel
+        utilization per band (2.4/5/6 GHz). Works against a UniFi OS console (cloud gateway, :443) or
+        a self-hosted console on a custom port: set {$UNIFI.URL} to the console base URL including the
+        port, {$UNIFI.KEY} to an API key (UniFi Network -> Settings -> Control Plane -> Integrations)
+        and {$UNIFI.MAC} to the AP's MAC. {$UNIFI.SITE} is the site's internal short name (the first
+        site is "default"). The host's own interface stays the AP IP (Base Ping). DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: 38595a38737b46bcb5af51e6c8bb81a4
+          name: 'UniFi raw device data'
+          type: SCRIPT
+          key: unifi.ap.raw
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          timeout: 15s
+          description: 'Master item: one controller call for the access point (stat/device by MAC), trimmed to the fields the sensors use. Everything else is dependent on this.'
+          params: |
+            var p = JSON.parse(value);
+            if (!p.url || !p.key || !p.mac) { throw 'set {$UNIFI.URL}, {$UNIFI.KEY} and {$UNIFI.MAC} on the host'; }
+            var mac = String(p.mac).toLowerCase().replace(/[^0-9a-f]/g, '');
+            if (mac.length !== 12) { throw 'MAC address looks wrong: ' + p.mac; }
+            mac = mac.match(/../g).join(':');
+            var site = String(p.site || 'default').toLowerCase();
+            var req = new HttpRequest();
+            req.addHeader('X-API-KEY: ' + p.key);
+            req.addHeader('Accept: application/json');
+            var resp = req.get(String(p.url).replace(/\/+$/, '') + '/proxy/network/api/s/' + site + '/stat/device/' + mac);
+            if (req.getStatus() !== 200) { throw 'UniFi API HTTP ' + req.getStatus(); }
+            var body = JSON.parse(resp);
+            var d = (body.data && body.data[0]) || null;
+            if (!d) { throw 'UniFi: device ' + mac + ' not found on site "' + site + '"'; }
+            var ss = d['system-stats'] || {};
+            var out = {
+              state: d.state,
+              model: d.model || '',
+              version: d.version || d.displayable_version || '',
+              uptime: d.uptime || 0,
+              cpu: parseFloat(ss.cpu),
+              mem: parseFloat(ss.mem),
+              clients: (typeof d['user-num_sta'] === 'number' ? d['user-num_sta'] : (d.num_sta || 0)),
+              radios: []
+            };
+            if (typeof d.general_temperature === 'number' && d.general_temperature > 0) { out.temp = d.general_temperature; }
+            if (typeof d.satisfaction === 'number' && d.satisfaction >= 0) { out.experience = d.satisfaction; }
+            if (d.uplink) {
+              out.uplink_rx_bps = (d.uplink['rx_bytes-r'] || 0) * 8;
+              out.uplink_tx_bps = (d.uplink['tx_bytes-r'] || 0) * 8;
+            }
+            var bands = { ng: '2.4 GHz', na: '5 GHz', '6e': '6 GHz', ad: '60 GHz' };
+            var rt = d.radio_table_stats || [];
+            for (var i = 0; i < rt.length; i++) {
+              var r = rt[i] || {};
+              out.radios.push({
+                id: r.name || ('radio' + i),
+                band: bands[r.radio] || r.radio || ('radio ' + i),
+                clients: (typeof r['user-num_sta'] === 'number' ? r['user-num_sta'] : (r.num_sta || 0)),
+                util: r.cu_total || 0
+              });
+            }
+            return JSON.stringify(out);
+          parameters:
+            - name: url
+              value: '{$UNIFI.URL}'
+            - name: key
+              value: '{$UNIFI.KEY}'
+            - name: mac
+              value: '{$UNIFI.MAC}'
+            - name: site
+              value: '{$UNIFI.SITE}'
+        - uuid: 2446c1d601d949ddb10bd1f4cd282765
+          name: 'Controller state'
+          type: DEPENDENT
+          key: unifi.device.state
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = the controller reports the AP connected, 0 = anything else. Not a curated sensor - it exists to drive the offline trigger.'
+          master_item:
+            key: unifi.ap.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.state'
+            - type: JAVASCRIPT
+              parameters:
+                - 'return String(value) === "1" ? 1 : 0;'
+          triggers:
+            - uuid: 06ad745eb38b43f19ae3df3c0c3a4e06
+              expression: 'max(/Argus UniFi AP by HTTP/unifi.device.state,#3)=0'
+              name: 'Access point offline on the UniFi controller'
+              priority: HIGH
+              description: 'The controller has not reported the access point connected on the last 3 checks.'
+        - uuid: 83af81798ee24e53b7467c77e73c76ce
+          name: 'CPU utilization'
+          type: DEPENDENT
+          key: unifi.cpu.util
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          master_item:
+            key: unifi.ap.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cpu'
+          triggers:
+            - uuid: dfb20555d3154ef9a22ee976a67c51b6
+              expression: 'min(/Argus UniFi AP by HTTP/unifi.cpu.util,#3)>={$CPU.UTIL.WARN} and min(/Argus UniFi AP by HTTP/unifi.cpu.util,#3)<{$CPU.UTIL.HIGH}'
+              name: 'High CPU utilization'
+              priority: WARNING
+              description: 'CPU utilization at/above the warning threshold on the last 3 checks.'
+            - uuid: 53bd343c8a1d444c8b2a93950b6d9985
+              expression: 'min(/Argus UniFi AP by HTTP/unifi.cpu.util,#3)>={$CPU.UTIL.HIGH}'
+              name: 'Very high CPU utilization'
+              priority: HIGH
+              description: 'CPU utilization at/above the high threshold on the last 3 checks.'
+        - uuid: b1fe6b1f4c174b74bb4de66d82931e9b
+          name: 'Memory utilization'
+          type: DEPENDENT
+          key: unifi.mem.util
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          master_item:
+            key: unifi.ap.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.mem'
+          triggers:
+            - uuid: e4ee4d69e6ee4f82803715d71ce1c396
+              expression: 'min(/Argus UniFi AP by HTTP/unifi.mem.util,#3)>={$MEM.USED.WARN} and min(/Argus UniFi AP by HTTP/unifi.mem.util,#3)<{$MEM.USED.HIGH}'
+              name: 'High memory utilization'
+              priority: WARNING
+              description: 'Memory use at/above the warning threshold on the last 3 checks.'
+            - uuid: bef23faaf2eb417d82cfdef11166a70f
+              expression: 'min(/Argus UniFi AP by HTTP/unifi.mem.util,#3)>={$MEM.USED.HIGH}'
+              name: 'Very high memory utilization'
+              priority: HIGH
+              description: 'Memory use at/above the high threshold on the last 3 checks.'
+        - uuid: bae66d01b2e040c88fee316ac2b5c95a
+          name: Uptime
+          type: DEPENDENT
+          key: unifi.uptime
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: uptime
+          master_item:
+            key: unifi.ap.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.uptime'
+        - uuid: d834274abc654565a71ec0164c8eba8c
+          name: Temperature
+          type: DEPENDENT
+          key: unifi.temp
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '°C'
+          description: 'General temperature; only models that report one deliver a value (others discard).'
+          master_item:
+            key: unifi.ap.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.temp'
+              error_handler: DISCARD_VALUE
+        - uuid: e3d99f94062c4167a6ab4d65df33c720
+          name: 'Connected clients'
+          type: DEPENDENT
+          key: unifi.clients
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Client devices currently connected to the access point (all radios).'
+          master_item:
+            key: unifi.ap.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.clients'
+        - uuid: a3f41e451cd8407ba5e8daa9509dd4f8
+          name: 'Experience score'
+          type: DEPENDENT
+          key: unifi.experience
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: "The controller's client-experience score for the AP (what the UniFi UI shows as Experience). Discarded when the controller doesn't report one."
+          master_item:
+            key: unifi.ap.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.experience'
+              error_handler: DISCARD_VALUE
+        - uuid: 814b700ed242417eb92cdda99c67b6af
+          name: 'Firmware version'
+          type: DEPENDENT
+          key: unifi.firmware
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          master_item:
+            key: unifi.ap.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.version'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: bbb5b9466742450aa24f163149f837f8
+          name: 'Uplink traffic in'
+          type: DEPENDENT
+          key: unifi.uplink.in
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: bps
+          description: 'Uplink receive rate. Discarded when the controller sends no uplink block.'
+          master_item:
+            key: unifi.ap.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.uplink_rx_bps'
+              error_handler: DISCARD_VALUE
+        - uuid: f71e287853e64caaaf6b5756ffbde049
+          name: 'Uplink traffic out'
+          type: DEPENDENT
+          key: unifi.uplink.out
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: bps
+          description: 'Uplink transmit rate.'
+          master_item:
+            key: unifi.ap.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.uplink_tx_bps'
+              error_handler: DISCARD_VALUE
+      discovery_rules:
+        - uuid: 2715967254ae49c98d8d4d177dcafbbb
+          name: 'Radio discovery'
+          type: DEPENDENT
+          key: unifi.radio.discovery
+          delay: '0'
+          description: 'Radios from the controller (one per band the AP serves).'
+          master_item:
+            key: unifi.ap.raw
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  var radios = d.radios || [];
+                  var out = [];
+                  for (var i = 0; i < radios.length; i++) {
+                    out.push({ '{#RADIOID}': String(radios[i].id), '{#BAND}': String(radios[i].band) });
+                  }
+                  return JSON.stringify(out);
+          item_prototypes:
+            - uuid: df44b0a4d8e749ffa8b23bea5f8581c4
+              name: 'Radio {#BAND} clients'
+              type: DEPENDENT
+              key: 'unifi.radio.clients[{#RADIOID},"{#BAND}"]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              description: 'Client devices connected on this radio.'
+              master_item:
+                key: unifi.ap.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var radios = d.radios || [];
+                      for (var i = 0; i < radios.length; i++) {
+                        if (String(radios[i].id) === '{#RADIOID}') { return radios[i].clients; }
+                      }
+                      throw 'radio {#RADIOID} not reported';
+            - uuid: 7d85fccb6a83406cb1d5f8315ab11545
+              name: 'Radio {#BAND} channel utilization'
+              type: DEPENDENT
+              key: 'unifi.radio.util[{#RADIOID},"{#BAND}"]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '%'
+              description: 'How busy the channel is (all transmissions the radio hears, own and neighbours).'
+              master_item:
+                key: unifi.ap.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var radios = d.radios || [];
+                      for (var i = 0; i < radios.length; i++) {
+                        if (String(radios[i].id) === '{#RADIOID}') { return radios[i].util; }
+                      }
+                      throw 'radio {#RADIOID} not reported';
+      macros:
+        - macro: '{$CPU.UTIL.WARN}'
+          value: '80'
+          description: 'CPU utilization percentage that raises a warning.'
+        - macro: '{$CPU.UTIL.HIGH}'
+          value: '95'
+          description: 'CPU utilization percentage that raises a high-severity alert.'
+        - macro: '{$MEM.USED.WARN}'
+          value: '85'
+          description: 'Memory-used percentage that raises a warning.'
+        - macro: '{$MEM.USED.HIGH}'
+          value: '95'
+          description: 'Memory-used percentage that raises a high-severity alert.'
+        - macro: '{$UNIFI.URL}'
+          value: 'https://unifi.example.lan'
+          description: 'UniFi console base URL including the port (cloud gateway :443, self-hosted console e.g. :11443). Set per host.'
+        - macro: '{$UNIFI.KEY}'
+          value: ''
+          description: 'UniFi Network API key (Settings -> Control Plane -> Integrations). Set per host as a secret macro.'
+        - macro: '{$UNIFI.MAC}'
+          value: ''
+          description: 'MAC address of the access point this host represents. Set per host.'
+        - macro: '{$UNIFI.SITE}'
+          value: 'default'
+          description: "The site's internal short name on the controller (the first site is 'default')."

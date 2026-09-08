@@ -98,6 +98,40 @@ var registry = []Class{
 			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "default"},
 		},
 	},
+	{
+		// Same access pattern as the switch. On a UniFi OS gateway the controller usually runs on
+		// the gateway itself, so {$UNIFI.URL} often points back at this same device.
+		ID:         "unifi-gateway",
+		Label:      "UniFi Gateway",
+		Family:     "UniFi",
+		Pattern:    PatternHTTPAPI,
+		Iface:      IfaceAgent,
+		Templates:  []string{"Argus UniFi Gateway by HTTP"},
+		OffersHTTP: false,
+		Icon:       "router",
+		Macros: []MacroSpec{
+			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
+			{Macro: "{$UNIFI.KEY}", Label: "API key", Hint: "UniFi Network → Settings → Control Plane → Integrations", Required: true, Secret: true},
+			{Macro: "{$UNIFI.MAC}", Label: "Gateway MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true},
+			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "default"},
+		},
+	},
+	{
+		ID:         "unifi-ap",
+		Label:      "UniFi Access Point",
+		Family:     "UniFi",
+		Pattern:    PatternHTTPAPI,
+		Iface:      IfaceAgent,
+		Templates:  []string{"Argus UniFi AP by HTTP"},
+		OffersHTTP: false,
+		Icon:       "wifi",
+		Macros: []MacroSpec{
+			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
+			{Macro: "{$UNIFI.KEY}", Label: "API key", Hint: "UniFi Network → Settings → Control Plane → Integrations", Required: true, Secret: true},
+			{Macro: "{$UNIFI.MAC}", Label: "Access point MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true},
+			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "default"},
+		},
+	},
 }
 
 // Classes returns the device-class catalog (stable order).

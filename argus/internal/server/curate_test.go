@@ -29,6 +29,48 @@ func TestClassifyUnifiPorts(t *testing.T) {
 	}
 }
 
+// AP radios group per band under Wireless; gateway WANs split traffic (Network) from the uplink
+// monitors (Ping, "... quality"), and the one-WAN case drops the index from the group name.
+func TestClassifyUnifiWirelessAndWan(t *testing.T) {
+	cases := []struct {
+		key, name          string
+		cat, inst, channel string
+	}{
+		{"unifi.clients", "Connected clients", "Wireless", "", ""},
+		{"unifi.experience", "Experience score", "Wireless", "", ""},
+		{`unifi.radio.clients[wifi0,"2.4 GHz"]`, "Radio 2.4 GHz clients", "Wireless", "Radio 2.4 GHz", "Clients"},
+		{`unifi.radio.util[wifi1,"5 GHz"]`, "Radio 5 GHz channel utilization", "Wireless", "Radio 5 GHz", "Utilization"},
+		{"unifi.wan.in[1]", "WAN 1 traffic in (wan1)", "Network", "WAN", "In"},
+		{"unifi.wan.out[2]", "WAN 2 traffic out (wan2)", "Network", "WAN 2", "Out"},
+		{"unifi.wan.latency[1]", "WAN 1 monitor latency (wan1)", "Ping", "WAN quality", "Response time"},
+		{"unifi.wan.avail[2]", "WAN 2 availability (wan2)", "Ping", "WAN 2 quality", "Availability"},
+		{"unifi.speedtest.down", "Speedtest download", "Network", "", ""},
+	}
+	for _, c := range cases {
+		cat, _, inst, ch, ok := classifyItem(c.key, c.name)
+		if !ok {
+			t.Fatalf("%s: not classified", c.key)
+		}
+		if cat != c.cat || inst != c.inst || ch != c.channel {
+			t.Errorf("%s: got (%q, %q, %q), want (%q, %q, %q)", c.key, cat, inst, ch, c.cat, c.inst, c.channel)
+		}
+	}
+}
+
+// Capability placeholders match on the key base, so per-instance keys are covered.
+func TestHideZero(t *testing.T) {
+	for _, k := range []string{"unifi.temp", "unifi.poe.total", "unifi.wan.latency[1]", "unifi.speedtest.down"} {
+		if !hideZero(k) {
+			t.Errorf("hideZero(%q) = false, want true", k)
+		}
+	}
+	for _, k := range []string{"unifi.wan.avail[1]", "unifi.wan.in[1]", "unifi.clients", "icmpping"} {
+		if hideZero(k) {
+			t.Errorf("hideZero(%q) = true, want false", k)
+		}
+	}
+}
+
 // Labels with embedded numbers sort numerically ("Port 2" before "Port 10").
 func TestNaturalLess(t *testing.T) {
 	cases := []struct {

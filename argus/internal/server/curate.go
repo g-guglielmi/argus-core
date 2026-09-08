@@ -31,23 +31,25 @@ var categoryOrderServer = map[string]int{
 	"Memory":      4,
 	"Disk":        5,
 	"Network":     6,
-	"Temperature": 7,
-	"Uptime":      8,
-	"Ports":       9,
-	"Status":      10,
+	"Wireless":    7,
+	"Temperature": 8,
+	"Uptime":      9,
+	"Ports":       10,
+	"Status":      11,
 }
 var categoryOrderNet = map[string]int{
 	"Ping":        0,
 	"Web":         1,
-	"Network":     2,
-	"Power":       3, // before CPU (user call)
-	"CPU":         4,
-	"Memory":      5,
-	"Disk":        6,
-	"Uptime":      7,
-	"Ports":       8,
-	"Temperature": 9,
-	"Status":      10,
+	"Wireless":    2, // an AP's headline is its clients/radios
+	"Network":     3,
+	"Power":       4, // before CPU (user call)
+	"CPU":         5,
+	"Memory":      6,
+	"Disk":        7,
+	"Uptime":      8,
+	"Ports":       9,
+	"Temperature": 10,
+	"Status":      11,
 }
 
 // splitKey returns the base key and its parameters, e.g. vfs.fs.size[/,pused] ->
@@ -73,11 +75,23 @@ func param(params []string, i int) string {
 	return ""
 }
 
-// hideWhenZero marks sensors that are capability placeholders when they read 0 (a device without a
-// temperature probe or without PoE reports a constant 0) - the curated view drops such rows.
+// hideWhenZero marks sensors that are capability placeholders when they read 0 or have never
+// delivered a value (a device without a temperature probe or without PoE reports a constant 0; a
+// gateway that never ran a speedtest reports nothing) - the curated view drops such rows. Keyed by
+// the item key's BASE, so per-instance keys (unifi.wan.latency[1]) are covered too.
 var hideWhenZero = map[string]bool{
-	"unifi.temp":      true,
-	"unifi.poe.total": true,
+	"unifi.temp":           true,
+	"unifi.poe.total":      true,
+	"unifi.experience":     true,
+	"unifi.speedtest.down": true,
+	"unifi.speedtest.up":   true,
+	"unifi.wan.latency":    true, // a real ping is never 0; absent monitor data leaves a stale row
+}
+
+// hideZero reports whether this item key is a capability placeholder when it reads 0.
+func hideZero(key string) bool {
+	base, _ := splitKey(key)
+	return hideWhenZero[base]
 }
 
 // naturalLess compares labels with embedded numbers numerically, so "Port 2" sorts before
@@ -124,6 +138,15 @@ func parenSuffix(name string) string {
 		return ""
 	}
 	return strings.TrimSpace(name[i+1 : len(name)-1])
+}
+
+// wanInstance names a gateway WAN group from its index: the first link is just "WAN" (most
+// gateways have one), a second becomes "WAN 2".
+func wanInstance(idx string) string {
+	if idx == "" || idx == "1" {
+		return "WAN"
+	}
+	return "WAN " + idx
 }
 
 // trafficLabel builds a network-traffic label, distinguishing the byte-rate item from the
@@ -248,6 +271,39 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "Ports", name, inst, ch, true
 	case "unifi.poe.total":
 		return "Power", "PoE power draw", "", "", true
+
+	// UniFi access points (Argus UniFi AP by HTTP): the wireless side gets its own category -
+	// total clients + experience flat, and a per-radio group (clients + channel utilization) per
+	// band. The band label rides in the key's second parameter ("2.4 GHz", "5 GHz", …).
+	case "unifi.clients":
+		return "Wireless", "Connected clients", "", "", true
+	case "unifi.experience":
+		return "Wireless", "Experience score", "", "", true
+	case "unifi.radio.clients", "unifi.radio.util":
+		inst := "Radio"
+		if band := param(p, 1); band != "" {
+			inst = "Radio " + band
+		}
+		ch := "Clients"
+		if base == "unifi.radio.util" {
+			ch = "Utilization"
+		}
+		return "Wireless", name, inst, ch, true
+
+	// UniFi gateways (Argus UniFi Gateway by HTTP): per-WAN traffic groups like a NIC, and the
+	// gateway's own uplink-monitor pings land under Ping as a "WAN quality" group beside ICMP.
+	case "unifi.wan.in":
+		return "Network", name, wanInstance(param(p, 0)), "In", true
+	case "unifi.wan.out":
+		return "Network", name, wanInstance(param(p, 0)), "Out", true
+	case "unifi.wan.latency":
+		return "Ping", name, wanInstance(param(p, 0)) + " quality", "Response time", true
+	case "unifi.wan.avail":
+		return "Ping", name, wanInstance(param(p, 0)) + " quality", "Availability", true
+	case "unifi.speedtest.down":
+		return "Network", "Speedtest download", "", "", true
+	case "unifi.speedtest.up":
+		return "Network", "Speedtest upload", "", "", true
 
 	// HTTP/HTTPS endpoint add-on (Argus HTTP Endpoint template). The key params are macros
 	// ({$HTTP.SCHEME}/{$HTTP.PORT}), so the label is fixed rather than derived from them.
