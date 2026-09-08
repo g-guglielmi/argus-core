@@ -456,7 +456,7 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			if ci, cj := order[out[i].Category], order[out[j].Category]; ci != cj {
 				return ci < cj
 			}
-			return out[i].Label < out[j].Label
+			return naturalLess(out[i].Label, out[j].Label) // "Port 2" before "Port 10"
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

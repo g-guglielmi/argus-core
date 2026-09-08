@@ -73,6 +73,39 @@ func param(params []string, i int) string {
 	return ""
 }
 
+// naturalLess compares labels with embedded numbers numerically, so "Port 2" sorts before
+// "Port 10" (and eth2 before eth10). Digit runs compare as integers; everything else bytewise.
+func naturalLess(a, b string) bool {
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		if isDigit(a[i]) && isDigit(b[j]) {
+			si, sj := i, j
+			for i < len(a) && isDigit(a[i]) {
+				i++
+			}
+			for j < len(b) && isDigit(b[j]) {
+				j++
+			}
+			na, nb := strings.TrimLeft(a[si:i], "0"), strings.TrimLeft(b[sj:j], "0")
+			if len(na) != len(nb) {
+				return len(na) < len(nb)
+			}
+			if na != nb {
+				return na < nb
+			}
+			continue
+		}
+		if a[i] != b[j] {
+			return a[i] < b[j]
+		}
+		i++
+		j++
+	}
+	return len(a)-i < len(b)-j
+}
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+
 // parenSuffix returns the content of a trailing "(...)" in an item name, e.g.
 // "Port 3 link (Shield-TV)" -> "Shield-TV"; "" when there is none.
 func parenSuffix(name string) string {
