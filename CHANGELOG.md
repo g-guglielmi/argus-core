@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [0.5.0] - 2026-09-08
+## [0.4.38] - 2026-09-08
 
 **Device classes — Argus provisions hosts now — plus a PRTG-grade monitoring view.** The first slice
 of the device-class catalog: hand-authored Zabbix templates ship inside Argus and reconcile at
