@@ -3817,7 +3817,7 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
           : <EmptyState icon={STATE_ICON[filter]} title={`No ${STATE_LABEL[filter].toLowerCase()} sensors`} text="Nothing on any site is in this state at the moment." />)
         : (
           <table className="slist slist-sensors">
-            <thead><tr><th>Host</th><th className="slgrow">Sensor</th><th>Value</th><th>Trend</th><th>{durCol}</th><th className="slprio">Priority</th><th /></tr></thead>
+            <thead><tr><th>Host</th><th className="slgrow">Sensor</th><th>Value</th><th>Trend</th><th className="slprio">Priority</th><th>{durCol}</th><th /></tr></thead>
             <tbody>
               {rows.map((s) => {
                 const clickable = s.numeric && s.supported
@@ -3830,8 +3830,8 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
                     </td>
                     <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })() : <span style={{ color: 'var(--err)' }}>not supported</span>}</td>
                     <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} width={168} fill /> : null}</td>
-                    <td className="mono dur" data-label={durCol}>{relTime(s.last_clock)}</td>
                     <td className="slprio" data-label="Priority"><PriorityStars value={s.priority} canEdit={false} /></td>
+                    <td className="mono dur" data-label={durCol}>{relTime(s.last_clock)}</td>
                     <td className="act">{canPause && <Kebab disabled={busy === s.item_id} actions={actionsFor(s)} />}</td>
                   </tr>
                 )
