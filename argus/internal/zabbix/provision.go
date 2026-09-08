@@ -22,6 +22,7 @@ type Template struct {
 type Macro struct {
 	Macro string `json:"macro"`
 	Value string `json:"value"`
+	Type  int    `json:"type,omitempty"` // 0 text (default), 1 secret (write-only afterwards)
 }
 
 // HostTag is a Zabbix host tag (used to stamp the Argus device class + provisioning source).

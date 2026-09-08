@@ -23,13 +23,15 @@ var cpuUtilKeep = map[string]bool{
 // categoryOrder controls how categories are grouped/sorted in the curated view.
 var categoryOrder = map[string]int{
 	"Ping":        0,
-	"Web":         1,
-	"CPU":         2,
-	"Memory":      3,
-	"Disk":        4,
-	"Network":     5,
-	"Temperature": 6,
-	"Uptime":      7,
+	"Status":      1,
+	"Web":         2,
+	"CPU":         3,
+	"Memory":      4,
+	"Disk":        5,
+	"Network":     6,
+	"Ports":       7,
+	"Temperature": 8,
+	"Uptime":      9,
 }
 
 // splitKey returns the base key and its parameters, e.g. vfs.fs.size[/,pused] ->
@@ -149,6 +151,27 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 
 	case "system.uptime":
 		return "Uptime", "Uptime", "", "", true
+
+	// UniFi devices, polled from the controller (Argus UniFi Switch by HTTP). The raw master item
+	// (unifi.switch.raw) deliberately doesn't match - it's plumbing, visible under "All sensors".
+	case "unifi.device.state":
+		return "Status", "Controller state", "", "", true
+	case "unifi.firmware":
+		return "Status", "Firmware version", "", "", true
+	case "unifi.cpu.util":
+		return "CPU", "CPU utilization", "", "", true
+	case "unifi.mem.util":
+		return "Memory", "Memory utilization", "", "", true
+	case "unifi.uptime":
+		return "Uptime", "Uptime", "", "", true
+	case "unifi.uplink.in":
+		return "Network", "Uplink traffic in", "Uplink", "In", true
+	case "unifi.uplink.out":
+		return "Network", "Uplink traffic out", "Uplink", "Out", true
+	case "unifi.port.state":
+		return "Ports", "Port " + param(p, 0) + " link", "Port " + param(p, 0), "Link", true
+	case "unifi.port.speed":
+		return "Ports", "Port " + param(p, 0) + " speed", "Port " + param(p, 0), "Speed", true
 
 	// HTTP/HTTPS endpoint add-on (Argus HTTP Endpoint template). The key params are macros
 	// ({$HTTP.SCHEME}/{$HTTP.PORT}), so the label is fixed rather than derived from them.

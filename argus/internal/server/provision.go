@@ -29,20 +29,21 @@ func (s *Server) startTemplateReconcile(ctx context.Context) {
 }
 
 type classView struct {
-	ID         string `json:"id"`
-	Label      string `json:"label"`
-	Family     string `json:"family"`
-	Pattern    string `json:"pattern"`
-	Iface      string `json:"iface"`
-	OffersHTTP bool   `json:"offers_http"`
-	Icon       string `json:"icon"`
+	ID         string                `json:"id"`
+	Label      string                `json:"label"`
+	Family     string                `json:"family"`
+	Pattern    string                `json:"pattern"`
+	Iface      string                `json:"iface"`
+	OffersHTTP bool                  `json:"offers_http"`
+	Icon       string                `json:"icon"`
+	Macros     []provision.MacroSpec `json:"macros,omitempty"` // per-host inputs the attach form collects
 }
 
 // GET /api/classes - the device-class catalog for the attach UI (any signed-in user).
 func (s *Server) handleClasses(w http.ResponseWriter, r *http.Request) {
 	out := make([]classView, 0)
 	for _, c := range provision.Classes() {
-		out = append(out, classView{ID: c.ID, Label: c.Label, Family: c.Family, Pattern: string(c.Pattern), Iface: string(c.Iface), OffersHTTP: c.OffersHTTP, Icon: c.Icon})
+		out = append(out, classView{ID: c.ID, Label: c.Label, Family: c.Family, Pattern: string(c.Pattern), Iface: string(c.Iface), OffersHTTP: c.OffersHTTP, Icon: c.Icon, Macros: c.Macros})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -99,6 +100,13 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 	if req.IP == "" && req.DNS == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "an IP address or DNS name is required"})
 		return
+	}
+	// Class-declared per-host macros (API endpoint, credentials, …) - the required ones must be set.
+	for _, ms := range class.Macros {
+		if ms.Required && strings.TrimSpace(req.Macros[ms.Macro]) == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": ms.Label + " is required for this device class"})
+			return
+		}
 	}
 	useIP := req.IP != ""
 	if req.UseIP != nil {
@@ -167,7 +175,7 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 		GroupIDs:    []string{groupID},
 		TemplateIDs: tmplIDs,
 		Interfaces:  ifaces,
-		Macros:      buildMacros(req),
+		Macros:      buildMacros(req, class),
 		MonitoredBy: monitoredBy,
 		ProxyID:     proxyID,
 		Tags: []zabbix.HostTag{
@@ -242,8 +250,15 @@ func (s *Server) resolveInterface(ctx context.Context, class provision.Class, re
 }
 
 // buildMacros turns the request's HTTP add-on port/scheme and any extra overrides into host macros.
-// Host-level macros override the template defaults (the §6 thresholds live in the templates).
-func buildMacros(req createHostRequest) []zabbix.Macro {
+// Host-level macros override the template defaults (the §6 thresholds live in the templates). Macros
+// the class declares as secret (API keys) are stored as Zabbix secret macros - write-only afterwards.
+func buildMacros(req createHostRequest, class provision.Class) []zabbix.Macro {
+	secret := map[string]bool{}
+	for _, ms := range class.Macros {
+		if ms.Secret {
+			secret[ms.Macro] = true
+		}
+	}
 	var macros []zabbix.Macro
 	if req.HTTP {
 		if p := strings.TrimSpace(req.HTTPPort); p != "" {
@@ -254,9 +269,16 @@ func buildMacros(req createHostRequest) []zabbix.Macro {
 		}
 	}
 	for k, v := range req.Macros {
-		if k = strings.TrimSpace(k); k != "" {
-			macros = append(macros, zabbix.Macro{Macro: k, Value: v})
+		if k = strings.TrimSpace(k); k == "" {
+			continue
+		} else if strings.TrimSpace(v) == "" {
+			continue // an empty optional field must not override the template default
 		}
+		m := zabbix.Macro{Macro: k, Value: v}
+		if secret[k] {
+			m.Type = 1
+		}
+		macros = append(macros, m)
 	}
 	return macros
 }
