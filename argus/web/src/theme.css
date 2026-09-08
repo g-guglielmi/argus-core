@@ -311,7 +311,7 @@ a { color: var(--accent); }
    dense. */
 /* Group + host rows share one grid so the graph, latency and kebab line up in columns down the whole
    tree at any nesting depth — indentation only ever squeezes the name column (col 1) on the left. */
-.site-head, .host-head { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 150px 84px 40px; align-items: center; cursor: pointer; user-select: none; }
+.site-head, .host-head { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 190px 84px 40px; align-items: center; cursor: pointer; user-select: none; }
 .site-head { padding: 5px 16px; background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
 .site-head:hover { background: color-mix(in srgb, var(--accent) 15%, var(--panel)); }
 /* Row cells. The name flexes + truncates; the last three are fixed-width so they align across rows. */
@@ -360,7 +360,7 @@ a { color: var(--accent); }
 .dev-badge { position: absolute; right: -3px; bottom: -3px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--panel); box-sizing: border-box; }
 .host-head:hover .dev-badge { border-color: var(--elevated); }
 /* Host row ICMP latency + sparkline — the per-host data groups don't carry, in aligned columns. */
-.hspark { display: inline-flex; width: 130px; }
+.hspark { display: inline-flex; width: 168px; } /* = the table/overview sparks; graph column is 190px */
 .hms { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Inline "Edit groups…" band under a host row */

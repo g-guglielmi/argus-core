@@ -2939,7 +2939,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
           </div>
           <div className="c-graph">
             {h.icmp_item && icmpSparks[h.icmp_item] && icmpSparks[h.icmp_item].length > 1 && (
-              <span className="hspark"><Spark values={icmpSparks[h.icmp_item]} color={h.state === 'ok' ? 'var(--accent)' : (STATE_VAR[h.state] || 'var(--accent)')} width={130} /></span>
+              <span className="hspark"><Spark values={icmpSparks[h.icmp_item]} color={h.state === 'ok' ? 'var(--accent)' : (STATE_VAR[h.state] || 'var(--accent)')} width={168} /></span>
             )}
           </div>
           <div className="c-val" title="ICMP response time">
