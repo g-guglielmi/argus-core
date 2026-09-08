@@ -11,6 +11,45 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.39] - 2026-09-09
+
+**The UniFi Switch class — and a discovery trigger.** §C phase C1 is complete: switches join the
+device catalog, polled from their UniFi controller with an API key — ports, PoE, traffic and all —
+and a freshly added host gets its discovered per-instance sensors in seconds instead of an hour.
+
+**Added:**
+- **UniFi Switch device class.** One controller call per poll, addressed by the switch's MAC —
+  works against a UniFi OS console (cloud gateway on :443) or a self-hosted console on a custom
+  port via a per-host `{$UNIFI.URL}`. Sensors: controller state (offline trigger), CPU and memory
+  utilization (threshold triggers), uptime, firmware, temperature (models that report one), uplink
+  traffic, total **PoE power draw**, and port discovery — per-port link, negotiated speed, traffic
+  in/out (controller-computed rates) and **PoE watts** on PoE-capable ports only. Ports carry the
+  controller's names ("Port 1 · Office-AP") and sort naturally (Port 2 before Port 10).
+- **Class-declared per-host inputs.** A device class can declare the macros it needs (controller
+  URL, API key, MAC, site) and the Add-device form renders them generically — secrets are masked in
+  the form and stored as Zabbix **secret macros**, write-only after creation. The seam every future
+  API-source class reuses.
+- **Discovery trigger.** After Add-device creates a host, its LLD rules fire automatically
+  ("execute now", delayed until the proxy has synced the new config, with a retry) — and a
+  **Discover now** action in the host menu runs the same trigger on demand for any host.
+
+**Changed:**
+- **Sensor categories order by host shape:** network gear (anything with switch ports) reads
+  network-first, servers keep the classic compute-first order, and Power sorts before CPU in both.
+  A GUI-editable order is on the roadmap.
+- **Port rows read like network interfaces:** live ↓/↑ traffic in the value column (a down port
+  reads "down"), a traffic sparkline — and every traffic-style group's sparkline (NICs, uplinks,
+  ports) now shows the **sum of in + out**: total throughput at a glance.
+- **Port charts start with the constant Speed/Link lines hidden** (their live values stay in the
+  legend; one click reveals the line) — so the traffic axis ranges to the actual in/out rates
+  instead of being pinned at the negotiated gigabits.
+
+**Fixed:**
+- Capability placeholders no longer occupy sensor rows: a switch without a temperature probe or
+  without PoE reports a constant 0 for those — the template stops collecting them and the curated
+  view hides the stale rows. The controller-state item feeds its offline trigger without taking up
+  a row of its own.
+
 ## [0.4.38] - 2026-09-08
 
 **Device classes — Argus provisions hosts now — plus a PRTG-grade monitoring view.** The first slice

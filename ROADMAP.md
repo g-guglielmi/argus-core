@@ -79,7 +79,7 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 
 **C1 - Vertical slice (prove both dominant patterns):**
 - [x] **Generic Linux SNMP** template (host-resources+UCD+IF-MIB, fs/NIC LLD, §6 macros) - lab-confirmed collecting core metrics + per-mount disks + per-NIC traffic; Add-device inherits the proxy SNMP defaults - v0.4.38
-- [ ] **UniFi Switch** HTTP-API template (self-hosted controller; master+dependent items, port LLD) - _(BE)_ M
+- [x] **UniFi Switch** HTTP-API template (API-key auth via the controller, master+dependent items, port LLD with names/traffic/PoE; covers cloud-gateway and self-hosted consoles) - lab-confirmed on real switches (PoE and non-PoE) - v0.4.39
 - [ ] Done = host created via Argus → template attached → sensors show with right labels/units → §6 triggers fire → LLD only-real instances → a per-host threshold override works
 
 **C2 - Breadth by pattern (ROI order):**
