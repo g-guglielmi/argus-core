@@ -52,7 +52,6 @@ zabbix_export:
               uptime: d.uptime || 0,
               cpu: parseFloat(ss.cpu),
               mem: parseFloat(ss.mem),
-              poe_total_w: 0,
               ports: []
             };
             if (typeof d.general_temperature === 'number' && d.general_temperature > 0) { out.temp = d.general_temperature; }
@@ -61,10 +60,12 @@ zabbix_export:
               out.uplink_tx_bps = (d.uplink['tx_bytes-r'] || 0) * 8;
             }
             var pt = d.port_table || [];
+            var poeTotal = 0, hasPoe = false;
             for (var i = 0; i < pt.length; i++) {
               var q = pt[i];
               var w = parseFloat(q.poe_power || '0') || 0;
-              out.poe_total_w += w;
+              poeTotal += w;
+              if (q.port_poe) { hasPoe = true; }
               out.ports.push({
                 idx: q.port_idx,
                 name: q.name || ('Port ' + q.port_idx),
@@ -76,7 +77,7 @@ zabbix_export:
                 out_bps: (q['tx_bytes-r'] || 0) * 8
               });
             }
-            out.poe_total_w = Math.round(out.poe_total_w * 100) / 100;
+            if (hasPoe) { out.poe_total_w = Math.round(poeTotal * 100) / 100; }
             return JSON.stringify(out);
           parameters:
             - name: url
@@ -204,13 +205,14 @@ zabbix_export:
           trends: 365d
           value_type: FLOAT
           units: W
-          description: 'Total PoE power currently delivered across all ports.'
+          description: 'Total PoE power currently delivered across all ports. Only emitted for switches with PoE-capable ports (others discard).'
           master_item:
             key: unifi.switch.raw
           preprocessing:
             - type: JSONPATH
               parameters:
                 - '$.poe_total_w'
+              error_handler: DISCARD_VALUE
         - uuid: 5bd62ec03c0e4aff97f050ac8961126a
           name: 'Firmware version'
           type: DEPENDENT
