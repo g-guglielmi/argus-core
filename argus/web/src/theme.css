@@ -435,6 +435,7 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .sensors .cat td { color: var(--accent); font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; padding-top: 11px; font-weight: 700; border-top: none; }
 .sensors .val { font-weight: 650; } .sensors .unit { color: var(--muted); font-weight: 400; }
 .sensors td.strend { width: 100px; }
+.sensors td.strend svg { max-width: 100%; } /* squish, don't overflow, when the Trend column is narrower than the spark */
 .sensors td.strend .spark, .row .mini svg, .slist .trend svg { display: block; }
 .sensors td.namecell { border-left: 3px solid transparent; }
 .sensors tr.warn td.namecell { border-left-color: var(--warn); }

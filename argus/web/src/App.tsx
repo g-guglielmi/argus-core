@@ -276,14 +276,18 @@ function Spark({ values, color, width = 84, fill = false }: { values?: number[];
   for (const v of values) { if (v < min) min = v; if (v > max) max = v }
   const rng = max - min || 1
   const px = (i: number) => (i / (values.length - 1)) * (w - 2) + 1
-  const py = (v: number) => h - 2 - ((v - min) / rng) * (h - 4)
+  // Half-pixel y endpoints (17.5 / 1.5): a horizontal stroke centered ON a pixel boundary (integer y)
+  // is split 50/50 across two rows by antialiasing and renders dim and blurry - which made flat lines
+  // (constant totals, idle disks) look washed out next to their crisp endpoint dot. Centered on a
+  // half-pixel, a flat line paints one full-brightness row.
+  const py = (v: number) => h - 2.5 - ((v - min) / rng) * (h - 4)
   let d = ''
   values.forEach((v, i) => { d += (i ? 'L' : 'M') + px(i).toFixed(1) + ' ' + py(v).toFixed(1) + ' ' })
   const area = `M1 ${h - 1} ${d.replace('M', 'L').trim()} L${w - 1} ${h - 1} Z`
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block', width: fill ? '100%' : undefined }}>
       <path d={area} fill={color} opacity={0.13} />
-      <path d={d.trim()} fill="none" stroke={color} strokeWidth={1.4} />
+      <path d={d.trim()} fill="none" stroke={color} strokeWidth={1.5} />
       <circle cx={w - 1} cy={py(values[values.length - 1])} r={1.8} fill={color} />
     </svg>
   )
@@ -3672,7 +3676,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                           </span>
                         </td>
                         <td className="mono val">{headline ?? <span style={{ color: 'var(--muted)' }}>—</span>}</td>
-                        <td className="strend">{clickable ? <Spark values={sparks[primary.id]} color={trendColor} /> : null}</td>
+                        <td className="strend">{clickable ? <Spark values={sparks[primary.id]} color={trendColor} width={168} /> : null}</td>
                         <td className="prio-cell" data-label="Priority"><PriorityStars value={gPrio} canEdit={canPause} onSet={(p) => row.items.forEach((i) => setItemPriority(i, p))} /></td>
                         <td><div className="lccell"><span className="when">{relTime(primary.last_clock)}</span>{canPause && actions.length > 0 && <Kebab actions={actions} />}</div></td>
                       </tr>
@@ -3723,7 +3727,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                           ? (() => { const [dv, du] = readingParts(it.last_value, it.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })()
                           : <span style={{ color: 'var(--err)' }}>not supported</span>}
                       </td>
-                      <td className="strend">{it.numeric && it.supported ? <Spark values={sparks[it.id]} color={trendColor} /> : null}</td>
+                      <td className="strend">{it.numeric && it.supported ? <Spark values={sparks[it.id]} color={trendColor} width={168} /> : null}</td>
                       <td className="prio-cell" data-label="Priority"><PriorityStars value={it.priority} canEdit={canPause} onSet={(p) => setItemPriority(it, p)} /></td>
                       <td>
                         <div className="lccell">
