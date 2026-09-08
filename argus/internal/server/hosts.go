@@ -436,8 +436,17 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 		out = append(out, iv)
 	}
 	if !all {
+		// Network gear (anything with switch ports) reads network-first; servers keep the classic
+		// compute-first order (categoryOrderServer/Net in curate.go).
+		order := categoryOrderServer
+		for _, v := range out {
+			if v.Category == "Ports" {
+				order = categoryOrderNet
+				break
+			}
+		}
 		sort.SliceStable(out, func(i, j int) bool {
-			if ci, cj := categoryOrder[out[i].Category], categoryOrder[out[j].Category]; ci != cj {
+			if ci, cj := order[out[i].Category], order[out[j].Category]; ci != cj {
 				return ci < cj
 			}
 			return out[i].Label < out[j].Label

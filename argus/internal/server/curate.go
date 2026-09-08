@@ -20,9 +20,23 @@ var cpuUtilKeep = map[string]bool{
 	"steal":  true,
 }
 
-// categoryOrder controls how categories are grouped/sorted in the curated view (user-specified:
-// availability first, then traffic, compute, storage, uptime, ports; Status metadata last).
-var categoryOrder = map[string]int{
+// Category order is per host SHAPE (user call): network gear - anything with switch ports - reads
+// network-first, while servers keep the classic compute-first order. Picking the order from the UI
+// (per class or per host) is planned for the management UI (ROADMAP §D).
+var categoryOrderServer = map[string]int{
+	"Ping":        0,
+	"Web":         1,
+	"CPU":         2,
+	"Memory":      3,
+	"Disk":        4,
+	"Network":     5,
+	"Temperature": 6,
+	"Uptime":      7,
+	"Ports":       8,
+	"Power":       9,
+	"Status":      10,
+}
+var categoryOrderNet = map[string]int{
 	"Ping":        0,
 	"Web":         1,
 	"Network":     2,

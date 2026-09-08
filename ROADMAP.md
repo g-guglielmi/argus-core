@@ -93,6 +93,7 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 
 ### D. Management UI screens
 - [ ] **Device management** - add/edit, assign site+proxy, class, per-device threshold overrides - _(FE+BE)_ M
+- [ ] **Sensor-category order in the GUI** - reorder a host's sensor categories from the UI (per class or per host), replacing the two built-in profiles (server = compute-first, network gear = network-first) - _(FE+BE)_ S-M
 - [ ] **Thresholds** - global defaults + per-device/sensor overrides - _(FE+BE)_ M
 - [ ] **Settings expansion** - retention controls, proxy health, allowed-hosts - _(FE+BE)_ S-M
 
