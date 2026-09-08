@@ -4007,7 +4007,10 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
   const xVal = (u: any, v: number | null) => { const t = v ?? lastVal(u, 0); return t == null ? '--' : new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const yVal = (sidx: number) => (u: any, v: number | null) => { const n = v ?? lastVal(u, sidx); return n == null ? '--' : fmtNum(n, units) }
-  const base: Partial<uPlot.Options> = { width, height: 320, scales: { x: { time: true } }, axes: [xAxis, yAxis], legend: { show: true }, ...zoomHook(onZoom, xs.length ? [xs[0], xs[xs.length - 1]] : undefined) }
+  // cursor.points.show:false removes uPlot's hover marker (a small dot it parks on the line at the
+  // cursor - and at the plot's top-left corner while idle). We're lines-only; the legend already shows
+  // the hovered value, so the dot is pure noise. This is the real source of the long-standing "stray dot".
+  const base: Partial<uPlot.Options> = { width, height: 320, scales: { x: { time: true } }, axes: [xAxis, yAxis], legend: { show: true }, cursor: { points: { show: false } }, ...zoomHook(onZoom, xs.length ? [xs[0], xs[xs.length - 1]] : undefined) }
 
   // Uptime is a monotonic counter — min ≈ avg ≈ max, so its band is meaningless; fall through to a
   // single line (drawn from avg on trend ranges).
@@ -4206,7 +4209,8 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
     extraYs.push(lo, hi)
     bands.push({ series: [minIdx + 1, minIdx], fill: c.fill }) // fill between max and min
   }
-  const opts = { width, height: 320, scales: scaleCfg, axes, series: uplotSeries, legend: { show: true }, bands, ...zoomHook(onZoom, xrange) } as uPlot.Options
+  // cursor.points.show:false removes uPlot's hover marker dot (see buildPlot) - the real "stray dot".
+  const opts = { width, height: 320, scales: scaleCfg, axes, series: uplotSeries, legend: { show: true }, cursor: { points: { show: false } }, bands, ...zoomHook(onZoom, xrange) } as uPlot.Options
   // insertGaps breaks the line where sampling actually stopped (a real outage) instead of drawing a
   // straight segment across it; bucketing above keeps offset-but-regular channels connected.
   const [gx, gy] = insertGaps(xs, [...ys, ...extraYs])
