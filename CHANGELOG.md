@@ -11,6 +11,59 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.5.0] - 2026-09-08
+
+**Device classes — Argus provisions hosts now — plus a PRTG-grade monitoring view.** The first slice
+of the device-class catalog: hand-authored Zabbix templates ship inside Argus and reconcile at
+startup, **"+ Add device"** creates and binds a host end-to-end, and a **Generic Linux SNMP** class
+arrives with full discovery. On the viewing side: channel groups with multi-series charts, a tree
+that separates groups from hosts at a glance, and a deep chart/sparkline rework.
+
+**Added:**
+- **Device-class framework (C0).** Class templates live inside the binary and are versioned and
+  re-imported at startup via `configuration.import` (needs a super-admin API token; soft-skips
+  without one). A class registry plus a per-host `device_class` overlay; **"+ Add device"** (admin)
+  in Sites & hosts creates the host in Zabbix, binds it to the site's proxy and attaches the class's
+  templates, macros and interface. First classes: **Ping only** with an optional **HTTP/HTTPS
+  endpoint** add-on (custom port).
+- **Generic Linux SNMP class (C1).** Core metrics (CPU, memory, uptime) plus discovery: filesystem
+  LLD → per-mount Disk total / used / used % (tmpfs filtered; OIDs matched in numeric *and*
+  MIB-symbolic form), interface LLD → per-NIC traffic in/out. Thresholds ride as user macros.
+  Add-device **inherits the proxy's SNMP defaults** — credentials are asked for only to override.
+- **PRTG-style channel groups.** Per-instance sensors (a disk mount, a NIC, the ICMP trio) collapse
+  into one group row; expanding it opens a single chart overlaying every channel — mixed units on two
+  y-axes, click-to-toggle legend — and pause/hide/priority act on the whole instance. ICMP reads
+  response time as the main field, loss beside it, and reachability inverted into a red **downtime
+  band**.
+- **Tree readability.** Compact accent-tinted group bands vs. taller host rows with device-type
+  icons, indent guides, and a per-host ICMP latency + sparkline; sparkline, latency and menu align in
+  shared columns at any nesting depth. Groups and hosts start collapsed and remember their open state
+  for the login session.
+- **Charts.** Min/max envelope band on trend ranges (1M+); the ping chart's % scale is pinned 0-100
+  and owns a fixed 0/20/…/100 grid, so "100 % loss" and "down" peak at the same height; the second
+  axis labels ride the shared gridlines; axis gutters size themselves to their longest label so
+  nothing clips; ticks are unit-aware for every unit; the primary channel is shaded like the
+  single-metric charts; drag-zoom pauses that chart's auto-refresh.
+
+**Changed:**
+- The host sensor table and the overview/status lists now share the tree's column order (… Trend,
+  Priority, Last check) and stable proportions, every sparkline in the app is one size, single-scale
+  charts label their axis on the right, and the Loss channel is amber-gold — clearly apart from the
+  red downtime.
+
+**Fixed:**
+- **The stray blue dot** in every chart's top-left corner: uPlot parks its drag-zoom selection box
+  collapsed at 0×0 there, and the dark theme's 1px accent border on it painted a 2-px speck. The
+  selection edge is now an inset shadow — identical while dragging, invisible when idle.
+- The 30-second refresh could steal the open chart, snapping the view back to the sensor originally
+  drilled into from the Overview.
+- Flat sparklines rendered dim and blurry (a stroke centered on a pixel boundary splits across two
+  rows — half-pixel centers now); axis labels could clip (`7d 4h 46m`, `953.67 MB`); a plain % axis
+  lost its unit and followed the browser locale; the overview list's column widths never applied
+  (Chrome ignores `calc(% - px)` on fixed-layout table columns).
+- Zabbix 7.0 rejects non-v4 UUIDs in template imports; proxy/load-balancer names no longer
+  icon-guess as a NAS.
+
 ## [0.4.37] - 2026-09-06
 
 **Human-readable time units.** Second-based readings now auto-scale to a sensible magnitude.
