@@ -294,6 +294,18 @@ function Spark({ values, color, width = 84, fill = false }: { values?: number[];
   )
 }
 
+// sumSparks adds two spark series element-wise for network-style groups (In + Out = total
+// throughput). The two series are downsampled independently, so align them from the tail - the
+// newest points are what a sparkline is for. Falls back to whichever side exists.
+function sumSparks(a?: number[], b?: number[]): number[] | undefined {
+  if (!a || a.length < 2) return b
+  if (!b || b.length < 2) return a
+  const n = Math.min(a.length, b.length)
+  const out: number[] = []
+  for (let i = 0; i < n; i++) out.push(a[a.length - n + i] + b[b.length - n + i])
+  return out
+}
+
 // useSparks fetches compact recent series for a set of item ids (batched), refreshing every 60s.
 function useSparks(itemIds: string[]): Record<string, number[]> {
   const [map, setMap] = useState<Record<string, number[]>>({})
@@ -3727,7 +3739,13 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                           </span>
                         </td>
                         <td className="mono val">{headline ?? <span style={{ color: 'var(--muted)' }}>—</span>}</td>
-                        <td className="strend">{clickable ? <Spark values={sparks[primary.id]} color={trendColor} width={168} /> : null}</td>
+                        <td className="strend">{clickable ? (() => {
+                          // Traffic-style groups (anything with In + Out channels: NICs, uplinks,
+                          // switch ports) spark the SUM of both directions - total throughput.
+                          const gin = row.items.find((x) => x.channel === 'In'), gout = row.items.find((x) => x.channel === 'Out')
+                          const vals = gin && gout ? sumSparks(sparks[gin.id], sparks[gout.id]) : sparks[primary.id]
+                          return <Spark values={vals} color={trendColor} width={168} />
+                        })() : null}</td>
                         <td className="prio-cell" data-label="Priority"><PriorityStars value={gPrio} canEdit={canPause} onSet={(p) => row.items.forEach((i) => setItemPriority(i, p))} /></td>
                         <td><div className="lccell"><span className="when">{relTime(primary.last_clock)}</span>{canPause && actions.length > 0 && <Kebab actions={actions} />}</div></td>
                       </tr>
