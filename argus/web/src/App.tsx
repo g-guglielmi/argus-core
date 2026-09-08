@@ -3485,19 +3485,26 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
   useEffect(() => { loadItems() }, [hostId, showAll])
 
   // Open the deep-linked sensor's chart once its row is present (from an Overview sensor click).
+  // Latched per target: `items` is re-fetched every 30s, and without the latch this re-fired on every
+  // poll and yanked the view back to the deep-linked sensor after the user had opened another chart.
+  const autoOpened = useRef<string | null>(null)
   useEffect(() => {
-    if (autoOpenItem && items && items.some((i) => i.id === autoOpenItem)) setOpenItem(autoOpenItem)
+    if (!autoOpenItem || autoOpened.current === autoOpenItem) return
+    if (items && items.some((i) => i.id === autoOpenItem)) { setOpenItem(autoOpenItem); autoOpened.current = autoOpenItem }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenItem, items])
 
   // When focused on a single sensor, force its chart open and report its display name up so the
   // breadcrumb can label the crumb (needed after a reload, where only the item id survives the URL).
+  // Latched like autoOpenItem, so the 30s poll can't force a manually-collapsed chart back open.
+  const onlyOpened = useRef<string | null>(null)
   useEffect(() => {
-    if (!onlyItem || !items) return
+    if (!onlyItem || !items || onlyOpened.current === onlyItem) return
     const it = items.find((i) => i.id === onlyItem)
     if (!it) return
     setOpenItem(onlyItem)
     onItemName?.(onlyItem, it.label || it.name)
+    onlyOpened.current = onlyItem
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onlyItem, items])
 
@@ -3998,7 +4005,9 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
   // Scaled y-axis ticks (bytes/bits/uptime); otherwise default numeric.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const yValues = scaled ? ((_u: any, splits: number[]) => splits.map((v) => fmtNum(v, units))) : undefined
-  const yAxis: uPlot.Axis = { stroke: c.axis, grid, ticks, size: 64, values: yValues as unknown as uPlot.Axis['values'] }
+  // Single-metric charts label their axis on the RIGHT (user pref: the values sit beside "now").
+  // Uptime durations ("364d 23h 59m") are the longest labels - give them a wider gutter or they clip.
+  const yAxis: uPlot.Axis = { stroke: c.axis, grid, ticks, side: 1, size: units === 'uptime' ? 88 : 64, values: yValues as unknown as uPlot.Axis['values'] }
   const xAxis: uPlot.Axis = { stroke: c.axis, grid, ticks }
   // Legend cells: show the hovered point, or fall back to the latest value when idle (so the
   // legend is never blank). unitLabel is dropped for scaled units since the value carries it.
@@ -4240,6 +4249,9 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
     extraYs.push(lo, hi)
     bands.push({ series: [minIdx + 1, minIdx], fill: c.fill }) // fill between max and min
   }
+  // Match the single-sensor look: shade under the primary channel - except on trend ranges, where
+  // the min/max band already shades around the line (both would be muddy), and never for downtime.
+  if (p0 && !p0.downtime && !bands.length) (uplotSeries[1] as uPlot.Series).fill = c.fill
   // cursor.points.show:false removes uPlot's hover marker dot (see buildPlot) - the real "stray dot".
   const opts = { width, height: 320, scales: scaleCfg, axes, series: uplotSeries, legend: { show: true }, cursor: { points: { show: false } }, bands, ...zoomHook(onZoom, xrange) } as uPlot.Options
   // insertGaps breaks the line where sampling actually stopped (a real outage) instead of drawing a
