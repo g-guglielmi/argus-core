@@ -73,6 +73,19 @@ func param(params []string, i int) string {
 	return ""
 }
 
+// parenSuffix returns the content of a trailing "(...)" in an item name, e.g.
+// "Port 3 link (Shield-TV)" -> "Shield-TV"; "" when there is none.
+func parenSuffix(name string) string {
+	if !strings.HasSuffix(name, ")") {
+		return ""
+	}
+	i := strings.LastIndexByte(name, '(')
+	if i < 0 {
+		return ""
+	}
+	return strings.TrimSpace(name[i+1 : len(name)-1])
+}
+
 // trafficLabel builds a network-traffic label, distinguishing the byte-rate item from the
 // per-interface error/dropped/packet counters that share the net.if.in/out key. Params are
 // [interface, mode]; mode "" or "bytes" is the main rate.
@@ -184,16 +197,15 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "Network", "Uplink traffic in", "Uplink", "In", true
 	case "unifi.uplink.out":
 		return "Network", "Uplink traffic out", "Uplink", "Out", true
-	case "unifi.port.state":
-		return "Ports", "Port " + param(p, 0) + " link", "Port " + param(p, 0), "Link", true
-	case "unifi.port.speed":
-		return "Ports", "Port " + param(p, 0) + " speed", "Port " + param(p, 0), "Speed", true
-	case "unifi.port.in":
-		return "Ports", "Port " + param(p, 0) + " traffic in", "Port " + param(p, 0), "In", true
-	case "unifi.port.out":
-		return "Ports", "Port " + param(p, 0) + " traffic out", "Port " + param(p, 0), "Out", true
-	case "unifi.port.poe":
-		return "Ports", "Port " + param(p, 0) + " PoE power", "Port " + param(p, 0), "PoE", true
+	case "unifi.port.state", "unifi.port.speed", "unifi.port.in", "unifi.port.out", "unifi.port.poe":
+		// The operator's port name from the controller rides in the item name ("Port 3 link
+		// (Shield-TV)"); lift it into the group label so the tree reads "Port 3 · Shield-TV".
+		inst := "Port " + param(p, 0)
+		if pn := parenSuffix(name); pn != "" && pn != inst {
+			inst += " · " + pn
+		}
+		ch := map[string]string{"unifi.port.state": "Link", "unifi.port.speed": "Speed", "unifi.port.in": "In", "unifi.port.out": "Out", "unifi.port.poe": "PoE"}[base]
+		return "Ports", name, inst, ch, true
 	case "unifi.poe.total":
 		return "Power", "PoE power draw", "", "", true
 
