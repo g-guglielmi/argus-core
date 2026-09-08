@@ -25,6 +25,9 @@ Thumbs.db
 # Local archives / transfer bundles
 *.zip
 
+# Local tools dropped into the repo folder (never publish)
+PuTTY/
+
 # Private local crosswalk (real infra values) - never publish
 LOCAL-VALUES.md
 
