@@ -8,12 +8,14 @@ zabbix_export:
       template: 'Argus UniFi Switch by HTTP'
       name: 'Argus UniFi Switch by HTTP'
       description: |
-        UniFi switch polled through the UniFi Network Integration API (API key): controller state,
-        CPU/memory, uptime, firmware, uplink traffic and per-port link discovery. Works against a
-        UniFi OS console (cloud gateway, :443) or a self-hosted console on a custom port - set
-        {$UNIFI.URL} to the console base URL including the port, {$UNIFI.KEY} to an API key
-        (UniFi Network -> Settings -> Control Plane -> Integrations) and {$UNIFI.MAC} to the
-        switch's MAC address. The host's own interface stays the switch IP (Base Ping). DESIGN section 5.
+        UniFi switch polled from its controller with an API key (one request per poll, addressed by
+        MAC): state, CPU/memory, uptime, firmware, temperature (models that report it), uplink
+        traffic, total PoE draw, and per-port discovery - link, speed, traffic in/out, and PoE power
+        on PoE-capable ports. Works against a UniFi OS console (cloud gateway, :443) or a self-hosted
+        console on a custom port: set {$UNIFI.URL} to the console base URL including the port,
+        {$UNIFI.KEY} to an API key (UniFi Network -> Settings -> Control Plane -> Integrations) and
+        {$UNIFI.MAC} to the switch's MAC. {$UNIFI.SITE} is the site's internal short name (the first
+        site is "default"). The host's own interface stays the switch IP (Base Ping). DESIGN section 5.
       groups:
         - name: Templates/Argus
       items:
@@ -26,36 +28,56 @@ zabbix_export:
           trends: '0'
           value_type: TEXT
           timeout: 15s
-          description: 'Master item: resolves the switch on the controller by MAC and merges its detail + latest statistics into one JSON. Everything else is dependent on this.'
+          description: 'Master item: one controller call for the switch (stat/device by MAC), trimmed to the fields the sensors use. Everything else is dependent on this.'
           params: |
             var p = JSON.parse(value);
             if (!p.url || !p.key || !p.mac) { throw 'set {$UNIFI.URL}, {$UNIFI.KEY} and {$UNIFI.MAC} on the host'; }
-            var base = p.url.replace(/\/+$/, '') + '/proxy/network/integration/v1';
-            function get(path) {
-              var req = new HttpRequest();
-              req.addHeader('X-API-KEY: ' + p.key);
-              req.addHeader('Accept: application/json');
-              var resp = req.get(base + path);
-              if (req.getStatus() !== 200) { throw 'UniFi API HTTP ' + req.getStatus() + ' for ' + path; }
-              return JSON.parse(resp);
+            var mac = String(p.mac).toLowerCase().replace(/[^0-9a-f]/g, '');
+            if (mac.length !== 12) { throw 'MAC address looks wrong: ' + p.mac; }
+            mac = mac.match(/../g).join(':');
+            var site = String(p.site || 'default').toLowerCase();
+            var req = new HttpRequest();
+            req.addHeader('X-API-KEY: ' + p.key);
+            req.addHeader('Accept: application/json');
+            var resp = req.get(String(p.url).replace(/\/+$/, '') + '/proxy/network/api/s/' + site + '/stat/device/' + mac);
+            if (req.getStatus() !== 200) { throw 'UniFi API HTTP ' + req.getStatus(); }
+            var body = JSON.parse(resp);
+            var d = (body.data && body.data[0]) || null;
+            if (!d) { throw 'UniFi: device ' + mac + ' not found on site "' + site + '"'; }
+            var ss = d['system-stats'] || {};
+            var out = {
+              state: d.state,
+              model: d.model || '',
+              version: d.version || d.displayable_version || '',
+              uptime: d.uptime || 0,
+              cpu: parseFloat(ss.cpu),
+              mem: parseFloat(ss.mem),
+              poe_total_w: 0,
+              ports: []
+            };
+            if (typeof d.general_temperature === 'number') { out.temp = d.general_temperature; }
+            if (d.uplink) {
+              out.uplink_rx_bps = (d.uplink['rx_bytes-r'] || 0) * 8;
+              out.uplink_tx_bps = (d.uplink['tx_bytes-r'] || 0) * 8;
             }
-            function norm(m) { return String(m || '').toLowerCase().replace(/[^0-9a-f]/g, ''); }
-            var sites = get('/sites?limit=200').data || [];
-            if (!sites.length) { throw 'UniFi: the API key sees no sites'; }
-            var want = String(p.site || 'default').toLowerCase();
-            var siteId = sites[0].id;
-            for (var i = 0; i < sites.length; i++) {
-              if (String(sites[i].name || '').toLowerCase() === want) { siteId = sites[i].id; break; }
+            var pt = d.port_table || [];
+            for (var i = 0; i < pt.length; i++) {
+              var q = pt[i];
+              var w = parseFloat(q.poe_power || '0') || 0;
+              out.poe_total_w += w;
+              out.ports.push({
+                idx: q.port_idx,
+                name: q.name || ('Port ' + q.port_idx),
+                up: q.up ? 1 : 0,
+                speed_bps: (q.speed || 0) * 1000000,
+                poe: q.port_poe ? 1 : 0,
+                poe_w: w,
+                in_bps: (q['rx_bytes-r'] || 0) * 8,
+                out_bps: (q['tx_bytes-r'] || 0) * 8
+              });
             }
-            var devices = get('/sites/' + siteId + '/devices?limit=200').data || [];
-            var devId = null, mac = norm(p.mac);
-            for (var j = 0; j < devices.length; j++) {
-              if (norm(devices[j].macAddress) === mac) { devId = devices[j].id; break; }
-            }
-            if (devId === null) { throw 'UniFi: no device with MAC ' + p.mac + ' on the site'; }
-            var detail = get('/sites/' + siteId + '/devices/' + devId);
-            var stats = get('/sites/' + siteId + '/devices/' + devId + '/statistics/latest');
-            return JSON.stringify({ detail: detail, stats: stats });
+            out.poe_total_w = Math.round(out.poe_total_w * 100) / 100;
+            return JSON.stringify(out);
           parameters:
             - name: url
               value: '{$UNIFI.URL}'
@@ -73,22 +95,22 @@ zabbix_export:
           history: 7d
           trends: 365d
           value_type: UNSIGNED
-          description: '1 = the controller reports the switch ONLINE (adopted and provisioned), 0 = any other state.'
+          description: '1 = the controller reports the switch connected, 0 = anything else. Not a curated sensor - it exists to drive the offline trigger.'
           master_item:
             key: unifi.switch.raw
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$.detail.state'
+                - '$.state'
             - type: JAVASCRIPT
               parameters:
-                - 'return value === "ONLINE" ? 1 : 0;'
+                - 'return String(value) === "1" ? 1 : 0;'
           triggers:
             - uuid: c1b747b6938b42dea2c759fc6784e1d1
               expression: 'max(/Argus UniFi Switch by HTTP/unifi.device.state,#3)=0'
               name: 'Switch offline on the UniFi controller'
               priority: HIGH
-              description: 'The controller has not reported the switch ONLINE on the last 3 checks.'
+              description: 'The controller has not reported the switch connected on the last 3 checks.'
         - uuid: ca43082bc0b84569be64e7390cadb56c
           name: 'CPU utilization'
           type: DEPENDENT
@@ -103,7 +125,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$.stats.cpuUtilizationPct'
+                - '$.cpu'
           triggers:
             - uuid: 675fe545ec37425cb8fb55280c2f3fee
               expression: 'min(/Argus UniFi Switch by HTTP/unifi.cpu.util,#3)>={$CPU.UTIL.WARN} and min(/Argus UniFi Switch by HTTP/unifi.cpu.util,#3)<{$CPU.UTIL.HIGH}'
@@ -129,7 +151,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$.stats.memoryUtilizationPct'
+                - '$.mem'
           triggers:
             - uuid: 0ae790aff9d44da9b9d58b242bcdef79
               expression: 'min(/Argus UniFi Switch by HTTP/unifi.mem.util,#3)>={$MEM.USED.WARN} and min(/Argus UniFi Switch by HTTP/unifi.mem.util,#3)<{$MEM.USED.HIGH}'
@@ -155,7 +177,40 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$.stats.uptimeSec'
+                - '$.uptime'
+        - uuid: d450d2c0a8d646f5a23decdc55474c9a
+          name: Temperature
+          type: DEPENDENT
+          key: unifi.temp
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '°C'
+          description: 'General temperature; only models that report one deliver a value (others discard).'
+          master_item:
+            key: unifi.switch.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.temp'
+              error_handler: DISCARD_VALUE
+        - uuid: ec2b651249f649278724e23c4ca82fc6
+          name: 'PoE power draw'
+          type: DEPENDENT
+          key: unifi.poe.total
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: W
+          description: 'Total PoE power currently delivered across all ports.'
+          master_item:
+            key: unifi.switch.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.poe_total_w'
         - uuid: 5bd62ec03c0e4aff97f050ac8961126a
           name: 'Firmware version'
           type: DEPENDENT
@@ -169,7 +224,7 @@ zabbix_export:
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$.detail.firmwareVersion'
+                - '$.version'
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d
@@ -182,13 +237,13 @@ zabbix_export:
           trends: 365d
           value_type: FLOAT
           units: bps
-          description: 'Uplink receive rate as reported by the controller. Discarded when the controller sends no uplink block (e.g. right after adoption).'
+          description: 'Uplink receive rate. Discarded when the controller sends no uplink block.'
           master_item:
             key: unifi.switch.raw
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$.stats.uplink.rxRateBps'
+                - '$.uplink_rx_bps'
               error_handler: DISCARD_VALUE
         - uuid: 2188a1d388804b44a47ce668f3c879e3
           name: 'Uplink traffic out'
@@ -199,13 +254,13 @@ zabbix_export:
           trends: 365d
           value_type: FLOAT
           units: bps
-          description: 'Uplink transmit rate as reported by the controller.'
+          description: 'Uplink transmit rate.'
           master_item:
             key: unifi.switch.raw
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$.stats.uplink.txRateBps'
+                - '$.uplink_tx_bps'
               error_handler: DISCARD_VALUE
       discovery_rules:
         - uuid: 939f7f3c014e403a8ed84dacbe0b1872
@@ -213,7 +268,7 @@ zabbix_export:
           type: DEPENDENT
           key: unifi.port.discovery
           delay: '0'
-          description: 'Physical switch ports from the controller device detail - only ports that exist.'
+          description: 'Physical switch ports from the controller - only ports that exist.'
           master_item:
             key: unifi.switch.raw
           preprocessing:
@@ -221,10 +276,10 @@ zabbix_export:
               parameters:
                 - |
                   var d = JSON.parse(value);
-                  var ports = (d.detail.interfaces && d.detail.interfaces.ports) || [];
+                  var ports = d.ports || [];
                   var out = [];
                   for (var i = 0; i < ports.length; i++) {
-                    out.push({ '{#PORTIDX}': String(ports[i].idx) });
+                    out.push({ '{#PORTIDX}': String(ports[i].idx), '{#PORTNAME}': ports[i].name, '{#POE}': String(ports[i].poe) });
                   }
                   return JSON.stringify(out);
           item_prototypes:
@@ -244,9 +299,9 @@ zabbix_export:
                   parameters:
                     - |
                       var d = JSON.parse(value);
-                      var ports = (d.detail.interfaces && d.detail.interfaces.ports) || [];
+                      var ports = d.ports || [];
                       for (var i = 0; i < ports.length; i++) {
-                        if (String(ports[i].idx) === '{#PORTIDX}') { return ports[i].state === 'UP' ? 1 : 0; }
+                        if (String(ports[i].idx) === '{#PORTIDX}') { return ports[i].up; }
                       }
                       throw 'port {#PORTIDX} not reported';
             - uuid: 9d532310ce7d442aa0356a921725a310
@@ -266,9 +321,102 @@ zabbix_export:
                   parameters:
                     - |
                       var d = JSON.parse(value);
-                      var ports = (d.detail.interfaces && d.detail.interfaces.ports) || [];
+                      var ports = d.ports || [];
                       for (var i = 0; i < ports.length; i++) {
-                        if (String(ports[i].idx) === '{#PORTIDX}') { return (ports[i].speedMbps || 0) * 1000000; }
+                        if (String(ports[i].idx) === '{#PORTIDX}') { return ports[i].speed_bps; }
+                      }
+                      throw 'port {#PORTIDX} not reported';
+            - uuid: c5bfba230f1b49b39c8567f828ec8369
+              name: 'Port {#PORTIDX} traffic in'
+              type: DEPENDENT
+              key: 'unifi.port.in[{#PORTIDX}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: bps
+              description: 'Receive rate on the port (controller-computed).'
+              master_item:
+                key: unifi.switch.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var ports = d.ports || [];
+                      for (var i = 0; i < ports.length; i++) {
+                        if (String(ports[i].idx) === '{#PORTIDX}') { return ports[i].in_bps; }
+                      }
+                      throw 'port {#PORTIDX} not reported';
+            - uuid: 2efbf39f2ee34ae1b0e62d2eaee5a160
+              name: 'Port {#PORTIDX} traffic out'
+              type: DEPENDENT
+              key: 'unifi.port.out[{#PORTIDX}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: bps
+              description: 'Transmit rate on the port (controller-computed).'
+              master_item:
+                key: unifi.switch.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var ports = d.ports || [];
+                      for (var i = 0; i < ports.length; i++) {
+                        if (String(ports[i].idx) === '{#PORTIDX}') { return ports[i].out_bps; }
+                      }
+                      throw 'port {#PORTIDX} not reported';
+        - uuid: ba722f38ebf14b30a9d8dc490385f90b
+          name: 'PoE port discovery'
+          type: DEPENDENT
+          key: unifi.poe.discovery
+          delay: '0'
+          description: 'The subset of ports that are PoE-capable - only those get a PoE power sensor.'
+          master_item:
+            key: unifi.switch.raw
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#POE}'
+                value: '^1$'
+                operator: MATCHES_REGEX
+                formulaid: A
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  var ports = d.ports || [];
+                  var out = [];
+                  for (var i = 0; i < ports.length; i++) {
+                    out.push({ '{#PORTIDX}': String(ports[i].idx), '{#PORTNAME}': ports[i].name, '{#POE}': String(ports[i].poe) });
+                  }
+                  return JSON.stringify(out);
+          item_prototypes:
+            - uuid: b37e494c1af146baa45f9aa577913dd0
+              name: 'Port {#PORTIDX} PoE power'
+              type: DEPENDENT
+              key: 'unifi.port.poe[{#PORTIDX}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: W
+              description: 'PoE power currently delivered on the port (0 when nothing draws).'
+              master_item:
+                key: unifi.switch.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var ports = d.ports || [];
+                      for (var i = 0; i < ports.length; i++) {
+                        if (String(ports[i].idx) === '{#PORTIDX}') { return ports[i].poe_w; }
                       }
                       throw 'port {#PORTIDX} not reported';
       macros:
@@ -294,5 +442,5 @@ zabbix_export:
           value: ''
           description: 'MAC address of the switch this host represents. Set per host.'
         - macro: '{$UNIFI.SITE}'
-          value: 'Default'
-          description: 'UniFi site name on the controller (the first site is used when no name matches).'
+          value: 'default'
+          description: "The site's internal short name on the controller (the first site is 'default')."

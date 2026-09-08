@@ -95,7 +95,7 @@ var registry = []Class{
 			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
 			{Macro: "{$UNIFI.KEY}", Label: "API key", Hint: "UniFi Network → Settings → Control Plane → Integrations", Required: true, Secret: true},
 			{Macro: "{$UNIFI.MAC}", Label: "Switch MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true},
-			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "Default"},
+			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "default"},
 		},
 	},
 }
