@@ -12,7 +12,8 @@ type User = { id: number; email: string; name: string; surname: string; role: st
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number }
 type Group = { id: string; name: string; hosts: number }
-type DeviceClass = { id: string; label: string; family: string; pattern: string; iface: string; offers_http: boolean; icon?: string }
+type MacroSpec = { macro: string; label: string; hint?: string; required?: boolean; secret?: boolean }
+type DeviceClass = { id: string; label: string; family: string; pattern: string; iface: string; offers_http: boolean; icon?: string; macros?: MacroSpec[] }
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[] }
@@ -3156,10 +3157,12 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
   const [snmpPort, setSnmpPort] = useState('161')
   const [snmpOverride, setSnmpOverride] = useState(false) // enter creds for this host instead of inheriting
   const [proxySnmp, setProxySnmp] = useState<{ set: boolean } | null>(null) // does the chosen proxy have a default?
+  const [macroVals, setMacroVals] = useState<Record<string, string>>({}) // class-declared per-host macros
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   const cls = classes.find((c) => c.id === classId)
+  const classMacros = cls?.macros || []
   const needsSnmp = cls?.iface === 'snmp'
   const offersHttp = !!cls?.offers_http
   const proxyName = proxies.find((p) => p.id === proxyId)?.name || 'the proxy'
@@ -3181,8 +3184,16 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
     if (useIp && !ip.trim()) { setErr('An IP address is required'); return }
     if (!useIp && !dns.trim()) { setErr('A DNS name is required'); return }
     if (showSnmpFields && !community.trim()) { setErr('An SNMP community is required'); return }
+    for (const ms of classMacros) {
+      if (ms.required && !(macroVals[ms.macro] || '').trim()) { setErr(`${ms.label} is required`); return }
+    }
     setBusy(true); setErr(null)
     const body: Record<string, unknown> = { name: name.trim(), ip: ip.trim(), dns: dns.trim(), use_ip: useIp, site: site.trim(), proxy_id: proxyId, class_id: classId }
+    if (classMacros.length) {
+      const m: Record<string, string> = {}
+      for (const ms of classMacros) { const v = (macroVals[ms.macro] || '').trim(); if (v) m[ms.macro] = v }
+      if (Object.keys(m).length) body.macros = m
+    }
     if (offersHttp && http) { body.http = true; body.http_scheme = httpScheme; if (httpPort.trim()) body.http_port = httpPort.trim() }
     // Omit snmp to inherit the proxy default; send it only when overriding or no default exists.
     if (showSnmpFields) body.snmp = { version: snmpVersion, community: community.trim(), port: snmpPort.trim() || '161' }
@@ -3227,6 +3238,15 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
                 <Field label="SNMP port" value={snmpPort} onChange={(e) => setSnmpPort(e.target.value)} />
               </div>
             )}
+          </div>
+        )}
+        {classMacros.length > 0 && (
+          <div style={grid}>
+            {classMacros.map((ms) => (
+              <Field key={ms.macro} label={ms.label + (ms.required ? '' : ' (optional)')} type={ms.secret ? 'password' : 'text'}
+                placeholder={ms.hint} value={macroVals[ms.macro] || ''}
+                onChange={(e) => setMacroVals((v) => ({ ...v, [ms.macro]: e.target.value }))} />
+            ))}
           </div>
         )}
         {offersHttp && (

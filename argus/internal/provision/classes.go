@@ -31,17 +31,28 @@ const (
 	IfaceSNMP  IfaceKind = "snmp"  // SNMP — Zabbix type 2, default port 161
 )
 
+// MacroSpec is a per-host macro the attach UI asks for when creating a host of this class - how
+// API-source classes (UniFi, later Nutanix/XCP-NG/…) receive their endpoint and credentials.
+type MacroSpec struct {
+	Macro    string `json:"macro"`    // Zabbix macro name, e.g. "{$UNIFI.URL}"
+	Label    string `json:"label"`    // form label
+	Hint     string `json:"hint"`     // placeholder / example
+	Required bool   `json:"required"` // creation fails without it
+	Secret   bool   `json:"secret"`   // stored as a Zabbix secret macro (write-only afterwards)
+}
+
 // Class is a device class in the registry: the metadata that drives provisioning (which Zabbix
 // templates to attach and what interface the host needs) and, later, discovery + the management UI.
 type Class struct {
-	ID         string    `json:"id"`         // stable Argus id, e.g. "linux-snmp"
-	Label      string    `json:"label"`      // human name, e.g. "Generic Linux (SNMP)"
-	Family     string    `json:"family"`     // UI grouping, e.g. "Linux", "UniFi", "Base"
-	Pattern    Pattern   `json:"pattern"`    //
-	Iface      IfaceKind `json:"iface"`      // interface the host needs (agent/snmp/none)
-	Templates  []string  `json:"templates"`  // Zabbix templates to attach (Base Ping is added on top)
-	OffersHTTP bool      `json:"offers_http"` // the HTTP/HTTPS add-on may be attached to this class
-	Icon       string    `json:"icon"`       // tree glyph name (server, switch, shield, …); see web devIcon map
+	ID         string      `json:"id"`         // stable Argus id, e.g. "linux-snmp"
+	Label      string      `json:"label"`      // human name, e.g. "Generic Linux (SNMP)"
+	Family     string      `json:"family"`     // UI grouping, e.g. "Linux", "UniFi", "Base"
+	Pattern    Pattern     `json:"pattern"`    //
+	Iface      IfaceKind   `json:"iface"`      // interface the host needs (agent/snmp/none)
+	Templates  []string    `json:"templates"`  // Zabbix templates to attach (Base Ping is added on top)
+	OffersHTTP bool        `json:"offers_http"` // the HTTP/HTTPS add-on may be attached to this class
+	Icon       string      `json:"icon"`       // tree glyph name (server, switch, shield, …); see web devIcon map
+	Macros     []MacroSpec `json:"macros,omitempty"` // per-host macros the attach UI collects
 }
 
 // registry is the catalog. C0 shipped the universal "base" class (Ping only); C1 adds Generic Linux
@@ -67,6 +78,25 @@ var registry = []Class{
 		Templates:  []string{"Argus Linux by SNMP"},
 		OffersHTTP: true,
 		Icon:       "server",
+	},
+	{
+		// The host's own interface is the switch's IP (Base Ping runs against it); the metrics come
+		// from the UniFi controller through the Integration API, addressed by the macros below - so
+		// one template covers a cloud gateway (:443) and a self-hosted console on a custom port.
+		ID:         "unifi-switch",
+		Label:      "UniFi Switch",
+		Family:     "UniFi",
+		Pattern:    PatternHTTPAPI,
+		Iface:      IfaceAgent,
+		Templates:  []string{"Argus UniFi Switch by HTTP"},
+		OffersHTTP: false,
+		Icon:       "switch",
+		Macros: []MacroSpec{
+			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
+			{Macro: "{$UNIFI.KEY}", Label: "API key", Hint: "UniFi Network → Settings → Control Plane → Integrations", Required: true, Secret: true},
+			{Macro: "{$UNIFI.MAC}", Label: "Switch MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true},
+			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "Default"},
+		},
 	},
 }
 
