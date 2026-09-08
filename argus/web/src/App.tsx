@@ -3679,7 +3679,10 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                   let channels: GroupChan[] = row.items.filter((i) => i.numeric && i.supported).map((i) =>
                     row.cat === 'Ping' && i.channel === 'Reachable'
                       ? { id: i.id, label: 'Downtime', units: '', invert: true } // show only when unreachable (PRTG-style)
-                      : { id: i.id, label: i.channel || i.label || i.name, units: i.units })
+                      // A port's Speed and Link are constants - start their lines hidden (legend keeps
+                      // the value; a click reveals the line). Hiding Speed also lets the bps axis
+                      // range to the In/Out traffic instead of pinning at the negotiated gigabits.
+                      : { id: i.id, label: i.channel || i.label || i.name, units: i.units, defaultOff: row.cat === 'Ports' && (i.channel === 'Speed' || i.channel === 'Link') })
                   // Put the primary/headline channel first so it owns the left axis + the accent colour.
                   const pIdx = channels.findIndex((cc) => cc.id === primary.id)
                   if (pIdx > 0) channels = [channels[pIdx], ...channels.slice(0, pIdx), ...channels.slice(pIdx + 1)]
@@ -4201,7 +4204,7 @@ const DOWNTIME_STROKE = '#d64550'
 const DOWNTIME_FILL = 'rgba(214, 69, 80, 0.30)'
 
 // invert turns a reachable (1=up) channel into downtime (spikes to 1 when down), drawn as a red band.
-type GroupChan = { id: string; label: string; units: string; invert?: boolean }
+type GroupChan = { id: string; label: string; units: string; invert?: boolean; defaultOff?: boolean }
 
 // colorLegendChecks tints each legend row's check (the ::after from theme.css) with that series'
 // colour, by copying the marker's border colour into a --mk custom property uPlot doesn't expose.
@@ -4214,7 +4217,7 @@ function colorLegendChecks(u: uPlot) {
 // buildMultiPlot overlays several channels on one uPlot: timestamps are unioned, each distinct unit
 // gets its own scale (axes drawn for the first two, left/right), and the legend lists every channel
 // with its live value and toggles it on click. xrange pins the x-axis to the requested window.
-function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean }[], width: number, c: ChartColors, xrange?: [number, number], onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
+function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean; off?: boolean }[], width: number, c: ChartColors, xrange?: [number, number], onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
   // Bucket timestamps to the typical sampling interval so channels sampled at slightly offset clocks
   // land on the same x (else the line renders as dots) while a genuine gap still breaks the line.
   const deltas: number[] = []
@@ -4285,6 +4288,7 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
     // The first (primary) channel is drawn a touch heavier so it reads as the main field.
     uplotSeries.push({
       label: s.label,
+      show: !s.off, // constants (a port's Speed/Link) start hidden - the legend keeps the value, a click reveals the line
       stroke: s.downtime ? DOWNTIME_STROKE : SERIES_COLORS[i % SERIES_COLORS.length],
       fill: s.downtime ? DOWNTIME_FILL : undefined,
       width: s.downtime ? 1 : i === 0 ? 2 : 1.5,
@@ -4302,7 +4306,7 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   const p0 = series[0]
   const extraYs: (number | null)[][] = []
   const bands: uPlot.Band[] = []
-  if (p0 && !p0.downtime && p0.points.some((p) => p.lo != null && p.hi != null)) {
+  if (p0 && !p0.downtime && !p0.off && p0.points.some((p) => p.lo != null && p.hi != null)) {
     const lo: (number | null)[] = new Array(xs.length).fill(null)
     const hi: (number | null)[] = new Array(xs.length).fill(null)
     p0.points.forEach((p) => { const i = xi.get(round(p.t)); if (i !== undefined) { lo[i] = p.lo ?? null; hi[i] = p.hi ?? null } })
@@ -4339,7 +4343,7 @@ function zoomHook(onZoom: ((z: boolean) => void) | undefined, xrange: [number, n
 // a click-to-toggle legend - the PRTG "sensor with channels" view. Long ranges use each channel's avg.
 function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
   const [range, setRange] = useState('2h')
-  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean }[] | null>(null)
+  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean; off?: boolean }[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
   const [themeTick, setThemeTick] = useState(0)
@@ -4360,7 +4364,7 @@ function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
     setError(null)
     Promise.all(channels.map((ch) =>
       fetch(`/api/items/${ch.id}/history?range=${range}`).then((r) => (r.ok ? r.json() : null)).then((d: Series | null) => ({
-        label: ch.label, units: ch.units, downtime: !!ch.invert,
+        label: ch.label, units: ch.units, downtime: !!ch.invert, off: !!ch.defaultOff,
         // invert reachability into downtime: up (>0) -> 0, down -> 1. lo/hi carry the trend min/max
         // (present only on long ranges) so the primary channel can draw a shaded envelope.
         points: d ? d.points.map((p) => { let v = p.v ?? p.avg ?? null; if (ch.invert && v != null) v = v > 0 ? 0 : 1; return { t: p.t, v, lo: ch.invert ? null : (p.min ?? null), hi: ch.invert ? null : (p.max ?? null) } }) : [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[],

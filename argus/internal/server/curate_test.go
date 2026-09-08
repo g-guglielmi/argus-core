@@ -28,3 +28,24 @@ func TestClassifyUnifiPorts(t *testing.T) {
 		}
 	}
 }
+
+// Labels with embedded numbers sort numerically ("Port 2" before "Port 10").
+func TestNaturalLess(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"Port 2 link", "Port 10 link", true},
+		{"Port 10 link", "Port 2 link", false},
+		{"Port 2 link", "Port 2 speed", true},
+		{"Traffic in (eth2)", "Traffic in (eth10)", true},
+		{"Port 2", "Port 2", false},
+		{"Port 02", "Port 2", false}, // equal numerically; equal-length tiebreak keeps order stable
+		{"CPU", "Memory", true},
+	}
+	for _, c := range cases {
+		if got := naturalLess(c.a, c.b); got != c.want {
+			t.Errorf("naturalLess(%q, %q) = %v, want %v", c.a, c.b, got, c.want)
+		}
+	}
+}
