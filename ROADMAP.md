@@ -71,14 +71,14 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 (**SNMP-first**; ~23 classes across 5 patterns). Built in three phases:
 
 **C0 - Framework (unblocks all):**
-- [ ] Zabbix client: add `configuration.import`, `template.get`, `host.create`, template/group/macro attach, `usermacro.*` - _(BE)_ M
-- [ ] Startup template-reconcile (version the set, import if changed) + `argus/internal/provision/templates/` home - _(BE)_ S-M
-- [ ] Class **registry** (generalize `classifyItem` → class catalog) + `device_class` overlay table keyed by `host_id` - _(BE)_ M
-- [ ] Minimal **manual attach** path (`POST /api/hosts` → create host, attach class templates/macros/interface) - _(BE)_ M
-- [ ] **Base/Ping** template + **HTTP/HTTPS-custom-port** add-on (the universal slice, end-to-end) - _(BE)_ S
+- [x] Zabbix client: add `configuration.import`, `template.get`, `host.create`, template/group/macro attach, `usermacro.*` - v0.5.0
+- [x] Startup template-reconcile (version the set, import if changed) + `argus/internal/provision/templates/` home - v0.5.0
+- [x] Class **registry** (generalize `classifyItem` → class catalog) + `device_class` overlay table keyed by `host_id` - v0.5.0
+- [x] Minimal **manual attach** path (`POST /api/hosts` → create host, attach class templates/macros/interface) - the "+ Add device" band in Sites & hosts - v0.5.0
+- [x] **Base/Ping** template + **HTTP/HTTPS-custom-port** add-on (the universal slice, end-to-end) - v0.5.0
 
 **C1 - Vertical slice (prove both dominant patterns):**
-- [ ] **Generic Linux SNMP** template (host-resources+UCD+IF-MIB, fs/NIC LLD, §6 macros) - _(BE)_ M
+- [x] **Generic Linux SNMP** template (host-resources+UCD+IF-MIB, fs/NIC LLD, §6 macros) - lab-confirmed collecting core metrics + per-mount disks + per-NIC traffic; Add-device inherits the proxy SNMP defaults - v0.5.0
 - [ ] **UniFi Switch** HTTP-API template (self-hosted controller; master+dependent items, port LLD) - _(BE)_ M
 - [ ] Done = host created via Argus → template attached → sensors show with right labels/units → §6 triggers fire → LLD only-real instances → a per-host threshold override works
 
