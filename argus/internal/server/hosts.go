@@ -430,9 +430,10 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				continue // hide un-curated "noise" in the default view
 			}
-			// A UniFi device with no temperature probe reports a constant 0 - hide the meaningless
-			// row (the template also stops collecting it; this hides the stale last value too).
-			if it.Key == "unifi.temp" {
+			// Capability placeholders: a UniFi device without a temperature probe, or a switch
+			// without PoE, reports a constant 0 - hide the meaningless row (the template also stops
+			// collecting these; the value check hides the stale last value too).
+			if hideWhenZero[it.Key] {
 				if v := pf(it.LastValue); v == nil || *v == 0 {
 					continue
 				}

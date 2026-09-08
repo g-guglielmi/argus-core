@@ -73,6 +73,13 @@ func param(params []string, i int) string {
 	return ""
 }
 
+// hideWhenZero marks sensors that are capability placeholders when they read 0 (a device without a
+// temperature probe or without PoE reports a constant 0) - the curated view drops such rows.
+var hideWhenZero = map[string]bool{
+	"unifi.temp":      true,
+	"unifi.poe.total": true,
+}
+
 // naturalLess compares labels with embedded numbers numerically, so "Port 2" sorts before
 // "Port 10" (and eth2 before eth10). Digit runs compare as integers; everything else bytewise.
 func naturalLess(a, b string) bool {
