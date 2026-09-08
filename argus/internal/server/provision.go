@@ -195,6 +195,9 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// Kick the class's discovery rules shortly after creation (delayed until the proxy has synced the
+	// new config), so per-instance sensors appear in seconds instead of after the rules' interval.
+	s.scheduleDiscovery(hostID)
 	writeJSON(w, http.StatusOK, map[string]string{"id": hostID, "class": class.ID})
 }
 

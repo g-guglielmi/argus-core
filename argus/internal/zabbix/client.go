@@ -319,6 +319,41 @@ func (c *Client) Items(ctx context.Context, hostID string) ([]Item, error) {
 	return items, c.call(ctx, "item.get", params, true, &items)
 }
 
+// DiscoveryRule is a low-level discovery (LLD) rule on a host (filesystem discovery, NIC discovery, …).
+type DiscoveryRule struct {
+	ItemID string `json:"itemid"`
+	Name   string `json:"name"`
+	Key    string `json:"key_"`
+}
+
+// DiscoveryRules returns a host's enabled LLD rules.
+func (c *Client) DiscoveryRules(ctx context.Context, hostID string) ([]DiscoveryRule, error) {
+	params := map[string]any{
+		"output":  []string{"itemid", "name", "key_"},
+		"hostids": hostID,
+		"filter":  map[string]any{"status": "0"},
+	}
+	var rules []DiscoveryRule
+	return rules, c.call(ctx, "discoveryrule.get", params, true, &rules)
+}
+
+// ExecuteNow queues a Zabbix "execute now" task (task.create type 6) for each given item or LLD rule
+// id - the same action as the frontend's "Execute now" in Zabbix itself. For a proxy-monitored host
+// Zabbix forwards the task to the proxy on its next sync.
+func (c *Client) ExecuteNow(ctx context.Context, itemIDs []string) error {
+	if len(itemIDs) == 0 {
+		return nil
+	}
+	tasks := make([]map[string]any, 0, len(itemIDs))
+	for _, id := range itemIDs {
+		tasks = append(tasks, map[string]any{"type": 6, "request": map[string]any{"itemid": id}})
+	}
+	var out struct {
+		TaskIDs []string `json:"taskids"`
+	}
+	return c.call(ctx, "task.create", tasks, true, &out)
+}
+
 type ItemHost struct {
 	HostID string `json:"hostid"`
 	Name   string `json:"name"`
