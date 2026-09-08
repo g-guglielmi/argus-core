@@ -292,7 +292,7 @@ a { color: var(--accent); }
 /* Column order + proportions mirror the host sensor table: sensor/value roomy, trend 16%, then the
    compact priority and last-check pair (cols 5/6 after the swap). Plain percentages only: Chrome
    ignores calc(% - px) on fixed-layout table columns and falls back to equal widths. */
-.slist-sensors  th:nth-child(1){width:15%} .slist-sensors  th:nth-child(2){width:26%} .slist-sensors  th:nth-child(3){width:20%} .slist-sensors  th:nth-child(4){width:16%} .slist-sensors  th:nth-child(5){width:10%} .slist-sensors  th:nth-child(6){width:9%} .slist-sensors  th:nth-child(7){width:4%}
+.slist-sensors  th:nth-child(1){width:20%} .slist-sensors  th:nth-child(2){width:20%} .slist-sensors  th:nth-child(3){width:20%} .slist-sensors  th:nth-child(4){width:18%} .slist-sensors  th:nth-child(5){width:10%} .slist-sensors  th:nth-child(6){width:8%} .slist-sensors  th:nth-child(7){width:4%}
 .slist-sensors td.act, .slist-sensors th:nth-child(7) { padding-left: 6px; padding-right: 12px; }
 .slist-problems th:nth-child(1){width:12%} .slist-problems th:nth-child(2){width:37%} .slist-problems th:nth-child(3){width:15%} .slist-problems th:nth-child(4){width:9%}  .slist-problems th:nth-child(5){width:11%} .slist-problems th:nth-child(6){width:10%} .slist-problems th:nth-child(7){width:6%}
 .slist td.slprio, .slist td.slsev { white-space: nowrap; }
