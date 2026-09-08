@@ -305,6 +305,16 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	case "unifi.speedtest.up":
 		return "Network", "Speedtest upload", "", "", true
 
+	// unRAID (Argus unRAID by SNMP, attached alongside the Linux template): the SNMP plugin's
+	// extend scripts deliver per-disk temperatures - grouped into ONE overlay chart - and
+	// per-share free space (flat rows under Disk, after the mounts).
+	case "unraid.disktemp.raw", "unraid.sharefree.raw":
+		return "", "", "", "", false // plumbing masters ("...temperatures..." must not hit the name heuristic)
+	case "unraid.disktemp":
+		return "Temperature", name, "Disk temperatures", param(p, 0), true
+	case "unraid.sharefree":
+		return "Disk", name, "", "", true
+
 	// HTTP/HTTPS endpoint add-on (Argus HTTP Endpoint template). The key params are macros
 	// ({$HTTP.SCHEME}/{$HTTP.PORT}), so the label is fixed rather than derived from them.
 	case "net.tcp.service":

@@ -28,7 +28,8 @@ func TestLoadTemplates(t *testing.T) {
 		all += d.content
 	}
 	for _, want := range []string{TemplateBasePing, TemplateHTTP, "Argus Linux by SNMP", "icmpping", "{$HTTP.PORT}", "{$PING.LOSS.WARN}", "{$CPU.UTIL.WARN}", "vfs.fs.discovery", "net.if.discovery",
-		"Argus UniFi Switch by HTTP", "Argus UniFi AP by HTTP", "Argus UniFi Gateway by HTTP", "unifi.radio.discovery", "unifi.wan.discovery", "{$UNIFI.WAN.AVAIL.MIN}"} {
+		"Argus UniFi Switch by HTTP", "Argus UniFi AP by HTTP", "Argus UniFi Gateway by HTTP", "unifi.radio.discovery", "unifi.wan.discovery", "{$UNIFI.WAN.AVAIL.MIN}",
+		"Argus unRAID by SNMP", "unraid.disktemp.discovery", "unraid.share.discovery", "{$DISK.TEMP.WARN}"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("templates missing %q", want)
 		}
@@ -81,5 +82,13 @@ func TestRegistry(t *testing.T) {
 	}
 	if _, ok := ClassByID("does-not-exist"); ok {
 		t.Fatal("unexpected class")
+	}
+	// unRAID stacks the unRAID extras on top of the Linux SNMP template (multi-template attach).
+	ur, ok := ClassByID("unraid")
+	if !ok {
+		t.Fatal("unraid class missing")
+	}
+	if ur.Pattern != PatternSNMP || ur.Iface != IfaceSNMP || len(ur.Templates) != 2 || len(ur.Macros) != 0 {
+		t.Fatalf("unexpected unraid class: %+v", ur)
 	}
 }
