@@ -3636,6 +3636,13 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
     if (cat === 'Network') { const inn = gi.find((x) => x.channel === 'In'), out = gi.find((x) => x.channel === 'Out'); return { node: <span>↓ {reading(inn) ?? '—'} &nbsp;&nbsp; ↑ {reading(out) ?? '—'}</span>, primary: inn || gi[0] } }
     if (cat === 'Disk') { const pu = gi.find((x) => (x.channel || '').startsWith('Used %')) || gi[0]; return { node: reading(pu), primary: pu } }
     if (cat === 'Ping') { const rt = gi.find((x) => x.channel === 'Response time') || gi[0]; return { node: reading(rt), primary: rt } }
+    // A port reads by its negotiated speed (the Link channel is a bare 1/0); a down port says so.
+    if (cat === 'Ports') {
+      const sp = gi.find((x) => x.channel === 'Speed') || gi[0]
+      const ln = gi.find((x) => x.channel === 'Link')
+      if (ln && ln.last_value !== '' && Number(ln.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>down</span>, primary: sp }
+      return { node: reading(sp), primary: sp }
+    }
     return { node: reading(gi[0]), primary: gi[0] }
   }
 

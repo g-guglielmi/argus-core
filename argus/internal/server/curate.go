@@ -20,18 +20,19 @@ var cpuUtilKeep = map[string]bool{
 	"steal":  true,
 }
 
-// categoryOrder controls how categories are grouped/sorted in the curated view.
+// categoryOrder controls how categories are grouped/sorted in the curated view (user-specified:
+// availability first, then traffic, compute, storage, uptime, ports; Status metadata last).
 var categoryOrder = map[string]int{
 	"Ping":        0,
-	"Status":      1,
-	"Web":         2,
+	"Web":         1,
+	"Network":     2,
 	"CPU":         3,
 	"Memory":      4,
 	"Disk":        5,
-	"Network":     6,
+	"Uptime":      6,
 	"Ports":       7,
 	"Temperature": 8,
-	"Uptime":      9,
+	"Status":      9,
 }
 
 // splitKey returns the base key and its parameters, e.g. vfs.fs.size[/,pused] ->
@@ -154,8 +155,8 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 
 	// UniFi devices, polled from the controller (Argus UniFi Switch by HTTP). The raw master item
 	// (unifi.switch.raw) deliberately doesn't match - it's plumbing, visible under "All sensors".
-	case "unifi.device.state":
-		return "Status", "Controller state", "", "", true
+	// unifi.device.state is also left uncurated (user call: not a useful reading) - it still feeds
+	// the "switch offline on the controller" trigger, it just doesn't take up a sensor row.
 	case "unifi.firmware":
 		return "Status", "Firmware version", "", "", true
 	case "unifi.cpu.util":
