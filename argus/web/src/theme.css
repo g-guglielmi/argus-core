@@ -448,11 +448,11 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
    shoving the other columns around. Mobile keeps auto layout (trend already hidden there). */
 @media (min-width: 769px) {
   table.sensors { table-layout: fixed; }
-  table.sensors thead th:nth-child(1) { width: 38%; }
-  table.sensors thead th:nth-child(2) { width: 22%; }
-  table.sensors thead th:nth-child(3) { width: 15%; }
+  table.sensors thead th:nth-child(1) { width: 30%; }
+  table.sensors thead th:nth-child(2) { width: 30%; }
+  table.sensors thead th:nth-child(3) { width: 18%; }
   table.sensors thead th:nth-child(4) { width: 11%; white-space: nowrap; }
-  table.sensors thead th:nth-child(5) { width: 14%; }
+  table.sensors thead th:nth-child(5) { width: 11%; }
 }
 
 /* PRTG-style priority stars (1..5). Editable stars are buttons; filled stars use a warm amber. */

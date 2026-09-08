@@ -3636,6 +3636,8 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                   // Put the primary/headline channel first so it owns the left axis + the accent colour.
                   const pIdx = channels.findIndex((cc) => cc.id === primary.id)
                   if (pIdx > 0) channels = [channels[pIdx], ...channels.slice(0, pIdx), ...channels.slice(pIdx + 1)]
+                  // Disk reads Used % -> Used -> Total (user pref: live values first, static Total last).
+                  if (row.cat === 'Disk') { const rank: Record<string, number> = { 'Used %': 0, Used: 1, Total: 2 }; channels = [channels[0], ...channels.slice(1).sort((a, b) => (rank[a.label] ?? 9) - (rank[b.label] ?? 9))] }
                   const clickable = channels.length > 0
                   const gState = row.items.reduce((w, i) => { const s = itemState[i.id]; return s && (!w || stateRank[s] > stateRank[w]) ? s : w }, '')
                   const gAcked = !row.items.some((i) => itemState[i.id] && itemAcked[i.id] === false)
@@ -3997,17 +3999,32 @@ function insertGaps(xs: number[], series: (number | null)[][]): [number[], (numb
   return [nx, ns]
 }
 
+// Auto-size a value axis to its longest rendered label ("364d 23h 59m", "953.67 MB", ...) so text
+// never clips regardless of unit - the uPlot autosize recipe: measure the formatted tick strings in
+// the axis font. cycleNum > 1 returns the size the axis already settled on, so layout can't oscillate.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function axisAutoSize(u: any, values: string[] | null, axisIdx: number, cycleNum: number): number {
+  const ax = u.axes[axisIdx]
+  if (cycleNum > 1) return ax._size
+  let size = (typeof ax.ticks?.size === 'number' ? ax.ticks.size : 10) + (typeof ax.gap === 'number' ? ax.gap : 5) + 4
+  const longest = (values ?? []).reduce((a, b) => (b != null && String(b).length > a.length ? String(b) : a), '')
+  if (longest !== '') { u.ctx.font = ax.font[0]; size += u.ctx.measureText(longest).width / (window.devicePixelRatio || 1) }
+  return Math.ceil(size)
+}
+const axisSize = axisAutoSize as unknown as uPlot.Axis['size']
+
 function buildPlot(data: Series, units: string, width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
   const xs = data.points.map((p) => p.t)
   const grid = { stroke: c.grid, width: 1 }
   const ticks = { stroke: c.grid, width: 1 }
   const scaled = scaledUnit(units)
-  // Scaled y-axis ticks (bytes/bits/uptime); otherwise default numeric.
+  // Unit-aware y-axis ticks for every unit ("2.2 %", "3.73 GB", "7d 4h") - uPlot's default formatter
+  // drops the unit and follows the browser locale, which read as bare "2,2" on a % axis.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const yValues = scaled ? ((_u: any, splits: number[]) => splits.map((v) => fmtNum(v, units))) : undefined
-  // Single-metric charts label their axis on the RIGHT (user pref: the values sit beside "now").
-  // Uptime durations ("364d 23h 59m") are the longest labels - give them a wider gutter or they clip.
-  const yAxis: uPlot.Axis = { stroke: c.axis, grid, ticks, side: 1, size: units === 'uptime' ? 88 : 64, values: yValues as unknown as uPlot.Axis['values'] }
+  const yValues = (_u: any, splits: number[]) => splits.map((v) => fmtNum(v, units))
+  // Single-metric charts label their axis on the RIGHT (user pref: the values sit beside "now");
+  // the gutter sizes itself to the longest label via axisSize, so nothing clips.
+  const yAxis: uPlot.Axis = { stroke: c.axis, grid, ticks, side: 1, size: axisSize, values: yValues as unknown as uPlot.Axis['values'] }
   const xAxis: uPlot.Axis = { stroke: c.axis, grid, ticks }
   // Legend cells: show the hovered point, or fall back to the latest value when idle (so the
   // legend is never blank). unitLabel is dropped for scaled units since the value carries it.
@@ -4191,10 +4208,11 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
     const FR = [0, 0.2, 0.4, 0.6, 0.8, 1]
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fracSplits = ((u: any) => { const l = u.scales[scaleKey(units[0])]; return l && l.min != null && l.max != null ? FR.map((f) => l.min + f * (l.max - l.min)) : FR }) as unknown as uPlot.Axis['splits']
-    axes.push({ scale: scaleKey(units[0]), stroke: c.axis, grid, ticks, size: 76, values: yv(units[0]), splits: fracSplits })
-    axes.push({ scale: scaleKey('%'), side: 1, stroke: c.axis, grid: { show: false }, ticks, size: 76, values: yv('%'), splits: (() => FR.map((f) => f * 100)) as unknown as uPlot.Axis['splits'] })
+    axes.push({ scale: scaleKey(units[0]), stroke: c.axis, grid, ticks, size: axisSize, values: yv(units[0]), splits: fracSplits })
+    axes.push({ scale: scaleKey('%'), side: 1, stroke: c.axis, grid: { show: false }, ticks, size: axisSize, values: yv('%'), splits: (() => FR.map((f) => f * 100)) as unknown as uPlot.Axis['splits'] })
   } else {
-    axes.push({ scale: scaleKey(units[0]), stroke: c.axis, grid, ticks, size: 76, values: yv(units[0]) })
+    // A single-scale group (network In/Out) reads like a single-metric chart: axis on the right.
+    axes.push({ scale: scaleKey(units[0]), stroke: c.axis, grid, ticks, size: axisSize, values: yv(units[0]), ...(units.length === 1 ? { side: 1 } : {}) })
     // No pinned scale: the primary owns the grid and the right axis rides ITS gridlines - the same
     // fractional heights mapped into the right scale, recomputed every draw (u.axes[1]._splits).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -4206,7 +4224,7 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
       const dp = smax - smin >= 20 ? 1 : smax - smin >= 2 ? 10 : 100
       return ls.map((v: number) => Math.round((smin + ((v - l.min) / (l.max - l.min)) * (smax - smin)) * dp) / dp)
     }) as unknown as uPlot.Axis['splits']
-    if (units.length > 1) axes.push({ scale: scaleKey(units[1]), side: 1, stroke: c.axis, grid: { show: false }, ticks, size: 76, values: yv(units[1]), splits: rightSplits })
+    if (units.length > 1) axes.push({ scale: scaleKey(units[1]), side: 1, stroke: c.axis, grid: { show: false }, ticks, size: axisSize, values: yv(units[1]), splits: rightSplits })
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const xVal = (u: any, v: number | null) => { const t = v ?? lastVal(u, 0); return t == null ? '--' : new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
@@ -4249,9 +4267,10 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
     extraYs.push(lo, hi)
     bands.push({ series: [minIdx + 1, minIdx], fill: c.fill }) // fill between max and min
   }
-  // Match the single-sensor look: shade under the primary channel - except on trend ranges, where
-  // the min/max band already shades around the line (both would be muddy), and never for downtime.
-  if (p0 && !p0.downtime && !bands.length) (uplotSeries[1] as uPlot.Series).fill = c.fill
+  // Match the single-sensor look: shade under the primary channel - except on trend ranges (the
+  // min/max band already shades around the line), for downtime, and when siblings share the primary's
+  // unit (network In/Out are peers on one scale - shading just one of them reads as favouritism).
+  if (p0 && !p0.downtime && !bands.length && series.filter((s) => s.units === p0.units).length === 1) (uplotSeries[1] as uPlot.Series).fill = c.fill
   // cursor.points.show:false removes uPlot's hover marker dot (see buildPlot) - the real "stray dot".
   const opts = { width, height: 320, scales: scaleCfg, axes, series: uplotSeries, legend: { show: true }, cursor: { points: { show: false } }, bands, ...zoomHook(onZoom, xrange) } as uPlot.Options
   // insertGaps breaks the line where sampling actually stopped (a real outage) instead of drawing a
