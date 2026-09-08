@@ -248,6 +248,14 @@ Runs per-site on the probe, reports to core for provisioning:
 5. **Default thresholds** applied; overridable in the UI.
 6. New devices surface in the UI as **"Discovered - review"** (confirm / adjust / ignore).
 
+**Discovery trigger (shipped with §C).** LLD rules run on a long interval (1h on the SNMP classes),
+so a freshly added host would sit without its per-instance sensors. Two seams close that gap:
+- **Add-device auto-fire:** after `POST /api/hosts` creates the host, the server fires every enabled
+  LLD rule via Zabbix `task.create` ("execute now") in the background - delayed ~15 s (the new
+  config must reach the host's proxy on its next config sync first) with one retry at 60 s.
+- **"Discover now"** (`POST /api/hosts/{id}/discover`, admin/helpdesk): the host kebab in the tree
+  runs the same trigger on demand, for any host with LLD rules - classed or not.
+
 ---
 
 ## 9. Notifications

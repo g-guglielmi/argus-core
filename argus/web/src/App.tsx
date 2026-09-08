@@ -2490,6 +2490,7 @@ const kbIcon = {
   folderOpen: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 8V6.2a1.8 1.8 0 0 1 1.8-1.8h3.9l2 2h6.5A1.8 1.8 0 0 1 20 8.2V9" /><path d="M3 9.2h17.8l-1.9 8.2a1.8 1.8 0 0 1-1.8 1.4H6.4a1.8 1.8 0 0 1-1.8-1.4z" /></svg>,
   gear: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
   trash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" /></svg>,
+  discover: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="8.5" /><path d="M12 12l5-5" /><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" /><path d="M20.5 12a8.5 8.5 0 0 0-2.5-6" opacity="0.5" /></svg>,
 }
 
 // devIcon: the per-host tree glyph, keyed by the `icon` name the backend resolves from a host's device
@@ -2639,6 +2640,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   const showAllEff = advanced && showAll
   const showHiddenEff = advanced && showHidden
   const canPause = role === 'admin' || role === 'helpdesk'
+  const toast = useToast()
   // Per-host ICMP latency sparklines: batch the icmppingsec item ids from the host list, auto-refreshed.
   const icmpSparks = useSparks(hosts.map((h) => h.icmp_item || '').filter(Boolean))
 
@@ -2773,6 +2775,19 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     setBusyId(null)
     if (res && !res.ok) { setError(await errText(res, `Could not resume host`)); return }
     load(); fireDataRefresh()
+  }
+  // Run the host's LLD rules now (Zabbix "execute now"), so new per-instance sensors - disks, NICs,
+  // ports - appear after one sweep instead of at the rules' next scheduled run.
+  async function discoverNow(h: Host) {
+    setBusyId(h.id)
+    const res = await fetch(`/api/hosts/${h.id}/discover`, { method: 'POST' }).catch(() => null)
+    setBusyId(null)
+    if (!res) { toast.error('Could not start discovery'); return }
+    if (!res.ok) { toast.error(await errText(res, 'Could not start discovery')); return }
+    const d = await res.json().catch(() => ({ triggered: 0 }))
+    toast.success(d.triggered > 0
+      ? `Discovery started (${d.triggered} rule${d.triggered === 1 ? '' : 's'}) — new sensors appear after the sweep`
+      : 'This host has no discovery rules')
   }
 
   // Build the group tree WITHOUT virtual parents: only real Zabbix groups (from /api/groups) become
@@ -2953,6 +2968,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
                 { sep: true, label: '' },
                 { label: 'Settings…', icon: kbIcon.gear, onClick: () => { setEditGroupsHost(null); setSettingsHost((cur) => (cur === h.id ? null : h.id)) } },
                 { label: 'Edit groups…', icon: kbIcon.folder, onClick: () => { setSettingsHost(null); setEditGroupsHost((cur) => (cur === h.id ? null : h.id)) } },
+                { label: 'Discover now', icon: kbIcon.discover, onClick: () => discoverNow(h) },
               ]} />
             )}
           </div>
