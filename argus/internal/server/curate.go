@@ -31,8 +31,9 @@ var categoryOrder = map[string]int{
 	"Disk":        5,
 	"Uptime":      6,
 	"Ports":       7,
-	"Temperature": 8,
-	"Status":      9,
+	"Power":       8,
+	"Temperature": 9,
+	"Status":      10,
 }
 
 // splitKey returns the base key and its parameters, e.g. vfs.fs.size[/,pused] ->
@@ -173,6 +174,14 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "Ports", "Port " + param(p, 0) + " link", "Port " + param(p, 0), "Link", true
 	case "unifi.port.speed":
 		return "Ports", "Port " + param(p, 0) + " speed", "Port " + param(p, 0), "Speed", true
+	case "unifi.port.in":
+		return "Ports", "Port " + param(p, 0) + " traffic in", "Port " + param(p, 0), "In", true
+	case "unifi.port.out":
+		return "Ports", "Port " + param(p, 0) + " traffic out", "Port " + param(p, 0), "Out", true
+	case "unifi.port.poe":
+		return "Ports", "Port " + param(p, 0) + " PoE power", "Port " + param(p, 0), "PoE", true
+	case "unifi.poe.total":
+		return "Power", "PoE power draw", "", "", true
 
 	// HTTP/HTTPS endpoint add-on (Argus HTTP Endpoint template). The key params are macros
 	// ({$HTTP.SCHEME}/{$HTTP.PORT}), so the label is fixed rather than derived from them.
