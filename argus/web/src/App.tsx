@@ -3636,12 +3636,14 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
     if (cat === 'Network') { const inn = gi.find((x) => x.channel === 'In'), out = gi.find((x) => x.channel === 'Out'); return { node: <span>↓ {reading(inn) ?? '—'} &nbsp;&nbsp; ↑ {reading(out) ?? '—'}</span>, primary: inn || gi[0] } }
     if (cat === 'Disk') { const pu = gi.find((x) => (x.channel || '').startsWith('Used %')) || gi[0]; return { node: reading(pu), primary: pu } }
     if (cat === 'Ping') { const rt = gi.find((x) => x.channel === 'Response time') || gi[0]; return { node: reading(rt), primary: rt } }
-    // A port reads by its negotiated speed (the Link channel is a bare 1/0); a down port says so.
+    // A port reads like a network interface: traffic in/out, with the In channel as primary (it
+    // drives the row's sparkline and the chart's main line). A down port just says so.
     if (cat === 'Ports') {
-      const sp = gi.find((x) => x.channel === 'Speed') || gi[0]
+      const inn = gi.find((x) => x.channel === 'In'), out = gi.find((x) => x.channel === 'Out')
+      const primary = inn || gi[0]
       const ln = gi.find((x) => x.channel === 'Link')
-      if (ln && ln.last_value !== '' && Number(ln.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>down</span>, primary: sp }
-      return { node: reading(sp), primary: sp }
+      if (ln && ln.last_value !== '' && Number(ln.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>down</span>, primary }
+      return { node: <span>↓ {reading(inn) ?? '—'} &nbsp;&nbsp; ↑ {reading(out) ?? '—'}</span>, primary }
     }
     return { node: reading(gi[0]), primary: gi[0] }
   }
@@ -3688,6 +3690,9 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                   if (pIdx > 0) channels = [channels[pIdx], ...channels.slice(0, pIdx), ...channels.slice(pIdx + 1)]
                   // Disk reads Used % -> Used -> Total (user pref: live values first, static Total last).
                   if (row.cat === 'Disk') { const rank: Record<string, number> = { 'Used %': 0, Used: 1, Total: 2 }; channels = [channels[0], ...channels.slice(1).sort((a, b) => (rank[a.label] ?? 9) - (rank[b.label] ?? 9))] }
+                  // Ports read In -> Out -> PoE, so In/Out carry the same colours as the network
+                  // groups; the constant Speed/Link (hidden lines) trail behind.
+                  if (row.cat === 'Ports') { const rank: Record<string, number> = { In: 0, Out: 1, PoE: 2, Speed: 3, Link: 4 }; channels = [channels[0], ...channels.slice(1).sort((a, b) => (rank[a.label] ?? 9) - (rank[b.label] ?? 9))] }
                   const clickable = channels.length > 0
                   const gState = row.items.reduce((w, i) => { const s = itemState[i.id]; return s && (!w || stateRank[s] > stateRank[w]) ? s : w }, '')
                   const gAcked = !row.items.some((i) => itemState[i.id] && itemAcked[i.id] === false)
