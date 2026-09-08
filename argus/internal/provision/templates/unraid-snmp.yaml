@@ -1,0 +1,165 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: 4c6e2196975541369cdd9592fd8ba7fb
+      template: 'Argus unRAID by SNMP'
+      name: 'Argus unRAID by SNMP'
+      description: |
+        unRAID extras on top of "Argus Linux by SNMP" (the unraid class attaches both): per-disk
+        temperatures and per-share free space, read from the NET-SNMP-EXTEND scripts that the
+        Community Applications "SNMP" plugin installs (extend names "disktemp" and "sharefree").
+        Temperatures come from the emhttp state, so spun-down disks are not woken - they simply
+        keep their last reading. Needs that plugin installed on the unRAID host; everything else
+        (CPU, memory, filesystems incl. array disks and docker.img, interfaces, uptime) is covered
+        by the Linux template. DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: 6a6473cc274143979ef25d5f4662e25e
+          name: 'unRAID disk temperatures (raw)'
+          type: SNMP_AGENT
+          snmp_oid: '.1.3.6.1.4.1.8072.1.3.2.3.1.2.8.100.105.115.107.116.101.109.112'
+          key: unraid.disktemp.raw
+          delay: 2m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          description: 'Master item: NET-SNMP-EXTEND-MIB nsExtendOutputFull."disktemp" - one line per drive, "<disk id>: <temp C>". The per-disk sensors depend on this.'
+        - uuid: 9cb735c54a5f4a44aa9c590a91a112fa
+          name: 'unRAID share free space (raw)'
+          type: SNMP_AGENT
+          snmp_oid: '.1.3.6.1.4.1.8072.1.3.2.3.1.2.9.115.104.97.114.101.102.114.101.101'
+          key: unraid.sharefree.raw
+          delay: 5m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          description: 'Master item: NET-SNMP-EXTEND-MIB nsExtendOutputFull."sharefree" - one line per user share, "<share>: <free bytes>". The per-share sensors depend on this.'
+      discovery_rules:
+        - uuid: 4c2b6bd5a9bb44fa8cd91548838bb542
+          name: 'Disk temperature discovery'
+          type: DEPENDENT
+          key: unraid.disktemp.discovery
+          delay: '0'
+          description: 'Drives reported by the SNMP plugin (parity, data disks, pools).'
+          master_item:
+            key: unraid.disktemp.raw
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var out = [];
+                  var lines = String(value).split('\n');
+                  for (var i = 0; i < lines.length; i++) {
+                    var s = lines[i];
+                    var c = s.lastIndexOf(':');
+                    if (c < 1) { continue; }
+                    var name = s.slice(0, c).trim();
+                    var v = parseFloat(s.slice(c + 1));
+                    if (!name || isNaN(v)) { continue; }
+                    out.push({ '{#DISKID}': name });
+                  }
+                  return JSON.stringify(out);
+          item_prototypes:
+            - uuid: a1f7c9a3cfd14440ab85c89760f64946
+              name: 'Disk temperature ({#DISKID})'
+              type: DEPENDENT
+              key: 'unraid.disktemp["{#DISKID}"]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '°C'
+              description: 'Drive temperature from the emhttp state. While the disk is spun down no value is delivered (the sensor keeps its last reading).'
+              master_item:
+                key: unraid.disktemp.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var lines = String(value).split('\n');
+                      for (var i = 0; i < lines.length; i++) {
+                        var s = lines[i];
+                        var c = s.lastIndexOf(':');
+                        if (c < 1) { continue; }
+                        if (s.slice(0, c).trim() !== '{#DISKID}') { continue; }
+                        var v = parseFloat(s.slice(c + 1));
+                        if (isNaN(v) || v <= 0) { throw 'disk spun down'; }
+                        return v;
+                      }
+                      throw 'disk {#DISKID} not reported';
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: 0bd565d559364f51b4468582576ee4a6
+                  expression: 'min(/Argus unRAID by SNMP/unraid.disktemp["{#DISKID}"],#3)>={$DISK.TEMP.WARN} and min(/Argus unRAID by SNMP/unraid.disktemp["{#DISKID}"],#3)<{$DISK.TEMP.HIGH}'
+                  name: 'Disk {#DISKID} running hot'
+                  priority: WARNING
+                  description: 'Drive temperature at/above the warning threshold on the last 3 checks.'
+                - uuid: fa9878282f4e4cea899ebaa2490bb7f1
+                  expression: 'min(/Argus unRAID by SNMP/unraid.disktemp["{#DISKID}"],#3)>={$DISK.TEMP.HIGH}'
+                  name: 'Disk {#DISKID} overheating'
+                  priority: HIGH
+                  description: 'Drive temperature at/above the high threshold on the last 3 checks.'
+        - uuid: 940bdfc5ddbe4aa5a79b8f5c75938267
+          name: 'Share discovery'
+          type: DEPENDENT
+          key: unraid.share.discovery
+          delay: '0'
+          description: 'User shares reported by the SNMP plugin.'
+          master_item:
+            key: unraid.sharefree.raw
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var out = [];
+                  var lines = String(value).split('\n');
+                  for (var i = 0; i < lines.length; i++) {
+                    var s = lines[i];
+                    var c = s.lastIndexOf(':');
+                    if (c < 1) { continue; }
+                    var name = s.slice(0, c).trim();
+                    var v = parseFloat(s.slice(c + 1));
+                    if (!name || isNaN(v)) { continue; }
+                    out.push({ '{#SHARE}': name });
+                  }
+                  return JSON.stringify(out);
+          item_prototypes:
+            - uuid: 5a6a9cb11e9141fb9c5226e33a6c4523
+              name: 'Share free ({#SHARE})'
+              type: DEPENDENT
+              key: 'unraid.sharefree["{#SHARE}"]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: B
+              description: 'Free space on the user share (accounts for its include/exclude disks and minimum-free setting).'
+              master_item:
+                key: unraid.sharefree.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var lines = String(value).split('\n');
+                      for (var i = 0; i < lines.length; i++) {
+                        var s = lines[i];
+                        var c = s.lastIndexOf(':');
+                        if (c < 1) { continue; }
+                        if (s.slice(0, c).trim() !== '{#SHARE}') { continue; }
+                        var v = parseFloat(s.slice(c + 1));
+                        if (isNaN(v)) { throw 'no value'; }
+                        return v;
+                      }
+                      throw 'share {#SHARE} not reported';
+                  error_handler: DISCARD_VALUE
+      macros:
+        - macro: '{$DISK.TEMP.WARN}'
+          value: '45'
+          description: "Drive temperature (°C) that raises a warning (matches unRAID's own default)."
+        - macro: '{$DISK.TEMP.HIGH}'
+          value: '55'
+          description: 'Drive temperature (°C) that raises a high-severity alert.'

@@ -57,6 +57,26 @@ func TestClassifyUnifiWirelessAndWan(t *testing.T) {
 	}
 }
 
+// unRAID disk temps group into ONE "Disk temperatures" instance (channel = the drive id); shares
+// are flat Disk rows; the raw extend masters stay uncurated even though their names say
+// "temperatures" (the heuristic must not catch them).
+func TestClassifyUnraid(t *testing.T) {
+	cat, _, inst, ch, ok := classifyItem(`unraid.disktemp["WDC WD30EFRX-68EUZN0 WD-WMC4N0E5EJ0F"]`, "Disk temperature (WDC WD30EFRX-68EUZN0 WD-WMC4N0E5EJ0F)")
+	if !ok || cat != "Temperature" || inst != "Disk temperatures" || ch != "WDC WD30EFRX-68EUZN0 WD-WMC4N0E5EJ0F" {
+		t.Errorf("disktemp: got (%q, %q, %q, ok=%v)", cat, inst, ch, ok)
+	}
+	cat, label, inst, _, ok := classifyItem(`unraid.sharefree["appdata"]`, "Share free (appdata)")
+	if !ok || cat != "Disk" || inst != "" || label != "Share free (appdata)" {
+		t.Errorf("sharefree: got (%q, %q, %q, ok=%v)", cat, label, inst, ok)
+	}
+	if _, _, _, _, ok := classifyItem("unraid.disktemp.raw", "unRAID disk temperatures (raw)"); ok {
+		t.Error("disktemp.raw master must stay uncurated")
+	}
+	if _, _, _, _, ok := classifyItem("unraid.sharefree.raw", "unRAID share free space (raw)"); ok {
+		t.Error("sharefree.raw master must stay uncurated")
+	}
+}
+
 // Capability placeholders match on the key base, so per-instance keys are covered.
 func TestHideZero(t *testing.T) {
 	for _, k := range []string{"unifi.temp", "unifi.poe.total", "unifi.wan.latency[1]", "unifi.speedtest.down"} {

@@ -80,6 +80,19 @@ var registry = []Class{
 		Icon:       "server",
 	},
 	{
+		// unRAID = the Linux SNMP template plus the extend scripts from the Community Applications
+		// "SNMP" plugin (per-disk temperatures, per-share free space). SNMP creds inherit the proxy
+		// default like every SNMP class.
+		ID:         "unraid",
+		Label:      "unRAID (SNMP)",
+		Family:     "NAS",
+		Pattern:    PatternSNMP,
+		Iface:      IfaceSNMP,
+		Templates:  []string{"Argus Linux by SNMP", "Argus unRAID by SNMP"},
+		OffersHTTP: true,
+		Icon:       "nas",
+	},
+	{
 		// The host's own interface is the switch's IP (Base Ping runs against it); the metrics come
 		// from the UniFi controller through the Integration API, addressed by the macros below - so
 		// one template covers a cloud gateway (:443) and a self-hosted console on a custom port.
