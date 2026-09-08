@@ -1,0 +1,616 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: f14d521aebb74d1c8867cd9e25957814
+      template: 'Argus UniFi Gateway by HTTP'
+      name: 'Argus UniFi Gateway by HTTP'
+      description: |
+        UniFi gateway (UDM/UXG/UCG) polled from its controller with an API key (one request per poll,
+        addressed by MAC): state, CPU/memory, uptime, firmware, temperature, per-WAN discovery -
+        traffic, monitor latency and availability (what the UniFi UI shows as WAN uptime, with a
+        degraded trigger) - plus the last speedtest result and LAN port discovery (link, speed,
+        traffic, PoE on models that power devices; WAN ports are excluded). Works against a UniFi OS
+        console (cloud gateway, :443) or a self-hosted console on a custom port: set {$UNIFI.URL} to
+        the console base URL including the port, {$UNIFI.KEY} to an API key (UniFi Network ->
+        Settings -> Control Plane -> Integrations) and {$UNIFI.MAC} to the gateway's MAC. On a UniFi
+        OS gateway the console usually runs on the gateway itself - the URL then points at this same
+        device. {$UNIFI.SITE} is the site's internal short name (the first site is "default"). The
+        host's own interface stays the gateway IP (Base Ping). DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: 7455c471f4c64d1880b247e3fbffb2e2
+          name: 'UniFi raw device data'
+          type: SCRIPT
+          key: unifi.gw.raw
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          timeout: 15s
+          description: 'Master item: one controller call for the gateway (stat/device by MAC), trimmed to the fields the sensors use. Everything else is dependent on this.'
+          params: |
+            var p = JSON.parse(value);
+            if (!p.url || !p.key || !p.mac) { throw 'set {$UNIFI.URL}, {$UNIFI.KEY} and {$UNIFI.MAC} on the host'; }
+            var mac = String(p.mac).toLowerCase().replace(/[^0-9a-f]/g, '');
+            if (mac.length !== 12) { throw 'MAC address looks wrong: ' + p.mac; }
+            mac = mac.match(/../g).join(':');
+            var site = String(p.site || 'default').toLowerCase();
+            var req = new HttpRequest();
+            req.addHeader('X-API-KEY: ' + p.key);
+            req.addHeader('Accept: application/json');
+            var resp = req.get(String(p.url).replace(/\/+$/, '') + '/proxy/network/api/s/' + site + '/stat/device/' + mac);
+            if (req.getStatus() !== 200) { throw 'UniFi API HTTP ' + req.getStatus(); }
+            var body = JSON.parse(resp);
+            var d = (body.data && body.data[0]) || null;
+            if (!d) { throw 'UniFi: device ' + mac + ' not found on site "' + site + '"'; }
+            var ss = d['system-stats'] || {};
+            var out = {
+              state: d.state,
+              model: d.model || '',
+              version: d.version || d.displayable_version || '',
+              uptime: d.uptime || 0,
+              cpu: parseFloat(ss.cpu),
+              mem: parseFloat(ss.mem),
+              wans: [],
+              ports: []
+            };
+            if (typeof d.general_temperature === 'number' && d.general_temperature > 0) {
+              out.temp = d.general_temperature;
+            } else if (d.temperatures && d.temperatures.length) {
+              var t = 0;
+              for (var i = 0; i < d.temperatures.length; i++) {
+                var e = d.temperatures[i] || {};
+                if (typeof e.value !== 'number' || e.value <= 0) { continue; }
+                if (!t || String(e.type).toLowerCase() === 'cpu' || /cpu/i.test(String(e.name || ''))) { t = e.value; }
+              }
+              if (t > 0) { out.temp = Math.round(t * 10) / 10; }
+            }
+            var wanIf = {};
+            var wanKeys = ['WAN', 'WAN2'];
+            var wanObjs = [d.wan1, d.wan2];
+            for (var i = 0; i < wanObjs.length; i++) {
+              var wn = wanObjs[i];
+              if (!wn || !(wn.up || wn.ip || wn.ifname)) { continue; }
+              if (wn.ifname) { wanIf[wn.ifname] = 1; }
+              var w = {
+                idx: i + 1,
+                name: wn.name || wn.ifname || ('wan' + (i + 1)),
+                up: wn.up ? 1 : 0,
+                in_bps: (wn['rx_bytes-r'] || 0) * 8,
+                out_bps: (wn['tx_bytes-r'] || 0) * 8
+              };
+              var st = (d.uptime_stats || {})[wanKeys[i]];
+              var mons = (st && st.monitors) || [];
+              var lat = 0, latN = 0, av = 0, avN = 0;
+              for (var j = 0; j < mons.length; j++) {
+                var m = mons[j] || {};
+                if (typeof m.latency_average === 'number' && m.latency_average > 0) { lat += m.latency_average; latN++; }
+                if (typeof m.availability === 'number') { av += m.availability; avN++; }
+              }
+              if (latN) { w.latency = Math.round(lat / latN * 10) / 10000; }
+              if (avN) { w.avail = Math.round(av / avN * 100) / 100; }
+              out.wans.push(w);
+            }
+            var pt = d.port_table || [];
+            var poeTotal = 0, hasPoe = false;
+            for (var i = 0; i < pt.length; i++) {
+              var q = pt[i];
+              var nm = q.name || ('Port ' + q.port_idx);
+              if (q.is_uplink || (q.ifname && wanIf[q.ifname]) || /^wan/i.test(String(q.network_name || '')) || /(^|\s)WAN(\s|\d|$)/.test(nm)) { continue; }
+              var pw = parseFloat(q.poe_power || '0') || 0;
+              poeTotal += pw;
+              if (q.port_poe) { hasPoe = true; }
+              out.ports.push({
+                idx: q.port_idx,
+                name: nm,
+                up: q.up ? 1 : 0,
+                speed_bps: (q.speed || 0) * 1000000,
+                poe: q.port_poe ? 1 : 0,
+                poe_w: pw,
+                in_bps: (q['rx_bytes-r'] || 0) * 8,
+                out_bps: (q['tx_bytes-r'] || 0) * 8
+              });
+            }
+            if (hasPoe) { out.poe_total_w = Math.round(poeTotal * 100) / 100; }
+            var stt = d['speedtest-status'];
+            if (stt && typeof stt.xput_download === 'number' && stt.xput_download > 0) {
+              out.st_down_bps = Math.round(stt.xput_download * 1000000);
+              out.st_up_bps = Math.round((stt.xput_upload || 0) * 1000000);
+            }
+            return JSON.stringify(out);
+          parameters:
+            - name: url
+              value: '{$UNIFI.URL}'
+            - name: key
+              value: '{$UNIFI.KEY}'
+            - name: mac
+              value: '{$UNIFI.MAC}'
+            - name: site
+              value: '{$UNIFI.SITE}'
+        - uuid: 47d69c9d8542439f86c35ff2a2ccce29
+          name: 'Controller state'
+          type: DEPENDENT
+          key: unifi.device.state
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = the controller reports the gateway connected, 0 = anything else. Not a curated sensor - it exists to drive the offline trigger.'
+          master_item:
+            key: unifi.gw.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.state'
+            - type: JAVASCRIPT
+              parameters:
+                - 'return String(value) === "1" ? 1 : 0;'
+          triggers:
+            - uuid: fe093e38c0e044929f82cf19d45d76f5
+              expression: 'max(/Argus UniFi Gateway by HTTP/unifi.device.state,#3)=0'
+              name: 'Gateway offline on the UniFi controller'
+              priority: HIGH
+              description: 'The controller has not reported the gateway connected on the last 3 checks.'
+        - uuid: 5d946a9b880a43d2b386564b60db67c5
+          name: 'CPU utilization'
+          type: DEPENDENT
+          key: unifi.cpu.util
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          master_item:
+            key: unifi.gw.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cpu'
+          triggers:
+            - uuid: d61d904bd18c439ca2ef101d3b8d859f
+              expression: 'min(/Argus UniFi Gateway by HTTP/unifi.cpu.util,#3)>={$CPU.UTIL.WARN} and min(/Argus UniFi Gateway by HTTP/unifi.cpu.util,#3)<{$CPU.UTIL.HIGH}'
+              name: 'High CPU utilization'
+              priority: WARNING
+              description: 'CPU utilization at/above the warning threshold on the last 3 checks.'
+            - uuid: 3fc73b7c54314fb495bad5a5603142d0
+              expression: 'min(/Argus UniFi Gateway by HTTP/unifi.cpu.util,#3)>={$CPU.UTIL.HIGH}'
+              name: 'Very high CPU utilization'
+              priority: HIGH
+              description: 'CPU utilization at/above the high threshold on the last 3 checks.'
+        - uuid: 093c91dc10844742b078fd01ab36105a
+          name: 'Memory utilization'
+          type: DEPENDENT
+          key: unifi.mem.util
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          master_item:
+            key: unifi.gw.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.mem'
+          triggers:
+            - uuid: a8c6bed9993c4b03b4bc2738a7edcd3c
+              expression: 'min(/Argus UniFi Gateway by HTTP/unifi.mem.util,#3)>={$MEM.USED.WARN} and min(/Argus UniFi Gateway by HTTP/unifi.mem.util,#3)<{$MEM.USED.HIGH}'
+              name: 'High memory utilization'
+              priority: WARNING
+              description: 'Memory use at/above the warning threshold on the last 3 checks.'
+            - uuid: 55f5ad27ff154defa68ba35d502ede97
+              expression: 'min(/Argus UniFi Gateway by HTTP/unifi.mem.util,#3)>={$MEM.USED.HIGH}'
+              name: 'Very high memory utilization'
+              priority: HIGH
+              description: 'Memory use at/above the high threshold on the last 3 checks.'
+        - uuid: 506251fa235b43eab0a85ae77056e260
+          name: Uptime
+          type: DEPENDENT
+          key: unifi.uptime
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: uptime
+          master_item:
+            key: unifi.gw.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.uptime'
+        - uuid: e97a6f920c4042229c93c635e41e18c1
+          name: Temperature
+          type: DEPENDENT
+          key: unifi.temp
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '°C'
+          description: 'CPU temperature (UniFi OS gateways report a probe list; the CPU probe is used). Models without probes discard.'
+          master_item:
+            key: unifi.gw.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.temp'
+              error_handler: DISCARD_VALUE
+        - uuid: f500fa76d44d4ad785d7253186c573b1
+          name: 'PoE power draw'
+          type: DEPENDENT
+          key: unifi.poe.total
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: W
+          description: 'Total PoE power currently delivered across all ports. Only emitted for gateways with PoE-capable ports (others discard).'
+          master_item:
+            key: unifi.gw.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.poe_total_w'
+              error_handler: DISCARD_VALUE
+        - uuid: 6aecde22ceb448a1acdc0403a65797b1
+          name: 'Firmware version'
+          type: DEPENDENT
+          key: unifi.firmware
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          master_item:
+            key: unifi.gw.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.version'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: abe96941e4da484aaebb4a563fa4059c
+          name: 'Speedtest download'
+          type: DEPENDENT
+          key: unifi.speedtest.down
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: bps
+          description: "Download rate from the gateway's last speedtest (scheduled or manual). Discarded until one has run."
+          master_item:
+            key: unifi.gw.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.st_down_bps'
+              error_handler: DISCARD_VALUE
+        - uuid: afe431122e024658a4000e26a9331073
+          name: 'Speedtest upload'
+          type: DEPENDENT
+          key: unifi.speedtest.up
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: bps
+          description: "Upload rate from the gateway's last speedtest."
+          master_item:
+            key: unifi.gw.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.st_up_bps'
+              error_handler: DISCARD_VALUE
+      discovery_rules:
+        - uuid: 99920c70d1cf45aa8274331ec65a7c18
+          name: 'WAN discovery'
+          type: DEPENDENT
+          key: unifi.wan.discovery
+          delay: '0'
+          description: 'Configured WAN links (1-2). Each gets traffic plus the monitor latency/availability the gateway measures against its uplink targets.'
+          master_item:
+            key: unifi.gw.raw
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  var wans = d.wans || [];
+                  var out = [];
+                  for (var i = 0; i < wans.length; i++) {
+                    out.push({ '{#WANIDX}': String(wans[i].idx), '{#WANNAME}': String(wans[i].name) });
+                  }
+                  return JSON.stringify(out);
+          item_prototypes:
+            - uuid: 6fcf0ac185c848399240d8993b56da2c
+              name: 'WAN {#WANIDX} traffic in ({#WANNAME})'
+              type: DEPENDENT
+              key: 'unifi.wan.in[{#WANIDX}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: bps
+              description: 'Download rate on the WAN link (controller-computed).'
+              master_item:
+                key: unifi.gw.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var wans = d.wans || [];
+                      for (var i = 0; i < wans.length; i++) {
+                        if (String(wans[i].idx) === '{#WANIDX}') { return wans[i].in_bps; }
+                      }
+                      throw 'WAN {#WANIDX} not reported';
+            - uuid: c4b5c6771f39488cb6ae1e17afbc04ef
+              name: 'WAN {#WANIDX} traffic out ({#WANNAME})'
+              type: DEPENDENT
+              key: 'unifi.wan.out[{#WANIDX}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: bps
+              description: 'Upload rate on the WAN link (controller-computed).'
+              master_item:
+                key: unifi.gw.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var wans = d.wans || [];
+                      for (var i = 0; i < wans.length; i++) {
+                        if (String(wans[i].idx) === '{#WANIDX}') { return wans[i].out_bps; }
+                      }
+                      throw 'WAN {#WANIDX} not reported';
+            - uuid: b31920675658423c82221392ac02408d
+              name: 'WAN {#WANIDX} monitor latency ({#WANNAME})'
+              type: DEPENDENT
+              key: 'unifi.wan.latency[{#WANIDX}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: s
+              description: "Average ping to the gateway's uplink monitor targets (what the UniFi UI shows as WAN latency). Discarded when the gateway reports no monitor data."
+              master_item:
+                key: unifi.gw.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var wans = d.wans || [];
+                      for (var i = 0; i < wans.length; i++) {
+                        if (String(wans[i].idx) === '{#WANIDX}') {
+                          if (typeof wans[i].latency !== 'number') { throw 'no monitor data'; }
+                          return wans[i].latency;
+                        }
+                      }
+                      throw 'WAN {#WANIDX} not reported';
+                  error_handler: DISCARD_VALUE
+            - uuid: 26104f961c4e4c4c9ce50f4de27a6b09
+              name: 'WAN {#WANIDX} availability ({#WANNAME})'
+              type: DEPENDENT
+              key: 'unifi.wan.avail[{#WANIDX}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '%'
+              description: 'Uplink availability over the monitor window (100 = no loss to the monitor targets).'
+              master_item:
+                key: unifi.gw.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var wans = d.wans || [];
+                      for (var i = 0; i < wans.length; i++) {
+                        if (String(wans[i].idx) === '{#WANIDX}') {
+                          if (typeof wans[i].avail !== 'number') { throw 'no monitor data'; }
+                          return wans[i].avail;
+                        }
+                      }
+                      throw 'WAN {#WANIDX} not reported';
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: 75c2f77c06a2497d85eccb87969ed9b6
+                  expression: 'max(/Argus UniFi Gateway by HTTP/unifi.wan.avail[{#WANIDX}],#3)<{$UNIFI.WAN.AVAIL.MIN}'
+                  name: 'WAN {#WANIDX} degraded ({#WANNAME})'
+                  priority: HIGH
+                  description: 'Uplink availability below {$UNIFI.WAN.AVAIL.MIN}% on the last 3 checks - the WAN link is down or losing packets to the monitor targets.'
+        - uuid: a73f71dcb0774524844dc6aee43490d6
+          name: 'Port discovery'
+          type: DEPENDENT
+          key: unifi.port.discovery
+          delay: '0'
+          description: 'Physical LAN ports from the controller (WAN ports are covered by WAN discovery and excluded here).'
+          master_item:
+            key: unifi.gw.raw
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  var ports = d.ports || [];
+                  var out = [];
+                  for (var i = 0; i < ports.length; i++) {
+                    out.push({ '{#PORTIDX}': String(ports[i].idx), '{#PORTNAME}': ports[i].name, '{#POE}': String(ports[i].poe) });
+                  }
+                  return JSON.stringify(out);
+          item_prototypes:
+            - uuid: f37a56a45f544b1c83569308d89c56a7
+              name: 'Port {#PORTIDX} link ({#PORTNAME})'
+              type: DEPENDENT
+              key: 'unifi.port.state[{#PORTIDX}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              description: '1 = link up, 0 = link down.'
+              master_item:
+                key: unifi.gw.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var ports = d.ports || [];
+                      for (var i = 0; i < ports.length; i++) {
+                        if (String(ports[i].idx) === '{#PORTIDX}') { return ports[i].up; }
+                      }
+                      throw 'port {#PORTIDX} not reported';
+            - uuid: 62d6a030ffa64d6886ed2d59a1acb135
+              name: 'Port {#PORTIDX} speed ({#PORTNAME})'
+              type: DEPENDENT
+              key: 'unifi.port.speed[{#PORTIDX}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: bps
+              description: 'Negotiated link speed (0 when the port is down).'
+              master_item:
+                key: unifi.gw.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var ports = d.ports || [];
+                      for (var i = 0; i < ports.length; i++) {
+                        if (String(ports[i].idx) === '{#PORTIDX}') { return ports[i].speed_bps; }
+                      }
+                      throw 'port {#PORTIDX} not reported';
+            - uuid: 31f093c5a45d4447af318a8e9eda086d
+              name: 'Port {#PORTIDX} traffic in ({#PORTNAME})'
+              type: DEPENDENT
+              key: 'unifi.port.in[{#PORTIDX}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: bps
+              description: 'Receive rate on the port (controller-computed).'
+              master_item:
+                key: unifi.gw.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var ports = d.ports || [];
+                      for (var i = 0; i < ports.length; i++) {
+                        if (String(ports[i].idx) === '{#PORTIDX}') { return ports[i].in_bps; }
+                      }
+                      throw 'port {#PORTIDX} not reported';
+            - uuid: a5fdc4ac00e64468ae05e8267e5d9bd6
+              name: 'Port {#PORTIDX} traffic out ({#PORTNAME})'
+              type: DEPENDENT
+              key: 'unifi.port.out[{#PORTIDX}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: bps
+              description: 'Transmit rate on the port (controller-computed).'
+              master_item:
+                key: unifi.gw.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var ports = d.ports || [];
+                      for (var i = 0; i < ports.length; i++) {
+                        if (String(ports[i].idx) === '{#PORTIDX}') { return ports[i].out_bps; }
+                      }
+                      throw 'port {#PORTIDX} not reported';
+        - uuid: 97dae226d96447688a9a593346fe131d
+          name: 'PoE port discovery'
+          type: DEPENDENT
+          key: unifi.poe.discovery
+          delay: '0'
+          description: 'The subset of LAN ports that are PoE-capable - only those get a PoE power sensor.'
+          master_item:
+            key: unifi.gw.raw
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#POE}'
+                value: '^1$'
+                operator: MATCHES_REGEX
+                formulaid: A
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  var ports = d.ports || [];
+                  var out = [];
+                  for (var i = 0; i < ports.length; i++) {
+                    out.push({ '{#PORTIDX}': String(ports[i].idx), '{#PORTNAME}': ports[i].name, '{#POE}': String(ports[i].poe) });
+                  }
+                  return JSON.stringify(out);
+          item_prototypes:
+            - uuid: bc1f8eaa938c44d08349d4a2bf491121
+              name: 'Port {#PORTIDX} PoE power ({#PORTNAME})'
+              type: DEPENDENT
+              key: 'unifi.port.poe[{#PORTIDX}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: W
+              description: 'PoE power currently delivered on the port (0 when nothing draws).'
+              master_item:
+                key: unifi.gw.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var ports = d.ports || [];
+                      for (var i = 0; i < ports.length; i++) {
+                        if (String(ports[i].idx) === '{#PORTIDX}') { return ports[i].poe_w; }
+                      }
+                      throw 'port {#PORTIDX} not reported';
+      macros:
+        - macro: '{$CPU.UTIL.WARN}'
+          value: '80'
+          description: 'CPU utilization percentage that raises a warning.'
+        - macro: '{$CPU.UTIL.HIGH}'
+          value: '95'
+          description: 'CPU utilization percentage that raises a high-severity alert.'
+        - macro: '{$MEM.USED.WARN}'
+          value: '85'
+          description: 'Memory-used percentage that raises a warning.'
+        - macro: '{$MEM.USED.HIGH}'
+          value: '95'
+          description: 'Memory-used percentage that raises a high-severity alert.'
+        - macro: '{$UNIFI.URL}'
+          value: 'https://unifi.example.lan'
+          description: 'UniFi console base URL including the port (cloud gateway :443, self-hosted console e.g. :11443). Set per host.'
+        - macro: '{$UNIFI.KEY}'
+          value: ''
+          description: 'UniFi Network API key (Settings -> Control Plane -> Integrations). Set per host as a secret macro.'
+        - macro: '{$UNIFI.MAC}'
+          value: ''
+          description: 'MAC address of the gateway this host represents. Set per host.'
+        - macro: '{$UNIFI.SITE}'
+          value: 'default'
+          description: "The site's internal short name on the controller (the first site is 'default')."
+        - macro: '{$UNIFI.WAN.AVAIL.MIN}'
+          value: '50'
+          description: 'WAN monitor availability (%) below which the WAN-degraded trigger fires.'

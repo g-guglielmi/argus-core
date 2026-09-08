@@ -27,9 +27,35 @@ func TestLoadTemplates(t *testing.T) {
 	for _, d := range docs {
 		all += d.content
 	}
-	for _, want := range []string{TemplateBasePing, TemplateHTTP, "Argus Linux by SNMP", "icmpping", "{$HTTP.PORT}", "{$PING.LOSS.WARN}", "{$CPU.UTIL.WARN}", "vfs.fs.discovery", "net.if.discovery"} {
+	for _, want := range []string{TemplateBasePing, TemplateHTTP, "Argus Linux by SNMP", "icmpping", "{$HTTP.PORT}", "{$PING.LOSS.WARN}", "{$CPU.UTIL.WARN}", "vfs.fs.discovery", "net.if.discovery",
+		"Argus UniFi Switch by HTTP", "Argus UniFi AP by HTTP", "Argus UniFi Gateway by HTTP", "unifi.radio.discovery", "unifi.wan.discovery", "{$UNIFI.WAN.AVAIL.MIN}"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("templates missing %q", want)
+		}
+	}
+}
+
+// Every UniFi class asks for the same controller macros; the templates they attach must exist.
+func TestUnifiClassFamily(t *testing.T) {
+	for _, id := range []string{"unifi-switch", "unifi-gateway", "unifi-ap"} {
+		c, ok := ClassByID(id)
+		if !ok {
+			t.Fatalf("%s class missing", id)
+		}
+		if c.Pattern != PatternHTTPAPI || c.Iface != IfaceAgent || len(c.Templates) != 1 {
+			t.Fatalf("unexpected %s class: %+v", id, c)
+		}
+		var key, mac bool
+		for _, m := range c.Macros {
+			if m.Macro == "{$UNIFI.KEY}" && m.Required && m.Secret {
+				key = true
+			}
+			if m.Macro == "{$UNIFI.MAC}" && m.Required {
+				mac = true
+			}
+		}
+		if !key || !mac {
+			t.Errorf("%s: macro specs incomplete (key=%v mac=%v)", id, key, mac)
 		}
 	}
 }

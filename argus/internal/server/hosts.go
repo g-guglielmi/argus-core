@@ -433,7 +433,7 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			// Capability placeholders: a UniFi device without a temperature probe, or a switch
 			// without PoE, reports a constant 0 - hide the meaningless row (the template also stops
 			// collecting these; the value check hides the stale last value too).
-			if hideWhenZero[it.Key] {
+			if hideZero(it.Key) {
 				if v := pf(it.LastValue); v == nil || *v == 0 {
 					continue
 				}
@@ -444,11 +444,11 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 		out = append(out, iv)
 	}
 	if !all {
-		// Network gear (anything with switch ports) reads network-first; servers keep the classic
-		// compute-first order (categoryOrderServer/Net in curate.go).
+		// Network gear (anything with switch ports or radios) reads network-first; servers keep
+		// the classic compute-first order (categoryOrderServer/Net in curate.go).
 		order := categoryOrderServer
 		for _, v := range out {
-			if v.Category == "Ports" {
+			if v.Category == "Ports" || v.Category == "Wireless" {
 				order = categoryOrderNet
 				break
 			}
