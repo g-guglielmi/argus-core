@@ -4171,7 +4171,20 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const yv = (u: string) => ((_up: any, splits: number[]) => splits.map((v) => fmtNum(v, u))) as unknown as uPlot.Axis['values']
   const axes: uPlot.Axis[] = [{ stroke: c.axis, grid, ticks }, { scale: scaleKey(units[0]), stroke: c.axis, grid, ticks, size: 76, values: yv(units[0]) }]
-  if (units.length > 1) axes.push({ scale: scaleKey(units[1]), side: 1, stroke: c.axis, ticks, size: 76, values: yv(units[1]) })
+  // The right axis rides the LEFT axis' gridlines: the same fractional heights mapped into its own
+  // scale, so its labels sit ON the shared grid instead of floating between lines. Recomputed every
+  // draw (from u.axes[1]._splits), so it follows the left axis through zooms and refreshes.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rightSplits = ((u: any, _ax: number, smin: number, smax: number) => {
+    const ls: number[] = (u.axes[1] && u.axes[1]._splits) || []
+    const l = u.scales[scaleKey(units[0])]
+    if (!ls.length || l == null || l.min == null || l.max == null || l.max === l.min) return [smin, smax]
+    // Label precision follows the scale span (a 0-100 % scale reads as integers; a narrow auto-ranged
+    // one keeps a decimal). Rounding shifts a label by well under a pixel.
+    const dp = smax - smin >= 20 ? 1 : smax - smin >= 2 ? 10 : 100
+    return ls.map((v: number) => Math.round((smin + ((v - l.min) / (l.max - l.min)) * (smax - smin)) * dp) / dp)
+  }) as unknown as uPlot.Axis['splits']
+  if (units.length > 1) axes.push({ scale: scaleKey(units[1]), side: 1, stroke: c.axis, grid: { show: false }, ticks, size: 76, values: yv(units[1]), splits: rightSplits })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const xVal = (u: any, v: number | null) => { const t = v ?? lastVal(u, 0); return t == null ? '--' : new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -4192,6 +4205,10 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
       value: val,
     } as uPlot.Series)
   })
+  // Loss rides with Downtime on the ping chart: pin its % scale to exactly 0-100 (no auto headroom),
+  // so "100 % lost" and downtime's "down" (a pinned 0-1 scale) peak at the same height, and 0 % sits
+  // on the bottom edge with the "up" line. Other %-scales (disk, memory) keep uPlot's auto-range zoom.
+  if (series.some((s) => s.downtime) && units.includes('%')) scaleCfg[scaleKey('%')] = { range: [0, 100] }
   // Primary channel min/max envelope (a shaded band), when it carries trend min/max — long ranges
   // only; short ranges are raw history (no min/max), so the band simply doesn't appear there.
   const p0 = series[0]
