@@ -346,11 +346,13 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "Disk", name, "", "", true
 
 	// HTTP/HTTPS endpoint add-on (Argus HTTP Endpoint template). The key params are macros
-	// ({$HTTP.SCHEME}/{$HTTP.PORT}), so the label is fixed rather than derived from them.
+	// ({$HTTP.SCHEME}/{$HTTP.PORT}), so the label is fixed rather than derived from them. The two
+	// items group like ICMP: response time is the primary channel, reachability the Downtime band
+	// (same "Reachable"/"Response time" channel names the Ping/Web frontend branches key on).
 	case "net.tcp.service":
-		return "Web", "HTTP/HTTPS reachable", "", "", true
+		return "Web", "HTTP/HTTPS reachable", "HTTP/HTTPS", "Reachable", true
 	case "net.tcp.service.perf":
-		return "Web", "HTTP/HTTPS response time", "", "", true
+		return "Web", "HTTP/HTTPS response time", "HTTP/HTTPS", "Response time", true
 	}
 
 	// Heuristic fallback for temperature sensors, whose keys vary widely by template/SNMP.

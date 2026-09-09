@@ -3648,7 +3648,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
   function groupHeadline(cat: string, gi: SensorItem[]): { node: ReactNode; primary: SensorItem } {
     if (cat === 'Network') { const inn = gi.find((x) => x.channel === 'In'), out = gi.find((x) => x.channel === 'Out'); return { node: <span>↓ {reading(inn) ?? '—'} &nbsp;&nbsp; ↑ {reading(out) ?? '—'}</span>, primary: inn || gi[0] } }
     if (cat === 'Disk') { const pu = gi.find((x) => (x.channel || '').startsWith('Used %')) || gi[0]; return { node: reading(pu), primary: pu } }
-    if (cat === 'Ping') { const rt = gi.find((x) => x.channel === 'Response time') || gi[0]; return { node: reading(rt), primary: rt } }
+    if (cat === 'Ping' || cat === 'Web') { const rt = gi.find((x) => x.channel === 'Response time') || gi[0]; return { node: reading(rt), primary: rt } }
     // A temperature group (unRAID disk temps) or CPU cores group reads as its HOTTEST/BUSIEST
     // member - the one you'd act on; that member also drives the sparkline and the chart's main line.
     if (cat === 'Temperature' || cat === 'CPU') {
@@ -3708,7 +3708,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                   const open = openItem === gkey
                   const { node: headline, primary } = groupHeadline(row.cat, row.items)
                   let channels: GroupChan[] = row.items.filter((i) => i.numeric && i.supported).map((i) =>
-                    row.cat === 'Ping' && i.channel === 'Reachable'
+                    (row.cat === 'Ping' || row.cat === 'Web') && i.channel === 'Reachable'
                       ? { id: i.id, label: 'Downtime', units: '', invert: true } // show only when unreachable (PRTG-style)
                       // A port's Speed and Link are constants - start their lines hidden (legend keeps
                       // the value; a click reveals the line). Hiding Speed also lets the bps axis

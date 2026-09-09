@@ -57,6 +57,19 @@ func TestClassifyUnifiWirelessAndWan(t *testing.T) {
 	}
 }
 
+// The HTTP add-on's two items group like ICMP: reachability + response time under one instance,
+// with the "Reachable"/"Response time" channels the frontend turns into Downtime + primary.
+func TestClassifyWebGroup(t *testing.T) {
+	cat, _, inst, ch, ok := classifyItem("net.tcp.service.perf[{$HTTP.SCHEME},,{$HTTP.PORT}]", "HTTP/HTTPS response time")
+	if !ok || cat != "Web" || inst != "HTTP/HTTPS" || ch != "Response time" {
+		t.Errorf("perf: got (%q, %q, %q, ok=%v)", cat, inst, ch, ok)
+	}
+	cat, _, inst, ch, ok = classifyItem("net.tcp.service[{$HTTP.SCHEME},,{$HTTP.PORT}]", "HTTP/HTTPS reachable")
+	if !ok || cat != "Web" || inst != "HTTP/HTTPS" || ch != "Reachable" {
+		t.Errorf("reachable: got (%q, %q, %q, ok=%v)", cat, inst, ch, ok)
+	}
+}
+
 // Per-core CPU loads group into one "Cores" instance with sequential core-number channels.
 func TestClassifyCpuCores(t *testing.T) {
 	cat, label, inst, ch, ok := classifyItem("system.cpu.core[7]", "Core 7 load")
