@@ -3229,7 +3229,7 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
   const grid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.7rem' }
   return createPortal(
     <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onCancel() }}>
-      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 640, maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
+      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 'min(980px, 94vw)', maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
         <div className="dlg-title">Add a device</div>
         <div className="dlg-scroll">
           {classes.length === 0 ? <Banner variant="info">Loading device classes…</Banner> : <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
