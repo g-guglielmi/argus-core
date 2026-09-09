@@ -91,4 +91,13 @@ func TestRegistry(t *testing.T) {
 	if ur.Pattern != PatternSNMP || ur.Iface != IfaceSNMP || len(ur.Templates) != 2 || len(ur.Macros) != 0 {
 		t.Fatalf("unexpected unraid class: %+v", ur)
 	}
+	// The class presets a host-level FS skip list (unRAID utility mounts + docker.img subvolumes).
+	if len(ur.HostMacros) != 1 || ur.HostMacros[0].Macro != "{$FS.NAME.SKIP}" {
+		t.Fatalf("unraid preset macros: %+v", ur.HostMacros)
+	}
+	for _, frag := range []string{"/mnt/addons", "/mnt/disks", "/mnt/remotes", "/mnt/rootshare", "/var/lib/memtester", "/var/lib/docker/"} {
+		if !strings.Contains(ur.HostMacros[0].Value, frag) {
+			t.Errorf("unraid FS skip missing %q", frag)
+		}
+	}
 }

@@ -2963,7 +2963,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
             <span className="hn lnk-host" onClick={(e) => { e.stopPropagation(); drillHost(path, h.id) }}>{h.name}</span>
             {h.paused && <span className="kind" style={{ color: PAUSED_BLUE }}>· paused {untilLabel(h.paused_until)}</span>}
             {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
-            {!h.paused && !h.hidden && h.problems > 0 && <span className="probpill" title={`${h.problems} problem${h.problems === 1 ? '' : 's'}`}>{h.problems}</span>}
+            {!h.paused && !h.hidden && h.problems > 0 && <span className={'probpill' + (h.state === 'warning' ? ' warn' : '')} title={`${h.problems} problem${h.problems === 1 ? '' : 's'}`}>{h.problems}</span>}
           </div>
           <div className="c-graph">
             {h.icmp_item && icmpSparks[h.icmp_item] && icmpSparks[h.icmp_item].length > 1 && (
@@ -3673,11 +3673,14 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
     return { node: reading(gi[0]), primary: gi[0] }
   }
 
+  // The problems banner takes the worst severity present: red for errors, amber when it's warnings only.
+  const probErr = problems.some((p) => p.state === 'error')
+  const probColor = probErr ? 'var(--err)' : 'var(--warn)'
   return (
     <div>
       {problems.length > 0 && (
-        <div style={{ border: '1px solid color-mix(in srgb, var(--err) 30%, var(--border))', background: 'color-mix(in srgb, var(--err) 7%, var(--panel))', borderRadius: 8, padding: '0.5rem 0.75rem', marginBottom: '0.5rem' }}>
-          <div style={{ color: 'var(--err)', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Active problems</div>
+        <div style={{ border: `1px solid color-mix(in srgb, ${probColor} 30%, var(--border))`, background: `color-mix(in srgb, ${probColor} 7%, var(--panel))`, borderRadius: 8, padding: '0.5rem 0.75rem', marginBottom: '0.5rem' }}>
+          <div style={{ color: probColor, fontSize: 12, marginBottom: 4, fontWeight: 600 }}>{probErr ? 'Active problems' : 'Active warnings'}</div>
           {problems.map((p, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.2rem 0' }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: healthColor(p.state, p.acknowledged) }} />
