@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, Fragment, type FormEvent, type ReactNode, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, Fragment, type FormEvent, type ReactNode, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { registerPasskey, loginWithPasskey } from './webauthn'
-import { Button, Card, Field, Banner, Badge, CopyButton, Switch, Select, Skeleton, EmptyState } from './ui'
+import { Button, Card, Field, Banner, Badge, CopyButton, Switch, Select, Combobox, Skeleton, EmptyState } from './ui'
 import { useConfirm, usePrompt, useAlert } from './dialog'
 import { useToast } from './toast'
 
@@ -3175,6 +3175,9 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
 
   const cls = classes.find((c) => c.id === classId)
   const classMacros = cls?.macros || []
+  // Alphabetical by label, with "Ping only" (base) pinned first as the universal default.
+  const classOptions = useMemo(() => classes.map((c) => ({ value: c.id, label: c.label }))
+    .sort((a, b) => (a.value === 'base' ? -1 : b.value === 'base' ? 1 : a.label.localeCompare(b.label))), [classes])
   const needsSnmp = cls?.iface === 'snmp'
   const offersHttp = !!cls?.offers_http
   const proxyName = proxies.find((p) => p.id === proxyId)?.name || 'the proxy'
@@ -3221,7 +3224,7 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
     <div style={{ margin: '8px 16px', padding: '12px 14px', background: 'var(--elevated)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
       {classes.length === 0 ? <Banner variant="info">Loading device classes…</Banner> : <>
         <div style={grid}>
-          <Field label="Device class"><Select value={classId} onChange={(e) => setClassId(e.target.value)}>{classes.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</Select></Field>
+          <Field label="Device class"><Combobox value={classId} onChange={setClassId} options={classOptions} placeholder="Search device classes…" /></Field>
           <Field label="Name" placeholder="e.g. core-switch-01" value={name} onChange={(e) => setName(e.target.value)} />
           <Field label="Site"><Select value={site} onChange={(e) => setSite(e.target.value)}><option value="">Choose a site…</option>{groups.map((g) => <option key={g.id} value={g.name}>{g.name}</option>)}</Select></Field>
           <Field label="Monitored by"><Select value={proxyId} onChange={(e) => setProxyId(e.target.value)}><option value="">Core server</option>{proxies.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
