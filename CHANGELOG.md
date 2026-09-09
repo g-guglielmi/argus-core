@@ -11,6 +11,67 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.40] - 2026-09-09
+
+**C2 breadth — the UniFi family and unRAID join the catalog.** Three new device classes ride the
+patterns C1 proved: two more UniFi types off the same controller API, and unRAID as the first
+multi-template class (the Generic Linux SNMP template plus a storage add-on). Along the way, a
+per-core CPU breakdown for every SNMP host, a corrected memory reading, and a batch of
+lab-driven monitoring-view refinements.
+
+**Added:**
+- **UniFi Gateway device class.** One controller call per poll (by MAC), like the switch: state,
+  CPU/memory, uptime, firmware, temperature, LAN port discovery (WAN ports excluded), total PoE
+  draw on models that power devices, the last speedtest result, and **per-WAN discovery** — traffic
+  in/out plus the gateway's own uplink-monitor latency and availability (shown as a "WAN quality"
+  group beside ICMP), with a WAN-degraded alert.
+- **UniFi Access Point device class.** Adds a **Wireless** sensor category: connected clients, the
+  controller's experience score, and per-radio discovery (clients and channel utilization per band,
+  2.4/5/6 GHz) — plus the shared state/CPU/memory/uptime/uplink/firmware sensors.
+- **unRAID device class (SNMP).** The first class to stack templates: Generic Linux SNMP (CPU,
+  memory, array/pool/`docker.img` filesystems, interfaces, uptime) plus an unRAID add-on for
+  per-disk temperatures and per-share free space, read from the Community Applications "SNMP"
+  plugin. Utility mount roots are filtered out by a class-preset skip list. Ships an optional
+  companion script (`docs/unraid-pool-temps.sh`) that adds cache/pool drives (incl. NVMe, which the
+  plugin omits) and reads temperatures from the emhttp state — atomic, dash-free, never waking a
+  disk — with drives named by slot ("Parity", "Disk 1", "Cache 2") and ordered like the Main tab.
+- **Per-core CPU utilization** on the Generic Linux SNMP class: `hrProcessorLoad` walked in one
+  request, discovered into a "Cores" group whose headline and chart follow the busiest core.
+
+**Changed:**
+- **Storage-box category order:** a host with drive-temperature sensors (unRAID now, QNAP/Ugreen
+  later) reads Temperature right before Disk. Third built-in shape profile beside compute-first
+  (servers) and network-first (switches/APs).
+- **HTTP/HTTPS collapses into one group** like ICMP: response time is the primary channel, the
+  reachability check becomes the inverted Downtime band.
+- **Available memory now reflects what the kernel can actually reclaim** — free plus buffers and
+  page cache, minus the tmpfs/shared pages that live in cache but can't be evicted. Matches what
+  `htop` and the unRAID dashboard report; memory utilization inherits the correction across every
+  SNMP host.
+- **The UniFi WAN-degraded alert arms itself:** it only fires for a WAN that was healthy in the
+  last few hours, so a configured-but-unplugged failover never alerts while a WAN that worked and
+  then died still does — and stays open through the whole outage. A per-WAN threshold override
+  remains for deliberate decommissions.
+- A **one-member group keeps its group name** (a WAN with only availability data reads "WAN 2
+  quality", not the raw item label) and folds back into a full group when more channels report.
+
+**Fixed:**
+- **Memory utilization read far too high** on any box with a warm cache — the previous "available
+  memory" counted only truly-free RAM. (See above.)
+- **Percentage charts no longer amplify a flat line:** a disk sitting at a steady 57 % auto-ranged
+  to a sliver of a percent and drew as a full-height ramp with every gridline rounding to the same
+  label. Percentage axes now keep a minimum visible span, so a steady value reads flat while a
+  genuinely varying one keeps its detail.
+- **unRAID disk temperatures no longer flicker in and out.** The plugin's temperature script serves
+  a partial file while rebuilding its cache, and Zabbix was disabling the momentarily-missing disks;
+  discovered drives are now kept through partial reads. Spun-down disks keep their last real reading
+  instead of a placeholder.
+- **Right-axis labels stopped clipping for good:** the auto-size pass now re-measures as the axis
+  settles, so a late switch to finer tick labels (`32.5 °C`) can't overflow the gutter.
+- **Warning-severity problems read as warnings, not errors:** the host banner shows "Active
+  warnings" in amber (red "Active problems" only when something is at error level), and the tree
+  problem count matches.
+
 ## [0.4.39] - 2026-09-09
 
 **The UniFi Switch class — and a discovery trigger.** §C phase C1 is complete: switches join the
