@@ -458,13 +458,17 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 		out = append(out, iv)
 	}
 	if !all {
-		// Network gear (anything with switch ports or radios) reads network-first; servers keep
-		// the classic compute-first order (categoryOrderServer/Net in curate.go).
+		// Network gear (anything with switch ports or radios) reads network-first; storage boxes
+		// (anything with a drive-temperature group) read temps before disks; everything else keeps
+		// the classic compute-first order (categoryOrderServer/Net/NAS in curate.go).
 		order := categoryOrderServer
 		for _, v := range out {
 			if v.Category == "Ports" || v.Category == "Wireless" {
 				order = categoryOrderNet
-				break
+				break // network shape wins over storage
+			}
+			if v.Category == "Temperature" && v.Instance == "Disk temperatures" {
+				order = categoryOrderNAS
 			}
 		}
 		sort.SliceStable(out, func(i, j int) bool {
