@@ -3729,6 +3729,13 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                   if (row.cat === 'Ports') { const rank: Record<string, number> = { In: 0, Out: 1, PoE: 2, Speed: 3, Link: 4 }; channels = [channels[0], ...channels.slice(1).sort((a, b) => (rank[a.label] ?? 9) - (rank[b.label] ?? 9))] }
                   // Radios read Clients -> Utilization (clients drive the group).
                   if (row.cat === 'Wireless') { const rank: Record<string, number> = { Clients: 0, Utilization: 1 }; channels = [channels[0], ...channels.slice(1).sort((a, b) => (rank[a.label] ?? 9) - (rank[b.label] ?? 9))] }
+                  // Drive temperatures read in unRAID Main-tab order: parity, data disks, then pools;
+                  // numbers compare numerically (Disk 2 before Disk 10). Non-unRAID channels trail.
+                  if (row.cat === 'Temperature') {
+                    const bucket = (l: string) => (/^parity/i.test(l) ? 0 : /^disk ?\d/i.test(l) ? 1 : /^cache/i.test(l) ? 2 : 3)
+                    const num = (l: string) => { const m = l.match(/(\d+)$/); return m ? parseInt(m[1], 10) : 0 }
+                    channels = [...channels].sort((a, b) => bucket(a.label) - bucket(b.label) || num(a.label) - num(b.label) || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0))
+                  }
                   const clickable = channels.length > 0
                   const gState = row.items.reduce((w, i) => { const s = itemState[i.id]; return s && (!w || stateRank[s] > stateRank[w]) ? s : w }, '')
                   const gAcked = !row.items.some((i) => itemState[i.id] && itemAcked[i.id] === false)
