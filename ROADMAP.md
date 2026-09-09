@@ -78,13 +78,13 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Base/Ping** template + **HTTP/HTTPS-custom-port** add-on (the universal slice, end-to-end) - v0.4.38
 
 **C1 - Vertical slice (prove both dominant patterns):**
-- [x] **Generic Linux SNMP** template (host-resources+UCD+IF-MIB, fs/NIC LLD, §6 macros) - lab-confirmed collecting core metrics + per-mount disks + per-NIC traffic; Add-device inherits the proxy SNMP defaults - v0.4.38
+- [x] **Generic Linux SNMP** template (host-resources+UCD+IF-MIB, fs/NIC LLD, §6 macros) - lab-confirmed collecting core metrics + per-mount disks + per-NIC traffic; Add-device inherits the proxy SNMP defaults; per-core CPU + reclaimable-memory correction - v0.4.38, v0.4.40
 - [x] **UniFi Switch** HTTP-API template (API-key auth via the controller, master+dependent items, port LLD with names/traffic/PoE; covers cloud-gateway and self-hosted consoles) - lab-confirmed on real switches (PoE and non-PoE) - v0.4.39
 - [ ] Done = host created via Argus → template attached → sensors show with right labels/units → §6 triggers fire → LLD only-real instances → a per-host threshold override works
 
 **C2 - Breadth by pattern (ROI order):**
-- [ ] Finish **SNMP family**: Aruba CX, InstantOn 1960, QNAP, Ugreen UGOS, unRAID, Sophos XGS, NetScaler, Libraesva, Windows (SNMP + LANMGR services), Hyper-V (host) - _(BE)_ **L**
-- [ ] Finish **UniFi family**: Gateway, AP, OS Console (+ cloud-gateway access mode) - _(BE)_ M
+- [ ] Finish **SNMP family**: Aruba CX, InstantOn 1960, QNAP, Ugreen UGOS, ~~unRAID~~ (v0.4.40 - Linux SNMP + extend add-on: per-disk/pool temps, per-share free, per-core CPU; lab-confirmed on two servers), Sophos XGS, NetScaler, Libraesva, Windows (SNMP + LANMGR services), Hyper-V (host) - _(BE)_ **L**
+- [ ] Finish **UniFi family**: ~~Gateway~~, ~~AP~~ (both v0.4.40, lab-confirmed on real UXG + U6), OS Console (+ cloud-gateway access mode) - _(BE)_ M
 - [ ] **Agentless**: DNS/AdGuard, NUT UPS (upsd :3493), Linux SSH (no-SNMP fallback) - _(BE)_ M
 - [ ] **API-source heavies** (register-endpoint + host-prototype LLD): Nutanix Prism, XCP-NG (XAPI collector), Citrix farm (OData) - _(BE)_ **L**
 - [ ] **vSphere** (native VMware collector) - **low priority, production-only** (not the lab) - _(BE)_ M
