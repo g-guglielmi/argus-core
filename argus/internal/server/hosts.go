@@ -400,6 +400,17 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 	hideMap, _ := s.st.ActiveSuppressionMap(ctx, "hide", "item")
 	pauseMap, _ := s.st.ActiveSuppressionMap(ctx, "pause", "item")
 	prioMap, _ := s.st.ItemPriorities(ctx)
+	// The optional emhttp-based unRAID extends supersede the plugin's smartctl chain per drive:
+	// when a drive id also reports via unraid.arraytemp (or pooltemp), the curated view drops the
+	// unraid.disktemp row for it. Stock hosts without the extends keep the plugin chain.
+	tempOverride := map[string]bool{}
+	if !all {
+		for _, it := range items {
+			if b, p := splitKey(it.Key); (b == "unraid.arraytemp" || b == "unraid.pooltemp") && it.LastValue != "" {
+				tempOverride[param(p, 0)] = true
+			}
+		}
+	}
 	out := make([]itemView, 0, len(items))
 	for _, it := range items {
 		var clock int64
@@ -437,6 +448,9 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 				if v := pf(it.LastValue); v == nil || *v == 0 {
 					continue
 				}
+			}
+			if b, p := splitKey(it.Key); b == "unraid.disktemp" && tempOverride[param(p, 0)] {
+				continue // this drive reports via the atomic arraytemps extend
 			}
 			iv.Category, iv.Label = cat, label
 			iv.Instance, iv.Channel = inst, ch

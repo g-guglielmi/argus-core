@@ -26,17 +26,27 @@ zabbix_export:
           type: SNMP_AGENT
           snmp_oid: '.1.3.6.1.4.1.8072.1.3.2.3.1.2.8.100.105.115.107.116.101.109.112'
           key: unraid.disktemp.raw
-          delay: 2m
+          delay: 5m
           history: '0'
           trends: '0'
           value_type: TEXT
-          description: 'Master item: NET-SNMP-EXTEND-MIB nsExtendOutputFull."disktemp" - one line per drive, "<disk id>: <temp C>". The per-disk sensors depend on this.'
+          description: 'Master item: NET-SNMP-EXTEND-MIB nsExtendOutputFull."disktemp" - the SNMP plugin''s own extend, one line per array drive. Fallback source: superseded per drive by the arraytemps extend when installed. Do NOT poll slower than 5m - the plugin script keeps a 5-minute cache and serves PARTIAL files while rebuilding it, so anything above the TTL makes every read partial.'
+        - uuid: 0fdcc27f85e149dfbb555b13a0d34410
+          name: 'unRAID array disk temperatures (raw)'
+          type: SNMP_AGENT
+          snmp_oid: '.1.3.6.1.4.1.8072.1.3.2.3.1.2.10.97.114.114.97.121.116.101.109.112.115'
+          key: unraid.arraytemp.raw
+          delay: 5m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          description: 'Master item: NET-SNMP-EXTEND-MIB nsExtendOutputFull."arraytemps" - parity + data disks from the OPTIONAL emhttp-state extend (docs/unraid-pool-temps.sh): atomic, instant, never wakes a disk. Unsupported until that extend is configured; where present it supersedes the plugin''s disktemp per drive.'
         - uuid: 3b7626ecbc2b46478f326e48023f3aa4
           name: 'unRAID pool disk temperatures (raw)'
           type: SNMP_AGENT
           snmp_oid: '.1.3.6.1.4.1.8072.1.3.2.3.1.2.9.112.111.111.108.116.101.109.112.115'
           key: unraid.pooltemp.raw
-          delay: 2m
+          delay: 5m
           history: '0'
           trends: '0'
           value_type: TEXT
@@ -118,6 +128,74 @@ zabbix_export:
                   description: 'Drive temperature at/above the warning threshold on the last 3 checks.'
                 - uuid: fa9878282f4e4cea899ebaa2490bb7f1
                   expression: 'min(/Argus unRAID by SNMP/unraid.disktemp["{#DISKID}"],#3)>={$DISK.TEMP.HIGH}'
+                  name: 'Disk {#DISKID} overheating'
+                  priority: HIGH
+                  description: 'Drive temperature at/above the high threshold on the last 3 checks.'
+        - uuid: 9119ec7fa0cc4dde956e29c88b6617f0
+          name: 'Array disk temperature discovery'
+          type: DEPENDENT
+          key: unraid.arraytemp.discovery
+          delay: '0'
+          lifetime: 14d
+          enabled_lifetime_type: DISABLE_NEVER
+          description: 'Parity + data disks from the optional arraytemps extend (emhttp state - atomic, unlike the plugin''s disktemp). The curated view hides the matching disktemp rows automatically.'
+          master_item:
+            key: unraid.arraytemp.raw
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var out = [];
+                  var lines = String(value).split('\n');
+                  for (var i = 0; i < lines.length; i++) {
+                    var s = lines[i];
+                    var c = s.lastIndexOf(':');
+                    if (c < 1) { continue; }
+                    var name = s.slice(0, c).trim();
+                    var v = parseFloat(s.slice(c + 1));
+                    if (!name || isNaN(v)) { continue; }
+                    out.push({ '{#DISKID}': name });
+                  }
+                  if (!out.length) { throw 'no array drives parsed'; }
+                  return JSON.stringify(out);
+              error_handler: DISCARD_VALUE
+          item_prototypes:
+            - uuid: 79b3594e86ff4ef6b635bcbf5cbedd22
+              name: 'Disk temperature ({#DISKID})'
+              type: DEPENDENT
+              key: 'unraid.arraytemp["{#DISKID}"]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '°C'
+              description: 'Array drive temperature from the emhttp state (refreshes at the poll_attributes cadence). A spun-down drive is omitted from the extend output and keeps its last real reading - no standby placeholder values.'
+              master_item:
+                key: unraid.arraytemp.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var lines = String(value).split('\n');
+                      for (var i = 0; i < lines.length; i++) {
+                        var s = lines[i];
+                        var c = s.lastIndexOf(':');
+                        if (c < 1) { continue; }
+                        if (s.slice(0, c).trim() !== '{#DISKID}') { continue; }
+                        var v = parseFloat(s.slice(c + 1));
+                        if (isNaN(v) || v <= 0) { throw 'no reading'; }
+                        return v;
+                      }
+                      throw 'array drive {#DISKID} not reported';
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: d79dcdda87d3462c82e58fd321c77536
+                  expression: 'min(/Argus unRAID by SNMP/unraid.arraytemp["{#DISKID}"],#3)>={$DISK.TEMP.WARN} and min(/Argus unRAID by SNMP/unraid.arraytemp["{#DISKID}"],#3)<{$DISK.TEMP.HIGH}'
+                  name: 'Disk {#DISKID} running hot'
+                  priority: WARNING
+                  description: 'Drive temperature at/above the warning threshold on the last 3 checks.'
+                - uuid: 1572f7d8a7904df09b18b36d22d55254
+                  expression: 'min(/Argus unRAID by SNMP/unraid.arraytemp["{#DISKID}"],#3)>={$DISK.TEMP.HIGH}'
                   name: 'Disk {#DISKID} overheating'
                   priority: HIGH
                   description: 'Drive temperature at/above the high threshold on the last 3 checks.'
