@@ -14,7 +14,10 @@ zabbix_export:
         Temperatures come from the emhttp state, so spun-down disks are not woken - they simply
         keep their last reading. Needs that plugin installed on the unRAID host; everything else
         (CPU, memory, filesystems incl. array disks and docker.img, interfaces, uptime) is covered
-        by the Linux template. DESIGN section 5.
+        by the Linux template. The plugin's disktemp extend covers ARRAY members only; cache/pool
+        drives (incl. NVMe) are picked up too when the optional "pooltemps" extend is installed -
+        see docs/unraid-pool-temps.sh in the argus-core repo. Hosts without it are unaffected.
+        DESIGN section 5.
       groups:
         - name: Templates/Argus
       items:
@@ -28,6 +31,16 @@ zabbix_export:
           trends: '0'
           value_type: TEXT
           description: 'Master item: NET-SNMP-EXTEND-MIB nsExtendOutputFull."disktemp" - one line per drive, "<disk id>: <temp C>". The per-disk sensors depend on this.'
+        - uuid: 3b7626ecbc2b46478f326e48023f3aa4
+          name: 'unRAID pool disk temperatures (raw)'
+          type: SNMP_AGENT
+          snmp_oid: '.1.3.6.1.4.1.8072.1.3.2.3.1.2.9.112.111.111.108.116.101.109.112.115'
+          key: unraid.pooltemp.raw
+          delay: 2m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          description: 'Master item: NET-SNMP-EXTEND-MIB nsExtendOutputFull."pooltemps" - cache/pool drives from the OPTIONAL extend (docs/unraid-pool-temps.sh). Unsupported until that extend is configured; the pool sensors depend on this.'
         - uuid: 9cb735c54a5f4a44aa9c590a91a112fa
           name: 'unRAID share free space (raw)'
           type: SNMP_AGENT
@@ -108,6 +121,74 @@ zabbix_export:
                   name: 'Disk {#DISKID} overheating'
                   priority: HIGH
                   description: 'Drive temperature at/above the high threshold on the last 3 checks.'
+        - uuid: 26f9bf403a034f43bf9f73049fbddde0
+          name: 'Pool disk temperature discovery'
+          type: DEPENDENT
+          key: unraid.pooltemp.discovery
+          delay: '0'
+          lifetime: 14d
+          enabled_lifetime_type: DISABLE_NEVER
+          description: 'Cache/pool drives from the optional pooltemps extend. The source (emhttp state) is atomic, but the same never-disable policy applies for consistency; a drive really removed ages out after 14 days.'
+          master_item:
+            key: unraid.pooltemp.raw
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var out = [];
+                  var lines = String(value).split('\n');
+                  for (var i = 0; i < lines.length; i++) {
+                    var s = lines[i];
+                    var c = s.lastIndexOf(':');
+                    if (c < 1) { continue; }
+                    var name = s.slice(0, c).trim();
+                    var v = parseFloat(s.slice(c + 1));
+                    if (!name || isNaN(v)) { continue; }
+                    out.push({ '{#DISKID}': name });
+                  }
+                  if (!out.length) { throw 'no pool drives parsed'; }
+                  return JSON.stringify(out);
+              error_handler: DISCARD_VALUE
+          item_prototypes:
+            - uuid: 22f547eb25a04ab1892818444215ffac
+              name: 'Disk temperature ({#DISKID})'
+              type: DEPENDENT
+              key: 'unraid.pooltemp["{#DISKID}"]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '°C'
+              description: 'Pool/cache drive temperature from the emhttp state (refreshes at the poll_attributes cadence). A spun-down or unreadable drive is omitted from the extend output and keeps its last reading. Pool thresholds are separate from the array ones - SSD/NVMe run hotter by design.'
+              master_item:
+                key: unraid.pooltemp.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var lines = String(value).split('\n');
+                      for (var i = 0; i < lines.length; i++) {
+                        var s = lines[i];
+                        var c = s.lastIndexOf(':');
+                        if (c < 1) { continue; }
+                        if (s.slice(0, c).trim() !== '{#DISKID}') { continue; }
+                        var v = parseFloat(s.slice(c + 1));
+                        if (isNaN(v) || v <= 0) { throw 'no reading'; }
+                        return v;
+                      }
+                      throw 'pool drive {#DISKID} not reported';
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: 1bfc4081788e4aeaad3d81ccf7214d77
+                  expression: 'min(/Argus unRAID by SNMP/unraid.pooltemp["{#DISKID}"],#3)>={$POOL.TEMP.WARN} and min(/Argus unRAID by SNMP/unraid.pooltemp["{#DISKID}"],#3)<{$POOL.TEMP.HIGH}'
+                  name: 'Pool disk {#DISKID} running hot'
+                  priority: WARNING
+                  description: 'Pool drive temperature at/above the warning threshold on the last 3 checks.'
+                - uuid: ddb95480417445788b6aae27f8be481a
+                  expression: 'min(/Argus unRAID by SNMP/unraid.pooltemp["{#DISKID}"],#3)>={$POOL.TEMP.HIGH}'
+                  name: 'Pool disk {#DISKID} overheating'
+                  priority: HIGH
+                  description: 'Pool drive temperature at/above the high threshold on the last 3 checks.'
         - uuid: 940bdfc5ddbe4aa5a79b8f5c75938267
           name: 'Share discovery'
           type: DEPENDENT
@@ -172,3 +253,9 @@ zabbix_export:
         - macro: '{$DISK.TEMP.HIGH}'
           value: '55'
           description: 'Drive temperature (°C) that raises a high-severity alert.'
+        - macro: '{$POOL.TEMP.WARN}'
+          value: '60'
+          description: 'Pool/cache drive temperature (°C) that raises a warning (SSD/NVMe run hotter than spinning disks).'
+        - macro: '{$POOL.TEMP.HIGH}'
+          value: '70'
+          description: 'Pool/cache drive temperature (°C) that raises a high-severity alert.'

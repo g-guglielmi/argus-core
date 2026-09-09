@@ -73,6 +73,11 @@ func TestClassifyUnraid(t *testing.T) {
 	if !ok || cat != "Temperature" || inst != "Disk temperatures" || ch != "WDC WD30EFRX-68EUZN0 WD-WMC4N0E5EJ0F" {
 		t.Errorf("disktemp: got (%q, %q, %q, ok=%v)", cat, inst, ch, ok)
 	}
+	// Pool drives (optional pooltemps extend) land in the SAME group as array drives.
+	pcat, _, pinst, pch, pok := classifyItem(`unraid.pooltemp["Samsung_SSD_970_EVO_1TB_S000000000"]`, "Disk temperature (Samsung_SSD_970_EVO_1TB_S000000000)")
+	if !pok || pcat != "Temperature" || pinst != "Disk temperatures" || pch != "Samsung_SSD_970_EVO_1TB_S000000000" {
+		t.Errorf("pooltemp: got (%q, %q, %q, ok=%v)", pcat, pinst, pch, pok)
+	}
 	cat, label, inst, _, ok := classifyItem(`unraid.sharefree["appdata"]`, "Share free (appdata)")
 	if !ok || cat != "Disk" || inst != "" || label != "Share free (appdata)" {
 		t.Errorf("sharefree: got (%q, %q, %q, ok=%v)", cat, label, inst, ok)
@@ -82,6 +87,9 @@ func TestClassifyUnraid(t *testing.T) {
 	}
 	if _, _, _, _, ok := classifyItem("unraid.sharefree.raw", "unRAID share free space (raw)"); ok {
 		t.Error("sharefree.raw master must stay uncurated")
+	}
+	if _, _, _, _, ok := classifyItem("unraid.pooltemp.raw", "unRAID pool disk temperatures (raw)"); ok {
+		t.Error("pooltemp.raw master must stay uncurated")
 	}
 }
 
