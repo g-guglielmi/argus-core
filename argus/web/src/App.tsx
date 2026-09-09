@@ -3648,9 +3648,9 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
     if (cat === 'Network') { const inn = gi.find((x) => x.channel === 'In'), out = gi.find((x) => x.channel === 'Out'); return { node: <span>↓ {reading(inn) ?? '—'} &nbsp;&nbsp; ↑ {reading(out) ?? '—'}</span>, primary: inn || gi[0] } }
     if (cat === 'Disk') { const pu = gi.find((x) => (x.channel || '').startsWith('Used %')) || gi[0]; return { node: reading(pu), primary: pu } }
     if (cat === 'Ping') { const rt = gi.find((x) => x.channel === 'Response time') || gi[0]; return { node: reading(rt), primary: rt } }
-    // A temperature group (unRAID disk temps) reads as its HOTTEST member - the one you'd act on;
-    // that member also drives the sparkline and the chart's main line.
-    if (cat === 'Temperature') {
+    // A temperature group (unRAID disk temps) or CPU cores group reads as its HOTTEST/BUSIEST
+    // member - the one you'd act on; that member also drives the sparkline and the chart's main line.
+    if (cat === 'Temperature' || cat === 'CPU') {
       let hot: SensorItem | undefined
       for (const x of gi) { if (x.supported && x.numeric && x.last_value !== '' && (!hot || Number(x.last_value) > Number(hot.last_value))) hot = x }
       if (hot) return { node: reading(hot), primary: hot }

@@ -46,6 +46,16 @@ zabbix_export:
               name: 'Very high CPU utilization'
               priority: HIGH
               description: 'CPU utilization at/above the high threshold on the last 3 checks.'
+        - uuid: ff83fbd3df554720906553c51652c316
+          name: 'CPU core loads (raw)'
+          type: SNMP_AGENT
+          snmp_oid: 'walk[1.3.6.1.2.1.25.3.3.1.2]'
+          key: snmp.cpu.cores.raw
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          description: 'Master item: HOST-RESOURCES hrProcessorLoad walked in one request - one line per logical CPU (1-minute average load %). The per-core sensors depend on this; core numbers are assigned by index order (the raw hrDeviceIndex values are meaningless).'
         - uuid: 36d1419085414e5bada09c21b1d914e9
           name: 'Total memory'
           type: SNMP_AGENT
@@ -106,17 +116,32 @@ zabbix_export:
             - type: MULTIPLIER
               parameters:
                 - '1024'
+        - uuid: a1b4f8e946df46eca131bf97056a1453
+          name: 'Shared memory (raw)'
+          type: SNMP_AGENT
+          snmp_oid: '.1.3.6.1.4.1.2021.4.13.0'
+          key: snmp.mem.shared
+          delay: 1m
+          history: 7d
+          trends: '0'
+          value_type: FLOAT
+          units: B
+          description: 'UCD-SNMP memShared (KB, scaled to bytes): Shmem - tmpfs contents and shared anonymous pages. Counted inside Cached by the kernel but NOT reclaimable, so Available memory subtracts it.'
+          preprocessing:
+            - type: MULTIPLIER
+              parameters:
+                - '1024'
         - uuid: dc9a09bf8b68438592353cd798fe956d
           name: 'Available memory'
           type: CALCULATED
           key: 'vm.memory.size[available]'
-          params: 'last(//snmp.mem.free)+last(//snmp.mem.buffers)+last(//snmp.mem.cached)'
+          params: 'last(//snmp.mem.free)+last(//snmp.mem.buffers)+last(//snmp.mem.cached)-last(//snmp.mem.shared)'
           delay: 1m
           history: 7d
           trends: 365d
           value_type: FLOAT
           units: B
-          description: 'Memory available for new work: free + buffers + page cache (the kernel reclaims cache on demand). memAvailReal alone reads near-zero on any Linux box with a warm cache and made utilization look ~90%+.'
+          description: 'Memory available for new work: free + buffers + reclaimable page cache (cached minus tmpfs/shared pages, which live in Cached but cannot be evicted). Approximates the kernel''s MemAvailable, matching what htop and the unRAID dashboard call used/free. memAvailReal alone reads near-zero on any warm box; naive free+buffers+cached overcounts by the tmpfs size.'
         - uuid: 01edcc1dad1b4799a3be05e398b8afc5
           name: 'Memory utilization'
           type: CALCULATED
@@ -154,6 +179,55 @@ zabbix_export:
               parameters:
                 - '0.01'
       discovery_rules:
+        - uuid: 1aaab2415f494b9ea701693d9951d0f7
+          name: 'CPU core discovery'
+          type: DEPENDENT
+          key: snmp.cpu.core.discovery
+          delay: '0'
+          description: 'Logical CPUs from hrProcessorLoad, numbered 1..N in index order. Boxes without the table simply discover nothing.'
+          master_item:
+            key: snmp.cpu.cores.raw
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var idx = [];
+                  var lines = String(value).split('\n');
+                  for (var i = 0; i < lines.length; i++) {
+                    var m = lines[i].match(/\.(\d+)\s*=\s*INTEGER:?\s*(-?\d+)\s*$/);
+                    if (m) { idx.push(parseInt(m[1], 10)); }
+                  }
+                  idx.sort(function (a, b) { return a - b; });
+                  var out = [];
+                  for (var i = 0; i < idx.length; i++) { out.push({ '{#COREN}': String(i + 1) }); }
+                  return JSON.stringify(out);
+          item_prototypes:
+            - uuid: 93f15a4c9b73442f8255c946304becf8
+              name: 'Core {#COREN} load'
+              type: DEPENDENT
+              key: 'system.cpu.core[{#COREN}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '%'
+              description: 'Load of this logical CPU, averaged over the last minute (hrProcessorLoad).'
+              master_item:
+                key: snmp.cpu.cores.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var rows = [];
+                      var lines = String(value).split('\n');
+                      for (var i = 0; i < lines.length; i++) {
+                        var m = lines[i].match(/\.(\d+)\s*=\s*INTEGER:?\s*(-?\d+)\s*$/);
+                        if (m) { rows.push([parseInt(m[1], 10), parseInt(m[2], 10)]); }
+                      }
+                      rows.sort(function (a, b) { return a[0] - b[0]; });
+                      var n = parseInt('{#COREN}', 10);
+                      if (!(n >= 1 && n <= rows.length)) { throw 'core {#COREN} not reported'; }
+                      return rows[n - 1][1];
         - uuid: e898b32bb4b94486a40ef37d0d4b5bf4
           name: 'Filesystem discovery'
           type: SNMP_AGENT

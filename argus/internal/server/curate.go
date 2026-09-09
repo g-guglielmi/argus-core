@@ -204,6 +204,10 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 			return "CPU", "CPU load (" + a + ")", "", "", true
 		}
 		return "CPU", "CPU load", "", "", true
+	case "system.cpu.core":
+		// Per-core loads (hrProcessorLoad LLD) group into one "Cores" row; the frontend headlines
+		// the busiest member, PRTG-style.
+		return "CPU", name, "Cores", "Core " + param(p, 0), true
 
 	case "vm.memory.utilization":
 		return "Memory", "Memory utilization", "", "", true
