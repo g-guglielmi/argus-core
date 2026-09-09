@@ -318,7 +318,13 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		// Array drives (plugin disktemp extend, or the atomic arraytemps extend where installed)
 		// and pool/cache drives (pooltemps extend) merge into the same group - one overlay chart
 		// for every drive in the box. hosts.go hides a disktemp row its arraytemp twin supersedes.
-		return "Temperature", name, "Disk temperatures", param(p, 0), true
+		// The channel is the unRAID slot ("parity", "disk1", "cache") when the item name carries
+		// one - script v3 emits it - else the drive id from the key (v2 output, plugin chain).
+		ch := parenSuffix(name)
+		if ch == "" {
+			ch = param(p, 0)
+		}
+		return "Temperature", name, "Disk temperatures", ch, true
 	case "unraid.sharefree":
 		return "Disk", name, "", "", true
 

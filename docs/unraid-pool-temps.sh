@@ -25,6 +25,11 @@
 #
 # Drives that are spun down or unreadable show temp="*" in the state file and are simply
 # omitted - the monitoring side keeps their last real reading (no fake standby values).
+#
+# Output format: "<slot>|<drive id>: <temp C>" - e.g. "parity|ST12000NM001G_XXXXXXXX: 34".
+# The slot (parity, disk1, cache, ...) becomes the sensor's display name; the drive id keys
+# the sensor, so history follows the physical drive across slot changes. The template also
+# accepts the older "<drive id>: <temp C>" format.
 
 mode="${1:-pools}"
 
@@ -36,7 +41,7 @@ awk -F'=' -v mode="$mode" '
     isarr = (slot ~ /^(parity[0-9]*|disk[0-9]+)$/)
     want = (mode == "array") ? isarr : !isarr
     if (want && id != "" && $2 ~ /^[0-9]+$/ && $2 + 0 > 0)
-      print id ": " $2
+      print slot "|" id ": " $2
     id=""
   }
 ' /var/local/emhttp/disks.ini

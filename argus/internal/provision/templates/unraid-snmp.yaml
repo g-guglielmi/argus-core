@@ -151,17 +151,20 @@ zabbix_export:
                     var s = lines[i];
                     var c = s.lastIndexOf(':');
                     if (c < 1) { continue; }
-                    var name = s.slice(0, c).trim();
+                    var left = s.slice(0, c).trim();
                     var v = parseFloat(s.slice(c + 1));
-                    if (!name || isNaN(v)) { continue; }
-                    out.push({ '{#DISKID}': name });
+                    var b = left.indexOf('|');
+                    var slot = b > 0 ? left.slice(0, b).trim() : '';
+                    var id = b > 0 ? left.slice(b + 1).trim() : left;
+                    if (!id || isNaN(v)) { continue; }
+                    out.push({ '{#DISKID}': id, '{#SLOT}': slot || id });
                   }
                   if (!out.length) { throw 'no array drives parsed'; }
                   return JSON.stringify(out);
               error_handler: DISCARD_VALUE
           item_prototypes:
             - uuid: 79b3594e86ff4ef6b635bcbf5cbedd22
-              name: 'Disk temperature ({#DISKID})'
+              name: 'Disk temperature ({#SLOT})'
               type: DEPENDENT
               key: 'unraid.arraytemp["{#DISKID}"]'
               delay: '0'
@@ -181,7 +184,9 @@ zabbix_export:
                         var s = lines[i];
                         var c = s.lastIndexOf(':');
                         if (c < 1) { continue; }
-                        if (s.slice(0, c).trim() !== '{#DISKID}') { continue; }
+                        var left = s.slice(0, c).trim();
+                        var b = left.indexOf('|');
+                        if ((b > 0 ? left.slice(b + 1).trim() : left) !== '{#DISKID}') { continue; }
                         var v = parseFloat(s.slice(c + 1));
                         if (isNaN(v) || v <= 0) { throw 'no reading'; }
                         return v;
@@ -191,12 +196,12 @@ zabbix_export:
               trigger_prototypes:
                 - uuid: d79dcdda87d3462c82e58fd321c77536
                   expression: 'min(/Argus unRAID by SNMP/unraid.arraytemp["{#DISKID}"],#3)>={$DISK.TEMP.WARN} and min(/Argus unRAID by SNMP/unraid.arraytemp["{#DISKID}"],#3)<{$DISK.TEMP.HIGH}'
-                  name: 'Disk {#DISKID} running hot'
+                  name: 'Disk {#SLOT} running hot'
                   priority: WARNING
                   description: 'Drive temperature at/above the warning threshold on the last 3 checks.'
                 - uuid: 1572f7d8a7904df09b18b36d22d55254
                   expression: 'min(/Argus unRAID by SNMP/unraid.arraytemp["{#DISKID}"],#3)>={$DISK.TEMP.HIGH}'
-                  name: 'Disk {#DISKID} overheating'
+                  name: 'Disk {#SLOT} overheating'
                   priority: HIGH
                   description: 'Drive temperature at/above the high threshold on the last 3 checks.'
         - uuid: 26f9bf403a034f43bf9f73049fbddde0
@@ -219,17 +224,20 @@ zabbix_export:
                     var s = lines[i];
                     var c = s.lastIndexOf(':');
                     if (c < 1) { continue; }
-                    var name = s.slice(0, c).trim();
+                    var left = s.slice(0, c).trim();
                     var v = parseFloat(s.slice(c + 1));
-                    if (!name || isNaN(v)) { continue; }
-                    out.push({ '{#DISKID}': name });
+                    var b = left.indexOf('|');
+                    var slot = b > 0 ? left.slice(0, b).trim() : '';
+                    var id = b > 0 ? left.slice(b + 1).trim() : left;
+                    if (!id || isNaN(v)) { continue; }
+                    out.push({ '{#DISKID}': id, '{#SLOT}': slot || id });
                   }
                   if (!out.length) { throw 'no pool drives parsed'; }
                   return JSON.stringify(out);
               error_handler: DISCARD_VALUE
           item_prototypes:
             - uuid: 22f547eb25a04ab1892818444215ffac
-              name: 'Disk temperature ({#DISKID})'
+              name: 'Disk temperature ({#SLOT})'
               type: DEPENDENT
               key: 'unraid.pooltemp["{#DISKID}"]'
               delay: '0'
@@ -249,7 +257,9 @@ zabbix_export:
                         var s = lines[i];
                         var c = s.lastIndexOf(':');
                         if (c < 1) { continue; }
-                        if (s.slice(0, c).trim() !== '{#DISKID}') { continue; }
+                        var left = s.slice(0, c).trim();
+                        var b = left.indexOf('|');
+                        if ((b > 0 ? left.slice(b + 1).trim() : left) !== '{#DISKID}') { continue; }
                         var v = parseFloat(s.slice(c + 1));
                         if (isNaN(v) || v <= 0) { throw 'no reading'; }
                         return v;
@@ -259,12 +269,12 @@ zabbix_export:
               trigger_prototypes:
                 - uuid: 1bfc4081788e4aeaad3d81ccf7214d77
                   expression: 'min(/Argus unRAID by SNMP/unraid.pooltemp["{#DISKID}"],#3)>={$POOL.TEMP.WARN} and min(/Argus unRAID by SNMP/unraid.pooltemp["{#DISKID}"],#3)<{$POOL.TEMP.HIGH}'
-                  name: 'Pool disk {#DISKID} running hot'
+                  name: 'Pool disk {#SLOT} running hot'
                   priority: WARNING
                   description: 'Pool drive temperature at/above the warning threshold on the last 3 checks.'
                 - uuid: ddb95480417445788b6aae27f8be481a
                   expression: 'min(/Argus unRAID by SNMP/unraid.pooltemp["{#DISKID}"],#3)>={$POOL.TEMP.HIGH}'
-                  name: 'Pool disk {#DISKID} overheating'
+                  name: 'Pool disk {#SLOT} overheating'
                   priority: HIGH
                   description: 'Pool drive temperature at/above the high threshold on the last 3 checks.'
         - uuid: 940bdfc5ddbe4aa5a79b8f5c75938267
