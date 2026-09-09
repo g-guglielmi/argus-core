@@ -260,12 +260,15 @@ func buildMacros(req createHostRequest, class provision.Class) []zabbix.Macro {
 		}
 	}
 	var macros []zabbix.Macro
+	used := map[string]bool{}
 	if req.HTTP {
 		if p := strings.TrimSpace(req.HTTPPort); p != "" {
 			macros = append(macros, zabbix.Macro{Macro: "{$HTTP.PORT}", Value: p})
+			used["{$HTTP.PORT}"] = true
 		}
 		if sc := strings.TrimSpace(req.HTTPScheme); sc != "" {
 			macros = append(macros, zabbix.Macro{Macro: "{$HTTP.SCHEME}", Value: sc})
+			used["{$HTTP.SCHEME}"] = true
 		}
 	}
 	for k, v := range req.Macros {
@@ -279,6 +282,13 @@ func buildMacros(req createHostRequest, class provision.Class) []zabbix.Macro {
 			m.Type = 1
 		}
 		macros = append(macros, m)
+		used[k] = true
+	}
+	// Class presets (e.g. unRAID's filesystem skip list) fill in last - anything set above wins.
+	for _, pm := range class.HostMacros {
+		if !used[pm.Macro] {
+			macros = append(macros, zabbix.Macro{Macro: pm.Macro, Value: pm.Value})
+		}
 	}
 	return macros
 }

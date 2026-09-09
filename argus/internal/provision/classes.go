@@ -31,6 +31,14 @@ const (
 	IfaceSNMP  IfaceKind = "snmp"  // SNMP — Zabbix type 2, default port 161
 )
 
+// PresetMacro is a host macro a class sets silently at creation - class-tuned defaults such as
+// unRAID's filesystem skip list. Host macros override template macros deterministically (unlike a
+// macro defined on two linked templates); a user-supplied macro of the same name wins over a preset.
+type PresetMacro struct {
+	Macro string `json:"-"`
+	Value string `json:"-"`
+}
+
 // MacroSpec is a per-host macro the attach UI asks for when creating a host of this class - how
 // API-source classes (UniFi, later Nutanix/XCP-NG/…) receive their endpoint and credentials.
 type MacroSpec struct {
@@ -53,6 +61,7 @@ type Class struct {
 	OffersHTTP bool        `json:"offers_http"` // the HTTP/HTTPS add-on may be attached to this class
 	Icon       string      `json:"icon"`       // tree glyph name (server, switch, shield, …); see web devIcon map
 	Macros     []MacroSpec `json:"macros,omitempty"` // per-host macros the attach UI collects
+	HostMacros []PresetMacro `json:"-"`        // macros set silently on every host of this class
 }
 
 // registry is the catalog. C0 shipped the universal "base" class (Ping only); C1 adds Generic Linux
@@ -91,6 +100,13 @@ var registry = []Class{
 		Templates:  []string{"Argus Linux by SNMP", "Argus unRAID by SNMP"},
 		OffersHTTP: true,
 		Icon:       "nas",
+		HostMacros: []PresetMacro{{
+			// The Linux default plus unRAID's utility mount roots (addons/disks/remotes/rootshare,
+			// memtester) and the children of /var/lib/docker (the btrfs/overlay subvolume mirrors
+			// /var/lib/docker itself, which stays - that's the docker.img usage).
+			Macro: "{$FS.NAME.SKIP}",
+			Value: `^(/run|/dev|/sys|/proc|/mnt/addons|/mnt/disks|/mnt/remotes|/mnt/rootshare|/var/lib/memtester|/var/lib/docker/[^/]+)($|/)`,
+		}},
 	},
 	{
 		// The host's own interface is the switch's IP (Base Ping runs against it); the metrics come

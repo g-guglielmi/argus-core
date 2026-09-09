@@ -61,21 +61,62 @@ zabbix_export:
             - type: MULTIPLIER
               parameters:
                 - '1024'
-        - uuid: dc9a09bf8b68438592353cd798fe956d
-          name: 'Available memory'
+        - uuid: 595df548692447df82b77c729eb79ad6
+          name: 'Free memory (raw)'
           type: SNMP_AGENT
           snmp_oid: '.1.3.6.1.4.1.2021.4.6.0'
+          key: snmp.mem.free
+          delay: 1m
+          history: 7d
+          trends: '0'
+          value_type: FLOAT
+          units: B
+          description: 'UCD-SNMP memAvailReal (KB, scaled to bytes): truly free RAM, NOT counting reclaimable buffers/cache. Feeds Available memory.'
+          preprocessing:
+            - type: MULTIPLIER
+              parameters:
+                - '1024'
+        - uuid: 1394827e5f804a7dbeca624f555a64ac
+          name: 'Memory buffers (raw)'
+          type: SNMP_AGENT
+          snmp_oid: '.1.3.6.1.4.1.2021.4.14.0'
+          key: snmp.mem.buffers
+          delay: 1m
+          history: 7d
+          trends: '0'
+          value_type: FLOAT
+          units: B
+          description: 'UCD-SNMP memBuffer (KB, scaled to bytes). Feeds Available memory.'
+          preprocessing:
+            - type: MULTIPLIER
+              parameters:
+                - '1024'
+        - uuid: fc48296e57fc4584aac29defe9d4d3a4
+          name: 'Cached memory (raw)'
+          type: SNMP_AGENT
+          snmp_oid: '.1.3.6.1.4.1.2021.4.15.0'
+          key: snmp.mem.cached
+          delay: 1m
+          history: 7d
+          trends: '0'
+          value_type: FLOAT
+          units: B
+          description: 'UCD-SNMP memCached (KB, scaled to bytes). Feeds Available memory.'
+          preprocessing:
+            - type: MULTIPLIER
+              parameters:
+                - '1024'
+        - uuid: dc9a09bf8b68438592353cd798fe956d
+          name: 'Available memory'
+          type: CALCULATED
           key: 'vm.memory.size[available]'
+          params: 'last(//snmp.mem.free)+last(//snmp.mem.buffers)+last(//snmp.mem.cached)'
           delay: 1m
           history: 7d
           trends: 365d
           value_type: FLOAT
           units: B
-          description: 'UCD-SNMP memAvailReal (KB), scaled to bytes.'
-          preprocessing:
-            - type: MULTIPLIER
-              parameters:
-                - '1024'
+          description: 'Memory available for new work: free + buffers + page cache (the kernel reclaims cache on demand). memAvailReal alone reads near-zero on any Linux box with a warm cache and made utilization look ~90%+.'
         - uuid: 01edcc1dad1b4799a3be05e398b8afc5
           name: 'Memory utilization'
           type: CALCULATED
