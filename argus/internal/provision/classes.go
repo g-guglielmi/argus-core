@@ -93,7 +93,7 @@ var registry = []Class{
 		// service table. Same item keys as Generic Linux SNMP, so curation is shared. SNMP creds
 		// inherit the proxy default like every SNMP class.
 		ID:         "windows-snmp",
-		Label:      "Windows Server (SNMP)",
+		Label:      "Windows (SNMP)",
 		Family:     "Windows",
 		Pattern:    PatternSNMP,
 		Iface:      IfaceSNMP,
