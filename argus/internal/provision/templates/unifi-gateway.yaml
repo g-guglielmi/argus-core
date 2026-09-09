@@ -428,10 +428,13 @@ zabbix_export:
                   error_handler: DISCARD_VALUE
               trigger_prototypes:
                 - uuid: 75c2f77c06a2497d85eccb87969ed9b6
-                  expression: 'max(/Argus UniFi Gateway by HTTP/unifi.wan.avail[{#WANIDX}],#3)<{$UNIFI.WAN.AVAIL.MIN:"{#WANIDX}"}'
+                  expression: 'max(/Argus UniFi Gateway by HTTP/unifi.wan.avail[{#WANIDX}],3h)>={$UNIFI.WAN.AVAIL.MIN:"{#WANIDX}"} and max(/Argus UniFi Gateway by HTTP/unifi.wan.avail[{#WANIDX}],#3)<{$UNIFI.WAN.AVAIL.MIN:"{#WANIDX}"}'
+                  recovery_mode: RECOVERY_EXPRESSION
+                  recovery_expression: 'min(/Argus UniFi Gateway by HTTP/unifi.wan.avail[{#WANIDX}],#3)>={$UNIFI.WAN.AVAIL.MIN:"{#WANIDX}"}'
                   name: 'WAN {#WANIDX} degraded ({#WANNAME})'
                   priority: HIGH
-                  description: 'Uplink availability below the threshold on the last 3 checks - the WAN link is down or losing packets to the monitor targets. The threshold is per-WAN via macro context: set {$UNIFI.WAN.AVAIL.MIN:"2"} = 0 on the host to silence a deliberately unplugged failover WAN 2 while WAN 1 keeps alerting at the default.'
+                  manual_close: 'YES'
+                  description: 'Uplink availability below the threshold on the last 3 checks, on a WAN that was healthy within the last 3 hours - so a configured-but-never-connected failover never alerts, while a WAN that worked and then died (unplugged, lossy, or ISP-dead) fires and STAYS open until it is genuinely healthy again (the recovery expression, not the arming window, closes it). Deliberately decommissioning a previously working WAN: close the problem manually once, or set the per-WAN threshold to 0 via macro context ({$UNIFI.WAN.AVAIL.MIN:"2"} = 0 on the host).'
         - uuid: a73f71dcb0774524844dc6aee43490d6
           name: 'Port discovery'
           type: DEPENDENT
