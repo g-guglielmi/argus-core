@@ -4092,15 +4092,19 @@ function insertGaps(xs: number[], series: (number | null)[][]): [number[], (numb
 
 // Auto-size a value axis to its longest rendered label ("364d 23h 59m", "953.67 MB", ...) so text
 // never clips regardless of unit - the uPlot autosize recipe: measure the formatted tick strings in
-// the axis font. cycleNum > 1 returns the size the axis already settled on, so layout can't oscillate.
+// the axis font. The stock recipe bails out with the cycle-1 size on later convergence cycles, but
+// resizing the gutter changes the plot width, which can make uPlot pick FINER splits ("32.5 °C"
+// where cycle 1 only saw "30 °C") that are wider than what was measured - the recurring clipped-C.
+// So later cycles re-measure and only ever GROW the gutter: monotone growth still converges (it's
+// bounded by the widest possible label) and can never oscillate.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function axisAutoSize(u: any, values: string[] | null, axisIdx: number, cycleNum: number): number {
   const ax = u.axes[axisIdx]
-  if (cycleNum > 1) return ax._size
   let size = (typeof ax.ticks?.size === 'number' ? ax.ticks.size : 10) + (typeof ax.gap === 'number' ? ax.gap : 5) + 4
   const longest = (values ?? []).reduce((a, b) => (b != null && String(b).length > a.length ? String(b) : a), '')
   if (longest !== '') { u.ctx.font = ax.font[0]; size += u.ctx.measureText(longest).width / (window.devicePixelRatio || 1) }
-  return Math.ceil(size)
+  size = Math.ceil(size)
+  return cycleNum > 1 ? Math.max(ax._size, size) : size
 }
 const axisSize = axisAutoSize as unknown as uPlot.Axis['size']
 

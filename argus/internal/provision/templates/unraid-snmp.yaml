@@ -44,7 +44,9 @@ zabbix_export:
           type: DEPENDENT
           key: unraid.disktemp.discovery
           delay: '0'
-          description: 'Drives reported by the SNMP plugin (parity, data disks, pools).'
+          lifetime: 14d
+          enabled_lifetime_type: DISABLE_NEVER
+          description: "Array drives reported by the SNMP plugin. The plugin's extend script serves a 5-minute cache and, on expiry, deletes it and rebuilds it one disk per second while serving the PARTIAL file - so a poll can legitimately see only the first disk or two. Lost resources are therefore never disabled (they'd flap on every partial read); a drive really removed ages out after 14 days."
           master_item:
             key: unraid.disktemp.raw
           preprocessing:
@@ -62,7 +64,9 @@ zabbix_export:
                     if (!name || isNaN(v)) { continue; }
                     out.push({ '{#DISKID}': name });
                   }
+                  if (!out.length) { throw 'no disks parsed (cache being rebuilt)'; }
                   return JSON.stringify(out);
+              error_handler: DISCARD_VALUE
           item_prototypes:
             - uuid: a1f7c9a3cfd14440ab85c89760f64946
               name: 'Disk temperature ({#DISKID})'
@@ -73,7 +77,7 @@ zabbix_export:
               trends: 365d
               value_type: FLOAT
               units: '°C'
-              description: 'Drive temperature from the emhttp state. While the disk is spun down no value is delivered (the sensor keeps its last reading).'
+              description: "Drive temperature via smartctl. Plugin sentinels: 20 = spun down (kept, so a heat warning clears when the disk spins down), 10 = SMART read error (discarded, keeps the last real reading). A poll that catches the plugin's cache mid-rebuild simply keeps the last reading too."
               master_item:
                 key: unraid.disktemp.raw
               preprocessing:
@@ -87,10 +91,11 @@ zabbix_export:
                         if (c < 1) { continue; }
                         if (s.slice(0, c).trim() !== '{#DISKID}') { continue; }
                         var v = parseFloat(s.slice(c + 1));
-                        if (isNaN(v) || v <= 0) { throw 'disk spun down'; }
+                        if (isNaN(v) || v <= 0) { throw 'no reading'; }
+                        if (v === 10) { throw 'SMART read error (plugin sentinel)'; }
                         return v;
                       }
-                      throw 'disk {#DISKID} not reported';
+                      throw 'disk {#DISKID} not reported (partial cache)';
                   error_handler: DISCARD_VALUE
               trigger_prototypes:
                 - uuid: 0bd565d559364f51b4468582576ee4a6
@@ -108,7 +113,9 @@ zabbix_export:
           type: DEPENDENT
           key: unraid.share.discovery
           delay: '0'
-          description: 'User shares reported by the SNMP plugin.'
+          lifetime: 14d
+          enabled_lifetime_type: DISABLE_NEVER
+          description: "User shares reported by the SNMP plugin. Same cache-rebuild caveat as disk temperatures (the plugin's extends serve partial files while rebuilding), so lost resources are never disabled; a share really deleted ages out after 14 days."
           master_item:
             key: unraid.sharefree.raw
           preprocessing:
@@ -126,7 +133,9 @@ zabbix_export:
                     if (!name || isNaN(v)) { continue; }
                     out.push({ '{#SHARE}': name });
                   }
+                  if (!out.length) { throw 'no shares parsed (cache being rebuilt)'; }
                   return JSON.stringify(out);
+              error_handler: DISCARD_VALUE
           item_prototypes:
             - uuid: 5a6a9cb11e9141fb9c5226e33a6c4523
               name: 'Share free ({#SHARE})'
