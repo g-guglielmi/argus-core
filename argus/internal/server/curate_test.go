@@ -70,6 +70,17 @@ func TestClassifyWebGroup(t *testing.T) {
 	}
 }
 
+// A UniFi OS Console's internal storage lands under Disk; the raw master stays uncurated.
+func TestClassifyUnifiConsole(t *testing.T) {
+	cat, label, _, _, ok := classifyItem("unifi.storage.pused[eMMC]", "Storage used % (eMMC)")
+	if !ok || cat != "Disk" || label != "Storage used % (eMMC)" {
+		t.Errorf("console storage: got (%q, %q, ok=%v)", cat, label, ok)
+	}
+	if _, _, _, _, ok := classifyItem("unifi.console.raw", "UniFi raw device data"); ok {
+		t.Error("console.raw master must stay uncurated")
+	}
+}
+
 // Per-core CPU loads group into one "Cores" instance with sequential core-number channels.
 func TestClassifyCpuCores(t *testing.T) {
 	cat, label, inst, ch, ok := classifyItem("system.cpu.core[7]", "Core 7 load")

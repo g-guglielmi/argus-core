@@ -1,0 +1,303 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: 2fafe1c10e7043089a53054bc60dfa01
+      template: 'Argus UniFi OS Console by HTTP'
+      name: 'Argus UniFi OS Console by HTTP'
+      description: |
+        A UniFi OS console (Cloud Key, UNVR, or a console-capable gateway) polled from its controller
+        with an API key (one request per poll, addressed by MAC): the console host's own health -
+        state, CPU/memory, uptime, firmware, temperature - plus internal storage usage on consoles
+        that have disks. Use this for a dedicated console (Cloud Key / UNVR); a gateway that also
+        hosts the console is better monitored with the UniFi Gateway class (WAN + ports). Set
+        {$UNIFI.URL} to the console base URL including the port (a UniFi OS console usually reaches
+        itself: cloud gateway :443, self-hosted console e.g. :11443), {$UNIFI.KEY} to an API key
+        (UniFi Network -> Settings -> Control Plane -> Integrations) and {$UNIFI.MAC} to the console's
+        MAC. {$UNIFI.SITE} is the site's internal short name (the first site is "default"). The host's
+        own interface stays the console IP (Base Ping). DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: 97fe9bcb03e14e33813afffc41497d6d
+          name: 'UniFi raw device data'
+          type: SCRIPT
+          key: unifi.console.raw
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          timeout: 15s
+          description: 'Master item: one controller call for the console (stat/device by MAC), trimmed to the fields the sensors use. Everything else is dependent on this.'
+          params: |
+            var p = JSON.parse(value);
+            if (!p.url || !p.key || !p.mac) { throw 'set {$UNIFI.URL}, {$UNIFI.KEY} and {$UNIFI.MAC} on the host'; }
+            var mac = String(p.mac).toLowerCase().replace(/[^0-9a-f]/g, '');
+            if (mac.length !== 12) { throw 'MAC address looks wrong: ' + p.mac; }
+            mac = mac.match(/../g).join(':');
+            var site = String(p.site || 'default').toLowerCase();
+            var req = new HttpRequest();
+            req.addHeader('X-API-KEY: ' + p.key);
+            req.addHeader('Accept: application/json');
+            var resp = req.get(String(p.url).replace(/\/+$/, '') + '/proxy/network/api/s/' + site + '/stat/device/' + mac);
+            if (req.getStatus() !== 200) { throw 'UniFi API HTTP ' + req.getStatus(); }
+            var body = JSON.parse(resp);
+            var d = (body.data && body.data[0]) || null;
+            if (!d) { throw 'UniFi: device ' + mac + ' not found on site "' + site + '"'; }
+            var ss = d['system-stats'] || {};
+            var out = {
+              state: d.state,
+              model: d.model || '',
+              version: d.version || d.displayable_version || '',
+              uptime: d.uptime || 0,
+              cpu: parseFloat(ss.cpu),
+              mem: parseFloat(ss.mem),
+              storage: []
+            };
+            if (typeof d.general_temperature === 'number' && d.general_temperature > 0) {
+              out.temp = d.general_temperature;
+            } else if (d.temperatures && d.temperatures.length) {
+              var t = 0;
+              for (var i = 0; i < d.temperatures.length; i++) {
+                var e = d.temperatures[i] || {};
+                if (typeof e.value !== 'number' || e.value <= 0) { continue; }
+                if (!t || String(e.type).toLowerCase() === 'cpu' || /cpu/i.test(String(e.name || ''))) { t = e.value; }
+              }
+              if (t > 0) { out.temp = Math.round(t * 10) / 10; }
+            }
+            // Internal storage: consoles with disks (Cloud Key, UNVR) report a storage array; consoles
+            // without one simply emit an empty list, so the storage LLD discovers nothing.
+            var st = d.storage || [];
+            for (var i = 0; i < st.length; i++) {
+              var s = st[i] || {};
+              var size = parseFloat(s.size), used = parseFloat(s.used);
+              if (!(size > 0) || !(used >= 0)) { continue; }
+              out.storage.push({
+                name: s.name || s.mount_point || ('disk' + i),
+                pused: Math.round(used / size * 1000) / 10
+              });
+            }
+            return JSON.stringify(out);
+          parameters:
+            - name: url
+              value: '{$UNIFI.URL}'
+            - name: key
+              value: '{$UNIFI.KEY}'
+            - name: mac
+              value: '{$UNIFI.MAC}'
+            - name: site
+              value: '{$UNIFI.SITE}'
+        - uuid: 9d22cf633bc5461f80c8dc06a0ab6e61
+          name: 'Controller state'
+          type: DEPENDENT
+          key: unifi.device.state
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = the controller reports the console connected, 0 = anything else. Not a curated sensor - it exists to drive the offline trigger.'
+          master_item:
+            key: unifi.console.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.state'
+            - type: JAVASCRIPT
+              parameters:
+                - 'return String(value) === "1" ? 1 : 0;'
+          triggers:
+            - uuid: 0f6056dc0da340d4aa2e53517462974e
+              expression: 'max(/Argus UniFi OS Console by HTTP/unifi.device.state,#3)=0'
+              name: 'Console offline on the UniFi controller'
+              priority: HIGH
+              description: 'The controller has not reported the console connected on the last 3 checks.'
+        - uuid: 0df8dab93906408bade4cb42113b87ce
+          name: 'CPU utilization'
+          type: DEPENDENT
+          key: unifi.cpu.util
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          master_item:
+            key: unifi.console.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cpu'
+          triggers:
+            - uuid: 2d1eef06d453496b9ceb0994dbac1935
+              expression: 'min(/Argus UniFi OS Console by HTTP/unifi.cpu.util,#3)>={$CPU.UTIL.WARN} and min(/Argus UniFi OS Console by HTTP/unifi.cpu.util,#3)<{$CPU.UTIL.HIGH}'
+              name: 'High CPU utilization'
+              priority: WARNING
+              description: 'CPU utilization at/above the warning threshold on the last 3 checks.'
+            - uuid: c22096aa66d043648befc96d5396e836
+              expression: 'min(/Argus UniFi OS Console by HTTP/unifi.cpu.util,#3)>={$CPU.UTIL.HIGH}'
+              name: 'Very high CPU utilization'
+              priority: HIGH
+              description: 'CPU utilization at/above the high threshold on the last 3 checks.'
+        - uuid: 3a5397a8326a4d698482aa25736d1ba1
+          name: 'Memory utilization'
+          type: DEPENDENT
+          key: unifi.mem.util
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          master_item:
+            key: unifi.console.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.mem'
+          triggers:
+            - uuid: 30a9944a2ce64206869d559b5a9eb3fa
+              expression: 'min(/Argus UniFi OS Console by HTTP/unifi.mem.util,#3)>={$MEM.USED.WARN} and min(/Argus UniFi OS Console by HTTP/unifi.mem.util,#3)<{$MEM.USED.HIGH}'
+              name: 'High memory utilization'
+              priority: WARNING
+              description: 'Memory use at/above the warning threshold on the last 3 checks.'
+            - uuid: f0cedc1f7f1045969217c529c3c1523b
+              expression: 'min(/Argus UniFi OS Console by HTTP/unifi.mem.util,#3)>={$MEM.USED.HIGH}'
+              name: 'Very high memory utilization'
+              priority: HIGH
+              description: 'Memory use at/above the high threshold on the last 3 checks.'
+        - uuid: 8c01e01f50d74d8e80b97593a8ca874d
+          name: Uptime
+          type: DEPENDENT
+          key: unifi.uptime
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: uptime
+          master_item:
+            key: unifi.console.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.uptime'
+        - uuid: 1655b33f10374966bc2e086be87de399
+          name: Temperature
+          type: DEPENDENT
+          key: unifi.temp
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '°C'
+          description: 'Console temperature; only models that report one deliver a value (others discard).'
+          master_item:
+            key: unifi.console.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.temp'
+              error_handler: DISCARD_VALUE
+        - uuid: 49091e263bd747a5b58bfcffb3a81fd8
+          name: 'Firmware version'
+          type: DEPENDENT
+          key: unifi.firmware
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          master_item:
+            key: unifi.console.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.version'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+      discovery_rules:
+        - uuid: 0366df05ea07482f8680c97e06c9b634
+          name: 'Storage discovery'
+          type: DEPENDENT
+          key: unifi.storage.discovery
+          delay: '0'
+          lifetime: 14d
+          enabled_lifetime_type: DISABLE_NEVER
+          description: 'Internal storage volumes on consoles that report them (Cloud Key eMMC, UNVR/UDM-Pro disks). Consoles without storage discover nothing. Lost volumes are never disabled; one really gone ages out after 14 days.'
+          master_item:
+            key: unifi.console.raw
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  var st = d.storage || [];
+                  var out = [];
+                  for (var i = 0; i < st.length; i++) { out.push({ '{#STORAGE}': String(st[i].name) }); }
+                  if (!out.length) { throw 'no storage reported'; }
+                  return JSON.stringify(out);
+              error_handler: DISCARD_VALUE
+          item_prototypes:
+            - uuid: 4a5c235239834a7d8caccac4f3594c0d
+              name: 'Storage used % ({#STORAGE})'
+              type: DEPENDENT
+              key: 'unifi.storage.pused[{#STORAGE}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '%'
+              description: 'Percentage of this storage volume in use.'
+              master_item:
+                key: unifi.console.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var st = d.storage || [];
+                      for (var i = 0; i < st.length; i++) {
+                        if (String(st[i].name) === '{#STORAGE}') { return st[i].pused; }
+                      }
+                      throw 'storage {#STORAGE} not reported';
+              trigger_prototypes:
+                - uuid: 1c8f20f8237844639fcd145dcbdf9960
+                  expression: 'min(/Argus UniFi OS Console by HTTP/unifi.storage.pused[{#STORAGE}],#3)>={$DISK.PUSED.WARN} and min(/Argus UniFi OS Console by HTTP/unifi.storage.pused[{#STORAGE}],#3)<{$DISK.PUSED.HIGH}'
+                  name: 'Storage {#STORAGE} almost full'
+                  priority: WARNING
+                  description: 'Storage volume at/above the warning threshold on the last 3 checks.'
+                - uuid: 228651c1fcd74e5693618c2d48011b54
+                  expression: 'min(/Argus UniFi OS Console by HTTP/unifi.storage.pused[{#STORAGE}],#3)>={$DISK.PUSED.HIGH}'
+                  name: 'Storage {#STORAGE} critically full'
+                  priority: HIGH
+                  description: 'Storage volume at/above the high threshold on the last 3 checks.'
+      macros:
+        - macro: '{$CPU.UTIL.WARN}'
+          value: '80'
+          description: 'CPU utilization percentage that raises a warning.'
+        - macro: '{$CPU.UTIL.HIGH}'
+          value: '95'
+          description: 'CPU utilization percentage that raises a high-severity alert.'
+        - macro: '{$MEM.USED.WARN}'
+          value: '85'
+          description: 'Memory-used percentage that raises a warning.'
+        - macro: '{$MEM.USED.HIGH}'
+          value: '95'
+          description: 'Memory-used percentage that raises a high-severity alert.'
+        - macro: '{$DISK.PUSED.WARN}'
+          value: '85'
+          description: 'Storage-used percentage that raises a warning.'
+        - macro: '{$DISK.PUSED.HIGH}'
+          value: '95'
+          description: 'Storage-used percentage that raises a high-severity alert.'
+        - macro: '{$UNIFI.URL}'
+          value: 'https://unifi.example.lan'
+          description: 'UniFi console base URL including the port (cloud gateway :443, self-hosted console e.g. :11443). Set per host.'
+        - macro: '{$UNIFI.KEY}'
+          value: ''
+          description: 'UniFi Network API key (Settings -> Control Plane -> Integrations). Set per host as a secret macro.'
+        - macro: '{$UNIFI.MAC}'
+          value: ''
+          description: 'MAC address of the console this host represents. Set per host.'
+        - macro: '{$UNIFI.SITE}'
+          value: 'default'
+          description: "The site's internal short name on the controller (the first site is 'default')."

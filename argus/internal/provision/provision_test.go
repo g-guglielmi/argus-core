@@ -28,7 +28,7 @@ func TestLoadTemplates(t *testing.T) {
 		all += d.content
 	}
 	for _, want := range []string{TemplateBasePing, TemplateHTTP, "Argus Linux by SNMP", "icmpping", "{$HTTP.PORT}", "{$PING.LOSS.WARN}", "{$CPU.UTIL.WARN}", "vfs.fs.discovery", "net.if.discovery",
-		"Argus UniFi Switch by HTTP", "Argus UniFi AP by HTTP", "Argus UniFi Gateway by HTTP", "unifi.radio.discovery", "unifi.wan.discovery", "{$UNIFI.WAN.AVAIL.MIN}",
+		"Argus UniFi Switch by HTTP", "Argus UniFi AP by HTTP", "Argus UniFi Gateway by HTTP", "Argus UniFi OS Console by HTTP", "unifi.radio.discovery", "unifi.wan.discovery", "unifi.storage.discovery", "{$UNIFI.WAN.AVAIL.MIN}",
 		"Argus unRAID by SNMP", "unraid.disktemp.discovery", "unraid.share.discovery", "{$DISK.TEMP.WARN}",
 		"snmp.cpu.core.discovery", "snmp.mem.shared", "DISABLE_NEVER",
 		"unraid.pooltemp.discovery", "unraid.arraytemp.discovery", "{$POOL.TEMP.WARN}"} {
@@ -40,7 +40,7 @@ func TestLoadTemplates(t *testing.T) {
 
 // Every UniFi class asks for the same controller macros; the templates they attach must exist.
 func TestUnifiClassFamily(t *testing.T) {
-	for _, id := range []string{"unifi-switch", "unifi-gateway", "unifi-ap"} {
+	for _, id := range []string{"unifi-switch", "unifi-gateway", "unifi-ap", "unifi-console"} {
 		c, ok := ClassByID(id)
 		if !ok {
 			t.Fatalf("%s class missing", id)

@@ -161,6 +161,25 @@ var registry = []Class{
 			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "default"},
 		},
 	},
+	{
+		// The console host itself (Cloud Key / UNVR / a console-capable gateway) - its own health
+		// plus internal storage. A gateway that also hosts the console is better served by the
+		// UniFi Gateway class (WAN + ports); this is for a dedicated console.
+		ID:         "unifi-console",
+		Label:      "UniFi OS Console",
+		Family:     "UniFi",
+		Pattern:    PatternHTTPAPI,
+		Iface:      IfaceAgent,
+		Templates:  []string{"Argus UniFi OS Console by HTTP"},
+		OffersHTTP: false,
+		Icon:       "cloud",
+		Macros: []MacroSpec{
+			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
+			{Macro: "{$UNIFI.KEY}", Label: "API key", Hint: "UniFi Network → Settings → Control Plane → Integrations", Required: true, Secret: true},
+			{Macro: "{$UNIFI.MAC}", Label: "Console MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true},
+			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "default"},
+		},
+	},
 }
 
 // Classes returns the device-class catalog (stable order).
