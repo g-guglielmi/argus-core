@@ -4122,6 +4122,24 @@ function axisAutoSize(u: any, values: string[] | null, axisIdx: number, cycleNum
 }
 const axisSize = axisAutoSize as unknown as uPlot.Axis['size']
 
+// A percentage axis must never zoom so tight that a near-constant value renders as a dramatic ramp
+// with every gridline rounding to the same label (a disk sitting at 57.3 % slowly filling). Enforce
+// a minimum visible span, centered on the data and clamped to [0,100]; a series that genuinely
+// varies more than the floor keeps uPlot's normal 10%-padded auto-range. % is bounded and often
+// near-constant, so it gets this treatment where other units keep tight auto-range.
+const PCT_MIN_SPAN = 10
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function pctRange(_u: any, dataMin: number | null, dataMax: number | null): [number, number] {
+  if (dataMin == null || dataMax == null) return [0, 100]
+  let lo: number, hi: number
+  const span = dataMax - dataMin
+  if (span >= PCT_MIN_SPAN) { const pad = span * 0.1; lo = dataMin - pad; hi = dataMax + pad }
+  else { const mid = (dataMin + dataMax) / 2; lo = mid - PCT_MIN_SPAN / 2; hi = mid + PCT_MIN_SPAN / 2 }
+  if (lo < 0) { hi -= lo; lo = 0 }
+  if (hi > 100) { lo -= hi - 100; hi = 100 }
+  return [Math.max(0, lo), Math.min(100, hi)]
+}
+
 function buildPlot(data: Series, units: string, width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
   const xs = data.points.map((p) => p.t)
   const grid = { stroke: c.grid, width: 1 }
@@ -4145,7 +4163,9 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
   // cursor.points.show:false removes uPlot's hover marker (a small dot it parks on the line at the
   // cursor - and at the plot's top-left corner while idle). We're lines-only; the legend already shows
   // the hovered value, so the dot is pure noise. This is the real source of the long-standing "stray dot".
-  const base: Partial<uPlot.Options> = { width, height: 320, scales: { x: { time: true } }, axes: [xAxis, yAxis], legend: { show: true }, cursor: { points: { show: false } }, ...zoomHook(onZoom, xs.length ? [xs[0], xs[xs.length - 1]] : undefined) }
+  const scales: uPlot.Scales = { x: { time: true } }
+  if (units === '%') scales.y = { range: pctRange as unknown as uPlot.Scale['range'] }
+  const base: Partial<uPlot.Options> = { width, height: 320, scales, axes: [xAxis, yAxis], legend: { show: true }, cursor: { points: { show: false } }, ...zoomHook(onZoom, xs.length ? [xs[0], xs[xs.length - 1]] : undefined) }
 
   // Uptime is a monotonic counter — min ≈ avg ≈ max, so its band is meaningless; fall through to a
   // single line (drawn from avg on trend ranges).
@@ -4360,6 +4380,9 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   // so "100 % lost" and downtime's "down" (a pinned 0-1 scale) peak at the same height, and 0 % sits
   // on the bottom edge with the "up" line. Other %-scales (disk, memory) keep uPlot's auto-range zoom.
   if (pctFixed) scaleCfg[scaleKey('%')] = { range: [0, 100] }
+  // A non-pinned % scale (disk Used %, memory %, radio utilization) gets a minimum span so a
+  // near-constant percentage reads flat instead of a full-height ramp with identical gridlines.
+  else if (units.includes('%')) scaleCfg[scaleKey('%')] = { range: pctRange }
   // Primary channel min/max envelope (a shaded band), when it carries trend min/max — long ranges
   // only; short ranges are raw history (no min/max), so the band simply doesn't appear there.
   const p0 = series[0]
