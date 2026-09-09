@@ -31,7 +31,7 @@ func TestLoadTemplates(t *testing.T) {
 		"Argus UniFi Switch by HTTP", "Argus UniFi AP by HTTP", "Argus UniFi Gateway by HTTP", "unifi.radio.discovery", "unifi.wan.discovery", "{$UNIFI.WAN.AVAIL.MIN}",
 		"Argus unRAID by SNMP", "unraid.disktemp.discovery", "unraid.share.discovery", "{$DISK.TEMP.WARN}",
 		"snmp.cpu.core.discovery", "snmp.mem.shared", "DISABLE_NEVER",
-		"unraid.pooltemp.discovery", "{$POOL.TEMP.WARN}"} {
+		"unraid.pooltemp.discovery", "unraid.arraytemp.discovery", "{$POOL.TEMP.WARN}"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("templates missing %q", want)
 		}

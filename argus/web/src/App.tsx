@@ -3713,9 +3713,15 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                       // the value; a click reveals the line). Hiding Speed also lets the bps axis
                       // range to the In/Out traffic instead of pinning at the negotiated gigabits.
                       : { id: i.id, label: i.channel || i.label || i.name, units: i.units, defaultOff: row.cat === 'Ports' && (i.channel === 'Speed' || i.channel === 'Link') })
-                  // Put the primary/headline channel first so it owns the left axis + the accent colour.
-                  const pIdx = channels.findIndex((cc) => cc.id === primary.id)
-                  if (pIdx > 0) channels = [channels[pIdx], ...channels.slice(0, pIdx), ...channels.slice(pIdx + 1)]
+                  // Put the primary/headline channel first so it owns the left axis + the accent colour -
+                  // EXCEPT for the max-member groups (CPU cores, disk temps): their primary is "whichever
+                  // member is busiest/hottest right now", and hoisting it would reshuffle the legend order
+                  // and every line's colour on each refresh. Those keep their natural order (Core 1..N,
+                  // drives alphabetical); the row's value and sparkline still follow the max member.
+                  if (row.cat !== 'CPU' && row.cat !== 'Temperature') {
+                    const pIdx = channels.findIndex((cc) => cc.id === primary.id)
+                    if (pIdx > 0) channels = [channels[pIdx], ...channels.slice(0, pIdx), ...channels.slice(pIdx + 1)]
+                  }
                   // Disk reads Used % -> Used -> Total (user pref: live values first, static Total last).
                   if (row.cat === 'Disk') { const rank: Record<string, number> = { 'Used %': 0, Used: 1, Total: 2 }; channels = [channels[0], ...channels.slice(1).sort((a, b) => (rank[a.label] ?? 9) - (rank[b.label] ?? 9))] }
                   // Ports read In -> Out -> PoE, so In/Out carry the same colours as the network

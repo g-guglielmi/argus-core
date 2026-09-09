@@ -73,6 +73,12 @@ func TestClassifyUnraid(t *testing.T) {
 	if !ok || cat != "Temperature" || inst != "Disk temperatures" || ch != "WDC WD30EFRX-68EUZN0 WD-WMC4N0E5EJ0F" {
 		t.Errorf("disktemp: got (%q, %q, %q, ok=%v)", cat, inst, ch, ok)
 	}
+	// The atomic arraytemps extend lands in the same group under the same channel id, so the
+	// hosts.go override can swap sources per drive without the UI noticing.
+	acat, _, ainst, ach, aok := classifyItem(`unraid.arraytemp["WDC WD30EFRX-68EUZN0 WD-WMC4N0E5EJ0F"]`, "Disk temperature (WDC WD30EFRX-68EUZN0 WD-WMC4N0E5EJ0F)")
+	if !aok || acat != "Temperature" || ainst != "Disk temperatures" || ach != "WDC WD30EFRX-68EUZN0 WD-WMC4N0E5EJ0F" {
+		t.Errorf("arraytemp: got (%q, %q, %q, ok=%v)", acat, ainst, ach, aok)
+	}
 	// Pool drives (optional pooltemps extend) land in the SAME group as array drives.
 	pcat, _, pinst, pch, pok := classifyItem(`unraid.pooltemp["Samsung_SSD_970_EVO_1TB_S000000000"]`, "Disk temperature (Samsung_SSD_970_EVO_1TB_S000000000)")
 	if !pok || pcat != "Temperature" || pinst != "Disk temperatures" || pch != "Samsung_SSD_970_EVO_1TB_S000000000" {
@@ -90,6 +96,9 @@ func TestClassifyUnraid(t *testing.T) {
 	}
 	if _, _, _, _, ok := classifyItem("unraid.pooltemp.raw", "unRAID pool disk temperatures (raw)"); ok {
 		t.Error("pooltemp.raw master must stay uncurated")
+	}
+	if _, _, _, _, ok := classifyItem("unraid.arraytemp.raw", "unRAID array disk temperatures (raw)"); ok {
+		t.Error("arraytemp.raw master must stay uncurated")
 	}
 }
 
