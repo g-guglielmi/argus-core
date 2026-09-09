@@ -81,6 +81,18 @@ func TestClassifyUnifiConsole(t *testing.T) {
 	}
 }
 
+// Windows services (LAN Manager svSvcTable) land under a Services category, labelled by name.
+func TestClassifyWindowsService(t *testing.T) {
+	cat, label, _, _, ok := classifyItem("win.service.state[DNS Server]", "DNS Server")
+	if !ok || cat != "Services" || label != "DNS Server" {
+		t.Errorf("win service: got (%q, %q, ok=%v)", cat, label, ok)
+	}
+	// Windows reuses the Linux memory/CPU keys, so they classify identically.
+	if cat, _, _, _, ok := classifyItem("vm.memory.utilization[snmp]", "Memory utilization"); !ok || cat != "Memory" {
+		t.Errorf("windows memory key: got (%q, ok=%v)", cat, ok)
+	}
+}
+
 // Per-core CPU loads group into one "Cores" instance with sequential core-number channels.
 func TestClassifyCpuCores(t *testing.T) {
 	cat, label, inst, ch, ok := classifyItem("system.cpu.core[7]", "Core 7 load")

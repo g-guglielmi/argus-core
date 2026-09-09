@@ -32,10 +32,11 @@ var categoryOrderServer = map[string]int{
 	"Disk":        5,
 	"Network":     6,
 	"Wireless":    7,
-	"Temperature": 8,
-	"Uptime":      9,
-	"Ports":       10,
-	"Status":      11,
+	"Services":    8,
+	"Temperature": 9,
+	"Uptime":      10,
+	"Ports":       11,
+	"Status":      12,
 }
 var categoryOrderNet = map[string]int{
 	"Ping":        0,
@@ -46,10 +47,11 @@ var categoryOrderNet = map[string]int{
 	"CPU":         5,
 	"Memory":      6,
 	"Disk":        7,
-	"Uptime":      8,
-	"Ports":       9,
-	"Temperature": 10,
-	"Status":      11,
+	"Services":    8,
+	"Uptime":      9,
+	"Ports":       10,
+	"Temperature": 11,
+	"Status":      12,
 }
 
 // Storage boxes (anything with a drive-temperature group: unRAID, later QNAP/Ugreen) read their
@@ -64,9 +66,10 @@ var categoryOrderNAS = map[string]int{
 	"Disk":        6,
 	"Network":     7,
 	"Wireless":    8,
-	"Uptime":      9,
-	"Ports":       10,
-	"Status":      11,
+	"Services":    9,
+	"Uptime":      10,
+	"Ports":       11,
+	"Status":      12,
 }
 
 // splitKey returns the base key and its parameters, e.g. vfs.fs.size[/,pused] ->
@@ -264,6 +267,11 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 
 	case "system.uptime":
 		return "Uptime", "Uptime", "", "", true
+
+	// Windows services (Argus Windows by SNMP, LAN Manager svSvcTable). The service name rides in
+	// the item name (the LLD prototype is named "{#WINSVC}"); each is its own flat row.
+	case "win.service.state":
+		return "Services", name, "", "", true
 
 	// UniFi devices, polled from the controller (Argus UniFi Switch by HTTP). The raw master item
 	// (unifi.switch.raw) deliberately doesn't match - it's plumbing, visible under "All sensors".
