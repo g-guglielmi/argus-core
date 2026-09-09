@@ -3192,6 +3192,13 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
     fetch(`/api/proxies/${encodeURIComponent(proxyId)}/snmp`).then((r) => (r.ok ? r.json() : { set: false })).then((d) => setProxySnmp({ set: !!d.set })).catch(() => setProxySnmp({ set: false }))
   }, [needsSnmp, proxyId])
 
+  // Escape closes the modal (matches the backdrop click and Cancel), unless a submit is in flight.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onCancel() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onCancel, busy])
+
   async function submit() {
     if (busy) return
     if (!name.trim()) { setErr('A host name is required'); return }
@@ -3220,9 +3227,12 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
   }
 
   const grid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.7rem' }
-  return (
-    <div style={{ margin: '8px 16px', padding: '12px 14px', background: 'var(--elevated)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-      {classes.length === 0 ? <Banner variant="info">Loading device classes…</Banner> : <>
+  return createPortal(
+    <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onCancel() }}>
+      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 640, maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
+        <div className="dlg-title">Add a device</div>
+        <div className="dlg-scroll">
+          {classes.length === 0 ? <Banner variant="info">Loading device classes…</Banner> : <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <div style={grid}>
           <Field label="Device class"><Combobox value={classId} onChange={setClassId} options={classOptions} placeholder="Search device classes…" /></Field>
           <Field label="Name" placeholder="e.g. core-switch-01" value={name} onChange={(e) => setName(e.target.value)} />
@@ -3274,12 +3284,15 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
           </div>
         )}
         {err && <Banner variant="error">{err}</Banner>}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
-          <Button variant="primary" onClick={submit} disabled={busy}>{busy ? 'Creating…' : 'Add device'}</Button>
+          </div>}
         </div>
-      </>}
-    </div>
+        <div className="dlg-foot">
+          <Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
+          <Button variant="primary" onClick={submit} disabled={busy || classes.length === 0}>{busy ? 'Creating…' : 'Add device'}</Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   )
 }
 

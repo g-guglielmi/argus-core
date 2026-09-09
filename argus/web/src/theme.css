@@ -605,7 +605,8 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .combo { position: relative; }
 .combo input.combo-input { width: 100%; padding: 8px 26px 8px 10px; cursor: text; }
 .combo-caret { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--muted); font-size: 11px; }
-.combo-list { position: absolute; z-index: 40; top: calc(100% + 3px); left: 0; right: 0; max-height: 240px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; background: var(--panel); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: 0 10px 26px rgba(0, 0, 0, 0.38); }
+/* Positioned inline (fixed) by the component, which portals it to <body> so no scroll container clips it. */
+.combo-list { z-index: 1200; max-height: 240px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; background: var(--panel); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: 0 10px 26px rgba(0, 0, 0, 0.38); }
 .combo-opt { padding: 6px 9px; border-radius: 6px; cursor: pointer; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .combo-opt.active { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .combo-opt.sel { color: var(--accent); font-weight: 600; }
