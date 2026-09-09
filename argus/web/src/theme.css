@@ -601,6 +601,15 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .cellinput.mono { font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; }
 .roleselect, .input { padding: 6px 9px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--elevated); color: var(--text); font: inherit; }
 .roleselect, select.input { cursor: pointer; }
+/* Combobox: a searchable single-select that reads like a Select but filters as you type. */
+.combo { position: relative; }
+.combo input.combo-input { width: 100%; padding: 8px 26px 8px 10px; cursor: text; }
+.combo-caret { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--muted); font-size: 11px; }
+.combo-list { position: absolute; z-index: 40; top: calc(100% + 3px); left: 0; right: 0; max-height: 240px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; background: var(--panel); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: 0 10px 26px rgba(0, 0, 0, 0.38); }
+.combo-opt { padding: 6px 9px; border-radius: 6px; cursor: pointer; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.combo-opt.active { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.combo-opt.sel { color: var(--accent); font-weight: 600; }
+.combo-empty { padding: 6px 9px; color: var(--muted); font-size: 13px; }
 /* Native checkboxes (group picker, wizard options) take the accent so they match the switch/inputs. */
 input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
 .badge { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border-strong); }
