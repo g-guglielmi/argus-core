@@ -326,6 +326,13 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	case "unifi.speedtest.up":
 		return "Network", "Speedtest upload", "", "", true
 
+	// UniFi OS Console (Argus UniFi OS Console by HTTP): the raw master is plumbing; internal
+	// storage volumes land under Disk (one flat "used %" row per volume, name in the label).
+	case "unifi.console.raw":
+		return "", "", "", "", false
+	case "unifi.storage.pused":
+		return "Disk", "Storage used % (" + param(p, 0) + ")", "", "", true
+
 	// unRAID (Argus unRAID by SNMP, attached alongside the Linux template): the SNMP plugin's
 	// extend scripts deliver per-disk temperatures - grouped into ONE overlay chart - and
 	// per-share free space (flat rows under Disk, after the mounts).
