@@ -8,10 +8,10 @@ zabbix_export:
       template: 'Argus Windows by SNMP'
       name: 'Argus Windows by SNMP'
       description: |
-        Windows Server over SNMP (HOST-RESOURCES-MIB + IF-MIB + the LAN Manager service table): CPU
-        utilization (overall and per-core), physical memory, fixed-disk volumes, network interfaces,
-        uptime, and selected Windows services. Enable the SNMP Service feature on the host and allow
-        the monitoring community. Service monitoring is opt-in: set {$WIN.SERVICE.MATCHES} to a regex
+        Windows over SNMP - any edition, client or server (HOST-RESOURCES-MIB + IF-MIB + the LAN
+        Manager service table): CPU utilization (overall and per-core), physical memory, fixed-disk
+        volumes, network interfaces, uptime, and selected Windows services. Enable the SNMP Service
+        feature on the host (Optional Features on Windows 10/11) and allow the monitoring community. Service monitoring is opt-in: set {$WIN.SERVICE.MATCHES} to a regex
         of the service display names you care about (it matches nothing by default). Reuses the same
         item keys as the Generic Linux SNMP class, so the curated view labels and groups everything
         identically. DESIGN section 5.
