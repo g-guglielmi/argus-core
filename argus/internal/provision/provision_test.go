@@ -29,7 +29,8 @@ func TestLoadTemplates(t *testing.T) {
 	}
 	for _, want := range []string{TemplateBasePing, TemplateHTTP, "Argus Linux by SNMP", "icmpping", "{$HTTP.PORT}", "{$PING.LOSS.WARN}", "{$CPU.UTIL.WARN}", "vfs.fs.discovery", "net.if.discovery",
 		"Argus UniFi Switch by HTTP", "Argus UniFi AP by HTTP", "Argus UniFi Gateway by HTTP", "unifi.radio.discovery", "unifi.wan.discovery", "{$UNIFI.WAN.AVAIL.MIN}",
-		"Argus unRAID by SNMP", "unraid.disktemp.discovery", "unraid.share.discovery", "{$DISK.TEMP.WARN}"} {
+		"Argus unRAID by SNMP", "unraid.disktemp.discovery", "unraid.share.discovery", "{$DISK.TEMP.WARN}",
+		"snmp.cpu.core.discovery", "snmp.mem.shared"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("templates missing %q", want)
 		}

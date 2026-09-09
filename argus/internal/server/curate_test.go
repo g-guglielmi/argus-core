@@ -57,6 +57,14 @@ func TestClassifyUnifiWirelessAndWan(t *testing.T) {
 	}
 }
 
+// Per-core CPU loads group into one "Cores" instance with sequential core-number channels.
+func TestClassifyCpuCores(t *testing.T) {
+	cat, label, inst, ch, ok := classifyItem("system.cpu.core[7]", "Core 7 load")
+	if !ok || cat != "CPU" || label != "Core 7 load" || inst != "Cores" || ch != "Core 7" {
+		t.Errorf("cpu core: got (%q, %q, %q, %q, ok=%v)", cat, label, inst, ch, ok)
+	}
+}
+
 // unRAID disk temps group into ONE "Disk temperatures" instance (channel = the drive id); shares
 // are flat Disk rows; the raw extend masters stay uncurated even though their names say
 // "temperatures" (the heuristic must not catch them).
