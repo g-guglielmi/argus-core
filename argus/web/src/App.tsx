@@ -3638,8 +3638,9 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
       }
     }
   }
-  // A one-member group is just a single sensor.
-  const finalRows: Row[] = rows.map((r) => (r.kind === 'group' && r.items.length === 1 ? { kind: 'item', cat: r.cat, item: r.items[0] } : r))
+  // A one-member group is just a single sensor - but it keeps the GROUP's name, so a "WAN 2
+  // quality" whose latency member has no data yet still reads like its fully-populated sibling.
+  const finalRows: Row[] = rows.map((r) => (r.kind === 'group' && r.items.length === 1 ? { kind: 'item', cat: r.cat, item: { ...r.items[0], label: r.instance } } : r))
   { let prev = ''; finalRows.forEach((r) => { r.showCat = grouped && !!r.cat && r.cat !== prev; prev = r.cat || prev }) }
 
   // Headline reading for a collapsed group: disk shows Used %, network shows down/up, else the first.
