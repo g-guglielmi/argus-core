@@ -3,6 +3,7 @@
 // widgets look and behave the same across every view, instead of being rebuilt ad-hoc
 // with inline styles and hardcoded colors.
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type InputHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type SelectHTMLAttributes } from 'react'
+import { createPortal } from 'react-dom'
 
 // copyToClipboard works over HTTPS (navigator.clipboard) and falls back to execCommand so Copy
 // still works over plain HTTP on a private IP.
@@ -96,18 +97,27 @@ export function Combobox({ value, onChange, options, placeholder = 'Search…', 
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
   const selected = options.find((o) => o.value === value)
   const q = query.trim().toLowerCase()
   const filtered = q ? options.filter((o) => o.label.toLowerCase().includes(q) || (o.hint || '').toLowerCase().includes(q)) : options
 
-  // Close when the focus/click leaves the widget.
+  // The option list is portaled to <body> and fixed-positioned under the input, so it is never
+  // clipped by a scroll container or modal. Reposition it on scroll/resize while open, and close
+  // when a click lands outside both the input and the (portaled) list.
+  const place = () => { const r = inputRef.current?.getBoundingClientRect(); if (r) setRect({ top: r.bottom + 3, left: r.left, width: r.width }) }
   useEffect(() => {
     if (!open) return
-    const onDoc = (e: MouseEvent) => { if (rootRef.current && !rootRef.current.contains(e.target as Node)) { setOpen(false); setQuery('') } }
+    place()
+    const reposition = () => place()
+    const onDoc = (e: MouseEvent) => { const t = e.target as Node; if (rootRef.current?.contains(t) || listRef.current?.contains(t)) return; setOpen(false); setQuery('') }
+    window.addEventListener('scroll', reposition, true)
+    window.addEventListener('resize', reposition)
     document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
+    return () => { window.removeEventListener('scroll', reposition, true); window.removeEventListener('resize', reposition); document.removeEventListener('mousedown', onDoc) }
   }, [open])
   // Reset the highlighted row whenever the filter changes; keep it visible while arrowing.
   useEffect(() => { setActive(0) }, [q])
@@ -118,12 +128,15 @@ export function Combobox({ value, onChange, options, placeholder = 'Search…', 
     if (e.key === 'ArrowDown') { e.preventDefault(); if (!open) setOpen(true); else setActive((a) => Math.min(a + 1, filtered.length - 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)) }
     else if (e.key === 'Enter') { if (open && filtered[active]) { e.preventDefault(); choose(filtered[active].value) } }
-    else if (e.key === 'Escape') { if (open) { e.preventDefault(); setOpen(false); setQuery('') } }
+    // Escape closes the dropdown first (and stops the native event so an enclosing modal's own
+    // Escape handler doesn't also fire); Escape with the list already closed bubbles normally.
+    else if (e.key === 'Escape') { if (open) { e.preventDefault(); e.nativeEvent.stopImmediatePropagation(); setOpen(false); setQuery('') } }
   }
 
   return (
     <div className="combo" ref={rootRef}>
       <input
+        ref={inputRef}
         className="input combo-input"
         role="combobox"
         aria-expanded={open}
@@ -136,8 +149,8 @@ export function Combobox({ value, onChange, options, placeholder = 'Search…', 
         onKeyDown={onKey}
       />
       <span className="combo-caret" aria-hidden="true">▾</span>
-      {open && (
-        <ul className="combo-list" role="listbox" ref={listRef}>
+      {open && rect && createPortal(
+        <ul className="combo-list" role="listbox" ref={listRef} style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width }}>
           {filtered.length === 0 && <li className="combo-empty">{emptyText}</li>}
           {filtered.map((o, i) => (
             <li
@@ -151,7 +164,8 @@ export function Combobox({ value, onChange, options, placeholder = 'Search…', 
               {o.label}
             </li>
           ))}
-        </ul>
+        </ul>,
+        document.body,
       )}
     </div>
   )
