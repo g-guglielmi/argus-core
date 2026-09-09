@@ -121,6 +121,24 @@ func TestHideZero(t *testing.T) {
 	}
 }
 
+// Every order profile must rank every category classifyItem can produce - a missing key silently
+// sorts as 0 (Ping-level), which is exactly the kind of bug this guards against.
+func TestCategoryOrdersComplete(t *testing.T) {
+	for name, m := range map[string]map[string]int{"server": categoryOrderServer, "net": categoryOrderNet, "nas": categoryOrderNAS} {
+		if len(m) != len(categoryOrderServer) {
+			t.Errorf("%s order has %d categories, server has %d", name, len(m), len(categoryOrderServer))
+		}
+		for cat := range categoryOrderServer {
+			if _, ok := m[cat]; !ok {
+				t.Errorf("%s order missing category %q", name, cat)
+			}
+		}
+	}
+	if categoryOrderNAS["Temperature"] >= categoryOrderNAS["Disk"] {
+		t.Error("NAS order must put Temperature before Disk")
+	}
+}
+
 // Labels with embedded numbers sort numerically ("Port 2" before "Port 10").
 func TestNaturalLess(t *testing.T) {
 	cases := []struct {

@@ -52,6 +52,23 @@ var categoryOrderNet = map[string]int{
 	"Status":      11,
 }
 
+// Storage boxes (anything with a drive-temperature group: unRAID, later QNAP/Ugreen) read their
+// drive temperatures right before the Disk section (user call) - the drives ARE the machine.
+var categoryOrderNAS = map[string]int{
+	"Ping":        0,
+	"Web":         1,
+	"Power":       2,
+	"CPU":         3,
+	"Memory":      4,
+	"Temperature": 5, // before Disk (user call)
+	"Disk":        6,
+	"Network":     7,
+	"Wireless":    8,
+	"Uptime":      9,
+	"Ports":       10,
+	"Status":      11,
+}
+
 // splitKey returns the base key and its parameters, e.g. vfs.fs.size[/,pused] ->
 // ("vfs.fs.size", ["/", "pused"]).
 func splitKey(key string) (string, []string) {
