@@ -31,7 +31,8 @@ func TestLoadTemplates(t *testing.T) {
 		"Argus UniFi Switch by HTTP", "Argus UniFi AP by HTTP", "Argus UniFi Gateway by HTTP", "Argus UniFi OS Console by HTTP", "unifi.radio.discovery", "unifi.wan.discovery", "unifi.storage.discovery", "{$UNIFI.WAN.AVAIL.MIN}",
 		"Argus unRAID by SNMP", "unraid.disktemp.discovery", "unraid.share.discovery", "{$DISK.TEMP.WARN}",
 		"snmp.cpu.core.discovery", "snmp.mem.shared", "DISABLE_NEVER",
-		"unraid.pooltemp.discovery", "unraid.arraytemp.discovery", "{$POOL.TEMP.WARN}"} {
+		"unraid.pooltemp.discovery", "unraid.arraytemp.discovery", "{$POOL.TEMP.WARN}",
+		"Argus Windows by SNMP", "win.service.discovery", "{$WIN.SERVICE.MATCHES}"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("templates missing %q", want)
 		}
@@ -84,6 +85,14 @@ func TestRegistry(t *testing.T) {
 	}
 	if _, ok := ClassByID("does-not-exist"); ok {
 		t.Fatal("unexpected class")
+	}
+	// Windows SNMP reuses the Linux item keys through its own template.
+	win, ok := ClassByID("windows-snmp")
+	if !ok {
+		t.Fatal("windows-snmp class missing")
+	}
+	if win.Pattern != PatternSNMP || win.Iface != IfaceSNMP || len(win.Templates) != 1 {
+		t.Fatalf("unexpected windows-snmp class: %+v", win)
 	}
 	// unRAID stacks the unRAID extras on top of the Linux SNMP template (multi-template attach).
 	ur, ok := ClassByID("unraid")

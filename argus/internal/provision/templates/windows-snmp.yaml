@@ -1,0 +1,410 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: c2c92259eb3946f2ac191bad28a8a9c5
+      template: 'Argus Windows by SNMP'
+      name: 'Argus Windows by SNMP'
+      description: |
+        Windows Server over SNMP (HOST-RESOURCES-MIB + IF-MIB + the LAN Manager service table): CPU
+        utilization (overall and per-core), physical memory, fixed-disk volumes, network interfaces,
+        uptime, and selected Windows services. Enable the SNMP Service feature on the host and allow
+        the monitoring community. Service monitoring is opt-in: set {$WIN.SERVICE.MATCHES} to a regex
+        of the service display names you care about (it matches nothing by default). Reuses the same
+        item keys as the Generic Linux SNMP class, so the curated view labels and groups everything
+        identically. DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: df116b5b8e8445c986542f74cea21a1e
+          name: 'CPU core loads (raw)'
+          type: SNMP_AGENT
+          snmp_oid: 'walk[1.3.6.1.2.1.25.3.3.1.2]'
+          key: snmp.cpu.cores.raw
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          description: 'Master item: HOST-RESOURCES hrProcessorLoad walked in one request - one line per logical CPU (1-minute average load %). Overall utilization and the per-core sensors depend on this.'
+        - uuid: 9c7699fcadad4c4a9a0b333a77236b58
+          name: 'CPU utilization'
+          type: DEPENDENT
+          key: 'system.cpu.util[snmp]'
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Average load across all logical CPUs (Windows reports per-processor load, not an idle counter).'
+          master_item:
+            key: snmp.cpu.cores.raw
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var vals = [];
+                  var lines = String(value).split('\n');
+                  for (var i = 0; i < lines.length; i++) {
+                    var m = lines[i].match(/\.(\d+)\s*=\s*INTEGER:?\s*(-?\d+)\s*$/);
+                    if (m) { vals.push(parseInt(m[2], 10)); }
+                  }
+                  if (!vals.length) { throw 'no processor load reported'; }
+                  var s = 0; for (var i = 0; i < vals.length; i++) { s += vals[i]; }
+                  return Math.round(s / vals.length * 100) / 100;
+          triggers:
+            - uuid: 9ed3dd79d3ce45d991ba96d72202a39c
+              expression: 'min(/Argus Windows by SNMP/system.cpu.util[snmp],#3)>={$CPU.UTIL.WARN} and min(/Argus Windows by SNMP/system.cpu.util[snmp],#3)<{$CPU.UTIL.HIGH}'
+              name: 'High CPU utilization'
+              priority: WARNING
+              description: 'CPU utilization at/above the warning threshold on the last 3 checks.'
+            - uuid: ca3a29bd174f4d37b801366b5dfc3b5f
+              expression: 'min(/Argus Windows by SNMP/system.cpu.util[snmp],#3)>={$CPU.UTIL.HIGH}'
+              name: 'Very high CPU utilization'
+              priority: HIGH
+              description: 'CPU utilization at/above the high threshold on the last 3 checks.'
+        - uuid: b1aa3392fea348ccbdffdafd2f58a068
+          name: 'Physical memory (raw)'
+          type: SNMP_AGENT
+          snmp_oid: 'walk[1.3.6.1.2.1.25.2.3.1.3,1.3.6.1.2.1.25.2.3.1.4,1.3.6.1.2.1.25.2.3.1.5,1.3.6.1.2.1.25.2.3.1.6]'
+          key: snmp.meminfo.raw
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          description: 'Master item: HOST-RESOURCES hrStorageTable, reduced to the Physical Memory row (total/available/used). The memory sensors depend on this.'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var rows = {};
+                  var lines = String(value).split('\n');
+                  for (var i = 0; i < lines.length; i++) {
+                    var m = lines[i].match(/25\.2\.3\.1\.(\d+)\.(\d+)\s*=\s*(.*\S)\s*$/);
+                    if (!m) { continue; }
+                    var col = m[1], idx = m[2], val = m[3].replace(/^\w+:\s*/, '').replace(/^"|"$/g, '');
+                    (rows[idx] = rows[idx] || {})[col] = val;
+                  }
+                  var best = null;
+                  for (var k in rows) { if (rows[k]['3'] && /physical memory/i.test(rows[k]['3'])) { best = rows[k]; break; } }
+                  if (!best) { throw 'Physical Memory row not found'; }
+                  var units = parseFloat(best['4']) || 1, size = parseFloat(best['5']), used = parseFloat(best['6']);
+                  if (!(size > 0)) { throw 'bad memory size'; }
+                  return JSON.stringify({ total: Math.round(size * units), avail: Math.round((size - used) * units), util: Math.round(used / size * 10000) / 100 });
+        - uuid: 2aa975c5257246d0869cc9cf15ae2a8f
+          name: 'Total memory'
+          type: DEPENDENT
+          key: 'vm.memory.size[total]'
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: B
+          master_item:
+            key: snmp.meminfo.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.total'
+        - uuid: c897707afb6c41a9a3227264aca8e2c4
+          name: 'Available memory'
+          type: DEPENDENT
+          key: 'vm.memory.size[available]'
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: B
+          master_item:
+            key: snmp.meminfo.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.avail'
+        - uuid: 9177a953a94445489529cb9fe4b351ad
+          name: 'Memory utilization'
+          type: DEPENDENT
+          key: 'vm.memory.utilization[snmp]'
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          master_item:
+            key: snmp.meminfo.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.util'
+          triggers:
+            - uuid: 537e947f5a54483997e8310c59ca3599
+              expression: 'min(/Argus Windows by SNMP/vm.memory.utilization[snmp],#3)>={$MEM.USED.WARN} and min(/Argus Windows by SNMP/vm.memory.utilization[snmp],#3)<{$MEM.USED.HIGH}'
+              name: 'High memory utilization'
+              priority: WARNING
+              description: 'Memory use at/above the warning threshold on the last 3 checks.'
+            - uuid: f024618d2f784f73a88ea40f562b5c69
+              expression: 'min(/Argus Windows by SNMP/vm.memory.utilization[snmp],#3)>={$MEM.USED.HIGH}'
+              name: 'Very high memory utilization'
+              priority: HIGH
+              description: 'Memory use at/above the high threshold on the last 3 checks.'
+        - uuid: c3c2375fb24b466f82aeade194318731
+          name: Uptime
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.2.1.25.1.1.0'
+          key: 'system.uptime[snmp]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: uptime
+          description: 'HOST-RESOURCES hrSystemUptime in TimeTicks (1/100 s), scaled to seconds.'
+          preprocessing:
+            - type: MULTIPLIER
+              parameters:
+                - '0.01'
+      discovery_rules:
+        - uuid: 36068c5ef1dc41f9b45544315ad53fff
+          name: 'CPU core discovery'
+          type: DEPENDENT
+          key: snmp.cpu.core.discovery
+          delay: '0'
+          description: 'Logical CPUs from hrProcessorLoad, numbered 1..N in index order.'
+          master_item:
+            key: snmp.cpu.cores.raw
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var idx = [];
+                  var lines = String(value).split('\n');
+                  for (var i = 0; i < lines.length; i++) {
+                    var m = lines[i].match(/\.(\d+)\s*=\s*INTEGER:?\s*(-?\d+)\s*$/);
+                    if (m) { idx.push(parseInt(m[1], 10)); }
+                  }
+                  idx.sort(function (a, b) { return a - b; });
+                  var out = [];
+                  for (var i = 0; i < idx.length; i++) { out.push({ '{#COREN}': String(i + 1) }); }
+                  return JSON.stringify(out);
+          item_prototypes:
+            - uuid: 45108744a7ec4405b7c7fed913ac9b7c
+              name: 'Core {#COREN} load'
+              type: DEPENDENT
+              key: 'system.cpu.core[{#COREN}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '%'
+              description: 'Load of this logical CPU (hrProcessorLoad).'
+              master_item:
+                key: snmp.cpu.cores.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var rows = [];
+                      var lines = String(value).split('\n');
+                      for (var i = 0; i < lines.length; i++) {
+                        var m = lines[i].match(/\.(\d+)\s*=\s*INTEGER:?\s*(-?\d+)\s*$/);
+                        if (m) { rows.push([parseInt(m[1], 10), parseInt(m[2], 10)]); }
+                      }
+                      rows.sort(function (a, b) { return a[0] - b[0]; });
+                      var n = parseInt('{#COREN}', 10);
+                      if (!(n >= 1 && n <= rows.length)) { throw 'core {#COREN} not reported'; }
+                      return rows[n - 1][1];
+        - uuid: 31589d34b7cc487480ebbf99b1e2682c
+          name: 'Filesystem discovery'
+          type: SNMP_AGENT
+          snmp_oid: 'discovery[{#FSNAME},1.3.6.1.2.1.25.2.3.1.3,{#FSTYPE},1.3.6.1.2.1.25.2.3.1.2]'
+          key: 'vfs.fs.discovery[snmp]'
+          delay: 1h
+          description: 'HOST-RESOURCES hrStorageTable, filtered to fixed disks (drive letters). Physical/Virtual Memory rows are a different storage type and are excluded.'
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#FSTYPE}'
+                value: 'FixedDisk$|25\.2\.1\.4$'
+                operator: MATCHES_REGEX
+                formulaid: A
+              - macro: '{#FSNAME}'
+                value: '{$FS.NAME.SKIP}'
+                operator: NOT_MATCHES_REGEX
+                formulaid: B
+          item_prototypes:
+            - uuid: 83752d3215384411942a003e48ec733b
+              name: 'Storage allocation units ({#FSNAME})'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.2.1.25.2.3.1.4.{#SNMPINDEX}'
+              key: 'snmp.storage.units[{#SNMPINDEX}]'
+              delay: 1h
+              history: 7d
+              trends: '0'
+              value_type: FLOAT
+              description: 'hrStorageAllocationUnits: block size in bytes (feeds the byte totals).'
+            - uuid: 212cd4e9981a4362a1ed97f408261d4b
+              name: 'Storage size in blocks ({#FSNAME})'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.2.1.25.2.3.1.5.{#SNMPINDEX}'
+              key: 'snmp.storage.size[{#SNMPINDEX}]'
+              delay: 1h
+              history: 7d
+              trends: '0'
+              value_type: FLOAT
+            - uuid: 7e60b41960ae412db3d5454e5ef054fe
+              name: 'Storage used in blocks ({#FSNAME})'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.2.1.25.2.3.1.6.{#SNMPINDEX}'
+              key: 'snmp.storage.used[{#SNMPINDEX}]'
+              delay: 5m
+              history: 7d
+              trends: '0'
+              value_type: FLOAT
+            - uuid: ee790818e356421ebdba4762b2f97c63
+              name: 'Disk total ({#FSNAME})'
+              type: CALCULATED
+              key: 'vfs.fs.size[{#FSNAME},total]'
+              params: 'last(//snmp.storage.size[{#SNMPINDEX}])*last(//snmp.storage.units[{#SNMPINDEX}])'
+              delay: 5m
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: B
+            - uuid: 059fa2f2e931444aaa9016afdf61bad0
+              name: 'Disk used ({#FSNAME})'
+              type: CALCULATED
+              key: 'vfs.fs.size[{#FSNAME},used]'
+              params: 'last(//snmp.storage.used[{#SNMPINDEX}])*last(//snmp.storage.units[{#SNMPINDEX}])'
+              delay: 5m
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: B
+            - uuid: 42b137ec6d1141c4ab0dd20a2723c67e
+              name: 'Disk used percent ({#FSNAME})'
+              type: CALCULATED
+              key: 'vfs.fs.size[{#FSNAME},pused]'
+              params: '100*last(//snmp.storage.used[{#SNMPINDEX}])/last(//snmp.storage.size[{#SNMPINDEX}])'
+              delay: 5m
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '%'
+              trigger_prototypes:
+                - uuid: 9e752327cf0c4ebda939487061b4cc08
+                  expression: 'min(/Argus Windows by SNMP/vfs.fs.size[{#FSNAME},pused],#3)>={$DISK.PUSED.WARN} and min(/Argus Windows by SNMP/vfs.fs.size[{#FSNAME},pused],#3)<{$DISK.PUSED.HIGH}'
+                  name: 'Disk space low: {#FSNAME}'
+                  priority: WARNING
+                  description: 'Filesystem usage at/above the warning threshold.'
+                - uuid: 86631e3ef58a4a1da268935eeedc2270
+                  expression: 'min(/Argus Windows by SNMP/vfs.fs.size[{#FSNAME},pused],#3)>={$DISK.PUSED.HIGH}'
+                  name: 'Disk space critical: {#FSNAME}'
+                  priority: HIGH
+                  description: 'Filesystem usage at/above the high threshold.'
+        - uuid: 3610b69efb4742d4847104da4d1518d5
+          name: 'Network interface discovery'
+          type: SNMP_AGENT
+          snmp_oid: 'discovery[{#IFNAME},1.3.6.1.2.1.31.1.1.1.1,{#IFALIAS},1.3.6.1.2.1.31.1.1.1.18]'
+          key: 'net.if.discovery[snmp]'
+          delay: 1h
+          description: 'IF-MIB ifXTable, filtered to physical interfaces.'
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#IFNAME}'
+                value: '{$NET.IF.SKIP}'
+                operator: NOT_MATCHES_REGEX
+                formulaid: A
+          item_prototypes:
+            - uuid: 20b7cfdd35634839bcbe826f8afcd8f4
+              name: 'Traffic in ({#IFNAME})'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.2.1.31.1.1.1.6.{#SNMPINDEX}'
+              key: 'net.if.in[{#IFNAME}]'
+              delay: 1m
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: bps
+              description: 'ifHCInOctets as a bit rate.'
+              preprocessing:
+                - type: CHANGE_PER_SECOND
+                - type: MULTIPLIER
+                  parameters:
+                    - '8'
+            - uuid: 57f7b19042ef4414aa5df5b6b34463f4
+              name: 'Traffic out ({#IFNAME})'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.2.1.31.1.1.1.10.{#SNMPINDEX}'
+              key: 'net.if.out[{#IFNAME}]'
+              delay: 1m
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: bps
+              description: 'ifHCOutOctets as a bit rate.'
+              preprocessing:
+                - type: CHANGE_PER_SECOND
+                - type: MULTIPLIER
+                  parameters:
+                    - '8'
+        - uuid: 20947edf39be4151a48283fd04842745
+          name: 'Windows service discovery'
+          type: SNMP_AGENT
+          snmp_oid: 'discovery[{#WINSVC},1.3.6.1.4.1.77.1.2.3.1.1]'
+          key: 'win.service.discovery'
+          delay: 1h
+          description: 'Services from the LAN Manager svSvcTable (only services currently running are listed). Opt-in: {$WIN.SERVICE.MATCHES} selects which service display names to monitor (matches nothing by default).'
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#WINSVC}'
+                value: '{$WIN.SERVICE.MATCHES}'
+                operator: MATCHES_REGEX
+                formulaid: A
+          item_prototypes:
+            - uuid: b13f7023ef484fa4a04f298ce030a06a
+              name: '{#WINSVC}'
+              type: SNMP_AGENT
+              snmp_oid: '1.3.6.1.4.1.77.1.2.3.1.3.{#SNMPINDEX}'
+              key: 'win.service.state[{#WINSVC}]'
+              delay: 1m
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              description: 'svSvcOperatingState (1 = active). A stopped service leaves the table, so its value stops arriving - the trigger fires on either.'
+              trigger_prototypes:
+                - uuid: 2c7b0c786ece45b480ec9179c7fa4a25
+                  expression: 'nodata(/Argus Windows by SNMP/win.service.state[{#WINSVC}],10m)=1 or last(/Argus Windows by SNMP/win.service.state[{#WINSVC}])<>1'
+                  name: 'Service not running: {#WINSVC}'
+                  priority: HIGH
+                  description: 'The service is not reporting an active state (stopped, paused, or gone from the service table).'
+                  manual_close: 'YES'
+      macros:
+        - macro: '{$CPU.UTIL.WARN}'
+          value: '80'
+          description: 'CPU utilization percentage that raises a warning.'
+        - macro: '{$CPU.UTIL.HIGH}'
+          value: '95'
+          description: 'CPU utilization percentage that raises a high-severity alert.'
+        - macro: '{$MEM.USED.WARN}'
+          value: '85'
+          description: 'Memory-used percentage that raises a warning.'
+        - macro: '{$MEM.USED.HIGH}'
+          value: '95'
+          description: 'Memory-used percentage that raises a high-severity alert.'
+        - macro: '{$DISK.PUSED.WARN}'
+          value: '90'
+          description: 'Filesystem used percentage that raises a warning (10% free).'
+        - macro: '{$DISK.PUSED.HIGH}'
+          value: '95'
+          description: 'Filesystem used percentage that raises a high-severity alert (5% free).'
+        - macro: '{$FS.NAME.SKIP}'
+          value: '^$'
+          description: 'Drive names matching this regex are not discovered. Default skips nothing; set it to exclude specific volumes.'
+        - macro: '{$NET.IF.SKIP}'
+          value: '(?i)(loopback|isatap|teredo|pseudo|tunnel|wan miniport|npcap|bluetooth)'
+          description: 'Interface names matching this regex are not discovered (virtual / tunnel NICs).'
+        - macro: '{$WIN.SERVICE.MATCHES}'
+          value: '^$'
+          description: 'Regex of Windows service display names to monitor (e.g. "DNS Server|DHCP Server|SQL Server .*"). Matches nothing by default - set it to opt in.'

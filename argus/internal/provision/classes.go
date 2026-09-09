@@ -89,6 +89,19 @@ var registry = []Class{
 		Icon:       "server",
 	},
 	{
+		// Windows Server over SNMP: HOST-RESOURCES (CPU/memory/disk) + IF-MIB + the LAN Manager
+		// service table. Same item keys as Generic Linux SNMP, so curation is shared. SNMP creds
+		// inherit the proxy default like every SNMP class.
+		ID:         "windows-snmp",
+		Label:      "Windows Server (SNMP)",
+		Family:     "Windows",
+		Pattern:    PatternSNMP,
+		Iface:      IfaceSNMP,
+		Templates:  []string{"Argus Windows by SNMP"},
+		OffersHTTP: true,
+		Icon:       "server",
+	},
+	{
 		// unRAID = the Linux SNMP template plus the extend scripts from the Community Applications
 		// "SNMP" plugin (per-disk temperatures, per-share free space). SNMP creds inherit the proxy
 		// default like every SNMP class.
