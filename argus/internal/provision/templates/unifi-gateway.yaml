@@ -428,10 +428,10 @@ zabbix_export:
                   error_handler: DISCARD_VALUE
               trigger_prototypes:
                 - uuid: 75c2f77c06a2497d85eccb87969ed9b6
-                  expression: 'max(/Argus UniFi Gateway by HTTP/unifi.wan.avail[{#WANIDX}],#3)<{$UNIFI.WAN.AVAIL.MIN}'
+                  expression: 'max(/Argus UniFi Gateway by HTTP/unifi.wan.avail[{#WANIDX}],#3)<{$UNIFI.WAN.AVAIL.MIN:"{#WANIDX}"}'
                   name: 'WAN {#WANIDX} degraded ({#WANNAME})'
                   priority: HIGH
-                  description: 'Uplink availability below {$UNIFI.WAN.AVAIL.MIN}% on the last 3 checks - the WAN link is down or losing packets to the monitor targets.'
+                  description: 'Uplink availability below the threshold on the last 3 checks - the WAN link is down or losing packets to the monitor targets. The threshold is per-WAN via macro context: set {$UNIFI.WAN.AVAIL.MIN:"2"} = 0 on the host to silence a deliberately unplugged failover WAN 2 while WAN 1 keeps alerting at the default.'
         - uuid: a73f71dcb0774524844dc6aee43490d6
           name: 'Port discovery'
           type: DEPENDENT
@@ -619,4 +619,4 @@ zabbix_export:
           description: "The site's internal short name on the controller (the first site is 'default')."
         - macro: '{$UNIFI.WAN.AVAIL.MIN}'
           value: '50'
-          description: 'WAN monitor availability (%) below which the WAN-degraded trigger fires.'
+          description: 'WAN monitor availability (%) below which the WAN-degraded trigger fires. Per-WAN override via context, e.g. {$UNIFI.WAN.AVAIL.MIN:"2"} = 0 disarms the alert for a deliberately unplugged failover WAN 2.'
