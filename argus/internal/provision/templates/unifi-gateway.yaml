@@ -313,7 +313,9 @@ zabbix_export:
           type: DEPENDENT
           key: unifi.wan.discovery
           delay: '0'
-          description: 'Configured WAN links (1-2). Each gets traffic plus the monitor latency/availability the gateway measures against its uplink targets.'
+          lifetime: 14d
+          enabled_lifetime_type: DISABLE_NEVER
+          description: 'Configured WAN links (1-2). Each gets traffic plus the monitor latency/availability the gateway measures against its uplink targets. Lost WANs are never disabled (a controller mid-update can briefly report nothing); a WAN really unconfigured ages out after 14 days.'
           master_item:
             key: unifi.gw.raw
           preprocessing:
@@ -435,6 +437,8 @@ zabbix_export:
           type: DEPENDENT
           key: unifi.port.discovery
           delay: '0'
+          lifetime: 14d
+          enabled_lifetime_type: DISABLE_NEVER
           description: 'Physical LAN ports from the controller (WAN ports are covered by WAN discovery and excluded here).'
           master_item:
             key: unifi.gw.raw
@@ -542,6 +546,8 @@ zabbix_export:
           type: DEPENDENT
           key: unifi.poe.discovery
           delay: '0'
+          lifetime: 14d
+          enabled_lifetime_type: DISABLE_NEVER
           description: 'The subset of LAN ports that are PoE-capable - only those get a PoE power sensor.'
           master_item:
             key: unifi.gw.raw
