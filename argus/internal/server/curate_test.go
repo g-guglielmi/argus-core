@@ -73,11 +73,16 @@ func TestClassifyUnraid(t *testing.T) {
 	if !ok || cat != "Temperature" || inst != "Disk temperatures" || ch != "WDC WD30EFRX-68EUZN0 WD-WMC4N0E5EJ0F" {
 		t.Errorf("disktemp: got (%q, %q, %q, ok=%v)", cat, inst, ch, ok)
 	}
-	// The atomic arraytemps extend lands in the same group under the same channel id, so the
-	// hosts.go override can swap sources per drive without the UI noticing.
-	acat, _, ainst, ach, aok := classifyItem(`unraid.arraytemp["WDC WD30EFRX-68EUZN0 WD-WMC4N0E5EJ0F"]`, "Disk temperature (WDC WD30EFRX-68EUZN0 WD-WMC4N0E5EJ0F)")
-	if !aok || acat != "Temperature" || ainst != "Disk temperatures" || ach != "WDC WD30EFRX-68EUZN0 WD-WMC4N0E5EJ0F" {
-		t.Errorf("arraytemp: got (%q, %q, %q, ok=%v)", acat, ainst, ach, aok)
+	// The atomic arraytemps extend lands in the same group; the channel is the unRAID slot when
+	// the name carries one (script v3), so the legend reads "parity"/"disk1" instead of serials.
+	acat, _, ainst, ach, aok := classifyItem(`unraid.arraytemp["WDC WD30EFRX-68EUZN0 WD-WMC4N0E5EJ0F"]`, "Disk temperature (parity)")
+	if !aok || acat != "Temperature" || ainst != "Disk temperatures" || ach != "parity" {
+		t.Errorf("arraytemp slot: got (%q, %q, %q, ok=%v)", acat, ainst, ach, aok)
+	}
+	// v2 output / not-yet-rediscovered items keep the drive id as the channel.
+	_, _, _, ach2, _ := classifyItem(`unraid.arraytemp["WDC WD30EFRX-68EUZN0 WD-WMC4N0E5EJ0F"]`, "Disk temperature (WDC WD30EFRX-68EUZN0 WD-WMC4N0E5EJ0F)")
+	if ach2 != "WDC WD30EFRX-68EUZN0 WD-WMC4N0E5EJ0F" {
+		t.Errorf("arraytemp id fallback: got channel %q", ach2)
 	}
 	// Pool drives (optional pooltemps extend) land in the SAME group as array drives.
 	pcat, _, pinst, pch, pok := classifyItem(`unraid.pooltemp["Samsung_SSD_970_EVO_1TB_S000000000"]`, "Disk temperature (Samsung_SSD_970_EVO_1TB_S000000000)")
