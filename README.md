@@ -76,7 +76,7 @@ from a homelab to a multi-site enterprise - can layer Argus on top.
 | Path | What |
 |---|---|
 | [`argus/`](argus/README.md) | The app - Go backend + React frontend, packaged as a Docker image to GHCR |
-| [`deploy/`](deploy/README.md) | Deploy kit - Zabbix core install, PKI, unRAID templates, checklist |
+| [`deploy/`](deploy/README.md) | Deploy kit - the self-installing **core appliance VM** (`core-vm/`), Zabbix core install scripts, PKI, unRAID templates, checklist |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Full design document (architecture, device classes, thresholds, roadmap) |
 | [`ROADMAP.md`](ROADMAP.md) | Tracking checklist of what's built and what's left |
 | [`.github/workflows/`](.github/workflows/build.yml) | CI - builds the Argus image, pushes to `ghcr.io/<owner>/argus`, auto-publishes GitHub Releases on tags |
@@ -94,15 +94,30 @@ Argus is split across three repos (image names stay the same regardless):
 
 ---
 
-## Quick start
+## Installation - two paths
 
-Argus needs a running **Zabbix 7.0 server** with at least one host producing data. If you
-already have Zabbix, skip to [Deploy Argus](#2-deploy-argus). If not, the full guide below
-walks through the entire stack.
+**Option A - the appliance VM (recommended for new deployments).** One self-installing golden
+image with the whole core baked in: Zabbix 7.0 (server + frontend), PostgreSQL + TimescaleDB,
+the probe-enrollment PKI, and Argus + its update sidecar.
+
+1. Download `argus-core-vm.ova` / `.qcow2` / `.vhd.gz` from the newest
+   [`core-vm/vX.Y.Z` Release](https://github.com/g-guglielmi/argus-core/releases).
+2. Import it (2+ vCPU, 4+ GB RAM; the 100 GB disk is thin) and boot it on a DHCP network.
+3. Browse to `http://<vm-ip>/` and fill in **one form** (hostname, keyboard, timezone, your
+   admin email + password). A live progress page configures everything - database, Zabbix,
+   accounts and API token, certificates, Argus - in a few minutes, ending at your sign-in.
+
+No Zabbix frontend wizard, no token copy-pasting, no SQL. Details, the security model, and
+what each step does: [`deploy/core-vm/README.md`](deploy/core-vm/README.md).
+
+**Option B - manual install.** For anything the appliance doesn't fit: a distro of your
+choice, an existing Zabbix, or Argus on a **separate VM** from the Zabbix core (it only needs
+to reach the API). The full guide below walks through the same stack the appliance ships -
+if you already have Zabbix, skip to [Deploy Argus](#2-deploy-argus).
 
 ---
 
-## Full deployment guide
+## Option B - manual deployment guide
 
 ### Prerequisites
 

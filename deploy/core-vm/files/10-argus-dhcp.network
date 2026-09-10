@@ -1,0 +1,13 @@
+# DHCP the primary NIC via systemd-networkd, independent of cloud-init (which is purged from this
+# image). Matches the usual predictable names (enX0 on Xen, ens/enp elsewhere, eth* as a fallback).
+# For a static address after setup, replace this file with a 10-argus-static.network carrying
+# [Network] Address=/Gateway=/DNS= and `systemctl restart systemd-networkd`.
+[Match]
+Name=en* eth*
+
+[Network]
+DHCP=yes
+
+[DHCPv4]
+# Use the DHCP-provided hostname if the server offers one.
+UseHostname=yes

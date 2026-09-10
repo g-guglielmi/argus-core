@@ -1,0 +1,45 @@
+[Unit]
+Description=Argus core (monitoring cockpit container)
+Documentation=https://github.com/g-guglielmi/argus-core
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+# The app's environment (Zabbix URL + token, first-admin seed, secret key, CA + update-dir paths)
+# lives in /etc/argus-core/argus.env, written by the first-boot setup service. Docker reads it via
+# --env-file; systemd only reads image.env (tag/image pins), which is guaranteed KEY=VALUE-simple -
+# argus.env may hold passwords with characters systemd's EnvironmentFile parser would mangle.
+# The image ships this unit installed but NOT enabled; first-boot setup enables it once argus.env
+# exists, so an unconfigured VM never crash-loops.
+Environment=ARGUS_CORE_TAG=latest
+Environment=ARGUS_CORE_IMAGE=ghcr.io/g-guglielmi/argus
+EnvironmentFile=-/etc/argus-core/image.env
+TimeoutStartSec=0
+
+# Create the core as a DETACHED, Docker-restarted container (not a foreground `--rm`), so the
+# argus-updater sidecar can recreate it in place (rename + recreate via the Engine API) without
+# killing a systemd-owned foreground process. systemd just ensures the container exists at boot
+# (oneshot); Docker's `--restart unless-stopped` keeps it running; the updater drives version changes.
+# The pull is best-effort ("-"): the image is pre-pulled into the golden image, so first boot works
+# even if GHCR is unreachable; a `systemctl restart` re-pulls ${ARGUS_CORE_TAG} when it can - pin a
+# version in image.env if you don't want a restart to converge the VM back on latest.
+#
+# host.docker.internal resolves to the Docker bridge gateway (host-gateway), so the container reaches
+# the Zabbix frontend that nginx serves on the HOST's :8080 - stable across DHCP address changes.
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-/usr/bin/docker rm -f argus
+ExecStartPre=-/usr/bin/docker pull ${ARGUS_CORE_IMAGE}:${ARGUS_CORE_TAG}
+ExecStart=/usr/bin/docker run -d --name argus --restart unless-stopped \
+  -p 8081:8080 \
+  --add-host host.docker.internal:host-gateway \
+  -v /var/lib/argus-core:/data \
+  -v /etc/argus/pki:/ca:ro \
+  -v /opt/argus/update:/update \
+  --env-file /etc/argus-core/argus.env \
+  ${ARGUS_CORE_IMAGE}:${ARGUS_CORE_TAG}
+ExecStop=-/usr/bin/docker stop argus
+
+[Install]
+WantedBy=multi-user.target

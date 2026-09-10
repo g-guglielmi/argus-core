@@ -1,5 +1,10 @@
 # Phase 0 - Deployment Kit (Foundations)
 
+> **Fastest path:** the self-installing **core appliance VM** ([`core-vm/`](core-vm/README.md))
+> does everything in this runbook - Zabbix + database + PKI + Argus - through one first-boot
+> form. This kit is the **manual alternative** for a distro of your choice, an existing Zabbix,
+> or a split Zabbix/Argus layout.
+
 Goal of Phase 0: stand up the **core** (Zabbix server + web + PostgreSQL/TimescaleDB) and
 **one probe** (site1) that connects to the core over **mutual TLS**, proving one device
 flows end-to-end. Everything else builds on this.

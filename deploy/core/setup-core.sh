@@ -1,15 +1,26 @@
 #!/usr/bin/env bash
-# setup-core.sh - install & configure the monitoring core on a Debian 12 / Ubuntu 24.04 VM:
+# setup-core.sh - install & configure the monitoring core on a Debian 12/13 / Ubuntu 24.04 VM:
 #   Zabbix 7.0 LTS (server + nginx frontend, which serves the JSON-RPC API)
-#   PostgreSQL 16 + TimescaleDB (Zabbix's history/trends store = your time-series DB)
+#   PostgreSQL + TimescaleDB (Zabbix's history/trends store = your time-series DB)
 #
 # Review before running. Assumes a fresh VM and root/sudo. Idempotent-ish but re-runs
 # may complain on already-created objects - that's fine.
 #
+# Two modes (so the manual path and the core appliance image install the SAME stack):
+#   SETUP_MODE=full  (default) - install + configure: repos, packages, DB create + schema import,
+#                    zabbix_server.conf, OS patching. Needs DBPASS. The manual-install path.
+#   SETUP_MODE=image - install ONLY: repos, packages, TimescaleDB pin, OS patching. No DBPASS, no
+#                    database, no config - the core appliance's first-boot service does those
+#                    per-instance (deploy/core-vm/files/argus-core-firstboot.py). Used by Packer.
+#
 # Usage:  sudo DBPASS='choose-a-strong-pass' ./setup-core.sh
+#         sudo SETUP_MODE=image ./setup-core.sh
 set -euo pipefail
 
-: "${DBPASS:?Set DBPASS to the Zabbix DB password, e.g. sudo DBPASS=... ./setup-core.sh}"
+SETUP_MODE="${SETUP_MODE:-full}"
+if [[ "$SETUP_MODE" == "full" ]]; then
+  : "${DBPASS:?Set DBPASS to the Zabbix DB password, e.g. sudo DBPASS=... ./setup-core.sh}"
+fi
 ZBX_MAJOR="7.0"                                   # LTS; bump if a newer LTS is out
 CODENAME="$(. /etc/os-release && echo "${VERSION_CODENAME:-trixie}")"   # Debian 13 = trixie
 DISTRO_ID="$(. /etc/os-release && echo "$ID")"   # debian | ubuntu
@@ -70,6 +81,11 @@ else
   apt-get install -y "$TS_META"
 fi
 
+# Everything below up to the OS-patching step is per-instance configuration - skipped when baking the
+# appliance image (the first-boot service runs the equivalent with per-install credentials, and re-runs
+# timescaledb-tune against the DEPLOYED VM's RAM rather than the build VM's).
+if [[ "$SETUP_MODE" == "full" ]]; then
+
 echo "==> [4/8] Tune PostgreSQL for TimescaleDB"
 timescaledb-tune --quiet --yes || true
 systemctl restart postgresql
@@ -99,6 +115,8 @@ CONF=/etc/zabbix/zabbix_server.conf
 sed -i "s/^# *DBName=.*/DBName=zabbix/"     "$CONF" || true
 sed -i "s/^# *DBUser=.*/DBUser=zabbix/"     "$CONF" || true
 grep -q "^DBPassword=" "$CONF" || echo "DBPassword=${DBPASS}" >> "$CONF"
+
+fi # SETUP_MODE=full
 
 echo "==> [8/8] OS patching & lifecycle (DESIGN §14c)"
 # Keep the core's Debian OS patched without dragging pinned packages forward. unattended-upgrades
@@ -214,6 +232,13 @@ systemctl enable --now argus-os-report.timer argus-reboot-check.timer
 /usr/local/sbin/argus-os-report || true
 echo "    unattended-upgrades (security only, no auto-reboot) + host reporter installed"
 echo "    reporting OS status into ${ARGUS_STATE_DIR} (map this as ARGUS_UPDATE_DIR in the core container)"
+
+if [[ "$SETUP_MODE" != "full" ]]; then
+  echo
+  echo ">>> Image mode: packages + OS patching installed. Database, zabbix_server.conf, TLS, and the"
+  echo ">>> frontend are configured per-instance by the appliance's first-boot service."
+  exit 0
+fi
 echo
 echo ">>> Now append the TLS + tuning lines from core/zabbix_server.conf.snippet to $CONF,"
 echo ">>> place ca.crt + zabbix-core.crt/.key under /etc/zabbix/certs/, then:"

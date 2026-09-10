@@ -1,0 +1,109 @@
+name: core-vm
+
+# Golden image build for the self-installing CORE appliance VM (DESIGN §14d). Kept out of the main
+# build workflow because a full VM build under TCG is minutes-long - it runs only on demand
+# (workflow_dispatch) or when a `core-vm/v*` tag is pushed (which also publishes a GitHub Release with
+# the image assets). Every push still gets a fast `packer validate` sanity check.
+
+on:
+  push:
+    branches: [main]
+    tags: ['core-vm/v*']
+  workflow_dispatch:
+# Note: no `paths:` filter here - combining `paths` with `tags` under one push block suppresses tag
+# events (they carry no changed-path set), which once stopped probe-vm releases from building. The
+# validate job below is cheap, so running it on every main push is an acceptable trade for reliable
+# tag-triggered releases.
+
+permissions:
+  contents: write   # publish the Release + upload image assets on a tag build
+
+defaults:
+  run:
+    working-directory: deploy/core-vm
+
+jobs:
+  # Cheap gate on every touch: the template parses and its plugins resolve. No VM is built.
+  validate:
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-packer@main
+      - run: packer init argus-core-vm.pkr.hcl
+      - run: packer validate argus-core-vm.pkr.hcl
+
+  # Full build: only on manual dispatch or a core-vm/v* tag.
+  build:
+    if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install QEMU + ISO tooling
+        run: |
+          sudo apt-get update
+          # xorriso builds the cloud-init "cidata" seed CD that Packer attaches for SSH bootstrap;
+          # libxml2-utils provides xmllint to validate the generated OVF descriptor.
+          sudo apt-get install -y qemu-system-x86 qemu-utils xorriso libxml2-utils
+
+      - uses: hashicorp/setup-packer@main
+
+      - name: Build the golden image
+        run: |
+          packer init argus-core-vm.pkr.hcl
+          PACKER_LOG=1 packer build argus-core-vm.pkr.hcl
+
+      - name: Convert to VHD (XCP-NG / Hyper-V import)
+        run: |
+          qemu-img convert -f qcow2 -O vpc -o subformat=dynamic \
+            output/argus-core-vm.qcow2 output/argus-core-vm.vhd
+          ls -lh output/
+
+      - name: Package as OVA (VMware / Nutanix / VirtualBox / Xen Orchestra)
+        # Stream-optimized VMDK + a hand-written OVF, tarred into a single .ova. The compressed VMDK
+        # keeps the OVA well under GitHub's 2 GiB Release-asset cap, so it ships un-gzipped.
+        run: bash scripts/make-ova.sh output/argus-core-vm.qcow2 output
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: argus-core-vm
+          path: |
+            deploy/core-vm/output/argus-core-vm.qcow2
+            deploy/core-vm/output/argus-core-vm.vhd
+            deploy/core-vm/output/argus-core-vm.ova
+          if-no-files-found: error
+
+      # GitHub caps a Release asset at 2 GiB; the VHD is larger, and a Debian disk gzips to a fraction
+      # of its size. Compress it for the Release (the raw VHD stays in the workflow artifact above for
+      # anyone who wants it un-gzipped).
+      - name: Compress VHD for the Release
+        if: github.ref_type == 'tag'
+        # run steps default to working-directory deploy/core-vm, so paths are relative to it (uses:
+        # actions like upload/release are not, hence their deploy/core-vm/ prefix).
+        run: |
+          gzip -f output/argus-core-vm.vhd
+          ls -lh output/
+
+      - name: Publish Release (tag builds only)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            deploy/core-vm/output/argus-core-vm.ova
+            deploy/core-vm/output/argus-core-vm.qcow2
+            deploy/core-vm/output/argus-core-vm.vhd.gz
+          body: |
+            Argus core appliance golden image (${{ github.ref_name }}) - the whole monitoring core
+            (Zabbix 7.0 + PostgreSQL/TimescaleDB + Argus + updater) in one self-installing VM.
+
+            - `argus-core-vm.ova` - VMware / Nutanix / VirtualBox, and importable by Xen Orchestra
+              (**Import → OVA**) as a ready-to-run VM.
+            - `argus-core-vm.qcow2` - KVM/libvirt, or convert as needed.
+            - `argus-core-vm.vhd.gz` - import into XCP-NG (as a VDI) or Hyper-V. **gunzip first:**
+              `gunzip argus-core-vm.vhd.gz`.
+
+            Deploy: import the disk (2+ vCPU, 4+ GB RAM), boot it on a DHCP network, browse to
+            `http://<vm-ip>/`, and fill in the one-page setup form. See deploy/core-vm/README.md.
