@@ -11,6 +11,21 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.42] - 2026-09-10
+
+**Parked disks keep their line.** A spun-down unRAID array or pool disk now stays on the temperature
+chart, drawn as a flat line at its last reading, instead of dropping off the graph entirely.
+
+**Fixed:**
+- **A parked drive no longer vanishes from the temperature chart.** When an array or pool disk spins
+  down it drops out of the emhttp temperature extend, so Zabbix flags that drive's item "not
+  supported" while keeping its last reading — but the group chart only plotted currently-supported
+  channels, so the drive (a spun-down parity disk, say) fell off the graph even though its reading
+  was intact and it was still counted among the group's channels. Parked temperature channels now
+  stay on the chart and hold their last reading as a flat line across the idle stretch, seeded from
+  the last value when the drive parked before the visible window. Actively-reporting drives are
+  unchanged — the hold only fills the gap a parked drive leaves.
+
 ## [0.4.41] - 2026-09-10
 
 **Windows monitoring, the UniFi family finished, and a smoother Add-device.** Two more device classes
