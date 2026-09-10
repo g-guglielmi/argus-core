@@ -275,13 +275,18 @@ function Spark({ values, color, width = 84, fill = false }: { values?: number[];
   const w = width, h = 20
   let min = values[0], max = values[0]
   for (const v of values) { if (v < min) min = v; if (v > max) max = v }
-  const rng = max - min || 1
+  // A near-constant series (a disk drifting a hundredth of a percent) would otherwise stretch its
+  // sliver of range across the full height and read as a dramatic ramp. Enforce a minimum span
+  // relative to the series' magnitude and center the data within it, so a flat-ish series draws flat
+  // while a genuinely varying one is unchanged (its real span dominates the floor -> same mapping).
+  const mid = (min + max) / 2
+  const rng = Math.max(max - min, Math.max(Math.abs(min), Math.abs(max), 1e-9) * 0.1)
   const px = (i: number) => (i / (values.length - 1)) * (w - 2) + 1
   // Half-pixel y endpoints (17.5 / 1.5): a horizontal stroke centered ON a pixel boundary (integer y)
   // is split 50/50 across two rows by antialiasing and renders dim and blurry - which made flat lines
   // (constant totals, idle disks) look washed out next to their crisp endpoint dot. Centered on a
   // half-pixel, a flat line paints one full-brightness row.
-  const py = (v: number) => h - 2.5 - ((v - min) / rng) * (h - 4)
+  const py = (v: number) => h - 2.5 - (((v - mid) / rng) + 0.5) * (h - 4)
   let d = ''
   values.forEach((v, i) => { d += (i ? 'L' : 'M') + px(i).toFixed(1) + ' ' + py(v).toFixed(1) + ' ' })
   const area = `M1 ${h - 1} ${d.replace('M', 'L').trim()} L${w - 1} ${h - 1} Z`
