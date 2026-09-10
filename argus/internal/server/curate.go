@@ -170,18 +170,28 @@ func wanInstance(idx string) string {
 }
 
 // trafficLabel builds a network-traffic label, distinguishing the byte-rate item from the
-// per-interface error/dropped/packet counters that share the net.if.in/out key. Params are
-// [interface, mode]; mode "" or "bytes" is the main rate.
-func trafficLabel(base string, p []string) string {
-	iface, mode := param(p, 0), param(p, 1)
+// per-interface error/dropped/packet counters that share the net.if.in/out key. iface is the
+// display name; mode (param 1) "" or "bytes" is the main rate.
+func trafficLabel(base, iface string, p []string) string {
 	label := base
-	if mode != "" && mode != "bytes" {
+	if mode := param(p, 1); mode != "" && mode != "bytes" {
 		label += " " + mode
 	}
 	if iface != "" {
 		label += " (" + iface + ")"
 	}
 	return label
+}
+
+// ifaceName is the display name for a network interface: the friendly name a template lifts into the
+// item name ("Traffic in (Ethernet 2)" - Windows uses ifAlias) when present, else the key parameter
+// (the ifName/ifIndex used to key the item). Linux items name themselves by ifName, so the paren
+// content equals the key param and nothing changes.
+func ifaceName(name string, p []string) string {
+	if s := parenSuffix(name); s != "" {
+		return s
+	}
+	return param(p, 0)
 }
 
 // chanMode names a network channel (In/Out) including a non-byte mode (errors, dropped, …).
@@ -261,9 +271,11 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		}
 
 	case "net.if.in", "net.if.dependent.in":
-		return "Network", trafficLabel("Traffic in", p), param(p, 0), chanMode("In", p), true
+		iface := ifaceName(name, p)
+		return "Network", trafficLabel("Traffic in", iface, p), iface, chanMode("In", p), true
 	case "net.if.out", "net.if.dependent.out":
-		return "Network", trafficLabel("Traffic out", p), param(p, 0), chanMode("Out", p), true
+		iface := ifaceName(name, p)
+		return "Network", trafficLabel("Traffic out", iface, p), iface, chanMode("Out", p), true
 
 	case "system.uptime":
 		return "Uptime", "Uptime", "", "", true
