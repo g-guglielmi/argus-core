@@ -667,7 +667,9 @@ NOSCRIPT_REFRESH = "<noscript><meta http-equiv=refresh content=3></noscript>"
 
 def vm_identity():
     name = sh("hostname").strip()
-    ips = [ip for ip in sh("hostname", "-I").split() if not ip.startswith("127.")]
+    # Skip loopback and the Docker default bridge (172.17.x) - the footer should show the LAN address.
+    ips = [ip for ip in sh("hostname", "-I").split()
+           if not ip.startswith("127.") and not ip.startswith("172.17.")]
     parts = [html.escape(p) for p in ([name] if name else []) + ips[:2]]
     return " · ".join(parts)
 
@@ -777,6 +779,9 @@ def progress_page(snap):
   </ul>
   <div id="tail">{result}</div>
   <script>
+    // The state this page was RENDERED with: reload only when the live state differs, otherwise a
+    // page already showing "failed"/"done" would reload itself forever.
+    const RENDERED = "{html.escape(snap["state"])}";
     async function poll() {{
       let s;
       try {{ s = await (await fetch("/status")).json(); }} catch (e) {{ setTimeout(poll, 2500); return; }}
@@ -786,7 +791,10 @@ def progress_page(snap):
         lis[i].className = st.state === "pending" ? "" : st.state;
         lis[i].querySelector(".ic").textContent = icons[st.state] || "•";
       }});
-      if (s.state === "failed" || s.state === "done") {{ location.reload(); return; }}
+      if (s.state === "failed" || s.state === "done") {{
+        if (s.state !== RENDERED) location.reload();
+        return;
+      }}
       setTimeout(poll, 1500);
     }}
     poll();

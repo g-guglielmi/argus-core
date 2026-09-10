@@ -79,6 +79,10 @@ docker pull ghcr.io/g-guglielmi/argus-updater:latest || true
 # for apt/docker; on the deployed VM systemd-resolved runs and populates the stub from DHCP).
 ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 
+# Neutral hostname for the shipped image (the build seed named the VM argus-core-build, which leaked
+# into the setup page's footer before setup ran). First boot sets the operator's chosen name.
+echo argus-core > /etc/hostname
+
 # Drop cloud-init entirely. It has finished its build-time job (it created the packer user and grew
 # the root filesystem to fill the disk on the build's first boot); the deployed appliance uses
 # systemd-networkd for networking and the first-boot setup service for configuration, so cloud-init
