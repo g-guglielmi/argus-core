@@ -9,6 +9,37 @@ Zabbix handles collection, transport, and buffering; Argus owns the **UI, authen
 and notifications** - a single distroless container (Go backend + embedded React SPA,
 SQLite state, no external dependencies beyond a running Zabbix).
 
+## Screenshots
+
+The **Sites & hosts** tree — every site, host, and its health at a glance, with a live
+latency sparkline per host:
+
+![Sites and hosts tree](docs/screenshots/sites-and-hosts.png)
+
+**A host's sensors, PRTG-style** — curated sensors grouped by category (ports, PoE, uplink,
+temperature, …), each with its live value, a trend sparkline, priority, and last check;
+active problems surface inline with one-click acknowledge:
+
+![Host sensors](docs/screenshots/host-sensors.png)
+
+**Per-sensor charts** — expand any channel group for an overlaid, multi-series chart (here,
+every drive's temperature on a NAS) across 2h → 1Y with drag-to-zoom:
+
+![Sensor chart](docs/screenshots/sensor-chart.png)
+
+**Overview** — the cross-site "what needs attention right now" list, each problem shown with
+its reason and trend:
+
+![Overview](docs/screenshots/overview.png)
+
+**Add a device** — pick a device class and Argus creates the Zabbix host and attaches the
+right templates, interface, and per-class inputs (here, a UniFi gateway's controller URL,
+API key, and MAC):
+
+![Add a device](docs/screenshots/add-device.png)
+
+> Screenshots use generic placeholder data.
+
 **What it does today (v0.2.8):**
 
 - **Monitoring tree** - site → host → sensor, grouped by Zabbix host group, with curated
