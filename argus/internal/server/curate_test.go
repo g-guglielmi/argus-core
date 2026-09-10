@@ -81,6 +81,32 @@ func TestClassifyUnifiConsole(t *testing.T) {
 	}
 }
 
+// A network interface is labelled by the friendly name lifted from the item name (Windows uses
+// ifAlias) when present, and grouped by it so In/Out stay together; it falls back to the key param
+// (ifName) when the item name carries none - which is the Linux case, so nothing changes there.
+func TestClassifyNetIfName(t *testing.T) {
+	// Windows: friendly ifAlias in the item name, ugly ifName in the key.
+	cat, label, inst, ch, ok := classifyItem("net.if.in[ethernet_32770]", "Traffic in (Ethernet 2)")
+	if !ok || cat != "Network" || inst != "Ethernet 2" || label != "Traffic in (Ethernet 2)" || ch != "In" {
+		t.Errorf("windows nic: got (%q, %q, %q, %q, ok=%v)", cat, label, inst, ch, ok)
+	}
+	// In and Out land in the same instance so they group.
+	_, _, instOut, chOut, _ := classifyItem("net.if.out[ethernet_32770]", "Traffic out (Ethernet 2)")
+	if instOut != "Ethernet 2" || chOut != "Out" {
+		t.Errorf("windows nic out: got instance %q channel %q", instOut, chOut)
+	}
+	// Linux: item name equals the key param, so behaviour is unchanged.
+	_, llabel, linst, _, _ := classifyItem("net.if.in[enp1s0]", "Traffic in (enp1s0)")
+	if linst != "enp1s0" || llabel != "Traffic in (enp1s0)" {
+		t.Errorf("linux nic: got instance %q label %q", linst, llabel)
+	}
+	// Empty alias in the name falls back to the key param.
+	_, _, finst, _, _ := classifyItem("net.if.in[ethernet_32770]", "Traffic in ()")
+	if finst != "ethernet_32770" {
+		t.Errorf("empty-alias fallback: got instance %q", finst)
+	}
+}
+
 // Windows services (LAN Manager svSvcTable) land under a Services category, labelled by name.
 func TestClassifyWindowsService(t *testing.T) {
 	cat, label, _, _, ok := classifyItem("win.service.state[DNS Server]", "DNS Server")
