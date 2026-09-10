@@ -3728,13 +3728,21 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                   const gkey = 'g:' + row.cat + '|' + row.instance
                   const open = openItem === gkey
                   const { node: headline, primary } = groupHeadline(row.cat, row.items)
-                  let channels: GroupChan[] = row.items.filter((i) => i.numeric && i.supported).map((i) =>
-                    (row.cat === 'Ping' || row.cat === 'Web') && i.channel === 'Reachable'
-                      ? { id: i.id, label: 'Downtime', units: '', invert: true } // show only when unreachable (PRTG-style)
-                      // A port's Speed and Link are constants - start their lines hidden (legend keeps
-                      // the value; a click reveals the line). Hiding Speed also lets the bps axis
-                      // range to the In/Out traffic instead of pinning at the negotiated gigabits.
-                      : { id: i.id, label: i.channel || i.label || i.name, units: i.units, defaultOff: row.cat === 'Ports' && (i.channel === 'Speed' || i.channel === 'Link') })
+                  // A spun-down unRAID disk drops out of the temperature extend: Zabbix flags its item
+                  // "not supported" but keeps the last reading. Keep such a parked drive on the chart
+                  // (its last value seeds a flat hold in buildMultiPlot) instead of filtering it out.
+                  let channels: GroupChan[] = row.items.filter((i) => i.numeric && (i.supported || (row.cat === 'Temperature' && i.last_value !== ''))).map((i) => {
+                    if ((row.cat === 'Ping' || row.cat === 'Web') && i.channel === 'Reachable')
+                      return { id: i.id, label: 'Downtime', units: '', invert: true } // show only when unreachable (PRTG-style)
+                    // A port's Speed and Link are constants - start their lines hidden (legend keeps
+                    // the value; a click reveals the line). Hiding Speed also lets the bps axis
+                    // range to the In/Out traffic instead of pinning at the negotiated gigabits.
+                    const c: GroupChan = { id: i.id, label: i.channel || i.label || i.name, units: i.units, defaultOff: row.cat === 'Ports' && (i.channel === 'Speed' || i.channel === 'Link') }
+                    // Temperature channels hold their last reading flat while the drive is parked - seed
+                    // the hold from the current last value/time (see buildMultiPlot's LOCF pass).
+                    if (row.cat === 'Temperature') { const sv = Number(i.last_value); c.hold = true; if (Number.isFinite(sv)) c.seedValue = sv; c.seedClock = i.last_clock }
+                    return c
+                  })
                   // Put the primary/headline channel first so it owns the left axis + the accent colour -
                   // EXCEPT for the max-member groups (CPU cores, disk temps): their primary is "whichever
                   // member is busiest/hottest right now", and hoisting it would reshuffle the legend order
@@ -4304,7 +4312,7 @@ const DOWNTIME_STROKE = '#d64550'
 const DOWNTIME_FILL = 'rgba(214, 69, 80, 0.30)'
 
 // invert turns a reachable (1=up) channel into downtime (spikes to 1 when down), drawn as a red band.
-type GroupChan = { id: string; label: string; units: string; invert?: boolean; defaultOff?: boolean }
+type GroupChan = { id: string; label: string; units: string; invert?: boolean; defaultOff?: boolean; hold?: boolean; seedValue?: number; seedClock?: number }
 
 // colorLegendChecks tints each legend row's check (the ::after from theme.css) with that series'
 // colour, by copying the marker's border colour into a --mk custom property uPlot doesn't expose.
@@ -4317,7 +4325,7 @@ function colorLegendChecks(u: uPlot) {
 // buildMultiPlot overlays several channels on one uPlot: timestamps are unioned, each distinct unit
 // gets its own scale (axes drawn for the first two, left/right), and the legend lists every channel
 // with its live value and toggles it on click. xrange pins the x-axis to the requested window.
-function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean; off?: boolean }[], width: number, c: ChartColors, xrange?: [number, number], onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
+function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean; off?: boolean; hold?: boolean; seedValue?: number; seedClock?: number }[], width: number, c: ChartColors, xrange?: [number, number], onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
   // Bucket timestamps to the typical sampling interval so channels sampled at slightly offset clocks
   // land on the same x (else the line renders as dots) while a genuine gap still breaks the line.
   const deltas: number[] = []
@@ -4340,6 +4348,18 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   const xs = [...tset].sort((a, b) => a - b)
   const xi = new Map(xs.map((t, i) => [t, i]))
   const ys = series.map((s) => { const a: (number | null)[] = new Array(xs.length).fill(null); s.points.forEach((p) => { const i = xi.get(round(p.t)); if (i !== undefined) a[i] = p.v }); return a })
+  // Held channels (parked unRAID disks): carry the last reading forward as a flat line instead of
+  // gapping. Fill each empty slot with the previous value; seed the leading run from the channel's
+  // last known value when the drive was already parked before the window opened (seedClock < from).
+  const from0 = xrange ? xrange[0] : (xs.length ? xs[0] : 0)
+  series.forEach((s, si) => {
+    if (!s.hold) return
+    let carry: number | null = s.seedValue != null && s.seedClock != null && s.seedClock < from0 ? s.seedValue : null
+    for (let j = 0; j < xs.length; j++) {
+      if (ys[si][j] == null) ys[si][j] = carry
+      else carry = ys[si][j]
+    }
+  })
   const units = [...new Set(series.map((s) => s.units))]
   const scaleKey = (u: string) => 'y' + units.indexOf(u)
   const grid = { stroke: c.grid, width: 1 }
@@ -4446,7 +4466,7 @@ function zoomHook(onZoom: ((z: boolean) => void) | undefined, xrange: [number, n
 // a click-to-toggle legend - the PRTG "sensor with channels" view. Long ranges use each channel's avg.
 function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
   const [range, setRange] = useState('2h')
-  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean; off?: boolean }[] | null>(null)
+  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean; off?: boolean; hold?: boolean; seedValue?: number; seedClock?: number }[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
   const [themeTick, setThemeTick] = useState(0)
@@ -4467,11 +4487,11 @@ function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
     setError(null)
     Promise.all(channels.map((ch) =>
       fetch(`/api/items/${ch.id}/history?range=${range}`).then((r) => (r.ok ? r.json() : null)).then((d: Series | null) => ({
-        label: ch.label, units: ch.units, downtime: !!ch.invert, off: !!ch.defaultOff,
+        label: ch.label, units: ch.units, downtime: !!ch.invert, off: !!ch.defaultOff, hold: !!ch.hold, seedValue: ch.seedValue, seedClock: ch.seedClock,
         // invert reachability into downtime: up (>0) -> 0, down -> 1. lo/hi carry the trend min/max
         // (present only on long ranges) so the primary channel can draw a shaded envelope.
         points: d ? d.points.map((p) => { let v = p.v ?? p.avg ?? null; if (ch.invert && v != null) v = v > 0 ? 0 : 1; return { t: p.t, v, lo: ch.invert ? null : (p.min ?? null), hi: ch.invert ? null : (p.max ?? null) } }) : [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[],
-      })).catch(() => ({ label: ch.label, units: ch.units, downtime: !!ch.invert, points: [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[] }))
+      })).catch(() => ({ label: ch.label, units: ch.units, downtime: !!ch.invert, hold: !!ch.hold, seedValue: ch.seedValue, seedClock: ch.seedClock, points: [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[] }))
     )).then((res) => { if (!cancelled) setSeries(res) }).catch(() => { if (!cancelled) setError('Failed to load history') })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4479,7 +4499,7 @@ function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
 
   useEffect(() => {
     if (plot.current) { plot.current.destroy(); plot.current = null }
-    if (!host.current || !series || !series.some((s) => s.points.length > 0)) return
+    if (!host.current || !series || !series.some((s) => s.points.length > 0 || (s.hold && s.seedValue != null))) return
     const width = host.current.clientWidth || 600
     const to = Math.floor(Date.now() / 1000)
     const from = to - (RANGE_SECS[range] || 7200)
@@ -4495,7 +4515,7 @@ function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  const empty = series && !series.some((s) => s.points.length > 0)
+  const empty = series && !series.some((s) => s.points.length > 0 || (s.hold && s.seedValue != null))
   return (
     <div>
       <div className="rtabs">
