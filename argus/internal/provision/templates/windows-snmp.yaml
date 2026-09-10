@@ -307,7 +307,9 @@ zabbix_export:
           snmp_oid: 'discovery[{#IFNAME},1.3.6.1.2.1.31.1.1.1.1,{#IFALIAS},1.3.6.1.2.1.31.1.1.1.18,{#IFTYPE},1.3.6.1.2.1.2.2.1.3,{#IFCONN},1.3.6.1.2.1.31.1.1.1.17]'
           key: 'net.if.discovery[snmp]'
           delay: 1h
-          description: 'IF-MIB, filtered to physical ethernet ports - ifType ethernetCsmacd AND ifConnectorPresent true. Windows exposes a swarm of virtual/tunnel/vSwitch adapters (some even ethernet-typed and bound to the real NIC), which the connector flag excludes.'
+          lifetime: 7d
+          enabled_lifetime_type: DISABLE_NEVER
+          description: 'IF-MIB, filtered to physical ethernet ports - ifType ethernetCsmacd AND ifConnectorPresent true. Windows exposes a swarm of virtual/tunnel/vSwitch adapters (some even ethernet-typed and bound to the real NIC), which the connector flag excludes. A NIC that briefly drops its connector during discovery is not disabled and keeps its history; one really gone is removed after 7 days.'
           filter:
             evaltype: AND
             conditions:
