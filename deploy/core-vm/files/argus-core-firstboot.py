@@ -386,24 +386,23 @@ def step_accounts(cfg, state):
         raise StepError("the Zabbix API did not come up: " + last)
 
     new_pw = cfg["zabbix_password"]
+    # Sign in as Admin: try the chosen password first (a prior attempt may already have rotated it),
+    # else the Zabbix default. Whichever works tells us whether rotation still needs doing.
     rotated = False
     try:
         auth = zbx_call("user.login", {"username": "Admin", "password": new_pw})
-        rotated = True  # already rotated on an earlier attempt
+        rotated = True
     except StepError:
         try:
             auth = zbx_call("user.login", {"username": "Admin", "password": "zabbix"})
         except StepError:
             raise StepError("could not sign in to Zabbix as Admin with either the chosen or the "
                             "default password - was the password changed manually?")
-    if not rotated:
-        admins = zbx_call("user.get", {"filter": {"username": ["Admin"]}, "output": ["userid"]}, auth)
-        if not admins:
-            raise StepError("stock Zabbix Admin user not found")
-        zbx_call("user.update", {"userid": admins[0]["userid"], "passwd": new_pw}, auth)
 
     # The machine account Argus talks through: a dedicated super admin, so rotating or disabling the
     # human Admin later never breaks Argus. Its password is random and never used interactively.
+    # Create it (and the API token) BEFORE rotating Admin - rotating a user's own password can end the
+    # current API session, so anything that must use `auth` runs first.
     svc = zbx_call("user.get", {"filter": {"username": ["argus-svc"]}, "output": ["userid"]}, auth)
     if svc:
         svc_id = svc[0]["userid"]
@@ -429,12 +428,27 @@ def step_accounts(cfg, state):
         state["zbx_token"] = zbx_call("token.generate", [tid], auth)[0]["token"]
         write_json(STATE_PATH, state)
 
-    # Housekeeping retention to match the Argus UI's time tabs; compression pays for the disk.
+    # Housekeeping retention to match the Argus UI's time tabs. Compression is best-effort (a DB that
+    # isn't TimescaleDB-managed rejects it) - retention still applies, so don't fail the whole setup.
     zbx_call("housekeeping.update", {
         "hk_history_global": 1, "hk_history": "30d",
         "hk_trends_global": 1, "hk_trends": "730d",
-        "compression_status": 1, "compress_older": "7d",
     }, auth)
+    try:
+        zbx_call("housekeeping.update", {"compression_status": 1, "compress_older": "7d"}, auth)
+    except StepError as e:
+        print("argus-core-firstboot: compression not enabled (%s) - retention still set" % e, flush=True)
+
+    # Rotate the Admin password LAST. Zabbix 7.0 requires current_passwd when a user changes their OWN
+    # password (we're logged in AS Admin); we only reach the rotation path after authenticating with
+    # the default "zabbix", so that is the current password.
+    if not rotated:
+        admins = zbx_call("user.get", {"filter": {"username": ["Admin"]}, "output": ["userid"]}, auth)
+        if not admins:
+            raise StepError("stock Zabbix Admin user not found")
+        zbx_call("user.update", {"userid": admins[0]["userid"], "passwd": new_pw,
+                                 "current_passwd": "zabbix"}, auth)
+
     try:
         zbx_call("user.logout", [], auth)
     except StepError:
@@ -882,6 +896,15 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _redirect(self, location="/"):
+        # Post-Redirect-Get: a POST always answers with a 303 to a GET, so the progress page is only
+        # ever reached by GET. Otherwise a browser reload (or the noscript meta-refresh) on a
+        # POST-loaded page re-submits the form and restarts the whole setup - the observed "loop".
+        self.send_response(303)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_GET(self):
         if self.path.startswith("/status"):
             self._send(json.dumps(ORCH.snapshot()), ctype="application/json")
@@ -904,15 +927,15 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0) or 0)
         form = parse_qs(self.rfile.read(length).decode("utf-8"), keep_blank_values=True)
         if setup_done():
-            self._send(done_page())
+            self._redirect("/")
             return
         if self.path.startswith("/retry"):
             if os.path.exists(CONFIG_PATH) and not ORCH.running():
                 ORCH.start(fresh=False)
-            self._send(progress_page(ORCH.snapshot()))
+            self._redirect("/")
             return
         if ORCH.running():
-            self._send(progress_page(ORCH.snapshot()))
+            self._redirect("/")
             return
         cfg, err = validate(form)
         if not cfg:
@@ -922,7 +945,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         write_json(CONFIG_PATH, cfg)
         ORCH.start(fresh=True)  # edited answers rerun every (idempotent) step against the new values
-        self._send(progress_page(ORCH.snapshot()))
+        self._redirect("/")
 
     def log_message(self, *args):
         pass
