@@ -11,6 +11,40 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.41] - 2026-09-10
+
+**Windows monitoring, the UniFi family finished, and a smoother Add-device.** Two more device classes
+(Windows over SNMP, the UniFi OS Console), the Add-device flow reworked into a searchable modal, and
+a batch of lab-driven fixes from putting a real Windows host and slow-filling disks under the lens.
+
+**Added:**
+- **Windows (SNMP) device class** — any edition, client or server. HOST-RESOURCES for CPU
+  (overall + per-core), physical memory, and fixed-disk volumes; IF-MIB for network; uptime; and a
+  new **Services** category that watches selected Windows services from the LAN Manager service
+  table (opt-in by a name regex, each with a not-running alert). Reuses the Generic Linux item keys,
+  so the curated view labels and groups everything identically.
+- **UniFi OS Console device class** — the console host itself (Cloud Key, UNVR, or a
+  console-capable gateway): state, CPU/memory, uptime, firmware, temperature, and internal storage
+  usage per volume. Completes the UniFi family (Switch, Gateway, AP, Console).
+- **Searchable device-class picker** — the Add-device class list is now a type-to-filter combobox,
+  sorted alphabetically (with "Ping only" pinned first), for a catalog that keeps growing.
+
+**Changed:**
+- **Add device is a modal** now, matching the Add-probe dialog, instead of an inline band that
+  pushed the host tree down — wider, with each field row on one line.
+
+**Fixed:**
+- **Windows network now collects** and is readable: Windows doesn't serve the 64-bit interface
+  counters, so traffic is read from the 32-bit counters; discovery keeps only physical ethernet
+  ports (dropping the swarm of virtual/tunnel/vSwitch adapters); and each NIC is labelled by its
+  Windows **connection name** (ifAlias — "Ethernet 2") rather than the raw internal name. A NIC that
+  briefly drops offline during discovery keeps its history (7-day grace before a truly removed one
+  is dropped).
+- **Near-constant values read flat**, in both the charts and the mini graphs: a disk sitting at a
+  steady 57 % (drifting a hundredth of a percent) no longer stretches that sliver across the full
+  height as a dramatic ramp. Percentage axes hold a minimum span; sparklines hold one relative to
+  the series' own magnitude. Genuinely varying series are unchanged.
+
 ## [0.4.40] - 2026-09-09
 
 **C2 breadth — the UniFi family and unRAID join the catalog.** Three new device classes ride the
