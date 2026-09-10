@@ -1,0 +1,22 @@
+[Unit]
+Description=Argus core first-boot setup (one-form appliance configuration)
+Documentation=https://github.com/g-guglielmi/argus-core
+# Serves the setup page on http://<vm>/ and, on submit, configures the whole core in place: system
+# settings + local admin user, database init + Zabbix schema, Zabbix server/frontend config, account
+# bootstrap (Admin password rotation + the argus-svc API token), the probe-enrollment PKI, and the
+# Argus + updater containers. Disables itself once setup completes; no-ops on later boots.
+Wants=network-online.target
+After=network-online.target docker.service postgresql.service
+Requires=docker.service
+
+[Service]
+# Long-running: it serves the setup + live progress page until the core is configured, then disables
+# itself (so it never runs again) and exits. If a boot interrupts a half-finished setup, it resumes
+# the run automatically from the saved answers.
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/argus-core-firstboot.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

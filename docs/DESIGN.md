@@ -366,6 +366,7 @@ class, threshold overrides, pause, acknowledge) · 9) Thresholds (global + overr
 
 ## 14. Deployment
 - Core: dedicated VM (Zabbix server + web + Timescale). Custom app: Docker container(s).
+  For NEW deployments the whole core ships as a **self-installing appliance VM** - see **§14d**.
 - Probes: single `docker run` container per site + **unRAID template XML**.
 - No docker-compose.
 - **Probe delivery - one artifact, two vehicles:** (a) Docker image (unRAID / any docker host);
@@ -555,6 +556,51 @@ page (the **OS** column + a "N need a reboot" rollup) and the core's own status 
 in **Settings -> OS updates** (`GET /api/os/status`, `PUT /api/os/reboot-window`, default **notify
 only**). The window is mirrored to `reboot-window.json` for the core's host watcher; patching stays
 strictly local (Argus never runs `apt` remotely).
+
+## 14d. Self-installing core appliance VM (`deploy/core-vm/`)
+
+The probe golden-image pattern (§14a) applied to the **core**: one Packer-built Debian 13 image with
+the entire stack baked - Zabbix 7.0 (server + nginx frontend + agent2), PostgreSQL + TimescaleDB
+(pinned 2.28), Docker with the `argus` + `argus-updater` images pre-pulled, and §14c patching in the
+**core flavor** (security-only, reboot operator-scheduled). Same base (`generic` cloud qcow2, full
+driver set), same delivery (OVA / qcow2 / VHD from a `core-vm/v*` tag Release), same identity strip,
+same no-cloud-init model, same systemd-networkd DHCP.
+
+**Nothing instance-specific is baked** - no passwords, no database, no certs. First boot serves a
+one-form setup page on `http://<vm>/` (hostname · console keymap · timezone · admin email +
+password, with per-role overrides under Advanced) and then configures everything behind a live,
+ground-truth progress page (idempotent steps; retry/edit on failure; reboot-safe resume):
+
+1. **system** - hostname/tz/keymap + the local Debian sudo user (console + SSH access).
+2. **database** - `timescaledb-tune` for the deployed RAM, `zabbix` role + DB with a **generated**
+   password, schema import, TimescaleDB conversion.
+3. **pki** - CA (`CN=Monitoring Core CA`) + core server cert; CA mounted RO into Argus so **probe
+   enrollment works out of the box**.
+4. **zabbix** - `zabbix_server.conf` (DB + TLS/tuning snippet), frontend `zabbix.conf.php` written
+   directly (**the browser setup wizard never runs**), nginx `:8080`, php-fpm tz, agent2
+   self-monitoring, services enabled.
+5. **accounts** - rotate the stock `Admin` password; create the **`argus-svc`** super-admin machine
+   user and mint its **API token** (never shown to a human; rotating `Admin` never breaks Argus);
+   housekeeping retention (30d/730d/compress 7d) via the API.
+6. **argus** - write `/etc/argus-core/argus.env` (token, first-admin seed via the existing
+   `ARGUS_ADMIN_*` mechanism, generated `ARGUS_SECRET_KEY`, `/ca` + `/update` mounts), start both
+   containers (systemd oneshot + docker-restart pattern from the probe VM), then seed Public URL +
+   timezone through the settings API so they stay UI-editable (only the Zabbix URL/token are
+   env-locked - the appliance owns its Zabbix).
+7. **finish** - scrub the one-time admin seed, park a permanent `:80 → :8081` nginx redirect, disable
+   the first-boot service.
+
+**Credential model:** one administrator password fans out to the Debian user, Zabbix `Admin`, and the
+Argus admin (individually overridable); the DB password, the API token, and the encryption key are
+machine-generated and never displayed. **The manual path stays first-class**: `setup-core.sh` gained
+`SETUP_MODE=image` (repos/packages/patching only) so the appliance and the manual install share one
+installer; Option B in the README covers non-Debian distros and split Zabbix/Argus layouts.
+
+**Limits:** first boot needs DHCP (static afterwards = swap the networkd file or use a reservation);
+HTTPS stays a fronting-reverse-proxy concern; Zabbix/PG package upgrades remain deliberate `apt`
+operations on the VM.
+
+**Status: implemented (2026-09-11), first image awaiting lab validation → `core-vm/v0.1.0`.**
 
 ## 15. Tech stack (confirmed)
 - **App name:** **Argus.** Split across three repos: **argus-core** (this repo — the app in `argus/`, docs, core deploy kit), **argus-probe** (the probe Docker image + self-configuring golden VM), and **argus-updater** (the core self-update sidecar). Image names stay `argus` / `argus-probe` / `argus-updater` regardless of repo names.
