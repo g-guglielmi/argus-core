@@ -314,13 +314,19 @@ def step_zabbix(cfg, state):
     replace_in_file(ZBX_CONF, r"^DBUser=.*$", "DBUser=zabbix", append_if_missing="DBUser=zabbix")
     replace_in_file(ZBX_CONF, r"^DBPassword=.*$", "DBPassword=" + dbpass,
                     append_if_missing="DBPassword=" + dbpass)
+    # Append the TLS + tuning snippet once. Guard on OUR marker line, NOT on "TLSCAFile=": the stock
+    # zabbix_server.conf ships commented "# TLSCAFile=" example lines, so a substring test wrongly
+    # concluded TLS was already set and skipped the append - leaving the server with no active TLS, so
+    # proxies fail the cert handshake (SSL alert 40). The uncommented lines we append win over the
+    # stock commented examples (same as the manual install path's unconditional append).
+    snippet_marker = "# --- appended by the Argus core appliance first-boot setup ---"
     with open(ZBX_CONF, encoding="utf-8") as fh:
         conf = fh.read()
-    if "TLSCAFile=" not in conf and os.path.exists(SNIPPET):
+    if snippet_marker not in conf and os.path.exists(SNIPPET):
         with open(SNIPPET, encoding="utf-8") as fh:
             snippet = fh.read()
         with open(ZBX_CONF, "a", encoding="utf-8") as fh:
-            fh.write("\n# --- appended by the Argus core appliance first-boot setup ---\n" + snippet)
+            fh.write("\n" + snippet_marker + "\n" + snippet)
 
     # Frontend config - what the browser setup wizard would have written.
     php_pass = dbpass.replace("\\", "\\\\").replace("'", "\\'")
