@@ -35,7 +35,8 @@ func TestLoadTemplates(t *testing.T) {
 		"Argus Windows by SNMP", "win.service.discovery", "{$WIN.SERVICE.MATCHES}",
 		"Argus AdGuard Home by HTTP", "adguard.raw", "adguard.block_pct", "{$ADGUARD.URL}", "net.tcp.service[tcp,{HOST.CONN}", "{$ADGUARD.DNS.PORT}",
 		"Argus Home Assistant by HTTP", "hass.raw", "hass.unavailable", "{$HASS.TOKEN}",
-		"Argus UPS by PeaNUT", "nut.raw", "nut.battery.charge", "nut.on_battery", "{$PEANUT.URL}", "{$PEANUT.UPS}"} {
+		"Argus UPS by PeaNUT", "nut.raw", "nut.battery.charge", "nut.on_battery", "{$PEANUT.URL}", "{$PEANUT.UPS}",
+		"Argus UPS by NUT", "argus_nut.py[{HOST.CONN}", "{$NUT.UPS}", "{$NUT.PORT}"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("templates missing %q", want)
 		}
@@ -126,6 +127,25 @@ func TestHTTPServiceClasses(t *testing.T) {
 	}
 	if !nutURL || !nutUps {
 		t.Errorf("nut-ups macro specs incomplete (url-derive=%v ups=%v)", nutURL, nutUps)
+	}
+
+	// The direct NUT class is a collector (external check on the proxy), not HTTP-API - the other
+	// UPS transport, sharing the same curated nut.* sensors.
+	nc, ok := ClassByID("nut-collector")
+	if !ok {
+		t.Fatal("nut-collector class missing")
+	}
+	if nc.Pattern != PatternCollector || nc.Iface != IfaceAgent || len(nc.Templates) != 1 || nc.Icon != "battery" {
+		t.Fatalf("unexpected nut-collector class: %+v", nc)
+	}
+	var ncUps bool
+	for _, m := range nc.Macros {
+		if m.Macro == "{$NUT.UPS}" && m.Required {
+			ncUps = true
+		}
+	}
+	if !ncUps {
+		t.Error("nut-collector must require {$NUT.UPS}")
 	}
 }
 

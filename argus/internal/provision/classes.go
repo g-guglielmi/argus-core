@@ -247,6 +247,25 @@ var registry = []Class{
 			{Macro: "{$PEANUT.PASSWORD}", Label: "PeaNUT password", Hint: "blank if PeaNUT runs with AUTH_DISABLED", Secret: true},
 		},
 	},
+	{
+		// The direct NUT path: the proxy's argus_nut.py collector (an external check baked into the
+		// probe image) speaks the NUT protocol to upsd - no extra app. Same curated sensors as the
+		// PeaNUT class; adding a UPS is just this device + its macros. The host is the NUT server's IP.
+		ID:         "nut-collector",
+		Label:      "UPS (NUT)",
+		Family:     "Power",
+		Pattern:    PatternCollector,
+		Iface:      IfaceAgent,
+		Templates:  []string{"Argus UPS by NUT"},
+		OffersHTTP: false,
+		Icon:       "battery",
+		Macros: []MacroSpec{
+			{Macro: "{$NUT.UPS}", Label: "UPS name", Hint: "ups (see: upsc -l <host>)", Required: true},
+			{Macro: "{$NUT.PORT}", Label: "upsd port", Hint: "3493"},
+			{Macro: "{$NUT.USER}", Label: "upsd username", Hint: "only if upsd needs a login to read"},
+			{Macro: "{$NUT.PASSWORD}", Label: "upsd password", Hint: "only if upsd needs a login to read", Secret: true},
+		},
+	},
 }
 
 // Classes returns the device-class catalog (stable order).
