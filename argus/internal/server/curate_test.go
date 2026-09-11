@@ -188,6 +188,12 @@ func TestClassifyHTTPServices(t *testing.T) {
 		{"hass.integrations", "Integrations", "Status", ""},
 		{"hass.entities", "Entities", "Status", ""},
 		{"hass.unavailable", "Unavailable entities", "Status", ""},
+		{"nut.battery.charge", "Battery charge", "Battery", ""},
+		{"nut.battery.runtime", "Battery runtime", "Battery", ""},
+		{"nut.status", "Status", "Battery", ""},
+		{"nut.load", "Load", "Power", ""},
+		{"nut.input.voltage", "Input voltage", "Power", ""},
+		{"nut.realpower", "Power draw", "Power", ""},
 	}
 	for _, c := range cases {
 		cat, _, _, ch, ok := classifyItem(c.key, c.name)
@@ -195,9 +201,9 @@ func TestClassifyHTTPServices(t *testing.T) {
 			t.Errorf("%s: got (%q, ch %q, ok=%v), want (%q, ch %q)", c.key, cat, ch, ok, c.cat, c.ch)
 		}
 	}
-	// The raw masters and the *.running health bits are plumbing (they drive down triggers), not
+	// The raw masters and the health/flag bits are plumbing (they drive down/alert triggers), not
 	// sensor rows.
-	for _, k := range []string{"adguard.raw", "adguard.running", "hass.raw", "hass.running"} {
+	for _, k := range []string{"adguard.raw", "adguard.running", "hass.raw", "hass.running", "nut.raw", "nut.reachable", "nut.on_battery", "nut.low_battery"} {
 		if _, _, _, _, ok := classifyItem(k, k); ok {
 			t.Errorf("%s must stay uncurated", k)
 		}
@@ -206,7 +212,7 @@ func TestClassifyHTTPServices(t *testing.T) {
 
 // Capability placeholders match on the key base, so per-instance keys are covered.
 func TestHideZero(t *testing.T) {
-	for _, k := range []string{"unifi.temp", "unifi.poe.total", "unifi.wan.latency[1]", "unifi.speedtest.down"} {
+	for _, k := range []string{"unifi.temp", "unifi.poe.total", "unifi.wan.latency[1]", "unifi.speedtest.down", "nut.realpower"} {
 		if !hideZero(k) {
 			t.Errorf("hideZero(%q) = false, want true", k)
 		}

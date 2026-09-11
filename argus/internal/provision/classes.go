@@ -228,6 +228,25 @@ var registry = []Class{
 			{Macro: "{$HASS.TOKEN}", Label: "Long-lived access token", Hint: "Home Assistant → Profile → Security", Required: true, Secret: true},
 		},
 	},
+	{
+		// A UPS monitored through NUT via PeaNUT (a container that fronts upsd over HTTP), so it's a
+		// plain HTTP-API class - no proxy collector needed. The host is the PeaNUT box; {$PEANUT.URL}
+		// defaults to its own IP on :8080.
+		ID:         "nut-ups",
+		Label:      "UPS (NUT via PeaNUT)",
+		Family:     "Power",
+		Pattern:    PatternHTTPAPI,
+		Iface:      IfaceAgent,
+		Templates:  []string{"Argus UPS by PeaNUT"},
+		OffersHTTP: false,
+		Icon:       "battery",
+		Macros: []MacroSpec{
+			{Macro: "{$PEANUT.URL}", Label: "PeaNUT URL", Hint: "http://peanut.example.lan:8080", Required: true, Derive: "http://{host}:8080"},
+			{Macro: "{$PEANUT.UPS}", Label: "UPS name", Hint: "ups (see PeaNUT /api/v1/devices)", Required: true},
+			{Macro: "{$PEANUT.USER}", Label: "PeaNUT username", Hint: "blank if PeaNUT runs with AUTH_DISABLED"},
+			{Macro: "{$PEANUT.PASSWORD}", Label: "PeaNUT password", Hint: "blank if PeaNUT runs with AUTH_DISABLED", Secret: true},
+		},
+	},
 }
 
 // Classes returns the device-class catalog (stable order).
