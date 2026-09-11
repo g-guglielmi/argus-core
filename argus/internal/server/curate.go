@@ -373,8 +373,6 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "Status", "Protection enabled", "", "", true
 	case "adguard.version":
 		return "Status", "Version", "", "", true
-	case "net.dns":
-		return "DNS", "DNS resolves", "", "", true
 
 	// Home Assistant (Argus Home Assistant by HTTP): platform health from the REST API. The raw
 	// master and hass.running (a constant 1 when healthy) stay uncurated - running drives the
@@ -414,6 +412,12 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	// items group like ICMP: response time is the primary channel, reachability the Downtime band
 	// (same "Reachable"/"Response time" channel names the Ping/Web frontend branches key on).
 	case "net.tcp.service":
+		// service "tcp" is a bare TCP-port reachability check (the AdGuard class uses it for the DNS
+		// port); the HTTP/HTTPS add-on uses the {$HTTP.SCHEME} service, so the service parameter tells
+		// the two net.tcp.service uses apart.
+		if param(p, 0) == "tcp" {
+			return "DNS", "DNS reachable", "", "", true
+		}
 		return "Web", "HTTP/HTTPS reachable", "HTTP/HTTPS", "Reachable", true
 	case "net.tcp.service.perf":
 		return "Web", "HTTP/HTTPS response time", "HTTP/HTTPS", "Response time", true

@@ -33,7 +33,7 @@ func TestLoadTemplates(t *testing.T) {
 		"snmp.cpu.core.discovery", "snmp.mem.shared", "DISABLE_NEVER",
 		"unraid.pooltemp.discovery", "unraid.arraytemp.discovery", "{$POOL.TEMP.WARN}",
 		"Argus Windows by SNMP", "win.service.discovery", "{$WIN.SERVICE.MATCHES}",
-		"Argus AdGuard Home by HTTP", "adguard.raw", "adguard.block_pct", "{$ADGUARD.URL}", "net.dns[{HOST.CONN}",
+		"Argus AdGuard Home by HTTP", "adguard.raw", "adguard.block_pct", "{$ADGUARD.URL}", "net.tcp.service[tcp,{HOST.CONN}", "{$ADGUARD.DNS.PORT}",
 		"Argus Home Assistant by HTTP", "hass.raw", "hass.unavailable", "{$HASS.TOKEN}"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("templates missing %q", want)

@@ -166,7 +166,7 @@ pre-§C fleet) falls back to a best-effort guess from its name, else a generic d
 | **Libraesva ESG** | SNMP (+HTTPS) | sysObjectID/sysDescr | host CPU/RAM/disk + mail-queue + admin-cert | fs |
 | **Windows server** | SNMP | sysObjectID (Windows) | CPU, RAM, disk, net, uptime + **selected services** (LANMGR `svSvcTable`) | disks, NICs, services |
 | **Generic Linux SSH** | Agentless | SSH reachable (no-SNMP fallback) | CPU, RAM, disk, net via `ssh.run` | fs, NICs |
-| **DNS server** (incl. **AdGuard**) | Agentless (+HTTP-API) | :53 + admin | `net.dns` resolve+verify answer/time; admin up; AdGuard stats via its API | - |
+| **DNS server** (incl. **AdGuard**) | Agentless (+HTTP-API) | :53 + admin | DNS port (TCP :53) reachable; admin up; AdGuard stats via its API | - |
 | **NUT UPS server** | Collector/script | upsd :3493 | battery %, on-battery, runtime, load, input V | UPSes |
 | **Home Assistant** | HTTP-API | :8123 REST + token | API up, version, integrations, entity count, unavailable entities | - |
 | **UniFi Switch** ✦src | HTTP-API | UniFi controller | uptime, CPU/mem, per-port traffic + PoE, clients | ports |
