@@ -1895,6 +1895,10 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
     .then((p: Proxy[]) => { setProxies(p || []); setError(null); if (p && p.length) setTarget(p[0].target ?? 'latest') })
     .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load probes'))
   useEffect(() => { loadProxies(); const t = setInterval(loadProxies, 30000); return () => clearInterval(t) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // The fleet target lives in app_meta, not on a proxy row, so read it directly - otherwise a core
+  // with no probes yet (or all removed) shows it blank instead of the real value ('latest' by default,
+  // but an admin may have pinned one while no probes exist, so fetch rather than assume).
+  useEffect(() => { if (isAdmin) fetch('/api/probes/target').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d && d.target) setTarget(d.target) }).catch(() => {}) }, [isAdmin])
 
   function loadTokens() {
     if (!isAdmin || !enroll) return
