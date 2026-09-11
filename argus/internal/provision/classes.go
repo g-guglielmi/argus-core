@@ -205,7 +205,7 @@ var registry = []Class{
 		OffersHTTP: false,
 		Icon:       "globe",
 		Macros: []MacroSpec{
-			{Macro: "{$ADGUARD.URL}", Label: "Admin URL", Hint: "http://adguard.example.lan (add :port if not 80)", Required: true},
+			{Macro: "{$ADGUARD.URL}", Label: "Admin URL", Hint: "http://adguard.example.lan:3000", Required: true},
 			{Macro: "{$ADGUARD.USER}", Label: "Admin username", Hint: "blank if the admin UI has no login"},
 			{Macro: "{$ADGUARD.PASSWORD}", Label: "Admin password", Hint: "blank if the admin UI has no login", Secret: true},
 		},
