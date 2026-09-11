@@ -1,0 +1,211 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: 895c26b2e2584193844b0fcd56ad2dd1
+      template: 'Argus UPS by NUT'
+      name: 'Argus UPS by NUT'
+      description: |
+        A UPS monitored through Network UPS Tools (NUT) directly: the proxy runs a small collector
+        (argus_nut.py, an external check baked into the argus-probe image) that speaks the NUT protocol
+        to upsd and reads battery charge, runtime, load, input voltage, power draw and the raw
+        ups.status - deriving on-battery / low-battery flags for the alerts. No extra app to run: adding
+        a UPS is just this device with its macros. Set {$NUT.UPS} to the UPS's NUT name (often "ups"),
+        {$NUT.PORT} to upsd's port (3493), and {$NUT.USER}/{$NUT.PASSWORD} only if upsd requires a login
+        for read (most allow anonymous LIST VAR). The host's own interface is the NUT server's IP
+        (Base Ping + the collector run against it). For a UPS already fronted by PeaNUT, use the
+        "Argus UPS by PeaNUT" class instead. DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: 83cab82620244aa8a2661de157975a2c
+          name: 'UPS raw data'
+          type: EXTERNAL
+          key: 'argus_nut.py[{HOST.CONN},{$NUT.PORT},{$NUT.UPS},{$NUT.USER},{$NUT.PASSWORD}]'
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          timeout: 15s
+          description: 'Master item: the proxy''s argus_nut.py collector queries upsd (LIST VAR) and prints the fields the sensors use as JSON. A connection failure prints reachable=0 (not an error) so the down trigger fires.'
+        - uuid: b2c2418e5ecd447e875b6aa3d7f404bb
+          name: 'UPS monitoring reachable'
+          type: DEPENDENT
+          key: nut.reachable
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = upsd answered for this UPS, 0 = NUT is down or unreachable. Not a curated sensor - it drives the down trigger.'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.reachable'
+          triggers:
+            - uuid: 186c3e58705f4ad698ab87a20c72f585
+              expression: 'max(/Argus UPS by NUT/nut.reachable,#3)=0'
+              name: 'UPS monitoring is unreachable'
+              priority: HIGH
+              description: 'upsd has not answered for this UPS on the last 3 checks (NUT down or unreachable).'
+        - uuid: 6d638c61c5314333934ca911091645fa
+          name: 'Battery charge'
+          type: DEPENDENT
+          key: nut.battery.charge
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'State of charge of the UPS battery.'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.charge'
+              error_handler: DISCARD_VALUE
+        - uuid: 44d0efd9b7804d0baaa685222e0cd330
+          name: 'Battery runtime'
+          type: DEPENDENT
+          key: nut.battery.runtime
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: s
+          description: 'Estimated runtime left on battery.'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.runtime'
+              error_handler: DISCARD_VALUE
+        - uuid: 8d188be00bd74561ab64bea195285130
+          name: 'Load'
+          type: DEPENDENT
+          key: nut.load
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'UPS output load as a percentage of its capacity.'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.load'
+              error_handler: DISCARD_VALUE
+        - uuid: 19c883c06e284439a0994735f87b11ea
+          name: 'Input voltage'
+          type: DEPENDENT
+          key: nut.input.voltage
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: V
+          description: 'Incoming utility (mains) voltage.'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.input_voltage'
+              error_handler: DISCARD_VALUE
+        - uuid: 258b0cbe0ea14ba49f66d4244420b22a
+          name: 'Power draw'
+          type: DEPENDENT
+          key: nut.realpower
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: W
+          description: 'Real power drawn through the UPS (only UPS models that report ups.realpower deliver a non-zero value).'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.realpower'
+              error_handler: DISCARD_VALUE
+        - uuid: 34ef5246d47340138515beadb7200622
+          name: 'Status'
+          type: DEPENDENT
+          key: nut.status
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'Raw NUT ups.status flags (OL = on line, OB = on battery, LB = low battery, CHRG = charging, ...).'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.status'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+        - uuid: 8444b7ee58554642827576adf5083425
+          name: 'On battery'
+          type: DEPENDENT
+          key: nut.on_battery
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = ups.status contains OB (running on battery, utility power lost). Drives the on-battery trigger.'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.on_battery'
+          triggers:
+            - uuid: 9c91357249624bad98fce0850ba117cc
+              expression: 'max(/Argus UPS by NUT/nut.on_battery,#2)=1 and max(/Argus UPS by NUT/nut.reachable,#2)=1'
+              name: 'UPS on battery (utility power lost)'
+              priority: WARNING
+              description: 'The UPS has been running on battery for the last 2 checks.'
+        - uuid: d859104f71b14de9b7f443999e81fd5a
+          name: 'Low battery'
+          type: DEPENDENT
+          key: nut.low_battery
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = ups.status contains LB (battery low - shutdown imminent). Drives the low-battery trigger.'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.low_battery'
+          triggers:
+            - uuid: 3bbc163d6b8a4ef0b4f945076f5ba6e3
+              expression: 'max(/Argus UPS by NUT/nut.low_battery,#2)=1 and max(/Argus UPS by NUT/nut.reachable,#2)=1'
+              name: 'UPS battery low - shutdown imminent'
+              priority: HIGH
+              description: 'The UPS has reported a low battery on the last 2 checks.'
+      macros:
+        - macro: '{$NUT.UPS}'
+          value: ups
+          description: 'The UPS''s NUT name as upsd exposes it (often "ups"). See `upsc -l <host>`.'
+        - macro: '{$NUT.PORT}'
+          value: '3493'
+          description: 'TCP port upsd listens on (default 3493).'
+        - macro: '{$NUT.USER}'
+          value: ''
+          description: 'upsd username - only if this upsd requires a login to read (most allow anonymous LIST VAR). Leave blank otherwise.'
+        - macro: '{$NUT.PASSWORD}'
+          value: ''
+          description: 'upsd password for {$NUT.USER}. Set per host as a secret macro; leave blank if not required.'
