@@ -3125,7 +3125,10 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
           </>}
         </div>
       )}
-      {creating && <GroupNameBand placeholder="New group name (use / for nesting, e.g. mybz/Network)" confirmLabel="Create" onConfirm={(name) => createGroup(name)} onCancel={() => setCreating(false)} />}
+      {creating && <GroupNameBand
+        prefix={focus.level === 'group' ? focus.path + '/' : undefined}
+        placeholder={focus.level === 'group' ? 'Subgroup name (use / for deeper nesting)' : 'New group name (use / for nesting, e.g. mybz/Network)'}
+        confirmLabel="Create" onConfirm={(name) => createGroup(name)} onCancel={() => setCreating(false)} />}
       {addingDevice && <AddDeviceBand classes={classes} groups={groups} proxies={proxies} defaultSite={focus.level === 'group' ? focus.path : ''} onCancel={() => setAddingDevice(false)} onCreated={() => { setAddingDevice(false); setError(null); load(); fireDataRefresh() }} />}
       {loading && <Skeleton rows={5} cols={3} />}
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
