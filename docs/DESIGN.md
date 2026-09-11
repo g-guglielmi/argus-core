@@ -600,7 +600,12 @@ installer; Option B in the README covers non-Debian distros and split Zabbix/Arg
 HTTPS stays a fronting-reverse-proxy concern; Zabbix/PG package upgrades remain deliberate `apt`
 operations on the VM.
 
-**Status: implemented (2026-09-11), first image awaiting lab validation → `core-vm/v0.1.0`.**
+**Status: shipped (`core-vm/v0.1.0`, 2026-09-11).** Lab-validated on XCP-NG end to end: one-form
+setup completes the whole bring-up, sign-in works, the Zabbix connection is live, and a probe enrolled
+and came online over mutual TLS. (Two first-boot bugs found and fixed during lab: Zabbix 7.0 requires
+`current_passwd` when rotating the Admin's own password, and the `zabbix_server.conf` TLS snippet must
+be appended by matching a self-authored marker, not the substring `TLSCAFile=` which the stock conf
+already carries in a commented example.)
 
 ## 15. Tech stack (confirmed)
 - **App name:** **Argus.** Split across three repos: **argus-core** (this repo — the app in `argus/`, docs, core deploy kit), **argus-probe** (the probe Docker image + self-configuring golden VM), and **argus-updater** (the core self-update sidecar). Image names stay `argus` / `argus-probe` / `argus-updater` regardless of repo names.
