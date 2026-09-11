@@ -27,17 +27,18 @@ var categoryOrderServer = map[string]int{
 	"Ping":        0,
 	"Web":         1,
 	"DNS":         2, // a DNS server's headline is its resolving/filtering
-	"Power":       3, // before CPU (user call) - matters for power-centric classes (PoE switches, UPS)
-	"CPU":         4,
-	"Memory":      5,
-	"Disk":        6,
-	"Network":     7,
-	"Wireless":    8,
-	"Services":    9,
-	"Temperature": 10,
-	"Uptime":      11,
-	"Ports":       12,
-	"Status":      13,
+	"Battery":     3, // a UPS's headline is its charge/on-battery state
+	"Power":       4, // before CPU (user call) - matters for power-centric classes (PoE switches, UPS)
+	"CPU":         5,
+	"Memory":      6,
+	"Disk":        7,
+	"Network":     8,
+	"Wireless":    9,
+	"Services":    10,
+	"Temperature": 11,
+	"Uptime":      12,
+	"Ports":       13,
+	"Status":      14,
 }
 var categoryOrderNet = map[string]int{
 	"Ping":        0,
@@ -45,15 +46,16 @@ var categoryOrderNet = map[string]int{
 	"DNS":         2,
 	"Wireless":    3, // an AP's headline is its clients/radios
 	"Network":     4,
-	"Power":       5, // before CPU (user call)
-	"CPU":         6,
-	"Memory":      7,
-	"Disk":        8,
-	"Services":    9,
-	"Uptime":      10,
-	"Ports":       11,
-	"Temperature": 12,
-	"Status":      13,
+	"Battery":     5,
+	"Power":       6, // before CPU (user call)
+	"CPU":         7,
+	"Memory":      8,
+	"Disk":        9,
+	"Services":    10,
+	"Uptime":      11,
+	"Ports":       12,
+	"Temperature": 13,
+	"Status":      14,
 }
 
 // Storage boxes (anything with a drive-temperature group: unRAID, later QNAP/Ugreen) read their
@@ -62,17 +64,18 @@ var categoryOrderNAS = map[string]int{
 	"Ping":        0,
 	"Web":         1,
 	"DNS":         2,
-	"Power":       3,
-	"CPU":         4,
-	"Memory":      5,
-	"Temperature": 6, // before Disk (user call)
-	"Disk":        7,
-	"Network":     8,
-	"Wireless":    9,
-	"Services":    10,
-	"Uptime":      11,
-	"Ports":       12,
-	"Status":      13,
+	"Battery":     3,
+	"Power":       4,
+	"CPU":         5,
+	"Memory":      6,
+	"Temperature": 7, // before Disk (user call)
+	"Disk":        8,
+	"Network":     9,
+	"Wireless":    10,
+	"Services":    11,
+	"Uptime":      12,
+	"Ports":       13,
+	"Status":      14,
 }
 
 // splitKey returns the base key and its parameters, e.g. vfs.fs.size[/,pused] ->
@@ -109,6 +112,7 @@ var hideWhenZero = map[string]bool{
 	"unifi.speedtest.down": true,
 	"unifi.speedtest.up":   true,
 	"unifi.wan.latency":    true, // a real ping is never 0; absent monitor data leaves a stale row
+	"nut.realpower":        true, // only UPS models that report ups.realpower deliver a non-zero value
 }
 
 // hideZero reports whether this item key is a capability placeholder when it reads 0.
@@ -387,6 +391,24 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "Status", "Entities", "", "", true
 	case "hass.unavailable":
 		return "Status", "Unavailable entities", "", "", true
+
+	// UPS via NUT/PeaNUT (Argus UPS by PeaNUT): battery state under a Battery category, load/power
+	// under Power. The raw master and the reachable/on_battery/low_battery flags stay uncurated -
+	// they drive the triggers; the human-readable ups.status string is the shown state.
+	case "nut.raw":
+		return "", "", "", "", false
+	case "nut.battery.charge":
+		return "Battery", "Battery charge", "", "", true
+	case "nut.battery.runtime":
+		return "Battery", "Battery runtime", "", "", true
+	case "nut.status":
+		return "Battery", "Status", "", "", true
+	case "nut.load":
+		return "Power", "Load", "", "", true
+	case "nut.input.voltage":
+		return "Power", "Input voltage", "", "", true
+	case "nut.realpower":
+		return "Power", "Power draw", "", "", true
 
 	// unRAID (Argus unRAID by SNMP, attached alongside the Linux template): the SNMP plugin's
 	// extend scripts deliver per-disk temperatures - grouped into ONE overlay chart - and

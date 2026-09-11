@@ -167,7 +167,7 @@ pre-§C fleet) falls back to a best-effort guess from its name, else a generic d
 | **Windows server** | SNMP | sysObjectID (Windows) | CPU, RAM, disk, net, uptime + **selected services** (LANMGR `svSvcTable`) | disks, NICs, services |
 | **Generic Linux SSH** | Agentless | SSH reachable (no-SNMP fallback) | CPU, RAM, disk, net via `ssh.run` | fs, NICs |
 | **DNS server** (incl. **AdGuard**) | Agentless (+HTTP-API) | :53 + admin | DNS port (TCP :53) reachable; admin up; AdGuard stats via its API | - |
-| **NUT UPS server** | Collector/script | upsd :3493 | battery %, on-battery, runtime, load, input V | UPSes |
+| **UPS (NUT via PeaNUT)** | HTTP-API | PeaNUT :8080 → upsd | battery %, on-battery/low-battery, runtime, load, input V, power draw | - |
 | **Home Assistant** | HTTP-API | :8123 REST + token | API up, version, integrations, entity count, unavailable entities | - |
 | **UniFi Switch** ✦src | HTTP-API | UniFi controller | uptime, CPU/mem, per-port traffic + PoE, clients | ports |
 | **UniFi Gateway** ✦src | HTTP-API | UniFi controller | + WAN up/down + throughput | ports, WANs |

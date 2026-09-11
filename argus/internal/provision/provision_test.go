@@ -34,7 +34,8 @@ func TestLoadTemplates(t *testing.T) {
 		"unraid.pooltemp.discovery", "unraid.arraytemp.discovery", "{$POOL.TEMP.WARN}",
 		"Argus Windows by SNMP", "win.service.discovery", "{$WIN.SERVICE.MATCHES}",
 		"Argus AdGuard Home by HTTP", "adguard.raw", "adguard.block_pct", "{$ADGUARD.URL}", "net.tcp.service[tcp,{HOST.CONN}", "{$ADGUARD.DNS.PORT}",
-		"Argus Home Assistant by HTTP", "hass.raw", "hass.unavailable", "{$HASS.TOKEN}"} {
+		"Argus Home Assistant by HTTP", "hass.raw", "hass.unavailable", "{$HASS.TOKEN}",
+		"Argus UPS by PeaNUT", "nut.raw", "nut.battery.charge", "nut.on_battery", "{$PEANUT.URL}", "{$PEANUT.UPS}"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("templates missing %q", want)
 		}
@@ -104,6 +105,27 @@ func TestHTTPServiceClasses(t *testing.T) {
 	}
 	if !haToken {
 		t.Error("home-assistant must require a secret {$HASS.TOKEN}")
+	}
+
+	// NUT via PeaNUT is also an HTTP-API class (no proxy collector); its URL derives from the host.
+	nut, ok := ClassByID("nut-ups")
+	if !ok {
+		t.Fatal("nut-ups class missing")
+	}
+	if nut.Pattern != PatternHTTPAPI || nut.Iface != IfaceAgent || len(nut.Templates) != 1 || nut.Icon != "battery" {
+		t.Fatalf("unexpected nut-ups class: %+v", nut)
+	}
+	var nutURL, nutUps bool
+	for _, m := range nut.Macros {
+		if m.Macro == "{$PEANUT.URL}" && m.Required && m.Derive == "http://{host}:8080" {
+			nutURL = true
+		}
+		if m.Macro == "{$PEANUT.UPS}" && m.Required {
+			nutUps = true
+		}
+	}
+	if !nutURL || !nutUps {
+		t.Errorf("nut-ups macro specs incomplete (url-derive=%v ups=%v)", nutURL, nutUps)
 	}
 }
 

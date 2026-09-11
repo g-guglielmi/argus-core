@@ -1,0 +1,259 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: b58c4f29c995420f934169e4c46ad52a
+      template: 'Argus UPS by PeaNUT'
+      name: 'Argus UPS by PeaNUT'
+      description: |
+        A UPS monitored through Network UPS Tools (NUT) by way of PeaNUT (github.com/Brandawg93/PeaNUT),
+        a small container that fronts upsd and exposes it over HTTP. Argus polls PeaNUT's JSON API
+        (/api/v1/devices/<ups>/vars) once per interval and reads battery charge, runtime, load, input
+        voltage, power draw and the raw ups.status - deriving on-battery / low-battery flags for the
+        alerts. This keeps NUT agentless and needs no proxy collector: it is a plain HTTP-API class like
+        the UniFi/AdGuard ones. Set {$PEANUT.URL} to PeaNUT's base URL including the port (default
+        :8080), {$PEANUT.UPS} to the UPS's NUT name (often "ups"), and {$PEANUT.USER}/{$PEANUT.PASSWORD}
+        to PeaNUT's Basic-auth credentials (leave blank if PeaNUT runs with AUTH_DISABLED). The host's
+        own interface is the PeaNUT box's IP (Base Ping). DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: 91e1747a66584223811a1687aa2aa5a0
+          name: 'UPS raw data'
+          type: SCRIPT
+          key: nut.raw
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          timeout: 15s
+          description: 'Master item: one poll of PeaNUT /api/v1/devices/<ups>/vars, reduced to the fields the sensors use. A network/gateway failure returns reachable=0 (not an error) so the down trigger fires; only a missing URL/UPS or rejected credentials make the item unsupported.'
+          params: |
+            var p = JSON.parse(value);
+            if (!p.url || !p.ups) { throw 'set {$PEANUT.URL} and {$PEANUT.UPS} on the host'; }
+            var base = String(p.url).replace(/\/+$/, '');
+            var out = { reachable: 0, status: '', charge: null, runtime: null, load: null, input_voltage: null, realpower: 0, on_battery: 0, low_battery: 0 };
+            var req = new HttpRequest();
+            req.addHeader('Accept: application/json');
+            if (p.user) { req.addHeader('Authorization: Basic ' + btoa(p.user + ':' + (p.pass || ''))); }
+            var resp, code;
+            try { resp = req.get(base + '/api/v1/devices/' + encodeURIComponent(p.ups) + '/vars'); code = req.getStatus(); }
+            catch (e) { return JSON.stringify(out); }
+            if (code === 401 || code === 403) { throw 'PeaNUT: HTTP ' + code + ' - check {$PEANUT.USER}/{$PEANUT.PASSWORD}'; }
+            if (code === 404) { throw 'PeaNUT: UPS "' + p.ups + '" not found (404) - check {$PEANUT.UPS}'; }
+            if (code !== 200) { return JSON.stringify(out); }
+            out.reachable = 1;
+            var body;
+            try { body = JSON.parse(resp); } catch (e) { return JSON.stringify(out); }
+            var vars = (body && body.data) ? body.data : body;
+            if (Array.isArray(vars)) {
+              var m = {};
+              for (var i = 0; i < vars.length; i++) {
+                var e = vars[i] || {};
+                var k = (e.key != null) ? e.key : e.name;
+                if (k != null) { m[k] = (e.value != null) ? e.value : e.val; }
+              }
+              vars = m;
+            }
+            if (!vars || typeof vars !== 'object') { return JSON.stringify(out); }
+            function num(k) { var x = parseFloat(vars[k]); return isNaN(x) ? null : x; }
+            out.charge = num('battery.charge');
+            out.runtime = num('battery.runtime');
+            out.load = num('ups.load');
+            out.input_voltage = num('input.voltage');
+            var rp = num('ups.realpower'); out.realpower = (rp == null ? 0 : rp);
+            var st = vars['ups.status']; out.status = (st == null ? '' : String(st));
+            var toks = out.status.toUpperCase().split(/\s+/);
+            out.on_battery = toks.indexOf('OB') >= 0 ? 1 : 0;
+            out.low_battery = toks.indexOf('LB') >= 0 ? 1 : 0;
+            return JSON.stringify(out);
+          parameters:
+            - name: url
+              value: '{$PEANUT.URL}'
+            - name: ups
+              value: '{$PEANUT.UPS}'
+            - name: user
+              value: '{$PEANUT.USER}'
+            - name: pass
+              value: '{$PEANUT.PASSWORD}'
+        - uuid: 55d60c6655d24e6c971a3ca65c5ebb00
+          name: 'UPS monitoring reachable'
+          type: DEPENDENT
+          key: nut.reachable
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = PeaNUT answered for this UPS, 0 = PeaNUT/NUT is down or unreachable. Not a curated sensor - it drives the down trigger.'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.reachable'
+          triggers:
+            - uuid: 084a3c303beb434d89d95cdc71af2733
+              expression: 'max(/Argus UPS by PeaNUT/nut.reachable,#3)=0'
+              name: 'UPS monitoring is unreachable'
+              priority: HIGH
+              description: 'PeaNUT has not answered for this UPS on the last 3 checks (PeaNUT down, NUT down, or unreachable).'
+        - uuid: ae8e2e3ee2a140a0b0cc337a2e059674
+          name: 'Battery charge'
+          type: DEPENDENT
+          key: nut.battery.charge
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'State of charge of the UPS battery.'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.charge'
+              error_handler: DISCARD_VALUE
+        - uuid: 16af71b4f59546f982f9bdd5a95cbfd3
+          name: 'Battery runtime'
+          type: DEPENDENT
+          key: nut.battery.runtime
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: s
+          description: 'Estimated runtime left on battery.'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.runtime'
+              error_handler: DISCARD_VALUE
+        - uuid: e2846ca601574bfd8f1d621f3d2e9c85
+          name: 'Load'
+          type: DEPENDENT
+          key: nut.load
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'UPS output load as a percentage of its capacity.'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.load'
+              error_handler: DISCARD_VALUE
+        - uuid: 7bb688f022574881b7dc6b233557e848
+          name: 'Input voltage'
+          type: DEPENDENT
+          key: nut.input.voltage
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: V
+          description: 'Incoming utility (mains) voltage.'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.input_voltage'
+              error_handler: DISCARD_VALUE
+        - uuid: d592c545186049a99200c20d058fc0b8
+          name: 'Power draw'
+          type: DEPENDENT
+          key: nut.realpower
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: W
+          description: 'Real power drawn through the UPS (only UPS models that report ups.realpower deliver a non-zero value).'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.realpower'
+              error_handler: DISCARD_VALUE
+        - uuid: 8dbf3e70bb3d48e9bf0fb8f50eab20a1
+          name: 'Status'
+          type: DEPENDENT
+          key: nut.status
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'Raw NUT ups.status flags (OL = on line, OB = on battery, LB = low battery, CHRG = charging, ...).'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.status'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+        - uuid: 219431c239bb4ae5b42c9a907510addd
+          name: 'On battery'
+          type: DEPENDENT
+          key: nut.on_battery
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = ups.status contains OB (running on battery, utility power lost). Drives the on-battery trigger.'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.on_battery'
+          triggers:
+            - uuid: 0b701d5eea2b4c8cb4f0c9aa4b010930
+              expression: 'max(/Argus UPS by PeaNUT/nut.on_battery,#2)=1 and max(/Argus UPS by PeaNUT/nut.reachable,#2)=1'
+              name: 'UPS on battery (utility power lost)'
+              priority: WARNING
+              description: 'The UPS has been running on battery for the last 2 checks.'
+        - uuid: 7d5a41378d064303b29f2f4b2359a713
+          name: 'Low battery'
+          type: DEPENDENT
+          key: nut.low_battery
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = ups.status contains LB (battery low - shutdown imminent). Drives the low-battery trigger.'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.low_battery'
+          triggers:
+            - uuid: de64467f9727448bb478e5ebee723d6d
+              expression: 'max(/Argus UPS by PeaNUT/nut.low_battery,#2)=1 and max(/Argus UPS by PeaNUT/nut.reachable,#2)=1'
+              name: 'UPS battery low - shutdown imminent'
+              priority: HIGH
+              description: 'The UPS has reported a low battery on the last 2 checks.'
+      macros:
+        - macro: '{$PEANUT.URL}'
+          value: 'http://peanut.example.lan:8080'
+          description: 'PeaNUT base URL including the port (default 8080). Set per host.'
+        - macro: '{$PEANUT.UPS}'
+          value: ups
+          description: 'The UPS''s NUT name as PeaNUT exposes it (often "ups"). See PeaNUT /api/v1/devices.'
+        - macro: '{$PEANUT.USER}'
+          value: ''
+          description: 'PeaNUT Basic-auth username. Leave blank if PeaNUT runs with AUTH_DISABLED.'
+        - macro: '{$PEANUT.PASSWORD}'
+          value: ''
+          description: 'PeaNUT Basic-auth password. Set per host as a secret macro; leave blank if AUTH_DISABLED.'
