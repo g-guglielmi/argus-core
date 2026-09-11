@@ -26,32 +26,34 @@ var cpuUtilKeep = map[string]bool{
 var categoryOrderServer = map[string]int{
 	"Ping":        0,
 	"Web":         1,
-	"Power":       2, // before CPU (user call) - matters for power-centric classes (PoE switches, UPS)
-	"CPU":         3,
-	"Memory":      4,
-	"Disk":        5,
-	"Network":     6,
-	"Wireless":    7,
-	"Services":    8,
-	"Temperature": 9,
-	"Uptime":      10,
-	"Ports":       11,
-	"Status":      12,
+	"DNS":         2, // a DNS server's headline is its resolving/filtering
+	"Power":       3, // before CPU (user call) - matters for power-centric classes (PoE switches, UPS)
+	"CPU":         4,
+	"Memory":      5,
+	"Disk":        6,
+	"Network":     7,
+	"Wireless":    8,
+	"Services":    9,
+	"Temperature": 10,
+	"Uptime":      11,
+	"Ports":       12,
+	"Status":      13,
 }
 var categoryOrderNet = map[string]int{
 	"Ping":        0,
 	"Web":         1,
-	"Wireless":    2, // an AP's headline is its clients/radios
-	"Network":     3,
-	"Power":       4, // before CPU (user call)
-	"CPU":         5,
-	"Memory":      6,
-	"Disk":        7,
-	"Services":    8,
-	"Uptime":      9,
-	"Ports":       10,
-	"Temperature": 11,
-	"Status":      12,
+	"DNS":         2,
+	"Wireless":    3, // an AP's headline is its clients/radios
+	"Network":     4,
+	"Power":       5, // before CPU (user call)
+	"CPU":         6,
+	"Memory":      7,
+	"Disk":        8,
+	"Services":    9,
+	"Uptime":      10,
+	"Ports":       11,
+	"Temperature": 12,
+	"Status":      13,
 }
 
 // Storage boxes (anything with a drive-temperature group: unRAID, later QNAP/Ugreen) read their
@@ -59,17 +61,18 @@ var categoryOrderNet = map[string]int{
 var categoryOrderNAS = map[string]int{
 	"Ping":        0,
 	"Web":         1,
-	"Power":       2,
-	"CPU":         3,
-	"Memory":      4,
-	"Temperature": 5, // before Disk (user call)
-	"Disk":        6,
-	"Network":     7,
-	"Wireless":    8,
-	"Services":    9,
-	"Uptime":      10,
-	"Ports":       11,
-	"Status":      12,
+	"DNS":         2,
+	"Power":       3,
+	"CPU":         4,
+	"Memory":      5,
+	"Temperature": 6, // before Disk (user call)
+	"Disk":        7,
+	"Network":     8,
+	"Wireless":    9,
+	"Services":    10,
+	"Uptime":      11,
+	"Ports":       12,
+	"Status":      13,
 }
 
 // splitKey returns the base key and its parameters, e.g. vfs.fs.size[/,pused] ->
@@ -352,6 +355,40 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "", "", "", "", false
 	case "unifi.storage.pused":
 		return "Disk", "Storage used % (" + param(p, 0) + ")", "", "", true
+
+	// AdGuard Home (Argus AdGuard Home by HTTP): DNS filtering stats from the admin API under a DNS
+	// category, plus a net.dns resolve check the proxy runs directly against the server. The raw
+	// master is plumbing (uncurated).
+	case "adguard.raw":
+		return "", "", "", "", false
+	case "adguard.block_pct":
+		return "DNS", "Block rate", "", "", true
+	case "adguard.queries":
+		return "DNS", "DNS queries", "", "", true
+	case "adguard.blocked":
+		return "DNS", "Blocked queries", "", "", true
+	case "adguard.avg_time":
+		return "DNS", "Average processing time", "", "", true
+	case "adguard.protection":
+		return "Status", "Protection enabled", "", "", true
+	case "adguard.version":
+		return "Status", "Version", "", "", true
+	case "net.dns":
+		return "DNS", "DNS resolves", "", "", true
+
+	// Home Assistant (Argus Home Assistant by HTTP): platform health from the REST API. The raw
+	// master and hass.running (a constant 1 when healthy) stay uncurated - running drives the
+	// not-ready trigger, and "not responding" is a nodata trigger on the master.
+	case "hass.raw":
+		return "", "", "", "", false
+	case "hass.version":
+		return "Status", "Version", "", "", true
+	case "hass.integrations":
+		return "Status", "Integrations", "", "", true
+	case "hass.entities":
+		return "Status", "Entities", "", "", true
+	case "hass.unavailable":
+		return "Status", "Unavailable entities", "", "", true
 
 	// unRAID (Argus unRAID by SNMP, attached alongside the Linux template): the SNMP plugin's
 	// extend scripts deliver per-disk temperatures - grouped into ONE overlay chart - and

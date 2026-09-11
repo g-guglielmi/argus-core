@@ -193,6 +193,40 @@ var registry = []Class{
 			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "default"},
 		},
 	},
+	{
+		// AdGuard Home polled from its admin API (DNS filtering stats + protection + version) with a
+		// proxy-run net.dns resolve check alongside. The host's own interface is the AdGuard box's IP.
+		ID:         "adguard",
+		Label:      "AdGuard Home",
+		Family:     "DNS",
+		Pattern:    PatternHTTPAPI,
+		Iface:      IfaceAgent,
+		Templates:  []string{"Argus AdGuard Home by HTTP"},
+		OffersHTTP: false,
+		Icon:       "globe",
+		Macros: []MacroSpec{
+			{Macro: "{$ADGUARD.URL}", Label: "Admin URL", Hint: "http://adguard.example.lan (add :port if not 80)", Required: true},
+			{Macro: "{$ADGUARD.USER}", Label: "Admin username", Hint: "blank if the admin UI has no login"},
+			{Macro: "{$ADGUARD.PASSWORD}", Label: "Admin password", Hint: "blank if the admin UI has no login", Secret: true},
+		},
+	},
+	{
+		// Home Assistant polled from its REST API with a long-lived access token: platform health
+		// (API up, version, integration/entity counts, unavailable entities) - not the entities
+		// themselves. The host's own interface is the Home Assistant box's IP (Base Ping).
+		ID:         "home-assistant",
+		Label:      "Home Assistant",
+		Family:     "Home",
+		Pattern:    PatternHTTPAPI,
+		Iface:      IfaceAgent,
+		Templates:  []string{"Argus Home Assistant by HTTP"},
+		OffersHTTP: false,
+		Icon:       "home",
+		Macros: []MacroSpec{
+			{Macro: "{$HASS.URL}", Label: "Base URL", Hint: "http://homeassistant.example.lan:8123", Required: true},
+			{Macro: "{$HASS.TOKEN}", Label: "Long-lived access token", Hint: "Home Assistant → Profile → Security", Required: true, Secret: true},
+		},
+	},
 }
 
 // Classes returns the device-class catalog (stable order).

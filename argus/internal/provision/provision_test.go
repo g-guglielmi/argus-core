@@ -32,7 +32,9 @@ func TestLoadTemplates(t *testing.T) {
 		"Argus unRAID by SNMP", "unraid.disktemp.discovery", "unraid.share.discovery", "{$DISK.TEMP.WARN}",
 		"snmp.cpu.core.discovery", "snmp.mem.shared", "DISABLE_NEVER",
 		"unraid.pooltemp.discovery", "unraid.arraytemp.discovery", "{$POOL.TEMP.WARN}",
-		"Argus Windows by SNMP", "win.service.discovery", "{$WIN.SERVICE.MATCHES}"} {
+		"Argus Windows by SNMP", "win.service.discovery", "{$WIN.SERVICE.MATCHES}",
+		"Argus AdGuard Home by HTTP", "adguard.raw", "adguard.block_pct", "{$ADGUARD.URL}", "net.dns[{HOST.CONN}",
+		"Argus Home Assistant by HTTP", "hass.raw", "hass.unavailable", "{$HASS.TOKEN}"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("templates missing %q", want)
 		}
@@ -61,6 +63,47 @@ func TestUnifiClassFamily(t *testing.T) {
 		if !key || !mac {
 			t.Errorf("%s: macro specs incomplete (key=%v mac=%v)", id, key, mac)
 		}
+	}
+}
+
+// AdGuard Home and Home Assistant are HTTP-API classes like UniFi, each backed by one template and
+// carrying a required secret credential macro (AdGuard's password is optional; HA's token is not).
+func TestHTTPServiceClasses(t *testing.T) {
+	ag, ok := ClassByID("adguard")
+	if !ok {
+		t.Fatal("adguard class missing")
+	}
+	if ag.Pattern != PatternHTTPAPI || ag.Iface != IfaceAgent || len(ag.Templates) != 1 || ag.Icon != "globe" {
+		t.Fatalf("unexpected adguard class: %+v", ag)
+	}
+	var agURL, agPass bool
+	for _, m := range ag.Macros {
+		if m.Macro == "{$ADGUARD.URL}" && m.Required {
+			agURL = true
+		}
+		if m.Macro == "{$ADGUARD.PASSWORD}" && m.Secret && !m.Required {
+			agPass = true
+		}
+	}
+	if !agURL || !agPass {
+		t.Errorf("adguard macro specs incomplete (url=%v secret-pass=%v)", agURL, agPass)
+	}
+
+	ha, ok := ClassByID("home-assistant")
+	if !ok {
+		t.Fatal("home-assistant class missing")
+	}
+	if ha.Pattern != PatternHTTPAPI || ha.Iface != IfaceAgent || len(ha.Templates) != 1 || ha.Icon != "home" {
+		t.Fatalf("unexpected home-assistant class: %+v", ha)
+	}
+	var haToken bool
+	for _, m := range ha.Macros {
+		if m.Macro == "{$HASS.TOKEN}" && m.Required && m.Secret {
+			haToken = true
+		}
+	}
+	if !haToken {
+		t.Error("home-assistant must require a secret {$HASS.TOKEN}")
 	}
 }
 

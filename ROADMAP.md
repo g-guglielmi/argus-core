@@ -86,7 +86,7 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 **C2 - Breadth by pattern (ROI order):**
 - [ ] Finish **SNMP family**: Aruba CX, InstantOn 1960, QNAP, Ugreen UGOS, ~~unRAID~~ (v0.4.40 - Linux SNMP + extend add-on: per-disk/pool temps, per-share free, per-core CPU; lab-confirmed on two servers), Sophos XGS, NetScaler, Libraesva, ~~Windows (SNMP + LANMGR services)~~ (v0.4.41 - HOST-RESOURCES + per-core CPU + services; lab-confirmed on Win11: 32-bit if-counters, physical-NIC filter, ifAlias naming), Hyper-V (host) - _(BE)_ **L**
 - [ ] Finish **UniFi family**: ~~Gateway~~, ~~AP~~ (both v0.4.40, lab-confirmed on real UXG + U6), ~~OS Console~~ (v0.4.40+, code-complete + on :testing; health fields = the proven gateway code, storage LLD unconfirmed — no standalone console on hand to test), cloud-gateway access mode (not built) - _(BE)_ M
-- [ ] **Agentless**: DNS/AdGuard, NUT UPS (upsd :3493), Linux SSH (no-SNMP fallback) - _(BE)_ M
+- [ ] **Self-hosted / agentless**: AdGuard Home + Home Assistant (HTTP-API + `net.dns` — built, on :testing 2026-09-11, awaiting lab confirm), NUT UPS (upsd :3493 → proxy external-check, next), Linux SSH (no-SNMP fallback) - _(BE)_ M
 - [ ] **API-source heavies** (register-endpoint + host-prototype LLD): Nutanix Prism, XCP-NG (XAPI collector), Citrix farm (OData) - _(BE)_ **L**
 - [ ] **vSphere** (native VMware collector) - **low priority, production-only** (not the lab) - _(BE)_ M
 

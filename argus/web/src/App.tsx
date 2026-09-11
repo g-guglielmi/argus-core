@@ -2529,6 +2529,7 @@ const devIcon: Record<string, JSX.Element> = {
   cloud: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M7.4 18.5a4.3 4.3 0 0 1-.4-8.6 5.1 5.1 0 0 1 9.8-1.1 3.8 3.8 0 0 1 .4 7.6z" /></svg>,
   globe: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="8.4" /><path d="M3.6 12h16.8M12 3.6c2.5 2.4 2.5 14.4 0 16.8M12 3.6c-2.5 2.4-2.5 14.4 0 16.8" /></svg>,
   battery: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="8" width="15" height="8.5" rx="1.6" /><path d="M21 11.2v2.6" /><path d="M11 10.2l-2 3.2h2.6l-2 3.2" /></svg>,
+  home: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M3.5 11.5 12 4l8.5 7.5" /><path d="M5.5 10v9.5h13V10" /><path d="M10 19.5v-5.5h4v5.5" /></svg>,
 }
 const hostGlyph = (name?: string): JSX.Element => devIcon[name || 'device'] || devIcon.device
 

@@ -169,6 +169,41 @@ func TestClassifyUnraid(t *testing.T) {
 	}
 }
 
+// AdGuard's DNS stats land under a DNS category (with the proxy-run net.dns resolve check), its
+// protection/version under Status; Home Assistant's platform health lands under Status. Both raw
+// masters stay uncurated.
+func TestClassifyHTTPServices(t *testing.T) {
+	cases := []struct {
+		key, name string
+		cat, ch   string
+	}{
+		{"adguard.block_pct", "Block rate", "DNS", ""},
+		{"adguard.queries", "DNS queries", "DNS", ""},
+		{"adguard.blocked", "Blocked queries", "DNS", ""},
+		{"adguard.avg_time", "Average processing time", "DNS", ""},
+		{"net.dns[{HOST.CONN},example.com]", "DNS resolves (example.com)", "DNS", ""},
+		{"adguard.protection", "Protection enabled", "Status", ""},
+		{"adguard.version", "Version", "Status", ""},
+		{"hass.version", "Version", "Status", ""},
+		{"hass.integrations", "Integrations", "Status", ""},
+		{"hass.entities", "Entities", "Status", ""},
+		{"hass.unavailable", "Unavailable entities", "Status", ""},
+	}
+	for _, c := range cases {
+		cat, _, _, ch, ok := classifyItem(c.key, c.name)
+		if !ok || cat != c.cat || ch != c.ch {
+			t.Errorf("%s: got (%q, ch %q, ok=%v), want (%q, ch %q)", c.key, cat, ch, ok, c.cat, c.ch)
+		}
+	}
+	// The raw masters and the *.running health bits are plumbing (they drive down triggers), not
+	// sensor rows.
+	for _, k := range []string{"adguard.raw", "adguard.running", "hass.raw", "hass.running"} {
+		if _, _, _, _, ok := classifyItem(k, k); ok {
+			t.Errorf("%s must stay uncurated", k)
+		}
+	}
+}
+
 // Capability placeholders match on the key base, so per-instance keys are covered.
 func TestHideZero(t *testing.T) {
 	for _, k := range []string{"unifi.temp", "unifi.poe.total", "unifi.wan.latency[1]", "unifi.speedtest.down"} {
