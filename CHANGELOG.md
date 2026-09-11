@@ -11,6 +11,23 @@ GitHub Release from the matching section below.
 
 ---
 
+## [core-vm/v0.1.0] - 2026-09-11
+
+**The whole monitoring core as one self-installing VM.** A new golden-image appliance
+(`deploy/core-vm/`) bakes the entire core — Zabbix 7.0 (server + frontend + agent2), PostgreSQL +
+TimescaleDB, and the Argus + updater containers — and configures all of it on **first boot from a
+single web form** (hostname, keyboard, timezone, admin email + password). No Zabbix setup wizard, no
+API-token copy-pasting, no SQL: first boot creates the local admin user, initializes the database and
+schema, generates the probe-enrollment PKI (so enrollment works out of the box), writes the Zabbix
+server + frontend config, rotates the stock `Admin` password and mints a dedicated `argus-svc` API
+token (machine-managed, never shown), sets housekeeping retention, and starts Argus — then hands you a
+sign-in link and parks a `:80 → :8081` redirect. One administrator password fans out to the Debian,
+Zabbix, and Argus accounts (each overridable under Advanced); the database password, API token, and
+encryption key are generated and never displayed. Ships as **OVA / qcow2 / VHD** (a separate
+`core-vm/vX.Y.Z` release). The **manual install path is unchanged and stays first-class** — any distro,
+an existing Zabbix, or Argus split from the Zabbix core (README **Option A** appliance / **Option B**
+manual; `setup-core.sh SETUP_MODE=image` shares one installer with the image build). See DESIGN **§14d**.
+
 ## [0.4.42] - 2026-09-10
 
 **Parked disks keep their line.** A spun-down unRAID array or pool disk now stays on the temperature
