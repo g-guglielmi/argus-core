@@ -1,0 +1,164 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: a9ef1c0b527a4267add896856988b401
+      template: 'Argus Home Assistant by HTTP'
+      name: 'Argus Home Assistant by HTTP'
+      description: |
+        Home Assistant polled from its REST API with a long-lived access token: whether the API is
+        up, the version, how many integrations/components are loaded, the total entity count and how
+        many entities are currently unavailable. This monitors the platform itself, not the individual
+        entities it exposes (that would be thousands of items - use Home Assistant's own dashboards for
+        those). Set {$HASS.URL} to the base URL including the port (e.g. http://homeassistant.example.lan:8123)
+        and {$HASS.TOKEN} to a long-lived access token (Home Assistant -> Profile -> Security -> Long-lived
+        access tokens). The host's own interface is the Home Assistant box's IP (Base Ping). DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: 994d74774f7e478bbdf1c8b948967e1b
+          name: 'Home Assistant raw data'
+          type: SCRIPT
+          key: hass.raw
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          timeout: 30s
+          description: 'Master item: /api/ health, /api/config (version, components) and /api/states (entity counts), reduced to the fields the sensors use. Unreachable or not-yet-ready returns running=0 (not an error) so the down trigger fires; only a missing URL/token or a rejected token make the item unsupported.'
+          params: |
+            var p = JSON.parse(value);
+            if (!p.url || !p.token) { throw 'set {$HASS.URL} and {$HASS.TOKEN} on the host'; }
+            var base = String(p.url).replace(/\/+$/, '');
+            var out = { running: 0, version: '', integrations: 0, entities: 0, unavailable: 0 };
+            var req = new HttpRequest();
+            req.addHeader('Authorization: Bearer ' + p.token);
+            req.addHeader('Accept: application/json');
+            var code;
+            try { req.get(base + '/api/'); code = req.getStatus(); }
+            catch (e) { return JSON.stringify(out); }
+            if (code === 401 || code === 403) { throw 'Home Assistant: HTTP ' + code + ' - check {$HASS.TOKEN}'; }
+            if (code !== 200) { return JSON.stringify(out); }
+            out.running = 1;
+            try {
+              var cfg = JSON.parse(req.get(base + '/api/config'));
+              out.version = cfg.version || '';
+              out.integrations = (cfg.components && cfg.components.length) || 0;
+            } catch (e) {}
+            try {
+              var sr = req.get(base + '/api/states');
+              if (req.getStatus() === 200) {
+                var states = JSON.parse(sr);
+                out.entities = states.length;
+                var u = 0;
+                for (var i = 0; i < states.length; i++) { if (String(states[i].state) === 'unavailable') { u++; } }
+                out.unavailable = u;
+              }
+            } catch (e) {}
+            return JSON.stringify(out);
+          parameters:
+            - name: url
+              value: '{$HASS.URL}'
+            - name: token
+              value: '{$HASS.TOKEN}'
+        - uuid: 7d85c0df2a9548e0b0c820da712aaebf
+          name: 'API running'
+          type: DEPENDENT
+          key: hass.running
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = /api/ reports the API running, 0 = Home Assistant is down, unreachable, or not ready (starting up / a gateway error in front of it). Not a curated sensor - it drives the down trigger.'
+          master_item:
+            key: hass.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.running'
+          triggers:
+            - uuid: 9ed9e27b51d144d7855c6cdbfa97ae67
+              expression: 'max(/Argus Home Assistant by HTTP/hass.running,#3)=0'
+              name: 'Home Assistant is down or not ready'
+              priority: HIGH
+              description: 'The API has not reported ready on the last 3 checks (down, unreachable, or a long restart/upgrade).'
+        - uuid: be894d59f8344a3c83237936f747de40
+          name: Version
+          type: DEPENDENT
+          key: hass.version
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          master_item:
+            key: hass.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.version'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: 8445aea28523496e9ac457f4cfcc97d9
+          name: Integrations
+          type: DEPENDENT
+          key: hass.integrations
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Number of components/integrations Home Assistant has loaded.'
+          master_item:
+            key: hass.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.integrations'
+        - uuid: 35140369191f40319cc9286e4a2aa96d
+          name: Entities
+          type: DEPENDENT
+          key: hass.entities
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Total number of entities Home Assistant is tracking.'
+          master_item:
+            key: hass.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.entities'
+        - uuid: 6a4eadb89c7c4d0cabb0c49bec5eec3f
+          name: 'Unavailable entities'
+          type: DEPENDENT
+          key: hass.unavailable
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Entities currently in the "unavailable" state - a device or integration that has dropped offline.'
+          master_item:
+            key: hass.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.unavailable'
+          triggers:
+            - uuid: b882d871443548f2a5f27925bdac0fcf
+              expression: 'min(/Argus Home Assistant by HTTP/hass.unavailable,#3)>{$HASS.UNAVAIL.MAX} and max(/Argus Home Assistant by HTTP/hass.running,#3)=1'
+              name: 'Many unavailable entities'
+              priority: WARNING
+              description: 'More than {$HASS.UNAVAIL.MAX} entities have been unavailable on the last 3 checks (while Home Assistant is up).'
+      macros:
+        - macro: '{$HASS.URL}'
+          value: 'http://homeassistant.example.lan:8123'
+          description: 'Home Assistant base URL including the port (default 8123). Set per host.'
+        - macro: '{$HASS.TOKEN}'
+          value: ''
+          description: 'Long-lived access token (Profile -> Security). Set per host as a secret macro.'
+        - macro: '{$HASS.UNAVAIL.MAX}'
+          value: '10'
+          description: 'How many entities may be unavailable before a warning is raised.'

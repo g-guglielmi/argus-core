@@ -117,6 +117,8 @@ func deviceIcon(name, classID string) string {
 		return "wifi"
 	case has("nas", "unraid", "qnap", "synology", "truenas", "freenas", "ugreen"):
 		return "nas"
+	case has("home assistant", "homeassistant", "home-assistant", "hass.io", "hassio", "hassos"):
+		return "home"
 	case has("dns", "adguard", "pihole", "pi-hole", "bind", "unbound", "libraesva"):
 		return "globe"
 	case has("vps", "cloud", "ovh", "hetzner", "vultr", "linode", "netbird", "droplet", "ec2"):

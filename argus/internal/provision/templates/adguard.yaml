@@ -1,0 +1,219 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: c4d95e88f6974ab4bf72cb8c452fff7f
+      template: 'Argus AdGuard Home by HTTP'
+      name: 'Argus AdGuard Home by HTTP'
+      description: |
+        AdGuard Home polled from its admin API (one HTTP call to /control/status + /control/stats per
+        poll): DNS filtering stats (queries, blocked, block rate, average processing time), whether
+        protection is enabled, and the version - plus a proxy-run net.dns check that confirms the DNS
+        service itself still answers. Set {$ADGUARD.URL} to the admin base URL including the port
+        (e.g. http://adguard.example.lan or :3000). If the admin UI has a login, set {$ADGUARD.USER}
+        and {$ADGUARD.PASSWORD} (sent as HTTP Basic auth); leave them blank if it has none. The host's
+        own interface is the AdGuard box's IP (Base Ping + the resolve check run against it). The stat
+        counters are totals over AdGuard's own statistics-retention window, so they read as a slowly
+        moving gauge. DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: 90d6b9b58c754d7ba3c269ae58658262
+          name: 'AdGuard raw data'
+          type: SCRIPT
+          key: adguard.raw
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          timeout: 15s
+          description: 'Master item: one poll of /control/status + /control/stats, reduced to the fields the sensors use. A network/gateway failure returns running=0 (not an error) so the down trigger fires; only a missing URL or rejected credentials make the item unsupported.'
+          params: |
+            var p = JSON.parse(value);
+            if (!p.url) { throw 'set {$ADGUARD.URL} on the host'; }
+            var base = String(p.url).replace(/\/+$/, '');
+            var out = { running: 0, protection: 0, version: '', queries: 0, blocked: 0, block_pct: 0, avg_time: 0 };
+            var req = new HttpRequest();
+            req.addHeader('Accept: application/json');
+            if (p.user) { req.addHeader('Authorization: Basic ' + btoa(p.user + ':' + (p.pass || ''))); }
+            var sresp, code;
+            try { sresp = req.get(base + '/control/status'); code = req.getStatus(); }
+            catch (e) { return JSON.stringify(out); }
+            if (code === 401 || code === 403) { throw 'AdGuard: HTTP ' + code + ' - check {$ADGUARD.USER}/{$ADGUARD.PASSWORD}'; }
+            if (code !== 200) { return JSON.stringify(out); }
+            out.running = 1;
+            try {
+              var status = JSON.parse(sresp);
+              out.protection = status.protection_enabled ? 1 : 0;
+              out.version = status.version || '';
+            } catch (e) {}
+            try {
+              var stResp = req.get(base + '/control/stats');
+              if (req.getStatus() === 200) {
+                var stats = JSON.parse(stResp);
+                var q = Number(stats.num_dns_queries) || 0, b = Number(stats.num_blocked_filtering) || 0;
+                out.queries = q;
+                out.blocked = b;
+                out.block_pct = q > 0 ? Math.round(b / q * 1000) / 10 : 0;
+                out.avg_time = Number(stats.avg_processing_time) || 0;
+              }
+            } catch (e) {}
+            return JSON.stringify(out);
+          parameters:
+            - name: url
+              value: '{$ADGUARD.URL}'
+            - name: user
+              value: '{$ADGUARD.USER}'
+            - name: pass
+              value: '{$ADGUARD.PASSWORD}'
+        - uuid: e75312b6ded340b0b7ab8f7177828f88
+          name: 'Service running'
+          type: DEPENDENT
+          key: adguard.running
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = the admin API answered, 0 = AdGuard is down or unreachable. Not a curated sensor - it drives the down trigger.'
+          master_item:
+            key: adguard.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.running'
+          triggers:
+            - uuid: 662dce6c8cb146b198d76499498cece2
+              expression: 'max(/Argus AdGuard Home by HTTP/adguard.running,#3)=0'
+              name: 'AdGuard Home is down or unreachable'
+              priority: HIGH
+              description: 'The admin API has not answered on the last 3 checks.'
+        - uuid: 669033dd96cd45ed943e06b531f31e5d
+          name: 'Protection enabled'
+          type: DEPENDENT
+          key: adguard.protection
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = filtering protection is on, 0 = it has been switched off.'
+          master_item:
+            key: adguard.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.protection'
+          triggers:
+            - uuid: cbdad755a29145cf9e099dd7ebedaffc
+              expression: 'max(/Argus AdGuard Home by HTTP/adguard.protection,#3)=0 and max(/Argus AdGuard Home by HTTP/adguard.running,#3)=1'
+              name: 'AdGuard protection is disabled'
+              priority: WARNING
+              description: 'Filtering protection has been switched off on the last 3 checks (while AdGuard is up).'
+        - uuid: fd00d647351b43edbf140aa18b8b39f6
+          name: Version
+          type: DEPENDENT
+          key: adguard.version
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          master_item:
+            key: adguard.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.version'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: 1e34061d94dc4d22bcc2f0452ad15e66
+          name: 'DNS queries'
+          type: DEPENDENT
+          key: adguard.queries
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Total DNS queries over AdGuard''s statistics-retention window.'
+          master_item:
+            key: adguard.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.queries'
+        - uuid: cc5c126f94b643b9b6248e6aecdbc394
+          name: 'Blocked queries'
+          type: DEPENDENT
+          key: adguard.blocked
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Queries blocked by filtering over the statistics-retention window.'
+          master_item:
+            key: adguard.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.blocked'
+        - uuid: d1497d0ce18e44c4823002abcccbc49c
+          name: 'Block rate'
+          type: DEPENDENT
+          key: adguard.block_pct
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Blocked queries as a percentage of all queries.'
+          master_item:
+            key: adguard.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.block_pct'
+        - uuid: 50c148205a5a4881a05bcb2d7bbb41de
+          name: 'Average processing time'
+          type: DEPENDENT
+          key: adguard.avg_time
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: s
+          description: 'Average time AdGuard spends handling a query (upstream time included).'
+          master_item:
+            key: adguard.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.avg_time'
+        - uuid: 98083e73366449c8a5021208dcdfe6ca
+          name: 'DNS resolves ({$ADGUARD.DNS.PROBE})'
+          type: SIMPLE
+          key: 'net.dns[{HOST.CONN},{$ADGUARD.DNS.PROBE}]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'The proxy asks this AdGuard server to resolve a known-good name: 1 = it answered, 0 = it did not. A direct test of the DNS service, independent of the admin API.'
+          triggers:
+            - uuid: 6a32331f9dd448acb68b82d882f647cb
+              expression: 'max(/Argus AdGuard Home by HTTP/net.dns[{HOST.CONN},{$ADGUARD.DNS.PROBE}],#3)=0'
+              name: 'AdGuard is not resolving DNS'
+              priority: HIGH
+              description: 'The server failed to resolve {$ADGUARD.DNS.PROBE} on the last 3 checks.'
+      macros:
+        - macro: '{$ADGUARD.URL}'
+          value: 'http://adguard.example.lan'
+          description: 'AdGuard Home admin base URL including the port (e.g. http://host or http://host:3000). Set per host.'
+        - macro: '{$ADGUARD.USER}'
+          value: ''
+          description: 'Admin username for the AdGuard UI. Leave blank if the UI has no login.'
+        - macro: '{$ADGUARD.PASSWORD}'
+          value: ''
+          description: 'Admin password for the AdGuard UI. Set per host as a secret macro; leave blank if the UI has no login.'
+        - macro: '{$ADGUARD.DNS.PROBE}'
+          value: example.com
+          description: 'A known-good domain the resolve check asks this server to look up.'
