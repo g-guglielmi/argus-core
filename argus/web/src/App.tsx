@@ -12,7 +12,7 @@ type User = { id: number; email: string; name: string; surname: string; role: st
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number }
 type Group = { id: string; name: string; hosts: number }
-type MacroSpec = { macro: string; label: string; hint?: string; required?: boolean; secret?: boolean }
+type MacroSpec = { macro: string; label: string; hint?: string; required?: boolean; secret?: boolean; derive?: string }
 type DeviceClass = { id: string; label: string; family: string; pattern: string; iface: string; offers_http: boolean; icon?: string; macros?: MacroSpec[] }
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
@@ -3183,6 +3183,7 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
   const [snmpOverride, setSnmpOverride] = useState(false) // enter creds for this host instead of inheriting
   const [proxySnmp, setProxySnmp] = useState<{ set: boolean } | null>(null) // does the chosen proxy have a default?
   const [macroVals, setMacroVals] = useState<Record<string, string>>({}) // class-declared per-host macros
+  const [macroTouched, setMacroTouched] = useState<Set<string>>(new Set()) // macros the user edited (stop auto-deriving them)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
@@ -3204,6 +3205,25 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
     setProxySnmp(null)
     fetch(`/api/proxies/${encodeURIComponent(proxyId)}/snmp`).then((r) => (r.ok ? r.json() : { set: false })).then((d) => setProxySnmp({ set: !!d.set })).catch(() => setProxySnmp({ set: false }))
   }, [needsSnmp, proxyId])
+
+  // Changing the class starts its macros fresh (so a derived URL is re-derived, not carried over).
+  useEffect(() => { setMacroTouched(new Set()) }, [classId])
+  // Auto-fill a host-addressed URL macro (AdGuard/HA admin URLs are usually just the host) from the
+  // IP/DNS the form already has, until the user edits that field. Classes opt in via MacroSpec.derive
+  // ("http://{host}"); a controller URL that differs from the device (UniFi) sets no derive.
+  const hostAddr = (useIp ? ip : dns).trim()
+  useEffect(() => {
+    setMacroVals((v) => {
+      let next = v
+      for (const ms of classMacros) {
+        if (!ms.derive || macroTouched.has(ms.macro)) continue
+        const val = hostAddr ? ms.derive.replace('{host}', hostAddr) : ''
+        if ((next[ms.macro] || '') !== val) { if (next === v) next = { ...v }; next[ms.macro] = val }
+      }
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hostAddr, classId, macroTouched])
 
   // Escape closes the modal (matches the backdrop click and Cancel), unless a submit is in flight.
   useEffect(() => {
@@ -3283,7 +3303,7 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
             {classMacros.map((ms) => (
               <Field key={ms.macro} label={ms.label + (ms.required ? '' : ' (optional)')} type={ms.secret ? 'password' : 'text'}
                 placeholder={ms.hint} value={macroVals[ms.macro] || ''}
-                onChange={(e) => setMacroVals((v) => ({ ...v, [ms.macro]: e.target.value }))} />
+                onChange={(e) => { const val = e.target.value; setMacroTouched((t) => (t.has(ms.macro) ? t : new Set(t).add(ms.macro))); setMacroVals((v) => ({ ...v, [ms.macro]: val })) }} />
             ))}
           </div>
         )}

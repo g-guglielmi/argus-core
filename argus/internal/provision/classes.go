@@ -42,11 +42,12 @@ type PresetMacro struct {
 // MacroSpec is a per-host macro the attach UI asks for when creating a host of this class - how
 // API-source classes (UniFi, later Nutanix/XCP-NG/…) receive their endpoint and credentials.
 type MacroSpec struct {
-	Macro    string `json:"macro"`    // Zabbix macro name, e.g. "{$UNIFI.URL}"
-	Label    string `json:"label"`    // form label
-	Hint     string `json:"hint"`     // placeholder / example
-	Required bool   `json:"required"` // creation fails without it
-	Secret   bool   `json:"secret"`   // stored as a Zabbix secret macro (write-only afterwards)
+	Macro    string `json:"macro"`             // Zabbix macro name, e.g. "{$UNIFI.URL}"
+	Label    string `json:"label"`             // form label
+	Hint     string `json:"hint"`              // placeholder / example
+	Required bool   `json:"required"`          // creation fails without it
+	Secret   bool   `json:"secret"`            // stored as a Zabbix secret macro (write-only afterwards)
+	Derive   string `json:"derive,omitempty"` // form auto-fills this from the host address ("{host}" -> the IP/DNS), overridable; e.g. "http://{host}". Only for host-addressed URLs, never a controller URL (UniFi) that differs from the device.
 }
 
 // Class is a device class in the registry: the metadata that drives provisioning (which Zabbix
@@ -205,7 +206,7 @@ var registry = []Class{
 		OffersHTTP: false,
 		Icon:       "globe",
 		Macros: []MacroSpec{
-			{Macro: "{$ADGUARD.URL}", Label: "Admin URL", Hint: "http://adguard.example.lan:3000", Required: true},
+			{Macro: "{$ADGUARD.URL}", Label: "Admin URL", Hint: "http://adguard.example.lan:3000", Required: true, Derive: "http://{host}"},
 			{Macro: "{$ADGUARD.USER}", Label: "Admin username", Hint: "blank if the admin UI has no login"},
 			{Macro: "{$ADGUARD.PASSWORD}", Label: "Admin password", Hint: "blank if the admin UI has no login", Secret: true},
 		},
@@ -223,7 +224,7 @@ var registry = []Class{
 		OffersHTTP: false,
 		Icon:       "home",
 		Macros: []MacroSpec{
-			{Macro: "{$HASS.URL}", Label: "Base URL", Hint: "http://homeassistant.example.lan:8123", Required: true},
+			{Macro: "{$HASS.URL}", Label: "Base URL", Hint: "http://homeassistant.example.lan:8123", Required: true, Derive: "http://{host}:8123"},
 			{Macro: "{$HASS.TOKEN}", Label: "Long-lived access token", Hint: "Home Assistant → Profile → Security", Required: true, Secret: true},
 		},
 	},
