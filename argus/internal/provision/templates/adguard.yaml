@@ -10,11 +10,11 @@ zabbix_export:
       description: |
         AdGuard Home polled from its admin API (one HTTP call to /control/status + /control/stats per
         poll): DNS filtering stats (queries, blocked, block rate, average processing time), whether
-        protection is enabled, and the version - plus a proxy-run net.dns check that confirms the DNS
-        service itself still answers. Set {$ADGUARD.URL} to the admin base URL including the port
+        protection is enabled, and the version - plus a proxy-run TCP check that confirms the DNS port
+        is reachable. Set {$ADGUARD.URL} to the admin base URL including the port
         (e.g. http://adguard.example.lan or :3000). If the admin UI has a login, set {$ADGUARD.USER}
         and {$ADGUARD.PASSWORD} (sent as HTTP Basic auth); leave them blank if it has none. The host's
-        own interface is the AdGuard box's IP (Base Ping + the resolve check run against it). The stat
+        own interface is the AdGuard box's IP (Base Ping + the DNS-port check run against it). The stat
         counters are totals over AdGuard's own statistics-retention window, so they read as a slowly
         moving gauge. DESIGN section 5.
       groups:
@@ -190,20 +190,20 @@ zabbix_export:
               parameters:
                 - '$.avg_time'
         - uuid: 98083e73366449c8a5021208dcdfe6ca
-          name: 'DNS resolves ({$ADGUARD.DNS.PROBE})'
+          name: 'DNS reachable'
           type: SIMPLE
-          key: 'net.dns[{HOST.CONN},{$ADGUARD.DNS.PROBE}]'
+          key: 'net.tcp.service[tcp,{HOST.CONN},{$ADGUARD.DNS.PORT}]'
           delay: 1m
           history: 7d
           trends: 365d
           value_type: UNSIGNED
-          description: 'The proxy asks this AdGuard server to resolve a known-good name: 1 = it answered, 0 = it did not. A direct test of the DNS service, independent of the admin API.'
+          description: 'The proxy opens a TCP connection to this server''s DNS port: 1 = the DNS service is accepting connections, 0 = it is not. An agentless liveness check independent of the admin API.'
           triggers:
             - uuid: 6a32331f9dd448acb68b82d882f647cb
-              expression: 'max(/Argus AdGuard Home by HTTP/net.dns[{HOST.CONN},{$ADGUARD.DNS.PROBE}],#3)=0'
-              name: 'AdGuard is not resolving DNS'
+              expression: 'max(/Argus AdGuard Home by HTTP/net.tcp.service[tcp,{HOST.CONN},{$ADGUARD.DNS.PORT}],#3)=0 and max(/Argus AdGuard Home by HTTP/adguard.running,#3)=1'
+              name: 'AdGuard is not answering on the DNS port'
               priority: HIGH
-              description: 'The server failed to resolve {$ADGUARD.DNS.PROBE} on the last 3 checks.'
+              description: 'The DNS port (TCP) refused connections on the last 3 checks while the admin API is up.'
       macros:
         - macro: '{$ADGUARD.URL}'
           value: 'http://adguard.example.lan'
@@ -214,6 +214,6 @@ zabbix_export:
         - macro: '{$ADGUARD.PASSWORD}'
           value: ''
           description: 'Admin password for the AdGuard UI. Set per host as a secret macro; leave blank if the UI has no login.'
-        - macro: '{$ADGUARD.DNS.PROBE}'
-          value: example.com
-          description: 'A known-good domain the resolve check asks this server to look up.'
+        - macro: '{$ADGUARD.DNS.PORT}'
+          value: '53'
+          description: 'TCP port the DNS service listens on, for the reachability check.'

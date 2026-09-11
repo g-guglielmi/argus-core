@@ -181,7 +181,7 @@ func TestClassifyHTTPServices(t *testing.T) {
 		{"adguard.queries", "DNS queries", "DNS", ""},
 		{"adguard.blocked", "Blocked queries", "DNS", ""},
 		{"adguard.avg_time", "Average processing time", "DNS", ""},
-		{"net.dns[{HOST.CONN},example.com]", "DNS resolves (example.com)", "DNS", ""},
+		{"net.tcp.service[tcp,{HOST.CONN},53]", "DNS reachable", "DNS", ""},
 		{"adguard.protection", "Protection enabled", "Status", ""},
 		{"adguard.version", "Version", "Status", ""},
 		{"hass.version", "Version", "Status", ""},
