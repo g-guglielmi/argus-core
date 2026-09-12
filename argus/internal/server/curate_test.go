@@ -193,6 +193,7 @@ func TestClassifyHTTPServices(t *testing.T) {
 		{"nut.status", "Status", "Battery", ""},
 		{"nut.load", "Load", "Power", ""},
 		{"nut.input.voltage", "Input voltage", "Power", ""},
+		{"nut.output.voltage", "Output voltage", "Power", ""},
 		{"nut.realpower", "Power draw", "Power", ""},
 	}
 	for _, c := range cases {
@@ -207,6 +208,20 @@ func TestClassifyHTTPServices(t *testing.T) {
 		if _, _, _, _, ok := classifyItem(k, k); ok {
 			t.Errorf("%s must stay uncurated", k)
 		}
+	}
+}
+
+// A UPS's Power section reads power-first, then load, then the voltages (not alphabetical), while an
+// unranked category falls through to natural label order.
+func TestItemRankPower(t *testing.T) {
+	want := []string{"Power draw", "Load", "Input voltage", "Output voltage"}
+	for i := 1; i < len(want); i++ {
+		if itemRank("Power", want[i-1]) >= itemRank("Power", want[i]) {
+			t.Errorf("Power order wrong: %q should rank before %q", want[i-1], want[i])
+		}
+	}
+	if itemRank("CPU", "CPU utilization") != itemRank("CPU", "anything") {
+		t.Error("an unranked category must give every label the same (default) rank")
 	}
 }
 

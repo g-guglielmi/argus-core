@@ -477,7 +477,12 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			if ci, cj := order[out[i].Category], order[out[j].Category]; ci != cj {
 				return ci < cj
 			}
-			return naturalLess(out[i].Label, out[j].Label) // "Port 2" before "Port 10"
+			// Within a category, some flat rows have a pinned reading order (e.g. Power: draw, load,
+			// input, output); everything else falls back to natural label order ("Port 2" < "Port 10").
+			if ri, rj := itemRank(out[i].Category, out[i].Label), itemRank(out[j].Category, out[j].Label); ri != rj {
+				return ri < rj
+			}
+			return naturalLess(out[i].Label, out[j].Label)
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

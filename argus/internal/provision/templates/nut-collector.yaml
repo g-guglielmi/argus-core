@@ -76,8 +76,8 @@ zabbix_export:
           history: 7d
           trends: 365d
           value_type: FLOAT
-          units: s
-          description: 'Estimated runtime left on battery.'
+          units: uptime
+          description: 'Estimated runtime left on battery (formatted as a duration).'
           master_item:
             key: 'argus_nut.py[{HOST.CONN},{$NUT.PORT},{$NUT.UPS},{$NUT.USER},{$NUT.PASSWORD}]'
           preprocessing:
@@ -118,6 +118,23 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.input_voltage'
+              error_handler: DISCARD_VALUE
+        - uuid: f81e47daae5c4e17a13b280a53e05f82
+          name: 'Output voltage'
+          type: DEPENDENT
+          key: nut.output.voltage
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: V
+          description: 'Voltage the UPS is delivering to the load (only UPS models that report output.voltage deliver a value).'
+          master_item:
+            key: 'argus_nut.py[{HOST.CONN},{$NUT.PORT},{$NUT.UPS},{$NUT.USER},{$NUT.PASSWORD}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.output_voltage'
               error_handler: DISCARD_VALUE
         - uuid: 258b0cbe0ea14ba49f66d4244420b22a
           name: 'Power draw'
