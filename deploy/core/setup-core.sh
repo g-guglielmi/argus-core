@@ -18,6 +18,8 @@
 set -euo pipefail
 
 SETUP_MODE="${SETUP_MODE:-full}"
+# Directory this script lives in - its externalscripts/ sibling ships the external-check collectors.
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 if [[ "$SETUP_MODE" == "full" ]]; then
   : "${DBPASS:?Set DBPASS to the Zabbix DB password, e.g. sudo DBPASS=... ./setup-core.sh}"
 fi
@@ -56,7 +58,8 @@ apt-get update
 echo "==> [3/8] Install packages"
 apt-get install -y \
   zabbix-server-pgsql zabbix-frontend-php php8.4-pgsql zabbix-nginx-conf zabbix-sql-scripts zabbix-agent2 \
-  "postgresql-${PG_VER}"
+  "postgresql-${PG_VER}" \
+  python3
 
 # TimescaleDB: Zabbix 7.0 supports up to 2.28. The repo's "latest" is usually newer (e.g. 2.29),
 # which makes Zabbix refuse to manage native compression. Pin the newest 2.28.x we can find.
@@ -79,6 +82,20 @@ else
   echo "    (!) no 2.28.x found; installing latest - Zabbix needs AllowUnsupportedDBVersions=1 and"
   echo "        will not manage compression until you downgrade to 2.28."
   apt-get install -y "$TS_META"
+fi
+
+# External-check collectors for agentless device classes (NUT UPS; the DNS resolver adds one too). They
+# run from the Zabbix server's ExternalScripts dir, so a core WITHOUT an external proxy - or any device
+# Monitored-by "Core server" - can run them. The argus-probe image bakes the same scripts (kept
+# byte-identical) for proxy-monitored devices. Installed in BOTH modes (manual install + appliance).
+EXT_DST=/usr/lib/zabbix/externalscripts
+if [[ -d "${SCRIPT_DIR}/externalscripts" ]]; then
+  install -d -m 0755 "$EXT_DST"
+  for f in "${SCRIPT_DIR}/externalscripts/"*.py; do
+    [[ -e "$f" ]] || continue
+    install -m 0755 "$f" "$EXT_DST/"
+    echo "    installed external-check collector $(basename "$f")"
+  done
 fi
 
 # Everything below up to the OS-patching step is per-instance configuration - skipped when baking the

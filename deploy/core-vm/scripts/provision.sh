@@ -95,5 +95,5 @@ rm -rf /etc/cloud /var/lib/cloud
 echo "==> trimming build artifacts"
 apt-get autoremove -y || true
 apt-get clean
-rm -rf "$FILES" /tmp/setup-core.sh /tmp/zabbix_server.conf.snippet /var/lib/apt/lists/*
+rm -rf "$FILES" /tmp/setup-core.sh /tmp/zabbix_server.conf.snippet /tmp/externalscripts /var/lib/apt/lists/*
 echo "==> provision complete"
