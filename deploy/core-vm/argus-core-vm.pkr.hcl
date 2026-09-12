@@ -110,6 +110,14 @@ build {
     destination = "/tmp/zabbix_server.conf.snippet"
   }
 
+  // External-check collectors (NUT UPS, DNS resolution) for agentless device classes. setup-core.sh
+  // installs them from its own externalscripts/ sibling, so they must sit next to it at /tmp. No
+  // trailing slash: uploads the directory itself, creating /tmp/externalscripts.
+  provisioner "file" {
+    source      = "../core/externalscripts"
+    destination = "/tmp"
+  }
+
   provisioner "shell" {
     execute_command = "sudo -E bash '{{ .Path }}'"
     script          = "scripts/provision.sh"
