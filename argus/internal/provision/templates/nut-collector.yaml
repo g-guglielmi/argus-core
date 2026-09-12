@@ -40,7 +40,7 @@ zabbix_export:
           value_type: UNSIGNED
           description: '1 = upsd answered for this UPS, 0 = NUT is down or unreachable. Not a curated sensor - it drives the down trigger.'
           master_item:
-            key: nut.raw
+            key: 'argus_nut.py[{HOST.CONN},{$NUT.PORT},{$NUT.UPS},{$NUT.USER},{$NUT.PASSWORD}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -62,7 +62,7 @@ zabbix_export:
           units: '%'
           description: 'State of charge of the UPS battery.'
           master_item:
-            key: nut.raw
+            key: 'argus_nut.py[{HOST.CONN},{$NUT.PORT},{$NUT.UPS},{$NUT.USER},{$NUT.PASSWORD}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -79,7 +79,7 @@ zabbix_export:
           units: s
           description: 'Estimated runtime left on battery.'
           master_item:
-            key: nut.raw
+            key: 'argus_nut.py[{HOST.CONN},{$NUT.PORT},{$NUT.UPS},{$NUT.USER},{$NUT.PASSWORD}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -96,7 +96,7 @@ zabbix_export:
           units: '%'
           description: 'UPS output load as a percentage of its capacity.'
           master_item:
-            key: nut.raw
+            key: 'argus_nut.py[{HOST.CONN},{$NUT.PORT},{$NUT.UPS},{$NUT.USER},{$NUT.PASSWORD}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -113,7 +113,7 @@ zabbix_export:
           units: V
           description: 'Incoming utility (mains) voltage.'
           master_item:
-            key: nut.raw
+            key: 'argus_nut.py[{HOST.CONN},{$NUT.PORT},{$NUT.UPS},{$NUT.USER},{$NUT.PASSWORD}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -130,7 +130,7 @@ zabbix_export:
           units: W
           description: 'Real power drawn through the UPS (only UPS models that report ups.realpower deliver a non-zero value).'
           master_item:
-            key: nut.raw
+            key: 'argus_nut.py[{HOST.CONN},{$NUT.PORT},{$NUT.UPS},{$NUT.USER},{$NUT.PASSWORD}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -146,7 +146,7 @@ zabbix_export:
           value_type: CHAR
           description: 'Raw NUT ups.status flags (OL = on line, OB = on battery, LB = low battery, CHRG = charging, ...).'
           master_item:
-            key: nut.raw
+            key: 'argus_nut.py[{HOST.CONN},{$NUT.PORT},{$NUT.UPS},{$NUT.USER},{$NUT.PASSWORD}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -164,7 +164,7 @@ zabbix_export:
           value_type: UNSIGNED
           description: '1 = ups.status contains OB (running on battery, utility power lost). Drives the on-battery trigger.'
           master_item:
-            key: nut.raw
+            key: 'argus_nut.py[{HOST.CONN},{$NUT.PORT},{$NUT.UPS},{$NUT.USER},{$NUT.PASSWORD}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -185,7 +185,7 @@ zabbix_export:
           value_type: UNSIGNED
           description: '1 = ups.status contains LB (battery low - shutdown imminent). Drives the low-battery trigger.'
           master_item:
-            key: nut.raw
+            key: 'argus_nut.py[{HOST.CONN},{$NUT.PORT},{$NUT.UPS},{$NUT.USER},{$NUT.PASSWORD}]'
           preprocessing:
             - type: JSONPATH
               parameters:
