@@ -27,8 +27,8 @@ var categoryOrderServer = map[string]int{
 	"Ping":        0,
 	"Web":         1,
 	"DNS":         2, // a DNS server's headline is its resolving/filtering
-	"Battery":     3, // a UPS's headline is its charge/on-battery state
-	"Power":       4, // before CPU (user call) - matters for power-centric classes (PoE switches, UPS)
+	"Power":       3, // before CPU (user call) - power-centric classes (PoE switches, UPS)
+	"Battery":     4, // a UPS's battery section (user call: after its Power section)
 	"CPU":         5,
 	"Memory":      6,
 	"Disk":        7,
@@ -46,8 +46,8 @@ var categoryOrderNet = map[string]int{
 	"DNS":         2,
 	"Wireless":    3, // an AP's headline is its clients/radios
 	"Network":     4,
-	"Battery":     5,
-	"Power":       6, // before CPU (user call)
+	"Power":       5, // before CPU (user call)
+	"Battery":     6,
 	"CPU":         7,
 	"Memory":      8,
 	"Disk":        9,
@@ -64,8 +64,8 @@ var categoryOrderNAS = map[string]int{
 	"Ping":        0,
 	"Web":         1,
 	"DNS":         2,
-	"Battery":     3,
-	"Power":       4,
+	"Power":       3,
+	"Battery":     4,
 	"CPU":         5,
 	"Memory":      6,
 	"Temperature": 7, // before Disk (user call)
@@ -76,6 +76,24 @@ var categoryOrderNAS = map[string]int{
 	"Uptime":      12,
 	"Ports":       13,
 	"Status":      14,
+}
+
+// itemLabelOrder pins the reading order of the flat rows WITHIN a category where plain alphabetical
+// isn't what the user wants. Labels not listed sort after the ranked ones (by natural label order).
+var itemLabelOrder = map[string]map[string]int{
+	// A UPS's Power section reads power-first, then load, then the voltages (user call).
+	"Power": {"Power draw": 0, "Load": 1, "Input voltage": 2, "Output voltage": 3},
+}
+
+// itemRank returns the within-category order rank for a flat row's label; unranked labels get a large
+// default so they fall after the explicitly-ordered ones.
+func itemRank(category, label string) int {
+	if m, ok := itemLabelOrder[category]; ok {
+		if r, ok := m[label]; ok {
+			return r
+		}
+	}
+	return 1 << 30
 }
 
 // splitKey returns the base key and its parameters, e.g. vfs.fs.size[/,pused] ->
@@ -407,6 +425,8 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "Power", "Load", "", "", true
 	case "nut.input.voltage":
 		return "Power", "Input voltage", "", "", true
+	case "nut.output.voltage":
+		return "Power", "Output voltage", "", "", true
 	case "nut.realpower":
 		return "Power", "Power draw", "", "", true
 

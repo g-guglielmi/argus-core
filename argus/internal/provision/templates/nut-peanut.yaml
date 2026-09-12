@@ -34,7 +34,7 @@ zabbix_export:
             var p = JSON.parse(value);
             if (!p.url || !p.ups) { throw 'set {$PEANUT.URL} and {$PEANUT.UPS} on the host'; }
             var base = String(p.url).replace(/\/+$/, '');
-            var out = { reachable: 0, status: '', charge: null, runtime: null, load: null, input_voltage: null, realpower: 0, on_battery: 0, low_battery: 0 };
+            var out = { reachable: 0, status: '', charge: null, runtime: null, load: null, input_voltage: null, output_voltage: null, realpower: 0, on_battery: 0, low_battery: 0 };
             var req = new HttpRequest();
             req.addHeader('Accept: application/json');
             if (p.user) { req.addHeader('Authorization: Basic ' + btoa(p.user + ':' + (p.pass || ''))); }
@@ -63,6 +63,7 @@ zabbix_export:
             out.runtime = num('battery.runtime');
             out.load = num('ups.load');
             out.input_voltage = num('input.voltage');
+            out.output_voltage = num('output.voltage');
             var rp = num('ups.realpower'); out.realpower = (rp == null ? 0 : rp);
             var st = vars['ups.status']; out.status = (st == null ? '' : String(st));
             var toks = out.status.toUpperCase().split(/\s+/);
@@ -124,8 +125,8 @@ zabbix_export:
           history: 7d
           trends: 365d
           value_type: FLOAT
-          units: s
-          description: 'Estimated runtime left on battery.'
+          units: uptime
+          description: 'Estimated runtime left on battery (formatted as a duration).'
           master_item:
             key: nut.raw
           preprocessing:
@@ -166,6 +167,23 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.input_voltage'
+              error_handler: DISCARD_VALUE
+        - uuid: c916c2f97ff34a7994b7a8a91964b8a0
+          name: 'Output voltage'
+          type: DEPENDENT
+          key: nut.output.voltage
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: V
+          description: 'Voltage the UPS is delivering to the load (only UPS models that report output.voltage deliver a value).'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.output_voltage'
               error_handler: DISCARD_VALUE
         - uuid: d592c545186049a99200c20d058fc0b8
           name: 'Power draw'

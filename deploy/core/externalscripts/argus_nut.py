@@ -25,7 +25,7 @@ import socket
 
 OUT = {
     "reachable": 0, "status": "", "charge": None, "runtime": None,
-    "load": None, "input_voltage": None, "realpower": 0,
+    "load": None, "input_voltage": None, "output_voltage": None, "realpower": 0,
     "on_battery": 0, "low_battery": 0,
 }
 
@@ -117,6 +117,7 @@ def main():
     OUT["runtime"] = to_num(vars_, "battery.runtime")
     OUT["load"] = to_num(vars_, "ups.load")
     OUT["input_voltage"] = to_num(vars_, "input.voltage")
+    OUT["output_voltage"] = to_num(vars_, "output.voltage")
     rp = to_num(vars_, "ups.realpower")
     OUT["realpower"] = rp if rp is not None else 0
     status = vars_.get("ups.status", "") or ""
