@@ -195,9 +195,9 @@ func TestClassifyHTTPServices(t *testing.T) {
 		{"nut.input.voltage", "Input voltage", "Power", ""},
 		{"nut.output.voltage", "Output voltage", "Power", ""},
 		{"nut.realpower", "Power draw", "Power", ""},
-		{"dns.resolve.success[example.com]", "Resolves (example.com)", "DNS", ""},
-		{"dns.resolve.time[example.com]", "Response time (example.com)", "DNS", ""},
-		{"dns.resolve.ip[example.com]", "Resolved IP (example.com)", "DNS", ""},
+		{"dns.resolve.success[example.com]", "Resolves (example.com)", "DNS", "Resolves"},
+		{"dns.resolve.time[example.com]", "Response time (example.com)", "DNS", "Response time"},
+		{"dns.resolve.ip[example.com]", "Resolved IP (example.com)", "DNS", "Resolved IP"},
 	}
 	for _, c := range cases {
 		cat, _, _, ch, ok := classifyItem(c.key, c.name)

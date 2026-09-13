@@ -399,11 +399,11 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	// DNS resolution (Argus DNS resolution, attachable to any DNS server): a real per-name resolve
 	// check from the proxy/core. One set of rows per name in {$DNS.RESOLVE.NAMES}.
 	case "dns.resolve.success":
-		return "DNS", "Resolves (" + param(p, 0) + ")", "", "", true
+		return "DNS", "Resolves (" + param(p, 0) + ")", param(p, 0), "Resolves", true
 	case "dns.resolve.time":
-		return "DNS", "Response time (" + param(p, 0) + ")", "", "", true
+		return "DNS", "Response time (" + param(p, 0) + ")", param(p, 0), "Response time", true
 	case "dns.resolve.ip":
-		return "DNS", "Resolved IP (" + param(p, 0) + ")", "", "", true
+		return "DNS", "Resolved IP (" + param(p, 0) + ")", param(p, 0), "Resolved IP", true
 
 	// Home Assistant (Argus Home Assistant by HTTP): platform health from the REST API. The raw
 	// master and hass.running (a constant 1 when healthy) stay uncurated - running drives the
