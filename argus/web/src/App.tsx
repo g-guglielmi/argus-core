@@ -3720,6 +3720,16 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
       if (ln && ln.last_value !== '' && Number(ln.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>down</span>, primary }
       return { node: <span>↓ {reading(inn) ?? '—'} &nbsp;&nbsp; ↑ {reading(out) ?? '—'}</span>, primary }
     }
+    // A DNS name reads by what it resolves to (the IP), collapsing the pass/fail + timing channels;
+    // response time drives the sparkline. A name that isn't resolving says so instead.
+    if (cat === 'DNS') {
+      const ip = gi.find((x) => x.channel === 'Resolved IP')
+      const rt = gi.find((x) => x.channel === 'Response time')
+      const ok = gi.find((x) => x.channel === 'Resolves')
+      const primary = rt || ip || gi[0]
+      if (ok && ok.last_value !== '' && Number(ok.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>not resolving</span>, primary }
+      return { node: reading(ip) ?? '—', primary }
+    }
     return { node: reading(gi[0]), primary: gi[0] }
   }
 
