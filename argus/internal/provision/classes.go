@@ -202,13 +202,16 @@ var registry = []Class{
 		Family:     "DNS",
 		Pattern:    PatternHTTPAPI,
 		Iface:      IfaceAgent,
-		Templates:  []string{"Argus AdGuard Home by HTTP"},
+		// The admin-API stats plus the shared DNS-resolution add-on (a real per-name resolve check
+		// against this server), so AdGuard reads like any other DNS server on top of its own stats.
+		Templates:  []string{"Argus AdGuard Home by HTTP", "Argus DNS resolution"},
 		OffersHTTP: false,
 		Icon:       "globe",
 		Macros: []MacroSpec{
 			{Macro: "{$ADGUARD.URL}", Label: "Admin URL", Hint: "http://adguard.example.lan:3000", Required: true, Derive: "http://{host}"},
 			{Macro: "{$ADGUARD.USER}", Label: "Admin username", Hint: "blank if the admin UI has no login"},
 			{Macro: "{$ADGUARD.PASSWORD}", Label: "Admin password", Hint: "blank if the admin UI has no login", Secret: true},
+			{Macro: "{$DNS.RESOLVE.NAMES}", Label: "Names to resolve", Hint: "comma-separated, e.g. example.com,cloudflare.com"},
 		},
 	},
 	{

@@ -3770,8 +3770,8 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                   // "not supported" but keeps the last reading. Keep such a parked drive on the chart
                   // (its last value seeds a flat hold in buildMultiPlot) instead of filtering it out.
                   let channels: GroupChan[] = row.items.filter((i) => i.numeric && (i.supported || (row.cat === 'Temperature' && i.last_value !== ''))).map((i) => {
-                    if ((row.cat === 'Ping' || row.cat === 'Web') && i.channel === 'Reachable')
-                      return { id: i.id, label: 'Downtime', units: '', invert: true } // show only when unreachable (PRTG-style)
+                    if (((row.cat === 'Ping' || row.cat === 'Web') && i.channel === 'Reachable') || (row.cat === 'DNS' && i.channel === 'Resolves'))
+                      return { id: i.id, label: 'Downtime', units: '', invert: true } // show only when unreachable / not-resolving (PRTG-style)
                     // A port's Speed and Link are constants - start their lines hidden (legend keeps
                     // the value; a click reveals the line). Hiding Speed also lets the bps axis
                     // range to the In/Out traffic instead of pinning at the negotiated gigabits.
