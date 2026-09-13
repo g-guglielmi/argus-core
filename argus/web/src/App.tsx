@@ -2743,20 +2743,25 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
 
   // Respond to a deep-link from the Overview/lists/Triggers: drill the focus onto the target host
   // (or sensor), and expand its site + host so the tree underneath is consistent. HostItems opens
-  // the sensor chart via autoOpenItem. Re-runs once hosts have loaded.
+  // the sensor chart via autoOpenItem. hosts.length is a dep so a link that arrived before the hosts
+  // loaded still applies once they do - but each deep-link is LATCHED on its nav id (target.n), so an
+  // incidental hosts reload (Add device, the 30s poll) never re-applies a now-stale target and yanks
+  // the user out of a group they've since drilled into by hand (drilling updates the URL, not target).
+  const appliedTarget = useRef<number | undefined>(undefined)
   useEffect(() => {
-    if (!target) return
+    if (!target || appliedTarget.current === target.n) return
     // A group deep-link (?group=…) focuses the group node directly - no host needed.
     if (target.groupPath && !target.hostId) {
       const p = target.groupPath
       setCollapsed((c) => { const n = new Set(c); let a = ''; for (const seg of p.split('/')) { a = a ? a + '/' + seg : seg; n.delete(a) } return n })
       setFocus({ level: 'group', path: p })
+      appliedTarget.current = target.n
       return
     }
     const hid = target.hostId
-    if (!hid) return
+    if (!hid) { appliedTarget.current = target.n; return }
     const h = hosts.find((x) => x.id === hid)
-    if (!h) return
+    if (!h) return // host not loaded yet - retry when hosts arrive (don't latch until it's applied)
     const p = (h.groups && h.groups.length ? h.groups : ['Ungrouped'])[0]
     // Un-collapse the target group and all its ancestor paths so the host is reachable in the tree.
     setCollapsed((c) => { const n = new Set(c); let a = ''; for (const seg of p.split('/')) { a = a ? a + '/' + seg : seg; n.delete(a) } return n })
@@ -2764,6 +2769,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     setFocus(target.itemId
       ? { level: 'sensor', path: p, hostId: hid, itemId: target.itemId, itemName: target.itemName }
       : { level: 'host', path: p, hostId: hid })
+    appliedTarget.current = target.n
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target?.n, hosts.length])
 
