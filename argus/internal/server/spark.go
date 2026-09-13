@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -102,14 +103,27 @@ func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
 	// Fetch one extra day of trends so the oldest displayed bucket has a previous-day baseline.
 	from := today0.AddDate(0, 0, -days).Unix()
 
+	// debug=1 returns a verbose diagnostic view of the same computation (inputs, per-day
+	// first/last, buckets) instead of the compact map - for chasing bucket/baseline disputes
+	// against live data. Not consumed by the app.
+	debug := r.URL.Query().Get("debug") == "1"
+	iso := func(ts int64) string { return time.Unix(ts, 0).In(loc).Format("2006-01-02 15:04:05") }
+	diag := map[string]any{}
+
 	out := make(map[string][]float64, len(ids))
 	for _, id := range ids {
 		it, err := s.zbx.Item(ctx, id)
 		if err != nil || !numericValueType(it.ValueType) {
+			if debug {
+				diag[id] = map[string]any{"error": fmt.Sprintf("item.get failed or non-numeric (err=%v)", err)}
+			}
 			continue
 		}
 		tps, err := s.zbx.Trends(ctx, id, from, now.Unix())
 		if err != nil {
+			if debug {
+				diag[id] = map[string]any{"key": it.Key, "error": "trend.get failed: " + err.Error()}
+			}
 			continue
 		}
 		pts := make([]dailyPt, 0, len(tps)+1)
@@ -125,6 +139,35 @@ func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		out[id] = dailyDeltas(pts, today0, days)
+		if debug {
+			sort.Slice(pts, func(i, j int) bool { return pts[i].t < pts[j].t })
+			perDay := []map[string]any{}
+			var cur map[string]any
+			var curDay string
+			for _, p := range pts {
+				dk := iso(p.t)[:10]
+				if dk != curDay {
+					cur = map[string]any{"day": dk, "first_t": iso(p.t), "first_v": p.v, "last_t": iso(p.t), "last_v": p.v, "points": 1}
+					perDay = append(perDay, cur)
+					curDay = dk
+				} else {
+					cur["last_t"], cur["last_v"] = iso(p.t), p.v
+					cur["points"] = cur["points"].(int) + 1
+				}
+			}
+			diag[id] = map[string]any{
+				"key": it.Key, "value_type": it.ValueType,
+				"lastvalue": it.LastValue, "lastclock": iso(atoi64(it.LastClock)),
+				"trend_rows": len(tps), "per_day": perDay, "buckets_oldest_to_today": out[id],
+			}
+		}
+	}
+	if debug {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"now": iso(now.Unix()), "off_minutes": off, "today0": iso(today0.Unix()),
+			"window_from": iso(from), "days": days, "items": diag,
+		})
+		return
 	}
 	writeJSON(w, http.StatusOK, out)
 }
