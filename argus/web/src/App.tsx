@@ -4278,7 +4278,10 @@ function axisAutoSize(u: any, values: string[] | null, axisIdx: number, cycleNum
   const ax = u.axes[axisIdx]
   let size = (typeof ax.ticks?.size === 'number' ? ax.ticks.size : 10) + (typeof ax.gap === 'number' ? ax.gap : 5) + 4
   const longest = (values ?? []).reduce((a, b) => (b != null && String(b).length > a.length ? String(b) : a), '')
-  if (longest !== '') { u.ctx.font = ax.font[0]; size += u.ctx.measureText(longest).width / (window.devicePixelRatio || 1) }
+  // +6 slack: on fractional display scaling (Windows 125/150 %) the canvas-measured width can come
+  // up a few px short of what actually paints, clipping the label's outer edge at the canvas
+  // boundary (visible on wide labels like "8000" on a right-side axis).
+  if (longest !== '') { u.ctx.font = ax.font[0]; size += u.ctx.measureText(longest).width / (window.devicePixelRatio || 1) + 6 }
   size = Math.ceil(size)
   return cycleNum > 1 ? Math.max(ax._size, size) : size
 }
@@ -4701,17 +4704,24 @@ function SensorGroupChart({ channels, bars }: { channels: GroupChan[]; bars?: bo
   useEffect(() => {
     let cancelled = false
     setError(null)
-    Promise.all(channels.map((ch) =>
-      fetch(`/api/items/${ch.id}/history?range=${range}`).then((r) => (r.ok ? r.json() : null)).then((d: Series | null) => ({
+    Promise.all(channels.map((ch) => {
+      const get = (rk: string): Promise<Series | null> => fetch(`/api/items/${ch.id}/history?range=${rk}`).then((r) => (r.ok ? r.json() : null))
+      // Bar mode: the day-scale ranges are trend-backed, and trends lag the still-open hour - so
+      // today's bar would trail the row's live "today" reading (which is freshened from the item's
+      // last value). Merge a short raw-history tail over the trends so chart, headline, and mini
+      // bars all see the same "now"; buildBarPlot's per-day first/last pass doesn't care about
+      // ordering or the overlap.
+      const reqs = bars ? [get(range), get('2h')] : [get(range)]
+      return Promise.all(reqs).then((ds) => ({
         label: ch.label, units: ch.units, downtime: !!ch.invert, off: !!ch.defaultOff, hold: !!ch.hold, seedValue: ch.seedValue, seedClock: ch.seedClock,
         // invert reachability into downtime: up (>0) -> 0, down -> 1. lo/hi carry the trend min/max
         // (present only on long ranges) so the primary channel can draw a shaded envelope.
-        points: d ? d.points.map((p) => { let v = p.v ?? p.avg ?? null; if (ch.invert && v != null) v = v > 0 ? 0 : 1; return { t: p.t, v, lo: ch.invert ? null : (p.min ?? null), hi: ch.invert ? null : (p.max ?? null) } }) : [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[],
+        points: ds.flatMap((d) => d ? d.points.map((p) => { let v = p.v ?? p.avg ?? null; if (ch.invert && v != null) v = v > 0 ? 0 : 1; return { t: p.t, v, lo: ch.invert ? null : (p.min ?? null), hi: ch.invert ? null : (p.max ?? null) } }) : [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[]),
       })).catch(() => ({ label: ch.label, units: ch.units, downtime: !!ch.invert, hold: !!ch.hold, seedValue: ch.seedValue, seedClock: ch.seedClock, points: [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[] }))
-    )).then((res) => { if (!cancelled) setSeries(res) }).catch(() => { if (!cancelled) setError('Failed to load history') })
+    })).then((res) => { if (!cancelled) setSeries(res) }).catch(() => { if (!cancelled) setError('Failed to load history') })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, range, tick])
+  }, [key, range, tick, bars])
 
   useEffect(() => {
     if (plot.current) { plot.current.destroy(); plot.current = null }
