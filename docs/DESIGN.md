@@ -353,7 +353,11 @@ class, threshold overrides, pause, acknowledge) · 9) Thresholds (global + overr
 - Tabs: **2h · 2d · 1M · 3M · 6M · 1Y**, with zoom-to-timeframe.
 - Maps onto Zabbix's data split (no custom downsampling needed):
   - **history** (raw, retain ~7-30 d) → powers **2h / 2d** + zoom.
-  - **trends** (hourly min/avg/max, retain 1-2 y) → powers **1M / 3M / 6M / 1Y**.
+  - **trends** (hourly min/avg/max, retain 1-2 y) → powers **7d / 1M / 3M / 6M / 1Y**.
+- **Counter → daily bars**: channel groups whose members are rolling counter totals (AdGuard's
+  queries/blocked) render as a **stacked bar per local calendar day** (day's growth = last reading
+  of the day minus the previous day's, clamped at 0; blocked overlays total) with their own
+  day-scale tabs — **7d (default) · 1M · 3M · 6M · 1Y**, no 2h/2d.
 - Storage: **PostgreSQL + TimescaleDB** as Zabbix's DB (native integration, partitioning +
   compression). Single source of truth; app data lives in the same instance (separate schema).
 

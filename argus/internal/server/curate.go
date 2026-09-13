@@ -86,6 +86,9 @@ var itemLabelOrder = map[string]map[string]int{
 	// Home Assistant's version rows read OS, then Core, then Supervisor (user call). Other classes'
 	// Status rows aren't listed, so they keep natural label order.
 	"Status": {"OS version": 0, "Core version": 1, "Supervisor version": 2},
+	// AdGuard's DNS section leads with the activity group (queries+blocked - the headline bar
+	// chart), then its rate/latency gauges; the per-name resolve rows trail unranked.
+	"DNS": {"DNS queries": 0, "Blocked queries": 1, "Block rate": 2, "Average processing time": 3},
 }
 
 // itemRank returns the within-category order rank for a flat row's label; unranked labels get a large
@@ -389,9 +392,9 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	case "adguard.block_pct":
 		return "DNS", "Block rate", "", "", true
 	case "adguard.queries":
-		return "DNS", "DNS queries", "", "", true
+		return "DNS", "DNS queries", "DNS activity", "Total", true
 	case "adguard.blocked":
-		return "DNS", "Blocked queries", "", "", true
+		return "DNS", "Blocked queries", "DNS activity", "Blocked", true
 	case "adguard.avg_time":
 		return "DNS", "Average processing time", "", "", true
 	case "adguard.protection":

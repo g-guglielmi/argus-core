@@ -11,6 +11,21 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **Daily activity bar chart for AdGuard** — the queries/blocked counters now collapse into one
+  "DNS activity" sensor whose chart draws a **stacked bar per calendar day** (full bar = total
+  queries, red share = blocked; midnight-to-midnight in the viewer's timezone) instead of the old
+  slowly-drifting lines. The day's growth is computed from AdGuard's rolling totals, so a
+  window-slide dip or a stats reset reads as a low/zero bar, never a negative one. Built as a
+  general counter→bars chart mode future counter metrics can reuse.
+- **Dedicated 7d timeframe** — bar-mode charts get their own day-scale tabs: **7d (default) ·
+  1M · 3M · 6M · 1Y** (no 2h/2d, which would hold at most two bars). Line charts keep the usual
+  set. The AdGuard sensor row headline now reads "N queries · M blocked".
+
+---
+
 ## [0.4.43] - 2026-09-14
 
 **Five new self-hosted-service device classes — AdGuard Home, Home Assistant, DNS servers, and UPSes
