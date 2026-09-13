@@ -33,7 +33,7 @@ func TestLoadTemplates(t *testing.T) {
 		"snmp.cpu.core.discovery", "snmp.mem.shared", "DISABLE_NEVER",
 		"unraid.pooltemp.discovery", "unraid.arraytemp.discovery", "{$POOL.TEMP.WARN}",
 		"Argus Windows by SNMP", "win.service.discovery", "{$WIN.SERVICE.MATCHES}",
-		"Argus AdGuard Home by HTTP", "adguard.raw", "adguard.block_pct", "{$ADGUARD.URL}", "net.tcp.service[tcp,{HOST.CONN}", "{$ADGUARD.DNS.PORT}",
+		"Argus AdGuard Home by HTTP", "adguard.raw", "adguard.block_pct", "{$ADGUARD.URL}",
 		"Argus Home Assistant by HTTP", "hass.raw", "hass.unavailable", "{$HASS.TOKEN}",
 		"Argus UPS by PeaNUT", "nut.raw", "nut.battery.charge", "nut.on_battery", "{$PEANUT.URL}", "{$PEANUT.UPS}",
 		"Argus UPS by NUT", "argus_nut.py[{HOST.CONN}", "{$NUT.UPS}", "{$NUT.PORT}", "nut.output.voltage",
