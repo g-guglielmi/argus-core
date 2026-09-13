@@ -534,14 +534,28 @@ func spaHandler() http.Handler {
 	sub, _ := fs.Sub(web.Dist, "dist")
 	fileServer := http.FileServer(http.FS(sub))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
+		// Explicit cache policy - the embedded FS carries no Last-Modified/ETag, so without headers
+		// the browser is left to heuristics, and a heuristically-cached index.html keeps a tab on
+		// the OLD frontend bundle after a self-update while /api/version already reports the new
+		// backend (charts then silently run last build's logic). The SPA shell must always
+		// revalidate; the hashed /assets/* are immutable by construction and may cache forever.
+		serveIndex := func() {
+			w.Header().Set("Cache-Control", "no-cache")
 			http.ServeFileFS(w, r, sub, "index.html")
+		}
+		if r.URL.Path == "/" {
+			serveIndex()
 			return
 		}
 		name := r.URL.Path[1:]
 		if _, err := fs.Stat(sub, name); err != nil {
-			http.ServeFileFS(w, r, sub, "index.html")
+			serveIndex()
 			return
+		}
+		if strings.HasPrefix(name, "assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 		fileServer.ServeHTTP(w, r)
 	})

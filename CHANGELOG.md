@@ -25,6 +25,10 @@ GitHub Release from the matching section below.
   reading when the previous day has no data, so a just-added AdGuard shows today's bar immediately
   (before, the chart stayed empty until two full days of history existed) and a post-outage day
   shows what it actually saw.
+- **Stale frontend after a self-update** — the app now serves its page shell with an explicit
+  `no-cache` policy (and the hashed asset bundles as immutable), so a browser tab can no longer
+  keep running the previous build's frontend after the core updates underneath it. Charts and
+  panels always match the running backend after a plain reload.
 - **"What's new" on the testing channel** — when the newer `:testing` build is itself a release
   (right after a cut), the About panel now shows that release's changelog instead of the generic
   "unreleased changes" line.
