@@ -76,8 +76,18 @@ func TestHTTPServiceClasses(t *testing.T) {
 	if !ok {
 		t.Fatal("adguard class missing")
 	}
-	if ag.Pattern != PatternHTTPAPI || ag.Iface != IfaceAgent || len(ag.Templates) != 1 || ag.Icon != "globe" {
+	// AdGuard attaches its own template plus the shared DNS-resolution add-on (multi-template).
+	if ag.Pattern != PatternHTTPAPI || ag.Iface != IfaceAgent || len(ag.Templates) != 2 || ag.Icon != "globe" {
 		t.Fatalf("unexpected adguard class: %+v", ag)
+	}
+	var agDNS bool
+	for _, tmpl := range ag.Templates {
+		if tmpl == "Argus DNS resolution" {
+			agDNS = true
+		}
+	}
+	if !agDNS {
+		t.Error("adguard must attach the Argus DNS resolution add-on")
 	}
 	var agURL, agPass bool
 	for _, m := range ag.Macros {
