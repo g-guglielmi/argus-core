@@ -433,7 +433,7 @@ func (c *Client) ActiveTriggers(ctx context.Context) ([]Trigger, error) {
 // Item returns one item's metadata (used before fetching its history/trends).
 func (c *Client) Item(ctx context.Context, itemID string) (*Item, error) {
 	params := map[string]any{
-		"output":  []string{"itemid", "hostid", "name", "key_", "units", "value_type"},
+		"output":  []string{"itemid", "hostid", "name", "key_", "units", "value_type", "lastvalue", "lastclock"},
 		"itemids": itemID,
 	}
 	var items []Item

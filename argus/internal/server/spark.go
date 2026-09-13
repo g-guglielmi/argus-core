@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -60,6 +61,125 @@ func (s *Server) handleSpark(w http.ResponseWriter, r *http.Request) {
 		out[id] = downsample(vals, 24)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// --- Daily growth buckets for counter-total items (AdGuard queries/blocked) ---
+//
+// A rolling counter total is meaningless as a raw sparkline/reading; what the row should show is
+// "how much per day". handleDaily serves one growth bucket per LOCAL calendar day (the viewer's
+// zone, passed as a JS getTimezoneOffset value) - the same math the bar chart runs client-side.
+// GET /api/daily?items=id1,id2&days=7&off=-120  ->  {"<id>": [d-6, ..., d-1, today-so-far], ...}
+func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
+	if !s.zbx.Authenticated() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured (set ARGUS_ZABBIX_API_TOKEN)"})
+		return
+	}
+	idsParam := strings.TrimSpace(r.URL.Query().Get("items"))
+	if idsParam == "" {
+		writeJSON(w, http.StatusOK, map[string][]float64{})
+		return
+	}
+	ids := strings.Split(idsParam, ",")
+	if len(ids) > 50 { // a host has a handful of counter items; cap defensively
+		ids = ids[:50]
+	}
+	days := atoi(r.URL.Query().Get("days"))
+	if days < 1 || days > 31 {
+		days = 7
+	}
+	// off is JS Date.getTimezoneOffset(): minutes such that UTC = local + off (UTC+2 -> -120).
+	off := atoi(r.URL.Query().Get("off"))
+	if off < -14*60 || off > 14*60 {
+		off = 0
+	}
+	loc := time.FixedZone("viewer", -off*60)
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+
+	now := time.Now()
+	y, mo, d := now.In(loc).Date()
+	today0 := time.Date(y, mo, d, 0, 0, 0, 0, loc)
+	// Fetch one extra day of trends so the oldest displayed bucket has a previous-day baseline.
+	from := today0.AddDate(0, 0, -days).Unix()
+
+	out := make(map[string][]float64, len(ids))
+	for _, id := range ids {
+		it, err := s.zbx.Item(ctx, id)
+		if err != nil || !numericValueType(it.ValueType) {
+			continue
+		}
+		tps, err := s.zbx.Trends(ctx, id, from, now.Unix())
+		if err != nil {
+			continue
+		}
+		pts := make([]dailyPt, 0, len(tps)+1)
+		for _, p := range tps {
+			if v := pf(p.ValueAvg); v != nil {
+				pts = append(pts, dailyPt{t: atoi64(p.Clock), v: *v})
+			}
+		}
+		// Trends lag the open hour; the item's live last value freshens today's bucket.
+		if lv := pf(it.LastValue); lv != nil {
+			if lc := atoi64(it.LastClock); lc > 0 {
+				pts = append(pts, dailyPt{t: lc, v: *lv})
+			}
+		}
+		out[id] = dailyDeltas(pts, today0, days)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+type dailyPt struct {
+	t int64
+	v float64
+}
+
+// dailyDeltas reduces a counter-total series to one growth value per calendar day, for the `days`
+// days ending at today0's day (oldest first, last = today-so-far). A day's growth is its last
+// reading minus the previous day's last reading, clamped at 0 (rolling-window totals dip when the
+// window slides or the stats reset - a dip is "no growth", not negative traffic). When the previous
+// day has no reading (a fresh item, or a gap), the day's own FIRST reading is the baseline, so a
+// brand-new device still gets a today bar. A day with no readings at all stays 0.
+func dailyDeltas(pts []dailyPt, today0 time.Time, days int) []float64 {
+	sort.Slice(pts, func(i, j int) bool { return pts[i].t < pts[j].t })
+	// First/last reading per day offset (0 = the oldest fetched day, days = today).
+	type fl struct {
+		has         bool
+		first, last float64
+	}
+	byDay := make([]fl, days+1)
+	start := today0.AddDate(0, 0, -days)
+	bounds := make([]int64, days+2)
+	for i := range bounds {
+		bounds[i] = start.AddDate(0, 0, i).Unix() // calendar-day arithmetic: DST-safe
+	}
+	for _, p := range pts {
+		for i := 0; i <= days; i++ {
+			if p.t >= bounds[i] && p.t < bounds[i+1] {
+				if !byDay[i].has {
+					byDay[i] = fl{has: true, first: p.v, last: p.v}
+				} else {
+					byDay[i].last = p.v // pts are clock-sorted
+				}
+				break
+			}
+		}
+	}
+	out := make([]float64, days)
+	for i := 1; i <= days; i++ {
+		cur := byDay[i]
+		if !cur.has {
+			continue // no readings that day -> 0
+		}
+		base := cur.first
+		if prev := byDay[i-1]; prev.has {
+			base = prev.last
+		}
+		if d := cur.last - base; d > 0 {
+			out[i-1] = d
+		}
+	}
+	return out
 }
 
 // downsample reduces a series to at most n points, keeping the first and last.

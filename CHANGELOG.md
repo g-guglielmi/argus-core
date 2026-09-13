@@ -11,6 +11,26 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **"Today" reading for AdGuard's DNS activity** — the row now reads the midnight-to-midnight count
+  so far ("12403 queries · 941 blocked today", in your timezone) instead of AdGuard's raw rolling
+  totals, and its mini trend graph is now seven tiny stacked daily bars — a miniature of the big
+  chart, last bar growing through the day. Backed by a new `/api/daily` endpoint that turns counter
+  totals into per-day growth buckets.
+
+**Fixed:**
+- **Daily bar chart on a fresh device** — a bar's baseline now falls back to the day's own first
+  reading when the previous day has no data, so a just-added AdGuard shows today's bar immediately
+  (before, the chart stayed empty until two full days of history existed) and a post-outage day
+  shows what it actually saw.
+- **"What's new" on the testing channel** — when the newer `:testing` build is itself a release
+  (right after a cut), the About panel now shows that release's changelog instead of the generic
+  "unreleased changes" line.
+
+---
+
 ## [0.4.44] - 2026-09-14
 
 **AdGuard's DNS activity now charts as daily stacked bars.**
