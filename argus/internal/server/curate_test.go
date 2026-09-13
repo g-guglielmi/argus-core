@@ -178,8 +178,8 @@ func TestClassifyHTTPServices(t *testing.T) {
 		cat, ch   string
 	}{
 		{"adguard.block_pct", "Block rate", "DNS", ""},
-		{"adguard.queries", "DNS queries", "DNS", ""},
-		{"adguard.blocked", "Blocked queries", "DNS", ""},
+		{"adguard.queries", "DNS queries", "DNS", "Total"},
+		{"adguard.blocked", "Blocked queries", "DNS", "Blocked"},
 		{"adguard.avg_time", "Average processing time", "DNS", ""},
 		{"adguard.protection", "Protection enabled", "Status", ""},
 		{"adguard.version", "Version", "Status", ""},
@@ -219,6 +219,7 @@ func TestItemRank(t *testing.T) {
 	for cat, want := range map[string][]string{
 		"Power":  {"Power draw", "Load", "Input voltage", "Output voltage"},
 		"Status": {"OS version", "Core version", "Supervisor version"},
+		"DNS":    {"DNS queries", "Blocked queries", "Block rate", "Average processing time"},
 	} {
 		for i := 1; i < len(want); i++ {
 			if itemRank(cat, want[i-1]) >= itemRank(cat, want[i]) {

@@ -36,6 +36,12 @@ type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: nu
 type Series = { name: string; units: string; kind: 'history' | 'trend'; points: SeriesPoint[] }
 
 const RANGES = ['2h', '2d', '1M', '3M', '6M', '1Y']
+// Counter-total groups (rolling totals that only make sense as per-day growth, e.g. AdGuard's
+// queries/blocked) render as a daily stacked-bar chart instead of lines, with day-scale ranges:
+// no 2h/2d (a day chart has 0-2 bars there), a dedicated 7d as the default. An item whose key
+// base is listed here opts its whole channel group into bar mode.
+const RANGES_BARS = ['7d', '1M', '3M', '6M', '1Y']
+const BAR_COUNTER_KEYS = new Set(['adguard.queries', 'adguard.blocked'])
 
 const stateColor: Record<string, string> = { ok: 'var(--ok)', warning: 'var(--warn)', error: 'var(--err)' }
 const stateRank: Record<string, number> = { ok: 0, warning: 1, error: 2 }
@@ -3729,6 +3735,10 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
     // A DNS name reads by what it resolves to (the IP), collapsing the pass/fail + timing channels;
     // response time drives the sparkline. A name that isn't resolving says so instead.
     if (cat === 'DNS') {
+      // AdGuard's activity group reads totals-first ("34.1k queries · 4.2k blocked"); Total is the
+      // primary. The per-name resolve groups below read by their Resolved IP instead.
+      const tot = gi.find((x) => x.channel === 'Total'), blk = gi.find((x) => x.channel === 'Blocked')
+      if (tot || blk) return { node: <span>{reading(tot) ?? '—'} queries &nbsp;·&nbsp; {reading(blk) ?? '—'} blocked</span>, primary: tot || gi[0] }
       const ip = gi.find((x) => x.channel === 'Resolved IP')
       const rt = gi.find((x) => x.channel === 'Response time')
       const ok = gi.find((x) => x.channel === 'Resolves')
@@ -3810,6 +3820,8 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                     const num = (l: string) => { const m = l.match(/(\d+)$/); return m ? parseInt(m[1], 10) : 0 }
                     channels = [...channels].sort((a, b) => bucket(a.label) - bucket(b.label) || num(a.label) - num(b.label) || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0))
                   }
+                  // A group whose members are all counter totals charts as daily stacked bars.
+                  const barGroup = row.items.length > 0 && row.items.every((i) => BAR_COUNTER_KEYS.has(i.key.replace(/\[.*$/, '')))
                   const clickable = channels.length > 0
                   const gState = row.items.reduce((w, i) => { const s = itemState[i.id]; return s && (!w || stateRank[s] > stateRank[w]) ? s : w }, '')
                   const gAcked = !row.items.some((i) => itemState[i.id] && itemAcked[i.id] === false)
@@ -3855,7 +3867,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                         <td><div className="lccell"><span className="when">{relTime(primary.last_clock)}</span>{canPause && actions.length > 0 && <Kebab actions={actions} />}</div></td>
                       </tr>
                       {open && clickable && (
-                        <tr className="chartrow"><td colSpan={5}><div className="chart-reveal"><SensorGroupChart channels={channels} /></div></td></tr>
+                        <tr className="chartrow"><td colSpan={5}><div className="chart-reveal"><SensorGroupChart channels={channels} bars={barGroup} /></div></td></tr>
                       )}
                     </Fragment>
                   )
@@ -4350,7 +4362,7 @@ function SensorChart({ itemId, units, color = 'var(--accent)' }: { itemId: strin
 // close to red, purple clashed with it). Ordered so no 2- or 3-channel group gets two similar lines.
 const SERIES_COLORS = ['#2ea8c9', '#e0b53a', '#3aa856', '#e0803a', '#c9564f', '#b8a032']
 // Lookback window per range key (seconds), so the group graph can pin its x-axis to the window.
-const RANGE_SECS: Record<string, number> = { '2h': 7200, '2d': 172800, '1M': 2592000, '3M': 7776000, '6M': 15552000, '1Y': 31536000 }
+const RANGE_SECS: Record<string, number> = { '2h': 7200, '2d': 172800, '7d': 604800, '1M': 2592000, '3M': 7776000, '6M': 15552000, '1Y': 31536000 }
 // Downtime channel (inverted reachability): a red band that only rises when the target is unreachable.
 const DOWNTIME_STROKE = '#d64550'
 const DOWNTIME_FILL = 'rgba(214, 69, 80, 0.30)'
@@ -4497,6 +4509,76 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   return [opts, [gx, ...dropIsolated(gy)] as uPlot.AlignedData]
 }
 
+// buildBarPlot renders counter-total channels (AdGuard's queries/blocked) as one stacked bar per
+// LOCAL calendar day. Each channel's raw series is reduced to "the day's growth": last reading of
+// the day minus the previous day's last reading, clamped at 0 - the source totals are rolling-window
+// counters, so they dip when the window slides or the stats reset, and a dip means "no growth", not
+// negative traffic. Channels are nested (each a subset of the one before: blocked ⊆ total), so bars
+// simply overlay - the full bar is the first channel, later ones paint their share on top from the
+// baseline. The line-chart passes (gap insertion, isolated-point drop, LOCF) don't apply here: a
+// lone bar must render, and a day with no predecessor reading stays an honest hole, not a zero.
+function buildBarPlot(series: { label: string; units: string; points: { t: number; v: number | null }[] }[], width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
+  // Local-midnight bucketing via Date (DST-correct; t - t%86400 would give UTC midnight).
+  const dayStart = (t: number) => { const d = new Date(t * 1000); d.setHours(0, 0, 0, 0); return Math.round(d.getTime() / 1000) }
+  const dayStep = (d0: number, n: number) => { const d = new Date(d0 * 1000); d.setDate(d.getDate() + n); d.setHours(0, 0, 0, 0); return Math.round(d.getTime() / 1000) }
+  // Last reading of each local day, per channel.
+  const lastOfDay = series.map((s) => {
+    const m = new Map<number, { t: number; v: number }>()
+    s.points.forEach((p) => { if (p.v == null) return; const d = dayStart(p.t); const cur = m.get(d); if (!cur || p.t > cur.t) m.set(d, { t: p.t, v: p.v }) })
+    return m
+  })
+  const daySet = new Set<number>()
+  lastOfDay.forEach((m) => m.forEach((_v, d) => daySet.add(d)))
+  const days = [...daySet].sort((a, b) => a - b)
+  const deltas = lastOfDay.map((m) => days.map((d) => {
+    const cur = m.get(d), prev = m.get(dayStep(d, -1))
+    return cur && prev ? Math.max(0, cur.v - prev.v) : null
+  }))
+  // A nested channel can't exceed its parent (a stats reset can briefly desync the two totals).
+  for (let i = 1; i < deltas.length; i++) deltas[i] = deltas[i].map((v, j) => { const p = deltas[i - 1][j]; return v == null || p == null ? v : Math.min(v, p) })
+  // Bars center on noon; pad the x axis to whole days on both sides (via null edge columns, like
+  // buildMultiPlot's window trick) so the first and last bars sit inside the plot, not clipped.
+  const barDays = days.filter((_d, j) => deltas.some((ch) => ch[j] != null))
+  const x0 = barDays.length ? barDays[0] : dayStart(Date.now() / 1000)
+  const x1 = barDays.length ? dayStep(barDays[barDays.length - 1], 1) : dayStep(x0, 1)
+  const xs = [x0, ...barDays.map((d) => d + 43200), x1]
+  const cols = deltas.map((ch) => [null, ...days.map((_d, j) => ch[j]).filter((_v, j) => deltas.some((c2) => c2[j] != null)), null])
+  const grid = { stroke: c.grid, width: 1 }
+  const ticks = { stroke: c.grid, width: 1 }
+  const units = series[0]?.units || ''
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const yValues = (_u: any, splits: number[]) => splits.map((v) => fmtNum(v, units))
+  // Cursor/idle x reads as a day, not a minute. Idle falls back to the LAST BAR's day - lastVal(u,0)
+  // would return the padding edge column (tomorrow's midnight), a day that hasn't happened.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const lastBarX = (u: any) => { for (let j = u.data[0].length - 1; j >= 0; j--) if (u.data.some((s: (number | null)[], si: number) => si > 0 && s[j] != null)) return u.data[0][j]; return null }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const xVal = (u: any, v: number | null) => { const t = v ?? lastBarX(u); return t == null ? '--' : new Date(t * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' }) }
+  const barsPath = uPlot.paths.bars!({ size: [0.85, 100] })
+  const uplotSeries: uPlot.Series[] = [{ value: xVal }]
+  series.forEach((s, i) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const val = (u: any, v: number | null) => { const n = v ?? lastVal(u, i + 1); return n == null ? '--' : fmtNum(n, s.units) }
+    // The nested share reads as "what got stopped" - red; the full bar keeps the primary blue.
+    const color = s.label === 'Blocked' ? DOWNTIME_STROKE : SERIES_COLORS[i % SERIES_COLORS.length]
+    uplotSeries.push({ label: s.label, stroke: color, fill: withAlpha(color, i === 0 ? 0.5 : 0.85), width: 1, paths: barsPath, points: { show: false, size: 0 }, value: val } as uPlot.Series)
+  })
+  // Bars sit on zero: floor the y range at 0 with a little headroom (uPlot's auto-range would
+  // otherwise lift the floor to the smallest bar and make every day look near-identical).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const yRange = ((_u: any, _min: number | null, max: number | null) => [0, Math.max(1, max ?? 1) * 1.05]) as unknown as uPlot.Scale['range']
+  const scales: uPlot.Scales = { x: { time: true }, y: { range: yRange } }
+  // Day-or-coarser tick increments only: uPlot's default time incrs happily pick 12h ticks on a 7d
+  // window, which reads as "12am / 12pm" clutter between daily bars.
+  const DAY_INCRS = [86400, 172800, 259200, 604800, 1209600, 2592000, 5184000, 7776000, 15552000, 31536000]
+  const axes: uPlot.Axis[] = [
+    { stroke: c.axis, grid, ticks, incrs: DAY_INCRS },
+    { stroke: c.axis, grid, ticks, side: 1, size: axisSize, values: yValues as unknown as uPlot.Axis['values'] },
+  ]
+  const opts = { width, height: 320, scales, axes, series: uplotSeries, legend: { show: true }, cursor: { points: { show: false } }, ...zoomHook(onZoom, [x0, x1]) } as uPlot.Options
+  return [opts, [xs, ...cols] as uPlot.AlignedData]
+}
+
 // zoomHook reports (via onZoom) whether the x view is narrower than the full window - so the caller
 // can pause auto-refresh while the user is zoomed in. uPlot fires setScale on init (full = not
 // zoomed), on a drag-zoom, and on a double-click reset.
@@ -4508,8 +4590,9 @@ function zoomHook(onZoom: ((z: boolean) => void) | undefined, xrange: [number, n
 
 // SensorGroupChart overlays the channels of one instance (a disk mount, a NIC) in a single graph with
 // a click-to-toggle legend - the PRTG "sensor with channels" view. Long ranges use each channel's avg.
-function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
-  const [range, setRange] = useState('2h')
+// bars switches to the daily stacked-bar mode (counter totals) with its own day-scale range tabs.
+function SensorGroupChart({ channels, bars }: { channels: GroupChan[]; bars?: boolean }) {
+  const [range, setRange] = useState(bars ? '7d' : '2h')
   const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean; off?: boolean; hold?: boolean; seedValue?: number; seedClock?: number }[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
@@ -4547,11 +4630,13 @@ function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
     const width = host.current.clientWidth || 600
     const to = Math.floor(Date.now() / 1000)
     const from = to - (RANGE_SECS[range] || 7200)
-    const [opts, aligned] = buildMultiPlot(series, width, chartColors('var(--accent)'), [from, to], (z) => { zoomedRef.current = z })
+    const [opts, aligned] = bars
+      ? buildBarPlot(series, width, chartColors('var(--accent)'), (z) => { zoomedRef.current = z })
+      : buildMultiPlot(series, width, chartColors('var(--accent)'), [from, to], (z) => { zoomedRef.current = z })
     plot.current = new uPlot(opts, aligned, host.current)
     colorLegendChecks(plot.current)
     return () => { if (plot.current) { plot.current.destroy(); plot.current = null } }
-  }, [series, themeTick, range])
+  }, [series, themeTick, range, bars])
 
   useEffect(() => {
     function onResize() { if (plot.current && host.current) plot.current.setSize({ width: host.current.clientWidth, height: 320 }) }
@@ -4563,7 +4648,7 @@ function SensorGroupChart({ channels }: { channels: GroupChan[] }) {
   return (
     <div>
       <div className="rtabs">
-        {RANGES.map((rk) => <button key={rk} className={'rtab' + (range === rk ? ' on' : '')} onClick={() => setRange(rk)}>{rk}</button>)}
+        {(bars ? RANGES_BARS : RANGES).map((rk) => <button key={rk} className={'rtab' + (range === rk ? ' on' : '')} onClick={() => setRange(rk)}>{rk}</button>)}
       </div>
       {error && <p style={{ color: 'var(--err)', margin: '0.3rem 0' }}>{error}</p>}
       {empty && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>No data in this range.</p>}

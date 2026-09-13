@@ -523,6 +523,7 @@ type timeRange struct {
 var timeRanges = map[string]timeRange{
 	"2h": {2 * time.Hour, false},
 	"2d": {48 * time.Hour, false},
+	"7d": {7 * 24 * time.Hour, true},
 	"1M": {30 * 24 * time.Hour, true},
 	"3M": {90 * 24 * time.Hour, true},
 	"6M": {180 * 24 * time.Hour, true},
