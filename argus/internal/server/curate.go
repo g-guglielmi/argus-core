@@ -410,14 +410,12 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	// not-ready trigger, and "not responding" is a nodata trigger on the master.
 	case "hass.raw":
 		return "", "", "", "", false
-	case "hass.version":
-		return "Status", "Version", "", "", true
-	case "hass.integrations":
-		return "Status", "Integrations", "", "", true
-	case "hass.entities":
-		return "Status", "Entities", "", "", true
-	case "hass.unavailable":
-		return "Status", "Unavailable entities", "", "", true
+	case "hass.version.core":
+		return "Status", "Core version", "", "", true
+	case "hass.version.supervisor":
+		return "Status", "Supervisor version", "", "", true
+	case "hass.version.os":
+		return "Status", "OS version", "", "", true
 
 	// UPS via NUT/PeaNUT (Argus UPS by PeaNUT): battery state under a Battery category, load/power
 	// under Power. The raw master and the reachable/on_battery/low_battery flags stay uncurated -
