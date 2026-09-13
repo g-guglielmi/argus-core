@@ -305,6 +305,52 @@ function Spark({ values, color, width = 84, fill = false }: { values?: number[];
   )
 }
 
+// BarSpark draws the counter-total mini-graph: one tiny bar per day (from /api/daily), a miniature
+// of the big daily bar chart - full bar = the day's total, red share = blocked, last bar = today so
+// far. A rolling total's raw sparkline is a meaningless drifting line; this shows the daily rhythm.
+function BarSpark({ total, blocked, width = 168 }: { total?: number[]; blocked?: number[]; width?: number }) {
+  if (!total || total.length === 0) return <span style={{ color: 'var(--faint)', fontSize: 12 }}>-</span>
+  const w = width, h = 20, gap = 2
+  const n = total.length
+  const bw = Math.max(2, (w - (n - 1) * gap) / n)
+  const max = Math.max(...total, 1e-9)
+  const bars = total.map((tv, i) => {
+    const x = i * (bw + gap)
+    const th = Math.max(tv > 0 ? 1 : 0, (tv / max) * (h - 2))
+    const bv = Math.min(blocked?.[i] ?? 0, tv)
+    const bh = Math.max(bv > 0 ? 1 : 0, (bv / max) * (h - 2))
+    return (
+      <g key={i}>
+        <rect x={x} y={h - 1 - th} width={bw} height={th} fill="#2ea8c9" opacity={0.6} />
+        {bh > 0 && <rect x={x} y={h - 1 - bh} width={bw} height={bh} fill="#d64550" opacity={0.9} />}
+      </g>
+    )
+  })
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block' }}>{bars}</svg>
+  )
+}
+
+// useDailies fetches per-day growth buckets for counter-total items (/api/daily) - the row headline
+// ("N queries · M blocked today") and the BarSpark mini bars. Bucketing runs in the viewer's zone
+// (the browser's UTC offset rides along), matching the big chart's local-midnight buckets.
+function useDailies(itemIds: string[]): Record<string, number[]> {
+  const [map, setMap] = useState<Record<string, number[]>>({})
+  const [tick, setTick] = useState(0)
+  const key = itemIds.slice().sort().join(',')
+  useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 300000); return () => clearInterval(t) }, [])
+  useEffect(() => {
+    if (!key) { setMap({}); return }
+    let cancelled = false
+    fetch(`/api/daily?items=${encodeURIComponent(key)}&days=7&off=${new Date().getTimezoneOffset()}`)
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((m) => { if (!cancelled) setMap(m || {}) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [key, tick])
+  return map
+}
+
 // sumSparks adds two spark series element-wise for network-style groups (In + Out = total
 // throughput). The two series are downsampled independently, so align them from the tail - the
 // newest points are what a sparkline is for. Falls back to whichever side exists.
@@ -3675,6 +3721,9 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
   }
 
   const sparks = useSparks((items || []).filter((i) => i.numeric && i.supported).map((i) => i.id))
+  // Counter-total items (AdGuard queries/blocked) additionally get per-day growth buckets, for the
+  // "today" headline and the daily mini bars (the raw rolling total is useless in both spots).
+  const dailies = useDailies((items || []).filter((i) => i.numeric && BAR_COUNTER_KEYS.has(i.key.replace(/\[.*$/, ''))).map((i) => i.id))
 
   if (error) return <div style={{ color: 'var(--err)', padding: '0.4rem 0' }}>{error}</div>
   if (!items) return <Skeleton rows={3} cols={4} />
@@ -3749,10 +3798,18 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
     // A DNS name reads by what it resolves to (the IP), collapsing the pass/fail + timing channels;
     // response time drives the sparkline. A name that isn't resolving says so instead.
     if (cat === 'DNS') {
-      // AdGuard's activity group reads totals-first ("34.1k queries · 4.2k blocked"); Total is the
-      // primary. The per-name resolve groups below read by their Resolved IP instead.
+      // AdGuard's activity group reads TODAY's midnight-to-midnight counts (from /api/daily), not
+      // the raw rolling totals - "12403 queries · 941 blocked today". Total is the primary. The
+      // per-name resolve groups below read by their Resolved IP instead.
       const tot = gi.find((x) => x.channel === 'Total'), blk = gi.find((x) => x.channel === 'Blocked')
-      if (tot || blk) return { node: <span>{reading(tot) ?? '—'} queries &nbsp;·&nbsp; {reading(blk) ?? '—'} blocked</span>, primary: tot || gi[0] }
+      if (tot || blk) {
+        const today = (it?: SensorItem) => { const a = it && dailies[it.id]; return a && a.length ? a[a.length - 1] : undefined }
+        const tq = today(tot), tb = today(blk)
+        const node = tq == null
+          ? <span style={{ color: 'var(--muted)' }}>…</span>
+          : <span>{fmtNum(tq, '')} queries &nbsp;·&nbsp; {tb == null ? '—' : fmtNum(tb, '')} blocked <span style={{ color: 'var(--faint)', fontSize: 11 }}>today</span></span>
+        return { node, primary: tot || gi[0] }
+      }
       const ip = gi.find((x) => x.channel === 'Resolved IP')
       const rt = gi.find((x) => x.channel === 'Response time')
       const ok = gi.find((x) => x.channel === 'Resolves')
@@ -3871,6 +3928,12 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                         </td>
                         <td className="mono val">{headline ?? <span style={{ color: 'var(--muted)' }}>—</span>}</td>
                         <td className="strend">{clickable ? (() => {
+                          // Counter-total groups show the daily mini bars (a miniature of the big
+                          // bar chart) instead of a drifting rolling-total line.
+                          if (barGroup) {
+                            const tot = row.items.find((x) => x.channel === 'Total'), blk = row.items.find((x) => x.channel === 'Blocked')
+                            return <BarSpark total={tot ? dailies[tot.id] : undefined} blocked={blk ? dailies[blk.id] : undefined} width={168} />
+                          }
                           // Traffic-style groups (anything with In + Out channels: NICs, uplinks,
                           // switch ports) spark the SUM of both directions - total throughput.
                           const gin = row.items.find((x) => x.channel === 'In'), gout = row.items.find((x) => x.channel === 'Out')
@@ -4530,23 +4593,35 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
 // negative traffic. Channels are nested (each a subset of the one before: blocked ⊆ total), so bars
 // simply overlay - the full bar is the first channel, later ones paint their share on top from the
 // baseline. The line-chart passes (gap insertion, isolated-point drop, LOCF) don't apply here: a
-// lone bar must render, and a day with no predecessor reading stays an honest hole, not a zero.
+// lone bar must render; a day with no readings at all stays a hole, not a zero.
 function buildBarPlot(series: { label: string; units: string; points: { t: number; v: number | null }[] }[], width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
   // Local-midnight bucketing via Date (DST-correct; t - t%86400 would give UTC midnight).
   const dayStart = (t: number) => { const d = new Date(t * 1000); d.setHours(0, 0, 0, 0); return Math.round(d.getTime() / 1000) }
   const dayStep = (d0: number, n: number) => { const d = new Date(d0 * 1000); d.setDate(d.getDate() + n); d.setHours(0, 0, 0, 0); return Math.round(d.getTime() / 1000) }
-  // Last reading of each local day, per channel.
-  const lastOfDay = series.map((s) => {
-    const m = new Map<number, { t: number; v: number }>()
-    s.points.forEach((p) => { if (p.v == null) return; const d = dayStart(p.t); const cur = m.get(d); if (!cur || p.t > cur.t) m.set(d, { t: p.t, v: p.v }) })
+  // First and last reading of each local day, per channel.
+  const byDay = series.map((s) => {
+    const m = new Map<number, { tF: number; vF: number; tL: number; vL: number }>()
+    s.points.forEach((p) => {
+      if (p.v == null) return
+      const d = dayStart(p.t)
+      const cur = m.get(d)
+      if (!cur) m.set(d, { tF: p.t, vF: p.v, tL: p.t, vL: p.v })
+      else { if (p.t < cur.tF) { cur.tF = p.t; cur.vF = p.v } if (p.t > cur.tL) { cur.tL = p.t; cur.vL = p.v } }
+    })
     return m
   })
   const daySet = new Set<number>()
-  lastOfDay.forEach((m) => m.forEach((_v, d) => daySet.add(d)))
+  byDay.forEach((m) => m.forEach((_v, d) => daySet.add(d)))
   const days = [...daySet].sort((a, b) => a - b)
-  const deltas = lastOfDay.map((m) => days.map((d) => {
-    const cur = m.get(d), prev = m.get(dayStep(d, -1))
-    return cur && prev ? Math.max(0, cur.v - prev.v) : null
+  // Day's growth = last reading minus the previous day's close. When the previous day has no
+  // reading (a fresh item, the window's partial first day, or a gap), the day's own FIRST reading
+  // is the baseline - a brand-new device still gets a today bar, and a post-gap day shows what it
+  // actually saw instead of a multi-day sum.
+  const deltas = byDay.map((m) => days.map((d) => {
+    const cur = m.get(d)
+    if (!cur) return null
+    const prev = m.get(dayStep(d, -1))
+    return Math.max(0, cur.vL - (prev ? prev.vL : cur.vF))
   }))
   // A nested channel can't exceed its parent (a stats reset can briefly desync the two totals).
   for (let i = 1; i < deltas.length; i++) deltas[i] = deltas[i].map((v, j) => { const p = deltas[i - 1][j]; return v == null || p == null ? v : Math.min(v, p) })

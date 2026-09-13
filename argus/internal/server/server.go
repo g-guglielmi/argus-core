@@ -132,6 +132,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/search", auth.RequireAuth(s.handleSearch))
 	mux.HandleFunc("GET /api/triggers", auth.RequireAuth(s.handleTriggers))
 	mux.HandleFunc("GET /api/spark", auth.RequireAuth(s.handleSpark))
+	mux.HandleFunc("GET /api/daily", auth.RequireAuth(s.handleDaily))
 	mux.HandleFunc("GET /api/proxies", auth.RequireAuth(s.handleProxies))
 	mux.HandleFunc("GET /api/hosts", auth.RequireAuth(s.handleHosts))
 	// device classes (§C): read the catalog (any user); create a host from a class (admin only).
