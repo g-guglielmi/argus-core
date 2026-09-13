@@ -863,16 +863,30 @@ function VersionAbout() {
         </div>
       ) : v && v.update_available && (
         <>
-          {v.dev_update ? (
-            <p className="set-row set-hint" style={{ marginBottom: 8 }}>A newer <span className="mono">:testing</span> build{v.dev_target ? <> — <span className="mono">{v.dev_target}</span></> : ''} has been published (unreleased changes past {running}). Updating re-pulls the testing channel in place.</p>
-          ) : (
-            <details className="set-row" onToggle={loadNotes}>
-              <summary className="set-hint" style={{ cursor: 'pointer' }}>What's new in {v.latest}</summary>
-              {notes === null ? <p className="set-hint">Loading…</p>
-                : notes === '' ? <p className="set-hint">Release notes unavailable.</p>
-                : <pre className="release-notes">{notes}</pre>}
-            </details>
-          )}
+          {(() => {
+            // The testing-channel update is digest-based and its target is usually an unreleased
+            // dev build - there are no notes to show for those. But right after a cut the testing
+            // tip IS the release (dev_target = a clean vX.Y.Z equal to the newest release), and its
+            // changelog exists - show the same "What's new" disclosure there too.
+            const norm = (s?: string) => (s || '').replace(/^v/, '')
+            const devIsRelease = !!(v.dev_update && v.dev_target && v.latest && norm(v.dev_target) === norm(v.latest))
+            const whatsNew = (
+              <details className="set-row" onToggle={loadNotes}>
+                <summary className="set-hint" style={{ cursor: 'pointer' }}>What's new in {v.latest}</summary>
+                {notes === null ? <p className="set-hint">Loading…</p>
+                  : notes === '' ? <p className="set-hint">Release notes unavailable.</p>
+                  : <pre className="release-notes">{notes}</pre>}
+              </details>
+            )
+            if (!v.dev_update) return whatsNew
+            if (devIsRelease) return (
+              <>
+                <p className="set-row set-hint" style={{ marginBottom: 8 }}>The <span className="mono">:testing</span> channel is now at the <span className="mono">{v.dev_target}</span> release. Updating re-pulls the testing channel in place.</p>
+                {whatsNew}
+              </>
+            )
+            return <p className="set-row set-hint" style={{ marginBottom: 8 }}>A newer <span className="mono">:testing</span> build{v.dev_target ? <> — <span className="mono">{v.dev_target}</span></> : ''} has been published (unreleased changes past {running}). Updating re-pulls the testing channel in place.</p>
+          })()}
           <div className="set-row" style={{ marginBottom: 0 }}>
             {upd && upd.self_update_enabled ? (
               <Button variant="primary" onClick={startUpdate} disabled={busy || active}>
