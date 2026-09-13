@@ -11,7 +11,9 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.4.44] - 2026-09-14
+
+**AdGuard's DNS activity now charts as daily stacked bars.**
 
 **Added:**
 - **Daily activity bar chart for AdGuard** — the queries/blocked counters now collapse into one
