@@ -11,6 +11,44 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.43] - 2026-09-14
+
+**Five new self-hosted-service device classes — AdGuard Home, Home Assistant, DNS servers, and UPSes
+over NUT — plus the agentless collectors that make them work.** These extend the device catalogue
+beyond SNMP/UniFi: a DNS server gets a genuine resolve check, a UPS is monitored through Network UPS
+Tools, and AdGuard / Home Assistant are polled over their own APIs. Two new sensor sections —
+**Battery** and **DNS** — organize them. Proxy-monitored NUT and DNS need the proxy updated to
+`argus-probe` `probe/v7.0.30-r7` (`:latest`), which bakes the collectors in; core-monitored devices
+work out of the box.
+
+**Added:**
+- **AdGuard Home** — DNS filtering stats (queries, blocked, block rate, average processing time),
+  whether protection is on, the version, and a real per-name resolve check. Admin login optional.
+- **Home Assistant** — API up/down plus the Core, Supervisor, and Operating-system versions (read
+  from HA's own update entities; Supervisor/OS appear on HA OS / Supervised installs).
+- **DNS server** — a genuine per-name resolution check against any resolver (Pi-hole, Microsoft DNS,
+  Ubiquiti, Sophos, AdGuard, …): resolves yes/no, response time, and the resolved IP, each name its
+  own collapsible row (the pass/fail shows as a downtime band). Backed by a dependency-free
+  `dns-resolver.py` external check.
+- **UPS (NUT)** — two ways to monitor a UPS through Network UPS Tools: a **direct collector**
+  (`argus_nut.py`, which speaks the NUT protocol to `upsd`) and **via PeaNUT** (polls PeaNUT's HTTP
+  API). Battery charge / runtime / status, load, input + output voltage and power draw, with
+  on-battery and low-battery alerts.
+- Agentless external-check collectors are baked into **both** the probe image and the core install
+  (`setup-core.sh`), so a device Monitored-by the Core server works with no external proxy.
+
+**Changed:**
+- Add-device auto-fills a host-addressed URL from the IP/DNS you enter (AdGuard, Home Assistant,
+  PeaNUT), overridable per host.
+- Creating a group while drilled into one now nests it there by default, matching the per-node "add
+  subgroup" and add-device-into-current-site behaviour.
+
+**Fixed:**
+- Adding a device no longer snaps the tree to a different group — the deep-link that placed you there
+  is applied once, so a host-list reload (Add device, the background poll) can't re-apply a stale
+  target over the group you've drilled into.
+- The AdGuard admin-URL field no longer clips its example text.
+
 ## [core-vm/v0.1.0] - 2026-09-11
 
 **The whole monitoring core as one self-installing VM.** A new golden-image appliance
