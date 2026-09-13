@@ -83,6 +83,9 @@ var categoryOrderNAS = map[string]int{
 var itemLabelOrder = map[string]map[string]int{
 	// A UPS's Power section reads power-first, then load, then the voltages (user call).
 	"Power": {"Power draw": 0, "Load": 1, "Input voltage": 2, "Output voltage": 3},
+	// Home Assistant's version rows read OS, then Core, then Supervisor (user call). Other classes'
+	// Status rows aren't listed, so they keep natural label order.
+	"Status": {"OS version": 0, "Core version": 1, "Supervisor version": 2},
 }
 
 // itemRank returns the within-category order rank for a flat row's label; unranked labels get a large

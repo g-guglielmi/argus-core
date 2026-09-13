@@ -212,14 +212,23 @@ func TestClassifyHTTPServices(t *testing.T) {
 	}
 }
 
-// A UPS's Power section reads power-first, then load, then the voltages (not alphabetical), while an
-// unranked category falls through to natural label order.
-func TestItemRankPower(t *testing.T) {
-	want := []string{"Power draw", "Load", "Input voltage", "Output voltage"}
-	for i := 1; i < len(want); i++ {
-		if itemRank("Power", want[i-1]) >= itemRank("Power", want[i]) {
-			t.Errorf("Power order wrong: %q should rank before %q", want[i-1], want[i])
+// Some categories have a pinned reading order that isn't alphabetical (user call): a UPS's Power
+// section, and Home Assistant's version rows under Status. Unranked labels fall through to natural
+// order, and an unranked category ranks every label the same.
+func TestItemRank(t *testing.T) {
+	for cat, want := range map[string][]string{
+		"Power":  {"Power draw", "Load", "Input voltage", "Output voltage"},
+		"Status": {"OS version", "Core version", "Supervisor version"},
+	} {
+		for i := 1; i < len(want); i++ {
+			if itemRank(cat, want[i-1]) >= itemRank(cat, want[i]) {
+				t.Errorf("%s order wrong: %q should rank before %q", cat, want[i-1], want[i])
+			}
 		}
+	}
+	// An unlisted Status label (another class) stays at the default rank, after the ranked ones.
+	if itemRank("Status", "Firmware version") <= itemRank("Status", "OS version") {
+		t.Error("an unlisted Status label should sort after the ranked ones")
 	}
 	if itemRank("CPU", "CPU utilization") != itemRank("CPU", "anything") {
 		t.Error("an unranked category must give every label the same (default) rank")
