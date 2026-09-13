@@ -1,0 +1,112 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: 5e6e947a173842498da5b6de4cccfcd5
+      template: 'Argus DNS resolution'
+      name: 'Argus DNS resolution'
+      description: |
+        Confirms a DNS server actually resolves names - a genuine query per name, not just a port
+        check. The proxy (or the core) runs dns-resolver.py, an external check baked into the image,
+        which sends a real A-record query to this host and reports success, response time and the
+        resolved IP. Attach it to any DNS server (AdGuard, Pi-hole, Microsoft DNS, Ubiquiti, Sophos,
+        ...); the host's own interface is the DNS server's IP. Set {$DNS.RESOLVE.NAMES} to a
+        comma-separated list of names to test (each becomes its own sensor); {$DNS.PORT} if not 53.
+        Design follows the Zabbix community DNS name-resolution template. DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      discovery_rules:
+        - uuid: 82cdc549c16d45cf9d340b91bc0e06e2
+          name: 'DNS name discovery'
+          type: EXTERNAL
+          key: 'dns-resolver.py[discover,"{$DNS.RESOLVE.NAMES}"]'
+          delay: 1h
+          lifetime: 14d
+          enabled_lifetime_type: DISABLE_NEVER
+          description: 'One sensor set per name in {$DNS.RESOLVE.NAMES}. The names come from a macro, not real discovery, so a name is never auto-disabled; removing it from the macro ages it out after 14 days.'
+          item_prototypes:
+            - uuid: e9509d55ad6d46d587efc25e70e04ef3
+              name: 'DNS check ({#DNSNAME})'
+              type: EXTERNAL
+              key: 'dns-resolver.py[check,{#DNSNAME},{HOST.CONN},{$DNS.PORT}]'
+              delay: 1m
+              history: '0'
+              trends: '0'
+              value_type: TEXT
+              timeout: 10s
+              description: 'Master item: one A-record query for {#DNSNAME} against this server, as JSON. The success/time/IP sensors depend on it.'
+            - uuid: 5fc82a036dc947d4b265e4f17c056303
+              name: 'Resolves ({#DNSNAME})'
+              type: DEPENDENT
+              key: 'dns.resolve.success[{#DNSNAME}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              description: '1 = the server returned a valid answer (NOERROR with at least one record) for {#DNSNAME}, 0 = it did not.'
+              master_item:
+                key: 'dns-resolver.py[check,{#DNSNAME},{HOST.CONN},{$DNS.PORT}]'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.success'
+              trigger_prototypes:
+                - uuid: deeaf34e28d043e5901437366af2596f
+                  expression: 'max(/Argus DNS resolution/dns.resolve.success[{#DNSNAME}],#3)=0'
+                  name: 'DNS not resolving {#DNSNAME}'
+                  priority: HIGH
+                  description: 'The server failed to resolve {#DNSNAME} on the last 3 checks.'
+            - uuid: 79c5262689984c58a4b02a037f209d74
+              name: 'Resolve time ({#DNSNAME})'
+              type: DEPENDENT
+              key: 'dns.resolve.time[{#DNSNAME}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: s
+              description: 'How long the query for {#DNSNAME} took.'
+              master_item:
+                key: 'dns-resolver.py[check,{#DNSNAME},{HOST.CONN},{$DNS.PORT}]'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.time'
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: c3cb39ab07ed46bb9f231a3a2807f99f
+                  expression: 'min(/Argus DNS resolution/dns.resolve.time[{#DNSNAME}],#3)>{$DNS.RTT.HIGH} and max(/Argus DNS resolution/dns.resolve.success[{#DNSNAME}],#3)=1'
+                  name: 'DNS resolution slow for {#DNSNAME}'
+                  priority: WARNING
+                  description: 'Resolving {#DNSNAME} took longer than {$DNS.RTT.HIGH} on the last 3 checks (while still resolving).'
+            - uuid: ccdcb51da08a40ce85e5b99aae32a8b1
+              name: 'Resolved IP ({#DNSNAME})'
+              type: DEPENDENT
+              key: 'dns.resolve.ip[{#DNSNAME}]'
+              delay: '0'
+              history: 7d
+              trends: '0'
+              value_type: CHAR
+              description: 'The first A record the server returned for {#DNSNAME} (blank if it did not resolve).'
+              master_item:
+                key: 'dns-resolver.py[check,{#DNSNAME},{HOST.CONN},{$DNS.PORT}]'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.ip'
+                  error_handler: DISCARD_VALUE
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+      macros:
+        - macro: '{$DNS.RESOLVE.NAMES}'
+          value: example.com
+          description: 'Comma-separated names to resolve against this server (each becomes its own sensor).'
+        - macro: '{$DNS.PORT}'
+          value: '53'
+          description: 'DNS server port (default 53).'
+        - macro: '{$DNS.RTT.HIGH}'
+          value: '0.5'
+          description: 'Resolve time (seconds) above which a warning is raised.'

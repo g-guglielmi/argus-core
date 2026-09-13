@@ -396,6 +396,15 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	case "adguard.version":
 		return "Status", "Version", "", "", true
 
+	// DNS resolution (Argus DNS resolution, attachable to any DNS server): a real per-name resolve
+	// check from the proxy/core. One set of rows per name in {$DNS.RESOLVE.NAMES}.
+	case "dns.resolve.success":
+		return "DNS", "Resolves (" + param(p, 0) + ")", "", "", true
+	case "dns.resolve.time":
+		return "DNS", "Response time (" + param(p, 0) + ")", "", "", true
+	case "dns.resolve.ip":
+		return "DNS", "Resolved IP (" + param(p, 0) + ")", "", "", true
+
 	// Home Assistant (Argus Home Assistant by HTTP): platform health from the REST API. The raw
 	// master and hass.running (a constant 1 when healthy) stay uncurated - running drives the
 	// not-ready trigger, and "not responding" is a nodata trigger on the master.

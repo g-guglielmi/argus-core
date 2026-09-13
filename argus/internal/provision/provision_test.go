@@ -36,7 +36,8 @@ func TestLoadTemplates(t *testing.T) {
 		"Argus AdGuard Home by HTTP", "adguard.raw", "adguard.block_pct", "{$ADGUARD.URL}", "net.tcp.service[tcp,{HOST.CONN}", "{$ADGUARD.DNS.PORT}",
 		"Argus Home Assistant by HTTP", "hass.raw", "hass.unavailable", "{$HASS.TOKEN}",
 		"Argus UPS by PeaNUT", "nut.raw", "nut.battery.charge", "nut.on_battery", "{$PEANUT.URL}", "{$PEANUT.UPS}",
-		"Argus UPS by NUT", "argus_nut.py[{HOST.CONN}", "{$NUT.UPS}", "{$NUT.PORT}", "nut.output.voltage"} {
+		"Argus UPS by NUT", "argus_nut.py[{HOST.CONN}", "{$NUT.UPS}", "{$NUT.PORT}", "nut.output.voltage",
+		"Argus DNS resolution", "dns-resolver.py[discover", "dns.resolve.success", "dns.resolve.time", "{$DNS.RESOLVE.NAMES}"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("templates missing %q", want)
 		}
@@ -146,6 +147,15 @@ func TestHTTPServiceClasses(t *testing.T) {
 	}
 	if !ncUps {
 		t.Error("nut-collector must require {$NUT.UPS}")
+	}
+
+	// The DNS server class is a collector (external-check resolver) usable on any DNS server.
+	dns, ok := ClassByID("dns-server")
+	if !ok {
+		t.Fatal("dns-server class missing")
+	}
+	if dns.Pattern != PatternCollector || dns.Iface != IfaceAgent || len(dns.Templates) != 1 || dns.Templates[0] != "Argus DNS resolution" {
+		t.Fatalf("unexpected dns-server class: %+v", dns)
 	}
 }
 

@@ -229,6 +229,22 @@ var registry = []Class{
 		},
 	},
 	{
+		// Any DNS server (Pi-hole, Microsoft DNS, Ubiquiti, Sophos, a plain resolver, or AdGuard) -
+		// the proxy/core runs dns-resolver.py to actually resolve names against it. Reusable add-on:
+		// AdGuard can attach this template too for a real resolve check on top of its API stats.
+		ID:         "dns-server",
+		Label:      "DNS server",
+		Family:     "DNS",
+		Pattern:    PatternCollector,
+		Iface:      IfaceAgent,
+		Templates:  []string{"Argus DNS resolution"},
+		OffersHTTP: false,
+		Icon:       "globe",
+		Macros: []MacroSpec{
+			{Macro: "{$DNS.RESOLVE.NAMES}", Label: "Names to resolve", Hint: "comma-separated, e.g. example.com,cloudflare.com"},
+		},
+	},
+	{
 		// A UPS monitored through NUT via PeaNUT (a container that fronts upsd over HTTP), so it's a
 		// plain HTTP-API class - no proxy collector needed. The host is the PeaNUT box; {$PEANUT.URL}
 		// defaults to its own IP on :8080.
