@@ -8,15 +8,15 @@ import (
 )
 
 type sensorRow struct {
-	HostID    string `json:"host_id"`
-	HostName  string `json:"host_name"`
-	ItemID    string `json:"item_id"`
-	Name      string `json:"name"`
-	Label     string `json:"label,omitempty"`
-	Category  string `json:"category,omitempty"`
-	Value     string `json:"value"`
-	Units     string `json:"units"`
-	LastClock int64  `json:"last_clock"`
+	HostID    string   `json:"host_id"`
+	HostName  string   `json:"host_name"`
+	ItemID    string   `json:"item_id"`
+	Name      string   `json:"name"`
+	Label     string   `json:"label,omitempty"`
+	Category  string   `json:"category,omitempty"`
+	Value     string   `json:"value"`
+	Units     string   `json:"units"`
+	LastClock int64    `json:"last_clock"`
 	State     string   `json:"state"` // ok | warning | error | acked | paused | hidden
 	Numeric   bool     `json:"numeric"`
 	Supported bool     `json:"supported"`

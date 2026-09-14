@@ -36,12 +36,13 @@ type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: nu
 type Series = { name: string; units: string; kind: 'history' | 'trend'; points: SeriesPoint[] }
 
 const RANGES = ['2h', '2d', '1M', '3M', '6M', '1Y']
-// Counter-total groups (rolling totals that only make sense as per-day growth, e.g. AdGuard's
-// queries/blocked) render as a daily stacked-bar chart instead of lines, with day-scale ranges:
-// no 2h/2d (a day chart has 0-2 bars there), a dedicated 7d as the default. An item whose key
-// base is listed here opts its whole channel group into bar mode.
+// "Today so far" sawtooth counters (reset at midnight, rise through the day - AdGuard's own
+// per-day stats) render as a daily stacked-bar chart instead of lines: a day's bar is simply the
+// day's PEAK reading. Day-scale ranges only: no 2h/2d (a day chart has 0-2 bars there), a
+// dedicated 7d as the default. An item whose key base is listed here opts its whole channel group
+// into bar mode; the convention is a ".today" key suffix (the /api/daily endpoint keys on it too).
 const RANGES_BARS = ['7d', '1M', '3M', '6M', '1Y']
-const BAR_COUNTER_KEYS = new Set(['adguard.queries', 'adguard.blocked'])
+const BAR_COUNTER_KEYS = new Set(['adguard.queries.today', 'adguard.blocked.today'])
 
 const stateColor: Record<string, string> = { ok: 'var(--ok)', warning: 'var(--warn)', error: 'var(--err)' }
 const stateRank: Record<string, number> = { ok: 0, warning: 1, error: 2 }
@@ -3799,16 +3800,13 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
     // A DNS name reads by what it resolves to (the IP), collapsing the pass/fail + timing channels;
     // response time drives the sparkline. A name that isn't resolving says so instead.
     if (cat === 'DNS') {
-      // AdGuard's activity group reads TODAY's midnight-to-midnight counts (from /api/daily), not
-      // the raw rolling totals - "12403 queries · 941 blocked today". Total is the primary. The
-      // per-name resolve groups below read by their Resolved IP instead.
+      // AdGuard's activity group reads TODAY's counts - the Total/Blocked items ARE "today so far"
+      // counters (AdGuard's own per-day stats), so the live readings are the headline:
+      // "12403 queries · 941 blocked today". Total is the primary. The per-name resolve groups
+      // below read by their Resolved IP instead.
       const tot = gi.find((x) => x.channel === 'Total'), blk = gi.find((x) => x.channel === 'Blocked')
       if (tot || blk) {
-        const today = (it?: SensorItem) => { const a = it && dailies[it.id]; return a && a.length ? a[a.length - 1] : undefined }
-        const tq = today(tot), tb = today(blk)
-        const node = tq == null
-          ? <span style={{ color: 'var(--muted)' }}>…</span>
-          : <span>{fmtNum(tq, '')} queries &nbsp;·&nbsp; {tb == null ? '—' : fmtNum(tb, '')} blocked <span style={{ color: 'var(--faint)', fontSize: 11 }}>today</span></span>
+        const node = <span>{reading(tot) ?? '—'} queries &nbsp;·&nbsp; {reading(blk) ?? '—'} blocked <span style={{ color: 'var(--faint)', fontSize: 11 }}>today</span></span>
         return { node, primary: tot || gi[0] }
       }
       const ip = gi.find((x) => x.channel === 'Resolved IP')
@@ -4590,46 +4588,35 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   return [opts, [gx, ...dropIsolated(gy)] as uPlot.AlignedData]
 }
 
-// buildBarPlot renders counter-total channels (AdGuard's queries/blocked) as one stacked bar per
-// LOCAL calendar day. Each channel's raw series is reduced to "the day's growth": last reading of
-// the day minus the previous day's last reading, clamped at 0 - the source totals are rolling-window
-// counters, so they dip when the window slides or the stats reset, and a dip means "no growth", not
-// negative traffic. Channels are nested (each a subset of the one before: blocked ⊆ total), so bars
-// simply overlay - the full bar is the first channel, later ones paint their share on top from the
-// baseline. The line-chart passes (gap insertion, isolated-point drop, LOCF) don't apply here: a
-// lone bar must render; a day with no readings at all stays a hole, not a zero.
+// buildBarPlot renders "today so far" sawtooth counters (AdGuard's queries/blocked today - reset
+// at midnight, rising through the day) as one stacked bar per LOCAL calendar day: a day's bar is
+// the day's PEAK reading - a closed day's final total, today's running total (live via the raw
+// tail the caller merges in). Channels are nested (each a subset of the one before: blocked ⊆
+// total), so bars simply overlay - the full bar is the first channel, later ones paint their share
+// on top from the baseline. The line-chart passes (gap insertion, isolated-point drop, LOCF) don't
+// apply here: a lone bar must render; a day with no readings at all stays a hole, not a zero.
 function buildBarPlot(series: { label: string; units: string; points: { t: number; v: number | null; hi?: number | null }[] }[], width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
   // Local-midnight bucketing via Date (DST-correct; t - t%86400 would give UTC midnight).
   const dayStart = (t: number) => { const d = new Date(t * 1000); d.setHours(0, 0, 0, 0); return Math.round(d.getTime() / 1000) }
   const dayStep = (d0: number, n: number) => { const d = new Date(d0 * 1000); d.setDate(d.getDate() + n); d.setHours(0, 0, 0, 0); return Math.round(d.getTime() / 1000) }
-  // First and last reading of each local day, per channel. Trend points carry hi (the hour's MAX):
-  // prefer it over v (the hour's mid-hour average) - a rising counter's hour-max is its value at
-  // the hour's END, so day closes land on true midnights instead of ~23:30 (matches /api/daily).
+  // Peak reading of each local day, per channel. Trend points carry hi (the hour's MAX): prefer it
+  // over v (the mid-hour average) so a closed day's bucket is its true final total (/api/daily
+  // computes the row's buckets the same way).
   const byDay = series.map((s) => {
-    const m = new Map<number, { tF: number; vF: number; tL: number; vL: number }>()
+    const m = new Map<number, number>()
     s.points.forEach((p) => {
       const pv = p.hi ?? p.v
       if (pv == null) return
       const d = dayStart(p.t)
       const cur = m.get(d)
-      if (!cur) m.set(d, { tF: p.t, vF: pv, tL: p.t, vL: pv })
-      else { if (p.t < cur.tF) { cur.tF = p.t; cur.vF = pv } if (p.t > cur.tL) { cur.tL = p.t; cur.vL = pv } }
+      if (cur == null || pv > cur) m.set(d, pv)
     })
     return m
   })
   const daySet = new Set<number>()
   byDay.forEach((m) => m.forEach((_v, d) => daySet.add(d)))
   const days = [...daySet].sort((a, b) => a - b)
-  // Day's growth = last reading minus the previous day's close. When the previous day has no
-  // reading (a fresh item, the window's partial first day, or a gap), the day's own FIRST reading
-  // is the baseline - a brand-new device still gets a today bar, and a post-gap day shows what it
-  // actually saw instead of a multi-day sum.
-  const deltas = byDay.map((m) => days.map((d) => {
-    const cur = m.get(d)
-    if (!cur) return null
-    const prev = m.get(dayStep(d, -1))
-    return Math.max(0, cur.vL - (prev ? prev.vL : cur.vF))
-  }))
+  const deltas = byDay.map((m) => days.map((d) => m.get(d) ?? null))
   // A nested channel can't exceed its parent (a stats reset can briefly desync the two totals).
   for (let i = 1; i < deltas.length; i++) deltas[i] = deltas[i].map((v, j) => { const p = deltas[i - 1][j]; return v == null || p == null ? v : Math.min(v, p) })
   // Bars center on noon; pad the x axis to whole days on both sides (via null edge columns, like

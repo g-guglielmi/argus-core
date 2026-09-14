@@ -14,8 +14,8 @@ func (s *Server) handleMFAStatus(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r.Context())
 	remaining, _ := s.st.CountUnusedRecoveryCodes(r.Context(), u.ID)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"enabled":                   u.TOTPEnabled,
-		"recovery_codes_remaining":  remaining,
+		"enabled":                  u.TOTPEnabled,
+		"recovery_codes_remaining": remaining,
 	})
 }
 

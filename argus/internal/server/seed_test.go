@@ -71,13 +71,13 @@ func TestStaticCIDR(t *testing.T) {
 		ip, prefix, want string
 		ok               bool
 	}{
-		{"", "24", "", true},                             // no static IP -> DHCP, no error
-		{"10.0.0.50", "24", "10.0.0.50/24", true},        // CIDR prefix
+		{"", "24", "", true},                                 // no static IP -> DHCP, no error
+		{"10.0.0.50", "24", "10.0.0.50/24", true},            // CIDR prefix
 		{"10.0.0.50", "255.255.255.0", "10.0.0.50/24", true}, // dotted netmask
-		{"10.0.0.50", "", "10.0.0.50/24", true},          // default /24
-		{"10.0.0.50", "33", "", false},                   // prefix out of range
-		{"not-an-ip", "24", "", false},                   // bad address
-		{"10.0.0.50", "255.0.255.0", "", false},          // non-contiguous mask
+		{"10.0.0.50", "", "10.0.0.50/24", true},              // default /24
+		{"10.0.0.50", "33", "", false},                       // prefix out of range
+		{"not-an-ip", "24", "", false},                       // bad address
+		{"10.0.0.50", "255.0.255.0", "", false},              // non-contiguous mask
 	}
 	for _, c := range cases {
 		got, err := staticCIDR(c.ip, c.prefix)

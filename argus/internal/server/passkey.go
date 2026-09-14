@@ -24,8 +24,8 @@ type waUser struct {
 	creds  []webauthn.Credential
 }
 
-func (x *waUser) WebAuthnID() []byte          { return x.handle }
-func (x *waUser) WebAuthnName() string        { return x.u.Email }
+func (x *waUser) WebAuthnID() []byte   { return x.handle }
+func (x *waUser) WebAuthnName() string { return x.u.Email }
 func (x *waUser) WebAuthnDisplayName() string {
 	if n := strings.TrimSpace(x.u.Name + " " + x.u.Surname); n != "" {
 		return n

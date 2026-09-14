@@ -141,7 +141,14 @@ func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
 				pts = append(pts, dailyPt{t: lc, v: *lv})
 			}
 		}
-		out[id] = dailyDeltas(pts, today0, days)
+		// A ".today" key is a sawtooth "count so far today" counter (AdGuard's own per-day stats):
+		// a day's total is simply its peak reading. Anything else is treated as a rolling total
+		// and reduced to day-over-day growth.
+		if base, _ := splitKey(it.Key); strings.HasSuffix(base, ".today") {
+			out[id] = dailyMaxes(pts, today0, days)
+		} else {
+			out[id] = dailyDeltas(pts, today0, days)
+		}
 		if debug {
 			sort.Slice(pts, func(i, j int) bool { return pts[i].t < pts[j].t })
 			perDay := []map[string]any{}
@@ -223,6 +230,30 @@ func dailyDeltas(pts []dailyPt, today0 time.Time, days int) []float64 {
 		}
 		if d := cur.last - base; d > 0 {
 			out[i-1] = d
+		}
+	}
+	return out
+}
+
+// dailyMaxes reduces a "today so far" sawtooth counter (resets at local midnight, rises through
+// the day) to one value per calendar day, for the `days` days ending at today0's day (oldest
+// first): each bucket is the day's PEAK reading - a closed day's final total, or today's running
+// total (freshened by the live last value the caller appends). A day with no readings stays 0.
+func dailyMaxes(pts []dailyPt, today0 time.Time, days int) []float64 {
+	out := make([]float64, days)
+	start := today0.AddDate(0, 0, -(days - 1))
+	bounds := make([]int64, days+1)
+	for i := range bounds {
+		bounds[i] = start.AddDate(0, 0, i).Unix() // calendar-day arithmetic: DST-safe
+	}
+	for _, p := range pts {
+		for i := 0; i < days; i++ {
+			if p.t >= bounds[i] && p.t < bounds[i+1] {
+				if p.v > out[i] {
+					out[i] = p.v
+				}
+				break
+			}
 		}
 	}
 	return out

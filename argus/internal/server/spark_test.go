@@ -11,7 +11,9 @@ import (
 func TestDailyDeltas(t *testing.T) {
 	loc := time.FixedZone("viewer", 2*3600)
 	today0 := time.Date(2026, 9, 14, 0, 0, 0, 0, loc)
-	day := func(off int, hour int) int64 { return today0.AddDate(0, 0, off).Add(time.Duration(hour) * time.Hour).Unix() }
+	day := func(off int, hour int) int64 {
+		return today0.AddDate(0, 0, off).Add(time.Duration(hour) * time.Hour).Unix()
+	}
 
 	t.Run("normal growth with dip and reset", func(t *testing.T) {
 		pts := []dailyPt{
@@ -75,4 +77,36 @@ func TestDailyDeltas(t *testing.T) {
 			t.Fatalf("len = %d, want 7", len(got))
 		}
 	})
+}
+
+// dailyMaxes handles the ".today" sawtooth counters (reset at midnight, rise all day): a closed
+// day's bucket is its final total (the peak), today's is the running total, an empty day stays 0.
+func TestDailyMaxes(t *testing.T) {
+	loc := time.FixedZone("viewer", 2*3600)
+	today0 := time.Date(2026, 9, 14, 0, 0, 0, 0, loc)
+	day := func(off int, hour int) int64 {
+		return today0.AddDate(0, 0, off).Add(time.Duration(hour) * time.Hour).Unix()
+	}
+
+	pts := []dailyPt{
+		// d-2: rises to 1000 by the day's end
+		{day(-2, 6), 400}, {day(-2, 23), 1000},
+		// d-1: rises to 1012 (out-of-order input on purpose)
+		{day(-1, 23), 1012}, {day(-1, 3), 100},
+		// today: post-midnight reset, running total 1234 (the live lastvalue)
+		{day(0, 0), 3}, {day(0, 10), 1234},
+	}
+	got := dailyMaxes(pts, today0, 7)
+	if len(got) != 7 {
+		t.Fatalf("len = %d, want 7", len(got))
+	}
+	want := []float64{0, 0, 0, 0, 1000, 1012, 1234}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("bucket %d = %v, want %v (all: %v)", i, got[i], want[i], got)
+		}
+	}
+	if out := dailyMaxes(nil, today0, 3); len(out) != 3 {
+		t.Fatalf("no data: len = %d, want 3", len(out))
+	}
 }

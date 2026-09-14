@@ -14,9 +14,10 @@ zabbix_export:
         port (e.g. http://adguard.example.lan or :3000). If the admin UI has a login, set {$ADGUARD.USER}
         and {$ADGUARD.PASSWORD} (sent as HTTP Basic auth); leave them blank if it has none. A real
         per-name resolve check comes from the Argus DNS resolution add-on the AdGuard class also
-        attaches. The host's own interface is the AdGuard box's IP (Base Ping). The stat counters are
-        totals over AdGuard's own statistics-retention window, so they read as a slowly moving gauge.
-        DESIGN section 5.
+        attaches. The host's own interface is the AdGuard box's IP (Base Ping). The query/blocked
+        counters are "today so far" values read from AdGuard's own per-interval stats arrays (the
+        numbers its dashboard shows), so they reset at midnight and rise through the day; the daily
+        bar chart reads each past day's total as that day's peak. DESIGN section 5.
       groups:
         - name: Templates/Argus
       items:
@@ -34,7 +35,21 @@ zabbix_export:
             var p = JSON.parse(value);
             if (!p.url) { throw 'set {$ADGUARD.URL} on the host'; }
             var base = String(p.url).replace(/\/+$/, '');
-            var out = { running: 0, protection: 0, version: '', queries: 0, blocked: 0, block_pct: 0, avg_time: 0 };
+            var out = { running: 0, protection: 0, version: '', queries_today: 0, blocked_today: 0, block_pct: 0, avg_time: 0 };
+            // Today's counts come from AdGuard's own per-interval stats arrays - the same numbers
+            // its dashboard shows. time_units 'days': the LAST entry is the current (partial) day.
+            // time_units 'hours' (24h stats retention): the last entry is the current hour - sum
+            // the entries since midnight. (getHours() is the poller's clock; with a 24h retention
+            // the sum is approximate if the AdGuard box keeps a different timezone.)
+            function today(arr, units) {
+              if (!arr || !arr.length) { return 0; }
+              if (units === 'hours') {
+                var n = Math.min(new Date().getHours() + 1, arr.length), s = 0;
+                for (var i = arr.length - n; i < arr.length; i++) { s += Number(arr[i]) || 0; }
+                return s;
+              }
+              return Number(arr[arr.length - 1]) || 0;
+            }
             var req = new HttpRequest();
             req.addHeader('Accept: application/json');
             if (p.user) { req.addHeader('Authorization: Basic ' + btoa(p.user + ':' + (p.pass || ''))); }
@@ -54,8 +69,8 @@ zabbix_export:
               if (req.getStatus() === 200) {
                 var stats = JSON.parse(stResp);
                 var q = Number(stats.num_dns_queries) || 0, b = Number(stats.num_blocked_filtering) || 0;
-                out.queries = q;
-                out.blocked = b;
+                out.queries_today = today(stats.dns_queries, stats.time_units);
+                out.blocked_today = today(stats.blocked_filtering, stats.time_units);
                 out.block_pct = q > 0 ? Math.round(b / q * 1000) / 10 : 0;
                 out.avg_time = Number(stats.avg_processing_time) || 0;
               }
@@ -127,36 +142,36 @@ zabbix_export:
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d
-        - uuid: 1e34061d94dc4d22bcc2f0452ad15e66
-          name: 'DNS queries'
+        - uuid: f7a7651c6b89439b8fe3bdd592c413e1
+          name: 'DNS queries today'
           type: DEPENDENT
-          key: adguard.queries
+          key: adguard.queries.today
           delay: '0'
           history: 7d
           trends: 365d
           value_type: UNSIGNED
-          description: 'Total DNS queries over AdGuard''s statistics-retention window.'
+          description: 'DNS queries handled since midnight, from AdGuard''s own per-day stats (the dashboard''s number). Resets at midnight; a past day''s total is the day''s peak (trend max).'
           master_item:
             key: adguard.raw
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$.queries'
-        - uuid: cc5c126f94b643b9b6248e6aecdbc394
-          name: 'Blocked queries'
+                - '$.queries_today'
+        - uuid: 61933dc5e983420aa0c5cf14af65962c
+          name: 'Blocked queries today'
           type: DEPENDENT
-          key: adguard.blocked
+          key: adguard.blocked.today
           delay: '0'
           history: 7d
           trends: 365d
           value_type: UNSIGNED
-          description: 'Queries blocked by filtering over the statistics-retention window.'
+          description: 'Queries blocked by filtering since midnight, from AdGuard''s own per-day stats. Resets at midnight; a past day''s total is the day''s peak (trend max).'
           master_item:
             key: adguard.raw
           preprocessing:
             - type: JSONPATH
               parameters:
-                - '$.blocked'
+                - '$.blocked_today'
         - uuid: d1497d0ce18e44c4823002abcccbc49c
           name: 'Block rate'
           type: DEPENDENT

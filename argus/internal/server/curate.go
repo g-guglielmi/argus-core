@@ -391,9 +391,9 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "", "", "", "", false
 	case "adguard.block_pct":
 		return "DNS", "Block rate", "", "", true
-	case "adguard.queries":
+	case "adguard.queries.today":
 		return "DNS", "DNS queries", "DNS activity", "Total", true
-	case "adguard.blocked":
+	case "adguard.blocked.today":
 		return "DNS", "Blocked queries", "DNS activity", "Blocked", true
 	case "adguard.avg_time":
 		return "DNS", "Average processing time", "", "", true
