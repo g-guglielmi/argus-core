@@ -110,3 +110,32 @@ func TestDailyMaxes(t *testing.T) {
 		t.Fatalf("no data: len = %d, want 3", len(out))
 	}
 }
+
+// dailyCloses handles daily ratios (block rate): a day's bucket is its LAST reading - the closed
+// day's final rate, or today's current rate - never the noisy intraday peak.
+func TestDailyCloses(t *testing.T) {
+	loc := time.FixedZone("viewer", 2*3600)
+	today0 := time.Date(2026, 9, 14, 0, 0, 0, 0, loc)
+	day := func(off int, hour int) int64 {
+		return today0.AddDate(0, 0, off).Add(time.Duration(hour) * time.Hour).Unix()
+	}
+	pts := []dailyPt{
+		// d-1: spikes to 66 early (small sample), settles at 4.4 by the day's end
+		{day(-1, 0), 66}, {day(-1, 23), 4.4},
+		// today: currently 19.8 (out-of-order input on purpose)
+		{day(0, 10), 19.8}, {day(0, 1), 50},
+	}
+	got := dailyCloses(pts, today0, 3)
+	want := []float64{0, 4.4, 19.8}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("bucket %d = %v, want %v (all: %v)", i, got[i], want[i], got)
+		}
+	}
+	// dailyMode routes the three shapes.
+	for k, m := range map[string]string{"adguard.queries.today": "max", "adguard.block_pct": "close", "adguard.queries": "delta"} {
+		if got := dailyMode(k); got != m {
+			t.Fatalf("dailyMode(%s) = %s, want %s", k, got, m)
+		}
+	}
+}

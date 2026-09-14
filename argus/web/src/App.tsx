@@ -43,6 +43,9 @@ const RANGES = ['2h', '2d', '1M', '3M', '6M', '1Y']
 // into bar mode; the convention is a ".today" key suffix (the /api/daily endpoint keys on it too).
 const RANGES_BARS = ['7d', '1M', '3M', '6M', '1Y']
 const BAR_COUNTER_KEYS = new Set(['adguard.queries.today', 'adguard.blocked.today'])
+// Daily-ratio sensors (block rate: resets at midnight, converges through the day) bar-chart too,
+// but a day's bar is its CLOSING reading, not its peak (the intraday max is small-sample noise).
+const BAR_RATE_KEYS = new Set(['adguard.block_pct'])
 
 const stateColor: Record<string, string> = { ok: 'var(--ok)', warning: 'var(--warn)', error: 'var(--err)' }
 const stateRank: Record<string, number> = { ok: 0, warning: 1, error: 2 }
@@ -3723,9 +3726,9 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
   }
 
   const sparks = useSparks((items || []).filter((i) => i.numeric && i.supported).map((i) => i.id))
-  // Counter-total items (AdGuard queries/blocked) additionally get per-day growth buckets, for the
-  // "today" headline and the daily mini bars (the raw rolling total is useless in both spots).
-  const dailies = useDailies((items || []).filter((i) => i.numeric && BAR_COUNTER_KEYS.has(i.key.replace(/\[.*$/, ''))).map((i) => i.id))
+  // Daily-resetting items (AdGuard's today counters + block rate) additionally get per-day
+  // buckets, for the daily mini bars in their rows.
+  const dailies = useDailies((items || []).filter((i) => { const b = i.key.replace(/\[.*$/, ''); return i.numeric && (BAR_COUNTER_KEYS.has(b) || BAR_RATE_KEYS.has(b)) }).map((i) => i.id))
 
   if (error) return <div style={{ color: 'var(--err)', padding: '0.4rem 0' }}>{error}</div>
   if (!items) return <Skeleton rows={3} cols={4} />
@@ -3972,6 +3975,9 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                 if (unacked.length) { actions.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => unacked.forEach((p) => ack(p, s)) }); if (acts.length) actions.push({ sep: true, label: '' }) }
                 actions.push(...acts)
                 const trendColor = st ? healthColor(st, itemAcked[it.id]) : 'var(--accent)'
+                // A daily-ratio sensor (block rate) charts as daily bars and minis like the
+                // counter group above it - one bar per day, the day's closing rate.
+                const barRate = BAR_RATE_KEYS.has(it.key.replace(/\[.*$/, ''))
                 return (
                   <Fragment key={it.id}>
                     {catRow}
@@ -3989,7 +3995,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                           ? (() => { const [dv, du] = readingParts(it.last_value, it.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })()
                           : <span style={{ color: 'var(--err)' }}>not supported</span>}
                       </td>
-                      <td className="strend">{it.numeric && it.supported ? <Spark values={sparks[it.id]} color={trendColor} width={168} /> : null}</td>
+                      <td className="strend">{it.numeric && it.supported ? (barRate ? <BarSpark total={dailies[it.id]} width={168} /> : <Spark values={sparks[it.id]} color={trendColor} width={168} />) : null}</td>
                       <td className="prio-cell" data-label="Priority"><PriorityStars value={it.priority} canEdit={canPause} onSet={(p) => setItemPriority(it, p)} /></td>
                       <td>
                         <div className="lccell">
@@ -3999,7 +4005,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                       </td>
                     </tr>
                     {open && clickable && (
-                      <tr className="chartrow"><td colSpan={5}><div className="chart-reveal"><SensorChart itemId={it.id} units={it.units} color={trendColor} /></div></td></tr>
+                      <tr className="chartrow"><td colSpan={5}><div className="chart-reveal"><SensorChart itemId={it.id} units={it.units} color={trendColor} bars={barRate} /></div></td></tr>
                     )}
                   </Fragment>
                 )
@@ -4362,8 +4368,10 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
   return [opts, [gx, gv] as uPlot.AlignedData]
 }
 
-function SensorChart({ itemId, units, color = 'var(--accent)' }: { itemId: string; units: string; color?: string }) {
-  const [range, setRange] = useState('2h')
+// bars switches to the daily bar mode for a single daily-ratio sensor (block rate): one bar per
+// day = the day's closing rate, with the day-scale range tabs.
+function SensorChart({ itemId, units, color = 'var(--accent)', bars }: { itemId: string; units: string; color?: string; bars?: boolean }) {
+  const [range, setRange] = useState(bars ? '7d' : '2h')
   const [data, setData] = useState<Series | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -4396,23 +4404,28 @@ function SensorChart({ itemId, units, color = 'var(--accent)' }: { itemId: strin
     let slowTimer: ReturnType<typeof setTimeout> | undefined
     if (fresh) slowTimer = setTimeout(() => { if (!cancelled) setShowLoading(true) }, 300)
     setError(null)
-    fetch(`/api/items/${itemId}/history?range=${range}`)
-      .then(async (r) => { if (!r.ok) throw new Error(await errText(r, 'Failed to load history')); return r.json() })
+    const get = (rk: string) => fetch(`/api/items/${itemId}/history?range=${rk}`)
+      .then(async (r) => { if (!r.ok) throw new Error(await errText(r, 'Failed to load history')); return r.json() as Promise<Series> })
+    // Bar mode: the day-scale ranges are trend-backed and trends lag the still-open hour - merge a
+    // short raw-history tail so today's bar tracks the live reading (same as the group bar chart).
+    ;(bars ? Promise.all([get(range), get('2h')]).then(([a, b]) => ({ ...a, points: [...a.points, ...b.points] })) : get(range))
       .then((d: Series) => { if (!cancelled) setData(d) })
       .catch((e) => { if (!cancelled) { setError(e.message || 'Failed to load history'); setData(null) } })
       .finally(() => { if (slowTimer) clearTimeout(slowTimer); if (!cancelled) { setLoading(false); setShowLoading(false) } })
     return () => { cancelled = true; if (slowTimer) clearTimeout(slowTimer) }
-  }, [itemId, range, tick])
+  }, [itemId, range, tick, bars])
 
   useEffect(() => {
     if (plot.current) { plot.current.destroy(); plot.current = null }
     if (!host.current || !data || data.points.length === 0) return
     const width = host.current.clientWidth || 600
-    const [opts, aligned] = buildPlot(data, units, width, chartColors(color), (z) => { zoomedRef.current = z })
+    const [opts, aligned] = bars
+      ? buildBarPlot([{ label: data.name || 'value', units, points: data.points.map((p) => ({ t: p.t, v: p.v ?? p.avg ?? null, hi: p.max ?? null })) }], width, chartColors(color), 'close', (z) => { zoomedRef.current = z })
+      : buildPlot(data, units, width, chartColors(color), (z) => { zoomedRef.current = z })
     plot.current = new uPlot(opts, aligned, host.current)
     colorLegendChecks(plot.current)
     return () => { if (plot.current) { plot.current.destroy(); plot.current = null } }
-  }, [data, units, color, themeTick])
+  }, [data, units, color, themeTick, bars])
 
   useEffect(() => {
     function onResize() { if (plot.current && host.current) plot.current.setSize({ width: host.current.clientWidth, height: 320 }) }
@@ -4423,7 +4436,7 @@ function SensorChart({ itemId, units, color = 'var(--accent)' }: { itemId: strin
   return (
     <div>
       <div className="rtabs">
-        {RANGES.map((rk) => (
+        {(bars ? RANGES_BARS : RANGES).map((rk) => (
           <button key={rk} className={'rtab' + (range === rk ? ' on' : '')} onClick={() => setRange(rk)}>{rk}</button>
         ))}
       </div>
@@ -4588,35 +4601,38 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   return [opts, [gx, ...dropIsolated(gy)] as uPlot.AlignedData]
 }
 
-// buildBarPlot renders "today so far" sawtooth counters (AdGuard's queries/blocked today - reset
-// at midnight, rising through the day) as one stacked bar per LOCAL calendar day: a day's bar is
-// the day's PEAK reading - a closed day's final total, today's running total (live via the raw
-// tail the caller merges in). Channels are nested (each a subset of the one before: blocked ⊆
-// total), so bars simply overlay - the full bar is the first channel, later ones paint their share
-// on top from the baseline. The line-chart passes (gap insertion, isolated-point drop, LOCF) don't
-// apply here: a lone bar must render; a day with no readings at all stays a hole, not a zero.
-function buildBarPlot(series: { label: string; units: string; points: { t: number; v: number | null; hi?: number | null }[] }[], width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
+// buildBarPlot renders daily-resetting sensors as one bar per LOCAL calendar day. mode 'max' is
+// for "today so far" sawtooth counters (AdGuard's queries/blocked today - reset at midnight,
+// rising all day): a day's bar is the day's PEAK reading - a closed day's final total, today's
+// running total (live via the raw tail the caller merges in). mode 'close' is for daily RATIOS
+// (block rate - converges through the day): a day's bar is its LAST reading. Channels are nested
+// (each a subset of the one before: blocked ⊆ total), so bars simply overlay - the full bar is
+// the first channel, later ones paint their share on top from the baseline. The line-chart passes
+// (gap insertion, isolated-point drop, LOCF) don't apply here: a lone bar must render; a day with
+// no readings at all stays a hole, not a zero.
+function buildBarPlot(series: { label: string; units: string; points: { t: number; v: number | null; hi?: number | null }[] }[], width: number, c: ChartColors, mode: 'max' | 'close', onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
   // Local-midnight bucketing via Date (DST-correct; t - t%86400 would give UTC midnight).
   const dayStart = (t: number) => { const d = new Date(t * 1000); d.setHours(0, 0, 0, 0); return Math.round(d.getTime() / 1000) }
   const dayStep = (d0: number, n: number) => { const d = new Date(d0 * 1000); d.setDate(d.getDate() + n); d.setHours(0, 0, 0, 0); return Math.round(d.getTime() / 1000) }
-  // Peak reading of each local day, per channel. Trend points carry hi (the hour's MAX): prefer it
-  // over v (the mid-hour average) so a closed day's bucket is its true final total (/api/daily
-  // computes the row's buckets the same way).
+  // One value per local day, per channel. 'max': prefer a trend point's hi (the hour's MAX) over
+  // v (the mid-hour average) so a closed day's bucket is its true final total. 'close': track the
+  // latest reading by clock, on v (a ratio's hour-max is intraday noise; its closing hour's avg ≈
+  // the day's final rate). /api/daily computes the row's buckets the same way.
   const byDay = series.map((s) => {
-    const m = new Map<number, number>()
+    const m = new Map<number, { t: number; v: number }>()
     s.points.forEach((p) => {
-      const pv = p.hi ?? p.v
+      const pv = mode === 'close' ? p.v : (p.hi ?? p.v)
       if (pv == null) return
       const d = dayStart(p.t)
       const cur = m.get(d)
-      if (cur == null || pv > cur) m.set(d, pv)
+      if (mode === 'close' ? (!cur || p.t >= cur.t) : (!cur || pv > cur.v)) m.set(d, { t: p.t, v: pv })
     })
     return m
   })
   const daySet = new Set<number>()
   byDay.forEach((m) => m.forEach((_v, d) => daySet.add(d)))
   const days = [...daySet].sort((a, b) => a - b)
-  const deltas = byDay.map((m) => days.map((d) => m.get(d) ?? null))
+  const deltas = byDay.map((m) => days.map((d) => m.get(d)?.v ?? null))
   // A nested channel can't exceed its parent (a stats reset can briefly desync the two totals).
   for (let i = 1; i < deltas.length; i++) deltas[i] = deltas[i].map((v, j) => { const p = deltas[i - 1][j]; return v == null || p == null ? v : Math.min(v, p) })
   // Bars center on noon; pad the x axis to whole days on both sides (via null edge columns, like
@@ -4721,7 +4737,7 @@ function SensorGroupChart({ channels, bars }: { channels: GroupChan[]; bars?: bo
     const to = Math.floor(Date.now() / 1000)
     const from = to - (RANGE_SECS[range] || 7200)
     const [opts, aligned] = bars
-      ? buildBarPlot(series, width, chartColors('var(--accent)'), (z) => { zoomedRef.current = z })
+      ? buildBarPlot(series, width, chartColors('var(--accent)'), 'max', (z) => { zoomedRef.current = z })
       : buildMultiPlot(series, width, chartColors('var(--accent)'), [from, to], (z) => { zoomedRef.current = z })
     plot.current = new uPlot(opts, aligned, host.current)
     colorLegendChecks(plot.current)
