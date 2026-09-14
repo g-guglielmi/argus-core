@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 g-guglielmi
+
 // Package secret provides authenticated encryption (AES-256-GCM) for sensitive values stored at
 // rest - notification channel credentials, TOTP seeds, and the alert-link signing key.
 //

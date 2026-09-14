@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 g-guglielmi
+
 // Argus CORE appliance golden image (DESIGN §14d). Builds on top of the official Debian 13 (trixie)
 // "generic" cloud qcow2 - the same base and build pattern as the probe golden image (argus-probe repo,
 // deploy/probe-vm): the cloud image boots in seconds under plain TCG (GitHub runners have no KVM

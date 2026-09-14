@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 g-guglielmi
+
 // Package provision owns the device-class catalog (DESIGN §5) and the Zabbix templates that back it:
 // the registry the attach UI/discovery choose from, and the startup reconcile that imports the
 // hand-authored class templates into Zabbix. It is a leaf on the store + zabbix client, like notify.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 g-guglielmi
+
 // Transient feedback (toasts): "Saved", "Test notification sent", "Could not delete…" - shown for a few
 // seconds in a corner and gone, instead of the persistent inline text lines the views used to leave behind.
 // Usage: const toast = useToast(); toast.success('Channel saved.'); toast.error(msg)

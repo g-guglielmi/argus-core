@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+
 # Drive temperatures for unRAID's SNMP plugin, read from the emhttp state file: returns
 # instantly, output is atomic (no partial reads), and no disk is ever woken. Temperatures
 # refresh at unRAID's own SMART polling cadence (Settings -> Disk Settings ->

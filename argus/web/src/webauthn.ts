@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 g-guglielmi
+
 // WebAuthn/passkey helpers. The server speaks base64url JSON (go-webauthn); the browser
 // credential API speaks ArrayBuffers, so we convert on the way in and out.
 

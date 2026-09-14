@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 g-guglielmi
+
 // Package settings manages the subset of configuration that an admin can change at runtime
 // from the UI (Zabbix connection, public URL, timezone, login rate limits).
 //

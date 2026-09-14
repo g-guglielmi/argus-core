@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+
 # gen-certs.sh - the monitoring PKI: ONE shared CA, ONE core (server) cert,
 # and ONE UNIQUE client cert per site for mutual-TLS proxy<->server auth.
 #

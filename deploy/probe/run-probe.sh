@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+
 # run-probe.sh - deploy a Zabbix ACTIVE proxy as a single container (mTLS, 7-day offline buffer).
 # No inbound port is published: an active proxy DIALS OUT to the core, so remote sites need
 # only outbound access to core:10051.

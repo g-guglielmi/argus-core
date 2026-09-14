@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+
 # setup-core.sh - install & configure the monitoring core on a Debian 12/13 / Ubuntu 24.04 VM:
 #   Zabbix 7.0 LTS (server + nginx frontend, which serves the JSON-RPC API)
 #   PostgreSQL + TimescaleDB (Zabbix's history/trends store = your time-series DB)

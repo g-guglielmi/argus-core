@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 g-guglielmi
+
 // In-app dialogs (confirm / prompt) so the UI never falls back to native browser popups.
 // Usage: const confirm = useConfirm(); if (!(await confirm({ message: '…', danger: true }))) return
 //        const prompt = usePrompt(); const v = await prompt({ label: '…', type: 'password' })

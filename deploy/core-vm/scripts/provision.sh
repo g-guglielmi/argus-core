@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+
 # Provision the Argus CORE appliance golden image on top of the stock Debian cloud image: install the
 # full core stack (Zabbix 7.0 server + nginx frontend + PostgreSQL/TimescaleDB via setup-core.sh in
 # image mode), Docker + the argus / argus-updater images, and the appliance systemd units + first-boot

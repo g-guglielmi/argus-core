@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 g-guglielmi
+
 // Shared UI primitives - the one design-system layer for the SPA. These wrap the
 // token-based classes in theme.css (.btn, .card, .field, .banner, .badge) so the same
 // widgets look and behave the same across every view, instead of being rebuilt ad-hoc

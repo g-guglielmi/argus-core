@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 g-guglielmi
+
 // Package buildinfo carries build-time metadata stamped into the binary via -ldflags.
 package buildinfo
 

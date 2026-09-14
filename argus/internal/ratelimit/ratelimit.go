@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 g-guglielmi
+
 // Package ratelimit provides a small in-memory sliding-window failure counter, used to throttle
 // repeated failed logins (brute-force protection). It is process-local and lock-guarded.
 package ratelimit
