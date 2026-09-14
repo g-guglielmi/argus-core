@@ -27,11 +27,11 @@ func (s *Server) handleSeedISO(w http.ResponseWriter, r *http.Request) {
 		Token     string `json:"token"`
 		EnrollURL string `json:"enroll_url"`
 		CoreHost  string `json:"core_host"`
-		Keymap    string `json:"keymap"` // console keyboard layout, e.g. "it" (default "us" on the VM)
+		Keymap    string `json:"keymap"`    // console keyboard layout, e.g. "it" (default "us" on the VM)
 		StaticIP  string `json:"static_ip"` // static networking (no DHCP); blank = DHCP
 		Prefix    string `json:"prefix"`    // "24" or a dotted mask "255.255.255.0"
 		Gateway   string `json:"gateway"`
-		DNS       string `json:"dns"` // comma/space separated
+		DNS       string `json:"dns"`  // comma/space separated
 		Name      string `json:"name"` // proxy name, for the download filename only
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {

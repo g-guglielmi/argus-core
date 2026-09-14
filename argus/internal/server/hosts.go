@@ -32,32 +32,32 @@ func severityState(sev int) string {
 }
 
 type hostView struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Problems int    `json:"problems"`
-	Severity int    `json:"severity"` // -1 when no active problem, else 0..5
-	State       string   `json:"state"`  // ok | warning | error
-	Paused      bool     `json:"paused"` // disabled in Zabbix (stopped collecting)
-	Hidden      bool     `json:"hidden"` // Argus-side suppression (still collecting)
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Problems    int      `json:"problems"`
+	Severity    int      `json:"severity"` // -1 when no active problem, else 0..5
+	State       string   `json:"state"`    // ok | warning | error
+	Paused      bool     `json:"paused"`   // disabled in Zabbix (stopped collecting)
+	Hidden      bool     `json:"hidden"`   // Argus-side suppression (still collecting)
 	PausedUntil *int64   `json:"paused_until,omitempty"`
 	HiddenUntil *int64   `json:"hidden_until,omitempty"`
-	Groups      []string `json:"groups"`             // host groups (drive the site tree)
-	ProxyID     string   `json:"proxy_id,omitempty"` // "" / "0" = monitored by the server
-	ClassID     string   `json:"class_id,omitempty"` // device class overlay id, "" when unclassified
-	Icon        string   `json:"icon"`               // tree glyph name (device/server/switch/…); see web devIcon
+	Groups      []string `json:"groups"`              // host groups (drive the site tree)
+	ProxyID     string   `json:"proxy_id,omitempty"`  // "" / "0" = monitored by the server
+	ClassID     string   `json:"class_id,omitempty"`  // device class overlay id, "" when unclassified
+	Icon        string   `json:"icon"`                // tree glyph name (device/server/switch/…); see web devIcon
 	IcmpItem    string   `json:"icmp_item,omitempty"` // icmppingsec item id (for the row's sparkline), "" if none
 	IcmpMs      *float64 `json:"icmp_ms,omitempty"`   // last ICMP response time in ms, nil when unknown
 }
 
 type itemView struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Key       string `json:"key"`
-	LastValue string `json:"last_value"`
-	Units     string `json:"units"`
-	LastClock int64  `json:"last_clock"` // unix seconds, 0 if never
-	Supported bool   `json:"supported"`
-	Enabled   bool   `json:"enabled"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Key         string `json:"key"`
+	LastValue   string `json:"last_value"`
+	Units       string `json:"units"`
+	LastClock   int64  `json:"last_clock"` // unix seconds, 0 if never
+	Supported   bool   `json:"supported"`
+	Enabled     bool   `json:"enabled"`
 	Numeric     bool   `json:"numeric"` // graphable (value_type float or unsigned)
 	Paused      bool   `json:"paused"`  // disabled in Zabbix (stopped collecting)
 	Hidden      bool   `json:"hidden"`  // Argus-side suppression (still collecting)
@@ -175,7 +175,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 
 	hideMap, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 	pauseMap, _ := s.st.ActiveSuppressionMap(ctx, "pause", "host")
-	classMap, _ := s.st.DeviceClasses(ctx) // host id -> device-class id (drives the tree icon)
+	classMap, _ := s.st.DeviceClasses(ctx)      // host id -> device-class id (drives the tree icon)
 	pingItems, _ := s.zbx.PingLatencyItems(ctx) // host id -> icmppingsec item (drives the row latency + sparkline)
 
 	out := make([]hostView, 0, len(hosts))

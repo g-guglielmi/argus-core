@@ -413,8 +413,8 @@ func verKey(m []string) [4]int {
 }
 
 type versionResponse struct {
-	Version         string `json:"version"`              // running build (git describe), "" if un-stamped
-	Latest          string `json:"latest,omitempty"`     // newest published release, "" until resolved
+	Version         string `json:"version"`          // running build (git describe), "" if un-stamped
+	Latest          string `json:"latest,omitempty"` // newest published release, "" until resolved
 	UpdateAvailable bool   `json:"update_available"`
 	DevUpdate       bool   `json:"dev_update,omitempty"`  // a newer :testing image exists for this dev build
 	DevTarget       string `json:"dev_target,omitempty"`  // the target :testing build's version, when known

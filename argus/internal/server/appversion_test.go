@@ -4,10 +4,10 @@ import "testing"
 
 func TestAppUpdateStatus(t *testing.T) {
 	cases := []struct {
-		name       string
+		name        string
 		cur, latest string
-		wantStatus string
-		wantUpdate bool
+		wantStatus  string
+		wantUpdate  bool
 	}{
 		{"unstamped local build", "", "v0.4.10", "dev", false},
 		{"bare sha build", "abc1234", "v0.4.10", "dev", false},
@@ -44,13 +44,13 @@ func TestAppUpdateStatus(t *testing.T) {
 // release and the running version alone can't distinguish the channels.
 func TestRunningImageRef(t *testing.T) {
 	cases := []struct{ cur, want string }{
-		{"v0.4.18-6-g1baec4b", "sha-1baec4b"},   // dev build -> its commit image
-		{"v0.4.15-9-g0517cd4", "sha-0517cd4"},   // dev build
-		{"v0.4.18", "v0.4.18"},                  // clean release (aligned case) -> the release tag
-		{"0.4.18", "0.4.18"},                    // clean, no leading v
-		{"v0.4.18-dirty", ""},                   // dirty, no commit -> unidentifiable
-		{"", ""},                                // un-stamped
-		{"abc1234", ""},                         // bare sha, no semver base
+		{"v0.4.18-6-g1baec4b", "sha-1baec4b"}, // dev build -> its commit image
+		{"v0.4.15-9-g0517cd4", "sha-0517cd4"}, // dev build
+		{"v0.4.18", "v0.4.18"},                // clean release (aligned case) -> the release tag
+		{"0.4.18", "0.4.18"},                  // clean, no leading v
+		{"v0.4.18-dirty", ""},                 // dirty, no commit -> unidentifiable
+		{"", ""},                              // un-stamped
+		{"abc1234", ""},                       // bare sha, no semver base
 	}
 	for _, c := range cases {
 		if got := runningImageRef(c.cur); got != c.want {
@@ -65,12 +65,12 @@ func TestDevUpdateOffered(t *testing.T) {
 		devUpd bool
 		want   bool
 	}{
-		{"development", true, true},          // dev build with a newer testing image
-		{"current", true, true},              // clean release on :testing with a newer testing image (the bug case)
-		{"development", false, false},        // dev build, no newer testing image
-		{"current", false, false},            // aligned clean release, nothing newer
-		{"outdated", true, false},            // a release-channel box is never offered the testing image here
-		{"unknown", true, false},             // can't compare -> don't offer
+		{"development", true, true},   // dev build with a newer testing image
+		{"current", true, true},       // clean release on :testing with a newer testing image (the bug case)
+		{"development", false, false}, // dev build, no newer testing image
+		{"current", false, false},     // aligned clean release, nothing newer
+		{"outdated", true, false},     // a release-channel box is never offered the testing image here
+		{"unknown", true, false},      // can't compare -> don't offer
 	}
 	for _, c := range cases {
 		if got := devUpdateOffered(c.status, c.devUpd); got != c.want {
@@ -89,11 +89,11 @@ func TestRevisionsMatch(t *testing.T) {
 		testingRev, running string
 		want                bool
 	}{
-		{"same commit, rebuilt", sha, sha, true},                 // the loop case: different digest, same code
-		{"different commits", sha, "deadbeefcafebabe", false},    // a genuinely newer :testing build
-		{"testing revision missing", "", sha, false},             // can't establish -> don't suppress
-		{"running revision missing", sha, "", false},             // can't establish -> don't suppress
-		{"both missing", "", "", false},                          // pre-label images -> fall back to digest
+		{"same commit, rebuilt", sha, sha, true},              // the loop case: different digest, same code
+		{"different commits", sha, "deadbeefcafebabe", false}, // a genuinely newer :testing build
+		{"testing revision missing", "", sha, false},          // can't establish -> don't suppress
+		{"running revision missing", sha, "", false},          // can't establish -> don't suppress
+		{"both missing", "", "", false},                       // pre-label images -> fall back to digest
 	}
 	for _, c := range cases {
 		if got := revisionsMatch(c.testingRev, c.running); got != c.want {

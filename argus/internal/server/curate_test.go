@@ -178,8 +178,8 @@ func TestClassifyHTTPServices(t *testing.T) {
 		cat, ch   string
 	}{
 		{"adguard.block_pct", "Block rate", "DNS", ""},
-		{"adguard.queries", "DNS queries", "DNS", "Total"},
-		{"adguard.blocked", "Blocked queries", "DNS", "Blocked"},
+		{"adguard.queries.today", "DNS queries", "DNS", "Total"},
+		{"adguard.blocked.today", "Blocked queries", "DNS", "Blocked"},
 		{"adguard.avg_time", "Average processing time", "DNS", ""},
 		{"adguard.protection", "Protection enabled", "Status", ""},
 		{"adguard.version", "Version", "Status", ""},
