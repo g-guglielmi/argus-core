@@ -11,6 +11,16 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **Drill into channel groups** — a multi-channel sensor's name (ICMP, DNS activity, a disk, a
+  NIC) is now a drill link like single sensors: click it to focus just that group, chart open,
+  with its own breadcrumb and shareable URL. Deep links to a member channel now open the whole
+  group's chart too, instead of nothing.
+
+---
+
 ## [0.4.45] - 2026-09-15
 
 **AdGuard's daily numbers are now exact — true midnight-to-midnight days, one source of truth.**
