@@ -68,10 +68,12 @@ zabbix_export:
               var stResp = req.get(base + '/control/stats');
               if (req.getStatus() === 200) {
                 var stats = JSON.parse(stResp);
-                var q = Number(stats.num_dns_queries) || 0, b = Number(stats.num_blocked_filtering) || 0;
                 out.queries_today = today(stats.dns_queries, stats.time_units);
                 out.blocked_today = today(stats.blocked_filtering, stats.time_units);
-                out.block_pct = q > 0 ? Math.round(b / q * 1000) / 10 : 0;
+                // Block rate over TODAY's traffic, so it agrees with the queries/blocked row above
+                // it (the old num_* ratio spanned AdGuard's whole retention window - a long-run
+                // average that visibly disagreed with the day's numbers).
+                out.block_pct = out.queries_today > 0 ? Math.round(out.blocked_today / out.queries_today * 1000) / 10 : 0;
                 out.avg_time = Number(stats.avg_processing_time) || 0;
               }
             } catch (e) {}
@@ -181,7 +183,7 @@ zabbix_export:
           trends: 365d
           value_type: FLOAT
           units: '%'
-          description: 'Blocked queries as a percentage of all queries.'
+          description: 'Blocked queries as a percentage of today''s queries - the same day the DNS activity row counts.'
           master_item:
             key: adguard.raw
           preprocessing:

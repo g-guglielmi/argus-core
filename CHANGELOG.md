@@ -14,17 +14,18 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 **Added:**
-- **"Today" reading for AdGuard's DNS activity** — the row now reads the midnight-to-midnight count
-  so far ("12403 queries · 941 blocked today", in your timezone) instead of AdGuard's raw rolling
-  totals, and its mini trend graph is now seven tiny stacked daily bars — a miniature of the big
-  chart, last bar growing through the day. Backed by a new `/api/daily` endpoint that turns counter
-  totals into per-day growth buckets.
+- **AdGuard now counts today, honestly** — the queries/blocked sensors read **"today so far"**
+  straight from AdGuard's own per-day statistics (the numbers its dashboard shows): the row says
+  "12403 queries · 941 blocked today", the mini trend graph is seven tiny stacked daily bars, and
+  the big chart's bar per day is exact — a closed day's bar is that day's real total. Backed by a
+  new `/api/daily` endpoint. **Block rate** now measures today's traffic too, so the whole DNS
+  section agrees with itself. (Replaces the previous rolling-window totals, whose day-over-day
+  deltas could read "0 blocked" all day and quietly understated queries — those items are removed
+  on upgrade, so the daily bars restart from the day you update.)
 
 **Fixed:**
-- **Daily bar chart on a fresh device** — a bar's baseline now falls back to the day's own first
-  reading when the previous day has no data, so a just-added AdGuard shows today's bar immediately
-  (before, the chart stayed empty until two full days of history existed) and a post-outage day
-  shows what it actually saw.
+- **Daily bar chart on a fresh device** — a just-added AdGuard shows today's bar immediately
+  (before, the chart stayed empty until two full days of history existed).
 - **Stale frontend after a self-update** — the app now serves its page shell with an explicit
   `no-cache` policy (and the hashed asset bundles as immutable), so a browser tab can no longer
   keep running the previous build's frontend after the core updates underneath it. Charts and
