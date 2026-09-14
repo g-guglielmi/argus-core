@@ -3803,13 +3803,18 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
     // A DNS name reads by what it resolves to (the IP), collapsing the pass/fail + timing channels;
     // response time drives the sparkline. A name that isn't resolving says so instead.
     if (cat === 'DNS') {
-      // AdGuard's activity group reads TODAY's counts - the Total/Blocked items ARE "today so far"
-      // counters (AdGuard's own per-day stats), so the live readings are the headline:
-      // "12403 queries · 941 blocked today". Total is the primary. The per-name resolve groups
-      // below read by their Resolved IP instead.
+      // AdGuard's activity group reads TODAY's counts - the bucket /api/daily assigned to today's
+      // LOCAL date, not the raw reading: AdGuard's stats day is UTC-aligned, so between local
+      // midnight and its rollover the raw counter still carries yesterday's total; the today
+      // bucket is honestly 0 then (matching the chart's empty today column). Total is primary.
+      // The per-name resolve groups below read by their Resolved IP instead.
       const tot = gi.find((x) => x.channel === 'Total'), blk = gi.find((x) => x.channel === 'Blocked')
       if (tot || blk) {
-        const node = <span>{reading(tot) ?? '—'} queries &nbsp;·&nbsp; {reading(blk) ?? '—'} blocked <span style={{ color: 'var(--faint)', fontSize: 11 }}>today</span></span>
+        const today = (it?: SensorItem) => { const a = it && dailies[it.id]; return a && a.length ? a[a.length - 1] : undefined }
+        const tq = today(tot), tb = today(blk)
+        const node = tq == null
+          ? <span style={{ color: 'var(--muted)' }}>…</span>
+          : <span>{fmtNum(tq, '')} queries &nbsp;·&nbsp; {tb == null ? '—' : fmtNum(tb, '')} blocked <span style={{ color: 'var(--faint)', fontSize: 11 }}>today</span></span>
         return { node, primary: tot || gi[0] }
       }
       const ip = gi.find((x) => x.channel === 'Resolved IP')
@@ -4614,16 +4619,21 @@ function buildBarPlot(series: { label: string; units: string; points: { t: numbe
   // Local-midnight bucketing via Date (DST-correct; t - t%86400 would give UTC midnight).
   const dayStart = (t: number) => { const d = new Date(t * 1000); d.setHours(0, 0, 0, 0); return Math.round(d.getTime() / 1000) }
   const dayStep = (d0: number, n: number) => { const d = new Date(d0 * 1000); d.setDate(d.getDate() + n); d.setHours(0, 0, 0, 0); return Math.round(d.getTime() / 1000) }
-  // One value per local day, per channel. 'max': prefer a trend point's hi (the hour's MAX) over
-  // v (the mid-hour average) so a closed day's bucket is its true final total. 'close': track the
-  // latest reading by clock, on v (a ratio's hour-max is intraday noise; its closing hour's avg ≈
-  // the day's final rate). /api/daily computes the row's buckets the same way.
+  // One value per day, per channel. Readings group by the SOURCE's day: AdGuard's stats days are
+  // UTC-aligned regardless of host timezone, so the counters roll after local midnight for a
+  // viewer east of UTC - group by UTC day and credit the whole day to the local calendar date of
+  // its midpoint (between local midnight and the rollover, "today" stays honestly empty and
+  // yesterday's bar finishes growing, like AdGuard's own graph). 'max': prefer a trend point's hi
+  // (the hour's MAX) over v (the mid-hour average) so a closed day's bucket is its true final
+  // total. 'close': track the latest reading by clock, on v (a ratio's hour-max is intraday
+  // noise; its closing hour's avg ≈ the day's final rate). /api/daily buckets the same way.
+  const srcDayMid = (t: number) => Math.floor(t / 86400) * 86400 + 43200
   const byDay = series.map((s) => {
     const m = new Map<number, { t: number; v: number }>()
     s.points.forEach((p) => {
       const pv = mode === 'close' ? p.v : (p.hi ?? p.v)
       if (pv == null) return
-      const d = dayStart(p.t)
+      const d = dayStart(srcDayMid(p.t))
       const cur = m.get(d)
       if (mode === 'close' ? (!cur || p.t >= cur.t) : (!cur || pv > cur.v)) m.set(d, { t: p.t, v: pv })
     })

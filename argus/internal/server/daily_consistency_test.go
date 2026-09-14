@@ -23,20 +23,21 @@ func TestDailyVsChartConsistency(t *testing.T) {
 	now := time.Date(2026, 9, 14, 14, 37, 22, 0, loc)
 	today0 := time.Date(2026, 9, 14, 0, 0, 0, 0, loc)
 	// Sawtooth: per-day totals; today reaches 1234 at "now". Within a day the count rises
-	// linearly; at midnight it resets to 0.
-	dataStart := today0.AddDate(0, 0, -2)
+	// linearly; the day boundary is the SOURCE's - AdGuard's stats days are UTC-aligned, so for
+	// this UTC+2 viewer the counter rolls at 02:00 local (the lab bug: at 00:06 local the raw
+	// reading still carried yesterday's total).
+	nowUTCDay := now.Unix() / 86400
+	dataStart := time.Unix((nowUTCDay-2)*86400, 0)
 	dayTotal := map[int64]float64{
-		today0.AddDate(0, 0, -2).Unix(): 1000,
-		today0.AddDate(0, 0, -1).Unix(): 1012,
-		today0.Unix():                   1234 * 86400 / now.Sub(today0).Seconds(),
+		nowUTCDay - 2: 1000,
+		nowUTCDay - 1: 1012,
+		nowUTCDay:     1234 * 86400 / float64(now.Unix()%86400),
 	}
 	valueAt := func(ts time.Time) float64 {
 		if ts.Before(dataStart) {
 			return 0
 		}
-		y, m, d := ts.In(loc).Date()
-		d0 := time.Date(y, m, d, 0, 0, 0, 0, loc)
-		return dayTotal[d0.Unix()] * ts.Sub(d0).Seconds() / 86400
+		return dayTotal[ts.Unix()/86400] * float64(ts.Unix()%86400) / 86400
 	}
 	lastValue := valueAt(now)
 
@@ -131,7 +132,8 @@ func TestDailyVsChartConsistency(t *testing.T) {
 		return time.Date(y, m, d, 0, 0, 0, 0, loc).Unix()
 	}
 	add := func(ts int64, v float64) {
-		d := dayStart(ts)
+		// like buildBarPlot: group by the source's UTC day, credit its midpoint's local date
+		d := dayStart(ts/86400*86400 + 43200)
 		if v > byDay[d] {
 			byDay[d] = v
 		}
