@@ -353,3 +353,17 @@ concurrency gotcha that can silently cancel a tag build).
 - Scaling pass for large deployments (~6000 sensors)
 
 See [`docs/DESIGN.md`](docs/DESIGN.md) for the full design and device-class definitions.
+
+## License
+
+Argus is free software licensed under the **GNU Affero General Public License v3.0**
+(see [`LICENSE`](LICENSE)).
+
+Copyright (C) 2026 Gian
+
+This program is free software: you can redistribute it and/or modify it under the
+terms of the GNU Affero General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later version.
+Because it is network-served software, the AGPL's §13 applies: if you run a modified
+version and let users interact with it over a network, you must also offer them the
+corresponding source.
