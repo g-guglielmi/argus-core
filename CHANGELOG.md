@@ -11,17 +11,23 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.4.45] - 2026-09-15
+
+**AdGuard's daily numbers are now exact — true midnight-to-midnight days, one source of truth.**
 
 **Added:**
-- **AdGuard now counts today, honestly** — the queries/blocked sensors read **"today so far"**
-  straight from AdGuard's own per-day statistics (the numbers its dashboard shows): the row says
-  "12403 queries · 941 blocked today", the mini trend graph is seven tiny stacked daily bars, and
-  the big chart's bar per day is exact — a closed day's bar is that day's real total. Backed by a
-  new `/api/daily` endpoint. **Block rate** now measures today's traffic too, so the whole DNS
-  section agrees with itself. (Replaces the previous rolling-window totals, whose day-over-day
-  deltas could read "0 blocked" all day and quietly understated queries — those items are removed
-  on upgrade, so the daily bars restart from the day you update.)
+- **AdGuard counts real days now** — the queries/blocked sensors read **"today so far"** from
+  AdGuard's own per-day statistics, reconstructed into **true local calendar days**: AdGuard
+  buckets its stats at UTC midnights (a known AdGuard Home limitation its own dashboard shares),
+  so Argus splits the counter's growth at *your* midnight instead — at 00:15 the row shows the
+  real count since 00:00, and yesterday's bar freezes at its genuine total. (Replaces the
+  rolling-window totals, whose deltas could read "0 blocked" all day; those items are removed on
+  upgrade, so the daily bars restart from the day you update.)
+- **Block rate, per day** — the Block rate row charts as daily bars too (7d·1M·3M·6M·1Y, mini
+  bars in the row), each day's rate derived from that day's blocked ÷ total — the same days,
+  the same math as the activity chart above it. Its reading is today's local-day rate.
+- **One source of truth** — the row headline, the mini bars, and both big bar charts all render
+  the same server-computed buckets (`/api/daily`), so they can never disagree with each other.
 
 **Fixed:**
 - **Daily bar chart on a fresh device** — a just-added AdGuard shows today's bar immediately

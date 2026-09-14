@@ -354,13 +354,15 @@ class, threshold overrides, pause, acknowledge) · 9) Thresholds (global + overr
 - Maps onto Zabbix's data split (no custom downsampling needed):
   - **history** (raw, retain ~7-30 d) → powers **2h / 2d** + zoom.
   - **trends** (hourly min/avg/max, retain 1-2 y) → powers **7d / 1M / 3M / 6M / 1Y**.
-- **Counter → daily bars**: channel groups whose members are rolling counter totals (AdGuard's
-  queries/blocked) render as a **stacked bar per local calendar day** (day's growth = last reading
-  of the day minus the previous day's close, falling back to the day's own first reading when the
-  previous day has none — a fresh device bars up immediately; clamped at 0; blocked overlays total)
-  with their own day-scale tabs — **7d (default) · 1M · 3M · 6M · 1Y**, no 2h/2d. The row itself
-  reads **today's count so far** and draws seven mini daily bars (`/api/daily`, viewer-timezone
-  buckets) instead of a rolling-total sparkline.
+- **Daily bars for "today so far" counters** (AdGuard's queries/blocked, `.today` keys): the
+  source resets its count at ITS OWN day boundary (AdGuard: hard-coded UTC midnights), and Argus
+  reconstructs **true local calendar days** from it — within a source day the counter only grows,
+  so consecutive-reading deltas are exact and credit to the local day they happened in
+  (`dailySplitDeltas`). The **`/api/daily`** endpoint is the single source: the row headline
+  ("N queries · M blocked today"), the mini daily bars, and the big stacked-bar chart (blocked
+  overlays total; tabs **7d (default) · 1M · 3M · 6M · 1Y**, no 2h/2d) all render its buckets.
+  **Block rate** derives per day from the sibling counters (blocked ÷ total) and bar-charts the
+  same way.
 - Storage: **PostgreSQL + TimescaleDB** as Zabbix's DB (native integration, partitioning +
   compression). Single source of truth; app data lives in the same instance (separate schema).
 
