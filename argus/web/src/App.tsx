@@ -989,6 +989,10 @@ function VersionAbout() {
           <p className="set-hint" style={{ marginTop: 6 }}>Holds the Docker socket and performs the core updates above. <strong>Update sidecar</strong> recreates it onto the latest image (rolling back on failure); the core keeps running throughout.</p>
         </div>
       )}
+      {/* AGPL-3.0 §13: network users must be able to reach the corresponding source. */}
+      <p className="set-hint" style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)', marginBottom: 0 }}>
+        Argus is free software under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer">GNU AGPL-3.0</a> — <a href="https://github.com/g-guglielmi/argus-core" target="_blank" rel="noopener noreferrer">source code</a>.
+      </p>
     </section>
   )
 }

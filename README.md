@@ -357,9 +357,9 @@ See [`docs/DESIGN.md`](docs/DESIGN.md) for the full design and device-class defi
 ## License
 
 Argus is free software licensed under the **GNU Affero General Public License v3.0**
-(see [`LICENSE`](LICENSE)).
+(see [`LICENSE`](LICENSE)). Source: <https://github.com/g-guglielmi/argus-core>
 
-Copyright (C) 2026 Gian
+Copyright (C) 2026 g-guglielmi
 
 This program is free software: you can redistribute it and/or modify it under the
 terms of the GNU Affero General Public License as published by the Free Software
