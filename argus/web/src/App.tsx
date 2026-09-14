@@ -3666,10 +3666,15 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
   // Open the deep-linked sensor's chart once its row is present (from an Overview sensor click).
   // Latched per target: `items` is re-fetched every 30s, and without the latch this re-fired on every
   // poll and yanked the view back to the deep-linked sensor after the user had opened another chart.
+  // A channel of a multi-channel instance opens as its GROUP row (the group key drives openItem),
+  // so deep links and drills that carry a member item id land on the whole group, not a lone
+  // channel ripped out of it.
+  const openKeyFor = (it: SensorItem) => (it.instance ? 'g:' + (it.category || '') + '|' + it.instance : it.id)
   const autoOpened = useRef<string | null>(null)
   useEffect(() => {
     if (!autoOpenItem || autoOpened.current === autoOpenItem) return
-    if (items && items.some((i) => i.id === autoOpenItem)) { setOpenItem(autoOpenItem); autoOpened.current = autoOpenItem }
+    const it = items?.find((i) => i.id === autoOpenItem)
+    if (it) { setOpenItem(openKeyFor(it)); autoOpened.current = autoOpenItem }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenItem, items])
 
@@ -3681,8 +3686,8 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
     if (!onlyItem || !items || onlyOpened.current === onlyItem) return
     const it = items.find((i) => i.id === onlyItem)
     if (!it) return
-    setOpenItem(onlyItem)
-    onItemName?.(onlyItem, it.label || it.name)
+    setOpenItem(openKeyFor(it))
+    onItemName?.(onlyItem, it.instance || it.label || it.name)
     onlyOpened.current = onlyItem
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onlyItem, items])
@@ -3749,9 +3754,16 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
   // Group per-instance sensors (disk mounts, NICs) into one collapsible "channel group" row, so a
   // host with many LLD sensors reads like PRTG instead of a flat wall. Curated view only; "All
   // sensors" and single-sensor focus stay flat.
-  const grouped = !onlyItem && !showAll
+  // Focusing a member of a multi-channel instance focuses the whole GROUP (grouping stays on and
+  // every sibling channel is shown) - a drilled "DNS activity" or "ICMP" reads exactly like its
+  // row in the full list, not like one channel ripped out of it.
+  const focusItem = onlyItem && items ? items.find((i) => i.id === onlyItem) : undefined
+  const focusInst = focusItem && focusItem.instance ? { cat: focusItem.category || '', inst: focusItem.instance } : undefined
+  const grouped = (!onlyItem || !!focusInst) && !showAll
   type Row = { cat: string; showCat?: boolean } & ({ kind: 'item'; item: SensorItem } | { kind: 'group'; instance: string; items: SensorItem[] })
-  const shownItems = onlyItem ? items.filter((i) => i.id === onlyItem) : items
+  const shownItems = onlyItem
+    ? (focusInst ? items.filter((i) => (i.category || '') === focusInst.cat && i.instance === focusInst.inst) : items.filter((i) => i.id === onlyItem))
+    : items
   const rows: Row[] = []
   if (!grouped) {
     shownItems.forEach((it) => rows.push({ kind: 'item', cat: it.category || '', item: it }))
@@ -3928,7 +3940,10 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                         <td className="namecell">
                           <span className={'sname' + (clickable ? ' sclick' : '')} style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: gPaused || gHidden ? 0.6 : 1 }}>
                             {clickable && <span className="scaret" style={{ color: 'var(--accent)', display: 'inline-block', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'none' }}>›</span>}
-                            <span>{row.instance}</span>
+                            {/* Drill on the name, like flat sensors: the group travels as its primary channel's
+                                item id (the focus/URL machinery is item-id based) and HostItems re-expands that
+                                id into the whole group. */}
+                            <span>{onDrillSensor ? <span className="lnk-sensor" onClick={(e) => { e.stopPropagation(); onDrillSensor(primary.id, row.instance) }}>{row.instance}</span> : row.instance}</span>
                             <span style={{ color: 'var(--faint)', fontSize: 11 }}> · {row.items.length} channels</span>
                             {gPaused && <span style={{ color: PAUSED_BLUE, fontSize: 11 }}> (paused)</span>}
                             {gHidden && <span style={{ color: HIDDEN_GREY, fontSize: 11 }}> (hidden)</span>}
