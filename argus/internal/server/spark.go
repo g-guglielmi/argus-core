@@ -256,9 +256,17 @@ func dailyMode(key string) string {
 	return "delta"
 }
 
-// dailyCloses reduces a daily ratio (block rate: resets at midnight, converges through the day)
-// to one value per calendar day: the LAST reading of the day - a closed day's final rate, or
-// today's current rate. A day with no readings stays 0.
+// srcDayMid maps a reading's clock to the midpoint of its SOURCE day. AdGuard's stats days are
+// UTC-aligned regardless of the host's timezone (its hourly buckets group by UTC day), so a
+// viewer east of UTC sees the counters roll well after local midnight. Group readings by the
+// source's own day and credit the whole day to the LOCAL calendar date containing its midpoint:
+// between local midnight and the source's rollover, "today" stays honestly empty and yesterday's
+// bar finishes growing - the same shape AdGuard's own dashboard draws.
+func srcDayMid(t int64) int64 { return t/86400*86400 + 43200 }
+
+// dailyCloses reduces a daily ratio (block rate: resets with the source's day, converges through
+// the day) to one value per calendar day: the LAST reading of the day - a closed day's final
+// rate, or today's current rate. A day with no readings stays 0.
 func dailyCloses(pts []dailyPt, today0 time.Time, days int) []float64 {
 	out := make([]float64, days)
 	last := make([]int64, days)
@@ -268,8 +276,9 @@ func dailyCloses(pts []dailyPt, today0 time.Time, days int) []float64 {
 		bounds[i] = start.AddDate(0, 0, i).Unix() // calendar-day arithmetic: DST-safe
 	}
 	for _, p := range pts {
+		mid := srcDayMid(p.t)
 		for i := 0; i < days; i++ {
-			if p.t >= bounds[i] && p.t < bounds[i+1] {
+			if mid >= bounds[i] && mid < bounds[i+1] {
 				if p.t >= last[i] {
 					last[i], out[i] = p.t, p.v
 				}
@@ -292,8 +301,9 @@ func dailyMaxes(pts []dailyPt, today0 time.Time, days int) []float64 {
 		bounds[i] = start.AddDate(0, 0, i).Unix() // calendar-day arithmetic: DST-safe
 	}
 	for _, p := range pts {
+		mid := srcDayMid(p.t) // group by the SOURCE's (UTC-aligned) day - see srcDayMid
 		for i := 0; i < days; i++ {
-			if p.t >= bounds[i] && p.t < bounds[i+1] {
+			if mid >= bounds[i] && mid < bounds[i+1] {
 				if p.v > out[i] {
 					out[i] = p.v
 				}

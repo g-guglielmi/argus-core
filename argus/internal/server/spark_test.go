@@ -93,8 +93,11 @@ func TestDailyMaxes(t *testing.T) {
 		{day(-2, 6), 400}, {day(-2, 23), 1000},
 		// d-1: rises to 1012 (out-of-order input on purpose)
 		{day(-1, 23), 1012}, {day(-1, 3), 100},
-		// today: post-midnight reset, running total 1234 (the live lastvalue)
-		{day(0, 0), 3}, {day(0, 10), 1234},
+		// 00:00 local is BEFORE the source's UTC rollover (viewer is UTC+2): that reading still
+		// belongs to yesterday's source day and must credit yesterday, not today
+		{day(0, 0), 3},
+		// today: running total after the source rolled (the live lastvalue)
+		{day(0, 10), 1234},
 	}
 	got := dailyMaxes(pts, today0, 7)
 	if len(got) != 7 {
@@ -120,10 +123,12 @@ func TestDailyCloses(t *testing.T) {
 		return today0.AddDate(0, 0, off).Add(time.Duration(hour) * time.Hour).Unix()
 	}
 	pts := []dailyPt{
-		// d-1: spikes to 66 early (small sample), settles at 4.4 by the day's end
-		{day(-1, 0), 66}, {day(-1, 23), 4.4},
-		// today: currently 19.8 (out-of-order input on purpose)
-		{day(0, 10), 19.8}, {day(0, 1), 50},
+		// d-1's source day (UTC-aligned, rolls at 02:00 local for a UTC+2 viewer): spikes early
+		// on a small sample, settles by evening; the 01:00-local reading is still pre-rollover,
+		// so it is the day's true close (out-of-order input on purpose)
+		{day(-1, 23), 4.5}, {day(-1, 3), 66}, {day(0, 1), 4.4},
+		// today's source day: current rate
+		{day(0, 10), 19.8},
 	}
 	got := dailyCloses(pts, today0, 3)
 	want := []float64{0, 4.4, 19.8}
