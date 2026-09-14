@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 g-guglielmi
+
 // Package pki loads the monitoring CA and signs probe certificate-signing requests, so Argus
 // can enroll new probes: the probe generates its own keypair + CSR locally (the private key never
 // leaves it) and Argus returns a signed leaf certificate trusted by the Zabbix server.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 g-guglielmi
+
 // Package zabbix is a minimal client for the Zabbix JSON-RPC API.
 // APIVersion is an unauthenticated connectivity probe; the read methods
 // (Hosts, Items, ActiveTriggers, …) authenticate with an API token.

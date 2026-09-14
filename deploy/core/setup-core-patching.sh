@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+
 # setup-core-patching.sh - install ONLY the OS patching & lifecycle piece (DESIGN §14c) on an
 # already-running core VM, without re-running the full Zabbix/PostgreSQL installer.
 #

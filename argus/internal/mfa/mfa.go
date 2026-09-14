@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 g-guglielmi
+
 // Package mfa wraps TOTP enrollment/validation and recovery-code generation.
 //
 // TOTP uses the RFC 6238 defaults (SHA1, 6 digits, 30-second period). Those are exactly

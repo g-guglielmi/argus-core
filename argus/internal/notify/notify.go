@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 g-guglielmi
+
 // Package notify delivers alert events to external channels (Discord, Telegram, email).
 // It is a leaf package: it knows how to render and send a single Event to a single Channel,
 // and holds no state. The polling/state-machine logic lives in the server package.
