@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"argus/internal/zabbix"
 )
 
 // handleSpark returns a compact recent series (down to ~24 values) per requested item, for the
@@ -64,12 +66,12 @@ func (s *Server) handleSpark(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// --- Daily growth buckets for counter-total items (AdGuard queries/blocked) ---
+// --- Daily buckets for daily-resetting sensors (AdGuard queries/blocked/block rate) ---
 //
-// A rolling counter total is meaningless as a raw sparkline/reading; what the row should show is
-// "how much per day". handleDaily serves one growth bucket per LOCAL calendar day (the viewer's
-// zone, passed as a JS getTimezoneOffset value) - the same math the bar chart runs client-side.
-// GET /api/daily?items=id1,id2&days=7&off=-120  ->  {"<id>": [d-6, ..., d-1, today-so-far], ...}
+// handleDaily is the single source of daily buckets: the row headline, the mini bars, AND the
+// big bar charts all consume it, so they can never disagree. One value per LOCAL calendar day
+// (the viewer's zone, passed as a JS getTimezoneOffset value), oldest first, last = today so far.
+// GET /api/daily?items=id1,id2&days=7&off=-120  ->  {"<id>": [d-6, ..., d-1, today], ...}
 func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
 	if !s.zbx.Authenticated() {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured (set ARGUS_ZABBIX_API_TOKEN)"})
@@ -85,7 +87,7 @@ func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
 		ids = ids[:50]
 	}
 	days := atoi(r.URL.Query().Get("days"))
-	if days < 1 || days > 31 {
+	if days < 1 || days > 366 {
 		days = 7
 	}
 	// off is JS Date.getTimezoneOffset(): minutes such that UTC = local + off (UTC+2 -> -120).
@@ -100,62 +102,109 @@ func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	y, mo, d := now.In(loc).Date()
 	today0 := time.Date(y, mo, d, 0, 0, 0, 0, loc)
-	// Fetch one extra day of trends so the oldest displayed bucket has a previous-day baseline.
+	// Fetch one extra day of trends so the oldest displayed bucket has its midnight baseline.
 	from := today0.AddDate(0, 0, -days).Unix()
 
 	// debug=1 returns a verbose diagnostic view of the same computation (inputs, per-day
-	// first/last, buckets) instead of the compact map - for chasing bucket/baseline disputes
-	// against live data. Not consumed by the app.
+	// first/last, buckets) instead of the compact map - for chasing bucket disputes against
+	// live data. Not consumed by the app.
 	debug := r.URL.Query().Get("debug") == "1"
 	iso := func(ts int64) string { return time.Unix(ts, 0).In(loc).Format("2006-01-02 15:04:05") }
 	diag := map[string]any{}
 
-	out := make(map[string][]float64, len(ids))
-	for _, id := range ids {
+	// loadPts assembles an item's readings: hourly trend MAXes (the hour-END value of a counter
+	// that only rises within its source day) plus the live last value (trends lag the open hour).
+	loadPts := func(id string) (*zabbix.Item, []dailyPt, string) {
 		it, err := s.zbx.Item(ctx, id)
 		if err != nil || !numericValueType(it.ValueType) {
-			if debug {
-				diag[id] = map[string]any{"error": fmt.Sprintf("item.get failed or non-numeric (err=%v)", err)}
-			}
-			continue
+			return nil, nil, fmt.Sprintf("item.get failed or non-numeric (err=%v)", err)
 		}
-		mode := dailyMode(it.Key)
 		tps, err := s.zbx.Trends(ctx, id, from, now.Unix())
 		if err != nil {
-			if debug {
-				diag[id] = map[string]any{"key": it.Key, "error": "trend.get failed: " + err.Error()}
-			}
-			continue
+			return it, nil, "trend.get failed: " + err.Error()
 		}
 		pts := make([]dailyPt, 0, len(tps)+1)
 		for _, p := range tps {
-			// Counters use value_MAX: a trend row's avg is the mid-hour value, so a max-based
-			// close lands on the hour's END - a rising counter's true total. A daily RATIO uses
-			// the avg instead: its max would be the noisy intraday peak, while by day's end the
-			// rate has converged, so the closing hour's avg ≈ the day's final rate.
-			v := pf(p.ValueMax)
-			if mode == "close" {
-				v = pf(p.ValueAvg)
-			}
-			if v != nil {
+			if v := pf(p.ValueMax); v != nil {
 				pts = append(pts, dailyPt{t: atoi64(p.Clock), v: *v})
 			}
 		}
-		// Trends lag the open hour; the item's live last value freshens today's bucket.
 		if lv := pf(it.LastValue); lv != nil {
 			if lc := atoi64(it.LastClock); lc > 0 {
 				pts = append(pts, dailyPt{t: lc, v: *lv})
 			}
 		}
+		return it, pts, ""
+	}
+	// counterBuckets memoizes the reconstructed local-day counts per item, so a batch that holds
+	// queries + blocked + the block rate loads each counter once.
+	counterCache := map[string][]float64{}
+	counterBuckets := func(id string) []float64 {
+		if b, ok := counterCache[id]; ok {
+			return b
+		}
+		_, pts, errMsg := loadPts(id)
+		if errMsg != "" {
+			return nil
+		}
+		b := dailySplitDeltas(pts, today0, days, from)
+		counterCache[id] = b
+		return b
+	}
+
+	out := make(map[string][]float64, len(ids))
+	for _, id := range ids {
+		it, err := s.zbx.Item(ctx, id)
+		if err != nil {
+			if debug {
+				diag[id] = map[string]any{"error": "item.get failed: " + err.Error()}
+			}
+			continue
+		}
+		mode := dailyMode(it.Key)
 		switch mode {
 		case "max":
-			out[id] = dailyMaxes(pts, today0, days)
-		case "close":
-			out[id] = dailyCloses(pts, today0, days)
+			if b := counterBuckets(id); b != nil {
+				out[id] = b
+			}
+		case "rate":
+			// The block rate's per-day value derives from its sibling counters on the same host
+			// (blocked/total per LOCAL day) - its own series can't be reconstructed into local
+			// days (a ratio isn't monotonic), and this keeps the whole DNS section on one math.
+			items, ierr := s.zbx.Items(ctx, it.HostID)
+			if ierr != nil {
+				if debug {
+					diag[id] = map[string]any{"key": it.Key, "mode": mode, "error": "item list failed: " + ierr.Error()}
+				}
+				continue
+			}
+			var qid, bid string
+			for _, hi := range items {
+				if base, _ := splitKey(hi.Key); base == "adguard.queries.today" {
+					qid = hi.ItemID
+				} else if base == "adguard.blocked.today" {
+					bid = hi.ItemID
+				}
+			}
+			q, b := counterBuckets(qid), counterBuckets(bid)
+			out[id] = rateBuckets(q, b)
+			if debug {
+				diag[id] = map[string]any{"key": it.Key, "mode": mode, "queries_item": qid, "blocked_item": bid,
+					"queries_buckets": q, "blocked_buckets": b, "buckets_oldest_to_today": out[id]}
+			}
+			continue
 		default:
+			_, pts, errMsg := loadPts(id)
+			if errMsg != "" {
+				if debug {
+					diag[id] = map[string]any{"key": it.Key, "mode": mode, "error": errMsg}
+				}
+				continue
+			}
 			out[id] = dailyDeltas(pts, today0, days)
 		}
 		if debug {
+			_, pts, _ := loadPts(id)
 			sort.Slice(pts, func(i, j int) bool { return pts[i].t < pts[j].t })
 			perDay := []map[string]any{}
 			var cur map[string]any
@@ -174,7 +223,7 @@ func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
 			diag[id] = map[string]any{
 				"key": it.Key, "mode": mode, "value_type": it.ValueType,
 				"lastvalue": it.LastValue, "lastclock": iso(atoi64(it.LastClock)),
-				"trend_rows": len(tps), "per_day": perDay, "buckets_oldest_to_today": out[id],
+				"per_day": perDay, "buckets_oldest_to_today": out[id],
 			}
 		}
 	}
@@ -241,74 +290,75 @@ func dailyDeltas(pts []dailyPt, today0 time.Time, days int) []float64 {
 	return out
 }
 
-// dailyMode picks how an item's series reduces to one value per day: a ".today" key is a sawtooth
-// "count so far today" counter (AdGuard's own per-day stats) whose day value is its PEAK; a daily
-// ratio derived from those counters (block rate) closes on its LAST reading of the day; anything
-// else is treated as a rolling total and reduced to day-over-day growth.
+// dailyMode picks how an item reduces to one value per day: a ".today" key is a sawtooth "count
+// so far today" counter (AdGuard's own per-day stats) reconstructed into TRUE local days; the
+// block rate derives per day from its sibling counters; anything else is treated as a rolling
+// total and reduced to day-over-day growth.
 func dailyMode(key string) string {
 	base, _ := splitKey(key)
 	if strings.HasSuffix(base, ".today") {
 		return "max"
 	}
 	if base == "adguard.block_pct" {
-		return "close"
+		return "rate"
 	}
 	return "delta"
 }
 
-// srcDayMid maps a reading's clock to the midpoint of its SOURCE day. AdGuard's stats days are
-// UTC-aligned regardless of the host's timezone (its hourly buckets group by UTC day), so a
-// viewer east of UTC sees the counters roll well after local midnight. Group readings by the
-// source's own day and credit the whole day to the LOCAL calendar date containing its midpoint:
-// between local midnight and the source's rollover, "today" stays honestly empty and yesterday's
-// bar finishes growing - the same shape AdGuard's own dashboard draws.
-func srcDayMid(t int64) int64 { return t/86400*86400 + 43200 }
-
-// dailyCloses reduces a daily ratio (block rate: resets with the source's day, converges through
-// the day) to one value per calendar day: the LAST reading of the day - a closed day's final
-// rate, or today's current rate. A day with no readings stays 0.
-func dailyCloses(pts []dailyPt, today0 time.Time, days int) []float64 {
+// dailySplitDeltas reconstructs TRUE local-calendar-day counts from a "today so far" counter
+// whose SOURCE day is misaligned with the viewer's - AdGuard buckets its stats at hard-coded UTC
+// midnights (AdGuardHome#4560), so for a viewer east of UTC the counter rolls after local
+// midnight. Within a source day the counter only grows, so the growth between two consecutive
+// readings is EXACT and is credited to the local day of the later reading; a drop means the
+// source day rolled over between the samples, and the new reading's value is the growth since
+// that reset. Readings are hour-end trend maxes, so for whole-hour timezone offsets the viewer's
+// midnight falls exactly on a reading and days split precisely. The window's first reading has
+// no baseline: if the series starts well inside the window (a freshly monitored item, not the
+// window edge of an old one) its carried value is credited so day one isn't undercounted.
+func dailySplitDeltas(pts []dailyPt, today0 time.Time, days int, windowFrom int64) []float64 {
+	sort.Slice(pts, func(i, j int) bool { return pts[i].t < pts[j].t })
 	out := make([]float64, days)
-	last := make([]int64, days)
 	start := today0.AddDate(0, 0, -(days - 1))
 	bounds := make([]int64, days+1)
 	for i := range bounds {
 		bounds[i] = start.AddDate(0, 0, i).Unix() // calendar-day arithmetic: DST-safe
 	}
-	for _, p := range pts {
-		mid := srcDayMid(p.t)
-		for i := 0; i < days; i++ {
-			if mid >= bounds[i] && mid < bounds[i+1] {
-				if p.t >= last[i] {
-					last[i], out[i] = p.t, p.v
-				}
-				break
-			}
+	credit := func(t int64, v float64) {
+		if v <= 0 {
+			return
 		}
+		i := sort.Search(len(bounds), func(k int) bool { return bounds[k] > t }) - 1
+		if i >= 0 && i < days {
+			out[i] += v
+		}
+	}
+	for k, p := range pts {
+		if k == 0 {
+			if p.t > windowFrom+2*3600 {
+				credit(p.t, p.v)
+			}
+			continue
+		}
+		d := p.v - pts[k-1].v
+		if d < 0 {
+			d = p.v // source-day rollover between the samples: the new count started at 0
+		}
+		credit(p.t, d)
 	}
 	return out
 }
 
-// dailyMaxes reduces a "today so far" sawtooth counter (resets at local midnight, rises through
-// the day) to one value per calendar day, for the `days` days ending at today0's day (oldest
-// first): each bucket is the day's PEAK reading - a closed day's final total, or today's running
-// total (freshened by the live last value the caller appends). A day with no readings stays 0.
-func dailyMaxes(pts []dailyPt, today0 time.Time, days int) []float64 {
-	out := make([]float64, days)
-	start := today0.AddDate(0, 0, -(days - 1))
-	bounds := make([]int64, days+1)
-	for i := range bounds {
-		bounds[i] = start.AddDate(0, 0, i).Unix() // calendar-day arithmetic: DST-safe
-	}
-	for _, p := range pts {
-		mid := srcDayMid(p.t) // group by the SOURCE's (UTC-aligned) day - see srcDayMid
-		for i := 0; i < days; i++ {
-			if mid >= bounds[i] && mid < bounds[i+1] {
-				if p.v > out[i] {
-					out[i] = p.v
-				}
-				break
+// rateBuckets derives per-day block rates from the per-day query/blocked counts: the same local
+// days, the same math the headline shows (blocked as a share of that day's total, one decimal).
+func rateBuckets(total, blocked []float64) []float64 {
+	out := make([]float64, len(total))
+	for i := range total {
+		if total[i] > 0 && i < len(blocked) {
+			b := blocked[i]
+			if b > total[i] {
+				b = total[i]
 			}
+			out[i] = float64(int(b/total[i]*1000+0.5)) / 10
 		}
 	}
 	return out

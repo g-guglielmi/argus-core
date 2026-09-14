@@ -79,66 +79,69 @@ func TestDailyDeltas(t *testing.T) {
 	})
 }
 
-// dailyMaxes handles the ".today" sawtooth counters (reset at midnight, rise all day): a closed
-// day's bucket is its final total (the peak), today's is the running total, an empty day stays 0.
-func TestDailyMaxes(t *testing.T) {
+// dailySplitDeltas reconstructs TRUE local-calendar-day counts from a "today so far" counter
+// whose source day is UTC-aligned (AdGuard rolls at 02:00 local for a UTC+2 viewer). Readings
+// carry the hourly-trend convention: t = the hour's START, v = the counter at the hour's END,
+// so a delta between consecutive rows is the growth during the later row's hour.
+func TestDailySplitDeltas(t *testing.T) {
 	loc := time.FixedZone("viewer", 2*3600)
 	today0 := time.Date(2026, 9, 14, 0, 0, 0, 0, loc)
+	from := today0.AddDate(0, 0, -7).Unix()
 	day := func(off int, hour int) int64 {
 		return today0.AddDate(0, 0, off).Add(time.Duration(hour) * time.Hour).Unix()
 	}
 
 	pts := []dailyPt{
-		// d-2: rises to 1000 by the day's end
-		{day(-2, 6), 400}, {day(-2, 23), 1000},
-		// d-1: rises to 1012 (out-of-order input on purpose)
-		{day(-1, 23), 1012}, {day(-1, 3), 100},
-		// 00:00 local is BEFORE the source's UTC rollover (viewer is UTC+2): that reading still
-		// belongs to yesterday's source day and must credit yesterday, not today
-		{day(0, 0), 3},
-		// today: running total after the source rolled (the live lastvalue)
-		{day(0, 10), 1234},
+		// Freshly monitored mid-day: the first reading carries the source day's count so far and
+		// must be credited, or day one undercounts. (Out-of-order input on purpose.)
+		{day(-1, 22), 800},  // +300 for d-1 (growth during 22:00-23:00 local)
+		{day(-1, 9), 500},   // genesis: +500 for d-1
+		{day(-1, 23), 1000}, // +200 for d-1 - the hour ENDING at local midnight is yesterday's
+		{day(0, 0), 1080},   // +80 for today (growth during 00:00-01:00 local, source day still open)
+		{day(0, 1), 1100},   // +20 for today (01:00-02:00 local, just before the source rollover)
+		{day(0, 2), 50},     // source rolled at 02:00 local: the new count is growth since the reset
+		{day(0, 10), 400},   // live last value: +350 for today
 	}
-	got := dailyMaxes(pts, today0, 7)
+	got := dailySplitDeltas(pts, today0, 7, from)
 	if len(got) != 7 {
 		t.Fatalf("len = %d, want 7", len(got))
 	}
-	want := []float64{0, 0, 0, 0, 1000, 1012, 1234}
+	want := []float64{0, 0, 0, 0, 0, 1000, 500}
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("bucket %d = %v, want %v (all: %v)", i, got[i], want[i], got)
 		}
 	}
-	if out := dailyMaxes(nil, today0, 3); len(out) != 3 {
+
+	// A series that starts AT the window edge is an old item, not a fresh one: its first reading's
+	// carried value belongs to time before the window and must NOT be credited.
+	edge := dailySplitDeltas([]dailyPt{{from, 5000}, {from + 86400 + 3600, 5100}}, today0, 7, from)
+	var sum float64
+	for _, v := range edge {
+		sum += v
+	}
+	if sum != 100 {
+		t.Fatalf("window-edge series credited %v, want only the observed +100", sum)
+	}
+
+	if out := dailySplitDeltas(nil, today0, 3, from); len(out) != 3 {
 		t.Fatalf("no data: len = %d, want 3", len(out))
 	}
 }
 
-// dailyCloses handles daily ratios (block rate): a day's bucket is its LAST reading - the closed
-// day's final rate, or today's current rate - never the noisy intraday peak.
-func TestDailyCloses(t *testing.T) {
-	loc := time.FixedZone("viewer", 2*3600)
-	today0 := time.Date(2026, 9, 14, 0, 0, 0, 0, loc)
-	day := func(off int, hour int) int64 {
-		return today0.AddDate(0, 0, off).Add(time.Duration(hour) * time.Hour).Unix()
-	}
-	pts := []dailyPt{
-		// d-1's source day (UTC-aligned, rolls at 02:00 local for a UTC+2 viewer): spikes early
-		// on a small sample, settles by evening; the 01:00-local reading is still pre-rollover,
-		// so it is the day's true close (out-of-order input on purpose)
-		{day(-1, 23), 4.5}, {day(-1, 3), 66}, {day(0, 1), 4.4},
-		// today's source day: current rate
-		{day(0, 10), 19.8},
-	}
-	got := dailyCloses(pts, today0, 3)
-	want := []float64{0, 4.4, 19.8}
+// rateBuckets derives per-day block rates from the per-day counts; dailyMode routes the shapes.
+func TestRateBuckets(t *testing.T) {
+	got := rateBuckets([]float64{1000, 500, 0, 200}, []float64{100, 250, 5, 999})
+	want := []float64{10, 50, 0, 100} // empty day -> 0; blocked clamped to total -> 100%
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("bucket %d = %v, want %v (all: %v)", i, got[i], want[i], got)
 		}
 	}
-	// dailyMode routes the three shapes.
-	for k, m := range map[string]string{"adguard.queries.today": "max", "adguard.block_pct": "close", "adguard.queries": "delta"} {
+	if out := rateBuckets([]float64{100}, nil); out[0] != 0 {
+		t.Fatalf("missing blocked series: got %v, want 0", out[0])
+	}
+	for k, m := range map[string]string{"adguard.queries.today": "max", "adguard.blocked.today": "max", "adguard.block_pct": "rate", "adguard.queries": "delta"} {
 		if got := dailyMode(k); got != m {
 			t.Fatalf("dailyMode(%s) = %s, want %s", k, got, m)
 		}
