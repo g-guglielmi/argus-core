@@ -119,6 +119,7 @@ func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
+		mode := dailyMode(it.Key)
 		tps, err := s.zbx.Trends(ctx, id, from, now.Unix())
 		if err != nil {
 			if debug {
@@ -128,10 +129,15 @@ func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
 		}
 		pts := make([]dailyPt, 0, len(tps)+1)
 		for _, p := range tps {
-			// value_MAX, not avg: a trend row's avg is the mid-hour value, so an avg-based
-			// midnight baseline leaks the last half hour of yesterday into "today". For a
-			// rising counter the hour's max is the value at the hour's END - the true close.
-			if v := pf(p.ValueMax); v != nil {
+			// Counters use value_MAX: a trend row's avg is the mid-hour value, so a max-based
+			// close lands on the hour's END - a rising counter's true total. A daily RATIO uses
+			// the avg instead: its max would be the noisy intraday peak, while by day's end the
+			// rate has converged, so the closing hour's avg ≈ the day's final rate.
+			v := pf(p.ValueMax)
+			if mode == "close" {
+				v = pf(p.ValueAvg)
+			}
+			if v != nil {
 				pts = append(pts, dailyPt{t: atoi64(p.Clock), v: *v})
 			}
 		}
@@ -141,12 +147,12 @@ func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
 				pts = append(pts, dailyPt{t: lc, v: *lv})
 			}
 		}
-		// A ".today" key is a sawtooth "count so far today" counter (AdGuard's own per-day stats):
-		// a day's total is simply its peak reading. Anything else is treated as a rolling total
-		// and reduced to day-over-day growth.
-		if base, _ := splitKey(it.Key); strings.HasSuffix(base, ".today") {
+		switch mode {
+		case "max":
 			out[id] = dailyMaxes(pts, today0, days)
-		} else {
+		case "close":
+			out[id] = dailyCloses(pts, today0, days)
+		default:
 			out[id] = dailyDeltas(pts, today0, days)
 		}
 		if debug {
@@ -166,7 +172,7 @@ func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			diag[id] = map[string]any{
-				"key": it.Key, "value_type": it.ValueType,
+				"key": it.Key, "mode": mode, "value_type": it.ValueType,
 				"lastvalue": it.LastValue, "lastclock": iso(atoi64(it.LastClock)),
 				"trend_rows": len(tps), "per_day": perDay, "buckets_oldest_to_today": out[id],
 			}
@@ -230,6 +236,45 @@ func dailyDeltas(pts []dailyPt, today0 time.Time, days int) []float64 {
 		}
 		if d := cur.last - base; d > 0 {
 			out[i-1] = d
+		}
+	}
+	return out
+}
+
+// dailyMode picks how an item's series reduces to one value per day: a ".today" key is a sawtooth
+// "count so far today" counter (AdGuard's own per-day stats) whose day value is its PEAK; a daily
+// ratio derived from those counters (block rate) closes on its LAST reading of the day; anything
+// else is treated as a rolling total and reduced to day-over-day growth.
+func dailyMode(key string) string {
+	base, _ := splitKey(key)
+	if strings.HasSuffix(base, ".today") {
+		return "max"
+	}
+	if base == "adguard.block_pct" {
+		return "close"
+	}
+	return "delta"
+}
+
+// dailyCloses reduces a daily ratio (block rate: resets at midnight, converges through the day)
+// to one value per calendar day: the LAST reading of the day - a closed day's final rate, or
+// today's current rate. A day with no readings stays 0.
+func dailyCloses(pts []dailyPt, today0 time.Time, days int) []float64 {
+	out := make([]float64, days)
+	last := make([]int64, days)
+	start := today0.AddDate(0, 0, -(days - 1))
+	bounds := make([]int64, days+1)
+	for i := range bounds {
+		bounds[i] = start.AddDate(0, 0, i).Unix() // calendar-day arithmetic: DST-safe
+	}
+	for _, p := range pts {
+		for i := 0; i < days; i++ {
+			if p.t >= bounds[i] && p.t < bounds[i+1] {
+				if p.t >= last[i] {
+					last[i], out[i] = p.t, p.v
+				}
+				break
+			}
 		}
 	}
 	return out
