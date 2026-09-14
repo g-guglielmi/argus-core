@@ -338,7 +338,8 @@ function useDailies(itemIds: string[]): Record<string, number[]> {
   const [map, setMap] = useState<Record<string, number[]>>({})
   const [tick, setTick] = useState(0)
   const key = itemIds.slice().sort().join(',')
-  useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 300000); return () => clearInterval(t) }, [])
+  // Same 60s cadence as the open chart, so the row's "today" and the today bar can't drift apart.
+  useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 60000); return () => clearInterval(t) }, [])
   useEffect(() => {
     if (!key) { setMap({}); return }
     let cancelled = false
@@ -4597,19 +4598,22 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
 // simply overlay - the full bar is the first channel, later ones paint their share on top from the
 // baseline. The line-chart passes (gap insertion, isolated-point drop, LOCF) don't apply here: a
 // lone bar must render; a day with no readings at all stays a hole, not a zero.
-function buildBarPlot(series: { label: string; units: string; points: { t: number; v: number | null }[] }[], width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
+function buildBarPlot(series: { label: string; units: string; points: { t: number; v: number | null; hi?: number | null }[] }[], width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
   // Local-midnight bucketing via Date (DST-correct; t - t%86400 would give UTC midnight).
   const dayStart = (t: number) => { const d = new Date(t * 1000); d.setHours(0, 0, 0, 0); return Math.round(d.getTime() / 1000) }
   const dayStep = (d0: number, n: number) => { const d = new Date(d0 * 1000); d.setDate(d.getDate() + n); d.setHours(0, 0, 0, 0); return Math.round(d.getTime() / 1000) }
-  // First and last reading of each local day, per channel.
+  // First and last reading of each local day, per channel. Trend points carry hi (the hour's MAX):
+  // prefer it over v (the hour's mid-hour average) - a rising counter's hour-max is its value at
+  // the hour's END, so day closes land on true midnights instead of ~23:30 (matches /api/daily).
   const byDay = series.map((s) => {
     const m = new Map<number, { tF: number; vF: number; tL: number; vL: number }>()
     s.points.forEach((p) => {
-      if (p.v == null) return
+      const pv = p.hi ?? p.v
+      if (pv == null) return
       const d = dayStart(p.t)
       const cur = m.get(d)
-      if (!cur) m.set(d, { tF: p.t, vF: p.v, tL: p.t, vL: p.v })
-      else { if (p.t < cur.tF) { cur.tF = p.t; cur.vF = p.v } if (p.t > cur.tL) { cur.tL = p.t; cur.vL = p.v } }
+      if (!cur) m.set(d, { tF: p.t, vF: pv, tL: p.t, vL: pv })
+      else { if (p.t < cur.tF) { cur.tF = p.t; cur.vF = pv } if (p.t > cur.tL) { cur.tL = p.t; cur.vL = pv } }
     })
     return m
   })

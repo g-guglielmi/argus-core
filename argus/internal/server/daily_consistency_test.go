@@ -159,7 +159,8 @@ func TestDailyVsChartConsistency(t *testing.T) {
 		}
 	}
 	for _, p := range chartTrends {
-		if v := pf(p.ValueAvg); v != nil {
+		// hour MAX, like buildBarPlot's `p.hi ?? p.v` - day closes land on true midnights.
+		if v := pf(p.ValueMax); v != nil {
 			add(atoi64(p.Clock), *v)
 		}
 	}

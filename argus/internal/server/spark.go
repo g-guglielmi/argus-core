@@ -128,7 +128,10 @@ func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
 		}
 		pts := make([]dailyPt, 0, len(tps)+1)
 		for _, p := range tps {
-			if v := pf(p.ValueAvg); v != nil {
+			// value_MAX, not avg: a trend row's avg is the mid-hour value, so an avg-based
+			// midnight baseline leaks the last half hour of yesterday into "today". For a
+			// rising counter the hour's max is the value at the hour's END - the true close.
+			if v := pf(p.ValueMax); v != nil {
 				pts = append(pts, dailyPt{t: atoi64(p.Clock), v: *v})
 			}
 		}
