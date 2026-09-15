@@ -11,8 +11,8 @@ zabbix_export:
         unRAID extras on top of "Argus Linux by SNMP" (the unraid class attaches both): per-disk
         temperatures and per-share free space, read from the NET-SNMP-EXTEND scripts that the
         Community Applications "SNMP" plugin installs (extend names "disktemp" and "sharefree").
-        Temperatures come from the emhttp state, so spun-down disks are not woken - they simply
-        keep their last reading. Needs that plugin installed on the unRAID host; everything else
+        Temperatures come from the emhttp state, so spun-down disks are not woken - a parked
+        drive reports a fixed 20 C standby sentinel. Needs that plugin installed on the unRAID host; everything else
         (CPU, memory, filesystems incl. array disks and docker.img, interfaces, uptime) is covered
         by the Linux template. The plugin's disktemp extend covers ARRAY members only; cache/pool
         drives (incl. NVMe) are picked up too when the optional "pooltemps" extend is installed -
@@ -175,7 +175,7 @@ zabbix_export:
               trends: 365d
               value_type: FLOAT
               units: '°C'
-              description: 'Array drive temperature from the emhttp state (refreshes at the poll_attributes cadence). A spun-down drive is omitted from the extend output and keeps its last real reading - no standby placeholder values.'
+              description: 'Array drive temperature from the emhttp state (refreshes at the poll_attributes cadence). A spun-down drive reports a fixed 20 C standby sentinel (matching the plugin''s disktemp extend), so it shows a distinct low flat line while parked and any heat warning clears.'
               master_item:
                 key: unraid.arraytemp.raw
               preprocessing:
@@ -251,7 +251,7 @@ zabbix_export:
               trends: 365d
               value_type: FLOAT
               units: '°C'
-              description: 'Pool/cache drive temperature from the emhttp state (refreshes at the poll_attributes cadence). A spun-down or unreadable drive is omitted from the extend output and keeps its last reading. Pool thresholds are separate from the array ones - SSD/NVMe run hotter by design.'
+              description: 'Pool/cache drive temperature from the emhttp state (refreshes at the poll_attributes cadence). A spun-down drive reports a fixed 20 C standby sentinel; an SSD/NVMe cache never parks so it always shows a real temperature. Pool thresholds are separate from the array ones - SSD/NVMe run hotter by design.'
               master_item:
                 key: unraid.pooltemp.raw
               preprocessing:
