@@ -144,18 +144,36 @@ func resolveLatestUpdaterVersion(ctx context.Context) (string, error) {
 }
 
 // updaterStatus classifies a probe's reported updater-sidecar version against the newest published
-// updater version. Leading "v" is ignored on both. "unknown" when either is unknown, "current" when
-// equal, "outdated" otherwise (a mismatch — the sidecar can self-update to close it).
+// updater RELEASE tag (updaterLatest only resolves X.Y.Z tags, not :latest digests). "unknown" when
+// either is unknown, "outdated" only when the reported X.Y.Z base is genuinely OLDER than the newest
+// release, else "current".
+//
+// The comparison is on the semver BASE, not the whole string: a sidecar tracking :latest reports a
+// git-describe build ("v0.2.3-3-gabc123") whose base equals the newest release, and a plain string
+// compare flagged it "outdated → 0.2.3" forever - a phantom "update available" that clicking Update
+// could never clear (the next :latest is still a describe build, still != the clean tag), and which
+// disagreed with a digest-based check (Dockhand). Digest drift on :latest is the updater's own
+// self-update job; Argus's tag view only answers "is it behind the newest release?" - so a describe
+// build at or past the newest tag is "current", same policy as the core's own appUpdateStatus.
 func updaterStatus(reported, latest string) string {
 	r := strings.TrimPrefix(strings.TrimSpace(reported), "v")
 	l := strings.TrimPrefix(strings.TrimSpace(latest), "v")
 	if r == "" || l == "" {
 		return "unknown"
 	}
-	if r == l {
-		return "current"
+	mr := appVerPrefix.FindStringSubmatch(r)
+	ml := appVerPrefix.FindStringSubmatch(l)
+	if mr == nil || ml == nil {
+		// One side has no X.Y.Z base to compare - fall back to exact match.
+		if r == l {
+			return "current"
+		}
+		return "outdated"
 	}
-	return "outdated"
+	if versionLess(verKey(mr), verKey(ml)) { // reported base older than the newest release
+		return "outdated"
+	}
+	return "current" // equal, or a development build at/past the newest release
 }
 
 var probeVerTag = regexp.MustCompile(`^([0-9]+)\.([0-9]+)\.([0-9]+)-r([0-9]+)$`)
