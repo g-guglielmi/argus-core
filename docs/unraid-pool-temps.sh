@@ -26,8 +26,13 @@
 #   3. The "Argus unRAID by SNMP" template picks the extends up automatically; hosts
 #      without them are unaffected.
 #
-# Drives that are spun down or unreadable show temp="*" in the state file and are simply
-# omitted - the monitoring side keeps their last real reading (no fake standby values).
+# A drive spun down for standby (spundown="1") reports temp="*" in the state file; we emit a
+# fixed 20 C standby sentinel for it, so a parked drive shows a distinct low flat line on the
+# chart - and any heat warning clears - instead of just holding its last reading. This matches
+# the plugin's own disktemp extend (where 20 = spun down). A device with no temperature sensor
+# (e.g. the USB boot flash) or an unreadable "*" that is NOT spun down is still omitted, and the
+# monitoring side keeps its last real reading. Always-on flash/SSD/NVMe never report spundown=1,
+# so they never get the sentinel.
 #
 # Output format: "<slot>|<drive id>: <temp C>" - e.g. "parity|ST12000NM001G_XXXXXXXX: 34".
 # The slot (parity, disk1, cache, ...) becomes the sensor's display name; the drive id keys
@@ -36,15 +41,24 @@
 
 mode="${1:-pools}"
 
+# Collect id/temp/spundown per [section] and decide at the section boundary, so field order in
+# disks.ini doesn't matter. A positive temp is emitted as-is; a spun-down drive gets the 20 C
+# sentinel; anything else (no sensor, unreadable but not parked) is omitted.
 awk -F'=' -v mode="$mode" '
-  /^\[/    { gsub(/[\["\]]/, ""); slot=$0 }
-  /^id=/   { gsub(/"/, "", $2); id=$2 }
-  /^temp=/ {
-    gsub(/"/, "", $2)
-    isarr = (slot ~ /^(parity[0-9]*|disk[0-9]+)$/)
-    want = (mode == "array") ? isarr : !isarr
-    if (want && id != "" && $2 ~ /^[0-9]+$/ && $2 + 0 > 0)
-      print slot "|" id ": " $2
-    id=""
+  function flush() {
+    if (slot != "" && id != "") {
+      isarr = (slot ~ /^(parity[0-9]*|disk[0-9]+)$/)
+      want = (mode == "array") ? isarr : !isarr
+      if (want) {
+        if (temp ~ /^[0-9]+$/ && temp + 0 > 0) print slot "|" id ": " temp
+        else if (sd == "1")                    print slot "|" id ": 20"
+      }
+    }
+    slot=""; id=""; temp=""; sd=""
   }
+  /^\[/        { flush(); gsub(/[\["\]]/, ""); slot=$0 }
+  /^id=/       { gsub(/"/, "", $2); id=$2 }
+  /^temp=/     { gsub(/"/, "", $2); temp=$2 }
+  /^spundown=/ { gsub(/"/, "", $2); sd=$2 }
+  END          { flush() }
 ' /var/local/emhttp/disks.ini
