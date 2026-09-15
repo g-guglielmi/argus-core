@@ -172,6 +172,32 @@ func TestClassifyUnraid(t *testing.T) {
 	}
 }
 
+// Ugreen (Zabbix agent): per-disk SMART temperatures join the same "Disk temperatures" overlay as
+// unRAID (channel = the disk name), while base metrics ride the shared native agent-key curation and
+// the smart.disk.get master stays plumbing.
+func TestClassifyUgreen(t *testing.T) {
+	cat, _, inst, ch, ok := classifyItem("ugreen.disk.temp[sda]", "Disk temperature (sda)")
+	if !ok || cat != "Temperature" || inst != "Disk temperatures" || ch != "sda" {
+		t.Errorf("ugreen disk temp: got (%q, %q, %q, ok=%v)", cat, inst, ch, ok)
+	}
+	if _, _, _, _, ok := classifyItem("smart.disk.get", "SMART disks (raw)"); ok {
+		t.Error("smart.disk.get master must stay uncurated")
+	}
+	// Base metrics reuse the native agent keys, so they curate exactly like the SNMP classes.
+	if cat, _, _, _, ok := classifyItem("system.cpu.util", "CPU utilization"); !ok || cat != "CPU" {
+		t.Errorf("agent cpu util: got (%q, ok=%v)", cat, ok)
+	}
+	if cat, _, _, _, ok := classifyItem("vm.memory.size[pused]", "Used memory percent"); !ok || cat != "Memory" {
+		t.Errorf("agent mem pused: got (%q, ok=%v)", cat, ok)
+	}
+	if cat, _, inst, _, ok := classifyItem("vfs.fs.size[/volume1,pused]", "Disk used percent (/volume1)"); !ok || cat != "Disk" || inst != "/volume1" {
+		t.Errorf("agent fs pused: got (%q, %q, ok=%v)", cat, inst, ok)
+	}
+	if cat, _, inst, _, ok := classifyItem("net.if.in[eth0]", "Traffic in (eth0)"); !ok || cat != "Network" || inst != "eth0" {
+		t.Errorf("agent net in: got (%q, %q, ok=%v)", cat, inst, ok)
+	}
+}
+
 // AdGuard's DNS stats land under a DNS category (with the proxy-run net.dns resolve check), its
 // protection/version under Status; Home Assistant's platform health lands under Status. Both raw
 // masters stay uncurated.

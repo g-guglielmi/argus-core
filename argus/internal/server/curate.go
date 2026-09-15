@@ -469,6 +469,15 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	case "unraid.sharefree":
 		return "Disk", name, "", "", true
 
+	// Ugreen NAS (Argus NAS by Zabbix agent): per-disk SMART temperatures from the agent 2 smart
+	// plugin, grouped into the same "Disk temperatures" overlay chart as unRAID (channel = the disk
+	// name). The smart.disk.get master is plumbing; CPU/memory/filesystem/interface reuse the native
+	// agent keys curated above (system.cpu.*, vm.memory.size, vfs.fs.size, net.if.*, system.uptime).
+	case "smart.disk.get":
+		return "", "", "", "", false
+	case "ugreen.disk.temp":
+		return "Temperature", "Disk temperature (" + param(p, 0) + ")", "Disk temperatures", param(p, 0), true
+
 	// HTTP/HTTPS endpoint add-on (Argus HTTP Endpoint template). The key params are macros
 	// ({$HTTP.SCHEME}/{$HTTP.PORT}), so the label is fixed rather than derived from them. The two
 	// items group like ICMP: response time is the primary channel, reachability the Downtime band

@@ -1,0 +1,282 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: 9c5349babe924f31ba7cf661dcc13851
+      template: 'Argus NAS by Zabbix agent'
+      name: 'Argus NAS by Zabbix agent'
+      description: |
+        A NAS monitored with Zabbix agent 2 (passive checks) - built for Ugreen UGOS, which exposes
+        no SNMP. The agent runs in a container ON the NAS (host network, /proc + /sys + / bind-mounts)
+        and the site proxy polls it on :10050; the agent's Server= must allow the proxy's IP. Disk
+        temperature + SMART need smartmontools in the container and device access (--privileged or
+        --device). CPU / memory / filesystem / interface use the same item keys as the SNMP classes,
+        so curation is shared. DESIGN section 5. This template needs no credentials - the Server= IP
+        allow-list is the access control (add a PSK on the agent + host TLS macros to encrypt).
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: a334bd40525641d5b3c8541177956b29
+          name: 'CPU utilization'
+          type: ZABBIX_PASSIVE
+          key: system.cpu.util
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Overall CPU utilization from the Zabbix agent (system.cpu.util, all cores).'
+          triggers:
+            - uuid: bd87ce638a894bba82b645998832cc79
+              expression: 'min(/Argus NAS by Zabbix agent/system.cpu.util,#3)>={$CPU.UTIL.WARN} and min(/Argus NAS by Zabbix agent/system.cpu.util,#3)<{$CPU.UTIL.HIGH}'
+              name: 'High CPU utilization'
+              priority: WARNING
+              description: 'CPU utilization at/above the warning threshold on the last 3 checks.'
+            - uuid: 2f00744b6f474968b140bb765edbfe73
+              expression: 'min(/Argus NAS by Zabbix agent/system.cpu.util,#3)>={$CPU.UTIL.HIGH}'
+              name: 'Very high CPU utilization'
+              priority: HIGH
+              description: 'CPU utilization at/above the high threshold on the last 3 checks.'
+        - uuid: a8339190e9e44fb0a5fb52277b9fa28d
+          name: 'CPU load (1m average)'
+          type: ZABBIX_PASSIVE
+          key: 'system.cpu.load[all,avg1]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          description: 'System load average over 1 minute, all cores (system.cpu.load).'
+        - uuid: de9219b0cc6a42f38502256f4d09afaf
+          name: 'Total memory'
+          type: ZABBIX_PASSIVE
+          key: 'vm.memory.size[total]'
+          delay: 5m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: B
+          description: 'Total physical memory (vm.memory.size[total]).'
+        - uuid: 23d7da77559441e4bd6de65c02c6d72f
+          name: 'Available memory'
+          type: ZABBIX_PASSIVE
+          key: 'vm.memory.size[available]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: B
+          description: 'Memory available to start new applications, without swapping (vm.memory.size[available]).'
+        - uuid: 69af35fea33345238ac4205f4afcc106
+          name: 'Used memory percent'
+          type: ZABBIX_PASSIVE
+          key: 'vm.memory.size[pused]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Percentage of memory in use (vm.memory.size[pused]).'
+          triggers:
+            - uuid: 4c0e48c26cd6445fa0db075f40ffc297
+              expression: 'min(/Argus NAS by Zabbix agent/vm.memory.size[pused],#3)>={$MEM.USED.WARN} and min(/Argus NAS by Zabbix agent/vm.memory.size[pused],#3)<{$MEM.USED.HIGH}'
+              name: 'High memory usage'
+              priority: WARNING
+              description: 'Memory usage at/above the warning threshold on the last 3 checks.'
+            - uuid: 111825e05f914e95b30c7dd8f6f1fbfe
+              expression: 'min(/Argus NAS by Zabbix agent/vm.memory.size[pused],#3)>={$MEM.USED.HIGH}'
+              name: 'Very high memory usage'
+              priority: HIGH
+              description: 'Memory usage at/above the high threshold on the last 3 checks.'
+        - uuid: f6e154a40c674b9693b7865e4cbed6e0
+          name: 'Uptime'
+          type: ZABBIX_PASSIVE
+          key: system.uptime
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: uptime
+          description: 'System uptime (system.uptime).'
+        - uuid: 13c046296e3048df82a1f09ad2743920
+          name: 'SMART disks (raw)'
+          type: ZABBIX_PASSIVE
+          key: smart.disk.get
+          delay: 5m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          description: 'Master item: agent 2 smart.disk.get - one JSON array of every disk smartctl sees (name, model, serial, type, temperature, health). The per-disk temperature sensors depend on this. Needs smartmontools in the agent container and device access.'
+      discovery_rules:
+        - uuid: 491a8f234f8b426a8260e8b733052220
+          name: 'Filesystem discovery'
+          type: ZABBIX_PASSIVE
+          key: vfs.fs.discovery
+          delay: 1h
+          description: 'Mounted filesystems reported by the agent, kept to real on-disk filesystems.'
+          filter:
+            evaltype: AND
+            conditions:
+              # Keep real on-disk filesystems; drop tmpfs/overlay/pseudo mounts by type.
+              - macro: '{#FSTYPE}'
+                value: '^(ext[234]|btrfs|xfs|zfs|f2fs|jfs|reiserfs|vfat|exfat|ntfs|fuseblk)$'
+                operator: MATCHES_REGEX
+                formulaid: A
+              # And drop noise mount paths (docker layers, boot, container roots) by name.
+              - macro: '{#FSNAME}'
+                value: '{$FS.NAME.SKIP}'
+                operator: NOT_MATCHES_REGEX
+                formulaid: B
+          item_prototypes:
+            - uuid: ce7fb1a7160d4d87a82a02032342809d
+              name: 'Disk total ({#FSNAME})'
+              type: ZABBIX_PASSIVE
+              key: 'vfs.fs.size[{#FSNAME},total]'
+              delay: 5m
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: B
+              description: 'Total size of {#FSNAME} ({#FSTYPE}).'
+            - uuid: 6e3666250155477e81512f5920ae2161
+              name: 'Disk used ({#FSNAME})'
+              type: ZABBIX_PASSIVE
+              key: 'vfs.fs.size[{#FSNAME},used]'
+              delay: 5m
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: B
+              description: 'Used space on {#FSNAME} ({#FSTYPE}).'
+            - uuid: 47e6c1b2d20f425794f47eec5d33bff1
+              name: 'Disk used percent ({#FSNAME})'
+              type: ZABBIX_PASSIVE
+              key: 'vfs.fs.size[{#FSNAME},pused]'
+              delay: 5m
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '%'
+              description: 'Used percentage of {#FSNAME} ({#FSTYPE}).'
+              trigger_prototypes:
+                - uuid: a6af88078499401aa7d63c7dd636c400
+                  expression: 'min(/Argus NAS by Zabbix agent/vfs.fs.size[{#FSNAME},pused],#3)>={$DISK.PUSED.WARN} and min(/Argus NAS by Zabbix agent/vfs.fs.size[{#FSNAME},pused],#3)<{$DISK.PUSED.HIGH}'
+                  name: 'Disk space low: {#FSNAME}'
+                  priority: WARNING
+                  description: 'Filesystem usage at/above the warning threshold.'
+                - uuid: 818433f5cd064c0994bfde58730e58d7
+                  expression: 'min(/Argus NAS by Zabbix agent/vfs.fs.size[{#FSNAME},pused],#3)>={$DISK.PUSED.HIGH}'
+                  name: 'Disk space critical: {#FSNAME}'
+                  priority: HIGH
+                  description: 'Filesystem usage at/above the high threshold.'
+        - uuid: e838d45cea6645859dc4f728584efaca
+          name: 'Network interface discovery'
+          type: ZABBIX_PASSIVE
+          key: net.if.discovery
+          delay: 1h
+          description: 'Network interfaces reported by the agent, filtered to physical NICs.'
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#IFNAME}'
+                value: '{$NET.IF.SKIP}'
+                operator: NOT_MATCHES_REGEX
+                formulaid: A
+          item_prototypes:
+            - uuid: d7eb487d778e4419a1f14046adb2f9ce
+              name: 'Traffic in ({#IFNAME})'
+              type: ZABBIX_PASSIVE
+              key: 'net.if.in[{#IFNAME}]'
+              delay: 1m
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: bps
+              description: 'Inbound traffic on {#IFNAME} as a bit rate.'
+              preprocessing:
+                - type: CHANGE_PER_SECOND
+                - type: MULTIPLIER
+                  parameters:
+                    - '8'
+            - uuid: f4060be15ad342bba341ade6e68d1496
+              name: 'Traffic out ({#IFNAME})'
+              type: ZABBIX_PASSIVE
+              key: 'net.if.out[{#IFNAME}]'
+              delay: 1m
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: bps
+              description: 'Outbound traffic on {#IFNAME} as a bit rate.'
+              preprocessing:
+                - type: CHANGE_PER_SECOND
+                - type: MULTIPLIER
+                  parameters:
+                    - '8'
+        - uuid: 66110e9118a94b11805135626f103e0c
+          name: 'SMART disk discovery'
+          type: ZABBIX_PASSIVE
+          key: smart.disk.discovery
+          delay: 1h
+          description: 'Physical disks smartctl sees (agent 2 smart plugin). Each gets a temperature sensor from the SMART master; they group into one "Disk temperatures" overlay chart.'
+          item_prototypes:
+            - uuid: e4a082858e4d48bcae4f08437cfc43b7
+              name: 'Disk temperature ({#NAME})'
+              type: DEPENDENT
+              key: 'ugreen.disk.temp[{#NAME}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '°C'
+              description: 'Temperature of {#NAME} ({#MODEL}), pulled from the SMART master by disk name.'
+              master_item:
+                key: smart.disk.get
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.[?(@.disk_name=="{#NAME}")].temperature.first()'
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: e099678e1a594756878f44f13107481c
+                  expression: 'min(/Argus NAS by Zabbix agent/ugreen.disk.temp[{#NAME}],#3)>={$DISK.TEMP.WARN} and min(/Argus NAS by Zabbix agent/ugreen.disk.temp[{#NAME}],#3)<{$DISK.TEMP.HIGH}'
+                  name: 'Disk running warm: {#NAME}'
+                  priority: WARNING
+                  description: 'Disk temperature at/above the warning threshold on the last 3 checks.'
+                - uuid: 8ef63d4173554437934dc701a3bb2ad1
+                  expression: 'min(/Argus NAS by Zabbix agent/ugreen.disk.temp[{#NAME}],#3)>={$DISK.TEMP.HIGH}'
+                  name: 'Disk overheating: {#NAME}'
+                  priority: HIGH
+                  description: 'Disk temperature at/above the high threshold on the last 3 checks.'
+      macros:
+        - macro: '{$CPU.UTIL.WARN}'
+          value: '80'
+          description: 'CPU utilization percentage that raises a warning.'
+        - macro: '{$CPU.UTIL.HIGH}'
+          value: '95'
+          description: 'CPU utilization percentage that raises a high-severity alert.'
+        - macro: '{$MEM.USED.WARN}'
+          value: '85'
+          description: 'Memory-used percentage that raises a warning.'
+        - macro: '{$MEM.USED.HIGH}'
+          value: '95'
+          description: 'Memory-used percentage that raises a high-severity alert.'
+        - macro: '{$DISK.PUSED.WARN}'
+          value: '90'
+          description: 'Filesystem used percentage that raises a warning (10% free).'
+        - macro: '{$DISK.PUSED.HIGH}'
+          value: '95'
+          description: 'Filesystem used percentage that raises a high-severity alert (5% free).'
+        - macro: '{$DISK.TEMP.WARN}'
+          value: '50'
+          description: 'Disk temperature (°C) that raises a warning.'
+        - macro: '{$DISK.TEMP.HIGH}'
+          value: '60'
+          description: 'Disk temperature (°C) that raises a high-severity alert.'
+        - macro: '{$FS.NAME.SKIP}'
+          value: '^(/run|/dev|/sys|/proc|/boot|/etc/hosts|/var/lib/docker|/mnt/.docker)($|/)'
+          description: 'Mount paths matching this regex are not discovered (pseudo-filesystems, docker layers, boot).'
+        - macro: '{$NET.IF.SKIP}'
+          value: '^(lo$|veth|docker|br-|virbr|vnet|tap|tun|cali|cni|flannel|dummy)'
+          description: 'Interface names matching this regex are not discovered (virtual / container NICs).'
