@@ -11,14 +11,16 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.4.47] - 2026-09-15
 
 **Added:**
 - **Central probe re-point.** The probe core host (**Settings → Probe enrollment** /
   `ARGUS_PROBE_CORE_HOST`) is now handed out on every probe check-in, not just baked in at
   enrollment. Change it once and the whole fleet converges: each probe applies the new address at
   its next restart — no re-enrollment. An explicit `ZBX_SERVER_HOST` on a probe still pins that one
-  probe and wins over the central value. _(The probe side ships in the next argus-probe image.)_
+  probe and wins over the central value. Fail-safe: an unreachable core or an older probe keeps the
+  last-known host, so a bad value can't strand the fleet. _(The probe side ships in argus-probe
+  `probe/v7.0.30-r9`.)_
 
 **Changed:**
 - **Recommend an IP for the probe core host.** The Zabbix proxy re-resolves this address on every
