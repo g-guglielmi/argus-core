@@ -6,7 +6,7 @@
 
   Before starting:
     1. Put ca.crt + proxy-site1.crt + proxy-site1.key in the Certs path below.
-    2. Set "Zabbix Server (core)" to your core's FQDN or IP.
+    2. Set "Zabbix Server (core)" to your core's IP (preferred - see the note on that field).
     3. Register an ACTIVE proxy named "proxy-site1" (certificate encryption) in the Zabbix UI.
   No inbound port is needed - an active proxy dials out to the core.
 -->
@@ -20,7 +20,7 @@
   <Category>Tools: Network:Management</Category>
   <Icon>https://assets.zabbix.com/img/logo/zabbix_logo_500x131.png</Icon>
   <Config Name="Proxy mode" Target="ZBX_PROXYMODE" Default="0" Mode="" Description="0 = active (proxy dials out to the core). Leave at 0." Type="Variable" Display="advanced" Required="true" Mask="false">0</Config>
-  <Config Name="Zabbix Server (core)" Target="ZBX_SERVER_HOST" Default="core.example.lan" Mode="" Description="FQDN or IP of the core (must be reachable on TCP 10051)." Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="Zabbix Server (core)" Target="ZBX_SERVER_HOST" Default="10.0.0.10" Mode="" Description="Address of the core (must be reachable on TCP 10051). Prefer an IP: the proxy re-resolves this on every data send, so an FQDN here generates heavy DNS load." Type="Variable" Display="always" Required="true" Mask="false"></Config>
   <Config Name="Proxy name" Target="ZBX_HOSTNAME" Default="proxy-site1" Mode="" Description="Must match the proxy name registered in the Zabbix UI." Type="Variable" Display="always" Required="true" Mask="false">proxy-site1</Config>
   <Config Name="Offline buffer (hours)" Target="ZBX_PROXYOFFLINEBUFFER" Default="168" Mode="" Description="How long to keep unsent data if the core is down. 168 = 7 days." Type="Variable" Display="advanced" Required="true" Mask="false">168</Config>
   <Config Name="TLS connect" Target="ZBX_TLSCONNECT" Default="cert" Mode="" Description="Use certificate-based mutual TLS." Type="Variable" Display="advanced" Required="true" Mask="false">cert</Config>
