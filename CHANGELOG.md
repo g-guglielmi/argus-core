@@ -11,6 +11,25 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.48] - 2026-09-15
+
+**Added:**
+- **Parked unRAID drives read 20 °C.** A spun-down array/pool drive now reports a fixed 20 °C
+  standby sentinel instead of dropping off the chart, so a parked disk shows a distinct low flat
+  line (and any heat warning clears) — matching the SNMP plugin's own `disktemp` extend. Gated on
+  the drive's standby flag, so the USB flash and always-on SSD/NVMe caches never get it. _(Re-copy
+  `docs/unraid-pool-temps.sh` to the unRAID host to pick this up.)_
+
+**Fixed:**
+- **Hidden chart channels stay hidden.** Channels you hide in a multi-channel sensor's legend no
+  longer reappear on the 60 s auto-refresh or when you switch the time range.
+- **Two near-identical yellow lines** in a 6-channel group (e.g. an unRAID array with two cache
+  drives): the sixth series is now a distinct violet instead of a second yellow-green.
+
+**Changed:**
+- **Unraid templates recommend an IP** for the probe core host (same DNS-flood rationale as
+  v0.4.47), on both the core and manual-proxy Community Applications templates.
+
 ## [0.4.47] - 2026-09-15
 
 **Added:**
