@@ -11,6 +11,21 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **Central probe re-point.** The probe core host (**Settings → Probe enrollment** /
+  `ARGUS_PROBE_CORE_HOST`) is now handed out on every probe check-in, not just baked in at
+  enrollment. Change it once and the whole fleet converges: each probe applies the new address at
+  its next restart — no re-enrollment. An explicit `ZBX_SERVER_HOST` on a probe still pins that one
+  probe and wins over the central value. _(The probe side ships in the next argus-probe image.)_
+
+**Changed:**
+- **Recommend an IP for the probe core host.** The Zabbix proxy re-resolves this address on every
+  data send, so an FQDN there generates heavy DNS load; the setting hint and deploy docs now advise
+  an IP. Combined with the central re-point above, switching the fleet from a name to an IP is a
+  one-field change plus a restart.
+
 ## [0.4.46] - 2026-09-15
 
 **Argus is now free software under the GNU AGPL-3.0.**

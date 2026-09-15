@@ -80,6 +80,13 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 	_ = s.st.SetUpdaterVersion(ctx, proxyName, strings.TrimSpace(req.UpdaterVersion))
 	target, _ := s.st.ProbeTargetVersion(ctx)
 	resp := map[string]string{"target": target}
+	// Hand out the current core host on every check-in (not gated on self-update capability, so a
+	// pure-reporter proxy gets it too). This lets an admin re-point the whole fleet by changing
+	// ARGUS_PROBE_CORE_HOST centrally: each probe applies the new value at its next restart. Omitted
+	// when unset, so the probe never overwrites its baked value with an empty one.
+	if ch := s.probeCoreHost(); ch != "" {
+		resp["core_host"] = ch
+	}
 	// Hand out (and clear) the one-shot updates exactly once - but ONLY to a caller that advertises
 	// self-update capability (the socket-holding updater sidecar). Otherwise a socket-less proxy's
 	// version-report check-in would consume the one-shot before the sidecar could act, losing it.
