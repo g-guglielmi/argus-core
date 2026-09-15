@@ -11,13 +11,27 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.4.46] - 2026-09-15
+
+**Argus is now free software under the GNU AGPL-3.0.**
 
 **Added:**
 - **Drill into channel groups** — a multi-channel sensor's name (ICMP, DNS activity, a disk, a
   NIC) is now a drill link like single sensors: click it to focus just that group, chart open,
   with its own breadcrumb and shareable URL. Deep links to a member channel now open the whole
   group's chart too, instead of nothing.
+
+**Changed:**
+- **Relicensed to AGPL-3.0** (was MIT). All three repos (core, probe, updater) are now under the
+  GNU Affero General Public License v3.0. Source files carry SPDX headers, and — as the AGPL's §13
+  network clause expects — the app's About page and the first-boot setup pages link to the source.
+
+**Fixed:**
+- **Phantom "update available" for updater sidecars.** A sidecar tracking `:latest` reports a
+  development build whose version base equals the newest release; the Probes page compared the whole
+  string and flagged it "outdated → x.y.z" permanently — an update that clicking could never clear.
+  It now compares the version base, so a sidecar at or past the newest release reads "up to date"
+  (matching a digest-based check).
 
 ---
 
