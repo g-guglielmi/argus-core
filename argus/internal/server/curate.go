@@ -449,8 +449,12 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	// unRAID (Argus unRAID by SNMP, attached alongside the Linux template): the SNMP plugin's
 	// extend scripts deliver per-disk temperatures - grouped into ONE overlay chart - and
 	// per-share free space (flat rows under Disk, after the mounts).
-	case "unraid.disktemp.raw", "unraid.sharefree.raw", "unraid.pooltemp.raw", "unraid.arraytemp.raw":
+	case "unraid.disktemp.raw", "unraid.sharefree.raw", "unraid.pooltemp.raw", "unraid.arraytemp.raw", "unraid.cputemp.raw":
 		return "", "", "", "", false // plumbing masters ("...temperatures..." must not hit the name heuristic)
+	case "unraid.cputemp":
+		// A single value (the CPU package), not per-drive - a standalone Temperature sensor, kept
+		// apart from the "Disk temperatures" overlay group.
+		return "Temperature", "CPU temperature", "", "", true
 	case "unraid.disktemp", "unraid.arraytemp", "unraid.pooltemp":
 		// Array drives (plugin disktemp extend, or the atomic arraytemps extend where installed)
 		// and pool/cache drives (pooltemps extend) merge into the same group - one overlay chart
