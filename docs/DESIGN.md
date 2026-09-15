@@ -701,6 +701,13 @@ plane; the probe checks in and converges.
 - **Check-in.** The probe posts `POST /api/probes/checkin` (Bearer probe token) every 5 min with
   its running image version + self-updater flag, and receives the fleet **target** to converge on.
   The version is baked into the image at build (`/etc/argus-probe.version`).
+- **Central core-host re-point.** The check-in response also carries the current **`core_host`**
+  (the `ARGUS_PROBE_CORE_HOST` setting, same source as enrollment). The probe re-fetches it once at
+  startup and applies it as its Zabbix `Server=`, so changing the setting re-points the whole fleet
+  at each probe's next restart — no re-enrollment. Fail-safe: an unreachable core or an older Argus
+  leaves the last-known host in place; an explicit `ZBX_SERVER_HOST` on the probe always wins.
+  Prefer an **IP** for this value — the proxy re-resolves it on every data send, so an FQDN floods
+  DNS.
 - **Target.** Argus holds a dashboard-settable target in `app_meta` (`GET`/`PUT /api/probes/target`,
   admin): `latest`, or an exact pin in the **decoupled probe scheme** - `7.0.29-r1`, *not* app
   semver (see the probe-image versioning in `deploy/README.md`). `/api/proxies` reports each

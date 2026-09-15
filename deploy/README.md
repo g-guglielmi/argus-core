@@ -97,10 +97,12 @@ probe no longer needs `gen-certs.sh` or manual proxy registration:
 **Prerequisites (one-time):**
 - Mount the CA (`ca.crt` + `ca.key`) read-only into the Argus container and set the two
   `ARGUS_CA_*` paths; set the **probe core host** (the address probes dial for `:10051`) - either
-  via `ARGUS_PROBE_CORE_HOST` or in **Settings → Probe enrollment** (no redeploy). Tip: a
-  split-horizon DNS name that resolves to the core's LAN/mesh IP internally and the public IP
-  externally lets every probe use one address. A probe can also override its baked-in core host
-  with `-e ZBX_SERVER_HOST=…` on its `docker run` (handy to re-point one probe without re-enrolling).
+  via `ARGUS_PROBE_CORE_HOST` or in **Settings → Probe enrollment** (no redeploy). **Prefer an IP
+  here, not an FQDN:** the Zabbix proxy re-resolves this address on every data send (very frequent),
+  so a name generates heavy DNS load - an IP eliminates it. Changing this value re-points the
+  **whole fleet**: each probe picks up the new host from its check-in and applies it at its next
+  restart (no re-enrollment). A probe can still override the central value with `-e ZBX_SERVER_HOST=…`
+  on its `docker run` (pins one probe, and that pin wins over the central re-sync).
 - The Zabbix API token Argus uses must have **super-admin** rights (to run `proxy.create`).
 - For remote sites with no VPN, publish **TCP 10051** on the core to the internet (HAProxy TCP
   passthrough / NAT), and make the `ghcr.io/<owner>/argus-probe` package public (or `docker login`).
