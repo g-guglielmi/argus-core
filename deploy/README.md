@@ -127,6 +127,48 @@ up as a standalone **CPU temperature** sensor under the Temperature category, wi
 > If the CPU sensor doesn't appear, run `sensors -u` on the host and check the label names - an
 > unusual chip may use labels the script doesn't recognise, which are a one-line tweak.
 
+## Monitoring a Ugreen NAS (Zabbix agent)
+
+Ugreen's **UGOS** exposes **no SNMP**, so the Ugreen device class doesn't use the SNMP path - it
+uses **Zabbix agent 2, run in a Docker container on the NAS itself** (UGOS ships Docker as an app).
+The site proxy then **polls the agent passively** on `:10050`, exactly like it polls an SNMP device
+on `:161` - the agent never has to reach out, and nothing extra is baked into the probe image.
+
+1. In Argus, **Add device → Ugreen (Zabbix agent)** with the NAS's IP. This creates the host with
+   an agent interface on `:10050` and attaches the *Argus NAS by Zabbix agent* template. Note the
+   **host name** you give it.
+2. On the NAS, run the agent container. This is a **starting point to validate in the lab** - the
+   exact mounts/privileges depend on your UGOS build:
+   ```bash
+   docker run -d --name argus-nas-agent --restart unless-stopped \
+     --network host --pid host --privileged \
+     -e ZBX_SERVER_HOST="<SITE-PROXY-IP>" \
+     -e ZBX_HOSTNAME="<the name you gave the device in Argus>" \
+     -v /:/rootfs:ro -v /proc:/proc:ro -v /sys:/sys:ro \
+     zabbix/zabbix-agent2:alpine-7.0-latest
+   ```
+   What each part is for:
+   - **`--network host`** - so the proxy can reach the agent on `:10050` (and the agent sees the
+     real NICs). Required.
+   - **`ZBX_SERVER_HOST=<proxy IP>`** - becomes the agent's `Server=` **allow-list**: only that
+     proxy may poll it. This *is* the access control (see the PSK note below).
+   - **`--pid host` + the `/proc`, `/sys`, `/` mounts** - so CPU / memory / filesystem readings are
+     the host's, not the container's.
+   - **`--privileged` + smartmontools** - for **per-disk SMART temperatures**. The stock agent2
+     image does not ship `smartmontools`; if the disk-temperature sensors stay empty, use an agent2
+     image that includes it (or add it) and make sure the container can read the raw disks. Every
+     other metric (CPU / RAM / filesystems / NICs / uptime) works without this.
+
+CPU, memory, filesystems, NICs and uptime use the **same item keys** as the SNMP classes, so they
+render identically. Disk temperatures group into the same **Disk temperatures** overlay chart as
+unRAID, with *running warm* (≥ `{$DISK.TEMP.WARN}`, 50 °C) and *overheating* (≥ `{$DISK.TEMP.HIGH}`,
+60 °C) alerts.
+
+> **Encryption (PSK).** The link is unencrypted by default; the `Server=` allow-list only checks the
+> source IP. On a trusted site LAN that's usually fine. To encrypt + mutually authenticate, add a
+> **PSK** on the agent (`TLSConnect`/`TLSAccept=psk`, `TLSPSKIdentity`, `TLSPSKFile`) and set the
+> matching TLS fields on the Zabbix host - no template change needed.
+
 ## Official docs vs. this script
 
 They do the **same base steps** - the Zabbix installer page (repo → packages → DB → schema)

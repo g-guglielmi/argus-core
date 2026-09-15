@@ -23,6 +23,7 @@ const (
 	PatternAgentless Pattern = "agentless"     // server/proxy-run checks (net.dns, ssh.run)
 	PatternVMware    Pattern = "native-vmware" // Zabbix's built-in VMware collector
 	PatternCollector Pattern = "collector"     // sidecar / script item (XCP-NG XAPI, NUT upsd)
+	PatternAgent     Pattern = "agent"         // Zabbix agent (passive) - a device that runs the agent but has no SNMP (Ugreen UGOS)
 )
 
 // IfaceKind is the network interface a class's host needs in Zabbix.
@@ -124,6 +125,22 @@ var registry = []Class{
 			Macro: "{$FS.NAME.SKIP}",
 			Value: `^(/run|/dev|/sys|/proc|/mnt/addons|/mnt/disks|/mnt/remotes|/mnt/rootshare|/var/lib/memtester|/var/lib/docker/[^/]+)($|/)`,
 		}},
+	},
+	{
+		// Ugreen UGOS exposes no SNMP, so this is our first Zabbix-agent class: the agent runs in a
+		// container ON the NAS (host network, /proc + /sys + / mounts, smartmontools for SMART) and the
+		// site proxy polls it passively on :10050 - the agent interface IfaceAgent already provisions.
+		// CPU/memory/filesystem/interface reuse the native agent item keys, so curation is shared with
+		// the Linux/Windows SNMP classes; the SMART master adds per-disk temperatures. No credentials -
+		// the agent's Server= IP allow-list is the access control (add a PSK to encrypt the link).
+		ID:         "ugreen",
+		Label:      "Ugreen (Zabbix agent)",
+		Family:     "NAS",
+		Pattern:    PatternAgent,
+		Iface:      IfaceAgent,
+		Templates:  []string{"Argus NAS by Zabbix agent"},
+		OffersHTTP: true,
+		Icon:       "nas",
 	},
 	{
 		// The host's own interface is the switch's IP (Base Ping runs against it); the metrics come

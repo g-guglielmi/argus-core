@@ -161,7 +161,7 @@ pre-§C fleet) falls back to a best-effort guess from its name, else a generic d
 | **Sophos XGS** | SNMP | sysObjectID `.2604` | CPU, mem, disk, ifaces, HA, live users, VPN | ifaces |
 | **Citrix NetScaler** | SNMP (+Nitro opt.) | sysObjectID `.5951` | CPU, mem, throughput, vserver state/health, SSL, HA | vservers |
 | **QNAP** | SNMP | sysObjectID `.24681` | CPU, mem, volume/disk, temp, fan, RAID, SMART | disks, volumes |
-| **Ugreen UGOS** | SNMP † | sysDescr (UGOS/Linux) | CPU, RAM, disk, temp, net, uptime | fs, disks, NICs |
+| **Ugreen UGOS** | Agent † | agent2 in Docker on the NAS | CPU, RAM, disk, net, uptime + per-disk SMART temps | fs, NICs, disks |
 | **unRAID** | SNMP | sysDescr `Unraid` | CPU load, RAM %, uptime, per-share free, NIC; disk + CPU temp via optional NET-SNMP extends (docs/unraid-pool-temps.sh, docs/unraid-cpu-temp.sh) | shares, disks, NICs |
 | **Libraesva ESG** | SNMP (+HTTPS) | sysObjectID/sysDescr | host CPU/RAM/disk + mail-queue + admin-cert | fs |
 | **Windows server** | SNMP | sysObjectID (Windows) | CPU, RAM, disk, net, uptime + **selected services** (LANMGR `svSvcTable`) | disks, NICs, services |
@@ -182,7 +182,12 @@ pre-§C fleet) falls back to a best-effort guess from its name, else a generic d
 ✦src = per-host today, but its metrics come *through* the registered UniFi controller (an API
 source; **both** self-hosted Network controllers **and** cloud gateways are in the fleet, so the
 UniFi template carries a controller-access mode). ✦ = API-endpoint source (register once → LLD
-spawns children). † Ugreen UGOS SNMP support is firmware-dependent; SSH is the fallback.
+spawns children). † Ugreen UGOS exposes **no SNMP**, so it's monitored with **Zabbix agent 2 run
+in a container on the NAS** (host network, `/proc` + `/sys` + `/` mounts, smartmontools for SMART);
+the site proxy polls it passively on `:10050` and the agent's `Server=` allow-lists that proxy. This
+is the catalog's first **agent** pattern — a carve-out for a Docker-capable device with no SNMP; the
+SNMP-first rule still governs the 400-server fleet. CPU/mem/fs/NIC reuse the native agent item keys,
+so curation is shared with the SNMP classes.
 
 ### SNMP gaps (need more than SNMP)
 - **UniFi** per-port/PoE/WAN/clients → controller API (self-hosted Network app **or** cloud gateway;

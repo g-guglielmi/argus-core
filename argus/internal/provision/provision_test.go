@@ -219,4 +219,17 @@ func TestRegistry(t *testing.T) {
 			t.Errorf("unraid FS skip missing %q", frag)
 		}
 	}
+	// Ugreen is our first Zabbix-agent class: passive agent over the agent interface (:10050), no
+	// credentials. It reuses the native agent item keys, so the create path treats it like any other
+	// agent-interface class.
+	ug, ok := ClassByID("ugreen")
+	if !ok {
+		t.Fatal("ugreen class missing")
+	}
+	if ug.Pattern != PatternAgent || ug.Iface != IfaceAgent || len(ug.Templates) != 1 || ug.Templates[0] != "Argus NAS by Zabbix agent" {
+		t.Fatalf("unexpected ugreen class: %+v", ug)
+	}
+	if len(ug.Macros) != 0 {
+		t.Fatalf("ugreen needs no credential macros: %+v", ug.Macros)
+	}
 }
