@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.4.49] - 2026-09-15
 
 **Added:**
 - **unRAID CPU temperature.** A new optional `cputemp` NET-SNMP extend
