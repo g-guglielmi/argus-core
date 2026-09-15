@@ -4515,7 +4515,7 @@ function colorLegendChecks(u: uPlot) {
 // buildMultiPlot overlays several channels on one uPlot: timestamps are unioned, each distinct unit
 // gets its own scale (axes drawn for the first two, left/right), and the legend lists every channel
 // with its live value and toggles it on click. xrange pins the x-axis to the requested window.
-function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean; off?: boolean; hold?: boolean; seedValue?: number; seedClock?: number }[], width: number, c: ChartColors, xrange?: [number, number], onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
+function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean; off?: boolean; hold?: boolean; seedValue?: number; seedClock?: number }[], width: number, c: ChartColors, xrange?: [number, number], onZoom?: (zoomed: boolean) => void, onToggle?: (label: string, show: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
   // Bucket timestamps to the typical sampling interval so channels sampled at slightly offset clocks
   // land on the same x (else the line renders as dots) while a genuine gap still breaks the line.
   const deltas: number[] = []
@@ -4636,7 +4636,7 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   // unit (network In/Out are peers on one scale - shading just one of them reads as favouritism).
   if (p0 && !p0.downtime && !bands.length && series.filter((s) => s.units === p0.units).length === 1) (uplotSeries[1] as uPlot.Series).fill = c.fill
   // cursor.points.show:false removes uPlot's hover marker dot (see buildPlot) - the real "stray dot".
-  const opts = { width, height: 320, scales: scaleCfg, axes, series: uplotSeries, legend: { show: true }, cursor: { points: { show: false } }, bands, ...zoomHook(onZoom, xrange) } as uPlot.Options
+  const opts = { width, height: 320, scales: scaleCfg, axes, series: uplotSeries, legend: { show: true }, cursor: { points: { show: false } }, bands, ...zoomHook(onZoom, xrange, onToggle) } as uPlot.Options
   // insertGaps breaks the line where sampling actually stopped (a real outage) instead of drawing a
   // straight segment across it; bucketing above keeps offset-but-regular channels connected.
   const [gx, gy] = insertGaps(xs, [...ys, ...extraYs])
@@ -4648,7 +4648,7 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
 // (bucket i is the local date today − (n−1−i); the last bucket is today so far, live). Channels
 // are nested (each a subset of the one before: blocked ⊆ total), so bars simply overlay - the
 // full bar is the first channel, later ones paint their share on top from the baseline.
-function buildBarPlot(series: { label: string; units: string; values: number[] }[], width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
+function buildBarPlot(series: { label: string; units: string; values: number[] }[], width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void, onToggle?: (label: string, show: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
   const n = Math.max(0, ...series.map((s) => s.values.length))
   // Local-midnight day math via Date (DST-correct; t - t%86400 would give UTC midnight).
   const dayAt = (i: number) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (n - 1 - i)); return Math.round(d.getTime() / 1000) }
@@ -4699,17 +4699,27 @@ function buildBarPlot(series: { label: string; units: string; values: number[] }
     { stroke: c.axis, grid, ticks, incrs: DAY_INCRS },
     { stroke: c.axis, grid, ticks, side: 1, size: axisSize, values: yValues as unknown as uPlot.Axis['values'] },
   ]
-  const opts = { width, height: 320, scales, axes, series: uplotSeries, legend: { show: true }, cursor: { points: { show: false } }, ...zoomHook(onZoom, [x0, x1]) } as uPlot.Options
+  const opts = { width, height: 320, scales, axes, series: uplotSeries, legend: { show: true }, cursor: { points: { show: false } }, ...zoomHook(onZoom, [x0, x1], onToggle) } as uPlot.Options
   return [opts, [xs, ...cols] as uPlot.AlignedData]
 }
 
 // zoomHook reports (via onZoom) whether the x view is narrower than the full window - so the caller
 // can pause auto-refresh while the user is zoomed in. uPlot fires setScale on init (full = not
-// zoomed), on a drag-zoom, and on a double-click reset.
-function zoomHook(onZoom: ((z: boolean) => void) | undefined, xrange: [number, number] | undefined): Partial<uPlot.Options> {
-  if (!onZoom || !xrange) return {}
-  const full = xrange[1] - xrange[0]
-  return { hooks: { setScale: [(u: uPlot, key: string) => { if (key === 'x' && u.scales.x.min != null && u.scales.x.max != null) onZoom(u.scales.x.max - u.scales.x.min < full * 0.985) }] } }
+// zoomed), on a drag-zoom, and on a double-click reset. onToggle (optional) reports legend
+// show/hide clicks so the caller can persist them across the chart's frequent rebuilds.
+function zoomHook(onZoom: ((z: boolean) => void) | undefined, xrange: [number, number] | undefined, onToggle?: (label: string, show: boolean) => void): Partial<uPlot.Options> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hooks: any = {}
+  if (onZoom && xrange) {
+    const full = xrange[1] - xrange[0]
+    hooks.setScale = [(u: uPlot, key: string) => { if (key === 'x' && u.scales.x.min != null && u.scales.x.max != null) onZoom(u.scales.x.max - u.scales.x.min < full * 0.985) }]
+  }
+  if (onToggle) {
+    // Fires only on a real show change (a legend click); cursor focus passes opts without `show`.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    hooks.setSeries = [(u: uPlot, i: number | null, o: any) => { if (i != null && o && o.show !== undefined) { const l = u.series[i]?.label; if (typeof l === 'string') onToggle(l, !!o.show) } }]
+  }
+  return Object.keys(hooks).length ? { hooks } : {}
 }
 
 // SensorGroupChart overlays the channels of one instance (a disk mount, a NIC) in a single graph with
@@ -4724,6 +4734,10 @@ function SensorGroupChart({ channels, bars }: { channels: GroupChan[]; bars?: bo
   const host = useRef<HTMLDivElement>(null)
   const plot = useRef<uPlot | null>(null)
   const zoomedRef = useRef(false) // true while the user has zoomed in; pauses auto-refresh
+  // The chart is destroyed+rebuilt on every auto-refresh and range change, and uPlot's legend
+  // show/hide state lives inside the instance - so without this it would reset each time. Remember
+  // the user's per-channel toggles (by label) and re-apply them after each rebuild.
+  const showRef = useRef<Record<string, boolean>>({})
   const key = channels.map((c) => c.id).join(',')
 
   useEffect(() => { const t = setInterval(() => { if (!zoomedRef.current) setTick((x) => x + 1) }, 60000); return () => clearInterval(t) }, [])
@@ -4767,10 +4781,14 @@ function SensorGroupChart({ channels, bars }: { channels: GroupChan[]; bars?: bo
     const width = host.current.clientWidth || 600
     const to = Math.floor(Date.now() / 1000)
     const from = to - (RANGE_SECS[range] || 7200)
+    const onToggle = (label: string, show: boolean) => { showRef.current[label] = show }
     const [opts, aligned] = bars
-      ? buildBarPlot(series.map((s) => ({ label: s.label, units: s.units, values: s.values || [] })), width, chartColors('var(--accent)'), (z) => { zoomedRef.current = z })
-      : buildMultiPlot(series, width, chartColors('var(--accent)'), [from, to], (z) => { zoomedRef.current = z })
+      ? buildBarPlot(series.map((s) => ({ label: s.label, units: s.units, values: s.values || [] })), width, chartColors('var(--accent)'), (z) => { zoomedRef.current = z }, onToggle)
+      : buildMultiPlot(series, width, chartColors('var(--accent)'), [from, to], (z) => { zoomedRef.current = z }, onToggle)
     plot.current = new uPlot(opts, aligned, host.current)
+    // Re-apply the user's remembered show/hide choices (they survive refresh + range change).
+    const sv = showRef.current
+    plot.current.series.forEach((s, i) => { if (i === 0) return; const l = s.label; if (typeof l === 'string' && sv[l] !== undefined && sv[l] !== s.show) plot.current!.setSeries(i, { show: sv[l] }) })
     colorLegendChecks(plot.current)
     return () => { if (plot.current) { plot.current.destroy(); plot.current = null } }
   }, [series, themeTick, range, bars])
