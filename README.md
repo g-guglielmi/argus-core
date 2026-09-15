@@ -209,6 +209,10 @@ It buffers up to 7 days of data if the core is unreachable.
 > Full env-var reference: [`argus/README.md`](argus/README.md#configuration-env-vars)
 >
 > unRAID template: [`deploy/unraid/argus.xml`](deploy/unraid/argus.xml)
+>
+> Monitoring unRAID **disk temperatures** (SNMP plugin + extend script): [`deploy/README.md`](deploy/README.md#monitoring-unraid-disk-temperatures)
+>
+> Monitoring unRAID **CPU temperature** (lm-sensors extend): [`deploy/README.md`](deploy/README.md#monitoring-unraid-cpu-temperature)
 
 #### 2a. Create a Zabbix API token
 

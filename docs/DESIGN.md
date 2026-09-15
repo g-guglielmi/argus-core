@@ -162,7 +162,7 @@ pre-§C fleet) falls back to a best-effort guess from its name, else a generic d
 | **Citrix NetScaler** | SNMP (+Nitro opt.) | sysObjectID `.5951` | CPU, mem, throughput, vserver state/health, SSL, HA | vservers |
 | **QNAP** | SNMP | sysObjectID `.24681` | CPU, mem, volume/disk, temp, fan, RAID, SMART | disks, volumes |
 | **Ugreen UGOS** | SNMP † | sysDescr (UGOS/Linux) | CPU, RAM, disk, temp, net, uptime | fs, disks, NICs |
-| **unRAID** | SNMP | sysDescr `Unraid` | CPU load, RAM %, uptime, per-share free, NIC; **disk temp/SMART = gap** | shares, disks, NICs |
+| **unRAID** | SNMP | sysDescr `Unraid` | CPU load, RAM %, uptime, per-share free, NIC; disk + CPU temp via optional NET-SNMP extends (docs/unraid-pool-temps.sh, docs/unraid-cpu-temp.sh) | shares, disks, NICs |
 | **Libraesva ESG** | SNMP (+HTTPS) | sysObjectID/sysDescr | host CPU/RAM/disk + mail-queue + admin-cert | fs |
 | **Windows server** | SNMP | sysObjectID (Windows) | CPU, RAM, disk, net, uptime + **selected services** (LANMGR `svSvcTable`) | disks, NICs, services |
 | **Generic Linux SSH** | Agentless | SSH reachable (no-SNMP fallback) | CPU, RAM, disk, net via `ssh.run` | fs, NICs |

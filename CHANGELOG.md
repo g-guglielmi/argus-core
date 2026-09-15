@@ -11,6 +11,17 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **unRAID CPU temperature.** A new optional `cputemp` NET-SNMP extend
+  ([`docs/unraid-cpu-temp.sh`](docs/unraid-cpu-temp.sh)) reports the CPU package temperature from
+  lm-sensors (Intel package / AMD Tdie/Tctl, hottest core as fallback), shown as a standalone
+  Temperature sensor with *running hot* / *overheating* alerts (`{$CPU.TEMP.WARN}` 80 °C,
+  `{$CPU.TEMP.HIGH}` 90 °C). Needs the Dynamix System Temperature plugin.
+- **Docs: monitoring unRAID temperatures.** `deploy/README.md` now documents the plugin +
+  extend-script setup for both disk temperatures and CPU temperature, linked from the main README.
+
 ## [0.4.48] - 2026-09-15
 
 **Added:**
