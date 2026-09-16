@@ -39,15 +39,6 @@ zabbix_export:
               name: 'Very high CPU utilization'
               priority: HIGH
               description: 'CPU utilization at/above the high threshold on the last 3 checks.'
-        - uuid: a8339190e9e44fb0a5fb52277b9fa28d
-          name: 'CPU load (1m average)'
-          type: ZABBIX_PASSIVE
-          key: 'system.cpu.load[all,avg1]'
-          delay: 1m
-          history: 7d
-          trends: 365d
-          value_type: FLOAT
-          description: 'System load average over 1 minute, all cores (system.cpu.load).'
         - uuid: de9219b0cc6a42f38502256f4d09afaf
           name: 'Total memory'
           type: ZABBIX_PASSIVE
@@ -70,14 +61,15 @@ zabbix_export:
           description: 'Memory available to start new applications, without swapping (vm.memory.size[available]).'
         - uuid: 69af35fea33345238ac4205f4afcc106
           name: 'Used memory percent'
-          type: ZABBIX_PASSIVE
+          type: CALCULATED
           key: 'vm.memory.size[pused]'
+          params: '100*(last(//vm.memory.size[total])-last(//vm.memory.size[available]))/last(//vm.memory.size[total])'
           delay: 1m
           history: 7d
           trends: 365d
           value_type: FLOAT
           units: '%'
-          description: 'Percentage of memory in use (vm.memory.size[pused]).'
+          description: 'Percentage of memory actually in use, computed from MemAvailable so reclaimable buffers/cache count as free (the agent native pused counts cache as used, reading ~95% on a NAS with a big page cache). = 100*(total-available)/total.'
           triggers:
             - uuid: 4c0e48c26cd6445fa0db075f40ffc297
               expression: 'min(/Argus NAS by Zabbix agent/vm.memory.size[pused],#3)>={$MEM.USED.WARN} and min(/Argus NAS by Zabbix agent/vm.memory.size[pused],#3)<{$MEM.USED.HIGH}'
@@ -114,7 +106,7 @@ zabbix_export:
           type: ZABBIX_PASSIVE
           key: vfs.fs.discovery
           delay: 1h
-          description: 'Mounted filesystems reported by the agent, kept to real on-disk filesystems.'
+          description: 'Mounted filesystems reported by the agent. When the agent runs in a container the mount table is noisy (the container overlay, /etc bind-mounts, and any host root bind); {$FS.NAME.MATCHES} keeps only the mounts you care about - the class defaults it to the data volumes (/volume1, /volume2, ...).'
           filter:
             evaltype: AND
             conditions:
@@ -128,6 +120,11 @@ zabbix_export:
                 value: '{$FS.NAME.SKIP}'
                 operator: NOT_MATCHES_REGEX
                 formulaid: B
+              # Keep ONLY the mounts matching this regex (the class narrows it to the data volumes).
+              - macro: '{#FSNAME}'
+                value: '{$FS.NAME.MATCHES}'
+                operator: MATCHES_REGEX
+                formulaid: C
           item_prototypes:
             - uuid: ce7fb1a7160d4d87a82a02032342809d
               name: 'Disk total ({#FSNAME})'
@@ -277,6 +274,9 @@ zabbix_export:
         - macro: '{$FS.NAME.SKIP}'
           value: '^(/run|/dev|/sys|/proc|/boot|/etc/hosts|/var/lib/docker|/mnt/.docker)($|/)'
           description: 'Mount paths matching this regex are not discovered (pseudo-filesystems, docker layers, boot).'
+        - macro: '{$FS.NAME.MATCHES}'
+          value: '.+'
+          description: 'Only mounts matching this regex are discovered. The Ugreen class narrows it to the data volumes ((^|/)volume[0-9]+$); widen it to monitor more paths.'
         - macro: '{$NET.IF.SKIP}'
           value: '^(lo$|veth|docker|br-|virbr|vnet|tap|tun|cali|cni|flannel|dummy)'
           description: 'Interface names matching this regex are not discovered (virtual / container NICs).'
