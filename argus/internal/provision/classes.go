@@ -169,7 +169,7 @@ var registry = []Class{
 				"cat > /volume1/docker/argus-agent/nas-agent.conf <<'EOF'\n" +
 				"UserParameter=ugreen.cpu.temp,for h in /sys/class/hwmon/hwmon*; do case \"$(cat \"$h/name\" 2>/dev/null)\" in coretemp|k10temp) cat \"$h/temp1_input\"; exit 0;; esac; done; cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -rn | head -1\n" +
 				"EOF\n" +
-				"docker run -d --name argus-nas-agent --restart unless-stopped \\\n" +
+				"docker run -d --name argus-agent --restart unless-stopped \\\n" +
 				"  --network host --pid host --privileged --user root \\\n" +
 				"  -e ZBX_SERVER_HOST=\"<PROXY-IP>\" \\\n" +
 				"  -e ZBX_HOSTNAME=\"{host}\" \\\n" +
