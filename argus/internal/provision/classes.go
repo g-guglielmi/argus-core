@@ -154,13 +154,8 @@ var registry = []Class{
 		Templates:  []string{"Argus NAS by Zabbix agent"},
 		OffersHTTP: true,
 		Icon:       "nas",
-		HostMacros: []PresetMacro{{
-			// A containerised agent sees a noisy mount table (its own overlay, /etc bind-mounts, any
-			// host-root bind). Narrow discovery to the UGOS data volumes so only /volume1, /volume2, ...
-			// are monitored - matches both a real-path mount (/volume1) and a /rootfs-prefixed one.
-			Macro: "{$FS.NAME.MATCHES}",
-			Value: `(^|/)volume[0-9]+$`,
-		}},
+		// The data-volume filter lives as the template's {$FS.NAME.MATCHES} default (not a host preset)
+		// so it also reaches hosts added before it existed, on the next template re-import.
 		Setup: &ClassSetup{
 			Title: "Set up the Zabbix agent on the NAS",
 			Intro: "UGOS has no SNMP, so this device is monitored by a Zabbix agent 2 container running on the NAS itself. Once it's up, the proxy (or core) that monitors this device polls the agent on port 10050 - nothing has to reach back out.",
