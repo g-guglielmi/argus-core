@@ -145,7 +145,7 @@ on `:161` - the agent never has to reach out, and nothing extra is baked into th
    cat > /volume1/docker/argus-agent/nas-agent.conf <<'EOF'
    UserParameter=ugreen.cpu.temp,for h in /sys/class/hwmon/hwmon*; do case "$(cat "$h/name" 2>/dev/null)" in coretemp|k10temp) cat "$h/temp1_input"; exit 0;; esac; done; cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -rn | head -1
    EOF
-   docker run -d --name argus-nas-agent --restart unless-stopped \
+   docker run -d --name argus-agent --restart unless-stopped \
      --network host --pid host --privileged --user root \
      -e ZBX_SERVER_HOST="<SITE-PROXY-IP>" \
      -e ZBX_HOSTNAME="<the name you gave the device in Argus>" \
