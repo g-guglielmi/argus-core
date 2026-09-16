@@ -54,6 +54,18 @@ type MacroSpec struct {
 	Derive   string `json:"derive,omitempty"` // form auto-fills this from the host address ("{host}" -> the IP/DNS), overridable; e.g. "http://{host}". Only for host-addressed URLs, never a controller URL (UniFi) that differs from the device.
 }
 
+// ClassSetup is optional prerequisite guidance the Add-device form shows for a class that needs
+// something set up ON the device first - e.g. the Ugreen agent class needs a Zabbix agent 2
+// container running on the NAS before the proxy can poll it. Purely informational: the create call
+// ignores it. In Command, "{host}" is replaced with the device name the user typed.
+type ClassSetup struct {
+	Title   string   `json:"title"`
+	Intro   string   `json:"intro,omitempty"`
+	Steps   []string `json:"steps,omitempty"`   // ordered prose steps
+	Command string   `json:"command,omitempty"` // a copyable shell snippet ({host} -> the device name)
+	Note    string   `json:"note,omitempty"`
+}
+
 // Class is a device class in the registry: the metadata that drives provisioning (which Zabbix
 // templates to attach and what interface the host needs) and, later, discovery + the management UI.
 type Class struct {
@@ -67,6 +79,7 @@ type Class struct {
 	Icon       string      `json:"icon"`       // tree glyph name (server, switch, shield, …); see web devIcon map
 	Macros     []MacroSpec `json:"macros,omitempty"` // per-host macros the attach UI collects
 	HostMacros []PresetMacro `json:"-"`        // macros set silently on every host of this class
+	Setup      *ClassSetup `json:"setup,omitempty"` // prerequisite steps shown in the attach form (agent classes)
 }
 
 // registry is the catalog. C0 shipped the universal "base" class (Ping only); C1 adds Generic Linux
@@ -141,6 +154,22 @@ var registry = []Class{
 		Templates:  []string{"Argus NAS by Zabbix agent"},
 		OffersHTTP: true,
 		Icon:       "nas",
+		Setup: &ClassSetup{
+			Title: "Set up the Zabbix agent on the NAS",
+			Intro: "UGOS has no SNMP, so this device is monitored by a Zabbix agent 2 container running on the NAS itself. Once it's up, the proxy (or core) that monitors this device polls the agent on port 10050 - nothing has to reach back out.",
+			Steps: []string{
+				"On the NAS, open the Docker app (UGOS ships Docker) - the container needs host networking, so run it from a shell or a compose/run config, not the simple app store form.",
+				"Run the container below. Replace <PROXY-IP> with the IP of the proxy (or core) shown in \"Monitored by\" above - that address is the only one allowed to poll the agent.",
+				"For per-disk SMART temperatures the agent needs smartmontools and raw-disk access (--privileged). If disk temps stay empty, that's why - CPU, memory, filesystems and network still work without it.",
+			},
+			Command: "docker run -d --name argus-nas-agent --restart unless-stopped \\\n" +
+				"  --network host --pid host --privileged \\\n" +
+				"  -e ZBX_SERVER_HOST=\"<PROXY-IP>\" \\\n" +
+				"  -e ZBX_HOSTNAME=\"{host}\" \\\n" +
+				"  -v /:/rootfs:ro -v /proc:/proc:ro -v /sys:/sys:ro \\\n" +
+				"  zabbix/zabbix-agent2:alpine-7.0-latest",
+			Note: "The link is unencrypted; the ZBX_SERVER_HOST allow-list is what restricts polling to your proxy. To encrypt it, add a PSK on the agent and the matching TLS fields on the host - see deploy/README.md.",
+		},
 	},
 	{
 		// The host's own interface is the switch's IP (Base Ping runs against it); the metrics come
