@@ -16,7 +16,8 @@ type Passkey = { id: string; name: string; created: string; last_used: string | 
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number }
 type Group = { id: string; name: string; hosts: number }
 type MacroSpec = { macro: string; label: string; hint?: string; required?: boolean; secret?: boolean; derive?: string }
-type DeviceClass = { id: string; label: string; family: string; pattern: string; iface: string; offers_http: boolean; icon?: string; macros?: MacroSpec[] }
+type ClassSetup = { title: string; intro?: string; steps?: string[]; command?: string; note?: string }
+type DeviceClass = { id: string; label: string; family: string; pattern: string; iface: string; offers_http: boolean; icon?: string; macros?: MacroSpec[]; setup?: ClassSetup }
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[] }
@@ -3274,6 +3275,9 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
 
   const cls = classes.find((c) => c.id === classId)
   const classMacros = cls?.macros || []
+  // Prerequisite steps some classes carry (e.g. Ugreen needs a Zabbix agent container on the NAS):
+  // fill {host} in the copyable command with the device name the user is typing.
+  const setupCmd = cls?.setup?.command ? cls.setup.command.replace('{host}', name.trim() || '<device-name>') : ''
   // Alphabetical by label, with "Ping only" (base) pinned first as the universal default.
   const classOptions = useMemo(() => classes.map((c) => ({ value: c.id, label: c.label }))
     .sort((a, b) => (a.value === 'base' ? -1 : b.value === 'base' ? 1 : a.label.localeCompare(b.label))), [classes])
@@ -3362,6 +3366,24 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
           {/* Blank label + input-height box so the toggle lines up with the address input, not its label. */}
           <Field label={' '}><div style={{ display: 'flex', alignItems: 'center', minHeight: 37 }}><Switch checked={useIp} onChange={setUseIp} label={useIp ? 'Connect by IP' : 'Connect by DNS'} /></div></Field>
         </div>
+        {cls?.setup && (
+          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '0.7rem 0.8rem', background: 'var(--elevated)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div style={{ fontWeight: 600, fontSize: 13 }}>{cls.setup.title}</div>
+            {cls.setup.intro && <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.45 }}>{cls.setup.intro}</div>}
+            {cls.setup.steps && cls.setup.steps.length > 0 && (
+              <ol style={{ margin: 0, paddingLeft: '1.15rem', fontSize: 12.5, lineHeight: 1.45, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                {cls.setup.steps.map((s, i) => <li key={i}>{s}</li>)}
+              </ol>
+            )}
+            {setupCmd && (
+              <div style={{ position: 'relative' }}>
+                <pre style={{ margin: 0, padding: '0.6rem 2.2rem 0.6rem 0.7rem', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12, overflowX: 'auto', whiteSpace: 'pre' }}>{setupCmd}</pre>
+                <div style={{ position: 'absolute', top: 6, right: 6 }}><CopyButton text={setupCmd} /></div>
+              </div>
+            )}
+            {cls.setup.note && <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.45 }}>{cls.setup.note}</div>}
+          </div>
+        )}
         {needsSnmp && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
             {proxySnmp === null && <span style={{ fontSize: 13, color: 'var(--muted)' }}>Checking {proxyName}'s SNMP settings…</span>}
