@@ -137,14 +137,13 @@ on `:161` - the agent never has to reach out, and nothing extra is baked into th
 1. In Argus, **Add device → Ugreen (Zabbix agent)** with the NAS's IP. This creates the host with
    an agent interface on `:10050` and attaches the *Argus NAS by Zabbix agent* template. Note the
    **host name** you give it.
-2. On the NAS, run the agent container. This is a **starting point to validate in the lab** - the
-   exact mounts/privileges depend on your UGOS build:
+2. On the NAS, run the agent container:
    ```bash
    docker run -d --name argus-nas-agent --restart unless-stopped \
-     --network host --pid host --privileged \
+     --network host --pid host --privileged --user root \
      -e ZBX_SERVER_HOST="<SITE-PROXY-IP>" \
      -e ZBX_HOSTNAME="<the name you gave the device in Argus>" \
-     -v /:/rootfs:ro -v /proc:/proc:ro -v /sys:/sys:ro \
+     -v /volume1:/volume1:ro -v /proc:/proc:ro -v /sys:/sys:ro \
      zabbix/zabbix-agent2:alpine-7.0-latest
    ```
    What each part is for:
@@ -152,17 +151,21 @@ on `:161` - the agent never has to reach out, and nothing extra is baked into th
      real NICs). Required.
    - **`ZBX_SERVER_HOST=<proxy IP>`** - becomes the agent's `Server=` **allow-list**: only that
      proxy may poll it. This *is* the access control (see the PSK note below).
-   - **`--pid host` + the `/proc`, `/sys`, `/` mounts** - so CPU / memory / filesystem readings are
-     the host's, not the container's.
-   - **`--privileged` + smartmontools** - for **per-disk SMART temperatures**. The stock agent2
-     image does not ship `smartmontools`; if the disk-temperature sensors stay empty, use an agent2
-     image that includes it (or add it) and make sure the container can read the raw disks. Every
-     other metric (CPU / RAM / filesystems / NICs / uptime) works without this.
+   - **`--pid host` + the `/proc`, `/sys` mounts** - so CPU / memory readings are the host's, not the
+     container's.
+   - **`-v /volume1:/volume1:ro`** - each data volume you want disk-usage for, mounted at its real
+     path (add `/volume2`, ... if you have more). The class filters filesystem discovery down to the
+     `volumeN` mounts, so the container's own filesystems don't clutter the Disk section.
+   - **`--privileged --user root`** - for **per-disk SMART temperatures**: `smart.disk.get` runs
+     `smartctl` against the raw disks, which needs root + raw access. The stock agent2 image does not
+     ship `smartmontools`, so **disk temperatures need an agent2 image that includes it** (or one
+     built from it). Every other metric (CPU / RAM / filesystems / NICs / uptime) works without it.
 
-CPU, memory, filesystems, NICs and uptime use the **same item keys** as the SNMP classes, so they
-render identically. Disk temperatures group into the same **Disk temperatures** overlay chart as
-unRAID, with *running warm* (≥ `{$DISK.TEMP.WARN}`, 50 °C) and *overheating* (≥ `{$DISK.TEMP.HIGH}`,
-60 °C) alerts.
+CPU utilization, memory, filesystems, NICs and uptime use the **same item keys** as the SNMP
+classes, so they render identically. Memory used-% is computed from **MemAvailable**, so page cache
+counts as free (matching what UGOS shows), not as used. Disk temperatures group into the same **Disk
+temperatures** overlay chart as unRAID, with *running warm* (≥ `{$DISK.TEMP.WARN}`, 50 °C) and
+*overheating* (≥ `{$DISK.TEMP.HIGH}`, 60 °C) alerts.
 
 > **Encryption (PSK).** The link is unencrypted by default; the `Server=` allow-list only checks the
 > source IP. On a trusted site LAN that's usually fine. To encrypt + mutually authenticate, add a
