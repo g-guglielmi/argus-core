@@ -174,7 +174,7 @@ var registry = []Class{
 				"  -e ZBX_SERVER_HOST=\"<PROXY-IP>\" \\\n" +
 				"  -e ZBX_HOSTNAME=\"{host}\" \\\n" +
 				"  -v /volume1:/volume1:ro -v /proc:/proc:ro -v /sys:/sys:ro \\\n" +
-				"  -v /volume1/docker/argus-agent/nas-agent.conf:/etc/zabbix/zabbix_agent2.d/nas-agent.conf:ro \\\n" +
+				"  -v /volume1/docker/argus-agent/nas-agent.conf:/etc/zabbix/zabbix_agent2.d/plugins.d/nas-agent.conf:ro \\\n" +
 				"  zabbix/zabbix-agent2:alpine-7.0-latest",
 			Note: "The link is unencrypted; the ZBX_SERVER_HOST allow-list is what restricts polling to your proxy. To encrypt it, add a PSK on the agent and the matching TLS fields on the host - see deploy/README.md.",
 		},
