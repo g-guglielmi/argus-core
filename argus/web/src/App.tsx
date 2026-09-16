@@ -1112,9 +1112,25 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   async function logout() { await fetch('/api/logout', { method: 'POST' }).catch(() => {}); onLogout() }
   function goto(v: View) { setTreeTarget(null); if (v === 'monitoring') setMonHome((n) => n + 1); setView(v); pushNav(v); setMenuOpen(false); setNavOpen(false) }
 
-  // Running version for the sidebar footer (the full About card lives in Settings). Fetched once.
+  // Running version for the sidebar footer (the full About card lives in Settings). This poll is also
+  // the stale-bundle guard: an already-loaded SPA never re-fetches its own index.html, so after the core
+  // is updated the tab keeps running the OLD JS until a full reload. The version endpoint is cheap
+  // (a compile-time build id + cached latest, no network), so we poll it and, when the running build id
+  // changes from the one this tab first saw, offer a reload. buildinfo.Version is "" only for un-stamped
+  // local dev builds (can't tell those apart), so the detector arms only once we've seen a concrete id.
   const [ver, setVer] = useState<VersionInfo | null>(null)
-  useEffect(() => { fetch('/api/version').then((r) => (r.ok ? r.json() : null)).then((v) => { if (v) setVer(v) }).catch(() => {}) }, [])
+  const [updateReady, setUpdateReady] = useState(false)
+  const bootVer = useRef<string | null>(null)
+  useEffect(() => {
+    let stop = false
+    const check = () => fetch('/api/version').then((r) => (r.ok ? r.json() : null)).then((v: VersionInfo | null) => {
+      if (stop || !v) return
+      setVer(v)
+      if (bootVer.current === null) bootVer.current = v.version || ''
+      else if (bootVer.current && v.version && v.version !== bootVer.current) setUpdateReady(true)
+    }).catch(() => {})
+    check(); const t = setInterval(check, 60000); return () => { stop = true; clearInterval(t) }
+  }, [])
 
   // title doubles as the tooltip for the collapsed (icon-only) rail.
   const nav = (id: View, label: string, opts?: { count?: number; soon?: boolean }) => (
@@ -1180,6 +1196,12 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
       </aside>
 
       <div className="main">
+        {updateReady && (
+          <div className="updbar" role="status">
+            <span>A new version of Argus is available — reload to load the latest.</span>
+            <Button variant="primary" onClick={() => window.location.reload()}>Reload</Button>
+          </div>
+        )}
         <div className="topbar">
           <button className="iconbtn" title="Toggle sidebar" aria-label="Toggle sidebar" onClick={toggleNav}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M3.5 6h17M3.5 12h17M3.5 18h17" /></svg>

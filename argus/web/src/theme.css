@@ -118,6 +118,10 @@ a { color: var(--accent); }
 .app-shell.collapsed .brand + .navlabel { display: none; }
 
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.updbar { display: flex; align-items: center; gap: 12px; padding: 9px 22px; font-size: 13px; color: var(--text); background: color-mix(in srgb, var(--accent) 16%, var(--panel)); border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.updbar span { flex: 1 1 auto; }
+.updbar .btn { flex: 0 0 auto; }
+@media (max-width: 768px) { .updbar { padding: 8px 12px; gap: 8px; } }
 .topbar { position: sticky; top: 0; z-index: 12; background: color-mix(in srgb, var(--bg) 84%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px; padding: 11px 22px; }
 .iconbtn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer; display: grid; place-items: center; flex-shrink: 0; }
 .iconbtn:hover { background: var(--elevated); color: var(--text); }
