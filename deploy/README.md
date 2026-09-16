@@ -137,13 +137,14 @@ on `:161` - the agent never has to reach out, and nothing extra is baked into th
 1. In Argus, **Add device → Ugreen (Zabbix agent)** with the NAS's IP. This creates the host with
    an agent interface on `:10050` and attaches the *Argus NAS by Zabbix agent* template. Note the
    **host name** you give it.
-2. On the NAS, run the block below. The first two lines write a one-line config that adds the
-   CPU-temperature reading (the stock agent2 image has `smartctl` for disk SMART already, but no
-   CPU-temp key); the rest starts the agent:
+2. On the NAS, run the block below. The `cat` writes a small config with two custom readings - CPU
+   temperature, and per-disk SMART temperature read **without waking the disk** (`smartctl -n
+   standby`); the rest starts the agent:
    ```bash
    mkdir -p /volume1/docker/argus-agent
    cat > /volume1/docker/argus-agent/nas-agent.conf <<'EOF'
    UserParameter=ugreen.cpu.temp,for h in /sys/class/hwmon/hwmon*; do case "$(cat "$h/name" 2>/dev/null)" in coretemp|k10temp) cat "$h/temp1_input"; exit 0;; esac; done; cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -rn | head -1
+   UserParameter=ugreen.disk.temp[*],smartctl -n standby -a -jc "$1" 2>/dev/null | grep -oE '"temperature":\{[^}]*"current":[0-9]+' | grep -oE '[0-9]+$'
    EOF
    docker run -d --name argus-agent --restart unless-stopped \
      --network host --pid host --privileged --user root \
@@ -167,11 +168,11 @@ on `:161` - the agent never has to reach out, and nothing extra is baked into th
    - **`-v /volume1:/volume1:ro`** - each data volume you want disk-usage for, mounted at its real
      path (add `/volume2`, ... if you have more). The class filters filesystem discovery down to the
      `volumeN` mounts, so the container's own filesystems don't clutter the Disk section.
-   - **`--privileged --user root`** - so `smart.disk.get` can run `smartctl` against the raw disks
-     for **per-disk SMART temperatures** (it needs root + raw access).
-   - **the `nas-agent.conf` mount** - the `ugreen.cpu.temp` UserParameter that reports the CPU
-     package temperature (coretemp/k10temp, else the hottest thermal zone). Skip these two `cat`/`-v`
-     lines if you don't want CPU temperature; everything else still works.
+   - **`--privileged --user root`** - so `smartctl` can read the raw disks for **per-disk SMART
+     temperatures** (it needs root + raw access). `smartmontools` is already in the stock agent2 image.
+   - **the `nas-agent.conf` mount** - the two UserParameters: `ugreen.cpu.temp` (CPU package temp from
+     coretemp/k10temp, else the hottest thermal zone) and `ugreen.disk.temp` (per-disk SMART temp).
+     Skip the `cat`/`-v` lines if you don't want the temperatures; everything else still works.
 
 CPU utilization, memory, filesystems, NICs and uptime use the **same item keys** as the SNMP
 classes, so they render identically. Memory used-% is computed from **MemAvailable**, so page cache
@@ -179,6 +180,12 @@ counts as free (matching what UGOS shows), not as used. Disk temperatures group 
 temperatures** overlay chart as unRAID (*running warm* ≥ `{$DISK.TEMP.WARN}` 50 °C, *overheating* ≥
 `{$DISK.TEMP.HIGH}` 60 °C), and CPU temperature is a standalone Temperature sensor (*running hot* ≥
 `{$CPU.TEMP.WARN}` 75 °C, *overheating* ≥ `{$CPU.TEMP.HIGH}` 85 °C).
+
+> **Spun-down disks.** `ugreen.disk.temp` uses `smartctl -n standby`, so a parked disk is **not
+> woken** - it reports nothing and its chart holds the last reading (flat line), like the unRAID
+> class. The temp item polls slowly (every 10 min) to avoid keeping an idle disk awake; if your drives
+> still aren't spinning down, raise that item's interval past your NAS's disk-standby timeout (SMART
+> reads on some drives reset the idle timer).
 
 > **Encryption (PSK).** The link is unencrypted by default; the `Server=` allow-list only checks the
 > source IP. On a trusted site LAN that's usually fine. To encrypt + mutually authenticate, add a

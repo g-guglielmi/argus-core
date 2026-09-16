@@ -176,19 +176,16 @@ func TestClassifyUnraid(t *testing.T) {
 // unRAID (channel = the disk name), while base metrics ride the shared native agent-key curation and
 // the smart.disk.get master stays plumbing.
 func TestClassifyUgreen(t *testing.T) {
-	cat, _, inst, ch, ok := classifyItem("ugreen.disk.temp[nvme0]", "Disk temperature (nvme0)")
+	// The key parameter is the device path; the channel is the bare device name.
+	cat, _, inst, ch, ok := classifyItem("ugreen.disk.temp[/dev/nvme0]", "Disk temperature (nvme0)")
 	if !ok || cat != "Temperature" || inst != "Disk temperatures" || ch != "nvme0" {
 		t.Errorf("ugreen disk temp: got (%q, %q, %q, ok=%v)", cat, inst, ch, ok)
 	}
-	// smartctl names a SATA disk "sda sat"; the channel keeps just the device.
-	if _, _, _, ch, _ := classifyItem("ugreen.disk.temp[sda sat]", "Disk temperature (sda sat)"); ch != "sda" {
+	if _, _, _, ch, _ := classifyItem("ugreen.disk.temp[/dev/sda]", "Disk temperature (sda sat)"); ch != "sda" {
 		t.Errorf("ugreen sata disk temp channel: got %q, want sda", ch)
 	}
 	if cat, label, inst, _, ok := classifyItem("ugreen.cpu.temp", "CPU temperature"); !ok || cat != "Temperature" || inst != "" || label != "CPU temperature" {
 		t.Errorf("ugreen cpu temp: got (%q, %q, %q, ok=%v)", cat, label, inst, ok)
-	}
-	if _, _, _, _, ok := classifyItem("smart.disk.get", "SMART disks (raw)"); ok {
-		t.Error("smart.disk.get master must stay uncurated")
 	}
 	// Base metrics reuse the native agent keys, so they curate exactly like the SNMP classes.
 	if cat, _, _, _, ok := classifyItem("system.cpu.util", "CPU utilization"); !ok || cat != "CPU" {
