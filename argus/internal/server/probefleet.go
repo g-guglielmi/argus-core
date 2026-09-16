@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,23 +29,48 @@ func validProbeTarget(v string) bool {
 //   - unknown : the probe hasn't checked in a version yet (or runs an old, pre-fleet image)
 //   - tracking: target is "latest" but GHCR hasn't been resolved yet - drift can't be computed, so
 //     the running version is shown for information only
-//   - current : reported version equals the effective target (the pin, or the resolved newest)
-//   - outdated: reported version differs from the effective target
+//   - current : the probe is at (or ahead of) the effective target
+//   - outdated: the probe is genuinely behind the effective target
+//
+// For "latest" the test is BEHIND, not just different: the GHCR latest cache refreshes only every few
+// hours, so right after a release the fleet can already run the new revision while the cache still
+// holds the previous one. A plain equality then flagged the up-to-date probe "outdated -> <older>",
+// i.e. it proposed a DOWNGRADE. A probe at or past the resolved latest is current. An explicit pin is
+// a deliberate target, so any mismatch (older or newer) is "outdated" - the admin may be pinning back.
 func updateStatus(reported, target, latest string) string {
 	if reported == "" {
 		return "unknown"
 	}
-	want := target
 	if target == "latest" {
 		if latest == "" {
 			return "tracking"
 		}
-		want = latest
+		if probeVersionLess(reported, latest) {
+			return "outdated"
+		}
+		return "current"
 	}
-	if reported == want {
+	if reported == target {
 		return "current"
 	}
 	return "outdated"
+}
+
+// probeVersionLess reports whether probe version a is strictly older than b, comparing the
+// (major, minor, patch, revision) tuple of an "X.Y.Z-rN" string. Unparseable input compares as
+// not-less, so an unrecognised version is never flagged as an outdated downgrade target.
+func probeVersionLess(a, b string) bool {
+	ma := probeVerTag.FindStringSubmatch(strings.TrimSpace(a))
+	mb := probeVerTag.FindStringSubmatch(strings.TrimSpace(b))
+	if ma == nil || mb == nil {
+		return false
+	}
+	var ka, kb [4]int
+	for i := 0; i < 4; i++ {
+		ka[i], _ = strconv.Atoi(ma[i+1])
+		kb[i], _ = strconv.Atoi(mb[i+1])
+	}
+	return versionLess(ka, kb)
 }
 
 // handleProbeCheckin is the probe-facing endpoint (public; authenticated by the long-lived probe
