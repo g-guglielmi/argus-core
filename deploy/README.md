@@ -137,13 +137,20 @@ on `:161` - the agent never has to reach out, and nothing extra is baked into th
 1. In Argus, **Add device → Ugreen (Zabbix agent)** with the NAS's IP. This creates the host with
    an agent interface on `:10050` and attaches the *Argus NAS by Zabbix agent* template. Note the
    **host name** you give it.
-2. On the NAS, run the agent container:
+2. On the NAS, run the block below. The first two lines write a one-line config that adds the
+   CPU-temperature reading (the stock agent2 image has `smartctl` for disk SMART already, but no
+   CPU-temp key); the rest starts the agent:
    ```bash
+   mkdir -p /volume1/docker/argus-agent
+   cat > /volume1/docker/argus-agent/nas-agent.conf <<'EOF'
+   UserParameter=ugreen.cpu.temp,for h in /sys/class/hwmon/hwmon*; do case "$(cat "$h/name" 2>/dev/null)" in coretemp|k10temp) cat "$h/temp1_input"; exit 0;; esac; done; cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -rn | head -1
+   EOF
    docker run -d --name argus-nas-agent --restart unless-stopped \
      --network host --pid host --privileged --user root \
      -e ZBX_SERVER_HOST="<SITE-PROXY-IP>" \
      -e ZBX_HOSTNAME="<the name you gave the device in Argus>" \
      -v /volume1:/volume1:ro -v /proc:/proc:ro -v /sys:/sys:ro \
+     -v /volume1/docker/argus-agent/nas-agent.conf:/etc/zabbix/zabbix_agent2.d/nas-agent.conf:ro \
      zabbix/zabbix-agent2:alpine-7.0-latest
    ```
    What each part is for:
@@ -152,20 +159,22 @@ on `:161` - the agent never has to reach out, and nothing extra is baked into th
    - **`ZBX_SERVER_HOST=<proxy IP>`** - becomes the agent's `Server=` **allow-list**: only that
      proxy may poll it. This *is* the access control (see the PSK note below).
    - **`--pid host` + the `/proc`, `/sys` mounts** - so CPU / memory readings are the host's, not the
-     container's.
+     container's, and the CPU-temp UserParameter can read the coretemp/k10temp sensor from `/sys`.
    - **`-v /volume1:/volume1:ro`** - each data volume you want disk-usage for, mounted at its real
      path (add `/volume2`, ... if you have more). The class filters filesystem discovery down to the
      `volumeN` mounts, so the container's own filesystems don't clutter the Disk section.
-   - **`--privileged --user root`** - for **per-disk SMART temperatures**: `smart.disk.get` runs
-     `smartctl` against the raw disks, which needs root + raw access. The stock agent2 image does not
-     ship `smartmontools`, so **disk temperatures need an agent2 image that includes it** (or one
-     built from it). Every other metric (CPU / RAM / filesystems / NICs / uptime) works without it.
+   - **`--privileged --user root`** - so `smart.disk.get` can run `smartctl` against the raw disks
+     for **per-disk SMART temperatures** (it needs root + raw access).
+   - **the `nas-agent.conf` mount** - the `ugreen.cpu.temp` UserParameter that reports the CPU
+     package temperature (coretemp/k10temp, else the hottest thermal zone). Skip these two `cat`/`-v`
+     lines if you don't want CPU temperature; everything else still works.
 
 CPU utilization, memory, filesystems, NICs and uptime use the **same item keys** as the SNMP
 classes, so they render identically. Memory used-% is computed from **MemAvailable**, so page cache
 counts as free (matching what UGOS shows), not as used. Disk temperatures group into the same **Disk
-temperatures** overlay chart as unRAID, with *running warm* (≥ `{$DISK.TEMP.WARN}`, 50 °C) and
-*overheating* (≥ `{$DISK.TEMP.HIGH}`, 60 °C) alerts.
+temperatures** overlay chart as unRAID (*running warm* ≥ `{$DISK.TEMP.WARN}` 50 °C, *overheating* ≥
+`{$DISK.TEMP.HIGH}` 60 °C), and CPU temperature is a standalone Temperature sensor (*running hot* ≥
+`{$CPU.TEMP.WARN}` 75 °C, *overheating* ≥ `{$CPU.TEMP.HIGH}` 85 °C).
 
 > **Encryption (PSK).** The link is unencrypted by default; the `Server=` allow-list only checks the
 > source IP. On a trusted site LAN that's usually fine. To encrypt + mutually authenticate, add a

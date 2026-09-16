@@ -476,7 +476,15 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	case "smart.disk.get":
 		return "", "", "", "", false
 	case "ugreen.disk.temp":
-		return "Temperature", "Disk temperature (" + param(p, 0) + ")", "Disk temperatures", param(p, 0), true
+		// smartctl names a SATA disk "sda sat" (device + access type); keep just the device for the
+		// channel/label. NVMe ("nvme0") has no suffix, so the first field is the whole name.
+		disk := param(p, 0)
+		if f := strings.Fields(disk); len(f) > 0 {
+			disk = f[0]
+		}
+		return "Temperature", "Disk temperature (" + disk + ")", "Disk temperatures", disk, true
+	case "ugreen.cpu.temp":
+		return "Temperature", "CPU temperature", "", "", true
 
 	// HTTP/HTTPS endpoint add-on (Argus HTTP Endpoint template). The key params are macros
 	// ({$HTTP.SCHEME}/{$HTTP.PORT}), so the label is fixed rather than derived from them. The two
