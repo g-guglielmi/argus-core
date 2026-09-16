@@ -469,19 +469,14 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	case "unraid.sharefree":
 		return "Disk", name, "", "", true
 
-	// Ugreen NAS (Argus NAS by Zabbix agent): per-disk SMART temperatures from the agent 2 smart
-	// plugin, grouped into the same "Disk temperatures" overlay chart as unRAID (channel = the disk
-	// name). The smart.disk.get master is plumbing; CPU/memory/filesystem/interface reuse the native
-	// agent keys curated above (system.cpu.*, vm.memory.size, vfs.fs.size, net.if.*, system.uptime).
-	case "smart.disk.get":
-		return "", "", "", "", false
+	// Ugreen NAS (Argus NAS by Zabbix agent): per-disk SMART temperatures (read without waking the
+	// disk), grouped into the same "Disk temperatures" overlay chart as unRAID (channel = the disk
+	// name). CPU/memory/filesystem/interface reuse the native agent keys curated above
+	// (system.cpu.*, vm.memory.size, vfs.fs.size, net.if.*, system.uptime).
 	case "ugreen.disk.temp":
-		// smartctl names a SATA disk "sda sat" (device + access type); keep just the device for the
-		// channel/label. NVMe ("nvme0") has no suffix, so the first field is the whole name.
-		disk := param(p, 0)
-		if f := strings.Fields(disk); len(f) > 0 {
-			disk = f[0]
-		}
+		// The key parameter is the device path (/dev/sda, /dev/nvme0); the bare device name is the
+		// channel/label.
+		disk := strings.TrimPrefix(param(p, 0), "/dev/")
 		return "Temperature", "Disk temperature (" + disk + ")", "Disk temperatures", disk, true
 	case "ugreen.cpu.temp":
 		return "Temperature", "CPU temperature", "", "", true

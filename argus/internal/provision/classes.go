@@ -163,11 +163,12 @@ var registry = []Class{
 				"On the NAS, open a shell (the container needs host networking, so run it from a shell or a compose/run config, not the simple Docker-app form).",
 				"Run the block below. Replace <PROXY-IP> with the IP of the proxy (or core) shown in \"Monitored by\" above - that address is the only one allowed to poll the agent.",
 				"Mount each data volume you want disk-usage for (the -v /volume1:/volume1:ro line; add /volume2, ... if you have more). Only the data volumes are shown; the container's own filesystems are filtered out.",
-				"The first two lines write a small config that adds the CPU-temperature reading; the -v that mounts it and --privileged --user root (for SMART disk temps) are already in the command. Everything - CPU, memory, disks, temps - comes up together.",
+				"The first lines write a small config with two readings - CPU temperature, and per-disk SMART temperature read with 'smartctl -n standby' so a spun-down disk is NOT woken (it just holds its last reading). The -v that mounts the config and --privileged --user root (for SMART) are already in the command; everything - CPU, memory, disks, temps - comes up together.",
 			},
 			Command: "mkdir -p /volume1/docker/argus-agent\n" +
 				"cat > /volume1/docker/argus-agent/nas-agent.conf <<'EOF'\n" +
 				"UserParameter=ugreen.cpu.temp,for h in /sys/class/hwmon/hwmon*; do case \"$(cat \"$h/name\" 2>/dev/null)\" in coretemp|k10temp) cat \"$h/temp1_input\"; exit 0;; esac; done; cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -rn | head -1\n" +
+				"UserParameter=ugreen.disk.temp[*],smartctl -n standby -a -jc \"$1\" 2>/dev/null | grep -oE '\"temperature\":\\{[^}]*\"current\":[0-9]+' | grep -oE '[0-9]+$'\n" +
 				"EOF\n" +
 				"docker run -d --name argus-agent --restart unless-stopped \\\n" +
 				"  --network host --pid host --privileged --user root \\\n" +

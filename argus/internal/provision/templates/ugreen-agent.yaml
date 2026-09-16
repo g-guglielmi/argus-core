@@ -116,15 +116,6 @@ zabbix_export:
               name: 'CPU overheating'
               priority: HIGH
               description: 'CPU package temperature at/above the high threshold on the last 3 checks.'
-        - uuid: 13c046296e3048df82a1f09ad2743920
-          name: 'SMART disks (raw)'
-          type: ZABBIX_PASSIVE
-          key: smart.disk.get
-          delay: 5m
-          history: '0'
-          trends: '0'
-          value_type: TEXT
-          description: 'Master item: agent 2 smart.disk.get - one JSON array of every disk smartctl sees (name, model, serial, type, temperature, health). The per-disk temperature sensors depend on this. Needs smartmontools in the agent container and device access.'
       discovery_rules:
         - uuid: 491a8f234f8b426a8260e8b733052220
           name: 'Filesystem discovery'
@@ -241,33 +232,26 @@ zabbix_export:
           type: ZABBIX_PASSIVE
           key: smart.disk.discovery
           delay: 1h
-          description: 'Physical disks smartctl sees (agent 2 smart plugin). Each gets a temperature sensor from the SMART master; they group into one "Disk temperatures" overlay chart.'
+          description: 'Physical disks smartctl sees (agent 2 smart plugin). Each gets a temperature sensor read WITHOUT waking the disk (smartctl -n standby); they group into one "Disk temperatures" overlay chart.'
           item_prototypes:
             - uuid: e4a082858e4d48bcae4f08437cfc43b7
               name: 'Disk temperature ({#NAME})'
-              type: DEPENDENT
-              key: 'ugreen.disk.temp[{#NAME}]'
-              delay: '0'
+              type: ZABBIX_PASSIVE
+              key: 'ugreen.disk.temp[{#PATH}]'
+              delay: 10m
               history: 7d
               trends: 365d
               value_type: FLOAT
               units: '°C'
-              description: 'Temperature of {#NAME} ({#MODEL}), pulled from the SMART master by disk name.'
-              master_item:
-                key: smart.disk.get
-              preprocessing:
-                - type: JSONPATH
-                  parameters:
-                    - '$.[?(@.disk_name=="{#NAME}")].temperature.current.first()'
-                  error_handler: DISCARD_VALUE
+              description: 'Temperature of {#NAME} ({#MODEL}), from the ugreen.disk.temp UserParameter (smartctl -n standby, so a spun-down disk is NOT woken - it reports nothing and the sensor holds its last reading, like the unRAID class). A spun-down disk shows as not-supported-but-valued; the chart holds a flat line for it. Read at a slow cadence to avoid keeping an idle disk awake - raise the interval past your NAS disk-standby timeout if the drives are not spinning down. Needs the nas-agent.conf UserParameter mounted; unsupported without it.'
               trigger_prototypes:
                 - uuid: e099678e1a594756878f44f13107481c
-                  expression: 'min(/Argus NAS by Zabbix agent/ugreen.disk.temp[{#NAME}],#3)>={$DISK.TEMP.WARN} and min(/Argus NAS by Zabbix agent/ugreen.disk.temp[{#NAME}],#3)<{$DISK.TEMP.HIGH}'
+                  expression: 'min(/Argus NAS by Zabbix agent/ugreen.disk.temp[{#PATH}],#3)>={$DISK.TEMP.WARN} and min(/Argus NAS by Zabbix agent/ugreen.disk.temp[{#PATH}],#3)<{$DISK.TEMP.HIGH}'
                   name: 'Disk running warm: {#NAME}'
                   priority: WARNING
                   description: 'Disk temperature at/above the warning threshold on the last 3 checks.'
                 - uuid: 8ef63d4173554437934dc701a3bb2ad1
-                  expression: 'min(/Argus NAS by Zabbix agent/ugreen.disk.temp[{#NAME}],#3)>={$DISK.TEMP.HIGH}'
+                  expression: 'min(/Argus NAS by Zabbix agent/ugreen.disk.temp[{#PATH}],#3)>={$DISK.TEMP.HIGH}'
                   name: 'Disk overheating: {#NAME}'
                   priority: HIGH
                   description: 'Disk temperature at/above the high threshold on the last 3 checks.'
