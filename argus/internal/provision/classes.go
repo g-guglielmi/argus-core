@@ -160,16 +160,21 @@ var registry = []Class{
 			Title: "Set up the Zabbix agent on the NAS",
 			Intro: "UGOS has no SNMP, so this device is monitored by a Zabbix agent 2 container running on the NAS itself. Once it's up, the proxy (or core) that monitors this device polls the agent on port 10050 - nothing has to reach back out.",
 			Steps: []string{
-				"On the NAS, open the Docker app (UGOS ships Docker) - the container needs host networking, so run it from a shell or a compose/run config, not the simple app store form.",
-				"Run the container below. Replace <PROXY-IP> with the IP of the proxy (or core) shown in \"Monitored by\" above - that address is the only one allowed to poll the agent.",
-				"Mount each data volume you want to monitor (the -v /volume1:/volume1:ro line; add /volume2, ... if you have more). Only mounts matching the data-volume names are shown - the container's own filesystems are filtered out.",
-				"For per-disk SMART temperatures the agent needs smartmontools and raw-disk access (--privileged, --user root). If disk temps stay empty, that's why - CPU, memory, filesystems and network still work without it.",
+				"On the NAS, open a shell (the container needs host networking, so run it from a shell or a compose/run config, not the simple Docker-app form).",
+				"Run the block below. Replace <PROXY-IP> with the IP of the proxy (or core) shown in \"Monitored by\" above - that address is the only one allowed to poll the agent.",
+				"Mount each data volume you want disk-usage for (the -v /volume1:/volume1:ro line; add /volume2, ... if you have more). Only the data volumes are shown; the container's own filesystems are filtered out.",
+				"The first two lines write a small config that adds the CPU-temperature reading; the -v that mounts it and --privileged --user root (for SMART disk temps) are already in the command. Everything - CPU, memory, disks, temps - comes up together.",
 			},
-			Command: "docker run -d --name argus-nas-agent --restart unless-stopped \\\n" +
+			Command: "mkdir -p /volume1/docker/argus-agent\n" +
+				"cat > /volume1/docker/argus-agent/nas-agent.conf <<'EOF'\n" +
+				"UserParameter=ugreen.cpu.temp,for h in /sys/class/hwmon/hwmon*; do case \"$(cat \"$h/name\" 2>/dev/null)\" in coretemp|k10temp) cat \"$h/temp1_input\"; exit 0;; esac; done; cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -rn | head -1\n" +
+				"EOF\n" +
+				"docker run -d --name argus-nas-agent --restart unless-stopped \\\n" +
 				"  --network host --pid host --privileged --user root \\\n" +
 				"  -e ZBX_SERVER_HOST=\"<PROXY-IP>\" \\\n" +
 				"  -e ZBX_HOSTNAME=\"{host}\" \\\n" +
 				"  -v /volume1:/volume1:ro -v /proc:/proc:ro -v /sys:/sys:ro \\\n" +
+				"  -v /volume1/docker/argus-agent/nas-agent.conf:/etc/zabbix/zabbix_agent2.d/nas-agent.conf:ro \\\n" +
 				"  zabbix/zabbix-agent2:alpine-7.0-latest",
 			Note: "The link is unencrypted; the ZBX_SERVER_HOST allow-list is what restricts polling to your proxy. To encrypt it, add a PSK on the agent and the matching TLS fields on the host - see deploy/README.md.",
 		},

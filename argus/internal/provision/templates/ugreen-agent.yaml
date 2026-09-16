@@ -91,6 +91,31 @@ zabbix_export:
           value_type: FLOAT
           units: uptime
           description: 'System uptime (system.uptime).'
+        - uuid: fe9d7236e7ed41a4ab33830ab7b391d6
+          name: 'CPU temperature'
+          type: ZABBIX_PASSIVE
+          key: ugreen.cpu.temp
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '°C'
+          description: 'CPU package temperature, read from sysfs by the ugreen.cpu.temp UserParameter (the coretemp/k10temp package sensor, else the hottest thermal zone) and scaled from milli-degrees. Needs the nas-agent.conf UserParameter mounted into the agent - unsupported without it.'
+          preprocessing:
+            - type: MULTIPLIER
+              parameters:
+                - '0.001'
+          triggers:
+            - uuid: 12e8fd66e1994271958c75e1a9295eee
+              expression: 'min(/Argus NAS by Zabbix agent/ugreen.cpu.temp,#3)>={$CPU.TEMP.WARN} and min(/Argus NAS by Zabbix agent/ugreen.cpu.temp,#3)<{$CPU.TEMP.HIGH}'
+              name: 'CPU running hot'
+              priority: WARNING
+              description: 'CPU package temperature at/above the warning threshold on the last 3 checks.'
+            - uuid: ffee40fd40e1406fbf84b40aa4eed1e6
+              expression: 'min(/Argus NAS by Zabbix agent/ugreen.cpu.temp,#3)>={$CPU.TEMP.HIGH}'
+              name: 'CPU overheating'
+              priority: HIGH
+              description: 'CPU package temperature at/above the high threshold on the last 3 checks.'
         - uuid: 13c046296e3048df82a1f09ad2743920
           name: 'SMART disks (raw)'
           type: ZABBIX_PASSIVE
@@ -233,7 +258,7 @@ zabbix_export:
               preprocessing:
                 - type: JSONPATH
                   parameters:
-                    - '$.[?(@.disk_name=="{#NAME}")].temperature.first()'
+                    - '$.[?(@.disk_name=="{#NAME}")].temperature.current.first()'
                   error_handler: DISCARD_VALUE
               trigger_prototypes:
                 - uuid: e099678e1a594756878f44f13107481c
@@ -271,6 +296,12 @@ zabbix_export:
         - macro: '{$DISK.TEMP.HIGH}'
           value: '60'
           description: 'Disk temperature (°C) that raises a high-severity alert.'
+        - macro: '{$CPU.TEMP.WARN}'
+          value: '75'
+          description: 'CPU package temperature (°C) that raises a warning.'
+        - macro: '{$CPU.TEMP.HIGH}'
+          value: '85'
+          description: 'CPU package temperature (°C) that raises a high-severity alert.'
         - macro: '{$FS.NAME.SKIP}'
           value: '^(/run|/dev|/sys|/proc|/boot|/etc/hosts|/var/lib/docker|/mnt/.docker)($|/)'
           description: 'Mount paths matching this regex are not discovered (pseudo-filesystems, docker layers, boot).'
