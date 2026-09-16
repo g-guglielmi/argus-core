@@ -150,9 +150,13 @@ on `:161` - the agent never has to reach out, and nothing extra is baked into th
      -e ZBX_SERVER_HOST="<SITE-PROXY-IP>" \
      -e ZBX_HOSTNAME="<the name you gave the device in Argus>" \
      -v /volume1:/volume1:ro -v /proc:/proc:ro -v /sys:/sys:ro \
-     -v /volume1/docker/argus-agent/nas-agent.conf:/etc/zabbix/zabbix_agent2.d/nas-agent.conf:ro \
+     -v /volume1/docker/argus-agent/nas-agent.conf:/etc/zabbix/zabbix_agent2.d/plugins.d/nas-agent.conf:ro \
      zabbix/zabbix-agent2:alpine-7.0-latest
    ```
+   > **Why `plugins.d/`?** The `zabbix/zabbix-agent2` image's config only `Include`s
+   > `/etc/zabbix/zabbix_agent2.d/plugins.d/*.conf` (and `/etc/zabbix/zabbix_agentd.d/*.conf`) - **not**
+   > `/etc/zabbix/zabbix_agent2.d/*.conf` itself. A UserParameter file dropped in the parent dir is
+   > silently ignored (`Unknown metric`), so mount it into `plugins.d/`.
    What each part is for:
    - **`--network host`** - so the proxy can reach the agent on `:10050` (and the agent sees the
      real NICs). Required.
