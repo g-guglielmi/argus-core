@@ -21,7 +21,45 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Skip the image build for docs-only branch pushes. Markdown / LICENSE never change the runtime
+  # (the binary embeds web/dist + the provision templates - no markdown), so rebuilding :testing and
+  # re-stamping the git-describe version for a docs commit only surfaces a phantom "update available".
+  # Release (tag) and manual (workflow_dispatch) builds ALWAYS run; any push touching a non-doc file
+  # builds; and it fail-opens (any doubt -> build), so it can never suppress a real image change.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.detect.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need both BEFORE and HEAD to diff a branch push
+      - name: Detect non-doc changes
+        id: detect
+        env:
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "reason=tag or manual -> build"; echo "build=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ -z "$BEFORE" ] || ! git rev-parse -q --verify "$BEFORE^{commit}" >/dev/null 2>&1; then
+            echo "reason=no valid base -> build (fail-open)"; echo "build=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          changed=$(git diff --name-only "$BEFORE" "$SHA")
+          printf 'changed files:\n%s\n' "$changed"
+          if [ -z "$changed" ]; then
+            echo "reason=empty diff -> build (fail-open)"; echo "build=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if printf '%s\n' "$changed" | grep -qvE '(\.md$|^LICENSE$)'; then
+            echo "reason=non-doc file changed -> build"; echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "reason=docs only -> skip image build"; echo "build=false" >> "$GITHUB_OUTPUT"
+          fi
+
   docker:
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
