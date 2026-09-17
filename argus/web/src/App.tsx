@@ -1198,7 +1198,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
       <div className="main">
         {updateReady && (
           <div className="updbar" role="status">
-            <span>A new version of Argus is available — reload to load the latest.</span>
+            <span>A new version of Argus is available - reload to load the latest.</span>
             <Button variant="primary" onClick={() => window.location.reload()}>Reload</Button>
           </div>
         )}
@@ -2566,7 +2566,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
               <div style={{ display: 'grid', gap: 15 }}>
                 {/* Step 1 - pick ONE appliance for your hypervisor. */}
                 <div style={{ display: 'grid', gap: 7 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 600 }}>1 · Virtual appliance{vmInfo?.version ? <span style={{ color: 'var(--faint)', fontWeight: 400 }}> · {vmInfo.version}</span> : null} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>— download <strong>one</strong> for your hypervisor</span></div>
+                  <div style={{ fontSize: 12.5, fontWeight: 600 }}>1 · Virtual appliance <span style={{ color: 'var(--accent)', fontWeight: 400 }}>{vmInfo?.version ? <>· {vmInfo.version} </> : null}- download <strong>one</strong> for your hypervisor</span></div>
                   {vmInfo && vmInfo.images.length > 0 ? (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                       {vmInfo.images.map((img) => (
@@ -2582,8 +2582,8 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
                 </div>
                 {/* Step 2 - the seed ISO: required, one ISO works with any of the three formats. */}
                 <div style={{ display: 'grid', gap: 7 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 600 }}>2 · Seed ISO <span style={{ color: 'var(--accent)' }}>· required for zero-touch</span></div>
-                  <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>Attach it to the VM as a CD/DVD before first boot — it carries this probe's token and network settings, and the <strong>same ISO works with any</strong> of the three formats above. (No ISO? Boot the appliance on DHCP and finish at its first-boot page instead.)</p>
+                  <div style={{ fontSize: 12.5, fontWeight: 600 }}>2 · Seed ISO <span style={{ color: 'var(--accent)' }}>· required for zero-touch provisioning and static IP</span></div>
+                  <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>Attach it to the VM as a CD/DVD before first boot - it carries this probe's token and network settings, and the <strong>same ISO works with any</strong> of the three formats above. (No ISO? Boot the appliance on DHCP and finish at its first-boot page instead.)</p>
                   <div><Button variant="primary" onClick={downloadSeedISO} disabled={seeding}>{seeding ? 'Building the ISO...' : 'Download seed ISO'}</Button></div>
                 </div>
               </div>
