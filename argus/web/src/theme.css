@@ -249,7 +249,7 @@ a { color: var(--accent); }
 .cell-stack { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
 .cell-stack .sub-line { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
 /* Version/OS value cell: value + status pill. Inline (side by side) on desktop; the mobile card
-   layout stacks it (value over pill) and right-aligns it — see the responsive block. */
+   layout stacks it (value over pill) and right-aligns it - see the responsive block. */
 .vcell { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 /* Quiet "everything's fine" state (up to date / patched): a small green check + muted text, so the
    common all-good case recedes and colored pills are reserved for things that need attention. */
@@ -314,7 +314,7 @@ a { color: var(--accent); }
    deliberately shorter than the device-icon host rows nested under them. Tighter rows keep a big tree
    dense. */
 /* Group + host rows share one grid so the graph, latency and kebab line up in columns down the whole
-   tree at any nesting depth — indentation only ever squeezes the name column (col 1) on the left. */
+   tree at any nesting depth - indentation only ever squeezes the name column (col 1) on the left. */
 .site-head, .host-head { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 190px 84px 40px; align-items: center; cursor: pointer; user-select: none; }
 .site-head { padding: 5px 16px; background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
 .site-head:hover { background: color-mix(in srgb, var(--accent) 15%, var(--panel)); }
@@ -323,15 +323,15 @@ a { color: var(--accent); }
 .c-name .name, .c-name .hn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .c-name .loc, .c-name .kind, .c-name .tag-hidden, .c-name .probpill { flex: none; }
 .c-graph { display: flex; align-items: center; min-width: 0; padding-left: 12px; }
-.host-head .c-graph { border-left: 1px solid var(--border); } /* divider before the graph — hosts only */
+.host-head .c-graph { border-left: 1px solid var(--border); } /* divider before the graph - hosts only */
 .c-val { display: flex; align-items: center; justify-content: flex-end; padding: 0 10px; }
-.c-act { display: flex; align-items: center; justify-content: center; border-left: 1px solid var(--border); } /* divider before the kebab — every row */
+.c-act { display: flex; align-items: center; justify-content: center; border-left: 1px solid var(--border); } /* divider before the kebab - every row */
 .grpdot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .probpill { min-width: 18px; height: 17px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; font-size: 11px; font-weight: 700; background: color-mix(in srgb, var(--err) 20%, transparent); color: var(--err); }
 .probpill.warn { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); } /* warnings only, no errors */
 .fold-ico { display: inline-flex; flex-shrink: 0; color: var(--accent); }
 .fold-ico svg { width: 16px; height: 16px; }
-/* Vertical indent guides (overlaid, full row height) — stack across rows into continuous lines. */
+/* Vertical indent guides (overlaid, full row height) - stack across rows into continuous lines. */
 .tguide { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--border); pointer-events: none; }
 .chev { width: 15px; height: 15px; color: var(--faint); transition: transform 0.15s; flex-shrink: 0; }
 .chev.open { transform: rotate(90deg); }
@@ -349,7 +349,7 @@ a { color: var(--accent); }
 
 .host { border-top: 1px solid var(--border); }
 /* Every tree row (group or host) divides with a top border, so hosts and subgroups interleave in any
-   order with exactly one line between any two rows. The first row drops it — the panel/crumbs header
+   order with exactly one line between any two rows. The first row drops it - the panel/crumbs header
    above already draws that boundary. */
 .tree > .site:first-child, .tree > .host:first-child { border-top: none; }
 .host-head { padding: 8px 16px; }
@@ -364,7 +364,7 @@ a { color: var(--accent); }
 .dev-ico svg { width: 18px; height: 18px; }
 .dev-badge { position: absolute; right: -3px; bottom: -3px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--panel); box-sizing: border-box; }
 .host-head:hover .dev-badge { border-color: var(--elevated); }
-/* Host row ICMP latency + sparkline — the per-host data groups don't carry, in aligned columns. */
+/* Host row ICMP latency + sparkline - the per-host data groups don't carry, in aligned columns. */
 .hspark { display: inline-flex; width: 168px; } /* = the table/overview sparks; graph column is 190px */
 .hms { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
@@ -537,7 +537,7 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .chan.off .ci, .chan.off .chan-name, .chan.off .chan-meta { opacity: 0.55; }
 
 /* Multi-select site scope: a compact dropdown that summarizes the selection and opens a scrollable,
-   filterable checklist — scales to many host-groups. Empty selection ("All sites") = every site. */
+   filterable checklist - scales to many host-groups. Empty selection ("All sites") = every site. */
 .msel { position: relative; max-width: 320px; }
 .msel-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 9px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--elevated); color: var(--text); font: inherit; cursor: pointer; text-align: left; }
 .msel-btn:hover { border-color: var(--accent); }
@@ -781,10 +781,10 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   .enroll tr { padding: 6px 14px; border-bottom: 1px solid var(--border); }
   .enroll tr:last-child td { border-bottom: none; }
   /* Highlight the boundary between probe cards (stronger than the faint within-card field dividers), so
-     one probe reads clearly apart from the next. The last card needs none — the panel edge closes it. */
+     one probe reads clearly apart from the next. The last card needs none - the panel edge closes it. */
   .enroll-probes tr { border-bottom: 2px solid var(--border-strong); }
   .enroll-probes tr:last-child { border-bottom: none; }
-  /* Values stack (value over pill), so each cell is a fixed 1-2 lines — align-items:center then keeps
+  /* Values stack (value over pill), so each cell is a fixed 1-2 lines - align-items:center then keeps
      the label vertically centred against that stack (rather than pinned to the top). Roomy row padding
      for readability on the narrow card. */
   .enroll td { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: auto; padding: 8px 0; border: none; overflow: visible; text-overflow: clip; }
@@ -803,7 +803,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   /* right-align each value cell (and its multi-line stack) down the card's right edge. */
   .enroll-probes td[data-label] > .vcell, .enroll-probes td[data-label] > .cell-stack { align-items: flex-end; text-align: right; margin-left: auto; }
   /* stack the version/OS value over its status pill (value on top, pill below), mirroring the health
-     stack — narrow cards read cleaner as two short lines than one wide wrapping line. */
+     stack - narrow cards read cleaner as two short lines than one wide wrapping line. */
   .enroll-probes td[data-label] .vcell { flex-direction: column; gap: 3px; }
   .enroll-probes td[data-label]:not(:first-child) .sub-line { padding-left: 0 !important; }
   /* Every value - bare text (versions, OS name, "Ns ago"), the quiet ✓ states and the pills' boxes -
@@ -813,7 +813,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   /* The ⋮ glyph is centred in its 36px touch target; pull the button out by the slack so the dots sit on
      the same edge as the values above them instead of ~15px inside it. */
   .enroll-probes td.row-actions .kebab-wrap { margin-right: -12px; }
-  /* the desktop vertical column dividers make no sense in the stacked card — turn them into horizontal
+  /* the desktop vertical column dividers make no sense in the stacked card - turn them into horizontal
      rules between each field row instead. */
   .enroll-probes td:not(:first-child) { border-left: none; }
   .enroll-probes td[data-label]:not(:first-child) { border-top: 1px solid var(--border); padding-top: 12px; }

@@ -18,7 +18,7 @@ import (
 )
 
 // The class templates live inside the Go module so they can be embedded and imported at startup
-// (go:embed can't reach outside the module, so this is the canonical home — DESIGN §5 points here).
+// (go:embed can't reach outside the module, so this is the canonical home - DESIGN §5 points here).
 // Each file is a self-contained Zabbix 7.0 export document imported via configuration.import.
 //
 //go:embed templates/*.yaml
@@ -65,7 +65,7 @@ func loadTemplates() ([]templateDoc, string, error) {
 // Reconcile imports the embedded class templates into Zabbix when they differ from what was last
 // imported (tracked by a hash in app_meta). Idempotent and safe on every startup. A Zabbix that is
 // unreachable or has no token yet is a soft skip (logged, retried next boot) rather than a fatal
-// startup error — the app still serves its read/curate views without provisioning.
+// startup error - the app still serves its read/curate views without provisioning.
 func Reconcile(ctx context.Context, zbx *zabbix.Client, st *store.Store, logger *slog.Logger) error {
 	if !zbx.Authenticated() {
 		logger.Info("provision: skipping template import until a Zabbix API token is configured")

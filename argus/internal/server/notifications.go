@@ -218,7 +218,7 @@ func groupAncestors(name string) []string {
 }
 
 // handleNotifySites returns the Zabbix host-group names for the channel "site" picker: every group
-// that has hosts, plus each group's ancestor paths — so a probe's root group (e.g. "mybz") is
+// that has hosts, plus each group's ancestor paths - so a probe's root group (e.g. "mybz") is
 // selectable even when only its subgroups hold hosts, and selecting it covers them (see siteCovers).
 func (s *Server) handleNotifySites(w http.ResponseWriter, r *http.Request) {
 	if !s.zbx.Authenticated() {

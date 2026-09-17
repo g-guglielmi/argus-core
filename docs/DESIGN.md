@@ -163,7 +163,7 @@ pre-§C fleet) falls back to a best-effort guess from its name, else a generic d
 | **Sophos XGS** | SNMP | sysObjectID `.2604` | CPU, mem, disk, ifaces, HA, live users, VPN | ifaces |
 | **Citrix NetScaler** | SNMP (+Nitro opt.) | sysObjectID `.5951` | CPU, mem, throughput, vserver state/health, SSL, HA | vservers |
 | **QNAP** | SNMP | sysObjectID `.24681` | CPU, mem, volume/disk, temp, fan, RAID, SMART | disks, volumes |
-| **Ugreen UGOS** ✓ | Agent † | agent2 in Docker on the NAS | CPU, RAM, disk, net, uptime + CPU temp + no-wake per-disk SMART temps (20 °C parked sentinel) — **v0.4.50** | fs, NICs, disks |
+| **Ugreen UGOS** ✓ | Agent † | agent2 in Docker on the NAS | CPU, RAM, disk, net, uptime + CPU temp + no-wake per-disk SMART temps (20 °C parked sentinel) - **v0.4.50** | fs, NICs, disks |
 | **unRAID** | SNMP | sysDescr `Unraid` | CPU load, RAM %, uptime, per-share free, NIC; disk + CPU temp via optional NET-SNMP extends (docs/unraid-pool-temps.sh, docs/unraid-cpu-temp.sh) | shares, disks, NICs |
 | **Libraesva ESG** | SNMP (+HTTPS) | sysObjectID/sysDescr | host CPU/RAM/disk + mail-queue + admin-cert | fs |
 | **Windows server** | SNMP | sysObjectID (Windows) | CPU, RAM, disk, net, uptime + **selected services** (LANMGR `svSvcTable`) | disks, NICs, services |
@@ -187,7 +187,7 @@ UniFi template carries a controller-access mode). ✦ = API-endpoint source (reg
 spawns children). † Ugreen UGOS exposes **no SNMP**, so it's monitored with **Zabbix agent 2 run
 in a container on the NAS** (host network, `/proc` + `/sys` + `/` mounts, smartmontools for SMART);
 the site proxy polls it passively on `:10050` and the agent's `Server=` allow-lists that proxy. This
-is the catalog's first **agent** pattern — a carve-out for a Docker-capable device with no SNMP; the
+is the catalog's first **agent** pattern - a carve-out for a Docker-capable device with no SNMP; the
 SNMP-first rule still governs the 400-server fleet. CPU/mem/fs/NIC reuse the native agent item keys,
 so curation is shared with the SNMP classes.
 
@@ -312,7 +312,7 @@ notifications** and receive alerts there, scoped by one or more sites (a multi-s
 probe's root group covers its subgroups) and a severity floor, exactly like a global channel.
 They are self-service and self-owned (`user_notify_channels`, config encrypted at rest, managed under
 `/api/me/notify/*`); a user only ever sees and edits their own. The notifier routes a problem to global
-**and** matching personal channels, and now fires as soon as *either* matches — so a personal-only setup
+**and** matching personal channels, and now fires as soon as *either* matches - so a personal-only setup
 alerts. This is the foundation for future mobile (Android/iOS) push, which becomes just another personal
 channel type. (2) An **email channel** can deliver to **each active user's registered email** instead of
 a fixed `to` (a `recipients` mode on the channel, admin-controlled): the notifier fans it out to one
@@ -363,7 +363,7 @@ class, threshold overrides, pause, acknowledge) · 9) Thresholds (global + overr
   - **trends** (hourly min/avg/max, retain 1-2 y) → powers **7d / 1M / 3M / 6M / 1Y**.
 - **Daily bars for "today so far" counters** (AdGuard's queries/blocked, `.today` keys): the
   source resets its count at ITS OWN day boundary (AdGuard: hard-coded UTC midnights), and Argus
-  reconstructs **true local calendar days** from it — within a source day the counter only grows,
+  reconstructs **true local calendar days** from it - within a source day the counter only grows,
   so consecutive-reading deltas are exact and credit to the local day they happened in
   (`dailySplitDeltas`). The **`/api/daily`** endpoint is the single source: the row headline
   ("N queries · M blocked today"), the mini daily bars, and the big stacked-bar chart (blocked
@@ -485,19 +485,19 @@ different things:
 the everywhere-fallback that also unlocks the bare-metal Clonezilla path for free.
 
 **Status (shipped).** The golden image (`argus-probe`'s `deploy/probe-vm/`) is built with Packer from
-the Debian 13 **`generic`** cloud image (full driver set — needed so the OVA boots on non-virtio
+the Debian 13 **`generic`** cloud image (full driver set - needed so the OVA boots on non-virtio
 hypervisors and the seed CD's isofs/CD-ROM works). **Delivery:** CI publishes **OVA** (stream-optimized
 VMDK + a hand-written OVF; imports on VMware/Nutanix/VirtualBox and, via *Import → OVA*, Xen Orchestra),
 **qcow2** (KVM/libvirt), and **VHD** (Hyper-V; VDI-import on XCP-NG). **Enrollment**, three ways, all
 from *Add probe → VM (cloud-init)*: pasted cloud-init user-data; a **downloadable seed ISO**; or the
-first-boot setup page. The seed ISO is deliberately **not** a cloud-init NoCloud seed — NoCloud needs
+first-boot setup page. The seed ISO is deliberately **not** a cloud-init NoCloud seed - NoCloud needs
 the `user-data`/`meta-data` names, which plain ISO9660 mangles and only Joliet/Rock-Ridge preserve.
 Instead it's an **Argus-owned** image (label `ARGUSSEED`, one 8.3-safe `ARGUS.ENV`) read by our own
 first-boot service, which sidesteps cloud-init's NoCloud datasource detection (fiddly on XCP-NG)
 entirely.
 
-**cloud-init is dropped from the deployed image** (it does its build-time job — build user + root-FS
-grow — then `provision.sh` purges it), so the appliance self-configures through systemd-networkd +
+**cloud-init is dropped from the deployed image** (it does its build-time job - build user + root-FS
+grow - then `provision.sh` purges it), so the appliance self-configures through systemd-networkd +
 the first-boot service alone; the enrollment matrix is now seed ISO / first-boot page (the cloud-init
 paste path is retired). **Break-glass (§14a credential lifecycle) is implemented**: the first-boot
 service creates a per-VM `argus` sudo user with a generated password, reports it over the probe
@@ -625,7 +625,7 @@ be appended by matching a self-authored marker, not the substring `TLSCAFile=` w
 already carries in a commented example.)
 
 ## 15. Tech stack (confirmed)
-- **App name:** **Argus.** Split across three repos: **argus-core** (this repo — the app in `argus/`, docs, core deploy kit), **argus-probe** (the probe Docker image + self-configuring golden VM), and **argus-updater** (the core self-update sidecar). Image names stay `argus` / `argus-probe` / `argus-updater` regardless of repo names.
+- **App name:** **Argus.** Split across three repos: **argus-core** (this repo - the app in `argus/`, docs, core deploy kit), **argus-probe** (the probe Docker image + self-configuring golden VM), and **argus-updater** (the core self-update sidecar). Image names stay `argus` / `argus-probe` / `argus-updater` regardless of repo names.
 - **Backend / notifier:** **Go** (single static binary, distroless image).
 - **Frontend:** **React + Vite** (uPlot for the dense/zoomable time-series graphs). The Go
   binary **serves the built SPA** via `go:embed` - one container, one origin (simplifies
@@ -711,9 +711,9 @@ plane; the probe checks in and converges.
 - **Central core-host re-point.** The check-in response also carries the current **`core_host`**
   (the `ARGUS_PROBE_CORE_HOST` setting, same source as enrollment). The probe re-fetches it once at
   startup and applies it as its Zabbix `Server=`, so changing the setting re-points the whole fleet
-  at each probe's next restart — no re-enrollment. Fail-safe: an unreachable core or an older Argus
+  at each probe's next restart - no re-enrollment. Fail-safe: an unreachable core or an older Argus
   leaves the last-known host in place; an explicit `ZBX_SERVER_HOST` on the probe always wins.
-  Prefer an **IP** for this value — the proxy re-resolves it on every data send, so an FQDN floods
+  Prefer an **IP** for this value - the proxy re-resolves it on every data send, so an FQDN floods
   DNS.
 - **Target.** Argus holds a dashboard-settable target in `app_meta` (`GET`/`PUT /api/probes/target`,
   admin): `latest`, or an exact pin in the **decoupled probe scheme** - `7.0.29-r1`, *not* app

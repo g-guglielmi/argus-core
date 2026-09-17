@@ -20,13 +20,13 @@ GitHub Release from the matching section below.
   as free), uptime, per-volume disk usage and per-NIC traffic reuse the native agent item keys, so
   they curate exactly like the SNMP classes; a small mounted config adds CPU package temperature and
   per-disk SMART temperature. Disk temps are read with `smartctl -n standby`, so a spun-down drive is
-  **never woken** — it reports a fixed **20 °C parked sentinel** (like the unRAID class), and an NVMe
+  **never woken** - it reports a fixed **20 °C parked sentinel** (like the unRAID class), and an NVMe
   (which never parks) is always read. **Add device → Ugreen (Zabbix agent)** shows the exact container
   command to run.
 - **Add-device setup steps.** A device class can carry prerequisite setup instructions (title, steps,
-  a copyable command), shown right in the Add-device dialog — the Ugreen class uses it to hand you the
+  a copyable command), shown right in the Add-device dialog - the Ugreen class uses it to hand you the
   agent-container command with the device name filled in.
-- **"New version available — Reload" prompt.** An open tab now notices when the core has been updated
+- **"New version available - Reload" prompt.** An open tab now notices when the core has been updated
   underneath it (the running build id changed) and offers a one-click reload, instead of silently
   running the old page bundle until a manual refresh.
 
@@ -52,7 +52,7 @@ GitHub Release from the matching section below.
 **Added:**
 - **Parked unRAID drives read 20 °C.** A spun-down array/pool drive now reports a fixed 20 °C
   standby sentinel instead of dropping off the chart, so a parked disk shows a distinct low flat
-  line (and any heat warning clears) — matching the SNMP plugin's own `disktemp` extend. Gated on
+  line (and any heat warning clears) - matching the SNMP plugin's own `disktemp` extend. Gated on
   the drive's standby flag, so the USB flash and always-on SSD/NVMe caches never get it. _(Re-copy
   `docs/unraid-pool-temps.sh` to the unRAID host to pick this up.)_
 
@@ -72,7 +72,7 @@ GitHub Release from the matching section below.
 - **Central probe re-point.** The probe core host (**Settings → Probe enrollment** /
   `ARGUS_PROBE_CORE_HOST`) is now handed out on every probe check-in, not just baked in at
   enrollment. Change it once and the whole fleet converges: each probe applies the new address at
-  its next restart — no re-enrollment. An explicit `ZBX_SERVER_HOST` on a probe still pins that one
+  its next restart - no re-enrollment. An explicit `ZBX_SERVER_HOST` on a probe still pins that one
   probe and wins over the central value. Fail-safe: an unreachable core or an older probe keeps the
   last-known host, so a bad value can't strand the fleet. _(The probe side ships in argus-probe
   `probe/v7.0.30-r9`.)_
@@ -88,20 +88,20 @@ GitHub Release from the matching section below.
 **Argus is now free software under the GNU AGPL-3.0.**
 
 **Added:**
-- **Drill into channel groups** — a multi-channel sensor's name (ICMP, DNS activity, a disk, a
+- **Drill into channel groups** - a multi-channel sensor's name (ICMP, DNS activity, a disk, a
   NIC) is now a drill link like single sensors: click it to focus just that group, chart open,
   with its own breadcrumb and shareable URL. Deep links to a member channel now open the whole
   group's chart too, instead of nothing.
 
 **Changed:**
 - **Relicensed to AGPL-3.0** (was MIT). All three repos (core, probe, updater) are now under the
-  GNU Affero General Public License v3.0. Source files carry SPDX headers, and — as the AGPL's §13
-  network clause expects — the app's About page and the first-boot setup pages link to the source.
+  GNU Affero General Public License v3.0. Source files carry SPDX headers, and - as the AGPL's §13
+  network clause expects - the app's About page and the first-boot setup pages link to the source.
 
 **Fixed:**
 - **Phantom "update available" for updater sidecars.** A sidecar tracking `:latest` reports a
   development build whose version base equals the newest release; the Probes page compared the whole
-  string and flagged it "outdated → x.y.z" permanently — an update that clicking could never clear.
+  string and flagged it "outdated → x.y.z" permanently - an update that clicking could never clear.
   It now compares the version base, so a sidecar at or past the newest release reads "up to date"
   (matching a digest-based check).
 
@@ -109,30 +109,30 @@ GitHub Release from the matching section below.
 
 ## [0.4.45] - 2026-09-15
 
-**AdGuard's daily numbers are now exact — true midnight-to-midnight days, one source of truth.**
+**AdGuard's daily numbers are now exact - true midnight-to-midnight days, one source of truth.**
 
 **Added:**
-- **AdGuard counts real days now** — the queries/blocked sensors read **"today so far"** from
+- **AdGuard counts real days now** - the queries/blocked sensors read **"today so far"** from
   AdGuard's own per-day statistics, reconstructed into **true local calendar days**: AdGuard
   buckets its stats at UTC midnights (a known AdGuard Home limitation its own dashboard shares),
-  so Argus splits the counter's growth at *your* midnight instead — at 00:15 the row shows the
+  so Argus splits the counter's growth at *your* midnight instead - at 00:15 the row shows the
   real count since 00:00, and yesterday's bar freezes at its genuine total. (Replaces the
   rolling-window totals, whose deltas could read "0 blocked" all day; those items are removed on
   upgrade, so the daily bars restart from the day you update.)
-- **Block rate, per day** — the Block rate row charts as daily bars too (7d·1M·3M·6M·1Y, mini
-  bars in the row), each day's rate derived from that day's blocked ÷ total — the same days,
+- **Block rate, per day** - the Block rate row charts as daily bars too (7d·1M·3M·6M·1Y, mini
+  bars in the row), each day's rate derived from that day's blocked ÷ total - the same days,
   the same math as the activity chart above it. Its reading is today's local-day rate.
-- **One source of truth** — the row headline, the mini bars, and both big bar charts all render
+- **One source of truth** - the row headline, the mini bars, and both big bar charts all render
   the same server-computed buckets (`/api/daily`), so they can never disagree with each other.
 
 **Fixed:**
-- **Daily bar chart on a fresh device** — a just-added AdGuard shows today's bar immediately
+- **Daily bar chart on a fresh device** - a just-added AdGuard shows today's bar immediately
   (before, the chart stayed empty until two full days of history existed).
-- **Stale frontend after a self-update** — the app now serves its page shell with an explicit
+- **Stale frontend after a self-update** - the app now serves its page shell with an explicit
   `no-cache` policy (and the hashed asset bundles as immutable), so a browser tab can no longer
   keep running the previous build's frontend after the core updates underneath it. Charts and
   panels always match the running backend after a plain reload.
-- **"What's new" on the testing channel** — when the newer `:testing` build is itself a release
+- **"What's new" on the testing channel** - when the newer `:testing` build is itself a release
   (right after a cut), the About panel now shows that release's changelog instead of the generic
   "unreleased changes" line.
 
@@ -143,13 +143,13 @@ GitHub Release from the matching section below.
 **AdGuard's DNS activity now charts as daily stacked bars.**
 
 **Added:**
-- **Daily activity bar chart for AdGuard** — the queries/blocked counters now collapse into one
+- **Daily activity bar chart for AdGuard** - the queries/blocked counters now collapse into one
   "DNS activity" sensor whose chart draws a **stacked bar per calendar day** (full bar = total
   queries, red share = blocked; midnight-to-midnight in the viewer's timezone) instead of the old
   slowly-drifting lines. The day's growth is computed from AdGuard's rolling totals, so a
   window-slide dip or a stats reset reads as a low/zero bar, never a negative one. Built as a
   general counter→bars chart mode future counter metrics can reuse.
-- **Dedicated 7d timeframe** — bar-mode charts get their own day-scale tabs: **7d (default) ·
+- **Dedicated 7d timeframe** - bar-mode charts get their own day-scale tabs: **7d (default) ·
   1M · 3M · 6M · 1Y** (no 2h/2d, which would hold at most two bars). Line charts keep the usual
   set. The AdGuard sensor row headline now reads "N queries · M blocked".
 
@@ -157,24 +157,24 @@ GitHub Release from the matching section below.
 
 ## [0.4.43] - 2026-09-14
 
-**Five new self-hosted-service device classes — AdGuard Home, Home Assistant, DNS servers, and UPSes
-over NUT — plus the agentless collectors that make them work.** These extend the device catalogue
+**Five new self-hosted-service device classes - AdGuard Home, Home Assistant, DNS servers, and UPSes
+over NUT - plus the agentless collectors that make them work.** These extend the device catalogue
 beyond SNMP/UniFi: a DNS server gets a genuine resolve check, a UPS is monitored through Network UPS
-Tools, and AdGuard / Home Assistant are polled over their own APIs. Two new sensor sections —
-**Battery** and **DNS** — organize them. Proxy-monitored NUT and DNS need the proxy updated to
+Tools, and AdGuard / Home Assistant are polled over their own APIs. Two new sensor sections -
+**Battery** and **DNS** - organize them. Proxy-monitored NUT and DNS need the proxy updated to
 `argus-probe` `probe/v7.0.30-r7` (`:latest`), which bakes the collectors in; core-monitored devices
 work out of the box.
 
 **Added:**
-- **AdGuard Home** — DNS filtering stats (queries, blocked, block rate, average processing time),
+- **AdGuard Home** - DNS filtering stats (queries, blocked, block rate, average processing time),
   whether protection is on, the version, and a real per-name resolve check. Admin login optional.
-- **Home Assistant** — API up/down plus the Core, Supervisor, and Operating-system versions (read
+- **Home Assistant** - API up/down plus the Core, Supervisor, and Operating-system versions (read
   from HA's own update entities; Supervisor/OS appear on HA OS / Supervised installs).
-- **DNS server** — a genuine per-name resolution check against any resolver (Pi-hole, Microsoft DNS,
+- **DNS server** - a genuine per-name resolution check against any resolver (Pi-hole, Microsoft DNS,
   Ubiquiti, Sophos, AdGuard, …): resolves yes/no, response time, and the resolved IP, each name its
   own collapsible row (the pass/fail shows as a downtime band). Backed by a dependency-free
   `dns-resolver.py` external check.
-- **UPS (NUT)** — two ways to monitor a UPS through Network UPS Tools: a **direct collector**
+- **UPS (NUT)** - two ways to monitor a UPS through Network UPS Tools: a **direct collector**
   (`argus_nut.py`, which speaks the NUT protocol to `upsd`) and **via PeaNUT** (polls PeaNUT's HTTP
   API). Battery charge / runtime / status, load, input + output voltage and power draw, with
   on-battery and low-battery alerts.
@@ -188,7 +188,7 @@ work out of the box.
   subgroup" and add-device-into-current-site behaviour.
 
 **Fixed:**
-- Adding a device no longer snaps the tree to a different group — the deep-link that placed you there
+- Adding a device no longer snaps the tree to a different group - the deep-link that placed you there
   is applied once, so a host-list reload (Add device, the background poll) can't re-apply a stale
   target over the group you've drilled into.
 - The AdGuard admin-URL field no longer clips its example text.
@@ -196,17 +196,17 @@ work out of the box.
 ## [core-vm/v0.1.0] - 2026-09-11
 
 **The whole monitoring core as one self-installing VM.** A new golden-image appliance
-(`deploy/core-vm/`) bakes the entire core — Zabbix 7.0 (server + frontend + agent2), PostgreSQL +
-TimescaleDB, and the Argus + updater containers — and configures all of it on **first boot from a
+(`deploy/core-vm/`) bakes the entire core - Zabbix 7.0 (server + frontend + agent2), PostgreSQL +
+TimescaleDB, and the Argus + updater containers - and configures all of it on **first boot from a
 single web form** (hostname, keyboard, timezone, admin email + password). No Zabbix setup wizard, no
 API-token copy-pasting, no SQL: first boot creates the local admin user, initializes the database and
 schema, generates the probe-enrollment PKI (so enrollment works out of the box), writes the Zabbix
 server + frontend config, rotates the stock `Admin` password and mints a dedicated `argus-svc` API
-token (machine-managed, never shown), sets housekeeping retention, and starts Argus — then hands you a
+token (machine-managed, never shown), sets housekeeping retention, and starts Argus - then hands you a
 sign-in link and parks a `:80 → :8081` redirect. One administrator password fans out to the Debian,
 Zabbix, and Argus accounts (each overridable under Advanced); the database password, API token, and
 encryption key are generated and never displayed. Ships as **OVA / qcow2 / VHD** (a separate
-`core-vm/vX.Y.Z` release). The **manual install path is unchanged and stays first-class** — any distro,
+`core-vm/vX.Y.Z` release). The **manual install path is unchanged and stays first-class** - any distro,
 an existing Zabbix, or Argus split from the Zabbix core (README **Option A** appliance / **Option B**
 manual; `setup-core.sh SETUP_MODE=image` shares one installer with the image build). See DESIGN **§14d**.
 
@@ -218,12 +218,12 @@ chart, drawn as a flat line at its last reading, instead of dropping off the gra
 **Fixed:**
 - **A parked drive no longer vanishes from the temperature chart.** When an array or pool disk spins
   down it drops out of the emhttp temperature extend, so Zabbix flags that drive's item "not
-  supported" while keeping its last reading — but the group chart only plotted currently-supported
+  supported" while keeping its last reading - but the group chart only plotted currently-supported
   channels, so the drive (a spun-down parity disk, say) fell off the graph even though its reading
   was intact and it was still counted among the group's channels. Parked temperature channels now
   stay on the chart and hold their last reading as a flat line across the idle stretch, seeded from
   the last value when the drive parked before the visible window. Actively-reporting drives are
-  unchanged — the hold only fills the gap a parked drive leaves.
+  unchanged - the hold only fills the gap a parked drive leaves.
 
 ## [0.4.41] - 2026-09-10
 
@@ -232,26 +232,26 @@ chart, drawn as a flat line at its last reading, instead of dropping off the gra
 a batch of lab-driven fixes from putting a real Windows host and slow-filling disks under the lens.
 
 **Added:**
-- **Windows (SNMP) device class** — any edition, client or server. HOST-RESOURCES for CPU
+- **Windows (SNMP) device class** - any edition, client or server. HOST-RESOURCES for CPU
   (overall + per-core), physical memory, and fixed-disk volumes; IF-MIB for network; uptime; and a
   new **Services** category that watches selected Windows services from the LAN Manager service
   table (opt-in by a name regex, each with a not-running alert). Reuses the Generic Linux item keys,
   so the curated view labels and groups everything identically.
-- **UniFi OS Console device class** — the console host itself (Cloud Key, UNVR, or a
+- **UniFi OS Console device class** - the console host itself (Cloud Key, UNVR, or a
   console-capable gateway): state, CPU/memory, uptime, firmware, temperature, and internal storage
   usage per volume. Completes the UniFi family (Switch, Gateway, AP, Console).
-- **Searchable device-class picker** — the Add-device class list is now a type-to-filter combobox,
+- **Searchable device-class picker** - the Add-device class list is now a type-to-filter combobox,
   sorted alphabetically (with "Ping only" pinned first), for a catalog that keeps growing.
 
 **Changed:**
 - **Add device is a modal** now, matching the Add-probe dialog, instead of an inline band that
-  pushed the host tree down — wider, with each field row on one line.
+  pushed the host tree down - wider, with each field row on one line.
 
 **Fixed:**
 - **Windows network now collects** and is readable: Windows doesn't serve the 64-bit interface
   counters, so traffic is read from the 32-bit counters; discovery keeps only physical ethernet
   ports (dropping the swarm of virtual/tunnel/vSwitch adapters); and each NIC is labelled by its
-  Windows **connection name** (ifAlias — "Ethernet 2") rather than the raw internal name. A NIC that
+  Windows **connection name** (ifAlias - "Ethernet 2") rather than the raw internal name. A NIC that
   briefly drops offline during discovery keeps its history (7-day grace before a truly removed one
   is dropped).
 - **Near-constant values read flat**, in both the charts and the mini graphs: a disk sitting at a
@@ -261,7 +261,7 @@ a batch of lab-driven fixes from putting a real Windows host and slow-filling di
 
 ## [0.4.40] - 2026-09-09
 
-**C2 breadth — the UniFi family and unRAID join the catalog.** Three new device classes ride the
+**C2 breadth - the UniFi family and unRAID join the catalog.** Three new device classes ride the
 patterns C1 proved: two more UniFi types off the same controller API, and unRAID as the first
 multi-template class (the Generic Linux SNMP template plus a storage add-on). Along the way, a
 per-core CPU breakdown for every SNMP host, a corrected memory reading, and a batch of
@@ -270,19 +270,19 @@ lab-driven monitoring-view refinements.
 **Added:**
 - **UniFi Gateway device class.** One controller call per poll (by MAC), like the switch: state,
   CPU/memory, uptime, firmware, temperature, LAN port discovery (WAN ports excluded), total PoE
-  draw on models that power devices, the last speedtest result, and **per-WAN discovery** — traffic
+  draw on models that power devices, the last speedtest result, and **per-WAN discovery** - traffic
   in/out plus the gateway's own uplink-monitor latency and availability (shown as a "WAN quality"
   group beside ICMP), with a WAN-degraded alert.
 - **UniFi Access Point device class.** Adds a **Wireless** sensor category: connected clients, the
   controller's experience score, and per-radio discovery (clients and channel utilization per band,
-  2.4/5/6 GHz) — plus the shared state/CPU/memory/uptime/uplink/firmware sensors.
+  2.4/5/6 GHz) - plus the shared state/CPU/memory/uptime/uplink/firmware sensors.
 - **unRAID device class (SNMP).** The first class to stack templates: Generic Linux SNMP (CPU,
   memory, array/pool/`docker.img` filesystems, interfaces, uptime) plus an unRAID add-on for
   per-disk temperatures and per-share free space, read from the Community Applications "SNMP"
   plugin. Utility mount roots are filtered out by a class-preset skip list. Ships an optional
   companion script (`docs/unraid-pool-temps.sh`) that adds cache/pool drives (incl. NVMe, which the
-  plugin omits) and reads temperatures from the emhttp state — atomic, dash-free, never waking a
-  disk — with drives named by slot ("Parity", "Disk 1", "Cache 2") and ordered like the Main tab.
+  plugin omits) and reads temperatures from the emhttp state - atomic, dash-free, never waking a
+  disk - with drives named by slot ("Parity", "Disk 1", "Cache 2") and ordered like the Main tab.
 - **Per-core CPU utilization** on the Generic Linux SNMP class: `hrProcessorLoad` walked in one
   request, discovered into a "Cores" group whose headline and chart follow the busiest core.
 
@@ -292,19 +292,19 @@ lab-driven monitoring-view refinements.
   (servers) and network-first (switches/APs).
 - **HTTP/HTTPS collapses into one group** like ICMP: response time is the primary channel, the
   reachability check becomes the inverted Downtime band.
-- **Available memory now reflects what the kernel can actually reclaim** — free plus buffers and
+- **Available memory now reflects what the kernel can actually reclaim** - free plus buffers and
   page cache, minus the tmpfs/shared pages that live in cache but can't be evicted. Matches what
   `htop` and the unRAID dashboard report; memory utilization inherits the correction across every
   SNMP host.
 - **The UniFi WAN-degraded alert arms itself:** it only fires for a WAN that was healthy in the
   last few hours, so a configured-but-unplugged failover never alerts while a WAN that worked and
-  then died still does — and stays open through the whole outage. A per-WAN threshold override
+  then died still does - and stays open through the whole outage. A per-WAN threshold override
   remains for deliberate decommissions.
 - A **one-member group keeps its group name** (a WAN with only availability data reads "WAN 2
   quality", not the raw item label) and folds back into a full group when more channels report.
 
 **Fixed:**
-- **Memory utilization read far too high** on any box with a warm cache — the previous "available
+- **Memory utilization read far too high** on any box with a warm cache - the previous "available
   memory" counted only truly-free RAM. (See above.)
 - **Percentage charts no longer amplify a flat line:** a disk sitting at a steady 57 % auto-ranged
   to a sliver of a percent and drew as a full-height ramp with every gridline rounding to the same
@@ -322,24 +322,24 @@ lab-driven monitoring-view refinements.
 
 ## [0.4.39] - 2026-09-09
 
-**The UniFi Switch class — and a discovery trigger.** §C phase C1 is complete: switches join the
-device catalog, polled from their UniFi controller with an API key — ports, PoE, traffic and all —
+**The UniFi Switch class - and a discovery trigger.** §C phase C1 is complete: switches join the
+device catalog, polled from their UniFi controller with an API key - ports, PoE, traffic and all -
 and a freshly added host gets its discovered per-instance sensors in seconds instead of an hour.
 
 **Added:**
-- **UniFi Switch device class.** One controller call per poll, addressed by the switch's MAC —
+- **UniFi Switch device class.** One controller call per poll, addressed by the switch's MAC -
   works against a UniFi OS console (cloud gateway on :443) or a self-hosted console on a custom
   port via a per-host `{$UNIFI.URL}`. Sensors: controller state (offline trigger), CPU and memory
   utilization (threshold triggers), uptime, firmware, temperature (models that report one), uplink
-  traffic, total **PoE power draw**, and port discovery — per-port link, negotiated speed, traffic
+  traffic, total **PoE power draw**, and port discovery - per-port link, negotiated speed, traffic
   in/out (controller-computed rates) and **PoE watts** on PoE-capable ports only. Ports carry the
   controller's names ("Port 1 · Office-AP") and sort naturally (Port 2 before Port 10).
 - **Class-declared per-host inputs.** A device class can declare the macros it needs (controller
-  URL, API key, MAC, site) and the Add-device form renders them generically — secrets are masked in
+  URL, API key, MAC, site) and the Add-device form renders them generically - secrets are masked in
   the form and stored as Zabbix **secret macros**, write-only after creation. The seam every future
   API-source class reuses.
 - **Discovery trigger.** After Add-device creates a host, its LLD rules fire automatically
-  ("execute now", delayed until the proxy has synced the new config, with a retry) — and a
+  ("execute now", delayed until the proxy has synced the new config, with a retry) - and a
   **Discover now** action in the host menu runs the same trigger on demand for any host.
 
 **Changed:**
@@ -347,21 +347,21 @@ and a freshly added host gets its discovered per-instance sensors in seconds ins
   network-first, servers keep the classic compute-first order, and Power sorts before CPU in both.
   A GUI-editable order is on the roadmap.
 - **Port rows read like network interfaces:** live ↓/↑ traffic in the value column (a down port
-  reads "down"), a traffic sparkline — and every traffic-style group's sparkline (NICs, uplinks,
+  reads "down"), a traffic sparkline - and every traffic-style group's sparkline (NICs, uplinks,
   ports) now shows the **sum of in + out**: total throughput at a glance.
 - **Port charts start with the constant Speed/Link lines hidden** (their live values stay in the
-  legend; one click reveals the line) — so the traffic axis ranges to the actual in/out rates
+  legend; one click reveals the line) - so the traffic axis ranges to the actual in/out rates
   instead of being pinned at the negotiated gigabits.
 
 **Fixed:**
 - Capability placeholders no longer occupy sensor rows: a switch without a temperature probe or
-  without PoE reports a constant 0 for those — the template stops collecting them and the curated
+  without PoE reports a constant 0 for those - the template stops collecting them and the curated
   view hides the stale rows. The controller-state item feeds its offline trigger without taking up
   a row of its own.
 
 ## [0.4.38] - 2026-09-08
 
-**Device classes — Argus provisions hosts now — plus a PRTG-grade monitoring view.** The first slice
+**Device classes - Argus provisions hosts now - plus a PRTG-grade monitoring view.** The first slice
 of the device-class catalog: hand-authored Zabbix templates ship inside Argus and reconcile at
 startup, **"+ Add device"** creates and binds a host end-to-end, and a **Generic Linux SNMP** class
 arrives with full discovery. On the viewing side: channel groups with multi-series charts, a tree
@@ -377,10 +377,10 @@ that separates groups from hosts at a glance, and a deep chart/sparkline rework.
 - **Generic Linux SNMP class (C1).** Core metrics (CPU, memory, uptime) plus discovery: filesystem
   LLD → per-mount Disk total / used / used % (tmpfs filtered; OIDs matched in numeric *and*
   MIB-symbolic form), interface LLD → per-NIC traffic in/out. Thresholds ride as user macros.
-  Add-device **inherits the proxy's SNMP defaults** — credentials are asked for only to override.
+  Add-device **inherits the proxy's SNMP defaults** - credentials are asked for only to override.
 - **PRTG-style channel groups.** Per-instance sensors (a disk mount, a NIC, the ICMP trio) collapse
-  into one group row; expanding it opens a single chart overlaying every channel — mixed units on two
-  y-axes, click-to-toggle legend — and pause/hide/priority act on the whole instance. ICMP reads
+  into one group row; expanding it opens a single chart overlaying every channel - mixed units on two
+  y-axes, click-to-toggle legend - and pause/hide/priority act on the whole instance. ICMP reads
   response time as the main field, loss beside it, and reachability inverted into a red **downtime
   band**.
 - **Tree readability.** Compact accent-tinted group bands vs. taller host rows with device-type
@@ -396,17 +396,17 @@ that separates groups from hosts at a glance, and a deep chart/sparkline rework.
 **Changed:**
 - The host sensor table and the overview/status lists now share the tree's column order (… Trend,
   Priority, Last check) and stable proportions, every sparkline in the app is one size, single-scale
-  charts label their axis on the right, and the Loss channel is amber-gold — clearly apart from the
+  charts label their axis on the right, and the Loss channel is amber-gold - clearly apart from the
   red downtime.
 
 **Fixed:**
 - **The stray blue dot** in every chart's top-left corner: uPlot parks its drag-zoom selection box
   collapsed at 0×0 there, and the dark theme's 1px accent border on it painted a 2-px speck. The
-  selection edge is now an inset shadow — identical while dragging, invisible when idle.
+  selection edge is now an inset shadow - identical while dragging, invisible when idle.
 - The 30-second refresh could steal the open chart, snapping the view back to the sensor originally
   drilled into from the Overview.
 - Flat sparklines rendered dim and blurry (a stroke centered on a pixel boundary splits across two
-  rows — half-pixel centers now); axis labels could clip (`7d 4h 46m`, `953.67 MB`); a plain % axis
+  rows - half-pixel centers now); axis labels could clip (`7d 4h 46m`, `953.67 MB`); a plain % axis
   lost its unit and followed the browser locale; the overview list's column widths never applied
   (Chrome ignores `calc(% - px)` on fixed-layout table columns).
 - Zabbix 7.0 rejects non-v4 UUIDs in template imports; proxy/load-balancer names no longer
@@ -429,7 +429,7 @@ that separates groups from hosts at a glance, and a deep chart/sparkline rework.
 
 **Fixed:**
 - A host that belongs directly to a group (e.g. a host in `myng` while `myng` also has subgroups) was
-  drawn indented under — and after — its sibling subgroups, so it looked like a member of one of them.
+  drawn indented under - and after - its sibling subgroups, so it looked like a member of one of them.
   It now sits at the group's own level, above the subgroups.
 - Row dividers were inconsistent once hosts and subgroups interleaved: some boundaries drew a double
   line, others none. Every tree row now draws exactly one divider, in any order.
@@ -441,22 +441,22 @@ that separates groups from hosts at a glance, and a deep chart/sparkline rework.
 ## [0.4.35] - 2026-09-06
 
 **Per-user notifications.** Everyone can now get alerts on their *own* Telegram or Discord, and email
-can fan out to every registered user — additively, without changing the existing shared channels.
+can fan out to every registered user - additively, without changing the existing shared channels.
 
 **Added:**
 - **Personal notifications (Account tab).** Any signed-in user (any role) can register their own
   Telegram (their own @BotFather bot token + chat ID) or Discord (webhook URL) and receive alerts there,
-  scoped by site and severity like a global channel — with the same per-channel delivery-health line and
+  scoped by site and severity like a global channel - with the same per-channel delivery-health line and
   a **Send test** button. Self-service and private: everything is under `/api/me/notify/*`, a user only
   ever sees their own channels (`user_notify_channels`, config encrypted at rest). Groundwork for the
   future mobile apps, where a phone is just another personal channel.
 - **Email → registered users.** An email channel can now deliver to **each active user's registered
-  email** instead of a fixed address — a "Send to" choice on the channel (admin-controlled), alongside
+  email** instead of a fixed address - a "Send to" choice on the channel (admin-controlled), alongside
   the existing fixed-address mode. Each recipient gets a private, individual message.
-- **Multi-site channels.** Any channel — global or personal — can target **several sites at once**
+- **Multi-site channels.** Any channel - global or personal - can target **several sites at once**
   (a multi-select of host-groups) rather than only one site or all. The picker is hierarchical:
   selecting a probe's root group (e.g. `mybz`) covers all its subgroups (`mybz/Network`, …), and a
-  channel fires when any of its sites matches — or is an ancestor of — one of the host's groups.
+  channel fires when any of its sites matches - or is an ancestor of - one of the host's groups.
 
 **Changed:**
 - The notifier fires a problem as soon as a **global or personal** channel matches its site + severity
@@ -521,13 +521,13 @@ health, one consistent set of controls, and clearer alert messages on every chan
 
 ## [0.4.33] - 2026-09-05
 
-A readability pass over the **Probes** and **Users** tables (both the same labelled-card pattern —
+A readability pass over the **Probes** and **Users** tables (both the same labelled-card pattern -
 a data table on desktop, stacked cards on mobile). No functional changes; UI only.
 
 **Changed:**
 - **Probes table restructured for scannability.** Dropped the `Argus-` prefix from the version headers
-  (`Proxy Version` / `Updater Version` / `VM OS Version`). The all-good states — `up to date` and
-  `patched` — are now a quiet green ✓ + muted text instead of a full pill, so colored pills are reserved
+  (`Proxy Version` / `Updater Version` / `VM OS Version`). The all-good states - `up to date` and
+  `patched` - are now a quiet green ✓ + muted text instead of a full pill, so colored pills are reserved
   for things that need attention (drift → `Update`, `reboot`, `offline`) and the eye lands on the probes
   that need action.
 - **Grid dividers** on both tables: faint vertical rules between columns and stronger horizontal rules
@@ -544,7 +544,7 @@ a data table on desktop, stacked cards on mobile). No functional changes; UI onl
 
 **OS patching & lifecycle** (roadmap §A, DESIGN §14c): keep the Debian OS under the core and probe VMs
 patched without accumulating CVEs, while leaving the reboot policy appropriate to each role. The OS
-patches itself locally — Argus reports status and schedules the core's reboot, but never runs `apt`
+patches itself locally - Argus reports status and schedules the core's reboot, but never runs `apt`
 remotely (there's no clean rollback; hypervisor snapshots are the safety net).
 
 **Added:**
@@ -552,7 +552,7 @@ remotely (there's no clean rollback; hypervisor snapshots are the safety net).
   `probe-vm/v0.3.1`) and the core (`deploy/core/setup-core.sh`) install `unattended-upgrades`
   (**security suite only**, so the core's TimescaleDB 2.28 hold is safe) + `needrestart` (auto-restart
   services after a libc/openssl bump, so most updates need no reboot).
-- **Role-appropriate reboots.** **Probe VMs** (cattle) auto-reboot in a weekly ~03:00 window — they
+- **Role-appropriate reboots.** **Probe VMs** (cattle) auto-reboot in a weekly ~03:00 window - they
   buffer 7 days offline, so a ~60 s reboot is invisible. The **core** (a pet hosting the DB + Zabbix)
   never reboots unattended by default: a new **Settings → OS updates** mask picks a day + time, or
   "notify only" (the default). A host-side watcher honours the window locally.
@@ -566,7 +566,7 @@ remotely (there's no clean rollback; hypervisor snapshots are the safety net).
 
 **Changed:**
 - **Probes table reworked.** Adding the OS column pushed it to 11 columns; regrouped into a clearer
-  layout — **Probe** (name + `mode · enrolled` subline), **Health** (online/offline + last check-in),
+  layout - **Probe** (name + `mode · enrolled` subline), **Health** (online/offline + last check-in),
   **Argus-Proxy Version** (Zabbix proxy version + up-to-date/update), **Argus-Updater Version** (the
   argus-updater sidecar's version + drift + an Update button when behind), **Argus-VM OS Version** (the
   OS name + patch chip), and a per-row **⋯ menu** (SNMP defaults, Console, Delete). The menu is portaled
@@ -576,12 +576,12 @@ remotely (there's no clean rollback; hypervisor snapshots are the safety net).
 - **Probes report their OS name** (`os` in `POST /api/probes/os-status`, new `os_version` column) so the
   VM's Debian version shows alongside the patch status.
 - The proxy SNMP-default band is a centered card with balanced fields; fixed its prose spilling past the
-  card — the probes table forces `white-space: nowrap` on cells and the inline panel inherited it, so its
+  card - the probes table forces `white-space: nowrap` on cells and the inline panel inherited it, so its
   note couldn't wrap (reset to `normal`; also guarded the field grid against `min-width: auto` overflow).
 
 **Deploy:**
 - `setup-core.sh` gains an OS-patching step: `unattended-upgrades` (auto-reboot **off**), a host
-  reporter writing `os-status.json`, and a reboot watcher reading `reboot-window.json` — both under
+  reporter writing `os-status.json`, and a reboot watcher reading `reboot-window.json` - both under
   `ARGUS_STATE_DIR` (the host path you map as the core container's `ARGUS_UPDATE_DIR`).
 
 ## [0.4.31] - 2026-09-03
@@ -614,7 +614,7 @@ Completes DESIGN §14a's delivery-vs-enrollment matrix and the break-glass item.
   static `systemd-networkd` file before enrollment, so the VM enrolls on a fixed address with no
   interaction. Seed-only (the first-boot page needs an IP to be reachable); a stuck VM is recoverable by
   re-attaching a corrected seed.
-- **The probe VM takes the hostname `argus-probe-<site>`** (e.g. `argus-probe-office`) on enrollment — the
+- **The probe VM takes the hostname `argus-probe-<site>`** (e.g. `argus-probe-office`) on enrollment - the
   VM is the probe appliance; the container it runs is the Zabbix proxy (`proxy-<site>`). The break-glass
   `argus` user is also added to the `docker` group so it can run `docker` without sudo.
 - **Terminology tidy-up:** the operator-facing copy consistently calls the deployable a **probe**;
@@ -634,10 +634,10 @@ Completes DESIGN §14a's delivery-vs-enrollment matrix and the break-glass item.
 **Fixed:**
 - **A failed update check no longer masquerades as "up to date."** When the core couldn't reach GHCR,
   the check bailed out and left the previous verdict in place, so "Check for updates" showed a
-  falsely-reassuring "You're on the latest available build" — indistinguishable from an actual up-to-date
+  falsely-reassuring "You're on the latest available build" - indistinguishable from an actual up-to-date
   result (as a GHCR outage made obvious). `/api/version` now reports the last successful-check time and
   whether the most recent attempt reached the registry; the About panel shows a **check failed** tag +
-  "Couldn't reach the registry — showing the result from N ago" instead of the green "latest" verdict.
+  "Couldn't reach the registry - showing the result from N ago" instead of the green "latest" verdict.
 - **Core "Check for updates" missed newer `:testing` builds.** Channel resolution let the argus-updater
   sidecar's reported image tag override the version stamp, so if the sidecar reported anything but
   `testing` a development build (which can only come from `:testing`) was treated as the `latest`
@@ -696,7 +696,7 @@ everywhere - the main container (a pure reporter, never holding the Docker socke
 - **The update-available state on the Probes page is now highlighted in amber** (the button + the
   "→ version" chip), so an outdated probe stands out at a glance instead of rendering muted like the
   other states.
-- **Project split into three repositories** — `argus-core` (this app), `argus-probe` (the probe Docker
+- **Project split into three repositories** - `argus-core` (this app), `argus-probe` (the probe Docker
   image + self-configuring golden VM), and `argus-updater` (the self-update sidecar). Image names are
   unchanged, so deployments are unaffected; the Add-probe **Compose** command now fetches its compose
   file from the argus-probe repo.
@@ -709,7 +709,7 @@ everywhere - the main container (a pure reporter, never holding the Docker socke
 
 - **Alert trend graphs now scale the Y axis by the sensor's units**, matching the app. Byte counters
   read as KB/MB/GB (1024-based), bit rates as Kbps/Mbps/Gbps, and uptime as a duration (e.g. `817.1d`,
-  `4.1h`, `45s`) — instead of raw or scientific-notation values like `7.06e+05`. Unitless values keep a
+  `4.1h`, `45s`) - instead of raw or scientific-notation values like `7.06e+05`. Unitless values keep a
   compact SI form (`70.6M`).
 
 **Added:**
@@ -724,13 +724,13 @@ everywhere - the main container (a pure reporter, never holding the Docker socke
 
 **Added:**
 
-- **Global quick-switcher (Ctrl-K).** A new search box in the top bar — and the **Ctrl/Cmd-K**
-  shortcut from anywhere — opens a palette that searches **hosts** (by name or IP), **sensors** (by
+- **Global quick-switcher (Ctrl-K).** A new search box in the top bar - and the **Ctrl/Cmd-K**
+  shortcut from anywhere - opens a palette that searches **hosts** (by name or IP), **sensors** (by
   name), and **host groups** (by name). Arrow keys move, Enter jumps: a host opens in the tree, a
   sensor opens its chart, a group focuses the tree on it. Matches rank prefix and word-boundary hits
   above mid-word ones.
 - **Per-channel notification severity floor.** Each notification channel can now set its own minimum
-  severity — **Warning & up**, **Average & up**, **High & up**, or **Disaster only** — in the channel
+  severity - **Warning & up**, **Average & up**, **High & up**, or **Disaster only** - in the channel
   editor (next to Site), with the floor shown on the channel card when it's above the default. A
   problem below a channel's floor no longer routes to it, and its recovery notice follows the same
   rule. Defaults to Warning, matching the previous behavior, so existing channels are unchanged.
@@ -740,8 +740,8 @@ everywhere - the main container (a pure reporter, never holding the Docker socke
   socket-enabled probe deploys straight from the wizard instead of hand-editing the command. The
   Compose format already bundles the updater sidecar, so there it's always on.
 - **Labeled axes on alert trend graphs.** The 2-hour trend PNG in every problem and recovery alert now
-  carries axis labels — min/mid/max value gridlines on the Y axis and relative time (2h ago → now) on
-  the X axis — for at-a-glance scale without opening the app.
+  carries axis labels - min/mid/max value gridlines on the Y axis and relative time (2h ago → now) on
+  the X axis - for at-a-glance scale without opening the app.
 
 ---
 
@@ -755,7 +755,7 @@ everywhere - the main container (a pure reporter, never holding the Docker socke
   the tree root. Host and sensor focus were already URL-persisted; group focus was the gap.
 - **Browser Back/Forward now step through the tree's drill levels.** Explicit drills (clicking a
   group/host/sensor name or a breadcrumb) push history entries, so Back walks back up root ← group ←
-  host ← sensor and Forward re-drills — instead of Back jumping straight out of the Monitoring tab.
+  host ← sensor and Forward re-drills - instead of Back jumping straight out of the Monitoring tab.
   Inline accordion toggles (expanding a host card or sensor row) still don't add history entries.
 
 ---
@@ -765,10 +765,10 @@ everywhere - the main container (a pure reporter, never holding the Docker socke
 **Changes:**
 
 - **Advanced mode declutters the monitoring toolbar.** The Sites & hosts toolbar had grown crowded, so
-  the two rarely-used controls — the **All sensors** view toggle and **hidden-group management** (Show
-  hidden / per-group hide) — now appear only when **Advanced mode** is on. It's a per-user preference
+  the two rarely-used controls - the **All sensors** view toggle and **hidden-group management** (Show
+  hidden / per-group hide) - now appear only when **Advanced mode** is on. It's a per-user preference
   (like the landing page), toggled from the admin-only **Settings → Interface** tab, so only an admin
-  can enable it and only for their own view — no one else is affected. Off by default; with it off the
+  can enable it and only for their own view - no one else is affected. Off by default; with it off the
   toolbar is just **+ New group** and **Reorder**.
 - **"+ New group" is now the primary (blue) button**, matching "+ Add channel" and "+ Add probe" on the
   other tabs.
@@ -778,11 +778,11 @@ everywhere - the main container (a pure reporter, never holding the Docker socke
   tooth in the lower-right, by swapping in the clean canonical gear; and vertically centered the Overview
   gauge (it was top-weighted, which made the space below it in the collapsed rail look like an uneven gap).
 - **Group separators in the collapsed sidebar.** When the rail is collapsed to icons, the
-  Watch/Configure/Admin section labels can't show their text, so they now render as thin divider lines —
+  Watch/Configure/Admin section labels can't show their text, so they now render as thin divider lines -
   keeping the same grouping the expanded sidebar shows.
 - **Hiding a group is now admin-only and asks for confirmation.** Unhiding a group is only reachable in
   advanced mode (an admin-only preference), so the **Hide from tree** / **Show in tree** actions now
-  appear only there too — closing a gap where a helpdesk user could hide a group and then have no way to
+  appear only there too - closing a gap where a helpdesk user could hide a group and then have no way to
   bring it back. Hiding also now shows an in-app confirm (it can tuck a group out of everyone's view),
   and the write endpoint (`PUT /api/tree/hidden`) is restricted to admins.
 
@@ -822,11 +822,11 @@ everywhere - the main container (a pure reporter, never holding the Docker socke
 
 ## [0.4.22] - 2026-08-31
 
-**Host settings editor (phase 2b) — manage a host's identity + connection from Argus:**
+**Host settings editor (phase 2b) - manage a host's identity + connection from Argus:**
 
 - A **"Settings…"** action on each host (admin/helpdesk) edits the **visible + technical name**,
   **Monitored by** (Server / Proxy with a proxy picker), and the host's **Agent and SNMP interfaces**
-  — add, edit and remove, with connect-via IP/DNS, port, and SNMP version/community (v1/v2c/v3).
+  - add, edit and remove, with connect-via IP/DNS, port, and SNMP version/community (v1/v2c/v3).
   One Save reconciles the whole desired state.
 - **Removing an interface no longer strands its checks.** If items still use the interface, Argus
   moves them to a surviving interface first (so you can swap an Agent interface for SNMP without
@@ -836,7 +836,7 @@ everywhere - the main container (a pure reporter, never holding the Docker socke
 
 **PRTG-style SNMP inheritance:**
 
-- Each proxy holds a **default** SNMP credential set — edit it in the Probes tab (the proxy's
+- Each proxy holds a **default** SNMP credential set - edit it in the Probes tab (the proxy's
   **Defaults** button). Community and v3 passphrases are encrypted at rest.
 - A host's SNMP interface can **Inherit** its proxy's default or **Override** per host. New SNMP
   interfaces default to Inherit when a default exists.

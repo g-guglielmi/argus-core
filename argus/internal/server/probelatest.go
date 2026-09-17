@@ -137,7 +137,7 @@ func (s *Server) startProbeVMRefresh(ctx context.Context) {
 
 var probeVMRelTag = regexp.MustCompile(`^probe-vm/v([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
-// vmImageLabel maps an appliance filename to a friendly "format — hypervisor" label.
+// vmImageLabel maps an appliance filename to a friendly "format - hypervisor" label.
 func vmImageLabel(name string) string {
 	switch {
 	case strings.HasSuffix(name, ".ova"):

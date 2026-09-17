@@ -764,7 +764,7 @@ function OSUpdates() {
   return (
     <section className="set-card">
       <h3>OS updates</h3>
-      <p className="set-note">The Debian OS under the core and probe VMs patches itself locally — security updates only, applied automatically. Argus reports status and schedules the core's reboot; it never runs apt remotely (there's no clean rollback). Per-probe status is on the <strong>Probes</strong> page.</p>
+      <p className="set-note">The Debian OS under the core and probe VMs patches itself locally - security updates only, applied automatically. Argus reports status and schedules the core's reboot; it never runs apt remotely (there's no clean rollback). Per-probe status is on the <strong>Probes</strong> page.</p>
 
       <div className="set-row">
         <div className="set-head"><span className="complabel">Core</span></div>
@@ -773,7 +773,7 @@ function OSUpdates() {
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             {c.os && <span className="mono">{c.os}</span>}
-            {c.reboot_required && <span className="tag avail" title="The core needs a reboot to finish applying updates — schedule it below">reboot needed</span>}
+            {c.reboot_required && <span className="tag avail" title="The core needs a reboot to finish applying updates - schedule it below">reboot needed</span>}
             {sec > 0 && <span className="tag avail">{sec} security update{sec === 1 ? '' : 's'}</span>}
             {sec === 0 && !c.reboot_required && <span className="tag online">patched</span>}
             {sec < 0 && !c.reboot_required && <span className="mono" style={{ color: 'var(--faint)' }}>count unknown</span>}
@@ -787,7 +787,7 @@ function OSUpdates() {
         <p className="set-hint" style={{ marginTop: 0 }}>Security patches apply automatically, but the core hosts the database and Zabbix, so its <strong>reboot</strong> is never unattended by default. Probe VMs reboot themselves in a weekly ~03:00 window.</p>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <select className="input" value={mode} onChange={(e) => setMode(e.target.value)} style={{ maxWidth: 320 }}>
-            <option value="notify">Notify only — never reboot automatically</option>
+            <option value="notify">Notify only - never reboot automatically</option>
             <option value="auto">Auto-reboot weekly when needed</option>
           </select>
           {mode === 'auto' && <>
@@ -880,7 +880,7 @@ function VersionAbout() {
   return (
     <section className="set-card">
       <h3>About</h3>
-      <p className="set-note">The Argus components running on this instance — the core app, and its updater sidecar when wired up — and whether newer versions are available.</p>
+      <p className="set-note">The Argus components running on this instance - the core app, and its updater sidecar when wired up - and whether newer versions are available.</p>
       <div className="set-row" style={{ marginBottom: v && v.update_available ? undefined : 0 }}>
         <div className="set-head">
           <span className="complabel">Core</span>
@@ -893,11 +893,11 @@ function VersionAbout() {
             {v.dev_update && <span className="vtag upd">↑ {v.dev_target || 'new testing build'}</span>}
             {v.status === 'current' && !v.check_error && <span className="vtag ok">latest</span>}
             {v.status === 'development' && <span className="vtag dev">development build</span>}
-            {v.check_error && !v.update_available && <span className="vtag dev" title="The last update check couldn't reach the registry — the verdict may be out of date">check failed</span>}
+            {v.check_error && !v.update_available && <span className="vtag dev" title="The last update check couldn't reach the registry - the verdict may be out of date">check failed</span>}
           </div>
         )}
       </div>
-      {v?.check_error && <p className="set-hint" style={{ margin: '0 0 8px', color: 'var(--warn)' }}>{v.check_error} to check for updates — {v.checked_at ? `showing the result from ${relTime(v.checked_at)}` : 'no successful check yet'}. Retry in a moment.</p>}
+      {v?.check_error && <p className="set-hint" style={{ margin: '0 0 8px', color: 'var(--warn)' }}>{v.check_error} to check for updates - {v.checked_at ? `showing the result from ${relTime(v.checked_at)}` : 'no successful check yet'}. Retry in a moment.</p>}
       {checkedMsg && <p className="set-hint" style={{ margin: '0 0 8px' }}>{checkedMsg}</p>}
 
       {/* Update progress / outcome banner (driven by the argus-updater sidecar). */}
@@ -941,7 +941,7 @@ function VersionAbout() {
                 {whatsNew}
               </>
             )
-            return <p className="set-row set-hint" style={{ marginBottom: 8 }}>A newer <span className="mono">:testing</span> build{v.dev_target ? <> — <span className="mono">{v.dev_target}</span></> : ''} has been published (unreleased changes past {running}). Updating re-pulls the testing channel in place.</p>
+            return <p className="set-row set-hint" style={{ marginBottom: 8 }}>A newer <span className="mono">:testing</span> build{v.dev_target ? <> - <span className="mono">{v.dev_target}</span></> : ''} has been published (unreleased changes past {running}). Updating re-pulls the testing channel in place.</p>
           })()}
           <div className="set-row" style={{ marginBottom: 0 }}>
             {upd && upd.self_update_enabled ? (
@@ -963,8 +963,8 @@ function VersionAbout() {
             <select className="input" value={switchTo} onChange={(e) => setSwitchTo(e.target.value)} style={{ maxWidth: 240 }}>
               <option value="">Select a target…</option>
               <optgroup label="Channels">
-                <option value="latest">latest — stable releases</option>
-                <option value="testing">testing — main, unreleased</option>
+                <option value="latest">latest - stable releases</option>
+                <option value="testing">testing - main, unreleased</option>
               </optgroup>
               {targets.releases.length > 0 && (
                 <optgroup label="Recent releases">
@@ -974,7 +974,7 @@ function VersionAbout() {
             </select>
             <Button variant="default" onClick={doSwitch} disabled={busy || active || !switchTo}>Switch</Button>
           </div>
-          <p className="set-hint" style={{ marginTop: 6 }}>Switches the running image to the selected channel or version. Picking a specific version pins the core — it won't track a channel until you switch back to <span className="mono">latest</span> or <span className="mono">testing</span>.</p>
+          <p className="set-hint" style={{ marginTop: 6 }}>Switches the running image to the selected channel or version. Picking a specific version pins the core - it won't track a channel until you switch back to <span className="mono">latest</span> or <span className="mono">testing</span>.</p>
         </details>
       )}
 
@@ -988,14 +988,14 @@ function VersionAbout() {
               : <Button variant="default" style={{ marginLeft: 'auto' }} onClick={updateSidecar}>Update sidecar</Button>}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span className="mono" title="Version of the argus-updater container that performs the updates above">{upd.updater_version || '—'}</span>
+            <span className="mono" title="Version of the argus-updater container that performs the updates above">{upd.updater_version || '-'}</span>
           </div>
           <p className="set-hint" style={{ marginTop: 6 }}>Holds the Docker socket and performs the core updates above. <strong>Update sidecar</strong> recreates it onto the latest image (rolling back on failure); the core keeps running throughout.</p>
         </div>
       )}
       {/* AGPL-3.0 §13: network users must be able to reach the corresponding source. */}
       <p className="set-hint" style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)', marginBottom: 0 }}>
-        Argus is free software under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer">GNU AGPL-3.0</a> — <a href="https://github.com/g-guglielmi/argus-core" target="_blank" rel="noopener noreferrer">source code</a>.
+        Argus is free software under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer">GNU AGPL-3.0</a> - <a href="https://github.com/g-guglielmi/argus-core" target="_blank" rel="noopener noreferrer">source code</a>.
       </p>
     </section>
   )
@@ -1168,7 +1168,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         <div className="side-foot">
           {ver && (
             <button type="button" className={'side-ver' + (ver.update_available ? ' upd' : '')} disabled={me.role !== 'admin'}
-              title={ver.update_available ? `Update available${ver.latest ? `: ${ver.latest}` : ''} — open Settings` : `Argus ${ver.version || 'development build'}`}
+              title={ver.update_available ? `Update available${ver.latest ? `: ${ver.latest}` : ''} - open Settings` : `Argus ${ver.version || 'development build'}`}
               onClick={() => goto('settings')}>
               <span className={'vtag ' + (ver.update_available ? 'upd' : ver.status === 'current' ? 'ok' : 'dev')}>{ver.version || 'dev'}</span>
               {ver.update_available && <span className="side-ver-txt">update available</span>}
@@ -1607,7 +1607,7 @@ function NotificationsView() {
                 <div className="ct">
                   <span className="ci" style={{ background: m.c }}>{m.l}</span>
                   <span className="chan-name">{c.name}</span>
-                  <Switch checked={c.enabled} onChange={() => toggle(c)} title={c.enabled ? 'Enabled — switch off to pause alerts to this channel' : 'Disabled — switch on to resume alerts'} />
+                  <Switch checked={c.enabled} onChange={() => toggle(c)} title={c.enabled ? 'Enabled - switch off to pause alerts to this channel' : 'Disabled - switch on to resume alerts'} />
                 </div>
                 <p className="chan-meta">{m.label} · {sitesLabel(c.sites)} · {sev}{c.type === 'email' && c.config?.recipients === 'users' ? ' · to all users' : ''}</p>
                 <ChannelDelivery c={c} />
@@ -1634,7 +1634,7 @@ function ChannelDelivery({ c }: { c: { last_sent_at?: number; last_error?: strin
   const failed = !!c.last_error_at && (!c.last_sent_at || c.last_error_at >= c.last_sent_at)
   if (failed) return <div className="chan-status err" title={c.last_error || ''}>Last delivery failed {relTime(c.last_error_at!)}{c.last_error ? ` · ${c.last_error}` : ''}</div>
   if (c.last_sent_at) return <div className="chan-status ok">Last sent {relTime(c.last_sent_at)}{c.sent_count ? ` · ${c.sent_count} delivered` : ''}</div>
-  return <div className="chan-status">Nothing sent yet — use “Send test” to check the setup.</div>
+  return <div className="chan-status">Nothing sent yet - use “Send test” to check the setup.</div>
 }
 
 function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
@@ -1759,7 +1759,7 @@ function PersonalNotifyCard() {
   }
 
   return (
-    <Card title="Personal notifications" note="Get alerts on your own Telegram or Discord. Only you receive these — they’re separate from the shared channels an admin manages.">
+    <Card title="Personal notifications" note="Get alerts on your own Telegram or Discord. Only you receive these - they’re separate from the shared channels an admin manages.">
       {editing && (
         <PersonalChannelEditor
           initial={editing === 'new' ? null : editing}
@@ -1783,7 +1783,7 @@ function PersonalNotifyCard() {
                 <div className="ct">
                   <span className="ci" style={{ background: m.c }}>{m.l}</span>
                   <span className="chan-name">{m.label}</span>
-                  <Switch checked={c.enabled} onChange={() => toggle(c)} title={c.enabled ? 'Enabled — switch off to pause your alerts here' : 'Disabled — switch on to resume'} />
+                  <Switch checked={c.enabled} onChange={() => toggle(c)} title={c.enabled ? 'Enabled - switch off to pause your alerts here' : 'Disabled - switch on to resume'} />
                 </div>
                 <p className="chan-meta">{sitesLabel(c.sites)} · {sev}</p>
                 <ChannelDelivery c={c} />
@@ -1967,7 +1967,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
       if (!res.ok) { alert({ title: 'Console access', message: await errText(res, 'Could not read the credential'), danger: true }); return }
       const d = await res.json()
       alert({
-        title: `Console access — ${p.name}`,
+        title: `Console access - ${p.name}`,
         message: (
           <div>
             <p style={{ margin: '0 0 12px', color: 'var(--muted)', fontSize: 13 }}>Break-glass login for the hypervisor console (or SSH over the VPN):</p>
@@ -2029,7 +2029,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
     const res = await fetch('/api/proxies/reconcile', { method: 'POST' })
     if (!res.ok) { alert({ title: 'Clean up', message: await errText(res, 'Cleanup failed'), danger: true }); return }
     const d = await res.json()
-    alert({ title: 'Clean up', message: d.pruned > 0 ? `Removed ${d.pruned} orphaned record${d.pruned === 1 ? '' : 's'} left by proxies deleted in Zabbix.` : 'No orphaned records — everything is in sync with Zabbix.' })
+    alert({ title: 'Clean up', message: d.pruned > 0 ? `Removed ${d.pruned} orphaned record${d.pruned === 1 ? '' : 's'} left by proxies deleted in Zabbix.` : 'No orphaned records - everything is in sync with Zabbix.' })
   }
 
   // Enrolled tokens are just noise once a probe is live (its enrollment date shows in the row
@@ -2174,7 +2174,7 @@ function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, on
 // (unattended-upgrades, security only) and auto-reboots in a weekly window; this only *reports*. A
 // dash means no report (a container probe, or a VM that hasn't reported yet).
 function OSCell({ p }: { p: Proxy }) {
-  if (!p.os_reported_at) return <span className="mono" style={{ color: 'var(--faint)' }} title="No OS patch report — a container probe, or a VM probe that hasn't reported yet">-</span>
+  if (!p.os_reported_at) return <span className="mono" style={{ color: 'var(--faint)' }} title="No OS patch report - a container probe, or a VM probe that hasn't reported yet">-</span>
   const when = `Reported ${relTime(p.os_reported_at)}`
   const sec = typeof p.sec_updates === 'number' ? p.sec_updates : -1
   // The reporter sends the full PRETTY_NAME (e.g. "Debian GNU/Linux 13 (trixie)"); trim the "GNU/Linux"
@@ -2194,7 +2194,7 @@ function OSCell({ p }: { p: Proxy }) {
 }
 
 // UpdaterVersionCell is the "Argus-Updater Version" column: the argus-updater sidecar's version, its
-// drift vs the newest published updater, and (admin) an Update button when it's behind — the same shape
+// drift vs the newest published updater, and (admin) an Update button when it's behind - the same shape
 // as the proxy-version cell. A dash means no sidecar manages this probe (e.g. an unRAID-native probe).
 function UpdaterVersionCell({ p, onUpdate }: { p: Proxy; onUpdate?: (p: Proxy) => void }) {
   if (!p.selfupdate) return <span className="mono" style={{ color: 'var(--faint)' }} title="No argus-updater sidecar manages this probe">-</span>
@@ -2543,7 +2543,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 205px)', gap: 8 }}>
                       <input className="input" value={netIp} onChange={(e) => setNetIp(e.target.value)} placeholder="IP address (10.0.0.50)" />
                       <Select value={netPrefix} onChange={(e) => setNetPrefix(e.target.value)} title="Subnet mask">
-                        {CIDR_PREFIXES.map(([p, mask]) => <option key={p} value={p}>/{p} — {mask}</option>)}
+                        {CIDR_PREFIXES.map(([p, mask]) => <option key={p} value={p}>/{p} - {mask}</option>)}
                       </Select>
                     </div>
                     <input className="input" value={netGw} onChange={(e) => setNetGw(e.target.value)} placeholder="Gateway (10.0.0.1)" />
@@ -2786,7 +2786,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   // Tree collapse/expand state persists for the browser session (sessionStorage): remembered across
-  // reloads and navigation, cleared when the tab/session ends — not forever. The first visit of a
+  // reloads and navigation, cleared when the tab/session ends - not forever. The first visit of a
   // session starts fully collapsed (default applied once the group list arrives, below).
   const [collapsed, setCollapsed] = useState<Set<string>>(() => { try { const s = sessionStorage.getItem('argus.tree.collapsed'); if (s) return new Set<string>(JSON.parse(s)) } catch { /* ignore */ } return new Set() })
   const collapseReady = useRef<boolean>((() => { try { return sessionStorage.getItem('argus.tree.collapsed') != null } catch { return false } })())
@@ -2956,7 +2956,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     if (!res.ok) { toast.error(await errText(res, 'Could not start discovery')); return }
     const d = await res.json().catch(() => ({ triggered: 0 }))
     toast.success(d.triggered > 0
-      ? `Discovery started (${d.triggered} rule${d.triggered === 1 ? '' : 's'}) — new sensors appear after the sweep`
+      ? `Discovery started (${d.triggered} rule${d.triggered === 1 ? '' : 's'}) - new sensors appear after the sweep`
       : 'This host has no discovery rules')
   }
 
@@ -3003,7 +3003,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     for (const n of ns) { n.hosts = applyOrder(n.hosts, (h) => h.id, (h) => h.name, orderOf(n.path, 'host')); orderTree(n.children, n.path) }
   }
   orderTree(roots, '')
-  // One ordered list of a parent's children — its direct hosts and its subgroups together — so a manual
+  // One ordered list of a parent's children - its direct hosts and its subgroups together - so a manual
   // 'sibling' order can interleave them (put a host above or below the subgroups). Base order is hosts
   // then groups (each already sorted by orderTree); a saved 'sibling' order, when present, overrides it.
   type Sibling = { host?: Host; group?: GNode; key: string }
@@ -3057,7 +3057,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   async function hideGroup(node: GNode) {
     const ok = await confirm({
       title: 'Hide from tree?',
-      message: `Hide “${node.path}” from the monitoring tree? The group stays in Zabbix — use “Show hidden” in the toolbar to bring it back.`,
+      message: `Hide “${node.path}” from the monitoring tree? The group stays in Zabbix - use “Show hidden” in the toolbar to bring it back.`,
       confirmLabel: 'Hide',
     })
     if (ok) setGroupHidden(node.path, true)
@@ -3455,7 +3455,7 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
               </div>
             )}
             {proxySnmp !== null && !proxySnmp.set && (
-              <span style={{ fontSize: 13, color: 'var(--muted)' }}>{proxyId === '' ? 'Hosts on the core server have' : `${proxyName} has`} no SNMP default — enter settings below{proxyId !== '' ? ', or set one in Probes to reuse it' : ''}.</span>
+              <span style={{ fontSize: 13, color: 'var(--muted)' }}>{proxyId === '' ? 'Hosts on the core server have' : `${proxyName} has`} no SNMP default - enter settings below{proxyId !== '' ? ', or set one in Probes to reuse it' : ''}.</span>
             )}
             {showSnmpFields && (
               <div style={grid}>
@@ -3540,7 +3540,7 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
         <label className="field"><span>Visible name</span><input className="input" value={cfg.name} disabled={!canEdit} onChange={(e) => patch({ name: e.target.value })} /></label>
         <label className="field"><span>Technical name</span><input className="input" value={cfg.host} disabled={!canEdit} onChange={(e) => patch({ host: e.target.value })} /></label>
       </div>
-      <div className="hs-note">Renaming the technical name is safe in Zabbix (references update automatically) — avoid it only if external scripts reference this host.</div>
+      <div className="hs-note">Renaming the technical name is safe in Zabbix (references update automatically) - avoid it only if external scripts reference this host.</div>
 
       <div className="hs-mon">
         <span className="hs-monlabel">Monitored by</span>
@@ -3583,9 +3583,9 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
                   </div>
                 </label>
               )}
-              {cfg.monitored_by === 1 && !cfg.proxy_default && <div className="if-inherit-note">No SNMP default is set for {cfg.proxy_name || 'this proxy'} yet — set one in the Probes tab (its “Defaults” button) to enable inheritance.</div>}
+              {cfg.monitored_by === 1 && !cfg.proxy_default && <div className="if-inherit-note">No SNMP default is set for {cfg.proxy_name || 'this proxy'} yet - set one in the Probes tab (its “Defaults” button) to enable inheritance.</div>}
               {i.inherit
-                ? <div className="if-inherit-note">Using {cfg.proxy_name || 'the proxy'}’s SNMP default{cfg.proxy_default ? ` (v${cfg.proxy_default.version === 2 ? '2c' : cfg.proxy_default.version}${cfg.proxy_default.version !== 3 ? `, community “${cfg.proxy_default.community}”` : ''})` : ''} — change it in the Probes tab.</div>
+                ? <div className="if-inherit-note">Using {cfg.proxy_name || 'the proxy'}’s SNMP default{cfg.proxy_default ? ` (v${cfg.proxy_default.version === 2 ? '2c' : cfg.proxy_default.version}${cfg.proxy_default.version !== 3 ? `, community “${cfg.proxy_default.community}”` : ''})` : ''} - change it in the Probes tab.</div>
                 : <>
               <label className="field"><span>SNMP version</span>
                 <select className="input" value={i.snmp?.version ?? 2} disabled={!canEdit} onChange={(e) => setSnmp(idx, { version: Number(e.target.value) })}>
@@ -3651,7 +3651,7 @@ function ProxySNMP({ proxyId, proxyName, onClose }: { proxyId: string; proxyName
     if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the SNMP default')); return }
     const d = await res.json().catch(() => ({} as { updated?: number; overrides?: number; warning?: string }))
     setIsSet(true)
-    const base = `SNMP default saved${typeof d.updated === 'number' ? ` — updated ${d.updated} inheriting host${d.updated === 1 ? '' : 's'}` : ''}${d.warning ? ` (${d.warning})` : ''}`
+    const base = `SNMP default saved${typeof d.updated === 'number' ? ` - updated ${d.updated} inheriting host${d.updated === 1 ? '' : 's'}` : ''}${d.warning ? ` (${d.warning})` : ''}`
     toast.success(base)
     // Offer to switch existing per-host (override) SNMP interfaces on this proxy to inherit this default.
     if (d.overrides && d.overrides > 0) {
@@ -3878,7 +3878,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
   // Headline reading for a collapsed group: disk shows Used %, network shows down/up, else the first.
   const reading = (it?: SensorItem): ReactNode => { if (!it || !it.supported) return null; const [dv, du] = readingParts(it.last_value, it.units); return <>{dv}{du ? <span className="unit"> {du}</span> : null}</> }
   function groupHeadline(cat: string, gi: SensorItem[]): { node: ReactNode; primary: SensorItem } {
-    if (cat === 'Network') { const inn = gi.find((x) => x.channel === 'In'), out = gi.find((x) => x.channel === 'Out'); return { node: <span>↓ {reading(inn) ?? '—'} &nbsp;&nbsp; ↑ {reading(out) ?? '—'}</span>, primary: inn || gi[0] } }
+    if (cat === 'Network') { const inn = gi.find((x) => x.channel === 'In'), out = gi.find((x) => x.channel === 'Out'); return { node: <span>↓ {reading(inn) ?? '-'} &nbsp;&nbsp; ↑ {reading(out) ?? '-'}</span>, primary: inn || gi[0] } }
     if (cat === 'Disk') { const pu = gi.find((x) => (x.channel || '').startsWith('Used %')) || gi[0]; return { node: reading(pu), primary: pu } }
     if (cat === 'Ping' || cat === 'Web') { const rt = gi.find((x) => x.channel === 'Response time') || gi[0]; return { node: reading(rt), primary: rt } }
     // A temperature group (unRAID disk temps) or CPU cores group reads as its HOTTEST/BUSIEST
@@ -3901,7 +3901,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
       const primary = inn || gi[0]
       const ln = gi.find((x) => x.channel === 'Link')
       if (ln && ln.last_value !== '' && Number(ln.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>down</span>, primary }
-      return { node: <span>↓ {reading(inn) ?? '—'} &nbsp;&nbsp; ↑ {reading(out) ?? '—'}</span>, primary }
+      return { node: <span>↓ {reading(inn) ?? '-'} &nbsp;&nbsp; ↑ {reading(out) ?? '-'}</span>, primary }
     }
     // A DNS name reads by what it resolves to (the IP), collapsing the pass/fail + timing channels;
     // response time drives the sparkline. A name that isn't resolving says so instead.
@@ -3917,7 +3917,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
         const tq = today(tot), tb = today(blk)
         const node = tq == null
           ? <span style={{ color: 'var(--muted)' }}>…</span>
-          : <span>{fmtNum(tq, '')} queries &nbsp;·&nbsp; {tb == null ? '—' : fmtNum(tb, '')} blocked <span style={{ color: 'var(--faint)', fontSize: 11 }}>today</span></span>
+          : <span>{fmtNum(tq, '')} queries &nbsp;·&nbsp; {tb == null ? '-' : fmtNum(tb, '')} blocked <span style={{ color: 'var(--faint)', fontSize: 11 }}>today</span></span>
         return { node, primary: tot || gi[0] }
       }
       const ip = gi.find((x) => x.channel === 'Resolved IP')
@@ -3925,7 +3925,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
       const ok = gi.find((x) => x.channel === 'Resolves')
       const primary = rt || ip || gi[0]
       if (ok && ok.last_value !== '' && Number(ok.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>not resolving</span>, primary }
-      return { node: reading(ip) ?? '—', primary }
+      return { node: reading(ip) ?? '-', primary }
     }
     return { node: reading(gi[0]), primary: gi[0] }
   }
@@ -4039,7 +4039,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                             {gHidden && <span style={{ color: HIDDEN_GREY, fontSize: 11 }}> (hidden)</span>}
                           </span>
                         </td>
-                        <td className="mono val">{headline ?? <span style={{ color: 'var(--muted)' }}>—</span>}</td>
+                        <td className="mono val">{headline ?? <span style={{ color: 'var(--muted)' }}>-</span>}</td>
                         <td className="strend">{clickable ? (() => {
                           // Counter-total groups show the daily mini bars (a miniature of the big
                           // bar chart) instead of a drifting rolling-total line.
@@ -4454,7 +4454,7 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
   if (units === '%') scales.y = { range: pctRange as unknown as uPlot.Scale['range'] }
   const base: Partial<uPlot.Options> = { width, height: 320, scales, axes: [xAxis, yAxis], legend: { show: true }, cursor: { points: { show: false } }, ...zoomHook(onZoom, xs.length ? [xs[0], xs[xs.length - 1]] : undefined) }
 
-  // Uptime is a monotonic counter — min ≈ avg ≈ max, so its band is meaningless; fall through to a
+  // Uptime is a monotonic counter - min ≈ avg ≈ max, so its band is meaningless; fall through to a
   // single line (drawn from avg on trend ranges).
   if (data.kind === 'trend' && units !== 'uptime') {
     const avg = data.points.map((p) => (p.avg ?? null))
@@ -4612,7 +4612,7 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   series.forEach((s) => s.points.forEach((p) => tset.add(round(p.t))))
   // Extend the axis to the window edges, but ONLY where an edge lies outside the data. Adding a
   // boundary x that falls *inside* the data range inserts a null column mid-line, which uPlot then
-  // paints as a stray dot at the plot edge — and the window 'from' lands inside the data whenever the
+  // paints as a stray dot at the plot edge - and the window 'from' lands inside the data whenever the
   // last poll lags 'now' (the usual case). With no data, still span the window.
   if (xrange) {
     let dmin = Infinity, dmax = -Infinity
@@ -4699,7 +4699,7 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   // A non-pinned % scale (disk Used %, memory %, radio utilization) gets a minimum span so a
   // near-constant percentage reads flat instead of a full-height ramp with identical gridlines.
   else if (units.includes('%')) scaleCfg[scaleKey('%')] = { range: pctRange }
-  // Primary channel min/max envelope (a shaded band), when it carries trend min/max — long ranges
+  // Primary channel min/max envelope (a shaded band), when it carries trend min/max - long ranges
   // only; short ranges are raw history (no min/max), so the band simply doesn't appear there.
   const p0 = series[0]
   const extraYs: (number | null)[][] = []

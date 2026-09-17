@@ -7,7 +7,7 @@ from the matching `CHANGELOG.md` section.
 ## Checklist
 
 1. Land the feature commits on `main` and confirm CI is **green** on the tip.
-2. Add the `## [X.Y.Z]` section to `CHANGELOG.md` (this is the Release body — the `release` job
+2. Add the `## [X.Y.Z]` section to `CHANGELOG.md` (this is the Release body - the `release` job
    fails if it can't find a matching section).
 3. Mark any completed `ROADMAP.md` items **in the same commit** as the CHANGELOG cut. Commit both.
 4. Push `main`.
@@ -30,13 +30,13 @@ is the last writer of `:testing` (cleanly stamped `vX.Y.Z`).
 But GitHub keeps only **one** *pending* run per concurrency group: if you push another commit to
 `main` while the tag build is still queued behind the main-push build, that new run **evicts the
 still-pending tag build**, which shows up as `cancelled`. The result is a tag with **no versioned
-image and no GitHub Release** — the failure mode seen at v0.4.29.
+image and no GitHub Release** - the failure mode seen at v0.4.29.
 
 Two ways to avoid it, both in the checklist above:
 - Fold the ROADMAP `[x]` marks into the CHANGELOG-cut commit (step 3) so there's no follow-up push.
 - If you must push again, wait until the tag build is *running*, not queued (step 6).
 
-**Recovery** if the tag build was cancelled this way: just re-run it — the tag already points at the
+**Recovery** if the tag build was cancelled this way: just re-run it - the tag already points at the
 right commit and nothing else is contending.
 ```bash
 gh run rerun <cancelled-tag-run-id>
