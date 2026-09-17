@@ -243,7 +243,7 @@ zabbix_export:
               trends: 365d
               value_type: FLOAT
               units: '°C'
-              description: 'Temperature of {#NAME} ({#MODEL}), from the ugreen.disk.temp UserParameter (smartctl -n standby, so a spun-down disk is NOT woken - it reports nothing and the sensor holds its last reading, like the unRAID class). A spun-down disk shows as not-supported-but-valued; the chart holds a flat line for it. Read at a slow cadence to avoid keeping an idle disk awake - raise the interval past your NAS disk-standby timeout if the drives are not spinning down. Needs the nas-agent.conf UserParameter mounted; unsupported without it.'
+              description: 'Temperature of {#NAME} ({#MODEL}), from the ugreen.disk.temp UserParameter (smartctl -n standby, so a spun-down disk is NOT woken). A parked disk reports a fixed 20 C standby sentinel (like the unRAID class) so it reads as a distinct low flat line = "parked", not a stale warm value; an awake disk reports its real temperature. Read at a slow cadence to avoid keeping an idle disk awake - raise the interval past your NAS disk-standby timeout if the drives are not spinning down. Needs the nas-agent.conf UserParameter mounted; unsupported without it.'
               trigger_prototypes:
                 - uuid: e099678e1a594756878f44f13107481c
                   expression: 'min(/Argus NAS by Zabbix agent/ugreen.disk.temp[{#PATH}],#3)>={$DISK.TEMP.WARN} and min(/Argus NAS by Zabbix agent/ugreen.disk.temp[{#PATH}],#3)<{$DISK.TEMP.HIGH}'
