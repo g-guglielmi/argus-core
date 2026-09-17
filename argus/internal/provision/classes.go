@@ -168,7 +168,7 @@ var registry = []Class{
 			Command: "mkdir -p /volume1/docker/argus-agent\n" +
 				"cat > /volume1/docker/argus-agent/nas-agent.conf <<'EOF'\n" +
 				"UserParameter=ugreen.cpu.temp,for h in /sys/class/hwmon/hwmon*; do case \"$(cat \"$h/name\" 2>/dev/null)\" in coretemp|k10temp) cat \"$h/temp1_input\"; exit 0;; esac; done; cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -rn | head -1\n" +
-				"UserParameter=ugreen.disk.temp[*],case \"$1\" in *nvme*) n= ;; *) n=\"-n standby\" ;; esac; o=$(smartctl $n -a -jc \"$1\" 2>/dev/null); t=$(printf '%s' \"$o\" | grep -oE '\"temperature\":\\{[^}]*\"current\":[0-9]+' | grep -oE '[0-9]+$'); if [ -n \"$t\" ]; then echo \"$t\"; elif [ -n \"$n\" ] && printf '%s' \"$o\" | grep -qiE 'in (STANDBY|SLEEP) mode'; then echo 20; fi\n" +
+				"UserParameter=ugreen.disk.temp[*],case \"$1\" in *nvme*) n= ;; *) n=\"-n standby\" ;; esac; o=$(smartctl $n -a -jc \"$1\" 2>/dev/null); t=$(printf '%s' \"$o\" | grep -oE '\"current\":[0-9]+' | head -1 | grep -oE '[0-9]+'); if [ -n \"$t\" ]; then echo \"$t\"; elif [ -n \"$n\" ] && printf '%s' \"$o\" | grep -qiE 'in (STANDBY|SLEEP) mode'; then echo 20; fi\n" +
 				"EOF\n" +
 				"docker run -d --name argus-agent --restart unless-stopped \\\n" +
 				"  --network host --pid host --privileged --user root \\\n" +
