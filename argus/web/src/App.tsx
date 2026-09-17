@@ -2399,6 +2399,10 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
   const [seeding, setSeeding] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [enrolled, setEnrolled] = useState<{ name: string; online: boolean } | null>(null)
+  // Newest probe-vm appliance + its OVA/qcow2/VHD download links, resolved server-side from GitHub
+  // Releases so the deploy step can offer direct downloads instead of sending the user to GitHub.
+  const [vmInfo, setVmInfo] = useState<{ version: string; page: string; images: { name: string; label: string; url: string; size: number }[] } | null>(null)
+  useEffect(() => { fetch('/api/probes/vm-images').then((r) => (r.ok ? r.json() : null)).then((v) => { if (v) setVmInfo(v) }).catch(() => {}) }, [])
 
   const slug = slugPreview(site)
   const proxyName = slug ? `proxy-${slug}` : ''
@@ -2560,8 +2564,20 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
             <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0 }}>Deploy <strong>{created.proxy_name}</strong>. The token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set the core host so it can reach :10051.'}</p>
             {method === 'vm' ? (
               <div style={{ display: 'grid', gap: 8 }}>
-                <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.6 }}>Import the appliance (OVA / qcow2 / VHD), then attach the seed ISO as a CD for zero-touch enrollment - or boot it (with DHCP) and open the first-boot page at its IP.</p>
-                <div><Button variant="primary" onClick={downloadSeedISO} disabled={seeding}>{seeding ? 'Building the ISO...' : 'Download seed ISO'}</Button></div>
+                <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.6 }}>Download the appliance{vmInfo?.version ? ` (${vmInfo.version})` : ''} for your hypervisor, then attach the seed ISO as a CD for zero-touch enrollment - or boot it (with DHCP) and open the first-boot page at its IP.</p>
+                {vmInfo && vmInfo.images.length > 0 ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {vmInfo.images.map((img) => (
+                      <a key={img.name} href={img.url} target="_blank" rel="noopener noreferrer" download title={`Download ${img.name}`}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--elevated)', color: 'var(--text)', fontSize: 12.5, fontWeight: 600, textDecoration: 'none' }}>
+                        {img.label}<span style={{ color: 'var(--faint)', fontWeight: 400 }}>· {img.size >= 1073741824 ? `${(img.size / 1073741824).toFixed(1)} GB` : `${Math.round(img.size / 1048576)} MB`}</span>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <a href="https://github.com/g-guglielmi/argus-probe/releases" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5 }}>Download the appliance from GitHub releases →</a>
+                )}
+                <div style={{ marginTop: 2 }}><Button variant="primary" onClick={downloadSeedISO} disabled={seeding}>{seeding ? 'Building the ISO...' : 'Download seed ISO'}</Button></div>
               </div>
             ) : (
               <>

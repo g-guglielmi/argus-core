@@ -75,6 +75,163 @@ func (s *Server) startProbeLatestRefresh(ctx context.Context) {
 	}()
 }
 
+// --- probe appliance (VM) images, resolved from the argus-probe GitHub Releases -------------------
+
+// probeVMImage is one downloadable appliance file of the newest probe-vm release (OVA/qcow2/VHD).
+type probeVMImage struct {
+	Name  string `json:"name"`  // asset filename, e.g. argus-probe-vm.ova
+	Label string `json:"label"` // friendly format label for the button
+	URL   string `json:"url"`   // direct browser download URL (GitHub release asset)
+	Size  int64  `json:"size"`  // bytes
+}
+
+// probeVMInfo is the newest probe-vm appliance release and its downloadable images.
+type probeVMInfo struct {
+	Version string         `json:"version"` // e.g. "v0.3.2" (the "probe-vm/" prefix stripped)
+	Page    string         `json:"page"`    // the release page URL (fallback link when no assets)
+	Images  []probeVMImage `json:"images"`
+}
+
+// probeVMCache holds the newest probe-vm release info, resolved from the public GitHub Releases API
+// and refreshed periodically, so the Add-probe wizard can offer direct appliance downloads instead of
+// sending the user to GitHub to find them.
+type probeVMCache struct {
+	mu   sync.RWMutex
+	info probeVMInfo
+}
+
+func (c *probeVMCache) get() probeVMInfo  { c.mu.RLock(); defer c.mu.RUnlock(); return c.info }
+func (c *probeVMCache) set(v probeVMInfo) { c.mu.Lock(); c.info = v; c.mu.Unlock() }
+
+// startProbeVMRefresh polls the argus-probe GitHub Releases for the newest probe-vm appliance and its
+// download assets, same cadence + best-effort semantics as the GHCR polls (an empty cache just means
+// the wizard falls back to a "releases page" link).
+func (s *Server) startProbeVMRefresh(ctx context.Context) {
+	go func() {
+		refresh := func() {
+			c, cancel := context.WithTimeout(ctx, 20*time.Second)
+			defer cancel()
+			info, err := resolveLatestProbeVM(c)
+			if err != nil {
+				s.logger.Warn("probe-vm images: GitHub resolve failed", "err", err)
+				return
+			}
+			if info.Version != "" {
+				s.probeVM.set(info)
+				s.logger.Info("probe-vm images resolved from GitHub", "version", info.Version, "images", len(info.Images))
+			}
+		}
+		refresh()
+		t := time.NewTicker(probeLatestRefresh)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				refresh()
+			}
+		}
+	}()
+}
+
+var probeVMRelTag = regexp.MustCompile(`^probe-vm/v([0-9]+)\.([0-9]+)\.([0-9]+)$`)
+
+// vmImageLabel maps an appliance filename to a friendly "format — hypervisor" label.
+func vmImageLabel(name string) string {
+	switch {
+	case strings.HasSuffix(name, ".ova"):
+		return "OVA · VirtualBox / VMware"
+	case strings.HasSuffix(name, ".qcow2"):
+		return "qcow2 · KVM / QEMU / Proxmox"
+	case strings.HasSuffix(name, ".vhd.gz"), strings.HasSuffix(name, ".vhd"):
+		return "VHD · Hyper-V"
+	default:
+		return name
+	}
+}
+
+// isVMImageAsset reports whether a release asset is a downloadable appliance image (not a checksum or
+// other sidecar file).
+func isVMImageAsset(name string) bool {
+	n := strings.ToLower(name)
+	return strings.HasSuffix(n, ".ova") || strings.HasSuffix(n, ".qcow2") ||
+		strings.HasSuffix(n, ".vhd") || strings.HasSuffix(n, ".vhd.gz")
+}
+
+// resolveLatestProbeVM returns the newest probe-vm/vX.Y.Z release of the argus-probe repo and its
+// appliance download assets, read anonymously from the public GitHub Releases API.
+func resolveLatestProbeVM(ctx context.Context) (probeVMInfo, error) {
+	repoPath := strings.TrimPrefix(probeImageRepo, "ghcr.io/") // "<owner>/argus-probe"
+	var rels []struct {
+		TagName string `json:"tag_name"`
+		HTMLURL string `json:"html_url"`
+		Draft   bool   `json:"draft"`
+		Assets  []struct {
+			Name string `json:"name"`
+			URL  string `json:"browser_download_url"`
+			Size int64  `json:"size"`
+		} `json:"assets"`
+	}
+	if err := githubGetJSON(ctx, "https://api.github.com/repos/"+repoPath+"/releases?per_page=100", &rels); err != nil {
+		return probeVMInfo{}, err
+	}
+	best := ""
+	var bestKey [4]int
+	var out probeVMInfo
+	for _, r := range rels {
+		if r.Draft {
+			continue
+		}
+		m := probeVMRelTag.FindStringSubmatch(r.TagName)
+		if m == nil {
+			continue
+		}
+		var k [4]int
+		for i := 0; i < 3; i++ {
+			k[i], _ = strconv.Atoi(m[i+1])
+		}
+		if best != "" && !versionLess(bestKey, k) { // not newer than the best so far
+			continue
+		}
+		imgs := make([]probeVMImage, 0, len(r.Assets))
+		for _, a := range r.Assets {
+			if isVMImageAsset(a.Name) {
+				imgs = append(imgs, probeVMImage{Name: a.Name, Label: vmImageLabel(strings.ToLower(a.Name)), URL: a.URL, Size: a.Size})
+			}
+		}
+		best, bestKey = r.TagName, k
+		out = probeVMInfo{Version: strings.TrimPrefix(r.TagName, "probe-vm/"), Page: r.HTMLURL, Images: imgs}
+	}
+	return out, nil
+}
+
+// handleProbeVMImages returns the newest probe appliance (VM) release and its downloadable images, so
+// the Add-probe wizard can offer direct OVA/qcow2/VHD downloads. Empty until the first GitHub resolve
+// (or if it fails) - the UI then falls back to a link to the releases page.
+func (s *Server) handleProbeVMImages(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.probeVM.get())
+}
+
+// githubGetJSON GETs a public GitHub API endpoint and decodes the JSON. GitHub requires a User-Agent.
+func githubGetJSON(ctx context.Context, url string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "argus")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode)
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
 // updaterImageRepo is the public GHCR repository for the argus-updater sidecar image (semver-tagged
 // X.Y.Z, unlike the probe image's X.Y.Z-rN). Used to resolve the newest updater version for drift.
 const updaterImageRepo = "ghcr.io/g-guglielmi/argus-updater"
