@@ -268,7 +268,7 @@ func matchingChannels(channels []store.NotifyChannel, groups []string, sev int) 
 	return out
 }
 
-// matchingUserChannels is matchingChannels for personal (per-user) channels — same site/severity rule.
+// matchingUserChannels is matchingChannels for personal (per-user) channels - same site/severity rule.
 func matchingUserChannels(channels []store.UserNotifyChannel, groups []string, sev int) []store.UserNotifyChannel {
 	var out []store.UserNotifyChannel
 	for _, c := range channels {
@@ -311,7 +311,7 @@ func sendAll(ctx context.Context, st *store.Store, channels []store.NotifyChanne
 
 // sendEmailToUsers delivers ev to each active user's registered email as a separate, private message
 // (one recipient per send, so no address is exposed to the others). It attempts every recipient and
-// returns an error only when none succeeded, so one bad address doesn't suppress the rest — the
+// returns an error only when none succeeded, so one bad address doesn't suppress the rest - the
 // channel's health line then flags a failure only on a total outage.
 func sendEmailToUsers(ctx context.Context, c store.NotifyChannel, emails []string, ev notify.Event, logger *slog.Logger) error {
 	if len(emails) == 0 {

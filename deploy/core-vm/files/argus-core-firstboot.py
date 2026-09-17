@@ -703,7 +703,7 @@ def page(body, head_extra=""):
     ident = vm_identity()
     # AGPL-3.0 §13: this network-served UI must let its users reach the corresponding source.
     vm_line = f"<div>This VM: <b>{ident}</b></div>" if ident else ""
-    src_line = "<div class=src>Argus — free software under the " \
+    src_line = "<div class=src>Argus - free software under the " \
                "<a href='https://www.gnu.org/licenses/agpl-3.0.html'>AGPL-3.0</a>. " \
                "<a href='https://github.com/g-guglielmi/argus-core'>Source code</a>.</div>"
     foot = f"<div class=vm>{vm_line}{src_line}</div>"

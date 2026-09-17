@@ -82,7 +82,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 		// Prefer the precise version a fleet-aware probe self-reports (includes our wrapper
 		// revision, e.g. 7.0.29-r2). Fall back to the Zabbix-reported proxy version so probes that
 		// don't check in (older images, or ones updated outside Argus like unRAID) still show a
-		// version — just the Zabbix version, without the -rN, and marked as externally managed.
+		// version - just the Zabbix version, without the -rN, and marked as externally managed.
 		version, status := ag.Version, updateStatus(ag.Version, target, latest)
 		if version == "" {
 			if zv := zbxVersionString(p.Version); zv != "" {

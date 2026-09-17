@@ -31,8 +31,8 @@ type IfaceKind string
 
 const (
 	IfaceNone  IfaceKind = ""      // no interface (endpoint-source classes register elsewhere)
-	IfaceAgent IfaceKind = "agent" // agent / simple checks (ping) — Zabbix type 1, default port 10050
-	IfaceSNMP  IfaceKind = "snmp"  // SNMP — Zabbix type 2, default port 161
+	IfaceAgent IfaceKind = "agent" // agent / simple checks (ping) - Zabbix type 1, default port 10050
+	IfaceSNMP  IfaceKind = "snmp"  // SNMP - Zabbix type 2, default port 161
 )
 
 // PresetMacro is a host macro a class sets silently at creation - class-tuned defaults such as

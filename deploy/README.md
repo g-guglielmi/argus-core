@@ -40,14 +40,14 @@ Debian 12 / Ubuntu 24.04 assumed (apt). Installs Zabbix 7.0 LTS, PostgreSQL 16 +
 TimescaleDB, creates the DB, imports schema, enables Timescale compression/partitioning.
 Then apply the TLS + tuning snippet: `core/zabbix_server.conf.snippet`.
 
-It also sets up **OS patching** (DESIGN §14c): `unattended-upgrades` (security suite only — it respects
+It also sets up **OS patching** (DESIGN §14c): `unattended-upgrades` (security suite only - it respects
 the TimescaleDB 2.28 hold) + `needrestart`, with the core's **reboot left to you** (Argus schedules it
 in **Settings → OS updates**; default is notify-only). A host reporter writes the core's patch status
-into `ARGUS_STATE_DIR` (default `/opt/argus/update`) — set that to the **same host path** you map as the
+into `ARGUS_STATE_DIR` (default `/opt/argus/update`) - set that to the **same host path** you map as the
 Argus container's `ARGUS_UPDATE_DIR`, so the core shows its own status and the chosen reboot window is
 honoured locally. Probe VMs patch + reboot themselves (weekly ~03:00) and report status the same way.
 
-> On an **already-running core**, don't re-run the whole installer just for this — run the standalone
+> On an **already-running core**, don't re-run the whole installer just for this - run the standalone
 > `core/setup-core-patching.sh` instead: `sudo ARGUS_STATE_DIR=/docker/argus-update ./setup-core-patching.sh`
 > (the host path bound to the core container's `/update`). It installs only the patching + reporter bits.
 
@@ -261,7 +261,7 @@ proxy record, its assigned hosts, and history are **preserved** (same `proxyid`)
 There's a brief collection gap while you swap containers (two containers can't share one proxy
 name at once). The old cert stays valid but unused; you can leave it or clean it up.
 
-> **Storage note — two binds, no anonymous volume.** The stock Zabbix proxy image declares
+> **Storage note - two binds, no anonymous volume.** The stock Zabbix proxy image declares
 > `/var/lib/zabbix/snmptraps` as a `VOLUME`, which Docker fills with an **anonymous volume** unless
 > that exact subpath is mounted. The generated commands/templates therefore bind **both**
 > `…/<probe>:/var/lib/zabbix` **and** `…/<probe>/snmptraps:/var/lib/zabbix/snmptraps`, so everything
@@ -303,7 +303,7 @@ check-in (a long-lived token issued at enrollment) - nothing inbound is opened.
   is the proxy plus the shared **[argus-updater](https://github.com/g-guglielmi/argus-updater)** image
   in `probe-watch` mode as a sidecar. The sidecar holds the socket and recreates the proxy via the
   Docker Engine API on an **Update now** or a fleet-target change (rolling back if the new one fails),
-  so **the proxy container never gets the socket** — the same principle as the core's updater. The
+  so **the proxy container never gets the socket** - the same principle as the core's updater. The
   Add-probe wizard's **Docker run** and **Compose** tabs both emit the two containers. Deploy the
   sidecar by hand next to a `docker run` proxy:
   ```

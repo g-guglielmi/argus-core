@@ -219,7 +219,7 @@ type Proxy struct {
 	LastAccess string `json:"lastaccess"`     // unix seconds, "0" if never
 	Mode       string `json:"operating_mode"` // "0" active, "1" passive
 	// Runtime fields Zabbix 7.0 reports for a connected proxy. Version is the proxy's Zabbix
-	// version — either a dotted string ("7.0.29") or the packed int form ("70029"), depending on
+	// version - either a dotted string ("7.0.29") or the packed int form ("70029"), depending on
 	// the release; callers normalise it. Empty/"0" when the proxy has never connected.
 	Version string `json:"version"`
 }
