@@ -2563,21 +2563,29 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
           <div style={{ display: 'grid', gap: 10 }}>
             <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0 }}>Deploy <strong>{created.proxy_name}</strong>. The token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set the core host so it can reach :10051.'}</p>
             {method === 'vm' ? (
-              <div style={{ display: 'grid', gap: 8 }}>
-                <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.6 }}>Download the appliance{vmInfo?.version ? ` (${vmInfo.version})` : ''} for your hypervisor, then attach the seed ISO as a CD for zero-touch enrollment - or boot it (with DHCP) and open the first-boot page at its IP.</p>
-                {vmInfo && vmInfo.images.length > 0 ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {vmInfo.images.map((img) => (
-                      <a key={img.name} href={img.url} target="_blank" rel="noopener noreferrer" download title={`Download ${img.name}`}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--elevated)', color: 'var(--text)', fontSize: 12.5, fontWeight: 600, textDecoration: 'none' }}>
-                        {img.label}<span style={{ color: 'var(--faint)', fontWeight: 400 }}>· {img.size >= 1073741824 ? `${(img.size / 1073741824).toFixed(1)} GB` : `${Math.round(img.size / 1048576)} MB`}</span>
-                      </a>
-                    ))}
-                  </div>
-                ) : (
-                  <a href="https://github.com/g-guglielmi/argus-probe/releases" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5 }}>Download the appliance from GitHub releases →</a>
-                )}
-                <div style={{ marginTop: 2 }}><Button variant="primary" onClick={downloadSeedISO} disabled={seeding}>{seeding ? 'Building the ISO...' : 'Download seed ISO'}</Button></div>
+              <div style={{ display: 'grid', gap: 15 }}>
+                {/* Step 1 - pick ONE appliance for your hypervisor. */}
+                <div style={{ display: 'grid', gap: 7 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600 }}>1 · Virtual appliance{vmInfo?.version ? <span style={{ color: 'var(--faint)', fontWeight: 400 }}> · {vmInfo.version}</span> : null} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>— download <strong>one</strong> for your hypervisor</span></div>
+                  {vmInfo && vmInfo.images.length > 0 ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {vmInfo.images.map((img) => (
+                        <a key={img.name} href={img.url} target="_blank" rel="noopener noreferrer" download title={`Download ${img.name}`}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--elevated)', color: 'var(--text)', fontSize: 12.5, fontWeight: 600, textDecoration: 'none' }}>
+                          {img.label}<span style={{ color: 'var(--faint)', fontWeight: 400 }}>· {img.size >= 1073741824 ? `${(img.size / 1073741824).toFixed(1)} GB` : `${Math.round(img.size / 1048576)} MB`}</span>
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <a href="https://github.com/g-guglielmi/argus-probe/releases" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5 }}>Download the appliance from GitHub releases →</a>
+                  )}
+                </div>
+                {/* Step 2 - the seed ISO: required, one ISO works with any of the three formats. */}
+                <div style={{ display: 'grid', gap: 7 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600 }}>2 · Seed ISO <span style={{ color: 'var(--accent)' }}>· required for zero-touch</span></div>
+                  <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>Attach it to the VM as a CD/DVD before first boot — it carries this probe's token and network settings, and the <strong>same ISO works with any</strong> of the three formats above. (No ISO? Boot the appliance on DHCP and finish at its first-boot page instead.)</p>
+                  <div><Button variant="primary" onClick={downloadSeedISO} disabled={seeding}>{seeding ? 'Building the ISO...' : 'Download seed ISO'}</Button></div>
+                </div>
               </div>
             ) : (
               <>
