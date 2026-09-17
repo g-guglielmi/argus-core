@@ -144,7 +144,7 @@ on `:161` - the agent never has to reach out, and nothing extra is baked into th
    mkdir -p /volume1/docker/argus-agent
    cat > /volume1/docker/argus-agent/nas-agent.conf <<'EOF'
    UserParameter=ugreen.cpu.temp,for h in /sys/class/hwmon/hwmon*; do case "$(cat "$h/name" 2>/dev/null)" in coretemp|k10temp) cat "$h/temp1_input"; exit 0;; esac; done; cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -rn | head -1
-   UserParameter=ugreen.disk.temp[*],o=$(smartctl -n standby -a -jc "$1" 2>/dev/null); t=$(printf '%s' "$o" | grep -oE '"temperature":\{[^}]*"current":[0-9]+' | grep -oE '[0-9]+$'); if [ -n "$t" ]; then echo "$t"; elif printf '%s' "$o" | grep -qiE 'STANDBY|SLEEP'; then echo 20; fi
+   UserParameter=ugreen.disk.temp[*],case "$1" in *nvme*) n= ;; *) n="-n standby" ;; esac; o=$(smartctl $n -a -jc "$1" 2>/dev/null); t=$(printf '%s' "$o" | grep -oE '"temperature":\{[^}]*"current":[0-9]+' | grep -oE '[0-9]+$'); if [ -n "$t" ]; then echo "$t"; elif [ -n "$n" ] && printf '%s' "$o" | grep -qiE 'in (STANDBY|SLEEP) mode'; then echo 20; fi
    EOF
    docker run -d --name argus-agent --restart unless-stopped \
      --network host --pid host --privileged --user root \
@@ -181,12 +181,13 @@ temperatures** overlay chart as unRAID (*running warm* ≥ `{$DISK.TEMP.WARN}` 5
 `{$DISK.TEMP.HIGH}` 60 °C), and CPU temperature is a standalone Temperature sensor (*running hot* ≥
 `{$CPU.TEMP.WARN}` 75 °C, *overheating* ≥ `{$CPU.TEMP.HIGH}` 85 °C).
 
-> **Spun-down disks.** `ugreen.disk.temp` uses `smartctl -n standby`, so a parked disk is **not
-> woken** - it reports a fixed **20 °C standby sentinel** (like the unRAID class), so it reads as a
-> distinct low flat line = *parked* rather than a stale warm value, and any heat alert clears. An awake
-> disk reports its real temperature. The item polls slowly (every 10 min) to avoid keeping an idle disk
-> awake; if your drives still aren't spinning down, raise that item's interval past your NAS's
-> disk-standby timeout (SMART reads on some drives reset the idle timer).
+> **Spun-down disks.** For a spinning disk `ugreen.disk.temp` uses `smartctl -n standby`, so a parked
+> one is **not woken** - it reports a fixed **20 °C standby sentinel** (like the unRAID class), a
+> distinct low flat line = *parked* rather than a stale warm value, and any heat alert clears; an awake
+> disk reports its real temperature. An **NVMe never spins down**, so it's always read normally (no
+> sentinel). The item polls slowly (every 10 min) to avoid keeping an idle disk awake; if your drives
+> still aren't spinning down, raise that item's interval past your NAS's disk-standby timeout (SMART
+> reads on some drives reset the idle timer).
 
 > **Encryption (PSK).** The link is unencrypted by default; the `Server=` allow-list only checks the
 > source IP. On a trusted site LAN that's usually fine. To encrypt + mutually authenticate, add a
