@@ -2483,7 +2483,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
   // body root keeps the backdrop viewport-relative so the pinned footer works.
   return createPortal(
     <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 560, maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
+      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 'min(800px, 94vw)', maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
         <div className="dlg-title">Add a probe{step < 4 && <span style={{ color: 'var(--faint)', fontWeight: 400, fontSize: 12 }}> &middot; step {step} of 3</span>}</div>
         {err && <div style={{ color: 'var(--err)', fontSize: 13, marginBottom: 8 }}>{err}</div>}
         <div className="dlg-scroll">
@@ -2600,9 +2600,23 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
                     <p style={{ color: 'var(--faint)', fontSize: 11.5, margin: 0, lineHeight: 1.5 }}>The template already carries the enrollment token, core host and paths, so it enrolls itself on first start. Adjust the data path if you don't use <code style={{ background: 'var(--panel)', padding: '1px 4px', borderRadius: 4 }}>/mnt/user/appdata</code>. The token is single-use and expires, so deploy it before then.</p>
                   </div>
                 ) : method === 'compose' ? (
-                  <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>Save this as <code style={{ background: 'var(--panel)', padding: '1px 4px', borderRadius: 4 }}>compose.yaml</code> on the host where you want the probe, then run <code style={{ background: 'var(--panel)', padding: '1px 4px', borderRadius: 4 }}>docker compose up -d</code>. It enrolls itself on first start.</p>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600 }}>Deploy with Docker Compose <span style={{ color: 'var(--accent)', fontWeight: 400 }}>· self-enrolls on first start</span></div>
+                    <ol style={{ margin: 0, paddingLeft: '1.15rem', color: 'var(--muted)', fontSize: 12.5, lineHeight: 1.6, display: 'grid', gap: 3 }}>
+                      <li>Save the file below as <code style={{ background: 'var(--panel)', padding: '1px 4px', borderRadius: 4 }}>compose.yaml</code> on the host where you want the probe.</li>
+                      <li>In that folder, run <code style={{ background: 'var(--panel)', padding: '1px 4px', borderRadius: 4 }}>docker compose up -d</code>.</li>
+                    </ol>
+                    <p style={{ color: 'var(--faint)', fontSize: 11.5, margin: 0, lineHeight: 1.5 }}>It brings up the proxy and its updater sidecar, which enroll on first start. The token is single-use and expires, so deploy it before then.</p>
+                  </div>
                 ) : (
-                  <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>Run this on the host where you want the probe (Docker required). It enrolls itself on first start; the token is single-use and expires.</p>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600 }}>Run the container on your Docker host <span style={{ color: 'var(--accent)', fontWeight: 400 }}>· self-enrolls on first start</span></div>
+                    <ol style={{ margin: 0, paddingLeft: '1.15rem', color: 'var(--muted)', fontSize: 12.5, lineHeight: 1.6, display: 'grid', gap: 3 }}>
+                      <li>On any host with Docker, paste and run the command below (the Copy button on the right).</li>
+                      <li>It creates the <code style={{ background: 'var(--panel)', padding: '1px 4px', borderRadius: 4 }}>argus-{created.proxy_name}</code> container, which enrolls itself on first start.</li>
+                    </ol>
+                    <p style={{ color: 'var(--faint)', fontSize: 11.5, margin: 0, lineHeight: 1.5 }}>Adjust the data path if you don't want the probe's state under the default. The token is single-use and expires, so run it before then.</p>
+                  </div>
                 )}
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}><CopyButton text={content} variant="default" /></div>
                 <pre style={{ margin: 0, padding: '11px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12, lineHeight: 1.5, maxHeight: 280 }}><code>{content}</code></pre>
