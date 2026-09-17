@@ -2589,6 +2589,21 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
               </div>
             ) : (
               <>
+                {method === 'unraid' ? (
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600 }}>Add this as a container template on unRAID <span style={{ color: 'var(--accent)', fontWeight: 400 }}>· self-enrolls on first start</span></div>
+                    <ol style={{ margin: 0, paddingLeft: '1.15rem', color: 'var(--muted)', fontSize: 12.5, lineHeight: 1.6, display: 'grid', gap: 3 }}>
+                      <li>Copy the template below (the Copy button on the right).</li>
+                      <li>On the unRAID flash, save it as <code style={{ background: 'var(--panel)', padding: '1px 4px', borderRadius: 4 }}>config/plugins/dockerMan/templates-user/argus-{created.proxy_name}.xml</code> (edit it over the flash share, or from the terminal).</li>
+                      <li>In the <strong>Docker</strong> tab, click <strong>Add Container</strong>, pick <strong>argus-{created.proxy_name}</strong> from the <em>Template</em> list at the top, then <strong>Apply</strong>.</li>
+                    </ol>
+                    <p style={{ color: 'var(--faint)', fontSize: 11.5, margin: 0, lineHeight: 1.5 }}>The template already carries the enrollment token, core host and paths, so it enrolls itself on first start. Adjust the data path if you don't use <code style={{ background: 'var(--panel)', padding: '1px 4px', borderRadius: 4 }}>/mnt/user/appdata</code>. The token is single-use and expires, so deploy it before then.</p>
+                  </div>
+                ) : method === 'compose' ? (
+                  <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>Save this as <code style={{ background: 'var(--panel)', padding: '1px 4px', borderRadius: 4 }}>compose.yaml</code> on the host where you want the probe, then run <code style={{ background: 'var(--panel)', padding: '1px 4px', borderRadius: 4 }}>docker compose up -d</code>. It enrolls itself on first start.</p>
+                ) : (
+                  <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>Run this on the host where you want the probe (Docker required). It enrolls itself on first start; the token is single-use and expires.</p>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}><CopyButton text={content} variant="default" /></div>
                 <pre style={{ margin: 0, padding: '11px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12, lineHeight: 1.5, maxHeight: 280 }}><code>{content}</code></pre>
               </>
