@@ -161,7 +161,7 @@ pre-§C fleet) falls back to a best-effort guess from its name, else a generic d
 | **Sophos XGS** | SNMP | sysObjectID `.2604` | CPU, mem, disk, ifaces, HA, live users, VPN | ifaces |
 | **Citrix NetScaler** | SNMP (+Nitro opt.) | sysObjectID `.5951` | CPU, mem, throughput, vserver state/health, SSL, HA | vservers |
 | **QNAP** | SNMP | sysObjectID `.24681` | CPU, mem, volume/disk, temp, fan, RAID, SMART | disks, volumes |
-| **Ugreen UGOS** | Agent † | agent2 in Docker on the NAS | CPU, RAM, disk, net, uptime + per-disk SMART temps | fs, NICs, disks |
+| **Ugreen UGOS** ✓ | Agent † | agent2 in Docker on the NAS | CPU, RAM, disk, net, uptime + CPU temp + no-wake per-disk SMART temps (20 °C parked sentinel) — **v0.4.50** | fs, NICs, disks |
 | **unRAID** | SNMP | sysDescr `Unraid` | CPU load, RAM %, uptime, per-share free, NIC; disk + CPU temp via optional NET-SNMP extends (docs/unraid-pool-temps.sh, docs/unraid-cpu-temp.sh) | shares, disks, NICs |
 | **Libraesva ESG** | SNMP (+HTTPS) | sysObjectID/sysDescr | host CPU/RAM/disk + mail-queue + admin-cert | fs |
 | **Windows server** | SNMP | sysObjectID (Windows) | CPU, RAM, disk, net, uptime + **selected services** (LANMGR `svSvcTable`) | disks, NICs, services |
