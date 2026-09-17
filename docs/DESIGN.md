@@ -143,6 +143,8 @@ Each class is built by one of a few **patterns** (build the pattern once, replic
 - **Collector/script** - the true SNMP-gaps Zabbix can't HTTP-agent cleanly: XCP-NG (XAPI),
   NUT (upsd :3493). A probe-side sidecar or Zabbix script item.
 - **Agentless** - server/proxy-run checks with no agent: DNS (`net.dns`), Linux-over-SSH (`ssh.run`).
+- **Agent** - a Zabbix agent runs *on* the device (in a container) and the proxy polls it passively.
+  The carve-out for a Docker-capable host that speaks no SNMP: Ugreen UGOS.
 
 **Two host models.** Most classes are **per-host** (one pingable device = one Zabbix host). A few
 are **API-endpoint sources** (✦): you register one endpoint (vCenter, Prism, Citrix Monitor, a
