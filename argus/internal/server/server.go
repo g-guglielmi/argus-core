@@ -44,13 +44,14 @@ type Server struct {
 	probeLatest   *probeLatestCache  // newest published probe version, polled from public GHCR
 	updaterLatest *probeLatestCache  // newest published argus-updater version, polled from public GHCR
 	appLatest     *appLatestCache    // newest published app release, polled from public GHCR
+	probeVM       *probeVMCache      // newest probe-vm appliance + assets, polled from GitHub Releases
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {
 	dummy, _ := auth.HashPassword("argus-nonexistent-user")
 	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, mgr: mgr, dummyHash: dummy,
 		signingSecret: GetSigningSecret(context.Background(), st),
-		loginLimiter:  mgr.Limiter(), probeLatest: &probeLatestCache{}, updaterLatest: &probeLatestCache{}, appLatest: &appLatestCache{}}
+		loginLimiter:  mgr.Limiter(), probeLatest: &probeLatestCache{}, updaterLatest: &probeLatestCache{}, appLatest: &appLatestCache{}, probeVM: &probeVMCache{}}
 	// Poll public GHCR for the newest probe revision so the fleet view can flag "-rN available"
 	// even when the target is "latest". Background; a failure just leaves it unknown.
 	s.startProbeLatestRefresh(context.Background())
@@ -58,6 +59,9 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	s.startUpdaterLatestRefresh(context.Background())
 	// Same for the app image, so the UI can show whether this instance is on the newest release.
 	s.startAppLatestRefresh(context.Background())
+	// Resolve the newest probe-vm appliance + its OVA/qcow2/VHD assets from GitHub Releases, so the
+	// Add-probe wizard can offer direct downloads instead of sending the user to GitHub.
+	s.startProbeVMRefresh(context.Background())
 	// Mirror the stored core reboot window to the shared update dir so the host reboot timer sees it
 	// even if the setting is never touched after this boot (DESIGN §14c). Best-effort.
 	s.syncRebootWindowFile(context.Background())
@@ -215,6 +219,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("DELETE /api/probes/tokens/{id}", auth.RequireRole("admin", s.handleDeleteEnrollToken))
 	// build a first-boot seed ISO (label ARGUSSEED / ARGUS.ENV) for the probe VM (admin; see seed.go)
 	mux.HandleFunc("POST /api/probes/seed-iso", auth.RequireRole("admin", s.handleSeedISO))
+	mux.HandleFunc("GET /api/probes/vm-images", auth.RequireRole("admin", s.handleProbeVMImages))
 
 	// probe fleet target version (admin only) - the version probes should converge on
 	mux.HandleFunc("GET /api/probes/target", auth.RequireRole("admin", s.handleGetProbeTarget))
