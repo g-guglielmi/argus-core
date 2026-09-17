@@ -11,6 +11,31 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.50] - 2026-09-17
+
+**Added:**
+- **Ugreen NAS (Zabbix agent) device class.** Ugreen's UGOS exposes no SNMP, so this is the catalog's
+  first **agent-based** class: a Zabbix agent 2 container runs on the NAS and the site proxy polls it
+  passively on `:10050`. CPU utilization, memory (computed from **MemAvailable**, so page cache counts
+  as free), uptime, per-volume disk usage and per-NIC traffic reuse the native agent item keys, so
+  they curate exactly like the SNMP classes; a small mounted config adds CPU package temperature and
+  per-disk SMART temperature. Disk temps are read with `smartctl -n standby`, so a spun-down drive is
+  **never woken** — it reports a fixed **20 °C parked sentinel** (like the unRAID class), and an NVMe
+  (which never parks) is always read. **Add device → Ugreen (Zabbix agent)** shows the exact container
+  command to run.
+- **Add-device setup steps.** A device class can carry prerequisite setup instructions (title, steps,
+  a copyable command), shown right in the Add-device dialog — the Ugreen class uses it to hand you the
+  agent-container command with the device name filled in.
+- **"New version available — Reload" prompt.** An open tab now notices when the core has been updated
+  underneath it (the running build id changed) and offers a one-click reload, instead of silently
+  running the old page bundle until a manual refresh.
+
+**Fixed:**
+- **Probes: an up-to-date probe is no longer offered a downgrade.** A probe running a just-published
+  revision while the core's registry "latest" cache still held the previous one was flagged "update
+  available → «older»". A probe at or ahead of the newest published revision now reads as current;
+  only a genuinely older probe is flagged for update.
+
 ## [0.4.49] - 2026-09-15
 
 **Added:**
