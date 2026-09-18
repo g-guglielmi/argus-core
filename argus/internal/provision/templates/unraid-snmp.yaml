@@ -16,8 +16,8 @@ zabbix_export:
         (CPU, memory, filesystems incl. array disks and docker.img, interfaces, uptime) is covered
         by the Linux template. The plugin's disktemp extend covers ARRAY members only; cache/pool
         drives (incl. NVMe) are picked up too when the optional "pooltemps" extend is installed -
-        see docs/unraid-pool-temps.sh in the argus-core repo. CPU package temperature is picked up
-        when the optional "cputemp" extend is installed (docs/unraid-cpu-temp.sh; needs the Dynamix
+        see docs/hosts/unraid-pool-temps.sh in the argus-core repo. CPU package temperature is picked up
+        when the optional "cputemp" extend is installed (docs/hosts/unraid-cpu-temp.sh; needs the Dynamix
         System Temperature plugin for lm-sensors). Hosts without these extends are unaffected.
         DESIGN section 5.
       groups:
@@ -42,7 +42,7 @@ zabbix_export:
           history: '0'
           trends: '0'
           value_type: TEXT
-          description: 'Master item: NET-SNMP-EXTEND-MIB nsExtendOutputFull."arraytemps" - parity + data disks from the OPTIONAL emhttp-state extend (docs/unraid-pool-temps.sh): atomic, instant, never wakes a disk. Unsupported until that extend is configured; where present it supersedes the plugin''s disktemp per drive.'
+          description: 'Master item: NET-SNMP-EXTEND-MIB nsExtendOutputFull."arraytemps" - parity + data disks from the OPTIONAL emhttp-state extend (docs/hosts/unraid-pool-temps.sh): atomic, instant, never wakes a disk. Unsupported until that extend is configured; where present it supersedes the plugin''s disktemp per drive.'
         - uuid: 3b7626ecbc2b46478f326e48023f3aa4
           name: 'unRAID pool disk temperatures (raw)'
           type: SNMP_AGENT
@@ -52,7 +52,7 @@ zabbix_export:
           history: '0'
           trends: '0'
           value_type: TEXT
-          description: 'Master item: NET-SNMP-EXTEND-MIB nsExtendOutputFull."pooltemps" - cache/pool drives from the OPTIONAL extend (docs/unraid-pool-temps.sh). Unsupported until that extend is configured; the pool sensors depend on this.'
+          description: 'Master item: NET-SNMP-EXTEND-MIB nsExtendOutputFull."pooltemps" - cache/pool drives from the OPTIONAL extend (docs/hosts/unraid-pool-temps.sh). Unsupported until that extend is configured; the pool sensors depend on this.'
         - uuid: 9cb735c54a5f4a44aa9c590a91a112fa
           name: 'unRAID share free space (raw)'
           type: SNMP_AGENT
@@ -72,7 +72,7 @@ zabbix_export:
           history: '0'
           trends: '0'
           value_type: TEXT
-          description: 'Master item: NET-SNMP-EXTEND-MIB nsExtendOutputFull."cputemp" - CPU package temperature from lm-sensors, via the OPTIONAL cputemp extend (docs/unraid-cpu-temp.sh; needs the Dynamix System Temperature plugin to load the sensor modules). Unsupported until that extend is configured.'
+          description: 'Master item: NET-SNMP-EXTEND-MIB nsExtendOutputFull."cputemp" - CPU package temperature from lm-sensors, via the OPTIONAL cputemp extend (docs/hosts/unraid-cpu-temp.sh; needs the Dynamix System Temperature plugin to load the sensor modules). Unsupported until that extend is configured.'
         - uuid: 0aba44d9bf53407ab6d216a83a6cfa57
           name: 'CPU temperature'
           type: DEPENDENT
