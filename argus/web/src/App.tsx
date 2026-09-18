@@ -3667,19 +3667,19 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
                 if (vmNames.length > 0) return (
                   <div className="field" key={m.macro}>
                     <span>{m.label}</span>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '4px 0' }}>
+                    <div className="vm-list">
                       {vmNames.map((n) => {
                         const on = !ignored.includes(n)
                         return (
-                          <label key={n} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: canEdit ? 'pointer' : 'default' }}>
+                          <label key={n} style={canEdit ? undefined : { cursor: 'default' }}>
                             <input type="checkbox" checked={on} disabled={!canEdit}
                               onChange={() => { const next = on ? [...ignored, n] : ignored.filter((x) => x !== n); setMacro(m.macro, next.join(',')) }} />
-                            <span style={on ? undefined : { color: 'var(--muted)', textDecoration: 'line-through' }}>{n}</span>
+                            <span className={on ? undefined : 'off'}>{n}</span>
                           </label>
                         )
                       })}
                     </div>
-                    <span style={{ color: 'var(--muted)', fontSize: 11, marginTop: 3 }}>Unchecked VMs are excluded from the sensors and the VM counts.</span>
+                    <span style={{ marginTop: 5 }}>Unchecked VMs are excluded from the sensors and the VM counts.</span>
                   </div>
                 )
                 // Nothing discovered yet (VM monitoring off): fall through to the plain text input.
