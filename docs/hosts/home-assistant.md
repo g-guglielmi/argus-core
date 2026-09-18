@@ -1,8 +1,8 @@
 # Home Assistant
 
 The **Home Assistant** class monitors the Home Assistant **platform** over its REST API with a
-long-lived access token: API reachability, version, integration and entity counts, and the number of
-unavailable entities. It watches the platform's health, not the individual entities/sensors inside it.
+long-lived access token: API reachability and the Core / Supervisor / OS versions. It watches the
+platform's health, not the individual entities/sensors inside it.
 
 ## 1. Create a long-lived access token
 
@@ -23,11 +23,13 @@ and only overwrites when you type a new one).
 
 ## What it monitors
 
-- **API up** - whether the REST API answers with the token.
-- **Version** - the running Home Assistant version.
-- **Integrations** loaded.
-- **Entity count**, and **unavailable entities** (a rising count of unavailable entities often flags a
-  failing integration or offline device).
+- **API up / ready** - whether the REST API answers with the token (HIGH alert if it is down or not
+  ready).
+- **Core version** - the running Home Assistant Core version.
+- **Supervisor version** and **OS version** - on installs that have them (Home Assistant OS or
+  Supervised), read from their update entities; blank on a Container / Core-only install. The entities
+  read are set by `{$HASS.SUPERVISOR.ENTITY}` and `{$HASS.OS.ENTITY}` (sensible defaults; override only
+  if yours are named differently).
 
 ## Troubleshooting
 

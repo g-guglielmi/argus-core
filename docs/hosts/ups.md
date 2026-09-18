@@ -8,8 +8,10 @@ sensors - pick the one that matches how your UPS is exposed:
 | **UPS (NUT)** | you have a NUT server (`upsd`) on the network | the proxy's `argus_nut.py` collector speaks the NUT protocol to `upsd` directly - no extra app |
 | **UPS (NUT via PeaNUT)** | you front NUT with **PeaNUT** (an HTTP UI/API for NUT) | a plain HTTP-API call to PeaNUT on `:8080` |
 
-Both report the same sensors: **battery %**, **on-battery / low-battery** status, **runtime**, **load**,
-**input voltage**, and **power draw**.
+Both expose the same sensors: **reachability**, **battery charge %**, **battery runtime**, **load %**,
+**input voltage**, **output voltage**, **power draw (W)**, **UPS status** (text), and the **on-battery**
+and **low-battery** flags. Alerts fire on **unreachable** (high), **on battery / utility power lost**
+(warning), and **battery low / shutdown imminent** (high).
 
 ## UPS (NUT) - direct
 
