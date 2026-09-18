@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.4.55] - 2026-09-19
 
 **Added:**
 - **Linux (SSH, agentless) device class.** The no-SNMP, no-agent fallback for a Linux box you can
