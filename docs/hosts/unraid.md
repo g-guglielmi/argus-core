@@ -35,6 +35,17 @@ A **spun-down (parked) drive reads a fixed `20 °C`** standby sentinel, so it sh
 flat line on the chart (and any heat warning clears) instead of dropping off - only genuine standby
 disks get this, never the USB boot flash or an always-on SSD/NVMe cache.
 
+**Temperature thresholds are split by role**, since SSDs tolerate more heat than spinning disks. Array
+members are HDDs, pool/cache devices are SSD/NVMe, so each uses its own macro pair:
+
+| Disks | Warning | High |
+|---|---|---|
+| Array (`{$DISK.TEMP.WARN}` / `{$DISK.TEMP.HIGH}`) | 40 °C | 45 °C |
+| Pool / cache (`{$POOL.TEMP.WARN}` / `{$POOL.TEMP.HIGH}`) | 65 °C | 75 °C |
+
+If you run an SSD in the array (or an HDD in a pool), override the relevant macro on that host in host
+settings - the split is by array/pool role, not by reading the drive's rotation status.
+
 ## Monitoring unRAID CPU temperature
 
 CPU temperature comes from **lm-sensors**, not SNMP, so it needs one more plugin and one more
