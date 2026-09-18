@@ -23,9 +23,47 @@ defaults:
     working-directory: deploy/core-vm
 
 jobs:
+  # Skip even the cheap validate for docs-only branch pushes (Markdown / LICENSE never affect the
+  # appliance image). Tag and manual runs ALWAYS proceed, any push touching a non-doc file proceeds,
+  # and it fail-opens (any doubt -> run), so it can never suppress a real change. Mirrors build.yml.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.detect.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need both BEFORE and HEAD to diff a branch push
+      - name: Detect non-doc changes
+        id: detect
+        # This workflow defaults run steps to deploy/core-vm; pin the diff to the repo root so it sees
+        # the whole changeset (and prints repo-relative paths), not just deploy/core-vm.
+        working-directory: ${{ github.workspace }}
+        env:
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "reason=tag or manual -> run"; echo "build=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ -z "$BEFORE" ] || ! git rev-parse -q --verify "$BEFORE^{commit}" >/dev/null 2>&1; then
+            echo "reason=no valid base -> run (fail-open)"; echo "build=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          changed=$(git diff --name-only "$BEFORE" "$SHA")
+          printf 'changed files:\n%s\n' "$changed"
+          if [ -z "$changed" ]; then
+            echo "reason=empty diff -> run (fail-open)"; echo "build=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if printf '%s\n' "$changed" | grep -qvE '(\.md$|^LICENSE$)'; then
+            echo "reason=non-doc file changed -> run"; echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "reason=docs only -> skip validate"; echo "build=false" >> "$GITHUB_OUTPUT"
+          fi
+
   # Cheap gate on every touch: the template parses and its plugins resolve. No VM is built.
   validate:
-    if: github.ref_type != 'tag'
+    needs: changes
+    if: github.ref_type != 'tag' && needs.changes.outputs.build == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
