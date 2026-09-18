@@ -20,7 +20,8 @@ type ClassSetup = { title: string; intro?: string; steps?: string[]; command?: s
 type DeviceClass = { id: string; label: string; family: string; pattern: string; iface: string; offers_http: boolean; icon?: string; macros?: MacroSpec[]; setup?: ClassSetup }
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
-type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[] }
+type MacroField = { macro: string; label: string; hint?: string; secret?: boolean; value: string; set?: boolean }
+type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[] }
 type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
@@ -3530,6 +3531,7 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
   function patch(p: Partial<HostCfg>) { setCfg((c) => (c ? { ...c, ...p } : c)) }
   function setIface(idx: number, p: Partial<Iface>) { setCfg((c) => (c ? { ...c, interfaces: c.interfaces.map((i, n) => (n === idx ? { ...i, ...p } : i)) } : c)) }
   function setSnmp(idx: number, p: Partial<SnmpCfg>) { setCfg((c) => (c ? { ...c, interfaces: c.interfaces.map((i, n) => (n === idx ? { ...i, snmp: { ...(i.snmp || blankSnmp()), ...p } } : i)) } : c)) }
+  function setMacro(macro: string, value: string) { setCfg((c) => (c ? { ...c, macros: (c.macros || []).map((m) => (m.macro === macro ? { ...m, value } : m)) } : c)) }
   function addIface(type: number) { setCfg((c) => (c ? { ...c, interfaces: [...c.interfaces, { type, useip: 1, ip: '', dns: '', port: type === 2 ? '161' : '10050', snmp: type === 2 ? blankSnmp() : undefined, inherit: type === 2 ? !!c.proxy_default : undefined }] } : c)) }
   async function removeIface(idx: number) {
     const it = cfg?.interfaces[idx]
@@ -3539,7 +3541,8 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
   async function save() {
     if (!cfg) return
     setBusy(true); setErr(null)
-    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces }) }).catch(() => null)
+    const macros = cfg.macros && cfg.macros.length > 0 ? Object.fromEntries(cfg.macros.map((m) => [m.macro, m.value])) : undefined
+    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros }) }).catch(() => null)
     setBusy(false)
     if (!res || !res.ok) { setErr(await errText(res, 'Could not save host settings')); return }
     onSaved()
@@ -3634,6 +3637,22 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
         </div>
       ))}
       {canEdit && <div className="hs-add"><button className="btn" onClick={() => addIface(1)}>+ Agent interface</button><button className="btn" onClick={() => addIface(2)}>+ SNMP interface</button></div>}
+
+      {cfg.macros && cfg.macros.length > 0 && (
+        <>
+          <div className="hs-title">{cfg.class_label ? cfg.class_label + ' options' : 'Monitoring options'}</div>
+          <div className="hs-grid">
+            {cfg.macros.map((m) => (
+              <label className="field" key={m.macro}>
+                <span>{m.label}</span>
+                <input className="input" type={m.secret ? 'password' : 'text'} placeholder={m.secret && m.set ? 'unchanged' : (m.hint || '')} value={m.value} disabled={!canEdit} onChange={(e) => setMacro(m.macro, e.target.value)} />
+                {m.hint && <span style={{ color: 'var(--muted)', fontSize: 11, marginTop: 3 }}>Example: {m.hint}</span>}
+              </label>
+            ))}
+          </div>
+          <div className="hs-note">These tune the class monitoring for this host. Leave a field blank to use the template default; changes take effect on the next discovery cycle.</div>
+        </>
+      )}
 
       {err && <div style={{ color: 'var(--err)', fontSize: 13, marginTop: 8 }}>{err}</div>}
       <div className="hs-foot">

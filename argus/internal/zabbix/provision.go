@@ -180,6 +180,45 @@ func (c *Client) SetHostMacros(ctx context.Context, hostID string, macros []Macr
 	return c.call(ctx, "host.update", map[string]any{"hostid": hostID, "macros": macros}, true, nil)
 }
 
+// HostMacro is a host user macro with its id, for surgical edits. A secret macro (Type 1) never
+// returns its Value, so the editor keeps it write-only.
+type HostMacro struct {
+	MacroID string `json:"hostmacroid"`
+	Macro   string `json:"macro"`
+	Value   string `json:"value"`
+	Type    int    `json:"type,string"`
+}
+
+// HostMacros returns a host's own user macros (not the template defaults it inherits). Used by the
+// host settings editor to show current values and to edit individual macros without disturbing the
+// rest (host.update `macros` would replace the whole set and wipe unreadable secret macros).
+func (c *Client) HostMacros(ctx context.Context, hostID string) ([]HostMacro, error) {
+	var out []HostMacro
+	err := c.call(ctx, "usermacro.get", map[string]any{
+		"output":  []string{"hostmacroid", "macro", "value", "type"},
+		"hostids": hostID,
+	}, true, &out)
+	return out, err
+}
+
+// CreateHostMacro adds one user macro to a host.
+func (c *Client) CreateHostMacro(ctx context.Context, hostID string, m Macro) error {
+	return c.call(ctx, "usermacro.create", map[string]any{"hostid": hostID, "macro": m.Macro, "value": m.Value, "type": m.Type}, true, nil)
+}
+
+// UpdateHostMacro changes an existing host macro's value (and type) by its id.
+func (c *Client) UpdateHostMacro(ctx context.Context, macroID string, value string, macroType int) error {
+	return c.call(ctx, "usermacro.update", map[string]any{"hostmacroid": macroID, "value": value, "type": macroType}, true, nil)
+}
+
+// DeleteHostMacros removes host macros by id (reverting them to the template default).
+func (c *Client) DeleteHostMacros(ctx context.Context, macroIDs ...string) error {
+	if len(macroIDs) == 0 {
+		return nil
+	}
+	return c.call(ctx, "usermacro.delete", macroIDs, true, nil)
+}
+
 // EnsureHostGroupID returns the id of the host group with this name, creating it if missing. Like
 // EnsureHostGroup but returns the id, which host.create needs.
 func (c *Client) EnsureHostGroupID(ctx context.Context, name string) (string, error) {

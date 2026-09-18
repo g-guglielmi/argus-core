@@ -11,6 +11,23 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **Per-host class options in host settings.** A device class that declares per-host macros (like the
+  Windows service filter) now shows those fields in the host settings editor, so you can tune the
+  monitoring of an existing host without touching Zabbix. Only the class's own macros are edited;
+  preset macros and template defaults are left untouched, and a cleared field reverts to the default.
+- **Windows service monitoring is now configurable in the UI.** The Windows (SNMP) class exposes
+  `{$WIN.SERVICE.MATCHES}` as a field, in both the Add-device wizard and the host settings editor. Set
+  it to a regex of service display names (e.g. `DNS Server|Print Spooler|SQL Server .*`) and those
+  services appear as sensors with a "Service not running" alert; the discovery re-runs on its next
+  cycle. It was already in the template but had no UI knob.
+
+**Changed:**
+- **Memory sensors read used, available, total.** The Memory category now lists used first, then
+  available, then total, instead of alphabetical order.
+
 ## [0.4.51] - 2026-09-18
 
 **Added:**
