@@ -28,6 +28,12 @@ GitHub Release from the matching section below.
 - **Memory sensors read used, available, total.** The Memory category now lists used first, then
   available, then total, instead of alphabetical order.
 
+**Docs:**
+- **Per-host monitoring guides folder.** The unRAID and Ugreen setup guides moved out of the long
+  deployment README into [`docs/hosts/`](docs/hosts/README.md), joined by a new **Windows** guide that
+  documents SNMP setup and the service-monitoring regex in detail. The main README and
+  `deploy/README.md` now point to the folder.
+
 ## [0.4.51] - 2026-09-18
 
 **Added:**
