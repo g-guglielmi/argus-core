@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.4.52] - 2026-09-18
 
 **Added:**
 - **Per-host class options in host settings.** A device class that declares per-host macros (like the
