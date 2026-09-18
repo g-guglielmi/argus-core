@@ -35,10 +35,12 @@ GitHub Release from the matching section below.
   those values. All overridable per host.
 
 **Docs:**
-- **Per-host monitoring guides folder.** The unRAID and Ugreen setup guides moved out of the long
-  deployment README into [`docs/hosts/`](docs/hosts/README.md), joined by a new **Windows** guide that
-  documents SNMP setup and the service-monitoring regex in detail. The main README and
-  `deploy/README.md` now point to the folder.
+- **Per-device monitoring guides.** [`docs/hosts/`](docs/hosts/README.md) now has a guide for every
+  device class Argus can add - Generic Linux (SNMP), Windows (SNMP, with the service-monitoring regex),
+  unRAID and Ugreen, the UniFi family (Switch/Gateway/AP/OS Console), AdGuard Home and generic DNS,
+  Home Assistant, and UPS (NUT direct and via PeaNUT) - each covering what it monitors, credentials,
+  device-side setup, and per-host tunables. The unRAID/Ugreen guides moved here out of the long
+  deployment README; the main README and `deploy/README.md` point to the folder.
 
 ## [0.4.51] - 2026-09-18
 
