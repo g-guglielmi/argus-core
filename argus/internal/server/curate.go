@@ -27,58 +27,61 @@ var cpuUtilKeep = map[string]bool{
 // network-first, while servers keep the classic compute-first order. Picking the order from the UI
 // (per class or per host) is planned for the management UI (ROADMAP §D).
 var categoryOrderServer = map[string]int{
-	"Ping":        0,
-	"Web":         1,
-	"DNS":         2, // a DNS server's headline is its resolving/filtering
-	"Power":       3, // before CPU (user call) - power-centric classes (PoE switches, UPS)
-	"Battery":     4, // a UPS's battery section (user call: after its Power section)
-	"CPU":         5,
-	"Memory":      6,
-	"Disk":        7,
-	"Network":     8,
-	"Wireless":    9,
-	"Services":    10,
-	"Temperature": 11,
-	"Uptime":      12,
-	"Ports":       13,
-	"Status":      14,
+	"Ping":             0,
+	"Web":              1,
+	"DNS":              2, // a DNS server's headline is its resolving/filtering
+	"Power":            3, // before CPU (user call) - power-centric classes (PoE switches, UPS)
+	"Battery":          4, // a UPS's battery section (user call: after its Power section)
+	"CPU":              5,
+	"Memory":           6,
+	"Disk":             7,
+	"Network":          8,
+	"Wireless":         9,
+	"Services":         10,
+	"Virtual machines": 11,
+	"Temperature":      12,
+	"Uptime":           13,
+	"Ports":            14,
+	"Status":           15,
 }
 var categoryOrderNet = map[string]int{
-	"Ping":        0,
-	"Web":         1,
-	"DNS":         2,
-	"Wireless":    3, // an AP's headline is its clients/radios
-	"Network":     4,
-	"Power":       5, // before CPU (user call)
-	"Battery":     6,
-	"CPU":         7,
-	"Memory":      8,
-	"Disk":        9,
-	"Services":    10,
-	"Uptime":      11,
-	"Ports":       12,
-	"Temperature": 13,
-	"Status":      14,
+	"Ping":             0,
+	"Web":              1,
+	"DNS":              2,
+	"Wireless":         3, // an AP's headline is its clients/radios
+	"Network":          4,
+	"Power":            5, // before CPU (user call)
+	"Battery":          6,
+	"CPU":              7,
+	"Memory":           8,
+	"Disk":             9,
+	"Services":         10,
+	"Virtual machines": 11,
+	"Uptime":           12,
+	"Ports":            13,
+	"Temperature":      14,
+	"Status":           15,
 }
 
 // Storage boxes (anything with a drive-temperature group: unRAID, later QNAP/Ugreen) read their
 // drive temperatures right before the Disk section (user call) - the drives ARE the machine.
 var categoryOrderNAS = map[string]int{
-	"Ping":        0,
-	"Web":         1,
-	"DNS":         2,
-	"Power":       3,
-	"Battery":     4,
-	"CPU":         5,
-	"Memory":      6,
-	"Temperature": 7, // before Disk (user call)
-	"Disk":        8,
-	"Network":     9,
-	"Wireless":    10,
-	"Services":    11,
-	"Uptime":      12,
-	"Ports":       13,
-	"Status":      14,
+	"Ping":             0,
+	"Web":              1,
+	"DNS":              2,
+	"Power":            3,
+	"Battery":          4,
+	"CPU":              5,
+	"Memory":           6,
+	"Temperature":      7, // before Disk (user call)
+	"Disk":             8,
+	"Network":          9,
+	"Wireless":         10,
+	"Services":         11,
+	"Virtual machines": 12,
+	"Uptime":           13,
+	"Ports":            14,
+	"Status":           15,
 }
 
 // itemLabelOrder pins the reading order of the flat rows WITHIN a category where plain alphabetical
@@ -102,14 +105,33 @@ var itemLabelOrder = map[string]map[string]int{
 }
 
 // itemRank returns the within-category order rank for a flat row's label; unranked labels get a large
-// default so they fall after the explicitly-ordered ones.
+// default so they fall after the explicitly-ordered ones. A label with a parenthesized instance
+// suffix ("Used memory (xcp-host1)") ranks as its base label, so per-member rows of a multi-machine
+// class (XCP-NG pool hypervisors) keep the same reading order as their flat cousins.
 func itemRank(category, label string) int {
 	if m, ok := itemLabelOrder[category]; ok {
 		if r, ok := m[label]; ok {
 			return r
 		}
+		if i := strings.LastIndex(label, " ("); i > 0 && strings.HasSuffix(label, ")") {
+			if r, ok := m[label[:i]]; ok {
+				return r
+			}
+		}
 	}
 	return 1 << 30
+}
+
+// xcpVMInstance extracts the VM name from a "VM <name> <suffix>" prototype item name, so every
+// sensor of one VM groups under the same instance; falls back to the key's uuid parameter when the
+// name doesn't match (e.g. an item renamed out-of-band).
+func xcpVMInstance(name, suffix, fallback string) string {
+	if strings.HasPrefix(name, "VM ") && strings.HasSuffix(name, suffix) {
+		if inst := strings.TrimSuffix(strings.TrimPrefix(name, "VM "), suffix); inst != "" {
+			return inst
+		}
+	}
+	return fallback
 }
 
 // splitKey returns the base key and its parameters, e.g. vfs.fs.size[/,pused] ->
@@ -147,6 +169,8 @@ var hideWhenZero = map[string]bool{
 	"unifi.speedtest.up":   true,
 	"unifi.wan.latency":    true, // a real ping is never 0; absent monitor data leaves a stale row
 	"nut.realpower":        true, // only UPS models that report ups.realpower deliver a non-zero value
+	"xcp.pool.ha":          true, // single-host pools never enable XAPI HA - a constant 0
+	"xcp.host.temp":        true, // only hosts with the argus-temp dom0 plugin deliver a value
 }
 
 // hideZero reports whether this item key is a capability placeholder when it reads 0.
@@ -452,6 +476,51 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "Power", "Output voltage", "", "", true
 	case "nut.realpower":
 		return "Power", "Power draw", "", "", true
+
+	// XCP-NG (Argus XCP-NG by XAPI): pool-level rows plus per-hypervisor sensors (flat - the item
+	// name carries the pool member, and a single-host pool reads like one machine); the opt-in
+	// per-VM sensors group per VM under Virtual machines. The raw master and the reachable /
+	// authed / live flags stay uncurated - they drive the triggers.
+	case "xcp.reachable", "xcp.authed", "xcp.host.live":
+		return "", "", "", "", false
+	case "xcp.pool.name":
+		return "Status", "Pool name", "", "", true
+	case "xcp.pool.ha":
+		return "Status", "HA enabled", "", "", true
+	case "xcp.hosts.total":
+		return "Status", "Pool members", "Pool members", "Total", true
+	case "xcp.hosts.live":
+		return "Status", "Pool members live", "Pool members", "Live", true
+	case "xcp.vms.total":
+		return "Virtual machines", "VMs defined", "VM count", "Total", true
+	case "xcp.vms.running":
+		return "Virtual machines", "VMs running", "VM count", "Running", true
+	case "xcp.host.cpu":
+		return "CPU", name, "", "", true
+	case "xcp.host.mem.used", "xcp.host.mem.pct", "xcp.host.mem.total":
+		return "Memory", name, "", "", true
+	case "xcp.host.uptime":
+		return "Uptime", name, "", "", true
+	case "xcp.host.temp":
+		return "Temperature", name, "", "", true
+	case "xcp.host.version":
+		return "Status", name, "", "", true
+	case "xcp.vm.state":
+		return "Virtual machines", name, xcpVMInstance(name, " state", param(p, 0)), "State", true
+	case "xcp.vm.cpu":
+		return "Virtual machines", name, xcpVMInstance(name, " CPU", param(p, 0)), "CPU", true
+	case "xcp.vm.mem.used":
+		return "Virtual machines", name, xcpVMInstance(name, " used memory", param(p, 0)), "Memory used", true
+	case "xcp.vm.mem.total":
+		return "Virtual machines", name, xcpVMInstance(name, " total memory", param(p, 0)), "Memory total", true
+	case "xcp.vm.disk.read":
+		return "Virtual machines", name, xcpVMInstance(name, " disk read", param(p, 0)), "Disk read", true
+	case "xcp.vm.disk.write":
+		return "Virtual machines", name, xcpVMInstance(name, " disk write", param(p, 0)), "Disk write", true
+	case "xcp.vm.net.rx":
+		return "Virtual machines", name, xcpVMInstance(name, " traffic in", param(p, 0)), "Traffic in", true
+	case "xcp.vm.net.tx":
+		return "Virtual machines", name, xcpVMInstance(name, " traffic out", param(p, 0)), "Traffic out", true
 
 	// unRAID (Argus unRAID by SNMP, attached alongside the Linux template): the SNMP plugin's
 	// extend scripts deliver per-disk temperatures - grouped into ONE overlay chart - and

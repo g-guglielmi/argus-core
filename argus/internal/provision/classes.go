@@ -46,12 +46,13 @@ type PresetMacro struct {
 // MacroSpec is a per-host macro the attach UI asks for when creating a host of this class - how
 // API-source classes (UniFi, later Nutanix/XCP-NG/…) receive their endpoint and credentials.
 type MacroSpec struct {
-	Macro    string `json:"macro"`             // Zabbix macro name, e.g. "{$UNIFI.URL}"
-	Label    string `json:"label"`             // form label
-	Hint     string `json:"hint"`              // placeholder / example
-	Required bool   `json:"required"`          // creation fails without it
-	Secret   bool   `json:"secret"`            // stored as a Zabbix secret macro (write-only afterwards)
-	Derive   string `json:"derive,omitempty"` // form auto-fills this from the host address ("{host}" -> the IP/DNS), overridable; e.g. "http://{host}". Only for host-addressed URLs, never a controller URL (UniFi) that differs from the device.
+	Macro    string   `json:"macro"`             // Zabbix macro name, e.g. "{$UNIFI.URL}"
+	Label    string   `json:"label"`             // form label
+	Hint     string   `json:"hint"`              // placeholder / example
+	Required bool     `json:"required"`          // creation fails without it
+	Secret   bool     `json:"secret"`            // stored as a Zabbix secret macro (write-only afterwards)
+	Derive   string   `json:"derive,omitempty"`  // form auto-fills this from the host address ("{host}" -> the IP/DNS), overridable; e.g. "http://{host}". Only for host-addressed URLs, never a controller URL (UniFi) that differs from the device.
+	Options  []string `json:"options,omitempty"` // fixed value set: the form renders a select instead of a text input (blank stays "template default"); e.g. XCP-NG's VM-monitoring mode off/state/full
 }
 
 // ClassSetup is optional prerequisite guidance the Add-device form shows for a class that needs
@@ -69,17 +70,17 @@ type ClassSetup struct {
 // Class is a device class in the registry: the metadata that drives provisioning (which Zabbix
 // templates to attach and what interface the host needs) and, later, discovery + the management UI.
 type Class struct {
-	ID         string      `json:"id"`         // stable Argus id, e.g. "linux-snmp"
-	Label      string      `json:"label"`      // human name, e.g. "Generic Linux (SNMP)"
-	Family     string      `json:"family"`     // UI grouping, e.g. "Linux", "UniFi", "Base"
-	Pattern    Pattern     `json:"pattern"`    //
-	Iface      IfaceKind   `json:"iface"`      // interface the host needs (agent/snmp/none)
-	Templates  []string    `json:"templates"`  // Zabbix templates to attach (Base Ping is added on top)
-	OffersHTTP bool        `json:"offers_http"` // the HTTP/HTTPS add-on may be attached to this class
-	Icon       string      `json:"icon"`       // tree glyph name (server, switch, shield, …); see web devIcon map
-	Macros     []MacroSpec `json:"macros,omitempty"` // per-host macros the attach UI collects
-	HostMacros []PresetMacro `json:"-"`        // macros set silently on every host of this class
-	Setup      *ClassSetup `json:"setup,omitempty"` // prerequisite steps shown in the attach form (agent classes)
+	ID         string        `json:"id"`               // stable Argus id, e.g. "linux-snmp"
+	Label      string        `json:"label"`            // human name, e.g. "Generic Linux (SNMP)"
+	Family     string        `json:"family"`           // UI grouping, e.g. "Linux", "UniFi", "Base"
+	Pattern    Pattern       `json:"pattern"`          //
+	Iface      IfaceKind     `json:"iface"`            // interface the host needs (agent/snmp/none)
+	Templates  []string      `json:"templates"`        // Zabbix templates to attach (Base Ping is added on top)
+	OffersHTTP bool          `json:"offers_http"`      // the HTTP/HTTPS add-on may be attached to this class
+	Icon       string        `json:"icon"`             // tree glyph name (server, switch, shield, …); see web devIcon map
+	Macros     []MacroSpec   `json:"macros,omitempty"` // per-host macros the attach UI collects
+	HostMacros []PresetMacro `json:"-"`                // macros set silently on every host of this class
+	Setup      *ClassSetup   `json:"setup,omitempty"`  // prerequisite steps shown in the attach form (agent classes)
 }
 
 // registry is the catalog. C0 shipped the universal "base" class (Ping only); C1 adds Generic Linux
@@ -263,11 +264,11 @@ var registry = []Class{
 	{
 		// AdGuard Home polled from its admin API (DNS filtering stats + protection + version) with a
 		// proxy-run net.dns resolve check alongside. The host's own interface is the AdGuard box's IP.
-		ID:         "adguard",
-		Label:      "AdGuard Home",
-		Family:     "DNS",
-		Pattern:    PatternHTTPAPI,
-		Iface:      IfaceAgent,
+		ID:      "adguard",
+		Label:   "AdGuard Home",
+		Family:  "DNS",
+		Pattern: PatternHTTPAPI,
+		Iface:   IfaceAgent,
 		// The admin-API stats plus the shared DNS-resolution add-on (a real per-name resolve check
 		// against this server), so AdGuard reads like any other DNS server on top of its own stats.
 		Templates:  []string{"Argus AdGuard Home by HTTP", "Argus DNS resolution"},
@@ -349,6 +350,35 @@ var registry = []Class{
 			{Macro: "{$NUT.PORT}", Label: "upsd port", Hint: "3493"},
 			{Macro: "{$NUT.USER}", Label: "upsd username", Hint: "only if upsd needs a login to read"},
 			{Macro: "{$NUT.PASSWORD}", Label: "upsd password", Hint: "only if upsd needs a login to read", Secret: true},
+		},
+	},
+	{
+		// An XCP-NG pool via XAPI: the proxy/core runs argus_xcpng.py (an external check) against
+		// the pool master - one XML-RPC session per poll covers every hypervisor in the pool, so a
+		// single-host pool reads like one machine and a real pool gets per-member sensors. Per-VM
+		// monitoring is opt-in ({$XCP.VM.MODE}); CPU temperature needs the optional argus-temp dom0
+		// plugin (docs/hosts/xcpng.md). The host's address is the pool master's IP.
+		ID:         "xcpng",
+		Label:      "XCP-NG (XAPI)",
+		Family:     "Virtualization",
+		Pattern:    PatternCollector,
+		Iface:      IfaceAgent,
+		Templates:  []string{"Argus XCP-NG by XAPI"},
+		OffersHTTP: false,
+		Icon:       "vm",
+		Macros: []MacroSpec{
+			{Macro: "{$XCP.USER}", Label: "XAPI username", Hint: "root", Required: true},
+			{Macro: "{$XCP.PASS}", Label: "XAPI password", Hint: "the host root password", Required: true, Secret: true},
+			{Macro: "{$XCP.VM.MODE}", Label: "VM monitoring", Hint: "off", Options: []string{"off", "state", "full"}},
+		},
+		Setup: &ClassSetup{
+			Title: "Point Argus at the pool master",
+			Steps: []string{
+				"Use the pool master's IP as the device address (a single host is its own master; a slave address is followed to the master automatically).",
+				"Credentials are the XAPI login - root and the host root password on a stock XCP-NG.",
+				"VM monitoring is optional: \"state\" adds each VM's power state, \"full\" adds per-VM CPU, memory and I/O.",
+			},
+			Note: "CPU temperature per hypervisor needs the optional argus-temp plugin on dom0 - see the XCP-NG guide in docs/hosts/.",
 		},
 	},
 }

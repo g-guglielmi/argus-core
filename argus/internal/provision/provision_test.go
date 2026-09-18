@@ -40,7 +40,8 @@ func TestLoadTemplates(t *testing.T) {
 		"Argus Home Assistant by HTTP", "hass.raw", "hass.version.core", "hass.version.os", "{$HASS.TOKEN}",
 		"Argus UPS by PeaNUT", "nut.raw", "nut.battery.charge", "nut.on_battery", "{$PEANUT.URL}", "{$PEANUT.UPS}",
 		"Argus UPS by NUT", "argus_nut.py[{HOST.CONN}", "{$NUT.UPS}", "{$NUT.PORT}", "nut.output.voltage",
-		"Argus DNS resolution", "dns-resolver.py[discover", "dns.resolve.success", "dns.resolve.time", "{$DNS.RESOLVE.NAMES}"} {
+		"Argus DNS resolution", "dns-resolver.py[discover", "dns.resolve.success", "dns.resolve.time", "{$DNS.RESOLVE.NAMES}",
+		"Argus XCP-NG by XAPI", "argus_xcpng.py[{HOST.CONN}", "xcp.host.discovery", "xcp.vm.discovery", "xcp.vmperf.discovery", "{$XCP.VM.MODE}", "{$XCP.TEMP.WARN}"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("templates missing %q", want)
 		}
@@ -169,6 +170,34 @@ func TestHTTPServiceClasses(t *testing.T) {
 	}
 	if dns.Pattern != PatternCollector || dns.Iface != IfaceAgent || len(dns.Templates) != 1 || dns.Templates[0] != "Argus DNS resolution" {
 		t.Fatalf("unexpected dns-server class: %+v", dns)
+	}
+
+	// XCP-NG is a collector class (argus_xcpng.py against the pool master): root credentials with a
+	// secret password, and the VM-monitoring mode is a fixed-choice macro (rendered as a select).
+	xcp, ok := ClassByID("xcpng")
+	if !ok {
+		t.Fatal("xcpng class missing")
+	}
+	if xcp.Pattern != PatternCollector || xcp.Iface != IfaceAgent || len(xcp.Templates) != 1 || xcp.Templates[0] != "Argus XCP-NG by XAPI" || xcp.Icon != "vm" {
+		t.Fatalf("unexpected xcpng class: %+v", xcp)
+	}
+	var xcpUser, xcpPass, xcpMode bool
+	for _, m := range xcp.Macros {
+		if m.Macro == "{$XCP.USER}" && m.Required {
+			xcpUser = true
+		}
+		if m.Macro == "{$XCP.PASS}" && m.Required && m.Secret {
+			xcpPass = true
+		}
+		if m.Macro == "{$XCP.VM.MODE}" && len(m.Options) == 3 && m.Options[0] == "off" {
+			xcpMode = true
+		}
+	}
+	if !xcpUser || !xcpPass || !xcpMode {
+		t.Errorf("xcpng macro specs incomplete (user=%v secret-pass=%v mode-options=%v)", xcpUser, xcpPass, xcpMode)
+	}
+	if xcp.Setup == nil {
+		t.Error("xcpng should carry pool-master setup guidance")
 	}
 }
 

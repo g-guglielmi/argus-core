@@ -44,12 +44,13 @@ type ifaceView struct {
 // macroFieldView is one class-declared per-host macro shown in the settings editor: its spec plus the
 // host's current value. A secret macro's value is masked (blank) and only Set signals it's configured.
 type macroFieldView struct {
-	Macro  string `json:"macro"`
-	Label  string `json:"label"`
-	Hint   string `json:"hint,omitempty"`
-	Secret bool   `json:"secret,omitempty"`
-	Value  string `json:"value"`         // current host value ("" if unset, or masked for a secret)
-	Set    bool   `json:"set,omitempty"` // a value is configured on the host (for secrets, where Value is masked)
+	Macro   string   `json:"macro"`
+	Label   string   `json:"label"`
+	Hint    string   `json:"hint,omitempty"`
+	Secret  bool     `json:"secret,omitempty"`
+	Options []string `json:"options,omitempty"` // fixed value set: the editor renders a select (blank = template default)
+	Value   string   `json:"value"`             // current host value ("" if unset, or masked for a secret)
+	Set     bool     `json:"set,omitempty"`     // a value is configured on the host (for secrets, where Value is masked)
 }
 
 type hostConfigView struct {
@@ -61,9 +62,9 @@ type hostConfigView struct {
 	ProxyName    string           `json:"proxy_name,omitempty"`
 	ProxyDefault *snmpView        `json:"proxy_default,omitempty"` // the host's proxy SNMP default (masked), if set
 	Interfaces   []ifaceView      `json:"interfaces"`
-	ClassID      string           `json:"class_id,omitempty"`     // device class, when known
-	ClassLabel   string           `json:"class_label,omitempty"`  // human label for the class macro section
-	Macros       []macroFieldView `json:"macros,omitempty"`       // class-declared per-host macros + current values
+	ClassID      string           `json:"class_id,omitempty"`    // device class, when known
+	ClassLabel   string           `json:"class_label,omitempty"` // human label for the class macro section
+	Macros       []macroFieldView `json:"macros,omitempty"`      // class-declared per-host macros + current values
 }
 
 // snmpToView converts client SNMP details to the browser shape, masking v3 passphrases.
@@ -125,7 +126,7 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			for _, ms := range class.Macros {
-				f := macroFieldView{Macro: ms.Macro, Label: ms.Label, Hint: ms.Hint, Secret: ms.Secret}
+				f := macroFieldView{Macro: ms.Macro, Label: ms.Label, Hint: ms.Hint, Secret: ms.Secret, Options: ms.Options}
 				if m, has := cur[ms.Macro]; has {
 					f.Set = strings.TrimSpace(m.Value) != "" || ms.Secret
 					if !ms.Secret {

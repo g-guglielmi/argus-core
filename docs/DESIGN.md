@@ -177,7 +177,7 @@ pre-§C fleet) falls back to a best-effort guess from its name, else a generic d
 | **UniFi OS Console** ✦ | HTTP-API | the controller host | console CPU/mem/temp/disk, adoption count, version | - |
 | **Nutanix AHV** ✦ | HTTP-API | Prism v3/v4 REST | cluster/host/VM CPU/mem/storage, VM state | hosts, VMs |
 | **Hyper-V** | SNMP | sysObjectID (Windows) | host CPU/RAM/disk/net/uptime; **per-VM state = gap (WMI/agent)** | disks, NICs |
-| **XCP-NG** | Collector | XAPI reachable | host CPU/mem, per-VM state, pool, temp | VMs, PBDs |
+| **XCP-NG** | Collector | XAPI on the pool master | pool (HA, members live, VM counts), per-hypervisor CPU/mem/uptime/version (+ temp via optional argus-temp dom0 plugin); opt-in per-VM state / CPU / mem / disk+net I/O ({$XCP.VM.MODE}) | hypervisors, VMs |
 | **vSphere ESXi + vCenter** ✦ | Native VMware | register vCenter | hypervisor CPU/mem, datastore, per-VM state/CPU/mem | hypervisors, VMs, datastores |
 | **Citrix farm** ✦ | HTTP-API | Monitor OData | registered-machine count/state, **failed logons**, sessions, load | delivery groups |
 
@@ -194,7 +194,8 @@ so curation is shared with the SNMP classes.
 ### SNMP gaps (need more than SNMP)
 - **UniFi** per-port/PoE/WAN/clients → controller API (self-hosted Network app **or** cloud gateway;
   SNMP is thin). **Nutanix / Citrix farm / vSphere** → API/VMware collector (app-level, no SNMP).
-- **XCP-NG** per-VM + host temp → XAPI/RRD (+ IPMI/lm-sensors for temp). **NUT** → upsd :3493.
+- **XCP-NG** per-VM + host CPU → XAPI + the hosts' rrd_updates feed; host temp → the argus-temp
+  XAPI plugin on dom0 (hwmon; see docs/hosts/xcpng.md). **NUT** → upsd :3493.
 - **unRAID** disk temp & SMART → smartctl via Net-SNMP `extend`, or the unRAID API. **Hyper-V**
   per-VM → WMI/agent (host stays SNMP). **AdGuard** block/query stats → AdGuard HTTP API.
 
