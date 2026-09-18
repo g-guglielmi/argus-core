@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.4.54] - 2026-09-18
 
 **Fixed:**
 - **XCP-NG: the Monitored VMs field hides while there is nothing to pick.** With VM monitoring off
