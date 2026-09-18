@@ -8,9 +8,10 @@ zabbix_export:
       template: 'Argus Linux by SNMP'
       name: 'Argus Linux by SNMP'
       description: |
-        Generic Linux over SNMP (UCD-SNMP-MIB + HOST-RESOURCES-MIB): CPU utilization, memory use
-        and uptime, with thresholds as user macros. Needs snmpd exposing the UCD + host-resources
-        modules. Filesystem and interface discovery (LLD) are added in a follow-up. DESIGN section 5.
+        Generic Linux over SNMP (UCD-SNMP-MIB + HOST-RESOURCES-MIB): CPU utilization (overall and
+        per-core), memory use, uptime, per-filesystem usage and per-interface traffic (both via LLD),
+        with thresholds as user macros. Needs snmpd exposing the UCD + host-resources modules.
+        DESIGN section 5.
       groups:
         - name: Templates/Argus
       items:
