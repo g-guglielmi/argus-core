@@ -62,7 +62,7 @@ echo "==> [3/8] Install packages"
 apt-get install -y \
   zabbix-server-pgsql zabbix-frontend-php php8.4-pgsql zabbix-nginx-conf zabbix-sql-scripts zabbix-agent2 \
   "postgresql-${PG_VER}" \
-  python3
+  python3 openssh-client sshpass
 
 # TimescaleDB: Zabbix 7.0 supports up to 2.28. The repo's "latest" is usually newer (e.g. 2.29),
 # which makes Zabbix refuse to manage native compression. Pin the newest 2.28.x we can find.
@@ -87,10 +87,11 @@ else
   apt-get install -y "$TS_META"
 fi
 
-# External-check collectors for agentless device classes (NUT UPS; the DNS resolver adds one too). They
-# run from the Zabbix server's ExternalScripts dir, so a core WITHOUT an external proxy - or any device
-# Monitored-by "Core server" - can run them. The argus-probe image bakes the same scripts (kept
-# byte-identical) for proxy-monitored devices. Installed in BOTH modes (manual install + appliance).
+# External-check collectors for agentless device classes (NUT UPS, DNS resolution, XCP-NG, agentless
+# Linux over SSH). They run from the Zabbix server's ExternalScripts dir, so a core WITHOUT an external
+# proxy - or any device Monitored-by "Core server" - can run them. openssh-client + sshpass (installed
+# above) back the SSH collector's key / password auth. The argus-probe image bakes the same scripts
+# (kept byte-identical) for proxy-monitored devices. Installed in BOTH modes (manual install + appliance).
 EXT_DST=/usr/lib/zabbix/externalscripts
 if [[ -d "${SCRIPT_DIR}/externalscripts" ]]; then
   install -d -m 0755 "$EXT_DST"

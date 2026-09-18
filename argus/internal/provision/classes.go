@@ -109,6 +109,39 @@ var registry = []Class{
 		Icon:       "server",
 	},
 	{
+		// The agentless, no-SNMP fallback for Linux: the proxy/core runs argus_linux_ssh.py (an
+		// external check) which opens ONE SSH session per poll, reads /proc + df + /proc/net/dev and
+		// emits JSON. Item keys match the native agent/SNMP keys, so curation is shared with the other
+		// Linux classes. Auth is a private key on the proxy (recommended) or a password secret macro;
+		// either way a read-only login is enough. The host's address is the box's own IP.
+		ID:         "linux-ssh",
+		Label:      "Linux (SSH, agentless)",
+		Family:     "Linux",
+		Pattern:    PatternAgentless,
+		Iface:      IfaceAgent,
+		Templates:  []string{"Argus Linux by SSH"},
+		OffersHTTP: true,
+		Icon:       "server",
+		Macros: []MacroSpec{
+			{Macro: "{$SSH.USER}", Label: "SSH user", Hint: "root (a read-only login is enough)"},
+			{Macro: "{$SSH.PORT}", Label: "SSH port", Hint: "22"},
+			{Macro: "{$SSH.AUTH}", Label: "Authentication", Hint: "key", Options: []string{"key", "password"}},
+			{Macro: "{$SSH.PASSWORD}", Label: "SSH password", Hint: "only for password auth", Secret: true},
+			{Macro: "{$SSH.KEYFILE}", Label: "Private key path (on the proxy)", Hint: "/var/lib/zabbix/ssh/argus_id"},
+		},
+		Setup: &ClassSetup{
+			Title: "Give the proxy read-only SSH access",
+			Intro: "This class has no agent and needs no SNMP - the proxy (or core) that monitors this device logs in over SSH once per minute and reads /proc, df and /proc/net/dev. A read-only account is all it needs.",
+			Steps: []string{
+				"Pick an SSH login on the target (root works; a plain read-only user is enough - the collector never writes).",
+				"Key auth (recommended): generate a monitoring keypair, add the public key to the target's ~/.ssh/authorized_keys, and place the private key ON the proxy at the path in \"Private key path\" (default /var/lib/zabbix/ssh/argus_id) - mount it into the argus-probe container there. Set Authentication to \"key\".",
+				"Password auth: set Authentication to \"password\" and fill in the SSH password (stored as a secret). The proxy image ships sshpass for this.",
+				"The first connection is trust-on-first-use (accept-new); later host-key changes are rejected.",
+			},
+			Note: "The same key/credential is reused for every host on a given proxy, so one monitoring key per site is enough. To lock it down further, restrict the key in authorized_keys (from=, no-pty).",
+		},
+	},
+	{
 		// Windows Server over SNMP: HOST-RESOURCES (CPU/memory/disk) + IF-MIB + the LAN Manager
 		// service table. Same item keys as Generic Linux SNMP, so curation is shared. SNMP creds
 		// inherit the proxy default like every SNMP class.

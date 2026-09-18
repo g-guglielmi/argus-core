@@ -1,0 +1,410 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: d348dcdd5e7a40138251e035ddeac174
+      template: 'Argus Linux by SSH'
+      name: 'Argus Linux by SSH'
+      description: |
+        The agentless, no-SNMP fallback for a Linux box you can only reach over SSH. The proxy runs a
+        small collector (argus_linux_ssh.py, an external check baked into the argus-probe image) that
+        opens ONE SSH session per poll, reads /proc + df + /proc/net/dev, and prints CPU utilisation,
+        load average, memory, uptime, per-filesystem usage and per-interface traffic (the last two via
+        LLD) as JSON - so every reading comes from a single login instead of one connection per item.
+        Item keys match the native agent/SNMP keys, so a host reads the same whichever way it is
+        monitored. Set {$SSH.USER} to a read-only login, {$SSH.AUTH} to "key" (recommended) or
+        "password", and either {$SSH.KEYFILE} (path to the private key ON the proxy) or {$SSH.PASSWORD}
+        (secret). The host's own interface is the Linux box's IP (Base Ping + the collector run against
+        it). DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: de0852df5f4642b18e0591a5be794e3b
+          name: 'Linux SSH raw data'
+          type: EXTERNAL
+          key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          timeout: 30s
+          description: 'Master item: the proxy''s argus_linux_ssh.py collector logs in once, reads /proc + df + /proc/net/dev and prints every reading as JSON. An SSH/auth/parse failure prints reachable=0 (not an error) so the down trigger fires instead of the items going unsupported.'
+        - uuid: 6aeb8117b4a84ad8be40517eb7fc17c0
+          name: 'Monitoring reachable'
+          type: DEPENDENT
+          key: linux.ssh.reachable
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = the SSH poll completed, 0 = the host is unreachable or the login failed. Not a curated sensor - it drives the down trigger.'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.reachable'
+          triggers:
+            - uuid: 60355bb838b142d9a56b5e8dce95b1fd
+              expression: 'max(/Argus Linux by SSH/linux.ssh.reachable,#3)=0'
+              name: 'SSH monitoring is unreachable'
+              priority: HIGH
+              description: 'The SSH collector has not completed a poll on the last 3 checks (host down, SSH refused, or the login/key is wrong).'
+        - uuid: bfa8719a8f284e29909b5e7091f55f2f
+          name: 'CPU utilization'
+          type: DEPENDENT
+          key: 'system.cpu.util[ssh]'
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Overall CPU utilization, computed from two /proc/stat samples one second apart (100 - idle%).'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cpu_util'
+              error_handler: DISCARD_VALUE
+          triggers:
+            - uuid: 08e77a7599c2408e9c16e810af1db841
+              expression: 'min(/Argus Linux by SSH/system.cpu.util[ssh],#3)>={$CPU.UTIL.WARN} and min(/Argus Linux by SSH/system.cpu.util[ssh],#3)<{$CPU.UTIL.HIGH}'
+              name: 'High CPU utilization'
+              priority: WARNING
+              description: 'CPU utilization at/above the warning threshold on the last 3 checks.'
+            - uuid: 9c173a6590a946ff8cf685d8c5d284b7
+              expression: 'min(/Argus Linux by SSH/system.cpu.util[ssh],#3)>={$CPU.UTIL.HIGH}'
+              name: 'Very high CPU utilization'
+              priority: HIGH
+              description: 'CPU utilization at/above the high threshold on the last 3 checks.'
+        - uuid: b0d05050128e4e538aae3084fd0021f3
+          name: 'Load average (1m)'
+          type: DEPENDENT
+          key: 'system.cpu.load[all,avg1]'
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          description: '1-minute load average (/proc/loadavg).'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.load1'
+              error_handler: DISCARD_VALUE
+        - uuid: c3d21f9c0a504f48ba425855ef6ee53d
+          name: 'Load average (5m)'
+          type: DEPENDENT
+          key: 'system.cpu.load[all,avg5]'
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          description: '5-minute load average (/proc/loadavg).'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.load5'
+              error_handler: DISCARD_VALUE
+        - uuid: 63a2e1270cac45f5abb0c2370a98cf02
+          name: 'Load average (15m)'
+          type: DEPENDENT
+          key: 'system.cpu.load[all,avg15]'
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          description: '15-minute load average (/proc/loadavg).'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.load15'
+              error_handler: DISCARD_VALUE
+        - uuid: 6c25b3222a9c4fb7b3add7c2a320fa89
+          name: 'Total memory'
+          type: DEPENDENT
+          key: 'vm.memory.size[total]'
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: B
+          description: 'MemTotal from /proc/meminfo, in bytes.'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.mem_total'
+              error_handler: DISCARD_VALUE
+        - uuid: cd408b2099af4c86a6b8ffecdb3c8be0
+          name: 'Available memory'
+          type: DEPENDENT
+          key: 'vm.memory.size[available]'
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: B
+          description: 'MemAvailable from /proc/meminfo (what applications can claim without swapping), in bytes.'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.mem_available'
+              error_handler: DISCARD_VALUE
+        - uuid: 4e73001374c74d96b908e45c88ffe153
+          name: 'Memory utilization'
+          type: DEPENDENT
+          key: 'vm.memory.utilization[ssh]'
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Memory in use as a percentage of total (100 * (MemTotal - MemAvailable) / MemTotal).'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.mem_util'
+              error_handler: DISCARD_VALUE
+          triggers:
+            - uuid: 68b389fdb8904984876bca62c4f1eb82
+              expression: 'min(/Argus Linux by SSH/vm.memory.utilization[ssh],#3)>={$MEM.USED.WARN} and min(/Argus Linux by SSH/vm.memory.utilization[ssh],#3)<{$MEM.USED.HIGH}'
+              name: 'High memory utilization'
+              priority: WARNING
+              description: 'Memory utilization at/above the warning threshold on the last 3 checks.'
+            - uuid: bf47fee91ca949ea942dfd07a2ec333d
+              expression: 'min(/Argus Linux by SSH/vm.memory.utilization[ssh],#3)>={$MEM.USED.HIGH}'
+              name: 'Very high memory utilization'
+              priority: HIGH
+              description: 'Memory utilization at/above the high threshold on the last 3 checks.'
+        - uuid: aa15a655797248ffa1a871e1ba092be7
+          name: 'Uptime'
+          type: DEPENDENT
+          key: 'system.uptime[ssh]'
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: uptime
+          description: 'System uptime from /proc/uptime.'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.uptime'
+              error_handler: DISCARD_VALUE
+      discovery_rules:
+        - uuid: ec60eacf925f4888bfa8b8f60bc91fba
+          name: 'Filesystem discovery'
+          type: DEPENDENT
+          key: 'vfs.fs.discovery[ssh]'
+          delay: '0'
+          lifetime: 7d
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          description: 'Mounted filesystems reported by df (pseudo/temporary filesystems already dropped by the collector; {$FS.NAME.SKIP} trims further). A mount that disappears is disabled immediately and deleted after 7 days.'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.fs_discovery'
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#FSNAME}'
+                value: '{$FS.NAME.SKIP}'
+                operator: NOT_MATCHES_REGEX
+                formulaid: A
+          item_prototypes:
+            - uuid: b050df72009d47789a772a965943902d
+              name: 'Disk total ({#FSNAME})'
+              type: DEPENDENT
+              key: 'vfs.fs.size[{#FSNAME},total]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: B
+              master_item:
+                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value), fs = d.fs || [];
+                      for (var i = 0; i < fs.length; i++) { if (fs[i].name === '{#FSNAME}') return fs[i].total; }
+                      throw 'no {#FSNAME}';
+                  error_handler: DISCARD_VALUE
+            - uuid: 0b1909332e474812851df9f7b941c351
+              name: 'Disk used ({#FSNAME})'
+              type: DEPENDENT
+              key: 'vfs.fs.size[{#FSNAME},used]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: B
+              master_item:
+                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value), fs = d.fs || [];
+                      for (var i = 0; i < fs.length; i++) { if (fs[i].name === '{#FSNAME}') return fs[i].used; }
+                      throw 'no {#FSNAME}';
+                  error_handler: DISCARD_VALUE
+            - uuid: 4aea8b0fcba24c7eb33be87d73eac9a8
+              name: 'Disk used percent ({#FSNAME})'
+              type: DEPENDENT
+              key: 'vfs.fs.size[{#FSNAME},pused]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '%'
+              master_item:
+                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value), fs = d.fs || [];
+                      for (var i = 0; i < fs.length; i++) { if (fs[i].name === '{#FSNAME}') return fs[i].pused; }
+                      throw 'no {#FSNAME}';
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: fff5938365af4a3baf14e01f8b8bc48c
+                  expression: 'min(/Argus Linux by SSH/vfs.fs.size[{#FSNAME},pused],#3)>={$DISK.PUSED.WARN} and min(/Argus Linux by SSH/vfs.fs.size[{#FSNAME},pused],#3)<{$DISK.PUSED.HIGH}'
+                  name: 'Disk space low: {#FSNAME}'
+                  priority: WARNING
+                  description: 'Filesystem usage at/above the warning threshold.'
+                - uuid: 84f13a2c6d154cadb3ff744896de6384
+                  expression: 'min(/Argus Linux by SSH/vfs.fs.size[{#FSNAME},pused],#3)>={$DISK.PUSED.HIGH}'
+                  name: 'Disk space critical: {#FSNAME}'
+                  priority: HIGH
+                  description: 'Filesystem usage at/above the high threshold.'
+        - uuid: 0b110777a32248b39676b7a04fa58f34
+          name: 'Network interface discovery'
+          type: DEPENDENT
+          key: 'net.if.discovery[ssh]'
+          delay: '0'
+          lifetime: 7d
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          description: 'Network interfaces from /proc/net/dev (loopback dropped by the collector; {$NET.IF.SKIP} trims virtual / container NICs). An interface that disappears is disabled immediately and deleted after 7 days.'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.net_discovery'
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#IFNAME}'
+                value: '{$NET.IF.SKIP}'
+                operator: NOT_MATCHES_REGEX
+                formulaid: A
+          item_prototypes:
+            - uuid: 22b5374f7ed04ced995df2765f866db6
+              name: 'Traffic in ({#IFNAME})'
+              type: DEPENDENT
+              key: 'net.if.in[{#IFNAME}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: bps
+              description: 'Receive octets from /proc/net/dev as a bit rate.'
+              master_item:
+                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value), n = d.net || [];
+                      for (var i = 0; i < n.length; i++) { if (n[i].name === '{#IFNAME}') return n[i].in; }
+                      throw 'no {#IFNAME}';
+                  error_handler: DISCARD_VALUE
+                - type: CHANGE_PER_SECOND
+                - type: MULTIPLIER
+                  parameters:
+                    - '8'
+            - uuid: b0c4edba175c48b28d94602ed538e17a
+              name: 'Traffic out ({#IFNAME})'
+              type: DEPENDENT
+              key: 'net.if.out[{#IFNAME}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: bps
+              description: 'Transmit octets from /proc/net/dev as a bit rate.'
+              master_item:
+                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value), n = d.net || [];
+                      for (var i = 0; i < n.length; i++) { if (n[i].name === '{#IFNAME}') return n[i].out; }
+                      throw 'no {#IFNAME}';
+                  error_handler: DISCARD_VALUE
+                - type: CHANGE_PER_SECOND
+                - type: MULTIPLIER
+                  parameters:
+                    - '8'
+      macros:
+        - macro: '{$SSH.USER}'
+          value: root
+          description: 'SSH login user. A read-only account is enough - the collector only reads /proc, df and /proc/net/dev.'
+        - macro: '{$SSH.PORT}'
+          value: '22'
+          description: 'SSH port.'
+        - macro: '{$SSH.AUTH}'
+          value: key
+          description: 'Authentication mode: "key" (private key on the proxy, recommended) or "password".'
+        - macro: '{$SSH.PASSWORD}'
+          value: ''
+          description: 'SSH password, for {$SSH.AUTH}=password. Set per host as a secret macro; passed to the collector via the environment, never on the command line.'
+        - macro: '{$SSH.KEYFILE}'
+          value: /var/lib/zabbix/ssh/argus_id
+          description: 'Path ON THE PROXY to the private key, for {$SSH.AUTH}=key. Mount your monitoring key here (its public half goes in each target''s authorized_keys).'
+        - macro: '{$CPU.UTIL.WARN}'
+          value: '80'
+          description: 'CPU utilization percentage that raises a warning.'
+        - macro: '{$CPU.UTIL.HIGH}'
+          value: '95'
+          description: 'CPU utilization percentage that raises a high-severity alert.'
+        - macro: '{$MEM.USED.WARN}'
+          value: '85'
+          description: 'Memory-used percentage that raises a warning.'
+        - macro: '{$MEM.USED.HIGH}'
+          value: '95'
+          description: 'Memory-used percentage that raises a high-severity alert.'
+        - macro: '{$DISK.PUSED.WARN}'
+          value: '90'
+          description: 'Filesystem used percentage that raises a warning (10% free).'
+        - macro: '{$DISK.PUSED.HIGH}'
+          value: '95'
+          description: 'Filesystem used percentage that raises a high-severity alert (5% free).'
+        - macro: '{$FS.NAME.SKIP}'
+          value: '^(/run|/dev|/sys|/proc)($|/)'
+          description: 'Mount paths matching this regex are not discovered (tmpfs / pseudo-filesystems).'
+        - macro: '{$NET.IF.SKIP}'
+          value: '^(lo$|veth|docker|br-|virbr|vnet|tap|tun|cali|cni|flannel|dummy)'
+          description: 'Interface names matching this regex are not discovered (virtual / container NICs).'
