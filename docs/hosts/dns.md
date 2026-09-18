@@ -7,7 +7,7 @@ runs `dns-resolver.py` to resolve names against the server and records success /
 | Class | Monitors |
 |---|---|
 | **DNS server** | per-name resolve success, resolve time, and resolved IP for the names you list |
-| **AdGuard Home** | the resolve check above, plus AdGuard's own stats: total / blocked queries, block rate, average processing time, protection enabled, version |
+| **AdGuard Home** | the resolve check above, plus AdGuard's own stats: service up/down, protection enabled, version, queries and blocked queries (today's counters), block rate, and average processing time |
 
 ## DNS server (any resolver)
 
@@ -19,7 +19,9 @@ answers on `:53`.
    `example.com,cloudflare.com`. Each name becomes its own resolve sensor (success, time, IP), grouped
    under the server.
 
-The resolve runs from the proxy/core, so it needs nothing installed on the DNS server itself.
+A name that stops resolving raises a **HIGH** alert; a slow resolve (over `{$DNS.RTT.HIGH}`, default
+0.5 s) raises a **warning**. The query port defaults to 53 (`{$DNS.PORT}`). The resolve runs from the
+proxy/core, so it needs nothing installed on the DNS server itself.
 
 ## AdGuard Home
 

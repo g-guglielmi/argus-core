@@ -5,14 +5,19 @@ by polling the device directly. Base Ping still runs against the device's own IP
 metrics come from the controller, addressed by the macros below. This works for both a self-hosted
 Network controller and a cloud/UniFi OS gateway that hosts the controller.
 
-There are four classes, same access pattern, different metrics:
+All four classes read a **common base** from the controller: online/offline state (with an offline
+alert), CPU utilization, memory utilization, uptime, temperature (on models that report it), and
+firmware version, plus high-CPU and high-memory alerts. On top of that, each class adds:
 
-| Class | Monitors beyond ping |
+| Class | Additionally monitors |
 |---|---|
-| **UniFi Switch** | uptime, CPU/memory, per-port traffic + PoE, client count |
-| **UniFi Gateway** | the switch set, plus WAN up/down and WAN throughput |
-| **UniFi Access Point** | per-radio traffic, clients, channel utilization |
-| **UniFi OS Console** | the console host's own CPU/memory/temp/disk, adoption count, version |
+| **UniFi Switch** | per-port link / speed / traffic, per-port PoE and total PoE power draw, uplink traffic in/out |
+| **UniFi Gateway** | per-port link / speed / traffic and PoE (as the switch), per-WAN traffic, WAN monitor latency and availability (with a "WAN degraded" alert), speedtest download/upload |
+| **UniFi Access Point** | connected clients, experience score, per-radio clients and per-radio channel utilization, uplink traffic in/out |
+| **UniFi OS Console** | per-storage-volume used % (with almost-full / critically-full alerts). No port, PoE or client metrics. |
+
+Metrics that a given model does not report (temperature, PoE, speedtest, experience score) simply do
+not appear, rather than showing as errors.
 
 ## 1. Create an Integration API key
 
