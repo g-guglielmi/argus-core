@@ -46,13 +46,14 @@ type PresetMacro struct {
 // MacroSpec is a per-host macro the attach UI asks for when creating a host of this class - how
 // API-source classes (UniFi, later Nutanix/XCP-NG/…) receive their endpoint and credentials.
 type MacroSpec struct {
-	Macro    string   `json:"macro"`             // Zabbix macro name, e.g. "{$UNIFI.URL}"
-	Label    string   `json:"label"`             // form label
-	Hint     string   `json:"hint"`              // placeholder / example
-	Required bool     `json:"required"`          // creation fails without it
-	Secret   bool     `json:"secret"`            // stored as a Zabbix secret macro (write-only afterwards)
-	Derive   string   `json:"derive,omitempty"`  // form auto-fills this from the host address ("{host}" -> the IP/DNS), overridable; e.g. "http://{host}". Only for host-addressed URLs, never a controller URL (UniFi) that differs from the device.
-	Options  []string `json:"options,omitempty"` // fixed value set: the form renders a select instead of a text input (blank stays "template default"); e.g. XCP-NG's VM-monitoring mode off/state/full
+	Macro        string   `json:"macro"`                   // Zabbix macro name, e.g. "{$UNIFI.URL}"
+	Label        string   `json:"label"`                   // form label
+	Hint         string   `json:"hint"`                    // placeholder / example
+	Required     bool     `json:"required"`                // creation fails without it
+	Secret       bool     `json:"secret"`                  // stored as a Zabbix secret macro (write-only afterwards)
+	Derive       string   `json:"derive,omitempty"`        // form auto-fills this from the host address ("{host}" -> the IP/DNS), overridable; e.g. "http://{host}". Only for host-addressed URLs, never a controller URL (UniFi) that differs from the device.
+	Options      []string `json:"options,omitempty"`       // fixed value set: the form renders a select instead of a text input (blank stays "template default"); e.g. XCP-NG's VM-monitoring mode off/state/full
+	SettingsOnly bool     `json:"settings_only,omitempty"` // shown only in host settings, not the Add-device wizard - for values that need discovered data first (XCP-NG's ignored-VMs list)
 }
 
 // ClassSetup is optional prerequisite guidance the Add-device form shows for a class that needs
@@ -370,6 +371,9 @@ var registry = []Class{
 			{Macro: "{$XCP.USER}", Label: "XAPI username", Hint: "root", Required: true},
 			{Macro: "{$XCP.PASS}", Label: "XAPI password", Hint: "the host root password", Required: true, Secret: true},
 			{Macro: "{$XCP.VM.MODE}", Label: "VM monitoring", Hint: "off", Options: []string{"off", "state", "full"}},
+			// Rendered as a checklist of the discovered VMs in host settings (there is nothing to
+			// pick from at add time). Ignored VMs vanish from the per-VM sensors AND the counts.
+			{Macro: "{$XCP.VM.IGNORE}", Label: "Monitored VMs", Hint: "comma-separated VM names to ignore", SettingsOnly: true},
 		},
 		Setup: &ClassSetup{
 			Title: "Point Argus at the pool master",

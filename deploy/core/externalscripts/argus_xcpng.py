@@ -19,13 +19,16 @@
 # without it simply omit the temp field. Keeping the whole poll in one master item means dependent
 # items parse it with JSONPath - one XAPI session per poll, nothing else.
 #
-# Usage (as Zabbix runs it): argus_xcpng.py <host> <user> <pass> [vmmode]
+# Usage (as Zabbix runs it): argus_xcpng.py <host> <user> <pass> [vmmode] [ignore]
 #   host   - pool master address (the template passes {HOST.CONN}); a slave answers HOST_IS_SLAVE
 #            and the script follows the redirect to the master automatically
 #   user   - XAPI username (root; XCP-NG local XAPI accounts are root-only)
 #   pass   - XAPI password
 #   vmmode - off | state | full (default off). "state" adds per-VM power state; "full" adds
 #            per-VM CPU / memory / disk I/O / network I/O from the RRDs.
+#   ignore - comma-separated VM names to leave out entirely (parked templates, scratch VMs):
+#            they disappear from the per-VM lists AND the running/defined counts. Zabbix parses
+#            key parameters before expanding macros, so the commas inside the one macro are safe.
 #
 # A connection failure is NOT an error: it prints reachable=0 so the template's down trigger fires
 # instead of the item going unsupported. Rejected credentials print reachable=1, authed=0 (their
@@ -159,6 +162,9 @@ def main():
         sys.exit(1)
     addr, user, passwd = sys.argv[1], sys.argv[2], sys.argv[3]
     vmmode = (sys.argv[4] if len(sys.argv) > 4 else "off").strip().lower() or "off"
+    ignore = set()
+    if len(sys.argv) > 5:
+        ignore = {n.strip() for n in sys.argv[5].split(",") if n.strip()}
 
     try:
         proxy, sid, addr = connect(addr, user, passwd)
@@ -193,7 +199,8 @@ def main():
     master_ref = pool.get("master", "")
 
     # Control domains carry the host boot time (dom0 starts with the host); real VMs are everything
-    # that is not a template / snapshot / control domain.
+    # that is not a template / snapshot / control domain - minus the user's ignore list, which drops
+    # a VM from the per-VM lists and the counts alike.
     dom0_by_host = {}
     real_vms = []
     for ref, vm in vms.items():
@@ -201,6 +208,8 @@ def main():
             continue
         if vm.get("is_control_domain"):
             dom0_by_host[vm.get("resident_on", "")] = vm
+            continue
+        if vm.get("name_label", "") in ignore:
             continue
         real_vms.append(vm)
 

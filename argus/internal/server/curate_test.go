@@ -298,10 +298,11 @@ func TestClassifyXCPNG(t *testing.T) {
 // order, and an unranked category ranks every label the same.
 func TestItemRank(t *testing.T) {
 	for cat, want := range map[string][]string{
-		"Power":  {"Power draw", "Load", "Input voltage", "Output voltage"},
-		"Status": {"OS version", "Core version", "Supervisor version"},
-		"DNS":    {"DNS queries", "Blocked queries", "Block rate", "Average processing time"},
-		"Memory": {"Used memory %", "Available memory", "Total memory"},
+		"Power":            {"Power draw", "Load", "Input voltage", "Output voltage"},
+		"Status":           {"OS version", "Core version", "Supervisor version"},
+		"DNS":              {"DNS queries", "Blocked queries", "Block rate", "Average processing time"},
+		"Memory":           {"Used memory %", "Available memory", "Total memory"},
+		"Virtual machines": {"VMs running", "VMs defined"},
 	} {
 		for i := 1; i < len(want); i++ {
 			if itemRank(cat, want[i-1]) >= itemRank(cat, want[i]) {
@@ -354,6 +355,9 @@ func TestCategoryOrdersComplete(t *testing.T) {
 	}
 	if categoryOrderNAS["Temperature"] >= categoryOrderNAS["Disk"] {
 		t.Error("NAS order must put Temperature before Disk")
+	}
+	if categoryOrderServer["Temperature"] <= categoryOrderServer["CPU"] || categoryOrderServer["Temperature"] >= categoryOrderServer["Memory"] {
+		t.Error("server order must put Temperature between CPU and Memory")
 	}
 }
 

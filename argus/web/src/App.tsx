@@ -15,13 +15,13 @@ type User = { id: number; email: string; name: string; surname: string; role: st
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number }
 type Group = { id: string; name: string; hosts: number }
-type MacroSpec = { macro: string; label: string; hint?: string; required?: boolean; secret?: boolean; derive?: string; options?: string[] }
+type MacroSpec = { macro: string; label: string; hint?: string; required?: boolean; secret?: boolean; derive?: string; options?: string[]; settings_only?: boolean }
 type ClassSetup = { title: string; intro?: string; steps?: string[]; command?: string; note?: string }
 type DeviceClass = { id: string; label: string; family: string; pattern: string; iface: string; offers_http: boolean; icon?: string; macros?: MacroSpec[]; setup?: ClassSetup }
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
 type MacroField = { macro: string; label: string; hint?: string; secret?: boolean; options?: string[]; value: string; set?: boolean }
-type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[] }
+type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; vm_names?: string[] }
 type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
@@ -3351,7 +3351,9 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
   const [err, setErr] = useState<string | null>(null)
 
   const cls = classes.find((c) => c.id === classId)
-  const classMacros = cls?.macros || []
+  // Settings-only macros (like XCP-NG's ignored-VMs list) need discovered data to pick from, so the
+  // wizard skips them - they appear in host settings once the host exists.
+  const classMacros = (cls?.macros || []).filter((ms) => !ms.settings_only)
   // Prerequisite steps some classes carry (e.g. Ugreen needs a Zabbix agent container on the NAS):
   // fill {host} in the copyable command with the device name the user is typing.
   const setupCmd = cls?.setup?.command ? cls.setup.command.replace('{host}', name.trim() || '<device-name>') : ''
@@ -3655,21 +3657,49 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
         <>
           <div className="hs-title">{cfg.class_label ? cfg.class_label + ' options' : 'Monitoring options'}</div>
           <div className="hs-grid">
-            {cfg.macros.map((m) => (
-              <label className="field" key={m.macro}>
-                <span>{m.label}</span>
-                {m.options && m.options.length > 0 ? (
-                  // Fixed value set: a select, where blank keeps the template default.
-                  <Select value={m.value} disabled={!canEdit} onChange={(e) => setMacro(m.macro, e.target.value)}>
-                    <option value="">{m.hint ? `default (${m.hint})` : 'template default'}</option>
-                    {m.options.map((o) => <option key={o} value={o}>{o}</option>)}
-                  </Select>
-                ) : (
-                  <input className="input" type={m.secret ? 'password' : 'text'} placeholder={m.secret && m.set ? 'unchanged' : (m.hint || '')} value={m.value} disabled={!canEdit} onChange={(e) => setMacro(m.macro, e.target.value)} />
-                )}
-                {m.hint && !(m.options && m.options.length > 0) && <span style={{ color: 'var(--muted)', fontSize: 11, marginTop: 3 }}>Example: {m.hint}</span>}
-              </label>
-            ))}
+            {cfg.macros.map((m) => {
+              // The XCP-NG ignored-VMs macro renders as a checklist of the discovered VMs (plus any
+              // name already ignored, so it can be re-enabled even after its sensors aged out).
+              // Checked = monitored; unchecked names are stored comma-separated in the macro.
+              if (m.macro === '{$XCP.VM.IGNORE}') {
+                const ignored = m.value.split(',').map((s) => s.trim()).filter(Boolean)
+                const vmNames = Array.from(new Set([...(cfg.vm_names || []), ...ignored])).sort()
+                if (vmNames.length > 0) return (
+                  <div className="field" key={m.macro}>
+                    <span>{m.label}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '4px 0' }}>
+                      {vmNames.map((n) => {
+                        const on = !ignored.includes(n)
+                        return (
+                          <label key={n} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: canEdit ? 'pointer' : 'default' }}>
+                            <input type="checkbox" checked={on} disabled={!canEdit}
+                              onChange={() => { const next = on ? [...ignored, n] : ignored.filter((x) => x !== n); setMacro(m.macro, next.join(',')) }} />
+                            <span style={on ? undefined : { color: 'var(--muted)', textDecoration: 'line-through' }}>{n}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                    <span style={{ color: 'var(--muted)', fontSize: 11, marginTop: 3 }}>Unchecked VMs are excluded from the sensors and the VM counts.</span>
+                  </div>
+                )
+                // Nothing discovered yet (VM monitoring off): fall through to the plain text input.
+              }
+              return (
+                <label className="field" key={m.macro}>
+                  <span>{m.label}</span>
+                  {m.options && m.options.length > 0 ? (
+                    // Fixed value set: a select, where blank keeps the template default.
+                    <Select value={m.value} disabled={!canEdit} onChange={(e) => setMacro(m.macro, e.target.value)}>
+                      <option value="">{m.hint ? `default (${m.hint})` : 'template default'}</option>
+                      {m.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </Select>
+                  ) : (
+                    <input className="input" type={m.secret ? 'password' : 'text'} placeholder={m.secret && m.set ? 'unchanged' : (m.hint || '')} value={m.value} disabled={!canEdit} onChange={(e) => setMacro(m.macro, e.target.value)} />
+                  )}
+                  {m.hint && !(m.options && m.options.length > 0) && <span style={{ color: 'var(--muted)', fontSize: 11, marginTop: 3 }}>Example: {m.hint}</span>}
+                </label>
+              )
+            })}
           </div>
           <div className="hs-note">These tune the class monitoring for this host. Leave a field blank to use the template default; changes take effect on the next discovery cycle.</div>
         </>

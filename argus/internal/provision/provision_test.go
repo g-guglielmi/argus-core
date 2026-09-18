@@ -41,7 +41,7 @@ func TestLoadTemplates(t *testing.T) {
 		"Argus UPS by PeaNUT", "nut.raw", "nut.battery.charge", "nut.on_battery", "{$PEANUT.URL}", "{$PEANUT.UPS}",
 		"Argus UPS by NUT", "argus_nut.py[{HOST.CONN}", "{$NUT.UPS}", "{$NUT.PORT}", "nut.output.voltage",
 		"Argus DNS resolution", "dns-resolver.py[discover", "dns.resolve.success", "dns.resolve.time", "{$DNS.RESOLVE.NAMES}",
-		"Argus XCP-NG by XAPI", "argus_xcpng.py[{HOST.CONN}", "xcp.host.discovery", "xcp.vm.discovery", "xcp.vmperf.discovery", "{$XCP.VM.MODE}", "{$XCP.TEMP.WARN}"} {
+		"Argus XCP-NG by XAPI", "argus_xcpng.py[{HOST.CONN}", "xcp.host.discovery", "xcp.vm.discovery", "xcp.vmperf.discovery", "{$XCP.VM.MODE}", "{$XCP.VM.IGNORE}", "{$XCP.TEMP.WARN}"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("templates missing %q", want)
 		}

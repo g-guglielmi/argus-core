@@ -33,13 +33,13 @@ var categoryOrderServer = map[string]int{
 	"Power":            3, // before CPU (user call) - power-centric classes (PoE switches, UPS)
 	"Battery":          4, // a UPS's battery section (user call: after its Power section)
 	"CPU":              5,
-	"Memory":           6,
-	"Disk":             7,
-	"Network":          8,
-	"Wireless":         9,
-	"Services":         10,
-	"Virtual machines": 11,
-	"Temperature":      12,
+	"Temperature":      6, // right after CPU (user call) - on servers the temp IS the CPU temp
+	"Memory":           7,
+	"Disk":             8,
+	"Network":          9,
+	"Wireless":         10,
+	"Services":         11,
+	"Virtual machines": 12,
 	"Uptime":           13,
 	"Ports":            14,
 	"Status":           15,
@@ -102,6 +102,9 @@ var itemLabelOrder = map[string]map[string]int{
 		"Available memory": 2, "Available memory %": 3,
 		"Total memory": 4,
 	},
+	// An XCP-NG host's Virtual machines section leads with the running/total count group; the
+	// per-VM rows trail unranked (natural name order).
+	"Virtual machines": {"VMs running": 0, "VMs defined": 1},
 }
 
 // itemRank returns the within-category order rank for a flat row's label; unranked labels get a large
