@@ -93,7 +93,7 @@ GitHub Release from the matching section below.
 
 **Added:**
 - **unRAID CPU temperature.** A new optional `cputemp` NET-SNMP extend
-  ([`docs/unraid-cpu-temp.sh`](docs/unraid-cpu-temp.sh)) reports the CPU package temperature from
+  ([`docs/hosts/unraid-cpu-temp.sh`](docs/hosts/unraid-cpu-temp.sh)) reports the CPU package temperature from
   lm-sensors (Intel package / AMD Tdie/Tctl, hottest core as fallback), shown as a standalone
   Temperature sensor with *running hot* / *overheating* alerts (`{$CPU.TEMP.WARN}` 80 °C,
   `{$CPU.TEMP.HIGH}` 90 °C). Needs the Dynamix System Temperature plugin.
@@ -107,7 +107,7 @@ GitHub Release from the matching section below.
   standby sentinel instead of dropping off the chart, so a parked disk shows a distinct low flat
   line (and any heat warning clears) - matching the SNMP plugin's own `disktemp` extend. Gated on
   the drive's standby flag, so the USB flash and always-on SSD/NVMe caches never get it. _(Re-copy
-  `docs/unraid-pool-temps.sh` to the unRAID host to pick this up.)_
+  `docs/hosts/unraid-pool-temps.sh` to the unRAID host to pick this up.)_
 
 **Fixed:**
 - **Hidden chart channels stay hidden.** Channels you hide in a multi-channel sensor's legend no
@@ -333,7 +333,7 @@ lab-driven monitoring-view refinements.
   memory, array/pool/`docker.img` filesystems, interfaces, uptime) plus an unRAID add-on for
   per-disk temperatures and per-share free space, read from the Community Applications "SNMP"
   plugin. Utility mount roots are filtered out by a class-preset skip list. Ships an optional
-  companion script (`docs/unraid-pool-temps.sh`) that adds cache/pool drives (incl. NVMe, which the
+  companion script (`docs/hosts/unraid-pool-temps.sh`) that adds cache/pool drives (incl. NVMe, which the
   plugin omits) and reads temperatures from the emhttp state - atomic, dash-free, never waking a
   disk - with drives named by slot ("Parity", "Disk 1", "Cache 2") and ordered like the Main tab.
 - **Per-core CPU utilization** on the Generic Linux SNMP class: `hrProcessorLoad` walked in one

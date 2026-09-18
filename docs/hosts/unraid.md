@@ -14,7 +14,7 @@ required on the unRAID host - without them the disk-temperature group shows as a
 
 1. **Install the Community Applications "SNMP" plugin** (Apps → search *SNMP*). It provides the
    `snmpd` service and the Settings → SNMP config box.
-2. **Install the temperature extend script** ([`unraid-pool-temps.sh`](../unraid-pool-temps.sh)):
+2. **Install the temperature extend script** ([`unraid-pool-temps.sh`](unraid-pool-temps.sh)):
    - Copy it to `/boot/config/plugins/snmp/pool_temps.sh` on the unRAID host.
    - In **Settings → SNMP**, add these lines to the snmpd.conf box, **remove** the plugin's own
      `extend disktemp …` line, then Apply:
@@ -55,7 +55,7 @@ extend script (same pattern as the disk temps above):
    let it detect sensors. This loads the kernel sensor modules (`coretemp` for Intel, `k10temp`
    for AMD, …) - it's what makes CPU temperature readable at all, and it's the same source as the
    temperature shown on the unRAID dashboard footer.
-2. **Install the CPU-temp extend script** ([`unraid-cpu-temp.sh`](../unraid-cpu-temp.sh)):
+2. **Install the CPU-temp extend script** ([`unraid-cpu-temp.sh`](unraid-cpu-temp.sh)):
    - Copy it to `/boot/config/plugins/snmp/cpu_temp.sh` on the unRAID host.
    - In **Settings → SNMP**, add this line to the snmpd.conf box, then Apply:
      ```
