@@ -29,8 +29,9 @@ GitHub Release from the matching section below.
   "default" entry that keeps the template default.
 - **XCP-NG: ignore individual VMs.** Host settings lists the discovered VMs as a **Monitored VMs**
   checklist - unticked VMs drop out of the per-VM sensors and the running/defined counts (the
-  `{$XCP.VM.IGNORE}` macro under the hood); their sensors are disabled immediately and age out
-  after 7 days, and an ignored VM stays listed so it can be re-enabled later.
+  `{$XCP.VM.IGNORE}` macro under the hood); saving also closes their open "not running" warnings.
+  Sensors of a lost VM are hidden from the curated view immediately, disabled in Zabbix, and
+  deleted after 7 days; an ignored VM stays listed (struck through) so it can be re-enabled later.
 
 **Changed:**
 - **Servers read CPU, temperature, memory.** The Temperature section moved up to sit right after

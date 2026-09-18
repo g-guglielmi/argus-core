@@ -48,10 +48,12 @@ VM runs and stops again.
 
 **Ignoring VMs**: host settings shows the discovered VMs as a checklist under **Monitored VMs** -
 untick the ones that should not be monitored (parked templates, scratch VMs) and they disappear
-from the per-VM sensors **and** the running/defined counts on the next poll. An ignored VM stays
-in the list (struck through) so it can be re-enabled later. Under the hood this is the
-`{$XCP.VM.IGNORE}` macro (comma-separated names). Sensors of a VM that leaves the list - ignored,
-deleted, or the mode turned down - are disabled immediately and deleted after 7 days.
+from the per-VM sensors **and** the running/defined counts on the next poll; any open *not
+running* warning for them is closed automatically when you save. An ignored VM stays in the list
+(struck through) so it can be re-enabled later. Under the hood this is the `{$XCP.VM.IGNORE}`
+macro (comma-separated names). Sensors of a VM that leaves the list - ignored, deleted, or the
+mode turned down - are hidden from the curated view right away, disabled in Zabbix, and deleted
+after 7 days.
 
 ## CPU temperature (optional)
 

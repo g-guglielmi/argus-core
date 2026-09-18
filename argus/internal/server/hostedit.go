@@ -390,7 +390,40 @@ func (s *Server) applyClassMacros(ctx context.Context, hostID string, desired ma
 			}
 		}
 	}
+	// An ignored VM's "not running" problem can never recover on its own: the next poll drops the
+	// VM from the blob, discovery disables its state item, and no recovery value ever arrives. The
+	// triggers allow manual close, so close those problems here (best-effort - a failure just
+	// leaves the manual route).
+	if v, sent := desired["{$XCP.VM.IGNORE}"]; sent && classID == "xcpng" {
+		s.closeIgnoredVMProblems(ctx, hostID, v)
+	}
 	return nil
+}
+
+// closeIgnoredVMProblems closes the open "VM <name> is not running" problems for every name on the
+// XCP-NG ignore list.
+func (s *Server) closeIgnoredVMProblems(ctx context.Context, hostID, ignoreCSV string) {
+	names := map[string]bool{}
+	for _, n := range strings.Split(ignoreCSV, ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			names[n] = true
+		}
+	}
+	if len(names) == 0 {
+		return
+	}
+	probs, err := s.zbx.Problems(ctx, hostID)
+	if err != nil {
+		return
+	}
+	for _, p := range probs {
+		if !strings.HasPrefix(p.Name, "VM ") || !strings.HasSuffix(p.Name, " is not running") {
+			continue
+		}
+		if names[strings.TrimSuffix(strings.TrimPrefix(p.Name, "VM "), " is not running")] {
+			_ = s.zbx.CloseEvent(ctx, p.EventID, "VM ignored in Argus host settings")
+		}
+	}
 }
 
 // handleSetHostProxy sets a host's collector (Server or a Proxy) - used both by the settings editor
