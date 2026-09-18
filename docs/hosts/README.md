@@ -42,6 +42,50 @@ the per-host tunables.
 - **Ping only** - no setup and no guide: **Add device → Ping only** gives ICMP reachability/latency.
   Every class also gets Base Ping automatically on top of its own metrics.
 
+## Planned (TBD)
+
+These classes are on the roadmap and **cannot be added yet** - they have no template and do not appear
+in **Add device**. Each gets its own guide when it ships. Order and timing are not a commitment; the
+list is here so you can see where the catalog is heading. See [../DESIGN.md](../DESIGN.md) section 5 and
+[../../ROADMAP.md](../../ROADMAP.md) for the authoritative plan.
+
+**SNMP (planned)**
+
+| Class | Expected to monitor |
+|---|---|
+| HPE Aruba CX | CPU, memory, temperature, PSU/fan, per-port traffic, PoE |
+| Aruba InstantOn 1960 | CPU, memory, per-port traffic, PoE |
+| Sophos XGS | CPU, memory, disk, interfaces, HA, live users, VPN |
+| Citrix NetScaler | CPU, memory, throughput, vserver state/health, SSL, HA |
+| QNAP | CPU, memory, volume/disk, temperature, fan, RAID, SMART |
+| Libraesva ESG | host CPU/RAM/disk, mail queue, admin certificate |
+| Hyper-V | host CPU/RAM/disk/net/uptime (per-VM state needs WMI/agent - a known gap) |
+
+**Agentless (planned)**
+
+| Class | Expected to monitor |
+|---|---|
+| Generic Linux SSH | CPU, RAM, disk, net via `ssh.run` (a no-SNMP fallback) |
+
+**HTTP / API (planned)**
+
+| Class | Expected to monitor |
+|---|---|
+| Nutanix AHV | cluster / host / VM CPU/mem/storage and VM state (Prism REST); one endpoint spawns child hosts |
+| Citrix farm | registered-machine count/state, failed logons, sessions, load (Monitor OData) |
+
+**Collector (planned)**
+
+| Class | Expected to monitor |
+|---|---|
+| XCP-NG | host CPU/mem, per-VM state, pool, temperature (XAPI) |
+
+**Native VMware (planned)**
+
+| Class | Expected to monitor |
+|---|---|
+| vSphere ESXi + vCenter | hypervisor CPU/mem, datastore, per-VM state/CPU/mem; register vCenter once, LLD spawns the child hosts |
+
 ## Per-host options
 
 Class tunables (thresholds, the Windows service filter, API credentials) can be set when you add the
