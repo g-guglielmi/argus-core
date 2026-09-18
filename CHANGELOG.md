@@ -11,6 +11,28 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.4.51] - 2026-09-18
+
+**Added:**
+- **Direct appliance downloads in the Add-probe wizard.** The VM deploy step now lists the built
+  proxy appliances (OVA, qcow2, VHD) as one-click download buttons with their sizes, resolved live
+  from the latest `probe-vm` GitHub Release, plus the seed ISO that every appliance needs. No more
+  hunting for the files on GitHub.
+- **Clearer, structured deploy instructions for every method.** The VM, unRAID, `docker run` and
+  `docker compose` steps now share a consistent layout: a bold titled action, numbered steps and a
+  short note. The VM step spells out that you pick one appliance for your hypervisor and that the
+  seed ISO is required for zero-touch provisioning and static IP; the container steps explain
+  self-enrollment and the single-use token.
+
+**Changed:**
+- **Wider Add-probe wizard.** The dialog widened (up to 800px) so the generated commands and the
+  unRAID template read without horizontal scrolling.
+
+**Fixed:**
+- **Docs-only pushes no longer rebuild the image.** A push that touches only Markdown or the LICENSE
+  now skips the container build, so a documentation edit stops producing a phantom `:testing` update
+  pill. Tag builds and manual runs always build.
+
 ## [0.4.50] - 2026-09-17
 
 **Added:**
