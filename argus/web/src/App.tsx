@@ -3656,6 +3656,9 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
       {cfg.macros && cfg.macros.length > 0 && (
         <>
           <div className="hs-title">{cfg.class_label ? cfg.class_label + ' options' : 'Monitoring options'}</div>
+          {/* Intro line ABOVE the fields: rendered after the grid it strands below the tallest
+              column (the XCP-NG VM checklist) and reads as an unaligned orphan. */}
+          <div className="hs-note" style={{ margin: '0 0 10px' }}>These tune the class monitoring for this host. Leave a field blank to use the template default; changes take effect on the next discovery cycle.</div>
           <div className="hs-grid">
             {cfg.macros.map((m) => {
               // The XCP-NG ignored-VMs macro renders as a checklist of the discovered VMs (plus any
@@ -3701,7 +3704,6 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
               )
             })}
           </div>
-          <div className="hs-note">These tune the class monitoring for this host. Leave a field blank to use the template default; changes take effect on the next discovery cycle.</div>
         </>
       )}
 
