@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.4.53] - 2026-09-18
 
 **Added:**
 - **XCP-NG (XAPI) device class.** One Argus device monitors a whole XCP-NG pool: point it at the
