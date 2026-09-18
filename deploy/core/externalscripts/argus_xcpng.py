@@ -230,12 +230,22 @@ def main():
         mem_used = mem_total - mem_free if mem_total else 0
         rrds = rrds_by_host.get(ref, {})
         cpu = rrds.get("host:%s:cpu_avg" % h.get("uuid", ""))
+        # Host boot time lives in other_config.boot_time (epoch seconds - what Xen Orchestra uses);
+        # the control domain's VM_metrics.start_time is the fallback, but reads epoch-0 on some
+        # releases (XCP-NG 8.3), so it can't be the primary source.
         uptime = None
-        dom0 = dom0_by_host.get(ref)
-        if dom0:
-            started = xapi_time(vmetrics.get(dom0.get("metrics", ""), {}).get("start_time"))
-            if started:
-                uptime = max(0, int(time.time()) - started)
+        try:
+            bt = float((h.get("other_config") or {}).get("boot_time"))
+            if bt > 0:
+                uptime = max(0, int(time.time() - bt))
+        except (TypeError, ValueError):
+            pass
+        if uptime is None:
+            dom0 = dom0_by_host.get(ref)
+            if dom0:
+                started = xapi_time(vmetrics.get(dom0.get("metrics", ""), {}).get("start_time"))
+                if started:
+                    uptime = max(0, int(time.time()) - started)
         entry = {
             "uuid": h.get("uuid", ""),
             "name": h.get("name_label", ""),
