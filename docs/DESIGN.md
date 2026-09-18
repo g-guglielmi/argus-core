@@ -158,7 +158,7 @@ pre-§C fleet) falls back to a best-effort guess from its name, else a generic d
 
 | Class | Pattern | Detected by | Metrics beyond Ping | LLD |
 |---|---|---|---|---|
-| **Generic Linux SNMP** | SNMP | host-resources / UCD | CPU, RAM, disk, net, uptime | fs, NICs |
+| **Linux (SNMP)** | SNMP | host-resources / UCD | CPU, RAM, disk, net, uptime | fs, NICs |
 | **HPE Aruba CX** | SNMP | sysObjectID (Aruba/HPE) | CPU, mem, temp, PSU/fan, per-port, PoE | ifaces, sensors |
 | **Aruba InstantOn 1960** | SNMP | sysObjectID | CPU, mem, per-port traffic, PoE | ports |
 | **Sophos XGS** | SNMP | sysObjectID `.2604` | CPU, mem, disk, ifaces, HA, live users, VPN | ifaces |

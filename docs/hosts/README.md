@@ -11,7 +11,7 @@ the per-host tunables.
 
 | Class | Guide |
 |---|---|
-| Generic Linux (SNMP) | [linux.md](linux.md) |
+| Linux (SNMP) | [linux.md](linux.md) |
 | Windows (SNMP) - incl. opt-in service monitoring | [windows.md](windows.md) |
 | unRAID (SNMP) - disk + CPU temperatures | [unraid.md](unraid.md) |
 
