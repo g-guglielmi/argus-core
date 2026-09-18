@@ -73,126 +73,15 @@ Add one test host in Zabbix (e.g. the UniFi gateway IP) assigned to `proxy-site1
 with a single ICMP ping item. Confirm data arrives through the proxy. Then pull the
 core's network briefly and confirm the proxy buffers + flushes on reconnect.
 
-## Monitoring unRAID disk temperatures
+## Monitoring specific hosts (temperatures, agents, services)
 
-The **Argus unRAID by SNMP** template (auto-attached to a host detected as unRAID) adds per-disk
-temperatures and per-share free space on top of the base Linux-SNMP metrics (CPU, RAM, uptime,
-filesystems, NICs). Those extras are read from **NET-SNMP `extend` scripts**, so two things are
-required on the unRAID host - without them the disk-temperature group shows as a gap:
+Per-host setup guides moved to [`../docs/hosts/`](../docs/hosts/README.md):
 
-1. **Install the Community Applications "SNMP" plugin** (Apps → search *SNMP*). It provides the
-   `snmpd` service and the Settings → SNMP config box.
-2. **Install the temperature extend script** ([`docs/unraid-pool-temps.sh`](../docs/unraid-pool-temps.sh)):
-   - Copy it to `/boot/config/plugins/snmp/pool_temps.sh` on the unRAID host.
-   - In **Settings → SNMP**, add these lines to the snmpd.conf box, **remove** the plugin's own
-     `extend disktemp …` line, then Apply:
-     ```
-     extend arraytemps /bin/bash /boot/config/plugins/snmp/pool_temps.sh array
-     extend pooltemps /bin/bash /boot/config/plugins/snmp/pool_temps.sh
-     ```
-     (invoked through `bash` because `/boot` is mounted `noexec` on current unRAID.)
-
-The script reads temperatures from unRAID's own emhttp state file, so it is **atomic, instant, and
-never wakes a disk** - the numbers match the unRAID dashboard and refresh at unRAID's SMART polling
-cadence (Settings → Disk Settings → *Tunable (poll_attributes)*, default 1800 s). It ships two
-extends: **`arraytemps`** (parity + data disks) and **`pooltemps`** (cache + custom pools, incl.
-NVMe). The template prefers these per drive and falls back to the plugin's own `disktemp` extend on
-hosts that don't have them; hosts without the plugin at all are simply unaffected.
-
-A **spun-down (parked) drive reads a fixed `20 °C`** standby sentinel, so it shows as a distinct low
-flat line on the chart (and any heat warning clears) instead of dropping off - only genuine standby
-disks get this, never the USB boot flash or an always-on SSD/NVMe cache.
-
-## Monitoring unRAID CPU temperature
-
-CPU temperature comes from **lm-sensors**, not SNMP, so it needs one more plugin and one more
-extend script (same pattern as the disk temps above):
-
-1. **Install the "Dynamix System Temperature" plugin** (Apps → search *System Temperature*), and
-   let it detect sensors. This loads the kernel sensor modules (`coretemp` for Intel, `k10temp`
-   for AMD, …) - it's what makes CPU temperature readable at all, and it's the same source as the
-   temperature shown on the unRAID dashboard footer.
-2. **Install the CPU-temp extend script** ([`docs/unraid-cpu-temp.sh`](../docs/unraid-cpu-temp.sh)):
-   - Copy it to `/boot/config/plugins/snmp/cpu_temp.sh` on the unRAID host.
-   - In **Settings → SNMP**, add this line to the snmpd.conf box, then Apply:
-     ```
-     extend cputemp /bin/bash /boot/config/plugins/snmp/cpu_temp.sh
-     ```
-
-The script reads `sensors` and reports the CPU **package** temperature (Intel `Package id 0` /
-AMD `Tdie`/`Tctl`, or the hottest core as a fallback) - it needs no per-CPU configuration. It shows
-up as a standalone **CPU temperature** sensor under the Temperature category, with a *running hot*
-(≥ `{$CPU.TEMP.WARN}`, default 80 °C) and *overheating* (≥ `{$CPU.TEMP.HIGH}`, default 90 °C) alert.
-
-> If the CPU sensor doesn't appear, run `sensors -u` on the host and check the label names - an
-> unusual chip may use labels the script doesn't recognise, which are a one-line tweak.
-
-## Monitoring a Ugreen NAS (Zabbix agent)
-
-Ugreen's **UGOS** exposes **no SNMP**, so the Ugreen device class doesn't use the SNMP path - it
-uses **Zabbix agent 2, run in a Docker container on the NAS itself** (UGOS ships Docker as an app).
-The site proxy then **polls the agent passively** on `:10050`, exactly like it polls an SNMP device
-on `:161` - the agent never has to reach out, and nothing extra is baked into the probe image.
-
-1. In Argus, **Add device → Ugreen (Zabbix agent)** with the NAS's IP. This creates the host with
-   an agent interface on `:10050` and attaches the *Argus NAS by Zabbix agent* template. Note the
-   **host name** you give it.
-2. On the NAS, run the block below. The `cat` writes a small config with two custom readings - CPU
-   temperature, and per-disk SMART temperature read **without waking the disk** (`smartctl -n
-   standby`); the rest starts the agent:
-   ```bash
-   mkdir -p /volume1/docker/argus-agent
-   cat > /volume1/docker/argus-agent/nas-agent.conf <<'EOF'
-   UserParameter=ugreen.cpu.temp,for h in /sys/class/hwmon/hwmon*; do case "$(cat "$h/name" 2>/dev/null)" in coretemp|k10temp) cat "$h/temp1_input"; exit 0;; esac; done; cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -rn | head -1
-   UserParameter=ugreen.disk.temp[*],case "$1" in *nvme*) n= ;; *) n="-n standby" ;; esac; o=$(smartctl $n -a -jc "$1" 2>/dev/null); t=$(printf '%s' "$o" | grep -oE '"current": *[0-9]+' | head -1 | grep -oE '[0-9]+'); if [ -n "$t" ]; then echo "$t"; elif [ -n "$n" ] && printf '%s' "$o" | grep -qiE 'standby|sleep'; then echo 20; fi
-   EOF
-   docker run -d --name argus-agent --restart unless-stopped \
-     --network host --pid host --privileged --user root \
-     -e ZBX_SERVER_HOST="<SITE-PROXY-IP>" \
-     -e ZBX_HOSTNAME="<the name you gave the device in Argus>" \
-     -v /volume1:/volume1:ro -v /proc:/proc:ro -v /sys:/sys:ro \
-     -v /volume1/docker/argus-agent/nas-agent.conf:/etc/zabbix/zabbix_agent2.d/plugins.d/nas-agent.conf:ro \
-     zabbix/zabbix-agent2:alpine-7.0-latest
-   ```
-   > **Why `plugins.d/`?** The `zabbix/zabbix-agent2` image's config only `Include`s
-   > `/etc/zabbix/zabbix_agent2.d/plugins.d/*.conf` (and `/etc/zabbix/zabbix_agentd.d/*.conf`) - **not**
-   > `/etc/zabbix/zabbix_agent2.d/*.conf` itself. A UserParameter file dropped in the parent dir is
-   > silently ignored (`Unknown metric`), so mount it into `plugins.d/`.
-   What each part is for:
-   - **`--network host`** - so the proxy can reach the agent on `:10050` (and the agent sees the
-     real NICs). Required.
-   - **`ZBX_SERVER_HOST=<proxy IP>`** - becomes the agent's `Server=` **allow-list**: only that
-     proxy may poll it. This *is* the access control (see the PSK note below).
-   - **`--pid host` + the `/proc`, `/sys` mounts** - so CPU / memory readings are the host's, not the
-     container's, and the CPU-temp UserParameter can read the coretemp/k10temp sensor from `/sys`.
-   - **`-v /volume1:/volume1:ro`** - each data volume you want disk-usage for, mounted at its real
-     path (add `/volume2`, ... if you have more). The class filters filesystem discovery down to the
-     `volumeN` mounts, so the container's own filesystems don't clutter the Disk section.
-   - **`--privileged --user root`** - so `smartctl` can read the raw disks for **per-disk SMART
-     temperatures** (it needs root + raw access). `smartmontools` is already in the stock agent2 image.
-   - **the `nas-agent.conf` mount** - the two UserParameters: `ugreen.cpu.temp` (CPU package temp from
-     coretemp/k10temp, else the hottest thermal zone) and `ugreen.disk.temp` (per-disk SMART temp).
-     Skip the `cat`/`-v` lines if you don't want the temperatures; everything else still works.
-
-CPU utilization, memory, filesystems, NICs and uptime use the **same item keys** as the SNMP
-classes, so they render identically. Memory used-% is computed from **MemAvailable**, so page cache
-counts as free (matching what UGOS shows), not as used. Disk temperatures group into the same **Disk
-temperatures** overlay chart as unRAID (*running warm* ≥ `{$DISK.TEMP.WARN}` 50 °C, *overheating* ≥
-`{$DISK.TEMP.HIGH}` 60 °C), and CPU temperature is a standalone Temperature sensor (*running hot* ≥
-`{$CPU.TEMP.WARN}` 75 °C, *overheating* ≥ `{$CPU.TEMP.HIGH}` 85 °C).
-
-> **Spun-down disks.** For a spinning disk `ugreen.disk.temp` uses `smartctl -n standby`, so a parked
-> one is **not woken** - it reports a fixed **20 °C standby sentinel** (like the unRAID class), a
-> distinct low flat line = *parked* rather than a stale warm value, and any heat alert clears; an awake
-> disk reports its real temperature. An **NVMe never spins down**, so it's always read normally (no
-> sentinel). The item polls slowly (every 10 min) to avoid keeping an idle disk awake; if your drives
-> still aren't spinning down, raise that item's interval past your NAS's disk-standby timeout (SMART
-> reads on some drives reset the idle timer).
-
-> **Encryption (PSK).** The link is unencrypted by default; the `Server=` allow-list only checks the
-> source IP. On a trusted site LAN that's usually fine. To encrypt + mutually authenticate, add a
-> **PSK** on the agent (`TLSConnect`/`TLSAccept=psk`, `TLSPSKIdentity`, `TLSPSKFile`) and set the
-> matching TLS fields on the Zabbix host - no template change needed.
+- **unRAID** disk + CPU temperatures (SNMP + System Temperature plugins, extend scripts):
+  [`docs/hosts/unraid.md`](../docs/hosts/unraid.md)
+- **Ugreen NAS** (Zabbix agent 2 container on UGOS, no-wake SMART temps):
+  [`docs/hosts/ugreen.md`](../docs/hosts/ugreen.md)
+- **Windows** SNMP + opt-in service monitoring: [`docs/hosts/windows.md`](../docs/hosts/windows.md)
 
 ## Official docs vs. this script
 

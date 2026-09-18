@@ -164,7 +164,7 @@ pre-§C fleet) falls back to a best-effort guess from its name, else a generic d
 | **Citrix NetScaler** | SNMP (+Nitro opt.) | sysObjectID `.5951` | CPU, mem, throughput, vserver state/health, SSL, HA | vservers |
 | **QNAP** | SNMP | sysObjectID `.24681` | CPU, mem, volume/disk, temp, fan, RAID, SMART | disks, volumes |
 | **Ugreen UGOS** ✓ | Agent † | agent2 in Docker on the NAS | CPU, RAM, disk, net, uptime + CPU temp + no-wake per-disk SMART temps (20 °C parked sentinel) - **v0.4.50** | fs, NICs, disks |
-| **unRAID** | SNMP | sysDescr `Unraid` | CPU load, RAM %, uptime, per-share free, NIC; disk + CPU temp via optional NET-SNMP extends (docs/unraid-pool-temps.sh, docs/unraid-cpu-temp.sh) | shares, disks, NICs |
+| **unRAID** | SNMP | sysDescr `Unraid` | CPU load, RAM %, uptime, per-share free, NIC; disk + CPU temp via optional NET-SNMP extends (setup: [docs/hosts/unraid.md](hosts/unraid.md)) | shares, disks, NICs |
 | **Libraesva ESG** | SNMP (+HTTPS) | sysObjectID/sysDescr | host CPU/RAM/disk + mail-queue + admin-cert | fs |
 | **Windows server** | SNMP | sysObjectID (Windows) | CPU, RAM, disk, net, uptime + **selected services** (LANMGR `svSvcTable`; opt-in via `{$WIN.SERVICE.MATCHES}`, set at add time or in host settings) | disks, NICs, services |
 | **Generic Linux SSH** | Agentless | SSH reachable (no-SNMP fallback) | CPU, RAM, disk, net via `ssh.run` | fs, NICs |

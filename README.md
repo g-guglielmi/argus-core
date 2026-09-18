@@ -78,6 +78,7 @@ from a homelab to a multi-site enterprise - can layer Argus on top.
 | [`argus/`](argus/README.md) | The app - Go backend + React frontend, packaged as a Docker image to GHCR |
 | [`deploy/`](deploy/README.md) | Deploy kit - the self-installing **core appliance VM** (`core-vm/`), Zabbix core install scripts, PKI, unRAID templates, checklist |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Full design document (architecture, device classes, thresholds, roadmap) |
+| [`docs/hosts/`](docs/hosts/README.md) | Per-host monitoring guides - Windows services, unRAID + Ugreen temperatures, and other host-side setup |
 | [`ROADMAP.md`](ROADMAP.md) | Tracking checklist of what's built and what's left |
 | [`.github/workflows/`](.github/workflows/build.yml) | CI - builds the Argus image, pushes to `ghcr.io/<owner>/argus`, auto-publishes GitHub Releases on tags |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release-by-release history |
@@ -210,9 +211,8 @@ It buffers up to 7 days of data if the core is unreachable.
 >
 > unRAID template: [`deploy/unraid/argus.xml`](deploy/unraid/argus.xml)
 >
-> Monitoring unRAID **disk temperatures** (SNMP plugin + extend script): [`deploy/README.md`](deploy/README.md#monitoring-unraid-disk-temperatures)
->
-> Monitoring unRAID **CPU temperature** (lm-sensors extend): [`deploy/README.md`](deploy/README.md#monitoring-unraid-cpu-temperature)
+> Per-host monitoring guides (unRAID + Ugreen **temperatures**, Windows **service** monitoring, and
+> other host-side setup): [`docs/hosts/`](docs/hosts/README.md)
 
 #### 2a. Create a Zabbix API token
 
