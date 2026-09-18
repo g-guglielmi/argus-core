@@ -14,14 +14,18 @@
 # - the code below runs unchanged on both.
 #
 # Reads the CPU package temperature from the kernel hwmon tree (coretemp for Intel, k10temp /
-# zenpower for AMD - the modules XCP-NG loads by default). Prefers the package/Tdie/Tctl label,
-# falls back to the hottest core. Prints degrees Celsius as a plain number.
+# zenpower for AMD). Prefers the package/Tdie/Tctl label, falls back to the hottest core. When no
+# CPU chip is exposed at all - Xen dom0 blocks the MSR probing Intel's coretemp needs, so on Intel
+# hosts "modprobe coretemp" typically fails with "No such device" - it falls back to the ACPI
+# thermal zone (acpitz), which on most boards tracks the CPU package closely. Prints degrees
+# Celsius as a plain number.
 import os
 
 import XenAPIPlugin
 
 HWMON = "/sys/class/hwmon"
 CHIPS = ("coretemp", "k10temp", "zenpower")
+FALLBACK_CHIPS = ("acpitz",)
 PREFERRED = ("package id 0", "tdie", "tctl")
 
 
@@ -33,13 +37,13 @@ def read(path):
         return ""
 
 
-def get(session, args):
-    best = None       # hottest core fallback
+def scan(chips):
+    best = None       # hottest reading fallback
     preferred = None  # package/Tdie/Tctl reading
     if os.path.isdir(HWMON):
         for dev in sorted(os.listdir(HWMON)):
             base = os.path.join(HWMON, dev)
-            if read(os.path.join(base, "name")) not in CHIPS:
+            if read(os.path.join(base, "name")) not in chips:
                 continue
             for fn in sorted(os.listdir(base)):
                 if not (fn.startswith("temp") and fn.endswith("_input")):
@@ -56,7 +60,13 @@ def get(session, args):
                     preferred = temp
                 if best is None or temp > best:
                     best = temp
-    temp = preferred if preferred is not None else best
+    return preferred if preferred is not None else best
+
+
+def get(session, args):
+    temp = scan(CHIPS)
+    if temp is None:
+        temp = scan(FALLBACK_CHIPS)
     if temp is None:
         raise Exception("no CPU temperature sensor found under %s" % HWMON)
     return "%.1f" % temp

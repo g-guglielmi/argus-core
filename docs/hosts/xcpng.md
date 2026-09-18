@@ -63,8 +63,12 @@ ssh root@<hypervisor> chmod +x /etc/xapi.d/plugins/argus-temp
 The file name **must** be `argus-temp` (the collector calls the plugin by that name). On XCP-NG
 8.2, change the first line of the file to `#!/usr/bin/python2` (8.3 keeps the `python3` shebang).
 The plugin reads the CPU package temperature from the kernel hwmon tree (`coretemp` for Intel,
-`k10temp`/`zenpower` for AMD - loaded by default) and prefers the package reading over the hottest
-core. Test it from dom0:
+`k10temp`/`zenpower` for AMD) and prefers the package reading over the hottest core. **On Intel
+hosts, Xen usually blocks the MSR access `coretemp` needs** (`modprobe coretemp` fails with *No
+such device* in dom0) - the plugin then falls back to the **ACPI thermal zone** (`acpitz`), which
+on most boards tracks the CPU package closely. AMD's `k10temp` reads PCI config space and works
+under Xen normally (`modprobe k10temp`, persisted via `/etc/modules-load.d/`, if it isn't loaded
+already). Test it from dom0:
 
 ```
 xe host-call-plugin host-uuid=<uuid> plugin=argus-temp fn=get
@@ -83,4 +87,5 @@ and *overheating* (≥ `{$XCP.TEMP.HIGH}`, default 90 °C) alert.
   booted may need a couple of minutes to serve it.
 - **No temperature sensor** - the `argus-temp` plugin is not installed on that hypervisor (see
   above), or its hwmon chip is not one the plugin recognises - run `head /sys/class/hwmon/hwmon*/name`
-  on dom0 and check for `coretemp`/`k10temp`.
+  on dom0 and check for `coretemp`/`k10temp`/`acpitz`; anything else is a one-line addition to the
+  plugin's chip list.
