@@ -3663,11 +3663,14 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
             {cfg.macros.map((m) => {
               // The XCP-NG ignored-VMs macro renders as a checklist of the discovered VMs (plus any
               // name already ignored, so it can be re-enabled even after its sensors aged out).
-              // Checked = monitored; unchecked names are stored comma-separated in the macro.
+              // Checked = monitored; unchecked names are stored comma-separated in the macro. With
+              // nothing to pick from (VM monitoring off, or nothing discovered yet) the field is
+              // hidden entirely - a raw names input would be noise.
               if (m.macro === '{$XCP.VM.IGNORE}') {
                 const ignored = m.value.split(',').map((s) => s.trim()).filter(Boolean)
                 const vmNames = Array.from(new Set([...(cfg.vm_names || []), ...ignored])).sort()
-                if (vmNames.length > 0) return (
+                if (vmNames.length === 0) return null
+                return (
                   <div className="field" key={m.macro}>
                     <span>{m.label}</span>
                     <div className="vm-list">
