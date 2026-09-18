@@ -27,6 +27,17 @@ GitHub Release from the matching section below.
 - **Choice macros render as dropdowns.** A class macro with a fixed value set (like the XCP-NG
   VM-monitoring mode) now shows as a select in the Add-device wizard and host settings, with a
   "default" entry that keeps the template default.
+- **XCP-NG: ignore individual VMs.** Host settings lists the discovered VMs as a **Monitored VMs**
+  checklist - unticked VMs drop out of the per-VM sensors and the running/defined counts (the
+  `{$XCP.VM.IGNORE}` macro under the hood); their sensors are disabled immediately and age out
+  after 7 days, and an ignored VM stays listed so it can be re-enabled later.
+
+**Changed:**
+- **Servers read CPU, temperature, memory.** The Temperature section moved up to sit right after
+  CPU on server-shaped hosts (it is the CPU temperature there); network gear and storage boxes
+  keep their own orders.
+- **An XCP-NG host's Virtual machines section leads with the running/defined count**, and a
+  single-member pool hides its meaningless "Pool members 1/1" rows.
 
 ---
 

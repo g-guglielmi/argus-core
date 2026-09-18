@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -65,6 +66,7 @@ type hostConfigView struct {
 	ClassID      string           `json:"class_id,omitempty"`    // device class, when known
 	ClassLabel   string           `json:"class_label,omitempty"` // human label for the class macro section
 	Macros       []macroFieldView `json:"macros,omitempty"`      // class-declared per-host macros + current values
+	VMNames      []string         `json:"vm_names,omitempty"`    // xcpng: discovered VM names, for the ignored-VMs checklist
 }
 
 // snmpToView converts client SNMP details to the browser shape, masking v3 passphrases.
@@ -134,6 +136,21 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				out.Macros = append(out.Macros, f)
+			}
+			// The XCP-NG ignored-VMs checklist needs names to pick from: the VMs currently
+			// discovered as state sensors (present once {$XCP.VM.MODE} is state/full). Names
+			// already ignored are merged back in by the frontend from the macro value itself.
+			if class.ID == "xcpng" {
+				if items, err := s.zbx.Items(ctx, hd.HostID); err == nil {
+					for _, it := range items {
+						if b, _ := splitKey(it.Key); b == "xcp.vm.state" {
+							if n := xcpVMInstance(it.Name, " state", ""); n != "" {
+								out.VMNames = append(out.VMNames, n)
+							}
+						}
+					}
+					sort.Strings(out.VMNames)
+				}
 			}
 		}
 	}

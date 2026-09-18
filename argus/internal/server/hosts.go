@@ -409,10 +409,16 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 	// when a drive id also reports via unraid.arraytemp (or pooltemp), the curated view drops the
 	// unraid.disktemp row for it. Stock hosts without the extends keep the plugin chain.
 	tempOverride := map[string]bool{}
+	// A single-member XCP-NG pool's "Pool members 1/1" group is noise (user call) - hide the pair
+	// while the pool really has one host; a bigger pool shows both, including live < total.
+	poolSingle := false
 	if !all {
 		for _, it := range items {
 			if b, p := splitKey(it.Key); (b == "unraid.arraytemp" || b == "unraid.pooltemp") && it.LastValue != "" {
 				tempOverride[param(p, 0)] = true
+			}
+			if it.Key == "xcp.hosts.total" && it.LastValue == "1" {
+				poolSingle = true
 			}
 		}
 	}
@@ -456,6 +462,9 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			}
 			if b, p := splitKey(it.Key); b == "unraid.disktemp" && tempOverride[param(p, 0)] {
 				continue // this drive reports via the atomic arraytemps extend
+			}
+			if poolSingle && (it.Key == "xcp.hosts.total" || it.Key == "xcp.hosts.live") {
+				continue // single-member pool: the 1/1 group says nothing
 			}
 			iv.Category, iv.Label = cat, label
 			iv.Instance, iv.Channel = inst, ch

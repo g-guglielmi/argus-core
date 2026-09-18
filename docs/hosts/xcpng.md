@@ -13,8 +13,7 @@ into the pool master over XML-RPC/HTTPS once per poll and reads everything in on
   whole pool - each member appears as its own set of sensors, named after the hypervisor.
 - **Credentials**: the XAPI login. On a stock XCP-NG that is **`root`** and the host root password
   (local XAPI accounts are root-only; only pools with external/AD authentication have other users).
-  The password is stored as a Zabbix **secret macro** (write-only after saving). Avoid commas in
-  the password - external-check parameters are comma-separated.
+  The password is stored as a Zabbix **secret macro** (write-only after saving).
 - **VM monitoring**: a dropdown, off by default (see below).
 
 > Multi-host pools are fully coded (the collector enumerates every member and reads each host's
@@ -22,8 +21,9 @@ into the pool master over XML-RPC/HTTPS once per poll and reads everything in on
 
 ## What it monitors
 
-**Pool**: name, HA enabled (hidden while off), members live vs total (with an alert when a member
-drops), VMs running vs defined - the VM counters work even with VM monitoring off.
+**Pool**: name, HA enabled (hidden while off), members live vs total (hidden on single-host pools,
+with an alert when a member drops), VMs running vs defined - the VM counters work even with VM
+monitoring off and lead the Virtual machines section.
 
 **Per hypervisor**: CPU utilization (from the host's RRD feed - XAPI itself stopped exposing live
 CPU long ago), used/total memory and %, uptime, XCP-NG version, liveness. Alerts: member down,
@@ -44,8 +44,14 @@ selects `{$XCP.VM.MODE}`:
 Templates, snapshots and control domains are always excluded. Memory-used inside the guest needs
 the XCP-NG **guest tools** in the VM; without them only the assigned total is reported. The *not
 running* alert can be closed manually for an intentionally stopped VM - it re-fires only after the
-VM runs and stops again. Switching the mode back down makes the per-VM sensors age out after 7
-days (nothing is deleted immediately).
+VM runs and stops again.
+
+**Ignoring VMs**: host settings shows the discovered VMs as a checklist under **Monitored VMs** -
+untick the ones that should not be monitored (parked templates, scratch VMs) and they disappear
+from the per-VM sensors **and** the running/defined counts on the next poll. An ignored VM stays
+in the list (struck through) so it can be re-enabled later. Under the hood this is the
+`{$XCP.VM.IGNORE}` macro (comma-separated names). Sensors of a VM that leaves the list - ignored,
+deleted, or the mode turned down - are disabled immediately and deleted after 7 days.
 
 ## CPU temperature (optional)
 

@@ -23,7 +23,7 @@ zabbix_export:
         - uuid: 9e881b6494aa419fb40f6cc127cf11e2
           name: 'XCP-NG raw data'
           type: EXTERNAL
-          key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+          key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
           delay: 1m
           history: '0'
           trends: '0'
@@ -40,7 +40,7 @@ zabbix_export:
           value_type: UNSIGNED
           description: '1 = XAPI answered, 0 = the pool master is down or unreachable. Not a curated sensor - it drives the down trigger.'
           master_item:
-            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -61,7 +61,7 @@ zabbix_export:
           value_type: UNSIGNED
           description: '1 = the XAPI login succeeded, 0 = XAPI answered but rejected the credentials. Not a curated sensor - it drives the credentials trigger.'
           master_item:
-            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -82,7 +82,7 @@ zabbix_export:
           value_type: CHAR
           description: 'The XCP-NG pool''s name label (empty on a host that was never named into a pool).'
           master_item:
-            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -100,7 +100,7 @@ zabbix_export:
           value_type: UNSIGNED
           description: '1 = XAPI high availability is enabled on the pool. Hidden while 0 (single-host pools never enable HA).'
           master_item:
-            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -115,7 +115,7 @@ zabbix_export:
           value_type: UNSIGNED
           description: 'Hypervisors in the pool.'
           master_item:
-            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -130,7 +130,7 @@ zabbix_export:
           value_type: UNSIGNED
           description: 'Hypervisors currently live (heartbeating) in the pool.'
           master_item:
-            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -149,9 +149,9 @@ zabbix_export:
           history: 7d
           trends: 365d
           value_type: UNSIGNED
-          description: 'Virtual machines defined in the pool (templates, snapshots and control domains excluded).'
+          description: 'Virtual machines defined in the pool (templates, snapshots, control domains and the {$XCP.VM.IGNORE} list excluded).'
           master_item:
-            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -166,7 +166,7 @@ zabbix_export:
           value_type: UNSIGNED
           description: 'Virtual machines currently running in the pool.'
           master_item:
-            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -181,7 +181,7 @@ zabbix_export:
           enabled_lifetime_type: DISABLE_NEVER
           description: 'Hypervisors in the pool, from the collector''s blob. A single-host pool discovers exactly one. A host really removed from the pool ages out after 14 days.'
           master_item:
-            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -205,7 +205,7 @@ zabbix_export:
               units: '%'
               description: 'Whole-host CPU utilization from the hypervisor''s RRD feed (cpu_avg across all cores, dom0 included).'
               master_item:
-                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -237,7 +237,7 @@ zabbix_export:
               units: B
               description: 'Host memory in use (total minus free, as XAPI reports it - includes dom0 and the Xen heap).'
               master_item:
-                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -260,7 +260,7 @@ zabbix_export:
               units: '%'
               description: 'Host memory in use as a percentage of installed memory.'
               master_item:
-                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -292,7 +292,7 @@ zabbix_export:
               units: B
               description: 'Installed host memory.'
               master_item:
-                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -315,7 +315,7 @@ zabbix_export:
               units: uptime
               description: 'Host uptime (from the control domain''s start time - dom0 boots with the host).'
               master_item:
-                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -341,7 +341,7 @@ zabbix_export:
               units: '°C'
               description: 'CPU package temperature via the optional argus-temp dom0 plugin (docs/hosts/xcpng.md). Hosts without the plugin never deliver a value and the sensor stays hidden.'
               master_item:
-                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -377,7 +377,7 @@ zabbix_export:
               value_type: CHAR
               description: 'XCP-NG product version on this hypervisor.'
               master_item:
-                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -402,7 +402,7 @@ zabbix_export:
               value_type: UNSIGNED
               description: '1 = this pool member is live (heartbeating). Not a curated sensor - it drives the member-down trigger.'
               master_item:
-                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -426,10 +426,10 @@ zabbix_export:
           key: xcp.vm.discovery
           delay: '0'
           lifetime: 7d
-          enabled_lifetime_type: DISABLE_NEVER
-          description: 'VMs in the pool (templates, snapshots and control domains excluded). Empty while {$XCP.VM.MODE} is off - existing VM sensors then age out after 7 days.'
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          description: 'VMs in the pool (templates, snapshots, control domains and the {$XCP.VM.IGNORE} list excluded). A VM that leaves the list - ignored, deleted, or {$XCP.VM.MODE} turned off - has its sensors disabled immediately and deleted after 7 days.'
           master_item:
-            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -452,7 +452,7 @@ zabbix_export:
               value_type: CHAR
               description: 'Power state as XAPI reports it: Running, Halted, Paused or Suspended.'
               master_item:
-                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -480,10 +480,10 @@ zabbix_export:
           key: xcp.vmperf.discovery
           delay: '0'
           lifetime: 7d
-          enabled_lifetime_type: DISABLE_NEVER
-          description: 'Per-VM performance sensors - only populated while {$XCP.VM.MODE} is "full", and only for running VMs (a stopped VM''s rates would be meaningless).'
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          description: 'Per-VM performance sensors - only populated while {$XCP.VM.MODE} is "full", and only for running VMs (a stopped VM''s rates would be meaningless). Lost entries are disabled immediately and deleted after 7 days.'
           master_item:
-            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -507,7 +507,7 @@ zabbix_export:
               units: '%'
               description: 'Mean utilization across the VM''s vCPUs, from the hypervisor''s RRD feed.'
               master_item:
-                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -533,7 +533,7 @@ zabbix_export:
               units: B
               description: 'Memory in use inside the guest (needs the guest tools; without them only total memory is reported).'
               master_item:
-                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -559,7 +559,7 @@ zabbix_export:
               units: B
               description: 'Memory assigned to the VM by the hypervisor.'
               master_item:
-                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -585,7 +585,7 @@ zabbix_export:
               units: B/s
               description: 'Read rate summed over the VM''s virtual disks.'
               master_item:
-                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -611,7 +611,7 @@ zabbix_export:
               units: B/s
               description: 'Write rate summed over the VM''s virtual disks.'
               master_item:
-                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -637,7 +637,7 @@ zabbix_export:
               units: bps
               description: 'Receive rate summed over the VM''s virtual NICs.'
               master_item:
-                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -666,7 +666,7 @@ zabbix_export:
               units: bps
               description: 'Transmit rate summed over the VM''s virtual NICs.'
               master_item:
-                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -694,6 +694,9 @@ zabbix_export:
         - macro: '{$XCP.VM.MODE}'
           value: 'off'
           description: 'Per-VM monitoring: off (pool/hypervisor sensors only), state (adds each VM''s power state), or full (adds per-VM CPU, memory, disk I/O and network I/O).'
+        - macro: '{$XCP.VM.IGNORE}'
+          value: ''
+          description: 'Comma-separated VM names to leave out of monitoring entirely (parked templates, scratch VMs) - they disappear from the per-VM sensors and the running/defined counts. Argus host settings edits this as a checklist.'
         - macro: '{$XCP.CPU.UTIL.WARN}'
           value: '90'
           description: 'Hypervisor CPU utilization (%) above which the high-CPU warning fires (5-minute average).'
