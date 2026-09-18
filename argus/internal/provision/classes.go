@@ -118,6 +118,14 @@ var registry = []Class{
 		Templates:  []string{"Argus Windows by SNMP"},
 		OffersHTTP: true,
 		Icon:       "server",
+		Macros: []MacroSpec{{
+			// Opt-in Windows service monitoring: a regex of service display names (LAN Manager
+			// svSvcTable). Empty = monitor no services. Only running services appear in the table,
+			// so the "Service not running" trigger fires when a matched one stops or drops out.
+			Macro: "{$WIN.SERVICE.MATCHES}",
+			Label: "Monitored services (regex)",
+			Hint:  "DNS Server|Print Spooler|SQL Server .*",
+		}},
 	},
 	{
 		// unRAID = the Linux SNMP template plus the extend scripts from the Community Applications

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"argus/internal/provision"
 	"argus/internal/store"
 	"argus/internal/zabbix"
 )
@@ -40,15 +41,29 @@ type ifaceView struct {
 	Inherit     bool      `json:"inherit"` // SNMP interface: creds managed by the proxy default
 }
 
+// macroFieldView is one class-declared per-host macro shown in the settings editor: its spec plus the
+// host's current value. A secret macro's value is masked (blank) and only Set signals it's configured.
+type macroFieldView struct {
+	Macro  string `json:"macro"`
+	Label  string `json:"label"`
+	Hint   string `json:"hint,omitempty"`
+	Secret bool   `json:"secret,omitempty"`
+	Value  string `json:"value"`         // current host value ("" if unset, or masked for a secret)
+	Set    bool   `json:"set,omitempty"` // a value is configured on the host (for secrets, where Value is masked)
+}
+
 type hostConfigView struct {
-	HostID       string      `json:"hostid"`
-	Host         string      `json:"host"`         // technical name
-	Name         string      `json:"name"`         // visible name
-	MonitoredBy  int         `json:"monitored_by"` // 0 server, 1 proxy, 2 proxy group
-	ProxyID      string      `json:"proxy_id,omitempty"`
-	ProxyName    string      `json:"proxy_name,omitempty"`
-	ProxyDefault *snmpView   `json:"proxy_default,omitempty"` // the host's proxy SNMP default (masked), if set
-	Interfaces   []ifaceView `json:"interfaces"`
+	HostID       string           `json:"hostid"`
+	Host         string           `json:"host"`         // technical name
+	Name         string           `json:"name"`         // visible name
+	MonitoredBy  int              `json:"monitored_by"` // 0 server, 1 proxy, 2 proxy group
+	ProxyID      string           `json:"proxy_id,omitempty"`
+	ProxyName    string           `json:"proxy_name,omitempty"`
+	ProxyDefault *snmpView        `json:"proxy_default,omitempty"` // the host's proxy SNMP default (masked), if set
+	Interfaces   []ifaceView      `json:"interfaces"`
+	ClassID      string           `json:"class_id,omitempty"`     // device class, when known
+	ClassLabel   string           `json:"class_label,omitempty"`  // human label for the class macro section
+	Macros       []macroFieldView `json:"macros,omitempty"`       // class-declared per-host macros + current values
 }
 
 // snmpToView converts client SNMP details to the browser shape, masking v3 passphrases.
@@ -96,6 +111,31 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 	for _, i := range hd.Interfaces {
 		out.Interfaces = append(out.Interfaces, ifaceView{InterfaceID: i.InterfaceID, Type: i.Type, UseIP: i.UseIP, IP: i.IP, DNS: i.DNS, Port: i.Port, SNMP: snmpToView(i.SNMP), Inherit: i.Type == 2 && inherit[i.InterfaceID]})
 	}
+
+	// Class-declared per-host macros (e.g. Windows service matching): show each spec with the host's
+	// current value so the editor can tune them after creation.
+	if classID, ok, _ := s.st.GetDeviceClass(ctx, hd.HostID); ok {
+		if class, ok := provision.ClassByID(classID); ok && len(class.Macros) > 0 {
+			out.ClassID = class.ID
+			out.ClassLabel = class.Label
+			cur := map[string]zabbix.HostMacro{}
+			if hm, err := s.zbx.HostMacros(ctx, hd.HostID); err == nil {
+				for _, m := range hm {
+					cur[m.Macro] = m
+				}
+			}
+			for _, ms := range class.Macros {
+				f := macroFieldView{Macro: ms.Macro, Label: ms.Label, Hint: ms.Hint, Secret: ms.Secret}
+				if m, has := cur[ms.Macro]; has {
+					f.Set = strings.TrimSpace(m.Value) != "" || ms.Secret
+					if !ms.Secret {
+						f.Value = m.Value
+					}
+				}
+				out.Macros = append(out.Macros, f)
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -106,11 +146,12 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var req struct {
-		Host        string      `json:"host"`
-		Name        string      `json:"name"`
-		MonitoredBy int         `json:"monitored_by"`
-		ProxyID     string      `json:"proxy_id"`
-		Interfaces  []ifaceView `json:"interfaces"`
+		Host        string            `json:"host"`
+		Name        string            `json:"name"`
+		MonitoredBy int               `json:"monitored_by"`
+		ProxyID     string            `json:"proxy_id"`
+		Interfaces  []ifaceView       `json:"interfaces"`
+		Macros      map[string]string `json:"macros"` // class macro name -> desired value (only declared macros are applied)
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -264,7 +305,74 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 			_ = s.st.DeleteSNMPInherit(ctx, i.InterfaceID)
 		}
 	}
+
+	// Class-declared per-host macros (only the ones the class defines are touched, so preset macros
+	// and template defaults are left alone).
+	if req.Macros != nil {
+		if err := s.applyClassMacros(ctx, cur.HostID, req.Macros); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// applyClassMacros surgically sets/clears the host macros a device class declares, from the desired
+// map (macro name -> value). Only class-declared macros are touched. A cleared text macro is deleted
+// (reverting to the template default); a secret macro left blank is kept unchanged (its value can't
+// be read back to compare). Macros the class doesn't declare, and preset macros, are never touched.
+func (s *Server) applyClassMacros(ctx context.Context, hostID string, desired map[string]string) error {
+	classID, ok, _ := s.st.GetDeviceClass(ctx, hostID)
+	if !ok {
+		return nil
+	}
+	class, ok := provision.ClassByID(classID)
+	if !ok || len(class.Macros) == 0 {
+		return nil
+	}
+	cur := map[string]zabbix.HostMacro{}
+	hm, err := s.zbx.HostMacros(ctx, hostID)
+	if err != nil {
+		return err
+	}
+	for _, m := range hm {
+		cur[m.Macro] = m
+	}
+	for _, ms := range class.Macros {
+		v, sent := desired[ms.Macro]
+		if !sent {
+			continue // the client didn't include this macro; leave it as-is
+		}
+		v = strings.TrimSpace(v)
+		existing, has := cur[ms.Macro]
+		mType := 0
+		if ms.Secret {
+			mType = 1
+		}
+		switch {
+		case ms.Secret && v == "":
+			// Blank secret = unchanged (we can't read the stored value to diff it).
+			continue
+		case v == "":
+			// Cleared text macro: drop it so the template default applies again.
+			if has {
+				if err := s.zbx.DeleteHostMacros(ctx, existing.MacroID); err != nil {
+					return err
+				}
+			}
+		case has:
+			if ms.Secret || existing.Value != v {
+				if err := s.zbx.UpdateHostMacro(ctx, existing.MacroID, v, mType); err != nil {
+					return err
+				}
+			}
+		default:
+			if err := s.zbx.CreateHostMacro(ctx, hostID, zabbix.Macro{Macro: ms.Macro, Value: v, Type: mType}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // handleSetHostProxy sets a host's collector (Server or a Proxy) - used both by the settings editor

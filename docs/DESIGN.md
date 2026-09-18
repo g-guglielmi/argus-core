@@ -166,7 +166,7 @@ pre-§C fleet) falls back to a best-effort guess from its name, else a generic d
 | **Ugreen UGOS** ✓ | Agent † | agent2 in Docker on the NAS | CPU, RAM, disk, net, uptime + CPU temp + no-wake per-disk SMART temps (20 °C parked sentinel) - **v0.4.50** | fs, NICs, disks |
 | **unRAID** | SNMP | sysDescr `Unraid` | CPU load, RAM %, uptime, per-share free, NIC; disk + CPU temp via optional NET-SNMP extends (docs/unraid-pool-temps.sh, docs/unraid-cpu-temp.sh) | shares, disks, NICs |
 | **Libraesva ESG** | SNMP (+HTTPS) | sysObjectID/sysDescr | host CPU/RAM/disk + mail-queue + admin-cert | fs |
-| **Windows server** | SNMP | sysObjectID (Windows) | CPU, RAM, disk, net, uptime + **selected services** (LANMGR `svSvcTable`) | disks, NICs, services |
+| **Windows server** | SNMP | sysObjectID (Windows) | CPU, RAM, disk, net, uptime + **selected services** (LANMGR `svSvcTable`; opt-in via `{$WIN.SERVICE.MATCHES}`, set at add time or in host settings) | disks, NICs, services |
 | **Generic Linux SSH** | Agentless | SSH reachable (no-SNMP fallback) | CPU, RAM, disk, net via `ssh.run` | fs, NICs |
 | **DNS server** (incl. **AdGuard**) | Collector (+HTTP-API) | :53 + admin | per-name resolve (success/time/IP) via `dns-resolver.py`; AdGuard stats via its API | names |
 | **UPS (NUT via PeaNUT)** | HTTP-API | PeaNUT :8080 → upsd | battery %, on-battery/low-battery, runtime, load, input V, power draw | - |
