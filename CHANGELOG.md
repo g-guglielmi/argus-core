@@ -27,6 +27,12 @@ GitHub Release from the matching section below.
 **Changed:**
 - **Memory sensors read used, available, total.** The Memory category now lists used first, then
   available, then total, instead of alphabetical order.
+- **Disk temperature thresholds split by disk type (HDD vs SSD).** SSDs tolerate more heat than
+  spinning disks, so the defaults are now **HDD 40 °C warn / 45 °C high** and **SSD/NVMe 65 °C warn /
+  75 °C high**. On the **Ugreen** class the trigger picks the threshold per disk from its SMART type
+  (`{#DISKTYPE}`, with `{$DISK.TEMP.WARN:ssd}` / `:nvme` contexts over the HDD default). On **unRAID**
+  the array (HDD) uses `{$DISK.TEMP.*}` and the pool/cache (SSD/NVMe) uses `{$POOL.TEMP.*}`, now set to
+  those values. All overridable per host.
 
 **Docs:**
 - **Per-host monitoring guides folder.** The unRAID and Ugreen setup guides moved out of the long

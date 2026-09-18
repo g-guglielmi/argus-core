@@ -48,9 +48,22 @@ on `:161` - the agent never has to reach out, and nothing extra is baked into th
 CPU utilization, memory, filesystems, NICs and uptime use the **same item keys** as the SNMP
 classes, so they render identically. Memory used-% is computed from **MemAvailable**, so page cache
 counts as free (matching what UGOS shows), not as used. Disk temperatures group into the same **Disk
-temperatures** overlay chart as unRAID (*running warm* ≥ `{$DISK.TEMP.WARN}` 50 °C, *overheating* ≥
-`{$DISK.TEMP.HIGH}` 60 °C), and CPU temperature is a standalone Temperature sensor (*running hot* ≥
-`{$CPU.TEMP.WARN}` 75 °C, *overheating* ≥ `{$CPU.TEMP.HIGH}` 85 °C).
+temperatures** overlay chart as unRAID, and CPU temperature is a standalone Temperature sensor
+(*running hot* ≥ `{$CPU.TEMP.WARN}` 75 °C, *overheating* ≥ `{$CPU.TEMP.HIGH}` 85 °C).
+
+**Disk temperature thresholds follow the disk type.** The SMART discovery reports each disk's type
+(`{#DISKTYPE}` = `hdd` / `ssd` / `nvme`), and the trigger picks the matching threshold, since SSDs
+tolerate more heat than spinning disks:
+
+| Disk type | Warning (`{$DISK.TEMP.WARN...}`) | High (`{$DISK.TEMP.HIGH...}`) |
+|---|---|---|
+| HDD (default) | 40 °C | 45 °C |
+| SSD (`:ssd`) | 65 °C | 75 °C |
+| NVMe (`:nvme`) | 65 °C | 75 °C |
+
+Override any of these per host in **host settings**, or globally on the template - e.g. set
+`{$DISK.TEMP.WARN:ssd}` to change the SSD warning level. A disk whose type is unknown falls back to
+the HDD default.
 
 > **Spun-down disks.** For a spinning disk `ugreen.disk.temp` uses `smartctl -n standby`, so a parked
 > one is **not woken** - it reports a fixed **20 °C standby sentinel** (like the unRAID class), a
