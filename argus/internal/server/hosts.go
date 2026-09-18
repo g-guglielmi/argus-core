@@ -466,6 +466,14 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			if poolSingle && (it.Key == "xcp.hosts.total" || it.Key == "xcp.hosts.live") {
 				continue // single-member pool: the 1/1 group says nothing
 			}
+			// A lost XCP-NG discovery entity (an ignored/deleted VM, a removed pool member) is
+			// disabled immediately and deleted after 7 days - hide it from the curated view for
+			// that window. A user-paused sensor has a suppression record and stays visible.
+			if iv.Paused && strings.HasPrefix(it.Key, "xcp.") {
+				if _, userPaused := pauseMap[it.ItemID]; !userPaused {
+					continue
+				}
+			}
 			iv.Category, iv.Label = cat, label
 			iv.Instance, iv.Channel = inst, ch
 		}

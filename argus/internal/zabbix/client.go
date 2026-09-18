@@ -677,6 +677,20 @@ func (c *Client) UnacknowledgeEvent(ctx context.Context, eventID string) error {
 	return c.call(ctx, "event.acknowledge", map[string]any{"eventids": eventID, "action": 16}, true, nil)
 }
 
+// CloseEvent manually closes a Zabbix problem event (the trigger must allow manual close). Used
+// when Argus knows a problem can never recover on its own - e.g. a VM added to the XCP-NG ignore
+// list leaves its "not running" trigger with a disabled item that will never deliver a recovery.
+func (c *Client) CloseEvent(ctx context.Context, eventID, message string) error {
+	action := 1 // close problem
+	params := map[string]any{"eventids": eventID}
+	if strings.TrimSpace(message) != "" {
+		action |= 4 // add message
+		params["message"] = message
+	}
+	params["action"] = action
+	return c.call(ctx, "event.acknowledge", params, true, nil)
+}
+
 // --- host-group management (config writes; require a super-admin token) ---
 
 // HostGroups lists every Zabbix host group with the number of hosts in each - the data behind the
