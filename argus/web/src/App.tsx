@@ -15,12 +15,12 @@ type User = { id: number; email: string; name: string; surname: string; role: st
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number }
 type Group = { id: string; name: string; hosts: number }
-type MacroSpec = { macro: string; label: string; hint?: string; required?: boolean; secret?: boolean; derive?: string }
+type MacroSpec = { macro: string; label: string; hint?: string; required?: boolean; secret?: boolean; derive?: string; options?: string[] }
 type ClassSetup = { title: string; intro?: string; steps?: string[]; command?: string; note?: string }
 type DeviceClass = { id: string; label: string; family: string; pattern: string; iface: string; offers_http: boolean; icon?: string; macros?: MacroSpec[]; setup?: ClassSetup }
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
-type MacroField = { macro: string; label: string; hint?: string; secret?: boolean; value: string; set?: boolean }
+type MacroField = { macro: string; label: string; hint?: string; secret?: boolean; options?: string[]; value: string; set?: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[] }
 type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
@@ -2686,6 +2686,7 @@ const devIcon: Record<string, JSX.Element> = {
   globe: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="8.4" /><path d="M3.6 12h16.8M12 3.6c2.5 2.4 2.5 14.4 0 16.8M12 3.6c-2.5 2.4-2.5 14.4 0 16.8" /></svg>,
   battery: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="8" width="15" height="8.5" rx="1.6" /><path d="M21 11.2v2.6" /><path d="M11 10.2l-2 3.2h2.6l-2 3.2" /></svg>,
   home: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M3.5 11.5 12 4l8.5 7.5" /><path d="M5.5 10v9.5h13V10" /><path d="M10 19.5v-5.5h4v5.5" /></svg>,
+  vm: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="4.5" width="18" height="15" rx="2" /><rect x="6" y="7.5" width="5.2" height="4" rx="0.8" /><rect x="12.8" y="7.5" width="5.2" height="4" rx="0.8" /><rect x="6" y="13.5" width="5.2" height="4" rx="0.8" /></svg>,
 }
 const hostGlyph = (name?: string): JSX.Element => devIcon[name || 'device'] || devIcon.device
 
@@ -3484,9 +3485,21 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
         {classMacros.length > 0 && (
           <div style={grid}>
             {classMacros.map((ms) => (
-              <Field key={ms.macro} label={ms.label + (ms.required ? '' : ' (optional)')} type={ms.secret ? 'password' : 'text'}
-                placeholder={ms.hint} value={macroVals[ms.macro] || ''}
-                onChange={(e) => { const val = e.target.value; setMacroTouched((t) => (t.has(ms.macro) ? t : new Set(t).add(ms.macro))); setMacroVals((v) => ({ ...v, [ms.macro]: val })) }} />
+              ms.options && ms.options.length > 0 ? (
+                // Fixed value set (e.g. XCP-NG's VM-monitoring mode): a select, where blank keeps
+                // the template default (the hint names it).
+                <Field key={ms.macro} label={ms.label + (ms.required ? '' : ' (optional)')}>
+                  <Select value={macroVals[ms.macro] || ''}
+                    onChange={(e) => { const val = e.target.value; setMacroTouched((t) => (t.has(ms.macro) ? t : new Set(t).add(ms.macro))); setMacroVals((v) => ({ ...v, [ms.macro]: val })) }}>
+                    <option value="">{ms.hint ? `default (${ms.hint})` : 'template default'}</option>
+                    {ms.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </Select>
+                </Field>
+              ) : (
+                <Field key={ms.macro} label={ms.label + (ms.required ? '' : ' (optional)')} type={ms.secret ? 'password' : 'text'}
+                  placeholder={ms.hint} value={macroVals[ms.macro] || ''}
+                  onChange={(e) => { const val = e.target.value; setMacroTouched((t) => (t.has(ms.macro) ? t : new Set(t).add(ms.macro))); setMacroVals((v) => ({ ...v, [ms.macro]: val })) }} />
+              )
             ))}
           </div>
         )}
@@ -3645,8 +3658,16 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
             {cfg.macros.map((m) => (
               <label className="field" key={m.macro}>
                 <span>{m.label}</span>
-                <input className="input" type={m.secret ? 'password' : 'text'} placeholder={m.secret && m.set ? 'unchanged' : (m.hint || '')} value={m.value} disabled={!canEdit} onChange={(e) => setMacro(m.macro, e.target.value)} />
-                {m.hint && <span style={{ color: 'var(--muted)', fontSize: 11, marginTop: 3 }}>Example: {m.hint}</span>}
+                {m.options && m.options.length > 0 ? (
+                  // Fixed value set: a select, where blank keeps the template default.
+                  <Select value={m.value} disabled={!canEdit} onChange={(e) => setMacro(m.macro, e.target.value)}>
+                    <option value="">{m.hint ? `default (${m.hint})` : 'template default'}</option>
+                    {m.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </Select>
+                ) : (
+                  <input className="input" type={m.secret ? 'password' : 'text'} placeholder={m.secret && m.set ? 'unchanged' : (m.hint || '')} value={m.value} disabled={!canEdit} onChange={(e) => setMacro(m.macro, e.target.value)} />
+                )}
+                {m.hint && !(m.options && m.options.length > 0) && <span style={{ color: 'var(--muted)', fontSize: 11, marginTop: 3 }}>Example: {m.hint}</span>}
               </label>
             ))}
           </div>

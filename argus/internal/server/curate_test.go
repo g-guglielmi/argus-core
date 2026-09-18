@@ -245,6 +245,54 @@ func TestClassifyHTTPServices(t *testing.T) {
 	}
 }
 
+// XCP-NG: pool rows + per-hypervisor sensors flat (the item name carries the pool member), per-VM
+// sensors grouped per VM under Virtual machines (the instance comes from the item name, so every
+// sensor of one VM stacks into the same row).
+func TestClassifyXCPNG(t *testing.T) {
+	cases := []struct {
+		key, name          string
+		cat, inst, channel string
+	}{
+		{"xcp.pool.name", "Pool name", "Status", "", ""},
+		{"xcp.pool.ha", "HA enabled", "Status", "", ""},
+		{"xcp.hosts.total", "Pool members", "Status", "Pool members", "Total"},
+		{"xcp.hosts.live", "Pool members live", "Status", "Pool members", "Live"},
+		{"xcp.vms.total", "VMs defined", "Virtual machines", "VM count", "Total"},
+		{"xcp.vms.running", "VMs running", "Virtual machines", "VM count", "Running"},
+		{"xcp.host.cpu[abc]", "CPU utilization (xcp1)", "CPU", "", ""},
+		{"xcp.host.mem.used[abc]", "Used memory (xcp1)", "Memory", "", ""},
+		{"xcp.host.mem.pct[abc]", "Used memory % (xcp1)", "Memory", "", ""},
+		{"xcp.host.mem.total[abc]", "Total memory (xcp1)", "Memory", "", ""},
+		{"xcp.host.uptime[abc]", "Uptime (xcp1)", "Uptime", "", ""},
+		{"xcp.host.temp[abc]", "CPU temperature (xcp1)", "Temperature", "", ""},
+		{"xcp.host.version[abc]", "XCP-NG version (xcp1)", "Status", "", ""},
+		{"xcp.vm.state[u1]", "VM core-vm state", "Virtual machines", "core-vm", "State"},
+		{"xcp.vm.cpu[u1]", "VM core-vm CPU", "Virtual machines", "core-vm", "CPU"},
+		{"xcp.vm.mem.used[u1]", "VM core-vm used memory", "Virtual machines", "core-vm", "Memory used"},
+		{"xcp.vm.mem.total[u1]", "VM core-vm total memory", "Virtual machines", "core-vm", "Memory total"},
+		{"xcp.vm.disk.read[u1]", "VM core-vm disk read", "Virtual machines", "core-vm", "Disk read"},
+		{"xcp.vm.disk.write[u1]", "VM core-vm disk write", "Virtual machines", "core-vm", "Disk write"},
+		{"xcp.vm.net.rx[u1]", "VM core-vm traffic in", "Virtual machines", "core-vm", "Traffic in"},
+		{"xcp.vm.net.tx[u1]", "VM core-vm traffic out", "Virtual machines", "core-vm", "Traffic out"},
+	}
+	for _, c := range cases {
+		cat, _, inst, ch, ok := classifyItem(c.key, c.name)
+		if !ok || cat != c.cat || inst != c.inst || ch != c.channel {
+			t.Errorf("%s: got (%q, inst %q, ch %q, ok=%v), want (%q, inst %q, ch %q)", c.key, cat, inst, ch, ok, c.cat, c.inst, c.channel)
+		}
+	}
+	// A renamed VM item falls back to the key's uuid parameter for the instance.
+	if _, _, inst, _, _ := classifyItem("xcp.vm.state[u1]", "renamed out-of-band"); inst != "u1" {
+		t.Errorf("renamed VM item instance = %q, want the uuid fallback", inst)
+	}
+	// The raw master and the reachable/authed/live flags are plumbing (they drive the triggers).
+	for _, k := range []string{"xcp.reachable", "xcp.authed", "xcp.host.live[abc]"} {
+		if _, _, _, _, ok := classifyItem(k, k); ok {
+			t.Errorf("%s must stay uncurated", k)
+		}
+	}
+}
+
 // Some categories have a pinned reading order that isn't alphabetical (user call): a UPS's Power
 // section, and Home Assistant's version rows under Status. Unranked labels fall through to natural
 // order, and an unranked category ranks every label the same.
@@ -265,6 +313,13 @@ func TestItemRank(t *testing.T) {
 	if itemRank("Status", "Firmware version") <= itemRank("Status", "OS version") {
 		t.Error("an unlisted Status label should sort after the ranked ones")
 	}
+	// A parenthesized instance suffix (XCP-NG per-hypervisor rows) ranks as its base label.
+	if itemRank("Memory", "Used memory (xcp1)") >= itemRank("Memory", "Total memory (xcp1)") {
+		t.Error("suffixed labels should keep the base label's rank")
+	}
+	if itemRank("Memory", "Used memory (xcp1)") != itemRank("Memory", "Used memory") {
+		t.Error("a suffixed label must rank exactly as its base label")
+	}
 	if itemRank("CPU", "CPU utilization") != itemRank("CPU", "anything") {
 		t.Error("an unranked category must give every label the same (default) rank")
 	}
@@ -272,7 +327,7 @@ func TestItemRank(t *testing.T) {
 
 // Capability placeholders match on the key base, so per-instance keys are covered.
 func TestHideZero(t *testing.T) {
-	for _, k := range []string{"unifi.temp", "unifi.poe.total", "unifi.wan.latency[1]", "unifi.speedtest.down", "nut.realpower"} {
+	for _, k := range []string{"unifi.temp", "unifi.poe.total", "unifi.wan.latency[1]", "unifi.speedtest.down", "nut.realpower", "xcp.pool.ha", "xcp.host.temp[abc]"} {
 		if !hideZero(k) {
 			t.Errorf("hideZero(%q) = false, want true", k)
 		}

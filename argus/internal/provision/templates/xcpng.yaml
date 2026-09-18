@@ -1,0 +1,708 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: 15a5c4e4470c45419c69f7616f082736
+      template: 'Argus XCP-NG by XAPI'
+      name: 'Argus XCP-NG by XAPI'
+      description: |
+        An XCP-NG pool monitored through XAPI: the proxy/core runs a small collector (argus_xcpng.py,
+        an external check) that logs into the pool master over XML-RPC/HTTPS and reads the pool state,
+        every hypervisor in the pool (CPU from the RRD feed, memory, uptime, version, liveness) and the
+        VM inventory in one poll. Point the host's address at the POOL MASTER (a slave redirects
+        automatically); single-host pools read as one hypervisor. {$XCP.USER}/{$XCP.PASS} are the XAPI
+        credentials (root - XCP-NG local XAPI accounts are root-only). Per-VM monitoring is opt-in via
+        {$XCP.VM.MODE}: off (default) / state (power state per VM) / full (state + CPU + memory +
+        disk I/O + network I/O). CPU temperature per hypervisor appears only where the optional
+        argus-temp dom0 plugin is installed (docs/hosts/xcpng.md). DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: 9e881b6494aa419fb40f6cc127cf11e2
+          name: 'XCP-NG raw data'
+          type: EXTERNAL
+          key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          timeout: 25s
+          description: 'Master item: argus_xcpng.py logs into the pool master over XAPI and prints pool, hypervisor and VM data as one JSON object. A connection failure prints reachable=0 (not an error) so the down trigger fires; rejected credentials print authed=0.'
+        - uuid: a6c7e2695c9741b3a6da8d0677c0bea7
+          name: 'XAPI reachable'
+          type: DEPENDENT
+          key: xcp.reachable
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = XAPI answered, 0 = the pool master is down or unreachable. Not a curated sensor - it drives the down trigger.'
+          master_item:
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.reachable'
+          triggers:
+            - uuid: 491942846a0048e4a567af83b274485e
+              expression: 'max(/Argus XCP-NG by XAPI/xcp.reachable,#3)=0'
+              name: 'XCP-NG XAPI is unreachable'
+              priority: HIGH
+              description: 'XAPI has not answered on the last 3 checks (host down, wrong address, or HTTPS blocked between the proxy/core and the pool master).'
+        - uuid: 2093e033e31241cb80b34fea0e2d9d01
+          name: 'XAPI login OK'
+          type: DEPENDENT
+          key: xcp.authed
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = the XAPI login succeeded, 0 = XAPI answered but rejected the credentials. Not a curated sensor - it drives the credentials trigger.'
+          master_item:
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.authed'
+          triggers:
+            - uuid: c5761b7281634b23a56a1418d656ff23
+              expression: 'max(/Argus XCP-NG by XAPI/xcp.authed,#2)=0 and max(/Argus XCP-NG by XAPI/xcp.reachable,#2)=1'
+              name: 'XCP-NG credentials rejected'
+              priority: HIGH
+              description: 'XAPI answers but refuses the login - check {$XCP.USER}/{$XCP.PASS} in host settings (the password is the host root password unless you changed it).'
+        - uuid: 526304f545e94f84ae27ec14c8547642
+          name: 'Pool name'
+          type: DEPENDENT
+          key: xcp.pool.name
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'The XCP-NG pool''s name label (empty on a host that was never named into a pool).'
+          master_item:
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.pool.name'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+        - uuid: 7521fd349e544f23a00f8fed17dd8468
+          name: 'HA enabled'
+          type: DEPENDENT
+          key: xcp.pool.ha
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = XAPI high availability is enabled on the pool. Hidden while 0 (single-host pools never enable HA).'
+          master_item:
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.pool.ha'
+        - uuid: 47517d9eaaa24efaa50d35e25fe41676
+          name: 'Pool members'
+          type: DEPENDENT
+          key: xcp.hosts.total
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Hypervisors in the pool.'
+          master_item:
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.pool.hosts_total'
+        - uuid: 247bb8b458534e838ba729e2b8e42829
+          name: 'Pool members live'
+          type: DEPENDENT
+          key: xcp.hosts.live
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Hypervisors currently live (heartbeating) in the pool.'
+          master_item:
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.pool.hosts_live'
+          triggers:
+            - uuid: 97cd78fb27b64e19851e5560eb038e46
+              expression: 'last(/Argus XCP-NG by XAPI/xcp.hosts.live)<last(/Argus XCP-NG by XAPI/xcp.hosts.total) and max(/Argus XCP-NG by XAPI/xcp.reachable,#2)=1'
+              name: 'An XCP-NG pool member is down'
+              priority: HIGH
+              description: 'At least one hypervisor in the pool is not live (the per-hypervisor down trigger names it).'
+        - uuid: fc80e1b7f98d4d65a35b9147a4648338
+          name: 'VMs defined'
+          type: DEPENDENT
+          key: xcp.vms.total
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Virtual machines defined in the pool (templates, snapshots and control domains excluded).'
+          master_item:
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.vm_total'
+        - uuid: 5d469cc231654eef9d2ce9cb1a02c28b
+          name: 'VMs running'
+          type: DEPENDENT
+          key: xcp.vms.running
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Virtual machines currently running in the pool.'
+          master_item:
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.vm_running'
+      discovery_rules:
+        - uuid: 29e6d10edb4d47bd85ed93c0b70e7496
+          name: 'Hypervisor discovery'
+          type: DEPENDENT
+          key: xcp.host.discovery
+          delay: '0'
+          lifetime: 14d
+          enabled_lifetime_type: DISABLE_NEVER
+          description: 'Hypervisors in the pool, from the collector''s blob. A single-host pool discovers exactly one. A host really removed from the pool ages out after 14 days.'
+          master_item:
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  var hs = d.hosts || [];
+                  var out = [];
+                  for (var i = 0; i < hs.length; i++) {
+                    out.push({ '{#HVUUID}': hs[i].uuid, '{#HVNAME}': hs[i].name });
+                  }
+                  return JSON.stringify(out);
+          item_prototypes:
+            - uuid: 82b5cb89bcca46559082f2a37f4123f4
+              name: 'CPU utilization ({#HVNAME})'
+              type: DEPENDENT
+              key: 'xcp.host.cpu[{#HVUUID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '%'
+              description: 'Whole-host CPU utilization from the hypervisor''s RRD feed (cpu_avg across all cores, dom0 included).'
+              master_item:
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var hs = d.hosts || [];
+                      for (var i = 0; i < hs.length; i++) {
+                        if (hs[i].uuid === '{#HVUUID}') {
+                          if (hs[i].cpu_pct == null) throw 'no reading';
+                          return hs[i].cpu_pct;
+                        }
+                      }
+                      throw 'hypervisor {#HVNAME} not reported';
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: 0111dda07c9f46fd9f2ef072ed979efe
+                  expression: 'avg(/Argus XCP-NG by XAPI/xcp.host.cpu[{#HVUUID}],5m)>{$XCP.CPU.UTIL.WARN}'
+                  name: 'High CPU utilization on {#HVNAME}'
+                  priority: WARNING
+                  description: 'CPU utilization on hypervisor {#HVNAME} has averaged above {$XCP.CPU.UTIL.WARN}% for 5 minutes.'
+            - uuid: 03f5e1e9d91d4ad5a247e31415d92313
+              name: 'Used memory ({#HVNAME})'
+              type: DEPENDENT
+              key: 'xcp.host.mem.used[{#HVUUID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              units: B
+              description: 'Host memory in use (total minus free, as XAPI reports it - includes dom0 and the Xen heap).'
+              master_item:
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var hs = d.hosts || [];
+                      for (var i = 0; i < hs.length; i++) {
+                        if (hs[i].uuid === '{#HVUUID}') { return hs[i].mem_used; }
+                      }
+                      throw 'hypervisor {#HVNAME} not reported';
+                  error_handler: DISCARD_VALUE
+            - uuid: 912f43b498f546b2aa9f0f5acded4f71
+              name: 'Used memory % ({#HVNAME})'
+              type: DEPENDENT
+              key: 'xcp.host.mem.pct[{#HVUUID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '%'
+              description: 'Host memory in use as a percentage of installed memory.'
+              master_item:
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var hs = d.hosts || [];
+                      for (var i = 0; i < hs.length; i++) {
+                        if (hs[i].uuid === '{#HVUUID}') {
+                          if (hs[i].mem_pct == null) throw 'no reading';
+                          return hs[i].mem_pct;
+                        }
+                      }
+                      throw 'hypervisor {#HVNAME} not reported';
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: c99d6558edfb47c79ec08ff67a9a25bf
+                  expression: 'avg(/Argus XCP-NG by XAPI/xcp.host.mem.pct[{#HVUUID}],5m)>{$XCP.MEM.WARN}'
+                  name: 'High memory usage on {#HVNAME}'
+                  priority: WARNING
+                  description: 'Memory usage on hypervisor {#HVNAME} has averaged above {$XCP.MEM.WARN}% for 5 minutes - little headroom left for starting or migrating VMs.'
+            - uuid: bb4b9d4be7a3482c880b692843f7ef4c
+              name: 'Total memory ({#HVNAME})'
+              type: DEPENDENT
+              key: 'xcp.host.mem.total[{#HVUUID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              units: B
+              description: 'Installed host memory.'
+              master_item:
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var hs = d.hosts || [];
+                      for (var i = 0; i < hs.length; i++) {
+                        if (hs[i].uuid === '{#HVUUID}') { return hs[i].mem_total; }
+                      }
+                      throw 'hypervisor {#HVNAME} not reported';
+                  error_handler: DISCARD_VALUE
+            - uuid: cb5d7b9a609a47aab48f97a9ca4460dc
+              name: 'Uptime ({#HVNAME})'
+              type: DEPENDENT
+              key: 'xcp.host.uptime[{#HVUUID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              units: uptime
+              description: 'Host uptime (from the control domain''s start time - dom0 boots with the host).'
+              master_item:
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var hs = d.hosts || [];
+                      for (var i = 0; i < hs.length; i++) {
+                        if (hs[i].uuid === '{#HVUUID}') {
+                          if (hs[i].uptime == null) throw 'no reading';
+                          return hs[i].uptime;
+                        }
+                      }
+                      throw 'hypervisor {#HVNAME} not reported';
+                  error_handler: DISCARD_VALUE
+            - uuid: c2d138680a6845f1ad6c31270c468417
+              name: 'CPU temperature ({#HVNAME})'
+              type: DEPENDENT
+              key: 'xcp.host.temp[{#HVUUID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '°C'
+              description: 'CPU package temperature via the optional argus-temp dom0 plugin (docs/hosts/xcpng.md). Hosts without the plugin never deliver a value and the sensor stays hidden.'
+              master_item:
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var hs = d.hosts || [];
+                      for (var i = 0; i < hs.length; i++) {
+                        if (hs[i].uuid === '{#HVUUID}') {
+                          if (hs[i].temp == null) throw 'no reading';
+                          return hs[i].temp;
+                        }
+                      }
+                      throw 'hypervisor {#HVNAME} not reported';
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: 2429ad2f580b4677999ebc3556a1b296
+                  expression: 'min(/Argus XCP-NG by XAPI/xcp.host.temp[{#HVUUID}],#3)>={$XCP.TEMP.WARN}'
+                  name: 'CPU running hot on {#HVNAME}'
+                  priority: WARNING
+                  description: 'CPU package temperature on {#HVNAME} has been at or above {$XCP.TEMP.WARN} C for 3 consecutive readings.'
+                - uuid: 600e04cbe6904a9ea11a8cf05fdee1b4
+                  expression: 'min(/Argus XCP-NG by XAPI/xcp.host.temp[{#HVUUID}],#3)>={$XCP.TEMP.HIGH}'
+                  name: 'CPU overheating on {#HVNAME}'
+                  priority: HIGH
+                  description: 'CPU package temperature on {#HVNAME} has been at or above {$XCP.TEMP.HIGH} C for 3 consecutive readings.'
+            - uuid: e8bb7a8e05674f62bd9a4926fba4dbf4
+              name: 'XCP-NG version ({#HVNAME})'
+              type: DEPENDENT
+              key: 'xcp.host.version[{#HVUUID}]'
+              delay: '0'
+              history: 7d
+              trends: '0'
+              value_type: CHAR
+              description: 'XCP-NG product version on this hypervisor.'
+              master_item:
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var hs = d.hosts || [];
+                      for (var i = 0; i < hs.length; i++) {
+                        if (hs[i].uuid === '{#HVUUID}') { return hs[i].version; }
+                      }
+                      throw 'hypervisor {#HVNAME} not reported';
+                  error_handler: DISCARD_VALUE
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+            - uuid: eba0746215294c86b30465a5c67766ce
+              name: 'Hypervisor alive ({#HVNAME})'
+              type: DEPENDENT
+              key: 'xcp.host.live[{#HVUUID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              description: '1 = this pool member is live (heartbeating). Not a curated sensor - it drives the member-down trigger.'
+              master_item:
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var hs = d.hosts || [];
+                      for (var i = 0; i < hs.length; i++) {
+                        if (hs[i].uuid === '{#HVUUID}') { return hs[i].live; }
+                      }
+                      throw 'hypervisor {#HVNAME} not reported';
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: d47d8bbb1a3b4833a4f967b456d18368
+                  expression: 'max(/Argus XCP-NG by XAPI/xcp.host.live[{#HVUUID}],#2)=0 and max(/Argus XCP-NG by XAPI/xcp.reachable,#2)=1'
+                  name: 'Hypervisor {#HVNAME} is down'
+                  priority: HIGH
+                  description: 'Pool member {#HVNAME} has not been live on the last 2 checks (crashed, powered off, or lost its heartbeat to the master).'
+        - uuid: 69c8b87dd9e44473bdbe419a2b5d6ed7
+          name: 'Virtual machine discovery'
+          type: DEPENDENT
+          key: xcp.vm.discovery
+          delay: '0'
+          lifetime: 7d
+          enabled_lifetime_type: DISABLE_NEVER
+          description: 'VMs in the pool (templates, snapshots and control domains excluded). Empty while {$XCP.VM.MODE} is off - existing VM sensors then age out after 7 days.'
+          master_item:
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  var vms = d.vms || [];
+                  var out = [];
+                  for (var i = 0; i < vms.length; i++) {
+                    out.push({ '{#VMUUID}': vms[i].uuid, '{#VMNAME}': vms[i].name });
+                  }
+                  return JSON.stringify(out);
+          item_prototypes:
+            - uuid: 6290f5346773465493c11e05f1656f5f
+              name: 'VM {#VMNAME} state'
+              type: DEPENDENT
+              key: 'xcp.vm.state[{#VMUUID}]'
+              delay: '0'
+              history: 7d
+              trends: '0'
+              value_type: CHAR
+              description: 'Power state as XAPI reports it: Running, Halted, Paused or Suspended.'
+              master_item:
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var vms = d.vms || [];
+                      for (var i = 0; i < vms.length; i++) {
+                        if (vms[i].uuid === '{#VMUUID}') { return vms[i].state; }
+                      }
+                      throw 'VM {#VMNAME} not reported';
+                  error_handler: DISCARD_VALUE
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              trigger_prototypes:
+                - uuid: 2aad4a38004c4b1b809a9db7c38c7c9d
+                  expression: 'last(/Argus XCP-NG by XAPI/xcp.vm.state[{#VMUUID}])<>"Running" and max(/Argus XCP-NG by XAPI/xcp.reachable,#2)=1'
+                  name: 'VM {#VMNAME} is not running'
+                  priority: WARNING
+                  manual_close: 'YES'
+                  description: 'The VM is halted, paused or suspended. Intentionally stopped VM? Close the alert manually - it re-fires only after the VM runs and stops again - or turn VM monitoring off for this pool in host settings.'
+        - uuid: 309a2f4177254d1792e904b60082cc7a
+          name: 'Virtual machine performance discovery'
+          type: DEPENDENT
+          key: xcp.vmperf.discovery
+          delay: '0'
+          lifetime: 7d
+          enabled_lifetime_type: DISABLE_NEVER
+          description: 'Per-VM performance sensors - only populated while {$XCP.VM.MODE} is "full", and only for running VMs (a stopped VM''s rates would be meaningless).'
+          master_item:
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  var vms = d.vms_perf || [];
+                  var out = [];
+                  for (var i = 0; i < vms.length; i++) {
+                    out.push({ '{#VMUUID}': vms[i].uuid, '{#VMNAME}': vms[i].name });
+                  }
+                  return JSON.stringify(out);
+          item_prototypes:
+            - uuid: 1076b30ae5bb49899bcaf5d2cd59acb0
+              name: 'VM {#VMNAME} CPU'
+              type: DEPENDENT
+              key: 'xcp.vm.cpu[{#VMUUID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: '%'
+              description: 'Mean utilization across the VM''s vCPUs, from the hypervisor''s RRD feed.'
+              master_item:
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var vms = d.vms_perf || [];
+                      for (var i = 0; i < vms.length; i++) {
+                        if (vms[i].uuid === '{#VMUUID}') {
+                          if (vms[i].cpu_pct == null) throw 'no reading';
+                          return vms[i].cpu_pct;
+                        }
+                      }
+                      throw 'VM {#VMNAME} not reported';
+                  error_handler: DISCARD_VALUE
+            - uuid: 0bd3693f3f034df2a4eefd066841afff
+              name: 'VM {#VMNAME} used memory'
+              type: DEPENDENT
+              key: 'xcp.vm.mem.used[{#VMUUID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              units: B
+              description: 'Memory in use inside the guest (needs the guest tools; without them only total memory is reported).'
+              master_item:
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var vms = d.vms_perf || [];
+                      for (var i = 0; i < vms.length; i++) {
+                        if (vms[i].uuid === '{#VMUUID}') {
+                          if (vms[i].mem_used == null) throw 'no reading';
+                          return vms[i].mem_used;
+                        }
+                      }
+                      throw 'VM {#VMNAME} not reported';
+                  error_handler: DISCARD_VALUE
+            - uuid: 6e77707e75de4a3e97e0d12ff08be35d
+              name: 'VM {#VMNAME} total memory'
+              type: DEPENDENT
+              key: 'xcp.vm.mem.total[{#VMUUID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              units: B
+              description: 'Memory assigned to the VM by the hypervisor.'
+              master_item:
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var vms = d.vms_perf || [];
+                      for (var i = 0; i < vms.length; i++) {
+                        if (vms[i].uuid === '{#VMUUID}') {
+                          if (vms[i].mem_total == null) throw 'no reading';
+                          return vms[i].mem_total;
+                        }
+                      }
+                      throw 'VM {#VMNAME} not reported';
+                  error_handler: DISCARD_VALUE
+            - uuid: eca101a8e56d49858a1e680c063ad6ee
+              name: 'VM {#VMNAME} disk read'
+              type: DEPENDENT
+              key: 'xcp.vm.disk.read[{#VMUUID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: B/s
+              description: 'Read rate summed over the VM''s virtual disks.'
+              master_item:
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var vms = d.vms_perf || [];
+                      for (var i = 0; i < vms.length; i++) {
+                        if (vms[i].uuid === '{#VMUUID}') {
+                          if (vms[i].disk_read == null) throw 'no reading';
+                          return vms[i].disk_read;
+                        }
+                      }
+                      throw 'VM {#VMNAME} not reported';
+                  error_handler: DISCARD_VALUE
+            - uuid: 63904b7c1b4443cd9430707e5e70a3fe
+              name: 'VM {#VMNAME} disk write'
+              type: DEPENDENT
+              key: 'xcp.vm.disk.write[{#VMUUID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: B/s
+              description: 'Write rate summed over the VM''s virtual disks.'
+              master_item:
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var vms = d.vms_perf || [];
+                      for (var i = 0; i < vms.length; i++) {
+                        if (vms[i].uuid === '{#VMUUID}') {
+                          if (vms[i].disk_write == null) throw 'no reading';
+                          return vms[i].disk_write;
+                        }
+                      }
+                      throw 'VM {#VMNAME} not reported';
+                  error_handler: DISCARD_VALUE
+            - uuid: 980c2bcffa204ab3acc2a75209412657
+              name: 'VM {#VMNAME} traffic in'
+              type: DEPENDENT
+              key: 'xcp.vm.net.rx[{#VMUUID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: bps
+              description: 'Receive rate summed over the VM''s virtual NICs.'
+              master_item:
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var vms = d.vms_perf || [];
+                      for (var i = 0; i < vms.length; i++) {
+                        if (vms[i].uuid === '{#VMUUID}') {
+                          if (vms[i].net_rx == null) throw 'no reading';
+                          return vms[i].net_rx;
+                        }
+                      }
+                      throw 'VM {#VMNAME} not reported';
+                  error_handler: DISCARD_VALUE
+                - type: MULTIPLIER
+                  parameters:
+                    - '8'
+            - uuid: 1364e1ca5e9347f3a7c116b0c0d8b3b4
+              name: 'VM {#VMNAME} traffic out'
+              type: DEPENDENT
+              key: 'xcp.vm.net.tx[{#VMUUID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: bps
+              description: 'Transmit rate summed over the VM''s virtual NICs.'
+              master_item:
+                key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      var vms = d.vms_perf || [];
+                      for (var i = 0; i < vms.length; i++) {
+                        if (vms[i].uuid === '{#VMUUID}') {
+                          if (vms[i].net_tx == null) throw 'no reading';
+                          return vms[i].net_tx;
+                        }
+                      }
+                      throw 'VM {#VMNAME} not reported';
+                  error_handler: DISCARD_VALUE
+                - type: MULTIPLIER
+                  parameters:
+                    - '8'
+      macros:
+        - macro: '{$XCP.USER}'
+          value: root
+          description: 'XAPI username. XCP-NG local XAPI accounts are root-only, so this is root unless the pool uses external (AD) authentication.'
+        - macro: '{$XCP.PASS}'
+          value: ''
+          description: 'XAPI password (the host root password). Set per host as a secret macro.'
+        - macro: '{$XCP.VM.MODE}'
+          value: 'off'
+          description: 'Per-VM monitoring: off (pool/hypervisor sensors only), state (adds each VM''s power state), or full (adds per-VM CPU, memory, disk I/O and network I/O).'
+        - macro: '{$XCP.CPU.UTIL.WARN}'
+          value: '90'
+          description: 'Hypervisor CPU utilization (%) above which the high-CPU warning fires (5-minute average).'
+        - macro: '{$XCP.MEM.WARN}'
+          value: '90'
+          description: 'Hypervisor memory usage (%) above which the high-memory warning fires (5-minute average).'
+        - macro: '{$XCP.TEMP.WARN}'
+          value: '80'
+          description: 'CPU package temperature (C) at or above which the running-hot warning fires (needs the argus-temp dom0 plugin).'
+        - macro: '{$XCP.TEMP.HIGH}'
+          value: '90'
+          description: 'CPU package temperature (C) at or above which the overheating alert fires (needs the argus-temp dom0 plugin).'

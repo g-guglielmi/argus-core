@@ -36,6 +36,7 @@ the per-host tunables.
 |---|---|
 | DNS server (per-name resolve) | [dns.md](dns.md) |
 | UPS (NUT, direct) | [ups.md](ups.md) |
+| XCP-NG (XAPI) - pool, hypervisors, opt-in VMs | [xcpng.md](xcpng.md) |
 
 **Base**
 
@@ -73,12 +74,6 @@ list is here so you can see where the catalog is heading. See [../DESIGN.md](../
 |---|---|
 | Nutanix AHV | cluster / host / VM CPU/mem/storage and VM state (Prism REST); one endpoint spawns child hosts |
 | Citrix farm | registered-machine count/state, failed logons, sessions, load (Monitor OData) |
-
-**Collector (planned)**
-
-| Class | Expected to monitor |
-|---|---|
-| XCP-NG | host CPU/mem, per-VM state, pool, temperature (XAPI) |
 
 **Native VMware (planned)**
 

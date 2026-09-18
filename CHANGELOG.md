@@ -11,6 +11,25 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **XCP-NG (XAPI) device class.** One Argus device monitors a whole XCP-NG pool: point it at the
+  pool master (a slave address is followed automatically) and the `argus_xcpng.py` collector reads
+  everything over one XAPI session per poll - pool health (HA, members live, VM counts), and per
+  hypervisor: CPU utilization (from the host's RRD feed), memory, uptime, XCP-NG version and
+  liveness, with member-down / high-CPU / high-memory / unreachable / bad-credentials alerts.
+  **Per-VM monitoring is opt-in** via a VM-monitoring dropdown (`{$XCP.VM.MODE}`): `off` (default),
+  `state` (power state per VM with a *not running* warning), or `full` (state + per-VM CPU, memory,
+  disk I/O and network I/O). **CPU temperature per hypervisor** works through an optional
+  `argus-temp` XAPI plugin dropped on dom0 (same session, no extra port; hosts without it simply
+  have no temperature sensor). Guide: `docs/hosts/xcpng.md`.
+- **Choice macros render as dropdowns.** A class macro with a fixed value set (like the XCP-NG
+  VM-monitoring mode) now shows as a select in the Add-device wizard and host settings, with a
+  "default" entry that keeps the template default.
+
+---
+
 ## [0.4.52] - 2026-09-18
 
 **Added:**
