@@ -75,7 +75,6 @@ def emit():
 
 def ssh_command(host, user, port, auth, keyfile):
     common = [
-        "-o", "BatchMode=yes",
         "-o", "ConnectTimeout=8",
         "-o", "StrictHostKeyChecking=accept-new",
         "-o", "UserKnownHostsFile=" + known_hosts_path(),
@@ -87,12 +86,16 @@ def ssh_command(host, user, port, auth, keyfile):
     target = "%s@%s" % (user, host)
     if auth == "password":
         # sshpass -e reads $SSHPASS from the environment, so the password never appears in argv or ps.
+        # No BatchMode here: it suppresses the password prompt, which is exactly what sshpass feeds -
+        # sshpass keeps the login non-interactive instead (NumberOfPasswordPrompts=1 caps a bad login).
         return ["sshpass", "-e", "ssh",
                 "-o", "PubkeyAuthentication=no",
                 "-o", "PreferredAuthentications=password,keyboard-interactive"] + \
             common + [target, REMOTE]
+    # Key auth is genuinely non-interactive, so BatchMode=yes here fails fast instead of ever prompting.
     return ["ssh",
             "-i", keyfile,
+            "-o", "BatchMode=yes",
             "-o", "PasswordAuthentication=no",
             "-o", "PreferredAuthentications=publickey"] + \
         common + [target, REMOTE]
