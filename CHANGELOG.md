@@ -11,6 +11,15 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Fixed:**
+- **XCP-NG: the Monitored VMs field hides while there is nothing to pick.** With VM monitoring off
+  (or nothing discovered yet) host settings no longer shows a raw comma-separated names input; the
+  checklist appears once VMs are discovered.
+
+---
+
 ## [0.4.53] - 2026-09-18
 
 **Added:**
