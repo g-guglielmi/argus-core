@@ -72,7 +72,7 @@ type ClassSetup struct {
 // templates to attach and what interface the host needs) and, later, discovery + the management UI.
 type Class struct {
 	ID         string        `json:"id"`               // stable Argus id, e.g. "linux-snmp"
-	Label      string        `json:"label"`            // human name, e.g. "Generic Linux (SNMP)"
+	Label      string        `json:"label"`            // human name, e.g. "Linux (SNMP)"
 	Family     string        `json:"family"`           // UI grouping, e.g. "Linux", "UniFi", "Base"
 	Pattern    Pattern       `json:"pattern"`          //
 	Iface      IfaceKind     `json:"iface"`            // interface the host needs (agent/snmp/none)
@@ -84,8 +84,8 @@ type Class struct {
 	Setup      *ClassSetup   `json:"setup,omitempty"`  // prerequisite steps shown in the attach form (agent classes)
 }
 
-// registry is the catalog. C0 shipped the universal "base" class (Ping only); C1 adds Generic Linux
-// (SNMP) and UniFi Switch; C2 the rest (DESIGN §5). Adding a class here means shipping its template
+// registry is the catalog. C0 shipped the universal "base" class (Ping only); C1 adds Linux (SNMP)
+// and UniFi Switch; C2 the rest (DESIGN §5). Adding a class here means shipping its template
 // under templates/ and re-importing (the startup reconcile handles that when the file set changes).
 var registry = []Class{
 	{
@@ -100,7 +100,7 @@ var registry = []Class{
 	},
 	{
 		ID:         "linux-snmp",
-		Label:      "Generic Linux (SNMP)",
+		Label:      "Linux (SNMP)",
 		Family:     "Linux",
 		Pattern:    PatternSNMP,
 		Iface:      IfaceSNMP,
@@ -143,7 +143,7 @@ var registry = []Class{
 	},
 	{
 		// Windows Server over SNMP: HOST-RESOURCES (CPU/memory/disk) + IF-MIB + the LAN Manager
-		// service table. Same item keys as Generic Linux SNMP, so curation is shared. SNMP creds
+		// service table. Same item keys as the Linux (SNMP) class, so curation is shared. SNMP creds
 		// inherit the proxy default like every SNMP class.
 		ID:         "windows-snmp",
 		Label:      "Windows (SNMP)",

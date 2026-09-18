@@ -1,6 +1,6 @@
-# Generic Linux (SNMP)
+# Linux (SNMP)
 
-The **Generic Linux (SNMP)** class monitors any Linux host that exposes SNMP (HOST-RESOURCES / UCD
+The **Linux (SNMP)** class monitors any Linux host that exposes SNMP (HOST-RESOURCES / UCD
 MIBs): CPU utilization, memory, filesystems, network interfaces and uptime. It is the baseline SNMP
 template that several other classes (unRAID, Windows) build on, so its readings curate the same way.
 
@@ -27,7 +27,7 @@ Install and configure `snmpd` (Debian/Ubuntu: `snmpd`; RHEL/Fedora: `net-snmp`):
 
 ## 2. Add the host in Argus
 
-**Add device → Generic Linux (SNMP)**, give the IP or DNS name. SNMP credentials inherit the site
+**Add device → Linux (SNMP)**, give the IP or DNS name. SNMP credentials inherit the site
 proxy's SNMP default (set in the Probes tab) unless you override them on the host. CPU, memory,
 filesystems, NICs and uptime start reporting within a minute or two.
 

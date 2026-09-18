@@ -213,7 +213,7 @@ func TestRegistry(t *testing.T) {
 	if base.Pattern != PatternBase || base.Iface != IfaceAgent || !base.OffersHTTP {
 		t.Fatalf("unexpected base class: %+v", base)
 	}
-	// The Generic Linux SNMP class (C1) drives the SNMP interface branch of the create path.
+	// The Linux (SNMP) class (C1) drives the SNMP interface branch of the create path.
 	lx, ok := ClassByID("linux-snmp")
 	if !ok {
 		t.Fatal("linux-snmp class missing")

@@ -26,6 +26,11 @@ GitHub Release from the matching section below.
   `docs/hosts/linux-ssh.md`. (The proxy image now bakes `openssh-client` + `sshpass`; the core
   installs them via `setup-core.sh`.)
 
+**Changed:**
+- **The "Generic Linux (SNMP)" class is now just "Linux (SNMP)"** - so it lines up with the new
+  "Linux (SSH, agentless)" class and matches its template name (`Argus Linux by SNMP`). Display only;
+  the class id, template and item keys are unchanged.
+
 ---
 
 ## [0.4.54] - 2026-09-18

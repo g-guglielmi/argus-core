@@ -3,7 +3,7 @@
 The **Windows (SNMP)** class monitors a Windows host over SNMP using the HOST-RESOURCES and IF-MIB
 tables plus the LAN Manager service table: CPU utilization (overall and per-core), physical memory,
 fixed-disk volumes, network interfaces, uptime, and - opt-in - selected Windows **services**. It reuses
-the same item keys as the Generic Linux SNMP class, so the readings curate identically.
+the same item keys as the Linux (SNMP) class, so the readings curate identically.
 
 ## 1. Enable SNMP on the Windows host
 
