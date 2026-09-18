@@ -38,6 +38,12 @@ the per-host tunables.
 | UPS (NUT, direct) | [ups.md](ups.md) |
 | XCP-NG (XAPI) - pool, hypervisors, opt-in VMs | [xcpng.md](xcpng.md) |
 
+**Agentless / SSH** (the proxy logs into the device over SSH - no agent, no SNMP)
+
+| Class | Guide |
+|---|---|
+| Linux (SSH, agentless) | [linux-ssh.md](linux-ssh.md) |
+
 **Base**
 
 - **Ping only** - no setup and no guide: **Add device → Ping only** gives ICMP reachability/latency.
@@ -61,12 +67,6 @@ list is here so you can see where the catalog is heading. See [../DESIGN.md](../
 | QNAP | CPU, memory, volume/disk, temperature, fan, RAID, SMART |
 | Libraesva ESG | host CPU/RAM/disk, mail queue, admin certificate |
 | Hyper-V | host CPU/RAM/disk/net/uptime (per-VM state needs WMI/agent - a known gap) |
-
-**Agentless (planned)**
-
-| Class | Expected to monitor |
-|---|---|
-| Generic Linux SSH | CPU, RAM, disk, net via `ssh.run` (a no-SNMP fallback) |
 
 **HTTP / API (planned)**
 

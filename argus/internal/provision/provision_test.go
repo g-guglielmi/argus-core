@@ -41,7 +41,8 @@ func TestLoadTemplates(t *testing.T) {
 		"Argus UPS by PeaNUT", "nut.raw", "nut.battery.charge", "nut.on_battery", "{$PEANUT.URL}", "{$PEANUT.UPS}",
 		"Argus UPS by NUT", "argus_nut.py[{HOST.CONN}", "{$NUT.UPS}", "{$NUT.PORT}", "nut.output.voltage",
 		"Argus DNS resolution", "dns-resolver.py[discover", "dns.resolve.success", "dns.resolve.time", "{$DNS.RESOLVE.NAMES}",
-		"Argus XCP-NG by XAPI", "argus_xcpng.py[{HOST.CONN}", "xcp.host.discovery", "xcp.vm.discovery", "xcp.vmperf.discovery", "{$XCP.VM.MODE}", "{$XCP.VM.IGNORE}", "{$XCP.TEMP.WARN}"} {
+		"Argus XCP-NG by XAPI", "argus_xcpng.py[{HOST.CONN}", "xcp.host.discovery", "xcp.vm.discovery", "xcp.vmperf.discovery", "{$XCP.VM.MODE}", "{$XCP.VM.IGNORE}", "{$XCP.TEMP.WARN}",
+		"Argus Linux by SSH", "argus_linux_ssh.py[{HOST.CONN}", "linux.ssh.reachable", "system.cpu.util[ssh]", "vfs.fs.discovery[ssh]", "net.if.discovery[ssh]", "{$SSH.AUTH}", "{$SSH.KEYFILE}", "{$SSH.PASSWORD}"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("templates missing %q", want)
 		}
@@ -222,6 +223,30 @@ func TestRegistry(t *testing.T) {
 	}
 	if _, ok := ClassByID("does-not-exist"); ok {
 		t.Fatal("unexpected class")
+	}
+	// Linux (SSH, agentless): the collector class that reuses the native Linux item keys, so curation
+	// is shared. Offers both auth modes via the {$SSH.AUTH} select and a secret password macro.
+	lssh, ok := ClassByID("linux-ssh")
+	if !ok {
+		t.Fatal("linux-ssh class missing")
+	}
+	if lssh.Pattern != PatternAgentless || lssh.Iface != IfaceAgent || len(lssh.Templates) != 1 || lssh.Templates[0] != "Argus Linux by SSH" {
+		t.Fatalf("unexpected linux-ssh class: %+v", lssh)
+	}
+	var sshAuthOpts, sshPassSecret bool
+	for _, m := range lssh.Macros {
+		if m.Macro == "{$SSH.AUTH}" && len(m.Options) == 2 && m.Options[0] == "key" && m.Options[1] == "password" {
+			sshAuthOpts = true
+		}
+		if m.Macro == "{$SSH.PASSWORD}" && m.Secret {
+			sshPassSecret = true
+		}
+	}
+	if !sshAuthOpts || !sshPassSecret {
+		t.Errorf("linux-ssh macro specs incomplete (auth-options=%v secret-pass=%v)", sshAuthOpts, sshPassSecret)
+	}
+	if lssh.Setup == nil {
+		t.Error("linux-ssh should carry SSH-access setup guidance")
 	}
 	// Windows SNMP reuses the Linux item keys through its own template.
 	win, ok := ClassByID("windows-snmp")

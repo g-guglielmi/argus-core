@@ -142,7 +142,8 @@ Each class is built by one of a few **patterns** (build the pattern once, replic
 - **Native VMware** - Zabbix's built-in VMware collector + stock templates. vSphere only.
 - **Collector/script** - the true SNMP-gaps Zabbix can't HTTP-agent cleanly: XCP-NG (XAPI),
   NUT (upsd :3493). A probe-side sidecar or Zabbix script item.
-- **Agentless** - server/proxy-run checks with no agent: DNS (`net.dns`), Linux-over-SSH (`ssh.run`).
+- **Agentless** - server/proxy-run checks with no agent on the device: DNS (`net.dns`), Linux-over-SSH
+  (a one-login-per-poll collector, `argus_linux_ssh.py`, that reads /proc + df in a single session).
 - **Agent** - a Zabbix agent runs *on* the device (in a container) and the proxy polls it passively.
   The carve-out for a Docker-capable host that speaks no SNMP: Ugreen UGOS.
 
@@ -167,7 +168,7 @@ pre-§C fleet) falls back to a best-effort guess from its name, else a generic d
 | **unRAID** | SNMP | sysDescr `Unraid` | CPU load, RAM %, uptime, per-share free, NIC; disk + CPU temp via optional NET-SNMP extends (setup: [docs/hosts/unraid.md](hosts/unraid.md)) | shares, disks, NICs |
 | **Libraesva ESG** | SNMP (+HTTPS) | sysObjectID/sysDescr | host CPU/RAM/disk + mail-queue + admin-cert | fs |
 | **Windows server** | SNMP | sysObjectID (Windows) | CPU, RAM, disk, net, uptime + **selected services** (LANMGR `svSvcTable`; opt-in via `{$WIN.SERVICE.MATCHES}`, set at add time or in host settings) | disks, NICs, services |
-| **Generic Linux SSH** | Agentless | SSH reachable (no-SNMP fallback) | CPU, RAM, disk, net via `ssh.run` | fs, NICs |
+| **Linux (SSH)** | Agentless | SSH login (no-SNMP fallback) | CPU, load, RAM, uptime, disk, net via `argus_linux_ssh.py` (one login/poll; key or password auth) | fs, NICs |
 | **DNS server** (incl. **AdGuard**) | Collector (+HTTP-API) | :53 + admin | per-name resolve (success/time/IP) via `dns-resolver.py`; AdGuard stats via its API | names |
 | **UPS (NUT via PeaNUT)** | HTTP-API | PeaNUT :8080 → upsd | battery %, on-battery/low-battery, runtime, load, input V, power draw | - |
 | **Home Assistant** | HTTP-API | :8123 REST + token | API up, version, integrations, entity count, unavailable entities | - |

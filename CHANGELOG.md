@@ -11,6 +11,23 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **Linux (SSH, agentless) device class.** The no-SNMP, no-agent fallback for a Linux box you can
+  only reach over SSH: the proxy (or core) runs the `argus_linux_ssh.py` collector, which opens
+  **one** SSH session per poll and reads `/proc`, `df` and `/proc/net/dev` in a single login -
+  returning CPU utilization, 1/5/15-minute load, memory, uptime, per-filesystem usage (LLD) and
+  per-interface traffic (LLD). The item keys match the native Linux keys, so a host reads exactly
+  like an SNMP- or agent-monitored one. **Authentication is your choice per host** (`{$SSH.AUTH}`):
+  an SSH **key** (private key mounted on the proxy - recommended) or a **password** (secret macro,
+  fed to the collector through the environment, never on the command line). A read-only login is
+  enough. Thresholds and the filesystem / interface skip lists are the usual Linux macros. Guide:
+  `docs/hosts/linux-ssh.md`. (The proxy image now bakes `openssh-client` + `sshpass`; the core
+  installs them via `setup-core.sh`.)
+
+---
+
 ## [0.4.54] - 2026-09-18
 
 **Fixed:**
