@@ -253,6 +253,7 @@ func TestItemRank(t *testing.T) {
 		"Power":  {"Power draw", "Load", "Input voltage", "Output voltage"},
 		"Status": {"OS version", "Core version", "Supervisor version"},
 		"DNS":    {"DNS queries", "Blocked queries", "Block rate", "Average processing time"},
+		"Memory": {"Used memory %", "Available memory", "Total memory"},
 	} {
 		for i := 1; i < len(want); i++ {
 			if itemRank(cat, want[i-1]) >= itemRank(cat, want[i]) {

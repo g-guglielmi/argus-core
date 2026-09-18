@@ -92,6 +92,13 @@ var itemLabelOrder = map[string]map[string]int{
 	// AdGuard's DNS section leads with the activity group (queries+blocked - the headline bar
 	// chart), then its rate/latency gauges; the per-name resolve rows trail unranked.
 	"DNS": {"DNS queries": 0, "Blocked queries": 1, "Block rate": 2, "Average processing time": 3},
+	// Memory reads used-first, then available, then total (user call) - the used figure is the one
+	// you glance at, and total is context that belongs last.
+	"Memory": {
+		"Used memory": 0, "Used memory %": 1, "Memory utilization": 1,
+		"Available memory": 2, "Available memory %": 3,
+		"Total memory": 4,
+	},
 }
 
 // itemRank returns the within-category order rank for a flat row's label; unranked labels get a large
