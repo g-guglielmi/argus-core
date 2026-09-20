@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"argus/internal/auth"
+	"argus/internal/netscan"
 	"argus/internal/provision"
 	"argus/internal/store"
 )
@@ -80,7 +81,9 @@ func normalizeScanCIDR(raw string) (string, string) {
 	return p.Masked().String(), ""
 }
 
-// POST /api/discovery/jobs (admin) - queue a subnet scan for a probe.
+// POST /api/discovery/jobs (admin) - queue a subnet scan. proxy_id "" (or "0") = the core server:
+// there is no check-in channel to ride, so the job is dispatched immediately to an in-process Go
+// scanner (internal/netscan) instead of waiting for a probe.
 func (s *Server) handleCreateDiscoveryJob(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ProxyID string   `json:"proxy_id"`
@@ -96,34 +99,38 @@ func (s *Server) handleCreateDiscoveryJob(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
 		return
 	}
-	if !s.zbx.Authenticated() {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured (set ARGUS_ZABBIX_API_TOKEN)"})
-		return
-	}
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 	defer cancel()
 
-	// Resolve the proxy: jobs are keyed by proxy NAME (the probe token identity at check-in).
-	proxies, err := s.zbx.Proxies(ctx)
-	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
-		return
-	}
+	// Core scans are keyed by the empty proxy name - no probe resolution, no capability gate.
+	coreScan := req.ProxyID == "" || req.ProxyID == "0"
 	proxyName := ""
-	for _, p := range proxies {
-		if p.ProxyID == req.ProxyID {
-			proxyName = p.Name
-			break
+	if !coreScan {
+		if !s.zbx.Authenticated() {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured (set ARGUS_ZABBIX_API_TOKEN)"})
+			return
 		}
-	}
-	if proxyName == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown probe"})
-		return
-	}
-	// Only a probe that has advertised the scan capability can run one (older images never will).
-	if ag, err := s.st.ProbeAgentByName(ctx, proxyName); err != nil || !ag.Scans {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "this probe hasn't reported the network-scan capability - it needs the latest probe image (and check-in enabled)"})
-		return
+		// Resolve the proxy: jobs are keyed by proxy NAME (the probe token identity at check-in).
+		proxies, err := s.zbx.Proxies(ctx)
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			return
+		}
+		for _, p := range proxies {
+			if p.ProxyID == req.ProxyID {
+				proxyName = p.Name
+				break
+			}
+		}
+		if proxyName == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown probe"})
+			return
+		}
+		// Only a probe that has advertised the scan capability can run one (older images never will).
+		if ag, err := s.st.ProbeAgentByName(ctx, proxyName); err != nil || !ag.Scans {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "this probe hasn't reported the network-scan capability - it needs the latest probe image (and check-in enabled)"})
+			return
+		}
 	}
 
 	job := store.DiscoveryJob{ProxyName: proxyName, CIDR: cidr, SNMPVersion: 2, SNMPPort: 161}
@@ -136,9 +143,10 @@ func (s *Server) handleCreateDiscoveryJob(w http.ResponseWriter, r *http.Request
 		if p, err := strconv.Atoi(strings.TrimSpace(req.SNMP.Port)); err == nil && p > 0 && p < 65536 {
 			job.SNMPPort = p
 		}
-	default:
+	case !coreScan:
 		// The common case: fingerprint with the probe's own SNMP default (v1/v2c only - the
-		// scanner doesn't speak v3; a v3-only site just scans without SNMP).
+		// scanner doesn't speak v3; a v3-only site just scans without SNMP). The core has no
+		// SNMP default of its own, so core scans use only an explicitly entered community.
 		if def, ok, _ := s.st.SNMPDefaultFor(ctx, req.ProxyID); ok && def.Community != "" && def.Version != 3 {
 			job.SNMPCommunity = def.Community
 			if def.Version == 1 {
@@ -151,15 +159,76 @@ func (s *Server) handleCreateDiscoveryJob(w http.ResponseWriter, r *http.Request
 	}
 	id, err := s.st.CreateDiscoveryJob(ctx, job)
 	if errors.Is(err, store.ErrDiscoveryBusy) {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "a scan is already queued or running for this probe - wait for it to finish"})
+		who := "this probe"
+		if coreScan {
+			who = "the core server"
+		}
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "a scan is already queued or running for " + who + " - wait for it to finish"})
 		return
 	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the scan"})
 		return
 	}
-	s.logger.Info("discovery: scan queued", "proxy", proxyName, "cidr", cidr, "job", id, "snmp", job.SNMPCommunity != "")
+	if coreScan {
+		// Dispatch in-process right away (TakeDiscoveryJob flips it to dispatched and decrypts
+		// the community, exactly as a check-in would).
+		if taken, err := s.st.TakeDiscoveryJob(ctx, ""); err == nil && taken != nil {
+			go s.runCoreScan(*taken)
+		}
+	}
+	s.logger.Info("discovery: scan queued", "proxy", proxyName, "core", coreScan, "cidr", cidr, "job", id, "snmp", job.SNMPCommunity != "")
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "state": "pending"})
+}
+
+// runCoreScan executes a core-server scan in-process and completes the job like a probe would.
+// Runs in its own goroutine with its own deadline; a wedged scan is covered by the store's
+// dispatched-job expiry.
+func (s *Server) runCoreScan(job store.DiscoveryJob) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
+	defer cancel()
+	var cred *netscan.SNMPCred
+	if job.SNMPCommunity != "" {
+		cred = &netscan.SNMPCred{Version: job.SNMPVersion, Community: job.SNMPCommunity, Port: job.SNMPPort}
+	}
+	hosts, partial, err := netscan.Scan(ctx, job.CIDR, cred)
+	errMsg := ""
+	switch {
+	case err != nil:
+		errMsg = err.Error()
+		if len(errMsg) > 200 {
+			errMsg = errMsg[:200]
+		}
+	case partial:
+		errMsg = "scan hit the time budget - results are partial"
+	}
+	results := make([]store.DiscoveryResult, 0, len(hosts))
+	for _, h := range hosts {
+		f := provision.Fingerprint{TCP: h.TCP, DNS: h.DNS}
+		res := store.DiscoveryResult{IP: h.IP, RDNS: h.RDNS, DNS: h.DNS}
+		if h.SNMP != nil {
+			res.SysDescr, res.SysObjectID, res.SysName = h.SNMP.SysDescr, h.SNMP.SysObjectID, h.SNMP.SysName
+			f.SysDescr, f.SysObjectID, f.SysName = h.SNMP.SysDescr, h.SNMP.SysObjectID, h.SNMP.SysName
+		}
+		if h.HTTP != nil {
+			if b, err := json.Marshal(h.HTTP); err == nil {
+				res.HTTPJSON = string(b)
+			}
+			f.HTTPTitle, f.HTTPServer = h.HTTP.Title, h.HTTP.Server
+		}
+		ports, _ := json.Marshal(h.TCP)
+		res.TCPPorts = string(ports)
+		res.SuggestedClass = provision.SuggestClass(f)
+		results = append(results, res)
+	}
+	// A fresh context: the scan one may just have expired, and the write must still land.
+	sctx, scancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer scancel()
+	if err := s.st.CompleteDiscoveryJob(sctx, job.ID, "", errMsg, results); err != nil {
+		s.logger.Error("discovery: could not store core scan results", "job", job.ID, "err", err)
+		return
+	}
+	s.logger.Info("discovery: core scan finished", "job", job.ID, "cidr", job.CIDR, "hosts", len(results), "note", errMsg)
 }
 
 type discoveryJobView struct {

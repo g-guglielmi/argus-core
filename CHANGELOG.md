@@ -27,6 +27,11 @@ GitHub Release from the matching section below.
   auto-fire, proxy SNMP inheritance) and tagged `argus.source=discovered`. **Ignored** devices stay
   ignored across re-scans; IPs Argus already monitors are flagged. Requires a probe image with the
   scanner (`probe/v7.0.30-r13+`; older probes show "needs probe update"). Guide: `docs/discovery.md`.
+- **Scan from the core server too.** "Scan from: Core server" runs an equivalent built-in Go
+  scanner inside Argus itself (no probe involved) - for no-proxy deployments and anything monitored
+  by the core directly. Same fingerprints and review flow; ICMP-only devices are found where the
+  container runtime allows unprivileged ping (Docker's default), and MAC addresses are probe-only.
+  The core has no SNMP default, so type a community into the form for SNMP facts.
 
 **Changed:**
 - **Probe check-in tick: 5 minutes → 1 minute** (probe image), so queued scans are picked up within

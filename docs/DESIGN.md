@@ -272,7 +272,11 @@ backgrounds `argus_netscan.py` (stdlib-only, one process per scan, lock-file ser
 budget, ≤1024 addresses) and POSTs the raw fingerprints to `POST /api/probes/scan-results`
 (probe-token auth). Jobs/results persist in `discovery_jobs`/`discovery_results`; stale jobs expire
 (pending 5 min, dispatched 15 min). Classification lives on the core so the mapping improves without
-fleet releases. Adopted hosts are tagged `argus.source=discovered`.
+fleet releases. Adopted hosts are tagged `argus.source=discovered`. **Core as a scan source:** a
+scan can also run from the core server itself - no check-in to ride, so the job dispatches straight
+into an in-process Go scanner (`internal/netscan`, the twin of argus_netscan.py) covering the
+networks the core monitors directly. Container-imposed limits: ICMP uses an unprivileged datagram
+socket (works under Docker's default `ping_group_range`, silently skipped elsewhere) and no MAC/ARP.
 
 **Discovery trigger (shipped with §C).** LLD rules run on a long interval (1h on the SNMP classes),
 so a freshly added host would sit without its per-instance sensors. Two seams close that gap:

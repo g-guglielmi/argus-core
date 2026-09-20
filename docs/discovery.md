@@ -7,22 +7,30 @@ results as monitored devices in a couple of clicks - the auto-provisioning repla
 
 ## Requirements
 
-- The **probe** that runs the scan must be on a probe image that ships the scanner (any
-  `probe/v7.0.30-r13` or later; the rolling `latest` tag picks it up automatically) **and** have
-  check-in enabled (probes enrolled through Argus have it out of the box; older ones can be issued a
-  token from the Probes page). A probe that qualifies advertises the capability at check-in - until
-  it does, the Discovery form shows it as "(needs probe update)".
+- **Scanning from a probe** needs a probe image that ships the scanner (any `probe/v7.0.30-r13` or
+  later; the rolling `latest` tag picks it up automatically) **and** check-in enabled (probes
+  enrolled through Argus have it out of the box; older ones can be issued a token from the Probes
+  page). A probe that qualifies advertises the capability at check-in - until it does, the
+  Discovery form shows it as "(needs probe update)".
+- **Scanning from the core server** needs nothing extra: the Argus server runs an equivalent
+  built-in scanner in-process (for the networks the core reaches - the same ones you'd monitor with
+  "Monitored by: Core server"). Two container-imposed differences: devices that answer **only ICMP
+  ping** (phones, IoT with no open ports) are found only where the container runtime allows
+  unprivileged ping (Docker does by default) and are otherwise skipped, and **MAC addresses** are
+  never reported.
 - For SNMP fingerprinting, either set the probe's **SNMP default** (Probes → SNMP) or type a
-  community into the scan form. Only SNMP **v1/v2c** are used for scanning; a v3-only site simply
-  scans without SNMP facts.
+  community into the scan form (the core has no SNMP default, so core scans always need it typed).
+  Only SNMP **v1/v2c** are used for scanning; a v3-only site simply scans without SNMP facts.
 
 ## Running a scan
 
-1. Pick the probe ("Scan from"), enter the subnet in CIDR form (e.g. `10.0.0.0/24`; a bare IP means
-   just that host; a `/22` = 1024 addresses is the maximum), optionally override the SNMP community,
-   and pick the **site** new devices should join (pre-filled from the probe's site).
-2. **Start scan.** The job is handed to the probe at its next check-in (within a minute) and the
-   scan itself typically takes one to a few minutes for a /24. One scan runs per probe at a time.
+1. Pick where to scan from ("Scan from": the **core server** or a probe), enter the subnet in CIDR
+   form (e.g. `10.0.0.0/24`; a bare IP means just that host; a `/22` = 1024 addresses is the
+   maximum), optionally override the SNMP community, and pick the **site** new devices should join
+   (pre-filled from the probe's site).
+2. **Start scan.** A probe picks the job up at its next check-in (within a minute); a core scan
+   starts immediately. The scan itself typically takes one to a few minutes for a /24. One scan
+   runs per source at a time.
 3. Results appear in the review table as soon as the probe reports back.
 
 For each live address the probe reports: ICMP reachability, open TCP ports from a small service set

@@ -3645,23 +3645,26 @@ function DiscoveryView() {
 
   async function start() {
     if (busy) return
+    // 'core' = scan from the Argus server itself (in-process Go scanner, proxy_id ""); anything
+    // else is a probe id and the job rides that probe's check-in channel.
+    const isCore = proxyId === 'core'
     const p = (proxies || []).find((x) => x.id === proxyId)
-    if (!p) { setErr('Pick the probe that should run the scan'); return }
+    if (!isCore && !p) { setErr('Pick where to scan from - the core server or a probe'); return }
     if (!cidr.trim()) { setErr('Enter a subnet to scan, e.g. 10.0.0.0/24'); return }
     setBusy(true); setErr(null)
-    const body: Record<string, unknown> = { proxy_id: proxyId, cidr: cidr.trim() }
+    const body: Record<string, unknown> = { proxy_id: isCore ? '' : proxyId, cidr: cidr.trim() }
     if (community.trim()) body.snmp = { version: 2, community: community.trim() }
     const res = await fetch('/api/discovery/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null)
     setBusy(false)
     if (!res || !res.ok) { setErr(await errText(res, 'Could not start the scan')); return }
     const d = await res.json().catch(() => ({} as { id?: number }))
     setSel(new Set()); setRowCfg({}); setRowErr({}); setOpen(new Set()); setResults([])
-    if (!site || !groups.some((g) => g.name === site)) {
+    if (p && (!site || !groups.some((g) => g.name === site))) {
       const s = siteOfProxy(p.name)
       if (groups.some((g) => g.name === s)) setSite(s)
     }
     void loadJobs()
-    if (d.id) { setJob({ id: d.id, proxy_name: p.name, cidr: cidr.trim(), state: 'pending', created_at: Math.floor(Date.now() / 1000) }) }
+    if (d.id) { setJob({ id: d.id, proxy_name: p ? p.name : '', cidr: cidr.trim(), state: 'pending', created_at: Math.floor(Date.now() / 1000) }) }
   }
 
   const selectable = (r: DiscoveryResultRow) => r.state === 'new' && !r.monitored_id
@@ -3755,23 +3758,26 @@ function DiscoveryView() {
         <div style={grid}>
           <Field label="Scan from">
             <Select value={proxyId} onChange={(e) => { setProxyId(e.target.value); const p = (proxies || []).find((x) => x.id === e.target.value); if (p) { const s = siteOfProxy(p.name); if (groups.some((g) => g.name === s)) setSite(s) } }}>
-              <option value="">Choose a probe…</option>
+              <option value="">Choose…</option>
+              <option value="core">Core server</option>
               {(proxies || []).map((p) => <option key={p.id} value={p.id} disabled={!p.scans}>{p.name}{p.scans ? '' : ' (needs probe update)'}</option>)}
             </Select>
           </Field>
           <Field label="Subnet" placeholder="10.0.0.0/24" value={cidr} onChange={(e) => setCidr(e.target.value)} />
-          <Field label="SNMP community (optional)" placeholder="probe's SNMP default" value={community} onChange={(e) => setCommunity(e.target.value)} />
+          <Field label="SNMP community (optional)" placeholder={proxyId === 'core' ? 'none (core has no default)' : "probe's SNMP default"} value={community} onChange={(e) => setCommunity(e.target.value)} />
           <Field label="Site for adopted devices"><Select value={site} onChange={(e) => setSite(e.target.value)}><option value="">Choose a site…</option>{groups.map((g) => <option key={g.id} value={g.name}>{g.name}</option>)}</Select></Field>
           <Field label={' '}><Button variant="primary" block onClick={start} disabled={busy || running || proxies === null}>{running ? 'Scan in progress…' : busy ? 'Starting…' : 'Start scan'}</Button></Field>
         </div>
         {proxies !== null && scanCapable.length === 0 && (
-          <Banner variant="info">None of your probes has reported the network-scan capability yet - it ships with the latest probe image (and needs check-in enabled). Probes on the rolling <code>latest</code> tag pick it up on their next self-update.</Banner>
+          <Banner variant="info">None of your probes has reported the network-scan capability yet - it ships with the latest probe image (and needs check-in enabled); probes on the rolling <code>latest</code> tag pick it up on their next self-update. You can still scan from the core server.</Banner>
         )}
         {err && <Banner variant="error">{err}</Banner>}
         {job && running && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: 13, color: 'var(--muted)' }}>
             <span className="spinner" aria-hidden="true" />
-            {jobState === 'pending' ? `Waiting for ${job.proxy_name} to pick the scan up (it checks in every minute)…` : `${job.proxy_name} is scanning ${job.cidr}… this can take a few minutes.`}
+            {!job.proxy_name ? `The core server is scanning ${job.cidr}… this can take a few minutes.`
+              : jobState === 'pending' ? `Waiting for ${job.proxy_name} to pick the scan up (it checks in every minute)…`
+              : `${job.proxy_name} is scanning ${job.cidr}… this can take a few minutes.`}
           </div>
         )}
         {job && job.state === 'failed' && <Banner variant="error">Scan of {job.cidr} failed: {job.error || 'unknown error'}</Banner>}
@@ -3879,7 +3885,7 @@ function DiscoveryView() {
           <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>Recent scans:</span>
           {jobs.map((j) => (
             <button key={j.id} className={'disc-chip' + (job?.id === j.id ? ' on' : '')} onClick={() => { setSel(new Set()); setRowErr({}); setOpen(new Set()); void loadJob(j.id) }}
-              title={`${j.proxy_name} · ${relTime(j.created_at)}${j.requested_by ? ` · by ${j.requested_by}` : ''}${j.error ? ` · ${j.error}` : ''}`}>
+              title={`${j.proxy_name || 'Core server'} · ${relTime(j.created_at)}${j.requested_by ? ` · by ${j.requested_by}` : ''}${j.error ? ` · ${j.error}` : ''}`}>
               {j.cidr} <span className={'tag' + (j.state === 'done' ? ' online' : j.state === 'failed' ? '' : ' pending')}>{j.state}</span>
             </button>
           ))}
