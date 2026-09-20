@@ -17,17 +17,20 @@ results as monitored devices in a couple of clicks - the auto-provisioning repla
   "Monitored by: Core server"). Two container-imposed differences: devices that answer **only ICMP
   ping** (phones, IoT with no open ports) are found only where the container runtime allows
   unprivileged ping (Docker does by default) and are otherwise skipped, and **MAC addresses** are
-  never reported.
-- For SNMP fingerprinting, either set the probe's **SNMP default** (Probes → SNMP) or type a
-  community into the scan form (the core has no SNMP default, so core scans always need it typed).
-  Only SNMP **v1/v2c** are used for scanning; a v3-only site simply scans without SNMP facts.
+  never reported. The core's SNMP default is set under Probes → **Core SNMP** - it also enables
+  SNMP-credential inheritance for every device monitored by the core, exactly like a probe's
+  default does for its site.
+- For SNMP fingerprinting, the scan **inherits the collector's SNMP default** - the probe's
+  (Probes → the probe's Defaults) or the core server's (Probes → **Core SNMP**) - unless you type a
+  community into the form for this one scan. Only SNMP **v1/v2c** are used for scanning; a v3-only
+  site simply scans without SNMP facts.
 
 ## Running a scan
 
 1. Pick where to scan from ("Scan from": the **core server** or a probe), enter the subnet in CIDR
    form (e.g. `10.0.0.0/24`; a bare IP means just that host; a `/22` = 1024 addresses is the
-   maximum), optionally override the SNMP community, and pick the **site** new devices should join
-   (pre-filled from the probe's site).
+   maximum), and optionally override the SNMP community for this scan. The **site** is chosen at
+   review time, not here.
 2. **Start scan.** A probe picks the job up at its next check-in (within a minute); a core scan
    starts immediately. The scan itself typically takes one to a few minutes for a /24. One scan
    runs per source at a time.
@@ -53,10 +56,12 @@ Ping + HTTP). Per row you can:
   agentless Linux class) and toggle the **HTTP/HTTPS add-on** when the device answered on a web
   port (scheme and port are taken from the scan).
 
-Then select the rows you want (header checkbox = all) and **Add selected** - each device is created
-exactly like the manual Add-device path (Base Ping + the class templates, thresholds from the class,
-LLD fired right away), bound to the scanning probe, tagged `argus.source=discovered`. SNMP-class
-devices inherit the probe's SNMP default like everywhere else in Argus.
+Then select the rows you want (header checkbox = all), pick the **site** they join in the toolbar
+(pre-filled from the scanning probe's site; override per device in its row settings), and **Add
+selected** - each device is created exactly like the manual Add-device path (Base Ping + the class
+templates, thresholds from the class, LLD fired right away), bound to the scanning collector,
+tagged `argus.source=discovered`. SNMP-class devices inherit their collector's SNMP default like
+everywhere else in Argus - including the core's own default for core-monitored devices.
 
 Rows you don't care about: **Ignore selected**. Ignored devices stay ignored on future re-scans of
 that probe (unignore any time via "Show ignored"). Devices Argus already monitors are flagged

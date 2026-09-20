@@ -143,11 +143,15 @@ func (s *Server) handleCreateDiscoveryJob(w http.ResponseWriter, r *http.Request
 		if p, err := strconv.Atoi(strings.TrimSpace(req.SNMP.Port)); err == nil && p > 0 && p < 65536 {
 			job.SNMPPort = p
 		}
-	case !coreScan:
-		// The common case: fingerprint with the probe's own SNMP default (v1/v2c only - the
-		// scanner doesn't speak v3; a v3-only site just scans without SNMP). The core has no
-		// SNMP default of its own, so core scans use only an explicitly entered community.
-		if def, ok, _ := s.st.SNMPDefaultFor(ctx, req.ProxyID); ok && def.Community != "" && def.Version != 3 {
+	default:
+		// The common case: fingerprint with the collector's own SNMP default (v1/v2c only - the
+		// scanner doesn't speak v3; a v3-only site just scans without SNMP). The core server's
+		// default lives under proxy id "0" (set via Probes -> Core SNMP).
+		defID := req.ProxyID
+		if coreScan {
+			defID = "0"
+		}
+		if def, ok, _ := s.st.SNMPDefaultFor(ctx, defID); ok && def.Community != "" && def.Version != 3 {
 			job.SNMPCommunity = def.Community
 			if def.Version == 1 {
 				job.SNMPVersion = 1

@@ -249,21 +249,26 @@ func (s *Server) resolveInterface(ctx context.Context, class provision.Class, re
 	}
 	var details *zabbix.SNMPDetails
 	inherit := false
-	switch {
-	case req.SNMP != nil: // explicit override entered in the form
+	if req.SNMP != nil { // explicit override entered in the form
 		v := req.SNMP.Version
 		if v == 0 {
 			v = 2
 		}
 		details = &zabbix.SNMPDetails{Version: v, Community: req.SNMP.Community, Bulk: 1}
-	case proxyID != "": // the common case: inherit the proxy's SNMP default
-		if def, ok, _ := s.st.SNMPDefaultFor(ctx, proxyID); ok {
+	} else {
+		// The common case: inherit the collector's SNMP default - the proxy's, or the core
+		// server's own default (stored under proxy id "0") for server-monitored hosts.
+		defID := proxyID
+		if defID == "" {
+			defID = "0"
+		}
+		if def, ok, _ := s.st.SNMPDefaultFor(ctx, defID); ok {
 			details = defaultToDetails(def)
 			inherit = true
 		}
 	}
 	if details == nil {
-		return nil, false, "no SNMP settings: this host's proxy has no SNMP default (set one in Probes), or switch on the override and enter them here"
+		return nil, false, "no SNMP settings: this host's collector has no SNMP default (set one in Probes - the probe's Defaults, or Core SNMP), or switch on the override and enter them here"
 	}
 	return []zabbix.HostInterface{{Type: 2, Main: 1, UseIP: u, IP: req.IP, DNS: req.DNS, Port: port, SNMP: details}}, inherit, ""
 }

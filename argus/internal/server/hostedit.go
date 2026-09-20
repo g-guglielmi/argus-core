@@ -109,6 +109,8 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 		if def, ok, _ := s.st.SNMPDefaultFor(ctx, hd.ProxyID); ok {
 			out.ProxyDefault = defaultToView(def)
 		}
+	} else if def, ok, _ := s.st.SNMPDefaultFor(ctx, "0"); ok {
+		out.ProxyDefault = defaultToView(def) // server-monitored: the core's own SNMP default ("0")
 	}
 	inherit, _ := s.st.SNMPInheritMap(ctx)
 	for _, i := range hd.Interfaces {
@@ -227,9 +229,10 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// SNMP inheritance: an interface set to "inherit" takes its creds from the host's (effective) proxy
-	// default rather than the submitted values.
-	effProxyID := ""
+	// SNMP inheritance: an interface set to "inherit" takes its creds from the host's (effective)
+	// collector default rather than the submitted values - the proxy's, or the core server's own
+	// default (stored under proxy id "0") for server-monitored hosts.
+	effProxyID := "0"
 	if req.MonitoredBy == 1 {
 		effProxyID = strings.TrimSpace(req.ProxyID)
 	}
@@ -256,11 +259,11 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		if iv.Type == 2 {
 			if iv.Inherit {
 				if effProxyID == "" {
-					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the host must be monitored by a proxy to inherit SNMP defaults"})
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "pick the proxy this host is monitored by before inheriting SNMP defaults"})
 					return
 				}
 				if !hasProxyDef {
-					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no SNMP default is set for this host's proxy - set one in the Probes tab, or override on the host"})
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no SNMP default is set for this host's collector - set one in the Probes tab (the probe's Defaults, or Core SNMP), or override on the host"})
 					return
 				}
 				iface.SNMP = defaultToDetails(proxyDef)

@@ -1929,6 +1929,11 @@ function probeComposeCmd(c: CreatedToken): string {
   ].join('\n')
 }
 
+// Sentinel for the Core-server SNMP-defaults band in openSnmp (otherwise keyed by probe name).
+// The core's default is stored under proxy id "0" and is what core-monitored hosts inherit and
+// core-run discovery scans fingerprint with.
+const CORE_SNMP = '::core::'
+
 function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
   const confirm = useConfirm()
   const alert = useAlert()
@@ -2050,9 +2055,10 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
           const needReboot = (proxies || []).filter((p) => p.reboot_required).length
           return needReboot > 0 ? <span className="tag avail" title="These probe VMs need a reboot to finish applying OS updates; each reboots in its weekly ~03:00 window">{needReboot} need a reboot</span> : null
         })()}
-        {isAdmin && <div className="tools">
-          <button className="btn" onClick={reconcile} title="Prune Argus records left behind by probes deleted directly in Zabbix">Clean up</button>
-          {enroll && <button className="btn primary" onClick={() => setWizardOpen(true)}>+ Add probe</button>}
+        {canEdit && <div className="tools">
+          <button className="btn" onClick={() => setOpenSnmp((n) => (n === CORE_SNMP ? null : CORE_SNMP))} title="The core server's own SNMP default - inherited by hosts monitored by the core, and used by core-run discovery scans">Core SNMP</button>
+          {isAdmin && <button className="btn" onClick={reconcile} title="Prune Argus records left behind by probes deleted directly in Zabbix">Clean up</button>}
+          {isAdmin && enroll && <button className="btn primary" onClick={() => setWizardOpen(true)}>+ Add probe</button>}
         </div>}
       </div>
 
@@ -2081,6 +2087,8 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
       )}
 
       {isAdmin && <FleetTarget target={target} latest={(proxies || []).find((p) => p.latest)?.latest} onSaved={setTarget} />}
+
+      {openSnmp === CORE_SNMP && <ProxySNMP proxyId="0" proxyName="Core server" onClose={() => setOpenSnmp(null)} />}
 
       <div className="enroll-scroll">
       <table className="enroll enroll-probes">
@@ -3366,16 +3374,18 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
     .sort((a, b) => (a.value === 'base' ? -1 : b.value === 'base' ? 1 : a.label.localeCompare(b.label))), [classes])
   const needsSnmp = cls?.iface === 'snmp'
   const offersHttp = !!cls?.offers_http
-  const proxyName = proxies.find((p) => p.id === proxyId)?.name || 'the proxy'
-  const canInherit = needsSnmp && proxyId !== '' && !!proxySnmp?.set
+  const proxyName = proxyId === '' ? 'the core server' : (proxies.find((p) => p.id === proxyId)?.name || 'the proxy')
+  const canInherit = needsSnmp && !!proxySnmp?.set
   const showSnmpFields = needsSnmp && proxySnmp !== null && (!canInherit || snmpOverride)
 
-  // For an SNMP class, check whether the chosen proxy has an SNMP default to inherit, so the form can
-  // hide the credential fields (the common case) and only ask when overriding or when none is set.
+  // For an SNMP class, check whether the chosen collector has an SNMP default to inherit, so the form
+  // can hide the credential fields (the common case) and only ask when overriding or when none is set.
+  // The core server's own default lives under proxy id "0" (Probes -> Core SNMP).
   useEffect(() => {
-    if (!needsSnmp || proxyId === '') { setProxySnmp({ set: false }); return }
+    if (!needsSnmp) { setProxySnmp({ set: false }); return }
     setProxySnmp(null)
-    fetch(`/api/proxies/${encodeURIComponent(proxyId)}/snmp`).then((r) => (r.ok ? r.json() : { set: false })).then((d) => setProxySnmp({ set: !!d.set })).catch(() => setProxySnmp({ set: false }))
+    const id = proxyId === '' ? '0' : proxyId
+    fetch(`/api/proxies/${encodeURIComponent(id)}/snmp`).then((r) => (r.ok ? r.json() : { set: false })).then((d) => setProxySnmp({ set: !!d.set })).catch(() => setProxySnmp({ set: false }))
   }, [needsSnmp, proxyId])
 
   // Changing the class starts its macros fresh (so a derived URL is re-derived, not carried over).
@@ -3477,7 +3487,7 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
               </div>
             )}
             {proxySnmp !== null && !proxySnmp.set && (
-              <span style={{ fontSize: 13, color: 'var(--muted)' }}>{proxyId === '' ? 'Hosts on the core server have' : `${proxyName} has`} no SNMP default - enter settings below{proxyId !== '' ? ', or set one in Probes to reuse it' : ''}.</span>
+              <span style={{ fontSize: 13, color: 'var(--muted)' }}>{proxyName} has no SNMP default - enter settings below, or set one in Probes{proxyId === '' ? ' (Core SNMP)' : ''} to reuse it.</span>
             )}
             {showSnmpFields && (
               <div style={grid}>
@@ -3538,7 +3548,7 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
 type DiscoveryJobRow = { id: number; proxy_name: string; cidr: string; state: string; error?: string; requested_by?: string; created_at: number; completed_at?: number }
 type DiscoveryHTTP = { port: number; scheme: string; status: number; server?: string; title?: string }
 type DiscoveryResultRow = { id: number; ip: string; mac?: string; rdns?: string; tcp: number[]; sysdescr?: string; sysobjectid?: string; sysname?: string; http?: DiscoveryHTTP; dns?: boolean; suggested_class?: string; state: string; host_id?: string; monitored_id?: string; monitored_name?: string }
-type DiscRowCfg = { name: string; classId: string; http: boolean; macros: Record<string, string> }
+type DiscRowCfg = { name: string; classId: string; http: boolean; macros: Record<string, string>; site?: string }
 
 function DiscoveryView() {
   const [proxies, setProxies] = useState<Proxy[] | null>(null)
@@ -3617,6 +3627,15 @@ function DiscoveryView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [classes, results])
 
+  // Default the adopt-site from the scanning probe once a job is in view (a core scan carries no
+  // site of its own, and any site the admin already picked wins).
+  useEffect(() => {
+    if (!job || site) return
+    const s = siteOfProxy(job.proxy_name || '')
+    if (s && groups.some((g) => g.name === s)) setSite(s)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.id, groups.length])
+
   // While a scan is pending/dispatched, poll it (self-rescheduling so slow responses never overlap).
   const jobId = job?.id, jobState = job?.state
   useEffect(() => {
@@ -3659,10 +3678,6 @@ function DiscoveryView() {
     if (!res || !res.ok) { setErr(await errText(res, 'Could not start the scan')); return }
     const d = await res.json().catch(() => ({} as { id?: number }))
     setSel(new Set()); setRowCfg({}); setRowErr({}); setOpen(new Set()); setResults([])
-    if (p && (!site || !groups.some((g) => g.name === site))) {
-      const s = siteOfProxy(p.name)
-      if (groups.some((g) => g.name === s)) setSite(s)
-    }
     void loadJobs()
     if (d.id) { setJob({ id: d.id, proxy_name: p ? p.name : '', cidr: cidr.trim(), state: 'pending', created_at: Math.floor(Date.now() / 1000) }) }
   }
@@ -3683,7 +3698,6 @@ function DiscoveryView() {
 
   async function addSelected() {
     if (adding) return
-    if (!site.trim()) { setErr('Pick the site the new devices belong to'); return }
     const jobProxyId = (proxies || []).find((p) => p.name === job?.proxy_name)?.id || ''
     setAdding(true); setErr(null)
     const errs: Record<number, string> = { ...rowErr }
@@ -3700,9 +3714,11 @@ function DiscoveryView() {
         if (v) macros[ms.macro] = v
         else if (ms.required) bad = `${ms.label} is required - open the row's settings`
       }
+      const siteFor = (cfg.site || site).trim()
+      if (!siteFor) bad = 'pick a site - in the toolbar for all selected, or per device in the row settings'
       if (!cfg.name.trim()) bad = 'a name is required'
       if (bad) { errs[id] = bad; setOpen((s) => new Set(s).add(id)); continue }
-      const body: Record<string, unknown> = { name: cfg.name.trim(), ip: r.ip, use_ip: true, site: site.trim(), proxy_id: jobProxyId, class_id: cfg.classId, discovery_result_id: id }
+      const body: Record<string, unknown> = { name: cfg.name.trim(), ip: r.ip, use_ip: true, site: siteFor, proxy_id: jobProxyId, class_id: cfg.classId, discovery_result_id: id }
       if (Object.keys(macros).length) body.macros = macros
       if (cls?.offers_http && cfg.http && r.http) {
         body.http = true; body.http_scheme = r.http.scheme
@@ -3757,16 +3773,17 @@ function DiscoveryView() {
       <div className="disc-form" style={{ padding: '0 1rem 0.9rem' }}>
         <div style={grid}>
           <Field label="Scan from">
-            <Select value={proxyId} onChange={(e) => { setProxyId(e.target.value); const p = (proxies || []).find((x) => x.id === e.target.value); if (p) { const s = siteOfProxy(p.name); if (groups.some((g) => g.name === s)) setSite(s) } }}>
+            <Select value={proxyId} onChange={(e) => setProxyId(e.target.value)}>
               <option value="">Choose…</option>
               <option value="core">Core server</option>
               {(proxies || []).map((p) => <option key={p.id} value={p.id} disabled={!p.scans}>{p.name}{p.scans ? '' : ' (needs probe update)'}</option>)}
             </Select>
           </Field>
           <Field label="Subnet" placeholder="10.0.0.0/24" value={cidr} onChange={(e) => setCidr(e.target.value)} />
-          <Field label="SNMP community (optional)" placeholder={proxyId === 'core' ? 'none (core has no default)' : "probe's SNMP default"} value={community} onChange={(e) => setCommunity(e.target.value)} />
-          <Field label="Site for adopted devices"><Select value={site} onChange={(e) => setSite(e.target.value)}><option value="">Choose a site…</option>{groups.map((g) => <option key={g.id} value={g.name}>{g.name}</option>)}</Select></Field>
-          <Field label={' '}><Button variant="primary" block onClick={start} disabled={busy || running || proxies === null}>{running ? 'Scan in progress…' : busy ? 'Starting…' : 'Start scan'}</Button></Field>
+          <Field label="SNMP community (optional)" placeholder={proxyId === 'core' ? "core's SNMP default" : "probe's SNMP default"} value={community} onChange={(e) => setCommunity(e.target.value)} />
+          {/* An nbsp label (a plain space collapses to zero height) + an input-height button, so the
+              button bottom-aligns with the inputs beside it, not with their labels. */}
+          <Field label={' '}><Button variant="primary" block style={{ height: 39 }} onClick={start} disabled={busy || running || proxies === null}>{running ? 'Scan in progress…' : busy ? 'Starting…' : 'Start scan'}</Button></Field>
         </div>
         {proxies !== null && scanCapable.length === 0 && (
           <Banner variant="info">None of your probes has reported the network-scan capability yet - it ships with the latest probe image (and needs check-in enabled); probes on the rolling <code>latest</code> tag pick it up on their next self-update. You can still scan from the core server.</Banner>
@@ -3788,6 +3805,11 @@ function DiscoveryView() {
         <>
           <div className="disc-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', padding: '0 1rem 0.7rem' }}>
             <Button variant="primary" onClick={addSelected} disabled={sel.size === 0 || adding}>{adding ? 'Adding…' : `Add ${sel.size || ''} selected`.replace('  ', ' ')}</Button>
+            <span style={{ fontSize: 13, color: 'var(--muted)' }}>into</span>
+            <Select value={site} onChange={(e) => setSite(e.target.value)} style={{ width: 'auto', minWidth: 150 }} title="The site the selected devices join - override per device in its row settings">
+              <option value="">Choose a site…</option>
+              {groups.map((g) => <option key={g.id} value={g.name}>{g.name}</option>)}
+            </Select>
             <Button variant="ghost" onClick={() => setState(Array.from(sel), 'ignored')} disabled={sel.size === 0 || adding}>Ignore selected</Button>
             <span style={{ flex: 1 }} />
             {results.some((r) => r.state === 'ignored') && <Switch checked={showIgnored} onChange={setShowIgnored} label="Show ignored" />}
@@ -3804,7 +3826,7 @@ function DiscoveryView() {
                   const cfg = rowCfg[r.id]
                   const canPick = selectable(r)
                   const cls = classes.find((c) => c.id === cfg?.classId)
-                  const hasBand = (attachMacros(cfg?.classId || '').length > 0) || (!!cls?.offers_http && !!r.http)
+                  const hasBand = canPick // the band always at least offers the per-device site override
                   const fp = facts(r)
                   return (
                     <Fragment key={r.id}>
@@ -3847,6 +3869,14 @@ function DiscoveryView() {
                       {canPick && cfg && open.has(r.id) && (
                         <tr className="disc-band-row"><td colSpan={5} style={{ padding: 0 }}>
                           <div className="disc-band">
+                            <div style={grid}>
+                              <Field label="Site (this device)">
+                                <Select value={cfg.site || ''} onChange={(e) => setCfg(r.id, { site: e.target.value })}>
+                                  <option value="">{site ? `same as the toolbar (${site})` : 'same as the toolbar'}</option>
+                                  {groups.map((g) => <option key={g.id} value={g.name}>{g.name}</option>)}
+                                </Select>
+                              </Field>
+                            </div>
                             {attachMacros(cfg.classId).length > 0 && (
                               <div style={grid}>
                                 {attachMacros(cfg.classId).map((ms) => (
@@ -3976,17 +4006,17 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
           </div>
           {i.type === 2 && (
             <div className="if-snmp">
-              {cfg.monitored_by === 1 && (
+              {(cfg.monitored_by === 0 || cfg.monitored_by === 1) && (
                 <label className="field if-inherit"><span>SNMP credentials</span>
                   <div className="seg">
-                    <button className={i.inherit ? 'on' : ''} disabled={!canEdit || !cfg.proxy_default} onClick={() => setIface(idx, { inherit: true })}>Inherit from {cfg.proxy_name || 'proxy'}</button>
+                    <button className={i.inherit ? 'on' : ''} disabled={!canEdit || !cfg.proxy_default} onClick={() => setIface(idx, { inherit: true })}>Inherit from {cfg.proxy_name || (cfg.monitored_by === 0 ? 'the core server' : 'proxy')}</button>
                     <button className={!i.inherit ? 'on' : ''} disabled={!canEdit} onClick={() => setIface(idx, { inherit: false })}>Override</button>
                   </div>
                 </label>
               )}
-              {cfg.monitored_by === 1 && !cfg.proxy_default && <div className="if-inherit-note">No SNMP default is set for {cfg.proxy_name || 'this proxy'} yet - set one in the Probes tab (its “Defaults” button) to enable inheritance.</div>}
+              {(cfg.monitored_by === 0 || cfg.monitored_by === 1) && !cfg.proxy_default && <div className="if-inherit-note">No SNMP default is set for {cfg.proxy_name || (cfg.monitored_by === 0 ? 'the core server' : 'this proxy')} yet - set one in the Probes tab ({cfg.monitored_by === 0 ? 'Core SNMP' : 'its “Defaults” button'}) to enable inheritance.</div>}
               {i.inherit
-                ? <div className="if-inherit-note">Using {cfg.proxy_name || 'the proxy'}’s SNMP default{cfg.proxy_default ? ` (v${cfg.proxy_default.version === 2 ? '2c' : cfg.proxy_default.version}${cfg.proxy_default.version !== 3 ? `, community “${cfg.proxy_default.community}”` : ''})` : ''} - change it in the Probes tab.</div>
+                ? <div className="if-inherit-note">Using {cfg.proxy_name || (cfg.monitored_by === 0 ? 'the core server' : 'the proxy')}’s SNMP default{cfg.proxy_default ? ` (v${cfg.proxy_default.version === 2 ? '2c' : cfg.proxy_default.version}${cfg.proxy_default.version !== 3 ? `, community “${cfg.proxy_default.community}”` : ''})` : ''} - change it in the Probes tab.</div>
                 : <>
               <label className="field"><span>SNMP version</span>
                 <select className="input" value={i.snmp?.version ?? 2} disabled={!canEdit} onChange={(e) => setSnmp(idx, { version: Number(e.target.value) })}>

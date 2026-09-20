@@ -17,8 +17,9 @@ the same item keys as the Linux (SNMP) class, so the readings curate identically
 
 ## 2. Add the host in Argus
 
-**Add device → Windows (SNMP)**, give the host's IP or DNS name. The SNMP credentials inherit the site
-proxy's SNMP default (set in the Probes tab) unless you override them on the host. CPU, memory, disk,
+**Add device → Windows (SNMP)**, give the host's IP or DNS name. The SNMP credentials inherit the
+collector's SNMP default - the site proxy's, or Core SNMP for core-monitored hosts (both set in the
+Probes tab) - unless you override them on the host. CPU, memory, disk,
 network and uptime start reporting within a minute or two.
 
 ## 3. Service monitoring (opt-in)

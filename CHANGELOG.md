@@ -31,7 +31,13 @@ GitHub Release from the matching section below.
   scanner inside Argus itself (no probe involved) - for no-proxy deployments and anything monitored
   by the core directly. Same fingerprints and review flow; ICMP-only devices are found where the
   container runtime allows unprivileged ping (Docker's default), and MAC addresses are probe-only.
-  The core has no SNMP default, so type a community into the form for SNMP facts.
+- **The core server now has its own SNMP default** (Probes → **Core SNMP**), completing the
+  PRTG-style inheritance story for no-proxy setups: core-monitored SNMP devices can inherit it in
+  Add-device and host settings (changes propagate to inheriting hosts, same as a probe default),
+  and core-run discovery scans fingerprint with it automatically.
+- **Discovery review picks the site, not the scan form.** The site for adopted devices moved to
+  where it belongs: a toolbar select at review time (pre-filled from the scanning probe's site)
+  with a per-device override in each row's settings band - so one scan can adopt into several sites.
 
 **Changed:**
 - **Probe check-in tick: 5 minutes → 1 minute** (probe image), so queued scans are picked up within

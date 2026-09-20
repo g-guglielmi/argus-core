@@ -277,6 +277,8 @@ scan can also run from the core server itself - no check-in to ride, so the job 
 into an in-process Go scanner (`internal/netscan`, the twin of argus_netscan.py) covering the
 networks the core monitors directly. Container-imposed limits: ICMP uses an unprivileged datagram
 socket (works under Docker's default `ping_group_range`, silently skipped elsewhere) and no MAC/ARP.
+The core has its own SNMP default (stored under proxy id "0", set via Probes → Core SNMP): it backs
+core-run scans and gives core-monitored hosts the same SNMP-credential inheritance as proxy hosts.
 
 **Discovery trigger (shipped with §C).** LLD rules run on a long interval (1h on the SNMP classes),
 so a freshly added host would sit without its per-instance sensors. Two seams close that gap:

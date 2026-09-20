@@ -27,8 +27,9 @@ Install and configure `snmpd` (Debian/Ubuntu: `snmpd`; RHEL/Fedora: `net-snmp`):
 
 ## 2. Add the host in Argus
 
-**Add device → Linux (SNMP)**, give the IP or DNS name. SNMP credentials inherit the site
-proxy's SNMP default (set in the Probes tab) unless you override them on the host. CPU, memory,
+**Add device → Linux (SNMP)**, give the IP or DNS name. SNMP credentials inherit the collector's
+SNMP default - the site proxy's, or Core SNMP for core-monitored hosts (both set in the Probes
+tab) - unless you override them on the host. CPU, memory,
 filesystems, NICs and uptime start reporting within a minute or two.
 
 ## What it monitors
