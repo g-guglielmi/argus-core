@@ -244,19 +244,35 @@ Dashboards (list views, same event stream):
 
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")
 
-> Sequencing: **§C** builds the class templates (§5) plus a **manual** attach path; **§B**
-> automates steps 1-6 below (fingerprint → attach → LLD → review). Separate roadmap items -
-> templates first, then discovery on top of them.
+> Sequencing: **§C** built the class templates (§5) plus a **manual** attach path; **§B** automates
+> the pipeline below on top of them. The **universal subnet scan** (steps 2-6) is SHIPPED; the
+> UniFi API sweep (step 1) is the remaining §B item - a second candidate source into the same
+> pipeline.
 
 Runs per-site on the probe, reports to core for provisioning:
-1. **UniFi API sweep** → managed inventory (gateway/switches/APs + known clients) with
-   model/MAC/IP/uptime/port stats → become Zabbix hosts, tagged by site, bound to that proxy.
-2. **Capability fingerprint** per host → SNMP (`sysObjectID`), HTTP(S), DNS :53, NUT :3493.
-3. **Template attach** by fingerprint.
-4. **LLD** creates only instances that exist (disks, filesystems, NICs, temps, PSUs, ports)
-   → satisfies "only show fields the device reports."
-5. **Default thresholds** applied; overridable in the UI.
-6. New devices surface in the UI as **"Discovered - review"** (confirm / adjust / ignore).
+1. **UniFi API sweep** (planned) → managed inventory (gateway/switches/APs + known clients) with
+   model/MAC/IP/uptime/port stats → candidates into the same review pipeline as the subnet scan.
+2. **Capability fingerprint** per host ✅ → ICMP + a TCP port set (22/53/80/443/445/3493/8080/8443/10050),
+   SNMP `sysDescr`/`sysObjectID`/`sysName` (hand-rolled v1/v2c GET), an HTTP(S) banner grab
+   (status/Server/`<title>`), a real DNS query on :53, reverse DNS and the ARP cache.
+3. **Template attach** by fingerprint ✅ → the core maps raw facts to a suggested device class
+   (`provision.SuggestClass`); the admin can override per row before adopting.
+4. **LLD** creates only instances that exist ✅ (adoption reuses `POST /api/hosts`, incl. the
+   post-create LLD auto-fire below).
+5. **Default thresholds** applied ✅ (classes carry them; overridable per host).
+6. New devices surface in the UI for review ✅ → the admin-only **Discovery** tab: pick a probe +
+   subnet, multi-select results, adjust name/class/macros per row, adopt or ignore (ignored devices
+   stay ignored across re-scans; already-monitored IPs are flagged).
+
+**Mechanics (universal subnet scan, shipped).** The scan piggybacks on the probe check-in channel,
+so the probe stays a pure reporter with no listening port: the check-in loop (60 s tick) advertises
+`"scans":true`, the core hands a queued job out exactly once in the check-in response
+(`scan: {id, cidr, snmp}` - SNMP creds default to the probe's SNMP default, v1/v2c only), the probe
+backgrounds `argus_netscan.py` (stdlib-only, one process per scan, lock-file serialised, 8-minute
+budget, ≤1024 addresses) and POSTs the raw fingerprints to `POST /api/probes/scan-results`
+(probe-token auth). Jobs/results persist in `discovery_jobs`/`discovery_results`; stale jobs expire
+(pending 5 min, dispatched 15 min). Classification lives on the core so the mapping improves without
+fleet releases. Adopted hosts are tagged `argus.source=discovered`.
 
 **Discovery trigger (shipped with §C).** LLD rules run on a long interval (1h on the SNMP classes),
 so a freshly added host would sit without its per-instance sensors. Two seams close that gap:

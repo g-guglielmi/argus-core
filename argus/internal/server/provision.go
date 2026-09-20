@@ -72,6 +72,10 @@ type createHostRequest struct {
 	HTTPScheme string            `json:"http_scheme"` // http | https (macro override)
 	SNMP       *snmpReq          `json:"snmp"`        // required for SNMP-interface classes
 	Macros     map[string]string `json:"macros"`      // extra per-host macro overrides
+	// Set when the host is adopted from the Discovery review screen (§B): the discovery result this
+	// host came from. The host is tagged/recorded with source "discovered" and the result is marked
+	// added, so a re-scan shows it as already monitored.
+	DiscoveryResultID int64 `json:"discovery_result_id,omitempty"`
 }
 
 // POST /api/hosts - create a monitored host from a device class. Admin only (wired in server.go).
@@ -173,6 +177,10 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	source := "manual"
+	if req.DiscoveryResultID > 0 {
+		source = "discovered"
+	}
 	hostID, err := s.zbx.CreateHost(ctx, zabbix.CreateHostParams{
 		Host:        req.Name,
 		Name:        req.Visible,
@@ -184,7 +192,7 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 		ProxyID:     proxyID,
 		Tags: []zabbix.HostTag{
 			{Tag: "argus.class", Value: class.ID},
-			{Tag: "argus.source", Value: "manual"},
+			{Tag: "argus.source", Value: source},
 		},
 	})
 	if err != nil {
@@ -193,8 +201,15 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 	}
 	// Record the Argus overlay. A failure here doesn't undo the host (it exists + is monitored); it
 	// just means the class tag on the Zabbix host is the only record until the next reconcile.
-	if err := s.st.SetDeviceClass(ctx, hostID, class.ID, "manual"); err != nil {
+	if err := s.st.SetDeviceClass(ctx, hostID, class.ID, source); err != nil {
 		s.logger.Error("provision: could not record device-class overlay", "host", hostID, "err", err)
+	}
+	// Adopted from a discovery scan: mark the result, so the review screen and future re-scans show
+	// it as monitored. Best-effort - the host itself is already created.
+	if req.DiscoveryResultID > 0 {
+		if err := s.st.MarkDiscoveryResultAdded(ctx, req.DiscoveryResultID, hostID); err != nil {
+			s.logger.Warn("provision: could not mark discovery result adopted", "result", req.DiscoveryResultID, "err", err)
+		}
 	}
 	// Mark the SNMP interface as inheriting its proxy default, so a later change to that default
 	// propagates here like every other inheriting interface (server/snmp.go).

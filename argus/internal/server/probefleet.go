@@ -94,25 +94,31 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		Version        string `json:"version"`
 		SelfUpdate     *bool  `json:"selfupdate"`      // pointer: omitted keeps the stored flag (two-reporter model)
 		UpdaterVersion string `json:"updater_version"` // the sidecar reports its own version here
+		Scans          *bool  `json:"scans"`           // the proxy container advertises the network-scan capability
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
-	if err := s.st.RecordProbeCheckin(ctx, proxyName, strings.TrimSpace(req.Version), req.SelfUpdate); err != nil {
+	if err := s.st.RecordProbeCheckin(ctx, proxyName, strings.TrimSpace(req.Version), req.SelfUpdate, req.Scans); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record check-in"})
 		return
 	}
 	_ = s.st.SetUpdaterVersion(ctx, proxyName, strings.TrimSpace(req.UpdaterVersion))
 	target, _ := s.st.ProbeTargetVersion(ctx)
-	resp := map[string]string{"target": target}
+	var resp struct {
+		Target        string          `json:"target"`
+		CoreHost      string          `json:"core_host,omitempty"`
+		Update        string          `json:"update,omitempty"`
+		UpdaterUpdate string          `json:"updater_update,omitempty"`
+		Scan          *scanJobPayload `json:"scan,omitempty"`
+	}
+	resp.Target = target
 	// Hand out the current core host on every check-in (not gated on self-update capability, so a
 	// pure-reporter proxy gets it too). This lets an admin re-point the whole fleet by changing
 	// ARGUS_PROBE_CORE_HOST centrally: each probe applies the new value at its next restart. Omitted
 	// when unset, so the probe never overwrites its baked value with an empty one.
-	if ch := s.probeCoreHost(); ch != "" {
-		resp["core_host"] = ch
-	}
+	resp.CoreHost = s.probeCoreHost()
 	// Hand out (and clear) the one-shot updates exactly once - but ONLY to a caller that advertises
 	// self-update capability (the socket-holding updater sidecar). Otherwise a socket-less proxy's
 	// version-report check-in would consume the one-shot before the sidecar could act, losing it.
@@ -120,11 +126,17 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 	//   updater_update -> the sidecar recreates ITSELF onto this argus-updater tag
 	if req.SelfUpdate != nil && *req.SelfUpdate {
 		if tag, _ := s.st.TakeProbeUpdate(ctx, proxyName); tag != "" {
-			resp["update"] = tag
+			resp.Update = tag
 		}
 		if tag, _ := s.st.TakeUpdaterUpdate(ctx, proxyName); tag != "" {
-			resp["updater_update"] = tag
+			resp.UpdaterUpdate = tag
 		}
+	}
+	// Hand out (and mark dispatched) a queued network-scan job exactly once - only to the proxy
+	// container itself (it advertises the scan capability; the updater sidecar doesn't), same
+	// reasoning as the self-update gate above. See netdiscovery.go for the pipeline.
+	if req.Scans != nil && *req.Scans {
+		resp.Scan = s.takeScanJob(ctx, proxyName)
 	}
 	// The probe knows its own image repo; it only needs the tag to converge on.
 	writeJSON(w, http.StatusOK, resp)

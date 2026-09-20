@@ -111,6 +111,9 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/probes/os-status", s.handleReportProbeOSStatus)
 	// probe fleet check-in (public; authenticated by the long-lived probe token from enrollment)
 	mux.HandleFunc("POST /api/probes/checkin", s.handleProbeCheckin)
+	// network-scan results a probe posts back after check-in handed it a discovery job (public;
+	// probe-token authenticated, own 2 MB body cap). See netdiscovery.go.
+	mux.HandleFunc("POST /api/probes/scan-results", s.handleScanResults)
 	// signed one-click acknowledge link from notifications (public; HMAC-verified, GET confirms)
 	mux.HandleFunc("GET /api/alert/ack", s.handleAlertAck)
 	mux.HandleFunc("POST /api/alert/ack", s.handleAlertAck)
@@ -179,6 +182,13 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("PATCH /api/hosts/{id}/config", auth.RequireRoles(s.handleUpdateHostConfig, "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/hosts/{id}/proxy", auth.RequireRoles(s.handleSetHostProxy, "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/hosts/{id}/discover", auth.RequireRoles(s.handleDiscoverNow, "admin", "helpdesk"))
+
+	// network auto-discovery (§B): queue a subnet scan on a probe, review its results, adopt or
+	// ignore them (adoption itself goes through POST /api/hosts). Admin only.
+	mux.HandleFunc("POST /api/discovery/jobs", auth.RequireRole("admin", s.handleCreateDiscoveryJob))
+	mux.HandleFunc("GET /api/discovery/jobs", auth.RequireRole("admin", s.handleListDiscoveryJobs))
+	mux.HandleFunc("GET /api/discovery/jobs/{id}", auth.RequireRole("admin", s.handleGetDiscoveryJob))
+	mux.HandleFunc("POST /api/discovery/results/state", auth.RequireRole("admin", s.handleSetDiscoveryResultsState))
 
 	// per-proxy SNMP defaults (PRTG-style inheritance): read (any user), save + propagate (config write).
 	mux.HandleFunc("GET /api/proxies/{id}/snmp", auth.RequireAuth(s.handleGetProxySNMP))

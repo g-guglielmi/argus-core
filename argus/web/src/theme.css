@@ -599,6 +599,25 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .enroll.enroll-probes th, .enroll.enroll-probes td { white-space: nowrap; overflow: visible; text-overflow: clip; }
 .enroll tr:last-child td { border-bottom: none; }
 
+/* --- discovery review table: same auto-layout + divider treatment as the probes table, but its
+   cells hold editors (name input, class combobox) and pill clusters, so those may wrap. --- */
+.enroll.enroll-discovery { table-layout: auto; }
+.enroll.enroll-discovery th:nth-child(n) { width: auto; }
+.enroll.enroll-discovery th, .enroll.enroll-discovery td { white-space: nowrap; overflow: visible; text-overflow: clip; }
+.enroll-discovery th:not(:first-child), .enroll-discovery td:not(:first-child) { border-left: 1px solid var(--border); }
+.enroll-discovery td { border-bottom-color: var(--border-strong); }
+.enroll-discovery .disc-facts { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.enroll-discovery .disc-name { width: 210px; }
+/* a row not up for adoption (already monitored / just added) reads quiet */
+.enroll-discovery tr.disc-muted td { opacity: 0.62; }
+/* the expanded per-row settings band (class macros + HTTP add-on) */
+.disc-band-row td { padding: 0; }
+.disc-band { padding: 10px 16px 14px; background: var(--elevated); border-bottom: 1px solid var(--border-strong); display: flex; flex-direction: column; gap: 0.7rem; }
+/* recent-scans strip */
+.disc-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid var(--border-strong); border-radius: 999px; background: none; color: inherit; font-size: 12.5px; cursor: pointer; }
+.disc-chip:hover { background: var(--elevated); }
+.disc-chip.on { border-color: var(--accent); }
+
 /* ---------- users / forms ---------- */
 .utable { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .utable th { text-align: left; color: var(--faint); font-weight: 600; font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; padding: 9px 16px; border-bottom: 1px solid var(--border); }
@@ -825,6 +844,20 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
      rules between each field row instead. */
   .enroll-probes td:not(:first-child) { border-left: none; }
   .enroll-probes td[data-label]:not(:first-child) { border-top: 1px solid var(--border); padding-top: 12px; }
+
+  /* --- discovery review table: labelled cards, same treatment as the probes table. The unlabelled
+     first cell is the row checkbox; the settings band spans the card full-width. --- */
+  .enroll-discovery tr { border-bottom: 2px solid var(--border-strong); }
+  .enroll-discovery tr:last-child { border-bottom: none; }
+  .enroll-discovery td:not(:first-child) { border-left: none; }
+  .enroll-discovery td[data-label]:not(:first-child) { border-top: 1px solid var(--border); padding-top: 12px; }
+  .enroll-discovery td[data-label] > .vcell, .enroll-discovery td[data-label] > .cell-stack { align-items: flex-end; text-align: right; margin-left: auto; }
+  .enroll-discovery td[data-label] .vcell { flex-direction: column; gap: 3px; align-items: flex-end; }
+  .enroll-discovery td[data-label="Class"] > div { margin-left: auto; }
+  .enroll-discovery .disc-name { width: min(220px, 60vw); }
+  .enroll-discovery td:first-child { display: flex; align-items: center; margin-bottom: 0; padding: 8px 0; }
+  .enroll-discovery tr.disc-band-row { border-bottom: 2px solid var(--border-strong); }
+  .enroll-discovery .disc-band-row td { padding: 0; }
 
   /* --- monitoring tree: drop the trend column, compact the priority, tighten indentation ---
      The expanded host's sensor table used to overflow the card (Last check + kebab clipped, values

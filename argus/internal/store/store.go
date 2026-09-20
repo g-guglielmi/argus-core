@@ -291,13 +291,51 @@ CREATE TABLE IF NOT EXISTS tree_hidden (
 
 -- Argus overlay: which device class a host was provisioned as (§C). Keyed by Zabbix host id like the
 -- other overlays. class_id is an Argus registry id (e.g. 'linux-snmp'); source is 'manual' (attach
--- UI) or 'discovered' (the future §B pipeline).
+-- UI) or 'discovered' (the §B pipeline).
 CREATE TABLE IF NOT EXISTS device_class (
   host_id    TEXT PRIMARY KEY,
   class_id   TEXT NOT NULL,
   source     TEXT NOT NULL DEFAULT 'manual',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
+);
+
+-- §B network discovery: subnet-scan jobs an admin queues for a probe. Handed out once at the
+-- probe's next check-in (pending -> dispatched) and finished when the probe posts results
+-- (done/failed). snmp_community is encrypted at rest like snmp_defaults.
+CREATE TABLE IF NOT EXISTS discovery_jobs (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  proxy_name     TEXT NOT NULL,
+  cidr           TEXT NOT NULL,
+  snmp_version   INTEGER NOT NULL DEFAULT 2,
+  snmp_community TEXT NOT NULL DEFAULT '',   -- encrypted
+  snmp_port      INTEGER NOT NULL DEFAULT 161,
+  state          TEXT NOT NULL DEFAULT 'pending', -- pending|dispatched|done|failed
+  error          TEXT NOT NULL DEFAULT '',
+  requested_by   TEXT NOT NULL DEFAULT '',   -- username, display only
+  created_at     INTEGER NOT NULL,
+  dispatched_at  INTEGER NOT NULL DEFAULT 0,
+  completed_at   INTEGER NOT NULL DEFAULT 0
+);
+
+-- Raw per-host fingerprints a scan reported, kept per job for the Discovery review screen.
+-- tcp_ports / http_json hold the probe's JSON fragments verbatim; suggested_class is the Argus
+-- class the core-side fingerprint mapping proposed ('' = none / plain ping).
+CREATE TABLE IF NOT EXISTS discovery_results (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id           INTEGER NOT NULL,
+  ip               TEXT NOT NULL,
+  mac              TEXT NOT NULL DEFAULT '',
+  rdns             TEXT NOT NULL DEFAULT '',
+  tcp_ports        TEXT NOT NULL DEFAULT '[]',
+  snmp_sysdescr    TEXT NOT NULL DEFAULT '',
+  snmp_sysobjectid TEXT NOT NULL DEFAULT '',
+  snmp_sysname     TEXT NOT NULL DEFAULT '',
+  http_json        TEXT NOT NULL DEFAULT '',
+  dns              INTEGER NOT NULL DEFAULT 0,
+  suggested_class  TEXT NOT NULL DEFAULT '',
+  state            TEXT NOT NULL DEFAULT 'new', -- new|ignored|added
+  host_id          TEXT NOT NULL DEFAULT ''     -- Zabbix host id once adopted
 );
 `); err != nil {
 		return err
@@ -358,6 +396,12 @@ CREATE TABLE IF NOT EXISTS device_class (
 		return err
 	}
 	if err := s.ensureColumn("probe_agents", "os_version TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	// Network-scan capability the probe container advertises at check-in (sticky like selfupdate:
+	// the updater sidecar's check-ins omit it and must not clear it). Only scan-capable probes are
+	// ever handed a discovery job.
+	if err := s.ensureColumn("probe_agents", "scans INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("notify_events", "item_id TEXT NOT NULL DEFAULT ''"); err != nil {

@@ -9,8 +9,9 @@ import (
 )
 
 // Two complementary check-ins model the socket-holding-sidecar deployment: the proxy container
-// reports its real version but omits self-update capability (no socket), while the sidecar advertises
-// capability but reports no version. Neither may clobber the other's field.
+// reports its real version and its network-scan capability but omits self-update capability (no
+// socket), while the sidecar advertises self-update capability but reports no version and no scan
+// capability. Neither may clobber the other's fields.
 func TestRecordProbeCheckinStickyFields(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
@@ -20,12 +21,12 @@ func TestRecordProbeCheckinStickyFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The proxy container reports its real version but omits selfupdate (nil = leave it).
-	if err := st.RecordProbeCheckin(ctx, "proxy-a", "7.0.30-r2", nil); err != nil {
+	// The proxy container reports its real version + scan capability but omits selfupdate (nil = leave it).
+	if err := st.RecordProbeCheckin(ctx, "proxy-a", "7.0.30-r2", nil, &yes); err != nil {
 		t.Fatal(err)
 	}
-	// The sidecar checks in with no version but selfupdate=true.
-	if err := st.RecordProbeCheckin(ctx, "proxy-a", "", &yes); err != nil {
+	// The sidecar checks in with no version, selfupdate=true, and no scans field.
+	if err := st.RecordProbeCheckin(ctx, "proxy-a", "", &yes, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -39,12 +40,15 @@ func TestRecordProbeCheckinStickyFields(t *testing.T) {
 	if !ag.SelfUpdate {
 		t.Error("selfupdate should be true after the sidecar advertised capability")
 	}
+	if !ag.Scans {
+		t.Error("scans must stay true when the sidecar's check-in omits it")
+	}
 	if ag.LastCheckin == 0 {
 		t.Error("last_checkin should have been updated by the empty-version check-in")
 	}
 
-	// The proxy reports version again, still omitting selfupdate: the flag must stick at true.
-	if err := st.RecordProbeCheckin(ctx, "proxy-a", "7.0.31-r1", nil); err != nil {
+	// The proxy reports version again, omitting both flags: they must stick.
+	if err := st.RecordProbeCheckin(ctx, "proxy-a", "7.0.31-r1", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	ag, _ = st.ProbeAgentByName(ctx, "proxy-a")
@@ -54,13 +58,19 @@ func TestRecordProbeCheckinStickyFields(t *testing.T) {
 	if !ag.SelfUpdate {
 		t.Error("selfupdate must stay true when a later check-in omits it")
 	}
+	if !ag.Scans {
+		t.Error("scans must stay true when a later check-in omits it")
+	}
 
-	// An explicit selfupdate=false does turn it off.
-	if err := st.RecordProbeCheckin(ctx, "proxy-a", "", &no); err != nil {
+	// Explicit false reports do turn the flags off.
+	if err := st.RecordProbeCheckin(ctx, "proxy-a", "", &no, &no); err != nil {
 		t.Fatal(err)
 	}
 	ag, _ = st.ProbeAgentByName(ctx, "proxy-a")
 	if ag.SelfUpdate {
 		t.Error("selfupdate should be false after an explicit false report")
+	}
+	if ag.Scans {
+		t.Error("scans should be false after an explicit false report")
 	}
 }

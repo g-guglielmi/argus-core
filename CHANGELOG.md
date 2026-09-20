@@ -11,6 +11,29 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **Network discovery (auto-provisioning §B, slice 1).** A new admin-only **Discovery** tab: pick a
+  probe and a subnet (CIDR, up to a /22), and the scan job rides the probe's existing check-in
+  channel - no new ports, the probe stays a pure reporter. The probe's new `argus_netscan.py`
+  (stdlib-only, baked into the probe image, no nmap) fingerprints every live address: ICMP, a small
+  TCP service-port set, SNMP `sysDescr`/`sysObjectID`/`sysName` (v1/v2c, defaulting to the probe's
+  SNMP default), an HTTP(S) banner (status/Server/title), a real DNS query, reverse DNS and the ARP
+  cache. The core maps each fingerprint to a **suggested device class** (UniFi models, Windows/Linux
+  SNMP, AdGuard Home, Home Assistant, XCP-NG, DNS server, NUT, Linux over SSH, or plain Ping+HTTP)
+  and the review table lets you multi-select, rename, change the class, fill class macros per row,
+  and **adopt** - each device is created through the same path as Add-device (thresholds, LLD
+  auto-fire, proxy SNMP inheritance) and tagged `argus.source=discovered`. **Ignored** devices stay
+  ignored across re-scans; IPs Argus already monitors are flagged. Requires a probe image with the
+  scanner (`probe/v7.0.30-r13+`; older probes show "needs probe update"). Guide: `docs/discovery.md`.
+
+**Changed:**
+- **Probe check-in tick: 5 minutes → 1 minute** (probe image), so queued scans are picked up within
+  a minute and fleet status is fresher. The check-in stays a single tiny HTTPS POST.
+
+---
+
 ## [0.4.55] - 2026-09-19
 
 **Added:**

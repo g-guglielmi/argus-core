@@ -22,7 +22,7 @@ type SnmpCfg = { version: number; community: string; bulk: number; security_name
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
 type MacroField = { macro: string; label: string; hint?: string; secret?: boolean; options?: string[]; value: string; set?: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; vm_names?: string[] }
-type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
+type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
@@ -618,13 +618,14 @@ function ResetPassword({ token, onDone }: { token: string; onDone: () => void })
   )
 }
 
-type View = 'overview' | 'triggers' | 'monitoring' | 'notifications' | 'probes' | 'users' | 'settings' | 'account' | 'list'
+type View = 'overview' | 'triggers' | 'monitoring' | 'notifications' | 'probes' | 'discovery' | 'users' | 'settings' | 'account' | 'list'
 const VIEW_TITLES: Record<View, [string, string]> = {
   overview: ['Overview', 'What needs attention right now'],
   triggers: ['Triggers', 'Alert rules - firing, or all by host'],
   monitoring: ['Monitoring', 'Sites, hosts and sensors'],
   notifications: ['Notifications', 'Alert routing and channels'],
   probes: ['Probes', 'Site probe enrollment'],
+  discovery: ['Discovery', 'Scan a subnet, review what answers, adopt devices'],
   users: ['Users', 'Accounts and access'],
   settings: ['Settings', 'System configuration'],
   account: ['Account', 'Your security settings'],
@@ -637,6 +638,7 @@ const ic = {
   monitoring: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"><rect x="9" y="3" width="6" height="5" rx="1.5" /><rect x="3" y="16" width="6" height="5" rx="1.5" /><rect x="15" y="16" width="6" height="5" rx="1.5" /><path d="M12 8v4" /><path d="M6 16v-2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" /></svg>,
   notifications: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>,
   probes: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5" /></svg>,
+  discovery: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4.6" /><path d="M12 12l5.6-5.6" /><circle cx="15.4" cy="14.6" r="1.1" fill="currentColor" stroke="none" /></svg>,
   users: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><path d="M16 5.2a3.2 3.2 0 0 1 0 6M17 14.5a5.5 5.5 0 0 1 3.5 5.5" /></svg>,
   settings: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
   account: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="3.4" /><path d="M5 20a7 7 0 0 1 14 0" /></svg>,
@@ -673,7 +675,7 @@ function useTheme(): ['dark' | 'light', () => void] {
 // bookmark, shared link, or Back/Forward restores the exact screen - instead of always
 // resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
 // (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
-const NAV_VIEWS: View[] = ['overview', 'triggers', 'monitoring', 'notifications', 'probes', 'users', 'settings', 'account', 'list']
+const NAV_VIEWS: View[] = ['overview', 'triggers', 'monitoring', 'notifications', 'probes', 'discovery', 'users', 'settings', 'account', 'list']
 type NavState = { view: View; filter: string; host?: string; item?: string; group?: string }
 
 function parseNav(): NavState {
@@ -1004,7 +1006,7 @@ function VersionAbout() {
 
 function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }: { me: Me; onMe: (m: Me) => void; onLogout: () => void; passkeysAvailable: boolean; probeEnroll: boolean; enter?: boolean }) {
   // Admin-only views can't be restored from a shared/stale URL by a non-admin.
-  const clampView = (v: View): View => ((v === 'users' || v === 'settings') && me.role !== 'admin' ? 'overview' : v)
+  const clampView = (v: View): View => ((v === 'users' || v === 'settings' || v === 'discovery') && me.role !== 'admin' ? 'overview' : v)
   // A fresh visit to the bare "/" (no query) honours the user's landing preference; any deep
   // link (?view=…, ?host=…, ?reset=… already handled) is respected as-is.
   const initialNav = (): NavState => {
@@ -1165,6 +1167,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         <div className="navlabel">Configure</div>
         {nav('notifications', 'Notifications')}
         {nav('probes', 'Probes')}
+        {me.role === 'admin' && nav('discovery', 'Discovery')}
         {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('users', 'Users')}{nav('settings', 'Settings')}</>}
         <div className="side-foot">
           {ver && (
@@ -1228,6 +1231,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} advanced={!!me.advanced} />}
           {view === 'notifications' && <NotificationsView />}
           {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} />}
+          {view === 'discovery' && me.role === 'admin' && <DiscoveryView />}
           {view === 'users' && me.role === 'admin' && <UsersView />}
           {view === 'settings' && me.role === 'admin' && <SettingsView me={me} onMe={onMe} />}
           {view === 'account' && <AccountView me={me} onMe={onMe} passkeysAvailable={passkeysAvailable} theme={theme} toggleTheme={toggleTheme} />}
@@ -3524,6 +3528,365 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
       </div>
     </div>,
     document.body,
+  )
+}
+
+// --- Network auto-discovery (§B): the Discovery tab. An admin points a probe at a subnet; the scan
+// job rides the probe's check-in channel (picked up within a minute), the probe's scanner reports
+// raw fingerprints, and the review table below adopts (via the ordinary POST /api/hosts, tagged
+// discovered) or ignores what it found. Admin-only (gated in the shell nav + clampView).
+type DiscoveryJobRow = { id: number; proxy_name: string; cidr: string; state: string; error?: string; requested_by?: string; created_at: number; completed_at?: number }
+type DiscoveryHTTP = { port: number; scheme: string; status: number; server?: string; title?: string }
+type DiscoveryResultRow = { id: number; ip: string; mac?: string; rdns?: string; tcp: number[]; sysdescr?: string; sysobjectid?: string; sysname?: string; http?: DiscoveryHTTP; dns?: boolean; suggested_class?: string; state: string; host_id?: string; monitored_id?: string; monitored_name?: string }
+type DiscRowCfg = { name: string; classId: string; http: boolean; macros: Record<string, string> }
+
+function DiscoveryView() {
+  const [proxies, setProxies] = useState<Proxy[] | null>(null)
+  const [groups, setGroups] = useState<Group[]>([])
+  const [classes, setClasses] = useState<DeviceClass[]>([])
+  const [jobs, setJobs] = useState<DiscoveryJobRow[] | null>(null)
+  const [job, setJob] = useState<DiscoveryJobRow | null>(null)
+  const [results, setResults] = useState<DiscoveryResultRow[]>([])
+  // scan form
+  const [proxyId, setProxyId] = useState('')
+  const [cidr, setCidr] = useState('')
+  const [community, setCommunity] = useState('') // blank = the probe's SNMP default
+  const [site, setSite] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  // review state
+  const [sel, setSel] = useState<Set<number>>(new Set())
+  const [rowCfg, setRowCfg] = useState<Record<number, DiscRowCfg>>({})
+  const [rowErr, setRowErr] = useState<Record<number, string>>({})
+  const [open, setOpen] = useState<Set<number>>(new Set()) // rows with the settings band expanded
+  const [showIgnored, setShowIgnored] = useState(false)
+  const [adding, setAdding] = useState(false)
+
+  const classOptions = useMemo(() => classes.map((c) => ({ value: c.id, label: c.label }))
+    .sort((a, b) => (a.value === 'base' ? -1 : b.value === 'base' ? 1 : a.label.localeCompare(b.label))), [classes])
+  const siteOfProxy = (name: string) => (name.startsWith('proxy-') ? name.slice(6) : name)
+  // Non-settings-only per-host macros a class collects at attach time (settings-only ones need
+  // discovered data and live in host settings afterwards - same rule as the Add-device form).
+  const attachMacros = (classId: string) => (classes.find((c) => c.id === classId)?.macros || []).filter((ms) => !ms.settings_only)
+  const deriveMacros = (classId: string, ip: string): Record<string, string> => {
+    const out: Record<string, string> = {}
+    for (const ms of attachMacros(classId)) if (ms.derive) out[ms.macro] = ms.derive.replace('{host}', ip)
+    return out
+  }
+  const seedRow = (r: DiscoveryResultRow): DiscRowCfg => {
+    const classId = r.suggested_class && classes.some((c) => c.id === r.suggested_class) ? r.suggested_class : 'base'
+    return { name: r.sysname || (r.rdns ? r.rdns.split('.')[0] : '') || r.ip, classId, http: !!r.http, macros: deriveMacros(classId, r.ip) }
+  }
+
+  function applyJob(d: { job: DiscoveryJobRow; results: DiscoveryResultRow[] }) {
+    setJob(d.job)
+    setResults(d.results || [])
+  }
+  async function loadJob(id: number) {
+    const r = await fetch(`/api/discovery/jobs/${id}`).catch(() => null)
+    if (!r || !r.ok) return
+    const d = await r.json().catch(() => null)
+    if (d && d.job) applyJob({ job: d.job, results: d.results || [] })
+  }
+  const loadJobs = () => fetch('/api/discovery/jobs?limit=10').then((r) => (r.ok ? r.json() : [])).then((j: DiscoveryJobRow[]) => setJobs(j || [])).catch(() => setJobs([]))
+
+  useEffect(() => {
+    fetch('/api/proxies').then((r) => (r.ok ? r.json() : [])).then((p) => setProxies(p || [])).catch(() => setProxies([]))
+    fetch('/api/groups').then((r) => (r.ok ? r.json() : [])).then((g) => setGroups(g || [])).catch(() => {})
+    fetch('/api/classes').then((r) => (r.ok ? r.json() : [])).then((c) => setClasses(c || [])).catch(() => {})
+    fetch('/api/discovery/jobs?limit=10').then((r) => (r.ok ? r.json() : [])).then((j: DiscoveryJobRow[]) => {
+      setJobs(j || [])
+      if (j && j.length) { void loadJob(j[0].id) } // resume the latest scan on entry
+    }).catch(() => setJobs([]))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  // Seed each result row's adopt config (name / suggested class / derived macros) exactly once,
+  // and only once the class catalog is in (the suggestion needs it). Rows the admin already edited
+  // are never re-seeded; result ids are globally unique, so stale entries from an older job are inert.
+  useEffect(() => {
+    if (!classes.length || !results.length) return
+    setRowCfg((prev) => {
+      let next = prev
+      for (const r of results) {
+        if (next[r.id]) continue
+        if (next === prev) next = { ...prev }
+        next[r.id] = seedRow(r)
+      }
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classes, results])
+
+  // While a scan is pending/dispatched, poll it (self-rescheduling so slow responses never overlap).
+  const jobId = job?.id, jobState = job?.state
+  useEffect(() => {
+    if (!jobId || (jobState !== 'pending' && jobState !== 'dispatched')) return
+    let alive = true
+    let timer = 0
+    const tick = async () => {
+      const r = await fetch(`/api/discovery/jobs/${jobId}`).catch(() => null)
+      if (!alive) return
+      if (r && r.ok) {
+        const d = await r.json().catch(() => null)
+        if (!alive) return
+        if (d && d.job) {
+          applyJob({ job: d.job, results: d.results || [] })
+          if (d.job.state === 'pending' || d.job.state === 'dispatched') timer = window.setTimeout(tick, 3000)
+          else void loadJobs()
+          return
+        }
+      }
+      timer = window.setTimeout(tick, 3000)
+    }
+    timer = window.setTimeout(tick, 1500)
+    return () => { alive = false; clearTimeout(timer) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId, jobState])
+
+  async function start() {
+    if (busy) return
+    const p = (proxies || []).find((x) => x.id === proxyId)
+    if (!p) { setErr('Pick the probe that should run the scan'); return }
+    if (!cidr.trim()) { setErr('Enter a subnet to scan, e.g. 10.0.0.0/24'); return }
+    setBusy(true); setErr(null)
+    const body: Record<string, unknown> = { proxy_id: proxyId, cidr: cidr.trim() }
+    if (community.trim()) body.snmp = { version: 2, community: community.trim() }
+    const res = await fetch('/api/discovery/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { setErr(await errText(res, 'Could not start the scan')); return }
+    const d = await res.json().catch(() => ({} as { id?: number }))
+    setSel(new Set()); setRowCfg({}); setRowErr({}); setOpen(new Set()); setResults([])
+    if (!site || !groups.some((g) => g.name === site)) {
+      const s = siteOfProxy(p.name)
+      if (groups.some((g) => g.name === s)) setSite(s)
+    }
+    void loadJobs()
+    if (d.id) { setJob({ id: d.id, proxy_name: p.name, cidr: cidr.trim(), state: 'pending', created_at: Math.floor(Date.now() / 1000) }) }
+  }
+
+  const selectable = (r: DiscoveryResultRow) => r.state === 'new' && !r.monitored_id
+  const visible = results.filter((r) => showIgnored || r.state !== 'ignored')
+  const selectableIds = visible.filter(selectable).map((r) => r.id)
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => sel.has(id))
+  const toggle = (id: number) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  const toggleAll = () => setSel(allSelected ? new Set<number>() : new Set(selectableIds))
+  const toggleOpen = (id: number) => setOpen((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  const setCfg = (id: number, patch: Partial<DiscRowCfg>) => setRowCfg((c) => ({ ...c, [id]: { ...c[id], ...patch } }))
+  const setRowClass = (id: number, classId: string, ip: string) => setRowCfg((c) => {
+    const cur = c[id]
+    // A class switch re-derives that class's URL-style macros but keeps anything already typed.
+    return { ...c, [id]: { ...cur, classId, macros: { ...deriveMacros(classId, ip), ...Object.fromEntries(Object.entries(cur.macros).filter(([, v]) => v !== '')) } } }
+  })
+
+  async function addSelected() {
+    if (adding) return
+    if (!site.trim()) { setErr('Pick the site the new devices belong to'); return }
+    const jobProxyId = (proxies || []).find((p) => p.name === job?.proxy_name)?.id || ''
+    setAdding(true); setErr(null)
+    const errs: Record<number, string> = { ...rowErr }
+    const adopted: Record<number, string> = {} // result id -> host id
+    for (const id of Array.from(sel)) {
+      const r = results.find((x) => x.id === id)
+      const cfg = rowCfg[id]
+      if (!r || !cfg || !selectable(r)) continue
+      const cls = classes.find((c) => c.id === cfg.classId)
+      let bad = ''
+      const macros: Record<string, string> = {}
+      for (const ms of attachMacros(cfg.classId)) {
+        const v = (cfg.macros[ms.macro] || '').trim()
+        if (v) macros[ms.macro] = v
+        else if (ms.required) bad = `${ms.label} is required - open the row's settings`
+      }
+      if (!cfg.name.trim()) bad = 'a name is required'
+      if (bad) { errs[id] = bad; setOpen((s) => new Set(s).add(id)); continue }
+      const body: Record<string, unknown> = { name: cfg.name.trim(), ip: r.ip, use_ip: true, site: site.trim(), proxy_id: jobProxyId, class_id: cfg.classId, discovery_result_id: id }
+      if (Object.keys(macros).length) body.macros = macros
+      if (cls?.offers_http && cfg.http && r.http) {
+        body.http = true; body.http_scheme = r.http.scheme
+        if (r.http.port !== 443 && r.http.port !== 80) body.http_port = String(r.http.port)
+      }
+      const res = await fetch('/api/hosts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null)
+      if (!res || !res.ok) { errs[id] = await errText(res, 'could not create the device'); continue }
+      const d = await res.json().catch(() => ({} as { id?: string }))
+      adopted[id] = d.id || ''
+      delete errs[id]
+    }
+    setRowErr(errs)
+    setAdding(false)
+    if (Object.keys(adopted).length) {
+      setResults((rs) => rs.map((r) => (adopted[r.id] !== undefined ? { ...r, state: 'added', host_id: adopted[r.id], monitored_id: adopted[r.id], monitored_name: rowCfg[r.id]?.name || r.ip } : r)))
+      setSel((s) => { const n = new Set(s); for (const id of Object.keys(adopted)) n.delete(Number(id)); return n })
+      fireDataRefresh()
+    }
+  }
+
+  async function setState(ids: number[], state: 'ignored' | 'new') {
+    if (!ids.length) return
+    const res = await fetch('/api/discovery/results/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, state }) }).catch(() => null)
+    if (!res || !res.ok) { setErr(await errText(res, 'Could not update the results')); return }
+    setResults((rs) => rs.map((r) => (ids.includes(r.id) && r.state !== 'added' ? { ...r, state } : r)))
+    setSel((s) => { const n = new Set(s); for (const id of ids) n.delete(id); return n })
+  }
+
+  const scanCapable = (proxies || []).filter((p) => p.scans)
+  const running = jobState === 'pending' || jobState === 'dispatched'
+  const grid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.7rem' }
+  const facts = (r: DiscoveryResultRow): string[] => {
+    const f: string[] = []
+    if (r.sysdescr || r.sysname) f.push('SNMP')
+    if (r.dns) f.push('DNS')
+    for (const p of r.tcp) f.push(p === 22 ? 'SSH' : p === 445 ? 'SMB' : p === 3493 ? 'NUT' : p === 443 ? 'HTTPS' : p === 80 ? 'HTTP' : p === 10050 ? 'Agent' : p === 53 ? ':53' : `:${p}`)
+    return f
+  }
+  const stateTag = (r: DiscoveryResultRow) => {
+    if (r.state === 'added') return <span className="tag online">added</span>
+    if (r.monitored_id) return <span className="tag avail" title={r.monitored_name || undefined}>monitored</span>
+    if (r.state === 'ignored') return <span className="tag">ignored</span>
+    return <span className="tag pending">new</span>
+  }
+
+  return (
+    <section className="panel">
+      <div className="phead">
+        <h2>Network discovery</h2>
+        <span className="hint">{job && !running ? `${results.length} device${results.length === 1 ? '' : 's'} found` : ''}</span>
+      </div>
+      <div className="disc-form" style={{ padding: '0 1rem 0.9rem' }}>
+        <div style={grid}>
+          <Field label="Scan from">
+            <Select value={proxyId} onChange={(e) => { setProxyId(e.target.value); const p = (proxies || []).find((x) => x.id === e.target.value); if (p) { const s = siteOfProxy(p.name); if (groups.some((g) => g.name === s)) setSite(s) } }}>
+              <option value="">Choose a probe…</option>
+              {(proxies || []).map((p) => <option key={p.id} value={p.id} disabled={!p.scans}>{p.name}{p.scans ? '' : ' (needs probe update)'}</option>)}
+            </Select>
+          </Field>
+          <Field label="Subnet" placeholder="10.0.0.0/24" value={cidr} onChange={(e) => setCidr(e.target.value)} />
+          <Field label="SNMP community (optional)" placeholder="probe's SNMP default" value={community} onChange={(e) => setCommunity(e.target.value)} />
+          <Field label="Site for adopted devices"><Select value={site} onChange={(e) => setSite(e.target.value)}><option value="">Choose a site…</option>{groups.map((g) => <option key={g.id} value={g.name}>{g.name}</option>)}</Select></Field>
+          <Field label={' '}><Button variant="primary" block onClick={start} disabled={busy || running || proxies === null}>{running ? 'Scan in progress…' : busy ? 'Starting…' : 'Start scan'}</Button></Field>
+        </div>
+        {proxies !== null && scanCapable.length === 0 && (
+          <Banner variant="info">None of your probes has reported the network-scan capability yet - it ships with the latest probe image (and needs check-in enabled). Probes on the rolling <code>latest</code> tag pick it up on their next self-update.</Banner>
+        )}
+        {err && <Banner variant="error">{err}</Banner>}
+        {job && running && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: 13, color: 'var(--muted)' }}>
+            <span className="spinner" aria-hidden="true" />
+            {jobState === 'pending' ? `Waiting for ${job.proxy_name} to pick the scan up (it checks in every minute)…` : `${job.proxy_name} is scanning ${job.cidr}… this can take a few minutes.`}
+          </div>
+        )}
+        {job && job.state === 'failed' && <Banner variant="error">Scan of {job.cidr} failed: {job.error || 'unknown error'}</Banner>}
+        {job && job.state === 'done' && job.error && <Banner variant="info">{job.error}</Banner>}
+      </div>
+
+      {job && job.state === 'done' && (
+        <>
+          <div className="disc-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', padding: '0 1rem 0.7rem' }}>
+            <Button variant="primary" onClick={addSelected} disabled={sel.size === 0 || adding}>{adding ? 'Adding…' : `Add ${sel.size || ''} selected`.replace('  ', ' ')}</Button>
+            <Button variant="ghost" onClick={() => setState(Array.from(sel), 'ignored')} disabled={sel.size === 0 || adding}>Ignore selected</Button>
+            <span style={{ flex: 1 }} />
+            {results.some((r) => r.state === 'ignored') && <Switch checked={showIgnored} onChange={setShowIgnored} label="Show ignored" />}
+          </div>
+          <div className="enroll-scroll">
+            <table className="enroll enroll-discovery">
+              <thead><tr>
+                <th style={{ width: 34 }}><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all" disabled={selectableIds.length === 0} /></th>
+                <th>Device</th><th>Found</th><th>Class</th><th>Status</th>
+              </tr></thead>
+              <tbody>
+                {visible.length === 0 && <tr><td colSpan={5} style={{ padding: 0 }}><div style={{ flex: 1, width: '100%' }}><EmptyState icon={ic.discovery} title="Nothing answered" text={`No live devices in ${job.cidr}. Try a different range, or check the SNMP community.`} /></div></td></tr>}
+                {visible.map((r) => {
+                  const cfg = rowCfg[r.id]
+                  const canPick = selectable(r)
+                  const cls = classes.find((c) => c.id === cfg?.classId)
+                  const hasBand = (attachMacros(cfg?.classId || '').length > 0) || (!!cls?.offers_http && !!r.http)
+                  const fp = facts(r)
+                  return (
+                    <Fragment key={r.id}>
+                      <tr className={canPick ? '' : 'disc-muted'}>
+                        <td data-label="">{canPick ? <input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} aria-label={`Select ${r.ip}`} /> : null}</td>
+                        <td data-label="Device">
+                          <div className="cell-stack">
+                            {canPick && cfg
+                              ? <input className="input disc-name" value={cfg.name} onChange={(e) => setCfg(r.id, { name: e.target.value })} />
+                              : <span>{r.monitored_name || cfg?.name || r.sysname || r.rdns || r.ip}</span>}
+                            <span className="sub-line">{r.ip}{r.mac ? ` · ${r.mac}` : ''}{r.rdns ? ` · ${r.rdns}` : ''}</span>
+                          </div>
+                        </td>
+                        <td data-label="Found">
+                          <div className="cell-stack">
+                            <span className="disc-facts">{fp.length ? fp.map((f) => <span key={f} className="tag">{f}</span>) : <span style={{ color: 'var(--faint)' }}>ping only</span>}</span>
+                            {(r.http?.title || r.sysdescr) && <span className="sub-line" title={r.sysdescr || r.http?.title}>{(r.http?.title || r.sysdescr || '').slice(0, 80)}</span>}
+                          </div>
+                        </td>
+                        <td data-label="Class">
+                          {canPick && cfg ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <div style={{ minWidth: 180, flex: 1 }}><Combobox value={cfg.classId} onChange={(v) => setRowClass(r.id, v, r.ip)} options={classOptions} placeholder="Class…" /></div>
+                              {hasBand && (
+                                <button className="iconbtn" title="Device settings" aria-label="Device settings" onClick={() => toggleOpen(r.id)}>
+                                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"><path d={open.has(r.id) ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} /></svg>
+                                </button>
+                              )}
+                            </div>
+                          ) : <span style={{ color: 'var(--muted)' }}>{classes.find((c) => c.id === (r.state === 'added' ? cfg?.classId : r.suggested_class))?.label || '-'}</span>}
+                        </td>
+                        <td data-label="Status">
+                          <div className="vcell">
+                            {stateTag(r)}
+                            {r.state === 'ignored' && <Button variant="ghost" onClick={() => setState([r.id], 'new')}>Unignore</Button>}
+                            {rowErr[r.id] && <span className="txt-err" style={{ fontSize: 12 }}>{rowErr[r.id]}</span>}
+                          </div>
+                        </td>
+                      </tr>
+                      {canPick && cfg && open.has(r.id) && (
+                        <tr className="disc-band-row"><td colSpan={5} style={{ padding: 0 }}>
+                          <div className="disc-band">
+                            {attachMacros(cfg.classId).length > 0 && (
+                              <div style={grid}>
+                                {attachMacros(cfg.classId).map((ms) => (
+                                  ms.options && ms.options.length > 0 ? (
+                                    <Field key={ms.macro} label={ms.label + (ms.required ? '' : ' (optional)')}>
+                                      <Select value={cfg.macros[ms.macro] || ''} onChange={(e) => setCfg(r.id, { macros: { ...cfg.macros, [ms.macro]: e.target.value } })}>
+                                        <option value="">{ms.hint ? `default (${ms.hint})` : 'template default'}</option>
+                                        {ms.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                                      </Select>
+                                    </Field>
+                                  ) : (
+                                    <Field key={ms.macro} label={ms.label + (ms.required ? '' : ' (optional)')} type={ms.secret ? 'password' : 'text'}
+                                      placeholder={ms.hint} value={cfg.macros[ms.macro] || ''}
+                                      onChange={(e) => setCfg(r.id, { macros: { ...cfg.macros, [ms.macro]: e.target.value } })} />
+                                  )
+                                ))}
+                              </div>
+                            )}
+                            {cls?.offers_http && r.http && (
+                              <Switch checked={cfg.http} onChange={(v) => setCfg(r.id, { http: v })} label={`Also check ${r.http.scheme.toUpperCase()}${r.http.port !== 443 && r.http.port !== 80 ? ` on :${r.http.port}` : ''}`} />
+                            )}
+                          </div>
+                        </td></tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {jobs !== null && jobs.length > 0 && (
+        <div className="disc-history" style={{ padding: '0.8rem 1rem 1rem', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>Recent scans:</span>
+          {jobs.map((j) => (
+            <button key={j.id} className={'disc-chip' + (job?.id === j.id ? ' on' : '')} onClick={() => { setSel(new Set()); setRowErr({}); setOpen(new Set()); void loadJob(j.id) }}
+              title={`${j.proxy_name} · ${relTime(j.created_at)}${j.requested_by ? ` · by ${j.requested_by}` : ''}${j.error ? ` · ${j.error}` : ''}`}>
+              {j.cidr} <span className={'tag' + (j.state === 'done' ? ' online' : j.state === 'failed' ? '' : ' pending')}>{j.state}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {jobs === null && <div style={{ padding: '0 1rem 1rem' }}><Skeleton rows={2} cols={4} /></div>}
+    </section>
   )
 }
 
