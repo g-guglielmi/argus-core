@@ -30,13 +30,14 @@ func SuggestClass(f Fingerprint) string {
 	descr := strings.ToLower(f.SysDescr)
 	sysname := strings.ToLower(f.SysName)
 
-	// Product pages are the most specific signal.
+	// Product pages are the most specific signal. "XO Lite" is the page an XCP-NG host itself
+	// serves on :443 (lab-confirmed - the hosts never say "xcp-ng" in the title).
 	switch {
 	case strings.Contains(title, "adguard home"):
 		return "adguard"
 	case strings.Contains(title, "home assistant"):
 		return "home-assistant"
-	case strings.Contains(title, "xcp-ng") || strings.Contains(title, "xenserver"):
+	case strings.Contains(title, "xcp-ng") || strings.Contains(title, "xenserver") || strings.Contains(title, "xo lite"):
 		return "xcpng"
 	case strings.Contains(title, "unraid"):
 		return "unraid"
@@ -44,30 +45,39 @@ func SuggestClass(f Fingerprint) string {
 
 	// SNMP answered: vendor/OS identification.
 	if f.SysDescr != "" || f.SysObjectID != "" {
-		if strings.HasPrefix(f.SysObjectID, oidUbiquiti) {
-			ident := descr + " " + sysname
+		ident := descr + " " + sysname
+		// UniFi: current firmware reports Ubiquiti's enterprise OID, but older firmware answers
+		// with the stock net-snmp OID and only the "Linux UBNT" sysDescr gives it away
+		// (lab-confirmed on a USW SFP) - so token-match on the identity too, before the plain
+		// "linux" check below can swallow it.
+		if strings.HasPrefix(f.SysObjectID, oidUbiquiti) || containsAny(ident, "ubnt", "unifi") {
 			switch {
-			case containsAny(ident, "usw", "us-", "unifi switch"):
+			case containsAny(ident, "usw", "us-", "edgeswitch", "unifi switch"):
 				return "unifi-switch"
 			case containsAny(ident, "ugw", "usg", "udm", "uxg", "ucg", "gateway"):
 				return "unifi-gateway"
 			case containsAny(ident, "uap", "u6", "u7", "ac-", "access point"):
 				return "unifi-ap"
 			}
-			return "unifi-ap" // most UniFi SNMP responders are APs; easily overridden in review
+			if strings.HasPrefix(f.SysObjectID, oidUbiquiti) {
+				return "unifi-ap" // most UniFi SNMP responders with no model token are APs
+			}
+			// "ubnt"/"unifi" seen but no model token and no Ubiquiti OID: fall through to the
+			// OS checks rather than guess a UniFi shape.
 		}
 		switch {
 		case strings.Contains(descr, "windows"):
 			return "windows-snmp"
-		case containsAny(descr+" "+sysname, "ugos", "ugreen"):
+		case containsAny(ident, "ugos", "ugreen"):
 			return "ugreen"
 		case strings.Contains(descr, "unraid"):
 			return "unraid"
 		case strings.Contains(descr, "linux"):
 			return "linux-snmp"
 		}
-		// An SNMP answer we can't place is still worth an SNMP class over plain ping.
-		return "linux-snmp"
+		// An SNMP answer from a vendor we can't place (MikroTik SwOS, printers, ...): the Linux
+		// SNMP template would be all wrong for it, so suggest plain Ping and let the admin pick.
+		return ""
 	}
 
 	// No SNMP: fall back to service ports.
