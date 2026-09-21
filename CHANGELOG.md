@@ -19,6 +19,11 @@ GitHub Release from the matching section below.
   console is spotted by its "UniFi OS" page title; and a live service now outranks the generic
   Linux guess - a Debian box answering real DNS queries suggests DNS server, a Pi serving upsd
   suggests UPS (NUT), while specific identities (Windows, unRAID, Ugreen, UniFi) still win.
+  The **MAC address joins the fingerprint**: Ubiquiti's OUI identifies UniFi gear that answers
+  nothing but SSH (the USW-Flex/Ultra models ship no SNMP agent) - suggested as UniFi Switch, or
+  UniFi Gateway when the device also answers DNS. And the "UniFi OS" page title maps to UniFi
+  Gateway (that's what UDM/UCG/UXG serve), while a self-hosted Network Server's "UniFi Network"
+  title maps to UniFi OS Console.
   Suggestions are recomputed from the stored scan facts on every read, so these fixes apply to
   scans you already ran - no re-scan needed. Also: PTR answers that echo the IP no longer seed
   device names like "10", and the adopt-site resets per opened scan instead of carrying over from

@@ -351,7 +351,7 @@ func (s *Server) handleGetDiscoveryJob(w http.ResponseWriter, r *http.Request) {
 		// value is kept only as a record): mapping improvements ship core-side and reach past
 		// scans immediately - no re-scan needed.
 		f := provision.Fingerprint{SysDescr: res.SysDescr, SysObjectID: res.SysObjectID,
-			SysName: res.SysName, DNS: res.DNS, TCP: v.TCP}
+			SysName: res.SysName, DNS: res.DNS, TCP: v.TCP, MAC: res.MAC}
 		if res.HTTPJSON != "" {
 			var hf httpFacts
 			if json.Unmarshal([]byte(res.HTTPJSON), &hf) == nil {
@@ -447,7 +447,7 @@ func (s *Server) handleScanResults(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(h.IP) == "" {
 			continue
 		}
-		f := provision.Fingerprint{TCP: h.TCP, DNS: h.DNS}
+		f := provision.Fingerprint{TCP: h.TCP, DNS: h.DNS, MAC: h.MAC}
 		res := store.DiscoveryResult{IP: h.IP, MAC: h.MAC, RDNS: h.RDNS, DNS: h.DNS}
 		if h.SNMP != nil {
 			res.SysDescr, res.SysObjectID, res.SysName = h.SNMP.SysDescr, h.SNMP.SysObjectID, h.SNMP.SysName

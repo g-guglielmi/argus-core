@@ -26,9 +26,17 @@ func TestSuggestClass(t *testing.T) {
 		// A US-8 on old firmware: net-snmp OID, no "UBNT" anywhere - only the model tokens give it
 		// away (lab-confirmed). Strong model tokens must open the UniFi branch on their own.
 		{"unifi switch by model token only", Fingerprint{SysObjectID: ".1.3.6.1.4.1.8072.3.2.10", SysDescr: "US-8-60W, 7.5.15.17146, Linux 3.6.5", SysName: "garage-USW8PoE"}, "unifi-switch"},
-		// A UniFi OS console titles its login page "UniFi OS" (lab-confirmed) and its sysDescr is
-		// plain Linux - the title must win.
-		{"unifi console by title", Fingerprint{HTTPTitle: "UniFi OS", SysDescr: "Linux console 4.19", TCP: []int{22, 53, 80, 443, 8443}, DNS: true}, "unifi-console"},
+		// A gateway titles its login page "UniFi OS" (lab-confirmed - UDM/UCG/UXG run UniFi OS)
+		// while its sysDescr is plain Linux; a self-hosted Network Server (the Debian-VM console)
+		// titles it "UniFi Network". The title must win over the OS checks.
+		{"unifi gateway by title", Fingerprint{HTTPTitle: "UniFi OS", SysDescr: "Linux gw 4.19", TCP: []int{22, 53, 80, 443, 8443}, DNS: true}, "unifi-gateway"},
+		{"unifi console by title", Fingerprint{HTTPTitle: "UniFi Network", SysDescr: "Linux console-vm 6.1 amd64", TCP: []int{22, 8443}}, "unifi-console"},
+		// The MAC OUI identifies Ubiquiti gear that answers nothing but SSH (the USW-Flex/Ultra
+		// models ship no SNMP agent) - lab-confirmed on a site full of them. A UniFi device that
+		// answers DNS is the gateway.
+		{"unifi switch by mac only", Fingerprint{MAC: "f4:e2:c6:12:34:56", TCP: []int{22}}, "unifi-switch"},
+		{"unifi gateway by mac + dns", Fingerprint{MAC: "F4-E2-C6-AA-BB-CC", TCP: []int{22, 53}, DNS: true}, "unifi-gateway"},
+		{"non-ubiquiti mac stays ssh", Fingerprint{MAC: "aa:bb:cc:dd:ee:ff", TCP: []int{22}}, "linux-ssh"},
 		{"windows", Fingerprint{SysDescr: "Hardware: Intel64 ... Software: Windows Version 6.3"}, "windows-snmp"},
 		// Specific identities beat service signals - a Windows DNS server stays Windows.
 		{"windows dns server", Fingerprint{SysDescr: "Hardware: Intel64 ... Software: Windows Version 6.3", TCP: []int{53}, DNS: true}, "windows-snmp"},
