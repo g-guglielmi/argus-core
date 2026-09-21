@@ -14,6 +14,15 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 **Fixed:**
+- **Discovery suggestions, refined by the first probe fleet scan.** UniFi gear on old firmware is
+  now recognized by model tokens alone (a US-8 whose only hints were "US-8-60W"/"USW8"); a UniFi OS
+  console is spotted by its "UniFi OS" page title; and a live service now outranks the generic
+  Linux guess - a Debian box answering real DNS queries suggests DNS server, a Pi serving upsd
+  suggests UPS (NUT), while specific identities (Windows, unRAID, Ugreen, UniFi) still win.
+  Suggestions are recomputed from the stored scan facts on every read, so these fixes apply to
+  scans you already ran - no re-scan needed. Also: PTR answers that echo the IP no longer seed
+  device names like "10", and the adopt-site resets per opened scan instead of carrying over from
+  the previous one.
 - **Host settings is now a dialog (and part of the URL).** The old inline band under the host row
   could be left open while drilling elsewhere in the tree - back at the root you'd still see one
   host's settings floating in the list. It's now a proper modal: any navigation means closing it
