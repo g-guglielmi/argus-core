@@ -3576,7 +3576,7 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
 // discovered) or ignores what it found. Admin-only (gated in the shell nav + clampView).
 type DiscoveryJobRow = { id: number; proxy_name: string; cidr: string; state: string; error?: string; requested_by?: string; created_at: number; completed_at?: number; found?: number; new?: number }
 type DiscoveryHTTP = { port: number; scheme: string; status: number; server?: string; title?: string }
-type DiscoveryResultRow = { id: number; ip: string; mac?: string; rdns?: string; tcp: number[]; sysdescr?: string; sysobjectid?: string; sysname?: string; http?: DiscoveryHTTP; dns?: boolean; suggested_class?: string; state: string; host_id?: string; monitored_id?: string; monitored_name?: string }
+type DiscoveryResultRow = { id: number; ip: string; mac?: string; rdns?: string; tcp: number[]; sysdescr?: string; sysobjectid?: string; sysname?: string; http?: DiscoveryHTTP; dns?: boolean; ssh?: string; suggested_class?: string; state: string; host_id?: string; monitored_id?: string; monitored_name?: string }
 type DiscRowCfg = { name: string; classId: string; http: boolean; httpScheme: string; httpPort: string; macros: Record<string, string>; site?: string }
 
 function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenScan: (id: number | null) => void }) {
@@ -3904,7 +3904,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
                         <td data-label="Found">
                           <div className="cell-stack">
                             <span className="disc-facts">{fp.length ? fp.map((f) => <span key={f} className="tag">{f}</span>) : <span style={{ color: 'var(--faint)' }}>ping only</span>}</span>
-                            {(r.http?.title || r.sysdescr) && <span className="sub-line" title={r.sysdescr || r.http?.title}>{(r.http?.title || r.sysdescr || '').slice(0, 80)}</span>}
+                            {(r.http?.title || r.sysdescr || r.ssh) && <span className="sub-line" title={r.sysdescr || r.http?.title || r.ssh}>{(r.http?.title || r.sysdescr || r.ssh || '').slice(0, 80)}</span>}
                           </div>
                         </td>
                         <td data-label="Class">

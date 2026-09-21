@@ -72,6 +72,7 @@ type DiscoveryResult struct {
 	SysName        string
 	HTTPJSON       string
 	DNS            bool
+	SSHBanner      string
 	SuggestedClass string
 	State          string // new | ignored | added
 	HostID         string // Zabbix host id once adopted
@@ -211,10 +212,10 @@ func (s *Store) CompleteDiscoveryJob(ctx context.Context, jobID int64, proxyName
 			dns = 1
 		}
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO discovery_results(job_id, ip, mac, rdns, tcp_ports, snmp_sysdescr, snmp_sysobjectid, snmp_sysname, http_json, dns, suggested_class, state, host_id)
-			 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'')`,
+			`INSERT INTO discovery_results(job_id, ip, mac, rdns, tcp_ports, snmp_sysdescr, snmp_sysobjectid, snmp_sysname, http_json, dns, ssh_banner, suggested_class, state, host_id)
+			 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'')`,
 			jobID, r.IP, r.MAC, r.RDNS, r.TCPPorts, r.SysDescr, r.SysObjectID, r.SysName, r.HTTPJSON,
-			dns, r.SuggestedClass, st); err != nil {
+			dns, r.SSHBanner, r.SuggestedClass, st); err != nil {
 			return err
 		}
 	}
@@ -272,7 +273,7 @@ func (s *Store) DiscoveryJobByID(ctx context.Context, id int64) (*DiscoveryJob, 
 // DiscoveryResultsByJob returns a job's results in IP-insertion order (the probe sorts by IP).
 func (s *Store) DiscoveryResultsByJob(ctx context.Context, jobID int64) ([]DiscoveryResult, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, job_id, ip, mac, rdns, tcp_ports, snmp_sysdescr, snmp_sysobjectid, snmp_sysname, http_json, dns, suggested_class, state, host_id
+		`SELECT id, job_id, ip, mac, rdns, tcp_ports, snmp_sysdescr, snmp_sysobjectid, snmp_sysname, http_json, dns, ssh_banner, suggested_class, state, host_id
 		 FROM discovery_results WHERE job_id=? ORDER BY id`, jobID)
 	if err != nil {
 		return nil, err
@@ -283,7 +284,7 @@ func (s *Store) DiscoveryResultsByJob(ctx context.Context, jobID int64) ([]Disco
 		var r DiscoveryResult
 		var dns int
 		if err := rows.Scan(&r.ID, &r.JobID, &r.IP, &r.MAC, &r.RDNS, &r.TCPPorts, &r.SysDescr,
-			&r.SysObjectID, &r.SysName, &r.HTTPJSON, &dns, &r.SuggestedClass, &r.State, &r.HostID); err != nil {
+			&r.SysObjectID, &r.SysName, &r.HTTPJSON, &dns, &r.SSHBanner, &r.SuggestedClass, &r.State, &r.HostID); err != nil {
 			return nil, err
 		}
 		r.DNS = dns != 0

@@ -55,11 +55,12 @@ type SNMPInfo struct {
 // HTTPBanner is the first answering web port's banner. The JSON shape matches the probe scanner's
 // http object verbatim (it is stored raw on the discovery result and read by the review UI).
 type HTTPBanner struct {
-	Port   int    `json:"port"`
-	Scheme string `json:"scheme"`
-	Status int    `json:"status"`
-	Server string `json:"server"`
-	Title  string `json:"title"`
+	Port     int    `json:"port"`
+	Scheme   string `json:"scheme"`
+	Status   int    `json:"status"`
+	Server   string `json:"server"`
+	Title    string `json:"title"`
+	Location string `json:"location,omitempty"` // where a redirecting / points (e.g. AdGuard's /login.html)
 }
 
 // Host is one live address's raw fingerprint.
@@ -70,6 +71,7 @@ type Host struct {
 	SNMP *SNMPInfo
 	HTTP *HTTPBanner
 	DNS  bool
+	SSH  string // the SSH server's version banner ("" when :22 is closed or silent)
 }
 
 // Scan sweeps an IPv4 CIDR and returns the live hosts sorted by address. partial reports that the
@@ -158,8 +160,32 @@ func scanHost(ctx context.Context, a netip.Addr, cred *SNMPCred) *Host {
 	if hasPort(open, 53) && dnsAnswers(ip) {
 		h.DNS = true
 	}
+	if hasPort(open, 22) {
+		h.SSH = sshBanner(ip)
+	}
 	h.HTTP = httpBanner(ip, open)
 	return h
+}
+
+// sshBanner reads the version line an SSH server volunteers on connect - "SSH-2.0-dropbear_..."
+// identifies embedded gear, "SSH-2.0-OpenSSH_..." a regular box.
+func sshBanner(ip string) string {
+	c, err := net.DialTimeout("tcp", net.JoinHostPort(ip, "22"), 2*time.Second)
+	if err != nil {
+		return ""
+	}
+	defer c.Close()
+	_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	buf := make([]byte, 120)
+	n, _ := c.Read(buf)
+	line := strings.TrimSpace(strings.SplitN(string(buf[:n]), "\n", 2)[0])
+	if !strings.HasPrefix(line, "SSH-") {
+		return ""
+	}
+	if len(line) > 60 {
+		line = line[:60]
+	}
+	return line
 }
 
 func tcpOpen(ip string, port int) bool {
@@ -217,7 +243,9 @@ var titleRe = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 var wsRe = regexp.MustCompile(`\s+`)
 
 // httpBanner grabs the first answering web port's status/Server/<title> (https first - richer
-// titles than an http redirect stub). Redirects are NOT followed, matching the probe scanner.
+// titles than an http redirect stub). SAME-HOST redirects are followed up to 2 hops for the real
+// title (an app's / usually 302s to its login page - AdGuard's /login.html titles "AdGuard Home"),
+// while the reported status/Location stay those of the original / request.
 func httpBanner(ip string, ports []int) *HTTPBanner {
 	candidates := []struct {
 		port   int
@@ -227,39 +255,61 @@ func httpBanner(ip string, ports []int) *HTTPBanner {
 		if !hasPort(ports, c.port) {
 			continue
 		}
-		tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
-		client := &http.Client{
-			Timeout:   3 * time.Second,
-			Transport: tr,
-			CheckRedirect: func(*http.Request, []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}
-		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s://%s/", c.scheme, net.JoinHostPort(ip, fmt.Sprint(c.port))), nil)
-		if err != nil {
+		status, server, location, title, ok := httpGet(c.scheme, ip, c.port, "/")
+		if !ok {
 			continue
 		}
-		req.Header.Set("User-Agent", "argus-netscan")
-		resp, err := client.Do(req)
-		if err != nil {
-			tr.CloseIdleConnections()
-			continue
-		}
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-		_ = resp.Body.Close()
-		tr.CloseIdleConnections()
-		title := ""
-		if m := titleRe.FindSubmatch(body); m != nil {
-			title = strings.TrimSpace(wsRe.ReplaceAllString(string(m[1]), " "))
-			if len(title) > 120 {
-				title = title[:120]
+		loc, hops := location, 0
+		for title == "" && strings.HasPrefix(loc, "/") && hops < 2 {
+			s2, _, l2, t2, ok2 := httpGet(c.scheme, ip, c.port, loc)
+			if !ok2 {
+				break
+			}
+			title, loc = t2, l2
+			hops++
+			if s2 < 300 || s2 >= 400 {
+				break
 			}
 		}
-		srv := resp.Header.Get("Server")
-		if len(srv) > 80 {
-			srv = srv[:80]
+		if len(location) > 120 {
+			location = location[:120]
 		}
-		return &HTTPBanner{Port: c.port, Scheme: c.scheme, Status: resp.StatusCode, Server: srv, Title: title}
+		return &HTTPBanner{Port: c.port, Scheme: c.scheme, Status: status, Server: server, Title: title, Location: location}
 	}
 	return nil
+}
+
+// httpGet fetches one path without following redirects; returns status, Server, Location, <title>.
+func httpGet(scheme, ip string, port int, path string) (status int, server, location, title string, ok bool) {
+	tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+	defer tr.CloseIdleConnections()
+	client := &http.Client{
+		Timeout:   3 * time.Second,
+		Transport: tr,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s://%s%s", scheme, net.JoinHostPort(ip, fmt.Sprint(port)), path), nil)
+	if err != nil {
+		return 0, "", "", "", false
+	}
+	req.Header.Set("User-Agent", "argus-netscan")
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, "", "", "", false
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	_ = resp.Body.Close()
+	if m := titleRe.FindSubmatch(body); m != nil {
+		title = strings.TrimSpace(wsRe.ReplaceAllString(string(m[1]), " "))
+		if len(title) > 120 {
+			title = title[:120]
+		}
+	}
+	server = resp.Header.Get("Server")
+	if len(server) > 80 {
+		server = server[:80]
+	}
+	return resp.StatusCode, server, resp.Header.Get("Location"), title, true
 }

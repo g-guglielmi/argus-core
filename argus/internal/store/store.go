@@ -333,6 +333,7 @@ CREATE TABLE IF NOT EXISTS discovery_results (
   snmp_sysname     TEXT NOT NULL DEFAULT '',
   http_json        TEXT NOT NULL DEFAULT '',
   dns              INTEGER NOT NULL DEFAULT 0,
+  ssh_banner       TEXT NOT NULL DEFAULT '',
   suggested_class  TEXT NOT NULL DEFAULT '',
   state            TEXT NOT NULL DEFAULT 'new', -- new|ignored|added
   host_id          TEXT NOT NULL DEFAULT ''     -- Zabbix host id once adopted
@@ -402,6 +403,11 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 	// the updater sidecar's check-ins omit it and must not clear it). Only scan-capable probes are
 	// ever handed a discovery job.
 	if err := s.ensureColumn("probe_agents", "scans INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	// SSH version banner a scanned host volunteered (dropbear = embedded gear) - added after the
+	// first fleet scans, so databases created before it need the column.
+	if err := s.ensureColumn("discovery_results", "ssh_banner TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("notify_events", "item_id TEXT NOT NULL DEFAULT ''"); err != nil {

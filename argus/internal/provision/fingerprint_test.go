@@ -37,6 +37,16 @@ func TestSuggestClass(t *testing.T) {
 		{"unifi switch by mac only", Fingerprint{MAC: "f4:e2:c6:12:34:56", TCP: []int{22}}, "unifi-switch"},
 		{"unifi gateway by mac + dns", Fingerprint{MAC: "F4-E2-C6-AA-BB-CC", TCP: []int{22, 53}, DNS: true}, "unifi-gateway"},
 		{"non-ubiquiti mac stays ssh", Fingerprint{MAC: "aa:bb:cc:dd:ee:ff", TCP: []int{22}}, "linux-ssh"},
+		// The hostname NAMES the product: an rDNS like adguard.<site>.lan beats the Debian identity
+		// (lab-confirmed - the admin called the box after what it runs).
+		{"adguard by rdns", Fingerprint{RDNS: "AdGuard.example.lan", SysDescr: "Linux adguard 6.12.107+deb13-amd64", SysObjectID: ".1.3.6.1.4.1.8072.3.2.10", TCP: []int{22, 53, 80}, DNS: true}, "adguard"},
+		{"home assistant by rdns", Fingerprint{RDNS: "homeassistant.example.lan", TCP: []int{}}, "home-assistant"},
+		// AdGuard's / redirects to /login.html - with a live DNS answer that's AdGuard even when
+		// the scanner didn't reach the titled page.
+		{"adguard by redirect location", Fingerprint{HTTPLocation: "/login.html", TCP: []int{53, 80}, DNS: true}, "adguard"},
+		// dropbear = embedded gear: the SSH collector can't run there, so no linux-ssh suggestion.
+		{"dropbear ssh-only -> base", Fingerprint{SSHBanner: "SSH-2.0-dropbear_2022.83", TCP: []int{22}}, ""},
+		{"openssh ssh-only stays linux-ssh", Fingerprint{SSHBanner: "SSH-2.0-OpenSSH_9.2", TCP: []int{22}}, "linux-ssh"},
 		{"windows", Fingerprint{SysDescr: "Hardware: Intel64 ... Software: Windows Version 6.3"}, "windows-snmp"},
 		// Specific identities beat service signals - a Windows DNS server stays Windows.
 		{"windows dns server", Fingerprint{SysDescr: "Hardware: Intel64 ... Software: Windows Version 6.3", TCP: []int{53}, DNS: true}, "windows-snmp"},

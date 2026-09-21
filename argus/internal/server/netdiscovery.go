@@ -208,8 +208,8 @@ func (s *Server) runCoreScan(job store.DiscoveryJob) {
 	}
 	results := make([]store.DiscoveryResult, 0, len(hosts))
 	for _, h := range hosts {
-		f := provision.Fingerprint{TCP: h.TCP, DNS: h.DNS}
-		res := store.DiscoveryResult{IP: h.IP, RDNS: h.RDNS, DNS: h.DNS}
+		f := provision.Fingerprint{TCP: h.TCP, DNS: h.DNS, RDNS: h.RDNS, SSHBanner: h.SSH}
+		res := store.DiscoveryResult{IP: h.IP, RDNS: h.RDNS, DNS: h.DNS, SSHBanner: h.SSH}
 		if h.SNMP != nil {
 			res.SysDescr, res.SysObjectID, res.SysName = h.SNMP.SysDescr, h.SNMP.SysObjectID, h.SNMP.SysName
 			f.SysDescr, f.SysObjectID, f.SysName = h.SNMP.SysDescr, h.SNMP.SysObjectID, h.SNMP.SysName
@@ -218,7 +218,7 @@ func (s *Server) runCoreScan(job store.DiscoveryJob) {
 			if b, err := json.Marshal(h.HTTP); err == nil {
 				res.HTTPJSON = string(b)
 			}
-			f.HTTPTitle, f.HTTPServer = h.HTTP.Title, h.HTTP.Server
+			f.HTTPTitle, f.HTTPServer, f.HTTPLocation = h.HTTP.Title, h.HTTP.Server, h.HTTP.Location
 		}
 		ports, _ := json.Marshal(h.TCP)
 		res.TCPPorts = string(ports)
@@ -288,6 +288,7 @@ type discoveryResultView struct {
 	SysName        string          `json:"sysname,omitempty"`
 	HTTP           json.RawMessage `json:"http,omitempty"`
 	DNS            bool            `json:"dns,omitempty"`
+	SSH            string          `json:"ssh,omitempty"`
 	SuggestedClass string          `json:"suggested_class,omitempty"`
 	State          string          `json:"state"`                    // new | ignored | added
 	HostID         string          `json:"host_id,omitempty"`        // the host this result was adopted as
@@ -340,7 +341,7 @@ func (s *Server) handleGetDiscoveryJob(w http.ResponseWriter, r *http.Request) {
 	for _, res := range results {
 		v := discoveryResultView{ID: res.ID, IP: res.IP, MAC: res.MAC, RDNS: res.RDNS,
 			SysDescr: res.SysDescr, SysObjectID: res.SysObjectID, SysName: res.SysName,
-			DNS: res.DNS, State: res.State, HostID: res.HostID}
+			DNS: res.DNS, SSH: res.SSHBanner, State: res.State, HostID: res.HostID}
 		if json.Unmarshal([]byte(res.TCPPorts), &v.TCP) != nil || v.TCP == nil {
 			v.TCP = []int{}
 		}
@@ -351,11 +352,12 @@ func (s *Server) handleGetDiscoveryJob(w http.ResponseWriter, r *http.Request) {
 		// value is kept only as a record): mapping improvements ship core-side and reach past
 		// scans immediately - no re-scan needed.
 		f := provision.Fingerprint{SysDescr: res.SysDescr, SysObjectID: res.SysObjectID,
-			SysName: res.SysName, DNS: res.DNS, TCP: v.TCP, MAC: res.MAC}
+			SysName: res.SysName, DNS: res.DNS, TCP: v.TCP, MAC: res.MAC, RDNS: res.RDNS,
+			SSHBanner: res.SSHBanner}
 		if res.HTTPJSON != "" {
 			var hf httpFacts
 			if json.Unmarshal([]byte(res.HTTPJSON), &hf) == nil {
-				f.HTTPTitle, f.HTTPServer = hf.Title, hf.Server
+				f.HTTPTitle, f.HTTPServer, f.HTTPLocation = hf.Title, hf.Server, hf.Location
 			}
 		}
 		v.SuggestedClass = provision.SuggestClass(f)
@@ -406,12 +408,14 @@ type scanResultHost struct {
 	} `json:"snmp"`
 	HTTP json.RawMessage `json:"http"`
 	DNS  bool            `json:"dns"`
+	SSH  string          `json:"ssh"`
 }
 
 // httpFacts is the slice of the scanner's HTTP banner the classifier cares about.
 type httpFacts struct {
-	Title  string `json:"title"`
-	Server string `json:"server"`
+	Title    string `json:"title"`
+	Server   string `json:"server"`
+	Location string `json:"location"`
 }
 
 // handleScanResults receives a finished scan from the probe (public; authenticated by the same
@@ -447,8 +451,8 @@ func (s *Server) handleScanResults(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(h.IP) == "" {
 			continue
 		}
-		f := provision.Fingerprint{TCP: h.TCP, DNS: h.DNS, MAC: h.MAC}
-		res := store.DiscoveryResult{IP: h.IP, MAC: h.MAC, RDNS: h.RDNS, DNS: h.DNS}
+		f := provision.Fingerprint{TCP: h.TCP, DNS: h.DNS, MAC: h.MAC, RDNS: h.RDNS, SSHBanner: h.SSH}
+		res := store.DiscoveryResult{IP: h.IP, MAC: h.MAC, RDNS: h.RDNS, DNS: h.DNS, SSHBanner: h.SSH}
 		if h.SNMP != nil {
 			res.SysDescr, res.SysObjectID, res.SysName = h.SNMP.SysDescr, h.SNMP.SysObjectID, h.SNMP.SysName
 			f.SysDescr, f.SysObjectID, f.SysName = h.SNMP.SysDescr, h.SNMP.SysObjectID, h.SNMP.SysName
@@ -457,7 +461,7 @@ func (s *Server) handleScanResults(w http.ResponseWriter, r *http.Request) {
 			res.HTTPJSON = string(h.HTTP)
 			var hf httpFacts
 			if json.Unmarshal(h.HTTP, &hf) == nil {
-				f.HTTPTitle, f.HTTPServer = hf.Title, hf.Server
+				f.HTTPTitle, f.HTTPServer, f.HTTPLocation = hf.Title, hf.Server, hf.Location
 			}
 		}
 		ports, _ := json.Marshal(h.TCP)

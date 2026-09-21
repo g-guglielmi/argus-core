@@ -9,14 +9,17 @@ import "strings"
 // probe collects facts only; mapping them to a device class happens here on the core, so the
 // mapping can grow without touching the fleet.
 type Fingerprint struct {
-	SysDescr    string // SNMP sysDescr ("" = no SNMP answer)
-	SysObjectID string // SNMP sysObjectID, dotted with leading "."
-	SysName     string // SNMP sysName
-	HTTPTitle   string // <title> of the first answering web port
-	HTTPServer  string // Server response header
-	DNS         bool   // the host answered a real DNS query on udp/53
-	TCP         []int  // open TCP ports from the scanner's probe set
-	MAC         string // MAC address (probe scans on the same L2 only; "" otherwise)
+	SysDescr     string // SNMP sysDescr ("" = no SNMP answer)
+	SysObjectID  string // SNMP sysObjectID, dotted with leading "."
+	SysName      string // SNMP sysName
+	HTTPTitle    string // <title> of the first answering web port (redirects followed same-host)
+	HTTPServer   string // Server response header
+	HTTPLocation string // Location header of a redirecting / ("" otherwise)
+	DNS          bool   // the host answered a real DNS query on udp/53
+	TCP          []int  // open TCP ports from the scanner's probe set
+	MAC          string // MAC address (host-network probe scans on the same L2 only; "" otherwise)
+	RDNS         string // reverse-DNS name ("" if none)
+	SSHBanner    string // the SSH server's version banner, e.g. "SSH-2.0-dropbear_2022.83"
 }
 
 // oidUbiquiti is the Ubiquiti enterprise arc (UniFi devices).
@@ -49,6 +52,24 @@ func SuggestClass(f Fingerprint) string {
 		return "unifi-console"
 	case strings.Contains(title, "unraid"):
 		return "unraid"
+	}
+
+	// Hostname hints: an rDNS or sysName that NAMES the product is trusted - the admin called the
+	// box after what it runs, and that beats the OS identity (a Debian VM named "AdGuard" should be
+	// monitored as AdGuard, not as generic Linux).
+	nameIdent := strings.ToLower(f.RDNS + " " + f.SysName)
+	switch {
+	case strings.Contains(nameIdent, "adguard"):
+		return "adguard"
+	case strings.Contains(nameIdent, "homeassistant") || strings.Contains(nameIdent, "home-assistant"):
+		return "home-assistant"
+	case strings.Contains(nameIdent, "pihole") || strings.Contains(nameIdent, "pi-hole"):
+		return "dns-server"
+	}
+	// AdGuard's / redirects to /login.html (a giveaway even when the scanner didn't follow it to
+	// the titled page) - together with a live DNS answer that's AdGuard.
+	if f.DNS && strings.HasPrefix(strings.ToLower(f.HTTPLocation), "/login.html") {
+		return "adguard"
 	}
 
 	uiMAC := ouiUbiquiti(f.MAC)
@@ -118,6 +139,11 @@ func SuggestClass(f Fingerprint) string {
 		return "nut-collector"
 	}
 	if hasPort(f.TCP, 22) {
+		// dropbear = embedded gear (UniFi switches, routers): busybox lacks the df/proc idioms the
+		// SSH collector needs, so the Linux (SSH) class can't work there - plain Ping instead.
+		if strings.Contains(strings.ToLower(f.SSHBanner), "dropbear") {
+			return ""
+		}
 		return "linux-ssh"
 	}
 	return "" // base Ping (the review UI pre-ticks the HTTP add-on when a web port answered)

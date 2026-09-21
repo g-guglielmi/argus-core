@@ -24,6 +24,14 @@ GitHub Release from the matching section below.
   UniFi Gateway when the device also answers DNS. And the "UniFi OS" page title maps to UniFi
   Gateway (that's what UDM/UCG/UXG serve), while a self-hosted Network Server's "UniFi Network"
   title maps to UniFi OS Console.
+  **Hostname hints**: an rDNS/sysName that names the product (adguard, homeassistant, pihole) beats
+  the OS identity - a Debian VM called AdGuard is monitored as AdGuard. **Deeper HTTP fingerprint**
+  (scanner side, core now / probe from r14): same-host redirects are followed for the real page
+  title (AdGuard's / 302s to /login.html, which titles "AdGuard Home" - no more "302 Found"), the
+  Location header is recorded (a `/login.html` redirect + live DNS = AdGuard even without the
+  title), and the **SSH version banner** is captured - dropbear identifies embedded gear (UniFi
+  switches), which no longer gets the Linux (SSH) suggestion its collector couldn't serve. Note:
+  MAC/OUI identification needs a host-network probe - a bridged container sees no LAN ARP.
   Suggestions are recomputed from the stored scan facts on every read, so these fixes apply to
   scans you already ran - no re-scan needed. Also: PTR answers that echo the IP no longer seed
   device names like "10", and the adopt-site resets per opened scan instead of carrying over from
