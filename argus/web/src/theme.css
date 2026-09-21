@@ -403,6 +403,8 @@ a { color: var(--accent); }
 .host-settings .hs-add { display: flex; gap: 8px; margin-top: 4px; }
 .host-settings .hs-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .host-settings select.input { cursor: pointer; }
+/* Inside the settings dialog the band chrome is redundant - the .dlg supplies it. */
+.host-settings.in-dlg { margin: 0; padding: 2px 0 0; background: none; border: none; border-radius: 0; }
 @media (max-width: 640px) { .host-settings .hs-grid, .host-settings .if-fields, .host-settings .if-snmp { grid-template-columns: 1fr; } }
 /* The probes table forces `white-space: nowrap` on every cell (so version strings don't wrap); the
    SNMP band lives in a cell and inherits it, which stops its note/title wrapping and spills the text

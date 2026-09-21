@@ -676,7 +676,7 @@ function useTheme(): ['dark' | 'light', () => void] {
 // resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
 // (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
 const NAV_VIEWS: View[] = ['overview', 'triggers', 'monitoring', 'notifications', 'probes', 'discovery', 'users', 'settings', 'account', 'list']
-type NavState = { view: View; filter: string; host?: string; item?: string; group?: string; scan?: string }
+type NavState = { view: View; filter: string; host?: string; item?: string; group?: string; scan?: string; edit?: string }
 
 function parseNav(): NavState {
   const p = new URLSearchParams(window.location.search)
@@ -686,7 +686,7 @@ function parseNav(): NavState {
   const raw = p.get('view')
   // Fall back to monitoring for a legacy ?host=&item= (or ?group=) link that predates ?view=.
   const view: View = raw && (NAV_VIEWS as string[]).includes(raw) ? (raw as View) : (host || group) ? 'monitoring' : 'overview'
-  return { view, filter: p.get('filter') || 'error', host, item, group, scan: p.get('scan') || undefined }
+  return { view, filter: p.get('filter') || 'error', host, item, group, scan: p.get('scan') || undefined, edit: p.get('edit') || undefined }
 }
 
 function buildNav(s: NavState): string {
@@ -697,6 +697,7 @@ function buildNav(s: NavState): string {
   if (s.view === 'monitoring') {
     if (s.host) { p.set('host', s.host); if (s.item) p.set('item', s.item) }
     else if (s.group) p.set('group', s.group)
+    if (s.edit) p.set('edit', s.edit) // the host whose settings dialog is open
   }
   // An opened discovery scan is its own screen: deep-linkable, and Back returns to the scan list.
   if (s.view === 'discovery' && s.scan) p.set('scan', s.scan)
@@ -1040,11 +1041,12 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
 
   // Deep-link target: Overview / lists / a shared URL ask the tree to open a host (and optionally
   // a sensor's chart). Seeded from the URL so a reload restores the open host/sensor.
-  const [treeTarget, setTreeTarget] = useState<{ hostId?: string; itemId?: string; itemName?: string; groupPath?: string; n: number } | null>(() => {
+  const [treeTarget, setTreeTarget] = useState<{ hostId?: string; itemId?: string; itemName?: string; groupPath?: string; editHost?: string; n: number } | null>(() => {
     const s = parseNav()
     if (s.view !== 'monitoring') return null
-    if (s.host) return { hostId: s.host, itemId: s.item, n: 0 }
-    if (s.group) return { groupPath: s.group, n: 0 }
+    if (s.host) return { hostId: s.host, itemId: s.item, editHost: s.edit, n: 0 }
+    if (s.group) return { groupPath: s.group, editHost: s.edit, n: 0 }
+    if (s.edit) return { editHost: s.edit, n: 0 }
     return null
   })
   const navN = useRef(0)
@@ -1074,8 +1076,8 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   // An explicit drill (group/host/sensor name, breadcrumb) pushes a history entry so Back/Forward step
   // through the drill levels; inline accordion toggles (expanding a host card or a sensor row) replace,
   // to keep those out of history.
-  function onTreeNav(hostId: string | null, itemId: string | null, group?: string | null, push?: boolean) {
-    const url = buildNav({ view: 'monitoring', filter: listFilter, host: hostId || undefined, item: itemId || undefined, group: group || undefined })
+  function onTreeNav(hostId: string | null, itemId: string | null, group?: string | null, push?: boolean, edit?: string | null) {
+    const url = buildNav({ view: 'monitoring', filter: listFilter, host: hostId || undefined, item: itemId || undefined, group: group || undefined, edit: edit || undefined })
     if (push) window.history.pushState({}, '', url)
     else window.history.replaceState({}, '', url)
   }
@@ -1097,8 +1099,9 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
       const n = parseNav()
       setView(clampView(n.view)); setListFilter(n.filter); setMenuOpen(false); setNavOpen(false)
       setDiscScan(n.view === 'discovery' ? n.scan || null : null)
-      if (n.view === 'monitoring' && n.host) { navN.current += 1; setTreeTarget({ hostId: n.host, itemId: n.item, n: navN.current }) }
-      else if (n.view === 'monitoring' && n.group) { navN.current += 1; setTreeTarget({ groupPath: n.group, n: navN.current }) }
+      if (n.view === 'monitoring' && n.host) { navN.current += 1; setTreeTarget({ hostId: n.host, itemId: n.item, editHost: n.edit, n: navN.current }) }
+      else if (n.view === 'monitoring' && n.group) { navN.current += 1; setTreeTarget({ groupPath: n.group, editHost: n.edit, n: navN.current }) }
+      else if (n.view === 'monitoring' && n.edit) { navN.current += 1; setTreeTarget({ editHost: n.edit, n: navN.current }) }
       else if (n.view === 'monitoring') { setTreeTarget(null); setMonHome((m) => m + 1) } // stepped back to the tree root
       else setTreeTarget(null)
     }
@@ -2813,7 +2816,7 @@ type GNode = { path: string; name: string; group?: Group; parentPath?: string; c
 // one `kind`, listed in manual order (group paths, or host ids). Unlisted siblings fall back to alpha.
 type OrderSet = { scope: string; kind: 'group' | 'host' | 'sibling'; items: string[] }
 
-function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { role: string; target: { hostId?: string; itemId?: string; itemName?: string; groupPath?: string; n: number } | null; homeSignal: number; onNavigate: (hostId: string | null, itemId: string | null, group?: string | null, push?: boolean) => void; advanced: boolean }) {
+function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { role: string; target: { hostId?: string; itemId?: string; itemName?: string; groupPath?: string; editHost?: string; n: number } | null; homeSignal: number; onNavigate: (hostId: string | null, itemId: string | null, group?: string | null, push?: boolean, edit?: string | null) => void; advanced: boolean }) {
   const confirm = useConfirm()
   const [hosts, setHosts] = useState<Host[]>([])
   const [groups, setGroups] = useState<Group[]>([])
@@ -2937,11 +2940,12 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
       const p = target.groupPath
       setCollapsed((c) => { const n = new Set(c); let a = ''; for (const seg of p.split('/')) { a = a ? a + '/' + seg : seg; n.delete(a) } return n })
       setFocus({ level: 'group', path: p })
+      setSettingsHost(target.editHost || null)
       appliedTarget.current = target.n
       return
     }
     const hid = target.hostId
-    if (!hid) { appliedTarget.current = target.n; return }
+    if (!hid) { setSettingsHost(target.editHost || null); appliedTarget.current = target.n; return }
     const h = hosts.find((x) => x.id === hid)
     if (!h) return // host not loaded yet - retry when hosts arrive (don't latch until it's applied)
     const p = (h.groups && h.groups.length ? h.groups : ['Ungrouped'])[0]
@@ -2951,6 +2955,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     setFocus(target.itemId
       ? { level: 'sensor', path: p, hostId: hid, itemId: target.itemId, itemName: target.itemName }
       : { level: 'host', path: p, hostId: hid })
+    setSettingsHost(target.editHost || null)
     appliedTarget.current = target.n
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target?.n, hosts.length])
@@ -2968,6 +2973,17 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   // Drill helpers - narrow the focus and refine the URL so Back steps between screens. Each level is
   // URL-persisted: group focus as ?group=<path>, host/sensor as ?host=&item=, so a reload or shared
   // link restores the same screen.
+  // The host-settings dialog is URL-backed (&edit=<hostid>) on top of the current focus params, so
+  // a reload restores it and Back closes it. Any drill (the calls below carry no edit) drops it.
+  function navEdit(edit: string | null) {
+    const host = focus.level === 'host' || focus.level === 'sensor' ? focus.hostId : null
+    const item = focus.level === 'sensor' ? focus.itemId : null
+    const group = focus.level === 'group' ? focus.path : null
+    onNavigate(host, item ?? null, group, true, edit)
+  }
+  function openSettings(hostId: string) { setEditGroupsHost(null); setSettingsHost(hostId); navEdit(hostId) }
+  function closeSettings() { setSettingsHost(null); navEdit(null) }
+
   function drillRoot() { setFocus({ level: 'root' }); onNavigate(null, null, null, true) }
   function drillGroup(path: string) { setFocus({ level: 'group', path }); onNavigate(null, null, path, true) }
   function drillHost(path: string, hostId: string) { setFocus({ level: 'host', path, hostId }); setOpenHost(path + '::' + hostId); onNavigate(hostId, null, null, true) }
@@ -3177,14 +3193,13 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
                 h.paused ? { label: 'Resume', icon: kbIcon.resume, onClick: () => clearHostState(h, 'pause') } : { label: 'Pause', icon: kbIcon.pause, onPick: (s) => setHostState(h, 'pause', s) },
                 h.hidden ? { label: 'Show', icon: kbIcon.show, onClick: () => clearHostState(h, 'hide') } : { label: 'Hide', icon: kbIcon.hide, onPick: (s) => setHostState(h, 'hide', s) },
                 { sep: true, label: '' },
-                { label: 'Settings…', icon: kbIcon.gear, onClick: () => { setEditGroupsHost(null); setSettingsHost((cur) => (cur === h.id ? null : h.id)) } },
+                { label: 'Settings…', icon: kbIcon.gear, onClick: () => openSettings(h.id) },
                 { label: 'Edit groups…', icon: kbIcon.folder, onClick: () => { setSettingsHost(null); setEditGroupsHost((cur) => (cur === h.id ? null : h.id)) } },
                 { label: 'Discover now', icon: kbIcon.discover, onClick: () => discoverNow(h) },
               ]} />
             )}
           </div>
         </div>
-        {settingsHost === h.id && <HostSettings hostId={h.id} canEdit={canPause} onClose={() => setSettingsHost(null)} onSaved={() => { setSettingsHost(null); load(); fireDataRefresh() }} />}
         {editGroupsHost === h.id && <GroupEditor current={h.groups || []} groups={groups} onSave={(ids) => setHostGroups(h.id, ids)} onCancel={() => setEditGroupsHost(null)} />}
         {hopen && <div className="host-body" style={{ paddingLeft: indent(depth) }}><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAllEff} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(path, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} /></div>}
       </div>
@@ -3318,6 +3333,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
         placeholder={focus.level === 'group' ? 'Subgroup name (use / for deeper nesting)' : 'New group name (use / for nesting, e.g. site1/Network)'}
         confirmLabel="Create" onConfirm={(name) => createGroup(name)} onCancel={() => setCreating(false)} />}
       {addingDevice && <AddDeviceBand classes={classes} groups={groups} proxies={proxies} defaultSite={focus.level === 'group' ? focus.path : ''} onCancel={() => setAddingDevice(false)} onCreated={() => { setAddingDevice(false); setError(null); load(); fireDataRefresh() }} />}
+      {settingsHost && <HostSettingsModal hostId={settingsHost} hostName={hosts.find((h) => h.id === settingsHost)?.name} canEdit={canPause} onClose={closeSettings} onSaved={() => { closeSettings(); load(); fireDataRefresh() }} />}
       {loading && <Skeleton rows={5} cols={3} />}
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
       {!loading && !error && hosts.length === 0 && <EmptyState icon={ic.monitoring} title="No hosts yet" text="Hosts monitored in Zabbix appear here, grouped by site. If you expected some, check the Zabbix connection in Settings." />}
@@ -4003,9 +4019,31 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
 const IFTYPE: Record<number, string> = { 1: 'Agent', 2: 'SNMP', 3: 'IPMI', 4: 'JMX' }
 function blankSnmp(): SnmpCfg { return { version: 2, community: 'public', bulk: 1, security_name: '', security_level: 0, auth_protocol: 0, auth_passphrase: '', priv_protocol: 0, priv_passphrase: '', context_name: '' } }
 
-// HostSettings is the inline band under a host row for editing its identity + interfaces (Zabbix
+// HostSettingsModal hosts the settings editor in a portaled dialog: navigating the tree or
+// switching views can never leave a stale settings band behind (the old inline band survived a
+// drill back to the root) - the dialog is closed first (Escape / backdrop / Cancel / Back, since
+// the open dialog is URL-backed via &edit=).
+function HostSettingsModal({ hostId, hostName, canEdit, onClose, onSaved }: { hostId: string; hostName?: string; canEdit: boolean; onClose: () => void; onSaved: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return createPortal(
+    <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 'min(980px, 94vw)', maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
+        <div className="dlg-title">Host settings{hostName ? ` · ${hostName}` : ''}</div>
+        <div className="dlg-scroll"><HostSettings hostId={hostId} canEdit={canEdit} onClose={onClose} onSaved={onSaved} inDialog /></div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+// HostSettings is the editor for a host's identity + interfaces (Zabbix
 // host.update + hostinterface CRUD). One "Save" reconciles the whole desired state on the server.
-function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; canEdit: boolean; onClose: () => void; onSaved: () => void }) {
+function HostSettings({ hostId, canEdit, onClose, onSaved, inDialog }: { hostId: string; canEdit: boolean; onClose: () => void; onSaved: () => void; inDialog?: boolean }) {
+  const rootCls = 'host-settings' + (inDialog ? ' in-dlg' : '')
   const confirm = useConfirm()
   const [cfg, setCfg] = useState<HostCfg | null>(null)
   const [proxies, setProxies] = useState<Proxy[]>([])
@@ -4036,11 +4074,11 @@ function HostSettings({ hostId, canEdit, onClose, onSaved }: { hostId: string; c
     onSaved()
   }
 
-  if (err && !cfg) return <div className="host-settings"><div style={{ color: 'var(--err)', fontSize: 13 }}>{err}</div><div className="hs-foot"><Button variant="ghost" onClick={onClose}>Close</Button></div></div>
-  if (!cfg) return <div className="host-settings"><span style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</span></div>
+  if (err && !cfg) return <div className={rootCls}><div style={{ color: 'var(--err)', fontSize: 13 }}>{err}</div><div className="hs-foot"><Button variant="ghost" onClick={onClose}>Close</Button></div></div>
+  if (!cfg) return <div className={rootCls}><span style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</span></div>
 
   return (
-    <div className="host-settings">
+    <div className={rootCls}>
       <div className="hs-grid">
         <label className="field"><span>Visible name</span><input className="input" value={cfg.name} disabled={!canEdit} onChange={(e) => patch({ name: e.target.value })} /></label>
         <label className="field"><span>Technical name</span><input className="input" value={cfg.host} disabled={!canEdit} onChange={(e) => patch({ host: e.target.value })} /></label>

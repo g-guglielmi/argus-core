@@ -11,6 +11,17 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Fixed:**
+- **Host settings is now a dialog (and part of the URL).** The old inline band under the host row
+  could be left open while drilling elsewhere in the tree - back at the root you'd still see one
+  host's settings floating in the list. It's now a proper modal: any navigation means closing it
+  first (Escape, backdrop, Cancel - or the browser's Back button, since the open dialog lives in
+  the URL as `&edit=<host>`, making it reload-safe and deep-linkable like the rest of the app).
+
+---
+
 ## [0.4.56] - 2026-09-21
 
 **Added:**
