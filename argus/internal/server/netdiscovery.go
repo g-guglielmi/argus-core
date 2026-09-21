@@ -340,13 +340,25 @@ func (s *Server) handleGetDiscoveryJob(w http.ResponseWriter, r *http.Request) {
 	for _, res := range results {
 		v := discoveryResultView{ID: res.ID, IP: res.IP, MAC: res.MAC, RDNS: res.RDNS,
 			SysDescr: res.SysDescr, SysObjectID: res.SysObjectID, SysName: res.SysName,
-			DNS: res.DNS, SuggestedClass: res.SuggestedClass, State: res.State, HostID: res.HostID}
+			DNS: res.DNS, State: res.State, HostID: res.HostID}
 		if json.Unmarshal([]byte(res.TCPPorts), &v.TCP) != nil || v.TCP == nil {
 			v.TCP = []int{}
 		}
 		if res.HTTPJSON != "" {
 			v.HTTP = json.RawMessage(res.HTTPJSON)
 		}
+		// The suggestion is recomputed from the STORED raw facts on every read (the ingest-time
+		// value is kept only as a record): mapping improvements ship core-side and reach past
+		// scans immediately - no re-scan needed.
+		f := provision.Fingerprint{SysDescr: res.SysDescr, SysObjectID: res.SysObjectID,
+			SysName: res.SysName, DNS: res.DNS, TCP: v.TCP}
+		if res.HTTPJSON != "" {
+			var hf httpFacts
+			if json.Unmarshal([]byte(res.HTTPJSON), &hf) == nil {
+				f.HTTPTitle, f.HTTPServer = hf.Title, hf.Server
+			}
+		}
+		v.SuggestedClass = provision.SuggestClass(f)
 		mid := res.HostID
 		if mid == "" {
 			mid = ipToHost[res.IP]

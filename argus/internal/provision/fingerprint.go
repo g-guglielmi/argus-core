@@ -31,7 +31,8 @@ func SuggestClass(f Fingerprint) string {
 	sysname := strings.ToLower(f.SysName)
 
 	// Product pages are the most specific signal. "XO Lite" is the page an XCP-NG host itself
-	// serves on :443 (lab-confirmed - the hosts never say "xcp-ng" in the title).
+	// serves on :443, and a UniFi OS console titles its login "UniFi OS"/"UniFi Network"
+	// (both lab-confirmed - the devices never name their product line in sysDescr).
 	switch {
 	case strings.Contains(title, "adguard home"):
 		return "adguard"
@@ -39,6 +40,8 @@ func SuggestClass(f Fingerprint) string {
 		return "home-assistant"
 	case strings.Contains(title, "xcp-ng") || strings.Contains(title, "xenserver") || strings.Contains(title, "xo lite"):
 		return "xcpng"
+	case strings.Contains(title, "unifi os") || strings.Contains(title, "unifi network"):
+		return "unifi-console"
 	case strings.Contains(title, "unraid"):
 		return "unraid"
 	}
@@ -47,23 +50,27 @@ func SuggestClass(f Fingerprint) string {
 	if f.SysDescr != "" || f.SysObjectID != "" {
 		ident := descr + " " + sysname
 		// UniFi: current firmware reports Ubiquiti's enterprise OID, but older firmware answers
-		// with the stock net-snmp OID and only the "Linux UBNT" sysDescr gives it away
-		// (lab-confirmed on a USW SFP) - so token-match on the identity too, before the plain
-		// "linux" check below can swallow it.
-		if strings.HasPrefix(f.SysObjectID, oidUbiquiti) || containsAny(ident, "ubnt", "unifi") {
+		// with the stock net-snmp OID and reveals itself only through "UBNT" in sysDescr or a
+		// model token in sysDescr/sysName (lab-confirmed on a USW SFP and a garage US-8-60W whose
+		// only hint was "US-8-60W" + "USW8" in the name) - so a STRONG model token opens this
+		// branch on its own, before the plain "linux" check below can swallow it.
+		strong := unifiModelClass(ident)
+		isUbnt := strings.HasPrefix(f.SysObjectID, oidUbiquiti) || containsAny(ident, "ubnt", "unifi")
+		if strong != "" {
+			return strong
+		}
+		if isUbnt {
+			// Confirmed Ubiquiti - weaker hints are safe to read now.
 			switch {
-			case containsAny(ident, "usw", "us-", "edgeswitch", "unifi switch"):
-				return "unifi-switch"
-			case containsAny(ident, "ugw", "usg", "udm", "uxg", "ucg", "gateway"):
+			case strings.Contains(ident, "gateway"):
 				return "unifi-gateway"
-			case containsAny(ident, "uap", "u6", "u7", "ac-", "access point"):
+			case containsAny(ident, "ac-", "access point"):
 				return "unifi-ap"
 			}
 			if strings.HasPrefix(f.SysObjectID, oidUbiquiti) {
 				return "unifi-ap" // most UniFi SNMP responders with no model token are APs
 			}
-			// "ubnt"/"unifi" seen but no model token and no Ubiquiti OID: fall through to the
-			// OS checks rather than guess a UniFi shape.
+			// "ubnt"/"unifi" seen but nothing else: fall through to the OS checks.
 		}
 		switch {
 		case strings.Contains(descr, "windows"):
@@ -72,6 +79,12 @@ func SuggestClass(f Fingerprint) string {
 			return "ugreen"
 		case strings.Contains(descr, "unraid"):
 			return "unraid"
+		// A live service outranks the GENERIC Linux guess (a Pi answering real DNS queries or
+		// serving upsd is better monitored as that service; specific identities above still win):
+		case f.DNS:
+			return "dns-server"
+		case hasPort(f.TCP, 3493):
+			return "nut-collector"
 		case strings.Contains(descr, "linux"):
 			return "linux-snmp"
 		}
@@ -91,6 +104,21 @@ func SuggestClass(f Fingerprint) string {
 		return "linux-ssh"
 	}
 	return "" // base Ping (the review UI pre-ticks the HTTP add-on when a web port answered)
+}
+
+// unifiModelClass maps STRONG UniFi model tokens in the lowercased SNMP identity to a class -
+// tokens specific enough to identify Ubiquiti gear on their own, without the enterprise OID
+// (generic words like "gateway" are NOT here; they only count once Ubiquiti is confirmed).
+func unifiModelClass(ident string) string {
+	switch {
+	case containsAny(ident, "usw", "us-8", "us-16", "us-24", "us-48", "edgeswitch", "unifi switch"):
+		return "unifi-switch"
+	case containsAny(ident, "ugw", "usg", "udm", "uxg", "ucg"):
+		return "unifi-gateway"
+	case containsAny(ident, "uap", "u6", "u7", "nanohd"):
+		return "unifi-ap"
+	}
+	return ""
 }
 
 func containsAny(s string, subs ...string) bool {

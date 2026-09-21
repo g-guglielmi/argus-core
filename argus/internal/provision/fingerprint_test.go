@@ -23,7 +23,19 @@ func TestSuggestClass(t *testing.T) {
 		// away (lab-confirmed on a USW SFP) - and the "unraid"-ish sysname must not win.
 		{"unifi switch, old firmware", Fingerprint{SysObjectID: ".1.3.6.1.4.1.8072.3.2.10", SysDescr: "Linux UBNT 3.18.24 mips", SysName: "rack-USW-SFP-unraid-link"}, "unifi-switch"},
 		{"unifi gateway", Fingerprint{SysObjectID: ".1.3.6.1.4.1.41112.1.4", SysName: "UDM-Pro"}, "unifi-gateway"},
+		// A US-8 on old firmware: net-snmp OID, no "UBNT" anywhere - only the model tokens give it
+		// away (lab-confirmed). Strong model tokens must open the UniFi branch on their own.
+		{"unifi switch by model token only", Fingerprint{SysObjectID: ".1.3.6.1.4.1.8072.3.2.10", SysDescr: "US-8-60W, 7.5.15.17146, Linux 3.6.5", SysName: "garage-USW8PoE"}, "unifi-switch"},
+		// A UniFi OS console titles its login page "UniFi OS" (lab-confirmed) and its sysDescr is
+		// plain Linux - the title must win.
+		{"unifi console by title", Fingerprint{HTTPTitle: "UniFi OS", SysDescr: "Linux console 4.19", TCP: []int{22, 53, 80, 443, 8443}, DNS: true}, "unifi-console"},
 		{"windows", Fingerprint{SysDescr: "Hardware: Intel64 ... Software: Windows Version 6.3"}, "windows-snmp"},
+		// Specific identities beat service signals - a Windows DNS server stays Windows.
+		{"windows dns server", Fingerprint{SysDescr: "Hardware: Intel64 ... Software: Windows Version 6.3", TCP: []int{53}, DNS: true}, "windows-snmp"},
+		// ... but a live service beats the GENERIC Linux guess: a Debian box answering real DNS
+		// queries (AdGuard without a page title) or serving upsd is that service first.
+		{"linux running dns", Fingerprint{SysDescr: "Linux adguard1 6.12.107+deb13-amd64", SysObjectID: ".1.3.6.1.4.1.8072.3.2.10", TCP: []int{22, 53, 80}, DNS: true}, "dns-server"},
+		{"linux running nut", Fingerprint{SysDescr: "Linux ups-pi 6.6.134+ aarch64", SysObjectID: ".1.3.6.1.4.1.8072.3.2.10", TCP: []int{22, 3493}}, "nut-collector"},
 		{"linux", Fingerprint{SysDescr: "Linux storage1 6.1.0 x86_64", SysObjectID: ".1.3.6.1.4.1.8072.3.2.10"}, "linux-snmp"},
 		{"unraid", Fingerprint{SysDescr: "Linux Tower 6.12.10-Unraid x86_64", SysObjectID: ".1.3.6.1.4.1.8072.3.2.10"}, "unraid"},
 		{"ugreen", Fingerprint{SysDescr: "Linux nas 5.x", SysName: "UGOS-NAS", SysObjectID: ".1.3.6.1.4.1.8072.3.2.10"}, "ugreen"},

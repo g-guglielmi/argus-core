@@ -3617,7 +3617,10 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
     // HTTP add-on pre-ticked (and scheme/port pre-filled) from what the scan actually saw; the
     // band still offers it for any web-capable class, scan facts or not.
     const httpPort = r.http && r.http.port !== 443 && r.http.port !== 80 ? String(r.http.port) : ''
-    return { name: r.sysname || (r.rdns ? r.rdns.split('.')[0] : '') || r.ip, classId, http: !!r.http, httpScheme: r.http?.scheme || 'https', httpPort, macros: deriveMacros(classId, r.ip) }
+    // Some resolvers answer a PTR lookup with the IP itself - a numeric first label would seed a
+    // useless name like "10", so only a real hostname-shaped rDNS contributes.
+    const rdnsName = r.rdns && !/^\d+$/.test(r.rdns.split('.')[0]) ? r.rdns.split('.')[0] : ''
+    return { name: r.sysname || rdnsName || r.ip, classId, http: !!r.http, httpScheme: r.http?.scheme || 'https', httpPort, macros: deriveMacros(classId, r.ip) }
   }
 
   function applyJob(d: { job: DiscoveryJobRow; results: DiscoveryResultRow[] }) {
@@ -3643,9 +3646,11 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   // The opened scan is owned by the URL (?scan=, held by AppShell): load it when it changes, clear
-  // everything when leaving back to the list.
+  // everything when leaving back to the list. The adopt-site resets per scan, so a site2 scan never
+  // inherits the site picked for an earlier scan of another site - the effect below re-defaults it from
+  // THIS scan's source.
   useEffect(() => {
-    setSel(new Set()); setRowErr({}); setOpen(new Set())
+    setSel(new Set()); setRowErr({}); setOpen(new Set()); setSite('')
     if (!scanId) { setJob(null); setResults([]); return }
     void loadJob(Number(scanId))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3893,7 +3898,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
                             {canPick && cfg
                               ? <input className="input disc-name" value={cfg.name} onChange={(e) => setCfg(r.id, { name: e.target.value })} />
                               : <span>{r.monitored_name || cfg?.name || r.sysname || r.rdns || r.ip}</span>}
-                            <span className="sub-line">{r.ip}{r.mac ? ` · ${r.mac}` : ''}{r.rdns ? ` · ${r.rdns}` : ''}</span>
+                            <span className="sub-line">{r.ip}{r.mac ? ` · ${r.mac}` : ''}{r.rdns && r.rdns !== r.ip ? ` · ${r.rdns}` : ''}</span>
                           </div>
                         </td>
                         <td data-label="Found">
