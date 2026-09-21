@@ -606,7 +606,10 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .enroll.enroll-discovery th, .enroll.enroll-discovery td { white-space: nowrap; overflow: visible; text-overflow: clip; }
 .enroll-discovery th:not(:first-child), .enroll-discovery td:not(:first-child) { border-left: 1px solid var(--border); }
 .enroll-discovery td { border-bottom-color: var(--border-strong); }
-.enroll-discovery .disc-facts { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.enroll-discovery .disc-facts { display: inline-flex; gap: 5px; flex-wrap: wrap; }
+/* The review cells stack a bordered-pill row over a text line (facts over sysDescr, name over
+   ip/mac) - the default 3px cell-stack gap reads mashed against the pill borders. */
+.enroll-discovery .cell-stack { gap: 7px; }
 .enroll-discovery .disc-name { width: 210px; }
 /* A row not up for adoption (already monitored / just added) reads quiet. Dim the cell CONTENT,
    never the td itself - opacity on the td also fades its bottom border, which made the row
