@@ -3545,10 +3545,10 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
 // job rides the probe's check-in channel (picked up within a minute), the probe's scanner reports
 // raw fingerprints, and the review table below adopts (via the ordinary POST /api/hosts, tagged
 // discovered) or ignores what it found. Admin-only (gated in the shell nav + clampView).
-type DiscoveryJobRow = { id: number; proxy_name: string; cidr: string; state: string; error?: string; requested_by?: string; created_at: number; completed_at?: number }
+type DiscoveryJobRow = { id: number; proxy_name: string; cidr: string; state: string; error?: string; requested_by?: string; created_at: number; completed_at?: number; found?: number; new?: number }
 type DiscoveryHTTP = { port: number; scheme: string; status: number; server?: string; title?: string }
 type DiscoveryResultRow = { id: number; ip: string; mac?: string; rdns?: string; tcp: number[]; sysdescr?: string; sysobjectid?: string; sysname?: string; http?: DiscoveryHTTP; dns?: boolean; suggested_class?: string; state: string; host_id?: string; monitored_id?: string; monitored_name?: string }
-type DiscRowCfg = { name: string; classId: string; http: boolean; macros: Record<string, string>; site?: string }
+type DiscRowCfg = { name: string; classId: string; http: boolean; httpScheme: string; httpPort: string; macros: Record<string, string>; site?: string }
 
 function DiscoveryView() {
   const [proxies, setProxies] = useState<Proxy[] | null>(null)
@@ -3585,7 +3585,10 @@ function DiscoveryView() {
   }
   const seedRow = (r: DiscoveryResultRow): DiscRowCfg => {
     const classId = r.suggested_class && classes.some((c) => c.id === r.suggested_class) ? r.suggested_class : 'base'
-    return { name: r.sysname || (r.rdns ? r.rdns.split('.')[0] : '') || r.ip, classId, http: !!r.http, macros: deriveMacros(classId, r.ip) }
+    // HTTP add-on pre-ticked (and scheme/port pre-filled) from what the scan actually saw; the
+    // band still offers it for any web-capable class, scan facts or not.
+    const httpPort = r.http && r.http.port !== 443 && r.http.port !== 80 ? String(r.http.port) : ''
+    return { name: r.sysname || (r.rdns ? r.rdns.split('.')[0] : '') || r.ip, classId, http: !!r.http, httpScheme: r.http?.scheme || 'https', httpPort, macros: deriveMacros(classId, r.ip) }
   }
 
   function applyJob(d: { job: DiscoveryJobRow; results: DiscoveryResultRow[] }) {
@@ -3604,10 +3607,14 @@ function DiscoveryView() {
     fetch('/api/proxies').then((r) => (r.ok ? r.json() : [])).then((p) => setProxies(p || [])).catch(() => setProxies([]))
     fetch('/api/groups').then((r) => (r.ok ? r.json() : [])).then((g) => setGroups(g || [])).catch(() => {})
     fetch('/api/classes').then((r) => (r.ok ? r.json() : [])).then((c) => setClasses(c || [])).catch(() => {})
-    fetch('/api/discovery/jobs?limit=10').then((r) => (r.ok ? r.json() : [])).then((j: DiscoveryJobRow[]) => {
+    fetch('/api/discovery/jobs').then((r) => (r.ok ? r.json() : [])).then((j: DiscoveryJobRow[]) => {
       setJobs(j || [])
-      if (j && j.length) { void loadJob(j[0].id) } // resume the latest scan on entry
+      // Resume a scan that is still running on entry; finished ones wait in the list below.
+      if (j && j.length && (j[0].state === 'pending' || j[0].state === 'dispatched')) { void loadJob(j[0].id) }
     }).catch(() => setJobs([]))
+    // Keep the scan list fresh (queued scans start, running ones finish) without a manual reload.
+    const t = window.setInterval(() => { void loadJobs() }, 15000)
+    return () => clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   // Seed each result row's adopt config (name / suggested class / derived macros) exactly once,
@@ -3720,9 +3727,9 @@ function DiscoveryView() {
       if (bad) { errs[id] = bad; setOpen((s) => new Set(s).add(id)); continue }
       const body: Record<string, unknown> = { name: cfg.name.trim(), ip: r.ip, use_ip: true, site: siteFor, proxy_id: jobProxyId, class_id: cfg.classId, discovery_result_id: id }
       if (Object.keys(macros).length) body.macros = macros
-      if (cls?.offers_http && cfg.http && r.http) {
-        body.http = true; body.http_scheme = r.http.scheme
-        if (r.http.port !== 443 && r.http.port !== 80) body.http_port = String(r.http.port)
+      if (cls?.offers_http && cfg.http) {
+        body.http = true; body.http_scheme = cfg.httpScheme || 'https'
+        if (cfg.httpPort.trim()) body.http_port = cfg.httpPort.trim()
       }
       const res = await fetch('/api/hosts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null)
       if (!res || !res.ok) { errs[id] = await errText(res, 'could not create the device'); continue }
@@ -3759,7 +3766,7 @@ function DiscoveryView() {
   }
   const stateTag = (r: DiscoveryResultRow) => {
     if (r.state === 'added') return <span className="tag online">added</span>
-    if (r.monitored_id) return <span className="tag avail" title={r.monitored_name || undefined}>monitored</span>
+    if (r.monitored_id) return <span className="tag online" title={r.monitored_name || undefined}>monitored</span>
     if (r.state === 'ignored') return <span className="tag">ignored</span>
     return <span className="tag pending">new</span>
   }
@@ -3768,7 +3775,7 @@ function DiscoveryView() {
     <section className="panel">
       <div className="phead">
         <h2>Network discovery</h2>
-        <span className="hint">{job && !running ? `${results.length} device${results.length === 1 ? '' : 's'} found` : ''}</span>
+        <span className="hint">scan a subnet from the core or a probe, then adopt what answered</span>
       </div>
       <div className="disc-form" style={{ padding: '0 1rem 0.9rem' }}>
         <div style={grid}>
@@ -3783,7 +3790,7 @@ function DiscoveryView() {
           <Field label="SNMP community (optional)" placeholder={proxyId === 'core' ? "core's SNMP default" : "probe's SNMP default"} value={community} onChange={(e) => setCommunity(e.target.value)} />
           {/* An nbsp label (a plain space collapses to zero height) + an input-height button, so the
               button bottom-aligns with the inputs beside it, not with their labels. */}
-          <Field label={' '}><Button variant="primary" block style={{ height: 39 }} onClick={start} disabled={busy || running || proxies === null}>{running ? 'Scan in progress…' : busy ? 'Starting…' : 'Start scan'}</Button></Field>
+          <Field label={' '}><Button variant="primary" block style={{ height: 39 }} onClick={start} disabled={busy || proxies === null}>{busy ? 'Starting…' : 'Start scan'}</Button></Field>
         </div>
         {proxies !== null && scanCapable.length === 0 && (
           <Banner variant="info">None of your probes has reported the network-scan capability yet - it ships with the latest probe image (and needs check-in enabled); probes on the rolling <code>latest</code> tag pick it up on their next self-update. You can still scan from the core server.</Banner>
@@ -3793,16 +3800,21 @@ function DiscoveryView() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: 13, color: 'var(--muted)' }}>
             <span className="spinner" aria-hidden="true" />
             {!job.proxy_name ? `The core server is scanning ${job.cidr}… this can take a few minutes.`
-              : jobState === 'pending' ? `Waiting for ${job.proxy_name} to pick the scan up (it checks in every minute)…`
+              : jobState === 'pending' ? `Queued for ${job.proxy_name} - it picks scans up at check-in, one at a time…`
               : `${job.proxy_name} is scanning ${job.cidr}… this can take a few minutes.`}
           </div>
         )}
         {job && job.state === 'failed' && <Banner variant="error">Scan of {job.cidr} failed: {job.error || 'unknown error'}</Banner>}
-        {job && job.state === 'done' && job.error && <Banner variant="info">{job.error}</Banner>}
       </div>
 
       {job && job.state === 'done' && (
         <>
+          <div className="phead" style={{ paddingTop: 4 }}>
+            <h2 style={{ fontSize: 15 }}>Results · {job.cidr} · {job.proxy_name || 'Core server'}</h2>
+            <span className="hint">{results.length} device{results.length === 1 ? '' : 's'} found · {relTime(job.completed_at || job.created_at)}</span>
+            <div className="tools"><Button variant="ghost" onClick={() => { setJob(null); setSel(new Set()) }}>Close</Button></div>
+          </div>
+          {job.error && <div style={{ padding: '0 1rem' }}><Banner variant="info">{job.error}</Banner></div>}
           <div className="disc-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', padding: '0 1rem 0.7rem' }}>
             <Button variant="primary" onClick={addSelected} disabled={sel.size === 0 || adding}>{adding ? 'Adding…' : `Add ${sel.size || ''} selected`.replace('  ', ' ')}</Button>
             <span style={{ fontSize: 13, color: 'var(--muted)' }}>into</span>
@@ -3850,6 +3862,17 @@ function DiscoveryView() {
                           {canPick && cfg ? (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <div style={{ minWidth: 180, flex: 1 }}><Combobox value={cfg.classId} onChange={(v) => setRowClass(r.id, v, r.ip)} options={classOptions} placeholder="Class…" /></div>
+                              {(() => {
+                                // Proactive nudge: this class can't be adopted until its required
+                                // fields are filled (Add also hard-blocks the row with an error).
+                                const missing = attachMacros(cfg.classId).filter((ms) => ms.required && !(cfg.macros[ms.macro] || '').trim())
+                                return missing.length > 0 ? (
+                                  <button className="iconbtn disc-warn" title={`This class still needs: ${missing.map((m) => m.label).join(', ')} - click to fill them in`}
+                                    aria-label="Missing required settings" onClick={() => setOpen((s) => new Set(s).add(r.id))}>
+                                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /><path d="M12 9.5v4M12 17h.01" /></svg>
+                                  </button>
+                                ) : null
+                              })()}
                               {hasBand && (
                                 <button className="iconbtn" title="Device settings" aria-label="Device settings" onClick={() => toggleOpen(r.id)}>
                                   <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"><path d={open.has(r.id) ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} /></svg>
@@ -3895,8 +3918,15 @@ function DiscoveryView() {
                                 ))}
                               </div>
                             )}
-                            {cls?.offers_http && r.http && (
-                              <Switch checked={cfg.http} onChange={(v) => setCfg(r.id, { http: v })} label={`Also check ${r.http.scheme.toUpperCase()}${r.http.port !== 443 && r.http.port !== 80 ? ` on :${r.http.port}` : ''}`} />
+                            {cls?.offers_http && (
+                              <div style={{ display: 'flex', gap: '0.9rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                <Switch checked={cfg.http} onChange={(v) => setCfg(r.id, { http: v })} label="Also check HTTP/HTTPS" />
+                                {cfg.http && <>
+                                  <Select value={cfg.httpScheme} onChange={(e) => setCfg(r.id, { httpScheme: e.target.value })} style={{ width: 'auto' }}><option value="https">HTTPS</option><option value="http">HTTP</option></Select>
+                                  <input className="input" style={{ width: 120 }} placeholder="port (443)" value={cfg.httpPort} onChange={(e) => setCfg(r.id, { httpPort: e.target.value })} />
+                                  {r.http && <span style={{ fontSize: 12, color: 'var(--muted)' }}>scan saw {r.http.scheme.toUpperCase()} on :{r.http.port}</span>}
+                                </>}
+                              </div>
                             )}
                           </div>
                         </td></tr>
@@ -3910,18 +3940,32 @@ function DiscoveryView() {
         </>
       )}
 
+      <div className="phead" style={{ paddingTop: job && job.state === 'done' ? 14 : 4 }}>
+        <h2 style={{ fontSize: 15 }}>Recent scans</h2>
+        <span className="hint">kept for 30 days - open one to review or re-adopt</span>
+      </div>
+      {jobs === null && <div style={{ padding: '0 1rem 1rem' }}><Skeleton rows={2} cols={5} /></div>}
+      {jobs !== null && jobs.length === 0 && <p style={{ color: 'var(--muted)', fontSize: 13, padding: '0 1rem 1rem', margin: 0 }}>No scans yet - point one at a subnet above.</p>}
       {jobs !== null && jobs.length > 0 && (
-        <div className="disc-history" style={{ padding: '0.8rem 1rem 1rem', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-          <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>Recent scans:</span>
-          {jobs.map((j) => (
-            <button key={j.id} className={'disc-chip' + (job?.id === j.id ? ' on' : '')} onClick={() => { setSel(new Set()); setRowErr({}); setOpen(new Set()); void loadJob(j.id) }}
-              title={`${j.proxy_name || 'Core server'} · ${relTime(j.created_at)}${j.requested_by ? ` · by ${j.requested_by}` : ''}${j.error ? ` · ${j.error}` : ''}`}>
-              {j.cidr} <span className={'tag' + (j.state === 'done' ? ' online' : j.state === 'failed' ? '' : ' pending')}>{j.state}</span>
-            </button>
-          ))}
+        <div className="enroll-scroll">
+          <table className="enroll enroll-discovery">
+            <thead><tr><th>When</th><th>Source</th><th>Subnet</th><th>Found</th><th>Status</th><th>By</th></tr></thead>
+            <tbody>
+              {jobs.map((j) => (
+                <tr key={j.id} className={'disc-scan-row' + (job?.id === j.id ? ' on' : '')} title={j.error || undefined}
+                  onClick={() => { setSel(new Set()); setRowErr({}); setOpen(new Set()); void loadJob(j.id) }}>
+                  <td data-label="When" className="mono" style={{ color: 'var(--muted)' }}>{relTime(j.created_at)}</td>
+                  <td data-label="Source">{j.proxy_name || 'Core server'}</td>
+                  <td data-label="Subnet" className="mono">{j.cidr}</td>
+                  <td data-label="Found">{j.state === 'done' ? `${j.found ?? 0} device${(j.found ?? 0) === 1 ? '' : 's'} · ${j.new ?? 0} new` : '-'}</td>
+                  <td data-label="Status"><span className={'tag' + (j.state === 'done' ? ' online' : j.state === 'failed' ? '' : ' pending')}>{j.state === 'dispatched' ? 'scanning' : j.state === 'pending' ? 'queued' : j.state}</span></td>
+                  <td data-label="By" style={{ color: 'var(--muted)' }}>{j.requested_by || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
-      {jobs === null && <div style={{ padding: '0 1rem 1rem' }}><Skeleton rows={2} cols={4} /></div>}
     </section>
   )
 }

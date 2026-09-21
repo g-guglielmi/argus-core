@@ -38,6 +38,15 @@ GitHub Release from the matching section below.
 - **Discovery review picks the site, not the scan form.** The site for adopted devices moved to
   where it belongs: a toolbar select at review time (pre-filled from the scanning probe's site)
   with a per-device override in each row's settings band - so one scan can adopt into several sites.
+- **Scan history + queueing.** Scans land in a proper **Recent scans** list (kept 30 days) with
+  found/new counts - open any scan to review or re-adopt its results, keeping the main Discovery
+  page clean. Scans queue per source and run one after another (different sources in parallel), so
+  several scans can be fired back to back.
+- **Review polish from the first real scan:** a class with unfilled required fields shows an amber
+  warning next to the picker (and the row is refused at Add time with the reason); the HTTP/HTTPS
+  add-on is offered for every web-capable class with scheme + port fields (pre-filled from the
+  scan); the "monitored" pill is green; and the review table's row dividers no longer fade under
+  already-monitored rows.
 
 **Changed:**
 - **Probe check-in tick: 5 minutes → 1 minute** (probe image), so queued scans are picked up within

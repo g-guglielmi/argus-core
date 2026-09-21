@@ -608,15 +608,19 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .enroll-discovery td { border-bottom-color: var(--border-strong); }
 .enroll-discovery .disc-facts { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 .enroll-discovery .disc-name { width: 210px; }
-/* a row not up for adoption (already monitored / just added) reads quiet */
-.enroll-discovery tr.disc-muted td { opacity: 0.62; }
-/* the expanded per-row settings band (class macros + HTTP add-on) */
+/* A row not up for adoption (already monitored / just added) reads quiet. Dim the cell CONTENT,
+   never the td itself - opacity on the td also fades its bottom border, which made the row
+   dividers look randomly stronger/weaker wherever muted and editable rows interleave. */
+.enroll-discovery tr.disc-muted td > * { opacity: 0.62; }
+/* the expanded per-row settings band (site + class macros + HTTP add-on) */
 .disc-band-row td { padding: 0; }
 .disc-band { padding: 10px 16px 14px; background: var(--elevated); border-bottom: 1px solid var(--border-strong); display: flex; flex-direction: column; gap: 0.7rem; }
-/* recent-scans strip */
-.disc-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid var(--border-strong); border-radius: 999px; background: none; color: inherit; font-size: 12.5px; cursor: pointer; }
-.disc-chip:hover { background: var(--elevated); }
-.disc-chip.on { border-color: var(--accent); }
+/* the amber missing-required-settings nudge next to the class picker */
+.iconbtn.disc-warn { color: var(--warn); }
+/* recent-scans history rows open on click */
+.disc-scan-row { cursor: pointer; }
+.disc-scan-row:hover td { background: var(--elevated); }
+.disc-scan-row.on td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 
 /* ---------- users / forms ---------- */
 .utable { width: 100%; border-collapse: collapse; font-size: 13.5px; }

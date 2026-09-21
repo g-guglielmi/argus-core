@@ -17,15 +17,25 @@ import (
 // scan results back. Results are the raw per-host fingerprints, kept per job so the Discovery view
 // can review, adopt or ignore them.
 
-// ErrDiscoveryBusy is returned when a scan is queued for a probe that already has one in flight.
-var ErrDiscoveryBusy = errors.New("a scan is already queued or running for this probe")
+// ErrDiscoveryBusy is returned when a source's scan queue is full.
+var ErrDiscoveryBusy = errors.New("too many scans queued for this source")
 
-// Stale-job expiry: a pending job the probe never picked up (offline, or an image without the scan
-// capability), and a dispatched job whose results never came back (the scanner's own budget is
-// 8 minutes plus posting retries).
+// Scans queue per source (proxy name, or "" = the core server) and run one at a time - the probe's
+// scanner is lock-file serialised anyway, and the core chains its queue in-process.
 const (
-	discoveryPendingMaxAge    = 5 * time.Minute
+	// discoveryQueueMax caps a source's pending+running scans.
+	discoveryQueueMax = 5
+	// discoveryPendingMaxAge fails a pending job nothing came to pick up (probe offline / not
+	// scan-capable). It only applies while NOTHING of that source is dispatched - a job waiting in
+	// line behind a running scan is healthy at any age.
+	discoveryPendingMaxAge = 5 * time.Minute
+	// discoveryDispatchedMaxAge fails a dispatched job whose results never came back (the
+	// scanner's own budget is 8 minutes plus posting retries).
 	discoveryDispatchedMaxAge = 15 * time.Minute
+	// discoveryRetention is how long finished scans (and their results) are kept.
+	discoveryRetention = 30 * 24 * time.Hour
+	// discoveryKeepPerSource additionally caps stored scans per source within the retention window.
+	discoveryKeepPerSource = 50
 )
 
 // DiscoveryJob is one queued network scan. SNMPCommunity is decrypted only by TakeDiscoveryJob
@@ -43,6 +53,9 @@ type DiscoveryJob struct {
 	CreatedAt     int64
 	DispatchedAt  int64
 	CompletedAt   int64
+	// Result counts, populated by ListDiscoveryJobs only (0 elsewhere).
+	Found    int
+	NewCount int
 }
 
 // DiscoveryResult is one fingerprinted host from a scan. TCPPorts and HTTPJSON hold the probe's
@@ -74,22 +87,25 @@ func scanDiscoveryJob(row interface{ Scan(...any) error }) (DiscoveryJob, error)
 }
 
 // expireStaleDiscoveryJobs fails jobs stuck in pending/dispatched past their grace periods, so a
-// dead probe can never wedge its scan queue. Called lazily by every read/write below.
+// dead probe can never wedge its scan queue. Called lazily by every read/write below. A pending
+// job is only stale while nothing of its source is dispatched - queued behind a running scan it
+// waits as long as it takes.
 func (s *Store) expireStaleDiscoveryJobs(ctx context.Context) {
 	now := time.Now()
 	_, _ = s.db.ExecContext(ctx,
-		`UPDATE discovery_jobs SET state='failed', error='the probe never picked the scan up - is it online and running a scan-capable image?', completed_at=?
-		 WHERE state='pending' AND created_at < ?`,
+		`UPDATE discovery_jobs SET state='failed', error='nothing picked the scan up - is the probe online and running a scan-capable image?', completed_at=?
+		 WHERE state='pending' AND created_at < ?
+		   AND NOT EXISTS (SELECT 1 FROM discovery_jobs d2 WHERE d2.proxy_name = discovery_jobs.proxy_name AND d2.state='dispatched')`,
 		now.Unix(), now.Add(-discoveryPendingMaxAge).Unix())
 	_, _ = s.db.ExecContext(ctx,
-		`UPDATE discovery_jobs SET state='failed', error='the probe picked the scan up but never reported back', completed_at=?
+		`UPDATE discovery_jobs SET state='failed', error='the scan was picked up but never reported back', completed_at=?
 		 WHERE state='dispatched' AND dispatched_at < ?`,
 		now.Unix(), now.Add(-discoveryDispatchedMaxAge).Unix())
 }
 
-// CreateDiscoveryJob queues a scan (state pending). One scan in flight per probe: ErrDiscoveryBusy
-// if a pending/dispatched job already exists. Older finished jobs beyond the last 10 per probe are
-// pruned with their results.
+// CreateDiscoveryJob queues a scan (state pending). Scans queue per source: ErrDiscoveryBusy only
+// when the source already has discoveryQueueMax scans pending/running. Finished scans older than
+// the retention window (or beyond the per-source cap) are pruned with their results.
 func (s *Store) CreateDiscoveryJob(ctx context.Context, j DiscoveryJob) (int64, error) {
 	s.expireStaleDiscoveryJobs(ctx)
 	var active int
@@ -98,7 +114,7 @@ func (s *Store) CreateDiscoveryJob(ctx context.Context, j DiscoveryJob) (int64, 
 		j.ProxyName).Scan(&active); err != nil {
 		return 0, err
 	}
-	if active > 0 {
+	if active >= discoveryQueueMax {
 		return 0, ErrDiscoveryBusy
 	}
 	res, err := s.db.ExecContext(ctx,
@@ -113,20 +129,31 @@ func (s *Store) CreateDiscoveryJob(ctx context.Context, j DiscoveryJob) (int64, 
 	if err != nil {
 		return 0, err
 	}
-	// Prune: keep this probe's 10 most recent jobs.
-	_, _ = s.db.ExecContext(ctx,
-		`DELETE FROM discovery_results WHERE job_id IN
-		   (SELECT id FROM discovery_jobs WHERE proxy_name=? ORDER BY id DESC LIMIT -1 OFFSET 10)`, j.ProxyName)
-	_, _ = s.db.ExecContext(ctx,
-		`DELETE FROM discovery_jobs WHERE id IN
-		   (SELECT id FROM discovery_jobs WHERE proxy_name=? ORDER BY id DESC LIMIT -1 OFFSET 10)`, j.ProxyName)
+	// Prune: drop scans past the retention window, and anything beyond the newest per-source cap.
+	// (The per-source branch is wrapped in a subselect - a bare ORDER BY/LIMIT would otherwise
+	// apply to the whole UNION in SQLite.)
+	cutoff := time.Now().Add(-discoveryRetention).Unix()
+	stale := `SELECT id FROM discovery_jobs WHERE state IN ('done','failed') AND created_at < ?
+	          UNION SELECT id FROM (SELECT id FROM discovery_jobs WHERE proxy_name=? ORDER BY id DESC LIMIT -1 OFFSET ?)`
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM discovery_results WHERE job_id IN (`+stale+`)`, cutoff, j.ProxyName, discoveryKeepPerSource)
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM discovery_jobs WHERE id IN (`+stale+`)`, cutoff, j.ProxyName, discoveryKeepPerSource)
 	return id, nil
 }
 
-// TakeDiscoveryJob hands a probe its oldest pending scan job (one-shot: pending -> dispatched) with
-// the SNMP community decrypted for the handout. nil when nothing is queued.
+// TakeDiscoveryJob hands a source its oldest pending scan job (one-shot: pending -> dispatched)
+// with the SNMP community decrypted for the handout. nil when nothing is queued OR a scan of this
+// source is already running - the queue drains strictly one at a time (the probe's scanner is
+// lock-file serialised; the core chains its queue after each completion).
 func (s *Store) TakeDiscoveryJob(ctx context.Context, proxyName string) (*DiscoveryJob, error) {
 	s.expireStaleDiscoveryJobs(ctx)
+	var running int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM discovery_jobs WHERE proxy_name=? AND state='dispatched'`, proxyName).Scan(&running); err != nil {
+		return nil, err
+	}
+	if running > 0 {
+		return nil, nil
+	}
 	var enc string
 	row := s.db.QueryRowContext(ctx,
 		`SELECT `+discoveryJobColumns+`, snmp_community FROM discovery_jobs
@@ -203,19 +230,24 @@ func (s *Store) CompleteDiscoveryJob(ctx context.Context, jobID int64, proxyName
 	return tx.Commit()
 }
 
-// ListDiscoveryJobs returns the most recent scan jobs, newest first (community left empty).
+// ListDiscoveryJobs returns the most recent scan jobs, newest first (community left empty), each
+// with its result counts (found / still-new) for the history list.
 func (s *Store) ListDiscoveryJobs(ctx context.Context, limit int) ([]DiscoveryJob, error) {
 	s.expireStaleDiscoveryJobs(ctx)
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+discoveryJobColumns+` FROM discovery_jobs ORDER BY id DESC LIMIT ?`, limit)
+		`SELECT `+discoveryJobColumns+`,
+		   (SELECT COUNT(*) FROM discovery_results r WHERE r.job_id = discovery_jobs.id),
+		   (SELECT COUNT(*) FROM discovery_results r WHERE r.job_id = discovery_jobs.id AND r.state='new')
+		 FROM discovery_jobs ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []DiscoveryJob
 	for rows.Next() {
-		j, err := scanDiscoveryJob(rows)
-		if err != nil {
+		var j DiscoveryJob
+		if err := rows.Scan(&j.ID, &j.ProxyName, &j.CIDR, &j.SNMPVersion, &j.SNMPPort, &j.State, &j.Error,
+			&j.RequestedBy, &j.CreatedAt, &j.DispatchedAt, &j.CompletedAt, &j.Found, &j.NewCount); err != nil {
 			return nil, err
 		}
 		out = append(out, j)

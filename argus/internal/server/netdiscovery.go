@@ -167,7 +167,7 @@ func (s *Server) handleCreateDiscoveryJob(w http.ResponseWriter, r *http.Request
 		if coreScan {
 			who = "the core server"
 		}
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "a scan is already queued or running for " + who + " - wait for it to finish"})
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "too many scans queued for " + who + " - wait for one to finish"})
 		return
 	}
 	if err != nil {
@@ -233,6 +233,11 @@ func (s *Server) runCoreScan(job store.DiscoveryJob) {
 		return
 	}
 	s.logger.Info("discovery: core scan finished", "job", job.ID, "cidr", job.CIDR, "hosts", len(results), "note", errMsg)
+	// Core scans queue like probe scans do; drain the next one (Take only yields once nothing is
+	// dispatched, so the queue runs strictly one at a time).
+	if next, err := s.st.TakeDiscoveryJob(sctx, ""); err == nil && next != nil {
+		go s.runCoreScan(*next)
+	}
 }
 
 type discoveryJobView struct {
@@ -244,17 +249,20 @@ type discoveryJobView struct {
 	RequestedBy string `json:"requested_by,omitempty"`
 	CreatedAt   int64  `json:"created_at"`
 	CompletedAt int64  `json:"completed_at,omitempty"`
+	Found       int    `json:"found"` // result counts (list only): live hosts / still up for review
+	New         int    `json:"new"`
 }
 
 func jobView(j store.DiscoveryJob) discoveryJobView {
 	return discoveryJobView{ID: j.ID, ProxyName: j.ProxyName, CIDR: j.CIDR, State: j.State,
-		Error: j.Error, RequestedBy: j.RequestedBy, CreatedAt: j.CreatedAt, CompletedAt: j.CompletedAt}
+		Error: j.Error, RequestedBy: j.RequestedBy, CreatedAt: j.CreatedAt, CompletedAt: j.CompletedAt,
+		Found: j.Found, New: j.NewCount}
 }
 
 // GET /api/discovery/jobs (admin) - recent scans, newest first.
 func (s *Server) handleListDiscoveryJobs(w http.ResponseWriter, r *http.Request) {
-	limit := 10
-	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 && n <= 50 {
+	limit := 30
+	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 && n <= 100 {
 		limit = n
 	}
 	jobs, err := s.st.ListDiscoveryJobs(r.Context(), limit)

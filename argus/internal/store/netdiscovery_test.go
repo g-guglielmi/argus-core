@@ -23,15 +23,25 @@ func TestDiscoveryJobLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Single flight per probe; a second probe is unaffected.
-	if _, err := st.CreateDiscoveryJob(ctx, DiscoveryJob{ProxyName: "proxy-site1", CIDR: "10.0.1.0/24"}); !errors.Is(err, ErrDiscoveryBusy) {
-		t.Fatalf("second job for the same probe: err = %v, want ErrDiscoveryBusy", err)
+	// Scans QUEUE per source (up to the cap); a second probe is unaffected.
+	id2q, err := st.CreateDiscoveryJob(ctx, DiscoveryJob{ProxyName: "proxy-site1", CIDR: "10.0.1.0/24"})
+	if err != nil {
+		t.Fatalf("second job should queue: %v", err)
 	}
 	if _, err := st.CreateDiscoveryJob(ctx, DiscoveryJob{ProxyName: "proxy-site2", CIDR: "10.0.2.0/24"}); err != nil {
 		t.Fatalf("job for another probe should be fine: %v", err)
 	}
+	for i := 0; i < discoveryQueueMax; i++ { // fill a separate probe's queue to the cap
+		if _, err := st.CreateDiscoveryJob(ctx, DiscoveryJob{ProxyName: "proxy-cap", CIDR: "10.0.3.0/24"}); err != nil {
+			t.Fatalf("queue slot %d: %v", i, err)
+		}
+	}
+	if _, err := st.CreateDiscoveryJob(ctx, DiscoveryJob{ProxyName: "proxy-cap", CIDR: "10.0.4.0/24"}); !errors.Is(err, ErrDiscoveryBusy) {
+		t.Fatalf("over-cap job: err = %v, want ErrDiscoveryBusy", err)
+	}
 
-	// Handout is one-shot and decrypts the community; the wrong probe gets nothing.
+	// Handout is one-shot, oldest first, decrypts the community; the wrong probe gets nothing, and
+	// nothing more is handed out while a scan of the same source is dispatched.
 	if j, _ := st.TakeDiscoveryJob(ctx, "proxy-other"); j != nil {
 		t.Fatal("a different probe must not receive this job")
 	}
@@ -43,7 +53,7 @@ func TestDiscoveryJobLifecycle(t *testing.T) {
 		t.Fatalf("handout mismatch: %+v", j)
 	}
 	if j2, _ := st.TakeDiscoveryJob(ctx, "proxy-site1"); j2 != nil {
-		t.Fatal("the job must be handed out exactly once")
+		t.Fatal("the queue must drain one at a time - nothing while a scan is dispatched")
 	}
 
 	// Completion by the wrong probe is rejected without leaking existence.
@@ -84,6 +94,14 @@ func TestDiscoveryJobLifecycle(t *testing.T) {
 	}
 	if rows[1].State != "ignored" {
 		t.Fatalf("ignored row: %+v", rows[1])
+	}
+
+	// With the first scan finished, the queue drains: the next handout is the job queued earlier
+	// (oldest first). Finish it empty to clear the way.
+	if q, _ := st.TakeDiscoveryJob(ctx, "proxy-site1"); q == nil || q.ID != id2q {
+		t.Fatalf("queue drain: got %+v, want job %d", q, id2q)
+	} else if err := st.CompleteDiscoveryJob(ctx, q.ID, "proxy-site1", "", nil); err != nil {
+		t.Fatal(err)
 	}
 
 	// A re-scan of the same probe carries the ignored state over by IP; the adopted IP is 'new'

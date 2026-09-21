@@ -32,9 +32,13 @@ results as monitored devices in a couple of clicks - the auto-provisioning repla
    maximum), and optionally override the SNMP community for this scan. The **site** is chosen at
    review time, not here.
 2. **Start scan.** A probe picks the job up at its next check-in (within a minute); a core scan
-   starts immediately. The scan itself typically takes one to a few minutes for a /24. One scan
-   runs per source at a time.
-3. Results appear in the review table as soon as the probe reports back.
+   starts immediately. The scan itself typically takes one to a few minutes for a /24. Scans
+   **queue per source** (a handful at a time, running one after another - the scanner is
+   single-file by design), and different sources scan in parallel, so you can fire several scans
+   back to back.
+3. Every scan lands in the **Recent scans** list (kept for 30 days) with its found/new counts -
+   open any of them to review, adopt or ignore its results; the just-started scan opens itself when
+   it finishes.
 
 For each live address the probe reports: ICMP reachability, open TCP ports from a small service set
 (SSH 22, DNS 53, HTTP 80/8080, HTTPS 443/8443, SMB 445, NUT 3493, Zabbix agent 10050), SNMP
@@ -51,10 +55,12 @@ servers by a real query, NUT by port, SSH-only boxes as Linux (SSH, agentless), 
 Ping + HTTP). Per row you can:
 
 - edit the **name** (pre-filled from `sysName`, reverse DNS, or the IP),
-- change the **class** (searchable dropdown - the suggestion is only a starting point),
-- open the row's settings (chevron) to fill **class macros** (e.g. SSH credentials for the
-  agentless Linux class) and toggle the **HTTP/HTTPS add-on** when the device answered on a web
-  port (scheme and port are taken from the scan).
+- change the **class** (searchable dropdown - the suggestion is only a starting point). A class
+  that still needs required fields shows an **amber warning** next to the picker (click it to fill
+  them in); a row with missing required fields is refused at Add time with the reason inline,
+- open the row's settings (chevron) to override the **site**, fill **class macros** (e.g. SSH
+  credentials for the agentless Linux class) and toggle the **HTTP/HTTPS add-on** with its scheme
+  and port - offered for every web-capable class, pre-filled when the scan saw a web port.
 
 Then select the rows you want (header checkbox = all), pick the **site** they join in the toolbar
 (pre-filled from the scanning probe's site; override per device in its row settings), and **Add
@@ -69,9 +75,10 @@ that probe (unignore any time via "Show ignored"). Devices Argus already monitor
 
 ## Notes
 
-- Recent scans (the last 10 per probe) are kept and can be reopened from the strip at the bottom.
-- A scan that the probe never picks up fails after 5 minutes ("is it online and running a
-  scan-capable image?"); one that never reports back fails after 15.
+- Scan history is kept for 30 days (capped per source); reopen any scan from the Recent scans list.
+- A scan nothing picks up fails after 5 minutes ("is the probe online and running a scan-capable
+  image?" - a scan queued behind a running one waits as long as it needs); one that is picked up
+  but never reports back fails after 15.
 - Scan traffic is polite: TCP connects and single UDP probes with 1-3 s timeouts, ~64 addresses in
   parallel, an 8-minute budget per scan.
 - The UniFi controller API sweep (managed inventory as a second candidate source) is the next slice
