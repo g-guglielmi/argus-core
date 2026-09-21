@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.4.56] - 2026-09-21
 
 **Added:**
 - **Network discovery (auto-provisioning §B, slice 1).** A new admin-only **Discovery** tab: pick a
