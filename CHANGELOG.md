@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.4.57] - 2026-09-21
 
 **Fixed:**
 - **Discovery suggestions, refined by the first probe fleet scan.** UniFi gear on old firmware is
