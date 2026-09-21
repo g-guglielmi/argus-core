@@ -1165,9 +1165,9 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         {nav('triggers', 'Triggers')}
         {nav('monitoring', 'Monitoring')}
         <div className="navlabel">Configure</div>
-        {nav('notifications', 'Notifications')}
-        {nav('probes', 'Probes')}
         {me.role === 'admin' && nav('discovery', 'Discovery')}
+        {nav('probes', 'Probes')}
+        {nav('notifications', 'Notifications')}
         {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('users', 'Users')}{nav('settings', 'Settings')}</>}
         <div className="side-foot">
           {ver && (
@@ -3809,13 +3809,15 @@ function DiscoveryView() {
 
       {job && job.state === 'done' && (
         <>
-          <div className="phead" style={{ paddingTop: 4 }}>
+          {/* The header + adopt toolbar read as ONE block: no border under the title, one border
+              under the toolbar (a line only above the toolbar looked lopsided). */}
+          <div className="phead" style={{ paddingTop: 4, borderBottom: 'none' }}>
             <h2 style={{ fontSize: 15 }}>Results · {job.cidr} · {job.proxy_name || 'Core server'}</h2>
             <span className="hint">{results.length} device{results.length === 1 ? '' : 's'} found · {relTime(job.completed_at || job.created_at)}</span>
             <div className="tools"><Button variant="ghost" onClick={() => { setJob(null); setSel(new Set()) }}>Close</Button></div>
           </div>
           {job.error && <div style={{ padding: '0 1rem' }}><Banner variant="info">{job.error}</Banner></div>}
-          <div className="disc-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', padding: '0 1rem 0.7rem' }}>
+          <div className="disc-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', padding: '0 1rem 0.7rem', borderBottom: '1px solid var(--border)' }}>
             <Button variant="primary" onClick={addSelected} disabled={sel.size === 0 || adding}>{adding ? 'Adding…' : `Add ${sel.size || ''} selected`.replace('  ', ' ')}</Button>
             <span style={{ fontSize: 13, color: 'var(--muted)' }}>into</span>
             <Select value={site} onChange={(e) => setSite(e.target.value)} style={{ width: 'auto', minWidth: 150 }} title="The site the selected devices join - override per device in its row settings">

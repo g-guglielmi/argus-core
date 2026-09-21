@@ -77,7 +77,7 @@ type Class struct {
 	Pattern    Pattern       `json:"pattern"`          //
 	Iface      IfaceKind     `json:"iface"`            // interface the host needs (agent/snmp/none)
 	Templates  []string      `json:"templates"`        // Zabbix templates to attach (Base Ping is added on top)
-	OffersHTTP bool          `json:"offers_http"`      // the HTTP/HTTPS add-on may be attached to this class
+	OffersHTTP bool          `json:"offers_http"`      // the HTTP/HTTPS add-on may be attached; true for every class today (any device may expose a web UI worth watching - the admin decides), kept as a seam
 	Icon       string        `json:"icon"`             // tree glyph name (server, switch, shield, …); see web devIcon map
 	Macros     []MacroSpec   `json:"macros,omitempty"` // per-host macros the attach UI collects
 	HostMacros []PresetMacro `json:"-"`                // macros set silently on every host of this class
@@ -233,7 +233,7 @@ var registry = []Class{
 		Pattern:    PatternHTTPAPI,
 		Iface:      IfaceAgent,
 		Templates:  []string{"Argus UniFi Switch by HTTP"},
-		OffersHTTP: false,
+		OffersHTTP: true,
 		Icon:       "switch",
 		Macros: []MacroSpec{
 			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
@@ -251,7 +251,7 @@ var registry = []Class{
 		Pattern:    PatternHTTPAPI,
 		Iface:      IfaceAgent,
 		Templates:  []string{"Argus UniFi Gateway by HTTP"},
-		OffersHTTP: false,
+		OffersHTTP: true,
 		Icon:       "router",
 		Macros: []MacroSpec{
 			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
@@ -267,7 +267,7 @@ var registry = []Class{
 		Pattern:    PatternHTTPAPI,
 		Iface:      IfaceAgent,
 		Templates:  []string{"Argus UniFi AP by HTTP"},
-		OffersHTTP: false,
+		OffersHTTP: true,
 		Icon:       "wifi",
 		Macros: []MacroSpec{
 			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
@@ -286,7 +286,7 @@ var registry = []Class{
 		Pattern:    PatternHTTPAPI,
 		Iface:      IfaceAgent,
 		Templates:  []string{"Argus UniFi OS Console by HTTP"},
-		OffersHTTP: false,
+		OffersHTTP: true,
 		Icon:       "cloud",
 		Macros: []MacroSpec{
 			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
@@ -306,7 +306,7 @@ var registry = []Class{
 		// The admin-API stats plus the shared DNS-resolution add-on (a real per-name resolve check
 		// against this server), so AdGuard reads like any other DNS server on top of its own stats.
 		Templates:  []string{"Argus AdGuard Home by HTTP", "Argus DNS resolution"},
-		OffersHTTP: false,
+		OffersHTTP: true,
 		Icon:       "globe",
 		Macros: []MacroSpec{
 			{Macro: "{$ADGUARD.URL}", Label: "Admin URL", Hint: "http://adguard.example.lan:3000", Required: true, Derive: "http://{host}"},
@@ -325,7 +325,7 @@ var registry = []Class{
 		Pattern:    PatternHTTPAPI,
 		Iface:      IfaceAgent,
 		Templates:  []string{"Argus Home Assistant by HTTP"},
-		OffersHTTP: false,
+		OffersHTTP: true,
 		Icon:       "home",
 		Macros: []MacroSpec{
 			{Macro: "{$HASS.URL}", Label: "Base URL", Hint: "http://homeassistant.example.lan:8123", Required: true, Derive: "http://{host}:8123"},
@@ -342,7 +342,7 @@ var registry = []Class{
 		Pattern:    PatternCollector,
 		Iface:      IfaceAgent,
 		Templates:  []string{"Argus DNS resolution"},
-		OffersHTTP: false,
+		OffersHTTP: true,
 		Icon:       "globe",
 		Macros: []MacroSpec{
 			{Macro: "{$DNS.RESOLVE.NAMES}", Label: "Names to resolve", Hint: "comma-separated, e.g. example.com,cloudflare.com"},
@@ -358,7 +358,7 @@ var registry = []Class{
 		Pattern:    PatternHTTPAPI,
 		Iface:      IfaceAgent,
 		Templates:  []string{"Argus UPS by PeaNUT"},
-		OffersHTTP: false,
+		OffersHTTP: true,
 		Icon:       "battery",
 		Macros: []MacroSpec{
 			{Macro: "{$PEANUT.URL}", Label: "PeaNUT URL", Hint: "http://peanut.example.lan:8080", Required: true, Derive: "http://{host}:8080"},
@@ -377,7 +377,7 @@ var registry = []Class{
 		Pattern:    PatternCollector,
 		Iface:      IfaceAgent,
 		Templates:  []string{"Argus UPS by NUT"},
-		OffersHTTP: false,
+		OffersHTTP: true,
 		Icon:       "battery",
 		Macros: []MacroSpec{
 			{Macro: "{$NUT.UPS}", Label: "UPS name", Hint: "ups (see: upsc -l <host>)", Required: true},
@@ -398,7 +398,7 @@ var registry = []Class{
 		Pattern:    PatternCollector,
 		Iface:      IfaceAgent,
 		Templates:  []string{"Argus XCP-NG by XAPI"},
-		OffersHTTP: false,
+		OffersHTTP: true,
 		Icon:       "vm",
 		Macros: []MacroSpec{
 			{Macro: "{$XCP.USER}", Label: "XAPI username", Hint: "root", Required: true},

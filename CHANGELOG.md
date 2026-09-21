@@ -47,6 +47,11 @@ GitHub Release from the matching section below.
   add-on is offered for every web-capable class with scheme + port fields (pre-filled from the
   scan); the "monitored" pill is green; and the review table's row dividers no longer fade under
   already-monitored rows.
+- **Every device class now offers the HTTP/HTTPS add-on** - the API-based and collector classes
+  (UniFi family, AdGuard, Home Assistant, DNS server, UPS, XCP-NG) previously hid it, but most of
+  those devices expose a web UI worth watching; whether to check it is the admin's call. Applies
+  to Add-device and the discovery review alike.
+- **Sidebar: Configure now reads Discovery → Probes → Notifications.**
 
 **Changed:**
 - **Probe check-in tick: 5 minutes → 1 minute** (probe image), so queued scans are picked up within

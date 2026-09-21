@@ -51,3 +51,13 @@ func TestSuggestClass(t *testing.T) {
 		}
 	}
 }
+
+// Every class offers the HTTP/HTTPS add-on: any device may expose a web UI worth watching, and the
+// discovery review + Add-device forms rely on the toggle always being available (user's call).
+func TestEveryClassOffersHTTP(t *testing.T) {
+	for _, c := range Classes() {
+		if !c.OffersHTTP {
+			t.Errorf("class %q does not offer the HTTP/HTTPS add-on - every class should", c.ID)
+		}
+	}
+}
