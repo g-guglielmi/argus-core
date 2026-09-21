@@ -676,7 +676,7 @@ function useTheme(): ['dark' | 'light', () => void] {
 // resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
 // (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
 const NAV_VIEWS: View[] = ['overview', 'triggers', 'monitoring', 'notifications', 'probes', 'discovery', 'users', 'settings', 'account', 'list']
-type NavState = { view: View; filter: string; host?: string; item?: string; group?: string }
+type NavState = { view: View; filter: string; host?: string; item?: string; group?: string; scan?: string }
 
 function parseNav(): NavState {
   const p = new URLSearchParams(window.location.search)
@@ -686,7 +686,7 @@ function parseNav(): NavState {
   const raw = p.get('view')
   // Fall back to monitoring for a legacy ?host=&item= (or ?group=) link that predates ?view=.
   const view: View = raw && (NAV_VIEWS as string[]).includes(raw) ? (raw as View) : (host || group) ? 'monitoring' : 'overview'
-  return { view, filter: p.get('filter') || 'error', host, item, group }
+  return { view, filter: p.get('filter') || 'error', host, item, group, scan: p.get('scan') || undefined }
 }
 
 function buildNav(s: NavState): string {
@@ -698,6 +698,8 @@ function buildNav(s: NavState): string {
     if (s.host) { p.set('host', s.host); if (s.item) p.set('item', s.item) }
     else if (s.group) p.set('group', s.group)
   }
+  // An opened discovery scan is its own screen: deep-linkable, and Back returns to the scan list.
+  if (s.view === 'discovery' && s.scan) p.set('scan', s.scan)
   const qs = p.toString()
   return window.location.pathname + (qs ? '?' + qs : '')
 }
@@ -1014,6 +1016,9 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
     return parseNav()
   }
   const [view, setView] = useState<View>(() => clampView(initialNav().view))
+  // The discovery scan being reviewed ("" = the scan list). Mirrored in the URL (?scan=) so a
+  // reload restores it and Back steps out of the results to the list.
+  const [discScan, setDiscScan] = useState<string | null>(() => { const s = initialNav(); return s.view === 'discovery' ? s.scan || null : null })
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('argus-collapsed') === '1' } catch { return false } })
   const [navOpen, setNavOpen] = useState(false) // mobile drawer
   const [menuOpen, setMenuOpen] = useState(false)
@@ -1091,6 +1096,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
     const onPop = () => {
       const n = parseNav()
       setView(clampView(n.view)); setListFilter(n.filter); setMenuOpen(false); setNavOpen(false)
+      setDiscScan(n.view === 'discovery' ? n.scan || null : null)
       if (n.view === 'monitoring' && n.host) { navN.current += 1; setTreeTarget({ hostId: n.host, itemId: n.item, n: navN.current }) }
       else if (n.view === 'monitoring' && n.group) { navN.current += 1; setTreeTarget({ groupPath: n.group, n: navN.current }) }
       else if (n.view === 'monitoring') { setTreeTarget(null); setMonHome((m) => m + 1) } // stepped back to the tree root
@@ -1113,7 +1119,12 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   }, [])
 
   async function logout() { await fetch('/api/logout', { method: 'POST' }).catch(() => {}); onLogout() }
-  function goto(v: View) { setTreeTarget(null); if (v === 'monitoring') setMonHome((n) => n + 1); setView(v); pushNav(v); setMenuOpen(false); setNavOpen(false) }
+  function goto(v: View) { setTreeTarget(null); setDiscScan(null); if (v === 'monitoring') setMonHome((n) => n + 1); setView(v); pushNav(v); setMenuOpen(false); setNavOpen(false) }
+  // Open (or leave, with null) a discovery scan's results - its own history entry, so Back works.
+  function openDiscoveryScan(id: number | null) {
+    setDiscScan(id ? String(id) : null)
+    window.history.pushState({}, '', buildNav({ view: 'discovery', filter: listFilter, scan: id ? String(id) : undefined }))
+  }
 
   // Running version for the sidebar footer (the full About card lives in Settings). This poll is also
   // the stale-bundle guard: an already-loaded SPA never re-fetches its own index.html, so after the core
@@ -1150,7 +1161,9 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
     </button>
   )
 
-  const [title, sub] = view === 'list' ? [`${STATE_LABEL[listFilter]} sensors`, 'Filtered across all sites'] : VIEW_TITLES[view]
+  const [title, sub] = view === 'list' ? [`${STATE_LABEL[listFilter]} sensors`, 'Filtered across all sites']
+    : view === 'discovery' && discScan ? ['Discovery · scan results', 'Review what the scan found, adopt or ignore it']
+    : VIEW_TITLES[view]
   return (
     <div className={'app-shell' + (collapsed ? ' collapsed' : '') + (navOpen ? ' nav-open' : '') + (enter ? ' app-enter' : '')}>
       {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} />}
@@ -1231,7 +1244,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} advanced={!!me.advanced} />}
           {view === 'notifications' && <NotificationsView />}
           {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} />}
-          {view === 'discovery' && me.role === 'admin' && <DiscoveryView />}
+          {view === 'discovery' && me.role === 'admin' && <DiscoveryView scanId={discScan} onOpenScan={openDiscoveryScan} />}
           {view === 'users' && me.role === 'admin' && <UsersView />}
           {view === 'settings' && me.role === 'admin' && <SettingsView me={me} onMe={onMe} />}
           {view === 'account' && <AccountView me={me} onMe={onMe} passkeysAvailable={passkeysAvailable} theme={theme} toggleTheme={toggleTheme} />}
@@ -3550,7 +3563,7 @@ type DiscoveryHTTP = { port: number; scheme: string; status: number; server?: st
 type DiscoveryResultRow = { id: number; ip: string; mac?: string; rdns?: string; tcp: number[]; sysdescr?: string; sysobjectid?: string; sysname?: string; http?: DiscoveryHTTP; dns?: boolean; suggested_class?: string; state: string; host_id?: string; monitored_id?: string; monitored_name?: string }
 type DiscRowCfg = { name: string; classId: string; http: boolean; httpScheme: string; httpPort: string; macros: Record<string, string>; site?: string }
 
-function DiscoveryView() {
+function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenScan: (id: number | null) => void }) {
   const [proxies, setProxies] = useState<Proxy[] | null>(null)
   const [groups, setGroups] = useState<Group[]>([])
   const [classes, setClasses] = useState<DeviceClass[]>([])
@@ -3607,16 +3620,20 @@ function DiscoveryView() {
     fetch('/api/proxies').then((r) => (r.ok ? r.json() : [])).then((p) => setProxies(p || [])).catch(() => setProxies([]))
     fetch('/api/groups').then((r) => (r.ok ? r.json() : [])).then((g) => setGroups(g || [])).catch(() => {})
     fetch('/api/classes').then((r) => (r.ok ? r.json() : [])).then((c) => setClasses(c || [])).catch(() => {})
-    fetch('/api/discovery/jobs').then((r) => (r.ok ? r.json() : [])).then((j: DiscoveryJobRow[]) => {
-      setJobs(j || [])
-      // Resume a scan that is still running on entry; finished ones wait in the list below.
-      if (j && j.length && (j[0].state === 'pending' || j[0].state === 'dispatched')) { void loadJob(j[0].id) }
-    }).catch(() => setJobs([]))
+    void loadJobs()
     // Keep the scan list fresh (queued scans start, running ones finish) without a manual reload.
     const t = window.setInterval(() => { void loadJobs() }, 15000)
     return () => clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // The opened scan is owned by the URL (?scan=, held by AppShell): load it when it changes, clear
+  // everything when leaving back to the list.
+  useEffect(() => {
+    setSel(new Set()); setRowErr({}); setOpen(new Set())
+    if (!scanId) { setJob(null); setResults([]); return }
+    void loadJob(Number(scanId))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanId])
   // Seed each result row's adopt config (name / suggested class / derived macros) exactly once,
   // and only once the class catalog is in (the suggestion needs it). Rows the admin already edited
   // are never re-seeded; result ids are globally unique, so stale entries from an older job are inert.
@@ -3684,9 +3701,9 @@ function DiscoveryView() {
     setBusy(false)
     if (!res || !res.ok) { setErr(await errText(res, 'Could not start the scan')); return }
     const d = await res.json().catch(() => ({} as { id?: number }))
-    setSel(new Set()); setRowCfg({}); setRowErr({}); setOpen(new Set()); setResults([])
     void loadJobs()
-    if (d.id) { setJob({ id: d.id, proxy_name: p ? p.name : '', cidr: cidr.trim(), state: 'pending', created_at: Math.floor(Date.now() / 1000) }) }
+    // Jump straight into the new scan's screen - it shows the progress and then the results.
+    if (d.id) onOpenScan(d.id)
   }
 
   const selectable = (r: DiscoveryResultRow) => r.state === 'new' && !r.monitored_id
@@ -3773,6 +3790,8 @@ function DiscoveryView() {
 
   return (
     <section className="panel">
+      {/* --- list screen: the scan form + recent-scans history (hidden while a scan is open) --- */}
+      {!job && <>
       <div className="phead">
         <h2>Network discovery</h2>
         <span className="hint">scan a subnet from the core or a probe, then adopt what answered</span>
@@ -3796,26 +3815,33 @@ function DiscoveryView() {
           <Banner variant="info">None of your probes has reported the network-scan capability yet - it ships with the latest probe image (and needs check-in enabled); probes on the rolling <code>latest</code> tag pick it up on their next self-update. You can still scan from the core server.</Banner>
         )}
         {err && <Banner variant="error">{err}</Banner>}
-        {job && running && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: 13, color: 'var(--muted)' }}>
-            <span className="spinner" aria-hidden="true" />
-            {!job.proxy_name ? `The core server is scanning ${job.cidr}… this can take a few minutes.`
-              : jobState === 'pending' ? `Queued for ${job.proxy_name} - it picks scans up at check-in, one at a time…`
-              : `${job.proxy_name} is scanning ${job.cidr}… this can take a few minutes.`}
-          </div>
-        )}
-        {job && job.state === 'failed' && <Banner variant="error">Scan of {job.cidr} failed: {job.error || 'unknown error'}</Banner>}
       </div>
+      </>}
+
+      {/* --- scan screen: an opened scan replaces the whole page; the topbar + URL reflect it
+          (?scan=) and "Back to scans" (or the browser's Back) returns to the list. --- */}
+      {job && (
+        <div className="phead" style={job.state === 'done' ? { borderBottom: 'none' } : undefined}>
+          <h2>Scan results · {job.cidr} · {job.proxy_name || 'Core server'}</h2>
+          <span className="hint">{job.state === 'done' ? `${results.length} device${results.length === 1 ? '' : 's'} found · ${relTime(job.completed_at || job.created_at)}` : `started ${relTime(job.created_at)}`}</span>
+          <div className="tools"><Button variant="ghost" onClick={() => onOpenScan(null)}>‹ Back to scans</Button></div>
+        </div>
+      )}
+      {job && err && <div style={{ padding: '8px 1rem 0' }}><Banner variant="error">{err}</Banner></div>}
+      {job && running && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: 13, color: 'var(--muted)', padding: '14px 1rem' }}>
+          <span className="spinner" aria-hidden="true" />
+          {!job.proxy_name ? `The core server is scanning ${job.cidr}… this can take a few minutes.`
+            : jobState === 'pending' ? `Queued for ${job.proxy_name} - it picks scans up at check-in, one at a time…`
+            : `${job.proxy_name} is scanning ${job.cidr}… this can take a few minutes.`}
+        </div>
+      )}
+      {job && job.state === 'failed' && <div style={{ padding: '14px 1rem' }}><Banner variant="error">Scan of {job.cidr} failed: {job.error || 'unknown error'}</Banner></div>}
 
       {job && job.state === 'done' && (
         <>
           {/* The header + adopt toolbar read as ONE block: no border under the title, one border
               under the toolbar (a line only above the toolbar looked lopsided). */}
-          <div className="phead" style={{ paddingTop: 4, borderBottom: 'none' }}>
-            <h2 style={{ fontSize: 15 }}>Results · {job.cidr} · {job.proxy_name || 'Core server'}</h2>
-            <span className="hint">{results.length} device{results.length === 1 ? '' : 's'} found · {relTime(job.completed_at || job.created_at)}</span>
-            <div className="tools"><Button variant="ghost" onClick={() => { setJob(null); setSel(new Set()) }}>Close</Button></div>
-          </div>
           {job.error && <div style={{ padding: '0 1rem' }}><Banner variant="info">{job.error}</Banner></div>}
           <div className="disc-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', padding: '0 1rem 0.7rem', borderBottom: '1px solid var(--border)' }}>
             <Button variant="primary" onClick={addSelected} disabled={sel.size === 0 || adding}>{adding ? 'Adding…' : `Add ${sel.size || ''} selected`.replace('  ', ' ')}</Button>
@@ -3942,7 +3968,8 @@ function DiscoveryView() {
         </>
       )}
 
-      <div className="phead" style={{ paddingTop: job && job.state === 'done' ? 14 : 4 }}>
+      {!job && <>
+      <div className="phead" style={{ paddingTop: 4 }}>
         <h2 style={{ fontSize: 15 }}>Recent scans</h2>
         <span className="hint">kept for 30 days - open one to review or re-adopt</span>
       </div>
@@ -3954,8 +3981,8 @@ function DiscoveryView() {
             <thead><tr><th>When</th><th>Source</th><th>Subnet</th><th>Found</th><th>Status</th><th>By</th></tr></thead>
             <tbody>
               {jobs.map((j) => (
-                <tr key={j.id} className={'disc-scan-row' + (job?.id === j.id ? ' on' : '')} title={j.error || undefined}
-                  onClick={() => { setSel(new Set()); setRowErr({}); setOpen(new Set()); void loadJob(j.id) }}>
+                <tr key={j.id} className="disc-scan-row" title={j.error || undefined}
+                  onClick={() => onOpenScan(j.id)}>
                   <td data-label="When" className="mono" style={{ color: 'var(--muted)' }}>{relTime(j.created_at)}</td>
                   <td data-label="Source">{j.proxy_name || 'Core server'}</td>
                   <td data-label="Subnet" className="mono">{j.cidr}</td>
@@ -3968,6 +3995,7 @@ function DiscoveryView() {
           </table>
         </div>
       )}
+      </>}
     </section>
   )
 }

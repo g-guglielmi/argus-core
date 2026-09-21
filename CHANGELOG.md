@@ -52,6 +52,10 @@ GitHub Release from the matching section below.
   those devices expose a web UI worth watching; whether to check it is the admin's call. Applies
   to Add-device and the discovery review alike.
 - **Sidebar: Configure now reads Discovery → Probes → Notifications.**
+- **An opened scan is its own screen.** Opening a result from Recent scans (or starting a scan)
+  replaces the whole Discovery page - no scan form or history alongside the review. The page header
+  and the URL reflect it (`?view=discovery&scan=N`, so results are deep-linkable), and "Back to
+  scans" or the browser's Back button return to the clean list.
 
 **Changed:**
 - **Probe check-in tick: 5 minutes → 1 minute** (probe image), so queued scans are picked up within
