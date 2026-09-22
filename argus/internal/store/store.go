@@ -349,7 +349,8 @@ CREATE TABLE IF NOT EXISTS discovery_results (
   http_json        TEXT NOT NULL DEFAULT '',
   dns              INTEGER NOT NULL DEFAULT 0,
   ssh_banner       TEXT NOT NULL DEFAULT '',
-  unifi_json       TEXT NOT NULL DEFAULT '',   -- controller-sourced facts (sweep results only)
+  unifi_json       TEXT NOT NULL DEFAULT '',   -- controller-sourced facts (sweeps + enriched scans)
+  controller_id    INTEGER NOT NULL DEFAULT 0, -- the unifi_controllers row those facts came from
   suggested_class  TEXT NOT NULL DEFAULT '',
   state            TEXT NOT NULL DEFAULT 'new', -- new|ignored|added
   host_id          TEXT NOT NULL DEFAULT ''     -- Zabbix host id once adopted
@@ -442,8 +443,13 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 	if err := s.ensureColumn("discovery_jobs", "controller_name TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
-	// Controller-sourced facts for a sweep result (name/model/type/state/version/site JSON).
+	// Controller-sourced facts for a sweep result (name/model/type/state/version/site JSON), and
+	// which saved controller they came from (sweep rows + controller-enriched scan rows - the
+	// adopt path resolves the {$UNIFI.*} injection through it).
 	if err := s.ensureColumn("discovery_results", "unifi_json TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("discovery_results", "controller_id INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("notify_events", "item_id TEXT NOT NULL DEFAULT ''"); err != nil {

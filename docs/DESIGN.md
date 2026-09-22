@@ -293,7 +293,11 @@ deterministic (`provision.SuggestUniFiClass` from the controller's own device ty
 payoff: for a sweep-adopted UniFi-class host the server injects `{$UNIFI.URL}/{$UNIFI.KEY}/
 {$UNIFI.MAC}/{$UNIFI.SITE}` from the saved controller + sweep facts before validation, so the API
 key never travels through the browser and nobody types per-device macros. Sweeps share the scan
-queue, history, retention and ignore carry-over.
+queue, history, retention and ignore carry-over. Saved controllers also **enrich subnet scans**:
+at result ingest the core fetches each controller's inventory (best-effort, bounded) and merges
+facts into matching rows by MAC-then-IP (`enrichScanResults`), storing the per-result
+`controller_id` the adopt-time injection resolves through - so a scan row for known UniFi gear
+behaves exactly like a sweep row.
 
 **Discovery trigger (shipped with §C).** LLD rules run on a long interval (1h on the SNMP classes),
 so a freshly added host would sit without its per-instance sensors. Two seams close that gap:

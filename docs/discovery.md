@@ -106,6 +106,14 @@ Network API, `/proxy/network/...` with a fallback to the bare path for plain sel
 controllers), so a controller that works for monitoring works for the sweep. TLS is not verified -
 consoles ship self-signed certificates.
 
+**Subnet scans use the controllers too.** Once a controller is saved, every subnet scan's results
+are cross-checked against its adopted devices (matched by MAC, or by IP where the scan saw no
+MAC): matching rows get the controller facts - exact model, real name, firmware, site - the
+certain class suggestion, and the same adopt-time macro injection as a sweep row. So a plain scan
+of a range with UniFi gear in it already reviews like a sweep; the standalone sweep remains the
+way to import a controller's whole estate (all sites, no wire scan) in one go. Best-effort: the
+core queries the controllers, so one it can't reach simply doesn't enrich.
+
 ## Notes
 
 - Scan history is kept for 30 days (capped per source); reopen any scan from the Recent scans list.

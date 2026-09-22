@@ -3853,19 +3853,22 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
   const isSweep = job?.kind === 'unifi'
   const jobLabel = job ? (job.kind === 'unifi' ? (job.controller_name || 'UniFi controller') : job.cidr) : ''
   const grid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.7rem' }
+  const portTag = (p: number) => (p === 22 ? 'SSH' : p === 445 ? 'SMB' : p === 3493 ? 'NUT' : p === 443 ? 'HTTPS' : p === 80 ? 'HTTP' : p === 10050 ? 'Agent' : p === 53 ? ':53' : `:${p}`)
   const facts = (r: DiscoveryResultRow): string[] => {
     if (r.unifi) {
-      // A sweep row's facts come from the controller: exact model, site, link state.
+      // Controller facts lead (exact model, site, link state); an enriched scan row keeps its
+      // wire facts after them - a pure sweep row has none.
       const f: string[] = []
       if (r.unifi.model) f.push(r.unifi.model)
       if (r.unifi.site && r.unifi.site !== 'default') f.push(r.unifi.site_desc || r.unifi.site)
       f.push(r.unifi.state === 1 ? 'online' : 'offline')
+      for (const p of r.tcp) f.push(portTag(p))
       return f
     }
     const f: string[] = []
     if (r.sysdescr || r.sysname) f.push('SNMP')
     if (r.dns) f.push('DNS')
-    for (const p of r.tcp) f.push(p === 22 ? 'SSH' : p === 445 ? 'SMB' : p === 3493 ? 'NUT' : p === 443 ? 'HTTPS' : p === 80 ? 'HTTP' : p === 10050 ? 'Agent' : p === 53 ? ':53' : `:${p}`)
+    for (const p of r.tcp) f.push(portTag(p))
     return f
   }
   const stateTag = (r: DiscoveryResultRow) => {

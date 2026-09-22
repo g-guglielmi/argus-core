@@ -299,6 +299,15 @@ func (s *Server) runCoreScan(job store.DiscoveryJob) {
 		res.SuggestedClass = provision.SuggestClass(f)
 		results = append(results, res)
 	}
+	// Merge saved-controller facts into the rows (best-effort, bounded) - known UniFi gear in the
+	// scanned range then reviews exactly like a sweep row, macros injection included.
+	if len(results) > 0 {
+		ectx, ecancel := context.WithTimeout(ctx, 20*time.Second)
+		if n := enrichScanResults(results, s.fetchControllerInventories(ectx)); n > 0 {
+			s.logger.Info("discovery: scan rows enriched from controllers", "job", job.ID, "rows", n)
+		}
+		ecancel()
+	}
 	// A fresh context: the scan one may just have expired, and the write must still land.
 	sctx, scancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer scancel()
@@ -325,19 +334,23 @@ type unifiFacts struct {
 	SiteDesc string `json:"site_desc,omitempty"`
 }
 
-// injectUniFiMacros fills the {$UNIFI.*} macros of a sweep-adopted host from the job's saved
+// injectUniFiMacros fills the {$UNIFI.*} macros of a host adopted from a controller-backed
+// discovery result (a sweep row, or a scan row enriched with controller facts) from the saved
 // controller and the result's own facts, wherever the request left them blank. The review screen
 // never sees the API key - it lands on the host straight from the encrypted store here.
-// Best-effort: if the controller has been deleted since the sweep, the normal required-macro
-// validation catches whatever stays blank.
+// Best-effort: if the controller has been deleted since, the normal required-macro validation
+// catches whatever stays blank.
 func (s *Server) injectUniFiMacros(ctx context.Context, req *createHostRequest) {
 	res, err := s.st.DiscoveryResultByID(ctx, req.DiscoveryResultID)
 	if err != nil || res.UniFiJSON == "" {
 		return
 	}
-	job, err := s.st.DiscoveryJobByID(ctx, res.JobID)
-	if err != nil || job.Kind != "unifi" {
-		return
+	ctlID := res.ControllerID
+	if ctlID == 0 {
+		// Sweep rows stored before the per-result controller reference existed.
+		if job, err := s.st.DiscoveryJobByID(ctx, res.JobID); err == nil && job.Kind == "unifi" {
+			ctlID = job.ControllerID
+		}
 	}
 	var uf unifiFacts
 	_ = json.Unmarshal([]byte(res.UniFiJSON), &uf)
@@ -349,12 +362,114 @@ func (s *Server) injectUniFiMacros(ctx context.Context, req *createHostRequest) 
 			req.Macros[macro] = value
 		}
 	}
-	if ctl, err := s.st.UniFiControllerByID(ctx, job.ControllerID); err == nil {
-		set("{$UNIFI.URL}", ctl.URL)
-		set("{$UNIFI.KEY}", ctl.APIKey)
+	if ctlID != 0 {
+		if ctl, err := s.st.UniFiControllerByID(ctx, ctlID); err == nil {
+			set("{$UNIFI.URL}", ctl.URL)
+			set("{$UNIFI.KEY}", ctl.APIKey)
+		}
 	}
 	set("{$UNIFI.MAC}", res.MAC)
 	set("{$UNIFI.SITE}", uf.Site)
+}
+
+// controllerInventory is one saved controller's adopted devices, fetched for scan enrichment.
+type controllerInventory struct {
+	ID      int64
+	Devices []unifi.Device
+}
+
+// fetchControllerInventories asks every saved controller for its adopted devices. Best-effort by
+// design: a controller the core can't reach (e.g. one only a remote probe's network sees) simply
+// contributes nothing, and a scan with no saved controllers costs nothing.
+func (s *Server) fetchControllerInventories(ctx context.Context) []controllerInventory {
+	ctls, err := s.st.ListUniFiControllers(ctx)
+	if err != nil || len(ctls) == 0 {
+		return nil
+	}
+	var out []controllerInventory
+	for _, c := range ctls {
+		ctl, err := s.st.UniFiControllerByID(ctx, c.ID)
+		if err != nil || ctl.APIKey == "" {
+			continue
+		}
+		devs, err := unifi.Sweep(ctx, ctl.URL, ctl.APIKey)
+		if err != nil {
+			s.logger.Debug("discovery: controller enrichment skipped", "controller", ctl.Name, "err", err)
+			continue
+		}
+		out = append(out, controllerInventory{ID: ctl.ID, Devices: devs})
+	}
+	return out
+}
+
+// normMAC lowercases a MAC and strips separators, for matching across notations.
+func normMAC(mac string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'f':
+			return r
+		case r >= 'A' && r <= 'F':
+			return r + ('a' - 'A')
+		}
+		return -1
+	}, mac)
+}
+
+// enrichScanResults merges saved-controller facts into subnet-scan rows: a row matching one of a
+// controller's adopted devices (by MAC, else by IP) gets the device record, the deterministic
+// class suggestion, and the controller reference the adopt path injects the {$UNIFI.*} macros
+// from - a plain scan then treats known UniFi gear exactly like a sweep would. Returns how many
+// rows were enriched.
+func enrichScanResults(results []store.DiscoveryResult, inventories []controllerInventory) int {
+	if len(inventories) == 0 {
+		return 0
+	}
+	type hit struct {
+		ctlID int64
+		d     unifi.Device
+	}
+	byMAC := map[string]hit{}
+	byIP := map[string]hit{}
+	for _, inv := range inventories {
+		for _, d := range inv.Devices {
+			h := hit{inv.ID, d}
+			if m := normMAC(d.MAC); m != "" {
+				if _, dup := byMAC[m]; !dup {
+					byMAC[m] = h
+				}
+			}
+			if d.IP != "" {
+				if _, dup := byIP[d.IP]; !dup {
+					byIP[d.IP] = h
+				}
+			}
+		}
+	}
+	n := 0
+	for i := range results {
+		if results[i].UniFiJSON != "" {
+			continue
+		}
+		h, ok := hit{}, false
+		if m := normMAC(results[i].MAC); m != "" {
+			h, ok = byMAC[m]
+		}
+		if !ok {
+			h, ok = byIP[results[i].IP]
+		}
+		if !ok {
+			continue
+		}
+		facts, _ := json.Marshal(unifiFacts{Name: h.d.Name, Model: h.d.Model, Type: h.d.Type,
+			State: h.d.State, Version: h.d.Version, Site: h.d.Site, SiteDesc: h.d.SiteDesc})
+		results[i].UniFiJSON = string(facts)
+		results[i].ControllerID = h.ctlID
+		if cls := provision.SuggestUniFiClass(h.d.Type, h.d.Model); cls != "" {
+			results[i].SuggestedClass = cls
+		}
+		n++
+	}
+	return n
 }
 
 // runCoreSweep executes a core-server UniFi sweep in-process and completes the job like a probe
@@ -382,6 +497,7 @@ func (s *Server) runCoreSweep(job store.DiscoveryJob) {
 				State: d.State, Version: d.Version, Site: d.Site, SiteDesc: d.SiteDesc})
 			results = append(results, store.DiscoveryResult{
 				IP: d.IP, MAC: d.MAC, TCPPorts: "[]", UniFiJSON: string(facts),
+				ControllerID:   job.ControllerID,
 				SuggestedClass: provision.SuggestUniFiClass(d.Type, d.Model),
 			})
 		}
@@ -511,15 +627,17 @@ func (s *Server) handleGetDiscoveryJob(w http.ResponseWriter, r *http.Request) {
 		}
 		// The suggestion is recomputed from the STORED raw facts on every read (the ingest-time
 		// value is kept only as a record): mapping improvements ship core-side and reach past
-		// scans immediately - no re-scan needed. Sweep results carry the controller's own device
-		// record, which beats any fingerprint.
+		// scans immediately - no re-scan needed. Controller facts (sweep rows, enriched scan
+		// rows) beat any fingerprint; an unmapped controller type falls back to the fingerprint
+		// so an enriched scan row never loses a good guess.
 		if res.UniFiJSON != "" {
 			v.Unifi = json.RawMessage(res.UniFiJSON)
 			var uf unifiFacts
 			if json.Unmarshal([]byte(res.UniFiJSON), &uf) == nil {
 				v.SuggestedClass = provision.SuggestUniFiClass(uf.Type, uf.Model)
 			}
-		} else {
+		}
+		if v.SuggestedClass == "" {
 			f := provision.Fingerprint{SysDescr: res.SysDescr, SysObjectID: res.SysObjectID,
 				SysName: res.SysName, DNS: res.DNS, TCP: v.TCP, MAC: res.MAC, RDNS: res.RDNS,
 				SSHBanner: res.SSHBanner}
@@ -598,7 +716,9 @@ func (s *Server) handleScanResults(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing probe token"})
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	// Generous enough for controller enrichment (bounded below) and still well inside the
+	// scanner's 30s posting timeout.
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
 	defer cancel()
 	proxyName, err := s.st.ProbeNameByToken(ctx, auth.HashToken(tok))
 	if err != nil {
@@ -648,6 +768,22 @@ func (s *Server) handleScanResults(w http.ResponseWriter, r *http.Request) {
 			res.SuggestedClass = provision.SuggestClass(f)
 		}
 		results = append(results, res)
+	}
+	// Post-processing by job kind: probe-sweep rows carry their controller reference (adopt-time
+	// macro injection resolves through it); scan rows get controller enrichment (best-effort,
+	// bounded - see enrichScanResults).
+	if job, jerr := s.st.DiscoveryJobByID(ctx, req.JobID); jerr == nil {
+		if job.Kind == "unifi" {
+			for i := range results {
+				results[i].ControllerID = job.ControllerID
+			}
+		} else if len(results) > 0 {
+			ectx, ecancel := context.WithTimeout(ctx, 12*time.Second)
+			if n := enrichScanResults(results, s.fetchControllerInventories(ectx)); n > 0 {
+				s.logger.Info("discovery: scan rows enriched from controllers", "job", req.JobID, "rows", n)
+			}
+			ecancel()
+		}
 	}
 	err = s.st.CompleteDiscoveryJob(ctx, req.JobID, proxyName, strings.TrimSpace(req.Error), results)
 	if errors.Is(err, store.ErrNotFound) {
