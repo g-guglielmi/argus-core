@@ -3584,6 +3584,26 @@ type UnifiCtlRow = { id: number; name: string; url: string; has_key: boolean }
 // (the API key never travels through the browser) - the review UI shows them as auto-filled.
 const UNIFI_AUTOFILL = ['{$UNIFI.URL}', '{$UNIFI.KEY}', '{$UNIFI.MAC}', '{$UNIFI.SITE}']
 
+// DiscDialog is the Discovery tab's action dialog (new scan / sweep / controllers): the landing
+// page stays a clean history, each action opens wizard-style. z-index sits BELOW the confirm
+// provider's (100) so a nested confirm - e.g. deleting a controller - paints on top.
+function DiscDialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return createPortal(
+    <div className="dlg-backdrop" style={{ zIndex: 90 }} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 'min(520px, 94vw)' }}>
+        <div className="dlg-title">{title}</div>
+        {children}
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenScan: (id: number | null) => void }) {
   const [proxies, setProxies] = useState<Proxy[] | null>(null)
   const [groups, setGroups] = useState<Group[]>([])
@@ -3605,9 +3625,10 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
   const [sweepFrom, setSweepFrom] = useState('')
   const [sweepErr, setSweepErr] = useState<string | null>(null)
   const [sweepBusy, setSweepBusy] = useState(false)
-  const [manageCtls, setManageCtls] = useState(false)
   const [ctlForm, setCtlForm] = useState<{ id: number; name: string; url: string; key: string } | null>(null)
   const [ctlBusy, setCtlBusy] = useState(false)
+  // Which action dialog is open - the landing page itself is just the scan history.
+  const [dlg, setDlg] = useState<null | 'scan' | 'sweep' | 'ctls'>(null)
   // review state
   const [sel, setSel] = useState<Set<number>>(new Set())
   const [rowCfg, setRowCfg] = useState<Record<number, DiscRowCfg>>({})
@@ -3671,7 +3692,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
   // inherits the site picked for an earlier scan of another site - the effect below re-defaults it from
   // THIS scan's source.
   useEffect(() => {
-    setSel(new Set()); setRowErr({}); setOpen(new Set()); setSite('')
+    setSel(new Set()); setRowErr({}); setOpen(new Set()); setSite(''); setDlg(null)
     if (!scanId) { setJob(null); setResults([]); return }
     void loadJob(Number(scanId))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3743,6 +3764,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
     setBusy(false)
     if (!res || !res.ok) { setErr(await errText(res, 'Could not start the scan')); return }
     const d = await res.json().catch(() => ({} as { id?: number }))
+    setDlg(null)
     void loadJobs()
     // Jump straight into the new scan's screen - it shows the progress and then the results.
     if (d.id) onOpenScan(d.id)
@@ -3759,6 +3781,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
     setSweepBusy(false)
     if (!res || !res.ok) { setSweepErr(await errText(res, 'Could not start the sweep')); return }
     const d = await res.json().catch(() => ({} as { id?: number }))
+    setDlg(null)
     void loadJobs()
     if (d.id) onOpenScan(d.id)
   }
@@ -3889,24 +3912,57 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
 
   return (
     <>
-      {/* --- list screen: three clearly-bounded cards (subnet scan / UniFi sweep / history),
-          hidden while a scan is open --- */}
+      {/* --- list screen: the scan history IS the page; New scan / UniFi sweep / Manage
+          controllers open as dialogs (wizard-style, per user feedback) --- */}
       {!job && <>
       <section className="panel">
       <div className="phead">
         <h2>Network discovery</h2>
-        <span className="hint">scan a subnet from the core or a probe, then adopt what answered</span>
+        <span className="hint">find devices, review what answered, adopt into monitoring · kept for 30 days</span>
+        <div className="tools">
+          <Button onClick={() => { setCtlForm((ctls?.length || 0) === 0 ? { id: 0, name: '', url: '', key: '' } : null); setDlg('ctls') }}>Manage controllers</Button>
+          <Button onClick={() => setDlg('sweep')} disabled={ctls === null}>UniFi sweep</Button>
+          <Button variant="primary" onClick={() => setDlg('scan')} disabled={proxies === null}>+ New scan</Button>
+        </div>
       </div>
-      {/* The built-in guide: say what a scan will actually do, and surface the invisible
-          controller enrichment - naming the controllers that will be consulted. */}
-      <p className="panel-intro">
-        Argus probes every address in the range from the collector you pick (ping, common service ports, SNMP, HTTP, DNS) and suggests a device class for whatever answers - review below, then adopt or ignore.{' '}
-        {(ctls || []).length > 0
-          ? <>Results are also checked against your saved controller{(ctls || []).length === 1 ? '' : 's'} (<b>{(ctls || []).map((c) => c.name).join(', ')}</b>): UniFi gear found in the range comes back with its exact model and all its UniFi settings pre-filled, as if swept.</>
-          : <>Save a UniFi controller below and scans will additionally identify its gear exactly, settings pre-filled.</>}
-      </p>
-      <div className="disc-form" style={{ padding: '12px 1rem 0.9rem' }}>
-        <div style={grid}>
+      {/* One concise nudge, only while no controller is saved - configuring them first makes
+          every later discovery identify UniFi gear exactly. */}
+      {ctls !== null && ctls.length === 0 && (
+        <p className="panel-intro">Tip: save your UniFi controllers first (<b>Manage controllers</b>). Discovery matches what it finds against them, so UniFi devices come back exactly identified, ready to adopt with their settings pre-filled.</p>
+      )}
+      {err && <div style={{ padding: '10px 1rem 0' }}><Banner variant="error">{err}</Banner></div>}
+      {jobs === null && <div style={{ padding: '10px 1rem 1rem' }}><Skeleton rows={2} cols={5} /></div>}
+      {jobs !== null && jobs.length === 0 && <p style={{ color: 'var(--muted)', fontSize: 13, padding: '10px 1rem 1rem', margin: 0 }}>No discoveries yet - start a subnet scan with <b>+ New scan</b>, or pull a controller's devices with <b>UniFi sweep</b>.</p>}
+      {jobs !== null && jobs.length > 0 && (
+        <div className="enroll-scroll">
+          <table className="enroll enroll-discovery">
+            <thead><tr><th>When</th><th>Source</th><th>Target</th><th>Found</th><th>Status</th><th>By</th><th style={{ width: 34 }} /></tr></thead>
+            <tbody>
+              {jobs.map((j) => (
+                <tr key={j.id} className="disc-scan-row" title={j.error || undefined}
+                  onClick={() => onOpenScan(j.id)}>
+                  <td data-label="When" className="mono" style={{ color: 'var(--muted)' }}>{relTime(j.created_at)}</td>
+                  <td data-label="Source">{j.proxy_name || 'Core server'}</td>
+                  <td data-label="Target" className={j.kind === 'unifi' ? undefined : 'mono'}>{j.kind === 'unifi' ? `UniFi sweep · ${j.controller_name || '?'}` : j.cidr}</td>
+                  <td data-label="Found">{j.state === 'done' ? `${j.found ?? 0} device${(j.found ?? 0) === 1 ? '' : 's'} · ${j.new ?? 0} new` : '-'}</td>
+                  <td data-label="Status"><span className={'tag' + (j.state === 'done' ? ' online' : j.state === 'failed' ? '' : ' pending')}>{j.state === 'dispatched' ? (j.kind === 'unifi' ? 'sweeping' : 'scanning') : j.state === 'pending' ? 'queued' : j.state}</span></td>
+                  <td data-label="By" style={{ color: 'var(--muted)' }}>{j.requested_by || '-'}</td>
+                  <td data-label="" onClick={(e) => e.stopPropagation()}>
+                    <button className="iconbtn" title="Delete this scan" aria-label="Delete this scan" onClick={() => void deleteJob(j)}>
+                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" /></svg>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      </section>
+
+      {dlg === 'scan' && (
+        <DiscDialog title="New subnet scan" onClose={() => setDlg(null)}>
+          <p className="dlg-msg">Probes every address in the range from the collector you pick and suggests a device class for whatever answers.</p>
           <Field label="Scan from">
             <Select value={proxyId} onChange={(e) => setProxyId(e.target.value)}>
               <option value="">Choose…</option>
@@ -3916,87 +3972,86 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
           </Field>
           <Field label="Subnet" placeholder="10.0.0.0/24" value={cidr} onChange={(e) => setCidr(e.target.value)} />
           <Field label="SNMP community (optional)" placeholder={proxyId === 'core' ? "core's SNMP default" : "probe's SNMP default"} value={community} onChange={(e) => setCommunity(e.target.value)} />
-          {/* An nbsp label (a plain space collapses to zero height) + an input-height button, so the
-              button bottom-aligns with the inputs beside it, not with their labels. */}
-          <Field label={' '}><Button variant="primary" block style={{ height: 39 }} onClick={start} disabled={busy || proxies === null}>{busy ? 'Starting…' : 'Start scan'}</Button></Field>
-        </div>
-        {proxies !== null && scanCapable.length === 0 && (
-          <Banner variant="info">None of your probes has reported the network-scan capability yet - it ships with the latest probe image (and needs check-in enabled); probes on the rolling <code>latest</code> tag pick it up on their next self-update. You can still scan from the core server.</Banner>
-        )}
-        {err && <Banner variant="error">{err}</Banner>}
-      </div>
-      </section>
+          {proxies !== null && scanCapable.length === 0 && (
+            <Banner variant="info">None of your probes has reported the network-scan capability yet - it ships with the latest probe image (and needs check-in enabled). You can still scan from the core server.</Banner>
+          )}
+          {err && <Banner variant="error">{err}</Banner>}
+          <div className="dlg-foot">
+            <Button variant="ghost" onClick={() => setDlg(null)}>Cancel</Button>
+            <Button variant="primary" onClick={start} disabled={busy}>{busy ? 'Starting…' : 'Start scan'}</Button>
+          </div>
+        </DiscDialog>
+      )}
 
-      {/* --- UniFi controller sweep: the second discovery source, its own card. A saved controller
-          is asked for its adopted devices (exact model/type/MAC/site), and adoption pre-fills the
-          UniFi class macros server-side - including the API key, which never reaches the browser. --- */}
-      <section className="panel">
-      <div className="phead">
-        <h2>UniFi controller sweep</h2>
-        <span className="hint">pull the adopted devices straight from a controller - exact models, macros pre-filled</span>
-        <div className="tools"><Button onClick={() => { const next = !manageCtls; setManageCtls(next); setCtlForm(next && (ctls?.length || 0) === 0 ? { id: 0, name: '', url: '', key: '' } : null) }}>{manageCtls ? 'Done' : 'Manage controllers'}</Button></div>
-      </div>
-      <p className="panel-intro">
-        No wire scan here: Argus asks the controller itself for every device it manages, across all its sites - instant and exact, even where a scan sees nothing. It takes a saved controller (base URL + an API key from UniFi Network → Settings → Control Plane → Integrations); devices adopted from a sweep arrive with all their UniFi settings filled in automatically, the API key included - nothing to type per device.
-      </p>
-      <div className="disc-form" style={{ padding: '12px 1rem 0.9rem' }}>
-        {ctls !== null && ctls.length === 0 && !manageCtls && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap' }}>
-            <span style={{ color: 'var(--muted)', fontSize: 13 }}>No controllers saved yet.</span>
-            <Button onClick={() => { setManageCtls(true); setCtlForm({ id: 0, name: '', url: '', key: '' }) }}>+ Add controller</Button>
-          </div>
-        )}
-        {(ctls?.length || 0) > 0 && (
-          <div style={grid}>
-            <Field label="Controller">
-              <Select value={sweepCtl} onChange={(e) => setSweepCtl(e.target.value)}>
-                <option value="">Choose…</option>
-                {(ctls || []).map((c) => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
-              </Select>
-            </Field>
-            <Field label="Sweep from">
-              <Select value={sweepFrom} onChange={(e) => setSweepFrom(e.target.value)}>
-                <option value="">Choose…</option>
-                <option value="core">Core server</option>
-                {(proxies || []).map((p) => <option key={p.id} value={p.id} disabled={!p.sweeps}>{p.name}{p.sweeps ? '' : ' (needs probe update)'}</option>)}
-              </Select>
-            </Field>
-            <Field label={' '}><Button variant="primary" block style={{ height: 39 }} onClick={startSweep} disabled={sweepBusy || ctls === null}>{sweepBusy ? 'Starting…' : 'Start sweep'}</Button></Field>
-          </div>
-        )}
-        {proxies !== null && (ctls?.length || 0) > 0 && sweepCapable.length === 0 && (
-          <Banner variant="info">None of your probes has reported the UniFi-sweep capability yet - it ships with the latest probe image. You can still sweep from the core server if it can reach the controller.</Banner>
-        )}
-        {manageCtls && (
-          <div className="disc-band" style={{ marginTop: '0.7rem' }}>
-            {(ctls || []).map((c) => (
-              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', fontSize: 13 }}>
-                <b>{c.name}</b>
-                <span className="mono" style={{ color: 'var(--muted)' }}>{c.url}</span>
-                <span style={{ flex: 1 }} />
-                <Button variant="ghost" onClick={() => setCtlForm({ id: c.id, name: c.name, url: c.url, key: '' })}>Edit</Button>
-                <Button variant="ghost" onClick={() => void deleteCtl(c)}>Delete</Button>
+      {dlg === 'sweep' && (
+        <DiscDialog title="UniFi controller sweep" onClose={() => setDlg(null)}>
+          <p className="dlg-msg">Asks a saved controller for every device it manages, across all its sites - no wire scan. Devices adopted from a sweep arrive with their UniFi settings pre-filled, the API key included.</p>
+          {(ctls?.length || 0) === 0 ? (
+            <>
+              <p style={{ color: 'var(--muted)', fontSize: 13, margin: 0 }}>No controllers saved yet.</p>
+              <div className="dlg-foot">
+                <Button variant="ghost" onClick={() => setDlg(null)}>Cancel</Button>
+                <Button variant="primary" onClick={() => { setCtlForm({ id: 0, name: '', url: '', key: '' }); setDlg('ctls') }}>Add a controller</Button>
               </div>
-            ))}
-            {ctlForm === null && <div><Button variant="ghost" onClick={() => setCtlForm({ id: 0, name: '', url: '', key: '' })}>+ Add controller</Button></div>}
-            {ctlForm !== null && (
-              <>
-                <div style={grid}>
-                  <Field label="Name" placeholder="site1" value={ctlForm.name} onChange={(e) => setCtlForm({ ...ctlForm, name: e.target.value })} />
-                  <Field label="Controller URL" placeholder="https://unifi.example.lan:11443" value={ctlForm.url} onChange={(e) => setCtlForm({ ...ctlForm, url: e.target.value })} />
-                  <Field label={ctlForm.id ? 'API key (blank = keep current)' : 'API key'} type="password" placeholder="from Control Plane → Integrations" value={ctlForm.key} onChange={(e) => setCtlForm({ ...ctlForm, key: e.target.value })} />
-                </div>
-                <div style={{ display: 'flex', gap: '0.6rem' }}>
-                  <Button variant="primary" onClick={saveCtl} disabled={ctlBusy}>{ctlBusy ? 'Saving…' : ctlForm.id ? 'Save changes' : 'Add controller'}</Button>
-                  <Button variant="ghost" onClick={() => setCtlForm(null)}>Cancel</Button>
-                </div>
-              </>
-            )}
+            </>
+          ) : (
+            <>
+              <Field label="Controller">
+                <Select value={sweepCtl} onChange={(e) => setSweepCtl(e.target.value)}>
+                  <option value="">Choose…</option>
+                  {(ctls || []).map((c) => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                </Select>
+              </Field>
+              <Field label="Sweep from">
+                <Select value={sweepFrom} onChange={(e) => setSweepFrom(e.target.value)}>
+                  <option value="">Choose…</option>
+                  <option value="core">Core server</option>
+                  {(proxies || []).map((p) => <option key={p.id} value={p.id} disabled={!p.sweeps}>{p.name}{p.sweeps ? '' : ' (needs probe update)'}</option>)}
+                </Select>
+              </Field>
+              {proxies !== null && sweepCapable.length === 0 && (
+                <Banner variant="info">None of your probes has reported the UniFi-sweep capability yet - it ships with the latest probe image. You can still sweep from the core server if it can reach the controller.</Banner>
+              )}
+              {sweepErr && <Banner variant="error">{sweepErr}</Banner>}
+              <div className="dlg-foot">
+                <Button variant="ghost" onClick={() => setDlg(null)}>Cancel</Button>
+                <Button variant="primary" onClick={startSweep} disabled={sweepBusy}>{sweepBusy ? 'Starting…' : 'Start sweep'}</Button>
+              </div>
+            </>
+          )}
+        </DiscDialog>
+      )}
+
+      {dlg === 'ctls' && (
+        <DiscDialog title="UniFi controllers" onClose={() => setDlg(null)}>
+          <p className="dlg-msg">Saved once, used by both discovery paths: sweeps import a controller's devices directly, and subnet scans match their results against it. The API key comes from UniFi Network → Settings → Control Plane → Integrations and never leaves the server.</p>
+          {(ctls || []).map((c) => (
+            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', fontSize: 13, marginBottom: 8 }}>
+              <b>{c.name}</b>
+              <span className="mono" style={{ color: 'var(--muted)' }}>{c.url}</span>
+              <span style={{ flex: 1 }} />
+              <Button variant="ghost" onClick={() => setCtlForm({ id: c.id, name: c.name, url: c.url, key: '' })}>Edit</Button>
+              <Button variant="ghost" onClick={() => void deleteCtl(c)}>Delete</Button>
+            </div>
+          ))}
+          {ctlForm === null && <div style={{ marginTop: 4 }}><Button onClick={() => setCtlForm({ id: 0, name: '', url: '', key: '' })}>+ Add controller</Button></div>}
+          {ctlForm !== null && (
+            <>
+              <Field label="Name" placeholder="site1" value={ctlForm.name} onChange={(e) => setCtlForm({ ...ctlForm, name: e.target.value })} />
+              <Field label="Controller URL" placeholder="https://unifi.example.lan:11443" value={ctlForm.url} onChange={(e) => setCtlForm({ ...ctlForm, url: e.target.value })} />
+              <Field label={ctlForm.id ? 'API key (blank = keep current)' : 'API key'} type="password" placeholder="from Control Plane → Integrations" value={ctlForm.key} onChange={(e) => setCtlForm({ ...ctlForm, key: e.target.value })} />
+              <div style={{ display: 'flex', gap: '0.6rem' }}>
+                <Button variant="primary" onClick={saveCtl} disabled={ctlBusy}>{ctlBusy ? 'Saving…' : ctlForm.id ? 'Save changes' : 'Add controller'}</Button>
+                <Button variant="ghost" onClick={() => setCtlForm(null)}>Cancel</Button>
+              </div>
+            </>
+          )}
+          {sweepErr && <Banner variant="error">{sweepErr}</Banner>}
+          <div className="dlg-foot">
+            <Button variant="ghost" onClick={() => setDlg(null)}>Close</Button>
           </div>
-        )}
-        {sweepErr && <Banner variant="error">{sweepErr}</Banner>}
-      </div>
-      </section>
+        </DiscDialog>
+      )}
       </>}
 
       {/* --- scan screen: an opened scan replaces the whole page; the topbar + URL reflect it
@@ -4166,39 +4221,6 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
       )}
       </section>}
 
-      {!job && <section className="panel">
-      <div className="phead">
-        <h2>Recent scans</h2>
-        <span className="hint">kept for 30 days - open one to review or re-adopt</span>
-      </div>
-      {jobs === null && <div style={{ padding: '10px 1rem 1rem' }}><Skeleton rows={2} cols={5} /></div>}
-      {jobs !== null && jobs.length === 0 && <p style={{ color: 'var(--muted)', fontSize: 13, padding: '10px 1rem 1rem', margin: 0 }}>No scans yet - point one at a subnet above, or sweep a UniFi controller.</p>}
-      {jobs !== null && jobs.length > 0 && (
-        <div className="enroll-scroll">
-          <table className="enroll enroll-discovery">
-            <thead><tr><th>When</th><th>Source</th><th>Target</th><th>Found</th><th>Status</th><th>By</th><th style={{ width: 34 }} /></tr></thead>
-            <tbody>
-              {jobs.map((j) => (
-                <tr key={j.id} className="disc-scan-row" title={j.error || undefined}
-                  onClick={() => onOpenScan(j.id)}>
-                  <td data-label="When" className="mono" style={{ color: 'var(--muted)' }}>{relTime(j.created_at)}</td>
-                  <td data-label="Source">{j.proxy_name || 'Core server'}</td>
-                  <td data-label="Target" className={j.kind === 'unifi' ? undefined : 'mono'}>{j.kind === 'unifi' ? `UniFi sweep · ${j.controller_name || '?'}` : j.cidr}</td>
-                  <td data-label="Found">{j.state === 'done' ? `${j.found ?? 0} device${(j.found ?? 0) === 1 ? '' : 's'} · ${j.new ?? 0} new` : '-'}</td>
-                  <td data-label="Status"><span className={'tag' + (j.state === 'done' ? ' online' : j.state === 'failed' ? '' : ' pending')}>{j.state === 'dispatched' ? (j.kind === 'unifi' ? 'sweeping' : 'scanning') : j.state === 'pending' ? 'queued' : j.state}</span></td>
-                  <td data-label="By" style={{ color: 'var(--muted)' }}>{j.requested_by || '-'}</td>
-                  <td data-label="" onClick={(e) => e.stopPropagation()}>
-                    <button className="iconbtn" title="Delete this scan" aria-label="Delete this scan" onClick={() => void deleteJob(j)}>
-                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" /></svg>
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      </section>}
     </>
   )
 }
