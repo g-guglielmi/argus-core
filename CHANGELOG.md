@@ -11,7 +11,13 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.5.0] - 2026-09-22
+
+> **Milestone: the PRTG "Add Sensor" replacement is complete.** This version number was reserved
+> for finished auto-discovery (§B): the universal subnet scan, the UniFi controller sweep, the
+> controller-enriched scans and the review-and-adopt pipeline shipped across v0.4.56-v0.4.58 and
+> are lab-validated on a real multi-site fleet. v0.5.0 caps the arc and adds the lifecycle
+> management below - the core now keeps ITSELF current, not just its probes.
 
 **Added:**
 - **Core Zabbix minor updates, managed from Settings (§14c extension).** The core's `zabbix-*`

@@ -65,7 +65,7 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
   re-running `deploy/core/setup-core-patching.sh`. - _(ops+BE+FE)_ S-M
 - [x] **OS patching & lifecycle** (core + probe VMs) - `unattended-upgrades` (security-suite only, respects the core's Timescale hold) + `needrestart` baked into the golden image and installed on the core by `setup-core.sh`. **Probes** auto-reboot in a weekly ~03:00 window (they buffer offline); **core** reboot is operator-scheduled via a **Settings → OS updates** mask (pick day+time, or notify-only; default notify-only). Probes report pending-security-update count + `reboot-required` hourly (`POST /api/probes/os-status`) and the core reports its own via a host timer into the shared update dir; surfaced on the **Probes** page (**OS** column + "N need a reboot") and Settings. Patching stays **local, never remote-triggered** (no clean apt rollback); hypervisor snapshots are the safety net. See DESIGN §14c. **v0.4.32 (core) + probe-vm/v0.3.1.** - _(ops+BE+FE)_ M-L
 
-### B. Auto-provisioning / discovery (Phase 4 - "replaces PRTG Add Sensor")
+### B. Auto-provisioning / discovery (Phase 4 - "replaces PRTG Add Sensor") - COMPLETE, v0.5.0 milestone
 - [x] **Universal subnet scan** (slice 1, shipped) - the admin-only **Discovery** tab: pick a probe
   (job rides the probe **check-in channel**, 60s tick; `argus_netscan.py`, stdlib-only, no nmap) OR
   the **core server** (in-process Go scanner, `internal/netscan`), results come back as raw
@@ -109,9 +109,13 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 **SNMP gaps** (DESIGN §5) - unRAID disk-temp/SMART, Hyper-V per-VM (WMI), XCP-NG XAPI, UniFi PoE/WAN, AdGuard stats, NUT protocol - are handled inside the per-class work above, not a separate track.
 
 ### D. Management UI screens
-- [ ] **Device management** - add/edit, assign site+proxy, class, per-device threshold overrides - _(FE+BE)_ M
+- [~] **Device management** - largely landed along the way: Add-device modal (class + macros +
+  site/proxy, v0.4.41), the URL-backed host-settings dialog (identity, interfaces, SNMP
+  inheritance, class macros, collector switch), group management, and discovery adoption. What
+  remains folds into the thresholds item below. - _(FE+BE)_
+- [ ] **Thresholds** - global defaults + per-device/per-sensor overrides in the UI (classes carry
+  macro-based defaults today; overriding means hand-editing host macros) - _(FE+BE)_ M
 - [ ] **Sensor-category order in the GUI** - reorder a host's sensor categories from the UI (per class or per host), replacing the two built-in profiles (server = compute-first, network gear = network-first) - _(FE+BE)_ S-M
-- [ ] **Thresholds** - global defaults + per-device/sensor overrides - _(FE+BE)_ M
 - [ ] **Settings expansion** - retention controls, proxy health, allowed-hosts - _(FE+BE)_ S-M
 
 ### E. Auth / account gaps
@@ -164,11 +168,18 @@ Done: ~~deep-link URLs~~ ✅ · ~~password reset~~ ✅ (v0.3.3) · ~~probe enrol
 ~~UI standardization / design system~~ ✅ (v0.4.10) ·
 ~~smaller-wins pass: global search + per-channel severity + self-update toggle + labeled axes~~ ✅ (v0.4.27).
 
-Re-evaluated from here:
+Re-evaluated at **v0.5.0** (2026-09-22): ~~§C core arc~~ ✅ (C0-C1 + the lab-testable C2 classes,
+v0.4.38-v0.4.55) · ~~§B auto-discovery~~ ✅ (subnet scan + UniFi sweep + enrichment + review/adopt,
+v0.4.56-v0.4.58) · plus the §14 lifecycle line (OS patching, core Zabbix minors, core time).
 
-1. **The 1.0 lift - "replaces PRTG Add Sensor" (§C → §B → §D)** _(next)_ **:** build/verify the **device-class templates** (§C, the foundation), then **auto-discovery** (§B: UniFi sweep → fingerprint → LLD → "Discovered - review"), then the **device/threshold management UI** (§D). This is the core work that gets Argus to a production **1.0**. Start with §C phase **C1**: **Generic Linux SNMP + UniFi Switch** end-to-end (SNMP-first fleet; templates are hand-authored Zabbix YAML imported at bootstrap) so discovery and the threshold UI have a concrete shape to build against. See §C for the C0/C1/C2 breakdown.
-2. **Scale & production readiness (§G)** - sizing pass + server-side census before the ~6000-sensor
-   deployment.
-3. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
+1. **§D: thresholds UI** _(next)_ - the last pillar of the 1.0 lift. Global defaults +
+   per-device/per-sensor overrides with a real screen instead of hand-edited macros; fold in the
+   sensor-category ordering while in there.
+2. **Production rollout** - move real sites onto Argus. This is also the trigger for the rest of
+   **C2** (Aruba/Instant On, QNAP, Sophos, NetScaler, Libraesva, Hyper-V, Nutanix Prism, Citrix,
+   vSphere): build each class when a production site actually needs it, lab-first as always.
+3. **Scale & production readiness (§G)** - sizing pass + server-side census before the
+   ~6000-sensor deployment.
+4. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
 
 Blocked / deferred: **site4** probe (§A) - its building is under renovation, so it won't come online in the near term; bring it online once that's done.
