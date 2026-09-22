@@ -3897,6 +3897,14 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
         <h2>Network discovery</h2>
         <span className="hint">scan a subnet from the core or a probe, then adopt what answered</span>
       </div>
+      {/* The built-in guide: say what a scan will actually do, and surface the invisible
+          controller enrichment - naming the controllers that will be consulted. */}
+      <p className="panel-intro">
+        Argus probes every address in the range from the collector you pick (ping, common service ports, SNMP, HTTP, DNS) and suggests a device class for whatever answers - review below, then adopt or ignore.{' '}
+        {(ctls || []).length > 0
+          ? <>Results are also checked against your saved controller{(ctls || []).length === 1 ? '' : 's'} (<b>{(ctls || []).map((c) => c.name).join(', ')}</b>): UniFi gear found in the range comes back with its exact model and all its UniFi settings pre-filled, as if swept.</>
+          : <>Save a UniFi controller below and scans will additionally identify its gear exactly, settings pre-filled.</>}
+      </p>
       <div className="disc-form" style={{ padding: '12px 1rem 0.9rem' }}>
         <div style={grid}>
           <Field label="Scan from">
@@ -3928,10 +3936,13 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
         <span className="hint">pull the adopted devices straight from a controller - exact models, macros pre-filled</span>
         <div className="tools"><Button onClick={() => { const next = !manageCtls; setManageCtls(next); setCtlForm(next && (ctls?.length || 0) === 0 ? { id: 0, name: '', url: '', key: '' } : null) }}>{manageCtls ? 'Done' : 'Manage controllers'}</Button></div>
       </div>
+      <p className="panel-intro">
+        No wire scan here: Argus asks the controller itself for every device it manages, across all its sites - instant and exact, even where a scan sees nothing. It takes a saved controller (base URL + an API key from UniFi Network → Settings → Control Plane → Integrations); devices adopted from a sweep arrive with all their UniFi settings filled in automatically, the API key included - nothing to type per device.
+      </p>
       <div className="disc-form" style={{ padding: '12px 1rem 0.9rem' }}>
         {ctls !== null && ctls.length === 0 && !manageCtls && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap' }}>
-            <span style={{ color: 'var(--muted)', fontSize: 13 }}>No controllers saved yet - its API key comes from UniFi Network → Settings → Control Plane → Integrations.</span>
+            <span style={{ color: 'var(--muted)', fontSize: 13 }}>No controllers saved yet.</span>
             <Button onClick={() => { setManageCtls(true); setCtlForm({ id: 0, name: '', url: '', key: '' }) }}>+ Add controller</Button>
           </div>
         )}

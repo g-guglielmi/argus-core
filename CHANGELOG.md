@@ -17,7 +17,9 @@ GitHub Release from the matching section below.
 - **Discovery page split into clearly-bounded cards.** Subnet scan, UniFi controller sweep and
   Recent scans are now three separate panels instead of stacked headings in one, and "Manage
   controllers" is a proper button on the sweep card (with a direct "+ Add controller" shortcut
-  when none are saved yet).
+  when none are saved yet). Each card opens with a built-in explainer of what Argus will do and
+  what it needs - the scan card even names the saved controllers its results will be checked
+  against (or invites you to save one).
 
 **Added (discovery, minor):**
 - **Scans can be deleted from the history** (trash icon on the row, or Delete inside the opened
