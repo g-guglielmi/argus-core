@@ -23,14 +23,14 @@ GitHub Release from the matching section below.
   and restarts `zabbix-server` - a seconds-long blip the proxies buffer through. Major upgrades
   are never automated. Existing cores enable the new reporter + watcher by re-running
   `deploy/core/setup-core-patching.sh` (one command, documented in deploy/README).
-- **Core time in Settings: timezone + clock-sync monitoring.** Every schedule on the OS-updates
-  card runs on the VM's clock, so the card now shows the VM's timezone and whether the clock is
-  NTP-synchronized (Debian's systemd-timesyncd), with a warning pill when it is not - a
-  monitoring box with a drifting clock corrupts every timestamp. The timezone has one source of
-  truth: the existing Settings → General → Timezone (ARGUS_TZ) now also drives the VM - a host
-  timer applies the IANA name via timedatectl (validated against the zoneinfo database) and
-  restarts zabbix-server to pick it up; the built-in UTC default is never pushed, so a
-  first-boot timezone is never overridden. The "reported Xm ago" stamp moved into the
+- **Core VM clock in Settings: timezone + clock-sync monitoring.** The General card now shows
+  the core VM's timezone and whether its clock is NTP-synchronized (Debian's systemd-timesyncd),
+  with a warning pill when it is not - a monitoring box with a drifting clock corrupts every
+  timestamp. It sits right under its source of truth: the existing Settings → General → Timezone
+  (ARGUS_TZ) now also drives the VM - a host timer applies the IANA name via timedatectl
+  (validated against the zoneinfo database) and restarts zabbix-server to pick it up; the
+  built-in UTC default is never pushed, so a first-boot timezone is never overridden. The
+  "reported Xm ago" stamp moved into the
   card header to make clear one host report feeds every section, and the window hints now say
   "the core VM's local time" instead of the ambiguous "(local)". Ships in the same
   setup-core-patching.sh re-run as the Zabbix-updates reporter.

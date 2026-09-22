@@ -808,27 +808,9 @@ function OSUpdates() {
         )}
       </div>
 
-      {/* Core time: the VM clock drives every schedule on this page, so its timezone and NTP
-          sync state live here. The timezone is applied host-side (argus-tz-check + timedatectl,
-          validated against zoneinfo) - same local-only file channel as the windows. */}
-      {c?.available && (
-        <div className="set-row">
-          <div className="set-head"><span className="complabel">Core time</span></div>
-          {!c.tz && c.clock_sync === undefined ? (
-            <p className="set-hint" style={{ marginTop: 0 }}>The host reporter predates time reporting - re-run <span className="mono">deploy/core/setup-core-patching.sh</span> from the repo to enable this section.</p>
-          ) : (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
-                {c.tz && <span className="mono">{c.tz}</span>}
-                {c.clock_sync === true && <span className="tag online" title="systemd-timesyncd reports the clock as NTP-synchronized">clock synced</span>}
-                {c.clock_sync === false && <span className="tag avail" title="The VM clock is NOT NTP-synchronized - timestamps will drift; check systemd-timesyncd on the core">clock NOT synced</span>}
-              </div>
-              <p className="set-hint" style={{ marginBottom: 0 }}>Every schedule on this page runs on the VM's clock. The timezone follows <strong>General → Timezone</strong> above - one setting for Argus and the VM (a host timer applies changes via timedatectl and restarts zabbix-server).</p>
-            </>
-          )}
-        </div>
-      )}
-
+      {/* The VM's timezone + clock-sync status render in the GENERAL settings card, next to the
+          Timezone setting that drives them - not here (user's call: this card is about updates).
+          The window hints below still note that schedules run on the VM's clock. */}
       <div className="set-row">
         <div className="set-head"><span className="complabel">Core reboot window</span></div>
         <p className="set-hint" style={{ marginTop: 0 }}>Security patches apply automatically, but the core hosts the database and Zabbix, so its <strong>reboot</strong> is never unattended by default. Probe VMs reboot themselves in a weekly ~03:00 window.</p>
@@ -1354,6 +1336,9 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
   const [busy, setBusy] = useState(false)
   const [advBusy, setAdvBusy] = useState(false)
   const [zbx, setZbx] = useState<{ reachable: boolean; version?: string; error?: string } | null>(null)
+  // The core VM's time status (zone + NTP sync), shown under the General group's Timezone field
+  // since that setting is what drives the VM's clock.
+  const [coreTime, setCoreTime] = useState<OSStatus['core'] | null>(null)
 
   // Advanced mode is a per-user preference (saved on the admin's own account, like the landing page),
   // NOT a server-wide setting - enabling it never changes what anyone else sees.
@@ -1372,7 +1357,10 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
   function checkHealth() {
     fetch('/api/health').then((r) => r.json()).then((h) => setZbx(h.zabbix)).catch(() => setZbx(null))
   }
-  useEffect(() => { load(); checkHealth() }, [])
+  useEffect(() => {
+    load(); checkHealth()
+    fetch('/api/os/status').then((r) => (r.ok ? r.json() : null)).then((d: OSStatus | null) => { if (d?.core.available) setCoreTime(d.core) }).catch(() => {})
+  }, [])
 
   const dirty = Object.keys(edits).length > 0
   const setEdit = (k: string, v: string) => setEdits((e) => ({ ...e, [k]: v }))
@@ -1460,6 +1448,20 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
                 </div>
               )}
               {gi.map(field)}
+              {/* The core VM's clock follows the Timezone field above (mirrored through the
+                  update-dir channel, applied by a host timer via timedatectl) - so its live
+                  state belongs right here, Connection-status style. */}
+              {g.name === 'General' && coreTime && (coreTime.tz || coreTime.clock_sync !== undefined) && (
+                <div className="set-row" style={{ marginBottom: 0 }}>
+                  <div className="set-head"><span className="flabel">Core VM clock</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    {coreTime.tz && <span className="mono">{coreTime.tz}</span>}
+                    {coreTime.clock_sync === true && <span className="tag online" title="systemd-timesyncd reports the clock as NTP-synchronized">clock synced</span>}
+                    {coreTime.clock_sync === false && <span className="tag avail" title="The VM clock is NOT NTP-synchronized - timestamps will drift; check systemd-timesyncd on the core">clock NOT synced</span>}
+                  </div>
+                  <span className="set-hint">The VM applies the Timezone above via a host timer (timedatectl); every schedule under OS updates runs on this clock.</span>
+                </div>
+              )}
             </section>
           )
         })}
