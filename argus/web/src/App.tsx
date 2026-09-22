@@ -806,19 +806,22 @@ function OSUpdates() {
       <div className="set-row">
         <div className="set-head"><span className="complabel">Core reboot window</span></div>
         <p className="set-hint" style={{ marginTop: 0 }}>Security patches apply automatically, but the core hosts the database and Zabbix, so its <strong>reboot</strong> is never unattended by default. Probe VMs reboot themselves in a weekly ~03:00 window.</p>
+        {/* Widths are deliberate: the caps must sum well under .set-row's 560px so the Save
+            button never wraps on font-rendering hairlines (it did). Same caps on both rows. */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <select className="input" value={mode} onChange={(e) => setMode(e.target.value)} style={{ maxWidth: 320 }}>
-            <option value="notify">Notify only - never reboot automatically</option>
-            <option value="auto">Auto-reboot weekly when needed</option>
+          <select className="input" value={mode} onChange={(e) => setMode(e.target.value)} style={{ maxWidth: 220 }}>
+            <option value="notify">Notify only</option>
+            <option value="auto">Auto-reboot weekly</option>
           </select>
           {mode === 'auto' && <>
-            <select className="input" value={weekday} onChange={(e) => setWeekday(parseInt(e.target.value, 10))} style={{ maxWidth: 160 }}>
+            <select className="input" value={weekday} onChange={(e) => setWeekday(parseInt(e.target.value, 10))} style={{ maxWidth: 140 }}>
               {WEEKDAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
             </select>
-            <input className="input" type="time" value={time} onChange={(e) => setTime(e.target.value)} style={{ maxWidth: 130 }} />
+            <input className="input" type="time" value={time} onChange={(e) => setTime(e.target.value)} style={{ maxWidth: 120 }} />
           </>}
           <Button variant="default" onClick={save} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save'}</Button>
         </div>
+        {mode === 'notify' && <p className="set-hint" style={{ marginBottom: 0 }}>Notify only: Argus flags "reboot needed" and leaves the reboot to you.</p>}
         {mode === 'auto' && <p className="set-hint" style={{ marginBottom: 0 }}>The core reboots only when an update requires it, on <strong>{WEEKDAYS[weekday]}</strong> at <strong>{time}</strong> (local). Take a hypervisor snapshot as your safety net.</p>}
       </div>
 
@@ -841,20 +844,22 @@ function OSUpdates() {
               </div>
             )}
             <p className="set-hint" style={{ marginTop: 0 }}>Minor updates within the same Zabbix line (e.g. 7.0.x) - the server restart is a seconds-long blip the probes buffer through. Major upgrades are never automated: they migrate the database and are a planned, snapshot-first event.</p>
+            {/* Same deliberate width caps as the reboot row - see the comment there. */}
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <select className="input" value={zMode} onChange={(e) => setZMode(e.target.value)} style={{ maxWidth: 320 }}>
-                <option value="notify">Notify only - never update automatically</option>
-                <option value="auto">Auto-update weekly when available</option>
+              <select className="input" value={zMode} onChange={(e) => setZMode(e.target.value)} style={{ maxWidth: 220 }}>
+                <option value="notify">Notify only</option>
+                <option value="auto">Auto-update weekly</option>
               </select>
               {zMode === 'auto' && <>
-                <select className="input" value={zWeekday} onChange={(e) => setZWeekday(parseInt(e.target.value, 10))} style={{ maxWidth: 160 }}>
+                <select className="input" value={zWeekday} onChange={(e) => setZWeekday(parseInt(e.target.value, 10))} style={{ maxWidth: 140 }}>
                   {WEEKDAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
                 </select>
-                <input className="input" type="time" value={zTime} onChange={(e) => setZTime(e.target.value)} style={{ maxWidth: 130 }} />
+                <input className="input" type="time" value={zTime} onChange={(e) => setZTime(e.target.value)} style={{ maxWidth: 120 }} />
               </>}
               <Button variant="default" onClick={saveZ} disabled={busy || !zDirty}>{busy ? 'Saving…' : 'Save'}</Button>
             </div>
             {zMode === 'auto' && <p className="set-hint" style={{ marginBottom: 0 }}>Pending zabbix-* minors apply on <strong>{WEEKDAYS[zWeekday]}</strong> at <strong>{zTime}</strong> (local), then zabbix-server restarts.</p>}
+            {zMode === 'notify' && <p className="set-hint" style={{ marginBottom: 0 }}>Notify only: Argus shows when a minor is available and leaves applying it to you.</p>}
           </>
         )}
       </div>

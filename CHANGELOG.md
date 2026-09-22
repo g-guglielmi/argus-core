@@ -24,6 +24,13 @@ GitHub Release from the matching section below.
   are never automated. Existing cores enable the new reporter + watcher by re-running
   `deploy/core/setup-core-patching.sh` (one command, documented in deploy/README).
 
+**Fixed:**
+- **The OS-updates Save buttons no longer wrap unpredictably.** The two window rows sat within
+  2px of the settings card's width, so whether Save fit on the line depended on font-rendering
+  hairlines - it could sit beside one row and below the other. Shorter mode labels (the hints
+  carry the detail, including a new notify-mode line) and tighter field caps give both rows the
+  same one-line layout with real slack.
+
 ## [0.4.58] - 2026-09-22
 
 **Changed:**
