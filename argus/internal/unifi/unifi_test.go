@@ -21,7 +21,7 @@ const devicesDefault = `{"meta":{"rc":"ok"},"data":[
 ]}`
 
 const devicesSite2 = `{"meta":{"rc":"ok"},"data":[
-  {"ip":"10.0.1.1","mac":"AA:BB:CC:00:00:05","name":"gw-branch","model":"UXGLITE","type":"uxg","state":1,"version":"3.2.12","adopted":true}
+  {"ip":"203.0.113.5","lan_ip":"10.0.1.1","mac":"AA:BB:CC:00:00:05","name":"gw-branch","model":"UXGLITE","type":"uxg","state":1,"version":"3.2.12","adopted":true}
 ]}`
 
 func serve(t *testing.T, prefix string, requireKey string) *httptest.Server {
@@ -70,6 +70,9 @@ func TestSweepUniFiOSPrefix(t *testing.T) {
 	}
 	if devs[2].Site != "a1b2c3" || devs[2].SiteDesc != "Site 2" {
 		t.Fatalf("second site wrong: %+v", devs[2])
+	}
+	if devs[2].IP != "10.0.1.1" {
+		t.Fatalf("gateway must use lan_ip (its \"ip\" is the WAN address), got %q", devs[2].IP)
 	}
 }
 

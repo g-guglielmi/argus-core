@@ -73,6 +73,7 @@ func Sweep(ctx context.Context, baseURL, apiKey string) ([]Device, error) {
 		var devices struct {
 			Data []struct {
 				IP      string `json:"ip"`
+				LanIP   string `json:"lan_ip"` // gateways report their WAN address as "ip"
 				MAC     string `json:"mac"`
 				Name    string `json:"name"`
 				Model   string `json:"model"`
@@ -86,11 +87,17 @@ func Sweep(ctx context.Context, baseURL, apiKey string) ([]Device, error) {
 			return nil, fmt.Errorf("site %s: %w", site.Name, err)
 		}
 		for _, d := range devices.Data {
-			if !d.Adopted || strings.TrimSpace(d.IP) == "" {
+			// Prefer lan_ip: for the gateway itself "ip" is the WAN address, and monitoring (plus
+			// the already-monitored dedupe) wants the LAN one. Switches/APs just carry "ip".
+			ip := strings.TrimSpace(d.LanIP)
+			if ip == "" {
+				ip = strings.TrimSpace(d.IP)
+			}
+			if !d.Adopted || ip == "" {
 				continue
 			}
 			out = append(out, Device{
-				IP:       strings.TrimSpace(d.IP),
+				IP:       ip,
 				MAC:      strings.ToLower(strings.TrimSpace(d.MAC)),
 				Name:     strings.TrimSpace(d.Name),
 				Model:    d.Model,
