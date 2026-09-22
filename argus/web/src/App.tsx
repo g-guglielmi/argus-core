@@ -1014,7 +1014,9 @@ function VersionAbout() {
                 {whatsNew}
               </>
             )
-            return <p className="set-hint" style={{ marginBottom: 8, maxWidth: 560 }}>A newer <span className="mono">:testing</span> build{v.dev_target ? <> - <span className="mono">{v.dev_target}</span></> : ''} has been published (unreleased changes past {running}). Updating re-pulls the testing channel in place.</p>
+            {/* No version here on purpose: it already shows in the pill above and on the update
+                button below (user feedback - the sentence read three times over). */}
+            return <p className="set-hint" style={{ marginBottom: 8, maxWidth: 560 }}>A newer <span className="mono">:testing</span> build has been published - changes on top of the build you are running, not yet in a tagged release. Updating re-pulls the testing channel in place.</p>
           })()}
           <div className="set-row" style={{ marginBottom: 0 }}>
             {upd && upd.self_update_enabled ? (
