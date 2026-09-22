@@ -47,9 +47,16 @@ into `ARGUS_STATE_DIR` (default `/opt/argus/update`) - set that to the **same ho
 Argus container's `ARGUS_UPDATE_DIR`, so the core shows its own status and the chosen reboot window is
 honoured locally. Probe VMs patch + reboot themselves (weekly ~03:00) and report status the same way.
 
+The same channel handles **core Zabbix minor updates**: the reporter includes the installed +
+candidate `zabbix-*` version, Settings → OS updates shows "core vs fleet" and offers a second
+weekly window (notify-only by default) in which a host timer applies same-major `zabbix-*` updates
+and restarts `zabbix-server` (a seconds-long blip the proxies buffer through). Major Zabbix
+upgrades are never automated.
+
 > On an **already-running core**, don't re-run the whole installer just for this - run the standalone
 > `core/setup-core-patching.sh` instead: `sudo ARGUS_STATE_DIR=/docker/argus-update ./setup-core-patching.sh`
-> (the host path bound to the core container's `/update`). It installs only the patching + reporter bits.
+> (the host path bound to the core container's `/update`). It installs only the patching + reporter +
+> zabbix-watcher bits, and re-running it after an upgrade refreshes them in place.
 
 After it's up:
 - Zabbix web UI (admin engine room) on the VM - lock it to the private network / admin only.

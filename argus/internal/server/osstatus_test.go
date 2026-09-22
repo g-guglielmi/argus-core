@@ -32,3 +32,26 @@ func TestRebootWindowValid(t *testing.T) {
 		t.Errorf("default reboot window mode = %q, want notify (core must never reboot unannounced)", defaultRebootWindow().Mode)
 	}
 }
+
+// The fleet's Zabbix version comes from the probes' image versions ("<zabbix>-rN"): the newest
+// x.y.z prefix wins, junk is skipped.
+func TestFleetZbxVersion(t *testing.T) {
+	cases := []struct {
+		name     string
+		versions []string
+		want     string
+	}{
+		{"empty", nil, ""},
+		{"single", []string{"7.0.30-r14"}, "7.0.30"},
+		{"newest wins", []string{"7.0.30-r14", "7.0.31-r2", "7.0.29-r1"}, "7.0.31"},
+		{"numeric not lexicographic", []string{"7.0.9-r1", "7.0.31-r2"}, "7.0.31"},
+		{"major beats minor", []string{"7.0.31-r2", "7.2.1-r1"}, "7.2.1"},
+		{"junk skipped", []string{"", "dev", "7.0-r1", "7.0.31-r2"}, "7.0.31"},
+		{"no revision suffix", []string{"7.0.31"}, "7.0.31"},
+	}
+	for _, c := range cases {
+		if got := fleetZbxVersion(c.versions); got != c.want {
+			t.Errorf("%s: fleetZbxVersion(%v) = %q, want %q", c.name, c.versions, got, c.want)
+		}
+	}
+}

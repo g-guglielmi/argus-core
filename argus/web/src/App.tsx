@@ -725,9 +725,12 @@ type UpdateState = {
 //                  argus-updater sidecar is wired up) a one-click "Update now" button
 // The one-click update is performed by the argus-updater sidecar (which holds the Docker socket); the
 // core just drops a request and polls /api/update/state, showing a running / success / failure banner.
+type OSWindow = { mode: string; weekday: number; hour: number; minute: number }
 type OSStatus = {
-  core: { available: boolean; sec_updates: number; reboot_required: boolean; reported_at: number; os?: string }
-  reboot_window: { mode: string; weekday: number; hour: number; minute: number }
+  core: { available: boolean; sec_updates: number; reboot_required: boolean; reported_at: number; os?: string; zbx_server?: string; zbx_candidate?: string }
+  reboot_window: OSWindow
+  zbx_window: OSWindow
+  fleet_zbx?: string
 }
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -741,6 +744,10 @@ function OSUpdates() {
   const [mode, setMode] = useState('notify')
   const [weekday, setWeekday] = useState(0)
   const [time, setTime] = useState('03:00')
+  // Zabbix minor-update window (same shape, separate policy).
+  const [zMode, setZMode] = useState('notify')
+  const [zWeekday, setZWeekday] = useState(0)
+  const [zTime, setZTime] = useState('04:00')
   const [busy, setBusy] = useState(false)
 
   const timeStr = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
@@ -750,27 +757,35 @@ function OSUpdates() {
     setMode(d.reboot_window.mode)
     setWeekday(d.reboot_window.weekday)
     setTime(timeStr(d.reboot_window.hour, d.reboot_window.minute))
+    if (d.zbx_window) {
+      setZMode(d.zbx_window.mode)
+      setZWeekday(d.zbx_window.weekday)
+      setZTime(timeStr(d.zbx_window.hour, d.zbx_window.minute))
+    }
   }).catch(() => {})
   useEffect(() => { load() }, [])
 
   const dirty = !!os && (mode !== os.reboot_window.mode || (mode === 'auto' && (weekday !== os.reboot_window.weekday || time !== timeStr(os.reboot_window.hour, os.reboot_window.minute))))
-  const save = async () => {
-    const [h, m] = time.split(':').map((n) => parseInt(n, 10))
-    const body = mode === 'auto' ? { mode, weekday, hour: h || 0, minute: m || 0 } : { mode: 'notify' }
+  const zDirty = !!os && (zMode !== os.zbx_window.mode || (zMode === 'auto' && (zWeekday !== os.zbx_window.weekday || zTime !== timeStr(os.zbx_window.hour, os.zbx_window.minute))))
+  const saveWindow = async (url: string, label: string, m: string, wd: number, t: string) => {
+    const [h, mi] = t.split(':').map((n) => parseInt(n, 10))
+    const body = m === 'auto' ? { mode: m, weekday: wd, hour: h || 0, minute: mi || 0 } : { mode: 'notify' }
     setBusy(true)
     try {
-      const res = await fetch('/api/os/reboot-window', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      if (!res.ok) { toast.error(await errText(res, 'Could not save the reboot window')); return }
-      toast.success('Reboot window saved.'); await load()
+      const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      if (!res.ok) { toast.error(await errText(res, `Could not save the ${label}`)); return }
+      toast.success(`${label[0].toUpperCase()}${label.slice(1)} saved.`); await load()
     } finally { setBusy(false) }
   }
+  const save = () => saveWindow('/api/os/reboot-window', 'reboot window', mode, weekday, time)
+  const saveZ = () => saveWindow('/api/os/zbx-window', 'update window', zMode, zWeekday, zTime)
 
   const c = os?.core
   const sec = c ? c.sec_updates : -1
   return (
     <section className="set-card">
       <h3>OS updates</h3>
-      <p className="set-note">The Debian OS under the core and probe VMs patches itself locally - security updates only, applied automatically. Argus reports status and schedules the core's reboot; it never runs apt remotely (there's no clean rollback). Per-probe status is on the <strong>Probes</strong> page.</p>
+      <p className="set-note">The Debian OS under the core and probe VMs patches itself locally - security updates only, applied automatically. Argus reports status and schedules the core's reboot and Zabbix minor updates; it never runs apt remotely (there's no clean rollback). Per-probe status is on the <strong>Probes</strong> page.</p>
 
       <div className="set-row">
         <div className="set-head"><span className="complabel">Core</span></div>
@@ -788,7 +803,7 @@ function OSUpdates() {
         )}
       </div>
 
-      <div className="set-row" style={{ marginBottom: 0 }}>
+      <div className="set-row">
         <div className="set-head"><span className="complabel">Core reboot window</span></div>
         <p className="set-hint" style={{ marginTop: 0 }}>Security patches apply automatically, but the core hosts the database and Zabbix, so its <strong>reboot</strong> is never unattended by default. Probe VMs reboot themselves in a weekly ~03:00 window.</p>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -805,6 +820,43 @@ function OSUpdates() {
           <Button variant="default" onClick={save} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save'}</Button>
         </div>
         {mode === 'auto' && <p className="set-hint" style={{ marginBottom: 0 }}>The core reboots only when an update requires it, on <strong>{WEEKDAYS[weekday]}</strong> at <strong>{time}</strong> (local). Take a hypervisor snapshot as your safety net.</p>}
+      </div>
+
+      {/* Core Zabbix minor updates (same-major only). The Zabbix apt repo is pinned per major
+          line, and the host applier double-guards on the major.minor prefix - a major upgrade is
+          always a planned manual event (DB migration + Timescale compatibility). */}
+      <div className="set-row" style={{ marginBottom: 0 }}>
+        <div className="set-head"><span className="complabel">Core Zabbix updates</span></div>
+        {c?.available && !c.zbx_server ? (
+          <p className="set-hint" style={{ marginTop: 0 }}>The host reporter predates Zabbix version reporting - re-run <span className="mono">deploy/core/setup-core-patching.sh</span> from the repo to enable this section.</p>
+        ) : (
+          <>
+            {c?.zbx_server && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+                <span className="mono">Zabbix server {c.zbx_server}</span>
+                {c.zbx_candidate && c.zbx_candidate !== c.zbx_server
+                  ? <span className="tag avail" title="A minor update is available from the Zabbix repo">{c.zbx_candidate} available</span>
+                  : <span className="tag online">up to date</span>}
+                {os?.fleet_zbx && os.fleet_zbx !== c.zbx_server && <span className="set-hint" style={{ margin: 0 }}>fleet probes are on {os.fleet_zbx}</span>}
+              </div>
+            )}
+            <p className="set-hint" style={{ marginTop: 0 }}>Minor updates within the same Zabbix line (e.g. 7.0.x) - the server restart is a seconds-long blip the probes buffer through. Major upgrades are never automated: they migrate the database and are a planned, snapshot-first event.</p>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <select className="input" value={zMode} onChange={(e) => setZMode(e.target.value)} style={{ maxWidth: 320 }}>
+                <option value="notify">Notify only - never update automatically</option>
+                <option value="auto">Auto-update weekly when available</option>
+              </select>
+              {zMode === 'auto' && <>
+                <select className="input" value={zWeekday} onChange={(e) => setZWeekday(parseInt(e.target.value, 10))} style={{ maxWidth: 160 }}>
+                  {WEEKDAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                </select>
+                <input className="input" type="time" value={zTime} onChange={(e) => setZTime(e.target.value)} style={{ maxWidth: 130 }} />
+              </>}
+              <Button variant="default" onClick={saveZ} disabled={busy || !zDirty}>{busy ? 'Saving…' : 'Save'}</Button>
+            </div>
+            {zMode === 'auto' && <p className="set-hint" style={{ marginBottom: 0 }}>Pending zabbix-* minors apply on <strong>{WEEKDAYS[zWeekday]}</strong> at <strong>{zTime}</strong> (local), then zabbix-server restarts.</p>}
+          </>
+        )}
       </div>
     </section>
   )

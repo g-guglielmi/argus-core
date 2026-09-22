@@ -606,6 +606,18 @@ clean rollback, and a remote OS upgrade bricking a probe at a hard-to-reach site
 OS patches itself locally (reliable; hypervisor snapshots are the safety net) and core only *reports* -
 the remote-trigger-with-rollback pattern stays reserved for container images.
 
+**Core Zabbix minor updates (same machinery).** The probe fleet auto-tracks Zabbix minors through
+base-image rebuilds, but the core's `zabbix-*` packages come from the per-major-pinned Zabbix apt repo
+and are outside unattended-upgrades' security-only origins - so without help the core slowly drifts
+behind its own fleet. The §14c file channel closes that gap: the host reporter adds the installed +
+candidate `zabbix-server-pgsql` version to `os-status.json`, Settings → OS updates shows "core x.y.z /
+candidate / fleet" with a second operator mask (notify-only default), Argus mirrors it to
+`zbx-update-window.json`, and a host timer (`argus-zbx-update`, every 5 min) applies
+`apt-get install --only-upgrade zabbix-*` in the window - **same major.minor line only** (the repo
+pinning makes majors unreachable anyway; the script double-guards) - then restarts `zabbix-server`
+(a seconds-long blip the proxies buffer through) and re-reports. **Major Zabbix upgrades stay a
+planned manual event**: DB migration on first start + Timescale compatibility, snapshot first.
+
 **Golden-image refresh cadence.** Re-run Packer periodically (e.g. quarterly or on each Debian point
 release) so newly deployed probes ship already-patched instead of installing months of updates on first
 boot. **Major-version upgrades (Debian 13 -> 14) are a deliberate manual / re-image event** - never

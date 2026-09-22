@@ -136,9 +136,12 @@ Afterwards, `http://<vm-ip>/` redirects to Argus. The Zabbix UI stays available 
 - **First boot needs DHCP** (the chicken-and-egg is real: you reach the setup page by IP). To move to
   a static address afterwards, replace `/etc/systemd/network/10-argus-dhcp.network` with a static
   `.network` file (template in the DHCP file's comments) - or just give the VM a DHCP reservation.
-- **Zabbix / PostgreSQL package upgrades stay deliberate** - `apt upgrade` on the VM when *you*
-  choose (security patches are automatic; TimescaleDB is pinned to 2.28 for Zabbix 7.0). A major
-  Debian upgrade is a re-image event, as with the probe VM.
+- **Zabbix / PostgreSQL package upgrades stay deliberate** - security patches are automatic and
+  TimescaleDB is pinned to 2.28 for Zabbix 7.0. For **Zabbix minors** (7.0.x) you can opt into a
+  weekly update window under **Settings → OS updates** (notify-only by default; a host timer
+  applies same-major `zabbix-*` updates locally and restarts the server) - or keep running
+  `apt upgrade` yourself. Major Zabbix upgrades and a major Debian upgrade stay manual; the
+  latter is a re-image event, as with the probe VM.
 - **Argus + updater track `:latest`** by default; pin tags in `/etc/argus-core/image.env` if you want
   a reboot never to move versions. In-app updates (Settings → About) work from day one via the baked
   updater sidecar.

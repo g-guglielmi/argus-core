@@ -65,6 +65,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// Mirror the stored core reboot window to the shared update dir so the host reboot timer sees it
 	// even if the setting is never touched after this boot (DESIGN §14c). Best-effort.
 	s.syncRebootWindowFile(context.Background())
+	s.syncZbxWindowFile(context.Background())
 	// Import the device-class templates into Zabbix (§C). Background + idempotent; soft-skips
 	// until a Zabbix token is configured, and the create path re-checks before it needs them.
 	s.startTemplateReconcile(context.Background())
@@ -260,6 +261,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// the operator-scheduled core reboot window (admin sets it; a host timer honours it locally).
 	mux.HandleFunc("GET /api/os/status", auth.RequireAuth(s.handleOSStatus))
 	mux.HandleFunc("PUT /api/os/reboot-window", auth.RequireRole("admin", s.handleSetRebootWindow))
+	mux.HandleFunc("PUT /api/os/zbx-window", auth.RequireRole("admin", s.handleSetZbxWindow))
 
 	// user management (admin only)
 	mux.HandleFunc("GET /api/users", auth.RequireRole("admin", s.handleListUsers))

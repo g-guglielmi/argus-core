@@ -11,6 +11,19 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **Core Zabbix minor updates, managed from Settings (§14c extension).** The core's `zabbix-*`
+  packages come from the per-major-pinned Zabbix repo and are outside the security-only
+  auto-patching, so the core could silently drift behind its own auto-tracking probe fleet.
+  Settings → OS updates now shows the core's Zabbix server version, the available candidate and
+  the fleet's probe version, and offers a second weekly window (notify-only by default) next to
+  the reboot mask: in it, a new host timer applies pending same-major `zabbix-*` updates locally
+  and restarts `zabbix-server` - a seconds-long blip the proxies buffer through. Major upgrades
+  are never automated. Existing cores enable the new reporter + watcher by re-running
+  `deploy/core/setup-core-patching.sh` (one command, documented in deploy/README).
+
 ## [0.4.58] - 2026-09-22
 
 **Changed:**
