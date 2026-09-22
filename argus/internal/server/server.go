@@ -263,7 +263,6 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/os/status", auth.RequireAuth(s.handleOSStatus))
 	mux.HandleFunc("PUT /api/os/reboot-window", auth.RequireRole("admin", s.handleSetRebootWindow))
 	mux.HandleFunc("PUT /api/os/zbx-window", auth.RequireRole("admin", s.handleSetZbxWindow))
-	mux.HandleFunc("PUT /api/os/timezone", auth.RequireRole("admin", s.handleSetTimezone))
 
 	// user management (admin only)
 	mux.HandleFunc("GET /api/users", auth.RequireRole("admin", s.handleListUsers))

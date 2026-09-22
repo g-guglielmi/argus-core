@@ -35,6 +35,9 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	// The timezone setting also drives the core VM's clock: re-mirror it for the host timer
+	// (cheap no-op when unchanged or still on the built-in default).
+	s.syncTimezoneFile(ctx)
 	s.logger.Info("settings updated", "keys", keysOf(req.Values))
 	writeJSON(w, http.StatusOK, s.mgr.List())
 }

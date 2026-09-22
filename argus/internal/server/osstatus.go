@@ -43,12 +43,11 @@ const zbxWindowFile = "zbx-update-window.json"
 // zbxWindowKey is the app_meta key holding the Zabbix minor-update window (JSON).
 const zbxWindowKey = "core_zbx_update_window"
 
-// tzFile is where Argus mirrors the operator-chosen VM timezone for the host timer
-// (argus-tz-check applies it via timedatectl after validating against the zoneinfo database).
+// tzFile is where Argus mirrors the configured timezone for the host timer (argus-tz-check
+// applies it via timedatectl after validating against the zoneinfo database). The source of
+// truth is the ordinary Settings -> General -> Timezone setting (ARGUS_TZ): ONE timezone drives
+// both the app's timestamps and the core VM's clock.
 const tzFile = "timezone.json"
-
-// tzKey is the app_meta key holding the desired VM timezone (an IANA name, "" = never set).
-const tzKey = "core_timezone"
 
 // tzSetting is the timezone.json payload.
 type tzSetting struct {
@@ -149,24 +148,15 @@ func (s *Server) syncZbxWindowFile(ctx context.Context) {
 	}
 }
 
-// loadTimezone reads the desired VM timezone ("" when the operator never set one - the host then
-// keeps whatever it has, typically the first-boot choice).
-func (s *Server) loadTimezone(ctx context.Context) string {
-	raw, ok, err := s.st.MetaGet(ctx, tzKey)
-	if err != nil || !ok || !validTimezone(raw) {
-		return ""
-	}
-	return raw
-}
-
-// syncTimezoneFile mirrors the desired timezone for the host's argus-tz-check timer. Nothing is
-// written while unset, so a fresh install never overrides the first-boot timezone.
-func (s *Server) syncTimezoneFile(ctx context.Context) {
+// syncTimezoneFile mirrors the configured timezone (Settings -> General, ARGUS_TZ) for the
+// host's argus-tz-check timer. Nothing is written while the setting sits on its built-in
+// default, so a fresh install never overrides the VM's first-boot timezone with UTC.
+func (s *Server) syncTimezoneFile(context.Context) {
 	if !s.cfg.SelfUpdateEnabled() {
 		return
 	}
-	tz := s.loadTimezone(ctx)
-	if tz == "" {
+	tz, configured := s.mgr.ConfiguredTimezone()
+	if !configured || !validTimezone(tz) {
 		return
 	}
 	if err := s.writeUpdateJSONAtomic(tzFile, tzSetting{TZ: tz}); err != nil {
@@ -237,7 +227,6 @@ type osStatusResponse struct {
 	RebootWindow rebootWindow `json:"reboot_window"`
 	ZbxWindow    rebootWindow `json:"zbx_window"`
 	FleetZbx     string       `json:"fleet_zbx,omitempty"` // newest Zabbix version among the probes
-	Timezone     string       `json:"timezone,omitempty"`  // desired VM timezone ("" = never set)
 }
 
 // coreOSStatus reads the core VM's OS status file from the shared update dir.
@@ -335,33 +324,7 @@ func (s *Server) handleOSStatus(w http.ResponseWriter, r *http.Request) {
 		RebootWindow: s.loadRebootWindow(ctx),
 		ZbxWindow:    s.loadZbxWindow(ctx),
 		FleetZbx:     fleet,
-		Timezone:     s.loadTimezone(ctx),
 	})
-}
-
-// handleSetTimezone stores the operator-chosen VM timezone and mirrors it for the host's
-// argus-tz-check timer (admin). The host validates against its zoneinfo database before applying
-// timedatectl - Argus only ships the wish through the same local-only file channel.
-func (s *Server) handleSetTimezone(w http.ResponseWriter, r *http.Request) {
-	var req tzSetting
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 512)).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
-		return
-	}
-	req.TZ = strings.TrimSpace(req.TZ)
-	if !validTimezone(req.TZ) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "enter an IANA timezone name, e.g. Europe/Rome"})
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
-	defer cancel()
-	if err := s.st.MetaSet(ctx, tzKey, req.TZ); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save the timezone"})
-		return
-	}
-	s.syncTimezoneFile(ctx)
-	s.logger.Info("core timezone set", "tz", req.TZ)
-	writeJSON(w, http.StatusOK, req)
 }
 
 // handleSetRebootWindow stores the operator-chosen core reboot window and mirrors it to the update dir

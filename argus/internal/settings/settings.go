@@ -58,7 +58,7 @@ var defs = []def{
 	{KeyZabbixURL, "ARGUS_ZABBIX_API_URL", "Zabbix API URL", "Connection", "url", false, "", "JSON-RPC endpoint, e.g. http://10.0.0.10:8080/api_jsonrpc.php", 0},
 	{KeyZabbixToken, "ARGUS_ZABBIX_API_TOKEN", "Zabbix API token", "Connection", "text", true, "", "Bearer token with write scope (for acknowledge/pause). Leave blank to keep the current value.", 0},
 	{KeyPublicURL, "ARGUS_PUBLIC_URL", "Public URL", "General", "url", false, "", "External base URL, used for Open/Acknowledge links in notifications.", 0},
-	{KeyTimezone, "ARGUS_TZ", "Timezone", "General", "tz", false, "UTC", "IANA name for notification timestamps, e.g. Europe/Rome.", 0},
+	{KeyTimezone, "ARGUS_TZ", "Timezone", "General", "tz", false, "UTC", "IANA name, e.g. Europe/Rome - used for notification timestamps AND applied to the core VM's clock by its host timer.", 0},
 	{KeyLoginMax, "ARGUS_LOGIN_MAX_ATTEMPTS", "Login max attempts", "Security", "int", false, "7", "Failed sign-ins per window before throttling.", 1},
 	{KeyLoginWindow, "ARGUS_LOGIN_WINDOW_MINUTES", "Login window (minutes)", "Security", "int", false, "15", "Sliding window for the attempt counter.", 1},
 	{KeySessionMax, "ARGUS_SESSION_MAX_HOURS", "Max session length (hours)", "Sessions", "int", false, "12", "Absolute lifetime of a sign-in before it must re-authenticate.", 1},
@@ -141,6 +141,19 @@ func (m *Manager) Location() *time.Location {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.loc
+}
+
+// ConfiguredTimezone returns the effective timezone and whether it was explicitly configured
+// (env or stored). The built-in UTC default reports false, so a caller mirroring the zone to
+// the core VM never overwrites a first-boot timezone with an unconfigured default.
+func (m *Manager) ConfiguredTimezone() (string, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	r, ok := m.snap[KeyTimezone]
+	if !ok || r.value == "" || r.source == "default" {
+		return r.value, false
+	}
+	return r.value, true
 }
 
 // ProbeCoreHost is the address probes should dial for the Zabbix server (:10051), or "" to let

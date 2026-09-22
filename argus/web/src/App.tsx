@@ -731,7 +731,6 @@ type OSStatus = {
   reboot_window: OSWindow
   zbx_window: OSWindow
   fleet_zbx?: string
-  timezone?: string
 }
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -749,8 +748,6 @@ function OSUpdates() {
   const [zMode, setZMode] = useState('notify')
   const [zWeekday, setZWeekday] = useState(0)
   const [zTime, setZTime] = useState('04:00')
-  // Desired VM timezone (an IANA name; the host applies it via timedatectl).
-  const [tz, setTz] = useState('')
   const [busy, setBusy] = useState(false)
 
   const timeStr = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
@@ -765,7 +762,6 @@ function OSUpdates() {
       setZWeekday(d.zbx_window.weekday)
       setZTime(timeStr(d.zbx_window.hour, d.zbx_window.minute))
     }
-    setTz(d.timezone || d.core.tz || '')
   }).catch(() => {})
   useEffect(() => { load() }, [])
 
@@ -783,15 +779,6 @@ function OSUpdates() {
   }
   const save = () => saveWindow('/api/os/reboot-window', 'reboot window', mode, weekday, time)
   const saveZ = () => saveWindow('/api/os/zbx-window', 'update window', zMode, zWeekday, zTime)
-  const tzDirty = !!os && tz.trim() !== '' && tz.trim() !== (os.timezone || os.core.tz || '')
-  const saveTz = async () => {
-    setBusy(true)
-    try {
-      const res = await fetch('/api/os/timezone', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tz: tz.trim() }) })
-      if (!res.ok) { toast.error(await errText(res, 'Could not save the timezone')); return }
-      toast.success('Timezone saved - the VM applies it within a few minutes.'); await load()
-    } finally { setBusy(false) }
-  }
 
   const c = os?.core
   const sec = c ? c.sec_updates : -1
@@ -836,11 +823,7 @@ function OSUpdates() {
                 {c.clock_sync === true && <span className="tag online" title="systemd-timesyncd reports the clock as NTP-synchronized">clock synced</span>}
                 {c.clock_sync === false && <span className="tag avail" title="The VM clock is NOT NTP-synchronized - timestamps will drift; check systemd-timesyncd on the core">clock NOT synced</span>}
               </div>
-              <p className="set-hint" style={{ marginTop: 0 }}>Every schedule on this page runs on the VM's clock. To change the timezone, enter an IANA name - a host timer applies it via timedatectl and restarts zabbix-server to pick it up.</p>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <input className="input" placeholder="Europe/Rome" value={tz} onChange={(e) => setTz(e.target.value)} style={{ maxWidth: 280 }} />
-                <Button variant="default" onClick={saveTz} disabled={busy || !tzDirty}>{busy ? 'Saving…' : 'Save'}</Button>
-              </div>
+              <p className="set-hint" style={{ marginBottom: 0 }}>Every schedule on this page runs on the VM's clock. The timezone follows <strong>General → Timezone</strong> above - one setting for Argus and the VM (a host timer applies changes via timedatectl and restarts zabbix-server).</p>
             </>
           )}
         </div>

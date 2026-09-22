@@ -622,10 +622,12 @@ planned manual event**: DB migration on first start + Timescale compatibility, s
 carries the VM timezone and `timedatectl`'s NTPSynchronized flag (Debian syncs via
 systemd-timesyncd out of the box): Settings shows both, with a warning pill when the clock is NOT
 synchronized - a monitoring box with a drifting clock corrupts every timestamp it collects. The
-timezone is operator-changeable from Settings: Argus mirrors the IANA name to `timezone.json` and
-a host timer (`argus-tz-check`) applies it via `timedatectl set-timezone` after validating the
-name against the local zoneinfo database, then restarts zabbix-server (long-running daemons cache
-the zone) and re-reports.
+timezone has ONE source of truth: the existing Settings → General → Timezone setting (ARGUS_TZ),
+which already drives the app's notification timestamps. When it is explicitly configured (env or
+stored - never the built-in UTC default, which must not override a first-boot choice), Argus
+mirrors the IANA name to `timezone.json` and a host timer (`argus-tz-check`) applies it via
+`timedatectl set-timezone` after validating the name against the local zoneinfo database, then
+restarts zabbix-server (long-running daemons cache the zone) and re-reports.
 
 **Golden-image refresh cadence.** Re-run Packer periodically (e.g. quarterly or on each Debian point
 release) so newly deployed probes ship already-patched instead of installing months of updates on first
