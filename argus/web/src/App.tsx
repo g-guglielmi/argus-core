@@ -1329,6 +1329,23 @@ type SettingItem = {
   env: string; value: string; source: string; locked: boolean; has_value: boolean
 }
 
+// VMClock is a live wall-clock in the core VM's timezone: the current instant is the same
+// everywhere, so formatting "now" in the VM's IANA zone IS the VM's local time (and the sync
+// pill next to it vouches that the VM's own clock agrees). Isolated so the 1s tick never
+// re-renders the whole settings form.
+function VMClock({ tz }: { tz: string }) {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const t = window.setInterval(() => setTick((n) => n + 1), 1000)
+    return () => clearInterval(t)
+  }, [])
+  let text = ''
+  try {
+    if (tz) text = new Intl.DateTimeFormat(undefined, { timeZone: tz, weekday: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date())
+  } catch { /* unknown zone name: fall back to showing just the zone */ }
+  return <input className="input" disabled value={text ? `${text} · ${tz}` : tz} aria-label="Core VM local time" />
+}
+
 function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
   const toast = useToast()
   const [items, setItems] = useState<SettingItem[] | null>(null)
@@ -1450,16 +1467,16 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
               {gi.map(field)}
               {/* The core VM's clock follows the Timezone field above (mirrored through the
                   update-dir channel, applied by a host timer via timedatectl) - so its live
-                  state belongs right here, Connection-status style. */}
+                  state belongs right here, styled like the fields around it. */}
               {g.name === 'General' && coreTime && (coreTime.tz || coreTime.clock_sync !== undefined) && (
                 <div className="set-row" style={{ marginBottom: 0 }}>
-                  <div className="set-head"><span className="flabel">Core VM clock</span></div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    {coreTime.tz && <span className="mono">{coreTime.tz}</span>}
+                  <div className="set-head">
+                    <span className="flabel">Core VM clock</span>
                     {coreTime.clock_sync === true && <span className="tag online" title="systemd-timesyncd reports the clock as NTP-synchronized">clock synced</span>}
                     {coreTime.clock_sync === false && <span className="tag avail" title="The VM clock is NOT NTP-synchronized - timestamps will drift; check systemd-timesyncd on the core">clock NOT synced</span>}
                   </div>
-                  <span className="set-hint">The VM applies the Timezone above via a host timer (timedatectl); every schedule under OS updates runs on this clock.</span>
+                  <VMClock tz={coreTime.tz || ''} />
+                  <span className="set-hint">Live time in the VM's timezone (the Timezone above, applied by a host timer via timedatectl); every schedule under OS updates runs on this clock.</span>
                 </div>
               )}
             </section>

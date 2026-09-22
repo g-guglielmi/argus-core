@@ -23,9 +23,9 @@ GitHub Release from the matching section below.
   and restarts `zabbix-server` - a seconds-long blip the proxies buffer through. Major upgrades
   are never automated. Existing cores enable the new reporter + watcher by re-running
   `deploy/core/setup-core-patching.sh` (one command, documented in deploy/README).
-- **Core VM clock in Settings: timezone + clock-sync monitoring.** The General card now shows
-  the core VM's timezone and whether its clock is NTP-synchronized (Debian's systemd-timesyncd),
-  with a warning pill when it is not - a monitoring box with a drifting clock corrupts every
+- **Core VM clock in Settings: live time + clock-sync monitoring.** The General card now shows
+  the core VM's clock as a live ticking field in its timezone, plus whether it is
+  NTP-synchronized (Debian's systemd-timesyncd), with a warning pill when it is not - a monitoring box with a drifting clock corrupts every
   timestamp. It sits right under its source of truth: the existing Settings → General → Timezone
   (ARGUS_TZ) now also drives the VM - a host timer applies the IANA name via timedatectl
   (validated against the zoneinfo database) and restarts zabbix-server to pick it up; the
