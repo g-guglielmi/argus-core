@@ -66,6 +66,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// even if the setting is never touched after this boot (DESIGN §14c). Best-effort.
 	s.syncRebootWindowFile(context.Background())
 	s.syncZbxWindowFile(context.Background())
+	s.syncTimezoneFile(context.Background())
 	// Import the device-class templates into Zabbix (§C). Background + idempotent; soft-skips
 	// until a Zabbix token is configured, and the create path re-checks before it needs them.
 	s.startTemplateReconcile(context.Background())
@@ -262,6 +263,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/os/status", auth.RequireAuth(s.handleOSStatus))
 	mux.HandleFunc("PUT /api/os/reboot-window", auth.RequireRole("admin", s.handleSetRebootWindow))
 	mux.HandleFunc("PUT /api/os/zbx-window", auth.RequireRole("admin", s.handleSetZbxWindow))
+	mux.HandleFunc("PUT /api/os/timezone", auth.RequireRole("admin", s.handleSetTimezone))
 
 	// user management (admin only)
 	mux.HandleFunc("GET /api/users", auth.RequireRole("admin", s.handleListUsers))

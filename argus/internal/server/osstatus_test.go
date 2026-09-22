@@ -3,7 +3,10 @@
 
 package server
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRebootWindowValid(t *testing.T) {
 	cases := []struct {
@@ -52,6 +55,23 @@ func TestFleetZbxVersion(t *testing.T) {
 	for _, c := range cases {
 		if got := fleetZbxVersion(c.versions); got != c.want {
 			t.Errorf("%s: fleetZbxVersion(%v) = %q, want %q", c.name, c.versions, got, c.want)
+		}
+	}
+}
+
+// The timezone shape check is deliberately light (the host's zoneinfo database is the real
+// gatekeeper) but must refuse anything that could misbehave in a JSON string or a shell-side sed.
+func TestValidTimezone(t *testing.T) {
+	good := []string{"Europe/Rome", "UTC", "America/Argentina/Buenos_Aires", "Etc/GMT+2", "US/East-Indiana"}
+	bad := []string{"", "/etc/passwd", "Europe/Rome\"x", "zone with spaces", "Europe/Rome;reboot", "-leading", "+plus", strings.Repeat("a", 65)}
+	for _, tz := range good {
+		if !validTimezone(tz) {
+			t.Errorf("validTimezone(%q) = false, want true", tz)
+		}
+	}
+	for _, tz := range bad {
+		if validTimezone(tz) {
+			t.Errorf("validTimezone(%q) = true, want false", tz)
 		}
 	}
 }

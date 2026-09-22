@@ -727,10 +727,11 @@ type UpdateState = {
 // core just drops a request and polls /api/update/state, showing a running / success / failure banner.
 type OSWindow = { mode: string; weekday: number; hour: number; minute: number }
 type OSStatus = {
-  core: { available: boolean; sec_updates: number; reboot_required: boolean; reported_at: number; os?: string; zbx_server?: string; zbx_candidate?: string }
+  core: { available: boolean; sec_updates: number; reboot_required: boolean; reported_at: number; os?: string; zbx_server?: string; zbx_candidate?: string; tz?: string; clock_sync?: boolean }
   reboot_window: OSWindow
   zbx_window: OSWindow
   fleet_zbx?: string
+  timezone?: string
 }
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -748,6 +749,8 @@ function OSUpdates() {
   const [zMode, setZMode] = useState('notify')
   const [zWeekday, setZWeekday] = useState(0)
   const [zTime, setZTime] = useState('04:00')
+  // Desired VM timezone (an IANA name; the host applies it via timedatectl).
+  const [tz, setTz] = useState('')
   const [busy, setBusy] = useState(false)
 
   const timeStr = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
@@ -762,6 +765,7 @@ function OSUpdates() {
       setZWeekday(d.zbx_window.weekday)
       setZTime(timeStr(d.zbx_window.hour, d.zbx_window.minute))
     }
+    setTz(d.timezone || d.core.tz || '')
   }).catch(() => {})
   useEffect(() => { load() }, [])
 
@@ -779,12 +783,27 @@ function OSUpdates() {
   }
   const save = () => saveWindow('/api/os/reboot-window', 'reboot window', mode, weekday, time)
   const saveZ = () => saveWindow('/api/os/zbx-window', 'update window', zMode, zWeekday, zTime)
+  const tzDirty = !!os && tz.trim() !== '' && tz.trim() !== (os.timezone || os.core.tz || '')
+  const saveTz = async () => {
+    setBusy(true)
+    try {
+      const res = await fetch('/api/os/timezone', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tz: tz.trim() }) })
+      if (!res.ok) { toast.error(await errText(res, 'Could not save the timezone')); return }
+      toast.success('Timezone saved - the VM applies it within a few minutes.'); await load()
+    } finally { setBusy(false) }
+  }
 
   const c = os?.core
   const sec = c ? c.sec_updates : -1
   return (
     <section className="set-card">
-      <h3>OS updates</h3>
+      {/* The reported-at stamp lives in the card header: ONE host report feeds every section
+          below (OS status AND the Zabbix versions), so it must not read as belonging to just
+          the first row. */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+        <h3>OS updates</h3>
+        {c?.available && c.reported_at > 0 && <span className="set-hint" style={{ margin: 0 }}>core status reported {relTime(c.reported_at)} - covers the OS and Zabbix sections below</span>}
+      </div>
       <p className="set-note">The Debian OS under the core and probe VMs patches itself locally - security updates only, applied automatically. Argus reports status and schedules the core's reboot and Zabbix minor updates; it never runs apt remotely (there's no clean rollback). Per-probe status is on the <strong>Probes</strong> page.</p>
 
       <div className="set-row">
@@ -798,10 +817,34 @@ function OSUpdates() {
             {sec > 0 && <span className="tag avail">{sec} security update{sec === 1 ? '' : 's'}</span>}
             {sec === 0 && !c.reboot_required && <span className="tag online">patched</span>}
             {sec < 0 && !c.reboot_required && <span className="mono" style={{ color: 'var(--faint)' }}>count unknown</span>}
-            {c.reported_at > 0 && <span className="set-hint" style={{ margin: 0 }}>reported {relTime(c.reported_at)}</span>}
           </div>
         )}
       </div>
+
+      {/* Core time: the VM clock drives every schedule on this page, so its timezone and NTP
+          sync state live here. The timezone is applied host-side (argus-tz-check + timedatectl,
+          validated against zoneinfo) - same local-only file channel as the windows. */}
+      {c?.available && (
+        <div className="set-row">
+          <div className="set-head"><span className="complabel">Core time</span></div>
+          {!c.tz && c.clock_sync === undefined ? (
+            <p className="set-hint" style={{ marginTop: 0 }}>The host reporter predates time reporting - re-run <span className="mono">deploy/core/setup-core-patching.sh</span> from the repo to enable this section.</p>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+                {c.tz && <span className="mono">{c.tz}</span>}
+                {c.clock_sync === true && <span className="tag online" title="systemd-timesyncd reports the clock as NTP-synchronized">clock synced</span>}
+                {c.clock_sync === false && <span className="tag avail" title="The VM clock is NOT NTP-synchronized - timestamps will drift; check systemd-timesyncd on the core">clock NOT synced</span>}
+              </div>
+              <p className="set-hint" style={{ marginTop: 0 }}>Every schedule on this page runs on the VM's clock. To change the timezone, enter an IANA name - a host timer applies it via timedatectl and restarts zabbix-server to pick it up.</p>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <input className="input" placeholder="Europe/Rome" value={tz} onChange={(e) => setTz(e.target.value)} style={{ maxWidth: 280 }} />
+                <Button variant="default" onClick={saveTz} disabled={busy || !tzDirty}>{busy ? 'Saving…' : 'Save'}</Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="set-row">
         <div className="set-head"><span className="complabel">Core reboot window</span></div>
@@ -822,7 +865,7 @@ function OSUpdates() {
           <Button variant="default" onClick={save} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save'}</Button>
         </div>
         {mode === 'notify' && <p className="set-hint" style={{ marginBottom: 0 }}>Notify only: Argus flags "reboot needed" and leaves the reboot to you.</p>}
-        {mode === 'auto' && <p className="set-hint" style={{ marginBottom: 0 }}>The core reboots only when an update requires it, on <strong>{WEEKDAYS[weekday]}</strong> at <strong>{time}</strong> (local). Take a hypervisor snapshot as your safety net.</p>}
+        {mode === 'auto' && <p className="set-hint" style={{ marginBottom: 0 }}>The core reboots only when an update requires it, on <strong>{WEEKDAYS[weekday]}</strong> at <strong>{time}</strong> (the core VM's local time). Take a hypervisor snapshot as your safety net.</p>}
       </div>
 
       {/* Core Zabbix minor updates (same-major only). The Zabbix apt repo is pinned per major
@@ -858,7 +901,7 @@ function OSUpdates() {
               </>}
               <Button variant="default" onClick={saveZ} disabled={busy || !zDirty}>{busy ? 'Saving…' : 'Save'}</Button>
             </div>
-            {zMode === 'auto' && <p className="set-hint" style={{ marginBottom: 0 }}>Pending zabbix-* minors apply on <strong>{WEEKDAYS[zWeekday]}</strong> at <strong>{zTime}</strong> (local), then zabbix-server restarts.</p>}
+            {zMode === 'auto' && <p className="set-hint" style={{ marginBottom: 0 }}>Pending zabbix-* minors apply on <strong>{WEEKDAYS[zWeekday]}</strong> at <strong>{zTime}</strong> (the core VM's local time), then zabbix-server restarts.</p>}
             {zMode === 'notify' && <p className="set-hint" style={{ marginBottom: 0 }}>Notify only: Argus shows when a minor is available and leaves applying it to you.</p>}
           </>
         )}

@@ -43,6 +43,38 @@ const zbxWindowFile = "zbx-update-window.json"
 // zbxWindowKey is the app_meta key holding the Zabbix minor-update window (JSON).
 const zbxWindowKey = "core_zbx_update_window"
 
+// tzFile is where Argus mirrors the operator-chosen VM timezone for the host timer
+// (argus-tz-check applies it via timedatectl after validating against the zoneinfo database).
+const tzFile = "timezone.json"
+
+// tzKey is the app_meta key holding the desired VM timezone (an IANA name, "" = never set).
+const tzKey = "core_timezone"
+
+// tzSetting is the timezone.json payload.
+type tzSetting struct {
+	TZ string `json:"tz"`
+}
+
+// validTimezone is a light shape check on an IANA zone name ("Europe/Rome"); the host is the
+// real gatekeeper (it only applies names present in its zoneinfo database).
+func validTimezone(tz string) bool {
+	if tz == "" || len(tz) > 64 {
+		return false
+	}
+	for i, r := range tz {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '/' || r == '_' || r == '+' || r == '-':
+			if i == 0 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // rebootWindow is the operator-scheduled reboot policy for the core VM. Mode "notify" never reboots
 // unattended (Argus just flags reboot-required); mode "auto" reboots in the given weekly window when
 // the OS needs it. Weekday is 0=Sunday..6=Saturday.
@@ -117,6 +149,31 @@ func (s *Server) syncZbxWindowFile(ctx context.Context) {
 	}
 }
 
+// loadTimezone reads the desired VM timezone ("" when the operator never set one - the host then
+// keeps whatever it has, typically the first-boot choice).
+func (s *Server) loadTimezone(ctx context.Context) string {
+	raw, ok, err := s.st.MetaGet(ctx, tzKey)
+	if err != nil || !ok || !validTimezone(raw) {
+		return ""
+	}
+	return raw
+}
+
+// syncTimezoneFile mirrors the desired timezone for the host's argus-tz-check timer. Nothing is
+// written while unset, so a fresh install never overrides the first-boot timezone.
+func (s *Server) syncTimezoneFile(ctx context.Context) {
+	if !s.cfg.SelfUpdateEnabled() {
+		return
+	}
+	tz := s.loadTimezone(ctx)
+	if tz == "" {
+		return
+	}
+	if err := s.writeUpdateJSONAtomic(tzFile, tzSetting{TZ: tz}); err != nil {
+		s.logger.Warn("timezone: could not mirror to update dir", "err", err)
+	}
+}
+
 // handleReportProbeOSStatus receives a probe VM's OS patch status (public; authenticated by the same
 // long-lived probe token as check-in). A host-side timer on the VM reports the pending security-update
 // count and whether the OS wants a reboot; patching itself stays local.
@@ -166,6 +223,11 @@ type coreOSView struct {
 	// reporter predates them.
 	ZbxServer    string `json:"zbx_server,omitempty"`
 	ZbxCandidate string `json:"zbx_candidate,omitempty"`
+	// VM timezone + NTP sync state (reporter r3+). ClockSync is nil when the reporter predates
+	// the field or timedatectl gave no answer - the UI then shows nothing rather than a false
+	// warning.
+	TZ        string `json:"tz,omitempty"`
+	ClockSync *bool  `json:"clock_sync,omitempty"`
 }
 
 // osStatusResponse drives the OS-patching UI: the core's own status and the operator windows.
@@ -175,6 +237,7 @@ type osStatusResponse struct {
 	RebootWindow rebootWindow `json:"reboot_window"`
 	ZbxWindow    rebootWindow `json:"zbx_window"`
 	FleetZbx     string       `json:"fleet_zbx,omitempty"` // newest Zabbix version among the probes
+	Timezone     string       `json:"timezone,omitempty"`  // desired VM timezone ("" = never set)
 }
 
 // coreOSStatus reads the core VM's OS status file from the shared update dir.
@@ -190,6 +253,8 @@ func (s *Server) coreOSStatus() coreOSView {
 		OS             string `json:"os"`
 		ZbxServer      string `json:"zbx_server"`
 		ZbxCandidate   string `json:"zbx_candidate"`
+		TZ             string `json:"tz"`
+		Clock          string `json:"clock"` // timedatectl NTPSynchronized: "yes" | "no" | ""
 	}
 	ok, err := readUpdateJSON(s.updatePath(coreOSStatusFile), &rec)
 	if err != nil || !ok {
@@ -202,6 +267,11 @@ func (s *Server) coreOSStatus() coreOSView {
 	v.OS = rec.OS
 	v.ZbxServer = rec.ZbxServer
 	v.ZbxCandidate = rec.ZbxCandidate
+	v.TZ = rec.TZ
+	if rec.Clock == "yes" || rec.Clock == "no" {
+		synced := rec.Clock == "yes"
+		v.ClockSync = &synced
+	}
 	return v
 }
 
@@ -265,7 +335,33 @@ func (s *Server) handleOSStatus(w http.ResponseWriter, r *http.Request) {
 		RebootWindow: s.loadRebootWindow(ctx),
 		ZbxWindow:    s.loadZbxWindow(ctx),
 		FleetZbx:     fleet,
+		Timezone:     s.loadTimezone(ctx),
 	})
+}
+
+// handleSetTimezone stores the operator-chosen VM timezone and mirrors it for the host's
+// argus-tz-check timer (admin). The host validates against its zoneinfo database before applying
+// timedatectl - Argus only ships the wish through the same local-only file channel.
+func (s *Server) handleSetTimezone(w http.ResponseWriter, r *http.Request) {
+	var req tzSetting
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 512)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	req.TZ = strings.TrimSpace(req.TZ)
+	if !validTimezone(req.TZ) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "enter an IANA timezone name, e.g. Europe/Rome"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	if err := s.st.MetaSet(ctx, tzKey, req.TZ); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save the timezone"})
+		return
+	}
+	s.syncTimezoneFile(ctx)
+	s.logger.Info("core timezone set", "tz", req.TZ)
+	writeJSON(w, http.StatusOK, req)
 }
 
 // handleSetRebootWindow stores the operator-chosen core reboot window and mirrors it to the update dir

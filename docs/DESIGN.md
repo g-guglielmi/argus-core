@@ -618,6 +618,15 @@ pinning makes majors unreachable anyway; the script double-guards) - then restar
 (a seconds-long blip the proxies buffer through) and re-reports. **Major Zabbix upgrades stay a
 planned manual event**: DB migration on first start + Timescale compatibility, snapshot first.
 
+**Core time (same machinery).** Every schedule above runs on the VM's clock, so the reporter also
+carries the VM timezone and `timedatectl`'s NTPSynchronized flag (Debian syncs via
+systemd-timesyncd out of the box): Settings shows both, with a warning pill when the clock is NOT
+synchronized - a monitoring box with a drifting clock corrupts every timestamp it collects. The
+timezone is operator-changeable from Settings: Argus mirrors the IANA name to `timezone.json` and
+a host timer (`argus-tz-check`) applies it via `timedatectl set-timezone` after validating the
+name against the local zoneinfo database, then restarts zabbix-server (long-running daemons cache
+the zone) and re-reports.
+
 **Golden-image refresh cadence.** Re-run Packer periodically (e.g. quarterly or on each Debian point
 release) so newly deployed probes ship already-patched instead of installing months of updates on first
 boot. **Major-version upgrades (Debian 13 -> 14) are a deliberate manual / re-image event** - never

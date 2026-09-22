@@ -192,10 +192,14 @@ zi="${zi#*:}"; zi="${zi%%-*}"
 zc="$(apt-cache policy zabbix-server-pgsql 2>/dev/null | awk '/Candidate:/{print $2}')"
 [ "$zc" = "(none)" ] && zc=""
 zc="${zc#*:}"; zc="${zc%%-*}"
+# VM timezone + NTP sync state (systemd-timesyncd by default on Debian): the Settings card
+# shows both, and a drifting clock on a monitoring box deserves a loud pill.
+tz="$(timedatectl show -p Timezone --value 2>/dev/null)"
+cs="$(timedatectl show -p NTPSynchronized --value 2>/dev/null)"
 [ -d "$DIR" ] || install -d -m 0755 "$DIR"
 umask 022  # so the new file is created world-readable, not mktemp's default 0600
 tmp="$(mktemp "$DIR/.os-status.XXXXXX")"
-printf '{"sec_updates":%d,"reboot_required":%s,"reported_at":%d,"os":"%s","zbx_server":"%s","zbx_candidate":"%s"}\n' "$sec" "$reboot" "$(date +%s)" "$os" "$zi" "$zc" > "$tmp"
+printf '{"sec_updates":%d,"reboot_required":%s,"reported_at":%d,"os":"%s","zbx_server":"%s","zbx_candidate":"%s","tz":"%s","clock":"%s"}\n' "$sec" "$reboot" "$(date +%s)" "$os" "$zi" "$zc" "$tz" "$cs" > "$tmp"
 mv -f "$tmp" "$DIR/os-status.json"
 chmod 0644 "$DIR/os-status.json"  # bulletproof: the Argus container (possibly non-root) reads it via the bind mount
 REPORT
@@ -273,9 +277,36 @@ fi
 ZUPD
 chmod +x /usr/local/sbin/argus-zbx-update
 
+# Timezone watcher: apply the operator-chosen VM timezone Argus writes to timezone.json (Settings
+# card). Validated against the local zoneinfo database - never feeds an arbitrary string to
+# timedatectl. Restarts zabbix-server afterwards (long-running daemons cache the zone) and
+# re-reports so the panel reflects the change. Local, never remote.
+cat > /usr/local/sbin/argus-tz-check <<'TZCK'
+#!/usr/bin/env bash
+set -u
+DIR="${ARGUS_STATE_DIR:-/opt/argus/update}"
+WANT="$DIR/timezone.json"
+[ -f "$WANT" ] || exit 0
+tz="$(sed -n 's/.*"tz":"\([A-Za-z0-9_+/-]*\)".*/\1/p' "$WANT")"
+[ -n "$tz" ] || exit 0
+cur="$(timedatectl show -p Timezone --value 2>/dev/null)"
+[ "$tz" = "$cur" ] && exit 0
+if [ ! -f "/usr/share/zoneinfo/$tz" ]; then
+  logger -t argus-tz "requested timezone $tz is not in the zoneinfo database; ignoring"
+  exit 0
+fi
+if timedatectl set-timezone "$tz"; then
+  logger -t argus-tz "timezone changed $cur -> $tz (operator setting from Argus)"
+  systemctl try-restart zabbix-server 2>/dev/null || true
+  systemctl try-restart php8*-fpm 2>/dev/null || true
+fi
+/usr/local/sbin/argus-os-report || true
+TZCK
+chmod +x /usr/local/sbin/argus-tz-check
+
 # systemd units: report hourly, check the reboot window every 5 minutes. ARGUS_STATE_DIR is baked in
 # so the scripts and Argus agree on the shared path.
-for unit in argus-os-report argus-reboot-check argus-zbx-update; do
+for unit in argus-os-report argus-reboot-check argus-zbx-update argus-tz-check; do
   cat > "/etc/systemd/system/${unit}.service" <<SVC
 [Unit]
 Description=Argus OS ${unit#argus-} (DESIGN §14c)
@@ -313,8 +344,17 @@ OnUnitActiveSec=5min
 [Install]
 WantedBy=timers.target
 T3
+cat > /etc/systemd/system/argus-tz-check.timer <<'T4'
+[Unit]
+Description=Apply the operator-chosen VM timezone from Argus
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+[Install]
+WantedBy=timers.target
+T4
 systemctl daemon-reload
-systemctl enable --now argus-os-report.timer argus-reboot-check.timer argus-zbx-update.timer
+systemctl enable --now argus-os-report.timer argus-reboot-check.timer argus-zbx-update.timer argus-tz-check.timer
 /usr/local/sbin/argus-os-report || true
 echo "    unattended-upgrades (security only, no auto-reboot) + host reporter + zabbix-minor watcher installed"
 echo "    reporting OS status into ${ARGUS_STATE_DIR} (map this as ARGUS_UPDATE_DIR in the core container)"

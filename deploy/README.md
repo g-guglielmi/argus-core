@@ -51,7 +51,9 @@ The same channel handles **core Zabbix minor updates**: the reporter includes th
 candidate `zabbix-*` version, Settings → OS updates shows "core vs fleet" and offers a second
 weekly window (notify-only by default) in which a host timer applies same-major `zabbix-*` updates
 and restarts `zabbix-server` (a seconds-long blip the proxies buffer through). Major Zabbix
-upgrades are never automated.
+upgrades are never automated. It also carries **core time**: the VM's timezone (changeable from
+Settings - a host timer applies it via `timedatectl` after validating against zoneinfo) and the
+NTP sync state, with a warning in Settings when the clock is not synchronized.
 
 > On an **already-running core**, don't re-run the whole installer just for this - run the standalone
 > `core/setup-core-patching.sh` instead: `sudo ARGUS_STATE_DIR=/docker/argus-update ./setup-core-patching.sh`
