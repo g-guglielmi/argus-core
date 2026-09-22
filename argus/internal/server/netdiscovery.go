@@ -521,6 +521,11 @@ func enrichScanResults(results []store.DiscoveryResult, inventories []controller
 					State: h.d.State, Version: h.d.Version, Site: h.d.Site, SiteDesc: h.d.SiteDesc})
 				results[i].UniFiJSON = string(facts)
 				results[i].ControllerID = h.ctlID
+				// A routed probe's scan sees no ARP, but the controller knows the MAC - and the
+				// {$UNIFI.MAC} injection at adopt time needs it on the row.
+				if results[i].MAC == "" {
+					results[i].MAC = h.d.MAC
+				}
 				if cls := provision.SuggestUniFiClass(h.d.Type, h.d.Model); cls != "" {
 					results[i].SuggestedClass = cls
 				}

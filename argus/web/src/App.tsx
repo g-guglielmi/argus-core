@@ -3664,9 +3664,13 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
     return { name: r.unifi?.name || clientName || r.sysname || rdnsName || r.ip, classId, http: !!r.http, httpScheme: r.http?.scheme || 'https', httpPort, macros: deriveMacros(classId, r.ip) }
   }
   // Sweep-adopted UniFi devices get their controller macros injected server-side at adopt time,
-  // so the review UI must neither warn about nor require them.
-  const autoFilled = (r: DiscoveryResultRow, classId: string, macro: string) =>
-    !!r.unifi && classId.startsWith('unifi-') && UNIFI_AUTOFILL.includes(macro)
+  // so the review UI must neither warn about nor require them. The MAC only counts when the row
+  // actually carries one (backfilled from the controller since scanner r16 / core enrichment) -
+  // otherwise it stays an editable required field instead of a disabled empty one.
+  const autoFilled = (r: DiscoveryResultRow, classId: string, macro: string) => {
+    if (!r.unifi || !classId.startsWith('unifi-') || !UNIFI_AUTOFILL.includes(macro)) return false
+    return macro !== '{$UNIFI.MAC}' || !!r.mac
+  }
 
   function applyJob(d: { job: DiscoveryJobRow; results: DiscoveryResultRow[] }) {
     setJob(d.job)

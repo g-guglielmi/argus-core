@@ -66,6 +66,12 @@ func TestEnrichScanResults(t *testing.T) {
 	if results[1].ControllerID != 7 || !strings.Contains(results[1].UniFiJSON, `"ap-hall"`) || results[1].SuggestedClass != "unifi-ap" {
 		t.Fatalf("IP-matched row wrong: %+v", results[1])
 	}
+	if results[1].MAC != "aa:bb:cc:00:00:02" {
+		t.Fatalf("a MAC-less row must inherit the controller device's MAC (the {$UNIFI.MAC} injection needs it): %+v", results[1])
+	}
+	if results[0].MAC != "AA-BB-CC-00-00-01" {
+		t.Fatalf("a row with its own scanned MAC must keep it: %+v", results[0])
+	}
 	if results[2].UniFiJSON != "" || results[2].ControllerID != 0 {
 		t.Fatalf("unknown row must stay untouched: %+v", results[2])
 	}

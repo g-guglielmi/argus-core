@@ -27,6 +27,12 @@ GitHub Release from the matching section below.
   too (late results are dropped); ignores recorded only in the deleted scan are forgotten.
 
 **Fixed:**
+- **Adopting controller-enriched scan rows no longer fails on a missing MAC.** A scan run across
+  a routed segment sees no ARP, so enriched rows carried no MAC and adoption was rejected with
+  "MAC is required for this device class" although the controller knew it. The enrichment merge
+  (core-side and the r16+ scanner) now backfills the row's MAC from the controller device, and
+  the review UI only shows the MAC as auto-filled when the row really has one - otherwise it
+  stays an editable required field.
 - **The scan history's "new" count now means actually new.** It counted every result never
   adopted or ignored through Argus, so a range full of devices monitored since before discovery
   existed read "7 new" while the review screen showed them all as monitored. The list now runs
