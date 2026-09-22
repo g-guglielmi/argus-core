@@ -100,6 +100,19 @@ func TestDiscoveryJobSweepKind(t *testing.T) {
 		t.Fatalf("DiscoveryResultByID: %+v %v", one, err)
 	}
 
+	// The history "new" counts subtract live-monitored IPs; the store side hands out the new-state
+	// IPs per job, and an adopted row drops out.
+	newIPs, err := st.DiscoveryNewResultIPs(ctx, []int64{id, 9999})
+	if err != nil || len(newIPs[id]) != 1 || newIPs[id][0] != "10.0.0.2" {
+		t.Fatalf("DiscoveryNewResultIPs: %v %v", newIPs, err)
+	}
+	if err := st.MarkDiscoveryResultAdded(ctx, got[0].ID, "hid-1"); err != nil {
+		t.Fatal(err)
+	}
+	if newIPs, _ = st.DiscoveryNewResultIPs(ctx, []int64{id}); len(newIPs[id]) != 0 {
+		t.Fatalf("added rows must not count as new: %v", newIPs)
+	}
+
 	// A default-kind job stays "scan".
 	sid, err := st.CreateDiscoveryJob(ctx, DiscoveryJob{ProxyName: "proxy-site1", CIDR: "10.0.0.0/24"})
 	if err != nil {

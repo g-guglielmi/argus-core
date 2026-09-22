@@ -20,6 +20,10 @@ GitHub Release from the matching section below.
   when none are saved yet).
 
 **Fixed:**
+- **The scan history's "new" count now means actually new.** It counted every result never
+  adopted or ignored through Argus, so a range full of devices monitored since before discovery
+  existed read "7 new" while the review screen showed them all as monitored. The list now runs
+  the same live already-monitored check as the review screen and subtracts those rows.
 - **A host moved to the core server could not be moved back to a proxy.** Zabbix reports a
   server-monitored host's proxy id as the sentinel `"0"`; the settings dialog carried it into the
   Server -> Proxy flip, where the proxy select displayed the first proxy while the state still

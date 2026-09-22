@@ -541,10 +541,38 @@ func (s *Server) handleListDiscoveryJobs(w http.ResponseWriter, r *http.Request)
 	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 && n <= 100 {
 		limit = n
 	}
-	jobs, err := s.st.ListDiscoveryJobs(r.Context(), limit)
+	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancel()
+	jobs, err := s.st.ListDiscoveryJobs(ctx, limit)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not list scans"})
 		return
+	}
+	// Live-adjust the "new" counts: a result whose IP is already monitored isn't actually new,
+	// whether it was adopted through Argus or added long before discovery existed. Same check the
+	// review screen's "monitored" pill uses; best-effort - a Zabbix hiccup leaves the raw counts.
+	if len(jobs) > 0 && s.zbx.Authenticated() {
+		if ips, err := s.zbx.HostIPs(ctx); err == nil {
+			monitored := make(map[string]bool, len(ips))
+			for _, ip := range ips {
+				monitored[ip] = true
+			}
+			ids := make([]int64, 0, len(jobs))
+			for _, j := range jobs {
+				ids = append(ids, j.ID)
+			}
+			if newIPs, err := s.st.DiscoveryNewResultIPs(ctx, ids); err == nil {
+				for i := range jobs {
+					n := 0
+					for _, ip := range newIPs[jobs[i].ID] {
+						if !monitored[ip] {
+							n++
+						}
+					}
+					jobs[i].NewCount = n
+				}
+			}
+		}
 	}
 	out := make([]discoveryJobView, 0, len(jobs))
 	for _, j := range jobs {

@@ -269,6 +269,36 @@ func (s *Store) ListDiscoveryJobs(ctx context.Context, limit int) ([]DiscoveryJo
 	return out, rows.Err()
 }
 
+// DiscoveryNewResultIPs returns, for each given job, the IPs of its results still in state
+// "new". The jobs-list handler subtracts the already-monitored ones so the history's "new" count
+// means "actually up for review", not just "never adopted through Argus".
+func (s *Store) DiscoveryNewResultIPs(ctx context.Context, jobIDs []int64) (map[int64][]string, error) {
+	out := map[int64][]string{}
+	if len(jobIDs) == 0 {
+		return out, nil
+	}
+	args := make([]any, 0, len(jobIDs))
+	for _, id := range jobIDs {
+		args = append(args, id)
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT job_id, ip FROM discovery_results WHERE state='new' AND job_id IN (?`+strings.Repeat(",?", len(jobIDs)-1)+`)`,
+		args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var jobID int64
+		var ip string
+		if err := rows.Scan(&jobID, &ip); err != nil {
+			return nil, err
+		}
+		out[jobID] = append(out[jobID], ip)
+	}
+	return out, rows.Err()
+}
+
 // DiscoveryJobByID returns one scan job (community left empty), or ErrNotFound.
 func (s *Store) DiscoveryJobByID(ctx context.Context, id int64) (*DiscoveryJob, error) {
 	s.expireStaleDiscoveryJobs(ctx)
