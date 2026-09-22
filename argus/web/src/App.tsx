@@ -1345,7 +1345,8 @@ function VMClock({ tz }: { tz: string }) {
   try {
     if (tz) text = new Intl.DateTimeFormat(undefined, { timeZone: tz, weekday: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date())
   } catch { /* unknown zone name: fall back to showing just the zone */ }
-  return <input className="input" disabled value={text ? `${text} · ${tz}` : tz} aria-label="Core VM local time" />
+  // Just the time: the zone itself is the Timezone field right above (user's call - redundant).
+  return <input className="input" disabled value={text || tz} aria-label="Core VM local time" />
 }
 
 function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
