@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.4.58] - 2026-09-22
 
 **Changed:**
 - **Discovery page reworked into a wizard-style flow.** The page itself is now just the scan
