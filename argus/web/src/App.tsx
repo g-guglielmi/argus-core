@@ -3577,7 +3577,8 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
 type DiscoveryJobRow = { id: number; proxy_name: string; kind?: string; controller_name?: string; cidr: string; state: string; error?: string; requested_by?: string; created_at: number; completed_at?: number; found?: number; new?: number }
 type DiscoveryHTTP = { port: number; scheme: string; status: number; server?: string; title?: string }
 type DiscoveryUnifi = { name?: string; model?: string; type?: string; state?: number; version?: string; site?: string; site_desc?: string }
-type DiscoveryResultRow = { id: number; ip: string; mac?: string; rdns?: string; tcp: number[]; sysdescr?: string; sysobjectid?: string; sysname?: string; http?: DiscoveryHTTP; dns?: boolean; ssh?: string; unifi?: DiscoveryUnifi; suggested_class?: string; state: string; host_id?: string; monitored_id?: string; monitored_name?: string }
+type DiscoveryUnifiClient = { name?: string; hostname?: string; wired?: boolean }
+type DiscoveryResultRow = { id: number; ip: string; mac?: string; rdns?: string; tcp: number[]; sysdescr?: string; sysobjectid?: string; sysname?: string; http?: DiscoveryHTTP; dns?: boolean; ssh?: string; unifi?: DiscoveryUnifi; unifi_client?: DiscoveryUnifiClient; suggested_class?: string; state: string; host_id?: string; monitored_id?: string; monitored_name?: string }
 type DiscRowCfg = { name: string; classId: string; http: boolean; httpScheme: string; httpPort: string; macros: Record<string, string>; site?: string }
 type UnifiCtlRow = { id: number; name: string; url: string; has_key: boolean }
 // The four controller macros the adopt path fills server-side for a sweep-adopted UniFi device
@@ -3657,7 +3658,10 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
     // Some resolvers answer a PTR lookup with the IP itself - a numeric first label would seed a
     // useless name like "10", so only a real hostname-shaped rDNS contributes.
     const rdnsName = r.rdns && !/^\d+$/.test(r.rdns.split('.')[0]) ? r.rdns.split('.')[0] : ''
-    return { name: r.unifi?.name || r.sysname || rdnsName || r.ip, classId, http: !!r.http, httpScheme: r.http?.scheme || 'https', httpPort, macros: deriveMacros(classId, r.ip) }
+    // Name preference: the controller's device name, then its client-table alias/hostname (a
+    // naming hint for non-UniFi hosts), then the wire facts.
+    const clientName = r.unifi_client?.name || r.unifi_client?.hostname || ''
+    return { name: r.unifi?.name || clientName || r.sysname || rdnsName || r.ip, classId, http: !!r.http, httpScheme: r.http?.scheme || 'https', httpPort, macros: deriveMacros(classId, r.ip) }
   }
   // Sweep-adopted UniFi devices get their controller macros injected server-side at adopt time,
   // so the review UI must neither warn about nor require them.
@@ -3899,6 +3903,8 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
       return f
     }
     const f: string[] = []
+    // A client-table match is a naming hint, not gear: one pill says where the name came from.
+    if (r.unifi_client) f.push(r.unifi_client.wired ? 'wired client' : 'Wi-Fi client')
     if (r.sysdescr || r.sysname) f.push('SNMP')
     if (r.dns) f.push('DNS')
     for (const p of r.tcp) f.push(portTag(p))

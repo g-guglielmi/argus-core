@@ -293,11 +293,16 @@ deterministic (`provision.SuggestUniFiClass` from the controller's own device ty
 payoff: for a sweep-adopted UniFi-class host the server injects `{$UNIFI.URL}/{$UNIFI.KEY}/
 {$UNIFI.MAC}/{$UNIFI.SITE}` from the saved controller + sweep facts before validation, so the API
 key never travels through the browser and nobody types per-device macros. Sweeps share the scan
-queue, history, retention and ignore carry-over. Saved controllers also **enrich subnet scans**:
-at result ingest the core fetches each controller's inventory (best-effort, bounded) and merges
-facts into matching rows by MAC-then-IP (`enrichScanResults`), storing the per-result
-`controller_id` the adopt-time injection resolves through - so a scan row for known UniFi gear
-behaves exactly like a sweep row.
+queue, history, retention and ignore carry-over. Saved controllers also **enrich subnet scans**,
+primarily PROBE-SIDE (image r16+): the scan job payload carries the controllers (keys decrypted
+at handout, like the sweep), the scanner queries them locally after the scan - the only vantage
+point that reliably reaches a remote site's controller - and posts rows with `unifi` facts +
+`unifi_ctl`, or a `unifi_client` naming hint when the host matched the controller's client
+table instead (name suggestion only, never a class, never an import). The core runs the same
+merge at ingest (`enrichScanResults`, MAC-then-IP, best-effort bounded) for core-run scans and
+as the fallback for older probe images; the stored per-result `controller_id` is what the
+adopt-time macro injection resolves through - so a scan row for known UniFi gear behaves
+exactly like a sweep row.
 
 **Discovery trigger (shipped with §C).** LLD rules run on a long interval (1h on the SNMP classes),
 so a freshly added host would sit without its per-instance sensors. Two seams close that gap:

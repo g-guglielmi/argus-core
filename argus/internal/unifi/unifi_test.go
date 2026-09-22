@@ -46,6 +46,10 @@ func serve(t *testing.T, prefix string, requireKey string) *httptest.Server {
 			_, _ = w.Write([]byte(devicesDefault))
 		case "/api/s/a1b2c3/stat/device":
 			_, _ = w.Write([]byte(devicesSite2))
+		case "/api/s/default/stat/sta":
+			_, _ = w.Write([]byte(`{"meta":{"rc":"ok"},"data":[{"ip":"10.0.0.77","mac":"AA:BB:CC:00:00:77","name":"nas-lab","hostname":"nas-lab.example.lan","is_wired":true}]}`))
+		case "/api/s/a1b2c3/stat/sta":
+			_, _ = w.Write([]byte(`{"meta":{"rc":"ok"},"data":[]}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -85,6 +89,18 @@ func TestSweepBarePathFallback(t *testing.T) {
 	}
 	if len(devs) != 3 {
 		t.Fatalf("want 3 devices, got %d", len(devs))
+	}
+}
+
+func TestClients(t *testing.T) {
+	srv := serve(t, "/proxy/network", "k-123")
+	defer srv.Close()
+	clients, err := Clients(context.Background(), srv.URL, "k-123")
+	if err != nil {
+		t.Fatalf("Clients: %v", err)
+	}
+	if len(clients) != 1 || clients[0].Name != "nas-lab" || clients[0].MAC != "aa:bb:cc:00:00:77" || !clients[0].Wired {
+		t.Fatalf("clients wrong: %+v", clients)
 	}
 }
 

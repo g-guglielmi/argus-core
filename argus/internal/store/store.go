@@ -350,6 +350,7 @@ CREATE TABLE IF NOT EXISTS discovery_results (
   dns              INTEGER NOT NULL DEFAULT 0,
   ssh_banner       TEXT NOT NULL DEFAULT '',
   unifi_json       TEXT NOT NULL DEFAULT '',   -- controller-sourced facts (sweeps + enriched scans)
+  unifi_client     TEXT NOT NULL DEFAULT '',   -- controller client-table naming hint (scans only)
   controller_id    INTEGER NOT NULL DEFAULT 0, -- the unifi_controllers row those facts came from
   suggested_class  TEXT NOT NULL DEFAULT '',
   state            TEXT NOT NULL DEFAULT 'new', -- new|ignored|added
@@ -450,6 +451,10 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 		return err
 	}
 	if err := s.ensureColumn("discovery_results", "controller_id INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	// Controller client-table naming hint for scan rows that match a client, not a device.
+	if err := s.ensureColumn("discovery_results", "unifi_client TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("notify_events", "item_id TEXT NOT NULL DEFAULT ''"); err != nil {

@@ -34,10 +34,21 @@ import (
 const maxScanHosts = 1024
 
 // scanJobPayload is the one-shot job handed to the probe inside the check-in response.
+// Controllers carries the saved UniFi controllers (keys decrypted at handout, same trust
+// boundary as the SNMP community): the scanner queries them locally right after the scan, so
+// enrichment works even for controllers only the probe's network can reach. Old probe images
+// simply ignore the field - the core-side ingest enrichment remains their fallback.
 type scanJobPayload struct {
-	ID   int64     `json:"id"`
-	CIDR string    `json:"cidr"`
-	SNMP *scanSNMP `json:"snmp,omitempty"` // omitted = scan without SNMP fingerprinting
+	ID          int64        `json:"id"`
+	CIDR        string       `json:"cidr"`
+	SNMP        *scanSNMP    `json:"snmp,omitempty"` // omitted = scan without SNMP fingerprinting
+	Controllers []scanCtlRef `json:"controllers,omitempty"`
+}
+
+type scanCtlRef struct {
+	ID  int64  `json:"id"`
+	URL string `json:"url"`
+	Key string `json:"key"`
 }
 
 type scanSNMP struct {
@@ -78,7 +89,7 @@ func (s *Server) takeDiscoveryHandout(ctx context.Context, proxyName string) (*s
 			s.logger.Info("discovery: sweep job dispatched", "proxy", proxyName, "job", job.ID, "controller", ctl.Name)
 			return nil, &sweepJobPayload{ID: job.ID, URL: ctl.URL, Key: ctl.APIKey}
 		}
-		p := &scanJobPayload{ID: job.ID, CIDR: job.CIDR}
+		p := &scanJobPayload{ID: job.ID, CIDR: job.CIDR, Controllers: s.scanControllerRefs(ctx)}
 		if job.SNMPCommunity != "" {
 			p.SNMP = &scanSNMP{Version: job.SNMPVersion, Community: job.SNMPCommunity, Port: job.SNMPPort}
 		}
@@ -375,10 +386,37 @@ func (s *Server) injectUniFiMacros(ctx context.Context, req *createHostRequest) 
 	set("{$UNIFI.SITE}", uf.Site)
 }
 
-// controllerInventory is one saved controller's adopted devices, fetched for scan enrichment.
+// scanControllerRefs resolves every saved controller (key decrypted) for a probe scan handout.
+// Empty when none are saved, so the payload field stays absent.
+func (s *Server) scanControllerRefs(ctx context.Context) []scanCtlRef {
+	ctls, err := s.st.ListUniFiControllers(ctx)
+	if err != nil || len(ctls) == 0 {
+		return nil
+	}
+	out := make([]scanCtlRef, 0, len(ctls))
+	for _, c := range ctls {
+		ctl, err := s.st.UniFiControllerByID(ctx, c.ID)
+		if err != nil || ctl.APIKey == "" {
+			continue
+		}
+		out = append(out, scanCtlRef{ID: ctl.ID, URL: ctl.URL, Key: ctl.APIKey})
+	}
+	return out
+}
+
+// controllerInventory is one saved controller's adopted devices (and known clients, as naming
+// hints), fetched for scan enrichment.
 type controllerInventory struct {
 	ID      int64
 	Devices []unifi.Device
+	Clients []unifi.Client
+}
+
+// clientFacts is the controller client-table naming hint stored per scan row (unifi_client).
+type clientFacts struct {
+	Name     string `json:"name,omitempty"`
+	Hostname string `json:"hostname,omitempty"`
+	Wired    bool   `json:"wired"`
 }
 
 // fetchControllerInventories asks every saved controller for its adopted devices. Best-effort by
@@ -400,7 +438,12 @@ func (s *Server) fetchControllerInventories(ctx context.Context) []controllerInv
 			s.logger.Debug("discovery: controller enrichment skipped", "controller", ctl.Name, "err", err)
 			continue
 		}
-		out = append(out, controllerInventory{ID: ctl.ID, Devices: devs})
+		inv := controllerInventory{ID: ctl.ID, Devices: devs}
+		// Client naming hints are nice-to-have: a failure here keeps the device facts.
+		if clients, err := unifi.Clients(ctx, ctl.URL, ctl.APIKey); err == nil {
+			inv.Clients = clients
+		}
+		out = append(out, inv)
 	}
 	return out
 }
@@ -433,6 +476,8 @@ func enrichScanResults(results []store.DiscoveryResult, inventories []controller
 	}
 	byMAC := map[string]hit{}
 	byIP := map[string]hit{}
+	cliByMAC := map[string]unifi.Client{}
+	cliByIP := map[string]unifi.Client{}
 	for _, inv := range inventories {
 		for _, d := range inv.Devices {
 			h := hit{inv.ID, d}
@@ -447,30 +492,58 @@ func enrichScanResults(results []store.DiscoveryResult, inventories []controller
 				}
 			}
 		}
+		for _, c := range inv.Clients {
+			if m := normMAC(c.MAC); m != "" {
+				if _, dup := cliByMAC[m]; !dup {
+					cliByMAC[m] = c
+				}
+			}
+			if c.IP != "" {
+				if _, dup := cliByIP[c.IP]; !dup {
+					cliByIP[c.IP] = c
+				}
+			}
+		}
 	}
 	n := 0
 	for i := range results {
-		if results[i].UniFiJSON != "" {
-			continue
+		mac := normMAC(results[i].MAC)
+		if results[i].UniFiJSON == "" {
+			h, ok := hit{}, false
+			if mac != "" {
+				h, ok = byMAC[mac]
+			}
+			if !ok {
+				h, ok = byIP[results[i].IP]
+			}
+			if ok {
+				facts, _ := json.Marshal(unifiFacts{Name: h.d.Name, Model: h.d.Model, Type: h.d.Type,
+					State: h.d.State, Version: h.d.Version, Site: h.d.Site, SiteDesc: h.d.SiteDesc})
+				results[i].UniFiJSON = string(facts)
+				results[i].ControllerID = h.ctlID
+				if cls := provision.SuggestUniFiClass(h.d.Type, h.d.Model); cls != "" {
+					results[i].SuggestedClass = cls
+				}
+				n++
+				continue
+			}
 		}
-		h, ok := hit{}, false
-		if m := normMAC(results[i].MAC); m != "" {
-			h, ok = byMAC[m]
+		// Not UniFi gear: the controller's client table may still know its name - a hint only,
+		// never a class and never an imported row.
+		if results[i].UniFiJSON == "" && results[i].UniFiClient == "" {
+			c, ok := unifi.Client{}, false
+			if mac != "" {
+				c, ok = cliByMAC[mac]
+			}
+			if !ok {
+				c, ok = cliByIP[results[i].IP]
+			}
+			if ok && (c.Name != "" || c.Hostname != "") {
+				facts, _ := json.Marshal(clientFacts{Name: c.Name, Hostname: c.Hostname, Wired: c.Wired})
+				results[i].UniFiClient = string(facts)
+				n++
+			}
 		}
-		if !ok {
-			h, ok = byIP[results[i].IP]
-		}
-		if !ok {
-			continue
-		}
-		facts, _ := json.Marshal(unifiFacts{Name: h.d.Name, Model: h.d.Model, Type: h.d.Type,
-			State: h.d.State, Version: h.d.Version, Site: h.d.Site, SiteDesc: h.d.SiteDesc})
-		results[i].UniFiJSON = string(facts)
-		results[i].ControllerID = h.ctlID
-		if cls := provision.SuggestUniFiClass(h.d.Type, h.d.Model); cls != "" {
-			results[i].SuggestedClass = cls
-		}
-		n++
 	}
 	return n
 }
@@ -599,7 +672,8 @@ type discoveryResultView struct {
 	HTTP           json.RawMessage `json:"http,omitempty"`
 	DNS            bool            `json:"dns,omitempty"`
 	SSH            string          `json:"ssh,omitempty"`
-	Unifi          json.RawMessage `json:"unifi,omitempty"` // controller-sourced facts (sweep results)
+	Unifi          json.RawMessage `json:"unifi,omitempty"`        // controller-sourced facts (sweeps + enriched scans)
+	UnifiClient    json.RawMessage `json:"unifi_client,omitempty"` // controller client-table naming hint
 	SuggestedClass string          `json:"suggested_class,omitempty"`
 	State          string          `json:"state"`                    // new | ignored | added
 	HostID         string          `json:"host_id,omitempty"`        // the host this result was adopted as
@@ -670,6 +744,9 @@ func (s *Server) handleGetDiscoveryJob(w http.ResponseWriter, r *http.Request) {
 			if json.Unmarshal([]byte(res.UniFiJSON), &uf) == nil {
 				v.SuggestedClass = provision.SuggestUniFiClass(uf.Type, uf.Model)
 			}
+		}
+		if res.UniFiClient != "" {
+			v.UnifiClient = json.RawMessage(res.UniFiClient)
 		}
 		if v.SuggestedClass == "" {
 			f := provision.Fingerprint{SysDescr: res.SysDescr, SysObjectID: res.SysObjectID,
@@ -750,7 +827,11 @@ type scanResultHost struct {
 	HTTP  json.RawMessage `json:"http"`
 	DNS   bool            `json:"dns"`
 	SSH   string          `json:"ssh"`
-	Unifi json.RawMessage `json:"unifi"` // controller sweep results only
+	Unifi json.RawMessage `json:"unifi"` // controller device facts (sweeps; probe-enriched scans)
+	// Probe-side enrichment extras (scanner r16+): which saved controller the unifi facts came
+	// from, and the client-table naming hint for hosts that matched a client instead.
+	UnifiCtl    int64           `json:"unifi_ctl"`
+	UnifiClient json.RawMessage `json:"unifi_client"`
 }
 
 // httpFacts is the slice of the scanner's HTTP banner the classifier cares about.
@@ -811,14 +892,22 @@ func (s *Server) handleScanResults(w http.ResponseWriter, r *http.Request) {
 		ports, _ := json.Marshal(h.TCP)
 		res.TCPPorts = string(ports)
 		if len(h.Unifi) > 0 {
-			// A sweep result: the controller's device record IS the identity - no fingerprinting.
+			// Controller device facts (a sweep result, or a probe-enriched scan row): the
+			// controller's record IS the identity - no fingerprinting.
 			res.UniFiJSON = string(h.Unifi)
+			res.ControllerID = h.UnifiCtl
 			var uf unifiFacts
 			if json.Unmarshal(h.Unifi, &uf) == nil {
 				res.SuggestedClass = provision.SuggestUniFiClass(uf.Type, uf.Model)
 			}
+			if res.SuggestedClass == "" {
+				res.SuggestedClass = provision.SuggestClass(f)
+			}
 		} else {
 			res.SuggestedClass = provision.SuggestClass(f)
+		}
+		if len(h.UnifiClient) > 0 {
+			res.UniFiClient = string(h.UnifiClient)
 		}
 		results = append(results, res)
 	}

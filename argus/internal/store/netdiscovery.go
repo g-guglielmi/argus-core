@@ -78,6 +78,7 @@ type DiscoveryResult struct {
 	DNS            bool
 	SSHBanner      string
 	UniFiJSON      string // controller-sourced facts (sweep results + controller-enriched scan rows)
+	UniFiClient    string // controller client-table naming hint (scan rows matching a client)
 	ControllerID   int64  // the unifi_controllers row those facts came from (0 = none)
 	SuggestedClass string
 	State          string // new | ignored | added
@@ -224,10 +225,10 @@ func (s *Store) CompleteDiscoveryJob(ctx context.Context, jobID int64, proxyName
 			dns = 1
 		}
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO discovery_results(job_id, ip, mac, rdns, tcp_ports, snmp_sysdescr, snmp_sysobjectid, snmp_sysname, http_json, dns, ssh_banner, unifi_json, controller_id, suggested_class, state, host_id)
-			 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'')`,
+			`INSERT INTO discovery_results(job_id, ip, mac, rdns, tcp_ports, snmp_sysdescr, snmp_sysobjectid, snmp_sysname, http_json, dns, ssh_banner, unifi_json, unifi_client, controller_id, suggested_class, state, host_id)
+			 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'')`,
 			jobID, r.IP, r.MAC, r.RDNS, r.TCPPorts, r.SysDescr, r.SysObjectID, r.SysName, r.HTTPJSON,
-			dns, r.SSHBanner, r.UniFiJSON, r.ControllerID, r.SuggestedClass, st); err != nil {
+			dns, r.SSHBanner, r.UniFiJSON, r.UniFiClient, r.ControllerID, r.SuggestedClass, st); err != nil {
 			return err
 		}
 	}
@@ -332,7 +333,7 @@ func (s *Store) DiscoveryJobByID(ctx context.Context, id int64) (*DiscoveryJob, 
 // DiscoveryResultsByJob returns a job's results in IP-insertion order (the probe sorts by IP).
 func (s *Store) DiscoveryResultsByJob(ctx context.Context, jobID int64) ([]DiscoveryResult, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, job_id, ip, mac, rdns, tcp_ports, snmp_sysdescr, snmp_sysobjectid, snmp_sysname, http_json, dns, ssh_banner, unifi_json, controller_id, suggested_class, state, host_id
+		`SELECT id, job_id, ip, mac, rdns, tcp_ports, snmp_sysdescr, snmp_sysobjectid, snmp_sysname, http_json, dns, ssh_banner, unifi_json, unifi_client, controller_id, suggested_class, state, host_id
 		 FROM discovery_results WHERE job_id=? ORDER BY id`, jobID)
 	if err != nil {
 		return nil, err
@@ -343,7 +344,7 @@ func (s *Store) DiscoveryResultsByJob(ctx context.Context, jobID int64) ([]Disco
 		var r DiscoveryResult
 		var dns int
 		if err := rows.Scan(&r.ID, &r.JobID, &r.IP, &r.MAC, &r.RDNS, &r.TCPPorts, &r.SysDescr,
-			&r.SysObjectID, &r.SysName, &r.HTTPJSON, &dns, &r.SSHBanner, &r.UniFiJSON, &r.ControllerID, &r.SuggestedClass, &r.State, &r.HostID); err != nil {
+			&r.SysObjectID, &r.SysName, &r.HTTPJSON, &dns, &r.SSHBanner, &r.UniFiJSON, &r.UniFiClient, &r.ControllerID, &r.SuggestedClass, &r.State, &r.HostID); err != nil {
 			return nil, err
 		}
 		r.DNS = dns != 0
@@ -357,10 +358,10 @@ func (s *Store) DiscoveryResultByID(ctx context.Context, id int64) (*DiscoveryRe
 	var r DiscoveryResult
 	var dns int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, job_id, ip, mac, rdns, tcp_ports, snmp_sysdescr, snmp_sysobjectid, snmp_sysname, http_json, dns, ssh_banner, unifi_json, controller_id, suggested_class, state, host_id
+		`SELECT id, job_id, ip, mac, rdns, tcp_ports, snmp_sysdescr, snmp_sysobjectid, snmp_sysname, http_json, dns, ssh_banner, unifi_json, unifi_client, controller_id, suggested_class, state, host_id
 		 FROM discovery_results WHERE id=?`, id).
 		Scan(&r.ID, &r.JobID, &r.IP, &r.MAC, &r.RDNS, &r.TCPPorts, &r.SysDescr,
-			&r.SysObjectID, &r.SysName, &r.HTTPJSON, &dns, &r.SSHBanner, &r.UniFiJSON, &r.ControllerID, &r.SuggestedClass, &r.State, &r.HostID)
+			&r.SysObjectID, &r.SysName, &r.HTTPJSON, &dns, &r.SSHBanner, &r.UniFiJSON, &r.UniFiClient, &r.ControllerID, &r.SuggestedClass, &r.State, &r.HostID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

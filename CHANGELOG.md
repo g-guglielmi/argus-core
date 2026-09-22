@@ -51,12 +51,18 @@ GitHub Release from the matching section below.
   subnet scan's job. The sweep speaks the same API the UniFi class templates poll (`X-API-KEY`
   against the Network API, `/proxy/network/...` with a bare-path fallback for plain self-hosted
   controllers).
-- **Subnet scans are enriched from your saved controllers.** When a scan's results arrive, the
-  core cross-checks them against every saved controller's adopted devices (matched by MAC, or by
-  IP where the scan saw none): matching rows gain the controller facts - exact model, real name,
-  firmware, site - the certain class suggestion, and the same adopt-time macro injection as a
-  sweep row. A plain scan of a range with UniFi gear in it now reviews like a sweep; best-effort,
-  a controller the core can't reach simply doesn't enrich.
+- **Subnet scans are enriched from your saved controllers.** Scan results are cross-checked
+  against every saved controller's adopted devices (matched by MAC, or by IP where the scan saw
+  none): matching rows gain the controller facts - exact model, real name, firmware, site - the
+  certain class suggestion, and the same adopt-time macro injection as a sweep row. A plain scan
+  of a range with UniFi gear in it now reviews like a sweep. With probe image **r16** the probe
+  queries the controllers ITSELF right after scanning (the scan job carries them), so enrichment
+  works even for controllers only that site's network can reach; the core does the same for
+  core-run scans and remains the best-effort fallback for older probe images.
+- **Controller client-table naming hints.** A scanned host that isn't UniFi gear but is known to
+  the controller as a client gets its controller name/hostname as the suggested device name
+  (with a "wired client"/"Wi-Fi client" pill in the review) - a hint only, never a class, and
+  clients are still never imported by sweeps.
 - **Adopting a swept UniFi device fills its macros for you.** For a sweep-adopted device on a
   UniFi class, the four controller macros (`{$UNIFI.URL}`, `{$UNIFI.KEY}`, `{$UNIFI.MAC}`,
   `{$UNIFI.SITE}`) are injected **server-side** from the saved controller and the sweep facts -

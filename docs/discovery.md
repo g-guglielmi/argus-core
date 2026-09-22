@@ -111,8 +111,19 @@ are cross-checked against its adopted devices (matched by MAC, or by IP where th
 MAC): matching rows get the controller facts - exact model, real name, firmware, site - the
 certain class suggestion, and the same adopt-time macro injection as a sweep row. So a plain scan
 of a range with UniFi gear in it already reviews like a sweep; the standalone sweep remains the
-way to import a controller's whole estate (all sites, no wire scan) in one go. Best-effort: the
-core queries the controllers, so one it can't reach simply doesn't enrich.
+way to import a controller's whole estate (all sites, no wire scan) in one go.
+
+Two extras since probe image r16:
+
+- **The probe queries the controllers itself**, right after scanning - the scan job carries the
+  saved controllers, so enrichment works even for a controller only that site's network can
+  reach (the usual case for remote sites). The core does the same for core-run scans, and also
+  acts as the fallback for older probe images - always best-effort, an unreachable controller
+  simply doesn't enrich.
+- **Client-table naming hints**: a scanned host that isn't UniFi gear but is known to the
+  controller as a client gets its controller name/hostname as the suggested device name (plus a
+  "wired client"/"Wi-Fi client" pill). A hint only - it never suggests a class and clients are
+  never imported by sweeps.
 
 ## Notes
 

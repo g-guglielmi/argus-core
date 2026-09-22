@@ -32,7 +32,91 @@ type Device struct {
 	SiteDesc string
 }
 
+// Client is one client the controller currently knows (stat/sta) - used only as a naming hint
+// for scan enrichment, never imported as a device.
+type Client struct {
+	IP       string
+	MAC      string
+	Name     string // the alias set in the controller, if any
+	Hostname string
+	Wired    bool
+}
+
 const requestTimeout = 30 * time.Second
+
+// Clients lists the controller's currently-known clients across all sites (naming hints for
+// scan enrichment). Same path/fallback/auth rules as Sweep.
+func Clients(ctx context.Context, baseURL, apiKey string) ([]Client, error) {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		return nil, fmt.Errorf("controller URL is empty")
+	}
+	client := newHTTPClient()
+	sites, prefix, err := fetchSites(ctx, client, base, apiKey)
+	if err != nil {
+		return nil, err
+	}
+	var out []Client
+	for _, site := range sites {
+		var rows struct {
+			Data []struct {
+				IP       string `json:"ip"`
+				MAC      string `json:"mac"`
+				Name     string `json:"name"`
+				Hostname string `json:"hostname"`
+				Wired    bool   `json:"is_wired"`
+			} `json:"data"`
+		}
+		if err := getJSON(ctx, client, base+prefix+"/api/s/"+site.Name+"/stat/sta", apiKey, &rows); err != nil {
+			return nil, fmt.Errorf("site %s: %w", site.Name, err)
+		}
+		for _, c := range rows.Data {
+			out = append(out, Client{
+				IP:       strings.TrimSpace(c.IP),
+				MAC:      strings.ToLower(strings.TrimSpace(c.MAC)),
+				Name:     strings.TrimSpace(c.Name),
+				Hostname: strings.TrimSpace(c.Hostname),
+				Wired:    c.Wired,
+			})
+		}
+	}
+	return out, nil
+}
+
+func newHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: requestTimeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+}
+
+type siteRef struct {
+	Name string `json:"name"`
+	Desc string `json:"desc"`
+}
+
+// fetchSites resolves the controller's sites and which path prefix it speaks (UniFi OS proxy vs
+// bare Network application).
+func fetchSites(ctx context.Context, client *http.Client, base, apiKey string) ([]siteRef, string, error) {
+	var sites struct {
+		Data []siteRef `json:"data"`
+	}
+	prefix := "/proxy/network"
+	err := getJSON(ctx, client, base+prefix+"/api/self/sites", apiKey, &sites)
+	if isNotFound(err) {
+		prefix = ""
+		err = getJSON(ctx, client, base+"/api/self/sites", apiKey, &sites)
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	if len(sites.Data) == 0 {
+		return nil, "", fmt.Errorf("the controller reported no sites")
+	}
+	return sites.Data, prefix, nil
+}
 
 // Sweep lists every adopted device (with an IP) across all of the controller's sites. It tries
 // the UniFi OS path first (/proxy/network/...) and falls back to the bare Network-application
@@ -42,34 +126,14 @@ func Sweep(ctx context.Context, baseURL, apiKey string) ([]Device, error) {
 	if base == "" {
 		return nil, fmt.Errorf("controller URL is empty")
 	}
-	client := &http.Client{
-		Timeout: requestTimeout,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-
-	var sites struct {
-		Data []struct {
-			Name string `json:"name"`
-			Desc string `json:"desc"`
-		} `json:"data"`
-	}
-	prefix := "/proxy/network"
-	err := getJSON(ctx, client, base+prefix+"/api/self/sites", apiKey, &sites)
-	if isNotFound(err) {
-		prefix = ""
-		err = getJSON(ctx, client, base+"/api/self/sites", apiKey, &sites)
-	}
+	client := newHTTPClient()
+	sites, prefix, err := fetchSites(ctx, client, base, apiKey)
 	if err != nil {
 		return nil, err
 	}
-	if len(sites.Data) == 0 {
-		return nil, fmt.Errorf("the controller reported no sites")
-	}
 
 	var out []Device
-	for _, site := range sites.Data {
+	for _, site := range sites {
 		var devices struct {
 			Data []struct {
 				IP      string `json:"ip"`
