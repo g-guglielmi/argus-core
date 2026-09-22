@@ -189,6 +189,10 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/discovery/jobs", auth.RequireRole("admin", s.handleListDiscoveryJobs))
 	mux.HandleFunc("GET /api/discovery/jobs/{id}", auth.RequireRole("admin", s.handleGetDiscoveryJob))
 	mux.HandleFunc("POST /api/discovery/results/state", auth.RequireRole("admin", s.handleSetDiscoveryResultsState))
+	// Saved UniFi controllers for the §B sweep (API key write-only; see unifictl.go).
+	mux.HandleFunc("GET /api/discovery/controllers", auth.RequireRole("admin", s.handleListUniFiControllers))
+	mux.HandleFunc("POST /api/discovery/controllers", auth.RequireRole("admin", s.handleSaveUniFiController))
+	mux.HandleFunc("DELETE /api/discovery/controllers/{id}", auth.RequireRole("admin", s.handleDeleteUniFiController))
 
 	// per-proxy SNMP defaults (PRTG-style inheritance): read (any user), save + propagate (config write).
 	mux.HandleFunc("GET /api/proxies/{id}/snmp", auth.RequireAuth(s.handleGetProxySNMP))

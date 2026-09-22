@@ -11,6 +11,28 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **UniFi controller sweep - auto-discovery slice 2 (completes §B).** The Discovery tab gains a
+  second candidate source: save a UniFi Network controller once (name + base URL + API key, the
+  key encrypted at rest and write-only from the browser) and sweep it - the controller reports its
+  adopted devices across all sites with exact model, type, MAC, IP, firmware and site, so the
+  class suggestion is deterministic (switch/AP/gateway from the controller's own device type,
+  `provision.SuggestUniFiClass`). Sweeps run from the **core server** (in-process `internal/unifi`
+  client) or from a **probe** on the controller's network (`argus_unifi_sweep.py` rides the same
+  check-in channel as the scanner, advertised as the `sweeps` capability - probe image r15+), and
+  share the scan queue, history, retention and ignore carry-over. Devices only - clients stay the
+  subnet scan's job. The sweep speaks the same API the UniFi class templates poll (`X-API-KEY`
+  against the Network API, `/proxy/network/...` with a bare-path fallback for plain self-hosted
+  controllers).
+- **Adopting a swept UniFi device fills its macros for you.** For a sweep-adopted device on a
+  UniFi class, the four controller macros (`{$UNIFI.URL}`, `{$UNIFI.KEY}`, `{$UNIFI.MAC}`,
+  `{$UNIFI.SITE}`) are injected **server-side** from the saved controller and the sweep facts -
+  the fields the manual Add-device flow makes you type per device. The API key goes straight from
+  the encrypted store onto the host as a secret macro and never travels through the browser; the
+  review row shows the fields as auto-filled (only the site stays overridable).
+
 ## [0.4.57] - 2026-09-21
 
 **Fixed:**

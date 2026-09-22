@@ -79,7 +79,7 @@ from a homelab to a multi-site enterprise - can layer Argus on top.
 | [`deploy/`](deploy/README.md) | Deploy kit - the self-installing **core appliance VM** (`core-vm/`), Zabbix core install scripts, PKI, unRAID templates, checklist |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Full design document (architecture, device classes, thresholds, roadmap) |
 | [`docs/hosts/`](docs/hosts/README.md) | Per-device monitoring guides - one per class (Linux/Windows SNMP, UniFi, AdGuard/DNS, Home Assistant, UPS, unRAID + Ugreen), with setup and credentials |
-| [`docs/discovery.md`](docs/discovery.md) | Network discovery - scan a subnet from a probe, review the fingerprints, adopt devices |
+| [`docs/discovery.md`](docs/discovery.md) | Network discovery - subnet scans + UniFi controller sweeps, review the candidates, adopt devices |
 | [`ROADMAP.md`](ROADMAP.md) | Tracking checklist of what's built and what's left |
 | [`.github/workflows/`](.github/workflows/build.yml) | CI - builds the Argus image, pushes to `ghcr.io/<owner>/argus`, auto-publishes GitHub Releases on tags |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release-by-release history |
@@ -350,10 +350,10 @@ concurrency gotcha that can silently cancel a tag build).
 - v0.3.3 - Self-service password reset (emailed single-use link)
 - v0.4.0 - Probe enrollment (GUI token → self-enrolling `argus-probe` container)
 - v0.4.x - Device classes (~20 classes: SNMP, HTTP APIs, agentless collectors) + network discovery
-  (scan a subnet from a probe, fingerprint, review + adopt - see [`docs/discovery.md`](docs/discovery.md))
+  (scan a subnet from a probe or the core, fingerprint, review + adopt; UniFi controller sweep with
+  server-side macro pre-fill - see [`docs/discovery.md`](docs/discovery.md))
 
 **Planned:**
-- Auto-discovery, UniFi slice - controller API sweep as a second candidate source for the review pipeline
 - Global search - top-bar quick-switcher to jump to a host/sensor by name, IP, or tag
   (server-side, for large deployments; see DESIGN §16)
 - Per-channel severity filter, labeled graph axes

@@ -18,6 +18,7 @@ type ProbeAgent struct {
 	Version        string
 	SelfUpdate     bool
 	Scans          bool   // the probe container advertises the network-scan capability (§B discovery)
+	Sweeps         bool   // the probe container advertises the UniFi-sweep capability (§B discovery)
 	LastCheckin    int64  // unix seconds, 0 if never
 	UpdaterVersion string // version of the argus-updater sidecar managing this probe, "" if none
 	// Break-glass console credential (VM probes). The secret itself is never carried here - only
@@ -62,7 +63,7 @@ func (s *Store) ProbeNameByToken(ctx context.Context, tokenHash string) (string,
 // socket-holding updater sidecar advertises capability but reports no version. An empty version
 // keeps the last known version; a nil selfUpdate/scans keeps the last known flag - so the two never
 // clobber each other. last_checkin is always refreshed.
-func (s *Store) RecordProbeCheckin(ctx context.Context, proxyName, version string, selfUpdate, scans *bool) error {
+func (s *Store) RecordProbeCheckin(ctx context.Context, proxyName, version string, selfUpdate, scans, sweeps *bool) error {
 	set := "last_checkin=?"
 	args := []any{time.Now().Unix()}
 	if strings.TrimSpace(version) != "" {
@@ -85,6 +86,14 @@ func (s *Store) RecordProbeCheckin(ctx context.Context, proxyName, version strin
 		set += ", scans=?"
 		args = append(args, sc)
 	}
+	if sweeps != nil {
+		sw := 0
+		if *sweeps {
+			sw = 1
+		}
+		set += ", sweeps=?"
+		args = append(args, sw)
+	}
 	args = append(args, proxyName)
 	_, err := s.db.ExecContext(ctx, `UPDATE probe_agents SET `+set+` WHERE proxy_name=?`, args...)
 	return err
@@ -94,11 +103,11 @@ func (s *Store) RecordProbeCheckin(ctx context.Context, proxyName, version strin
 // through Argus (no check-in credential).
 func (s *Store) ProbeAgentByName(ctx context.Context, name string) (*ProbeAgent, error) {
 	var a ProbeAgent
-	var su, sc, bg, rr int
+	var su, sc, sw, bg, rr int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT proxy_name,version,selfupdate,scans,last_checkin,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version
+		`SELECT proxy_name,version,selfupdate,scans,sweeps,last_checkin,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version
 		 FROM probe_agents WHERE proxy_name=?`, name).
-		Scan(&a.ProxyName, &a.Version, &su, &sc, &a.LastCheckin, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion)
+		Scan(&a.ProxyName, &a.Version, &su, &sc, &sw, &a.LastCheckin, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -107,6 +116,7 @@ func (s *Store) ProbeAgentByName(ctx context.Context, name string) (*ProbeAgent,
 	}
 	a.SelfUpdate = su != 0
 	a.Scans = sc != 0
+	a.Sweeps = sw != 0
 	a.BreakGlassSet = bg != 0
 	a.RebootRequired = rr != 0
 	return &a, nil
@@ -144,7 +154,7 @@ func (s *Store) TakeProbeUpdate(ctx context.Context, name string) (string, error
 
 // ProbeAgents returns every probe's fleet-update state, keyed by proxy name (for the fleet view).
 func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,version,selfupdate,scans,last_checkin,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version FROM probe_agents`)
+	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,version,selfupdate,scans,sweeps,last_checkin,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version FROM probe_agents`)
 	if err != nil {
 		return nil, err
 	}
@@ -152,12 +162,13 @@ func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) 
 	out := make(map[string]ProbeAgent)
 	for rows.Next() {
 		var a ProbeAgent
-		var su, sc, bg, rr int
-		if err := rows.Scan(&a.ProxyName, &a.Version, &su, &sc, &a.LastCheckin, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion); err != nil {
+		var su, sc, sw, bg, rr int
+		if err := rows.Scan(&a.ProxyName, &a.Version, &su, &sc, &sw, &a.LastCheckin, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion); err != nil {
 			return nil, err
 		}
 		a.SelfUpdate = su != 0
 		a.Scans = sc != 0
+		a.Sweeps = sw != 0
 		a.BreakGlassSet = bg != 0
 		a.RebootRequired = rr != 0
 		out[a.ProxyName] = a

@@ -2,7 +2,9 @@
 
 Argus can sweep a subnet from one of your probes, fingerprint what answers, and let you adopt the
 results as monitored devices in a couple of clicks - the auto-provisioning replacement for PRTG's
-"Add Sensor" flow (DESIGN §8). Discovery is **admin-only** and lives in the sidebar under
+"Add Sensor" flow (DESIGN §8). A second source, the **UniFi controller sweep**, asks a UniFi
+Network controller for its adopted devices instead of probing the wire - both feed the same
+review-and-adopt screen. Discovery is **admin-only** and lives in the sidebar under
 **Configure → Discovery**.
 
 ## Requirements
@@ -73,6 +75,37 @@ Rows you don't care about: **Ignore selected**. Ignored devices stay ignored on 
 that probe (unignore any time via "Show ignored"). Devices Argus already monitors are flagged
 "monitored" and can't be selected, so a re-scan is a cheap way to find what's new on a subnet.
 
+## UniFi controller sweep
+
+Where the subnet scan fingerprints and guesses, the sweep **asks the controller** - so every result
+comes back with the exact model, type, MAC, IP, firmware and UniFi site, and the class suggestion
+is certain (switch/AP/gateway by the controller's own device type).
+
+1. Save the controller once under **Manage controllers**: a name, the base URL (the same one you'd
+   put in `{$UNIFI.URL}`, e.g. `https://unifi.example.lan:11443`) and an **API key** (UniFi
+   Network → Settings → Control Plane → Integrations). The key is stored encrypted and never
+   returned to the browser; editing a controller with the key field left blank keeps the stored
+   one.
+2. Pick the controller, pick where to sweep from (the **core server**, if it can reach the
+   controller URL, or a **probe** on the controller's network - probe sweeps need
+   `probe/v7.0.30-r15` or later, older ones show "(needs probe update)"), and **Start sweep**. A
+   sweep is a handful of HTTPS calls and finishes in seconds; it covers **all sites** of a
+   multi-site controller and lists **adopted devices with an IP** (clients are the subnet scan's
+   job).
+3. Review and adopt exactly as with a scan - with one extra convenience: for a device adopted with
+   a UniFi class, the four controller macros (`{$UNIFI.URL}`, `{$UNIFI.KEY}`, `{$UNIFI.MAC}`,
+   `{$UNIFI.SITE}`) are **filled in server-side from the saved controller and the sweep facts** -
+   the fields the manual Add-device flow makes you type per device. The API key goes straight from
+   the encrypted store onto the host (as a secret macro); the row settings show these fields as
+   auto-filled, and only the site can be overridden.
+
+Sweeps share the scan queue and history (same per-source queueing, same 30-day retention, same
+ignore carry-over - a device ignored in a scan stays ignored in a sweep of the same source and
+vice versa). The sweep speaks the same API the UniFi class templates poll (`X-API-KEY` against the
+Network API, `/proxy/network/...` with a fallback to the bare path for plain self-hosted
+controllers), so a controller that works for monitoring works for the sweep. TLS is not verified -
+consoles ship self-signed certificates.
+
 ## Notes
 
 - Scan history is kept for 30 days (capped per source); reopen any scan from the Recent scans list.
@@ -81,5 +114,5 @@ that probe (unignore any time via "Show ignored"). Devices Argus already monitor
   but never reports back fails after 15.
 - Scan traffic is polite: TCP connects and single UDP probes with 1-3 s timeouts, ~64 addresses in
   parallel, an 8-minute budget per scan.
-- The UniFi controller API sweep (managed inventory as a second candidate source) is the next slice
-  of this pipeline - see the roadmap.
+- Deleting a saved controller never touches adopted devices (their macros are their own); queued
+  sweeps referencing it fail with a clear message.

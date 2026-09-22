@@ -109,6 +109,12 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "an IP address or DNS name is required"})
 		return
 	}
+	// A sweep-adopted UniFi device gets its controller macros (URL/KEY/MAC/SITE) filled from the
+	// saved controller server-side, BEFORE the required-macro check - the API key never travels
+	// through the browser. See injectUniFiMacros in netdiscovery.go.
+	if req.DiscoveryResultID > 0 && strings.HasPrefix(class.ID, "unifi-") {
+		s.injectUniFiMacros(r.Context(), &req)
+	}
 	// Class-declared per-host macros (API endpoint, credentials, …) - the required ones must be set.
 	for _, ms := range class.Macros {
 		if ms.Required && strings.TrimSpace(req.Macros[ms.Macro]) == "" {

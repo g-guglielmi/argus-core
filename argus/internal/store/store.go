@@ -304,8 +304,11 @@ CREATE TABLE IF NOT EXISTS device_class (
 -- probe's next check-in (pending -> dispatched) and finished when the probe posts results
 -- (done/failed). snmp_community is encrypted at rest like snmp_defaults.
 CREATE TABLE IF NOT EXISTS discovery_jobs (
-  id             INTEGER PRIMARY KEY AUTOINCREMENT,
-  proxy_name     TEXT NOT NULL,
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  proxy_name      TEXT NOT NULL,
+  kind            TEXT NOT NULL DEFAULT 'scan',  -- scan (subnet) | unifi (controller sweep)
+  controller_id   INTEGER NOT NULL DEFAULT 0,    -- unifi_controllers.id for sweep jobs
+  controller_name TEXT NOT NULL DEFAULT '',      -- display snapshot (survives controller deletion)
   cidr           TEXT NOT NULL,
   snmp_version   INTEGER NOT NULL DEFAULT 2,
   snmp_community TEXT NOT NULL DEFAULT '',   -- encrypted
@@ -316,6 +319,18 @@ CREATE TABLE IF NOT EXISTS discovery_jobs (
   created_at     INTEGER NOT NULL,
   dispatched_at  INTEGER NOT NULL DEFAULT 0,
   completed_at   INTEGER NOT NULL DEFAULT 0
+);
+
+-- Saved UniFi Network controllers the §B sweep can enumerate adopted devices from. The API key is
+-- encrypted at rest like snmp_defaults secrets; it is decrypted only at sweep dispatch and at
+-- adopt-time macro injection - it never travels to the browser.
+CREATE TABLE IF NOT EXISTS unifi_controllers (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  url        TEXT NOT NULL,
+  api_key    TEXT NOT NULL DEFAULT '',   -- encrypted
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
 );
 
 -- Raw per-host fingerprints a scan reported, kept per job for the Discovery review screen.
@@ -334,6 +349,7 @@ CREATE TABLE IF NOT EXISTS discovery_results (
   http_json        TEXT NOT NULL DEFAULT '',
   dns              INTEGER NOT NULL DEFAULT 0,
   ssh_banner       TEXT NOT NULL DEFAULT '',
+  unifi_json       TEXT NOT NULL DEFAULT '',   -- controller-sourced facts (sweep results only)
   suggested_class  TEXT NOT NULL DEFAULT '',
   state            TEXT NOT NULL DEFAULT 'new', -- new|ignored|added
   host_id          TEXT NOT NULL DEFAULT ''     -- Zabbix host id once adopted
@@ -408,6 +424,26 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 	// SSH version banner a scanned host volunteered (dropbear = embedded gear) - added after the
 	// first fleet scans, so databases created before it need the column.
 	if err := s.ensureColumn("discovery_results", "ssh_banner TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	// UniFi-sweep capability the probe container advertises at check-in (sticky like scans).
+	if err := s.ensureColumn("probe_agents", "sweeps INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	// Discovery job kind ('scan' = subnet scan, 'unifi' = controller sweep) plus the sweep's
+	// controller reference: the id resolves credentials at dispatch time, the name is a display
+	// snapshot that survives the controller's deletion.
+	if err := s.ensureColumn("discovery_jobs", "kind TEXT NOT NULL DEFAULT 'scan'"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("discovery_jobs", "controller_id INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("discovery_jobs", "controller_name TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	// Controller-sourced facts for a sweep result (name/model/type/state/version/site JSON).
+	if err := s.ensureColumn("discovery_results", "unifi_json TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("notify_events", "item_id TEXT NOT NULL DEFAULT ''"); err != nil {

@@ -191,6 +191,21 @@ func unifiModelClass(ident string) string {
 	return ""
 }
 
+// SuggestUniFiClass maps a controller sweep's device record to a class. Unlike SuggestClass this
+// is deterministic - the controller states the device type outright; the model tokens are only a
+// fallback for exotic type strings. "" means no suggestion (base Ping).
+func SuggestUniFiClass(typ, model string) string {
+	switch strings.ToLower(strings.TrimSpace(typ)) {
+	case "usw":
+		return "unifi-switch"
+	case "uap":
+		return "unifi-ap"
+	case "ugw", "usg", "udm", "uxg", "ucg":
+		return "unifi-gateway"
+	}
+	return unifiModelClass(strings.ToLower(model))
+}
+
 func containsAny(s string, subs ...string) bool {
 	for _, sub := range subs {
 		if strings.Contains(s, sub) {

@@ -36,6 +36,12 @@ read at the controller, so one key covers every UniFi device on that controller.
 
 ## 3. Add the device in Argus
 
+> **Shortcut: the UniFi controller sweep.** Under **Configure → Discovery**, save the controller
+> once (URL + API key) and sweep it - every adopted switch/AP/gateway shows up with the right class
+> suggested, and adopting fills all four macros below automatically (the key straight from the
+> encrypted store). See [`docs/discovery.md`](../discovery.md). The manual path below still works
+> for one-offs.
+
 **Add device →** the matching UniFi class, then fill in:
 
 | Field | Macro | Notes |

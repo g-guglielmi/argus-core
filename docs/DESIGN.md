@@ -245,13 +245,13 @@ Dashboards (list views, same event stream):
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")
 
 > Sequencing: **§C** built the class templates (§5) plus a **manual** attach path; **§B** automates
-> the pipeline below on top of them. The **universal subnet scan** (steps 2-6) is SHIPPED; the
-> UniFi API sweep (step 1) is the remaining §B item - a second candidate source into the same
-> pipeline.
+> the pipeline below on top of them. The **universal subnet scan** (steps 2-6) and the **UniFi
+> controller sweep** (step 1) are both SHIPPED - §B is complete.
 
 Runs per-site on the probe, reports to core for provisioning:
-1. **UniFi API sweep** (planned) → managed inventory (gateway/switches/APs + known clients) with
-   model/MAC/IP/uptime/port stats → candidates into the same review pipeline as the subnet scan.
+1. **UniFi controller sweep** ✅ → a saved controller (name + URL + encrypted API key) is asked for
+   its adopted devices across all sites (model/type/MAC/IP/firmware/site, devices only - clients
+   are the subnet scan's job) → candidates into the same review pipeline as the subnet scan.
 2. **Capability fingerprint** per host ✅ → ICMP + a TCP port set (22/53/80/443/445/3493/8080/8443/10050),
    SNMP `sysDescr`/`sysObjectID`/`sysName` (hand-rolled v1/v2c GET), an HTTP(S) banner grab
    (status/Server/`<title>`), a real DNS query on :53, reverse DNS and the ARP cache.
@@ -279,6 +279,21 @@ networks the core monitors directly. Container-imposed limits: ICMP uses an unpr
 socket (works under Docker's default `ping_group_range`, silently skipped elsewhere) and no MAC/ARP.
 The core has its own SNMP default (stored under proxy id "0", set via Probes → Core SNMP): it backs
 core-run scans and gives core-monitored hosts the same SNMP-credential inheritance as proxy hosts.
+
+**Mechanics (UniFi controller sweep, shipped).** The second candidate source rides the exact same
+rails: a `discovery_jobs` row with `kind=unifi` referencing a saved controller (`unifi_controllers`,
+API key encrypted at rest, write-only from the browser). A probe advertising `"sweeps":true`
+receives it as `sweep: {id, url, key}` in the check-in response and backgrounds
+`argus_unifi_sweep.py` (stdlib-only, mirrored like the scanner); a core-sourced job runs the
+in-process `internal/unifi` client. Both speak the API the UniFi class templates already poll
+(`X-API-KEY` against `/proxy/network/api/self/sites` + `/api/s/{site}/stat/device`, bare-path
+fallback for plain self-hosted controllers, TLS unverified) and post into the same
+`/api/probes/scan-results` shape with a per-host `unifi` facts object. Classification is
+deterministic (`provision.SuggestUniFiClass` from the controller's own device type). The adopt
+payoff: for a sweep-adopted UniFi-class host the server injects `{$UNIFI.URL}/{$UNIFI.KEY}/
+{$UNIFI.MAC}/{$UNIFI.SITE}` from the saved controller + sweep facts before validation, so the API
+key never travels through the browser and nobody types per-device macros. Sweeps share the scan
+queue, history, retention and ignore carry-over.
 
 **Discovery trigger (shipped with §C).** LLD rules run on a long interval (1h on the SNMP classes),
 so a freshly added host would sit without its per-instance sensors. Two seams close that gap:

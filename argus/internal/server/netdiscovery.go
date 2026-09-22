@@ -17,15 +17,18 @@ import (
 	"argus/internal/netscan"
 	"argus/internal/provision"
 	"argus/internal/store"
+	"argus/internal/unifi"
 )
 
-// Network auto-discovery (§B, universal subnet scan). The pipeline piggybacks on the probe
-// check-in channel: an admin queues a scan job here, handleProbeCheckin hands it to the probe once
-// (takeScanJob), the probe's argus_netscan.py sweeps the subnet and POSTs the raw fingerprints to
-// /api/probes/scan-results, and the core classifies them (provision.SuggestClass) for the
-// Discovery review screen, where results are adopted via the ordinary POST /api/hosts
-// (discovery_result_id) or ignored. Note the namespace: /api/discovery/* - the bare "discover"
-// noun (discover.go) is the per-host LLD re-fire, a different thing.
+// Network auto-discovery (§B). Two job kinds share one pipeline: the universal subnet scan
+// (kind "scan") and the UniFi controller sweep (kind "unifi", which asks a saved controller for
+// its adopted devices). Both piggyback on the probe check-in channel: an admin queues a job here,
+// handleProbeCheckin hands it out once (takeDiscoveryHandout), the probe's scanner/sweeper POSTs
+// results to /api/probes/scan-results, and the core classifies them (provision.SuggestClass /
+// SuggestUniFiClass) for the Discovery review screen, where results are adopted via the ordinary
+// POST /api/hosts (discovery_result_id) or ignored. Core-sourced jobs skip the channel and run
+// in-process (runCoreScan / runCoreSweep). Note the namespace: /api/discovery/* - the bare
+// "discover" noun (discover.go) is the per-host LLD re-fire, a different thing.
 
 // maxScanHosts caps a scan's subnet size (a /22). The scanner enforces the same cap.
 const maxScanHosts = 1024
@@ -43,22 +46,46 @@ type scanSNMP struct {
 	Port      int    `json:"port"`
 }
 
-// takeScanJob pops the probe's oldest pending scan job for the check-in response (nil = none).
-func (s *Server) takeScanJob(ctx context.Context, proxyName string) *scanJobPayload {
-	job, err := s.st.TakeDiscoveryJob(ctx, proxyName)
-	if err != nil {
-		s.logger.Warn("discovery: could not take scan job", "proxy", proxyName, "err", err)
-		return nil
+// sweepJobPayload is the one-shot UniFi sweep handed to the probe inside the check-in response.
+// The API key is decrypted at handout time only (the check-in channel is the same trust boundary
+// that already carries the SNMP community).
+type sweepJobPayload struct {
+	ID  int64  `json:"id"`
+	URL string `json:"url"`
+	Key string `json:"key"`
+}
+
+// takeDiscoveryHandout pops the probe's oldest pending discovery job for the check-in response
+// and shapes it by kind (at most one of the returns is non-nil). A sweep job whose saved
+// controller is gone completes as failed on the spot, freeing the queue for the next job.
+func (s *Server) takeDiscoveryHandout(ctx context.Context, proxyName string) (*scanJobPayload, *sweepJobPayload) {
+	for range [3]int{} { // bounded: each dead sweep job completes and frees the next
+		job, err := s.st.TakeDiscoveryJob(ctx, proxyName)
+		if err != nil {
+			s.logger.Warn("discovery: could not take discovery job", "proxy", proxyName, "err", err)
+			return nil, nil
+		}
+		if job == nil {
+			return nil, nil
+		}
+		if job.Kind == "unifi" {
+			ctl, err := s.st.UniFiControllerByID(ctx, job.ControllerID)
+			if err != nil || ctl.APIKey == "" {
+				_ = s.st.CompleteDiscoveryJob(ctx, job.ID, proxyName,
+					"the saved controller no longer exists (or has no API key) - re-add it under Discovery", nil)
+				continue
+			}
+			s.logger.Info("discovery: sweep job dispatched", "proxy", proxyName, "job", job.ID, "controller", ctl.Name)
+			return nil, &sweepJobPayload{ID: job.ID, URL: ctl.URL, Key: ctl.APIKey}
+		}
+		p := &scanJobPayload{ID: job.ID, CIDR: job.CIDR}
+		if job.SNMPCommunity != "" {
+			p.SNMP = &scanSNMP{Version: job.SNMPVersion, Community: job.SNMPCommunity, Port: job.SNMPPort}
+		}
+		s.logger.Info("discovery: scan job dispatched", "proxy", proxyName, "job", job.ID, "cidr", job.CIDR)
+		return p, nil
 	}
-	if job == nil {
-		return nil
-	}
-	p := &scanJobPayload{ID: job.ID, CIDR: job.CIDR}
-	if job.SNMPCommunity != "" {
-		p.SNMP = &scanSNMP{Version: job.SNMPVersion, Community: job.SNMPCommunity, Port: job.SNMPPort}
-	}
-	s.logger.Info("discovery: scan job dispatched", "proxy", proxyName, "job", job.ID, "cidr", job.CIDR)
-	return p
+	return nil, nil
 }
 
 // normalizeScanCIDR validates and canonicalises the requested scan range: IPv4 only, at most a /22
@@ -81,28 +108,36 @@ func normalizeScanCIDR(raw string) (string, string) {
 	return p.Masked().String(), ""
 }
 
-// POST /api/discovery/jobs (admin) - queue a subnet scan. proxy_id "" (or "0") = the core server:
-// there is no check-in channel to ride, so the job is dispatched immediately to an in-process Go
-// scanner (internal/netscan) instead of waiting for a probe.
+// POST /api/discovery/jobs (admin) - queue a subnet scan (kind "scan", the default) or a UniFi
+// controller sweep (kind "unifi" + controller_id). proxy_id "" (or "0") = the core server: there
+// is no check-in channel to ride, so the job is dispatched immediately to an in-process runner
+// (internal/netscan / internal/unifi) instead of waiting for a probe.
 func (s *Server) handleCreateDiscoveryJob(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ProxyID string   `json:"proxy_id"`
-		CIDR    string   `json:"cidr"`
-		SNMP    *snmpReq `json:"snmp"` // explicit override; default = the probe's SNMP default
+		ProxyID      string   `json:"proxy_id"`
+		Kind         string   `json:"kind"` // "" / "scan" | "unifi"
+		ControllerID int64    `json:"controller_id"`
+		CIDR         string   `json:"cidr"`
+		SNMP         *snmpReq `json:"snmp"` // explicit override; default = the probe's SNMP default
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
-	cidr, msg := normalizeScanCIDR(req.CIDR)
-	if msg != "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
-		return
+	sweep := req.Kind == "unifi"
+	cidr := ""
+	if !sweep {
+		var msg string
+		cidr, msg = normalizeScanCIDR(req.CIDR)
+		if msg != "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+			return
+		}
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 	defer cancel()
 
-	// Core scans are keyed by the empty proxy name - no probe resolution, no capability gate.
+	// Core jobs are keyed by the empty proxy name - no probe resolution, no capability gate.
 	coreScan := req.ProxyID == "" || req.ProxyID == "0"
 	proxyName := ""
 	if !coreScan {
@@ -126,35 +161,60 @@ func (s *Server) handleCreateDiscoveryJob(w http.ResponseWriter, r *http.Request
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown probe"})
 			return
 		}
-		// Only a probe that has advertised the scan capability can run one (older images never will).
-		if ag, err := s.st.ProbeAgentByName(ctx, proxyName); err != nil || !ag.Scans {
+		// Only a probe that has advertised the matching capability can run the job (older images
+		// never will).
+		ag, err := s.st.ProbeAgentByName(ctx, proxyName)
+		switch {
+		case err != nil || (!sweep && !ag.Scans):
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "this probe hasn't reported the network-scan capability - it needs the latest probe image (and check-in enabled)"})
+			return
+		case sweep && !ag.Sweeps:
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "this probe hasn't reported the UniFi-sweep capability - it needs the latest probe image (and check-in enabled)"})
 			return
 		}
 	}
 
 	job := store.DiscoveryJob{ProxyName: proxyName, CIDR: cidr, SNMPVersion: 2, SNMPPort: 161}
-	switch {
-	case req.SNMP != nil && strings.TrimSpace(req.SNMP.Community) != "":
-		job.SNMPCommunity = strings.TrimSpace(req.SNMP.Community)
-		if req.SNMP.Version == 1 {
-			job.SNMPVersion = 1
+	if sweep {
+		ctl, err := s.st.UniFiControllerByID(ctx, req.ControllerID)
+		if errors.Is(err, store.ErrNotFound) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown controller - pick a saved one"})
+			return
 		}
-		if p, err := strconv.Atoi(strings.TrimSpace(req.SNMP.Port)); err == nil && p > 0 && p < 65536 {
-			job.SNMPPort = p
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not load the controller"})
+			return
 		}
-	default:
-		// The common case: fingerprint with the collector's own SNMP default (v1/v2c only - the
-		// scanner doesn't speak v3; a v3-only site just scans without SNMP). The core server's
-		// default lives under proxy id "0" (set via Probes -> Core SNMP).
-		defID := req.ProxyID
-		if coreScan {
-			defID = "0"
+		if ctl.APIKey == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "this controller has no API key saved - edit it and add one"})
+			return
 		}
-		if def, ok, _ := s.st.SNMPDefaultFor(ctx, defID); ok && def.Community != "" && def.Version != 3 {
-			job.SNMPCommunity = def.Community
-			if def.Version == 1 {
+		job.Kind = "unifi"
+		job.ControllerID = ctl.ID
+		job.ControllerName = ctl.Name
+	} else {
+		switch {
+		case req.SNMP != nil && strings.TrimSpace(req.SNMP.Community) != "":
+			job.SNMPCommunity = strings.TrimSpace(req.SNMP.Community)
+			if req.SNMP.Version == 1 {
 				job.SNMPVersion = 1
+			}
+			if p, err := strconv.Atoi(strings.TrimSpace(req.SNMP.Port)); err == nil && p > 0 && p < 65536 {
+				job.SNMPPort = p
+			}
+		default:
+			// The common case: fingerprint with the collector's own SNMP default (v1/v2c only - the
+			// scanner doesn't speak v3; a v3-only site just scans without SNMP). The core server's
+			// default lives under proxy id "0" (set via Probes -> Core SNMP).
+			defID := req.ProxyID
+			if coreScan {
+				defID = "0"
+			}
+			if def, ok, _ := s.st.SNMPDefaultFor(ctx, defID); ok && def.Community != "" && def.Version != 3 {
+				job.SNMPCommunity = def.Community
+				if def.Version == 1 {
+					job.SNMPVersion = 1
+				}
 			}
 		}
 	}
@@ -167,22 +227,36 @@ func (s *Server) handleCreateDiscoveryJob(w http.ResponseWriter, r *http.Request
 		if coreScan {
 			who = "the core server"
 		}
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "too many scans queued for " + who + " - wait for one to finish"})
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "too many discovery jobs queued for " + who + " - wait for one to finish"})
 		return
 	}
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the scan"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the job"})
 		return
 	}
 	if coreScan {
 		// Dispatch in-process right away (TakeDiscoveryJob flips it to dispatched and decrypts
 		// the community, exactly as a check-in would).
-		if taken, err := s.st.TakeDiscoveryJob(ctx, ""); err == nil && taken != nil {
-			go s.runCoreScan(*taken)
-		}
+		s.dispatchNextCoreJob(ctx)
 	}
-	s.logger.Info("discovery: scan queued", "proxy", proxyName, "core", coreScan, "cidr", cidr, "job", id, "snmp", job.SNMPCommunity != "")
+	s.logger.Info("discovery: job queued", "proxy", proxyName, "core", coreScan, "kind", req.Kind,
+		"cidr", cidr, "controller", job.ControllerName, "job", id, "snmp", job.SNMPCommunity != "")
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "state": "pending"})
+}
+
+// dispatchNextCoreJob pops the core's oldest pending discovery job (if none is running) and runs
+// it in-process by kind. Called on job creation and after each core job finishes, so the core's
+// queue drains strictly one at a time - the same cadence a probe's lock-file gives it.
+func (s *Server) dispatchNextCoreJob(ctx context.Context) {
+	taken, err := s.st.TakeDiscoveryJob(ctx, "")
+	if err != nil || taken == nil {
+		return
+	}
+	if taken.Kind == "unifi" {
+		go s.runCoreSweep(*taken)
+		return
+	}
+	go s.runCoreScan(*taken)
 }
 
 // runCoreScan executes a core-server scan in-process and completes the job like a probe would.
@@ -233,28 +307,114 @@ func (s *Server) runCoreScan(job store.DiscoveryJob) {
 		return
 	}
 	s.logger.Info("discovery: core scan finished", "job", job.ID, "cidr", job.CIDR, "hosts", len(results), "note", errMsg)
-	// Core scans queue like probe scans do; drain the next one (Take only yields once nothing is
+	// Core jobs queue like probe jobs do; drain the next one (Take only yields once nothing is
 	// dispatched, so the queue runs strictly one at a time).
-	if next, err := s.st.TakeDiscoveryJob(sctx, ""); err == nil && next != nil {
-		go s.runCoreScan(*next)
+	s.dispatchNextCoreJob(sctx)
+}
+
+// unifiFacts is the controller-sourced device record stored per sweep result (unifi_json) and
+// carried to the review screen verbatim. Site is the API site name (the {$UNIFI.SITE} value);
+// SiteDesc its display name.
+type unifiFacts struct {
+	Name     string `json:"name,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Type     string `json:"type,omitempty"`
+	State    int    `json:"state"`
+	Version  string `json:"version,omitempty"`
+	Site     string `json:"site,omitempty"`
+	SiteDesc string `json:"site_desc,omitempty"`
+}
+
+// injectUniFiMacros fills the {$UNIFI.*} macros of a sweep-adopted host from the job's saved
+// controller and the result's own facts, wherever the request left them blank. The review screen
+// never sees the API key - it lands on the host straight from the encrypted store here.
+// Best-effort: if the controller has been deleted since the sweep, the normal required-macro
+// validation catches whatever stays blank.
+func (s *Server) injectUniFiMacros(ctx context.Context, req *createHostRequest) {
+	res, err := s.st.DiscoveryResultByID(ctx, req.DiscoveryResultID)
+	if err != nil || res.UniFiJSON == "" {
+		return
 	}
+	job, err := s.st.DiscoveryJobByID(ctx, res.JobID)
+	if err != nil || job.Kind != "unifi" {
+		return
+	}
+	var uf unifiFacts
+	_ = json.Unmarshal([]byte(res.UniFiJSON), &uf)
+	if req.Macros == nil {
+		req.Macros = map[string]string{}
+	}
+	set := func(macro, value string) {
+		if strings.TrimSpace(req.Macros[macro]) == "" && value != "" {
+			req.Macros[macro] = value
+		}
+	}
+	if ctl, err := s.st.UniFiControllerByID(ctx, job.ControllerID); err == nil {
+		set("{$UNIFI.URL}", ctl.URL)
+		set("{$UNIFI.KEY}", ctl.APIKey)
+	}
+	set("{$UNIFI.MAC}", res.MAC)
+	set("{$UNIFI.SITE}", uf.Site)
+}
+
+// runCoreSweep executes a core-server UniFi sweep in-process and completes the job like a probe
+// would. Runs in its own goroutine with its own deadline; a wedged sweep is covered by the
+// store's dispatched-job expiry.
+func (s *Server) runCoreSweep(job store.DiscoveryJob) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	var results []store.DiscoveryResult
+	errMsg := ""
+	ctl, err := s.st.UniFiControllerByID(ctx, job.ControllerID)
+	if err != nil || ctl.APIKey == "" {
+		errMsg = "the saved controller no longer exists (or has no API key) - re-add it under Discovery"
+	} else {
+		devices, err := unifi.Sweep(ctx, ctl.URL, ctl.APIKey)
+		if err != nil {
+			errMsg = err.Error()
+			if len(errMsg) > 200 {
+				errMsg = errMsg[:200]
+			}
+		}
+		results = make([]store.DiscoveryResult, 0, len(devices))
+		for _, d := range devices {
+			facts, _ := json.Marshal(unifiFacts{Name: d.Name, Model: d.Model, Type: d.Type,
+				State: d.State, Version: d.Version, Site: d.Site, SiteDesc: d.SiteDesc})
+			results = append(results, store.DiscoveryResult{
+				IP: d.IP, MAC: d.MAC, TCPPorts: "[]", UniFiJSON: string(facts),
+				SuggestedClass: provision.SuggestUniFiClass(d.Type, d.Model),
+			})
+		}
+	}
+	// A fresh context: the sweep one may just have expired, and the write must still land.
+	sctx, scancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer scancel()
+	if err := s.st.CompleteDiscoveryJob(sctx, job.ID, "", errMsg, results); err != nil {
+		s.logger.Error("discovery: could not store core sweep results", "job", job.ID, "err", err)
+		return
+	}
+	s.logger.Info("discovery: core sweep finished", "job", job.ID, "controller", job.ControllerName, "devices", len(results), "note", errMsg)
+	s.dispatchNextCoreJob(sctx)
 }
 
 type discoveryJobView struct {
-	ID          int64  `json:"id"`
-	ProxyName   string `json:"proxy_name"`
-	CIDR        string `json:"cidr"`
-	State       string `json:"state"` // pending | dispatched | done | failed
-	Error       string `json:"error,omitempty"`
-	RequestedBy string `json:"requested_by,omitempty"`
-	CreatedAt   int64  `json:"created_at"`
-	CompletedAt int64  `json:"completed_at,omitempty"`
-	Found       int    `json:"found"` // result counts (list only): live hosts / still up for review
-	New         int    `json:"new"`
+	ID             int64  `json:"id"`
+	ProxyName      string `json:"proxy_name"`
+	Kind           string `json:"kind"` // scan | unifi
+	ControllerName string `json:"controller_name,omitempty"`
+	CIDR           string `json:"cidr"`
+	State          string `json:"state"` // pending | dispatched | done | failed
+	Error          string `json:"error,omitempty"`
+	RequestedBy    string `json:"requested_by,omitempty"`
+	CreatedAt      int64  `json:"created_at"`
+	CompletedAt    int64  `json:"completed_at,omitempty"`
+	Found          int    `json:"found"` // result counts (list only): live hosts / still up for review
+	New            int    `json:"new"`
 }
 
 func jobView(j store.DiscoveryJob) discoveryJobView {
-	return discoveryJobView{ID: j.ID, ProxyName: j.ProxyName, CIDR: j.CIDR, State: j.State,
+	return discoveryJobView{ID: j.ID, ProxyName: j.ProxyName, Kind: j.Kind, ControllerName: j.ControllerName,
+		CIDR: j.CIDR, State: j.State,
 		Error: j.Error, RequestedBy: j.RequestedBy, CreatedAt: j.CreatedAt, CompletedAt: j.CompletedAt,
 		Found: j.Found, New: j.NewCount}
 }
@@ -289,6 +449,7 @@ type discoveryResultView struct {
 	HTTP           json.RawMessage `json:"http,omitempty"`
 	DNS            bool            `json:"dns,omitempty"`
 	SSH            string          `json:"ssh,omitempty"`
+	Unifi          json.RawMessage `json:"unifi,omitempty"` // controller-sourced facts (sweep results)
 	SuggestedClass string          `json:"suggested_class,omitempty"`
 	State          string          `json:"state"`                    // new | ignored | added
 	HostID         string          `json:"host_id,omitempty"`        // the host this result was adopted as
@@ -350,17 +511,26 @@ func (s *Server) handleGetDiscoveryJob(w http.ResponseWriter, r *http.Request) {
 		}
 		// The suggestion is recomputed from the STORED raw facts on every read (the ingest-time
 		// value is kept only as a record): mapping improvements ship core-side and reach past
-		// scans immediately - no re-scan needed.
-		f := provision.Fingerprint{SysDescr: res.SysDescr, SysObjectID: res.SysObjectID,
-			SysName: res.SysName, DNS: res.DNS, TCP: v.TCP, MAC: res.MAC, RDNS: res.RDNS,
-			SSHBanner: res.SSHBanner}
-		if res.HTTPJSON != "" {
-			var hf httpFacts
-			if json.Unmarshal([]byte(res.HTTPJSON), &hf) == nil {
-				f.HTTPTitle, f.HTTPServer, f.HTTPLocation = hf.Title, hf.Server, hf.Location
+		// scans immediately - no re-scan needed. Sweep results carry the controller's own device
+		// record, which beats any fingerprint.
+		if res.UniFiJSON != "" {
+			v.Unifi = json.RawMessage(res.UniFiJSON)
+			var uf unifiFacts
+			if json.Unmarshal([]byte(res.UniFiJSON), &uf) == nil {
+				v.SuggestedClass = provision.SuggestUniFiClass(uf.Type, uf.Model)
 			}
+		} else {
+			f := provision.Fingerprint{SysDescr: res.SysDescr, SysObjectID: res.SysObjectID,
+				SysName: res.SysName, DNS: res.DNS, TCP: v.TCP, MAC: res.MAC, RDNS: res.RDNS,
+				SSHBanner: res.SSHBanner}
+			if res.HTTPJSON != "" {
+				var hf httpFacts
+				if json.Unmarshal([]byte(res.HTTPJSON), &hf) == nil {
+					f.HTTPTitle, f.HTTPServer, f.HTTPLocation = hf.Title, hf.Server, hf.Location
+				}
+			}
+			v.SuggestedClass = provision.SuggestClass(f)
 		}
-		v.SuggestedClass = provision.SuggestClass(f)
 		mid := res.HostID
 		if mid == "" {
 			mid = ipToHost[res.IP]
@@ -406,9 +576,10 @@ type scanResultHost struct {
 		SysObjectID string `json:"sysobjectid"`
 		SysName     string `json:"sysname"`
 	} `json:"snmp"`
-	HTTP json.RawMessage `json:"http"`
-	DNS  bool            `json:"dns"`
-	SSH  string          `json:"ssh"`
+	HTTP  json.RawMessage `json:"http"`
+	DNS   bool            `json:"dns"`
+	SSH   string          `json:"ssh"`
+	Unifi json.RawMessage `json:"unifi"` // controller sweep results only
 }
 
 // httpFacts is the slice of the scanner's HTTP banner the classifier cares about.
@@ -466,7 +637,16 @@ func (s *Server) handleScanResults(w http.ResponseWriter, r *http.Request) {
 		}
 		ports, _ := json.Marshal(h.TCP)
 		res.TCPPorts = string(ports)
-		res.SuggestedClass = provision.SuggestClass(f)
+		if len(h.Unifi) > 0 {
+			// A sweep result: the controller's device record IS the identity - no fingerprinting.
+			res.UniFiJSON = string(h.Unifi)
+			var uf unifiFacts
+			if json.Unmarshal(h.Unifi, &uf) == nil {
+				res.SuggestedClass = provision.SuggestUniFiClass(uf.Type, uf.Model)
+			}
+		} else {
+			res.SuggestedClass = provision.SuggestClass(f)
+		}
 		results = append(results, res)
 	}
 	err = s.st.CompleteDiscoveryJob(ctx, req.JobID, proxyName, strings.TrimSpace(req.Error), results)

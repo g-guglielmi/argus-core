@@ -82,6 +82,40 @@ func TestSuggestClass(t *testing.T) {
 	}
 }
 
+// The UniFi sweep gets device type + model straight from the controller, so the mapping is
+// deterministic - the model tokens only back up exotic type strings.
+func TestSuggestUniFiClass(t *testing.T) {
+	cases := []struct {
+		typ, model, want string
+	}{
+		{"usw", "US8P60", "unifi-switch"},
+		{"usw", "USMINI", "unifi-switch"},
+		{"uap", "U7PG2", "unifi-ap"},
+		{"ugw", "UGW3", "unifi-gateway"},
+		{"udm", "UDMPRO", "unifi-gateway"},
+		{"uxg", "UXGLITE", "unifi-gateway"},
+		{"ucg", "UCGMAX", "unifi-gateway"},
+		{"USW", "US8P60", "unifi-switch"}, // case-insensitive type
+		{"", "USW-Flex-2.5G-8", "unifi-switch"},   // model-token fallback
+		{"", "U6-Enterprise", "unifi-ap"},         // model-token fallback
+		{"", "Mystery-Device", ""},                // unknown -> base Ping
+		{"udb", "UDB", ""},                        // an exotic type with no token stays base
+	}
+	for _, c := range cases {
+		if got := SuggestUniFiClass(c.typ, c.model); got != c.want {
+			t.Errorf("SuggestUniFiClass(%q, %q) = %q, want %q", c.typ, c.model, got, c.want)
+		}
+	}
+	for _, c := range cases {
+		if c.want == "" {
+			continue
+		}
+		if _, ok := ClassByID(c.want); !ok {
+			t.Errorf("suggested class %q is not in the registry", c.want)
+		}
+	}
+}
+
 // Every class offers the HTTP/HTTPS add-on: any device may expose a web UI worth watching, and the
 // discovery review + Add-device forms rely on the toggle always being available (user's call).
 func TestEveryClassOffersHTTP(t *testing.T) {

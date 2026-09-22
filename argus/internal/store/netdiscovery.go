@@ -38,11 +38,15 @@ const (
 	discoveryKeepPerSource = 50
 )
 
-// DiscoveryJob is one queued network scan. SNMPCommunity is decrypted only by TakeDiscoveryJob
-// (the check-in handout); listing reads leave it empty.
+// DiscoveryJob is one queued discovery run: a subnet scan (kind "scan") or a UniFi controller
+// sweep (kind "unifi", CIDR empty, ControllerID/ControllerName set). SNMPCommunity is decrypted
+// only by TakeDiscoveryJob (the check-in handout); listing reads leave it empty.
 type DiscoveryJob struct {
-	ID            int64
-	ProxyName     string
+	ID             int64
+	ProxyName      string
+	Kind           string // scan | unifi
+	ControllerID   int64  // unifi_controllers.id (sweep jobs)
+	ControllerName string // display snapshot (sweep jobs)
 	CIDR          string
 	SNMPVersion   int
 	SNMPCommunity string
@@ -73,16 +77,18 @@ type DiscoveryResult struct {
 	HTTPJSON       string
 	DNS            bool
 	SSHBanner      string
+	UniFiJSON      string // controller-sourced facts (sweep results only)
 	SuggestedClass string
 	State          string // new | ignored | added
 	HostID         string // Zabbix host id once adopted
 }
 
-const discoveryJobColumns = `id, proxy_name, cidr, snmp_version, snmp_port, state, error, requested_by, created_at, dispatched_at, completed_at`
+const discoveryJobColumns = `id, proxy_name, kind, controller_id, controller_name, cidr, snmp_version, snmp_port, state, error, requested_by, created_at, dispatched_at, completed_at`
 
 func scanDiscoveryJob(row interface{ Scan(...any) error }) (DiscoveryJob, error) {
 	var j DiscoveryJob
-	err := row.Scan(&j.ID, &j.ProxyName, &j.CIDR, &j.SNMPVersion, &j.SNMPPort, &j.State, &j.Error,
+	err := row.Scan(&j.ID, &j.ProxyName, &j.Kind, &j.ControllerID, &j.ControllerName, &j.CIDR,
+		&j.SNMPVersion, &j.SNMPPort, &j.State, &j.Error,
 		&j.RequestedBy, &j.CreatedAt, &j.DispatchedAt, &j.CompletedAt)
 	return j, err
 }
@@ -118,10 +124,14 @@ func (s *Store) CreateDiscoveryJob(ctx context.Context, j DiscoveryJob) (int64, 
 	if active >= discoveryQueueMax {
 		return 0, ErrDiscoveryBusy
 	}
+	if j.Kind == "" {
+		j.Kind = "scan"
+	}
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO discovery_jobs(proxy_name, cidr, snmp_version, snmp_community, snmp_port, state, error, requested_by, created_at, dispatched_at, completed_at)
-		 VALUES(?,?,?,?,?,'pending','',?,?,0,0)`,
-		j.ProxyName, j.CIDR, j.SNMPVersion, s.cipher.Encrypt(j.SNMPCommunity), j.SNMPPort,
+		`INSERT INTO discovery_jobs(proxy_name, kind, controller_id, controller_name, cidr, snmp_version, snmp_community, snmp_port, state, error, requested_by, created_at, dispatched_at, completed_at)
+		 VALUES(?,?,?,?,?,?,?,?,'pending','',?,?,0,0)`,
+		j.ProxyName, j.Kind, j.ControllerID, j.ControllerName, j.CIDR,
+		j.SNMPVersion, s.cipher.Encrypt(j.SNMPCommunity), j.SNMPPort,
 		j.RequestedBy, time.Now().Unix())
 	if err != nil {
 		return 0, err
@@ -160,7 +170,8 @@ func (s *Store) TakeDiscoveryJob(ctx context.Context, proxyName string) (*Discov
 		`SELECT `+discoveryJobColumns+`, snmp_community FROM discovery_jobs
 		 WHERE proxy_name=? AND state='pending' ORDER BY id LIMIT 1`, proxyName)
 	var j DiscoveryJob
-	err := row.Scan(&j.ID, &j.ProxyName, &j.CIDR, &j.SNMPVersion, &j.SNMPPort, &j.State, &j.Error,
+	err := row.Scan(&j.ID, &j.ProxyName, &j.Kind, &j.ControllerID, &j.ControllerName, &j.CIDR,
+		&j.SNMPVersion, &j.SNMPPort, &j.State, &j.Error,
 		&j.RequestedBy, &j.CreatedAt, &j.DispatchedAt, &j.CompletedAt, &enc)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -212,10 +223,10 @@ func (s *Store) CompleteDiscoveryJob(ctx context.Context, jobID int64, proxyName
 			dns = 1
 		}
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO discovery_results(job_id, ip, mac, rdns, tcp_ports, snmp_sysdescr, snmp_sysobjectid, snmp_sysname, http_json, dns, ssh_banner, suggested_class, state, host_id)
-			 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'')`,
+			`INSERT INTO discovery_results(job_id, ip, mac, rdns, tcp_ports, snmp_sysdescr, snmp_sysobjectid, snmp_sysname, http_json, dns, ssh_banner, unifi_json, suggested_class, state, host_id)
+			 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'')`,
 			jobID, r.IP, r.MAC, r.RDNS, r.TCPPorts, r.SysDescr, r.SysObjectID, r.SysName, r.HTTPJSON,
-			dns, r.SSHBanner, r.SuggestedClass, st); err != nil {
+			dns, r.SSHBanner, r.UniFiJSON, r.SuggestedClass, st); err != nil {
 			return err
 		}
 	}
@@ -247,7 +258,8 @@ func (s *Store) ListDiscoveryJobs(ctx context.Context, limit int) ([]DiscoveryJo
 	var out []DiscoveryJob
 	for rows.Next() {
 		var j DiscoveryJob
-		if err := rows.Scan(&j.ID, &j.ProxyName, &j.CIDR, &j.SNMPVersion, &j.SNMPPort, &j.State, &j.Error,
+		if err := rows.Scan(&j.ID, &j.ProxyName, &j.Kind, &j.ControllerID, &j.ControllerName, &j.CIDR,
+			&j.SNMPVersion, &j.SNMPPort, &j.State, &j.Error,
 			&j.RequestedBy, &j.CreatedAt, &j.DispatchedAt, &j.CompletedAt, &j.Found, &j.NewCount); err != nil {
 			return nil, err
 		}
@@ -273,7 +285,7 @@ func (s *Store) DiscoveryJobByID(ctx context.Context, id int64) (*DiscoveryJob, 
 // DiscoveryResultsByJob returns a job's results in IP-insertion order (the probe sorts by IP).
 func (s *Store) DiscoveryResultsByJob(ctx context.Context, jobID int64) ([]DiscoveryResult, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, job_id, ip, mac, rdns, tcp_ports, snmp_sysdescr, snmp_sysobjectid, snmp_sysname, http_json, dns, ssh_banner, suggested_class, state, host_id
+		`SELECT id, job_id, ip, mac, rdns, tcp_ports, snmp_sysdescr, snmp_sysobjectid, snmp_sysname, http_json, dns, ssh_banner, unifi_json, suggested_class, state, host_id
 		 FROM discovery_results WHERE job_id=? ORDER BY id`, jobID)
 	if err != nil {
 		return nil, err
@@ -284,13 +296,32 @@ func (s *Store) DiscoveryResultsByJob(ctx context.Context, jobID int64) ([]Disco
 		var r DiscoveryResult
 		var dns int
 		if err := rows.Scan(&r.ID, &r.JobID, &r.IP, &r.MAC, &r.RDNS, &r.TCPPorts, &r.SysDescr,
-			&r.SysObjectID, &r.SysName, &r.HTTPJSON, &dns, &r.SSHBanner, &r.SuggestedClass, &r.State, &r.HostID); err != nil {
+			&r.SysObjectID, &r.SysName, &r.HTTPJSON, &dns, &r.SSHBanner, &r.UniFiJSON, &r.SuggestedClass, &r.State, &r.HostID); err != nil {
 			return nil, err
 		}
 		r.DNS = dns != 0
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// DiscoveryResultByID returns one result (the adopt path resolves a sweep result's facts + job).
+func (s *Store) DiscoveryResultByID(ctx context.Context, id int64) (*DiscoveryResult, error) {
+	var r DiscoveryResult
+	var dns int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, job_id, ip, mac, rdns, tcp_ports, snmp_sysdescr, snmp_sysobjectid, snmp_sysname, http_json, dns, ssh_banner, unifi_json, suggested_class, state, host_id
+		 FROM discovery_results WHERE id=?`, id).
+		Scan(&r.ID, &r.JobID, &r.IP, &r.MAC, &r.RDNS, &r.TCPPorts, &r.SysDescr,
+			&r.SysObjectID, &r.SysName, &r.HTTPJSON, &dns, &r.SSHBanner, &r.UniFiJSON, &r.SuggestedClass, &r.State, &r.HostID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	r.DNS = dns != 0
+	return &r, nil
 }
 
 // SetDiscoveryResultsState flips results between new and ignored. Adopted rows are never touched.

@@ -95,23 +95,25 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		SelfUpdate     *bool  `json:"selfupdate"`      // pointer: omitted keeps the stored flag (two-reporter model)
 		UpdaterVersion string `json:"updater_version"` // the sidecar reports its own version here
 		Scans          *bool  `json:"scans"`           // the proxy container advertises the network-scan capability
+		Sweeps         *bool  `json:"sweeps"`          // ... and the UniFi-sweep capability
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
-	if err := s.st.RecordProbeCheckin(ctx, proxyName, strings.TrimSpace(req.Version), req.SelfUpdate, req.Scans); err != nil {
+	if err := s.st.RecordProbeCheckin(ctx, proxyName, strings.TrimSpace(req.Version), req.SelfUpdate, req.Scans, req.Sweeps); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record check-in"})
 		return
 	}
 	_ = s.st.SetUpdaterVersion(ctx, proxyName, strings.TrimSpace(req.UpdaterVersion))
 	target, _ := s.st.ProbeTargetVersion(ctx)
 	var resp struct {
-		Target        string          `json:"target"`
-		CoreHost      string          `json:"core_host,omitempty"`
-		Update        string          `json:"update,omitempty"`
-		UpdaterUpdate string          `json:"updater_update,omitempty"`
-		Scan          *scanJobPayload `json:"scan,omitempty"`
+		Target        string           `json:"target"`
+		CoreHost      string           `json:"core_host,omitempty"`
+		Update        string           `json:"update,omitempty"`
+		UpdaterUpdate string           `json:"updater_update,omitempty"`
+		Scan          *scanJobPayload  `json:"scan,omitempty"`
+		Sweep         *sweepJobPayload `json:"sweep,omitempty"`
 	}
 	resp.Target = target
 	// Hand out the current core host on every check-in (not gated on self-update capability, so a
@@ -132,11 +134,12 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 			resp.UpdaterUpdate = tag
 		}
 	}
-	// Hand out (and mark dispatched) a queued network-scan job exactly once - only to the proxy
+	// Hand out (and mark dispatched) a queued discovery job exactly once - only to the proxy
 	// container itself (it advertises the scan capability; the updater sidecar doesn't), same
-	// reasoning as the self-update gate above. See netdiscovery.go for the pipeline.
+	// reasoning as the self-update gate above. The handout is shaped by the job's kind (a subnet
+	// scan or a UniFi sweep); at most one of the two fields is set. See netdiscovery.go.
 	if req.Scans != nil && *req.Scans {
-		resp.Scan = s.takeScanJob(ctx, proxyName)
+		resp.Scan, resp.Sweep = s.takeDiscoveryHandout(ctx, proxyName)
 	}
 	// The probe knows its own image repo; it only needs the tag to converge on.
 	writeJSON(w, http.StatusOK, resp)

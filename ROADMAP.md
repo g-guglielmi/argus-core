@@ -66,7 +66,11 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
   fingerprints and land in a review table. Covers the fingerprint / attach / thresholds / review
   items below for any subnet - the UniFi sweep becomes a second candidate source into the same
   pipeline. See DESIGN §8. - _(BE+FE+probe)_
-- [ ] Per-site **UniFi API sweep** → inventory → candidates into the same review pipeline, tagged, bound to proxy - _(BE)_ **L**
+- [x] Per-site **UniFi controller sweep** (slice 2, shipped) - saved controllers (URL + encrypted
+  API key, managed in the Discovery tab), swept from the core or a `sweeps`-capable probe
+  (`argus_unifi_sweep.py` / `internal/unifi`); adopted devices arrive with the exact class and the
+  four `{$UNIFI.*}` macros injected server-side (the key never reaches the browser). Devices only -
+  clients stay the subnet scan's job. See DESIGN §8. - _(BE+FE+probe)_
 - [x] **Capability fingerprint** (ICMP + TCP port set, SNMP sysDescr/sysObjectID/sysName, HTTP(S) banner, DNS :53, NUT :3493, rDNS, ARP) - _(BE)_ M
 - [x] **Template attach** by fingerprint (`provision.SuggestClass`, admin-overridable per row) + **LLD** per-instance items (via the existing post-create auto-fire) - _(BE)_ M
 - [x] Default thresholds applied on discovery (adoption reuses `POST /api/hosts`; classes carry the §6 defaults) - _(BE)_ S

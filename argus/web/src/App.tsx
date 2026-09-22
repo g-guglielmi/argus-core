@@ -22,7 +22,7 @@ type SnmpCfg = { version: number; community: string; bulk: number; security_name
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
 type MacroField = { macro: string; label: string; hint?: string; secret?: boolean; options?: string[]; value: string; set?: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; vm_names?: string[] }
-type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
+type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
@@ -3574,10 +3574,15 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
 // job rides the probe's check-in channel (picked up within a minute), the probe's scanner reports
 // raw fingerprints, and the review table below adopts (via the ordinary POST /api/hosts, tagged
 // discovered) or ignores what it found. Admin-only (gated in the shell nav + clampView).
-type DiscoveryJobRow = { id: number; proxy_name: string; cidr: string; state: string; error?: string; requested_by?: string; created_at: number; completed_at?: number; found?: number; new?: number }
+type DiscoveryJobRow = { id: number; proxy_name: string; kind?: string; controller_name?: string; cidr: string; state: string; error?: string; requested_by?: string; created_at: number; completed_at?: number; found?: number; new?: number }
 type DiscoveryHTTP = { port: number; scheme: string; status: number; server?: string; title?: string }
-type DiscoveryResultRow = { id: number; ip: string; mac?: string; rdns?: string; tcp: number[]; sysdescr?: string; sysobjectid?: string; sysname?: string; http?: DiscoveryHTTP; dns?: boolean; ssh?: string; suggested_class?: string; state: string; host_id?: string; monitored_id?: string; monitored_name?: string }
+type DiscoveryUnifi = { name?: string; model?: string; type?: string; state?: number; version?: string; site?: string; site_desc?: string }
+type DiscoveryResultRow = { id: number; ip: string; mac?: string; rdns?: string; tcp: number[]; sysdescr?: string; sysobjectid?: string; sysname?: string; http?: DiscoveryHTTP; dns?: boolean; ssh?: string; unifi?: DiscoveryUnifi; suggested_class?: string; state: string; host_id?: string; monitored_id?: string; monitored_name?: string }
 type DiscRowCfg = { name: string; classId: string; http: boolean; httpScheme: string; httpPort: string; macros: Record<string, string>; site?: string }
+type UnifiCtlRow = { id: number; name: string; url: string; has_key: boolean }
+// The four controller macros the adopt path fills server-side for a sweep-adopted UniFi device
+// (the API key never travels through the browser) - the review UI shows them as auto-filled.
+const UNIFI_AUTOFILL = ['{$UNIFI.URL}', '{$UNIFI.KEY}', '{$UNIFI.MAC}', '{$UNIFI.SITE}']
 
 function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenScan: (id: number | null) => void }) {
   const [proxies, setProxies] = useState<Proxy[] | null>(null)
@@ -3593,6 +3598,16 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
   const [site, setSite] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // UniFi sweep form + saved controllers
+  const confirm = useConfirm()
+  const [ctls, setCtls] = useState<UnifiCtlRow[] | null>(null)
+  const [sweepCtl, setSweepCtl] = useState('')
+  const [sweepFrom, setSweepFrom] = useState('')
+  const [sweepErr, setSweepErr] = useState<string | null>(null)
+  const [sweepBusy, setSweepBusy] = useState(false)
+  const [manageCtls, setManageCtls] = useState(false)
+  const [ctlForm, setCtlForm] = useState<{ id: number; name: string; url: string; key: string } | null>(null)
+  const [ctlBusy, setCtlBusy] = useState(false)
   // review state
   const [sel, setSel] = useState<Set<number>>(new Set())
   const [rowCfg, setRowCfg] = useState<Record<number, DiscRowCfg>>({})
@@ -3620,8 +3635,12 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
     // Some resolvers answer a PTR lookup with the IP itself - a numeric first label would seed a
     // useless name like "10", so only a real hostname-shaped rDNS contributes.
     const rdnsName = r.rdns && !/^\d+$/.test(r.rdns.split('.')[0]) ? r.rdns.split('.')[0] : ''
-    return { name: r.sysname || rdnsName || r.ip, classId, http: !!r.http, httpScheme: r.http?.scheme || 'https', httpPort, macros: deriveMacros(classId, r.ip) }
+    return { name: r.unifi?.name || r.sysname || rdnsName || r.ip, classId, http: !!r.http, httpScheme: r.http?.scheme || 'https', httpPort, macros: deriveMacros(classId, r.ip) }
   }
+  // Sweep-adopted UniFi devices get their controller macros injected server-side at adopt time,
+  // so the review UI must neither warn about nor require them.
+  const autoFilled = (r: DiscoveryResultRow, classId: string, macro: string) =>
+    !!r.unifi && classId.startsWith('unifi-') && UNIFI_AUTOFILL.includes(macro)
 
   function applyJob(d: { job: DiscoveryJobRow; results: DiscoveryResultRow[] }) {
     setJob(d.job)
@@ -3634,11 +3653,13 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
     if (d && d.job) applyJob({ job: d.job, results: d.results || [] })
   }
   const loadJobs = () => fetch('/api/discovery/jobs?limit=10').then((r) => (r.ok ? r.json() : [])).then((j: DiscoveryJobRow[]) => setJobs(j || [])).catch(() => setJobs([]))
+  const loadCtls = () => fetch('/api/discovery/controllers').then((r) => (r.ok ? r.json() : [])).then((c: UnifiCtlRow[]) => setCtls(c || [])).catch(() => setCtls([]))
 
   useEffect(() => {
     fetch('/api/proxies').then((r) => (r.ok ? r.json() : [])).then((p) => setProxies(p || [])).catch(() => setProxies([]))
     fetch('/api/groups').then((r) => (r.ok ? r.json() : [])).then((g) => setGroups(g || [])).catch(() => {})
     fetch('/api/classes').then((r) => (r.ok ? r.json() : [])).then((c) => setClasses(c || [])).catch(() => {})
+    void loadCtls()
     void loadJobs()
     // Keep the scan list fresh (queued scans start, running ones finish) without a manual reload.
     const t = window.setInterval(() => { void loadJobs() }, 15000)
@@ -3727,6 +3748,40 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
     if (d.id) onOpenScan(d.id)
   }
 
+  async function startSweep() {
+    if (sweepBusy) return
+    if (!sweepCtl) { setSweepErr('Pick a saved controller to sweep'); return }
+    const isCore = sweepFrom === 'core'
+    if (!isCore && !(proxies || []).some((x) => x.id === sweepFrom)) { setSweepErr('Pick where to sweep from - the core server or a probe'); return }
+    setSweepBusy(true); setSweepErr(null)
+    const body = { kind: 'unifi', controller_id: Number(sweepCtl), proxy_id: isCore ? '' : sweepFrom }
+    const res = await fetch('/api/discovery/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null)
+    setSweepBusy(false)
+    if (!res || !res.ok) { setSweepErr(await errText(res, 'Could not start the sweep')); return }
+    const d = await res.json().catch(() => ({} as { id?: number }))
+    void loadJobs()
+    if (d.id) onOpenScan(d.id)
+  }
+
+  async function saveCtl() {
+    if (!ctlForm || ctlBusy) return
+    setCtlBusy(true); setSweepErr(null)
+    const body = { id: ctlForm.id, name: ctlForm.name.trim(), url: ctlForm.url.trim(), api_key: ctlForm.key.trim() }
+    const res = await fetch('/api/discovery/controllers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null)
+    setCtlBusy(false)
+    if (!res || !res.ok) { setSweepErr(await errText(res, 'Could not save the controller')); return }
+    setCtlForm(null)
+    void loadCtls()
+  }
+
+  async function deleteCtl(c: UnifiCtlRow) {
+    if (!(await confirm({ message: `Delete the saved controller "${c.name}"? Devices already adopted keep working - only future sweeps lose it.`, danger: true }))) return
+    const res = await fetch(`/api/discovery/controllers/${c.id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res || !res.ok) { setSweepErr(await errText(res, 'Could not delete the controller')); return }
+    if (sweepCtl === String(c.id)) setSweepCtl('')
+    void loadCtls()
+  }
+
   const selectable = (r: DiscoveryResultRow) => r.state === 'new' && !r.monitored_id
   const visible = results.filter((r) => showIgnored || r.state !== 'ignored')
   const selectableIds = visible.filter(selectable).map((r) => r.id)
@@ -3757,7 +3812,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
       for (const ms of attachMacros(cfg.classId)) {
         const v = (cfg.macros[ms.macro] || '').trim()
         if (v) macros[ms.macro] = v
-        else if (ms.required) bad = `${ms.label} is required - open the row's settings`
+        else if (ms.required && !autoFilled(r, cfg.classId, ms.macro)) bad = `${ms.label} is required - open the row's settings`
       }
       const siteFor = (cfg.site || site).trim()
       if (!siteFor) bad = 'pick a site - in the toolbar for all selected, or per device in the row settings'
@@ -3793,9 +3848,20 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
   }
 
   const scanCapable = (proxies || []).filter((p) => p.scans)
+  const sweepCapable = (proxies || []).filter((p) => p.sweeps)
   const running = jobState === 'pending' || jobState === 'dispatched'
+  const isSweep = job?.kind === 'unifi'
+  const jobLabel = job ? (job.kind === 'unifi' ? (job.controller_name || 'UniFi controller') : job.cidr) : ''
   const grid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.7rem' }
   const facts = (r: DiscoveryResultRow): string[] => {
+    if (r.unifi) {
+      // A sweep row's facts come from the controller: exact model, site, link state.
+      const f: string[] = []
+      if (r.unifi.model) f.push(r.unifi.model)
+      if (r.unifi.site && r.unifi.site !== 'default') f.push(r.unifi.site_desc || r.unifi.site)
+      f.push(r.unifi.state === 1 ? 'online' : 'offline')
+      return f
+    }
     const f: string[] = []
     if (r.sysdescr || r.sysname) f.push('SNMP')
     if (r.dns) f.push('DNS')
@@ -3837,13 +3903,76 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
         )}
         {err && <Banner variant="error">{err}</Banner>}
       </div>
+
+      {/* --- UniFi controller sweep: the second discovery source. A saved controller is asked for
+          its adopted devices (exact model/type/MAC/site), and adoption pre-fills the UniFi class
+          macros server-side - including the API key, which never reaches the browser. --- */}
+      <div className="phead" style={{ paddingTop: 4 }}>
+        <h2 style={{ fontSize: 15 }}>UniFi controller sweep</h2>
+        <span className="hint">pull the adopted devices straight from a controller - exact models, macros pre-filled</span>
+        <div className="tools"><Button variant="ghost" onClick={() => { setManageCtls((m) => !m); setCtlForm(null) }}>{manageCtls ? 'Done' : 'Manage controllers'}</Button></div>
+      </div>
+      <div className="disc-form" style={{ padding: '0 1rem 0.9rem' }}>
+        {ctls !== null && ctls.length === 0 && !manageCtls && (
+          <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 0.6rem' }}>No controllers saved yet - add one under <b>Manage controllers</b> (its API key comes from UniFi Network → Settings → Control Plane → Integrations).</p>
+        )}
+        {(ctls?.length || 0) > 0 && (
+          <div style={grid}>
+            <Field label="Controller">
+              <Select value={sweepCtl} onChange={(e) => setSweepCtl(e.target.value)}>
+                <option value="">Choose…</option>
+                {(ctls || []).map((c) => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+              </Select>
+            </Field>
+            <Field label="Sweep from">
+              <Select value={sweepFrom} onChange={(e) => setSweepFrom(e.target.value)}>
+                <option value="">Choose…</option>
+                <option value="core">Core server</option>
+                {(proxies || []).map((p) => <option key={p.id} value={p.id} disabled={!p.sweeps}>{p.name}{p.sweeps ? '' : ' (needs probe update)'}</option>)}
+              </Select>
+            </Field>
+            <Field label={' '}><Button variant="primary" block style={{ height: 39 }} onClick={startSweep} disabled={sweepBusy || ctls === null}>{sweepBusy ? 'Starting…' : 'Start sweep'}</Button></Field>
+          </div>
+        )}
+        {proxies !== null && (ctls?.length || 0) > 0 && sweepCapable.length === 0 && (
+          <Banner variant="info">None of your probes has reported the UniFi-sweep capability yet - it ships with the latest probe image. You can still sweep from the core server if it can reach the controller.</Banner>
+        )}
+        {manageCtls && (
+          <div className="disc-band" style={{ marginTop: '0.7rem' }}>
+            {(ctls || []).map((c) => (
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', fontSize: 13 }}>
+                <b>{c.name}</b>
+                <span className="mono" style={{ color: 'var(--muted)' }}>{c.url}</span>
+                <span style={{ flex: 1 }} />
+                <Button variant="ghost" onClick={() => setCtlForm({ id: c.id, name: c.name, url: c.url, key: '' })}>Edit</Button>
+                <Button variant="ghost" onClick={() => void deleteCtl(c)}>Delete</Button>
+              </div>
+            ))}
+            {ctlForm === null && <div><Button variant="ghost" onClick={() => setCtlForm({ id: 0, name: '', url: '', key: '' })}>+ Add controller</Button></div>}
+            {ctlForm !== null && (
+              <>
+                <div style={grid}>
+                  <Field label="Name" placeholder="site1" value={ctlForm.name} onChange={(e) => setCtlForm({ ...ctlForm, name: e.target.value })} />
+                  <Field label="Controller URL" placeholder="https://unifi.example.lan:11443" value={ctlForm.url} onChange={(e) => setCtlForm({ ...ctlForm, url: e.target.value })} />
+                  <Field label={ctlForm.id ? 'API key (blank = keep current)' : 'API key'} type="password" placeholder="from Control Plane → Integrations" value={ctlForm.key} onChange={(e) => setCtlForm({ ...ctlForm, key: e.target.value })} />
+                </div>
+                <div style={{ display: 'flex', gap: '0.6rem' }}>
+                  <Button variant="primary" onClick={saveCtl} disabled={ctlBusy}>{ctlBusy ? 'Saving…' : ctlForm.id ? 'Save changes' : 'Add controller'}</Button>
+                  <Button variant="ghost" onClick={() => setCtlForm(null)}>Cancel</Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        {sweepErr && <Banner variant="error">{sweepErr}</Banner>}
+      </div>
       </>}
 
       {/* --- scan screen: an opened scan replaces the whole page; the topbar + URL reflect it
           (?scan=) and "Back to scans" (or the browser's Back) returns to the list. --- */}
       {job && (
         <div className="phead" style={job.state === 'done' ? { borderBottom: 'none' } : undefined}>
-          <h2>Scan results · {job.cidr} · {job.proxy_name || 'Core server'}</h2>
+          <h2>{isSweep ? 'Sweep results' : 'Scan results'} · {jobLabel} · {job.proxy_name || 'Core server'}</h2>
           <span className="hint">{job.state === 'done' ? `${results.length} device${results.length === 1 ? '' : 's'} found · ${relTime(job.completed_at || job.created_at)}` : `started ${relTime(job.created_at)}`}</span>
           <div className="tools"><Button variant="ghost" onClick={() => onOpenScan(null)}>‹ Back to scans</Button></div>
         </div>
@@ -3852,12 +3981,12 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
       {job && running && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: 13, color: 'var(--muted)', padding: '14px 1rem' }}>
           <span className="spinner" aria-hidden="true" />
-          {!job.proxy_name ? `The core server is scanning ${job.cidr}… this can take a few minutes.`
-            : jobState === 'pending' ? `Queued for ${job.proxy_name} - it picks scans up at check-in, one at a time…`
-            : `${job.proxy_name} is scanning ${job.cidr}… this can take a few minutes.`}
+          {jobState === 'pending' && job.proxy_name ? `Queued for ${job.proxy_name} - it picks jobs up at check-in, one at a time…`
+            : isSweep ? `${job.proxy_name || 'The core server'} is asking ${jobLabel} for its devices… this only takes a moment.`
+            : `${job.proxy_name || 'The core server'} is scanning ${job.cidr}… this can take a few minutes.`}
         </div>
       )}
-      {job && job.state === 'failed' && <div style={{ padding: '14px 1rem' }}><Banner variant="error">Scan of {job.cidr} failed: {job.error || 'unknown error'}</Banner></div>}
+      {job && job.state === 'failed' && <div style={{ padding: '14px 1rem' }}><Banner variant="error">{isSweep ? 'Sweep of' : 'Scan of'} {jobLabel} failed: {job.error || 'unknown error'}</Banner></div>}
 
       {job && job.state === 'done' && (
         <>
@@ -3882,7 +4011,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
                 <th>Device</th><th>Found</th><th>Class</th><th>Status</th>
               </tr></thead>
               <tbody>
-                {visible.length === 0 && <tr><td colSpan={5} style={{ padding: 0 }}><div style={{ flex: 1, width: '100%' }}><EmptyState icon={ic.discovery} title="Nothing answered" text={`No live devices in ${job.cidr}. Try a different range, or check the SNMP community.`} /></div></td></tr>}
+                {visible.length === 0 && <tr><td colSpan={5} style={{ padding: 0 }}><div style={{ flex: 1, width: '100%' }}><EmptyState icon={ic.discovery} title={isSweep ? 'No devices' : 'Nothing answered'} text={isSweep ? `${jobLabel} reported no adopted devices with an IP address.` : `No live devices in ${job.cidr}. Try a different range, or check the SNMP community.`} /></div></td></tr>}
                 {visible.map((r) => {
                   const cfg = rowCfg[r.id]
                   const canPick = selectable(r)
@@ -3904,7 +4033,10 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
                         <td data-label="Found">
                           <div className="cell-stack">
                             <span className="disc-facts">{fp.length ? fp.map((f) => <span key={f} className="tag">{f}</span>) : <span style={{ color: 'var(--faint)' }}>ping only</span>}</span>
-                            {(r.http?.title || r.sysdescr || r.ssh) && <span className="sub-line" title={r.sysdescr || r.http?.title || r.ssh}>{(r.http?.title || r.sysdescr || r.ssh || '').slice(0, 80)}</span>}
+                            {(() => {
+                              const sub = r.unifi ? (r.unifi.version ? `firmware ${r.unifi.version}` : '') : (r.http?.title || r.sysdescr || r.ssh || '')
+                              return sub ? <span className="sub-line" title={r.unifi ? sub : (r.sysdescr || r.http?.title || r.ssh)}>{sub.slice(0, 80)}</span> : null
+                            })()}
                           </div>
                         </td>
                         <td data-label="Class">
@@ -3914,7 +4046,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
                               {(() => {
                                 // Proactive nudge: this class can't be adopted until its required
                                 // fields are filled (Add also hard-blocks the row with an error).
-                                const missing = attachMacros(cfg.classId).filter((ms) => ms.required && !(cfg.macros[ms.macro] || '').trim())
+                                const missing = attachMacros(cfg.classId).filter((ms) => ms.required && !autoFilled(r, cfg.classId, ms.macro) && !(cfg.macros[ms.macro] || '').trim())
                                 return missing.length > 0 ? (
                                   <button className="iconbtn disc-warn" title={`This class still needs: ${missing.map((m) => m.label).join(', ')} - click to fill them in`}
                                     aria-label="Missing required settings" onClick={() => setOpen((s) => new Set(s).add(r.id))}>
@@ -3952,7 +4084,18 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
                             {attachMacros(cfg.classId).length > 0 && (
                               <div style={grid}>
                                 {attachMacros(cfg.classId).map((ms) => (
-                                  ms.options && ms.options.length > 0 ? (
+                                  autoFilled(r, cfg.classId, ms.macro) ? (
+                                    // Sweep-adopted rows: the controller macros land server-side at
+                                    // adopt time. URL/KEY/MAC are fixed facts (the key never reaches
+                                    // the browser); the site stays overridable.
+                                    ms.macro === '{$UNIFI.SITE}' ? (
+                                      <Field key={ms.macro} label={ms.label + ' (optional)'} placeholder={`${r.unifi?.site || 'default'} - from the controller`}
+                                        value={cfg.macros[ms.macro] || ''} onChange={(e) => setCfg(r.id, { macros: { ...cfg.macros, [ms.macro]: e.target.value } })} />
+                                    ) : (
+                                      <Field key={ms.macro} label={ms.label} value={ms.macro === '{$UNIFI.MAC}' ? (r.mac || '') : ''}
+                                        placeholder="auto-filled from the controller" disabled readOnly />
+                                    )
+                                  ) : ms.options && ms.options.length > 0 ? (
                                     <Field key={ms.macro} label={ms.label + (ms.required ? '' : ' (optional)')}>
                                       <Select value={cfg.macros[ms.macro] || ''} onChange={(e) => setCfg(r.id, { macros: { ...cfg.macros, [ms.macro]: e.target.value } })}>
                                         <option value="">{ms.hint ? `default (${ms.hint})` : 'template default'}</option>
@@ -3995,20 +4138,20 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
         <span className="hint">kept for 30 days - open one to review or re-adopt</span>
       </div>
       {jobs === null && <div style={{ padding: '0 1rem 1rem' }}><Skeleton rows={2} cols={5} /></div>}
-      {jobs !== null && jobs.length === 0 && <p style={{ color: 'var(--muted)', fontSize: 13, padding: '0 1rem 1rem', margin: 0 }}>No scans yet - point one at a subnet above.</p>}
+      {jobs !== null && jobs.length === 0 && <p style={{ color: 'var(--muted)', fontSize: 13, padding: '0 1rem 1rem', margin: 0 }}>No scans yet - point one at a subnet above, or sweep a UniFi controller.</p>}
       {jobs !== null && jobs.length > 0 && (
         <div className="enroll-scroll">
           <table className="enroll enroll-discovery">
-            <thead><tr><th>When</th><th>Source</th><th>Subnet</th><th>Found</th><th>Status</th><th>By</th></tr></thead>
+            <thead><tr><th>When</th><th>Source</th><th>Target</th><th>Found</th><th>Status</th><th>By</th></tr></thead>
             <tbody>
               {jobs.map((j) => (
                 <tr key={j.id} className="disc-scan-row" title={j.error || undefined}
                   onClick={() => onOpenScan(j.id)}>
                   <td data-label="When" className="mono" style={{ color: 'var(--muted)' }}>{relTime(j.created_at)}</td>
                   <td data-label="Source">{j.proxy_name || 'Core server'}</td>
-                  <td data-label="Subnet" className="mono">{j.cidr}</td>
+                  <td data-label="Target" className={j.kind === 'unifi' ? undefined : 'mono'}>{j.kind === 'unifi' ? `UniFi sweep · ${j.controller_name || '?'}` : j.cidr}</td>
                   <td data-label="Found">{j.state === 'done' ? `${j.found ?? 0} device${(j.found ?? 0) === 1 ? '' : 's'} · ${j.new ?? 0} new` : '-'}</td>
-                  <td data-label="Status"><span className={'tag' + (j.state === 'done' ? ' online' : j.state === 'failed' ? '' : ' pending')}>{j.state === 'dispatched' ? 'scanning' : j.state === 'pending' ? 'queued' : j.state}</span></td>
+                  <td data-label="Status"><span className={'tag' + (j.state === 'done' ? ' online' : j.state === 'failed' ? '' : ' pending')}>{j.state === 'dispatched' ? (j.kind === 'unifi' ? 'sweeping' : 'scanning') : j.state === 'pending' ? 'queued' : j.state}</span></td>
                   <td data-label="By" style={{ color: 'var(--muted)' }}>{j.requested_by || '-'}</td>
                 </tr>
               ))}
