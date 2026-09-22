@@ -3876,14 +3876,16 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
   }
 
   return (
-    <section className="panel">
-      {/* --- list screen: the scan form + recent-scans history (hidden while a scan is open) --- */}
+    <>
+      {/* --- list screen: three clearly-bounded cards (subnet scan / UniFi sweep / history),
+          hidden while a scan is open --- */}
       {!job && <>
+      <section className="panel">
       <div className="phead">
         <h2>Network discovery</h2>
         <span className="hint">scan a subnet from the core or a probe, then adopt what answered</span>
       </div>
-      <div className="disc-form" style={{ padding: '0 1rem 0.9rem' }}>
+      <div className="disc-form" style={{ padding: '12px 1rem 0.9rem' }}>
         <div style={grid}>
           <Field label="Scan from">
             <Select value={proxyId} onChange={(e) => setProxyId(e.target.value)}>
@@ -3903,18 +3905,23 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
         )}
         {err && <Banner variant="error">{err}</Banner>}
       </div>
+      </section>
 
-      {/* --- UniFi controller sweep: the second discovery source. A saved controller is asked for
-          its adopted devices (exact model/type/MAC/site), and adoption pre-fills the UniFi class
-          macros server-side - including the API key, which never reaches the browser. --- */}
-      <div className="phead" style={{ paddingTop: 4 }}>
-        <h2 style={{ fontSize: 15 }}>UniFi controller sweep</h2>
+      {/* --- UniFi controller sweep: the second discovery source, its own card. A saved controller
+          is asked for its adopted devices (exact model/type/MAC/site), and adoption pre-fills the
+          UniFi class macros server-side - including the API key, which never reaches the browser. --- */}
+      <section className="panel">
+      <div className="phead">
+        <h2>UniFi controller sweep</h2>
         <span className="hint">pull the adopted devices straight from a controller - exact models, macros pre-filled</span>
-        <div className="tools"><Button variant="ghost" onClick={() => { setManageCtls((m) => !m); setCtlForm(null) }}>{manageCtls ? 'Done' : 'Manage controllers'}</Button></div>
+        <div className="tools"><Button onClick={() => { const next = !manageCtls; setManageCtls(next); setCtlForm(next && (ctls?.length || 0) === 0 ? { id: 0, name: '', url: '', key: '' } : null) }}>{manageCtls ? 'Done' : 'Manage controllers'}</Button></div>
       </div>
-      <div className="disc-form" style={{ padding: '0 1rem 0.9rem' }}>
+      <div className="disc-form" style={{ padding: '12px 1rem 0.9rem' }}>
         {ctls !== null && ctls.length === 0 && !manageCtls && (
-          <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 0.6rem' }}>No controllers saved yet - add one under <b>Manage controllers</b> (its API key comes from UniFi Network → Settings → Control Plane → Integrations).</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap' }}>
+            <span style={{ color: 'var(--muted)', fontSize: 13 }}>No controllers saved yet - its API key comes from UniFi Network → Settings → Control Plane → Integrations.</span>
+            <Button onClick={() => { setManageCtls(true); setCtlForm({ id: 0, name: '', url: '', key: '' }) }}>+ Add controller</Button>
+          </div>
         )}
         {(ctls?.length || 0) > 0 && (
           <div style={grid}>
@@ -3966,19 +3973,19 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
         )}
         {sweepErr && <Banner variant="error">{sweepErr}</Banner>}
       </div>
+      </section>
       </>}
 
       {/* --- scan screen: an opened scan replaces the whole page; the topbar + URL reflect it
           (?scan=) and "Back to scans" (or the browser's Back) returns to the list. --- */}
-      {job && (
+      {job && <section className="panel">
         <div className="phead" style={job.state === 'done' ? { borderBottom: 'none' } : undefined}>
           <h2>{isSweep ? 'Sweep results' : 'Scan results'} · {jobLabel} · {job.proxy_name || 'Core server'}</h2>
           <span className="hint">{job.state === 'done' ? `${results.length} device${results.length === 1 ? '' : 's'} found · ${relTime(job.completed_at || job.created_at)}` : `started ${relTime(job.created_at)}`}</span>
           <div className="tools"><Button variant="ghost" onClick={() => onOpenScan(null)}>‹ Back to scans</Button></div>
         </div>
-      )}
-      {job && err && <div style={{ padding: '8px 1rem 0' }}><Banner variant="error">{err}</Banner></div>}
-      {job && running && (
+      {err && <div style={{ padding: '8px 1rem 0' }}><Banner variant="error">{err}</Banner></div>}
+      {running && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: 13, color: 'var(--muted)', padding: '14px 1rem' }}>
           <span className="spinner" aria-hidden="true" />
           {jobState === 'pending' && job.proxy_name ? `Queued for ${job.proxy_name} - it picks jobs up at check-in, one at a time…`
@@ -3986,9 +3993,9 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
             : `${job.proxy_name || 'The core server'} is scanning ${job.cidr}… this can take a few minutes.`}
         </div>
       )}
-      {job && job.state === 'failed' && <div style={{ padding: '14px 1rem' }}><Banner variant="error">{isSweep ? 'Sweep of' : 'Scan of'} {jobLabel} failed: {job.error || 'unknown error'}</Banner></div>}
+      {job.state === 'failed' && <div style={{ padding: '14px 1rem' }}><Banner variant="error">{isSweep ? 'Sweep of' : 'Scan of'} {jobLabel} failed: {job.error || 'unknown error'}</Banner></div>}
 
-      {job && job.state === 'done' && (
+      {job.state === 'done' && (
         <>
           {/* The header + adopt toolbar read as ONE block: no border under the title, one border
               under the toolbar (a line only above the toolbar looked lopsided). */}
@@ -4131,14 +4138,15 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
           </div>
         </>
       )}
+      </section>}
 
-      {!job && <>
-      <div className="phead" style={{ paddingTop: 4 }}>
-        <h2 style={{ fontSize: 15 }}>Recent scans</h2>
+      {!job && <section className="panel">
+      <div className="phead">
+        <h2>Recent scans</h2>
         <span className="hint">kept for 30 days - open one to review or re-adopt</span>
       </div>
-      {jobs === null && <div style={{ padding: '0 1rem 1rem' }}><Skeleton rows={2} cols={5} /></div>}
-      {jobs !== null && jobs.length === 0 && <p style={{ color: 'var(--muted)', fontSize: 13, padding: '0 1rem 1rem', margin: 0 }}>No scans yet - point one at a subnet above, or sweep a UniFi controller.</p>}
+      {jobs === null && <div style={{ padding: '10px 1rem 1rem' }}><Skeleton rows={2} cols={5} /></div>}
+      {jobs !== null && jobs.length === 0 && <p style={{ color: 'var(--muted)', fontSize: 13, padding: '10px 1rem 1rem', margin: 0 }}>No scans yet - point one at a subnet above, or sweep a UniFi controller.</p>}
       {jobs !== null && jobs.length > 0 && (
         <div className="enroll-scroll">
           <table className="enroll enroll-discovery">
@@ -4159,8 +4167,8 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
           </table>
         </div>
       )}
-      </>}
-    </section>
+      </section>}
+    </>
   )
 }
 

@@ -13,6 +13,12 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Changed:**
+- **Discovery page split into clearly-bounded cards.** Subnet scan, UniFi controller sweep and
+  Recent scans are now three separate panels instead of stacked headings in one, and "Manage
+  controllers" is a proper button on the sweep card (with a direct "+ Add controller" shortcut
+  when none are saved yet).
+
 **Fixed:**
 - **A host moved to the core server could not be moved back to a proxy.** Zabbix reports a
   server-monitored host's proxy id as the sentinel `"0"`; the settings dialog carried it into the
