@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -182,17 +183,20 @@ func (c *Client) Hosts(ctx context.Context) ([]Host, error) {
 	return hosts, c.call(ctx, "host.get", params, true, &hosts)
 }
 
-// HostIPs returns each host's primary IP address (the main interface, else any interface), keyed by
-// host id. Best-effort and used only to make hosts searchable by IP; a host with no IP is omitted.
+// HostIPs returns each host's primary IP address (the main interface, else any interface), keyed
+// by host id. A connect-by-DNS interface whose "DNS name" is actually a literal IP address counts
+// too - the host lives at that address just the same (search-by-IP and the discovery
+// already-monitored dedupe would otherwise miss it). Best-effort; a host with no address is omitted.
 func (c *Client) HostIPs(ctx context.Context) (map[string]string, error) {
 	params := map[string]any{
 		"output":           []string{"hostid"},
-		"selectInterfaces": []string{"ip", "main"},
+		"selectInterfaces": []string{"ip", "dns", "main"},
 	}
 	var rows []struct {
 		HostID     string `json:"hostid"`
 		Interfaces []struct {
 			IP   string `json:"ip"`
+			DNS  string `json:"dns"`
 			Main string `json:"main"`
 		} `json:"interfaces"`
 	}
@@ -202,11 +206,17 @@ func (c *Client) HostIPs(ctx context.Context) (map[string]string, error) {
 	out := make(map[string]string, len(rows))
 	for _, h := range rows {
 		for _, i := range h.Interfaces {
-			if i.IP == "" {
+			addr := i.IP
+			if addr == "" {
+				if a, err := netip.ParseAddr(strings.TrimSpace(i.DNS)); err == nil {
+					addr = a.String()
+				}
+			}
+			if addr == "" {
 				continue
 			}
 			if _, ok := out[h.HostID]; !ok || i.Main == "1" {
-				out[h.HostID] = i.IP // prefer the main interface, else the first with an IP
+				out[h.HostID] = addr // prefer the main interface, else the first with an address
 			}
 		}
 	}
