@@ -36,6 +36,10 @@ GitHub Release from the matching section below.
   setup-core-patching.sh re-run as the Zabbix-updates reporter.
 
 **Fixed:**
+- **The About card's testing-channel notice no longer stacks its words vertically.** The two
+  dev-channel sentences ("A newer :testing build..." / "The :testing channel is now at...")
+  carried the grid-layout row class, which puts every inline span on its own line - ":testing",
+  the build tag and the rest of the sentence each rendered as a separate row.
 - **The OS-updates Save buttons no longer wrap unpredictably.** The two window rows sat within
   2px of the settings card's width, so whether Save fit on the line depended on font-rendering
   hairlines - it could sit beside one row and below the other. Shorter mode labels (the hints

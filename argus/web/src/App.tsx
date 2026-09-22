@@ -1026,11 +1026,13 @@ function VersionAbout() {
             if (!v.dev_update) return whatsNew
             if (devIsRelease) return (
               <>
-                <p className="set-row set-hint" style={{ marginBottom: 8 }}>The <span className="mono">:testing</span> channel is now at the <span className="mono">{v.dev_target}</span> release. Updating re-pulls the testing channel in place.</p>
+                {/* NOT .set-row: that class is display:grid, which stacks every inline span on
+                    its own line inside a sentence. */}
+                <p className="set-hint" style={{ marginBottom: 8, maxWidth: 560 }}>The <span className="mono">:testing</span> channel is now at the <span className="mono">{v.dev_target}</span> release. Updating re-pulls the testing channel in place.</p>
                 {whatsNew}
               </>
             )
-            return <p className="set-row set-hint" style={{ marginBottom: 8 }}>A newer <span className="mono">:testing</span> build{v.dev_target ? <> - <span className="mono">{v.dev_target}</span></> : ''} has been published (unreleased changes past {running}). Updating re-pulls the testing channel in place.</p>
+            return <p className="set-hint" style={{ marginBottom: 8, maxWidth: 560 }}>A newer <span className="mono">:testing</span> build{v.dev_target ? <> - <span className="mono">{v.dev_target}</span></> : ''} has been published (unreleased changes past {running}). Updating re-pulls the testing channel in place.</p>
           })()}
           <div className="set-row" style={{ marginBottom: 0 }}>
             {upd && upd.self_update_enabled ? (
