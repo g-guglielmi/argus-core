@@ -300,6 +300,29 @@ CREATE TABLE IF NOT EXISTS device_class (
   updated_at INTEGER NOT NULL
 );
 
+-- Argus overlay (§D thresholds): fleet-wide threshold-macro defaults the admin set from the
+-- Thresholds screen, keyed by the Zabbix template technical name + the macro. Argus is the source of
+-- truth: these are re-applied onto the live templates after every startup reconcile so a template
+-- re-import (app upgrade) can't clobber them. A row absent means "use the template's factory default".
+CREATE TABLE IF NOT EXISTS threshold_default (
+  template   TEXT NOT NULL,
+  macro      TEXT NOT NULL,
+  value      TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (template, macro)
+);
+
+-- Argus overlay (§D sensor-category order): a chosen category reading-order, per class or per host.
+-- scope is 'class:<class-id>' or 'host:<host-id>'; a host override wins over its class, and both win
+-- over the built-in per-shape profiles in curate.go. Categories a scope omits fall back to the
+-- built-in order after the listed ones (shape mirrors tree_order).
+CREATE TABLE IF NOT EXISTS category_order (
+  scope    TEXT NOT NULL,
+  category TEXT NOT NULL,
+  ord      INTEGER NOT NULL,
+  PRIMARY KEY (scope, category)
+);
+
 -- §B network discovery: subnet-scan jobs an admin queues for a probe. Handed out once at the
 -- probe's next check-in (pending -> dispatched) and finished when the probe posts results
 -- (done/failed). snmp_community is encrypted at rest like snmp_defaults.

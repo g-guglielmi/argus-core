@@ -54,19 +54,32 @@ type macroFieldView struct {
 	Set     bool     `json:"set,omitempty"`     // a value is configured on the host (for secrets, where Value is masked)
 }
 
+// thresholdFieldView is one per-host threshold override in the settings editor: the effective global
+// default (placeholder / reset target) plus the host's own value if it overrides. All text, never secret.
+type thresholdFieldView struct {
+	Macro   string `json:"macro"`
+	Label   string `json:"label"`
+	Unit    string `json:"unit,omitempty"`
+	Default string `json:"default"`         // effective global default (store override or template factory)
+	Value   string `json:"value,omitempty"` // this host's override ("" = using the default)
+}
+
 type hostConfigView struct {
-	HostID       string           `json:"hostid"`
-	Host         string           `json:"host"`         // technical name
-	Name         string           `json:"name"`         // visible name
-	MonitoredBy  int              `json:"monitored_by"` // 0 server, 1 proxy, 2 proxy group
-	ProxyID      string           `json:"proxy_id,omitempty"`
-	ProxyName    string           `json:"proxy_name,omitempty"`
-	ProxyDefault *snmpView        `json:"proxy_default,omitempty"` // the host's proxy SNMP default (masked), if set
-	Interfaces   []ifaceView      `json:"interfaces"`
-	ClassID      string           `json:"class_id,omitempty"`    // device class, when known
-	ClassLabel   string           `json:"class_label,omitempty"` // human label for the class macro section
-	Macros       []macroFieldView `json:"macros,omitempty"`      // class-declared per-host macros + current values
-	VMNames      []string         `json:"vm_names,omitempty"`    // xcpng: discovered VM names, for the ignored-VMs checklist
+	HostID        string               `json:"hostid"`
+	Host          string               `json:"host"`         // technical name
+	Name          string               `json:"name"`         // visible name
+	MonitoredBy   int                  `json:"monitored_by"` // 0 server, 1 proxy, 2 proxy group
+	ProxyID       string               `json:"proxy_id,omitempty"`
+	ProxyName     string               `json:"proxy_name,omitempty"`
+	ProxyDefault  *snmpView            `json:"proxy_default,omitempty"` // the host's proxy SNMP default (masked), if set
+	Interfaces    []ifaceView          `json:"interfaces"`
+	ClassID       string               `json:"class_id,omitempty"`    // device class, when known
+	ClassLabel    string               `json:"class_label,omitempty"` // human label for the class macro section
+	Macros        []macroFieldView     `json:"macros,omitempty"`      // class-declared per-host macros + current values
+	Thresholds    []thresholdFieldView `json:"thresholds,omitempty"`  // per-host threshold overrides (§D)
+	VMNames       []string             `json:"vm_names,omitempty"`    // xcpng: discovered VM names, for the ignored-VMs checklist
+	Categories    []string             `json:"categories,omitempty"`  // the host's curated sensor categories, in effective order (§D)
+	CategoryOrder []string             `json:"category_order,omitempty"` // stored per-host order override (empty = inheriting)
 }
 
 // snmpToView converts client SNMP details to the browser shape, masking v3 passphrases.
@@ -89,7 +102,7 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured (set ARGUS_ZABBIX_API_TOKEN)"})
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 	hd, err := s.zbx.HostDetail(ctx, r.PathValue("id"))
 	if err != nil {
@@ -124,10 +137,10 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 		out.Interfaces = append(out.Interfaces, ifaceView{InterfaceID: i.InterfaceID, Type: i.Type, UseIP: i.UseIP, IP: i.IP, DNS: i.DNS, Port: i.Port, SNMP: snmpToView(i.SNMP), Inherit: i.Type == 2 && inherit[i.InterfaceID]})
 	}
 
-	// Class-declared per-host macros (e.g. Windows service matching): show each spec with the host's
-	// current value so the editor can tune them after creation.
+	// Class-declared per-host macros (e.g. Windows service matching) + per-host threshold overrides
+	// (§D): show each with the host's current value so the editor can tune them after creation.
 	if classID, ok, _ := s.st.GetDeviceClass(ctx, hd.HostID); ok {
-		if class, ok := provision.ClassByID(classID); ok && len(class.Macros) > 0 {
+		if class, ok := provision.ClassByID(classID); ok {
 			out.ClassID = class.ID
 			out.ClassLabel = class.Label
 			cur := map[string]zabbix.HostMacro{}
@@ -146,6 +159,25 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 				}
 				out.Macros = append(out.Macros, f)
 			}
+			// Per-host threshold overrides: the class's templates + Base Ping (every host). The
+			// placeholder is the effective global default (store override, else template factory);
+			// blank means "inherit the default". Argus is the source of truth, so no Zabbix read here.
+			factory, _ := provision.TemplateFactoryDefaults()
+			gdef, _ := s.st.ThresholdDefaults(ctx)
+			tset := append([]string{provision.TemplateBasePing}, class.Templates...)
+			for _, tt := range provision.ThresholdsForTemplates(tset) {
+				for _, sp := range tt.Specs {
+					def := gdef[tt.Template][sp.Macro]
+					if def == "" {
+						def = factory[tt.Template][sp.Macro]
+					}
+					tf := thresholdFieldView{Macro: sp.Macro, Label: sp.Label, Unit: sp.Unit, Default: def}
+					if m, has := cur[sp.Macro]; has {
+						tf.Value = m.Value
+					}
+					out.Thresholds = append(out.Thresholds, tf)
+				}
+			}
 			// The XCP-NG ignored-VMs checklist needs names to pick from: the VMs currently
 			// discovered as state sensors (present once {$XCP.VM.MODE} is state/full). Names
 			// already ignored are merged back in by the frontend from the macro value itself.
@@ -163,6 +195,13 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
+	// Per-host sensor-category order (§D): the host's curated categories in effective order, plus any
+	// stored per-host override (empty = inheriting the class/built-in order). Best-effort.
+	out.CategoryOrder, _ = s.st.CategoryOrder(ctx, "host:"+hd.HostID)
+	if items, err := s.zbx.Items(ctx, hd.HostID); err == nil {
+		out.Categories = s.hostCategoriesInOrder(ctx, hd.HostID, out.ClassID, items)
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -173,12 +212,13 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var req struct {
-		Host        string            `json:"host"`
-		Name        string            `json:"name"`
-		MonitoredBy int               `json:"monitored_by"`
-		ProxyID     string            `json:"proxy_id"`
-		Interfaces  []ifaceView       `json:"interfaces"`
-		Macros      map[string]string `json:"macros"` // class macro name -> desired value (only declared macros are applied)
+		Host          string            `json:"host"`
+		Name          string            `json:"name"`
+		MonitoredBy   int               `json:"monitored_by"`
+		ProxyID       string            `json:"proxy_id"`
+		Interfaces    []ifaceView       `json:"interfaces"`
+		Macros        map[string]string `json:"macros"`         // class macro / threshold name -> desired value (only known macros are applied)
+		CategoryOrder *[]string         `json:"category_order"` // §D per-host order; nil = leave as-is, [] = clear override
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -336,11 +376,23 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Class-declared per-host macros (only the ones the class defines are touched, so preset macros
-	// and template defaults are left alone).
+	// Class-declared per-host macros + per-host threshold overrides (only the macros the class
+	// declares and its known thresholds are touched, so preset macros and other defaults are left
+	// alone; a cleared field reverts to the template/global default).
 	if req.Macros != nil {
 		if err := s.applyClassMacros(ctx, cur.HostID, req.Macros); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			return
+		}
+	}
+	// Per-host sensor-category order (§D): nil leaves it, an empty list clears the override.
+	if req.CategoryOrder != nil {
+		if !validCategories(*req.CategoryOrder) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown sensor category"})
+			return
+		}
+		if err := s.st.SetCategoryOrder(ctx, "host:"+cur.HostID, *req.CategoryOrder); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
 	}
@@ -357,7 +409,33 @@ func (s *Server) applyClassMacros(ctx context.Context, hostID string, desired ma
 		return nil
 	}
 	class, ok := provision.ClassByID(classID)
-	if !ok || len(class.Macros) == 0 {
+	if !ok {
+		return nil
+	}
+	// Editable macros = the class's declared macros (some secret) plus its threshold macros (§D, all
+	// text: the class's templates + Base Ping). Nothing else the host carries is ever touched.
+	type editableMacro struct {
+		macro  string
+		secret bool
+	}
+	editable := make([]editableMacro, 0, len(class.Macros)+8)
+	seen := map[string]bool{}
+	for _, ms := range class.Macros {
+		if !seen[ms.Macro] {
+			seen[ms.Macro] = true
+			editable = append(editable, editableMacro{ms.Macro, ms.Secret})
+		}
+	}
+	tset := append([]string{provision.TemplateBasePing}, class.Templates...)
+	for _, tt := range provision.ThresholdsForTemplates(tset) {
+		for _, sp := range tt.Specs {
+			if !seen[sp.Macro] {
+				seen[sp.Macro] = true
+				editable = append(editable, editableMacro{sp.Macro, false})
+			}
+		}
+	}
+	if len(editable) == 0 {
 		return nil
 	}
 	cur := map[string]zabbix.HostMacro{}
@@ -368,19 +446,19 @@ func (s *Server) applyClassMacros(ctx context.Context, hostID string, desired ma
 	for _, m := range hm {
 		cur[m.Macro] = m
 	}
-	for _, ms := range class.Macros {
-		v, sent := desired[ms.Macro]
+	for _, ms := range editable {
+		v, sent := desired[ms.macro]
 		if !sent {
 			continue // the client didn't include this macro; leave it as-is
 		}
 		v = strings.TrimSpace(v)
-		existing, has := cur[ms.Macro]
+		existing, has := cur[ms.macro]
 		mType := 0
-		if ms.Secret {
+		if ms.secret {
 			mType = 1
 		}
 		switch {
-		case ms.Secret && v == "":
+		case ms.secret && v == "":
 			// Blank secret = unchanged (we can't read the stored value to diff it).
 			continue
 		case v == "":
@@ -391,13 +469,13 @@ func (s *Server) applyClassMacros(ctx context.Context, hostID string, desired ma
 				}
 			}
 		case has:
-			if ms.Secret || existing.Value != v {
+			if ms.secret || existing.Value != v {
 				if err := s.zbx.UpdateHostMacro(ctx, existing.MacroID, v, mType); err != nil {
 					return err
 				}
 			}
 		default:
-			if err := s.zbx.CreateHostMacro(ctx, hostID, zabbix.Macro{Macro: ms.Macro, Value: v, Type: mType}); err != nil {
+			if err := s.zbx.CreateHostMacro(ctx, hostID, zabbix.Macro{Macro: ms.macro, Value: v, Type: mType}); err != nil {
 				return err
 			}
 		}

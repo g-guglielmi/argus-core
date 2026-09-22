@@ -14,6 +14,7 @@ import (
 
 	"argus/internal/auth"
 	"argus/internal/provision"
+	"argus/internal/zabbix"
 )
 
 // decodeOptional decodes a small JSON body if present, ignoring an empty/absent body.
@@ -482,17 +483,20 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 	if !all {
 		// Network gear (anything with switch ports or radios) reads network-first; storage boxes
 		// (anything with a drive-temperature group) read temps before disks; everything else keeps
-		// the classic compute-first order (categoryOrderServer/Net/NAS in curate.go).
-		order := categoryOrderServer
+		// the classic compute-first order (categoryOrderServer/Net/NAS in curate.go). That built-in
+		// shape order is the fallback; a per-host or per-class override (§D) wins over it.
+		builtin := categoryOrderServer
 		for _, v := range out {
 			if v.Category == "Ports" || v.Category == "Wireless" {
-				order = categoryOrderNet
+				builtin = categoryOrderNet
 				break // network shape wins over storage
 			}
 			if v.Category == "Temperature" && v.Instance == "Disk temperatures" {
-				order = categoryOrderNAS
+				builtin = categoryOrderNAS
 			}
 		}
+		classID, _, _ := s.st.GetDeviceClass(ctx, r.PathValue("id"))
+		order := s.resolveCategoryOrder(ctx, r.PathValue("id"), classID, builtin)
 		sort.SliceStable(out, func(i, j int) bool {
 			if ci, cj := order[out[i].Category], order[out[j].Category]; ci != cj {
 				return ci < cj
@@ -506,6 +510,76 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// resolveCategoryOrder returns category -> rank for a host: the per-host override wins, then the
+// per-class override, then the built-in shape profile passed in. Categories a chosen list omits fall
+// after the listed ones in the built-in order, so a partial reorder never drops a category (§D).
+func (s *Server) resolveCategoryOrder(ctx context.Context, hostID, classID string, builtin map[string]int) map[string]int {
+	if hostID != "" {
+		if cats, _ := s.st.CategoryOrder(ctx, "host:"+hostID); len(cats) > 0 {
+			return orderFromList(cats, builtin)
+		}
+	}
+	if classID != "" {
+		if cats, _ := s.st.CategoryOrder(ctx, "class:"+classID); len(cats) > 0 {
+			return orderFromList(cats, builtin)
+		}
+	}
+	return builtin
+}
+
+// orderFromList turns a chosen category order into a rank map, appending any built-in categories the
+// list omits after the listed ones (in their built-in order) so nothing sorts to rank 0 by accident.
+func orderFromList(cats []string, builtin map[string]int) map[string]int {
+	out := make(map[string]int, len(builtin)+len(cats))
+	for i, c := range cats {
+		out[c] = i
+	}
+	rest := make([]string, 0, len(builtin))
+	for c := range builtin {
+		if _, ok := out[c]; !ok {
+			rest = append(rest, c)
+		}
+	}
+	sort.Slice(rest, func(i, j int) bool { return builtin[rest[i]] < builtin[rest[j]] })
+	for i, c := range rest {
+		out[c] = len(cats) + i
+	}
+	return out
+}
+
+// hostCategoriesInOrder returns the host's distinct curated sensor categories in the effective reading
+// order (host override -> class override -> built-in shape profile), for the §D per-host reorder UI.
+func (s *Server) hostCategoriesInOrder(ctx context.Context, hostID, classID string, items []zabbix.Item) []string {
+	seen := map[string]bool{}
+	var cats []string
+	ports, diskTemp := false, false
+	for _, it := range items {
+		cat, _, inst, _, ok := classifyItem(it.Key, it.Name)
+		if !ok {
+			continue
+		}
+		if !seen[cat] {
+			seen[cat] = true
+			cats = append(cats, cat)
+		}
+		if cat == "Ports" || cat == "Wireless" {
+			ports = true
+		}
+		if cat == "Temperature" && inst == "Disk temperatures" {
+			diskTemp = true
+		}
+	}
+	builtin := categoryOrderServer
+	if ports {
+		builtin = categoryOrderNet
+	} else if diskTemp {
+		builtin = categoryOrderNAS
+	}
+	order := s.resolveCategoryOrder(ctx, hostID, classID, builtin)
+	sort.Slice(cats, func(i, j int) bool { return order[cats[i]] < order[cats[j]] })
+	return cats
 }
 
 // handleItemPriority sets a sensor's PRTG-style display priority (1..5). Argus-only - it reorders the

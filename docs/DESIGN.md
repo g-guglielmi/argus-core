@@ -221,6 +221,15 @@ so curation is shared with the SNMP classes.
 
 - Disk-temp thresholds are **type-aware** (HDD vs SSD) via the SMART `rotational` flag
   (from the unRAID API). Pure-SNMP disks with unknown type fall back to the SSD numbers.
+- **Edited from the UI (§D).** Each threshold is a Zabbix user macro defined on the class template
+  (`{$CPU.UTIL.WARN}`, `{$DISK.TEMP.HIGH}`, `{$PING.LOSS.WARN}`, ...). The admin **Thresholds** screen
+  edits the fleet-wide default per template; per-device (per-type) overrides live in each host's
+  settings dialog. A host macro of the same name beats the template default deterministically, so an
+  override is a host macro and a "reset" deletes it. Fleet-wide defaults are stored in Argus and
+  re-applied onto the templates after each startup reconcile, so a template re-import can't clobber
+  them. True per-individual-instance overrides (one disk vs another on the same host) would need
+  instance-context macros in the trigger expressions and are a later option; per-type (HDD/SSD/NVMe)
+  is covered today by context macros.
 
 ---
 
@@ -397,8 +406,9 @@ later.
 6) Sensor detail (graphs).
 
 **Managing:** 7) Discovery review · 8) Device management (add/edit, assign site+proxy,
-class, threshold overrides, pause, acknowledge) · 9) Thresholds (global + overrides) ·
-10) Notifications (instances, credentials, targets, test-send) · 11) Users & security ·
+class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Thresholds
+(fleet-wide defaults per template + per-class sensor-category order) · 10) Notifications
+(instances, credentials, targets, test-send) · 11) Users & security ·
 12) Settings (FQDN/allowed-hosts, retention, proxy status).
 
 ---

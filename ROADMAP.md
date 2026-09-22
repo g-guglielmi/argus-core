@@ -109,13 +109,17 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 **SNMP gaps** (DESIGN §5) - unRAID disk-temp/SMART, Hyper-V per-VM (WMI), XCP-NG XAPI, UniFi PoE/WAN, AdGuard stats, NUT protocol - are handled inside the per-class work above, not a separate track.
 
 ### D. Management UI screens
-- [~] **Device management** - largely landed along the way: Add-device modal (class + macros +
-  site/proxy, v0.4.41), the URL-backed host-settings dialog (identity, interfaces, SNMP
-  inheritance, class macros, collector switch), group management, and discovery adoption. What
-  remains folds into the thresholds item below. - _(FE+BE)_
-- [ ] **Thresholds** - global defaults + per-device/per-sensor overrides in the UI (classes carry
-  macro-based defaults today; overriding means hand-editing host macros) - _(FE+BE)_ M
-- [ ] **Sensor-category order in the GUI** - reorder a host's sensor categories from the UI (per class or per host), replacing the two built-in profiles (server = compute-first, network gear = network-first) - _(FE+BE)_ S-M
+- [x] **Device management** - Add-device modal (class + macros + site/proxy, v0.4.41), the URL-backed
+  host-settings dialog (identity, interfaces, SNMP inheritance, class macros, collector switch),
+  group management, discovery adoption, and the per-host threshold + sensor-order overrides below. - _(FE+BE)_
+- [x] **Thresholds** - a dedicated admin **Thresholds** screen edits fleet-wide defaults per class
+  template (stored in Argus and re-applied to the Zabbix templates after each import, so a template
+  re-import can't clobber them); per-device/per-type overrides live in each host's settings dialog
+  (blank a field to fall back to the effective default). No more hand-editing host macros in Zabbix.
+  Disk-temp keeps its HDD/SSD/NVMe split; per-individual-instance overrides stay a later option. - _(FE+BE)_ M
+- [x] **Sensor-category order in the GUI** - reorder a host's sensor categories from the UI, per class
+  (Thresholds screen) or per host (host settings); the built-in server/network/NAS shape profiles stay
+  as the fallback for anything without an override. - _(FE+BE)_ S-M
 - [ ] **Settings expansion** - retention controls, proxy health, allowed-hosts - _(FE+BE)_ S-M
 
 ### E. Auth / account gaps
@@ -170,16 +174,14 @@ Done: ~~deep-link URLs~~ ✅ · ~~password reset~~ ✅ (v0.3.3) · ~~probe enrol
 
 Re-evaluated at **v0.5.0** (2026-09-22): ~~§C core arc~~ ✅ (C0-C1 + the lab-testable C2 classes,
 v0.4.38-v0.4.55) · ~~§B auto-discovery~~ ✅ (subnet scan + UniFi sweep + enrichment + review/adopt,
-v0.4.56-v0.4.58) · plus the §14 lifecycle line (OS patching, core Zabbix minors, core time).
+v0.4.56-v0.4.58) · plus the §14 lifecycle line (OS patching, core Zabbix minors, core time) ·
+~~§D thresholds UI + sensor-category ordering~~ ✅ (the last 1.0-lift pillar).
 
-1. **§D: thresholds UI** _(next)_ - the last pillar of the 1.0 lift. Global defaults +
-   per-device/per-sensor overrides with a real screen instead of hand-edited macros; fold in the
-   sensor-category ordering while in there.
-2. **Production rollout** - move real sites onto Argus. This is also the trigger for the rest of
+1. **Production rollout** - move real sites onto Argus. This is also the trigger for the rest of
    **C2** (Aruba/Instant On, QNAP, Sophos, NetScaler, Libraesva, Hyper-V, Nutanix Prism, Citrix,
    vSphere): build each class when a production site actually needs it, lab-first as always.
-3. **Scale & production readiness (§G)** - sizing pass + server-side census before the
+2. **Scale & production readiness (§G)** - sizing pass + server-side census before the
    ~6000-sensor deployment.
-4. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
+3. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
 
 Blocked / deferred: **site4** probe (§A) - its building is under renovation, so it won't come online in the near term; bring it online once that's done.

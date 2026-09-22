@@ -201,7 +201,20 @@ func (c *Client) HostMacros(ctx context.Context, hostID string) ([]HostMacro, er
 	return out, err
 }
 
-// CreateHostMacro adds one user macro to a host.
+// TemplateMacros returns a template's own user macros (usermacro.get with templateids). Used by the
+// thresholds screen to read/reset each class template's current threshold-macro values. A Zabbix
+// template shares the hosts table, so the create/update/delete macro calls below work on a template
+// id passed as the hostid too - only the read differs (templateids vs hostids filter).
+func (c *Client) TemplateMacros(ctx context.Context, templateID string) ([]HostMacro, error) {
+	var out []HostMacro
+	err := c.call(ctx, "usermacro.get", map[string]any{
+		"output":      []string{"hostmacroid", "macro", "value", "type"},
+		"templateids": templateID,
+	}, true, &out)
+	return out, err
+}
+
+// CreateHostMacro adds one user macro to a host (or, with a template id, a template).
 func (c *Client) CreateHostMacro(ctx context.Context, hostID string, m Macro) error {
 	return c.call(ctx, "usermacro.create", map[string]any{"hostid": hostID, "macro": m.Macro, "value": m.Value, "type": m.Type}, true, nil)
 }

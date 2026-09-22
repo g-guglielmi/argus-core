@@ -11,6 +11,26 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **Thresholds UI (§D) - edit alert thresholds without touching Zabbix.** Thresholds are Zabbix user
+  macros (`{$CPU.UTIL.WARN}`, `{$DISK.TEMP.HIGH}`, `{$PING.LOSS.WARN}`, ...) that until now could only
+  be changed by hand-editing host macros in Zabbix. A new admin **Thresholds** screen edits the
+  fleet-wide default for each threshold, grouped by the monitoring template that carries it (so a
+  switch's CPU band and a server's are edited independently, and a template shared by several classes
+  shows the classes it affects). Overrides are stored in Argus and re-applied to the Zabbix templates
+  after every startup reconcile, so a template re-import on an app upgrade can't silently reset them;
+  a factory default is always one click away via **Reset**.
+- **Per-device threshold overrides in host settings.** Each host's settings dialog gains a
+  **Thresholds** section listing the thresholds that apply to it (its class templates + Base Ping),
+  each showing the effective default as the placeholder; type a number to override it for that host
+  only, blank it to fall back to the default. Disk temperature keeps its HDD/SSD/NVMe split.
+- **Sensor-category order from the UI (§D).** The order sensor categories read in a host view is now
+  reorderable per class (on the Thresholds screen) and per host (in host settings). The built-in
+  server / network / NAS shape profiles remain the fallback for anything without an override, and a
+  category a host doesn't have is simply skipped.
+
 ## [0.5.0] - 2026-09-22
 
 > **Milestone: the PRTG "Add Sensor" replacement is complete.** This version number was reserved

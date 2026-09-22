@@ -3,7 +3,22 @@
 
 package server
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
+
+// canonicalCategories returns every sensor category in the built-in server-profile order. It is the
+// reorder pool + seed for the §D category-order editor and the allow-list a saved order is checked
+// against (validCategories).
+func canonicalCategories() []string {
+	cats := make([]string, 0, len(categoryOrderServer))
+	for c := range categoryOrderServer {
+		cats = append(cats, c)
+	}
+	sort.Slice(cats, func(i, j int) bool { return categoryOrderServer[cats[i]] < categoryOrderServer[cats[j]] })
+	return cats
+}
 
 // Curation maps raw Zabbix item keys to a small set of sensor categories the user cares
 // about (ping, CPU, memory, disk, …) with friendly labels. Items that don't match a rule

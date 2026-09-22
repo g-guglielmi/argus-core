@@ -28,6 +28,11 @@ func (s *Server) startTemplateReconcile(ctx context.Context) {
 		if err := provision.Reconcile(c, s.zbx, s.st, s.logger); err != nil {
 			s.logger.Error("provision: template reconcile failed (will retry on next host create/restart)", "err", err)
 		}
+		// Overlay the admin's stored fleet-wide threshold defaults onto the (possibly re-imported)
+		// templates, so a template re-import can't silently reset them to factory values (§D).
+		if err := provision.ApplyGlobalThresholds(c, s.zbx, s.st, s.logger); err != nil {
+			s.logger.Error("thresholds: applying global defaults failed (will retry on next restart/save)", "err", err)
+		}
 	}()
 }
 

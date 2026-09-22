@@ -21,7 +21,12 @@ type DeviceClass = { id: string; label: string; family: string; pattern: string;
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
 type MacroField = { macro: string; label: string; hint?: string; secret?: boolean; options?: string[]; value: string; set?: boolean }
-type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; vm_names?: string[] }
+type ThresholdField = { macro: string; label: string; unit?: string; default: string; value?: string }
+type ThrRowData = { macro: string; label: string; unit?: string; default: string; value?: string }
+type ThrTemplate = { template: string; label: string; every_host?: boolean; optional?: boolean; classes?: string[]; thresholds: ThrRowData[] }
+type ThrClass = { id: string; label: string; order?: string[] }
+type ThresholdsData = { templates: ThrTemplate[]; categories: string[]; classes: ThrClass[] }
+type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; vm_names?: string[]; categories?: string[]; category_order?: string[] }
 type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
@@ -618,7 +623,7 @@ function ResetPassword({ token, onDone }: { token: string; onDone: () => void })
   )
 }
 
-type View = 'overview' | 'triggers' | 'monitoring' | 'notifications' | 'probes' | 'discovery' | 'users' | 'settings' | 'account' | 'list'
+type View = 'overview' | 'triggers' | 'monitoring' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'users' | 'settings' | 'account' | 'list'
 const VIEW_TITLES: Record<View, [string, string]> = {
   overview: ['Overview', 'What needs attention right now'],
   triggers: ['Triggers', 'Alert rules - firing, or all by host'],
@@ -626,6 +631,7 @@ const VIEW_TITLES: Record<View, [string, string]> = {
   notifications: ['Notifications', 'Alert routing and channels'],
   probes: ['Probes', 'Site probe enrollment'],
   discovery: ['Discovery', 'Scan a subnet, review what answers, adopt devices'],
+  thresholds: ['Thresholds', 'Fleet-wide alert defaults and sensor order'],
   users: ['Users', 'Accounts and access'],
   settings: ['Settings', 'System configuration'],
   account: ['Account', 'Your security settings'],
@@ -639,6 +645,7 @@ const ic = {
   notifications: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>,
   probes: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5" /></svg>,
   discovery: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4.6" /><path d="M12 12l5.6-5.6" /><circle cx="15.4" cy="14.6" r="1.1" fill="currentColor" stroke="none" /></svg>,
+  thresholds: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M5 21v-6M5 11V3M12 21v-9M12 8V3M19 21v-4M19 13V3" /><circle cx="5" cy="13" r="2" /><circle cx="12" cy="6" r="2" /><circle cx="19" cy="15" r="2" /></svg>,
   users: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><path d="M16 5.2a3.2 3.2 0 0 1 0 6M17 14.5a5.5 5.5 0 0 1 3.5 5.5" /></svg>,
   settings: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
   account: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="3.4" /><path d="M5 20a7 7 0 0 1 14 0" /></svg>,
@@ -675,7 +682,7 @@ function useTheme(): ['dark' | 'light', () => void] {
 // bookmark, shared link, or Back/Forward restores the exact screen - instead of always
 // resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
 // (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
-const NAV_VIEWS: View[] = ['overview', 'triggers', 'monitoring', 'notifications', 'probes', 'discovery', 'users', 'settings', 'account', 'list']
+const NAV_VIEWS: View[] = ['overview', 'triggers', 'monitoring', 'notifications', 'probes', 'discovery', 'thresholds', 'users', 'settings', 'account', 'list']
 type NavState = { view: View; filter: string; host?: string; item?: string; group?: string; scan?: string; edit?: string }
 
 function parseNav(): NavState {
@@ -1078,7 +1085,7 @@ function VersionAbout() {
 
 function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }: { me: Me; onMe: (m: Me) => void; onLogout: () => void; passkeysAvailable: boolean; probeEnroll: boolean; enter?: boolean }) {
   // Admin-only views can't be restored from a shared/stale URL by a non-admin.
-  const clampView = (v: View): View => ((v === 'users' || v === 'settings' || v === 'discovery') && me.role !== 'admin' ? 'overview' : v)
+  const clampView = (v: View): View => ((v === 'users' || v === 'settings' || v === 'discovery' || v === 'thresholds') && me.role !== 'admin' ? 'overview' : v)
   // A fresh visit to the bare "/" (no query) honours the user's landing preference; any deep
   // link (?view=…, ?host=…, ?reset=… already handled) is respected as-is.
   const initialNav = (): NavState => {
@@ -1251,6 +1258,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         {nav('monitoring', 'Monitoring')}
         <div className="navlabel">Configure</div>
         {me.role === 'admin' && nav('discovery', 'Discovery')}
+        {me.role === 'admin' && nav('thresholds', 'Thresholds')}
         {nav('probes', 'Probes')}
         {nav('notifications', 'Notifications')}
         {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('users', 'Users')}{nav('settings', 'Settings')}</>}
@@ -1317,6 +1325,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           {view === 'notifications' && <NotificationsView />}
           {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} />}
           {view === 'discovery' && me.role === 'admin' && <DiscoveryView scanId={discScan} onOpenScan={openDiscoveryScan} />}
+          {view === 'thresholds' && me.role === 'admin' && <ThresholdsView />}
           {view === 'users' && me.role === 'admin' && <UsersView />}
           {view === 'settings' && me.role === 'admin' && <SettingsView me={me} onMe={onMe} />}
           {view === 'account' && <AccountView me={me} onMe={onMe} passkeysAvailable={passkeysAvailable} theme={theme} toggleTheme={toggleTheme} />}
@@ -4371,6 +4380,136 @@ function blankSnmp(): SnmpCfg { return { version: 2, community: 'public', bulk: 
 // switching views can never leave a stale settings band behind (the old inline band survived a
 // drill back to the root) - the dialog is closed first (Escape / backdrop / Cancel / Back, since
 // the open dialog is URL-backed via &edit=).
+// ThrRow is one global threshold-default field: edit the fleet-wide value (blank/placeholder = the
+// factory default), save on blur, and Reset back to the factory value. Saves via PUT /api/thresholds/default.
+function ThrRow({ template, row, onSaved }: { template: string; row: ThrRowData; onSaved: (template: string, macro: string, value: string) => void }) {
+  const [val, setVal] = useState(row.value || '')
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'err'>('idle')
+  const [err, setErr] = useState('')
+  useEffect(() => { setVal(row.value || '') }, [row.value])
+  async function commit(next: string) {
+    next = next.trim()
+    if (next === (row.value || '')) { setStatus('idle'); return }
+    setStatus('saving'); setErr('')
+    const res = await fetch('/api/thresholds/default', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ template, macro: row.macro, value: next }) }).catch(() => null)
+    if (!res || !res.ok) { setStatus('err'); setErr(await errText(res, 'Save failed')); return }
+    setStatus('saved'); onSaved(template, row.macro, next); setTimeout(() => setStatus('idle'), 1500)
+  }
+  const overridden = (row.value || '') !== ''
+  return (
+    <div className="thr-row">
+      <span className="thr-row-label">{row.label}{row.unit ? ` (${row.unit})` : ''}</span>
+      <div className="thr-row-input">
+        <input className="input" value={val} inputMode="decimal" placeholder={`default ${row.default}${row.unit || ''}`}
+          onChange={(e) => setVal(e.target.value)} onBlur={() => commit(val)}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
+        {overridden && <button className="btn ghost thr-reset" onClick={() => { setVal(''); commit('') }}>Reset</button>}
+        {status === 'saving' && <span className="thr-row-def">Saving…</span>}
+        {status === 'saved' && <span className="thr-row-def txt-ok">Saved</span>}
+      </div>
+      {status === 'err' ? <span className="thr-row-def txt-err">{err}</span>
+        : overridden ? <span className="thr-row-def">Overrides the default of {row.default}{row.unit || ''}</span>
+        : <span className="thr-row-def">Factory default</span>}
+    </div>
+  )
+}
+
+// ClassOrderCard reorders the sensor categories for all hosts of one class (§D). The full category
+// set is offered; categories a host doesn't have are simply skipped. Per-host order lives in host settings.
+function ClassOrderCard({ data, onChanged }: { data: ThresholdsData; onChanged: () => void }) {
+  const [classId, setClassId] = useState(data.classes[0]?.id || '')
+  const cls = data.classes.find((c) => c.id === classId)
+  const [cats, setCats] = useState<string[]>(cls?.order?.length ? cls.order : data.categories)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  useEffect(() => {
+    const c = data.classes.find((x) => x.id === classId)
+    setCats(c?.order?.length ? c.order : data.categories)
+    setErr('')
+  }, [classId, data])
+  const custom = !!cls?.order?.length
+  function move(i: number, dir: -1 | 1) {
+    const j = i + dir
+    if (j < 0 || j >= cats.length) return
+    const next = [...cats]
+    ;[next[i], next[j]] = [next[j], next[i]]
+    setCats(next)
+  }
+  async function put(categories: string[]) {
+    setBusy(true); setErr('')
+    const res = await fetch('/api/thresholds/order', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope: 'class:' + classId, categories }) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { setErr(await errText(res, 'Could not save the order')); return }
+    onChanged()
+  }
+  return (
+    <div className="thr-card">
+      <div className="thr-card-head">
+        <div className="thr-card-title">Sensor order</div>
+        <div className="thr-card-scope">Per class{custom ? ' · customized' : ' · built-in default'}</div>
+      </div>
+      <p className="set-note" style={{ margin: '4px 0 12px' }}>The order sensor categories read for every host of a class. Categories a host doesn't have are skipped. A single host can override this in its own settings.</p>
+      <label className="field" style={{ maxWidth: 320 }}><span>Class</span>
+        <Select value={classId} onChange={(e) => setClassId(e.target.value)}>
+          {data.classes.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </Select>
+      </label>
+      <ol className="cat-order" style={{ marginTop: 12, maxWidth: 420 }}>
+        {cats.map((c, i) => (
+          <li key={c}>
+            <span className="cat-name">{c}</span>
+            <span className="cat-move">
+              <button className="btn ghost" disabled={busy || i === 0} onClick={() => move(i, -1)} aria-label="Move up">↑</button>
+              <button className="btn ghost" disabled={busy || i === cats.length - 1} onClick={() => move(i, 1)} aria-label="Move down">↓</button>
+            </span>
+          </li>
+        ))}
+      </ol>
+      {err && <div className="txt-err" style={{ fontSize: 13, marginTop: 8 }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        <Button variant="primary" onClick={() => put(cats)} disabled={busy}>Save order</Button>
+        {custom && <Button variant="ghost" onClick={() => put([])} disabled={busy}>Reset to default</Button>}
+      </div>
+    </div>
+  )
+}
+
+// ThresholdsView (§D): fleet-wide threshold defaults per class template + per-class sensor order.
+// Per-device overrides live in each host's settings dialog. Admin-only.
+function ThresholdsView() {
+  const [data, setData] = useState<ThresholdsData | null>(null)
+  const [err, setErr] = useState('')
+  function load() { fetch('/api/thresholds').then((r) => (r.ok ? r.json() : Promise.reject())).then((d: ThresholdsData) => { setData(d); setErr('') }).catch(() => setErr('Could not load thresholds')) }
+  useEffect(load, [])
+  function onRowSaved(template: string, macro: string, value: string) {
+    setData((d) => d ? { ...d, templates: d.templates.map((t) => t.template === template ? { ...t, thresholds: t.thresholds.map((r) => r.macro === macro ? { ...r, value } : r) } : t) } : d)
+  }
+  function scopeText(t: ThrTemplate): string {
+    if (t.every_host) return 'Applies to every device'
+    if (t.optional) return 'Optional add-on (enable per host)'
+    return t.classes && t.classes.length > 0 ? 'Used by: ' + t.classes.join(', ') : ''
+  }
+  if (err && !data) return <div className="txt-err" style={{ fontSize: 13 }}>{err}</div>
+  if (!data) return <div style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</div>
+  return (
+    <div className="thr-view">
+      <p className="set-note">Fleet-wide alert thresholds, grouped by the monitoring template that carries them. A change applies to every host using that template; override it for a single device in the host's settings. Blank a field to keep the factory default.</p>
+      {data.templates.map((t) => (
+        <div className="thr-card" key={t.template}>
+          <div className="thr-card-head">
+            <div className="thr-card-title">{t.label}</div>
+            <div className="thr-card-scope">{scopeText(t)}</div>
+          </div>
+          <div className="thr-rows">
+            {t.thresholds.map((r) => <ThrRow key={r.macro} template={t.template} row={r} onSaved={onRowSaved} />)}
+          </div>
+        </div>
+      ))}
+      <ClassOrderCard data={data} onChanged={load} />
+    </div>
+  )
+}
+
 function HostSettingsModal({ hostId, hostName, canEdit, onClose, onSaved }: { hostId: string; hostName?: string; canEdit: boolean; onClose: () => void; onSaved: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -4397,8 +4536,9 @@ function HostSettings({ hostId, canEdit, onClose, onSaved, inDialog }: { hostId:
   const [proxies, setProxies] = useState<Proxy[]>([])
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [customOrder, setCustomOrder] = useState(false)
   useEffect(() => {
-    fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : Promise.reject())).then(setCfg).catch(() => setErr('Could not load host settings'))
+    fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : Promise.reject())).then((d: HostCfg) => { setCfg(d); setCustomOrder(!!(d.category_order && d.category_order.length)) }).catch(() => setErr('Could not load host settings'))
     fetch('/api/proxies').then((r) => (r.ok ? r.json() : [])).then((p) => setProxies(p || [])).catch(() => {})
   }, [hostId])
 
@@ -4406,6 +4546,17 @@ function HostSettings({ hostId, canEdit, onClose, onSaved, inDialog }: { hostId:
   function setIface(idx: number, p: Partial<Iface>) { setCfg((c) => (c ? { ...c, interfaces: c.interfaces.map((i, n) => (n === idx ? { ...i, ...p } : i)) } : c)) }
   function setSnmp(idx: number, p: Partial<SnmpCfg>) { setCfg((c) => (c ? { ...c, interfaces: c.interfaces.map((i, n) => (n === idx ? { ...i, snmp: { ...(i.snmp || blankSnmp()), ...p } } : i)) } : c)) }
   function setMacro(macro: string, value: string) { setCfg((c) => (c ? { ...c, macros: (c.macros || []).map((m) => (m.macro === macro ? { ...m, value } : m)) } : c)) }
+  function setThreshold(macro: string, value: string) { setCfg((c) => (c ? { ...c, thresholds: (c.thresholds || []).map((t) => (t.macro === macro ? { ...t, value } : t)) } : c)) }
+  function moveCategory(idx: number, dir: -1 | 1) {
+    setCfg((c) => {
+      if (!c || !c.categories) return c
+      const cats = [...c.categories]
+      const j = idx + dir
+      if (j < 0 || j >= cats.length) return c
+      ;[cats[idx], cats[j]] = [cats[j], cats[idx]]
+      return { ...c, categories: cats }
+    })
+  }
   function addIface(type: number) { setCfg((c) => (c ? { ...c, interfaces: [...c.interfaces, { type, useip: 1, ip: '', dns: '', port: type === 2 ? '161' : '10050', snmp: type === 2 ? blankSnmp() : undefined, inherit: type === 2 ? !!c.proxy_default : undefined }] } : c)) }
   async function removeIface(idx: number) {
     const it = cfg?.interfaces[idx]
@@ -4415,8 +4566,13 @@ function HostSettings({ hostId, canEdit, onClose, onSaved, inDialog }: { hostId:
   async function save() {
     if (!cfg) return
     setBusy(true); setErr(null)
-    const macros = cfg.macros && cfg.macros.length > 0 ? Object.fromEntries(cfg.macros.map((m) => [m.macro, m.value])) : undefined
-    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros }) }).catch(() => null)
+    // Class options and per-host threshold overrides share the one macro map the server applies (only
+    // the class's own macros + its known thresholds are ever touched; a blank field reverts to default).
+    const pairs = [...(cfg.macros || []).map((m) => [m.macro, m.value] as const), ...(cfg.thresholds || []).map((t) => [t.macro, t.value || ''] as const)]
+    const macros = pairs.length > 0 ? Object.fromEntries(pairs) : undefined
+    // Per-host sensor order: send the current list when "custom" is on, else [] to clear the override.
+    const category_order = cfg.categories && cfg.categories.length > 0 ? (customOrder ? cfg.categories : []) : undefined
+    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order }) }).catch(() => null)
     setBusy(false)
     if (!res || !res.ok) { setErr(await errText(res, 'Could not save host settings')); return }
     onSaved()
@@ -4568,6 +4724,45 @@ function HostSettings({ hostId, canEdit, onClose, onSaved, inDialog }: { hostId:
               )
             })}
           </div>
+        </>
+      )}
+
+      {cfg.thresholds && cfg.thresholds.length > 0 && (
+        <>
+          <div className="hs-title">Thresholds</div>
+          <div className="hs-note" style={{ margin: '0 0 10px' }}>Per-host overrides. Leave a field blank to use the current default (shown in the field). Set a number to override it for this host only; fleet-wide defaults live in the Thresholds screen.</div>
+          <div className="hs-grid">
+            {cfg.thresholds.map((t) => (
+              <label className="field" key={t.macro}>
+                <span>{t.label}{t.unit ? ` (${t.unit})` : ''}</span>
+                <input className="input" type="text" inputMode="decimal" placeholder={t.default ? `default ${t.default}${t.unit || ''}` : 'default'} value={t.value || ''} disabled={!canEdit} onChange={(e) => setThreshold(t.macro, e.target.value)} />
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+
+      {cfg.categories && cfg.categories.length > 1 && (
+        <>
+          <div className="hs-title">Sensor order</div>
+          <div className="hs-note" style={{ margin: '0 0 10px' }}>The order sensor categories read on this host. Off follows the class or built-in default order.</div>
+          <label className="hs-note" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 10px', cursor: canEdit ? 'pointer' : 'default' }}>
+            <input type="checkbox" checked={customOrder} disabled={!canEdit} onChange={(e) => setCustomOrder(e.target.checked)} />
+            <span>Custom order for this host</span>
+          </label>
+          {customOrder && (
+            <ol className="cat-order">
+              {cfg.categories.map((c, i) => (
+                <li key={c}>
+                  <span className="cat-name">{c}</span>
+                  <span className="cat-move">
+                    <button className="btn ghost" disabled={!canEdit || i === 0} onClick={() => moveCategory(i, -1)} aria-label="Move up">↑</button>
+                    <button className="btn ghost" disabled={!canEdit || i === cfg.categories!.length - 1} onClick={() => moveCategory(i, 1)} aria-label="Move down">↓</button>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
         </>
       )}
 

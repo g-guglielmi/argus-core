@@ -83,9 +83,11 @@ list is here so you can see where the catalog is heading. See [../DESIGN.md](../
 
 ## Per-host options
 
-Class tunables (thresholds, the Windows service filter, API credentials) can be set when you add the
+Class tunables (the Windows service filter, API credentials, and the like) can be set when you add the
 device **and** changed later in **host settings** (the settings panel on the host row) under the class
-options section.
+options section. That same dialog has a **Thresholds** section for per-device alert-threshold overrides
+and a **Sensor order** section; fleet-wide threshold defaults live on the admin **Thresholds** screen.
+See [../thresholds.md](../thresholds.md).
 
 For the full device-class catalog (including classes still on the roadmap) and what each one collects,
 see [../DESIGN.md](../DESIGN.md) section 5.
