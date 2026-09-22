@@ -13,6 +13,14 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Fixed:**
+- **A host moved to the core server could not be moved back to a proxy.** Zabbix reports a
+  server-monitored host's proxy id as the sentinel `"0"`; the settings dialog carried it into the
+  Server -> Proxy flip, where the proxy select displayed the first proxy while the state still
+  held `"0"` - saving then failed with a Zabbix "object does not exist" error (the workaround was
+  the Zabbix UI). The sentinel is now normalized out of the config read, the flip lands on a real
+  proxy, and both write paths reject `"0"` outright.
+
 **Added:**
 - **UniFi controller sweep - auto-discovery slice 2 (completes §B).** The Discovery tab gains a
   second candidate source: save a UniFi Network controller once (name + base URL + API key, the

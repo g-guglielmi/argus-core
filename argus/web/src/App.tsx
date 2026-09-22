@@ -4237,7 +4237,9 @@ function HostSettings({ hostId, canEdit, onClose, onSaved, inDialog }: { hostId:
         <span className="hs-monlabel">Monitored by</span>
         <div className="seg">
           <button className={cfg.monitored_by === 0 ? 'on' : ''} disabled={!canEdit} onClick={() => patch({ monitored_by: 0 })}>Server</button>
-          <button className={cfg.monitored_by === 1 ? 'on' : ''} disabled={!canEdit} onClick={() => patch({ monitored_by: 1, proxy_id: cfg.proxy_id || proxies[0]?.id })}>Proxy</button>
+          {/* "0" is the server-monitored sentinel, not a proxy id - flipping to Proxy must land on
+              a real proxy or the select silently shows one the state doesn't hold. */}
+          <button className={cfg.monitored_by === 1 ? 'on' : ''} disabled={!canEdit} onClick={() => patch({ monitored_by: 1, proxy_id: cfg.proxy_id && cfg.proxy_id !== '0' ? cfg.proxy_id : proxies[0]?.id })}>Proxy</button>
         </div>
         {cfg.monitored_by === 1 && (
           <select className="input" value={cfg.proxy_id || ''} disabled={!canEdit} onChange={(e) => patch({ proxy_id: e.target.value })}>

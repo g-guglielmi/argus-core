@@ -97,6 +97,13 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := hostConfigView{HostID: hd.HostID, Host: hd.Host, Name: hd.Name, MonitoredBy: hd.MonitoredBy, ProxyID: hd.ProxyID, Interfaces: make([]ifaceView, 0, len(hd.Interfaces))}
+	// Zabbix reports proxyid "0" for a server-monitored host. Never hand that sentinel to the
+	// browser: it would survive a Server -> Proxy flip as a select value no option matches, and a
+	// later save would send it back as a real proxy id (host.update then fails with "/1/proxyid:
+	// object does not exist").
+	if out.ProxyID == "0" {
+		out.ProxyID = ""
+	}
 	if hd.ProxyID != "" && hd.ProxyID != "0" {
 		if proxies, perr := s.zbx.Proxies(ctx); perr == nil {
 			for _, p := range proxies {
@@ -183,7 +190,9 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the technical host name is required"})
 		return
 	}
-	if req.MonitoredBy == 1 && strings.TrimSpace(req.ProxyID) == "" {
+	// "0" is Zabbix's server-monitored sentinel, never a real proxy id - a client that still
+	// carries it hasn't picked a proxy.
+	if req.MonitoredBy == 1 && (strings.TrimSpace(req.ProxyID) == "" || strings.TrimSpace(req.ProxyID) == "0") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a proxy is required when monitored by a proxy"})
 		return
 	}
@@ -444,7 +453,7 @@ func (s *Server) handleSetHostProxy(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if req.MonitoredBy == 1 && strings.TrimSpace(req.ProxyID) == "" {
+	if req.MonitoredBy == 1 && (strings.TrimSpace(req.ProxyID) == "" || strings.TrimSpace(req.ProxyID) == "0") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a proxy is required when monitored by a proxy"})
 		return
 	}
