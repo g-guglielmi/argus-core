@@ -313,6 +313,9 @@ func (s *Server) runCoreScan(job store.DiscoveryJob) {
 	defer scancel()
 	if err := s.st.CompleteDiscoveryJob(sctx, job.ID, "", errMsg, results); err != nil {
 		s.logger.Error("discovery: could not store core scan results", "job", job.ID, "err", err)
+		if errors.Is(err, store.ErrNotFound) {
+			s.dispatchNextCoreJob(sctx) // the job was deleted mid-run; keep the queue draining
+		}
 		return
 	}
 	s.logger.Info("discovery: core scan finished", "job", job.ID, "cidr", job.CIDR, "hosts", len(results), "note", errMsg)
@@ -507,6 +510,9 @@ func (s *Server) runCoreSweep(job store.DiscoveryJob) {
 	defer scancel()
 	if err := s.st.CompleteDiscoveryJob(sctx, job.ID, "", errMsg, results); err != nil {
 		s.logger.Error("discovery: could not store core sweep results", "job", job.ID, "err", err)
+		if errors.Is(err, store.ErrNotFound) {
+			s.dispatchNextCoreJob(sctx) // the job was deleted mid-run; keep the queue draining
+		}
 		return
 	}
 	s.logger.Info("discovery: core sweep finished", "job", job.ID, "controller", job.ControllerName, "devices", len(results), "note", errMsg)
@@ -687,6 +693,25 @@ func (s *Server) handleGetDiscoveryJob(w http.ResponseWriter, r *http.Request) {
 		out = append(out, v)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"job": jobView(*job), "results": out})
+}
+
+// DELETE /api/discovery/jobs/{id} (admin) - remove a scan and its results from the history (an
+// obsolete or wrong-subnet run). Running jobs may be deleted too; a late result post is dropped.
+func (s *Server) handleDeleteDiscoveryJob(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid scan id"})
+		return
+	}
+	if err := s.st.DeleteDiscoveryJob(r.Context(), id); errors.Is(err, store.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "scan not found"})
+		return
+	} else if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not delete the scan"})
+		return
+	}
+	s.logger.Info("discovery: scan deleted", "job", id)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // POST /api/discovery/results/state (admin) - flip results between new and ignored. An ignored

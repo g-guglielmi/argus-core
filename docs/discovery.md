@@ -116,7 +116,10 @@ core queries the controllers, so one it can't reach simply doesn't enrich.
 
 ## Notes
 
-- Scan history is kept for 30 days (capped per source); reopen any scan from the Recent scans list.
+- Scan history is kept for 30 days (capped per source); reopen any scan from the Recent scans
+  list, or delete one there (trash icon, or the Delete button inside the opened scan) - e.g. an
+  obsolete run or a wrong subnet. A running job can be deleted too; its late results are dropped.
+  Deleting a scan also forgets any ignores recorded only in it.
 - A scan nothing picks up fails after 5 minutes ("is the probe online and running a scan-capable
   image?" - a scan queued behind a running one waits as long as it needs); one that is picked up
   but never reports back fails after 15.

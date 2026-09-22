@@ -188,6 +188,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/discovery/jobs", auth.RequireRole("admin", s.handleCreateDiscoveryJob))
 	mux.HandleFunc("GET /api/discovery/jobs", auth.RequireRole("admin", s.handleListDiscoveryJobs))
 	mux.HandleFunc("GET /api/discovery/jobs/{id}", auth.RequireRole("admin", s.handleGetDiscoveryJob))
+	mux.HandleFunc("DELETE /api/discovery/jobs/{id}", auth.RequireRole("admin", s.handleDeleteDiscoveryJob))
 	mux.HandleFunc("POST /api/discovery/results/state", auth.RequireRole("admin", s.handleSetDiscoveryResultsState))
 	// Saved UniFi controllers for the §B sweep (API key write-only; see unifictl.go).
 	mux.HandleFunc("GET /api/discovery/controllers", auth.RequireRole("admin", s.handleListUniFiControllers))

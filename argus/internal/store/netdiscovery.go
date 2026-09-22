@@ -269,6 +269,22 @@ func (s *Store) ListDiscoveryJobs(ctx context.Context, limit int) ([]DiscoveryJo
 	return out, rows.Err()
 }
 
+// DeleteDiscoveryJob removes a scan and its results (an obsolete or wrong-subnet run). Deleting
+// a still-running job is allowed - that is exactly when a wrong subnet wants killing; a late
+// result post then completes into ErrNotFound and is dropped. Note: results carry the ignore
+// memory, so a device ignored ONLY in the deleted scan shows as new on its next appearance.
+func (s *Store) DeleteDiscoveryJob(ctx context.Context, id int64) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM discovery_jobs WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	_, err = s.db.ExecContext(ctx, `DELETE FROM discovery_results WHERE job_id=?`, id)
+	return err
+}
+
 // DiscoveryNewResultIPs returns, for each given job, the IPs of its results still in state
 // "new". The jobs-list handler subtracts the already-monitored ones so the history's "new" count
 // means "actually up for review", not just "never adopted through Argus".

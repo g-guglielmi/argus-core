@@ -3782,6 +3782,15 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
     void loadCtls()
   }
 
+  async function deleteJob(j: DiscoveryJobRow) {
+    const label = j.kind === 'unifi' ? `the sweep of ${j.controller_name || 'the controller'}` : `the scan of ${j.cidr}`
+    if (!(await confirm({ message: `Delete ${label} and its results? Devices ignored only in this scan will show as new next time they are found.`, danger: true }))) return
+    const res = await fetch(`/api/discovery/jobs/${j.id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res || !res.ok) { setErr(await errText(res, 'Could not delete the scan')); return }
+    if (job?.id === j.id) onOpenScan(null)
+    void loadJobs()
+  }
+
   const selectable = (r: DiscoveryResultRow) => r.state === 'new' && !r.monitored_id
   const visible = results.filter((r) => showIgnored || r.state !== 'ignored')
   const selectableIds = visible.filter(selectable).map((r) => r.id)
@@ -3985,7 +3994,10 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
         <div className="phead" style={job.state === 'done' ? { borderBottom: 'none' } : undefined}>
           <h2>{isSweep ? 'Sweep results' : 'Scan results'} · {jobLabel} · {job.proxy_name || 'Core server'}</h2>
           <span className="hint">{job.state === 'done' ? `${results.length} device${results.length === 1 ? '' : 's'} found · ${relTime(job.completed_at || job.created_at)}` : `started ${relTime(job.created_at)}`}</span>
-          <div className="tools"><Button variant="ghost" onClick={() => onOpenScan(null)}>‹ Back to scans</Button></div>
+          <div className="tools">
+            <Button variant="ghost" onClick={() => void deleteJob(job)}>Delete</Button>
+            <Button variant="ghost" onClick={() => onOpenScan(null)}>‹ Back to scans</Button>
+          </div>
         </div>
       {err && <div style={{ padding: '8px 1rem 0' }}><Banner variant="error">{err}</Banner></div>}
       {running && (
@@ -4153,7 +4165,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
       {jobs !== null && jobs.length > 0 && (
         <div className="enroll-scroll">
           <table className="enroll enroll-discovery">
-            <thead><tr><th>When</th><th>Source</th><th>Target</th><th>Found</th><th>Status</th><th>By</th></tr></thead>
+            <thead><tr><th>When</th><th>Source</th><th>Target</th><th>Found</th><th>Status</th><th>By</th><th style={{ width: 34 }} /></tr></thead>
             <tbody>
               {jobs.map((j) => (
                 <tr key={j.id} className="disc-scan-row" title={j.error || undefined}
@@ -4164,6 +4176,11 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
                   <td data-label="Found">{j.state === 'done' ? `${j.found ?? 0} device${(j.found ?? 0) === 1 ? '' : 's'} · ${j.new ?? 0} new` : '-'}</td>
                   <td data-label="Status"><span className={'tag' + (j.state === 'done' ? ' online' : j.state === 'failed' ? '' : ' pending')}>{j.state === 'dispatched' ? (j.kind === 'unifi' ? 'sweeping' : 'scanning') : j.state === 'pending' ? 'queued' : j.state}</span></td>
                   <td data-label="By" style={{ color: 'var(--muted)' }}>{j.requested_by || '-'}</td>
+                  <td data-label="" onClick={(e) => e.stopPropagation()}>
+                    <button className="iconbtn" title="Delete this scan" aria-label="Delete this scan" onClick={() => void deleteJob(j)}>
+                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" /></svg>
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -19,6 +19,11 @@ GitHub Release from the matching section below.
   controllers" is a proper button on the sweep card (with a direct "+ Add controller" shortcut
   when none are saved yet).
 
+**Added (discovery, minor):**
+- **Scans can be deleted from the history** (trash icon on the row, or Delete inside the opened
+  scan) - for obsolete runs or a scan started with the wrong subnet. Running jobs can be deleted
+  too (late results are dropped); ignores recorded only in the deleted scan are forgotten.
+
 **Fixed:**
 - **The scan history's "new" count now means actually new.** It counted every result never
   adopted or ignored through Argus, so a range full of devices monitored since before discovery
