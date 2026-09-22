@@ -15,10 +15,11 @@ GitHub Release from the matching section below.
 
 **Changed:**
 - **Discovery page reworked into a wizard-style flow.** The page itself is now just the scan
-  history; **+ New scan**, **UniFi sweep** and **Manage controllers** sit in its header and open
-  as focused dialogs, each with a one-line description of what Argus will do. While no controller
-  is saved, a single tip on the page advises configuring them first, so discovery identifies
-  UniFi gear exactly from the start.
+  history with two header actions: **+ New scan** opens a wizard whose first step picks the
+  discovery source (subnet scan or UniFi controller sweep - future vendor APIs become more
+  cards there), and **Discovery settings** holds the saved controllers. Each step carries a
+  one-line description of what Argus will do; while no controller is saved, a single tip on the
+  page advises configuring them first, so discovery identifies UniFi gear exactly from the start.
 
 **Added (discovery, minor):**
 - **Scans can be deleted from the history** (trash icon on the row, or Delete inside the opened

@@ -3627,8 +3627,9 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
   const [sweepBusy, setSweepBusy] = useState(false)
   const [ctlForm, setCtlForm] = useState<{ id: number; name: string; url: string; key: string } | null>(null)
   const [ctlBusy, setCtlBusy] = useState(false)
-  // Which action dialog is open - the landing page itself is just the scan history.
-  const [dlg, setDlg] = useState<null | 'scan' | 'sweep' | 'ctls'>(null)
+  // Which action dialog is open - the landing page itself is just the scan history. 'new' is
+  // the wizard's source-picker step; future discovery sources (other vendor APIs) slot in there.
+  const [dlg, setDlg] = useState<null | 'new' | 'scan' | 'sweep' | 'ctls'>(null)
   // review state
   const [sel, setSel] = useState<Set<number>>(new Set())
   const [rowCfg, setRowCfg] = useState<Record<number, DiscRowCfg>>({})
@@ -3920,15 +3921,14 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
         <h2>Network discovery</h2>
         <span className="hint">find devices, review what answered, adopt into monitoring · kept for 30 days</span>
         <div className="tools">
-          <Button onClick={() => { setCtlForm((ctls?.length || 0) === 0 ? { id: 0, name: '', url: '', key: '' } : null); setDlg('ctls') }}>Manage controllers</Button>
-          <Button onClick={() => setDlg('sweep')} disabled={ctls === null}>UniFi sweep</Button>
-          <Button variant="primary" onClick={() => setDlg('scan')} disabled={proxies === null}>+ New scan</Button>
+          <Button onClick={() => { setCtlForm((ctls?.length || 0) === 0 ? { id: 0, name: '', url: '', key: '' } : null); setDlg('ctls') }}>Discovery settings</Button>
+          <Button variant="primary" onClick={() => setDlg('new')} disabled={proxies === null || ctls === null}>+ New scan</Button>
         </div>
       </div>
       {/* One concise nudge, only while no controller is saved - configuring them first makes
           every later discovery identify UniFi gear exactly. */}
       {ctls !== null && ctls.length === 0 && (
-        <p className="panel-intro">Tip: save your UniFi controllers first (<b>Manage controllers</b>). Discovery matches what it finds against them, so UniFi devices come back exactly identified, ready to adopt with their settings pre-filled.</p>
+        <p className="panel-intro">Tip: save your UniFi controllers first (<b>Discovery settings</b>). Discovery matches what it finds against them, so UniFi devices come back exactly identified, ready to adopt with their settings pre-filled.</p>
       )}
       {err && <div style={{ padding: '10px 1rem 0' }}><Banner variant="error">{err}</Banner></div>}
       {jobs === null && <div style={{ padding: '10px 1rem 1rem' }}><Skeleton rows={2} cols={5} /></div>}
@@ -3960,6 +3960,27 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
       )}
       </section>
 
+      {/* Step 1 of the wizard: pick the discovery source (probe-wizard option-card idiom).
+          Future vendor APIs become more cards here, not more page chrome. */}
+      {dlg === 'new' && (
+        <DiscDialog title="New scan" onClose={() => setDlg(null)}>
+          <p className="dlg-msg">How should Argus look for devices?</p>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <button type="button" onClick={() => setDlg('scan')} style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 8, cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--elevated)' }}>
+              <div style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--text)' }}>Subnet scan</div>
+              <div style={{ color: 'var(--muted)', fontSize: 12 }}>Probe an IP range from the core or a probe - finds anything that answers, vendor or not.</div>
+            </button>
+            <button type="button" onClick={() => setDlg('sweep')} style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 8, cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--elevated)' }}>
+              <div style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--text)' }}>UniFi controller sweep</div>
+              <div style={{ color: 'var(--muted)', fontSize: 12 }}>Ask a saved controller for every device it manages, across all its sites - no wire scan, settings pre-filled.</div>
+            </button>
+          </div>
+          <div className="dlg-foot">
+            <Button variant="ghost" onClick={() => setDlg(null)}>Cancel</Button>
+          </div>
+        </DiscDialog>
+      )}
+
       {dlg === 'scan' && (
         <DiscDialog title="New subnet scan" onClose={() => setDlg(null)}>
           <p className="dlg-msg">Probes every address in the range from the collector you pick and suggests a device class for whatever answers.</p>
@@ -3977,7 +3998,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
           )}
           {err && <Banner variant="error">{err}</Banner>}
           <div className="dlg-foot">
-            <Button variant="ghost" onClick={() => setDlg(null)}>Cancel</Button>
+            <Button variant="ghost" onClick={() => setDlg('new')}>‹ Back</Button>
             <Button variant="primary" onClick={start} disabled={busy}>{busy ? 'Starting…' : 'Start scan'}</Button>
           </div>
         </DiscDialog>
@@ -3990,7 +4011,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
             <>
               <p style={{ color: 'var(--muted)', fontSize: 13, margin: 0 }}>No controllers saved yet.</p>
               <div className="dlg-foot">
-                <Button variant="ghost" onClick={() => setDlg(null)}>Cancel</Button>
+                <Button variant="ghost" onClick={() => setDlg('new')}>‹ Back</Button>
                 <Button variant="primary" onClick={() => { setCtlForm({ id: 0, name: '', url: '', key: '' }); setDlg('ctls') }}>Add a controller</Button>
               </div>
             </>
@@ -4014,7 +4035,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
               )}
               {sweepErr && <Banner variant="error">{sweepErr}</Banner>}
               <div className="dlg-foot">
-                <Button variant="ghost" onClick={() => setDlg(null)}>Cancel</Button>
+                <Button variant="ghost" onClick={() => setDlg('new')}>‹ Back</Button>
                 <Button variant="primary" onClick={startSweep} disabled={sweepBusy}>{sweepBusy ? 'Starting…' : 'Start sweep'}</Button>
               </div>
             </>
@@ -4023,7 +4044,8 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
       )}
 
       {dlg === 'ctls' && (
-        <DiscDialog title="UniFi controllers" onClose={() => setDlg(null)}>
+        <DiscDialog title="Discovery settings" onClose={() => setDlg(null)}>
+          <div style={{ fontWeight: 600, fontSize: 13.5, margin: '2px 0 6px' }}>UniFi controllers</div>
           <p className="dlg-msg">Saved once, used by both discovery paths: sweeps import a controller's devices directly, and subnet scans match their results against it. The API key comes from UniFi Network → Settings → Control Plane → Integrations and never leaves the server.</p>
           {(ctls || []).map((c) => (
             <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', fontSize: 13, marginBottom: 8 }}>
