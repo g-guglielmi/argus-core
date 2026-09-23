@@ -31,6 +31,16 @@ GitHub Release from the matching section below.
   server / network / NAS shape profiles remain the fallback for anything without an override, and a
   category a host doesn't have is simply skipped.
 
+**Fixed:**
+- **Ugreen NAS class woke parked disks every hour.** The class used the Zabbix agent2 SMART plugin
+  (`smart.disk.discovery`, hourly) to enumerate disks; that plugin runs a full `smartctl` on every
+  drive, which opens - and spins up - a standby disk, and then overran the agent timeout on the
+  sleeping drive (the discovery showing as *Not supported / timeout*). It's replaced with a custom
+  `ugreen.disk.discovery` UserParameter that reads the disk list, model and HDD/SSD/NVMe type purely
+  from `/sys` (never opening a disk), so nothing in the class wakes a parked drive any more (the
+  temperature reads already used `smartctl -n standby`). Existing Ugreen NASes need the agent
+  re-deployed with the updated `nas-agent.conf` (the new UserParameter); see docs/hosts/ugreen.md.
+
 ## [0.5.0] - 2026-09-22
 
 > **Milestone: the PRTG "Add Sensor" replacement is complete.** This version number was reserved

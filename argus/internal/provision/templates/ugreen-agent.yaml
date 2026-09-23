@@ -230,9 +230,9 @@ zabbix_export:
         - uuid: 66110e9118a94b11805135626f103e0c
           name: 'SMART disk discovery'
           type: ZABBIX_PASSIVE
-          key: smart.disk.discovery
+          key: ugreen.disk.discovery
           delay: 1h
-          description: 'Physical disks smartctl sees (agent 2 smart plugin). Each gets a temperature sensor read WITHOUT waking the disk (smartctl -n standby); they group into one "Disk temperatures" overlay chart.'
+          description: 'Physical disks, enumerated from /sys (block devices + NVMe controllers) by the ugreen.disk.discovery UserParameter - it reads only sysfs (device name, model, and rotational flag for the {#DISKTYPE}), so it NEVER opens or spins up a disk. Replaces the agent2 smart plugin discovery, which ran a full smartctl on every drive each cycle and woke parked disks. Each disk gets a temperature sensor read WITHOUT waking it (smartctl -n standby); they group into one "Disk temperatures" overlay chart. Needs the nas-agent.conf UserParameter mounted; unsupported without it.'
           item_prototypes:
             - uuid: e4a082858e4d48bcae4f08437cfc43b7
               name: 'Disk temperature ({#NAME})'

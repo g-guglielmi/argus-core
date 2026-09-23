@@ -206,12 +206,13 @@ var registry = []Class{
 				"On the NAS, open a shell (the container needs host networking, so run it from a shell or a compose/run config, not the simple Docker-app form).",
 				"Run the block below. Replace <PROXY-IP> with the IP of the proxy (or core) shown in \"Monitored by\" above - that address is the only one allowed to poll the agent.",
 				"Mount each data volume you want disk-usage for (the -v /volume1:/volume1:ro line; add /volume2, ... if you have more). Only the data volumes are shown; the container's own filesystems are filtered out.",
-				"The first lines write a small config with two readings - CPU temperature, and per-disk SMART temperature read with 'smartctl -n standby' so a spun-down disk is NOT woken (it just holds its last reading). The -v that mounts the config and --privileged --user root (for SMART) are already in the command; everything - CPU, memory, disks, temps - comes up together.",
+				"The first lines write a small config with three readings - CPU temperature; a disk list built purely from /sys (device name, model and HDD/SSD/NVMe type), so discovery never opens a disk; and per-disk SMART temperature read with 'smartctl -n standby' so a spun-down disk is NOT woken (it just holds its last reading). The -v that mounts the config and --privileged --user root (for SMART) are already in the command; everything - CPU, memory, disks, temps - comes up together.",
 			},
 			Command: "mkdir -p /volume1/docker/argus-agent\n" +
 				"cat > /volume1/docker/argus-agent/nas-agent.conf <<'EOF'\n" +
 				"UserParameter=ugreen.cpu.temp,for h in /sys/class/hwmon/hwmon*; do case \"$(cat \"$h/name\" 2>/dev/null)\" in coretemp|k10temp) cat \"$h/temp1_input\"; exit 0;; esac; done; cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -rn | head -1\n" +
 				"UserParameter=ugreen.disk.temp[*],case \"$1\" in *nvme*) n= ;; *) n=\"-n standby\" ;; esac; o=$(smartctl $n -a -jc \"$1\" 2>/dev/null); t=$(printf '%s' \"$o\" | grep -oE '\"current\": *[0-9]+' | head -1 | grep -oE '[0-9]+'); if [ -n \"$t\" ]; then echo \"$t\"; elif [ -n \"$n\" ] && printf '%s' \"$o\" | grep -qiE 'standby|sleep'; then echo 20; fi\n" +
+				"UserParameter=ugreen.disk.discovery,emit(){ printf '%s{\"{#PATH}\":\"/dev/%s\",\"{#NAME}\":\"%s\",\"{#DISKTYPE}\":\"%s\",\"{#MODEL}\":\"%s\"}' \"$c\" \"$1\" \"$1\" \"$2\" \"$3\"; c=,; }; { printf '['; c=; for x in /sys/class/nvme/nvme*; do [ -e \"$x\" ] || continue; n=${x##*/}; m=$(sed 's/\"//g;s/^ *//;s/ *$//' \"$x/model\" 2>/dev/null); emit \"$n\" nvme \"$m\"; done; for d in /sys/block/sd*; do [ -e \"$d\" ] || continue; n=${d##*/}; [ \"$(cat \"$d/queue/rotational\" 2>/dev/null)\" = 1 ] && t=hdd || t=ssd; m=$(sed 's/\"//g;s/^ *//;s/ *$//' \"$d/device/model\" 2>/dev/null); emit \"$n\" \"$t\" \"$m\"; done; printf ']'; }\n" +
 				"EOF\n" +
 				"docker run -d --name argus-agent --restart unless-stopped \\\n" +
 				"  --network host --pid host --privileged --user root \\\n" +
