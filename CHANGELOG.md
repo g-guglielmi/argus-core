@@ -16,20 +16,21 @@ GitHub Release from the matching section below.
 **Added:**
 - **Thresholds UI (§D) - edit alert thresholds without touching Zabbix.** Thresholds are Zabbix user
   macros (`{$CPU.UTIL.WARN}`, `{$DISK.TEMP.HIGH}`, `{$PING.LOSS.WARN}`, ...) that until now could only
-  be changed by hand-editing host macros in Zabbix. A new admin **Thresholds** screen edits the
-  fleet-wide default for each threshold, grouped by the monitoring template that carries it (so a
-  switch's CPU band and a server's are edited independently, and a template shared by several classes
-  shows the classes it affects). Overrides are stored in Argus and re-applied to the Zabbix templates
-  after every startup reconcile, so a template re-import on an app upgrade can't silently reset them;
-  a factory default is always one click away via **Reset**.
+  be changed by hand-editing host macros in Zabbix. A new admin **Thresholds** screen (under Admin)
+  lists the monitoring templates; clicking one opens a dialog that edits the fleet-wide default for
+  each of its thresholds (so a switch's CPU band and a server's are edited independently, and each row
+  shows the classes it affects plus how many thresholds you've customized). Overrides are stored in
+  Argus and re-applied to the Zabbix templates after every startup reconcile, so a template re-import
+  on an app upgrade can't silently reset them; a factory default is always one click away via **Reset**.
 - **Per-device threshold overrides in host settings.** Each host's settings dialog gains a
   **Thresholds** section listing the thresholds that apply to it (its class templates + Base Ping),
   each showing the effective default as the placeholder; type a number to override it for that host
   only, blank it to fall back to the default. Disk temperature keeps its HDD/SSD/NVMe split.
-- **Sensor-category order from the UI (§D).** The order sensor categories read in a host view is now
-  reorderable per class (on the Thresholds screen) and per host (in host settings). The built-in
-  server / network / NAS shape profiles remain the fallback for anything without an override, and a
-  category a host doesn't have is simply skipped.
+- **Per-host sensor-category order (§D).** The order sensor categories read in a host view can be
+  reordered per host, in that host's settings dialog. The built-in server / network / NAS shape
+  profiles are the fixed default; a per-host order wins over it, and a category the host doesn't have
+  is simply skipped. (There is no fleet-wide/per-class order override - the default is deliberately
+  fixed.)
 
 **Fixed:**
 - **Ugreen NAS class woke parked disks every hour.** The class used the Zabbix agent2 SMART plugin

@@ -4,14 +4,15 @@ Every alert in Argus fires when a reading crosses a **threshold**. Thresholds ar
 defined on each monitoring template (for example `{$CPU.UTIL.WARN}` = 80, `{$DISK.TEMP.HIGH}` = 45,
 `{$PING.LOSS.WARN}` = 20) and compared inside the templates' trigger expressions (DESIGN §6). You can
 tune them from the UI - fleet-wide or for a single device - without touching Zabbix. Editing the
-fleet-wide defaults is **admin-only** and lives in the sidebar under **Configure → Thresholds**.
+fleet-wide defaults is **admin-only** and lives in the sidebar under **Admin → Thresholds**.
 
 ## Two levels
 
-- **Fleet-wide default** - the value every host inherits. Edited on the **Thresholds** screen, grouped
-  by the template that carries the threshold. Most compute classes share the same template
-  (`Argus Linux by SNMP`, `Argus NAS by Zabbix agent`, ...), so a template group shows the classes it
-  affects; changing a value there changes it for every host of those classes that has no override.
+- **Fleet-wide default** - the value every host inherits. The **Thresholds** screen lists the
+  monitoring templates; click one to open a dialog that edits its thresholds. A template row shows the
+  classes it affects and how many of its thresholds you've customized. Most compute classes share the
+  same template (`Argus Linux by SNMP`, `Argus NAS by Zabbix agent`, ...), so a change there applies to
+  every host of those classes that has no override.
 - **Per-device override** - a value for one host only. Edited in that host's settings dialog
   (**Monitoring → a host → Settings → Thresholds**). An override always wins over the fleet-wide
   default.
@@ -35,20 +36,17 @@ stored defaults again immediately, so they survive upgrades.
 
 Disk-temperature thresholds are type-aware. Spinning disks (HDD) use the base
 `{$DISK.TEMP.WARN}` / `{$DISK.TEMP.HIGH}`; SSD and NVMe drives use the higher `:ssd` / `:nvme`
-context values, picked per drive from its SMART type. All of them appear as separate rows on the
-Thresholds screen. Setting a threshold for one *individual* drive (as opposed to all HDDs, or all
+context values, picked per drive from its SMART type. All of them appear as separate rows in the
+template's edit dialog. Setting a threshold for one *individual* drive (as opposed to all HDDs, or all
 SSDs) is not exposed today - it would need per-instance context macros in the triggers.
 
 ## Sensor order
 
-The Thresholds screen also sets the **order sensor categories read** in a host view (CPU before disk,
-network gear network-first, and so on). You can reorder them:
+The order sensor categories read in a host view (CPU before disk, network gear network-first, and so
+on) has a **fixed default** - one of three built-in profiles chosen by the host's shape
+(server = compute-first, network gear = network-first, storage = drive-temps-before-disks).
 
-- **Per class** - on the Thresholds screen, pick a class and drag the categories; it applies to every
-  host of that class.
-- **Per host** - in a host's settings dialog, turn on "Custom order for this host" and reorder.
-
-A per-host order wins over its class, and both win over the three built-in shape profiles
-(server = compute-first, network gear = network-first, storage = drive-temps-before-disks), which
-remain the default for anything without an override. Categories a host doesn't have are skipped, so a
-partial reorder is always safe.
+You can override that order **per host**: in a host's settings dialog, turn on "Custom order for this
+host" and reorder the categories. A per-host order wins over the built-in default; categories the host
+doesn't have are skipped, so a partial reorder is always safe. There is no fleet-wide/per-class order
+override - the built-in default is deliberately fixed, and only individual hosts deviate.

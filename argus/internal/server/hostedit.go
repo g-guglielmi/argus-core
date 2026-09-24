@@ -200,7 +200,7 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 	// stored per-host override (empty = inheriting the class/built-in order). Best-effort.
 	out.CategoryOrder, _ = s.st.CategoryOrder(ctx, "host:"+hd.HostID)
 	if items, err := s.zbx.Items(ctx, hd.HostID); err == nil {
-		out.Categories = s.hostCategoriesInOrder(ctx, hd.HostID, out.ClassID, items)
+		out.Categories = s.hostCategoriesInOrder(ctx, hd.HostID, items)
 	}
 	writeJSON(w, http.StatusOK, out)
 }

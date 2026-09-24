@@ -15,10 +15,11 @@ import (
 	"argus/internal/zabbix"
 )
 
-// Thresholds screen (ROADMAP §D). Global (fleet-wide) threshold defaults are edited here and per-host
-// overrides in the host settings dialog; the sensor-category order (per class, and per host in host
-// settings) folds in alongside. Global defaults are stored in Argus (source of truth) and applied to
-// the Zabbix templates, so linked hosts inherit them and a template re-import can't clobber them.
+// Thresholds screen (ROADMAP §D). Global (fleet-wide) threshold defaults are edited here (a template
+// list, each opening an edit dialog) and per-host overrides in the host settings dialog. Global
+// defaults are stored in Argus (source of truth) and applied to the Zabbix templates, so linked hosts
+// inherit them and a template re-import can't clobber them. Sensor-category order is fixed by default
+// (the built-in per-shape profiles) and overridable only per host, in that host's settings.
 
 type thresholdRowView struct {
 	Macro   string `json:"macro"`
@@ -37,23 +38,15 @@ type thresholdTemplateView struct {
 	Rows      []thresholdRowView `json:"thresholds"`
 }
 
-type classOrderView struct {
-	ID    string   `json:"id"`
-	Label string   `json:"label"`
-	Order []string `json:"order,omitempty"` // stored per-class override (empty = built-in default)
-}
-
 type thresholdsResponse struct {
-	Templates  []thresholdTemplateView `json:"templates"`
-	Categories []string                `json:"categories"` // canonical category list (reorder pool + seed)
-	Classes    []classOrderView        `json:"classes"`
+	Templates []thresholdTemplateView `json:"templates"`
 }
 
 // displayTemplateName drops the "Argus " prefix templates carry, for a cleaner section heading.
 func displayTemplateName(name string) string { return strings.TrimPrefix(name, "Argus ") }
 
-// handleThresholds returns the full thresholds screen: the global-default catalog (grouped by
-// template) plus the per-class sensor-category order. Admin-only.
+// handleThresholds returns the global-default catalog for the thresholds screen, grouped by template
+// (one row per template; the UI opens an edit dialog per template). Admin-only.
 func (s *Server) handleThresholds(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
@@ -88,15 +81,6 @@ func (s *Server) handleThresholds(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		out.Templates = append(out.Templates, tv)
-	}
-
-	out.Categories = canonicalCategories()
-	for _, c := range provision.Classes() {
-		cv := classOrderView{ID: c.ID, Label: c.Label}
-		if ord, _ := s.st.CategoryOrder(ctx, "class:"+c.ID); len(ord) > 0 {
-			cv.Order = ord
-		}
-		out.Classes = append(out.Classes, cv)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -201,40 +185,8 @@ func (s *Server) setTemplateMacro(ctx context.Context, template, macro, value st
 	return s.zbx.CreateHostMacro(ctx, tid, zabbix.Macro{Macro: macro, Value: value, Type: 0})
 }
 
-// handleSetCategoryOrder saves a per-class sensor-category order. Admin-only. Per-host order is saved
-// through the host-config PATCH instead. An empty list clears the override (revert to the built-in).
-func (s *Server) handleSetCategoryOrder(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Scope      string   `json:"scope"`
-		Categories []string `json:"categories"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-		return
-	}
-	classID, ok := strings.CutPrefix(req.Scope, "class:")
-	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "scope must be a class (per-host order is saved in host settings)"})
-		return
-	}
-	if _, ok := provision.ClassByID(classID); !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown class"})
-		return
-	}
-	if !validCategories(req.Categories) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown sensor category"})
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
-	defer cancel()
-	if err := s.st.SetCategoryOrder(ctx, req.Scope, req.Categories); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-// validCategories reports whether every name is a known sensor category (the canonical set).
+// validCategories reports whether every name is a known sensor category (the canonical set). Used to
+// validate a per-host sensor-order override (saved through the host-config PATCH).
 func validCategories(cats []string) bool {
 	for _, c := range cats {
 		if _, ok := categoryOrderServer[c]; !ok {

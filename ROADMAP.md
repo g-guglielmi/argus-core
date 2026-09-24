@@ -112,14 +112,15 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Device management** - Add-device modal (class + macros + site/proxy, v0.4.41), the URL-backed
   host-settings dialog (identity, interfaces, SNMP inheritance, class macros, collector switch),
   group management, discovery adoption, and the per-host threshold + sensor-order overrides below. - _(FE+BE)_
-- [x] **Thresholds** - a dedicated admin **Thresholds** screen edits fleet-wide defaults per class
-  template (stored in Argus and re-applied to the Zabbix templates after each import, so a template
-  re-import can't clobber them); per-device/per-type overrides live in each host's settings dialog
-  (blank a field to fall back to the effective default). No more hand-editing host macros in Zabbix.
-  Disk-temp keeps its HDD/SSD/NVMe split; per-individual-instance overrides stay a later option. - _(FE+BE)_ M
-- [x] **Sensor-category order in the GUI** - reorder a host's sensor categories from the UI, per class
-  (Thresholds screen) or per host (host settings); the built-in server/network/NAS shape profiles stay
-  as the fallback for anything without an override. - _(FE+BE)_ S-M
+- [x] **Thresholds** - a dedicated admin **Thresholds** screen (under Admin) lists the monitoring
+  templates; clicking one opens a dialog to edit that template's fleet-wide defaults (stored in Argus
+  and re-applied to the Zabbix templates after each import, so a re-import can't clobber them).
+  Per-device/per-type overrides live in each host's settings dialog (blank a field to fall back to the
+  effective default). No more hand-editing host macros in Zabbix. Disk-temp keeps its HDD/SSD/NVMe
+  split; per-individual-instance overrides stay a later option. - _(FE+BE)_ M
+- [x] **Sensor-category order in the GUI** - reorder a host's sensor categories from the UI, per host
+  (in host settings); the built-in server/network/NAS shape profiles are the fixed default and a
+  per-host order wins over it. (No fleet-wide/per-class override - the default is deliberately fixed.) - _(FE+BE)_ S-M
 - [ ] **Settings expansion** - retention controls, proxy health, allowed-hosts - _(FE+BE)_ S-M
 
 ### E. Auth / account gaps

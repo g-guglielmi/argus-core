@@ -495,8 +495,7 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 				builtin = categoryOrderNAS
 			}
 		}
-		classID, _, _ := s.st.GetDeviceClass(ctx, r.PathValue("id"))
-		order := s.resolveCategoryOrder(ctx, r.PathValue("id"), classID, builtin)
+		order := s.resolveCategoryOrder(ctx, r.PathValue("id"), builtin)
 		sort.SliceStable(out, func(i, j int) bool {
 			if ci, cj := order[out[i].Category], order[out[j].Category]; ci != cj {
 				return ci < cj
@@ -512,17 +511,12 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// resolveCategoryOrder returns category -> rank for a host: the per-host override wins, then the
-// per-class override, then the built-in shape profile passed in. Categories a chosen list omits fall
-// after the listed ones in the built-in order, so a partial reorder never drops a category (§D).
-func (s *Server) resolveCategoryOrder(ctx context.Context, hostID, classID string, builtin map[string]int) map[string]int {
+// resolveCategoryOrder returns category -> rank for a host: a per-host override wins, otherwise the
+// built-in shape profile passed in (the fixed default). Categories a chosen list omits fall after the
+// listed ones in the built-in order, so a partial reorder never drops a category (§D).
+func (s *Server) resolveCategoryOrder(ctx context.Context, hostID string, builtin map[string]int) map[string]int {
 	if hostID != "" {
 		if cats, _ := s.st.CategoryOrder(ctx, "host:"+hostID); len(cats) > 0 {
-			return orderFromList(cats, builtin)
-		}
-	}
-	if classID != "" {
-		if cats, _ := s.st.CategoryOrder(ctx, "class:"+classID); len(cats) > 0 {
 			return orderFromList(cats, builtin)
 		}
 	}
@@ -551,7 +545,7 @@ func orderFromList(cats []string, builtin map[string]int) map[string]int {
 
 // hostCategoriesInOrder returns the host's distinct curated sensor categories in the effective reading
 // order (host override -> class override -> built-in shape profile), for the §D per-host reorder UI.
-func (s *Server) hostCategoriesInOrder(ctx context.Context, hostID, classID string, items []zabbix.Item) []string {
+func (s *Server) hostCategoriesInOrder(ctx context.Context, hostID string, items []zabbix.Item) []string {
 	seen := map[string]bool{}
 	var cats []string
 	ports, diskTemp := false, false
@@ -577,7 +571,7 @@ func (s *Server) hostCategoriesInOrder(ctx context.Context, hostID, classID stri
 	} else if diskTemp {
 		builtin = categoryOrderNAS
 	}
-	order := s.resolveCategoryOrder(ctx, hostID, classID, builtin)
+	order := s.resolveCategoryOrder(ctx, hostID, builtin)
 	sort.Slice(cats, func(i, j int) bool { return order[cats[i]] < order[cats[j]] })
 	return cats
 }

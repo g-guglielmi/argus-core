@@ -197,11 +197,10 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/discovery/controllers", auth.RequireRole("admin", s.handleSaveUniFiController))
 	mux.HandleFunc("DELETE /api/discovery/controllers/{id}", auth.RequireRole("admin", s.handleDeleteUniFiController))
 
-	// §D thresholds: global threshold defaults (per class template) + per-class sensor-category order.
-	// Per-host overrides ride the host-config GET/PATCH above. Admin-only.
+	// §D thresholds: global threshold defaults, per class template. Per-host threshold + sensor-order
+	// overrides ride the host-config GET/PATCH above. Admin-only.
 	mux.HandleFunc("GET /api/thresholds", auth.RequireRole("admin", s.handleThresholds))
 	mux.HandleFunc("PUT /api/thresholds/default", auth.RequireRole("admin", s.handleSetThresholdDefault))
-	mux.HandleFunc("PUT /api/thresholds/order", auth.RequireRole("admin", s.handleSetCategoryOrder))
 
 	// per-proxy SNMP defaults (PRTG-style inheritance): read (any user), save + propagate (config write).
 	mux.HandleFunc("GET /api/proxies/{id}/snmp", auth.RequireAuth(s.handleGetProxySNMP))

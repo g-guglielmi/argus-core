@@ -24,8 +24,7 @@ type MacroField = { macro: string; label: string; hint?: string; secret?: boolea
 type ThresholdField = { macro: string; label: string; unit?: string; default: string; value?: string }
 type ThrRowData = { macro: string; label: string; unit?: string; default: string; value?: string }
 type ThrTemplate = { template: string; label: string; every_host?: boolean; optional?: boolean; classes?: string[]; thresholds: ThrRowData[] }
-type ThrClass = { id: string; label: string; order?: string[] }
-type ThresholdsData = { templates: ThrTemplate[]; categories: string[]; classes: ThrClass[] }
+type ThresholdsData = { templates: ThrTemplate[] }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; vm_names?: string[]; categories?: string[]; category_order?: string[] }
 type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
@@ -631,7 +630,7 @@ const VIEW_TITLES: Record<View, [string, string]> = {
   notifications: ['Notifications', 'Alert routing and channels'],
   probes: ['Probes', 'Site probe enrollment'],
   discovery: ['Discovery', 'Scan a subnet, review what answers, adopt devices'],
-  thresholds: ['Thresholds', 'Fleet-wide alert defaults and sensor order'],
+  thresholds: ['Thresholds', 'Fleet-wide alert defaults per template'],
   users: ['Users', 'Accounts and access'],
   settings: ['Settings', 'System configuration'],
   account: ['Account', 'Your security settings'],
@@ -1258,10 +1257,9 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         {nav('monitoring', 'Monitoring')}
         <div className="navlabel">Configure</div>
         {me.role === 'admin' && nav('discovery', 'Discovery')}
-        {me.role === 'admin' && nav('thresholds', 'Thresholds')}
         {nav('probes', 'Probes')}
         {nav('notifications', 'Notifications')}
-        {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('users', 'Users')}{nav('settings', 'Settings')}</>}
+        {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('thresholds', 'Thresholds')}{nav('users', 'Users')}{nav('settings', 'Settings')}</>}
         <div className="side-foot">
           {ver && (
             <button type="button" className={'side-ver' + (ver.update_available ? ' upd' : '')} disabled={me.role !== 'admin'}
@@ -4414,98 +4412,73 @@ function ThrRow({ template, row, onSaved }: { template: string; row: ThrRowData;
   )
 }
 
-// ClassOrderCard reorders the sensor categories for all hosts of one class (§D). The full category
-// set is offered; categories a host doesn't have are simply skipped. Per-host order lives in host settings.
-function ClassOrderCard({ data, onChanged }: { data: ThresholdsData; onChanged: () => void }) {
-  const [classId, setClassId] = useState(data.classes[0]?.id || '')
-  const cls = data.classes.find((c) => c.id === classId)
-  const [cats, setCats] = useState<string[]>(cls?.order?.length ? cls.order : data.categories)
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState('')
+// thrScopeText describes who a template's thresholds reach, for the list row + dialog header.
+function thrScopeText(t: ThrTemplate): string {
+  if (t.every_host) return 'Applies to every device'
+  if (t.optional) return 'Optional add-on (enabled per host)'
+  return t.classes && t.classes.length > 0 ? 'Used by: ' + t.classes.join(', ') : ''
+}
+
+// ThresholdDialog edits one template's fleet-wide threshold defaults. Each field saves on blur (ThrRow);
+// closing refreshes the list so the "N customized" counts update.
+function ThresholdDialog({ tpl, onClose, onSaved }: { tpl: ThrTemplate; onClose: () => void; onSaved: (template: string, macro: string, value: string) => void }) {
   useEffect(() => {
-    const c = data.classes.find((x) => x.id === classId)
-    setCats(c?.order?.length ? c.order : data.categories)
-    setErr('')
-  }, [classId, data])
-  const custom = !!cls?.order?.length
-  function move(i: number, dir: -1 | 1) {
-    const j = i + dir
-    if (j < 0 || j >= cats.length) return
-    const next = [...cats]
-    ;[next[i], next[j]] = [next[j], next[i]]
-    setCats(next)
-  }
-  async function put(categories: string[]) {
-    setBusy(true); setErr('')
-    const res = await fetch('/api/thresholds/order', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope: 'class:' + classId, categories }) }).catch(() => null)
-    setBusy(false)
-    if (!res || !res.ok) { setErr(await errText(res, 'Could not save the order')); return }
-    onChanged()
-  }
-  return (
-    <div className="thr-card">
-      <div className="thr-card-head">
-        <div className="thr-card-title">Sensor order</div>
-        <div className="thr-card-scope">Per class{custom ? ' · customized' : ' · built-in default'}</div>
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return createPortal(
+    <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 'min(760px, 94vw)', maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
+        <div className="dlg-title">{tpl.label} · thresholds</div>
+        <div className="dlg-scroll">
+          <p className="set-note" style={{ marginTop: 0 }}>{thrScopeText(tpl)}. These are the fleet-wide defaults - every host using this template inherits them unless overridden in its own settings. Blank a field (or Reset) to use the factory default.</p>
+          <div className="thr-rows">
+            {tpl.thresholds.map((r) => <ThrRow key={r.macro} template={tpl.template} row={r} onSaved={onSaved} />)}
+          </div>
+        </div>
+        <div className="hs-foot"><Button variant="ghost" onClick={onClose}>Done</Button></div>
       </div>
-      <p className="set-note" style={{ margin: '4px 0 12px' }}>The order sensor categories read for every host of a class. Categories a host doesn't have are skipped. A single host can override this in its own settings.</p>
-      <label className="field" style={{ maxWidth: 320 }}><span>Class</span>
-        <Select value={classId} onChange={(e) => setClassId(e.target.value)}>
-          {data.classes.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-        </Select>
-      </label>
-      <ol className="cat-order" style={{ marginTop: 12, maxWidth: 420 }}>
-        {cats.map((c, i) => (
-          <li key={c}>
-            <span className="cat-name">{c}</span>
-            <span className="cat-move">
-              <button className="btn ghost" disabled={busy || i === 0} onClick={() => move(i, -1)} aria-label="Move up">↑</button>
-              <button className="btn ghost" disabled={busy || i === cats.length - 1} onClick={() => move(i, 1)} aria-label="Move down">↓</button>
-            </span>
-          </li>
-        ))}
-      </ol>
-      {err && <div className="txt-err" style={{ fontSize: 13, marginTop: 8 }}>{err}</div>}
-      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-        <Button variant="primary" onClick={() => put(cats)} disabled={busy}>Save order</Button>
-        {custom && <Button variant="ghost" onClick={() => put([])} disabled={busy}>Reset to default</Button>}
-      </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
-// ThresholdsView (§D): fleet-wide threshold defaults per class template + per-class sensor order.
-// Per-device overrides live in each host's settings dialog. Admin-only.
+// ThresholdsView (§D): a list of monitoring templates; clicking one opens a dialog to edit its
+// fleet-wide threshold defaults. Per-device overrides live in each host's settings dialog. Admin-only.
 function ThresholdsView() {
   const [data, setData] = useState<ThresholdsData | null>(null)
   const [err, setErr] = useState('')
+  const [open, setOpen] = useState<string | null>(null)
   function load() { fetch('/api/thresholds').then((r) => (r.ok ? r.json() : Promise.reject())).then((d: ThresholdsData) => { setData(d); setErr('') }).catch(() => setErr('Could not load thresholds')) }
   useEffect(load, [])
   function onRowSaved(template: string, macro: string, value: string) {
     setData((d) => d ? { ...d, templates: d.templates.map((t) => t.template === template ? { ...t, thresholds: t.thresholds.map((r) => r.macro === macro ? { ...r, value } : r) } : t) } : d)
   }
-  function scopeText(t: ThrTemplate): string {
-    if (t.every_host) return 'Applies to every device'
-    if (t.optional) return 'Optional add-on (enable per host)'
-    return t.classes && t.classes.length > 0 ? 'Used by: ' + t.classes.join(', ') : ''
-  }
   if (err && !data) return <div className="txt-err" style={{ fontSize: 13 }}>{err}</div>
   if (!data) return <div style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</div>
+  const active = open ? data.templates.find((t) => t.template === open) : null
   return (
     <div className="thr-view">
-      <p className="set-note">Fleet-wide alert thresholds, grouped by the monitoring template that carries them. A change applies to every host using that template; override it for a single device in the host's settings. Blank a field to keep the factory default.</p>
-      {data.templates.map((t) => (
-        <div className="thr-card" key={t.template}>
-          <div className="thr-card-head">
-            <div className="thr-card-title">{t.label}</div>
-            <div className="thr-card-scope">{scopeText(t)}</div>
-          </div>
-          <div className="thr-rows">
-            {t.thresholds.map((r) => <ThrRow key={r.macro} template={t.template} row={r} onSaved={onRowSaved} />)}
-          </div>
-        </div>
-      ))}
-      <ClassOrderCard data={data} onChanged={load} />
+      <p className="set-note">Fleet-wide alert thresholds, grouped by the monitoring template that carries them. Click a template to edit its defaults - a change applies to every host using it. Override for a single device in that host's settings.</p>
+      <div className="thr-list">
+        {data.templates.map((t) => {
+          const overrides = t.thresholds.filter((r) => r.value).length
+          return (
+            <button className="thr-list-row" key={t.template} onClick={() => setOpen(t.template)}>
+              <span className="thr-list-main">
+                <span className="thr-list-title">{t.label}</span>
+                <span className="thr-list-scope">{thrScopeText(t)}</span>
+              </span>
+              <span className="thr-list-meta">
+                <span>{t.thresholds.length} threshold{t.thresholds.length === 1 ? '' : 's'}{overrides ? ` · ${overrides} customized` : ''}</span>
+                <span className="thr-list-caret">›</span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      {active && <ThresholdDialog tpl={active} onClose={() => { setOpen(null); load() }} onSaved={onRowSaved} />}
     </div>
   )
 }
