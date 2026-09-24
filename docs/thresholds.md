@@ -32,6 +32,21 @@ every startup reconcile**. That matters because an app upgrade that ships edited
 them, which would otherwise reset the template macros to their shipped values; Argus overlays your
 stored defaults again immediately, so they survive upgrades.
 
+## Disabling an alert
+
+To silence an alert you don't need, use **Disable alerts** on the sensor (in the host's sensor view,
+via the row's menu). It disables that sensor's Zabbix trigger(s) - the sensor keeps collecting and
+graphing, it just stops raising problems. It's granular:
+
+- **A whole sensor or group** - the menu's *Disable alerts* / *Enable alerts*.
+- **One channel of a multi-channel sensor** - expand the sensor and use the per-channel **Alerts:**
+  chips (e.g. mute the temperature alert on one drive while its siblings keep alerting).
+- **Per band** is implicit - the warning and error are separate triggers, so muting acts on both;
+  to keep one band and drop the other, set that band's threshold in the editor instead.
+
+A muted sensor shows an "alerts off" (or "N muted") tag. This is a Zabbix trigger status, so it
+persists until you re-enable it.
+
 ## Per-type disk temperatures
 
 Disk-temperature thresholds are type-aware. Spinning disks (HDD) use the base

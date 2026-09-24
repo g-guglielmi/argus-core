@@ -36,7 +36,7 @@ const SEVERITIES: { v: number; label: string }[] = [
   { v: 4, label: 'High & up' },
   { v: 5, label: 'Disaster only' },
 ]
-type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number }
+type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
 type TriggerHost = { id: string; name: string }
 type Trigger = { id: string; description: string; severity: number; enabled: boolean; problem: boolean; since: number; hosts: TriggerHost[]; sensors: string[] }
@@ -2806,6 +2806,8 @@ const kbIcon = {
   show: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>,
   ack: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M22 11.2V12a10 10 0 1 1-5.9-9.1" /><path d="M22 4 12 14.5l-3-3" /></svg>,
   edit: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>,
+  mute: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M13.7 21a2 2 0 0 1-3.4 0" /><path d="M18.6 13A18 18 0 0 1 18 8" /><path d="M6.3 6.3A5.9 5.9 0 0 0 6 8c0 7-3 9-3 9h14" /><path d="M18 8a6 6 0 0 0-9.3-5" /><path d="M2 2l20 20" /></svg>,
+  unmute: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>,
   folder: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>,
   folderOpen: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 8V6.2a1.8 1.8 0 0 1 1.8-1.8h3.9l2 2h6.5A1.8 1.8 0 0 1 20 8.2V9" /><path d="M3 9.2h17.8l-1.9 8.2a1.8 1.8 0 0 1-1.8 1.4H6.4a1.8 1.8 0 0 1-1.8-1.4z" /></svg>,
   gear: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
@@ -4913,6 +4915,15 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
     setBusyItem(null)
     loadItems(false); fireDataRefresh()
   }
+  // Mute / unmute a sensor's alerts = disable / enable its Zabbix triggers (the item keeps collecting).
+  // Accepts several item ids so a whole group, or one channel, can be toggled at once.
+  async function muteItems(ids: string[], mute: boolean) {
+    if (ids.length === 0) return
+    setBusyItem(ids[0])
+    await Promise.all(ids.map((id) => fetch(`/api/items/${id}/mute`, { method: mute ? 'POST' : 'DELETE' }).catch(() => {})))
+    setBusyItem(null)
+    loadItems(false); fireDataRefresh()
+  }
   // Set a sensor's PRTG-style display priority (Argus-only, admin/helpdesk). Optimistic; reverts to
   // server truth on failure, and nudges the overview/status lists to re-sort on success.
   async function setItemPriority(it: SensorItem, priority: number) {
@@ -5138,6 +5149,12 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                   if (!hostHidden) acts.push(row.items.every((i) => i.hidden)
                     ? { label: 'Show', icon: kbIcon.show, onClick: () => row.items.forEach((i) => i.hidden && clearItemState(i, 'hide')) }
                     : { label: 'Hide', icon: kbIcon.hide, onPick: (s) => row.items.forEach((i) => setItemState(i, 'hide', s)) })
+                  // Disable/enable alerts for the whole group (all its channels' triggers). Per-channel
+                  // muting is in the expanded chart panel below.
+                  const gAlertable = row.items.filter((i) => i.alertable)
+                  if (gAlertable.length) acts.push(gAlertable.every((i) => i.alerts_off)
+                    ? { label: 'Enable alerts', icon: kbIcon.unmute, onClick: () => muteItems(gAlertable.map((i) => i.id), false) }
+                    : { label: 'Disable alerts', icon: kbIcon.mute, onClick: () => muteItems(gAlertable.filter((i) => !i.alerts_off).map((i) => i.id), true) })
                   const gUnacked = problems.filter((p) => !p.acknowledged && p.item_ids.some((id) => row.items.some((i) => i.id === id)))
                   const actions: KAction[] = []
                   if (gUnacked.length) { actions.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => gUnacked.forEach((p) => ack(p, s)) }); if (acts.length) actions.push({ sep: true, label: '' }) }
@@ -5156,6 +5173,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                             <span style={{ color: 'var(--faint)', fontSize: 11 }}> · {row.items.length} channels</span>
                             {gPaused && <span style={{ color: PAUSED_BLUE, fontSize: 11 }}> (paused)</span>}
                             {gHidden && <span style={{ color: HIDDEN_GREY, fontSize: 11 }}> (hidden)</span>}
+                            {(() => { const al = row.items.filter((i) => i.alertable); if (!al.length) return null; const n = al.filter((i) => i.alerts_off).length; if (n === 0) return null; return <span style={{ color: 'var(--faint)', fontSize: 11 }}> ({n === al.length ? 'alerts off' : n + ' muted'})</span> })()}
                           </span>
                         </td>
                         <td className="mono val">{headline ?? <span style={{ color: 'var(--muted)' }}>-</span>}</td>
@@ -5176,7 +5194,28 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                         <td><div className="lccell"><span className="when">{relTime(primary.last_clock)}</span>{canPause && actions.length > 0 && <Kebab actions={actions} />}</div></td>
                       </tr>
                       {open && clickable && (
-                        <tr className="chartrow"><td colSpan={5}><div className="chart-reveal"><SensorGroupChart channels={channels} bars={barGroup} /></div></td></tr>
+                        <tr className="chartrow"><td colSpan={5}><div className="chart-reveal">
+                          {(() => {
+                            // Per-channel alert mute: with >1 alertable channel (e.g. several drives) you
+                            // can turn off the alert for just one of them; a single-channel group uses the
+                            // row's "Disable alerts" action instead.
+                            const al = row.items.filter((i) => i.alertable)
+                            if (al.length < 2) return null
+                            return (
+                              <div className="chan-mute">
+                                <span className="chan-mute-lbl">Alerts:</span>
+                                {al.map((i) => (
+                                  <button key={i.id} className={'chan-mute-btn' + (i.alerts_off ? ' off' : '')} disabled={busyItem === i.id}
+                                    title={i.alerts_off ? 'Alerts off for this channel - click to enable' : 'Disable alerts for this channel'}
+                                    onClick={(e) => { e.stopPropagation(); muteItems([i.id], !i.alerts_off) }}>
+                                    {i.alerts_off ? kbIcon.mute : kbIcon.unmute}<span>{i.channel || i.label || i.name}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )
+                          })()}
+                          <SensorGroupChart channels={channels} bars={barGroup} />
+                        </div></td></tr>
                       )}
                     </Fragment>
                   )
@@ -5201,6 +5240,9 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                 if (!hostHidden) acts.push(it.hidden
                   ? { label: 'Show', icon: kbIcon.show, onClick: () => clearItemState(it, 'hide') }
                   : { label: 'Hide', icon: kbIcon.hide, onPick: (s) => setItemState(it, 'hide', s) })
+                if (it.alertable) acts.push(it.alerts_off
+                  ? { label: 'Enable alerts', icon: kbIcon.unmute, onClick: () => muteItems([it.id], false) }
+                  : { label: 'Disable alerts', icon: kbIcon.mute, onClick: () => muteItems([it.id], true) })
                 const actions: KAction[] = []
                 if (unacked.length) { actions.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => unacked.forEach((p) => ack(p, s)) }); if (acts.length) actions.push({ sep: true, label: '' }) }
                 actions.push(...acts)
@@ -5218,6 +5260,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                           <span className="sn-label">{onDrillSensor ? <span className="lnk-sensor" onClick={(e) => { e.stopPropagation(); onDrillSensor(it.id, label) }}>{label}</span> : label}</span>
                           {effPaused && <span style={{ color: PAUSED_BLUE, fontSize: 11 }}> (paused · {hostPaused && !it.paused ? 'host' : untilLabel(it.paused_until)})</span>}
                           {effHidden && <span style={{ color: HIDDEN_GREY, fontSize: 11 }}> (hidden · {hostHidden && !it.hidden ? 'host' : untilLabel(it.hidden_until)})</span>}
+                          {it.alerts_off && <span style={{ color: 'var(--faint)', fontSize: 11 }}> (alerts off)</span>}
                         </span>
                       </td>
                       <td className="mono val">

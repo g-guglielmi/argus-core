@@ -477,6 +477,14 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .sname { min-width: 0; max-width: 100%; }
 .sname > * { flex-shrink: 0; }
 .sname > .sn-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Per-channel alert mute chips in an expanded multi-channel sensor (disable alerts for one drive/mount). */
+.chan-mute { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; }
+.chan-mute-lbl { font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; margin-right: 2px; }
+.chan-mute-btn { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 3px 9px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); color: var(--text); cursor: pointer; }
+.chan-mute-btn svg { width: 13px; height: 13px; }
+.chan-mute-btn:hover { border-color: var(--border-strong); }
+.chan-mute-btn.off { color: var(--faint); border-style: dashed; }
+.chan-mute-btn.off span { text-decoration: line-through; }
 /* Even, stable column proportions on desktop: auto layout let Sensor/Value widths jump with whatever
    content a host happens to have. Fixed layout obeys the header widths; long names wrap instead of
    shoving the other columns around. Mobile keeps auto layout (trend already hidden there). */

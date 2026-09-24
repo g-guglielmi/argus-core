@@ -652,6 +652,74 @@ func (c *Client) TriggerItems(ctx context.Context, triggerIDs []string) (map[str
 	return out, nil
 }
 
+// ItemTrigger is one trigger on an item, with its enabled/disabled status - for the "disable alerts"
+// (mute) action, which turns a sensor's triggers off while leaving the item collecting data.
+type ItemTrigger struct {
+	TriggerID string `json:"triggerid"`
+	Status    int    `json:"status,string"` // 0 = enabled, 1 = disabled
+}
+
+// ItemTriggers maps each item id to the triggers that reference it (with status). One trigger can
+// reference several items, so it appears under each. Used to show which sensors have alerts muted.
+func (c *Client) ItemTriggers(ctx context.Context, itemIDs []string) (map[string][]ItemTrigger, error) {
+	out := map[string][]ItemTrigger{}
+	if len(itemIDs) == 0 {
+		return out, nil
+	}
+	params := map[string]any{
+		"output":      []string{"triggerid", "status"},
+		"selectItems": []string{"itemid"},
+		"itemids":     itemIDs,
+	}
+	var ts []struct {
+		TriggerID string `json:"triggerid"`
+		Status    int    `json:"status,string"`
+		Items     []struct {
+			ItemID string `json:"itemid"`
+		} `json:"items"`
+	}
+	if err := c.call(ctx, "trigger.get", params, true, &ts); err != nil {
+		return nil, err
+	}
+	for _, t := range ts {
+		for _, it := range t.Items {
+			out[it.ItemID] = append(out[it.ItemID], ItemTrigger{TriggerID: t.TriggerID, Status: t.Status})
+		}
+	}
+	return out, nil
+}
+
+// TriggerIDsForItem returns the ids of every trigger that references an item.
+func (c *Client) TriggerIDsForItem(ctx context.Context, itemID string) ([]string, error) {
+	m, err := c.ItemTriggers(ctx, []string{itemID})
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(m[itemID]))
+	for _, t := range m[itemID] {
+		ids = append(ids, t.TriggerID)
+	}
+	return ids, nil
+}
+
+// SetTriggersEnabled enables (status 0) or disables (status 1) triggers in one call - the "disable
+// alerts" / "enable alerts" (mute) action. Disabling a trigger stops it alerting while the underlying
+// item keeps collecting; a discovered (LLD) trigger keeps its manual status across discovery refreshes.
+func (c *Client) SetTriggersEnabled(ctx context.Context, triggerIDs []string, enabled bool) error {
+	if len(triggerIDs) == 0 {
+		return nil
+	}
+	status := 1
+	if enabled {
+		status = 0
+	}
+	updates := make([]map[string]any, len(triggerIDs))
+	for i, id := range triggerIDs {
+		updates[i] = map[string]any{"triggerid": id, "status": status}
+	}
+	return c.call(ctx, "trigger.update", updates, true, nil)
+}
+
 // SetItemEnabled enables (status 0) or disables (status 1) an item - the "Pause" action.
 func (c *Client) SetItemEnabled(ctx context.Context, itemID string, enabled bool) error {
 	status := 1

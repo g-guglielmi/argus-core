@@ -72,6 +72,8 @@ type itemView struct {
 	Instance    string `json:"instance,omitempty"` // groups per-target sensors (a mount, a NIC) for stacking
 	Channel     string `json:"channel,omitempty"`  // the metric within an instance (Used %, In, …)
 	Priority    int    `json:"priority"`           // PRTG-style display priority 1..5 (Argus-only)
+	Alertable   bool   `json:"alertable,omitempty"` // has ≥1 trigger (so alerts can be muted)
+	AlertsOff   bool   `json:"alerts_off,omitempty"` // all its triggers are disabled (muted)
 }
 
 // numericValueType reports whether a Zabbix value_type is graphable (0 float, 3 unsigned).
@@ -389,6 +391,35 @@ func (s *Server) zbxEnableHandler(scope string, enabled bool) http.HandlerFunc {
 	}
 }
 
+// muteHandler disables (mute=true) or re-enables (mute=false) every trigger on an item - the "disable
+// alerts" action. Unlike Pause (which disables the item and stops collection), this leaves the item
+// collecting and only turns its alerts off. Granular: an LLD-discovered sensor (one drive, one mount)
+// has its own triggers, so muting one instance leaves its siblings alerting. Admin/helpdesk.
+func (s *Server) muteHandler(mute bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.zbx.Authenticated() {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured (set ARGUS_ZABBIX_API_TOKEN)"})
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+		defer cancel()
+		trigIDs, err := s.zbx.TriggerIDsForItem(ctx, r.PathValue("id"))
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			return
+		}
+		if len(trigIDs) == 0 {
+			writeJSON(w, http.StatusOK, map[string]string{"status": "ok"}) // nothing to mute
+			return
+		}
+		if err := s.zbx.SetTriggersEnabled(ctx, trigIDs, !mute); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	}
+}
+
 func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 	if !s.zbx.Authenticated() {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured (set ARGUS_ZABBIX_API_TOKEN)"})
@@ -479,6 +510,31 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			iv.Instance, iv.Channel = inst, ch
 		}
 		out = append(out, iv)
+	}
+	// Alert-mute state: which sensors have triggers (so alerts can be disabled) and whether every one
+	// of their triggers is currently disabled. Best-effort - a failure just leaves the mute action off.
+	{
+		itemIDs := make([]string, 0, len(out))
+		for _, v := range out {
+			itemIDs = append(itemIDs, v.ID)
+		}
+		if trigs, err := s.zbx.ItemTriggers(ctx, itemIDs); err == nil {
+			for i := range out {
+				ts := trigs[out[i].ID]
+				if len(ts) == 0 {
+					continue
+				}
+				out[i].Alertable = true
+				allOff := true
+				for _, t := range ts {
+					if t.Status == 0 {
+						allOff = false
+						break
+					}
+				}
+				out[i].AlertsOff = allOff
+			}
+		}
 	}
 	if !all {
 		// Network gear (anything with switch ports or radios) reads network-first; storage boxes

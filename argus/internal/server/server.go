@@ -161,6 +161,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("DELETE /api/hosts/{id}/pause", auth.RequireRoles(s.zbxEnableHandler("host", true), "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/items/{id}/pause", auth.RequireRoles(s.zbxEnableHandler("item", false), "admin", "helpdesk"))
 	mux.HandleFunc("DELETE /api/items/{id}/pause", auth.RequireRoles(s.zbxEnableHandler("item", true), "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/items/{id}/mute", auth.RequireRoles(s.muteHandler(true), "admin", "helpdesk"))
+	mux.HandleFunc("DELETE /api/items/{id}/mute", auth.RequireRoles(s.muteHandler(false), "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/hosts/{id}/hide", auth.RequireRoles(s.hideHandler("host"), "admin", "helpdesk"))
 	mux.HandleFunc("DELETE /api/hosts/{id}/hide", auth.RequireRoles(s.unhideHandler("host"), "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/items/{id}/hide", auth.RequireRoles(s.hideHandler("item"), "admin", "helpdesk"))

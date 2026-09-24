@@ -39,6 +39,12 @@ GitHub Release from the matching section below.
   Thresholds editor and is tunable there. The hard-failure triggers (host down, DNS not resolving,
   endpoint down) are unchanged.
 
+- **Disable alerts per sensor, granular to one channel.** A **Disable alerts** action (in a host's
+  sensor view) turns off a sensor's Zabbix trigger(s) while the sensor keeps collecting and graphing -
+  for when an alert isn't wanted. It works on a whole sensor/group, and, by expanding a multi-channel
+  sensor, on a single channel (e.g. mute the temperature alert on just one drive while its siblings
+  keep alerting). A muted sensor shows an "alerts off" tag; the state persists until re-enabled.
+
 **Fixed:**
 - **Ugreen NAS class woke parked disks every hour.** The class used the Zabbix agent2 SMART plugin
   (`smart.disk.discovery`, hourly) to enumerate disks; that plugin runs a full `smartctl` on every
