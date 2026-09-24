@@ -301,6 +301,14 @@ a { color: var(--accent); }
 .slist-problems th:nth-child(1){width:12%} .slist-problems th:nth-child(2){width:37%} .slist-problems th:nth-child(3){width:15%} .slist-problems th:nth-child(4){width:9%}  .slist-problems th:nth-child(5){width:11%} .slist-problems th:nth-child(6){width:10%} .slist-problems th:nth-child(7){width:6%}
 .slist td.slprio, .slist td.slsev { white-space: nowrap; }
 .slist td.act .acktag { margin-right: 6px; }
+/* Long names/paths truncate with an ellipsis instead of overflowing these fixed columns. The host cell
+   and the single-line name cells (trigger description, sensor list) truncate at the cell; the sensor
+   cell wraps its name in .sl-name so the "reason" sub-line below can still wrap. */
+.slist td.slhost, .slist-sensors td.slgrow, .slist td.tsensors { overflow: hidden; }
+.slist td.slhost .lnk-host { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slist-sensors td.slgrow .sl-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slist td.tsensors, .slist-trig td.slgrow { text-overflow: ellipsis; white-space: nowrap; }
+.slist-trig td.slgrow { overflow: hidden; }
 /* the "why" line under a sensor name: severity label + trigger reason (only when the sensor has one) */
 .slist .sreason { font-size: 11.5px; color: var(--muted); margin-top: 2px; line-height: 1.35; }
 /* the acked action (tag + Unacknowledge) can wrap within its fixed column instead of overflowing */

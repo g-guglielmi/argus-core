@@ -5329,7 +5329,7 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
                   <tr key={s.item_id} style={{ opacity: s.state === 'acked' ? 0.72 : 1 }}>
                     <td className="slhost" style={{ borderLeftColor: STATE_VAR[s.state] || 'var(--border)' }}><span className="lnk-host" onClick={() => goHost(s.host_id)}>{s.host_name}</span></td>
                     <td className="slgrow">
-                      {clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id, s.label || s.name)}>{s.label || s.name}</span> : (s.label || s.name)}
+                      <span className="sl-name">{clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id, s.label || s.name)}>{s.label || s.name}</span> : (s.label || s.name)}</span>
                       {s.reason && <div className="sreason"><span style={{ color: sevInfo(s.severity).color, fontWeight: 600 }}>{sevInfo(s.severity).label}</span> · {s.reason}{s.since ? <span title={`Firing since ${new Date(s.since * 1000).toLocaleString()}`}> · {relTime(s.since)}</span> : null}</div>}
                     </td>
                     <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })() : <span style={{ color: 'var(--err)' }}>not supported</span>}</td>

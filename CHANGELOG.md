@@ -45,10 +45,12 @@ GitHub Release from the matching section below.
   (`{$FS.NAME.MATCHES}`) was `(^|/)volume[0-9]+$`, which matched any mount **ending** in `/volumeN` -
   so a docker overlay mounted under `/volume2/@docker/.../merged/volume1` showed up as a monitored
   filesystem. Anchored to `^(/rootfs)?/volume[0-9]+$` so only a top-level data volume matches.
-- **Long sensor names overflowed the Sensor column.** A very long mount path (or any long sensor
-  name) ran past the fixed column and overlapped the value/trend cells. Names now truncate with an
-  ellipsis; the caret, channel count and paused/hidden tags stay put, and the phone layout no longer
-  scrolls sideways on a long name.
+- **Long sensor names overflowed their column.** A very long mount path (or any long sensor name) ran
+  past its fixed column and overlapped the neighbouring cells - in the host-detail sensor table and in
+  the cross-site status/problem/trigger lists (Overview, Errors, the status-chip drill-downs, Paused,
+  Triggers). Names now truncate with an ellipsis everywhere; the caret, channel count and paused/hidden
+  tags stay put, the sensor's "reason" sub-line still wraps, and the phone layout no longer scrolls
+  sideways on a long name. (The monitoring tree and the global search already truncated.)
 - **Disk-temperature channels sorted oddly.** The "Disk temperatures" overlay ordered channels by a
   trailing digit (meant for unRAID slots), which split device names like `nvme0` and `nvme1` and
   pushed a newly added disk to the end. Non-unRAID device names now sort naturally/alphabetically
