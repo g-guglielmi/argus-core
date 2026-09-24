@@ -25,7 +25,7 @@ type ThresholdField = { macro: string; label: string; unit?: string; default: st
 type ThrRowData = { macro: string; label: string; unit?: string; default: string; value?: string }
 type ThrTemplate = { template: string; label: string; every_host?: boolean; optional?: boolean; classes?: string[]; thresholds: ThrRowData[] }
 type ThresholdsData = { templates: ThrTemplate[] }
-type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; vm_names?: string[]; categories?: string[]; category_order?: string[] }
+type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; http_enabled?: boolean; http_port?: string; http_scheme?: string; vm_names?: string[]; categories?: string[]; category_order?: string[] }
 type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
@@ -4547,7 +4547,7 @@ function HostSettings({ hostId, canEdit, onClose, onSaved, inDialog }: { hostId:
     const macros = pairs.length > 0 ? Object.fromEntries(pairs) : undefined
     // Per-host sensor order: send the current list when "custom" is on, else [] to clear the override.
     const category_order = cfg.categories && cfg.categories.length > 0 ? (customOrder ? cfg.categories : []) : undefined
-    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order }) }).catch(() => null)
+    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order, http_enabled: !!cfg.http_enabled, http_port: cfg.http_port || '', http_scheme: cfg.http_scheme || '' }) }).catch(() => null)
     setBusy(false)
     if (!res || !res.ok) { setErr(await errText(res, 'Could not save host settings')); return }
     onSaved()
@@ -4700,6 +4700,26 @@ function HostSettings({ hostId, canEdit, onClose, onSaved, inDialog }: { hostId:
             })}
           </div>
         </>
+      )}
+
+      <div className="hs-title">HTTP/HTTPS endpoint</div>
+      <div className="hs-note" style={{ margin: '0 0 10px' }}>An optional reachability + response-time check on a web port, run from the host's proxy. Turn it on or off for this host and set the port/scheme.</div>
+      <div className="hs-mon">
+        <span className="hs-monlabel">Monitor HTTP</span>
+        <div className="seg">
+          <button className={cfg.http_enabled ? 'on' : ''} disabled={!canEdit} onClick={() => patch({ http_enabled: true })}>On</button>
+          <button className={!cfg.http_enabled ? 'on' : ''} disabled={!canEdit} onClick={() => patch({ http_enabled: false })}>Off</button>
+        </div>
+      </div>
+      {cfg.http_enabled && (
+        <div className="hs-grid">
+          <label className="field"><span>Scheme</span>
+            <Select value={cfg.http_scheme || 'https'} disabled={!canEdit} onChange={(e) => patch({ http_scheme: e.target.value })}>
+              <option value="https">https</option><option value="http">http</option>
+            </Select>
+          </label>
+          <label className="field"><span>Port</span><input className="input" value={cfg.http_port || ''} placeholder="443" disabled={!canEdit} onChange={(e) => patch({ http_port: e.target.value })} /></label>
+        </div>
       )}
 
       {cfg.thresholds && cfg.thresholds.length > 0 && (

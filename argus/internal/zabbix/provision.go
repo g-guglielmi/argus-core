@@ -158,6 +158,50 @@ func (c *Client) CreateHost(ctx context.Context, p CreateHostParams) (string, er
 	return res.HostIDs[0], nil
 }
 
+// HostLinkedTemplateNames returns the technical names of the templates directly linked to a host,
+// so the settings editor can tell whether an optional add-on (e.g. the HTTP endpoint) is attached.
+func (c *Client) HostLinkedTemplateNames(ctx context.Context, hostID string) ([]string, error) {
+	params := map[string]any{
+		"output":                []string{"hostid"},
+		"selectParentTemplates": []string{"host"},
+		"hostids":               hostID,
+	}
+	var hs []struct {
+		ParentTemplates []struct {
+			Host string `json:"host"`
+		} `json:"parentTemplates"`
+	}
+	if err := c.call(ctx, "host.get", params, true, &hs); err != nil {
+		return nil, err
+	}
+	var out []string
+	if len(hs) > 0 {
+		for _, t := range hs[0].ParentTemplates {
+			out = append(out, t.Host)
+		}
+	}
+	return out, nil
+}
+
+// LinkHostTemplate links a template to a host without disturbing its other templates (host.massadd).
+func (c *Client) LinkHostTemplate(ctx context.Context, hostID, templateID string) error {
+	params := map[string]any{
+		"hosts":     []map[string]string{{"hostid": hostID}},
+		"templates": []map[string]string{{"templateid": templateID}},
+	}
+	return c.call(ctx, "host.massadd", params, true, nil)
+}
+
+// UnlinkHostTemplate unlinks a template from a host AND clears its items/triggers (templates_clear),
+// leaving the host's other templates in place.
+func (c *Client) UnlinkHostTemplate(ctx context.Context, hostID, templateID string) error {
+	params := map[string]any{
+		"hostid":          hostID,
+		"templates_clear": []map[string]string{{"templateid": templateID}},
+	}
+	return c.call(ctx, "host.update", params, true, nil)
+}
+
 // HostIDByName returns the id of the host with this technical name, or "" if none exists (used to
 // reject a duplicate before host.create rather than surfacing Zabbix's raw error).
 func (c *Client) HostIDByName(ctx context.Context, host string) (string, error) {

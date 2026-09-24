@@ -77,6 +77,9 @@ type hostConfigView struct {
 	ClassLabel    string               `json:"class_label,omitempty"` // human label for the class macro section
 	Macros        []macroFieldView     `json:"macros,omitempty"`      // class-declared per-host macros + current values
 	Thresholds    []thresholdFieldView `json:"thresholds,omitempty"`  // per-host threshold overrides (§D)
+	HTTPEnabled   bool                 `json:"http_enabled"`          // the HTTP/HTTPS add-on is linked to this host
+	HTTPPort      string               `json:"http_port,omitempty"`   // {$HTTP.PORT} (host value, else template default)
+	HTTPScheme    string               `json:"http_scheme,omitempty"` // {$HTTP.SCHEME} (host value, else template default)
 	VMNames       []string             `json:"vm_names,omitempty"`    // xcpng: discovered VM names, for the ignored-VMs checklist
 	Categories    []string             `json:"categories,omitempty"`  // the host's curated sensor categories, in effective order (§D)
 	CategoryOrder []string             `json:"category_order,omitempty"` // stored per-host order override (empty = inheriting)
@@ -94,6 +97,15 @@ func snmpToView(s *zabbix.SNMPDetails) *snmpView {
 		PrivProtocol: s.PrivProtocol, PrivPassphrase: "", // masked
 		ContextName: s.ContextName,
 	}
+}
+
+// macroValueOr returns a host macro's value when it is set (non-empty), else the fallback (a template
+// default). Used to show the effective HTTP port/scheme in the settings editor.
+func macroValueOr(cur map[string]zabbix.HostMacro, macro, fallback string) string {
+	if m, ok := cur[macro]; ok && strings.TrimSpace(m.Value) != "" {
+		return m.Value
+	}
+	return fallback
 }
 
 // handleHostConfig returns a host's identity + interfaces for the settings editor (read-only, any user).
@@ -137,21 +149,23 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 		out.Interfaces = append(out.Interfaces, ifaceView{InterfaceID: i.InterfaceID, Type: i.Type, UseIP: i.UseIP, IP: i.IP, DNS: i.DNS, Port: i.Port, SNMP: snmpToView(i.SNMP), Inherit: i.Type == 2 && inherit[i.InterfaceID]})
 	}
 
+	// The host's own macros, fetched once and reused for the class-macro, threshold and HTTP sections.
+	curMacros := map[string]zabbix.HostMacro{}
+	if hm, err := s.zbx.HostMacros(ctx, hd.HostID); err == nil {
+		for _, m := range hm {
+			curMacros[m.Macro] = m
+		}
+	}
+
 	// Class-declared per-host macros (e.g. Windows service matching) + per-host threshold overrides
 	// (§D): show each with the host's current value so the editor can tune them after creation.
 	if classID, ok, _ := s.st.GetDeviceClass(ctx, hd.HostID); ok {
 		if class, ok := provision.ClassByID(classID); ok {
 			out.ClassID = class.ID
 			out.ClassLabel = class.Label
-			cur := map[string]zabbix.HostMacro{}
-			if hm, err := s.zbx.HostMacros(ctx, hd.HostID); err == nil {
-				for _, m := range hm {
-					cur[m.Macro] = m
-				}
-			}
 			for _, ms := range class.Macros {
 				f := macroFieldView{Macro: ms.Macro, Label: ms.Label, Hint: ms.Hint, Secret: ms.Secret, Options: ms.Options}
-				if m, has := cur[ms.Macro]; has {
+				if m, has := curMacros[ms.Macro]; has {
 					f.Set = strings.TrimSpace(m.Value) != "" || ms.Secret
 					if !ms.Secret {
 						f.Value = m.Value
@@ -172,7 +186,7 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 						def = factory[tt.Template][sp.Macro]
 					}
 					tf := thresholdFieldView{Macro: sp.Macro, Label: sp.Label, Unit: sp.Unit, Default: def}
-					if m, has := cur[sp.Macro]; has {
+					if m, has := curMacros[sp.Macro]; has {
 						tf.Value = m.Value
 					}
 					out.Thresholds = append(out.Thresholds, tf)
@@ -194,6 +208,25 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	}
+
+	// HTTP/HTTPS add-on: whether the optional endpoint template is linked, plus its port/scheme (the
+	// host's own macro value, else the template factory default) so the settings form can show + edit them.
+	if names, err := s.zbx.HostLinkedTemplateNames(ctx, hd.HostID); err == nil {
+		for _, n := range names {
+			if n == provision.TemplateHTTP {
+				out.HTTPEnabled = true
+				break
+			}
+		}
+	}
+	{
+		httpDef := map[string]string{}
+		if factory, err := provision.TemplateFactoryDefaults(); err == nil {
+			httpDef = factory[provision.TemplateHTTP]
+		}
+		out.HTTPPort = macroValueOr(curMacros, "{$HTTP.PORT}", httpDef["{$HTTP.PORT}"])
+		out.HTTPScheme = macroValueOr(curMacros, "{$HTTP.SCHEME}", httpDef["{$HTTP.SCHEME}"])
 	}
 
 	// Per-host sensor-category order (§D): the host's curated categories in effective order, plus any
@@ -219,6 +252,9 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		Interfaces    []ifaceView       `json:"interfaces"`
 		Macros        map[string]string `json:"macros"`         // class macro / threshold name -> desired value (only known macros are applied)
 		CategoryOrder *[]string         `json:"category_order"` // §D per-host order; nil = leave as-is, [] = clear override
+		HTTPEnabled   *bool             `json:"http_enabled"`   // HTTP add-on: nil = leave, true = link, false = unlink
+		HTTPPort      string            `json:"http_port"`      // {$HTTP.PORT} (applied when http_enabled is true)
+		HTTPScheme    string            `json:"http_scheme"`    // {$HTTP.SCHEME} (applied when http_enabled is true)
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -396,7 +432,75 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+	// HTTP/HTTPS add-on: link/unlink the endpoint template and, when enabled, set its port/scheme.
+	if req.HTTPEnabled != nil {
+		if err := s.applyHTTPAddon(ctx, cur.HostID, *req.HTTPEnabled, req.HTTPPort, req.HTTPScheme); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// applyHTTPAddon links or unlinks the optional HTTP endpoint template on a host, and (when enabled)
+// sets its {$HTTP.PORT} / {$HTTP.SCHEME} host macros. Unlinking clears the template's items/triggers.
+func (s *Server) applyHTTPAddon(ctx context.Context, hostID string, enabled bool, port, scheme string) error {
+	names, err := s.zbx.HostLinkedTemplateNames(ctx, hostID)
+	if err != nil {
+		return err
+	}
+	linked := false
+	for _, n := range names {
+		if n == provision.TemplateHTTP {
+			linked = true
+			break
+		}
+	}
+	ids, err := s.zbx.TemplateIDsByName(ctx, []string{provision.TemplateHTTP})
+	if err != nil {
+		return err
+	}
+	httpID := ids[provision.TemplateHTTP]
+	if !enabled {
+		if linked {
+			return s.zbx.UnlinkHostTemplate(ctx, hostID, httpID)
+		}
+		return nil
+	}
+	if !linked {
+		if err := s.zbx.LinkHostTemplate(ctx, hostID, httpID); err != nil {
+			return err
+		}
+	}
+	// Set port/scheme as host macros (blank -> delete, reverting to the template default).
+	cur := map[string]zabbix.HostMacro{}
+	if hm, err := s.zbx.HostMacros(ctx, hostID); err == nil {
+		for _, m := range hm {
+			cur[m.Macro] = m
+		}
+	}
+	for macro, val := range map[string]string{"{$HTTP.PORT}": strings.TrimSpace(port), "{$HTTP.SCHEME}": strings.TrimSpace(scheme)} {
+		existing, has := cur[macro]
+		switch {
+		case val == "":
+			if has {
+				if err := s.zbx.DeleteHostMacros(ctx, existing.MacroID); err != nil {
+					return err
+				}
+			}
+		case has:
+			if existing.Value != val {
+				if err := s.zbx.UpdateHostMacro(ctx, existing.MacroID, val, 0); err != nil {
+					return err
+				}
+			}
+		default:
+			if err := s.zbx.CreateHostMacro(ctx, hostID, zabbix.Macro{Macro: macro, Value: val, Type: 0}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // applyClassMacros surgically sets/clears the host macros a device class declares, from the desired

@@ -39,6 +39,10 @@ GitHub Release from the matching section below.
   Thresholds editor and is tunable there. The hard-failure triggers (host down, DNS not resolving,
   endpoint down) are unchanged.
 
+- **Manage the HTTP/HTTPS add-on from host settings.** The optional HTTP endpoint check (reachability
+  + response time) could only be chosen when adding a device. A host's settings dialog now has an
+  **HTTP/HTTPS endpoint** section to turn it on or off after the fact (links/unlinks the template,
+  clearing its sensors on disable) and to edit the port and scheme (`{$HTTP.PORT}` / `{$HTTP.SCHEME}`).
 - **Disable alerts per sensor, granular to one channel.** A **Disable alerts** action (in a host's
   sensor view) turns off a sensor's Zabbix trigger(s) while the sensor keeps collecting and graphing -
   for when an alert isn't wanted. It works on a whole sensor/group, and, by expanding a multi-channel
