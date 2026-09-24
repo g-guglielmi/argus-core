@@ -19,8 +19,9 @@ answers on `:53`.
    `example.com,cloudflare.com`. Each name becomes its own resolve sensor (success, time, IP), grouped
    under the server.
 
-A name that stops resolving raises a **HIGH** alert; a slow resolve (over `{$DNS.RTT.HIGH}`, default
-0.5 s) raises a **warning**. The query port defaults to 53 (`{$DNS.PORT}`). The resolve runs from the
+A name that stops resolving raises a **HIGH** alert. A slow resolve raises a **warning** at or above
+`{$DNS.RTT.WARN}` (default 0.5 s) and a **high-severity** alert at or above `{$DNS.RTT.HIGH}` (default
+1 s). The query port defaults to 53 (`{$DNS.PORT}`). The resolve runs from the
 proxy/core, so it needs nothing installed on the DNS server itself.
 
 ## AdGuard Home

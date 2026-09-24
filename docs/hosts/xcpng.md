@@ -27,8 +27,8 @@ monitoring off and lead the Virtual machines section.
 
 **Per hypervisor**: CPU utilization (from the host's RRD feed - XAPI itself stopped exposing live
 CPU long ago), used/total memory and %, uptime, XCP-NG version, liveness. Alerts: member down,
-high CPU (`{$XCP.CPU.UTIL.WARN}`, default 90%), high memory (`{$XCP.MEM.WARN}`, default 90%),
-unreachable XAPI and rejected credentials.
+high CPU (warning `{$XCP.CPU.UTIL.WARN}` 85%, high `{$XCP.CPU.UTIL.HIGH}` 95%), high memory (warning
+`{$XCP.MEM.WARN}` 85%, high `{$XCP.MEM.HIGH}` 95%), unreachable XAPI and rejected credentials.
 
 ## VM monitoring (optional)
 

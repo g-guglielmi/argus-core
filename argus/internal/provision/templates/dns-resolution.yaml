@@ -77,10 +77,15 @@ zabbix_export:
                   error_handler: DISCARD_VALUE
               trigger_prototypes:
                 - uuid: c3cb39ab07ed46bb9f231a3a2807f99f
-                  expression: 'min(/Argus DNS resolution/dns.resolve.time[{#DNSNAME}],#3)>{$DNS.RTT.HIGH} and max(/Argus DNS resolution/dns.resolve.success[{#DNSNAME}],#3)=1'
+                  expression: 'min(/Argus DNS resolution/dns.resolve.time[{#DNSNAME}],#3)>={$DNS.RTT.WARN} and min(/Argus DNS resolution/dns.resolve.time[{#DNSNAME}],#3)<{$DNS.RTT.HIGH} and max(/Argus DNS resolution/dns.resolve.success[{#DNSNAME}],#3)=1'
                   name: 'DNS resolution slow for {#DNSNAME}'
                   priority: WARNING
-                  description: 'Resolving {#DNSNAME} took longer than {$DNS.RTT.HIGH} on the last 3 checks (while still resolving).'
+                  description: 'Resolving {#DNSNAME} took at least {$DNS.RTT.WARN}s (below the high threshold) on the last 3 checks (while still resolving).'
+                - uuid: d3cb39ab07ed46bb9f231a3a2807f9a0
+                  expression: 'min(/Argus DNS resolution/dns.resolve.time[{#DNSNAME}],#3)>={$DNS.RTT.HIGH} and max(/Argus DNS resolution/dns.resolve.success[{#DNSNAME}],#3)=1'
+                  name: 'DNS resolution very slow for {#DNSNAME}'
+                  priority: HIGH
+                  description: 'Resolving {#DNSNAME} took at least {$DNS.RTT.HIGH}s on the last 3 checks (while still resolving).'
             - uuid: ccdcb51da08a40ce85e5b99aae32a8b1
               name: 'Resolved IP ({#DNSNAME})'
               type: DEPENDENT
@@ -107,6 +112,9 @@ zabbix_export:
         - macro: '{$DNS.PORT}'
           value: '53'
           description: 'DNS server port (default 53).'
-        - macro: '{$DNS.RTT.HIGH}'
+        - macro: '{$DNS.RTT.WARN}'
           value: '0.5'
-          description: 'Resolve time (seconds) above which a warning is raised.'
+          description: 'Resolve time (seconds) that raises a warning.'
+        - macro: '{$DNS.RTT.HIGH}'
+          value: '1'
+          description: 'Resolve time (seconds) that raises a high-severity alert.'

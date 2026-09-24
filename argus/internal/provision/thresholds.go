@@ -60,7 +60,9 @@ func diskUsedSpecs() []ThresholdSpec {
 var thresholdCatalog = []TemplateThresholds{
 	{Template: TemplateBasePing, Specs: []ThresholdSpec{
 		{Macro: "{$PING.LOSS.WARN}", Label: "Packet loss - warning", Unit: "%"},
+		{Macro: "{$PING.LOSS.HIGH}", Label: "Packet loss - high", Unit: "%"},
 		{Macro: "{$PING.RESP.WARN}", Label: "Response time - warning", Unit: "s"},
+		{Macro: "{$PING.RESP.HIGH}", Label: "Response time - high", Unit: "s"},
 	}},
 	{Template: "Argus Linux by SNMP", Specs: concat(cpuUtilSpecs(), memUsedSpecs(), diskUsedSpecs())},
 	{Template: "Argus Linux by SSH", Specs: concat(cpuUtilSpecs(), memUsedSpecs(), diskUsedSpecs())},
@@ -90,16 +92,20 @@ var thresholdCatalog = []TemplateThresholds{
 	{Template: "Argus UniFi AP by HTTP", Specs: concat(cpuUtilSpecs(), memUsedSpecs())},
 	{Template: "Argus UniFi OS Console by HTTP", Specs: concat(cpuUtilSpecs(), memUsedSpecs(), diskUsedSpecs())},
 	{Template: "Argus DNS resolution", Specs: []ThresholdSpec{
-		{Macro: "{$DNS.RTT.HIGH}", Label: "Resolve time - warning", Unit: "s"},
+		{Macro: "{$DNS.RTT.WARN}", Label: "Resolve time - warning", Unit: "s"},
+		{Macro: "{$DNS.RTT.HIGH}", Label: "Resolve time - high", Unit: "s"},
 	}},
 	{Template: "Argus XCP-NG by XAPI", Specs: []ThresholdSpec{
 		{Macro: "{$XCP.CPU.UTIL.WARN}", Label: "Hypervisor CPU - warning", Unit: "%"},
+		{Macro: "{$XCP.CPU.UTIL.HIGH}", Label: "Hypervisor CPU - high", Unit: "%"},
 		{Macro: "{$XCP.MEM.WARN}", Label: "Hypervisor memory - warning", Unit: "%"},
+		{Macro: "{$XCP.MEM.HIGH}", Label: "Hypervisor memory - high", Unit: "%"},
 		{Macro: "{$XCP.TEMP.WARN}", Label: "Hypervisor CPU temp - warning", Unit: "°C"},
 		{Macro: "{$XCP.TEMP.HIGH}", Label: "Hypervisor CPU temp - high", Unit: "°C"},
 	}},
 	{Template: TemplateHTTP, Specs: []ThresholdSpec{
 		{Macro: "{$HTTP.RESPONSE.WARN}", Label: "Response time - warning", Unit: "s"},
+		{Macro: "{$HTTP.RESPONSE.HIGH}", Label: "Response time - high", Unit: "s"},
 	}},
 }
 

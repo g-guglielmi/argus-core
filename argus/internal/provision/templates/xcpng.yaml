@@ -222,10 +222,15 @@ zabbix_export:
                   error_handler: DISCARD_VALUE
               trigger_prototypes:
                 - uuid: 0111dda07c9f46fd9f2ef072ed979efe
-                  expression: 'avg(/Argus XCP-NG by XAPI/xcp.host.cpu[{#HVUUID}],5m)>{$XCP.CPU.UTIL.WARN}'
+                  expression: 'avg(/Argus XCP-NG by XAPI/xcp.host.cpu[{#HVUUID}],5m)>={$XCP.CPU.UTIL.WARN} and avg(/Argus XCP-NG by XAPI/xcp.host.cpu[{#HVUUID}],5m)<{$XCP.CPU.UTIL.HIGH}'
                   name: 'High CPU utilization on {#HVNAME}'
                   priority: WARNING
-                  description: 'CPU utilization on hypervisor {#HVNAME} has averaged above {$XCP.CPU.UTIL.WARN}% for 5 minutes.'
+                  description: 'CPU utilization on hypervisor {#HVNAME} has averaged at or above {$XCP.CPU.UTIL.WARN}% (below the high threshold) for 5 minutes.'
+                - uuid: 0211dda07c9f46fd9f2ef072ed979eff
+                  expression: 'avg(/Argus XCP-NG by XAPI/xcp.host.cpu[{#HVUUID}],5m)>={$XCP.CPU.UTIL.HIGH}'
+                  name: 'Very high CPU utilization on {#HVNAME}'
+                  priority: HIGH
+                  description: 'CPU utilization on hypervisor {#HVNAME} has averaged at or above {$XCP.CPU.UTIL.HIGH}% for 5 minutes.'
             - uuid: 03f5e1e9d91d4ad5a247e31415d92313
               name: 'Used memory ({#HVNAME})'
               type: DEPENDENT
@@ -277,10 +282,15 @@ zabbix_export:
                   error_handler: DISCARD_VALUE
               trigger_prototypes:
                 - uuid: c99d6558edfb47c79ec08ff67a9a25bf
-                  expression: 'avg(/Argus XCP-NG by XAPI/xcp.host.mem.pct[{#HVUUID}],5m)>{$XCP.MEM.WARN}'
+                  expression: 'avg(/Argus XCP-NG by XAPI/xcp.host.mem.pct[{#HVUUID}],5m)>={$XCP.MEM.WARN} and avg(/Argus XCP-NG by XAPI/xcp.host.mem.pct[{#HVUUID}],5m)<{$XCP.MEM.HIGH}'
                   name: 'High memory usage on {#HVNAME}'
                   priority: WARNING
-                  description: 'Memory usage on hypervisor {#HVNAME} has averaged above {$XCP.MEM.WARN}% for 5 minutes - little headroom left for starting or migrating VMs.'
+                  description: 'Memory usage on hypervisor {#HVNAME} has averaged at or above {$XCP.MEM.WARN}% (below the high threshold) for 5 minutes - little headroom left for starting or migrating VMs.'
+                - uuid: c99d6558edfb47c79ec08ff67a9a25c0
+                  expression: 'avg(/Argus XCP-NG by XAPI/xcp.host.mem.pct[{#HVUUID}],5m)>={$XCP.MEM.HIGH}'
+                  name: 'Very high memory usage on {#HVNAME}'
+                  priority: HIGH
+                  description: 'Memory usage on hypervisor {#HVNAME} has averaged at or above {$XCP.MEM.HIGH}% for 5 minutes.'
             - uuid: bb4b9d4be7a3482c880b692843f7ef4c
               name: 'Total memory ({#HVNAME})'
               type: DEPENDENT
@@ -698,11 +708,17 @@ zabbix_export:
           value: ''
           description: 'Comma-separated VM names to leave out of monitoring entirely (parked templates, scratch VMs) - they disappear from the per-VM sensors and the running/defined counts. Argus host settings edits this as a checklist.'
         - macro: '{$XCP.CPU.UTIL.WARN}'
-          value: '90'
-          description: 'Hypervisor CPU utilization (%) above which the high-CPU warning fires (5-minute average).'
+          value: '85'
+          description: 'Hypervisor CPU utilization (%) that raises a warning (5-minute average).'
+        - macro: '{$XCP.CPU.UTIL.HIGH}'
+          value: '95'
+          description: 'Hypervisor CPU utilization (%) that raises a high-severity alert (5-minute average).'
         - macro: '{$XCP.MEM.WARN}'
-          value: '90'
-          description: 'Hypervisor memory usage (%) above which the high-memory warning fires (5-minute average).'
+          value: '85'
+          description: 'Hypervisor memory usage (%) that raises a warning (5-minute average).'
+        - macro: '{$XCP.MEM.HIGH}'
+          value: '95'
+          description: 'Hypervisor memory usage (%) that raises a high-severity alert (5-minute average).'
         - macro: '{$XCP.TEMP.WARN}'
           value: '80'
           description: 'CPU package temperature (C) at or above which the running-hot warning fires (needs the argus-temp dom0 plugin).'

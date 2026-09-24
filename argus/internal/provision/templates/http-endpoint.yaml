@@ -40,10 +40,15 @@ zabbix_export:
           units: s
           triggers:
             - uuid: 643105a64ad949d89e85ef7ef6d3a8d8
-              expression: 'min(/Argus HTTP Endpoint/net.tcp.service.perf[{$HTTP.SCHEME},,{$HTTP.PORT}],#3)>{$HTTP.RESPONSE.WARN}'
+              expression: 'min(/Argus HTTP Endpoint/net.tcp.service.perf[{$HTTP.SCHEME},,{$HTTP.PORT}],#3)>={$HTTP.RESPONSE.WARN} and min(/Argus HTTP Endpoint/net.tcp.service.perf[{$HTTP.SCHEME},,{$HTTP.PORT}],#3)<{$HTTP.RESPONSE.HIGH}'
               name: 'HTTP/HTTPS slow response'
               priority: WARNING
-              description: 'Response time above the warning threshold on the last 3 checks.'
+              description: 'Response time at or above the warning threshold (below the high threshold) on the last 3 checks.'
+            - uuid: 743105a64ad949d89e85ef7ef6d3a8d9
+              expression: 'min(/Argus HTTP Endpoint/net.tcp.service.perf[{$HTTP.SCHEME},,{$HTTP.PORT}],#3)>={$HTTP.RESPONSE.HIGH}'
+              name: 'HTTP/HTTPS very slow response'
+              priority: HIGH
+              description: 'Response time at or above the high threshold on the last 3 checks.'
       macros:
         - macro: '{$HTTP.SCHEME}'
           value: https
@@ -54,3 +59,6 @@ zabbix_export:
         - macro: '{$HTTP.RESPONSE.WARN}'
           value: '1'
           description: 'Response time (seconds) that raises a warning.'
+        - macro: '{$HTTP.RESPONSE.HIGH}'
+          value: '3'
+          description: 'Response time (seconds) that raises a high-severity alert.'

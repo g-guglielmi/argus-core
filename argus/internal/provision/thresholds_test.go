@@ -18,7 +18,9 @@ func TestTemplateFactoryDefaults(t *testing.T) {
 		{"Argus Base Ping", "{$PING.RESP.WARN}", "0.15"},
 		{"Argus NAS by Zabbix agent", "{$DISK.TEMP.WARN:ssd}", "65"},
 		{"Argus unRAID by SNMP", "{$POOL.TEMP.HIGH}", "75"},
-		{"Argus XCP-NG by XAPI", "{$XCP.CPU.UTIL.WARN}", "90"},
+		{"Argus XCP-NG by XAPI", "{$XCP.CPU.UTIL.WARN}", "85"},
+		{"Argus XCP-NG by XAPI", "{$XCP.CPU.UTIL.HIGH}", "95"},
+		{"Argus Base Ping", "{$PING.LOSS.HIGH}", "60"},
 		{"Argus UniFi Gateway by HTTP", "{$UNIFI.WAN.AVAIL.MIN}", "50"},
 	}
 	for _, c := range cases {

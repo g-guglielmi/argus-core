@@ -32,6 +32,13 @@ GitHub Release from the matching section below.
   is simply skipped. (There is no fleet-wide/per-class order override - the default is deliberately
   fixed.)
 
+- **Every sensor now carries a warning AND an error threshold.** Six graded bands that shipped
+  warn-only gained a high (error) band and trigger, so alerts can escalate: ICMP packet loss (high
+  60%), ICMP response time (0.5s), DNS resolve time (1s), XCP-NG CPU (warning realigned to 85%, high
+  95%), XCP-NG memory (85% / 95%), and HTTP response time (3s). Each shows as a warn/high pair in the
+  Thresholds editor and is tunable there. The hard-failure triggers (host down, DNS not resolving,
+  endpoint down) are unchanged.
+
 **Fixed:**
 - **Ugreen NAS class woke parked disks every hour.** The class used the Zabbix agent2 SMART plugin
   (`smart.disk.discovery`, hourly) to enumerate disks; that plugin runs a full `smartctl` on every

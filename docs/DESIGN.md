@@ -212,13 +212,16 @@ so curation is shared with the SNMP classes.
 | CPU temp | ≥ 75 °C | ≥ 85 °C |
 | Disk temp - **HDD** | ≥ 40 °C | ≥ 45 °C |
 | Disk temp - **SSD** | ≥ 50 °C | ≥ 60 °C |
-| Ping | loss ≥ 20% or latency > 150 ms | 100% loss (down) |
-| HTTP/HTTPS | resp > 1 s | non-2xx/3xx or timeout |
+| Ping | loss ≥ 20% or RTT ≥ 0.15 s | loss ≥ 60%, RTT ≥ 0.5 s, or 100% loss (down) |
+| HTTP/HTTPS | resp ≥ 1 s | resp ≥ 3 s, or non-2xx/3xx / timeout (down) |
 | TLS cert expiry | ≤ 14 days | ≤ 3 days |
-| DNS | resolve > 500 ms | no/incorrect answer |
+| DNS | resolve ≥ 0.5 s | resolve ≥ 1 s, or no/incorrect answer |
 | UPS | - | **on battery** / runtime < 5 min / replace battery |
 | Printer supply | (not monitored) | (not monitored) |
 
+- Every graded metric carries **both** a warning and an error (high) band - `{$X.WARN}` and
+  `{$X.HIGH}` - so an alert can escalate; the hard-failure cases (host down, DNS not resolving,
+  endpoint down) stay as their own triggers on top.
 - Disk-temp thresholds are **type-aware** (HDD vs SSD) via the SMART `rotational` flag
   (from the unRAID API). Pure-SNMP disks with unknown type fall back to the SSD numbers.
 - **Edited from the UI (§D).** Each threshold is a Zabbix user macro defined on the class template
