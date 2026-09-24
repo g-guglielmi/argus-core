@@ -5178,7 +5178,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                             {/* Drill on the name, like flat sensors: the group travels as its primary channel's
                                 item id (the focus/URL machinery is item-id based) and HostItems re-expands that
                                 id into the whole group. */}
-                            <span>{onDrillSensor ? <span className="lnk-sensor" onClick={(e) => { e.stopPropagation(); onDrillSensor(primary.id, row.instance) }}>{row.instance}</span> : row.instance}</span>
+                            <span className="sn-label">{onDrillSensor ? <span className="lnk-sensor" onClick={(e) => { e.stopPropagation(); onDrillSensor(primary.id, row.instance) }}>{row.instance}</span> : row.instance}</span>
                             <span style={{ color: 'var(--faint)', fontSize: 11 }}> · {row.items.length} channels</span>
                             {gPaused && <span style={{ color: PAUSED_BLUE, fontSize: 11 }}> (paused)</span>}
                             {gHidden && <span style={{ color: HIDDEN_GREY, fontSize: 11 }}> (hidden)</span>}
@@ -5241,7 +5241,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                       <td className="namecell">
                         <span className={'sname' + (clickable ? ' sclick' : '')} style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: effPaused || effHidden ? 0.6 : 1 }}>
                           {clickable && <span className="scaret" style={{ color: 'var(--accent)', display: 'inline-block', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'none' }}>›</span>}
-                          {onDrillSensor ? <span className="lnk-sensor" onClick={(e) => { e.stopPropagation(); onDrillSensor(it.id, label) }}>{label}</span> : label}
+                          <span className="sn-label">{onDrillSensor ? <span className="lnk-sensor" onClick={(e) => { e.stopPropagation(); onDrillSensor(it.id, label) }}>{label}</span> : label}</span>
                           {effPaused && <span style={{ color: PAUSED_BLUE, fontSize: 11 }}> (paused · {hostPaused && !it.paused ? 'host' : untilLabel(it.paused_until)})</span>}
                           {effHidden && <span style={{ color: HIDDEN_GREY, fontSize: 11 }}> (hidden · {hostHidden && !it.hidden ? 'host' : untilLabel(it.hidden_until)})</span>}
                         </span>

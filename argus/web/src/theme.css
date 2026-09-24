@@ -462,6 +462,13 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .sensors tr.paused td.namecell { border-left-color: var(--paused); }
 .sensors tr.hidden td.namecell { border-left-color: var(--hidden); }
 .sensors td.prio-cell, .sensors thead th:nth-child(4) { width: 1%; white-space: nowrap; }
+/* Long sensor / mount names truncate with an ellipsis instead of overflowing the fixed Sensor column
+   (e.g. a deep container mount path). The meta bits (caret, "· N channels", paused/hidden) never
+   shrink; only the name label does. */
+.sensors td.namecell { overflow: hidden; }
+.sname { min-width: 0; max-width: 100%; }
+.sname > * { flex-shrink: 0; }
+.sname > .sn-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Even, stable column proportions on desktop: auto layout let Sensor/Value widths jump with whatever
    content a host happens to have. Fixed layout obeys the header widths; long names wrap instead of
    shoving the other columns around. Mobile keeps auto layout (trend already hidden there). */
@@ -879,6 +886,9 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   .sensors .prio .prio-star { display: none; }
   .sensors .prio .prio-compact { display: inline-flex; }
   .sensors .prio .prio-compact .prio-star { display: inline; font-size: 13px; }
+  /* Auto table layout on phones: cap the name cell so a long mount path truncates instead of forcing
+     the page to scroll sideways. */
+  table.sensors td.namecell { max-width: 62vw; }
   .lccell { gap: 3px; }
   .lccell .when { font-size: 12px; }
   .site-head, .pending-note { padding-left: 14px; }

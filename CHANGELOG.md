@@ -40,6 +40,14 @@ GitHub Release from the matching section below.
   from `/sys` (never opening a disk), so nothing in the class wakes a parked drive any more (the
   temperature reads already used `smartctl -n standby`). Existing Ugreen NASes need the agent
   re-deployed with the updated `nas-agent.conf` (the new UserParameter); see docs/hosts/ugreen.md.
+- **Ugreen filesystem discovery matched nested `/volumeN` paths.** The data-volume filter
+  (`{$FS.NAME.MATCHES}`) was `(^|/)volume[0-9]+$`, which matched any mount **ending** in `/volumeN` -
+  so a docker overlay mounted under `/volume2/@docker/.../merged/volume1` showed up as a monitored
+  filesystem. Anchored to `^(/rootfs)?/volume[0-9]+$` so only a top-level data volume matches.
+- **Long sensor names overflowed the Sensor column.** A very long mount path (or any long sensor
+  name) ran past the fixed column and overlapped the value/trend cells. Names now truncate with an
+  ellipsis; the caret, channel count and paused/hidden tags stay put, and the phone layout no longer
+  scrolls sideways on a long name.
 
 ## [0.5.0] - 2026-09-22
 

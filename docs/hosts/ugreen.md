@@ -39,8 +39,11 @@ on `:161` - the agent never has to reach out, and nothing extra is baked into th
    - **`--pid host` + the `/proc`, `/sys` mounts** - so CPU / memory readings are the host's, not the
      container's, and the CPU-temp UserParameter can read the coretemp/k10temp sensor from `/sys`.
    - **`-v /volume1:/volume1:ro`** - each data volume you want disk-usage for, mounted at its real
-     path (add `/volume2`, ... if you have more). The class filters filesystem discovery down to the
-     `volumeN` mounts, so the container's own filesystems don't clutter the Disk section.
+     path. **A volume the container can't see isn't monitored**, so add a `-v /volume2:/volume2:ro`
+     line (and `/volume3`, ...) for every volume and recreate the container when you add one. The class
+     filters filesystem discovery to the top-level `/volumeN` mounts only, so the container's own
+     filesystems - and nested paths that merely end in `/volumeN`, like a docker overlay under
+     `/volume2/@docker/.../merged/volume1` - don't clutter the Disk section.
    - **`--privileged --user root`** - so `smartctl` can read the raw disks for **per-disk SMART
      temperatures** (it needs root + raw access). `smartmontools` is already in the stock agent2 image.
    - **the `nas-agent.conf` mount** - three UserParameters: `ugreen.cpu.temp` (CPU package temp from
