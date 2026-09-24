@@ -5139,12 +5139,13 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                   if (row.cat === 'Ports') { const rank: Record<string, number> = { In: 0, Out: 1, PoE: 2, Speed: 3, Link: 4 }; channels = [channels[0], ...channels.slice(1).sort((a, b) => (rank[a.label] ?? 9) - (rank[b.label] ?? 9))] }
                   // Radios read Clients -> Utilization (clients drive the group).
                   if (row.cat === 'Wireless') { const rank: Record<string, number> = { Clients: 0, Utilization: 1 }; channels = [channels[0], ...channels.slice(1).sort((a, b) => (rank[a.label] ?? 9) - (rank[b.label] ?? 9))] }
-                  // Drive temperatures read in unRAID Main-tab order: parity, data disks, then pools;
-                  // numbers compare numerically (Disk 2 before Disk 10). Non-unRAID channels trail.
+                  // Drive temperatures read in unRAID Main-tab order (parity, data disks, then pools);
+                  // within a bucket - and for plain device names (Ugreen: nvme0, nvme1, sda, sdb) - sort
+                  // naturally, so it reads alphabetically with numbers in order (Disk 2 before Disk 10,
+                  // nvme0 before nvme1 before sda).
                   if (row.cat === 'Temperature') {
                     const bucket = (l: string) => (/^parity/i.test(l) ? 0 : /^disk ?\d/i.test(l) ? 1 : /^cache/i.test(l) ? 2 : 3)
-                    const num = (l: string) => { const m = l.match(/(\d+)$/); return m ? parseInt(m[1], 10) : 0 }
-                    channels = [...channels].sort((a, b) => bucket(a.label) - bucket(b.label) || num(a.label) - num(b.label) || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0))
+                    channels = [...channels].sort((a, b) => bucket(a.label) - bucket(b.label) || a.label.localeCompare(b.label, undefined, { numeric: true }))
                   }
                   // A group whose members are all counter totals charts as daily stacked bars.
                   const barGroup = row.items.length > 0 && row.items.every((i) => BAR_COUNTER_KEYS.has(i.key.replace(/\[.*$/, '')))

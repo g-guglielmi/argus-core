@@ -48,6 +48,10 @@ GitHub Release from the matching section below.
   name) ran past the fixed column and overlapped the value/trend cells. Names now truncate with an
   ellipsis; the caret, channel count and paused/hidden tags stay put, and the phone layout no longer
   scrolls sideways on a long name.
+- **Disk-temperature channels sorted oddly.** The "Disk temperatures" overlay ordered channels by a
+  trailing digit (meant for unRAID slots), which split device names like `nvme0` and `nvme1` and
+  pushed a newly added disk to the end. Non-unRAID device names now sort naturally/alphabetically
+  (`nvme0, nvme1, sda, sdb`); unRAID keeps its parity/data/pool slot order.
 
 ## [0.5.0] - 2026-09-22
 
