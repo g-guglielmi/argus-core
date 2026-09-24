@@ -85,11 +85,20 @@ list is here so you can see where the catalog is heading. See [../DESIGN.md](../
 
 Class tunables (the Windows service filter, API credentials, and the like) can be set when you add the
 device **and** changed later in **host settings** (the settings panel on the host row) under the class
-options section. That same dialog has a **Thresholds** section for per-device alert-threshold overrides,
-a **Sensor order** section, and an **HTTP/HTTPS endpoint** toggle (turn the optional web-reachability
-check on or off for the host and set its port/scheme, at any time - not just when adding the device);
-fleet-wide threshold defaults live on the admin **Thresholds** screen. See
-[../thresholds.md](../thresholds.md).
+options section. That same dialog also has:
+
+- a **Thresholds** section for per-device alert-threshold overrides (fleet-wide defaults live on the
+  admin **Thresholds** screen - see [../thresholds.md](../thresholds.md));
+- a **Sensor order** section;
+- an **Add-ons** section - optional Argus checks you can layer on a host at any time (not just when
+  adding it): the **HTTP/HTTPS endpoint** (reachability + response time on a web port) and **DNS
+  resolution** (resolve names against the host). Toggling one on links its template and lets you set
+  its options; toggling off removes its sensors;
+- a **Change class** control (admin) - switch a host to a different device class in place, without
+  deleting and re-adding it. It swaps the class's templates (keeping Base Ping + add-ons), keeps
+  history for any template the old and new class share, adds the new class's interface type if the
+  host lacks it, and collects the new class's credentials. Sensors from templates only in the old
+  class are removed.
 
 For the full device-class catalog (including classes still on the roadmap) and what each one collects,
 see [../DESIGN.md](../DESIGN.md) section 5.

@@ -6,6 +6,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -54,6 +55,29 @@ type macroFieldView struct {
 	Set     bool     `json:"set,omitempty"`     // a value is configured on the host (for secrets, where Value is masked)
 }
 
+// addOnMacroView is one config field of an add-on (e.g. HTTP port), with the host's current value or
+// the template default. addOnView is an optional add-on template with its enabled state + fields.
+type addOnMacroView struct {
+	Macro   string   `json:"macro"`
+	Label   string   `json:"label"`
+	Hint    string   `json:"hint,omitempty"`
+	Options []string `json:"options,omitempty"`
+	Value   string   `json:"value"`
+}
+type addOnView struct {
+	ID          string           `json:"id"`
+	Label       string           `json:"label"`
+	Description string           `json:"description"`
+	Enabled     bool             `json:"enabled"`
+	Macros      []addOnMacroView `json:"macros,omitempty"`
+}
+
+// addOnDesired is the client's desired state for one add-on in the host-config PATCH.
+type addOnDesired struct {
+	Enabled bool              `json:"enabled"`
+	Macros  map[string]string `json:"macros"`
+}
+
 // thresholdFieldView is one per-host threshold override in the settings editor: the effective global
 // default (placeholder / reset target) plus the host's own value if it overrides. All text, never secret.
 type thresholdFieldView struct {
@@ -77,9 +101,7 @@ type hostConfigView struct {
 	ClassLabel    string               `json:"class_label,omitempty"` // human label for the class macro section
 	Macros        []macroFieldView     `json:"macros,omitempty"`      // class-declared per-host macros + current values
 	Thresholds    []thresholdFieldView `json:"thresholds,omitempty"`  // per-host threshold overrides (§D)
-	HTTPEnabled   bool                 `json:"http_enabled"`          // the HTTP/HTTPS add-on is linked to this host
-	HTTPPort      string               `json:"http_port,omitempty"`   // {$HTTP.PORT} (host value, else template default)
-	HTTPScheme    string               `json:"http_scheme,omitempty"` // {$HTTP.SCHEME} (host value, else template default)
+	AddOns        []addOnView          `json:"addons,omitempty"`      // optional Argus templates toggleable on this host
 	VMNames       []string             `json:"vm_names,omitempty"`    // xcpng: discovered VM names, for the ignored-VMs checklist
 	Categories    []string             `json:"categories,omitempty"`  // the host's curated sensor categories, in effective order (§D)
 	CategoryOrder []string             `json:"category_order,omitempty"` // stored per-host order override (empty = inheriting)
@@ -210,23 +232,32 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// HTTP/HTTPS add-on: whether the optional endpoint template is linked, plus its port/scheme (the
-	// host's own macro value, else the template factory default) so the settings form can show + edit them.
+	// Optional add-ons: for each registry add-on NOT already provided by the host's class, report
+	// whether its template is linked and each config field's value (host macro, else template default).
 	if names, err := s.zbx.HostLinkedTemplateNames(ctx, hd.HostID); err == nil {
+		linked := map[string]bool{}
 		for _, n := range names {
-			if n == provision.TemplateHTTP {
-				out.HTTPEnabled = true
-				break
+			linked[n] = true
+		}
+		classTemplates := map[string]bool{}
+		if out.ClassID != "" {
+			if c, ok := provision.ClassByID(out.ClassID); ok {
+				for _, t := range c.Templates {
+					classTemplates[t] = true
+				}
 			}
 		}
-	}
-	{
-		httpDef := map[string]string{}
-		if factory, err := provision.TemplateFactoryDefaults(); err == nil {
-			httpDef = factory[provision.TemplateHTTP]
+		factory, _ := provision.TemplateFactoryDefaults()
+		for _, a := range provision.AddOns() {
+			if classTemplates[a.Template] {
+				continue // the class already includes this template; managed in class options, not here
+			}
+			av := addOnView{ID: a.ID, Label: a.Label, Description: a.Description, Enabled: linked[a.Template]}
+			for _, ms := range a.Macros {
+				av.Macros = append(av.Macros, addOnMacroView{Macro: ms.Macro, Label: ms.Label, Hint: ms.Hint, Options: ms.Options, Value: macroValueOr(curMacros, ms.Macro, factory[a.Template][ms.Macro])})
+			}
+			out.AddOns = append(out.AddOns, av)
 		}
-		out.HTTPPort = macroValueOr(curMacros, "{$HTTP.PORT}", httpDef["{$HTTP.PORT}"])
-		out.HTTPScheme = macroValueOr(curMacros, "{$HTTP.SCHEME}", httpDef["{$HTTP.SCHEME}"])
 	}
 
 	// Per-host sensor-category order (§D): the host's curated categories in effective order, plus any
@@ -250,11 +281,9 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		MonitoredBy   int               `json:"monitored_by"`
 		ProxyID       string            `json:"proxy_id"`
 		Interfaces    []ifaceView       `json:"interfaces"`
-		Macros        map[string]string `json:"macros"`         // class macro / threshold name -> desired value (only known macros are applied)
-		CategoryOrder *[]string         `json:"category_order"` // §D per-host order; nil = leave as-is, [] = clear override
-		HTTPEnabled   *bool             `json:"http_enabled"`   // HTTP add-on: nil = leave, true = link, false = unlink
-		HTTPPort      string            `json:"http_port"`      // {$HTTP.PORT} (applied when http_enabled is true)
-		HTTPScheme    string            `json:"http_scheme"`    // {$HTTP.SCHEME} (applied when http_enabled is true)
+		Macros        map[string]string       `json:"macros"`         // class macro / threshold name -> desired value (only known macros are applied)
+		CategoryOrder *[]string               `json:"category_order"` // §D per-host order; nil = leave as-is, [] = clear override
+		AddOns        map[string]addOnDesired `json:"addons"`         // add-on id -> desired {enabled, macros}; nil = leave as-is
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -432,71 +461,95 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	// HTTP/HTTPS add-on: link/unlink the endpoint template and, when enabled, set its port/scheme.
-	if req.HTTPEnabled != nil {
-		if err := s.applyHTTPAddon(ctx, cur.HostID, *req.HTTPEnabled, req.HTTPPort, req.HTTPScheme); err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+	// Optional add-ons: link/unlink each add-on's template and, when enabled, set its config macros.
+	if req.AddOns != nil {
+		if err := s.applyAddOns(ctx, cur.HostID, req.AddOns); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// applyHTTPAddon links or unlinks the optional HTTP endpoint template on a host, and (when enabled)
-// sets its {$HTTP.PORT} / {$HTTP.SCHEME} host macros. Unlinking clears the template's items/triggers.
-func (s *Server) applyHTTPAddon(ctx context.Context, hostID string, enabled bool, port, scheme string) error {
+// applyAddOns links/unlinks the optional add-on templates on a host and (when enabled) sets their
+// config macros. Only registry add-ons are touched, and never one the host's class already provides.
+// Unlinking clears the template's items/triggers; a blank macro reverts to the template default.
+func (s *Server) applyAddOns(ctx context.Context, hostID string, desired map[string]addOnDesired) error {
 	names, err := s.zbx.HostLinkedTemplateNames(ctx, hostID)
 	if err != nil {
 		return err
 	}
-	linked := false
+	linked := map[string]bool{}
 	for _, n := range names {
-		if n == provision.TemplateHTTP {
-			linked = true
-			break
+		linked[n] = true
+	}
+	classTemplates := map[string]bool{}
+	if classID, ok, _ := s.st.GetDeviceClass(ctx, hostID); ok {
+		if c, ok := provision.ClassByID(classID); ok {
+			for _, t := range c.Templates {
+				classTemplates[t] = true
+			}
 		}
 	}
-	ids, err := s.zbx.TemplateIDsByName(ctx, []string{provision.TemplateHTTP})
-	if err != nil {
-		return err
-	}
-	httpID := ids[provision.TemplateHTTP]
-	if !enabled {
-		if linked {
-			return s.zbx.UnlinkHostTemplate(ctx, hostID, httpID)
-		}
-		return nil
-	}
-	if !linked {
-		if err := s.zbx.LinkHostTemplate(ctx, hostID, httpID); err != nil {
-			return err
-		}
-	}
-	// Set port/scheme as host macros (blank -> delete, reverting to the template default).
 	cur := map[string]zabbix.HostMacro{}
 	if hm, err := s.zbx.HostMacros(ctx, hostID); err == nil {
 		for _, m := range hm {
 			cur[m.Macro] = m
 		}
 	}
-	for macro, val := range map[string]string{"{$HTTP.PORT}": strings.TrimSpace(port), "{$HTTP.SCHEME}": strings.TrimSpace(scheme)} {
-		existing, has := cur[macro]
-		switch {
-		case val == "":
-			if has {
-				if err := s.zbx.DeleteHostMacros(ctx, existing.MacroID); err != nil {
+	for id, d := range desired {
+		a, ok := provision.AddOnByID(id)
+		if !ok || classTemplates[a.Template] {
+			continue // unknown add-on, or one the class owns - never managed here
+		}
+		if d.Enabled {
+			for _, ms := range a.Macros {
+				if ms.Required && strings.TrimSpace(d.Macros[ms.Macro]) == "" {
+					return fmt.Errorf("%s is required for the %s add-on", ms.Label, a.Label)
+				}
+			}
+		}
+		tmpls, err := s.zbx.Templates(ctx, []string{a.Template})
+		if err != nil {
+			return err
+		}
+		if len(tmpls) == 0 {
+			continue // template not imported yet
+		}
+		tid := tmpls[0].TemplateID
+		if !d.Enabled {
+			if linked[a.Template] {
+				if err := s.zbx.UnlinkHostTemplate(ctx, hostID, tid); err != nil {
 					return err
 				}
 			}
-		case has:
-			if existing.Value != val {
-				if err := s.zbx.UpdateHostMacro(ctx, existing.MacroID, val, 0); err != nil {
-					return err
-				}
-			}
-		default:
-			if err := s.zbx.CreateHostMacro(ctx, hostID, zabbix.Macro{Macro: macro, Value: val, Type: 0}); err != nil {
+			continue
+		}
+		if !linked[a.Template] {
+			if err := s.zbx.LinkHostTemplate(ctx, hostID, tid); err != nil {
 				return err
+			}
+		}
+		for _, ms := range a.Macros {
+			val := strings.TrimSpace(d.Macros[ms.Macro])
+			existing, has := cur[ms.Macro]
+			switch {
+			case val == "":
+				if has {
+					if err := s.zbx.DeleteHostMacros(ctx, existing.MacroID); err != nil {
+						return err
+					}
+				}
+			case has:
+				if existing.Value != val {
+					if err := s.zbx.UpdateHostMacro(ctx, existing.MacroID, val, 0); err != nil {
+						return err
+					}
+				}
+			default:
+				if err := s.zbx.CreateHostMacro(ctx, hostID, zabbix.Macro{Macro: ms.Macro, Value: val, Type: 0}); err != nil {
+					return err
+				}
 			}
 		}
 	}

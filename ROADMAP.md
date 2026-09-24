@@ -111,7 +111,9 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 ### D. Management UI screens
 - [x] **Device management** - Add-device modal (class + macros + site/proxy, v0.4.41), the URL-backed
   host-settings dialog (identity, interfaces, SNMP inheritance, class macros, collector switch),
-  group management, discovery adoption, and the per-host threshold + sensor-order overrides below. - _(FE+BE)_
+  group management, discovery adoption, the per-host threshold + sensor-order overrides below, optional
+  **add-ons** (HTTP/DNS layered on/off in settings), and an in-place **change-class** (swap a host's
+  device class without delete/recreate, keeping shared-template history). - _(FE+BE)_
 - [x] **Thresholds** - a dedicated admin **Thresholds** screen (under Admin) lists the monitoring
   templates; clicking one opens a dialog to edit that template's fleet-wide defaults (stored in Argus
   and re-applied to the Zabbix templates after each import, so a re-import can't clobber them).

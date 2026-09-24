@@ -39,10 +39,18 @@ GitHub Release from the matching section below.
   Thresholds editor and is tunable there. The hard-failure triggers (host down, DNS not resolving,
   endpoint down) are unchanged.
 
-- **Manage the HTTP/HTTPS add-on from host settings.** The optional HTTP endpoint check (reachability
-  + response time) could only be chosen when adding a device. A host's settings dialog now has an
-  **HTTP/HTTPS endpoint** section to turn it on or off after the fact (links/unlinks the template,
-  clearing its sensors on disable) and to edit the port and scheme (`{$HTTP.PORT}` / `{$HTTP.SCHEME}`).
+- **Manage optional add-ons from host settings.** A host's settings dialog now has an **Add-ons**
+  section to layer optional Argus checks on the fly (not just at add time): the **HTTP/HTTPS endpoint**
+  (reachability + response time, with port/scheme) and **DNS resolution** (resolve names against the
+  host). Each toggle links/unlinks its template (clearing its sensors on disable) and edits its macros.
+  Add-ons are driven by a small registry, so new ones are one entry each; an add-on a host's class
+  already provides isn't offered (it's managed as a class option). Supersedes the earlier HTTP-only
+  toggle.
+- **Change a host's device class in place.** A **Change class** control (admin) in host settings swaps
+  a host to a different class without delete + recreate: it diffs and swaps the class's templates
+  (Base Ping + add-ons untouched), keeps history for any template the old and new class share, adds the
+  new class's interface type when the host lacks it (SNMP inherits the proxy default), and collects the
+  new class's credentials. Sensors from templates only in the old class are removed (with a confirm).
 - **Disable alerts per sensor, granular to one channel.** A **Disable alerts** action (in a host's
   sensor view) turns off a sensor's Zabbix trigger(s) while the sensor keeps collecting and graphing -
   for when an alert isn't wanted. It works on a whole sensor/group, and, by expanding a multi-channel

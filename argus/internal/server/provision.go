@@ -239,6 +239,230 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"id": hostID, "class": class.ID})
 }
 
+type changeClassRequest struct {
+	ClassID string            `json:"class_id"`
+	Macros  map[string]string `json:"macros"` // the new class's per-host + required macros
+	SNMP    *snmpReq          `json:"snmp"`   // override for a new SNMP interface, when one must be added
+}
+
+// handleChangeHostClass switches an existing host to a different device class in place (no delete +
+// recreate): it swaps the class's templates (keeping Base Ping + any add-ons), ensures the new class's
+// interface type exists, applies the new class's preset + entered macros, and updates the overlay.
+// History is kept for any template shared by the old and new class. Admin only (wired in server.go).
+func (s *Server) handleChangeHostClass(w http.ResponseWriter, r *http.Request) {
+	if !s.zbx.Authenticated() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured (set ARGUS_ZABBIX_API_TOKEN)"})
+		return
+	}
+	var req changeClassRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	newClass, ok := provision.ClassByID(req.ClassID)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown device class"})
+		return
+	}
+	// The new class's required macros (credentials, endpoints) must be supplied, like Add-device.
+	for _, ms := range newClass.Macros {
+		if ms.Required && strings.TrimSpace(req.Macros[ms.Macro]) == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": ms.Label + " is required for this device class"})
+			return
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := provision.Reconcile(ctx, s.zbx, s.st, s.logger); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not import class templates: " + err.Error()})
+		return
+	}
+
+	hostID := r.PathValue("id")
+	hd, err := s.zbx.HostDetail(ctx, hostID)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		return
+	}
+	oldClassID, _, _ := s.st.GetDeviceClass(ctx, hostID)
+	oldClass, _ := provision.ClassByID(oldClassID) // zero value (no templates) if unknown/unset
+
+	// Template diff: add the new class's templates that aren't linked yet; remove the old class's
+	// templates that the new class doesn't also use (Base Ping + add-ons are never touched). Removing
+	// clears that template's items/history - unavoidable when the monitoring changes.
+	linkedNames, err := s.zbx.HostLinkedTemplateNames(ctx, hostID)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		return
+	}
+	linked := map[string]bool{}
+	for _, n := range linkedNames {
+		linked[n] = true
+	}
+	newSet := map[string]bool{}
+	for _, t := range newClass.Templates {
+		newSet[t] = true
+	}
+	var toAdd, toRemove []string
+	for _, t := range newClass.Templates {
+		if !linked[t] {
+			toAdd = append(toAdd, t)
+		}
+	}
+	for _, t := range oldClass.Templates {
+		if !newSet[t] && linked[t] {
+			toRemove = append(toRemove, t)
+		}
+	}
+	ids, err := s.zbx.TemplateIDsByName(ctx, append(append([]string{}, toAdd...), toRemove...))
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		return
+	}
+	for _, t := range toAdd {
+		if err := s.zbx.LinkHostTemplate(ctx, hostID, ids[t]); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			return
+		}
+	}
+	for _, t := range toRemove {
+		if err := s.zbx.UnlinkHostTemplate(ctx, hostID, ids[t]); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			return
+		}
+	}
+
+	// Ensure the new class's interface type exists (e.g. agent-class host -> SNMP class needs an SNMP
+	// interface); existing interfaces are left in place.
+	if msg := s.ensureClassInterface(ctx, hd, newClass, req.SNMP); msg != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+		return
+	}
+
+	// Apply the new class's preset macros + the entered per-host macros.
+	if err := s.applyNewClassMacros(ctx, hostID, newClass, req.Macros); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		return
+	}
+	if err := s.st.SetDeviceClass(ctx, hostID, newClass.ID, "manual"); err != nil {
+		s.logger.Error("provision: could not record device-class overlay after class change", "host", hostID, "err", err)
+	}
+	s.scheduleDiscovery(hostID)
+	writeJSON(w, http.StatusOK, map[string]string{"id": hostID, "class": newClass.ID})
+}
+
+// ensureClassInterface adds the interface type a class needs when the host lacks it (SNMP creds inherit
+// the collector default, or come from the request override). Returns a user-facing error, or "".
+func (s *Server) ensureClassInterface(ctx context.Context, hd *zabbix.HostDetail, class provision.Class, snmp *snmpReq) string {
+	want := 1 // agent
+	switch class.Iface {
+	case provision.IfaceNone:
+		return ""
+	case provision.IfaceSNMP:
+		want = 2
+	}
+	// Reuse the host's existing main interface address as the connection target.
+	var useIP, ip, dns string
+	for _, i := range hd.Interfaces {
+		if i.Type == want {
+			return "" // already has the needed type
+		}
+		if useIP == "" && (i.IP != "" || i.DNS != "") {
+			ip, dns = i.IP, i.DNS
+			if i.UseIP == 1 {
+				useIP = "ip"
+			} else {
+				useIP = "dns"
+			}
+		}
+	}
+	u := 1
+	if useIP == "dns" {
+		u = 0
+	}
+	if want == 1 {
+		if _, err := s.zbx.CreateHostInterface(ctx, hd.HostID, zabbix.HostInterface{Type: 1, Main: 1, UseIP: u, IP: ip, DNS: dns, Port: "10050"}); err != nil {
+			return "Zabbix: " + err.Error()
+		}
+		return ""
+	}
+	// SNMP: creds from the request override, else the collector's SNMP default.
+	var details *zabbix.SNMPDetails
+	inherit := false
+	if snmp != nil {
+		v := snmp.Version
+		if v == 0 {
+			v = 2
+		}
+		details = &zabbix.SNMPDetails{Version: v, Community: snmp.Community, Bulk: 1}
+	} else {
+		defID := "0"
+		if hd.MonitoredBy == 1 && hd.ProxyID != "" && hd.ProxyID != "0" {
+			defID = hd.ProxyID
+		}
+		if def, ok, _ := s.st.SNMPDefaultFor(ctx, defID); ok {
+			details = defaultToDetails(def)
+			inherit = true
+		}
+	}
+	if details == nil {
+		return "this class needs SNMP, but the host's collector has no SNMP default (set one in Probes, or switch on the SNMP override and enter the credentials)"
+	}
+	port := "161"
+	if snmp != nil && snmp.Port != "" {
+		port = snmp.Port
+	}
+	newID, err := s.zbx.CreateHostInterface(ctx, hd.HostID, zabbix.HostInterface{Type: 2, Main: 1, UseIP: u, IP: ip, DNS: dns, Port: port, SNMP: details})
+	if err != nil {
+		return "Zabbix: " + err.Error()
+	}
+	if inherit {
+		_ = s.st.SetSNMPInherit(ctx, newID, true)
+	}
+	return ""
+}
+
+// applyNewClassMacros sets a class's preset macros and the entered per-host macros on a host (create or
+// update; a blank entered value is left alone rather than deleted, since a class change is additive).
+func (s *Server) applyNewClassMacros(ctx context.Context, hostID string, class provision.Class, entered map[string]string) error {
+	cur := map[string]zabbix.HostMacro{}
+	hm, err := s.zbx.HostMacros(ctx, hostID)
+	if err != nil {
+		return err
+	}
+	for _, m := range hm {
+		cur[m.Macro] = m
+	}
+	set := func(macro, value string, secret bool) error {
+		mType := 0
+		if secret {
+			mType = 1
+		}
+		if existing, has := cur[macro]; has {
+			if secret || existing.Value != value {
+				return s.zbx.UpdateHostMacro(ctx, existing.MacroID, value, mType)
+			}
+			return nil
+		}
+		return s.zbx.CreateHostMacro(ctx, hostID, zabbix.Macro{Macro: macro, Value: value, Type: mType})
+	}
+	for _, p := range class.HostMacros {
+		if err := set(p.Macro, p.Value, false); err != nil {
+			return err
+		}
+	}
+	for _, ms := range class.Macros {
+		v := strings.TrimSpace(entered[ms.Macro])
+		if v == "" {
+			continue // required ones were validated by the caller; blanks are left as-is
+		}
+		if err := set(ms.Macro, v, ms.Secret); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // resolveInterface builds the host's Zabbix interface for its class. For SNMP classes the credentials
 // inherit the selected proxy's SNMP default (defaultToDetails, like the rest of Argus) unless the
 // request carries an explicit override; the bool reports whether to track the interface as inheriting.

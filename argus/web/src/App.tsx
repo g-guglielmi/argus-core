@@ -25,7 +25,9 @@ type ThresholdField = { macro: string; label: string; unit?: string; default: st
 type ThrRowData = { macro: string; label: string; unit?: string; default: string; value?: string }
 type ThrTemplate = { template: string; label: string; every_host?: boolean; optional?: boolean; classes?: string[]; thresholds: ThrRowData[] }
 type ThresholdsData = { templates: ThrTemplate[] }
-type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; http_enabled?: boolean; http_port?: string; http_scheme?: string; vm_names?: string[]; categories?: string[]; category_order?: string[] }
+type AddOnMacro = { macro: string; label: string; hint?: string; options?: string[]; value: string }
+type AddOnCfg = { id: string; label: string; description: string; enabled: boolean; macros?: AddOnMacro[] }
+type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[] }
 type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
@@ -3449,7 +3451,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
         placeholder={focus.level === 'group' ? 'Subgroup name (use / for deeper nesting)' : 'New group name (use / for nesting, e.g. site1/Network)'}
         confirmLabel="Create" onConfirm={(name) => createGroup(name)} onCancel={() => setCreating(false)} />}
       {addingDevice && <AddDeviceBand classes={classes} groups={groups} proxies={proxies} defaultSite={focus.level === 'group' ? focus.path : ''} onCancel={() => setAddingDevice(false)} onCreated={() => { setAddingDevice(false); setError(null); load(); fireDataRefresh() }} />}
-      {settingsHost && <HostSettingsModal hostId={settingsHost} hostName={hosts.find((h) => h.id === settingsHost)?.name} canEdit={canPause} onClose={closeSettings} onSaved={() => { closeSettings(); load(); fireDataRefresh() }} />}
+      {settingsHost && <HostSettingsModal hostId={settingsHost} hostName={hosts.find((h) => h.id === settingsHost)?.name} canEdit={canPause} isAdmin={role === 'admin'} onClose={closeSettings} onSaved={() => { closeSettings(); load(); fireDataRefresh() }} />}
       {loading && <Skeleton rows={5} cols={3} />}
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
       {!loading && !error && hosts.length === 0 && <EmptyState icon={ic.monitoring} title="No hosts yet" text="Hosts monitored in Zabbix appear here, grouped by site. If you expected some, check the Zabbix connection in Settings." />}
@@ -4376,6 +4378,82 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
 const IFTYPE: Record<number, string> = { 1: 'Agent', 2: 'SNMP', 3: 'IPMI', 4: 'JMX' }
 function blankSnmp(): SnmpCfg { return { version: 2, community: 'public', bulk: 1, security_name: '', security_level: 0, auth_protocol: 0, auth_passphrase: '', priv_protocol: 0, priv_passphrase: '', context_name: '' } }
 
+// ClassChanger swaps a host's device class in place (no delete/recreate): pick a new class, supply its
+// required macros (+ SNMP creds if the host needs a new SNMP interface), confirm, POST it, reload.
+function ClassChanger({ hostId, currentClassId, currentClassLabel, onChanged }: { hostId: string; currentClassId?: string; currentClassLabel?: string; onChanged: () => void }) {
+  const confirm = useConfirm()
+  const [open, setOpen] = useState(false)
+  const [classes, setClasses] = useState<DeviceClass[]>([])
+  const [sel, setSel] = useState('')
+  const [macros, setMacros] = useState<Record<string, string>>({})
+  const [snmpOn, setSnmpOn] = useState(false)
+  const [snmp, setSnmp] = useState({ version: 2, community: '', port: '' })
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  useEffect(() => { if (open && classes.length === 0) fetch('/api/classes').then((r) => (r.ok ? r.json() : [])).then((c) => setClasses(c || [])).catch(() => {}) }, [open, classes.length])
+  const cls = classes.find((c) => c.id === sel)
+  const macroSpecs = (cls?.macros || []).filter((m) => !m.settings_only)
+  async function apply() {
+    if (!cls) return
+    if (!(await confirm({ title: 'Change class', message: `Switch this host to "${cls.label}"? Sensors from templates that are only in the current class are removed; history for any template shared with the new class is kept.`, confirmLabel: 'Change class' }))) return
+    setBusy(true); setErr('')
+    const body: Record<string, unknown> = { class_id: sel, macros }
+    if (cls.iface === 'snmp' && snmpOn) body.snmp = { version: snmp.version, community: snmp.community, port: snmp.port }
+    const res = await fetch(`/api/hosts/${hostId}/class`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { setErr(await errText(res, 'Could not change class')); return }
+    setOpen(false); onChanged()
+  }
+  return (
+    <div className="hs-mon">
+      <span className="hs-monlabel">Class</span>
+      {!open ? (
+        <>
+          <span style={{ fontSize: 13 }}>{currentClassLabel || currentClassId || 'None'}</span>
+          <button className="btn" onClick={() => { setSel(''); setMacros({}); setErr(''); setOpen(true) }}>Change class</button>
+        </>
+      ) : (
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Select value={sel} onChange={(e) => { setSel(e.target.value); setMacros({}) }}>
+            <option value="">Select a class…</option>
+            {classes.filter((c) => c.id !== currentClassId).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </Select>
+          {macroSpecs.length > 0 && (
+            <div className="hs-grid" style={{ marginTop: 10 }}>
+              {macroSpecs.map((m) => (
+                <label className="field" key={m.macro}>
+                  <span>{m.label}{m.required ? ' *' : ''}</span>
+                  {m.options && m.options.length > 0
+                    ? <Select value={macros[m.macro] || ''} onChange={(e) => setMacros((v) => ({ ...v, [m.macro]: e.target.value }))}><option value="">{m.hint ? `default (${m.hint})` : 'default'}</option>{m.options.map((o) => <option key={o} value={o}>{o}</option>)}</Select>
+                    : <input className="input" type={m.secret ? 'password' : 'text'} placeholder={m.hint || ''} value={macros[m.macro] || ''} onChange={(e) => setMacros((v) => ({ ...v, [m.macro]: e.target.value }))} />}
+                </label>
+              ))}
+            </div>
+          )}
+          {cls?.iface === 'snmp' && (
+            <label className="hs-note" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+              <input type="checkbox" checked={snmpOn} onChange={(e) => setSnmpOn(e.target.checked)} />
+              <span>Enter SNMP credentials (only needed if this host has no SNMP interface yet and its proxy has no SNMP default)</span>
+            </label>
+          )}
+          {cls?.iface === 'snmp' && snmpOn && (
+            <div className="hs-grid" style={{ marginTop: 8 }}>
+              <label className="field"><span>SNMP version</span><Select value={snmp.version} onChange={(e) => setSnmp((s) => ({ ...s, version: Number(e.target.value) }))}><option value={1}>v1</option><option value={2}>v2c</option></Select></label>
+              <label className="field"><span>Community</span><input className="input" value={snmp.community} onChange={(e) => setSnmp((s) => ({ ...s, community: e.target.value }))} /></label>
+              <label className="field"><span>Port</span><input className="input" placeholder="161" value={snmp.port} onChange={(e) => setSnmp((s) => ({ ...s, port: e.target.value }))} /></label>
+            </div>
+          )}
+          {err && <div className="txt-err" style={{ fontSize: 13, marginTop: 8 }}>{err}</div>}
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <Button variant="primary" onClick={apply} disabled={busy || !sel}>Apply class change</Button>
+            <Button variant="ghost" onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // HostSettingsModal hosts the settings editor in a portaled dialog: navigating the tree or
 // switching views can never leave a stale settings band behind (the old inline band survived a
 // drill back to the root) - the dialog is closed first (Escape / backdrop / Cancel / Back, since
@@ -4485,7 +4563,7 @@ function ThresholdsView() {
   )
 }
 
-function HostSettingsModal({ hostId, hostName, canEdit, onClose, onSaved }: { hostId: string; hostName?: string; canEdit: boolean; onClose: () => void; onSaved: () => void }) {
+function HostSettingsModal({ hostId, hostName, canEdit, isAdmin, onClose, onSaved }: { hostId: string; hostName?: string; canEdit: boolean; isAdmin?: boolean; onClose: () => void; onSaved: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
@@ -4495,7 +4573,7 @@ function HostSettingsModal({ hostId, hostName, canEdit, onClose, onSaved }: { ho
     <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 'min(980px, 94vw)', maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
         <div className="dlg-title">Host settings{hostName ? ` · ${hostName}` : ''}</div>
-        <div className="dlg-scroll"><HostSettings hostId={hostId} canEdit={canEdit} onClose={onClose} onSaved={onSaved} inDialog /></div>
+        <div className="dlg-scroll"><HostSettings hostId={hostId} canEdit={canEdit} isAdmin={isAdmin} onClose={onClose} onSaved={onSaved} inDialog /></div>
       </div>
     </div>,
     document.body,
@@ -4504,7 +4582,7 @@ function HostSettingsModal({ hostId, hostName, canEdit, onClose, onSaved }: { ho
 
 // HostSettings is the editor for a host's identity + interfaces (Zabbix
 // host.update + hostinterface CRUD). One "Save" reconciles the whole desired state on the server.
-function HostSettings({ hostId, canEdit, onClose, onSaved, inDialog }: { hostId: string; canEdit: boolean; onClose: () => void; onSaved: () => void; inDialog?: boolean }) {
+function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: { hostId: string; canEdit: boolean; isAdmin?: boolean; onClose: () => void; onSaved: () => void; inDialog?: boolean }) {
   const rootCls = 'host-settings' + (inDialog ? ' in-dlg' : '')
   const confirm = useConfirm()
   const [cfg, setCfg] = useState<HostCfg | null>(null)
@@ -4512,9 +4590,13 @@ function HostSettings({ hostId, canEdit, onClose, onSaved, inDialog }: { hostId:
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [customOrder, setCustomOrder] = useState(false)
-  useEffect(() => {
+  function loadCfg() {
     fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : Promise.reject())).then((d: HostCfg) => { setCfg(d); setCustomOrder(!!(d.category_order && d.category_order.length)) }).catch(() => setErr('Could not load host settings'))
+  }
+  useEffect(() => {
+    loadCfg()
     fetch('/api/proxies').then((r) => (r.ok ? r.json() : [])).then((p) => setProxies(p || [])).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hostId])
 
   function patch(p: Partial<HostCfg>) { setCfg((c) => (c ? { ...c, ...p } : c)) }
@@ -4522,6 +4604,8 @@ function HostSettings({ hostId, canEdit, onClose, onSaved, inDialog }: { hostId:
   function setSnmp(idx: number, p: Partial<SnmpCfg>) { setCfg((c) => (c ? { ...c, interfaces: c.interfaces.map((i, n) => (n === idx ? { ...i, snmp: { ...(i.snmp || blankSnmp()), ...p } } : i)) } : c)) }
   function setMacro(macro: string, value: string) { setCfg((c) => (c ? { ...c, macros: (c.macros || []).map((m) => (m.macro === macro ? { ...m, value } : m)) } : c)) }
   function setThreshold(macro: string, value: string) { setCfg((c) => (c ? { ...c, thresholds: (c.thresholds || []).map((t) => (t.macro === macro ? { ...t, value } : t)) } : c)) }
+  function setAddon(id: string, p: Partial<AddOnCfg>) { setCfg((c) => (c ? { ...c, addons: (c.addons || []).map((a) => (a.id === id ? { ...a, ...p } : a)) } : c)) }
+  function setAddonMacro(id: string, macro: string, value: string) { setCfg((c) => (c ? { ...c, addons: (c.addons || []).map((a) => (a.id === id ? { ...a, macros: (a.macros || []).map((m) => (m.macro === macro ? { ...m, value } : m)) } : a)) } : c)) }
   function moveCategory(idx: number, dir: -1 | 1) {
     setCfg((c) => {
       if (!c || !c.categories) return c
@@ -4547,7 +4631,8 @@ function HostSettings({ hostId, canEdit, onClose, onSaved, inDialog }: { hostId:
     const macros = pairs.length > 0 ? Object.fromEntries(pairs) : undefined
     // Per-host sensor order: send the current list when "custom" is on, else [] to clear the override.
     const category_order = cfg.categories && cfg.categories.length > 0 ? (customOrder ? cfg.categories : []) : undefined
-    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order, http_enabled: !!cfg.http_enabled, http_port: cfg.http_port || '', http_scheme: cfg.http_scheme || '' }) }).catch(() => null)
+    const addons = cfg.addons ? Object.fromEntries(cfg.addons.map((a) => [a.id, { enabled: a.enabled, macros: Object.fromEntries((a.macros || []).map((m) => [m.macro, m.value])) }])) : undefined
+    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order, addons }) }).catch(() => null)
     setBusy(false)
     if (!res || !res.ok) { setErr(await errText(res, 'Could not save host settings')); return }
     onSaved()
@@ -4579,6 +4664,8 @@ function HostSettings({ hostId, canEdit, onClose, onSaved, inDialog }: { hostId:
           </select>
         )}
       </div>
+
+      {isAdmin && cfg.class_id && <ClassChanger hostId={hostId} currentClassId={cfg.class_id} currentClassLabel={cfg.class_label} onChanged={loadCfg} />}
 
       <div className="hs-title">Interfaces</div>
       {cfg.interfaces.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13 }}>No interfaces.</div>}
@@ -4702,24 +4789,31 @@ function HostSettings({ hostId, canEdit, onClose, onSaved, inDialog }: { hostId:
         </>
       )}
 
-      <div className="hs-title">HTTP/HTTPS endpoint</div>
-      <div className="hs-note" style={{ margin: '0 0 10px' }}>An optional reachability + response-time check on a web port, run from the host's proxy. Turn it on or off for this host and set the port/scheme.</div>
-      <div className="hs-mon">
-        <span className="hs-monlabel">Monitor HTTP</span>
-        <div className="seg">
-          <button className={cfg.http_enabled ? 'on' : ''} disabled={!canEdit} onClick={() => patch({ http_enabled: true })}>On</button>
-          <button className={!cfg.http_enabled ? 'on' : ''} disabled={!canEdit} onClick={() => patch({ http_enabled: false })}>Off</button>
-        </div>
-      </div>
-      {cfg.http_enabled && (
-        <div className="hs-grid">
-          <label className="field"><span>Scheme</span>
-            <Select value={cfg.http_scheme || 'https'} disabled={!canEdit} onChange={(e) => patch({ http_scheme: e.target.value })}>
-              <option value="https">https</option><option value="http">http</option>
-            </Select>
-          </label>
-          <label className="field"><span>Port</span><input className="input" value={cfg.http_port || ''} placeholder="443" disabled={!canEdit} onChange={(e) => patch({ http_port: e.target.value })} /></label>
-        </div>
+      {cfg.addons && cfg.addons.length > 0 && (
+        <>
+          <div className="hs-title">Add-ons</div>
+          <div className="hs-note" style={{ margin: '0 0 10px' }}>Optional Argus checks you can layer on this host. Turn one on and set its options; turning it off removes its sensors.</div>
+          {cfg.addons.map((a) => (
+            <div key={a.id} style={{ marginBottom: 10 }}>
+              <label className="hs-note" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 6px', cursor: canEdit ? 'pointer' : 'default' }}>
+                <input type="checkbox" checked={a.enabled} disabled={!canEdit} onChange={(e) => setAddon(a.id, { enabled: e.target.checked })} />
+                <span><b style={{ color: 'var(--text)' }}>{a.label}</b> - {a.description}</span>
+              </label>
+              {a.enabled && a.macros && a.macros.length > 0 && (
+                <div className="hs-grid">
+                  {a.macros.map((m) => (
+                    <label className="field" key={m.macro}>
+                      <span>{m.label}</span>
+                      {m.options && m.options.length > 0
+                        ? <Select value={m.value} disabled={!canEdit} onChange={(e) => setAddonMacro(a.id, m.macro, e.target.value)}>{m.options.map((o) => <option key={o} value={o}>{o}</option>)}</Select>
+                        : <input className="input" value={m.value} placeholder={m.hint || ''} disabled={!canEdit} onChange={(e) => setAddonMacro(a.id, m.macro, e.target.value)} />}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </>
       )}
 
       {cfg.thresholds && cfg.thresholds.length > 0 && (
