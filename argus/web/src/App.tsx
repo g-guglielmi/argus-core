@@ -5690,26 +5690,34 @@ function thrLinesHook(lines: ThrLine[]) {
     const axFont: string = ((u.axes[1] as any)?.font?.[0] as string) || `${11 * dpr}px system-ui, sans-serif`
     ctx.save()
     ctx.lineWidth = dpr
+    const vis: { l: ThrLine; y: number }[] = []
     for (const l of lines) {
       if (!l.series.some((i) => u.series[i]?.show)) continue
       const y = Math.round(u.valToPos(l.value, l.scale, true)) + 0.5
       if (!Number.isFinite(y) || y < bbox.top || y > bbox.top + bbox.height) continue
+      vis.push({ l, y })
       ctx.strokeStyle = withAlpha(l.color, 0.75)
       ctx.setLineDash([4 * dpr, 4 * dpr])
       ctx.beginPath()
       ctx.moveTo(bbox.left, y)
       ctx.lineTo(bbox.left + bbox.width, y)
       ctx.stroke()
-      ctx.setLineDash([])
-      ctx.font = axFont.replace(/(\d+(?:\.\d+)?)px/, (_m, n) => `${Math.round(Number(n) * 0.9)}px`)
-      ctx.fillStyle = withAlpha(l.color, 0.95)
-      ctx.textAlign = 'right'
-      ctx.textBaseline = 'bottom'
-      // A line hugging the top edge puts its label under it instead, so it never clips.
-      const above = y - bbox.top > 16 * dpr
-      if (!above) ctx.textBaseline = 'top'
-      ctx.fillText(l.owner ? `${l.owner} ${l.text}` : l.text, bbox.left + bbox.width - 6 * dpr, above ? y - 3 * dpr : y + 3 * dpr)
     }
+    ctx.setLineDash([])
+    ctx.font = axFont.replace(/(\d+(?:\.\d+)?)px/, (_m, n) => `${Math.round(Number(n) * 0.9)}px`)
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'bottom'
+    // Labels sit just above their line, top to bottom; one that would collide with the label above
+    // (two thresholds close together, often on different axes) is pushed down to stack under it. The
+    // first is kept clear of the top edge so it never clips.
+    const lh = 13 * dpr
+    let prev = -Infinity
+    vis.sort((a, b) => a.y - b.y).forEach(({ l, y }) => {
+      const ty = Math.max(y - 3 * dpr, bbox.top + lh, prev + lh)
+      prev = ty
+      ctx.fillStyle = withAlpha(l.color, 0.95)
+      ctx.fillText(l.owner ? `${l.owner} ${l.text}` : l.text, bbox.left + bbox.width - 6 * dpr, ty)
+    })
     ctx.restore()
   }
 }
@@ -6089,6 +6097,13 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   // Primary channel min/max envelope (a shaded band), when it carries trend min/max - long ranges
   // only; short ranges are raw history (no min/max), so the band simply doesn't appear there.
   const p0 = series[0]
+  // The MAIN channel - the primary, when it is the only channel on its unit (ICMP response time, a
+  // disk's Used %) - is banded by value like a single-sensor chart: its line, fill and envelope turn
+  // the warning / error colour only past its own thresholds. Peer groups (drive temps, CPU cores,
+  // In/Out) keep their identity colours - a gold channel would be indistinguishable from "warning".
+  const mainThr = p0 && !p0.downtime && series.filter((s) => s.units === p0.units).length === 1 && thrOn(p0.thr) ? p0.thr : undefined
+  const paint = (alpha: number, plain: string) => (mainThr ? thrPaint(scaleKey(p0.units), mainThr, c, alpha) : plain)
+  if (mainThr) (uplotSeries[1] as uPlot.Series).stroke = paint(1, c.line)
   const extraYs: (number | null)[][] = []
   const bands: uPlot.Band[] = []
   if (p0 && !p0.downtime && !p0.off && p0.points.some((p) => p.lo != null && p.hi != null)) {
@@ -6098,15 +6113,15 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const softVal = (_u: any, v: number | null) => (v == null ? '--' : fmtNum(v, p0.units))
     const minIdx = uplotSeries.length // series-array index (x is at 0)
-    uplotSeries.push({ label: 'min', stroke: c.soft, width: 0.75, points: { show: false, size: 0 }, scale: scaleKey(p0.units), value: softVal } as uPlot.Series)
-    uplotSeries.push({ label: 'max', stroke: c.soft, width: 0.75, points: { show: false, size: 0 }, scale: scaleKey(p0.units), value: softVal } as uPlot.Series)
+    uplotSeries.push({ label: 'min', stroke: paint(0.4, c.soft), width: 0.75, points: { show: false, size: 0 }, scale: scaleKey(p0.units), value: softVal } as uPlot.Series)
+    uplotSeries.push({ label: 'max', stroke: paint(0.4, c.soft), width: 0.75, points: { show: false, size: 0 }, scale: scaleKey(p0.units), value: softVal } as uPlot.Series)
     extraYs.push(lo, hi)
-    bands.push({ series: [minIdx + 1, minIdx], fill: c.fill }) // fill between max and min
+    bands.push({ series: [minIdx + 1, minIdx], fill: paint(0.12, c.fill) }) // fill between max and min
   }
   // Match the single-sensor look: shade under the primary channel - except on trend ranges (the
   // min/max band already shades around the line), for downtime, and when siblings share the primary's
   // unit (network In/Out are peers on one scale - shading just one of them reads as favouritism).
-  if (p0 && !p0.downtime && !bands.length && series.filter((s) => s.units === p0.units).length === 1) (uplotSeries[1] as uPlot.Series).fill = c.fill
+  if (p0 && !p0.downtime && !bands.length && series.filter((s) => s.units === p0.units).length === 1) (uplotSeries[1] as uPlot.Series).fill = paint(0.12, c.fill)
   // cursor.points.show:false removes uPlot's hover marker dot (see buildPlot) - the real "stray dot".
   const opts = { width, height: 320, scales: scaleCfg, axes, series: uplotSeries, legend: { show: true }, cursor: { points: { show: false } }, bands, ...zoomHook(onZoom, xrange, onToggle) } as uPlot.Options
   // Threshold reference lines per channel, merged where channels share one (all array drives at

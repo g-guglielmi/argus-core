@@ -438,10 +438,13 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   excursion stays marked after the alert clears. The values come from the sensor's **own triggers**
   (`trigger.get` with `expandExpression`, so host overrides, fleet defaults and per-disk-type macro
   contexts are already resolved - the chart shows exactly what alerts); `/api/hosts/{id}/items`
-  carries them per item as `thr`. Multi-channel group charts keep their per-channel colours and draw
-  just the reference lines (one pair per distinct threshold, e.g. HDD and NVMe pairs on a mixed
-  drive group). Every reference line carries a value label, prefixed with the channel name when only
-  one channel owns it (a two-axis chart like ICMP needs it to say which axis a line belongs to).
+  carries them per item as `thr`. On multi-channel group charts only the **main channel** is banded -
+  the primary, when it is the only channel on its unit (ICMP response time, a disk's Used %); every
+  other channel, and peer groups (drive temps, CPU cores, In/Out) where a gold channel would read as
+  "warning", keeps its identity colour and gets just the reference lines (one pair per distinct
+  threshold, e.g. HDD and NVMe pairs on a mixed drive group). Every reference line carries a value
+  label, prefixed with the channel name when only one channel owns it (a two-axis chart like ICMP
+  needs it to say which axis a line belongs to); labels of nearby lines stack, never overlap.
   Sensors without a numeric threshold (up/down, state checks) are unchanged. A reference line outside
   the data's range is not drawn - the y-scale is never stretched to fit it. The **alert-notification
   PNG** (`chart.go`) applies the same banding server-side: its fill is tinted per pixel row by the
