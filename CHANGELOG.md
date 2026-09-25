@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.5.2] - 2026-09-26
 
 **Changed:**
 - **Graphs colour by threshold, not by state.** A sensor's chart used to paint the whole line in the
@@ -19,21 +19,24 @@ GitHub Release from the matching section below.
   It now colours by value: the normal colour inside the normal range, the warning colour only where
   the line is past the warning value, the error colour only where it is past high (mirrored for
   lower-is-worse sensors), with dashed reference lines at both values - so past excursions stay
-  visible after the alert clears. The values are read from the sensor's own triggers (host
-  overrides, fleet defaults and per-disk-type values already applied), so the chart matches what
-  alerts. On multi-channel graphs the **main channel** (the primary, when it is the only one on its
-  unit: ICMP response time, a disk's Used %) is banded the same way; the other channels, and peer
-  groups like drive temperatures, CPU cores or In/Out, keep their per-channel colours and draw the
-  reference lines only. Each reference line ends in a small **tag on its own axis** (amber for the
-  warning, red for high) showing its value: outside the plot, so it never covers the data, and on the
-  side of the scale it belongs to, so on the two-axis ICMP graph the Loss tags sit on the % axis and the
-  response-time tags on the ms axis. A tag's value lines up with the axis numbers (same position and
-  font). Axis numbers that would sit under a tag are hidden (a tagged axis shows more numbers, so a
-  readable scale remains) and nearby tags stack instead of overlapping. Sensors without a numeric threshold are unchanged.
+  visible after the alert clears, across all history on screen.
+  - The values are read from the sensor's own triggers (host overrides, fleet defaults and
+    per-disk-type values already applied), so the chart matches what alerts.
+  - On multi-channel graphs the **main channel** (the primary, when it is the only one on its unit:
+    ICMP response time, a disk's Used %) is banded the same way; the other channels, and peer groups
+    like drive temperatures, CPU cores or In/Out, keep their per-channel colours and draw the
+    reference lines only.
+  - Each reference line ends in a small **tag on its own axis** (amber for the warning, red for
+    high) showing its value: outside the plot, so it never covers the data, and on the side of the
+    scale it belongs to - on the two-axis ICMP graph the Loss tags sit on the % axis and the
+    response-time tags on the ms axis. Tags line up with the axis numbers (same position and font);
+    numbers a tag would cover are hidden (a tagged axis shows more numbers, so a readable scale
+    remains, and they come back when that channel is hidden in the legend); nearby tags stack.
+  - Sensors without a numeric threshold (up/down, state checks) are unchanged.
 - **The graph in alert notifications is banded the same way** (Telegram / Discord / email): normal
   colour in range, warning and error colour only where the line crosses, dashed reference lines with
-  the same value tags on the axis as the app; a recovery's graph now shows the spike that caused it instead of an all-green line. The
-  channel Test button previews a banded sample graph.
+  the same value tags on the axis as the app. A recovery's graph now shows the spike that caused it
+  instead of an all-green line. The channel Test button previews a banded sample graph.
 
 ## [0.5.1] - 2026-09-25
 
