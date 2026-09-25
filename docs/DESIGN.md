@@ -452,7 +452,8 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   Sensors without a numeric threshold (up/down, state checks) are unchanged. A reference line outside
   the data's range is not drawn - the y-scale is never stretched to fit it. The **alert-notification
   PNG** (`chart.go`) applies the same banding server-side: its fill is tinted per pixel row by the
-  band of that height (matching the app's vertical gradient), with dashed labelled reference lines.
+  band of that height (matching the app's vertical gradient), with dashed reference lines and the
+  same filled value tags in its Y-axis gutter (an axis label a tag would cover is dropped).
 - Storage: **PostgreSQL + TimescaleDB** as Zabbix's DB (native integration, partitioning +
   compression). Single source of truth; app data lives in the same instance (separate schema).
 

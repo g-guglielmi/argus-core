@@ -11,6 +11,7 @@ import (
 	"image/draw"
 	"image/png"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -154,13 +155,51 @@ func renderChart(vals []float64, cr, cg, cb uint8, units string, thr *itemThresh
 	label := color.RGBA{120, 120, 120, 255}
 	baseY := h - mB
 
-	// Horizontal gridlines at max / mid / min, each with its value label to the left.
+	// Threshold tags, like the app's charts: a filled tag in the band colour at the line's height in
+	// the Y-axis gutter, for each threshold inside the plotted range (the range is never stretched to
+	// fit one). Worked out first so the axis labels they would cover can be skipped.
+	type thrTag struct {
+		v    float64
+		y    int
+		c    color.RGBA
+		ink  color.RGBA
+		text string
+	}
+	var tags []thrTag
+	if thr != nil {
+		for _, tl := range []struct {
+			v   *float64
+			c   color.RGBA
+			ink color.RGBA
+		}{{thr.Warn, bandWarn, color.RGBA{0x1B, 0x14, 0x05, 255}}, {thr.High, bandErr, color.RGBA{255, 255, 255, 255}}} {
+			if tl.v == nil || *tl.v < min || *tl.v > max {
+				continue
+			}
+			tags = append(tags, thrTag{*tl.v, yAt(*tl.v), tl.c, tl.ink, axisLabel(*tl.v, units)})
+		}
+		sort.Slice(tags, func(i, j int) bool { return tags[i].y < tags[j].y })
+	}
+	const tagH = 15
+	nearTag := func(y int) bool {
+		for _, t := range tags {
+			if d := t.y - y; d > -tagH && d < tagH {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Horizontal gridlines at max / mid / min, each with its value label to the left (dropped where a
+	// threshold tag takes that spot).
 	for _, gl := range []struct {
 		v float64
 		y int
 	}{{max, mT}, {(min + max) / 2, mT + ph/2}, {min, baseY}} {
 		for x := mL; x < w-mR; x++ {
 			img.Set(x, gl.y, grid)
+		}
+		if nearTag(gl.y) {
+			continue
 		}
 		s := axisLabel(gl.v, units)
 		tw := textWidth(s)
@@ -198,28 +237,12 @@ func renderChart(vals []float64, cr, cg, cb uint8, units string, thr *itemThresh
 		}
 	}
 
-	// Threshold reference lines: dashed, value-labelled at the right end (under the line when it hugs
-	// the top edge). Only those inside the plotted range - the range is never stretched to fit one.
-	if thr != nil {
-		for _, tl := range []struct {
-			v *float64
-			c color.RGBA
-		}{{thr.Warn, bandWarn}, {thr.High, bandErr}} {
-			if tl.v == nil || *tl.v < min || *tl.v > max {
-				continue
+	// Threshold reference lines: dashed, between the fill and the line.
+	for _, t := range tags {
+		for x := mL; x < w-mR; x++ {
+			if (x-mL)%8 < 4 {
+				img.Set(x, t.y, t.c)
 			}
-			y := yAt(*tl.v)
-			for x := mL; x < w-mR; x++ {
-				if (x-mL)%8 < 4 {
-					img.Set(x, y, tl.c)
-				}
-			}
-			s := axisLabel(*tl.v, units)
-			ty := y - 3
-			if y-mT < 14 {
-				ty = y + 12
-			}
-			drawText(img, w-mR-4-textWidth(s), ty, s, tl.c)
 		}
 	}
 
@@ -238,6 +261,26 @@ func renderChart(vals []float64, cr, cg, cb uint8, units string, thr *itemThresh
 				img.Set(lx+dx, ly+dy, mc)
 			}
 		}
+	}
+
+	// The tags, right-aligned against the plot's left edge; two close thresholds stack downward.
+	prevCy := -1 << 30
+	for _, t := range tags {
+		cy := t.y
+		if cy < tagH/2 {
+			cy = tagH / 2
+		}
+		if cy < prevCy+tagH+1 {
+			cy = prevCy + tagH + 1
+		}
+		prevCy = cy
+		tw := textWidth(t.text) + 8
+		x0 := mL - 2 - tw
+		if x0 < 0 {
+			x0 = 0
+		}
+		draw.Draw(img, image.Rect(x0, cy-tagH/2, x0+tw, cy-tagH/2+tagH), image.NewUniform(t.c), image.Point{}, draw.Src)
+		drawText(img, x0+4, cy+4, t.text, t.ink)
 	}
 	// baseline (x axis)
 	for x := mL; x < w-mR; x++ {

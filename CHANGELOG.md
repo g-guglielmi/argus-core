@@ -30,8 +30,8 @@ GitHub Release from the matching section below.
   response-time tags on the ms axis. Axis numbers that would sit under a tag are hidden and nearby
   tags stack instead of overlapping. Sensors without a numeric threshold are unchanged.
 - **The graph in alert notifications is banded the same way** (Telegram / Discord / email): normal
-  colour in range, warning and error colour only where the line crosses, dashed labelled reference
-  lines; a recovery's graph now shows the spike that caused it instead of an all-green line. The
+  colour in range, warning and error colour only where the line crosses, dashed reference lines with
+  the same value tags on the axis as the app; a recovery's graph now shows the spike that caused it instead of an all-green line. The
   channel Test button previews a banded sample graph.
 
 ## [0.5.1] - 2026-09-25
