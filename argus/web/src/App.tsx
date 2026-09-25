@@ -5681,14 +5681,20 @@ type ThrLine = { scale: string; value: number; color: string; ink: string; serie
 
 const thrVisible = (u: uPlot, lines: ThrLine[]) => lines.filter((l) => l.series.some((i) => u.series[i]?.show))
 
-// thrAxisOf finds the y axis that shows a scale: its side (1 right, 3 left) and gutter in CSS px
-// (a right axis spans [pos, pos+size], a left one [pos-size, pos] - see uPlot calcAxesRects), or null
-// when the scale has no axis (a third unit on a two-axis chart).
-function thrAxisOf(u: uPlot, scale: string): { side: number; pos: number; size: number } | null {
+// thrAxisOf finds the y axis that shows a scale, or null when the scale has no axis (a third unit on a
+// two-axis chart). anchor is where uPlot anchors that axis's tick labels, in canvas px - the plot-side
+// gutter edge shifted outward by tick length + gap (uPlot drawAxesGrid: basePos + (tickSize +
+// axisGap) * shiftDir), with labels LEFT-aligned there on a right axis and RIGHT-aligned on a left one.
+// A tag anchors its text on the same point, in the same font, so it lines up with the axis numbers.
+function thrAxisOf(u: uPlot, scale: string): { side: number; anchor: number; font: string } | null {
+  const dpr = window.devicePixelRatio || 1
   for (let i = 1; i < u.axes.length; i++) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const a = u.axes[i] as any
-    if (a.scale === scale && a.show !== false && a._size > 0) return { side: a.side, pos: a._pos, size: a._size }
+    if (a.scale !== scale || a.show === false || !(a._size > 0)) continue
+    const tick = a.ticks && a.ticks.show !== false ? Math.round((a.ticks.size ?? 10) * dpr) : 0
+    const shift = (tick + Math.round((a.gap ?? 5) * dpr)) * (a.side === 3 ? -1 : 1)
+    return { side: a.side, anchor: Math.round(a._pos * dpr) + shift, font: (a.font && a.font[0]) || thrFont(u) }
   }
   return null
 }
@@ -5736,7 +5742,7 @@ function thrTagsHook(lines: ThrLine[]) {
     const h = 16 * dpr, padX = 5 * dpr, gap = 2 * dpr
     ctx.save()
     ctx.font = thrFont(u)
-    const bySide: Record<string, { l: ThrLine; y: number; ax: { side: number; pos: number; size: number } }[]> = {}
+    const bySide: Record<string, { l: ThrLine; y: number; ax: { side: number; anchor: number; font: string } }[]> = {}
     const inline: { l: ThrLine; y: number }[] = []
     for (const l of thrVisible(u, lines)) {
       const y = u.valToPos(l.value, l.scale, true)
@@ -5746,14 +5752,18 @@ function thrTagsHook(lines: ThrLine[]) {
       else inline.push({ l, y })
     }
     ctx.textBaseline = 'middle'
-    ctx.textAlign = 'center'
     Object.values(bySide).forEach((tags) => {
       let prevCy = -Infinity
       tags.sort((a, b) => a.y - b.y).forEach(({ l, y, ax }) => {
         const cy = Math.max(y, h / 2, prevCy + h + gap)
         prevCy = cy
-        const w = ctx.measureText(l.text).width + 2 * padX
-        let x = ax.side === 1 ? ax.pos * dpr + gap : ax.pos * dpr - gap - w
+        // The tag's TEXT sits exactly where the axis numbers do (same anchor, alignment and font); the
+        // coloured box pads around it, reaching over the tick marks on the plot side.
+        ctx.font = ax.font
+        const tw = ctx.measureText(l.text).width
+        const right = ax.side === 1
+        let x = right ? ax.anchor - padX : ax.anchor - tw - padX
+        const w = tw + 2 * padX
         x = Math.max(0, Math.min(x, cw - w))
         ctx.fillStyle = l.color
         ctx.beginPath()
@@ -5763,9 +5773,11 @@ function thrTagsHook(lines: ThrLine[]) {
         else ctx.rect(x, cy - h / 2, w, h)
         ctx.fill()
         ctx.fillStyle = l.ink
-        ctx.fillText(l.text, x + w / 2, cy + 0.5 * dpr)
+        ctx.textAlign = 'left'
+        ctx.fillText(l.text, x + padX, cy + 0.5 * dpr)
       })
     })
+    ctx.font = thrFont(u)
     // Fallback: no axis for this scale - label just above the line inside the plot, stacked.
     ctx.textAlign = 'right'
     ctx.textBaseline = 'bottom'
@@ -5808,17 +5820,24 @@ function addThrLines(opts: uPlot.Options, lines: ThrLine[]) {
         return out.map((v: unknown, k: number) => (tagYs.some((ty) => Math.abs(u.valToPos(splits[k], sc) - ty) < 16) ? '' : v))
       }
     }
+    // A tagged axis gets denser ticks (uPlot's default min spacing is 30px): the numbers a tag covers
+    // are dropped, and on a short axis that could leave only two - this keeps a readable scale.
+    if (a.space == null) a.space = 18
     const os = a.size
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     a.size = (u: uPlot, values: any, ai: number, cycle: number): number => {
       const base: number = typeof os === 'function' ? os(u, values, ai, cycle) : typeof os === 'number' ? os : 50
-      const sc = u.axes[ai].scale as string
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ax = u.axes[ai] as any
+      const sc = ax.scale as string
       // All of the scale's lines (not only visible ones), so toggling a channel doesn't resize the gutter.
       const mine = lines.filter((l) => l.scale === sc)
-      if (!mine.length) return base
-      u.ctx.font = thrFont(u)
+      if (!mine.length || !ax.font) return base
+      u.ctx.font = ax.font[0]
       const widest = Math.max(...mine.map((l) => u.ctx.measureText(l.text).width)) / dpr
-      return Math.max(base, Math.ceil(widest + 10 + 6))
+      // Tag text starts where the numbers do (tick + gap out), plus its outer padding and a little slack.
+      const tick = ax.ticks && ax.ticks.show !== false ? ax.ticks.size ?? 10 : 0
+      return Math.max(base, Math.ceil(tick + (ax.gap ?? 5) + widest + 5 + 4))
     }
   })
 }

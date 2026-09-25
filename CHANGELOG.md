@@ -27,8 +27,9 @@ GitHub Release from the matching section below.
   reference lines only. Each reference line ends in a small **tag on its own axis** (amber for the
   warning, red for high) showing its value: outside the plot, so it never covers the data, and on the
   side of the scale it belongs to, so on the two-axis ICMP graph the Loss tags sit on the % axis and the
-  response-time tags on the ms axis. Axis numbers that would sit under a tag are hidden and nearby
-  tags stack instead of overlapping. Sensors without a numeric threshold are unchanged.
+  response-time tags on the ms axis. A tag's value lines up with the axis numbers (same position and
+  font). Axis numbers that would sit under a tag are hidden (a tagged axis shows more numbers, so a
+  readable scale remains) and nearby tags stack instead of overlapping. Sensors without a numeric threshold are unchanged.
 - **The graph in alert notifications is banded the same way** (Telegram / Discord / email): normal
   colour in range, warning and error colour only where the line crosses, dashed reference lines with
   the same value tags on the axis as the app; a recovery's graph now shows the spike that caused it instead of an all-green line. The

@@ -445,9 +445,11 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   threshold, e.g. HDD and NVMe pairs on a mixed drive group). Every reference line is labelled by a
   filled **axis tag** (the trading-chart pattern) at its height in the gutter of the axis showing its
   scale - never over the data, and the side says which channel's scale it is on (ICMP: Loss tags on
-  the % axis, response time on the ms axis). Tick labels within a tag's height are dropped, the
-  gutter grows if a tag is wider than the widest tick, and tags on one side stack instead of
-  overlapping. A line whose scale has no axis (a third unit on a two-axis chart) falls back to a
+  the % axis, response time on the ms axis). A tag's text is anchored exactly where uPlot anchors the
+  axis numbers (tick length + gap out from the plot, same alignment and font), so it lines up with
+  them. Tick labels within a tag's height are dropped - a tagged axis gets denser ticks (min spacing
+  18px instead of 30) so a readable scale survives - the gutter grows if a tag is wider than the
+  widest tick, and tags on one side stack instead of overlapping. A line whose scale has no axis (a third unit on a two-axis chart) falls back to a
   small in-plot label with the channel name.
   Sensors without a numeric threshold (up/down, state checks) are unchanged. A reference line outside
   the data's range is not drawn - the y-scale is never stretched to fit it. The **alert-notification
