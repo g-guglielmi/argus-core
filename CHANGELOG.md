@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.5.1] - 2026-09-25
 
 **Added:**
 - **Thresholds UI (§D) - edit alert thresholds without touching Zabbix.** Thresholds are Zabbix user
@@ -51,6 +51,7 @@ GitHub Release from the matching section below.
   (Base Ping + add-ons untouched), keeps history for any template the old and new class share, adds the
   new class's interface type when the host lacks it (SNMP inherits the proxy default), and collects the
   new class's credentials. Sensors from templates only in the old class are removed (with a confirm).
+  The host's Zabbix `argus.class` tag is kept aligned with the new class (preserving `argus.source`).
 - **Disable alerts per sensor, granular to one channel.** A **Disable alerts** action (in a host's
   sensor view) turns off a sensor's Zabbix trigger(s) while the sensor keeps collecting and graphing -
   for when an alert isn't wanted. It works on a whole sensor/group, and, by expanding a multi-channel
