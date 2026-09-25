@@ -5674,9 +5674,31 @@ function thrPaint(scaleKey: string, thr: Thr, c: ChartColors, alpha: number) {
 
 // A dashed reference line at a threshold value on one scale; series lists the chart series it belongs
 // to (drawn while any of them is shown, so hiding a channel in the legend also hides its lines). text
-// is the value ("85 °C"); owner names the channel, shown when the line belongs to one channel of a
-// multi-channel chart (on a two-axis chart like ICMP, a line only reads right with its channel).
-type ThrLine = { scale: string; value: number; color: string; series: number[]; text: string; owner?: string }
+// is the value ("85 °C") shown on the line's axis tag; ink is the tag's text colour. owner names the
+// channel - used only by the in-plot fallback label, since a tag's axis side already says which
+// channel's scale it is on.
+type ThrLine = { scale: string; value: number; color: string; ink: string; series: number[]; text: string; owner?: string }
+
+const thrVisible = (u: uPlot, lines: ThrLine[]) => lines.filter((l) => l.series.some((i) => u.series[i]?.show))
+
+// thrAxisOf finds the y axis that shows a scale: its side (1 right, 3 left) and gutter in CSS px
+// (a right axis spans [pos, pos+size], a left one [pos-size, pos] - see uPlot calcAxesRects), or null
+// when the scale has no axis (a third unit on a two-axis chart).
+function thrAxisOf(u: uPlot, scale: string): { side: number; pos: number; size: number } | null {
+  for (let i = 1; i < u.axes.length; i++) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const a = u.axes[i] as any
+    if (a.scale === scale && a.show !== false && a._size > 0) return { side: a.side, pos: a._pos, size: a._size }
+  }
+  return null
+}
+
+// The tag / fallback-label font: the axis tick font, a notch smaller.
+function thrFont(u: uPlot): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const f: string = ((u.axes[1] as any)?.font?.[0] as string) || `${11 * (window.devicePixelRatio || 1)}px system-ui, sans-serif`
+  return f.replace(/(\d+(?:\.\d+)?)px/, (_m, n) => `${Math.round(Number(n) * 0.9)}px`)
+}
 
 // thrLinesHook draws the threshold reference lines UNDER the data (drawAxes runs after the grid, before
 // the series). A line outside the current y range is simply not drawn - the scale is never stretched
@@ -5685,34 +5707,71 @@ function thrLinesHook(lines: ThrLine[]) {
   return (u: uPlot) => {
     const { ctx, bbox } = u
     const dpr = window.devicePixelRatio || 1
-    // Label in the axis font, a notch smaller; right-aligned just above its line, inside the plot.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const axFont: string = ((u.axes[1] as any)?.font?.[0] as string) || `${11 * dpr}px system-ui, sans-serif`
     ctx.save()
     ctx.lineWidth = dpr
-    const vis: { l: ThrLine; y: number }[] = []
-    for (const l of lines) {
-      if (!l.series.some((i) => u.series[i]?.show)) continue
+    ctx.setLineDash([4 * dpr, 4 * dpr])
+    for (const l of thrVisible(u, lines)) {
       const y = Math.round(u.valToPos(l.value, l.scale, true)) + 0.5
       if (!Number.isFinite(y) || y < bbox.top || y > bbox.top + bbox.height) continue
-      vis.push({ l, y })
       ctx.strokeStyle = withAlpha(l.color, 0.75)
-      ctx.setLineDash([4 * dpr, 4 * dpr])
       ctx.beginPath()
       ctx.moveTo(bbox.left, y)
       ctx.lineTo(bbox.left + bbox.width, y)
       ctx.stroke()
     }
-    ctx.setLineDash([])
-    ctx.font = axFont.replace(/(\d+(?:\.\d+)?)px/, (_m, n) => `${Math.round(Number(n) * 0.9)}px`)
+    ctx.restore()
+  }
+}
+
+// thrTagsHook labels each line with a filled tag in its colour ON ITS AXIS, at the line's height (the
+// trading-chart pattern): outside the plot, so it never covers the data, and on the side of the scale
+// it belongs to, so a two-axis chart reads unambiguously. Tags on one side that would collide stack
+// downward. A line whose scale has no axis falls back to a small label inside the plot's right edge.
+// Runs in the draw hook (after the axes and series) so the tag sits on top of the tick marks.
+function thrTagsHook(lines: ThrLine[]) {
+  return (u: uPlot) => {
+    const { ctx, bbox } = u
+    const dpr = window.devicePixelRatio || 1
+    const cw = ctx.canvas.width
+    const h = 16 * dpr, padX = 5 * dpr, gap = 2 * dpr
+    ctx.save()
+    ctx.font = thrFont(u)
+    const bySide: Record<string, { l: ThrLine; y: number; ax: { side: number; pos: number; size: number } }[]> = {}
+    const inline: { l: ThrLine; y: number }[] = []
+    for (const l of thrVisible(u, lines)) {
+      const y = u.valToPos(l.value, l.scale, true)
+      if (!Number.isFinite(y) || y < bbox.top || y > bbox.top + bbox.height) continue
+      const ax = thrAxisOf(u, l.scale)
+      if (ax) (bySide[ax.side] = bySide[ax.side] || []).push({ l, y, ax })
+      else inline.push({ l, y })
+    }
+    ctx.textBaseline = 'middle'
+    ctx.textAlign = 'center'
+    Object.values(bySide).forEach((tags) => {
+      let prevCy = -Infinity
+      tags.sort((a, b) => a.y - b.y).forEach(({ l, y, ax }) => {
+        const cy = Math.max(y, h / 2, prevCy + h + gap)
+        prevCy = cy
+        const w = ctx.measureText(l.text).width + 2 * padX
+        let x = ax.side === 1 ? ax.pos * dpr + gap : ax.pos * dpr - gap - w
+        x = Math.max(0, Math.min(x, cw - w))
+        ctx.fillStyle = l.color
+        ctx.beginPath()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const c2 = ctx as any
+        if (typeof c2.roundRect === 'function') c2.roundRect(x, cy - h / 2, w, h, 3 * dpr)
+        else ctx.rect(x, cy - h / 2, w, h)
+        ctx.fill()
+        ctx.fillStyle = l.ink
+        ctx.fillText(l.text, x + w / 2, cy + 0.5 * dpr)
+      })
+    })
+    // Fallback: no axis for this scale - label just above the line inside the plot, stacked.
     ctx.textAlign = 'right'
     ctx.textBaseline = 'bottom'
-    // Labels sit just above their line, top to bottom; one that would collide with the label above
-    // (two thresholds close together, often on different axes) is pushed down to stack under it. The
-    // first is kept clear of the top edge so it never clips.
     const lh = 13 * dpr
     let prev = -Infinity
-    vis.sort((a, b) => a.y - b.y).forEach(({ l, y }) => {
+    inline.sort((a, b) => a.y - b.y).forEach(({ l, y }) => {
       const ty = Math.max(y - 3 * dpr, bbox.top + lh, prev + lh)
       prev = ty
       ctx.fillStyle = withAlpha(l.color, 0.95)
@@ -5722,19 +5781,54 @@ function thrLinesHook(lines: ThrLine[]) {
   }
 }
 
-// addThrLines merges the threshold-line hook into a chart's options (keeping any zoom/toggle hooks).
+// addThrLines wires threshold lines into a chart: the dashed lines + axis tags (merged into any
+// existing zoom/toggle hooks), and two wraps on every y axis that carries tags - its tick labels skip a
+// value that would sit under a tag (a "504 ms" tick beside a "500 ms" tag), and its gutter grows when
+// a tag is wider than the widest tick label, so a tag never clips at the canvas edge.
 function addThrLines(opts: uPlot.Options, lines: ThrLine[]) {
   if (!lines.length) return
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const hooks: any = (opts.hooks = opts.hooks || {})
   hooks.drawAxes = [...(hooks.drawAxes || []), thrLinesHook(lines)]
+  hooks.draw = [...(hooks.draw || []), thrTagsHook(lines)]
+  const dpr = window.devicePixelRatio || 1
+  ;(opts.axes || []).forEach((ax, i) => {
+    if (i === 0) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const a = ax as any
+    const ov = a.values
+    if (typeof ov === 'function') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      a.values = (u: uPlot, splits: number[], ai: number, space: number, incr: number): any => {
+        const out = ov(u, splits, ai, space, incr)
+        const sc = u.axes[ai].scale as string
+        const tagYs = thrVisible(u, lines).filter((l) => l.scale === sc).map((l) => u.valToPos(l.value, sc))
+        if (!tagYs.length || !Array.isArray(out)) return out
+        // A tick within a tag's height (16px) of it would peek out from under the tag - drop its label.
+        return out.map((v: unknown, k: number) => (tagYs.some((ty) => Math.abs(u.valToPos(splits[k], sc) - ty) < 16) ? '' : v))
+      }
+    }
+    const os = a.size
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    a.size = (u: uPlot, values: any, ai: number, cycle: number): number => {
+      const base: number = typeof os === 'function' ? os(u, values, ai, cycle) : typeof os === 'number' ? os : 50
+      const sc = u.axes[ai].scale as string
+      // All of the scale's lines (not only visible ones), so toggling a channel doesn't resize the gutter.
+      const mine = lines.filter((l) => l.scale === sc)
+      if (!mine.length) return base
+      u.ctx.font = thrFont(u)
+      const widest = Math.max(...mine.map((l) => u.ctx.measureText(l.text).width)) / dpr
+      return Math.max(base, Math.ceil(widest + 10 + 6))
+    }
+  })
 }
 
 // thrLines turns one sensor's thresholds into its reference lines (units formats the value label).
 function thrLines(thr: Thr, scale: string, series: number[], c: ChartColors, units: string, owner?: string): ThrLine[] {
   const out: ThrLine[] = []
-  if (thr.warn != null) out.push({ scale, value: thr.warn, color: c.warn, series, text: fmtNum(thr.warn, units), owner })
-  if (thr.high != null) out.push({ scale, value: thr.high, color: c.err, series, text: fmtNum(thr.high, units), owner })
+  // Tag ink: dark on the amber warning tag, white on the red error tag (legible in both themes).
+  if (thr.warn != null) out.push({ scale, value: thr.warn, color: c.warn, ink: '#1b1405', series, text: fmtNum(thr.warn, units), owner })
+  if (thr.high != null) out.push({ scale, value: thr.high, color: c.err, ink: '#ffffff', series, text: fmtNum(thr.high, units), owner })
   return out
 }
 

@@ -56,8 +56,8 @@ alerts - a per-device override or a new fleet default shows up on the chart on t
 Muting a sensor's alerts keeps the colouring, so past excursions stay visible. On a multi-channel
 graph the main channel (e.g. ICMP response time, a disk's Used %) is coloured the same way; the other
 channels, and groups of equal peers like all drive temperatures, keep one colour per channel and just
-draw the reference lines, each labelled with its value (and the channel's name when only one channel
-has that threshold). The colouring applies to all history on screen, judged against today's
+draw the reference lines. Each line's value is shown in a small tag on its own axis (on a two-axis
+graph like ICMP, the Loss tags sit on the % axis and the response-time tags on the ms axis). The colouring applies to all history on screen, judged against today's
 thresholds. The
 graph attached to alert notifications is coloured the same way.
 
