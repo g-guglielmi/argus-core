@@ -5803,6 +5803,13 @@ function addThrLines(opts: uPlot.Options, lines: ThrLine[]) {
   const hooks: any = (opts.hooks = opts.hooks || {})
   hooks.drawAxes = [...(hooks.drawAxes || []), thrLinesHook(lines)]
   hooks.draw = [...(hooks.draw || []), thrTagsHook(lines)]
+  // Showing/hiding a channel in the legend adds/removes its tags, so the axis must re-run its tick
+  // labels (the ones a tag covered come back when the tag goes). uPlot only recomputes axes when a
+  // scale changes, and a pinned scale (ICMP's 0-100 % Loss axis) never does - force it. Deferred out
+  // of the hook; `show` is only present on a real toggle (cursor focus passes opts without it).
+  hooks.setSeries = [...(hooks.setSeries || []), (u: uPlot, _i: number | null, o: { show?: boolean } | undefined) => {
+    if (o && o.show !== undefined) requestAnimationFrame(() => u.redraw(false, true))
+  }]
   const dpr = window.devicePixelRatio || 1
   ;(opts.axes || []).forEach((ax, i) => {
     if (i === 0) return
