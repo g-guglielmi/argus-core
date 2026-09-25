@@ -74,6 +74,9 @@ type itemView struct {
 	Priority    int    `json:"priority"`           // PRTG-style display priority 1..5 (Argus-only)
 	Alertable   bool   `json:"alertable,omitempty"` // has ≥1 trigger (so alerts can be muted)
 	AlertsOff   bool   `json:"alerts_off,omitempty"` // all its triggers are disabled (muted)
+	// Effective warning/high values from its own triggers, so the chart can colour just the stretch
+	// of line past a threshold (nil when the sensor has no numeric threshold). See chartthr.go.
+	Thresholds *itemThresholds `json:"thr,omitempty"`
 }
 
 // numericValueType reports whether a Zabbix value_type is graphable (0 float, 3 unsigned).
@@ -512,7 +515,9 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 		out = append(out, iv)
 	}
 	// Alert-mute state: which sensors have triggers (so alerts can be disabled) and whether every one
-	// of their triggers is currently disabled. Best-effort - a failure just leaves the mute action off.
+	// of their triggers is currently disabled, plus each numeric sensor's chart threshold bands (muted
+	// triggers still count - the chart keeps marking excursions). Best-effort - a failure just leaves
+	// the mute action off and the charts unbanded.
 	{
 		itemIDs := make([]string, 0, len(out))
 		for _, v := range out {
@@ -525,6 +530,9 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				out[i].Alertable = true
+				if out[i].Numeric {
+					out[i].Thresholds = itemThresholdsFrom(ts, out[i].Key)
+				}
 				allOff := true
 				for _, t := range ts {
 					if t.Status == 0 {

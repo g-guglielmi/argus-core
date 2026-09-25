@@ -47,6 +47,15 @@ graphing, it just stops raising problems. It's granular:
 A muted sensor shows an "alerts off" (or "N muted") tag. This is a Zabbix trigger status, so it
 persists until you re-enable it.
 
+## Thresholds on the graphs
+
+A sensor's chart shows its thresholds: dashed lines at the warning and error values, and the line
+itself changes colour only where it crosses one (warning colour past the warning value, error
+colour past high). The values are read from the sensor's live triggers, so they always match what
+alerts - a per-device override or a new fleet default shows up on the chart on the next refresh.
+Muting a sensor's alerts keeps the colouring, so past excursions stay visible. Multi-channel graphs
+(e.g. all drive temperatures) keep one colour per channel and just draw the reference lines.
+
 ## Per-type disk temperatures
 
 Disk-temperature thresholds are type-aware. Spinning disks (HDD) use the base

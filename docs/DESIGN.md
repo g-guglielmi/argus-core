@@ -431,6 +431,17 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   overlays total; tabs **7d (default) · 1M · 3M · 6M · 1Y**, no 2h/2d) all render its buckets.
   **Block rate** derives per day from the sibling counters (blocked ÷ total) and bar-charts the
   same way.
+- **Threshold bands:** a single-sensor chart is coloured **by value**, not by the sensor's current
+  state - the normal accent colour inside the normal range, the warning colour past the warning
+  value, the error colour past high (mirrored for lower-is-worse sensors), with dashed reference
+  lines at both values. Only the stretch of line beyond a threshold changes colour, and a past
+  excursion stays marked after the alert clears. The values come from the sensor's **own triggers**
+  (`trigger.get` with `expandExpression`, so host overrides, fleet defaults and per-disk-type macro
+  contexts are already resolved - the chart shows exactly what alerts); `/api/hosts/{id}/items`
+  carries them per item as `thr`. Multi-channel group charts keep their per-channel colours and draw
+  just the reference lines (one pair per distinct threshold, e.g. HDD and NVMe pairs on a mixed
+  drive group). Sensors without a numeric threshold (up/down, state checks) are unchanged. A
+  reference line outside the data's range is not drawn - the y-scale is never stretched to fit it.
 - Storage: **PostgreSQL + TimescaleDB** as Zabbix's DB (native integration, partitioning +
   compression). Single source of truth; app data lives in the same instance (separate schema).
 

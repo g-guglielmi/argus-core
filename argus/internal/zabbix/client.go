@@ -655,26 +655,32 @@ func (c *Client) TriggerItems(ctx context.Context, triggerIDs []string) (map[str
 // ItemTrigger is one trigger on an item, with its enabled/disabled status - for the "disable alerts"
 // (mute) action, which turns a sensor's triggers off while leaving the item collecting data.
 type ItemTrigger struct {
-	TriggerID string `json:"triggerid"`
-	Status    int    `json:"status,string"` // 0 = enabled, 1 = disabled
+	TriggerID  string `json:"triggerid"`
+	Status     int    `json:"status,string"`   // 0 = enabled, 1 = disabled
+	Priority   int    `json:"priority,string"` // Zabbix severity 0..5
+	Expression string `json:"expression"`      // with user macros resolved (expandExpression)
+	ItemCount  int    `json:"-"`               // how many items the trigger references
 }
 
-// ItemTriggers maps each item id to the triggers that reference it (with status). One trigger can
-// reference several items, so it appears under each. Used to show which sensors have alerts muted.
+// ItemTriggers maps each item id to the triggers that reference it (with status, severity and the
+// macro-resolved expression). One trigger can reference several items, so it appears under each.
+// Used to show which sensors have alerts muted and to read each sensor's threshold values for its
+// chart. expandExpression resolves the user macros as Zabbix evaluates them (host override > template
+// > global, with macro context), so the numbers are the effective thresholds for that host.
 func (c *Client) ItemTriggers(ctx context.Context, itemIDs []string) (map[string][]ItemTrigger, error) {
 	out := map[string][]ItemTrigger{}
 	if len(itemIDs) == 0 {
 		return out, nil
 	}
 	params := map[string]any{
-		"output":      []string{"triggerid", "status"},
-		"selectItems": []string{"itemid"},
-		"itemids":     itemIDs,
+		"output":           []string{"triggerid", "status", "priority", "expression"},
+		"expandExpression": true,
+		"selectItems":      []string{"itemid"},
+		"itemids":          itemIDs,
 	}
 	var ts []struct {
-		TriggerID string `json:"triggerid"`
-		Status    int    `json:"status,string"`
-		Items     []struct {
+		ItemTrigger
+		Items []struct {
 			ItemID string `json:"itemid"`
 		} `json:"items"`
 	}
@@ -682,8 +688,10 @@ func (c *Client) ItemTriggers(ctx context.Context, itemIDs []string) (map[string
 		return nil, err
 	}
 	for _, t := range ts {
+		tr := t.ItemTrigger
+		tr.ItemCount = len(t.Items)
 		for _, it := range t.Items {
-			out[it.ItemID] = append(out[it.ItemID], ItemTrigger{TriggerID: t.TriggerID, Status: t.Status})
+			out[it.ItemID] = append(out[it.ItemID], tr)
 		}
 	}
 	return out, nil

@@ -38,7 +38,9 @@ const SEVERITIES: { v: number; label: string }[] = [
   { v: 4, label: 'High & up' },
   { v: 5, label: 'Disaster only' },
 ]
-type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean }
+type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr }
+// A sensor's effective warning/high values, read from its own triggers (below = lower is worse).
+type Thr = { warn?: number; high?: number; below?: boolean }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
 type TriggerHost = { id: string; name: string }
 type Trigger = { id: string; description: string; severity: number; enabled: boolean; problem: boolean; since: number; hosts: TriggerHost[]; sensors: string[] }
@@ -5215,7 +5217,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                     // A port's Speed and Link are constants - start their lines hidden (legend keeps
                     // the value; a click reveals the line). Hiding Speed also lets the bps axis
                     // range to the In/Out traffic instead of pinning at the negotiated gigabits.
-                    const c: GroupChan = { id: i.id, label: i.channel || i.label || i.name, units: i.units, defaultOff: row.cat === 'Ports' && (i.channel === 'Speed' || i.channel === 'Link') }
+                    const c: GroupChan = { id: i.id, label: i.channel || i.label || i.name, units: i.units, defaultOff: row.cat === 'Ports' && (i.channel === 'Speed' || i.channel === 'Link'), thr: i.thr }
                     // Temperature channels hold their last reading flat while the drive is parked - seed
                     // the hold from the current last value/time (see buildMultiPlot's LOCF pass).
                     if (row.cat === 'Temperature') { const sv = Number(i.last_value); c.hold = true; if (Number.isFinite(sv)) c.seedValue = sv; c.seedClock = i.last_clock }
@@ -5398,7 +5400,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                       </td>
                     </tr>
                     {open && clickable && (
-                      <tr className="chartrow"><td colSpan={5}><div className="chart-reveal"><SensorChart itemId={it.id} units={it.units} color={trendColor} bars={barRate} label={label} /></div></td></tr>
+                      <tr className="chartrow"><td colSpan={5}><div className="chart-reveal"><SensorChart itemId={it.id} units={it.units} color={trendColor} bars={barRate} label={label} thr={it.thr} /></div></td></tr>
                     )}
                   </Fragment>
                 )
@@ -5614,7 +5616,7 @@ function TriggersView({ goHost }: { goHost: (h: string) => void }) {
   )
 }
 
-type ChartColors = { line: string; fill: string; soft: string; axis: string; grid: string }
+type ChartColors = { line: string; fill: string; soft: string; axis: string; grid: string; warn: string; err: string }
 
 // withAlpha turns a #rrggbb token value into an rgba() with the given opacity (other formats pass through).
 function withAlpha(color: string, a: number): string {
@@ -5631,7 +5633,87 @@ function chartColors(color: string): ChartColors {
   const css = getComputedStyle(document.documentElement)
   const tok = (v: string) => { const m = /^var\((--[\w-]+)\)$/.exec(v.trim()); return (m ? css.getPropertyValue(m[1]) : v).trim() }
   const line = tok(color) || '#2ea8c9'
-  return { line, fill: withAlpha(line, 0.12), soft: withAlpha(line, 0.4), axis: tok('var(--faint)') || '#8a8a8a', grid: tok('var(--border)') || 'rgba(128,128,128,0.25)' }
+  return { line, fill: withAlpha(line, 0.12), soft: withAlpha(line, 0.4), axis: tok('var(--faint)') || '#8a8a8a', grid: tok('var(--border)') || 'rgba(128,128,128,0.25)', warn: tok('var(--warn)') || '#e0a53a', err: tok('var(--err)') || '#e2564d' }
+}
+
+// thrOn reports whether a sensor has at least one numeric threshold to band its chart with.
+const thrOn = (t?: Thr): t is Thr => !!t && (t.warn != null || t.high != null)
+
+// thrPaint colours a series BY VALUE instead of by the sensor's current state: the normal line colour
+// inside the normal range, the warning colour past the warning value, the error colour past high
+// (mirrored for below-is-worse sensors). It is a vertical canvas gradient with hard stops at each
+// threshold's pixel height, which uPlot rebuilds whenever the scale changes (zoom, resize, refresh) -
+// so only the stretch of line beyond a threshold changes colour, and a past excursion stays marked
+// after the alert has cleared. alpha < 1 gives the matching translucent fill / band.
+function thrPaint(scaleKey: string, thr: Thr, c: ChartColors, alpha: number) {
+  const tint = (col: string) => (alpha < 1 ? withAlpha(col, alpha) : col)
+  const past = (v: number, t?: number) => t != null && (thr.below ? v <= t : v >= t)
+  const colorAt = (v: number) => (past(v, thr.high) ? c.err : past(v, thr.warn) ? c.warn : c.line)
+  // Distinct threshold values, highest first = top of the plot first (canvas y grows downward).
+  const ts = [...new Set([thr.warn, thr.high].filter((x): x is number => x != null))].sort((a, b) => b - a)
+  // One representative value per region: above the top line, between each pair, below the bottom.
+  const reps = [ts[0] + 1, ...ts.slice(1).map((t, i) => (ts[i] + t) / 2), ts[ts.length - 1] - 1]
+  return (u: uPlot) => {
+    const bb = u.bbox
+    // Before the first layout (legend markers, init) there is no plot box or scale yet.
+    if (!bb || !bb.height) return tint(c.line)
+    const offs = ts.map((t) => (u.valToPos(t, scaleKey, true) - bb.top) / bb.height)
+    if (offs.some((o) => !Number.isFinite(o))) return tint(c.line)
+    const g = u.ctx.createLinearGradient(0, bb.top, 0, bb.top + bb.height)
+    let prev = 0
+    reps.forEach((rv, k) => {
+      const end = k < offs.length ? Math.min(1, Math.max(prev, offs[k])) : 1
+      const col = tint(colorAt(rv))
+      g.addColorStop(prev, col)
+      g.addColorStop(end, col)
+      prev = end
+    })
+    return g
+  }
+}
+
+// A dashed reference line at a threshold value on one scale; series lists the chart series it belongs
+// to (drawn while any of them is shown, so hiding a channel in the legend also hides its lines).
+type ThrLine = { scale: string; value: number; color: string; series: number[] }
+
+// thrLinesHook draws the threshold reference lines UNDER the data (drawAxes runs after the grid, before
+// the series). A line outside the current y range is simply not drawn - the scale is never stretched
+// to fit a threshold, so a sensor far from its limits keeps a readable chart.
+function thrLinesHook(lines: ThrLine[]) {
+  return (u: uPlot) => {
+    const { ctx, bbox } = u
+    const dpr = window.devicePixelRatio || 1
+    ctx.save()
+    ctx.lineWidth = dpr
+    ctx.setLineDash([4 * dpr, 4 * dpr])
+    for (const l of lines) {
+      if (!l.series.some((i) => u.series[i]?.show)) continue
+      const y = Math.round(u.valToPos(l.value, l.scale, true)) + 0.5
+      if (!Number.isFinite(y) || y < bbox.top || y > bbox.top + bbox.height) continue
+      ctx.strokeStyle = withAlpha(l.color, 0.75)
+      ctx.beginPath()
+      ctx.moveTo(bbox.left, y)
+      ctx.lineTo(bbox.left + bbox.width, y)
+      ctx.stroke()
+    }
+    ctx.restore()
+  }
+}
+
+// addThrLines merges the threshold-line hook into a chart's options (keeping any zoom/toggle hooks).
+function addThrLines(opts: uPlot.Options, lines: ThrLine[]) {
+  if (!lines.length) return
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hooks: any = (opts.hooks = opts.hooks || {})
+  hooks.drawAxes = [...(hooks.drawAxes || []), thrLinesHook(lines)]
+}
+
+// thrLines turns one sensor's thresholds into its reference lines.
+function thrLines(thr: Thr, scale: string, series: number[], c: ChartColors): ThrLine[] {
+  const out: ThrLine[] = []
+  if (thr.warn != null) out.push({ scale, value: thr.warn, color: c.warn, series })
+  if (thr.high != null) out.push({ scale, value: thr.high, color: c.err, series })
+  return out
 }
 
 // insertGaps breaks the line where sampling stopped (e.g. a paused sensor): where the time
@@ -5703,7 +5785,12 @@ function pctRange(_u: any, dataMin: number | null, dataMax: number | null): [num
   return [Math.max(0, lo), Math.min(100, hi)]
 }
 
-function buildPlot(data: Series, units: string, width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
+// thr (optional) bands the line by value - see thrPaint - and adds dashed warning/high reference lines.
+function buildPlot(data: Series, units: string, width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void, thr?: Thr): [uPlot.Options, uPlot.AlignedData] {
+  const banded = thrOn(thr)
+  const lineStroke = banded ? thrPaint('y', thr, c, 1) : c.line
+  const softStroke = banded ? thrPaint('y', thr, c, 0.4) : c.soft
+  const areaFill = banded ? thrPaint('y', thr, c, 0.12) : c.fill
   const xs = data.points.map((p) => p.t)
   const grid = { stroke: c.grid, width: 1 }
   const ticks = { stroke: c.grid, width: 1 }
@@ -5740,12 +5827,13 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
       ...base,
       series: [
         { value: xVal },
-        { label: `avg${unitLabel}`, stroke: c.line, width: 1.5, points: { show: false, size: 0 }, value: yVal(1) },
-        { label: 'min', stroke: c.soft, width: 1, points: { show: false, size: 0 }, value: yVal(2) },
-        { label: 'max', stroke: c.soft, width: 1, points: { show: false, size: 0 }, value: yVal(3) },
+        { label: `avg${unitLabel}`, stroke: lineStroke, width: 1.5, points: { show: false, size: 0 }, value: yVal(1) },
+        { label: 'min', stroke: softStroke, width: 1, points: { show: false, size: 0 }, value: yVal(2) },
+        { label: 'max', stroke: softStroke, width: 1, points: { show: false, size: 0 }, value: yVal(3) },
       ],
-      bands: [{ series: [3, 2], fill: c.fill }],
+      bands: [{ series: [3, 2], fill: areaFill }],
     } as uPlot.Options
+    if (banded) addThrLines(opts, thrLines(thr, 'y', [1, 2, 3], c))
     const [gx, gy] = insertGaps(xs, [avg, min, max])
     const [ga, gmin, gmax] = dropIsolated(gy)
     return [opts, [gx, ga, gmin, gmax] as uPlot.AlignedData]
@@ -5754,8 +5842,9 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
   const vs = data.points.map((p) => (p.v ?? p.avg ?? null))
   const opts: uPlot.Options = {
     ...base,
-    series: [{ value: xVal }, { label: `value${unitLabel}`, stroke: c.line, width: 1.5, fill: c.fill, points: { show: false, size: 0 }, value: yVal(1) }],
+    series: [{ value: xVal }, { label: `value${unitLabel}`, stroke: lineStroke, width: 1.5, fill: areaFill, points: { show: false, size: 0 }, value: yVal(1) }],
   } as uPlot.Options
+  if (banded) addThrLines(opts, thrLines(thr, 'y', [1], c))
   const [gx, gy] = insertGaps(xs, [vs])
   const [gv] = dropIsolated(gy)
   return [opts, [gx, gv] as uPlot.AlignedData]
@@ -5763,7 +5852,13 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
 
 // bars switches to the daily bar mode for a single daily-ratio sensor (block rate): one bar per
 // day from /api/daily, with the day-scale range tabs; label names the legend there.
-function SensorChart({ itemId, units, color = 'var(--accent)', bars, label }: { itemId: string; units: string; color?: string; bars?: boolean; label?: string }) {
+// thr bands the line by value (only the stretch past a threshold takes the warning/error colour), so a
+// banded chart keeps the accent base colour instead of painting the whole line in the sensor's state.
+function SensorChart({ itemId, units, color = 'var(--accent)', bars, label, thr }: { itemId: string; units: string; color?: string; bars?: boolean; label?: string; thr?: Thr }) {
+  const banded = !bars && thrOn(thr)
+  // The items list is re-fetched on every poll (a new thr object each time) - key the rebuild on the
+  // values, not the object, so the chart doesn't redraw for nothing.
+  const thrKey = banded ? `${thr.warn}|${thr.high}|${thr.below ? 1 : 0}` : ''
   const [range, setRange] = useState(bars ? '7d' : '2h')
   const [data, setData] = useState<Series | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -5822,11 +5917,12 @@ function SensorChart({ itemId, units, color = 'var(--accent)', bars, label }: { 
     const width = host.current.clientWidth || 600
     const [opts, aligned] = bars
       ? buildBarPlot([{ label: data.name || 'value', units, values: data.points.map((p) => p.v ?? 0) }], width, chartColors(color), (z) => { zoomedRef.current = z })
-      : buildPlot(data, units, width, chartColors(color), (z) => { zoomedRef.current = z })
+      : buildPlot(data, units, width, chartColors(banded ? 'var(--accent)' : color), (z) => { zoomedRef.current = z }, banded ? thr : undefined)
     plot.current = new uPlot(opts, aligned, host.current)
     colorLegendChecks(plot.current)
     return () => { if (plot.current) { plot.current.destroy(); plot.current = null } }
-  }, [data, units, color, themeTick, bars])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, units, color, themeTick, bars, thrKey])
 
   useEffect(() => {
     function onResize() { if (plot.current && host.current) plot.current.setSize({ width: host.current.clientWidth, height: 320 }) }
@@ -5863,7 +5959,8 @@ const DOWNTIME_STROKE = '#d64550'
 const DOWNTIME_FILL = 'rgba(214, 69, 80, 0.30)'
 
 // invert turns a reachable (1=up) channel into downtime (spikes to 1 when down), drawn as a red band.
-type GroupChan = { id: string; label: string; units: string; invert?: boolean; defaultOff?: boolean; hold?: boolean; seedValue?: number; seedClock?: number }
+// thr draws the channel's warning/high as dashed reference lines (group lines keep their own colours).
+type GroupChan = { id: string; label: string; units: string; invert?: boolean; defaultOff?: boolean; hold?: boolean; seedValue?: number; seedClock?: number; thr?: Thr }
 
 // colorLegendChecks tints each legend row's check (the ::after from theme.css) with that series'
 // colour, by copying the marker's border colour into a --mk custom property uPlot doesn't expose.
@@ -5876,7 +5973,7 @@ function colorLegendChecks(u: uPlot) {
 // buildMultiPlot overlays several channels on one uPlot: timestamps are unioned, each distinct unit
 // gets its own scale (axes drawn for the first two, left/right), and the legend lists every channel
 // with its live value and toggles it on click. xrange pins the x-axis to the requested window.
-function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean; off?: boolean; hold?: boolean; seedValue?: number; seedClock?: number }[], width: number, c: ChartColors, xrange?: [number, number], onZoom?: (zoomed: boolean) => void, onToggle?: (label: string, show: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
+function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean; off?: boolean; hold?: boolean; seedValue?: number; seedClock?: number; thr?: Thr }[], width: number, c: ChartColors, xrange?: [number, number], onZoom?: (zoomed: boolean) => void, onToggle?: (label: string, show: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
   // Bucket timestamps to the typical sampling interval so channels sampled at slightly offset clocks
   // land on the same x (else the line renders as dots) while a genuine gap still breaks the line.
   const deltas: number[] = []
@@ -5998,6 +6095,20 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   if (p0 && !p0.downtime && !bands.length && series.filter((s) => s.units === p0.units).length === 1) (uplotSeries[1] as uPlot.Series).fill = c.fill
   // cursor.points.show:false removes uPlot's hover marker dot (see buildPlot) - the real "stray dot".
   const opts = { width, height: 320, scales: scaleCfg, axes, series: uplotSeries, legend: { show: true }, cursor: { points: { show: false } }, bands, ...zoomHook(onZoom, xrange, onToggle) } as uPlot.Options
+  // Threshold reference lines per channel, merged where channels share one (all array drives at
+  // 40/45 draw a single pair; mixed HDD + SSD groups get both pairs). A line shows while any of its
+  // channels is visible, so toggling a drive off in the legend drops lines only it had.
+  const merged = new Map<string, ThrLine>()
+  series.forEach((s, i) => {
+    if (s.downtime || !thrOn(s.thr)) return
+    thrLines(s.thr, scaleKey(s.units), [i + 1], c).forEach((l) => {
+      const k = `${l.scale}|${l.value}|${l.color}`
+      const m = merged.get(k)
+      if (m) m.series.push(i + 1)
+      else merged.set(k, l)
+    })
+  })
+  addThrLines(opts, [...merged.values()])
   // insertGaps breaks the line where sampling actually stopped (a real outage) instead of drawing a
   // straight segment across it; bucketing above keeps offset-but-regular channels connected.
   const [gx, gy] = insertGaps(xs, [...ys, ...extraYs])
@@ -6088,7 +6199,7 @@ function zoomHook(onZoom: ((z: boolean) => void) | undefined, xrange: [number, n
 // bars switches to the daily stacked-bar mode (counter totals) with its own day-scale range tabs.
 function SensorGroupChart({ channels, bars }: { channels: GroupChan[]; bars?: boolean }) {
   const [range, setRange] = useState(bars ? '7d' : '2h')
-  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; values?: number[]; downtime?: boolean; off?: boolean; hold?: boolean; seedValue?: number; seedClock?: number }[] | null>(null)
+  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; values?: number[]; downtime?: boolean; off?: boolean; hold?: boolean; seedValue?: number; seedClock?: number; thr?: Thr }[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
   const [themeTick, setThemeTick] = useState(0)
@@ -6126,11 +6237,11 @@ function SensorGroupChart({ channels, bars }: { channels: GroupChan[]; bars?: bo
     }
     Promise.all(channels.map((ch) =>
       fetch(`/api/items/${ch.id}/history?range=${range}`).then((r) => (r.ok ? r.json() : null)).then((d: Series | null) => ({
-        label: ch.label, units: ch.units, downtime: !!ch.invert, off: !!ch.defaultOff, hold: !!ch.hold, seedValue: ch.seedValue, seedClock: ch.seedClock,
+        label: ch.label, units: ch.units, downtime: !!ch.invert, off: !!ch.defaultOff, hold: !!ch.hold, seedValue: ch.seedValue, seedClock: ch.seedClock, thr: ch.thr,
         // invert reachability into downtime: up (>0) -> 0, down -> 1. lo/hi carry the trend min/max
         // (present only on long ranges) so the primary channel can draw a shaded envelope.
         points: d ? d.points.map((p) => { let v = p.v ?? p.avg ?? null; if (ch.invert && v != null) v = v > 0 ? 0 : 1; return { t: p.t, v, lo: ch.invert ? null : (p.min ?? null), hi: ch.invert ? null : (p.max ?? null) } }) : [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[],
-      })).catch(() => ({ label: ch.label, units: ch.units, downtime: !!ch.invert, hold: !!ch.hold, seedValue: ch.seedValue, seedClock: ch.seedClock, points: [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[] }))
+      })).catch(() => ({ label: ch.label, units: ch.units, downtime: !!ch.invert, hold: !!ch.hold, seedValue: ch.seedValue, seedClock: ch.seedClock, thr: ch.thr, points: [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[] }))
     )).then((res) => { if (!cancelled) setSeries(res) }).catch(() => { if (!cancelled) setError('Failed to load history') })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -11,6 +11,19 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Changed:**
+- **Graphs colour by threshold, not by state.** A sensor's chart used to paint the whole line in the
+  sensor's current state colour (all red while a problem was open, all blue again once it cleared).
+  It now colours by value: the normal colour inside the normal range, the warning colour only where
+  the line is past the warning value, the error colour only where it is past high (mirrored for
+  lower-is-worse sensors), with dashed reference lines at both values - so past excursions stay
+  visible after the alert clears. The values are read from the sensor's own triggers (host
+  overrides, fleet defaults and per-disk-type values already applied), so the chart matches what
+  alerts. Multi-channel graphs (e.g. drive temperatures) keep their per-channel colours and draw the
+  reference lines only. Sensors without a numeric threshold are unchanged.
+
 ## [0.5.1] - 2026-09-25
 
 **Added:**
