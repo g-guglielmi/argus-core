@@ -47,9 +47,16 @@ func alertSeries(ctx context.Context, zbx *zabbix.Client, itemID, valueType stri
 	return downsample(vals, 160)
 }
 
-// alertChart renders a sensor's 2-hour trend PNG in the given state's color, or nil when there's
-// no usable history (non-numeric item, no data, or a fetch error) - the alert then omits the graph.
-// It reads the item's units so the Y axis scales them like the app (bytes, bits, uptime).
+// demoThresholds bands the Test-button preview so it shows what a real alert graph looks like.
+func demoThresholds() *itemThresholds {
+	w, h := 60.0, 75.0
+	return &itemThresholds{Warn: &w, High: &h}
+}
+
+// alertChart renders a sensor's 2-hour trend PNG, or nil when there's no usable history
+// (non-numeric item, no data, or a fetch error) - the alert then omits the graph. It reads the item's
+// units so the Y axis scales them like the app (bytes, bits, uptime). A sensor with numeric thresholds
+// is banded by value like the app's charts (see chartthr.go); one without keeps the state colour.
 func alertChart(ctx context.Context, zbx *zabbix.Client, itemID, state string) []byte {
 	if itemID == "" {
 		return nil
@@ -66,14 +73,48 @@ func alertChart(ctx context.Context, zbx *zabbix.Client, itemID, state string) [
 	if len(series) < 2 {
 		return nil
 	}
+	var thr *itemThresholds
+	if trigs, err := zbx.ItemTriggers(ctx, []string{itemID}); err == nil {
+		thr = itemThresholdsFrom(trigs[itemID], it.Key)
+	}
 	r, g, b := statusRGB(state)
-	return renderChart(series, r, g, b, it.Units)
+	return renderChart(series, r, g, b, it.Units, thr)
 }
 
-// renderChart draws a compact 2-hour trend as a PNG (white background, filled line in the status
-// color) with labeled axes: min/mid/max on the Y axis (scaled by the item's units, like the app)
-// and relative time (2h ago → now) on the X axis. Returns nil for <2 points.
-func renderChart(vals []float64, cr, cg, cb uint8, units string) []byte {
+// Band palette for a thresholded chart, matching the app's tokens (--accent / --warn / --err).
+var (
+	bandNormal = color.RGBA{0x2E, 0xA8, 0xC9, 255}
+	bandWarn   = color.RGBA{0xE0, 0xA5, 0x3A, 255}
+	bandErr    = color.RGBA{0xE2, 0x56, 0x4D, 255}
+)
+
+// bandColor picks a value's colour: error past high, warning past warn (mirrored when lower is worse).
+func bandColor(v float64, thr *itemThresholds) color.RGBA {
+	past := func(t *float64) bool {
+		if t == nil {
+			return false
+		}
+		if thr.Below {
+			return v <= *t
+		}
+		return v >= *t
+	}
+	switch {
+	case past(thr.High):
+		return bandErr
+	case past(thr.Warn):
+		return bandWarn
+	default:
+		return bandNormal
+	}
+}
+
+// renderChart draws a compact 2-hour trend as a PNG (white background, filled line) with labeled
+// axes: min/mid/max on the Y axis (scaled by the item's units, like the app) and relative time
+// (2h ago → now) on the X axis. With thr, the line and fill are coloured BY VALUE (normal / warning /
+// error band, like the app's charts) and dashed, labelled reference lines mark the thresholds that
+// fall inside the plotted range; without it the whole line takes the given status colour.
+func renderChart(vals []float64, cr, cg, cb uint8, units string, thr *itemThresholds) []byte {
 	const w, h = 600, 200
 	// Room on the left for Y labels (wider, to fit unit suffixes like "5.2GBps") and along the bottom.
 	const mL, mR, mT, mB = 60, 12, 12, 26
@@ -101,8 +142,13 @@ func renderChart(vals []float64, cr, cg, cb uint8, units string) []byte {
 	xAt := func(i int) int { return mL + i*pw/(n-1) }
 	yAt := func(v float64) int { return mT + int((1-(v-min)/(max-min))*float64(ph)) }
 
-	line := color.RGBA{cr, cg, cb, 255}
-	fill := blendWhite(cr, cg, cb, 0.16)
+	status := color.RGBA{cr, cg, cb, 255}
+	colAt := func(v float64) color.RGBA {
+		if thr == nil {
+			return status
+		}
+		return bandColor(v, thr)
+	}
 	grid := color.RGBA{236, 236, 236, 255}
 	axis := color.RGBA{206, 206, 206, 255}
 	label := color.RGBA{120, 120, 120, 255}
@@ -121,6 +167,19 @@ func renderChart(vals []float64, cr, cg, cb uint8, units string) []byte {
 		drawText(img, mL-6-tw, gl.y+4, s, label)
 	}
 
+	// Pass 1: the area fill. Each pixel ROW takes the band of the value at that height (like the app's
+	// vertical gradient), so only the area beyond a threshold is tinted, not the whole column under a
+	// spike. The line's pixels are collected and drawn last, so the reference lines sit between.
+	rowFill := make([]color.RGBA, baseY+1)
+	for yy := range rowFill {
+		c := colAt(min + (1-float64(yy-mT)/float64(ph))*(max-min))
+		rowFill[yy] = blendWhite(c.R, c.G, c.B, 0.16)
+	}
+	type linePx struct {
+		x, y int
+		c    color.RGBA
+	}
+	var line []linePx
 	for i := 0; i < n-1; i++ {
 		x0, y0 := xAt(i), yAt(vals[i])
 		x1, y1 := xAt(i+1), yAt(vals[i+1])
@@ -131,20 +190,52 @@ func renderChart(vals []float64, cr, cg, cb uint8, units string) []byte {
 			t := float64(x-x0) / float64(x1-x0)
 			y := y0 + int(t*float64(y1-y0))
 			for yy := y; yy < baseY; yy++ {
-				img.Set(x, yy, fill)
+				if yy >= 0 {
+					img.Set(x, yy, rowFill[yy])
+				}
 			}
-			for d := -1; d <= 1; d++ { // ~2px line
-				img.Set(x, y+d, line)
+			line = append(line, linePx{x, y, colAt(vals[i] + t*(vals[i+1]-vals[i]))})
+		}
+	}
+
+	// Threshold reference lines: dashed, value-labelled at the right end (under the line when it hugs
+	// the top edge). Only those inside the plotted range - the range is never stretched to fit one.
+	if thr != nil {
+		for _, tl := range []struct {
+			v *float64
+			c color.RGBA
+		}{{thr.Warn, bandWarn}, {thr.High, bandErr}} {
+			if tl.v == nil || *tl.v < min || *tl.v > max {
+				continue
 			}
+			y := yAt(*tl.v)
+			for x := mL; x < w-mR; x++ {
+				if (x-mL)%8 < 4 {
+					img.Set(x, y, tl.c)
+				}
+			}
+			s := axisLabel(*tl.v, units)
+			ty := y - 3
+			if y-mT < 14 {
+				ty = y + 12
+			}
+			drawText(img, w-mR-4-textWidth(s), ty, s, tl.c)
+		}
+	}
+
+	for _, p := range line {
+		for d := -1; d <= 1; d++ { // ~2px line
+			img.Set(p.x, p.y+d, p.c)
 		}
 	}
 
 	// last-point marker
 	lx, ly := xAt(n-1), yAt(vals[n-1])
+	mc := colAt(vals[n-1])
 	for dy := -3; dy <= 3; dy++ {
 		for dx := -3; dx <= 3; dx++ {
 			if dx*dx+dy*dy <= 9 {
-				img.Set(lx+dx, ly+dy, line)
+				img.Set(lx+dx, ly+dy, mc)
 			}
 		}
 	}

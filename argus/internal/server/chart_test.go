@@ -3,7 +3,12 @@
 
 package server
 
-import "testing"
+import (
+	"bytes"
+	"image/png"
+	"os"
+	"testing"
+)
 
 func TestAxisNum(t *testing.T) {
 	cases := map[float64]string{
@@ -39,5 +44,50 @@ func TestAxisLabel(t *testing.T) {
 		if got := axisLabel(c.v, c.units); got != c.want {
 			t.Errorf("axisLabel(%v, %q) = %q, want %q", c.v, c.units, got, c.want)
 		}
+	}
+}
+
+// TestRenderChartBands checks the alert graph is coloured by value: a series crossing both
+// thresholds paints normal, warning AND error pixels, while an unbanded chart uses only the status
+// colour. ARGUS_CHART_OUT=<dir> also writes the PNGs for a visual check.
+func TestRenderChartBands(t *testing.T) {
+	vals := demoSeries()
+	banded := renderChart(vals, 0xE2, 0x56, 0x4D, "%", demoThresholds())
+	plain := renderChart(vals, 0xE2, 0x56, 0x4D, "%", nil)
+	if dir := os.Getenv("ARGUS_CHART_OUT"); dir != "" {
+		_ = os.WriteFile(dir+"/banded.png", banded, 0o644)
+		_ = os.WriteFile(dir+"/plain.png", plain, 0o644)
+	}
+	count := func(b []byte) map[[3]uint8]int {
+		img, err := png.Decode(bytes.NewReader(b))
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen := map[[3]uint8]int{}
+		bd := img.Bounds()
+		for y := bd.Min.Y; y < bd.Max.Y; y++ {
+			for x := bd.Min.X; x < bd.Max.X; x++ {
+				r, g, b, _ := img.At(x, y).RGBA()
+				seen[[3]uint8{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8)}]++
+			}
+		}
+		return seen
+	}
+	rgb := func(c interface{ RGBA() (r, g, b, a uint32) }) [3]uint8 {
+		r, g, b, _ := c.RGBA()
+		return [3]uint8{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8)}
+	}
+	bc := count(banded)
+	for name, c := range map[string][3]uint8{"normal": rgb(bandNormal), "warning": rgb(bandWarn), "error": rgb(bandErr)} {
+		if bc[c] == 0 {
+			t.Errorf("banded chart has no %s-coloured line pixels", name)
+		}
+	}
+	pc := count(plain)
+	if pc[rgb(bandNormal)] != 0 || pc[rgb(bandWarn)] != 0 {
+		t.Errorf("unbanded chart should draw only in the status colour")
+	}
+	if pc[rgb(bandErr)] == 0 {
+		t.Errorf("unbanded chart lost its status-coloured line")
 	}
 }

@@ -201,7 +201,7 @@ func (s *Server) handleTestMyChannel(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	ev := notify.SampleEvent(time.Now().In(s.mgr.Location()), s.mgr.PublicURL())
 	dr, dg, db := statusRGB(ev.State)
-	ev.ChartPNG = renderChart(demoSeries(), dr, dg, db, "")
+	ev.ChartPNG = renderChart(demoSeries(), dr, dg, db, "", demoThresholds())
 	err := notify.Send(ctx, notify.Channel{ID: ch.ID, Type: ch.Type, Name: "personal", Enabled: ch.Enabled, Config: ch.Config}, ev)
 	_ = s.st.RecordUserNotifyDelivery(ctx, ch.ID, err)
 	if err != nil {

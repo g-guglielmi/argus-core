@@ -22,7 +22,13 @@ GitHub Release from the matching section below.
   visible after the alert clears. The values are read from the sensor's own triggers (host
   overrides, fleet defaults and per-disk-type values already applied), so the chart matches what
   alerts. Multi-channel graphs (e.g. drive temperatures) keep their per-channel colours and draw the
-  reference lines only. Sensors without a numeric threshold are unchanged.
+  reference lines only. Each reference line is labelled with its value, plus the channel name when it
+  belongs to one channel of a multi-channel graph (on the two-axis ICMP graph a line reads "Loss 60 %",
+  so it isn't mistaken for a response-time limit). Sensors without a numeric threshold are unchanged.
+- **The graph in alert notifications is banded the same way** (Telegram / Discord / email): normal
+  colour in range, warning and error colour only where the line crosses, dashed labelled reference
+  lines; a recovery's graph now shows the spike that caused it instead of an all-green line. The
+  channel Test button previews a banded sample graph.
 
 ## [0.5.1] - 2026-09-25
 

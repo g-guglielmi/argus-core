@@ -54,7 +54,9 @@ itself changes colour only where it crosses one (warning colour past the warning
 colour past high). The values are read from the sensor's live triggers, so they always match what
 alerts - a per-device override or a new fleet default shows up on the chart on the next refresh.
 Muting a sensor's alerts keeps the colouring, so past excursions stay visible. Multi-channel graphs
-(e.g. all drive temperatures) keep one colour per channel and just draw the reference lines.
+(e.g. all drive temperatures) keep one colour per channel and just draw the reference lines, each
+labelled with its value (and the channel's name when only one channel has that threshold). The
+graph attached to alert notifications is coloured the same way.
 
 ## Per-type disk temperatures
 

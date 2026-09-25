@@ -194,7 +194,7 @@ func (s *Server) handleTestChannel(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	ev := notify.SampleEvent(time.Now().In(s.mgr.Location()), s.mgr.PublicURL())
 	dr, dg, db := statusRGB(ev.State)
-	ev.ChartPNG = renderChart(demoSeries(), dr, dg, db, "") // preview the graph too
+	ev.ChartPNG = renderChart(demoSeries(), dr, dg, db, "", demoThresholds()) // preview the graph too
 	err = notify.Send(ctx, toNotifyChannel(*ch), ev)
 	// A test counts as a delivery attempt too, so the card's health line reflects it either way.
 	_ = s.st.RecordNotifyDelivery(ctx, id, err)

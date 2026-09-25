@@ -440,8 +440,12 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   contexts are already resolved - the chart shows exactly what alerts); `/api/hosts/{id}/items`
   carries them per item as `thr`. Multi-channel group charts keep their per-channel colours and draw
   just the reference lines (one pair per distinct threshold, e.g. HDD and NVMe pairs on a mixed
-  drive group). Sensors without a numeric threshold (up/down, state checks) are unchanged. A
-  reference line outside the data's range is not drawn - the y-scale is never stretched to fit it.
+  drive group). Every reference line carries a value label, prefixed with the channel name when only
+  one channel owns it (a two-axis chart like ICMP needs it to say which axis a line belongs to).
+  Sensors without a numeric threshold (up/down, state checks) are unchanged. A reference line outside
+  the data's range is not drawn - the y-scale is never stretched to fit it. The **alert-notification
+  PNG** (`chart.go`) applies the same banding server-side: its fill is tinted per pixel row by the
+  band of that height (matching the app's vertical gradient), with dashed labelled reference lines.
 - Storage: **PostgreSQL + TimescaleDB** as Zabbix's DB (native integration, partitioning +
   compression). Single source of truth; app data lives in the same instance (separate schema).
 

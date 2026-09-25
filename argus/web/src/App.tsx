@@ -5673,8 +5673,10 @@ function thrPaint(scaleKey: string, thr: Thr, c: ChartColors, alpha: number) {
 }
 
 // A dashed reference line at a threshold value on one scale; series lists the chart series it belongs
-// to (drawn while any of them is shown, so hiding a channel in the legend also hides its lines).
-type ThrLine = { scale: string; value: number; color: string; series: number[] }
+// to (drawn while any of them is shown, so hiding a channel in the legend also hides its lines). text
+// is the value ("85 °C"); owner names the channel, shown when the line belongs to one channel of a
+// multi-channel chart (on a two-axis chart like ICMP, a line only reads right with its channel).
+type ThrLine = { scale: string; value: number; color: string; series: number[]; text: string; owner?: string }
 
 // thrLinesHook draws the threshold reference lines UNDER the data (drawAxes runs after the grid, before
 // the series). A line outside the current y range is simply not drawn - the scale is never stretched
@@ -5683,18 +5685,30 @@ function thrLinesHook(lines: ThrLine[]) {
   return (u: uPlot) => {
     const { ctx, bbox } = u
     const dpr = window.devicePixelRatio || 1
+    // Label in the axis font, a notch smaller; right-aligned just above its line, inside the plot.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const axFont: string = ((u.axes[1] as any)?.font?.[0] as string) || `${11 * dpr}px system-ui, sans-serif`
     ctx.save()
     ctx.lineWidth = dpr
-    ctx.setLineDash([4 * dpr, 4 * dpr])
     for (const l of lines) {
       if (!l.series.some((i) => u.series[i]?.show)) continue
       const y = Math.round(u.valToPos(l.value, l.scale, true)) + 0.5
       if (!Number.isFinite(y) || y < bbox.top || y > bbox.top + bbox.height) continue
       ctx.strokeStyle = withAlpha(l.color, 0.75)
+      ctx.setLineDash([4 * dpr, 4 * dpr])
       ctx.beginPath()
       ctx.moveTo(bbox.left, y)
       ctx.lineTo(bbox.left + bbox.width, y)
       ctx.stroke()
+      ctx.setLineDash([])
+      ctx.font = axFont.replace(/(\d+(?:\.\d+)?)px/, (_m, n) => `${Math.round(Number(n) * 0.9)}px`)
+      ctx.fillStyle = withAlpha(l.color, 0.95)
+      ctx.textAlign = 'right'
+      ctx.textBaseline = 'bottom'
+      // A line hugging the top edge puts its label under it instead, so it never clips.
+      const above = y - bbox.top > 16 * dpr
+      if (!above) ctx.textBaseline = 'top'
+      ctx.fillText(l.owner ? `${l.owner} ${l.text}` : l.text, bbox.left + bbox.width - 6 * dpr, above ? y - 3 * dpr : y + 3 * dpr)
     }
     ctx.restore()
   }
@@ -5708,11 +5722,11 @@ function addThrLines(opts: uPlot.Options, lines: ThrLine[]) {
   hooks.drawAxes = [...(hooks.drawAxes || []), thrLinesHook(lines)]
 }
 
-// thrLines turns one sensor's thresholds into its reference lines.
-function thrLines(thr: Thr, scale: string, series: number[], c: ChartColors): ThrLine[] {
+// thrLines turns one sensor's thresholds into its reference lines (units formats the value label).
+function thrLines(thr: Thr, scale: string, series: number[], c: ChartColors, units: string, owner?: string): ThrLine[] {
   const out: ThrLine[] = []
-  if (thr.warn != null) out.push({ scale, value: thr.warn, color: c.warn, series })
-  if (thr.high != null) out.push({ scale, value: thr.high, color: c.err, series })
+  if (thr.warn != null) out.push({ scale, value: thr.warn, color: c.warn, series, text: fmtNum(thr.warn, units), owner })
+  if (thr.high != null) out.push({ scale, value: thr.high, color: c.err, series, text: fmtNum(thr.high, units), owner })
   return out
 }
 
@@ -5833,7 +5847,7 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
       ],
       bands: [{ series: [3, 2], fill: areaFill }],
     } as uPlot.Options
-    if (banded) addThrLines(opts, thrLines(thr, 'y', [1, 2, 3], c))
+    if (banded) addThrLines(opts, thrLines(thr, 'y', [1, 2, 3], c, units))
     const [gx, gy] = insertGaps(xs, [avg, min, max])
     const [ga, gmin, gmax] = dropIsolated(gy)
     return [opts, [gx, ga, gmin, gmax] as uPlot.AlignedData]
@@ -5844,7 +5858,7 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
     ...base,
     series: [{ value: xVal }, { label: `value${unitLabel}`, stroke: lineStroke, width: 1.5, fill: areaFill, points: { show: false, size: 0 }, value: yVal(1) }],
   } as uPlot.Options
-  if (banded) addThrLines(opts, thrLines(thr, 'y', [1], c))
+  if (banded) addThrLines(opts, thrLines(thr, 'y', [1], c, units))
   const [gx, gy] = insertGaps(xs, [vs])
   const [gv] = dropIsolated(gy)
   return [opts, [gx, gv] as uPlot.AlignedData]
@@ -6101,10 +6115,11 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   const merged = new Map<string, ThrLine>()
   series.forEach((s, i) => {
     if (s.downtime || !thrOn(s.thr)) return
-    thrLines(s.thr, scaleKey(s.units), [i + 1], c).forEach((l) => {
+    thrLines(s.thr, scaleKey(s.units), [i + 1], c, s.units, s.label).forEach((l) => {
       const k = `${l.scale}|${l.value}|${l.color}`
       const m = merged.get(k)
-      if (m) m.series.push(i + 1)
+      // Shared by several channels (every HDD at 40 °C): the value alone says it; no single owner.
+      if (m) { m.series.push(i + 1); m.owner = undefined }
       else merged.set(k, l)
     })
   })
