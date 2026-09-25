@@ -347,6 +347,11 @@ func (s *Server) handleChangeHostClass(w http.ResponseWriter, r *http.Request) {
 	if err := s.st.SetDeviceClass(ctx, hostID, newClass.ID, "manual"); err != nil {
 		s.logger.Error("provision: could not record device-class overlay after class change", "host", hostID, "err", err)
 	}
+	// Keep the Zabbix-side argus.class tag aligned (preserving argus.source). The overlay above is
+	// authoritative for Argus, so this is best-effort cosmetics for the raw Zabbix view.
+	if err := s.zbx.SetHostTag(ctx, hostID, "argus.class", newClass.ID); err != nil {
+		s.logger.Warn("provision: could not update argus.class tag after class change", "host", hostID, "err", err)
+	}
 	s.scheduleDiscovery(hostID)
 	writeJSON(w, http.StatusOK, map[string]string{"id": hostID, "class": newClass.ID})
 }

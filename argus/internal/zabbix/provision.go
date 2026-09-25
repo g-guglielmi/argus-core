@@ -224,6 +224,41 @@ func (c *Client) SetHostMacros(ctx context.Context, hostID string, macros []Macr
 	return c.call(ctx, "host.update", map[string]any{"hostid": hostID, "macros": macros}, true, nil)
 }
 
+// SetHostTag sets (adding if absent) one host tag by key while preserving every other tag on the host.
+// host.update `tags` replaces the whole set, so the current tags are read first and merged - this keeps
+// argus.source intact when only argus.class changes (e.g. on a class change). A no-op if the tag is
+// already at value.
+func (c *Client) SetHostTag(ctx context.Context, hostID, tag, value string) error {
+	var raw []struct {
+		Tags []HostTag `json:"tags"`
+	}
+	if err := c.call(ctx, "host.get", map[string]any{
+		"output":     []string{"hostid"},
+		"selectTags": []string{"tag", "value"},
+		"hostids":    hostID,
+	}, true, &raw); err != nil {
+		return err
+	}
+	if len(raw) == 0 {
+		return fmt.Errorf("host not found")
+	}
+	tags := raw[0].Tags
+	found := false
+	for i := range tags {
+		if tags[i].Tag == tag {
+			if tags[i].Value == value {
+				return nil // already aligned - nothing to write
+			}
+			tags[i].Value = value
+			found = true
+		}
+	}
+	if !found {
+		tags = append(tags, HostTag{Tag: tag, Value: value})
+	}
+	return c.call(ctx, "host.update", map[string]any{"hostid": hostID, "tags": tags}, true, nil)
+}
+
 // HostMacro is a host user macro with its id, for surgical edits. A secret macro (Type 1) never
 // returns its Value, so the editor keeps it write-only.
 type HostMacro struct {
