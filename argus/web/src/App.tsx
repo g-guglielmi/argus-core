@@ -411,6 +411,35 @@ export default function App() {
   // True only when the shell mounts right after a sign-in (not on an authenticated reload), so the
   // login -> app transition fades in instead of hard-cutting.
   const [justLoggedIn, setJustLoggedIn] = useState(false)
+  // Set when a signed-in session ends under the open app, so the login screen says why.
+  const [expired, setExpired] = useState(false)
+  const meRef = useRef<Me | null>(null)
+  meRef.current = me
+
+  // A session that ends while the app is open (max lifetime, idle timeout, sign-out elsewhere) makes
+  // every API call return the auth middleware's 401 {"error":"unauthorized"}. The views treat that
+  // like any failed load, so the shell used to stay up showing "unauthorized" / "Failed to load"
+  // until a manual reload. One wrapper around fetch sends such a response back to the login screen
+  // instead. Other 401s (a wrong current password, a failed sign-in step) carry their own error and
+  // pass through untouched. The URL is kept, so signing in again lands on the same view.
+  useEffect(() => {
+    const orig = window.fetch
+    window.fetch = async (input, init) => {
+      const res = await orig(input, init)
+      if (res.status === 401 && meRef.current) {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+        const body = await res.clone().json().catch(() => null)
+        if (new URL(url, window.location.href).pathname.startsWith('/api/') && body?.error === 'unauthorized') {
+          meRef.current = null
+          setExpired(true)
+          setJustLoggedIn(false)
+          setMe(null)
+        }
+      }
+      return res
+    }
+    return () => { window.fetch = orig }
+  }, [])
 
   useEffect(() => {
     fetch('/api/me').then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => setMe(null)).finally(() => setLoading(false))
@@ -423,8 +452,8 @@ export default function App() {
   // Neutral loader during the initial /api/me check - deliberately NOT the branded Frame, so an
   // authenticated refresh doesn't flash the login-page chrome before the app mounts.
   if (loading) return <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', color: 'var(--faint)' }}>Loading…</div>
-  if (!me) return <Login onSuccess={(m) => { setJustLoggedIn(true); setMe(m) }} passkeysAvailable={passkeysAvailable} passwordReset={passwordReset} />
-  return <AppShell me={me} onMe={setMe} onLogout={() => { setJustLoggedIn(false); setMe(null) }} passkeysAvailable={passkeysAvailable} probeEnroll={probeEnroll} enter={justLoggedIn} />
+  if (!me) return <Login onSuccess={(m) => { setExpired(false); setJustLoggedIn(true); setMe(m) }} passkeysAvailable={passkeysAvailable} passwordReset={passwordReset} notice={expired ? 'Your session has ended. Sign in again to continue.' : null} />
+  return <AppShell me={me} onMe={setMe} onLogout={() => { setExpired(false); setJustLoggedIn(false); setMe(null) }} passkeysAvailable={passkeysAvailable} probeEnroll={probeEnroll} enter={justLoggedIn} />
 }
 
 function Frame({ children }: { children: ReactNode }) {
@@ -442,7 +471,7 @@ function Frame({ children }: { children: ReactNode }) {
   )
 }
 
-function Login({ onSuccess, passkeysAvailable, passwordReset }: { onSuccess: (m: Me) => void; passkeysAvailable: boolean; passwordReset: boolean }) {
+function Login({ onSuccess, passkeysAvailable, passwordReset, notice }: { onSuccess: (m: Me) => void; passkeysAvailable: boolean; passwordReset: boolean; notice?: string | null }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -528,6 +557,7 @@ function Login({ onSuccess, passkeysAvailable, passwordReset }: { onSuccess: (m:
   return (
     <Frame>
       <Card style={{ maxWidth: 380, marginTop: '1.5rem' }} title="Sign in">
+        {!error && <Banner variant="info">{notice}</Banner>}
         <form onSubmit={submitPassword}>
           <Field label="Email" type="email" value={email} autoComplete="username" onChange={(e) => setEmail(e.target.value)} required />
           <Field label="Password" type="password" value={password} autoComplete="current-password" onChange={(e) => setPassword(e.target.value)} required />

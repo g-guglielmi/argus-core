@@ -396,7 +396,10 @@ later.
 - **Sessions:** admin-configurable **max lifetime** (default **12h**, `ARGUS_SESSION_MAX_HOURS`)
   plus an optional **idle timeout** (default off, `ARGUS_SESSION_IDLE_MINUTES`; a per-session
   `last_seen` is bumped by the auth middleware, throttled to ≤1 write/min). Both live in
-  **Settings → Sessions** and honour env-wins precedence.
+  **Settings → Sessions** and honour env-wins precedence. When a session ends while the app is
+  open, the SPA sees the auth middleware's `401 {"error":"unauthorized"}` on its next API call and
+  drops straight back to the login screen ("Your session has ended"), keeping the URL so signing in
+  again returns to the same view. Other 401s (a wrong current password) are left to their form.
 - **Per-user landing page** preference - default Overview; user can switch to the Errors list in
   **Account → Landing page** (stored server-side, `POST /api/me/preferences`).
 

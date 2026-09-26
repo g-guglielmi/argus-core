@@ -11,6 +11,15 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Fixed:**
+- **An expired session now returns to the login screen.** When a session ended while the app was
+  open (max lifetime, idle timeout, or signed out elsewhere), the app stayed on screen showing
+  "unauthorized" and "Failed to load sensors" until a manual reload. It now goes straight to the
+  login screen with a short "Your session has ended" note, and signing in again returns to the
+  same view.
+
 ## [0.5.3] - 2026-09-26
 
 **Changed:**
