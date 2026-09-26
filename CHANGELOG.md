@@ -11,6 +11,12 @@ GitHub Release from the matching section below.
 
 ---
 
+## [0.5.3] - 2026-09-26
+
+**Changed:**
+- Clearer example hints in the **Add probe** wizard's site field and the **New group** dialog.
+- Documentation: the roadmap lists the threshold-banded graphs shipped in 0.5.2.
+
 ## [0.5.2] - 2026-09-26
 
 **Changed:**
