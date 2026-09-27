@@ -10,7 +10,11 @@ package provision
 // every provisioned host automatically; the HTTP endpoint is an optional add-on.
 const (
 	TemplateBasePing = "Argus Base Ping"
-	TemplateHTTP     = "Argus HTTP Endpoint"
+	// ClassProbe is the Argus-managed class of the per-site Probe health host.
+	ClassProbe   = "probe"
+	TemplateHTTP = "Argus HTTP Endpoint"
+	// TemplateProbeHealth is the per-probe health template (internal checks run on the proxy).
+	TemplateProbeHealth = "Argus Probe Health"
 )
 
 // Pattern is how a class is monitored (drives which collector/template style it uses). See DESIGN §5.
@@ -82,12 +86,27 @@ type Class struct {
 	Macros     []MacroSpec   `json:"macros,omitempty"` // per-host macros the attach UI collects
 	HostMacros []PresetMacro `json:"-"`                // macros set silently on every host of this class
 	Setup      *ClassSetup   `json:"setup,omitempty"`  // prerequisite steps shown in the attach form (agent classes)
+	// Internal classes are managed by Argus itself (the per-site Probe host): never offered in the
+	// Add-device / discovery / change-class pickers, and refused by the create and change-class APIs.
+	Internal bool `json:"internal,omitempty"`
 }
 
 // registry is the catalog. C0 shipped the universal "base" class (Ping only); C1 adds Linux (SNMP)
 // and UniFi Switch; C2 the rest (DESIGN §5). Adding a class here means shipping its template
 // under templates/ and re-importing (the startup reconcile handles that when the file set changes).
 var registry = []Class{
+	{
+		// One per probe, created by Argus (server.EnsureProbeHosts), monitored BY that proxy and with
+		// no interface: its Zabbix internal checks measure the proxy's own health. No Base Ping.
+		ID:        ClassProbe,
+		Label:     "Argus probe",
+		Family:    "Argus",
+		Pattern:   PatternBase,
+		Iface:     IfaceNone,
+		Templates: []string{TemplateProbeHealth},
+		Icon:      "probe",
+		Internal:  true,
+	},
 	{
 		ID:         "base",
 		Label:      "Ping only",
@@ -432,4 +451,13 @@ func ClassByID(id string) (Class, bool) {
 		}
 	}
 	return Class{}, false
+}
+
+// HostTemplates is every template a host of this class carries: Base Ping plus the class's own, or
+// just the class's own for a class with no interface (Ping needs an address to ping).
+func (c Class) HostTemplates() []string {
+	if c.Iface == IfaceNone {
+		return append([]string(nil), c.Templates...)
+	}
+	return append([]string{TemplateBasePing}, c.Templates...)
 }

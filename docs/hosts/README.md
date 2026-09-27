@@ -49,6 +49,14 @@ the per-host tunables.
 - **Ping only** - no setup and no guide: **Add device → Ping only** gives ICMP reachability/latency.
   Every class also gets Base Ping automatically on top of its own metrics.
 
+**Automatic**
+
+- **Probe health** - nothing to add: Argus gives every probe a **Probe <site>** host in its site
+  group, monitored by that probe and carrying the **Argus Probe Health** template. It shows whether
+  the probe is reaching the core (alerting when it stops), values waiting to be sent, items running
+  late, cache use and how busy its processes are. It's linked from each probe's **Health** cell on
+  the Probes page, and deleted along with the probe. Its thresholds are on the Thresholds screen.
+
 ## Planned (TBD)
 
 These classes are on the roadmap and **cannot be added yet** - they have no template and do not appear

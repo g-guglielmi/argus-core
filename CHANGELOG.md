@@ -11,6 +11,22 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **Probe health.** Every probe now gets a **Probe <site>** host in its site group, measured by the
+  probe itself, so its health shows up like any other device's sensors and alerts.
+  - **Probe unreachable:** a warning after 5 minutes without data from a probe and an error after
+    15. Until now the Probes page showed a probe as offline, but nothing sent an alert.
+  - Unsent values waiting for the core, items running more than 10 minutes late, history and
+    configuration cache use, and a **Process load** sensor with one line per process type
+    (headlined by the busiest).
+  - Every sensor has a warning and an error threshold, editable on the Thresholds screen.
+  - The Probes page's **Health** cell shows each probe's worst open problem (ok, warning or
+    error) and opens its sensors in Monitoring.
+  - Argus creates the hosts for existing probes at startup and for new ones at enrollment. Deleting
+    a probe deletes its Probe host too. They can't be added by hand or have their class changed.
+
 ## [0.5.7] - 2026-09-27
 
 **Changed:**

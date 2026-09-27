@@ -218,6 +218,49 @@ func (c *Client) HostIDByName(ctx context.Context, host string) (string, error) 
 	return "", nil
 }
 
+// DeleteHost deletes hosts (host.delete takes a bare array of hostids), with their items, triggers
+// and history. Used for the Argus-managed Probe host when its probe is removed.
+func (c *Client) DeleteHost(ctx context.Context, ids ...string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return c.call(ctx, "host.delete", ids, true, nil)
+}
+
+// HostIDsByNames maps each given technical host name that exists to its host id (one host.get).
+func (c *Client) HostIDsByNames(ctx context.Context, names []string) (map[string]string, error) {
+	out := map[string]string{}
+	if len(names) == 0 {
+		return out, nil
+	}
+	var hs []struct {
+		HostID string `json:"hostid"`
+		Host   string `json:"host"`
+	}
+	if err := c.call(ctx, "host.get", map[string]any{"output": []string{"hostid", "host"}, "filter": map[string]any{"host": names}}, true, &hs); err != nil {
+		return nil, err
+	}
+	for _, h := range hs {
+		out[h.Host] = h.HostID
+	}
+	return out, nil
+}
+
+// HostGroupIDByName returns the id of the host group with this exact name, or "" if there is none.
+// Unlike EnsureHostGroupID it never creates the group.
+func (c *Client) HostGroupIDByName(ctx context.Context, name string) (string, error) {
+	var gs []struct {
+		GroupID string `json:"groupid"`
+	}
+	if err := c.call(ctx, "hostgroup.get", map[string]any{"output": []string{"groupid"}, "filter": map[string]any{"name": []string{name}}}, true, &gs); err != nil {
+		return "", err
+	}
+	if len(gs) > 0 {
+		return gs[0].GroupID, nil
+	}
+	return "", nil
+}
+
 // SetHostMacros replaces a host's user macros (host.update `macros` replaces the full set), for
 // per-host threshold overrides on top of the template defaults.
 func (c *Client) SetHostMacros(ctx context.Context, hostID string, macros []Macro) error {

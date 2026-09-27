@@ -17,7 +17,7 @@ type Host = { id: string; name: string; problems: number; severity: number; stat
 type Group = { id: string; name: string; hosts: number }
 type MacroSpec = { macro: string; label: string; hint?: string; required?: boolean; secret?: boolean; derive?: string; options?: string[]; settings_only?: boolean }
 type ClassSetup = { title: string; intro?: string; steps?: string[]; command?: string; note?: string }
-type DeviceClass = { id: string; label: string; family: string; pattern: string; iface: string; offers_http: boolean; icon?: string; macros?: MacroSpec[]; setup?: ClassSetup }
+type DeviceClass = { id: string; label: string; family: string; pattern: string; iface: string; offers_http: boolean; internal?: boolean; icon?: string; macros?: MacroSpec[]; setup?: ClassSetup }
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
 type MacroField = { macro: string; label: string; hint?: string; secret?: boolean; options?: string[]; value: string; set?: boolean }
@@ -28,7 +28,7 @@ type ThresholdsData = { templates: ThrTemplate[] }
 type AddOnMacro = { macro: string; label: string; hint?: string; options?: string[]; value: string }
 type AddOnCfg = { id: string; label: string; description: string; enabled: boolean; macros?: AddOnMacro[] }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[] }
-type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
+type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
@@ -1452,7 +1452,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} loading={!sensorsLoaded} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
           {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} advanced={!!me.advanced} />}
           {view === 'notifications' && <NotificationsView />}
-          {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} />}
+          {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} goHost={goHost} />}
           {view === 'discovery' && me.role === 'admin' && <DiscoveryView scanId={discScan} onOpenScan={openDiscoveryScan} />}
           {view === 'thresholds' && me.role === 'admin' && <ThresholdsView />}
           {view === 'users' && me.role === 'admin' && <UsersView />}
@@ -2244,7 +2244,7 @@ function probeComposeCmd(c: CreatedToken): string {
 // core-run discovery scans fingerprint with.
 const CORE_SNMP = '::core::'
 
-function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
+function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; goHost: (hostId: string) => void }) {
   const confirm = useConfirm()
   const alert = useAlert()
   const [proxies, setProxies] = useState<Proxy[] | null>(null)
@@ -2337,7 +2337,7 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
   // Delete a proxy from Zabbix and clean up its Argus-side records. Zabbix refuses if hosts still
   // reference it - that error is surfaced.
   async function del(p: Proxy) {
-    if (!(await confirm({ title: 'Delete probe', message: `Remove “${p.name}” from Zabbix and delete its Argus records (enrollment tokens, check-in state, SNMP default)? Zabbix won't allow this while hosts are still monitored by it. Its host group is left in place.`, confirmLabel: 'Delete', danger: true }))) return
+    if (!(await confirm({ title: 'Delete probe', message: `Remove “${p.name}” from Zabbix and delete its Argus records (enrollment tokens, check-in state, SNMP default)? Its Probe health host is deleted with it; Zabbix won't allow this while other hosts are still monitored by it. Its host group is left in place.`, confirmLabel: 'Delete', danger: true }))) return
     const res = await fetch(`/api/proxies/${encodeURIComponent(p.id)}`, { method: 'DELETE' })
     if (!res.ok) { alert({ title: 'Delete probe', message: await errText(res, 'Could not delete the proxy'), danger: true }); return }
     setProxies((ps) => (ps || []).filter((x) => x.id !== p.id))
@@ -2422,7 +2422,18 @@ function ProbesView({ role, enroll }: { role: string; enroll: boolean }) {
                 </td>
                 <td data-label="Health">
                   <div className="cell-stack">
-                    {p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}
+                      {/* The probe's own health sensors (queue, backlog, caches, process load) live on its
+                          Argus-managed Probe host in the site group; its worst open problem shows here. */}
+                      {p.probe_host_id && (
+                        <button type="button" className="linklike" onClick={() => goHost(p.probe_host_id!)} title="Open this probe's health sensors in Monitoring">
+                          {p.probe_health === 'error' ? <span className="tag err">health: error</span>
+                            : p.probe_health === 'warning' ? <span className="tag avail">health: warning</span>
+                            : <span className="tag online">health: ok</span>}
+                        </button>
+                      )}
+                    </span>
                     <span className="sub-line mono" title="When the core last received data from this probe" style={{ paddingLeft: 10, color: !p.last_access ? 'var(--faint)' : (Date.now() / 1000 - p.last_access > 60 ? 'var(--warn)' : undefined) }}>{p.last_access ? relTime(p.last_access) : 'never'}</span>
                   </div>
                 </td>
@@ -2999,6 +3010,7 @@ const kbIcon = {
 // class (or a best-effort name guess for the unclassified fleet). Same hand-drawn stroke style as
 // kbIcon. `hostGlyph` falls back to a generic device for any unknown name.
 const devIcon: Record<string, JSX.Element> = {
+  probe: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5" /></svg>,
   device: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="4" width="18" height="12.5" rx="2" /><path d="M8.5 20.5h7M12 16.5v4" /></svg>,
   server: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="4" width="18" height="7" rx="1.6" /><rect x="3" y="13" width="18" height="7" rx="1.6" /><path d="M6.6 7.5h.01M6.6 16.5h.01M10 7.5h4M10 16.5h4" /></svg>,
   switch: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="2.5" y="7.5" width="19" height="9" rx="1.6" /><path d="M6 10.5h2.4M6 16.5v1.7M9.6 16.5v1.7M13.2 16.5v1.7M16.8 16.5v1.7" /></svg>,
@@ -3013,6 +3025,10 @@ const devIcon: Record<string, JSX.Element> = {
   vm: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="4.5" width="18" height="15" rx="2" /><rect x="6" y="7.5" width="5.2" height="4" rx="0.8" /><rect x="12.8" y="7.5" width="5.2" height="4" rx="0.8" /><rect x="6" y="13.5" width="5.2" height="4" rx="0.8" /></svg>,
 }
 const hostGlyph = (name?: string): JSX.Element => devIcon[name || 'device'] || devIcon.device
+
+// Device classes Argus creates and manages itself (the per-site Probe health host): their class
+// can't be changed from host settings.
+const ARGUS_MANAGED_CLASSES = new Set(['probe'])
 
 // fmtLatency renders an ICMP response time (milliseconds) compactly for the host row.
 function fmtLatency(ms: number): string {
@@ -3695,7 +3711,7 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
   // fill {host} in the copyable command with the device name the user is typing.
   const setupCmd = cls?.setup?.command ? cls.setup.command.replace('{host}', name.trim() || '<device-name>') : ''
   // Alphabetical by label, with "Ping only" (base) pinned first as the universal default.
-  const classOptions = useMemo(() => classes.map((c) => ({ value: c.id, label: c.label }))
+  const classOptions = useMemo(() => classes.filter((c) => !c.internal).map((c) => ({ value: c.id, label: c.label }))
     .sort((a, b) => (a.value === 'base' ? -1 : b.value === 'base' ? 1 : a.label.localeCompare(b.label))), [classes])
   const needsSnmp = cls?.iface === 'snmp'
   const offersHttp = !!cls?.offers_http
@@ -3935,7 +3951,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
   const [showIgnored, setShowIgnored] = useState(false)
   const [adding, setAdding] = useState(false)
 
-  const classOptions = useMemo(() => classes.map((c) => ({ value: c.id, label: c.label }))
+  const classOptions = useMemo(() => classes.filter((c) => !c.internal).map((c) => ({ value: c.id, label: c.label }))
     .sort((a, b) => (a.value === 'base' ? -1 : b.value === 'base' ? 1 : a.label.localeCompare(b.label))), [classes])
   const siteOfProxy = (name: string) => (name.startsWith('proxy-') ? name.slice(6) : name)
   // Non-settings-only per-host macros a class collects at attach time (settings-only ones need
@@ -4588,13 +4604,15 @@ function ClassChanger({ hostId, currentClassId, currentClassLabel, onChanged }: 
       {!open ? (
         <>
           <span style={{ fontSize: 13 }}>{currentClassLabel || currentClassId || 'None'}</span>
-          <button className="btn" onClick={() => { setSel(''); setMacros({}); setErr(''); setOpen(true) }}>Change class</button>
+          {ARGUS_MANAGED_CLASSES.has(currentClassId || '')
+            ? <span className="set-hint" style={{ margin: 0 }}>managed by Argus</span>
+            : <button className="btn" onClick={() => { setSel(''); setMacros({}); setErr(''); setOpen(true) }}>Change class</button>}
         </>
       ) : (
         <div style={{ flex: 1, minWidth: 0 }}>
           <Select value={sel} onChange={(e) => { setSel(e.target.value); setMacros({}) }}>
             <option value="">Select a class…</option>
-            {classes.filter((c) => c.id !== currentClassId).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            {classes.filter((c) => c.id !== currentClassId && !c.internal).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
           </Select>
           {macroSpecs.length > 0 && (
             <div className="hs-grid" style={{ marginTop: 10 }}>
@@ -5304,7 +5322,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
     if (cat === 'Ping' || cat === 'Web') { const rt = gi.find((x) => x.channel === 'Response time') || gi[0]; return { node: reading(rt), primary: rt } }
     // A temperature group (unRAID disk temps) or CPU cores group reads as its HOTTEST/BUSIEST
     // member - the one you'd act on; that member also drives the sparkline and the chart's main line.
-    if (cat === 'Temperature' || cat === 'CPU') {
+    if (cat === 'Temperature' || cat === 'CPU' || cat === 'Probe') {
       let hot: SensorItem | undefined
       for (const x of gi) { if (x.supported && x.numeric && x.last_value !== '' && (!hot || Number(x.last_value) > Number(hot.last_value))) hot = x }
       if (hot) return { node: reading(hot), primary: hot }

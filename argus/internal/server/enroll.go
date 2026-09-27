@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"argus/internal/auth"
+	"argus/internal/provision"
 	"argus/internal/store"
 	"argus/internal/zabbix"
 )
@@ -164,6 +165,15 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 			s.logger.Warn("enroll: could not ensure the site host group", "site", t.Site, "err", err)
 		}
 	}
+	// ...and its Probe health host, in the background so enrollment never waits on it.
+	go func() {
+		c, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		if err := provision.Reconcile(c, s.zbx, s.st, s.logger); err != nil {
+			s.logger.Warn("enroll: template reconcile before the Probe host failed", "err", err)
+		}
+		s.EnsureProbeHosts(c)
+	}()
 
 	// Issue a long-lived check-in credential so the probe can report its running version and read
 	// the fleet target version (powers the fleet-update view + opt-in self-updater). Best-effort:

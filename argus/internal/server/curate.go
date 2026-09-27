@@ -41,6 +41,9 @@ var cpuUtilKeep = map[string]bool{
 // Category order is per host SHAPE (user call): network gear - anything with switch ports - reads
 // network-first, while servers keep the classic compute-first order. Picking the order from the UI
 // (per class or per host) is planned for the management UI (ROADMAP §D).
+// The per-site Probe host's "Probe" category is deliberately absent: an unlisted category ranks 0,
+// so it reads first on that host (which has no Ping), and it stays out of every other host's
+// sensor-order editor (canonicalCategories).
 var categoryOrderServer = map[string]int{
 	"Ping":             0,
 	"Web":              1,
@@ -120,6 +123,8 @@ var itemLabelOrder = map[string]map[string]int{
 	// An XCP-NG host's Virtual machines section leads with the running/total count group; the
 	// per-VM rows trail unranked (natural name order).
 	"Virtual machines": {"VMs running": 0, "VMs defined": 1},
+	// A Probe host reads data-flow first (is anything backing up?), then its caches.
+	"Probe": {"Unsent values": 0, "Delayed items (over 10 min)": 1, "History cache used": 2, "Configuration cache used": 3},
 }
 
 // itemRank returns the within-category order rank for a flat row's label; unranked labels get a large
@@ -300,6 +305,27 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "Ping", "ICMP loss", "ICMP", "Loss", true
 	case "icmppingsec":
 		return "Ping", "ICMP response time", "ICMP", "Response time", true
+
+	// Argus Probe Health: Zabbix internal checks on the per-site Probe host, measured by its proxy.
+	case "zabbix":
+		switch param(p, 0) {
+		case "uptime":
+			return "Uptime", "Probe uptime", "", "", true
+		case "proxy_history":
+			return "Probe", "Unsent values", "", "", true
+		case "queue":
+			return "Probe", "Delayed items (over 10 min)", "", "", true
+		case "wcache":
+			return "Probe", "History cache used", "", "", true
+		case "rcache":
+			return "Probe", "Configuration cache used", "", "", true
+		case "process":
+			// One "Process load" row, a channel per process type; the UI headlines the busiest.
+			if t := param(p, 1); t != "" {
+				return "Probe", "Process load (" + t + ")", "Process load", strings.ToUpper(t[:1]) + t[1:], true
+			}
+		}
+		return "", "", "", "", false
 
 	case "system.cpu.util":
 		// The Linux template has one item per CPU state, most of them near-zero noise. Keep

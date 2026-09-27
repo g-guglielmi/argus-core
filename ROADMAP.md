@@ -123,10 +123,11 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Sensor-category order in the GUI** - reorder a host's sensor categories from the UI, per host
   (in host settings); the built-in server/network/NAS shape profiles are the fixed default and a
   per-host order wins over it. (No fleet-wide/per-class override - the default is deliberately fixed.) - _(FE+BE)_ S-M
-- [~] **Settings expansion** - ~~retention controls~~ (**Settings → Data retention**: history /
+- [x] **Settings expansion** - ~~retention controls~~ (**Settings → Data retention**: history /
   trends / compression via Zabbix housekeeping, floors set by the chart tabs - v0.5.5), ~~allowed FQDNs and IPs~~ (a
-  Host/Origin allow-list in Settings, off until configured; probes exempt; lockout-safe - v0.5.6), proxy health (a per-site "Probe" host carrying the
-  Zabbix proxy-health sensors, linked from the Probes page) - _(FE+BE)_ S-M
+  Host/Origin allow-list in Settings, off until configured; probes exempt; lockout-safe - v0.5.6), ~~proxy health~~ (a per-site "Probe" host
+  carrying the probe's own health sensors and a "probe unreachable" alert, linked from the Probes
+  page) - _(FE+BE)_ S-M
 
 ### E. Auth / account gaps
 - [x] **Self-service email password reset** (single-use emailed link; reuses the email channel) - v0.3.3

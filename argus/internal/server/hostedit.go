@@ -200,7 +200,7 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 			// blank means "inherit the default". Argus is the source of truth, so no Zabbix read here.
 			factory, _ := provision.TemplateFactoryDefaults()
 			gdef, _ := s.st.ThresholdDefaults(ctx)
-			tset := append([]string{provision.TemplateBasePing}, class.Templates...)
+			tset := class.HostTemplates()
 			for _, tt := range provision.ThresholdsForTemplates(tset) {
 				for _, sp := range tt.Specs {
 					def := gdef[tt.Template][sp.Macro]
@@ -240,15 +240,20 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 			linked[n] = true
 		}
 		classTemplates := map[string]bool{}
+		noAddOns := false // Argus-managed hosts (the Probe host) have no address for add-ons to check
 		if out.ClassID != "" {
 			if c, ok := provision.ClassByID(out.ClassID); ok {
 				for _, t := range c.Templates {
 					classTemplates[t] = true
 				}
+				noAddOns = c.Internal
 			}
 		}
 		factory, _ := provision.TemplateFactoryDefaults()
 		for _, a := range provision.AddOns() {
+			if noAddOns {
+				break
+			}
 			if classTemplates[a.Template] {
 				continue // the class already includes this template; managed in class options, not here
 			}
@@ -583,7 +588,7 @@ func (s *Server) applyClassMacros(ctx context.Context, hostID string, desired ma
 			editable = append(editable, editableMacro{ms.Macro, ms.Secret})
 		}
 	}
-	tset := append([]string{provision.TemplateBasePing}, class.Templates...)
+	tset := class.HostTemplates()
 	for _, tt := range provision.ThresholdsForTemplates(tset) {
 		for _, sp := range tt.Specs {
 			if !seen[sp.Macro] {

@@ -116,11 +116,12 @@ func TestSuggestUniFiClass(t *testing.T) {
 	}
 }
 
-// Every class offers the HTTP/HTTPS add-on: any device may expose a web UI worth watching, and the
-// discovery review + Add-device forms rely on the toggle always being available (user's call).
+// Every user-addable class offers the HTTP/HTTPS add-on: any device may expose a web UI worth
+// watching, and the discovery review + Add-device forms rely on the toggle always being available
+// (user's call). Argus-managed classes (the Probe host, which has no address) are exempt.
 func TestEveryClassOffersHTTP(t *testing.T) {
 	for _, c := range Classes() {
-		if !c.OffersHTTP {
+		if !c.OffersHTTP && !c.Internal {
 			t.Errorf("class %q does not offer the HTTP/HTTPS add-on - every class should", c.ID)
 		}
 	}

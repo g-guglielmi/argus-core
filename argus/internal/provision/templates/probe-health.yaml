@@ -1,0 +1,362 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: ce281c1d863948abac98168d62565123
+      template: 'Argus Probe Health'
+      name: 'Argus Probe Health'
+      description: |
+        Health of an Argus probe (a Zabbix proxy), measured by the proxy itself: Zabbix internal
+        checks run on the proxy that monitors the host, so this template goes on one "Probe <site>"
+        host per proxy, monitored by that proxy and with no interface. Argus creates those hosts
+        automatically. Reachability uses a strict nodata() trigger, so it fires while the proxy is
+        offline too. Thresholds are user macros, editable in the Argus Thresholds screen.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: ae5ac0e9eecf49aabb4bd3daffcdda36
+          name: 'Probe uptime'
+          type: INTERNAL
+          key: 'zabbix[uptime]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          units: 'uptime'
+          description: 'How long the proxy process has been running. No new value means the probe is not reaching the core.'
+          triggers:
+            - uuid: daaa2fab16784ff0a37e3c88f7d98156
+              expression: 'nodata(/Argus Probe Health/zabbix[uptime],{$PROBE.NODATA.WARN},"strict")=1 and nodata(/Argus Probe Health/zabbix[uptime],{$PROBE.NODATA.HIGH},"strict")=0'
+              name: 'Probe not reporting'
+              priority: WARNING
+              description: 'No data from the probe for the warning period: it is offline or cannot reach the core. It keeps collecting and buffers its data meanwhile.'
+            - uuid: 0babcaf2316847f29735e6dae0508819
+              expression: 'nodata(/Argus Probe Health/zabbix[uptime],{$PROBE.NODATA.HIGH},"strict")=1'
+              name: 'Probe unreachable'
+              priority: HIGH
+              description: 'No data from the probe for the high period. Nothing from this site reaches Argus until it reconnects.'
+        - uuid: 594d9682dd5746f096781b3c87defc23
+          name: 'Unsent values'
+          type: INTERNAL
+          key: 'zabbix[proxy_history]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Values the proxy has collected but not yet sent to the core. Normally near zero; a growing number means data is backing up.'
+          triggers:
+            - uuid: 734e0df026d7404682f52f98354b5b06
+              expression: 'min(/Argus Probe Health/zabbix[proxy_history],5m)>={$PROBE.BACKLOG.WARN} and min(/Argus Probe Health/zabbix[proxy_history],5m)<{$PROBE.BACKLOG.HIGH}'
+              name: 'Probe data backing up'
+              priority: WARNING
+              description: 'Unsent values stayed at or above the warning threshold for 5 minutes (below the high threshold).'
+            - uuid: d1bed9fa74994dee88744a3c6d829bc5
+              expression: 'min(/Argus Probe Health/zabbix[proxy_history],5m)>={$PROBE.BACKLOG.HIGH}'
+              name: 'Probe data badly backed up'
+              priority: HIGH
+              description: 'Unsent values stayed at or above the high threshold for 5 minutes.'
+        - uuid: e8ce59ce8e5048038ced1b81293bdf83
+          name: 'Delayed items (over 10 min)'
+          type: INTERNAL
+          key: 'zabbix[queue,10m]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Items the proxy is more than 10 minutes late collecting. Unreachable devices add to this too.'
+          triggers:
+            - uuid: 380f1bc599414ba1b2f261967c6bd8cb
+              expression: 'min(/Argus Probe Health/zabbix[queue,10m],15m)>={$PROBE.QUEUE.WARN} and min(/Argus Probe Health/zabbix[queue,10m],15m)<{$PROBE.QUEUE.HIGH}'
+              name: 'Probe falling behind'
+              priority: WARNING
+              description: 'Items delayed over 10 minutes stayed at or above the warning threshold for 15 minutes (below the high threshold).'
+            - uuid: 424a7f1337554d9085876ef95c243f8c
+              expression: 'min(/Argus Probe Health/zabbix[queue,10m],15m)>={$PROBE.QUEUE.HIGH}'
+              name: 'Probe badly behind'
+              priority: HIGH
+              description: 'Items delayed over 10 minutes stayed at or above the high threshold for 15 minutes.'
+        - uuid: 3288c751c862498d81a8002c1199d3f5
+          name: 'History cache used'
+          type: INTERNAL
+          key: 'zabbix[wcache,history,pused]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'How full the proxy history cache is.'
+          triggers:
+            - uuid: 4649fff6f4a64d62b87261c63ff49cc1
+              expression: 'min(/Argus Probe Health/zabbix[wcache,history,pused],5m)>={$PROBE.CACHE.WARN} and min(/Argus Probe Health/zabbix[wcache,history,pused],5m)<{$PROBE.CACHE.HIGH}'
+              name: 'Probe history cache filling up'
+              priority: WARNING
+              description: 'History cache use stayed at or above the warning threshold for 5 minutes (below the high threshold).'
+            - uuid: 518672681e3d4c1a82e56032ec983d01
+              expression: 'min(/Argus Probe Health/zabbix[wcache,history,pused],5m)>={$PROBE.CACHE.HIGH}'
+              name: 'Probe history cache nearly full'
+              priority: HIGH
+              description: 'History cache use stayed at or above the high threshold for 5 minutes.'
+        - uuid: 90a35df04d0a454a9eca6003b4835245
+          name: 'Configuration cache used'
+          type: INTERNAL
+          key: 'zabbix[rcache,buffer,pused]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'How full the proxy configuration cache is.'
+          triggers:
+            - uuid: 73351404a14b4b72ac812e2d509f40ed
+              expression: 'min(/Argus Probe Health/zabbix[rcache,buffer,pused],5m)>={$PROBE.CACHE.WARN} and min(/Argus Probe Health/zabbix[rcache,buffer,pused],5m)<{$PROBE.CACHE.HIGH}'
+              name: 'Probe configuration cache filling up'
+              priority: WARNING
+              description: 'Configuration cache use stayed at or above the warning threshold for 5 minutes (below the high threshold).'
+            - uuid: 4ad38fea6fb84396b71423def821ae5e
+              expression: 'min(/Argus Probe Health/zabbix[rcache,buffer,pused],5m)>={$PROBE.CACHE.HIGH}'
+              name: 'Probe configuration cache nearly full'
+              priority: HIGH
+              description: 'Configuration cache use stayed at or above the high threshold for 5 minutes.'
+        - uuid: d4baff03255946bf8da15601d4da65f0
+          name: 'Process load: poller'
+          type: INTERNAL
+          key: 'zabbix[process,poller,avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the proxy poller processes were busy.'
+          triggers:
+            - uuid: e64747ca897c46989187c81f57362537
+              expression: 'avg(/Argus Probe Health/zabbix[process,poller,avg,busy],5m)>={$PROBE.PROC.WARN} and avg(/Argus Probe Health/zabbix[process,poller,avg,busy],5m)<{$PROBE.PROC.HIGH}'
+              name: 'Probe poller processes busy'
+              priority: WARNING
+              description: 'The poller processes averaged at or above the warning threshold for 5 minutes (below the high threshold).'
+            - uuid: 94745521f7cb4f21b2d463f76f772d07
+              expression: 'avg(/Argus Probe Health/zabbix[process,poller,avg,busy],5m)>={$PROBE.PROC.HIGH}'
+              name: 'Probe poller processes overloaded'
+              priority: HIGH
+              description: 'The poller processes averaged at or above the high threshold for 5 minutes. Raise their count in the proxy config.'
+        - uuid: b87101fec1834b8a9238f182aedc57ed
+          name: 'Process load: unreachable poller'
+          type: INTERNAL
+          key: 'zabbix[process,"unreachable poller",avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the proxy unreachable poller processes were busy.'
+          triggers:
+            - uuid: d041c98cf9874a49a377cf990c2c5457
+              expression: 'avg(/Argus Probe Health/zabbix[process,"unreachable poller",avg,busy],5m)>={$PROBE.PROC.WARN} and avg(/Argus Probe Health/zabbix[process,"unreachable poller",avg,busy],5m)<{$PROBE.PROC.HIGH}'
+              name: 'Probe unreachable poller processes busy'
+              priority: WARNING
+              description: 'The unreachable poller processes averaged at or above the warning threshold for 5 minutes (below the high threshold).'
+            - uuid: 2a94cd4fe0d241ebbdbdac336e9e7bf3
+              expression: 'avg(/Argus Probe Health/zabbix[process,"unreachable poller",avg,busy],5m)>={$PROBE.PROC.HIGH}'
+              name: 'Probe unreachable poller processes overloaded'
+              priority: HIGH
+              description: 'The unreachable poller processes averaged at or above the high threshold for 5 minutes. Raise their count in the proxy config.'
+        - uuid: 17d3a5bf7f18491188fcd883a2ba3f3f
+          name: 'Process load: agent poller'
+          type: INTERNAL
+          key: 'zabbix[process,"agent poller",avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the proxy agent poller processes were busy.'
+          triggers:
+            - uuid: 2bdf9e6440b7473cb562b8ba76de1087
+              expression: 'avg(/Argus Probe Health/zabbix[process,"agent poller",avg,busy],5m)>={$PROBE.PROC.WARN} and avg(/Argus Probe Health/zabbix[process,"agent poller",avg,busy],5m)<{$PROBE.PROC.HIGH}'
+              name: 'Probe agent poller processes busy'
+              priority: WARNING
+              description: 'The agent poller processes averaged at or above the warning threshold for 5 minutes (below the high threshold).'
+            - uuid: 1c012649d0ba4c7cab70a9efeef013de
+              expression: 'avg(/Argus Probe Health/zabbix[process,"agent poller",avg,busy],5m)>={$PROBE.PROC.HIGH}'
+              name: 'Probe agent poller processes overloaded'
+              priority: HIGH
+              description: 'The agent poller processes averaged at or above the high threshold for 5 minutes. Raise their count in the proxy config.'
+        - uuid: 071c665dcca9486cb20de4dac13fd506
+          name: 'Process load: snmp poller'
+          type: INTERNAL
+          key: 'zabbix[process,"snmp poller",avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the proxy snmp poller processes were busy.'
+          triggers:
+            - uuid: aba27fbf65c44accb607c54d51d42724
+              expression: 'avg(/Argus Probe Health/zabbix[process,"snmp poller",avg,busy],5m)>={$PROBE.PROC.WARN} and avg(/Argus Probe Health/zabbix[process,"snmp poller",avg,busy],5m)<{$PROBE.PROC.HIGH}'
+              name: 'Probe snmp poller processes busy'
+              priority: WARNING
+              description: 'The snmp poller processes averaged at or above the warning threshold for 5 minutes (below the high threshold).'
+            - uuid: e194f097ccee4d71922fe84be9616dfe
+              expression: 'avg(/Argus Probe Health/zabbix[process,"snmp poller",avg,busy],5m)>={$PROBE.PROC.HIGH}'
+              name: 'Probe snmp poller processes overloaded'
+              priority: HIGH
+              description: 'The snmp poller processes averaged at or above the high threshold for 5 minutes. Raise their count in the proxy config.'
+        - uuid: b2a4e2051a9e4e888f868d028e8511ee
+          name: 'Process load: http agent poller'
+          type: INTERNAL
+          key: 'zabbix[process,"http agent poller",avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the proxy http agent poller processes were busy.'
+          triggers:
+            - uuid: 37b6e22796254572901571cd58f2dd82
+              expression: 'avg(/Argus Probe Health/zabbix[process,"http agent poller",avg,busy],5m)>={$PROBE.PROC.WARN} and avg(/Argus Probe Health/zabbix[process,"http agent poller",avg,busy],5m)<{$PROBE.PROC.HIGH}'
+              name: 'Probe http agent poller processes busy'
+              priority: WARNING
+              description: 'The http agent poller processes averaged at or above the warning threshold for 5 minutes (below the high threshold).'
+            - uuid: a0e55aa70de84ea4a8d01fe5fccfffe0
+              expression: 'avg(/Argus Probe Health/zabbix[process,"http agent poller",avg,busy],5m)>={$PROBE.PROC.HIGH}'
+              name: 'Probe http agent poller processes overloaded'
+              priority: HIGH
+              description: 'The http agent poller processes averaged at or above the high threshold for 5 minutes. Raise their count in the proxy config.'
+        - uuid: 72c0e95282b942ff82e14d9c4c856aed
+          name: 'Process load: icmp pinger'
+          type: INTERNAL
+          key: 'zabbix[process,"icmp pinger",avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the proxy icmp pinger processes were busy.'
+          triggers:
+            - uuid: 75a62e8371f84941b5178118f4edf032
+              expression: 'avg(/Argus Probe Health/zabbix[process,"icmp pinger",avg,busy],5m)>={$PROBE.PROC.WARN} and avg(/Argus Probe Health/zabbix[process,"icmp pinger",avg,busy],5m)<{$PROBE.PROC.HIGH}'
+              name: 'Probe icmp pinger processes busy'
+              priority: WARNING
+              description: 'The icmp pinger processes averaged at or above the warning threshold for 5 minutes (below the high threshold).'
+            - uuid: cb6aefbfa5964482b8c48298b789f7a6
+              expression: 'avg(/Argus Probe Health/zabbix[process,"icmp pinger",avg,busy],5m)>={$PROBE.PROC.HIGH}'
+              name: 'Probe icmp pinger processes overloaded'
+              priority: HIGH
+              description: 'The icmp pinger processes averaged at or above the high threshold for 5 minutes. Raise their count in the proxy config.'
+        - uuid: c0041a5c09a54fbabf917591c68ee593
+          name: 'Process load: trapper'
+          type: INTERNAL
+          key: 'zabbix[process,trapper,avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the proxy trapper processes were busy.'
+          triggers:
+            - uuid: b08f035cac16454d9f36b844509a81ee
+              expression: 'avg(/Argus Probe Health/zabbix[process,trapper,avg,busy],5m)>={$PROBE.PROC.WARN} and avg(/Argus Probe Health/zabbix[process,trapper,avg,busy],5m)<{$PROBE.PROC.HIGH}'
+              name: 'Probe trapper processes busy'
+              priority: WARNING
+              description: 'The trapper processes averaged at or above the warning threshold for 5 minutes (below the high threshold).'
+            - uuid: e74a23bb002546e89e306efdd12c2ebc
+              expression: 'avg(/Argus Probe Health/zabbix[process,trapper,avg,busy],5m)>={$PROBE.PROC.HIGH}'
+              name: 'Probe trapper processes overloaded'
+              priority: HIGH
+              description: 'The trapper processes averaged at or above the high threshold for 5 minutes. Raise their count in the proxy config.'
+        - uuid: 85fe9ebd3c9f45e98f542e1f3c228b71
+          name: 'Process load: data sender'
+          type: INTERNAL
+          key: 'zabbix[process,"data sender",avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the proxy data sender processes were busy.'
+          triggers:
+            - uuid: 77eb39b8a6c7412cb8460a9bfe5e9804
+              expression: 'avg(/Argus Probe Health/zabbix[process,"data sender",avg,busy],5m)>={$PROBE.PROC.WARN} and avg(/Argus Probe Health/zabbix[process,"data sender",avg,busy],5m)<{$PROBE.PROC.HIGH}'
+              name: 'Probe data sender processes busy'
+              priority: WARNING
+              description: 'The data sender processes averaged at or above the warning threshold for 5 minutes (below the high threshold).'
+            - uuid: 196484a51e0f4a98bc1b489b66c8932e
+              expression: 'avg(/Argus Probe Health/zabbix[process,"data sender",avg,busy],5m)>={$PROBE.PROC.HIGH}'
+              name: 'Probe data sender processes overloaded'
+              priority: HIGH
+              description: 'The data sender processes averaged at or above the high threshold for 5 minutes. Raise their count in the proxy config.'
+        - uuid: e28ed31243384fd298237cd7635dcd98
+          name: 'Process load: history syncer'
+          type: INTERNAL
+          key: 'zabbix[process,"history syncer",avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the proxy history syncer processes were busy.'
+          triggers:
+            - uuid: 94947187117542b1ba767c4f873c531e
+              expression: 'avg(/Argus Probe Health/zabbix[process,"history syncer",avg,busy],5m)>={$PROBE.PROC.WARN} and avg(/Argus Probe Health/zabbix[process,"history syncer",avg,busy],5m)<{$PROBE.PROC.HIGH}'
+              name: 'Probe history syncer processes busy'
+              priority: WARNING
+              description: 'The history syncer processes averaged at or above the warning threshold for 5 minutes (below the high threshold).'
+            - uuid: 3191a386a8784f20be6e19e1c5f7619a
+              expression: 'avg(/Argus Probe Health/zabbix[process,"history syncer",avg,busy],5m)>={$PROBE.PROC.HIGH}'
+              name: 'Probe history syncer processes overloaded'
+              priority: HIGH
+              description: 'The history syncer processes averaged at or above the high threshold for 5 minutes. Raise their count in the proxy config.'
+        - uuid: 6709898ee42047b7a900a70bfc1d84ad
+          name: 'Process load: preprocessing worker'
+          type: INTERNAL
+          key: 'zabbix[process,"preprocessing worker",avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the proxy preprocessing worker processes were busy.'
+          triggers:
+            - uuid: 17482263691a490bb9df167b4bd40695
+              expression: 'avg(/Argus Probe Health/zabbix[process,"preprocessing worker",avg,busy],5m)>={$PROBE.PROC.WARN} and avg(/Argus Probe Health/zabbix[process,"preprocessing worker",avg,busy],5m)<{$PROBE.PROC.HIGH}'
+              name: 'Probe preprocessing worker processes busy'
+              priority: WARNING
+              description: 'The preprocessing worker processes averaged at or above the warning threshold for 5 minutes (below the high threshold).'
+            - uuid: ed80a792dd434a5fa8249cbc42843dbf
+              expression: 'avg(/Argus Probe Health/zabbix[process,"preprocessing worker",avg,busy],5m)>={$PROBE.PROC.HIGH}'
+              name: 'Probe preprocessing worker processes overloaded'
+              priority: HIGH
+              description: 'The preprocessing worker processes averaged at or above the high threshold for 5 minutes. Raise their count in the proxy config.'
+      macros:
+        - macro: '{$PROBE.NODATA.WARN}'
+          value: '300'
+          description: 'Seconds without data from the probe before a warning.'
+        - macro: '{$PROBE.NODATA.HIGH}'
+          value: '900'
+          description: 'Seconds without data from the probe before a high-severity alert.'
+        - macro: '{$PROBE.BACKLOG.WARN}'
+          value: '1000'
+          description: 'Unsent values that raise a warning.'
+        - macro: '{$PROBE.BACKLOG.HIGH}'
+          value: '10000'
+          description: 'Unsent values that raise a high-severity alert.'
+        - macro: '{$PROBE.QUEUE.WARN}'
+          value: '50'
+          description: 'Items delayed over 10 minutes that raise a warning.'
+        - macro: '{$PROBE.QUEUE.HIGH}'
+          value: '200'
+          description: 'Items delayed over 10 minutes that raise a high-severity alert.'
+        - macro: '{$PROBE.CACHE.WARN}'
+          value: '75'
+          description: 'Cache use percentage that raises a warning.'
+        - macro: '{$PROBE.CACHE.HIGH}'
+          value: '90'
+          description: 'Cache use percentage that raises a high-severity alert.'
+        - macro: '{$PROBE.PROC.WARN}'
+          value: '75'
+          description: 'Process busy percentage that raises a warning.'
+        - macro: '{$PROBE.PROC.HIGH}'
+          value: '90'
+          description: 'Process busy percentage that raises a high-severity alert.'

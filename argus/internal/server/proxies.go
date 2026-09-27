@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"argus/internal/store"
+	"argus/internal/zabbix"
 )
 
 type proxyView struct {
@@ -40,6 +41,10 @@ type proxyView struct {
 	RebootRequired bool   `json:"reboot_required"`
 	OSReportedAt   int64  `json:"os_reported_at"`
 	OSVersion      string `json:"os_version"` // the probe VM's OS pretty-name ("" if not reported)
+	// The probe's Argus-managed Probe health host: its id (for the link to its sensors; "" until it
+	// exists) and its worst open problem: "ok" | "warning" | "error" ("" when there's no host).
+	ProbeHostID string `json:"probe_host_id,omitempty"`
+	ProbeHealth string `json:"probe_health,omitempty"`
 }
 
 // handleProxies lists Zabbix proxies (the per-site collectors) with their last-access time, so
@@ -70,8 +75,9 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 		s.logger.Warn("proxies: probe target lookup failed", "err", err)
 		target = "latest"
 	}
-	latest := s.probeLatest.get()          // newest published probe version from GHCR ("" if unresolved)
-	updaterLatest := s.updaterLatest.get() // newest published argus-updater version from GHCR
+	probeHosts, probeHealth := s.probeHostHealth(ctx, proxies) // best-effort: empty maps on failure
+	latest := s.probeLatest.get()                              // newest published probe version from GHCR ("" if unresolved)
+	updaterLatest := s.updaterLatest.get()                     // newest published argus-updater version from GHCR
 	now := time.Now().Unix()
 	out := make([]proxyView, 0, len(proxies))
 	for _, p := range proxies {
@@ -115,9 +121,56 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			RebootRequired: ag.RebootRequired,
 			OSReportedAt:   ag.OSReportedAt,
 			OSVersion:      ag.OSVersion,
+			ProbeHostID:    probeHosts[p.Name],
+			ProbeHealth:    probeHealth[p.Name],
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// probeHostHealth finds each proxy's Probe health host and its worst open problem, keyed by proxy
+// name: two Zabbix calls for the whole fleet. Best-effort - on any failure the Probes page just
+// shows no health link.
+func (s *Server) probeHostHealth(ctx context.Context, proxies []zabbix.Proxy) (hostIDs, health map[string]string) {
+	hostIDs, health = map[string]string{}, map[string]string{}
+	names := make([]string, 0, len(proxies))
+	for _, p := range proxies {
+		names = append(names, probeHostName(p.Name))
+	}
+	ids, err := s.zbx.HostIDsByNames(ctx, names)
+	if err != nil {
+		s.logger.Warn("proxies: Probe host lookup failed", "err", err)
+		return
+	}
+	worst := map[string]int{} // host id -> highest open trigger priority
+	if trigs, err := s.zbx.ActiveTriggers(ctx); err == nil {
+		for _, t := range trigs {
+			pr, _ := strconv.Atoi(t.Priority)
+			for _, h := range t.Hosts {
+				if pr > worst[h.HostID] {
+					worst[h.HostID] = pr
+				}
+			}
+		}
+	} else {
+		s.logger.Warn("proxies: active trigger lookup failed", "err", err)
+	}
+	for _, p := range proxies {
+		id := ids[probeHostName(p.Name)]
+		if id == "" {
+			continue
+		}
+		hostIDs[p.Name] = id
+		switch w := worst[id]; {
+		case w >= 3:
+			health[p.Name] = "error"
+		case w == 2:
+			health[p.Name] = "warning"
+		default:
+			health[p.Name] = "ok"
+		}
+	}
+	return
 }
 
 // osSecUpdates normalises a probe's reported security-update count. A probe that has never reported OS
@@ -185,6 +238,12 @@ func (s *Server) handleDeleteProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	if name == "" {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "proxy not found"})
+		return
+	}
+	// The Argus-managed Probe health host goes first: Zabbix refuses to delete a proxy that still
+	// monitors hosts, and that host is monitored by this proxy.
+	if err := s.deleteProbeHost(ctx, name); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not remove the probe's health host: " + err.Error()})
 		return
 	}
 	if err := s.zbx.DeleteProxy(ctx, id); err != nil {

@@ -220,6 +220,11 @@ so curation is shared with the SNMP classes.
 | Disk temp - **HDD** | ≥ 40 °C | ≥ 45 °C |
 | Disk temp - **SSD** | ≥ 50 °C | ≥ 60 °C |
 | Ping | loss ≥ 20% or RTT ≥ 0.15 s | loss ≥ 60%, RTT ≥ 0.5 s, or 100% loss (down) |
+| Probe reporting (§18a) | no data for 5 min | no data for 15 min |
+| Probe unsent values | ≥ 1000 for 5 min | ≥ 10000 for 5 min |
+| Probe items delayed over 10 min | ≥ 50 for 15 min | ≥ 200 for 15 min |
+| Probe cache used (history / configuration) | ≥ 75% | ≥ 90% |
+| Probe process busy (per process type) | ≥ 75% (5 min avg) | ≥ 90% (5 min avg) |
 | HTTP/HTTPS | resp ≥ 1 s | resp ≥ 3 s, or non-2xx/3xx / timeout (down) |
 | TLS cert expiry | ≤ 14 days | ≤ 3 days |
 | DNS | resolve ≥ 0.5 s | resolve ≥ 1 s, or no/incorrect answer |
@@ -879,6 +884,34 @@ minimal **updater sidecar**, never the proxy. Unraid probes use their own native
 shows drift + the manual one-click command).
 
 ---
+
+## 18a. Probe health (implemented)
+
+**What.** Each probe gets one Argus-managed host, **Probe <site>** (technical name
+`argus-probe-<site>`), in its site group, **monitored by that proxy**, with **no interface** and the
+**Argus Probe Health** template. Zabbix runs internal checks on the proxy that monitors the host, so
+its items measure the proxy itself:
+
+- `zabbix[uptime]` - with a **strict** `nodata()` pair (warning / high after
+  `{$PROBE.NODATA.WARN}` / `{$PROBE.NODATA.HIGH}` seconds). Strict mode keeps nodata() from being
+  held back while the proxy is away, so "probe unreachable" fires while it is offline. This is the
+  alert that was missing: the Probes page showed offline, but nothing notified.
+- `zabbix[proxy_history]` (values waiting to be sent), `zabbix[queue,10m]` (items running late),
+  `zabbix[wcache,history,pused]` / `zabbix[rcache,buffer,pused]` (cache use) and
+  `zabbix[process,<type>,avg,busy]` per process type (grouped as one **Process load** sensor that
+  headlines the busiest).
+
+Every sensor has a warning and an error threshold, editable on the Thresholds screen and per host.
+
+**Lifecycle.** `EnsureProbeHosts` runs after the startup template import and after each
+enrollment; it is idempotent. It never creates the site group: a proxy whose group is missing (the
+operator deleted it, or the proxy isn't named `proxy-<site>`) is skipped with a log line. Deleting a
+probe deletes its Probe host first (Zabbix refuses to delete a proxy that still monitors hosts).
+
+**Class.** `probe` is an **internal** class: never offered in the Add-device, discovery or
+change-class pickers, refused by the create and change-class APIs, no Base Ping (no address) and no
+add-ons. The Probes page's Health cell shows the host's worst open problem (ok / warning / error)
+and links to it.
 
 ## 19. Parking lot / future
 - Public status page (Uptime-Kuma-style shareable page).
