@@ -466,7 +466,7 @@ func (c *Client) ItemsByIDs(ctx context.Context, ids []string) (map[string]Item,
 		return out, nil
 	}
 	params := map[string]any{
-		"output":  []string{"itemid", "hostid", "name", "key_", "lastvalue", "units", "value_type"},
+		"output":  []string{"itemid", "hostid", "name", "key_", "lastvalue", "lastclock", "units", "value_type"},
 		"itemids": ids,
 	}
 	var items []Item

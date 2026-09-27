@@ -360,6 +360,13 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
 - **Routing:** Warning **and** Error → Telegram + Discord + email (same for all sites).
 - **Recovery (OK) notifications:** enabled.
 - **Flap debounce:** a sensor must hold a state for N consecutive polls before notifying.
+- **Severity changes aren't recoveries:** warning and error thresholds are separate band triggers
+  ("at or above warning and below error" / "at or above error"), so escalating closes the warning
+  trigger. RESOLVED is sent only when the sensor has no open problem left; a problem that closes
+  while another one on the same host + sensor at a different severity is open is a severity change,
+  and sends nothing (the new severity alerts on its own).
+- **"No data" alerts** (nodata() triggers, e.g. probe unreachable) read "No data since HH:MM"
+  instead of the stale last value.
 - Telegram = one shared bot, per-site topic. Discord = dedicated webhook per site.
   Model supports flipping either to shared/dedicated with no code change.
 - Secrets entered in the UI later (placeholders for now).

@@ -32,6 +32,12 @@ GitHub Release from the matching section below.
   ICMP pingers, matching the `argus-probe` image from `probe/v7.0.31-r3`.
 
 **Fixed:**
+- **No more false "RESOLVED" when an alert escalates.** A warning that turned into an error (or an
+  error that eased to a warning) on the same sensor sent a RESOLVED for the old one, although the
+  problem was still going on. RESOLVED now goes out only when the sensor has actually recovered.
+  This applied to every sensor with warning and error thresholds, not just probes.
+- A "no data" alert, like "Probe unreachable", now reads **No data since 00:53** instead of the
+  last value that arrived before the data stopped.
 - Sparklines of percentages near zero (a cache at 0.002 %) no longer draw a tiny change as a
   full-height spike: they use the same minimum 10-point span as the big chart.
   - Argus creates the hosts for existing probes at startup and for new ones at enrollment. Deleting

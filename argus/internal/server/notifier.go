@@ -123,7 +123,13 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		if _, stillActive := activeIDs[eid]; stillActive {
 			continue
 		}
-		if stt.State == "firing" {
+		// A warning that gives way to its sensor's error trigger (or the reverse) is a severity change,
+		// not a recovery: the band triggers ("warn and below high" / "high") hand over on the same
+		// sensor, so the old one closing would otherwise send a false RESOLVED mid-incident. RESOLVED
+		// goes out only once the sensor has no open problem left.
+		if stt.State == "firing" && sensorStillAlerting(stt, problems, targets) {
+			logger.Info("notifier: severity change on the same sensor, no recovery sent", "event", eid, "host", stt.HostName, "name", stt.Name)
+		} else if stt.State == "firing" {
 			since := time.Now().Unix() - stt.FirstSeen
 			ev := notify.Event{
 				Kind: "recovery", Severity: stt.Severity, State: "ok",
@@ -181,6 +187,10 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			if items, e := zbx.ItemsByIDs(ctx, []string{itemID}); e == nil {
 				if it, ok := items[itemID]; ok {
 					value = notify.FormatReading(it.LastValue, it.Units)
+					// A "no data" alert's reading is when data stopped, not the stale last value.
+					if strings.Contains(t.Expression, "nodata(") {
+						value = noDataSince(atoi64(it.LastClock), now.In(loc))
+					}
 				}
 			}
 		}
@@ -377,6 +387,43 @@ var thresholdRe = regexp.MustCompile(`([<>]=?)\s*([0-9]+(?:\.[0-9]+)?)`)
 
 // parseThreshold pulls a best-effort threshold (e.g. ">90") from a trigger expression.
 // Complex expressions may not match, in which case it returns "" and the value shows alone.
+// sensorStillAlerting reports whether another open problem sits on the same host and sensor at a
+// different severity than this closed one: a band trigger escalating (warning -> high) or easing
+// (high -> warning), which must not read as a recovery.
+func sensorStillAlerting(stt store.NotifyState, problems []zabbix.Problem, targets map[string]zabbix.TriggerTarget) bool {
+	if stt.HostID == "" || stt.ItemID == "" {
+		return false
+	}
+	for _, p := range problems {
+		if p.EventID == stt.EventID || atoi(p.Severity) == stt.Severity || atoi(p.Severity) < 2 {
+			continue
+		}
+		t := targets[p.ObjectID]
+		if len(t.Hosts) == 0 || t.Hosts[0].HostID != stt.HostID {
+			continue
+		}
+		for _, it := range t.Items {
+			if it.ItemID == stt.ItemID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// noDataSince renders a "no data" alert's reading: when the last value arrived, as a time today or a
+// date + time otherwise ("No data since 00:53" / "No data since Sep 27 23:10"). lastClock 0 = never.
+func noDataSince(lastClock int64, now time.Time) string {
+	if lastClock <= 0 {
+		return "No data received yet"
+	}
+	t := time.Unix(lastClock, 0).In(now.Location())
+	if y1, m1, d1 := t.Date(); y1 == now.Year() && m1 == now.Month() && d1 == now.Day() {
+		return "No data since " + t.Format("15:04")
+	}
+	return "No data since " + t.Format("Jan 2 15:04")
+}
+
 func parseThreshold(expr string) string {
 	m := thresholdRe.FindStringSubmatch(expr)
 	if m == nil {
