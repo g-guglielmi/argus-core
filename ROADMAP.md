@@ -125,7 +125,7 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   per-host order wins over it. (No fleet-wide/per-class override - the default is deliberately fixed.) - _(FE+BE)_ S-M
 - [~] **Settings expansion** - ~~retention controls~~ (**Settings → Data retention**: history /
   trends / compression via Zabbix housekeeping, floors set by the chart tabs - v0.5.5), ~~allowed FQDNs and IPs~~ (a
-  Host/Origin allow-list in Settings, off until configured; probes exempt; lockout-safe), proxy health (a per-site "Probe" host carrying the
+  Host/Origin allow-list in Settings, off until configured; probes exempt; lockout-safe - v0.5.6), proxy health (a per-site "Probe" host carrying the
   Zabbix proxy-health sensors, linked from the Probes page) - _(FE+BE)_ S-M
 
 ### E. Auth / account gaps
