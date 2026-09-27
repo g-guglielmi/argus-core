@@ -26,6 +26,10 @@ GitHub Release from the matching section below.
     error) and opens its sensors in Monitoring.
   - In the Monitoring tree it's pinned first in its site, even in sites you reordered by hand
     before it existed; move it with Reorder and your placement sticks.
+
+**Fixed:**
+- Sparklines of percentages near zero (a cache at 0.002 %) no longer draw a tiny change as a
+  full-height spike: they use the same minimum 10-point span as the big chart.
   - Argus creates the hosts for existing probes at startup and for new ones at enrollment. Deleting
     a probe deletes its Probe host too. They can't be added by hand or have their class changed.
 
