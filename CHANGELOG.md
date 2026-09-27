@@ -24,6 +24,8 @@ GitHub Release from the matching section below.
   - Every sensor has a warning and an error threshold, editable on the Thresholds screen.
   - The Probes page's **Health** cell shows each probe's worst open problem (ok, warning or
     error) and opens its sensors in Monitoring.
+  - In the Monitoring tree it's pinned first in its site, even in sites you reordered by hand
+    before it existed; move it with Reorder and your placement sticks.
   - Argus creates the hosts for existing probes at startup and for new ones at enrollment. Deleting
     a probe deletes its Probe host too. They can't be added by hand or have their class changed.
 

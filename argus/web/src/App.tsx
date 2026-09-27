@@ -3360,16 +3360,21 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   const orderMap = new Map<string, string[]>()
   for (const o of order) orderMap.set(o.scope + ' ' + o.kind, o.items)
   const orderOf = (scope: string, kind: 'group' | 'host' | 'sibling') => orderMap.get(scope + ' ' + kind)
-  function applyOrder<T>(items: T[], orderKey: (t: T) => string, alphaKey: (t: T) => string, ordered?: string[]): T[] {
-    const base = [...items].sort((a, b) => alphaKey(a).localeCompare(alphaKey(b)))
+  // A site's Probe health host is pinned first by default: ahead of the alphabetical order, and ahead
+  // of a saved order that doesn't list it yet. Once an admin moves it, the saved order wins.
+  const isProbeHost = (h?: Host) => h?.class_id === 'probe'
+  function applyOrder<T>(items: T[], orderKey: (t: T) => string, alphaKey: (t: T) => string, ordered?: string[], pinned?: (t: T) => boolean): T[] {
+    const pin = (t: T) => (pinned && pinned(t) ? 0 : 1)
+    const base = [...items].sort((a, b) => pin(a) - pin(b) || alphaKey(a).localeCompare(alphaKey(b)))
     if (!ordered || ordered.length === 0) return base
     const pos = new Map(ordered.map((id, i) => [id, i]))
-    return base.sort((a, b) => (pos.get(orderKey(a)) ?? Infinity) - (pos.get(orderKey(b)) ?? Infinity))
+    const at = (t: T) => pos.get(orderKey(t)) ?? (pin(t) === 0 ? -1 : Infinity)
+    return base.sort((a, b) => at(a) - at(b))
   }
   const orderTree = (ns: GNode[], scope: string) => {
     const sorted = applyOrder(ns, (n) => n.path, (n) => n.name, orderOf(scope, 'group'))
     ns.length = 0; ns.push(...sorted)
-    for (const n of ns) { n.hosts = applyOrder(n.hosts, (h) => h.id, (h) => h.name, orderOf(n.path, 'host')); orderTree(n.children, n.path) }
+    for (const n of ns) { n.hosts = applyOrder(n.hosts, (h) => h.id, (h) => h.name, orderOf(n.path, 'host'), isProbeHost); orderTree(n.children, n.path) }
   }
   orderTree(roots, '')
   // One ordered list of a parent's children - its direct hosts and its subgroups together - so a manual
@@ -3384,7 +3389,8 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     const sib = orderOf(scope, 'sibling')
     if (!sib || sib.length === 0) return base
     const pos = new Map(sib.map((k, i) => [k, i]))
-    return [...base].sort((a, b) => (pos.get(a.key) ?? Infinity) - (pos.get(b.key) ?? Infinity))
+    const at = (x: Sibling) => pos.get(x.key) ?? (isProbeHost(x.host) ? -1 : Infinity)
+    return [...base].sort((a, b) => at(a) - at(b))
   }
   // Drop hidden groups (and their whole subtree) from the tree unless we're revealing them to manage
   // them. A host that's only in hidden groups disappears with them; a host also in a visible group still
