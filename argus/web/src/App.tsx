@@ -919,7 +919,7 @@ type Retention = {
   available: boolean; error?: string
   history_days: number; history_override: boolean
   trend_days: number; trend_override: boolean
-  compression_available: boolean; compression: boolean; compress_after_days: number
+  compression_available: boolean; timescaledb: boolean; compression: boolean; compress_after_days: number
   min_history_days: number; min_trend_days: number
 }
 
@@ -992,7 +992,11 @@ function DataRetention() {
                 <Switch checked={comp} disabled={busy} onChange={setComp} label={comp ? 'On' : 'Off'} />
                 <span className="set-hint">TimescaleDB compresses older data in place, which shrinks the database a lot. Compressed data stays readable.</span>
               </>
-            ) : <span className="set-hint">Needs TimescaleDB, which this database doesn't have.</span>}
+            ) : r.timescaledb ? (
+              <span className="set-hint">TimescaleDB is in use, but Zabbix reports compression as unavailable. Usually the TimescaleDB build lacks compression (the Apache-2 edition), or the Zabbix server hasn't restarted since TimescaleDB was set up; the Zabbix server log says which.</span>
+            ) : (
+              <span className="set-hint">Needs TimescaleDB, and this Zabbix database doesn't use it: its history tables were never converted (Zabbix's TimescaleDB schema step). Retention still works without it.</span>
+            )}
           </div>
           {r.compression_available && comp && (
             <label className="set-row">

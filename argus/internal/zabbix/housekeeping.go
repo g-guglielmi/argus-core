@@ -5,6 +5,7 @@ package zabbix
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -12,18 +13,38 @@ import (
 )
 
 // Housekeeping is the subset of Zabbix's global housekeeping settings Argus manages: how long raw
-// history and hourly trends are kept, and TimescaleDB compression. Zabbix returns every field as a
-// string; periods use its time-suffix syntax ("30d", "1w", "86400").
+// history and hourly trends are kept, and TimescaleDB compression. Periods use Zabbix's time-suffix
+// syntax ("30d", "1w", "86400").
 type Housekeeping struct {
-	HistoryMode             string `json:"hk_history_mode"`   // "1" = housekeeping deletes old history
-	HistoryGlobal           string `json:"hk_history_global"` // "1" = the period below overrides every item's own
-	History                 string `json:"hk_history"`
-	TrendsMode              string `json:"hk_trends_mode"`
-	TrendsGlobal            string `json:"hk_trends_global"`
-	Trends                  string `json:"hk_trends"`
-	CompressionStatus       string `json:"compression_status"`       // "1" = TimescaleDB compression on
-	CompressOlder           string `json:"compress_older"`           // compress chunks older than this
-	CompressionAvailability string `json:"compression_availability"` // "1" = the DB supports compression
+	HistoryMode             flexString `json:"hk_history_mode"`   // "1" = housekeeping deletes old history
+	HistoryGlobal           flexString `json:"hk_history_global"` // "1" = the period below overrides every item's own
+	History                 flexString `json:"hk_history"`
+	TrendsMode              flexString `json:"hk_trends_mode"`
+	TrendsGlobal            flexString `json:"hk_trends_global"`
+	Trends                  flexString `json:"hk_trends"`
+	DBExtension             flexString `json:"db_extension"`             // "timescaledb" when the history tables are hypertables, else ""
+	CompressionStatus       flexString `json:"compression_status"`       // "1" = TimescaleDB compression on
+	CompressOlder           flexString `json:"compress_older"`           // compress chunks older than this
+	CompressionAvailability flexString `json:"compression_availability"` // "1" = Zabbix found compression usable
+}
+
+// flexString decodes a JSON string or number as a string. The API documents several housekeeping
+// fields as integers; today Zabbix sends them as strings, but a numeric value must not break the
+// whole read.
+type flexString string
+
+func (f *flexString) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		*f = flexString(s)
+		return nil
+	}
+	var n json.Number
+	if err := json.Unmarshal(b, &n); err != nil {
+		return err
+	}
+	*f = flexString(n.String())
+	return nil
 }
 
 // Housekeeping reads the global housekeeping settings. Zabbix allows this only for a Super admin

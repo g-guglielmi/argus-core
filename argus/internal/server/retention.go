@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	"argus/internal/zabbix"
@@ -39,8 +40,10 @@ type retentionView struct {
 	HistoryOverride bool `json:"history_override"`
 	TrendDays       int  `json:"trend_days"`
 	TrendOverride   bool `json:"trend_override"`
-	// Compression is only offered when the database supports it (TimescaleDB).
+	// Compression is only offered when Zabbix reports it usable. TimescaleDB tells the two
+	// "unavailable" cases apart: no TimescaleDB at all, or TimescaleDB without usable compression.
 	CompressionAvailable bool `json:"compression_available"`
+	TimescaleDB          bool `json:"timescaledb"`
 	Compression          bool `json:"compression"`
 	CompressAfterDays    int  `json:"compress_after_days"`
 	MinHistoryDays       int  `json:"min_history_days"`
@@ -58,13 +61,14 @@ func periodDays(p string) int {
 func retentionFrom(hk zabbix.Housekeeping) retentionView {
 	return retentionView{
 		Available:            true,
-		HistoryDays:          periodDays(hk.History),
+		HistoryDays:          periodDays(string(hk.History)),
 		HistoryOverride:      hk.HistoryGlobal == "1",
-		TrendDays:            periodDays(hk.Trends),
+		TrendDays:            periodDays(string(hk.Trends)),
 		TrendOverride:        hk.TrendsGlobal == "1",
 		CompressionAvailable: hk.CompressionAvailability == "1",
+		TimescaleDB:          strings.EqualFold(string(hk.DBExtension), "timescaledb"),
 		Compression:          hk.CompressionStatus == "1",
-		CompressAfterDays:    periodDays(hk.CompressOlder),
+		CompressAfterDays:    periodDays(string(hk.CompressOlder)),
 		MinHistoryDays:       retentionMinHistoryDays,
 		MinTrendDays:         retentionMinTrendDays,
 	}

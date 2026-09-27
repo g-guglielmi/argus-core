@@ -12,12 +12,12 @@ import (
 func TestRetentionFrom(t *testing.T) {
 	v := retentionFrom(zabbix.Housekeeping{
 		HistoryGlobal: "1", History: "30d", TrendsGlobal: "0", Trends: "2w",
-		CompressionStatus: "1", CompressOlder: "604800", CompressionAvailability: "1",
+		CompressionStatus: "1", CompressOlder: "604800", CompressionAvailability: "1", DBExtension: "timescaledb",
 	})
 	if !v.Available || v.HistoryDays != 30 || !v.HistoryOverride || v.TrendDays != 14 || v.TrendOverride {
 		t.Fatalf("periods: %+v", v)
 	}
-	if !v.CompressionAvailable || !v.Compression || v.CompressAfterDays != 7 {
+	if !v.CompressionAvailable || !v.TimescaleDB || !v.Compression || v.CompressAfterDays != 7 {
 		t.Fatalf("compression: %+v", v)
 	}
 	if d := periodDays("36h"); d != 2 { // rounds to whole days

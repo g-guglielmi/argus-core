@@ -4,6 +4,7 @@
 package zabbix
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 )
@@ -29,5 +30,16 @@ func TestIsPermissionError(t *testing.T) {
 	}
 	if IsPermissionError(&rpcError{Code: -32602, Message: "Invalid params.", Data: "bad value"}) || IsPermissionError(fmt.Errorf("plain")) {
 		t.Fatal("false positive")
+	}
+}
+
+func TestHousekeepingDecodesStringsAndNumbers(t *testing.T) {
+	var hk Housekeeping
+	raw := `{"hk_history":"31d","hk_history_global":"1","db_extension":"","compression_availability":0,"compression_status":"0"}`
+	if err := json.Unmarshal([]byte(raw), &hk); err != nil {
+		t.Fatal(err)
+	}
+	if hk.History != "31d" || hk.HistoryGlobal != "1" || hk.CompressionAvailability != "0" || hk.DBExtension != "" {
+		t.Fatalf("decoded %+v", hk)
 	}
 }
