@@ -103,11 +103,21 @@ cd argus/web && npm install && npm run dev
 
 All configuration is via environment variables (`docker run -e …` / `--env-file`).
 
-> **Runtime settings (admin UI).** Several of these can also be set from the admin **Settings**
-> page with no redeploy: the **Zabbix API URL + token**, **`ARGUS_PUBLIC_URL`**, **`ARGUS_TZ`**,
-> the **login rate-limit** vars, and the **session timeout** vars. Precedence is **env-wins**: when the variable is set it takes
-> effect and the field is read-only in the UI; unset the variable to manage that setting in the
-> GUI (stored in the database, token encrypted at rest). The rows below are marked _(UI)_.
+> **Runtime settings (admin UI).** The rows marked _(UI)_ below can also be set from the admin
+> **Settings** page with no redeploy: the Zabbix API URL + token, the Public URL, the timezone,
+> the login rate-limit and session timeout vars, the allowed FQDNs and IPs, and the probe core
+> host. Values saved there are stored in the database (the token encrypted at rest).
+>
+> - **Env wins.** When a variable is set, it takes effect and its field shows **via env** and is
+>   read-only. Each Settings section has its own **Save**, which saves only that section; a section
+>   whose fields all come from variables has **no Save button**, because there is nothing it could
+>   change.
+> - **Moving a setting from env to the UI:** remove the variable, recreate the container, then enter
+>   the value in Settings and save. Until you do, Argus uses the value saved in its database, or the
+>   built-in default when none was ever saved. For the **Zabbix API URL and token** that means no
+>   Zabbix connection in between, so move one at a time and re-enter it straight away.
+> - **Data retention** (history, trends, compression) isn't an env var: it's Zabbix's own
+>   housekeeping setting, edited from Settings when the Zabbix token is a Super admin.
 
 **Core**
 | Var | Default | Purpose |
