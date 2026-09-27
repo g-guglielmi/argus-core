@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.5.7] - 2026-09-27
 
 **Changed:**
 - **Each Settings section saves on its own.** The single "Save changes" button at the top is gone:
