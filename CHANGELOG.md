@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.5.8] - 2026-09-28
 
 **Added:**
 - **Probe health.** Every probe now gets a **Probe <site>** host in its site group, measured by the

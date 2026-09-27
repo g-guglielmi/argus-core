@@ -127,7 +127,7 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   trends / compression via Zabbix housekeeping, floors set by the chart tabs - v0.5.5), ~~allowed FQDNs and IPs~~ (a
   Host/Origin allow-list in Settings, off until configured; probes exempt; lockout-safe - v0.5.6), ~~proxy health~~ (a per-site "Probe" host
   carrying the probe's own health sensors and a "probe unreachable" alert, linked from the Probes
-  page) - _(FE+BE)_ S-M
+  page - v0.5.8) - _(FE+BE)_ S-M
 
 ### E. Auth / account gaps
 - [x] **Self-service email password reset** (single-use emailed link; reuses the email channel) - v0.3.3
