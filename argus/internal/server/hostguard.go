@@ -12,7 +12,7 @@ import (
 	"argus/internal/settings"
 )
 
-// Allowed hosts (Settings expansion, §D; DESIGN §4 "CSRF / allowed hosts"). The session cookie is
+// Allowed FQDNs and IPs (Settings expansion, §D; DESIGN §4 "CSRF / allowed FQDNs and IPs"). The session cookie is
 // SameSite=Lax, which already keeps other sites from sending signed-in requests. The allow-list
 // closes what Lax leaves open:
 //   - DNS rebinding: a hostile name resolving to the Argus IP reaches the API with its own Host
@@ -79,7 +79,7 @@ func hostGuardVerdict(r *http.Request, list []string, publicURL string, trustPro
 	}
 	host := requestHost(r, trustProxy)
 	if !hostAllowed(host, list, publicURL) {
-		return false, "Argus doesn't accept requests addressed to \"" + host + "\". An admin can add it under Settings → Allowed hosts."
+		return false, "Argus doesn't accept requests addressed to \"" + host + "\". An admin can add it under Settings → Allowed FQDNs and IPs."
 	}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
@@ -104,7 +104,7 @@ func hostGuardVerdict(r *http.Request, list []string, publicURL string, trustPro
 func (s *Server) hostGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if ok, msg := hostGuardVerdict(r, s.mgr.AllowedHosts(), s.mgr.PublicURL(), s.cfg.TrustProxy); !ok {
-			s.logger.Warn("request refused by allowed hosts", "host", r.Host, "origin", r.Header.Get("Origin"), "path", r.URL.Path, "ip", s.clientIP(r))
+			s.logger.Warn("request refused by the allowed FQDNs and IPs list", "host", r.Host, "origin", r.Header.Get("Origin"), "path", r.URL.Path, "ip", s.clientIP(r))
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": msg})
 			return
 		}
@@ -134,5 +134,5 @@ func allowedHostsLockout(r *http.Request, values map[string]string, current []st
 	if hostAllowed(host, list, publicURL) {
 		return ""
 	}
-	return "You're using Argus at \"" + host + "\", which this change would lock out. Add it to Allowed hosts first."
+	return "You're using Argus at \"" + host + "\", which this change would lock out. Add it to Allowed FQDNs and IPs first."
 }

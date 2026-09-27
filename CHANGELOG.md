@@ -14,8 +14,9 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 **Added:**
-- **Allowed hosts.** A new **Settings → Allowed hosts** list (also `ARGUS_ALLOWED_HOSTS`) names the
-  addresses browsers may use to reach Argus. With a list set, Argus refuses API requests for any
+- **Allowed FQDNs and IPs.** A new **Settings → Allowed FQDNs and IPs** list (also
+  `ARGUS_ALLOWED_HOSTS`) names the addresses people type in the browser to reach Argus, such as
+  `monitoring.example.com` or `10.0.0.10`. With a list set, Argus refuses API requests for any
   other address and changes coming from other sites, which blocks DNS-rebinding and cross-site
   attacks on top of the existing SameSite session cookie.
   - Off until you fill it in, so upgrading changes nothing. The card shows the address you're using

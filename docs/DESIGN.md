@@ -112,8 +112,8 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
   cert, registers the proxy via the Zabbix API, returns cert + `ca.crt`. The **private key never
   leaves the probe**. Argus signs with the mounted CA (`ARGUS_CA_*`); the self-enrolling
   `argus-probe` image runs the probe side. `gen-certs.sh` remains the manual fallback.
-- **CSRF / allowed hosts:** the session cookie is `SameSite=Lax` (other sites can't send signed-in
-  requests), and **Settings → Allowed hosts** (`ARGUS_ALLOWED_HOSTS`) adds a Host/Origin allow-list,
+- **CSRF / allowed FQDNs and IPs:** the session cookie is `SameSite=Lax` (other sites can't send signed-in
+  requests), and **Settings → Allowed FQDNs and IPs** (`ARGUS_ALLOWED_HOSTS`) adds a Host/Origin allow-list,
   e.g. `monitoring.example.com` **+ the private IP**. With a list set, `/api/*` requests for any other
   `Host` are refused (DNS rebinding), and so are state-changing requests from any other `Origin`
   (sibling subdomains count as "same site" for Lax). Off until configured, so an upgrade can't lock

@@ -496,7 +496,7 @@ function Login({ onSuccess, passkeysAvailable, passwordReset, notice }: { onSucc
     setBusy(true); setError(null)
     try {
       const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) })
-      // 403 = refused before the credentials were even checked (Allowed hosts): show why, so a
+      // 403 = refused before the credentials were even checked (Allowed FQDNs and IPs): show why, so a
       // locked-out admin doesn't keep retrying their password.
       if (res.status === 403) { setError(await errText(res, 'This address is not allowed')); return }
       if (!res.ok) { setError('Invalid email or password'); return }
@@ -1565,7 +1565,7 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
     { name: 'General', title: 'General', note: 'Timezone and the external URL used in notification links.' },
     { name: 'Security', title: 'Login rate limiting', note: 'Brute-force protection thresholds.' },
     { name: 'Sessions', title: 'Sessions', note: 'How long a sign-in stays valid. Changes take effect immediately, including for existing sessions: lowering the max length can sign users out on their next request.' },
-    { name: 'Access', title: 'Allowed hosts', note: 'The addresses browsers may use to reach Argus. With a list set, Argus refuses API requests for any other address and changes coming from other sites, which blocks DNS-rebinding and cross-site attacks.' },
+    { name: 'Access', title: 'Allowed FQDNs and IPs', note: "The addresses people type in the browser's address bar to open Argus, like monitoring.example.com or 10.0.0.10. With a list set, Argus refuses API requests for any other address and changes coming from other sites, which blocks DNS-rebinding and cross-site attacks." },
     { name: 'Probe enrollment', title: 'Probe enrollment', note: 'The address new probes are told to dial for the Zabbix server (:10051).' },
   ]
 
@@ -1636,7 +1636,7 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
   )
 }
 
-// AllowedHostsStatus sits under the Allowed hosts field: whether the check is on, the address this
+// AllowedHostsStatus sits under the Allowed FQDNs and IPs field: whether the check is on, the address this
 // browser is using (always kept working: the server refuses a save that would lock it out), and,
 // while the list is empty, a one-click suggestion built from the Public URL host plus this address.
 function AllowedHostsStatus({ items, edits, onUse }: { items: SettingItem[]; edits: Record<string, string>; onUse: (v: string) => void }) {
