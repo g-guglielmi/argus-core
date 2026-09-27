@@ -483,6 +483,12 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 	if err := s.ensureColumn("notify_events", "item_id TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// When the incident behind an alert began (unix s; 0 = unknown, fall back to first_seen): carried
+	// across severity changes and, for "no data" alerts, set to when the data stopped - so "Recovered
+	// after" measures the whole outage, not just the last alert's lifetime.
+	if err := s.ensureColumn("notify_events", "incident_start INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	// Per-channel minimum severity (Zabbix 0..5); default 2 = Warning, matching the old global floor.
 	if err := s.ensureColumn("notify_channels", "min_severity INTEGER NOT NULL DEFAULT 2"); err != nil {
 		return err

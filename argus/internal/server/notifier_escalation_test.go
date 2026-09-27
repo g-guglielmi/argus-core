@@ -75,3 +75,12 @@ func TestParseThresholdExpanded(t *testing.T) {
 		}
 	}
 }
+
+func TestIncidentStartFallback(t *testing.T) {
+	if got := incidentStart(store.NotifyState{FirstSeen: 1000, IncidentStart: 640}); got != 640 {
+		t.Errorf("recorded start: %d", got)
+	}
+	if got := incidentStart(store.NotifyState{FirstSeen: 1000}); got != 1000 {
+		t.Errorf("a row from before incident tracking falls back to first_seen: %d", got)
+	}
+}

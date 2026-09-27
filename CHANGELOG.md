@@ -41,6 +41,10 @@ GitHub Release from the matching section below.
   it skips the extra one-minute flap guard (the no-data period already is one), and the probe's
   uptime check runs every 30 seconds. The probe alerts now arrive about 3.5 and 5.5 minutes after
   a probe goes quiet, instead of 5 and 7.
+- **"Recovered after" now covers the whole incident.** It used to count only how long the last alert
+  was open, so a probe down for 9 minutes read "Recovered after 4m" (the error alert only started at
+  5). It now counts from when the incident began: when the data stopped for a "no data" alert, and
+  from the first alert when a warning escalated to an error.
 - Alerts show their threshold from the real value (for example `>=75`), now that Argus reads trigger
   expressions with their macros resolved.
 - The Probes page counts a probe as **offline** after 2 minutes without contact (was 5), so it no

@@ -118,6 +118,10 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		activeIDs[p.EventID] = p
 	}
 
+	// Incident starts handed over by alerts that closed on a severity change, keyed by host|item: the
+	// problem that took over inherits them, so its "Recovered after" covers the whole incident.
+	inherited := map[string]int64{}
+
 	// --- recoveries: fired problems that are no longer active ---
 	for eid, stt := range states {
 		if _, stillActive := activeIDs[eid]; stillActive {
@@ -129,8 +133,12 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		// goes out only once the sensor has no open problem left.
 		if stt.State == "firing" && sensorStillAlerting(stt, problems, targets) {
 			logger.Info("notifier: severity change on the same sensor, no recovery sent", "event", eid, "host", stt.HostName, "name", stt.Name)
+			k := stt.HostID + "|" + stt.ItemID
+			if s := incidentStart(stt); inherited[k] == 0 || s < inherited[k] {
+				inherited[k] = s
+			}
 		} else if stt.State == "firing" {
-			since := time.Now().Unix() - stt.FirstSeen
+			since := time.Now().Unix() - incidentStart(stt)
 			ev := notify.Event{
 				Kind: "recovery", Severity: stt.Severity, State: "ok",
 				Host: stt.HostName, Name: stt.Name, Site: primarySite(hostGroups[stt.HostID]), When: time.Now().In(loc),
@@ -161,10 +169,23 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		alertable := isAlertable(t, hiddenHosts, hiddenItems, acked, p.EventID)
 
 		stt, seen := states[p.EventID]
+		// The incident began when Zabbix raised this problem - or earlier, if it took over from an alert
+		// on the same sensor at another severity.
+		start := stt.IncidentStart
+		if start == 0 {
+			start = atoi64(p.Clock)
+		}
+		if s := inherited[hostID+"|"+itemID]; s > 0 && (start == 0 || s < start) {
+			start = s
+			if seen && stt.IncidentStart != start {
+				stt.IncidentStart = start
+				_ = st.UpsertNotifyState(ctx, stt)
+			}
+		}
 		if !seen {
 			_ = st.UpsertNotifyState(ctx, store.NotifyState{
 				EventID: p.EventID, HostID: hostID, ItemID: itemID, HostName: hostName, Name: p.Name,
-				Severity: sev, State: "pending", FirstSeen: now.Unix(),
+				Severity: sev, State: "pending", FirstSeen: now.Unix(), IncidentStart: start,
 			})
 			continue
 		}
@@ -189,9 +210,14 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			if items, e := zbx.ItemsByIDs(ctx, []string{itemID}); e == nil {
 				if it, ok := items[itemID]; ok {
 					value = notify.FormatReading(it.LastValue, it.Units)
-					// A "no data" alert's reading is when data stopped, not the stale last value.
+					// A "no data" alert's reading is when data stopped, not the stale last value - and
+					// that moment is when its incident really began.
 					if strings.Contains(t.Expression, "nodata(") {
-						value = noDataSince(atoi64(it.LastClock), now.In(loc))
+						lc := atoi64(it.LastClock)
+						value = noDataSince(lc, now.In(loc))
+						if lc > 0 && (start == 0 || lc < start) {
+							start = lc
+						}
 					}
 				}
 			}
@@ -208,7 +234,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		firedAt := now.Unix()
 		_ = st.UpsertNotifyState(ctx, store.NotifyState{
 			EventID: p.EventID, HostID: hostID, ItemID: itemID, HostName: hostName, Name: p.Name,
-			Severity: sev, State: "firing", FirstSeen: stt.FirstSeen, FiredAt: &firedAt,
+			Severity: sev, State: "firing", FirstSeen: stt.FirstSeen, FiredAt: &firedAt, IncidentStart: start,
 		})
 	}
 }
@@ -389,6 +415,15 @@ var thresholdRe = regexp.MustCompile(`([<>]=?)\s*([0-9]+(?:\.[0-9]+)?)`)
 
 // parseThreshold pulls a best-effort threshold (e.g. ">90") from a trigger expression.
 // Complex expressions may not match, in which case it returns "" and the value shows alone.
+// incidentStart is when the incident behind a notifier state began: its recorded start, or - for rows
+// from before that was tracked - when Argus first saw the problem.
+func incidentStart(stt store.NotifyState) int64 {
+	if stt.IncidentStart > 0 {
+		return stt.IncidentStart
+	}
+	return stt.FirstSeen
+}
+
 // sensorStillAlerting reports whether another open problem sits on the same host and sensor at a
 // different severity than this closed one: a band trigger escalating (warning -> high) or easing
 // (high -> warning), which must not read as a recovery.
