@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.5.5] - 2026-09-27
 
 **Added:**
 - **Data retention in Settings.** How long Zabbix keeps raw history and hourly trends, and
