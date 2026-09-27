@@ -365,8 +365,10 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   trigger. RESOLVED is sent only when the sensor has no open problem left; a problem that closes
   while another one on the same host + sensor at a different severity is open is a severity change,
   and sends nothing (the new severity alerts on its own).
-- **"No data" alerts** (nodata() triggers, e.g. probe unreachable) read "No data since HH:MM"
-  instead of the stale last value.
+- **"No data" alerts** (nodata() triggers, e.g. probe unreachable) read "No data for 4m (since
+  HH:MM)" instead of the stale last value, and skip the flap debounce: the nodata period already is
+  one. The notifier reads trigger expressions expanded (`expandExpression`), which is also where the
+  alert's threshold comes from.
 - Telegram = one shared bot, per-site topic. Discord = dedicated webhook per site.
   Model supports flipping either to shared/dedicated with no code change.
 - Secrets entered in the UI later (placeholders for now).

@@ -610,6 +610,9 @@ func (c *Client) TriggerTargets(ctx context.Context, triggerIDs []string) (map[s
 		"selectHosts": []string{"hostid", "name", "status"},
 		"selectItems": []string{"itemid"},
 		"triggerids":  triggerIDs,
+		// Without this the expression comes back as "{functionid}>=90"-style ids: the function names
+		// (nodata) and resolved macro values (thresholds) would be invisible to Argus.
+		"expandExpression": true,
 	}
 	var ts []struct {
 		TriggerID string `json:"triggerid"`

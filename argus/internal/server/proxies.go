@@ -19,7 +19,7 @@ type proxyView struct {
 	ID             string `json:"id"` // Zabbix proxyid, for "Monitored by" assignment
 	Name           string `json:"name"`
 	LastAccess     int64  `json:"last_access"`      // unix seconds Zabbix last heard data, 0 if never seen
-	Online         bool   `json:"online"`           // seen within the last 5 minutes
+	Online         bool   `json:"online"`           // heard from within the last 2 minutes (before the 3-minute "not reporting" warning)
 	Mode           string `json:"mode"`             // active | passive
 	EnrolledAt     int64  `json:"enrolled_at"`      // unix seconds a probe self-enrolled via Argus; 0 if manual
 	Version        string `json:"version"`          // running probe image version reported at check-in ("" = unknown)
@@ -101,7 +101,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			ID:             p.ProxyID,
 			Name:           p.Name,
 			LastAccess:     la,
-			Online:         la > 0 && now-la <= 300,
+			Online:         la > 0 && now-la <= 120,
 			Mode:           mode,
 			EnrolledAt:     enrolled[p.Name],
 			Version:        version,

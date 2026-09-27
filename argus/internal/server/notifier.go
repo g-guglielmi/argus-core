@@ -174,7 +174,9 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		if !alertable {
 			continue // acked/hidden/paused: keep waiting quietly
 		}
-		if now.Sub(time.Unix(stt.FirstSeen, 0)) < notifyDebounce {
+		// A "no data" trigger already waited its own period (that IS its flap guard), so it alerts
+		// straight away instead of sitting out the debounce too.
+		if now.Sub(time.Unix(stt.FirstSeen, 0)) < notifyDebounce && !strings.Contains(t.Expression, "nodata(") {
 			continue // still within the flap-debounce window
 		}
 		gMatches := matchingChannels(channels, hostGroups[hostID], sev)
@@ -411,17 +413,18 @@ func sensorStillAlerting(stt store.NotifyState, problems []zabbix.Problem, targe
 	return false
 }
 
-// noDataSince renders a "no data" alert's reading: when the last value arrived, as a time today or a
-// date + time otherwise ("No data since 00:53" / "No data since Sep 27 23:10"). lastClock 0 = never.
+// noDataSince renders a "no data" alert's reading: how long data has been missing and since when,
+// as a time today or a date + time otherwise ("No data for 4m (since 00:53)"). lastClock 0 = never.
 func noDataSince(lastClock int64, now time.Time) string {
 	if lastClock <= 0 {
 		return "No data received yet"
 	}
 	t := time.Unix(lastClock, 0).In(now.Location())
+	since := t.Format("Jan 2 15:04")
 	if y1, m1, d1 := t.Date(); y1 == now.Year() && m1 == now.Month() && d1 == now.Day() {
-		return "No data since " + t.Format("15:04")
+		since = t.Format("15:04")
 	}
-	return "No data since " + t.Format("Jan 2 15:04")
+	return "No data for " + notify.FormatDuration(now.Unix()-lastClock) + " (since " + since + ")"
 }
 
 func parseThreshold(expr string) string {

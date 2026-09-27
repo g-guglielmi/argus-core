@@ -20,7 +20,7 @@ zabbix_export:
           name: 'Probe uptime'
           type: INTERNAL
           key: 'zabbix[uptime]'
-          delay: 1m
+          delay: 30s
           history: 7d
           trends: 365d
           value_type: UNSIGNED

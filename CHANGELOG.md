@@ -36,8 +36,15 @@ GitHub Release from the matching section below.
   error that eased to a warning) on the same sensor sent a RESOLVED for the old one, although the
   problem was still going on. RESOLVED now goes out only when the sensor has actually recovered.
   This applied to every sensor with warning and error thresholds, not just probes.
-- A "no data" alert, like "Probe unreachable", now reads **No data since 00:53** instead of the
-  last value that arrived before the data stopped.
+- A "no data" alert, like "Probe unreachable", now reads **No data for 4m (since 00:56)** instead of
+  the last value that arrived before the data stopped, and it's sent as soon as its period is up:
+  it skips the extra one-minute flap guard (the no-data period already is one), and the probe's
+  uptime check runs every 30 seconds. The probe alerts now arrive about 3.5 and 5.5 minutes after
+  a probe goes quiet, instead of 5 and 7.
+- Alerts show their threshold from the real value (for example `>=75`), now that Argus reads trigger
+  expressions with their macros resolved.
+- The Probes page counts a probe as **offline** after 2 minutes without contact (was 5), so it no
+  longer reads "online" next to a "health: warning".
 - Sparklines of percentages near zero (a cache at 0.002 %) no longer draw a tiny change as a
   full-height spike: they use the same minimum 10-point span as the big chart.
   - Argus creates the hosts for existing probes at startup and for new ones at enrollment. Deleting

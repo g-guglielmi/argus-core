@@ -50,13 +50,28 @@ func TestSensorStillAlerting(t *testing.T) {
 func TestNoDataSince(t *testing.T) {
 	loc := time.FixedZone("CEST", 2*3600)
 	now := time.Date(2026, 9, 28, 1, 0, 0, 0, loc)
-	if got := noDataSince(time.Date(2026, 9, 28, 0, 53, 0, 0, loc).Unix(), now); got != "No data since 00:53" {
+	if got := noDataSince(time.Date(2026, 9, 28, 0, 56, 0, 0, loc).Unix(), now); got != "No data for 4m (since 00:56)" {
 		t.Errorf("same day: %q", got)
 	}
-	if got := noDataSince(time.Date(2026, 9, 27, 23, 10, 0, 0, loc).Unix(), now); got != "No data since Sep 27 23:10" {
+	if got := noDataSince(time.Date(2026, 9, 27, 23, 10, 0, 0, loc).Unix(), now); got != "No data for 1h 50m (since Sep 27 23:10)" {
 		t.Errorf("earlier day: %q", got)
 	}
 	if got := noDataSince(0, now); got != "No data received yet" {
 		t.Errorf("never: %q", got)
+	}
+}
+
+// TriggerTargets now asks for expanded expressions (real macro values, function names). The
+// threshold shown in an alert must come from the comparison, not from digits inside the item key.
+func TestParseThresholdExpanded(t *testing.T) {
+	cases := map[string]string{
+		`min(/Probe site1/zabbix[queue,10m],15m)>=50 and min(/Probe site1/zabbix[queue,10m],15m)<200`: ">=50",
+		`min(/web1/system.cpu.util,5m)>90`:                   ">90",
+		`nodata(/Probe site1/zabbix[uptime],300,"strict")=1`: "",
+	}
+	for expr, want := range cases {
+		if got := parseThreshold(expr); got != want {
+			t.Errorf("parseThreshold(%q) = %q, want %q", expr, got, want)
+		}
 	}
 }

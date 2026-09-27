@@ -179,6 +179,9 @@ func SampleEvent(now time.Time, openURL string) Event {
 	}
 }
 
+// FormatDuration is fmtDur for callers outside the package (e.g. a "no data for 4m" reading).
+func FormatDuration(secs int64) string { return fmtDur(secs) }
+
 // fmtDur renders a duration in seconds as a compact "1d 3h", "4h 12m", or "45s" string.
 func fmtDur(secs int64) string {
 	if secs < 60 {
