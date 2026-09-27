@@ -27,6 +27,10 @@ GitHub Release from the matching section below.
   - In the Monitoring tree it's pinned first in its site, even in sites you reordered by hand
     before it existed; move it with Reorder and your placement sticks.
 
+**Changed:**
+- The manual probe deploy files (`deploy/probe/run-probe.sh`, the Unraid proxy template) start 5
+  ICMP pingers, matching the `argus-probe` image from `probe/v7.0.31-r3`.
+
 **Fixed:**
 - Sparklines of percentages near zero (a cache at 0.002 %) no longer draw a tiny change as a
   full-height spike: they use the same minimum 10-point span as the big chart.

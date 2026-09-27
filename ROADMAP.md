@@ -154,6 +154,14 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 ### G. Scale & production readiness
 - [ ] **Sizing pass** before the ~6000-sensor deployment (proxies, DB, caches, NVPS) - analysis
 - [ ] **Server-side census/counts** - move the `/api/sensors` full census server-side at scale - _(BE)_ M
+- [ ] **Probe process autoscaling** - size each probe's Zabbix process counts (ICMP pingers first,
+  then pollers, trappers, preprocessing workers) from its own load, since Zabbix only reads them at
+  start. Argus already sees each probe's per-process busy % on its Probe host: it computes the count
+  that keeps a process near ~50% busy, sends it at check-in (same channel as the core-host
+  re-point), and the probe applies it at its next restart, or Argus has the updater sidecar
+  recreate the proxy when the number changes (a few seconds down; the probe buffers). Until then the
+  probe image starts 5 pingers (`probe/v7.0.31-r3`) and the "processes busy" warning flags a site
+  that outgrows it. - _(BE+probe+updater)_ M
 - [x] **`testing` channel / release-gated `latest`** - `main` pushes now publish `:testing` (+ `:sha`)
   and only `v*` tag pushes move `:latest` (alongside `:vX.Y.Z`), so production can pin `:latest` and a
   test box tracks `:testing` without manual tagging. Pairs with the version indicator (a `:testing`

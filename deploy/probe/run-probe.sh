@@ -37,7 +37,7 @@ docker run -d \
   -e ZBX_SERVER_HOST="${CORE}" \
   -e ZBX_HOSTNAME="proxy-${SITE}" \
   -e ZBX_PROXYOFFLINEBUFFER=168 \
-  -e ZBX_PROXYLOCALBUFFER=0 \
+  -e ZBX_PROXYLOCALBUFFER=0   -e ZBX_STARTPINGERS=5 \
   -e ZBX_TLSCONNECT=cert \
   -e ZBX_TLSACCEPT=cert \
   -e ZBX_TLSCAFILE=/certs/ca.crt \
