@@ -11,6 +11,14 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Changed:**
+- **Each Settings section saves on its own.** The single "Save changes" button at the top is gone:
+  every section has its own **Save** at the bottom, which saves just that section and leaves
+  unsaved edits in the others alone. Pressing Enter in a field saves its section. Data retention's
+  button is now a plain **Save** too.
+
 ## [0.5.6] - 2026-09-27
 
 **Added:**

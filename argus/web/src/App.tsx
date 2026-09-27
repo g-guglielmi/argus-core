@@ -939,8 +939,6 @@ function DataRetention() {
   const [comp, setComp] = useState(false)
   const [compAfter, setCompAfter] = useState('')
   const [busy, setBusy] = useState(false)
-  // The card sits inside the Settings form: Enter here must not submit the other settings.
-  const noEnter = (e: ReactKeyboardEvent) => { if (e.key === 'Enter') e.preventDefault() }
 
   const apply = (d: Retention) => {
     setR(d); setHist(String(d.history_days)); setTrend(String(d.trend_days))
@@ -969,7 +967,7 @@ function DataRetention() {
   }
 
   return (
-    <section className="set-card">
+    <form className="set-card" onSubmit={(e) => { e.preventDefault(); if (dirty && !busy) save() }}>
       <h3>Data retention</h3>
       <p className="set-note">How long Zabbix keeps sensor data. Raw history feeds the 2h and 2d chart tabs; hourly trends (min / avg / max) feed 7d through 1Y. Zabbix deletes older data by itself, and longer periods mean a bigger database.</p>
       {!r ? <Skeleton rows={2} cols={2} /> : !r.available ? <p className="set-hint">{r.error}</p> : (
@@ -979,12 +977,12 @@ function DataRetention() {
           )}
           <label className="set-row">
             <div className="set-head"><span className="flabel">History (days)</span></div>
-            <input className="input" type="number" min={r.min_history_days} value={hist} disabled={busy} onKeyDown={noEnter} onChange={(e) => setHist(e.target.value)} />
+            <input className="input" type="number" min={r.min_history_days} value={hist} disabled={busy} onChange={(e) => setHist(e.target.value)} />
             <span className="set-hint">Every raw reading. At least {r.min_history_days} days, so the 2d tab stays full; the installer default is 30.</span>
           </label>
           <label className="set-row">
             <div className="set-head"><span className="flabel">Trends (days)</span></div>
-            <input className="input" type="number" min={r.min_trend_days} value={trend} disabled={busy} onKeyDown={noEnter} onChange={(e) => setTrend(e.target.value)} />
+            <input className="input" type="number" min={r.min_trend_days} value={trend} disabled={busy} onChange={(e) => setTrend(e.target.value)} />
             <span className="set-hint" style={t < 365 ? { color: 'var(--warn)' } : undefined}>
               {t < 365 ? 'Under a year, the 1Y tab won\'t reach back a full year.' : 'Hourly min / avg / max per sensor. The installer default is 730 (two years).'}
             </span>
@@ -1001,16 +999,16 @@ function DataRetention() {
           {r.compression_available && comp && (
             <label className="set-row">
               <div className="set-head"><span className="flabel">Compress after (days)</span></div>
-              <input className="input" type="number" min={7} value={compAfter} disabled={busy} onKeyDown={noEnter} onChange={(e) => setCompAfter(e.target.value)} />
+              <input className="input" type="number" min={7} value={compAfter} disabled={busy} onChange={(e) => setCompAfter(e.target.value)} />
               <span className="set-hint">At least 7 days (Zabbix's minimum). The installer default is 7.</span>
             </label>
           )}
-          <div className="set-row" style={{ marginBottom: 0 }}>
-            <button type="button" className="btn primary" style={{ justifySelf: 'start', width: 'auto' }} disabled={!dirty || busy} onClick={save}>{busy ? 'Saving…' : 'Save retention'}</button>
+          <div className="set-row set-actions">
+            <button type="submit" className="btn primary" disabled={!dirty || busy}>{busy ? 'Saving…' : 'Save'}</button>
           </div>
         </>
       )}
-    </section>
+    </form>
   )
 }
 
@@ -1493,7 +1491,7 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
   const toast = useToast()
   const [items, setItems] = useState<SettingItem[] | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
-  const [busy, setBusy] = useState(false)
+  const [busyGroup, setBusyGroup] = useState<string | null>(null)
   const [advBusy, setAdvBusy] = useState(false)
   const [zbx, setZbx] = useState<{ reachable: boolean; version?: string; error?: string } | null>(null)
   // The core VM's time status (zone + NTP sync), shown under the General group's Timezone field
@@ -1522,19 +1520,28 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
     fetch('/api/os/status').then((r) => (r.ok ? r.json() : null)).then((d: OSStatus | null) => { if (d?.core.available) setCoreTime(d.core) }).catch(() => {})
   }, [])
 
-  const dirty = Object.keys(edits).length > 0
   const setEdit = (k: string, v: string) => setEdits((e) => ({ ...e, [k]: v }))
+  const groupKeys = (name: string) => new Set((items || []).filter((it) => it.group === name).map((it) => it.key))
 
-  async function save(e?: FormEvent) {
-    e?.preventDefault(); setBusy(true)
+  // Each settings card saves on its own: only that card's fields are sent, and unsaved edits in the
+  // other cards stay as they are.
+  async function saveGroup(g: { name: string; title: string }, e?: FormEvent) {
+    e?.preventDefault()
+    const keys = groupKeys(g.name)
+    const values = Object.fromEntries(Object.entries(edits).filter(([k]) => keys.has(k)))
+    if (Object.keys(values).length === 0) return
+    setBusyGroup(g.name)
     try {
-      const res = await fetch('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: edits }) })
-      if (!res.ok) { toast.error(await errText(res, 'Could not save settings')); return }
-      setItems(await res.json()); setEdits({}); toast.success('Settings saved and applied.'); checkHealth()
-    } finally { setBusy(false) }
+      const res = await fetch('/api/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values }) })
+      if (!res.ok) { toast.error(await errText(res, `Could not save ${g.title}`)); return }
+      setItems(await res.json())
+      setEdits((cur) => Object.fromEntries(Object.entries(cur).filter(([k]) => !keys.has(k))))
+      toast.success(`${g.title} saved and applied.`)
+      if (g.name === 'Connection') checkHealth()
+    } finally { setBusyGroup(null) }
   }
 
-  const field = (it: SettingItem) => {
+  const field = (it: SettingItem, busy: boolean) => {
     const editing = it.key in edits
     const cur = editing ? edits[it.key] : it.secret ? '' : it.value
     const ph = it.secret ? (it.has_value ? '•••••••• (unchanged)' : 'not set') : ''
@@ -1573,13 +1580,10 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
     <div className="panel">
       <div className="phead">
         <h2>Settings</h2>
-        <span className="hint">Admin only</span>
-        <div className="tools">
-          <button className="btn primary" disabled={!dirty || busy} onClick={() => save()}>{busy ? 'Saving…' : 'Save changes'}</button>
-        </div>
+        <span className="hint">Admin only · each section saves on its own</span>
       </div>
 
-      <form onSubmit={save} className="set-body">
+      <div className="set-body">
         {/* Running version + update check, at the top so it's the first thing an admin sees. */}
         <VersionAbout />
         {/* OS patching & lifecycle (DESIGN §14c): core patch status + the operator-scheduled reboot window. */}
@@ -1599,8 +1603,11 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
         {items === null ? <Skeleton rows={4} cols={2} /> : groups.map((g) => {
           const gi = items.filter((it) => it.group === g.name)
           if (gi.length === 0) return null
+          const busy = busyGroup === g.name
+          const gDirty = gi.some((it) => it.key in edits)
           return (
-            <section className="set-card" key={g.name}>
+            // A form per card, so Enter in a field saves just this card.
+            <form className="set-card" key={g.name} onSubmit={(e) => saveGroup(g, e)}>
               <h3>{g.title}</h3>
               {g.note && <p className="set-note">{g.note}</p>}
               {g.name === 'Connection' && zbx && (
@@ -1608,7 +1615,7 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
                   {zbx.reachable ? `Connected - Zabbix ${zbx.version}` : `Not reachable${zbx.error ? ': ' + zbx.error : ''}`}
                 </div>
               )}
-              {gi.map(field)}
+              {gi.map((it) => field(it, busy))}
               {g.name === 'Access' && <AllowedHostsStatus items={items} edits={edits} onUse={(v) => setEdit('allowed_hosts', v)} />}
               {/* The core VM's clock follows the Timezone field above (mirrored through the
                   update-dir channel, applied by a host timer via timedatectl) - so its live
@@ -1624,14 +1631,17 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
                   <span className="set-hint">Live time in the VM's timezone (the Timezone above, applied by a host timer via timedatectl); every schedule under OS updates runs on this clock.</span>
                 </div>
               )}
-            </section>
+              {gi.some((it) => !it.locked) && (
+                <div className="set-row set-actions">
+                  <button type="submit" className="btn primary" disabled={!gDirty || busy}>{busy ? 'Saving…' : 'Save'}</button>
+                </div>
+              )}
+            </form>
           )
         })}
-        {/* Zabbix housekeeping (history / trends / compression) - saved on its own, like OS updates. */}
+        {/* Zabbix housekeeping (history / trends / compression), saved through its own endpoint. */}
         <DataRetention />
-        {/* Native submit so Enter works; the header button submits too. */}
-        <button type="submit" style={{ display: 'none' }} aria-hidden />
-      </form>
+      </div>
     </div>
   )
 }
