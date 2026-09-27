@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.5.4] - 2026-09-27
 
 **Fixed:**
 - **An expired session now returns to the login screen.** When a session ended while the app was
