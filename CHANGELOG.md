@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.5.6] - 2026-09-27
 
 **Added:**
 - **Allowed FQDNs and IPs.** A new **Settings → Allowed FQDNs and IPs** list (also
