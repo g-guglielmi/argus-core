@@ -915,6 +915,101 @@ function OSUpdates() {
   )
 }
 
+type Retention = {
+  available: boolean; error?: string
+  history_days: number; history_override: boolean
+  trend_days: number; trend_override: boolean
+  compression_available: boolean; compression: boolean; compress_after_days: number
+  min_history_days: number; min_trend_days: number
+}
+
+// DataRetention edits how long Zabbix keeps sensor data (its global housekeeping settings), so an
+// admin no longer has to open the Zabbix frontend for it. Raw history feeds the 2h/2d chart tabs and
+// hourly trends 7d-1Y, which sets the floors the server enforces. Shortening a period deletes data at
+// the next housekeeper run, so a save that shortens anything asks first.
+function DataRetention() {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [r, setR] = useState<Retention | null>(null)
+  const [hist, setHist] = useState('')
+  const [trend, setTrend] = useState('')
+  const [comp, setComp] = useState(false)
+  const [compAfter, setCompAfter] = useState('')
+  const [busy, setBusy] = useState(false)
+  // The card sits inside the Settings form: Enter here must not submit the other settings.
+  const noEnter = (e: ReactKeyboardEvent) => { if (e.key === 'Enter') e.preventDefault() }
+
+  const apply = (d: Retention) => {
+    setR(d); setHist(String(d.history_days)); setTrend(String(d.trend_days))
+    setComp(d.compression); setCompAfter(String(d.compress_after_days || 7))
+  }
+  useEffect(() => { fetch('/api/settings/retention').then((res) => (res.ok ? res.json() : null)).then((d: Retention | null) => { if (d) apply(d) }).catch(() => {}) }, [])
+
+  const h = parseInt(hist, 10), t = parseInt(trend, 10), ca = parseInt(compAfter, 10)
+  const dirty = !!r?.available && (h !== r.history_days || t !== r.trend_days || comp !== r.compression || (comp && ca !== r.compress_after_days) || !r.history_override || !r.trend_override)
+  const shorter = !!r && ((h < r.history_days) || (t < r.trend_days))
+
+  async function save() {
+    if (!r) return
+    if (shorter && !(await confirm({
+      title: 'Shorten data retention',
+      message: 'Zabbix deletes data older than the new period at its next housekeeping run (within the hour). The deleted history and trends cannot be recovered.',
+      confirmLabel: 'Shorten and delete', danger: true,
+    }))) return
+    setBusy(true)
+    try {
+      const res = await fetch('/api/settings/retention', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ history_days: h, trend_days: t, compression: comp, compress_after_days: comp ? ca : 0 }) })
+      if (!res.ok) { toast.error(await errText(res, 'Could not save data retention')); return }
+      apply(await res.json()); toast.success('Data retention saved.')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <section className="set-card">
+      <h3>Data retention</h3>
+      <p className="set-note">How long Zabbix keeps sensor data. Raw history feeds the 2h and 2d chart tabs; hourly trends (min / avg / max) feed 7d through 1Y. Zabbix deletes older data by itself, and longer periods mean a bigger database.</p>
+      {!r ? <Skeleton rows={2} cols={2} /> : !r.available ? <p className="set-hint">{r.error}</p> : (
+        <>
+          {!(r.history_override && r.trend_override) && (
+            <p className="set-hint" style={{ marginTop: 0 }}>Each item currently keeps its own period (Zabbix's per-item setting). Saving applies the periods below to every item.</p>
+          )}
+          <label className="set-row">
+            <div className="set-head"><span className="flabel">History (days)</span></div>
+            <input className="input" type="number" min={r.min_history_days} value={hist} disabled={busy} onKeyDown={noEnter} onChange={(e) => setHist(e.target.value)} />
+            <span className="set-hint">Every raw reading. At least {r.min_history_days} days, so the 2d tab stays full; the installer default is 30.</span>
+          </label>
+          <label className="set-row">
+            <div className="set-head"><span className="flabel">Trends (days)</span></div>
+            <input className="input" type="number" min={r.min_trend_days} value={trend} disabled={busy} onKeyDown={noEnter} onChange={(e) => setTrend(e.target.value)} />
+            <span className="set-hint" style={t < 365 ? { color: 'var(--warn)' } : undefined}>
+              {t < 365 ? 'Under a year, the 1Y tab won\'t reach back a full year.' : 'Hourly min / avg / max per sensor. The installer default is 730 (two years).'}
+            </span>
+          </label>
+          <div className="set-row set-toggle">
+            <div className="set-head"><span className="flabel">Compression</span></div>
+            {r.compression_available ? (
+              <>
+                <Switch checked={comp} disabled={busy} onChange={setComp} label={comp ? 'On' : 'Off'} />
+                <span className="set-hint">TimescaleDB compresses older data in place, which shrinks the database a lot. Compressed data stays readable.</span>
+              </>
+            ) : <span className="set-hint">Needs TimescaleDB, which this database doesn't have.</span>}
+          </div>
+          {r.compression_available && comp && (
+            <label className="set-row">
+              <div className="set-head"><span className="flabel">Compress after (days)</span></div>
+              <input className="input" type="number" min={7} value={compAfter} disabled={busy} onKeyDown={noEnter} onChange={(e) => setCompAfter(e.target.value)} />
+              <span className="set-hint">At least 7 days (Zabbix's minimum). The installer default is 7.</span>
+            </label>
+          )}
+          <div className="set-row" style={{ marginBottom: 0 }}>
+            <button type="button" className="btn primary" style={{ justifySelf: 'start', width: 'auto' }} disabled={!dirty || busy} onClick={save}>{busy ? 'Saving…' : 'Save retention'}</button>
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
 function VersionAbout() {
   const confirm = useConfirm()
   const [v, setV] = useState<VersionInfo | null>(null)
@@ -1526,6 +1621,8 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
             </section>
           )
         })}
+        {/* Zabbix housekeeping (history / trends / compression) - saved on its own, like OS updates. */}
+        <DataRetention />
         {/* Native submit so Enter works; the header button submits too. */}
         <button type="submit" style={{ display: 'none' }} aria-hidden />
       </form>

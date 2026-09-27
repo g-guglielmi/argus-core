@@ -177,7 +177,8 @@ Two steps are manual:
    restart nginx + php-fpm.
 2. **Frontend wizard** - open `http://<core-ip>:8080` in a browser and complete the
    setup (DB connection, admin password, timezone). Set **Housekeeping** retention:
-   history 30d, trends 730d, compression after 7d.
+   history 30d, trends 730d, compression after 7d. (Once Argus is running you can also set
+   these later in Argus under **Settings → Data retention**, if its Zabbix token is a Super admin.)
 
 #### 1c. Register a probe (per remote site)
 

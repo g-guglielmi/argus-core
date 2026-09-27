@@ -237,6 +237,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// system settings (admin only) - runtime-editable config
 	mux.HandleFunc("GET /api/settings", auth.RequireRole("admin", s.handleListSettings))
 	mux.HandleFunc("PATCH /api/settings", auth.RequireRole("admin", s.handleUpdateSettings))
+	mux.HandleFunc("GET /api/settings/retention", auth.RequireRole("admin", s.handleGetRetention))
+	mux.HandleFunc("PUT /api/settings/retention", auth.RequireRole("admin", s.handleSetRetention))
 
 	// probe enrollment tokens (admin only)
 	mux.HandleFunc("GET /api/probes/tokens", auth.RequireRole("admin", s.handleListEnrollTokens))

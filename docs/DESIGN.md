@@ -425,6 +425,12 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
 - Maps onto Zabbix's data split (no custom downsampling needed):
   - **history** (raw, retain ~7-30 d) → powers **2h / 2d** + zoom.
   - **trends** (hourly min/avg/max, retain 1-2 y) → powers **7d / 1M / 3M / 6M / 1Y**.
+  - The periods are Zabbix's global housekeeping settings (installers set 30d / 730d / compress
+    after 7d), editable in **Settings → Data retention** (`/api/settings/retention`, needs a Super
+    admin token). The tabs set the floors: history ≥ 2 days (2d tab), trends ≥ 7 days (7d tab);
+    under a year only warns that the 1Y tab won't be full. Saving always applies the periods as a
+    global override, and a save that shortens a period confirms first (Zabbix deletes the older
+    data at its next hourly housekeeping run).
 - **Daily bars for "today so far" counters** (AdGuard's queries/blocked, `.today` keys): the
   source resets its count at ITS OWN day boundary (AdGuard: hard-coded UTC midnights), and Argus
   reconstructs **true local calendar days** from it - within a source day the counter only grows,

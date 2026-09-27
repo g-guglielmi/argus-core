@@ -11,6 +11,20 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **Data retention in Settings.** How long Zabbix keeps raw history and hourly trends, and
+  TimescaleDB compression, can now be changed from **Settings → Data retention** instead of the
+  Zabbix frontend.
+  - The chart tabs set the limits: history can't go below 2 days (the 2d tab reads raw history) and
+    trends below 7 days; a trend period under a year warns that the 1Y tab won't reach back a full
+    year.
+  - Shortening a period asks first, since Zabbix deletes the older data within the hour and it
+    can't be recovered.
+  - Needs a Super admin Zabbix token (Zabbix's rule for housekeeping); with any other token the
+    section explains why it's read-only. Compression is only offered on TimescaleDB databases.
+
 ## [0.5.4] - 2026-09-27
 
 **Fixed:**
