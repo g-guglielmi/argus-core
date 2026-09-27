@@ -331,10 +331,10 @@ zabbix_export:
               description: 'The preprocessing worker processes averaged at or above the high threshold for 5 minutes. Raise their count in the proxy config.'
       macros:
         - macro: '{$PROBE.NODATA.WARN}'
-          value: '300'
+          value: '180'
           description: 'Seconds without data from the probe before a warning.'
         - macro: '{$PROBE.NODATA.HIGH}'
-          value: '900'
+          value: '300'
           description: 'Seconds without data from the probe before a high-severity alert.'
         - macro: '{$PROBE.BACKLOG.WARN}'
           value: '1000'

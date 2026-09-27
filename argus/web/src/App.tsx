@@ -294,7 +294,7 @@ function fireDataRefresh(): void { refreshBus.forEach((f) => f()) }
 // the drawing resolution (the dense monitoring tree keeps the compact 84px); fill makes the SVG scale
 // to its cell's width, so the roomy fixed-width Trend column in the overview/status lists gets a big,
 // column-filling trace at any screen size.
-function Spark({ values, color, width = 84, fill = false }: { values?: number[]; color: string; width?: number; fill?: boolean }) {
+function Spark({ values, color, width = 84, fill = false, units }: { values?: number[]; color: string; width?: number; fill?: boolean; units?: string }) {
   if (!values || values.length < 2) return <span style={{ color: 'var(--faint)', fontSize: 12 }}>-</span>
   const w = width, h = 20
   let min = values[0], max = values[0]
@@ -303,8 +303,15 @@ function Spark({ values, color, width = 84, fill = false }: { values?: number[];
   // sliver of range across the full height and read as a dramatic ramp. Enforce a minimum span
   // relative to the series' magnitude and center the data within it, so a flat-ish series draws flat
   // while a genuinely varying one is unchanged (its real span dominates the floor -> same mapping).
-  const mid = (min + max) / 2
-  const rng = Math.max(max - min, Math.max(Math.abs(min), Math.abs(max), 1e-9) * 0.1)
+  // Percentages use the big chart's rule instead (pctRange): at least PCT_MIN_SPAN points, kept
+  // inside 0-100. The relative floor alone can't flatten a near-zero percentage - 0 to 0.002 % has a
+  // tiny magnitude, so its tiny floor still stretched it into a full-height spike.
+  let mid = (min + max) / 2
+  let rng = Math.max(max - min, Math.max(Math.abs(min), Math.abs(max), 1e-9) * 0.1)
+  if (units === '%' && max - min < PCT_MIN_SPAN) {
+    rng = PCT_MIN_SPAN
+    mid = Math.min(Math.max(mid, PCT_MIN_SPAN / 2), 100 - PCT_MIN_SPAN / 2)
+  }
   const px = (i: number) => (i / (values.length - 1)) * (w - 2) + 1
   // Half-pixel y endpoints (17.5 / 1.5): a horizontal stroke centered ON a pixel boundary (integer y)
   // is split 50/50 across two rows by antialiasing and renders dim and blurry - which made flat lines
@@ -5504,7 +5511,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                           // switch ports) spark the SUM of both directions - total throughput.
                           const gin = row.items.find((x) => x.channel === 'In'), gout = row.items.find((x) => x.channel === 'Out')
                           const vals = gin && gout ? sumSparks(sparks[gin.id], sparks[gout.id]) : sparks[primary.id]
-                          return <Spark values={vals} color={trendColor} width={168} />
+                          return <Spark values={vals} color={trendColor} width={168} units={gin && gout ? undefined : primary.units} />
                         })() : null}</td>
                         <td className="prio-cell" data-label="Priority"><PriorityStars value={gPrio} canEdit={canPause} onSet={(p) => row.items.forEach((i) => setItemPriority(i, p))} /></td>
                         <td><div className="lccell"><span className="when">{relTime(primary.last_clock)}</span>{canPause && actions.length > 0 && <Kebab actions={actions} />}</div></td>
@@ -5590,7 +5597,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                           })()
                           : <span style={{ color: 'var(--err)' }}>not supported</span>}
                       </td>
-                      <td className="strend">{it.numeric && it.supported ? (barRate ? <BarSpark total={dailies[it.id]} width={168} /> : <Spark values={sparks[it.id]} color={trendColor} width={168} />) : null}</td>
+                      <td className="strend">{it.numeric && it.supported ? (barRate ? <BarSpark total={dailies[it.id]} width={168} /> : <Spark values={sparks[it.id]} color={trendColor} width={168} units={it.units} />) : null}</td>
                       <td className="prio-cell" data-label="Priority"><PriorityStars value={it.priority} canEdit={canPause} onSet={(p) => setItemPriority(it, p)} /></td>
                       <td>
                         <div className="lccell">
@@ -5692,7 +5699,7 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
                       {s.reason && <div className="sreason"><span style={{ color: sevInfo(s.severity).color, fontWeight: 600 }}>{sevInfo(s.severity).label}</span> · {s.reason}{s.since ? <span title={`Firing since ${new Date(s.since * 1000).toLocaleString()}`}> · {relTime(s.since)}</span> : null}</div>}
                     </td>
                     <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })() : <span style={{ color: 'var(--err)' }}>not supported</span>}</td>
-                    <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} width={168} fill /> : null}</td>
+                    <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} width={168} fill units={s.units} /> : null}</td>
                     <td className="slprio" data-label="Priority"><PriorityStars value={s.priority} canEdit={false} /></td>
                     <td className="mono dur" data-label={durCol}>{relTime(s.last_clock)}</td>
                     <td className="act">{canPause && <Kebab disabled={busy === s.item_id} actions={actionsFor(s)} />}</td>

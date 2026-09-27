@@ -16,8 +16,8 @@ GitHub Release from the matching section below.
 **Added:**
 - **Probe health.** Every probe now gets a **Probe <site>** host in its site group, measured by the
   probe itself, so its health shows up like any other device's sensors and alerts.
-  - **Probe unreachable:** a warning after 5 minutes without data from a probe and an error after
-    15. Until now the Probes page showed a probe as offline, but nothing sent an alert.
+  - **Probe unreachable:** a warning after 3 minutes without data from a probe and an error after
+    5. Until now the Probes page showed a probe as offline, but nothing sent an alert.
   - Unsent values waiting for the core, items running more than 10 minutes late, history and
     configuration cache use, and a **Process load** sensor with one line per process type
     (headlined by the busiest).

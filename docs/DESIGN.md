@@ -220,7 +220,7 @@ so curation is shared with the SNMP classes.
 | Disk temp - **HDD** | ≥ 40 °C | ≥ 45 °C |
 | Disk temp - **SSD** | ≥ 50 °C | ≥ 60 °C |
 | Ping | loss ≥ 20% or RTT ≥ 0.15 s | loss ≥ 60%, RTT ≥ 0.5 s, or 100% loss (down) |
-| Probe reporting (§18a) | no data for 5 min | no data for 15 min |
+| Probe reporting (§18a) | no data for 3 min | no data for 5 min |
 | Probe unsent values | ≥ 1000 for 5 min | ≥ 10000 for 5 min |
 | Probe items delayed over 10 min | ≥ 50 for 15 min | ≥ 200 for 15 min |
 | Probe cache used (history / configuration) | ≥ 75% | ≥ 90% |
