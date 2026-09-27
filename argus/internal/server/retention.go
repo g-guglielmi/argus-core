@@ -40,10 +40,10 @@ type retentionView struct {
 	HistoryOverride bool `json:"history_override"`
 	TrendDays       int  `json:"trend_days"`
 	TrendOverride   bool `json:"trend_override"`
-	// Compression is only offered when Zabbix reports it usable. TimescaleDB tells the two
-	// "unavailable" cases apart: no TimescaleDB at all, or TimescaleDB without usable compression.
+	// Compression needs TimescaleDB. Zabbix 7.0's housekeeping.get does not return the documented
+	// compression_availability field at all, so availability comes from db_extension (what the
+	// Zabbix frontend itself uses), with compression already on as proof too.
 	CompressionAvailable bool `json:"compression_available"`
-	TimescaleDB          bool `json:"timescaledb"`
 	Compression          bool `json:"compression"`
 	CompressAfterDays    int  `json:"compress_after_days"`
 	MinHistoryDays       int  `json:"min_history_days"`
@@ -58,6 +58,11 @@ func periodDays(p string) int {
 	return int(math.Round(float64(secs) / 86400))
 }
 
+// compressionAvailable reports whether the database can compress history (see retentionView).
+func compressionAvailable(hk zabbix.Housekeeping) bool {
+	return strings.EqualFold(string(hk.DBExtension), "timescaledb") || hk.CompressionAvailability == "1" || hk.CompressionStatus == "1"
+}
+
 func retentionFrom(hk zabbix.Housekeeping) retentionView {
 	return retentionView{
 		Available:            true,
@@ -65,8 +70,7 @@ func retentionFrom(hk zabbix.Housekeeping) retentionView {
 		HistoryOverride:      hk.HistoryGlobal == "1",
 		TrendDays:            periodDays(string(hk.Trends)),
 		TrendOverride:        hk.TrendsGlobal == "1",
-		CompressionAvailable: hk.CompressionAvailability == "1",
-		TimescaleDB:          strings.EqualFold(string(hk.DBExtension), "timescaledb"),
+		CompressionAvailable: compressionAvailable(hk),
 		Compression:          hk.CompressionStatus == "1",
 		CompressAfterDays:    periodDays(string(hk.CompressOlder)),
 		MinHistoryDays:       retentionMinHistoryDays,
@@ -110,10 +114,9 @@ func (u retentionUpdate) validate(compressionAvailable bool) error {
 	if u.TrendDays < retentionMinTrendDays || u.TrendDays > retentionMaxDays {
 		return fmt.Errorf("trends must be between %d and %d days (the 7d to 1Y chart tabs read trends)", retentionMinTrendDays, retentionMaxDays)
 	}
-	if u.Compression {
-		if !compressionAvailable {
-			return fmt.Errorf("this database doesn't support compression (it needs TimescaleDB)")
-		}
+	// Without TimescaleDB the compression fields are ignored (never written), not an error: the UI
+	// hides them, but the request still carries the current state.
+	if u.Compression && compressionAvailable {
 		if u.CompressAfterDays < retentionMinCompressDay || u.CompressAfterDays > retentionMaxDays {
 			return fmt.Errorf("compression must start after between %d and %d days", retentionMinCompressDay, retentionMaxDays)
 		}
@@ -136,7 +139,7 @@ func (s *Server) handleSetRetention(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": retentionUnavailable(err).Error})
 		return
 	}
-	compressionAvailable := hk.CompressionAvailability == "1"
+	compressionAvailable := compressionAvailable(hk)
 	if err := u.validate(compressionAvailable); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return

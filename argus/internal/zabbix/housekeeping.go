@@ -25,7 +25,7 @@ type Housekeeping struct {
 	DBExtension             flexString `json:"db_extension"`             // "timescaledb" when the history tables are hypertables, else ""
 	CompressionStatus       flexString `json:"compression_status"`       // "1" = TimescaleDB compression on
 	CompressOlder           flexString `json:"compress_older"`           // compress chunks older than this
-	CompressionAvailability flexString `json:"compression_availability"` // "1" = Zabbix found compression usable
+	CompressionAvailability flexString `json:"compression_availability"` // documented, but 7.0's housekeeping.get doesn't return it
 }
 
 // flexString decodes a JSON string or number as a string. The API documents several housekeeping

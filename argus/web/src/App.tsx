@@ -919,7 +919,7 @@ type Retention = {
   available: boolean; error?: string
   history_days: number; history_override: boolean
   trend_days: number; trend_override: boolean
-  compression_available: boolean; timescaledb: boolean; compression: boolean; compress_after_days: number
+  compression_available: boolean; compression: boolean; compress_after_days: number
   min_history_days: number; min_trend_days: number
 }
 
@@ -946,7 +946,8 @@ function DataRetention() {
   useEffect(() => { fetch('/api/settings/retention').then((res) => (res.ok ? res.json() : null)).then((d: Retention | null) => { if (d) apply(d) }).catch(() => {}) }, [])
 
   const h = parseInt(hist, 10), t = parseInt(trend, 10), ca = parseInt(compAfter, 10)
-  const dirty = !!r?.available && (h !== r.history_days || t !== r.trend_days || comp !== r.compression || (comp && ca !== r.compress_after_days) || !r.history_override || !r.trend_override)
+  const compDirty = !!r?.compression_available && (comp !== r.compression || (comp && ca !== r.compress_after_days))
+  const dirty = !!r?.available && (h !== r.history_days || t !== r.trend_days || compDirty || !r.history_override || !r.trend_override)
   const shorter = !!r && ((h < r.history_days) || (t < r.trend_days))
 
   async function save() {
@@ -958,7 +959,7 @@ function DataRetention() {
     }))) return
     setBusy(true)
     try {
-      const res = await fetch('/api/settings/retention', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ history_days: h, trend_days: t, compression: comp, compress_after_days: comp ? ca : 0 }) })
+      const res = await fetch('/api/settings/retention', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ history_days: h, trend_days: t, compression: r.compression_available && comp, compress_after_days: r.compression_available && comp ? ca : 0 }) })
       if (!res.ok) { toast.error(await errText(res, 'Could not save data retention')); return }
       apply(await res.json()); toast.success('Data retention saved.')
     } finally { setBusy(false) }
@@ -992,11 +993,7 @@ function DataRetention() {
                 <Switch checked={comp} disabled={busy} onChange={setComp} label={comp ? 'On' : 'Off'} />
                 <span className="set-hint">TimescaleDB compresses older data in place, which shrinks the database a lot. Compressed data stays readable.</span>
               </>
-            ) : r.timescaledb ? (
-              <span className="set-hint">TimescaleDB is in use, but Zabbix reports compression as unavailable. Usually the TimescaleDB build lacks compression (the Apache-2 edition), or the Zabbix server hasn't restarted since TimescaleDB was set up; the Zabbix server log says which.</span>
-            ) : (
-              <span className="set-hint">Needs TimescaleDB, and this Zabbix database doesn't use it: its history tables were never converted (Zabbix's TimescaleDB schema step). Retention still works without it.</span>
-            )}
+            ) : <span className="set-hint">Needs TimescaleDB, which this Zabbix database doesn't use. Retention still works without it.</span>}
           </div>
           {r.compression_available && comp && (
             <label className="set-row">
