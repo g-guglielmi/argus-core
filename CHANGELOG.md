@@ -15,7 +15,7 @@ GitHub Release from the matching section below.
 
 **Added:**
 - **Allowed FQDNs and IPs.** A new **Settings → Allowed FQDNs and IPs** list (also
-  `ARGUS_ALLOWED_HOSTS`) names the addresses people type in the browser to reach Argus, such as
+  `ARGUS_TRUSTED_ORIGINS`) names the addresses people type in the browser to reach Argus, such as
   `monitoring.example.com` or `10.0.0.10`. With a list set, Argus refuses API requests for any
   other address and changes coming from other sites, which blocks DNS-rebinding and cross-site
   attacks on top of the existing SameSite session cookie.
@@ -24,7 +24,7 @@ GitHub Release from the matching section below.
   - The Public URL's host and localhost always work, and probes are never checked, so a typo can't
     take the fleet offline.
   - A save that would lock you out is refused, with the address to add. If you do get locked out,
-    set `ARGUS_ALLOWED_HOSTS=*` and restart.
+    set `ARGUS_TRUSTED_ORIGINS=*` and restart.
   - A refused sign-in says why instead of "Invalid email or password".
 
 ## [0.5.5] - 2026-09-27

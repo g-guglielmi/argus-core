@@ -133,7 +133,7 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 | `ARGUS_LOGIN_WINDOW_MINUTES` | `15` | _(UI)_ rate-limit sliding window |
 | `ARGUS_SESSION_MAX_HOURS` | `12` | _(UI)_ absolute session lifetime before re-authentication is required |
 | `ARGUS_SESSION_IDLE_MINUTES` | `0` | _(UI)_ sign out after this long with no activity (`0` disables the idle timeout) |
-| `ARGUS_ALLOWED_HOSTS` | *(empty)* | _(UI)_ **Allowed FQDNs and IPs**: the addresses people type in the browser to reach Argus, comma-separated; any other `Host` (and changes from any other `Origin`) is refused. Empty = off. The Public URL host and localhost are always allowed; probe endpoints are never checked. `*` turns it off (lockout recovery) |
+| `ARGUS_TRUSTED_ORIGINS` | *(empty)* | _(UI)_ **Allowed FQDNs and IPs**: the addresses people type in the browser to reach Argus, comma-separated; any other `Host` (and changes from any other `Origin`) is refused. Empty = off. The Public URL host and localhost are always allowed; probe endpoints are never checked. `*` turns it off (lockout recovery) |
 
 **Notifications**
 | Var | Default | Purpose |
