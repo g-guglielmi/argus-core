@@ -124,8 +124,8 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   (in host settings); the built-in server/network/NAS shape profiles are the fixed default and a
   per-host order wins over it. (No fleet-wide/per-class override - the default is deliberately fixed.) - _(FE+BE)_ S-M
 - [~] **Settings expansion** - ~~retention controls~~ (**Settings → Data retention**: history /
-  trends / compression via Zabbix housekeeping, floors set by the chart tabs - v0.5.5), allowed-hosts (a
-  Host/Origin allow-list, off until configured), proxy health (a per-site "Probe" host carrying the
+  trends / compression via Zabbix housekeeping, floors set by the chart tabs - v0.5.5), ~~allowed-hosts~~ (a
+  Host/Origin allow-list in Settings, off until configured; probes exempt; lockout-safe), proxy health (a per-site "Probe" host carrying the
   Zabbix proxy-health sensors, linked from the Probes page) - _(FE+BE)_ S-M
 
 ### E. Auth / account gaps

@@ -11,6 +11,21 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **Allowed hosts.** A new **Settings → Allowed hosts** list (also `ARGUS_ALLOWED_HOSTS`) names the
+  addresses browsers may use to reach Argus. With a list set, Argus refuses API requests for any
+  other address and changes coming from other sites, which blocks DNS-rebinding and cross-site
+  attacks on top of the existing SameSite session cookie.
+  - Off until you fill it in, so upgrading changes nothing. The card shows the address you're using
+    and suggests a list in one click.
+  - The Public URL's host and localhost always work, and probes are never checked, so a typo can't
+    take the fleet offline.
+  - A save that would lock you out is refused, with the address to add. If you do get locked out,
+    set `ARGUS_ALLOWED_HOSTS=*` and restart.
+  - A refused sign-in says why instead of "Invalid email or password".
+
 ## [0.5.5] - 2026-09-27
 
 **Added:**

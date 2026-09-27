@@ -29,6 +29,10 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no settings to update"})
 		return
 	}
+	if msg := allowedHostsLockout(r, req.Values, s.mgr.AllowedHosts(), s.mgr.PublicURL(), s.cfg.TrustProxy); msg != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
 	if err := s.mgr.Set(ctx, req.Values); err != nil {

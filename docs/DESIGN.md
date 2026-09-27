@@ -112,8 +112,15 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
   cert, registers the proxy via the Zabbix API, returns cert + `ca.crt`. The **private key never
   leaves the probe**. Argus signs with the mounted CA (`ARGUS_CA_*`); the self-enrolling
   `argus-probe` image runs the probe side. `gen-certs.sh` remains the manual fallback.
-- **CSRF / allowed hosts:** allowed-hosts/origins list = `monitoring.example.com` **+ the
-  private IP**, with SameSite cookies + CSRF tokens.
+- **CSRF / allowed hosts:** the session cookie is `SameSite=Lax` (other sites can't send signed-in
+  requests), and **Settings → Allowed hosts** (`ARGUS_ALLOWED_HOSTS`) adds a Host/Origin allow-list,
+  e.g. `monitoring.example.com` **+ the private IP**. With a list set, `/api/*` requests for any other
+  `Host` are refused (DNS rebinding), and so are state-changing requests from any other `Origin`
+  (sibling subdomains count as "same site" for Lax). Off until configured, so an upgrade can't lock
+  anyone out; the Public URL host and loopback are always allowed; the probes' machine endpoints
+  (enroll, check-in, OS status, break-glass, scan results) are never checked; a save that would lock
+  out the admin making it is refused; `ARGUS_ALLOWED_HOSTS=*` is the recovery switch. Behind a
+  trusted proxy (`ARGUS_TRUST_PROXY`) the host comes from `X-Forwarded-Host`.
 - **Passkey caveat (accepted):** WebAuthn RP IDs must be a domain, not a bare IP.
   → Passkey login works via `monitoring.example.com`; direct **private-IP** access
   (troubleshooting) falls back to **password + MFA**.

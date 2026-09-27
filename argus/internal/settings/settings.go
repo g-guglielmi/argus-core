@@ -14,8 +14,10 @@ package settings
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,6 +39,7 @@ const (
 	KeyProbeCoreHost = "probe_core_host"
 	KeySessionMax    = "session_max_hours"
 	KeySessionIdle   = "session_idle_minutes"
+	KeyAllowedHosts  = "allowed_hosts"
 )
 
 const metaPrefix = "setting:"
@@ -63,6 +66,7 @@ var defs = []def{
 	{KeyLoginWindow, "ARGUS_LOGIN_WINDOW_MINUTES", "Login window (minutes)", "Security", "int", false, "15", "Sliding window for the attempt counter.", 1},
 	{KeySessionMax, "ARGUS_SESSION_MAX_HOURS", "Max session length (hours)", "Sessions", "int", false, "12", "Absolute lifetime of a sign-in before it must re-authenticate.", 1},
 	{KeySessionIdle, "ARGUS_SESSION_IDLE_MINUTES", "Idle timeout (minutes)", "Sessions", "int", false, "0", "Sign out after this long with no activity. 0 disables the idle timeout.", 0},
+	{KeyAllowedHosts, "ARGUS_ALLOWED_HOSTS", "Allowed hosts", "Access", "hostlist", false, "", "Hostnames or IPs browsers may use to reach Argus, comma-separated. Empty turns the check off (any address works). The Public URL's host and localhost are always allowed, and probes are never checked. To recover from a lockout, set ARGUS_ALLOWED_HOSTS=* and restart.", 0},
 	{KeyProbeCoreHost, "ARGUS_PROBE_CORE_HOST", "Probe core host", "Probe enrollment", "text", false, "", "Address probes dial for :10051 (host or host:port). Prefer an IP: the proxy re-resolves this on every data send, so an FQDN here generates heavy DNS load. Baked into new enrollments and re-synced to existing probes at their next restart. Falls back to the Public URL host if empty.", 0},
 }
 
@@ -112,6 +116,7 @@ type Manager struct {
 	probeCoreHost string
 	sessionMax    time.Duration
 	sessionIdle   time.Duration
+	allowedHosts  []string // nil = the allowed-hosts check is off
 }
 
 // New builds the manager, creates the login limiter, loads any stored overrides, and applies
@@ -178,6 +183,14 @@ func (m *Manager) SessionIdleTimeout() time.Duration {
 	return m.sessionIdle
 }
 
+// AllowedHosts is the configured allow-list of browser-facing hostnames, normalized; nil means the
+// check is off. The Public URL's host and loopback are allowed on top of it (see server.hostAllowed).
+func (m *Manager) AllowedHosts() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.allowedHosts
+}
+
 // List returns every setting's current state for the admin UI.
 func (m *Manager) List() []View {
 	m.mu.RLock()
@@ -229,7 +242,11 @@ func (m *Manager) Set(ctx context.Context, updates map[string]string) error {
 		if err := validate(d, val); err != nil {
 			return err
 		}
-		changes = append(changes, change{d: d, val: normalize(d, val)})
+		if nv := normalize(d, val); nv != "" {
+			changes = append(changes, change{d: d, val: nv})
+		} else { // "*" for the host list: stored as the default, i.e. off
+			changes = append(changes, change{d: d, clear: true})
+		}
 	}
 
 	for _, c := range changes {
@@ -279,6 +296,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	pch := effective(snap[KeyProbeCoreHost])
 	sessMaxH := atoiClamp(effective(snap[KeySessionMax]), 12, 1)
 	sessIdleMin := atoiClamp(effective(snap[KeySessionIdle]), 0, 0)
+	allowed, _ := ParseHostList(effective(snap[KeyAllowedHosts])) // validated on the way in
 
 	// Apply to the live subsystems (each is independently lock-guarded).
 	m.zbx.Configure(zURL, zTok)
@@ -291,6 +309,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	m.probeCoreHost = pch
 	m.sessionMax = time.Duration(sessMaxH) * time.Hour
 	m.sessionIdle = time.Duration(sessIdleMin) * time.Minute
+	m.allowedHosts = allowed
 	m.mu.Unlock()
 	return nil
 }
@@ -345,8 +364,13 @@ func envSet(name string) bool {
 }
 
 func normalize(d def, v string) string {
-	if d.typ == "url" {
+	switch d.typ {
+	case "url":
 		return strings.TrimRight(v, "/")
+	case "hostlist":
+		if list, err := ParseHostList(v); err == nil {
+			return strings.Join(list, ", ")
+		}
 	}
 	return v
 }
@@ -357,6 +381,10 @@ func validate(d def, v string) error {
 		u, err := url.Parse(v)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return fmt.Errorf("%s must be a full http(s) URL", d.label)
+		}
+	case "hostlist":
+		if _, err := ParseHostList(v); err != nil {
+			return err
 		}
 	case "tz":
 		if _, err := time.LoadLocation(v); err != nil {
@@ -384,4 +412,56 @@ func atoiClamp(s string, def, min int) int {
 		return n
 	}
 	return def
+}
+
+var hostLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+
+// NormalizeHost reduces what an admin might paste (a bare host, host:port, [v6]:port, or a whole URL)
+// to a lower-case hostname or IP with no port, or an error if it isn't a valid one.
+func NormalizeHost(raw string) (string, error) {
+	h := strings.ToLower(strings.TrimSpace(raw))
+	if strings.Contains(h, "://") {
+		u, err := url.Parse(h)
+		if err != nil || u.Hostname() == "" {
+			return "", fmt.Errorf("%q is not a valid host", raw)
+		}
+		h = u.Hostname()
+	} else if hp, _, err := net.SplitHostPort(h); err == nil {
+		h = hp
+	}
+	h = strings.TrimSuffix(strings.Trim(h, "[]"), ".")
+	if h == "" {
+		return "", fmt.Errorf("empty host")
+	}
+	if net.ParseIP(h) != nil {
+		return h, nil
+	}
+	for _, label := range strings.Split(h, ".") {
+		if !hostLabel.MatchString(label) {
+			return "", fmt.Errorf("%q is not a valid hostname or IP (wildcards aren't supported)", raw)
+		}
+	}
+	return h, nil
+}
+
+// ParseHostList parses the allowed-hosts setting: hosts separated by commas, semicolons or
+// whitespace, normalized and de-duplicated. Empty or "*" means the check is off (nil, nil).
+func ParseHostList(v string) ([]string, error) {
+	fields := strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n' })
+	var out []string
+	seen := map[string]bool{}
+	for _, f := range fields {
+		if f == "*" {
+			return nil, nil
+		}
+		h, err := NormalizeHost(f)
+		if err != nil {
+			return nil, err
+		}
+		if !seen[h] {
+			seen[h] = true
+			out = append(out, h)
+		}
+	}
+	return out, nil
 }

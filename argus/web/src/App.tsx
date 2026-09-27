@@ -496,6 +496,9 @@ function Login({ onSuccess, passkeysAvailable, passwordReset, notice }: { onSucc
     setBusy(true); setError(null)
     try {
       const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) })
+      // 403 = refused before the credentials were even checked (Allowed hosts): show why, so a
+      // locked-out admin doesn't keep retrying their password.
+      if (res.status === 403) { setError(await errText(res, 'This address is not allowed')); return }
       if (!res.ok) { setError('Invalid email or password'); return }
       const data = await res.json()
       if (data.mfa_required) { setMfaToken(data.mfa_token); return }
@@ -1562,6 +1565,7 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
     { name: 'General', title: 'General', note: 'Timezone and the external URL used in notification links.' },
     { name: 'Security', title: 'Login rate limiting', note: 'Brute-force protection thresholds.' },
     { name: 'Sessions', title: 'Sessions', note: 'How long a sign-in stays valid. Changes take effect immediately, including for existing sessions: lowering the max length can sign users out on their next request.' },
+    { name: 'Access', title: 'Allowed hosts', note: 'The addresses browsers may use to reach Argus. With a list set, Argus refuses API requests for any other address and changes coming from other sites, which blocks DNS-rebinding and cross-site attacks.' },
     { name: 'Probe enrollment', title: 'Probe enrollment', note: 'The address new probes are told to dial for the Zabbix server (:10051).' },
   ]
 
@@ -1605,6 +1609,7 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
                 </div>
               )}
               {gi.map(field)}
+              {g.name === 'Access' && <AllowedHostsStatus items={items} edits={edits} onUse={(v) => setEdit('allowed_hosts', v)} />}
               {/* The core VM's clock follows the Timezone field above (mirrored through the
                   update-dir channel, applied by a host timer via timedatectl) - so its live
                   state belongs right here, styled like the fields around it. */}
@@ -1627,6 +1632,39 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
         {/* Native submit so Enter works; the header button submits too. */}
         <button type="submit" style={{ display: 'none' }} aria-hidden />
       </form>
+    </div>
+  )
+}
+
+// AllowedHostsStatus sits under the Allowed hosts field: whether the check is on, the address this
+// browser is using (always kept working: the server refuses a save that would lock it out), and,
+// while the list is empty, a one-click suggestion built from the Public URL host plus this address.
+function AllowedHostsStatus({ items, edits, onUse }: { items: SettingItem[]; edits: Record<string, string>; onUse: (v: string) => void }) {
+  const it = items.find((i) => i.key === 'allowed_hosts')
+  if (!it) return null
+  const value = ('allowed_hosts' in edits ? edits.allowed_hosts : it.value).trim()
+  const on = value !== '' && value !== '*'
+  const here = window.location.hostname.replace(/^\[|\]$/g, '').toLowerCase()
+  const loopback = here === 'localhost' || here.endsWith('.localhost') || here === '::1' || /^127\./.test(here)
+  let pubHost = ''
+  try { const pu = items.find((i) => i.key === 'public_url')?.value; if (pu) pubHost = new URL(pu).hostname.toLowerCase() } catch { /* no Public URL */ }
+  const suggestion = [...new Set([pubHost, loopback ? '' : here].filter(Boolean))].join(', ')
+  return (
+    <div className="set-row" style={{ marginBottom: 0 }}>
+      <div className="set-head">
+        <span className="flabel">Status</span>
+        {on ? <span className="tag online">on</span> : <span className="set-src">off</span>}
+      </div>
+      <span className="set-hint">
+        {on ? 'Requests for any address outside the list are refused. ' : 'Any address is accepted. '}
+        You're using <span className="mono">{here}</span>{loopback ? ' (localhost, always allowed)' : ''}.
+      </span>
+      {!on && suggestion && !it.locked && (
+        <span className="set-hint">
+          Suggested list: <span className="mono">{suggestion}</span>{' '}
+          <button type="button" className="btn" style={{ padding: '2px 10px', marginLeft: 6 }} onClick={() => onUse(suggestion)}>Use this</button>
+        </span>
+      )}
     </div>
   )
 }

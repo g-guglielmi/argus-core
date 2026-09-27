@@ -286,8 +286,9 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 
 	mux.Handle("/", spaHandler())
 
-	// Every request passes through session resolution first (idle timeout read live from settings).
-	return auth.Middleware(s.st, s.mgr.SessionIdleTimeout, s.mgr.SessionMaxLifetime)(mux)
+	// Every request passes the allowed-hosts check (a no-op until configured), then session
+	// resolution (idle timeout read live from settings).
+	return s.hostGuard(auth.Middleware(s.st, s.mgr.SessionIdleTimeout, s.mgr.SessionMaxLifetime)(mux))
 }
 
 // --- health ---
