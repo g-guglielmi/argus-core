@@ -55,7 +55,8 @@ func TestVersionMatchesTag(t *testing.T) {
 	for _, c := range []struct {
 		v, tag string
 		want   bool
-	}{{"7.0.31-r3", "7.0.31-r3", true}, {"0.2.5", "v0.2.5", true}, {"7.0.31-r2", "7.0.31-r3", false}, {"", "7.0.31-r3", false}} {
+	}{{"7.0.31-r3", "7.0.31-r3", true}, {"0.2.5", "v0.2.5", true}, {"7.0.31-r2", "7.0.31-r3", false}, {"", "7.0.31-r3", false},
+		{"7.0.31-r4", "latest", false}, {"0.2.6", "testing", false}, {"0.2.6", "", false}} {
 		if got := versionMatchesTag(c.v, c.tag); got != c.want {
 			t.Errorf("versionMatchesTag(%q, %q) = %v", c.v, c.tag, got)
 		}

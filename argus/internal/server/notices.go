@@ -281,9 +281,11 @@ func (s *Server) selfUpdateEvents(ctx context.Context, proxy, what, version, ver
 	if what == "updater" {
 		subject = "The updater of probe " + site
 	}
+	changed := false
 	if version != "" {
 		prev, seen, _ := s.st.MetaGet(ctx, verPrefix+proxy)
 		if seen && prev != "" && prev != version {
+			changed = true
 			out = append(out, notice{key: what + "-updated:" + proxy + ":" + version, title: subject + " updated to " + version,
 				detail: "It was on " + prev + ".", host: host, site: site, view: "probes"})
 		}
@@ -293,8 +295,16 @@ func (s *Server) selfUpdateEvents(ctx context.Context, proxy, what, version, ver
 	}
 	if pend, ok, _ := s.st.MetaGet(ctx, pendPrefix+proxy); ok {
 		tag, at, _ := strings.Cut(pend, "|")
+		// A hand-out is done when the probe reports the tag's version. A rolling tag (latest,
+		// testing) has no version of its own: it's done when the version changed since the hand-out
+		// (the "updated to" notice above), or when the probe already runs the newest published
+		// version (an "Update now" on a current probe re-pulls the same image).
+		newest := s.probeLatest.get()
+		if what == "updater" {
+			newest = s.updaterLatest.get()
+		}
 		switch {
-		case versionMatchesTag(version, tag):
+		case versionMatchesTag(version, tag), changed, rollingTag(tag) && versionMatchesTag(version, newest):
 			_ = s.st.MetaDelete(ctx, pendPrefix+proxy)
 		case time.Since(time.Unix(atoi64(at), 0)) > selfUpdateGrace:
 			out = append(out, notice{key: what + "-update-failed:" + proxy + ":" + tag + ":" + at, title: subject + " failed to update to " + tag,
@@ -307,11 +317,14 @@ func (s *Server) selfUpdateEvents(ctx context.Context, proxy, what, version, ver
 }
 
 // versionMatchesTag reports whether a reported version is the handed-out tag ("7.0.31-r3" vs a tag
-// "7.0.31-r3" or "v0.2.5" vs "0.2.5").
+// "7.0.31-r3" or "v0.2.5" vs "0.2.5"). A rolling tag never matches: it names no version.
 func versionMatchesTag(version, tag string) bool {
 	v, t := strings.TrimPrefix(version, "v"), strings.TrimPrefix(tag, "v")
-	return v != "" && (v == t || strings.HasPrefix(v, t+"+"))
+	return v != "" && t != "" && !rollingTag(t) && (v == t || strings.HasPrefix(v, t+"+"))
 }
+
+// rollingTag says whether an image tag moves with releases rather than naming one.
+func rollingTag(tag string) bool { return tag == "latest" || tag == "testing" }
 
 // scanNotices: discovery jobs that finished since the last look. The first run only sets the mark.
 func (s *Server) scanNotices(ctx context.Context) []notice {

@@ -79,6 +79,12 @@ changes what Argus monitors; what changes is who can make it do things, and what
 - Adding a passkey and turning two-factor off ask for the password (and a current code); Discord
   webhooks must be Discord's own; channel credentials can't be read back out of Argus.
 
+**Fixed:**
+- An update handed out as `latest` (or `testing`) no longer ends in a false "failed to update"
+  notice 20 minutes later: a rolling tag names no version, so the "still on ..." check could never
+  be satisfied. The hand-out now counts as done when the version changed since (the "updated to"
+  notice already sent) or when the probe already runs the newest published version.
+
 ## [0.5.12] - 2026-09-28
 
 **Changed:**
