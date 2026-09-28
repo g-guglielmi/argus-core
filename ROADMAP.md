@@ -171,7 +171,7 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   (probe image + golden VM), **[argus-updater](https://github.com/g-guglielmi/argus-updater)** (self-update
   sidecar). Image names unchanged. History preserved via `git filter-repo`.
 
-### H. Notification logic + parking lot
+### H. Notification logic + status pages - COMPLETE, v0.5.9-v0.5.11
 - [x] **Escalation, reminders, acknowledged notice** - each channel (global or personal) gets a
   **Notify after** delay (it hears only of problems still open and unacknowledged by then, e.g. team
   at once, managers after 30 min) and a **Remind every** interval (repeat until acknowledged, no cap).
@@ -195,9 +195,9 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   devices; a notification channel that keeps failing (told on the other channels). Per channel: a
   **System notices** switch (off by default) next to the alert level, which gains **None**, so a
   channel can carry alerts, notices, or both. - v0.5.10
-- [ ] **Status pages** (on `:testing`) - read-only wall-screen dashboards opened with a secret link
-  instead of a login: token swapped for a cookie + clean URL, stored hashed, rotatable, optional
-  networks allowlist and expiry, down to the sensors that need attention. - _(FE+BE)_ M
+- [x] **Status pages** - read-only wall-screen dashboards opened with a secret link instead of a
+  login: a PRTG-style alarm list (Errors / Acknowledged / Warnings), token swapped for a cookie + clean
+  URL, kept encrypted and rotatable, optional networks allowlist and expiry. - v0.5.11
 
 ### I. Mobile app (last step)
 - [ ] **Android native app with push notifications** - the app registers a device with Argus; the notifier delivers alerts as **push** (e.g. FCM) via a new "push" notification channel type, alongside Discord/Telegram/email. A PWA + web push is a cheaper fallback if a full native app isn't warranted. - _(app + BE)_ **L**
@@ -217,9 +217,7 @@ v0.4.38-v0.4.55) · ~~§B auto-discovery~~ ✅ (subnet scan + UniFi sweep + enri
 v0.4.56-v0.4.58) · plus the §14 lifecycle line (OS patching, core Zabbix minors, core time) ·
 ~~§D thresholds UI + sensor-category ordering~~ ✅ (the last 1.0-lift pillar).
 
-1. **Notification logic (§H)** - escalation + reminders, master sensors, alerts for sensors that
-   stop collecting, then system notices, so production sites get the full alerting behaviour from
-   day one.
+1. ~~**Notification logic + status pages (§H)**~~ ✅ (v0.5.9-v0.5.11).
 2. **Production rollout** - move real sites onto Argus. This is also the trigger for the rest of
    **C2** (Aruba/Instant On, QNAP, Sophos, NetScaler, Libraesva, Hyper-V, Nutanix Prism, Citrix,
    vSphere): build each class when a production site actually needs it, lab-first as always.

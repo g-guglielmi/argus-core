@@ -11,14 +11,14 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.5.11] - 2026-09-28
 
 **Added:**
 - **Status pages** for a wall screen. A new admin screen, **Status pages**, makes read-only dashboards
   that open with a secret link instead of a login. The screen is a PRTG-style alarm list: one row per
   open problem (host, site, problem, the sensor with its reading, how long it's been open), worst and
-  newest first, with **Errors / Warnings / Acknowledged** pills in a slim top bar to switch lists (the
-  screen remembers the choice). With no errors it just says "All systems operational". A list longer
+  newest first, with **Errors / Acknowledged / Warnings** pills in a slim top bar to switch lists.
+  With no errors it just says "All systems operational". A list longer
   than the screen pages itself every 15 seconds; data refreshes every 30, and a lost connection is
   flagged while the last known state stays up.
   - Opening the link swaps it for a cookie and a plain `/status` address, so the secret doesn't sit
@@ -30,12 +30,12 @@ GitHub Release from the matching section below.
     uses the app's colours: the pills are tinted with their state's colour, and the tab icon is a
     green check with no errors and a red "!" with any. The pills start grey and take their colour
     once the first data arrives.
-
 - **A clock in the top bar**, with how long ago the status data refreshed, in Argus's timezone.
 - **Time format** in Settings -> General (`ARGUS_TIME_FORMAT`): 24-hour (the default) or 12-hour,
   for Argus's clocks and the status pages.
-- A status page opens on a chosen list with `#errors`, `#acknowledged` or `#warnings` at the end of
-  its address (the secret link too); picking a pill updates the address.
+- A status page opens on a chosen list with `#acknowledged` or `#warnings` at the end of its
+  address (the secret link too); a plain address always opens on errors, and picking a pill updates
+  the address.
 
 **Changed:**
 - The status pills read by urgency: Errors, Acknowledged, Warnings, OK (then Paused and Hidden).
