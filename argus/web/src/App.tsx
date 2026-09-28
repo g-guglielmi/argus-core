@@ -2960,8 +2960,6 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
     } catch { setErr('Could not build the seed ISO') } finally { setSeeding(false) }
   }
 
-  }
-
   const content = created ? (method === 'docker' ? probeDockerCmd(created, redeploy, selfupdate) : method === 'compose' ? probeComposeCmd(created) : method === 'unraid' ? probeUnraidXml(created) : '') : ''
 
   // Optional final step: poll until this token is redeemed, then show success.
@@ -3103,7 +3101,6 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
                   <div style={{ fontSize: 12.5, fontWeight: 600 }}>2 · Seed ISO <span style={{ color: 'var(--accent)' }}>· required for zero-touch provisioning and static IP</span></div>
                   <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>Attach it to the VM as a CD/DVD before first boot - it carries this probe's token and network settings, and the <strong>same ISO works with any</strong> of the three formats above. (No ISO? Boot the appliance on DHCP and finish at its first-boot page instead.)</p>
                   <div><Button variant="primary" onClick={downloadSeedISO} disabled={seeding}>{seeding ? 'Building the ISO...' : 'Download seed ISO'}</Button></div>
-                </div>
                 </div>
               </div>
             ) : (
