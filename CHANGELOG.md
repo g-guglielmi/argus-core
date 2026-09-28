@@ -28,6 +28,9 @@ GitHub Release from the matching section below.
   now, fixed) is now in **Settings -> Alerting** (`ARGUS_ALERT_DELAY_SECONDS`).
 
 **Changed:**
+- Notification channels (shared and personal) open in a dialog instead of an inline editor, with
+  one row each for the channel itself, what it receives (sites and severity), and escalation and
+  reminders.
 - Reminders, acknowledged notices and recoveries go to exactly the channels that received the alert.
   A channel set to High and up now also hears when an incident it was alerted about ends, even if it
   eased to a warning first; a delayed channel that was never alerted gets no recovery either.

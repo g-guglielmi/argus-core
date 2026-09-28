@@ -1975,28 +1975,72 @@ function timingLabel(c: { min_severity: number; delay_min?: number; repeat_min?:
   return out
 }
 
-function EscalationFields({ delay, repeat, remSev, onDelay, onRepeat, onRemSev, who }: {
+function EscalationSection({ delay, repeat, remSev, onDelay, onRepeat, onRemSev, who }: {
   delay: number; repeat: number; remSev: number; onDelay: (m: number) => void; onRepeat: (m: number) => void; onRemSev: (s: number) => void; who: string
 }) {
   const opts = (list: number[], cur: number) => (list.includes(cur) ? list : [...list, cur].sort((a, b) => a - b))
   return (
-    <>
-      <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Notify after</span>
-        <Select value={delay} onChange={(e) => onDelay(Number(e.target.value))} title={`Escalation: ${who} hears only of problems still open and unacknowledged after this long`}>
-          {opts(DELAY_CHOICES, delay).map((m) => <option key={m} value={m}>{m ? fmtMinutes(m) : 'Immediately'}</option>)}
-        </Select>
-      </label>
-      <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Remind every</span>
-        <Select value={repeat} onChange={(e) => onRepeat(Number(e.target.value))} title="Repeat the alert while it stays open and unacknowledged">
-          {opts(REPEAT_CHOICES, repeat).map((m) => <option key={m} value={m}>{m ? fmtMinutes(m) : 'Off'}</option>)}
-        </Select>
-      </label>
-      <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Remind for</span>
-        <Select value={remSev} onChange={(e) => onRemSev(Number(e.target.value))} disabled={!repeat} title="Only problems at or above this severity are repeated; lower ones are still alerted once">
-          {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
-        </Select>
-      </label>
-    </>
+    <ChanSection title="Escalation and reminders"
+      note={`${who} ${who === 'You' ? 'hear' : 'hears'} only of problems still open and unacknowledged after "Notify after". Reminders repeat an open problem until someone acknowledges it.`}>
+      <div className="chan-row chan-row-3">
+        <label className="chan-field"><span className="flabel">Notify after</span>
+          <Select value={delay} onChange={(e) => onDelay(Number(e.target.value))}>
+            {opts(DELAY_CHOICES, delay).map((m) => <option key={m} value={m}>{m ? fmtMinutes(m) : 'Immediately'}</option>)}
+          </Select>
+        </label>
+        <label className="chan-field"><span className="flabel">Remind every</span>
+          <Select value={repeat} onChange={(e) => onRepeat(Number(e.target.value))}>
+            {opts(REPEAT_CHOICES, repeat).map((m) => <option key={m} value={m}>{m ? fmtMinutes(m) : 'Off'}</option>)}
+          </Select>
+        </label>
+        <label className="chan-field"><span className="flabel">Remind for</span>
+          <Select value={remSev} onChange={(e) => onRemSev(Number(e.target.value))} disabled={!repeat} title="Only problems at or above this severity are repeated; lower ones are still alerted once">
+            {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
+          </Select>
+        </label>
+      </div>
+    </ChanSection>
+  )
+}
+
+function ChanSection({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
+  return (
+    <section className="chan-sec">
+      <div className="chan-sec-h">{title}</div>
+      {note && <p className="set-note" style={{ margin: 0 }}>{note}</p>}
+      {children}
+    </section>
+  )
+}
+
+// ChannelDialog is the modal shell shared by the shared-channel and personal-channel editors: title,
+// scrolling sections, and a pinned footer with the Enabled switch and the actions. Escape and a click
+// on the backdrop cancel, like the other Argus dialogs.
+function ChannelDialog({ title, submitLabel, enabled, setEnabled, onCancel, onSubmit, children }: {
+  title: string; submitLabel: string; enabled: boolean; setEnabled: (v: boolean) => void
+  onCancel: () => void; onSubmit: (e: FormEvent) => void; children: ReactNode
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onCancel])
+  return createPortal(
+    <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel() }}>
+      <form className="dlg" role="dialog" aria-modal="true" onSubmit={onSubmit}
+        style={{ maxWidth: 'min(680px, 94vw)', maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
+        <div className="dlg-title">{title}</div>
+        <div className="dlg-scroll"><div className="chan-form">{children}</div></div>
+        <div className="chan-dlg-foot">
+          <Switch checked={enabled} onChange={setEnabled} label="Enabled" />
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            <button type="button" className="btn" onClick={onCancel}>Cancel</button>
+            <button type="submit" className="btn primary">{submitLabel}</button>
+          </div>
+        </div>
+      </form>
+    </div>,
+    document.body,
   )
 }
 
@@ -2034,61 +2078,61 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
 
   const fields = CH_FIELDS[type] || []
   return (
-    <form onSubmit={save} style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)', display: 'grid', gap: 12 }}>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Type</span>
-          <Select value={type} onChange={(e) => setType(e.target.value)} disabled={!!initial}>
-            {Object.keys(CH_META).map((t) => <option key={t} value={t}>{CH_META[t].label}</option>)}
-          </Select>
-        </label>
-        <label style={{ display: 'grid', gap: 4, flex: 1, minWidth: 160 }}><span className="flabel">Name</span>
-          <input className="input" placeholder="e.g. Discord - site1" value={name} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Severity</span>
-          <Select value={minSev} onChange={(e) => setMinSev(Number(e.target.value))} title="Only problems at or above this severity reach this channel">
-            {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
-          </Select>
-        </label>
-        <EscalationFields delay={delayMin} repeat={repeatMin} remSev={remSev} onDelay={setDelayMin} onRepeat={setRepeatMin} onRemSev={setRemSev} who="this channel" />
-      </div>
-      <div style={{ display: 'grid', gap: 6 }}><span className="flabel">Sites</span>
-        <SitePicker options={sites} value={selSites} onChange={setSelSites} />
-      </div>
-      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-        {type === 'email' && (
-          <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Send to</span>
-            <Select value={config.recipients || 'fixed'} onChange={(e) => setCfg('recipients', e.target.value)}>
-              <option value="fixed">A fixed address</option>
-              <option value="users">Each user’s registered email</option>
+    <ChannelDialog title={initial ? `Edit ${initial.name}` : 'Add channel'} submitLabel={initial ? 'Save changes' : 'Add channel'}
+      enabled={enabled} setEnabled={setEnabled} onCancel={onCancel} onSubmit={save}>
+      <ChanSection title="Channel">
+        <div className="chan-row">
+          <label className="chan-field"><span className="flabel">Type</span>
+            <Select value={type} onChange={(e) => setType(e.target.value)} disabled={!!initial}>
+              {Object.keys(CH_META).map((t) => <option key={t} value={t}>{CH_META[t].label}</option>)}
             </Select>
           </label>
-        )}
-        {fields.filter((f) => !(type === 'email' && f.key === 'to' && (config.recipients || 'fixed') === 'users')).map((f) => (
-          <label key={f.key} style={{ display: 'grid', gap: 4 }}><span className="flabel">{f.label}</span>
-            <input className="input" type={f.type || 'text'} placeholder={f.ph} value={config[f.key] || ''} onChange={(e) => setCfg(f.key, e.target.value)} required={!f.opt} />
+          <label className="chan-field chan-wide"><span className="flabel">Name</span>
+            <input className="input" placeholder="e.g. Discord - site1" value={name} onChange={(e) => setName(e.target.value)} required />
           </label>
-        ))}
-        {type === 'email' && (
-          <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Encryption</span>
-            <Select value={config.tls || 'starttls'} onChange={(e) => setCfg('tls', e.target.value)}>
-              <option value="starttls">STARTTLS (587)</option>
-              <option value="tls">Implicit TLS (465)</option>
-              <option value="none">None</option>
-            </Select>
-          </label>
-        )}
-      </div>
-      {type === 'email' && (config.recipients || 'fixed') === 'users' && (
-        <p className="set-note">Sends to every active user’s account email. The “To” field is ignored.</p>
-      )}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <Switch checked={enabled} onChange={setEnabled} label="Enabled" />
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          <button type="button" className="btn" onClick={onCancel}>Cancel</button>
-          <button type="submit" className="btn primary">{initial ? 'Save changes' : 'Add channel'}</button>
         </div>
-      </div>
-    </form>
+        <div className="chan-row">
+          {type === 'email' && (
+            <label className="chan-field"><span className="flabel">Send to</span>
+              <Select value={config.recipients || 'fixed'} onChange={(e) => setCfg('recipients', e.target.value)}>
+                <option value="fixed">A fixed address</option>
+                <option value="users">Each user’s registered email</option>
+              </Select>
+            </label>
+          )}
+          {fields.filter((f) => !(type === 'email' && f.key === 'to' && (config.recipients || 'fixed') === 'users')).map((f) => (
+            <label key={f.key} className={'chan-field' + (fields.length === 1 ? ' chan-full' : '')}><span className="flabel">{f.label}</span>
+              <input className="input" type={f.type || 'text'} placeholder={f.ph} value={config[f.key] || ''} onChange={(e) => setCfg(f.key, e.target.value)} required={!f.opt} />
+            </label>
+          ))}
+          {type === 'email' && (
+            <label className="chan-field"><span className="flabel">Encryption</span>
+              <Select value={config.tls || 'starttls'} onChange={(e) => setCfg('tls', e.target.value)}>
+                <option value="starttls">STARTTLS (587)</option>
+                <option value="tls">Implicit TLS (465)</option>
+                <option value="none">None</option>
+              </Select>
+            </label>
+          )}
+        </div>
+        {type === 'email' && (config.recipients || 'fixed') === 'users' && (
+          <p className="set-note">Sends to every active user’s account email. The “To” field is ignored.</p>
+        )}
+      </ChanSection>
+      <ChanSection title="What it receives">
+        <div className="chan-row">
+          <div className="chan-field chan-wide"><span className="flabel">Sites</span>
+            <SitePicker options={sites} value={selSites} onChange={setSelSites} />
+          </div>
+          <label className="chan-field"><span className="flabel">Severity</span>
+            <Select value={minSev} onChange={(e) => setMinSev(Number(e.target.value))} title="Only problems at or above this severity reach this channel">
+              {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
+            </Select>
+          </label>
+        </div>
+      </ChanSection>
+      <EscalationSection delay={delayMin} repeat={repeatMin} remSev={remSev} onDelay={setDelayMin} onRepeat={setRepeatMin} onRemSev={setRemSev} who="This channel" />
+    </ChannelDialog>
   )
 }
 
@@ -2212,40 +2256,40 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
     ? 'Create your own bot with @BotFather for the token, and message the bot once so it’s allowed to reach you.'
     : 'Paste a Discord channel webhook URL (Server Settings → Integrations → Webhooks).'
   return (
-    <form onSubmit={save} style={{ display: 'grid', gap: 10, marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid var(--border)' }}>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Type</span>
-          <Select value={type} onChange={(e) => setType(e.target.value)} disabled={!!initial}>
-            <option value="telegram">Telegram</option>
-            <option value="discord">Discord</option>
-          </Select>
-        </label>
-        <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Severity</span>
-          <Select value={minSev} onChange={(e) => setMinSev(Number(e.target.value))} title="Only problems at or above this severity reach you">
-            {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
-          </Select>
-        </label>
-        <EscalationFields delay={delayMin} repeat={repeatMin} remSev={remSev} onDelay={setDelayMin} onRepeat={setRepeatMin} onRemSev={setRemSev} who="you" />
-      </div>
-      <div style={{ display: 'grid', gap: 6 }}><span className="flabel">Sites</span>
-        <SitePicker options={sites} value={selSites} onChange={setSelSites} />
-      </div>
-      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
-        {fields.map((f) => (
-          <label key={f.key} style={{ display: 'grid', gap: 4 }}><span className="flabel">{f.label}</span>
-            <input className="input" type={f.type || 'text'} placeholder={f.ph} value={config[f.key] || ''} onChange={(e) => setCfg(f.key, e.target.value)} required={!f.opt} />
+    <ChannelDialog title={initial ? `Edit your ${CH_META[initial.type]?.label || initial.type} channel` : 'Add a personal channel'} submitLabel={initial ? 'Save changes' : 'Add channel'}
+      enabled={enabled} setEnabled={setEnabled} onCancel={onCancel} onSubmit={save}>
+      <ChanSection title="Channel">
+        <div className="chan-row">
+          <label className="chan-field"><span className="flabel">Type</span>
+            <Select value={type} onChange={(e) => setType(e.target.value)} disabled={!!initial}>
+              <option value="telegram">Telegram</option>
+              <option value="discord">Discord</option>
+            </Select>
           </label>
-        ))}
-      </div>
-      <p className="set-note">{hint}</p>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <Switch checked={enabled} onChange={setEnabled} label="Enabled" />
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          <button type="button" className="btn" onClick={onCancel}>Cancel</button>
-          <button type="submit" className="btn primary">{initial ? 'Save changes' : 'Add channel'}</button>
         </div>
-      </div>
-    </form>
+        <div className="chan-row">
+          {fields.map((f) => (
+            <label key={f.key} className={'chan-field' + (fields.length === 1 ? ' chan-full' : '')}><span className="flabel">{f.label}</span>
+              <input className="input" type={f.type || 'text'} placeholder={f.ph} value={config[f.key] || ''} onChange={(e) => setCfg(f.key, e.target.value)} required={!f.opt} />
+            </label>
+          ))}
+        </div>
+        <p className="set-note">{hint}</p>
+      </ChanSection>
+      <ChanSection title="What you receive">
+        <div className="chan-row">
+          <div className="chan-field chan-wide"><span className="flabel">Sites</span>
+            <SitePicker options={sites} value={selSites} onChange={setSelSites} />
+          </div>
+          <label className="chan-field"><span className="flabel">Severity</span>
+            <Select value={minSev} onChange={(e) => setMinSev(Number(e.target.value))} title="Only problems at or above this severity reach you">
+              {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
+            </Select>
+          </label>
+        </div>
+      </ChanSection>
+      <EscalationSection delay={delayMin} repeat={repeatMin} remSev={remSev} onDelay={setDelayMin} onRepeat={setRepeatMin} onRemSev={setRemSev} who="You" />
+    </ChannelDialog>
   )
 }
 
@@ -5211,7 +5255,7 @@ function ProxySNMP({ proxyId, proxyName, onClose }: { proxyId: string; proxyName
 
 // GroupEditor is the inline band under a host row for moving it between tree groups: a checkbox per
 // group (current membership pre-checked), enforcing at least one. Save replaces the host's full group
-// set. Mirrors the inline-editor idiom (ChannelEditor) rather than a modal.
+// set. An inline band rather than a modal: it edits one row in place.
 function GroupEditor({ current, groups, onSave, onCancel }: { current: string[]; groups: Group[]; onSave: (ids: string[]) => Promise<void> | void; onCancel: () => void }) {
   const [sel, setSel] = useState<Set<string>>(() => new Set(groups.filter((g) => current.includes(g.name)).map((g) => g.id)))
   const [busy, setBusy] = useState(false)

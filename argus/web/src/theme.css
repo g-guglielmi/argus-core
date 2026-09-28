@@ -459,6 +459,25 @@ a { color: var(--accent); }
    column and wrap the body in .dlg-scroll. The small padding keeps focus rings from being clipped. */
 .dlg-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px; margin: -6px; }
 
+/* Notification channel editor (modal): one section per concern, each a row of fields. */
+.chan-form { display: grid; gap: 18px; }
+.chan-sec { display: grid; gap: 10px; }
+.chan-sec + .chan-sec { padding-top: 16px; border-top: 1px solid var(--border); }
+.chan-sec-h { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent); }
+.chan-row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.chan-row-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.chan-field { display: grid; gap: 4px; min-width: 0; align-content: start; }
+.chan-field .input, .chan-field select { width: 100%; }
+.chan-field .msel { max-width: none; }
+.chan-field .msel-pop { max-width: none; }
+.chan-wide { grid-column: span 2; }
+.chan-full { grid-column: 1 / -1; }
+.chan-dlg-foot { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+@media (max-width: 560px) {
+  .chan-row, .chan-row-3 { grid-template-columns: 1fr; }
+  .chan-wide { grid-column: auto; }
+}
+
 table.sensors { width: 100%; border-collapse: collapse; font-size: 13px; }
 table.sensors thead th { text-align: left; color: var(--faint); font-weight: 600; font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; padding: 3px 10px; }
 table.sensors > tbody > tr > td { padding: 5px 10px; border-top: 1px solid var(--border); vertical-align: middle; }
