@@ -105,6 +105,21 @@ type hostConfigView struct {
 	VMNames       []string             `json:"vm_names,omitempty"`    // xcpng: discovered VM names, for the ignored-VMs checklist
 	Categories    []string             `json:"categories,omitempty"`  // the host's curated sensor categories, in effective order (§D)
 	CategoryOrder []string             `json:"category_order,omitempty"` // stored per-host order override (empty = inheriting)
+	Master        *masterView          `json:"master,omitempty"`         // the host's master sensor (notifier dependency)
+}
+
+// masterView is a host's master sensor for the settings editor: the one in effect ("" = none), the
+// default it falls back to ("" = the host has no ping), whether it's overridden, and the sensors that
+// can be one (those with an alert).
+type masterView struct {
+	ItemID    string         `json:"item_id"`
+	DefaultID string         `json:"default_item_id"`
+	Custom    bool           `json:"custom"`
+	Options   []masterOption `json:"options"`
+}
+type masterOption struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
 }
 
 // snmpToView converts client SNMP details to the browser shape, masking v3 passphrases.
@@ -270,6 +285,7 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 	out.CategoryOrder, _ = s.st.CategoryOrder(ctx, "host:"+hd.HostID)
 	if items, err := s.zbx.Items(ctx, hd.HostID); err == nil {
 		out.Categories = s.hostCategoriesInOrder(ctx, hd.HostID, items)
+		out.Master = s.masterConfig(ctx, hd.HostID, items)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -289,6 +305,7 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		Macros        map[string]string       `json:"macros"`         // class macro / threshold name -> desired value (only known macros are applied)
 		CategoryOrder *[]string               `json:"category_order"` // §D per-host order; nil = leave as-is, [] = clear override
 		AddOns        map[string]addOnDesired `json:"addons"`         // add-on id -> desired {enabled, macros}; nil = leave as-is
+		Master        *string                 `json:"master"`         // "default", "none" or a sensor id; nil = leave as-is
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -471,6 +488,12 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	// Optional add-ons: link/unlink each add-on's template and, when enabled, set its config macros.
+	if req.Master != nil {
+		if err := s.applyMaster(ctx, cur.HostID, *req.Master); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+	}
 	if req.AddOns != nil {
 		if err := s.applyAddOns(ctx, cur.HostID, req.AddOns); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})

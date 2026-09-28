@@ -49,6 +49,8 @@ type NotifyState struct {
 	IncidentStart int64
 	// AckNotified is set once the channels that got the alert were told it was acknowledged.
 	AckNotified bool
+	// HeldAt is the last time the alert was held back because its master sensor was down (0 = never).
+	HeldAt int64
 }
 
 // --- channels ---
@@ -206,7 +208,7 @@ func (s *Store) RecordNotifyDelivery(ctx context.Context, id int64, sendErr erro
 // NotifyStates returns every tracked event keyed by event id.
 func (s *Store) NotifyStates(ctx context.Context) (map[string]NotifyState, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT event_id,host_id,item_id,host_name,name,severity,state,first_seen,fired_at,incident_start,ack_notified FROM notify_events`)
+		`SELECT event_id,host_id,item_id,host_name,name,severity,state,first_seen,fired_at,incident_start,ack_notified,held_at FROM notify_events`)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +218,7 @@ func (s *Store) NotifyStates(ctx context.Context) (map[string]NotifyState, error
 		var st NotifyState
 		var fired sql.NullInt64
 		var ackN int
-		if err := rows.Scan(&st.EventID, &st.HostID, &st.ItemID, &st.HostName, &st.Name, &st.Severity, &st.State, &st.FirstSeen, &fired, &st.IncidentStart, &ackN); err != nil {
+		if err := rows.Scan(&st.EventID, &st.HostID, &st.ItemID, &st.HostName, &st.Name, &st.Severity, &st.State, &st.FirstSeen, &fired, &st.IncidentStart, &ackN, &st.HeldAt); err != nil {
 			return nil, err
 		}
 		st.AckNotified = ackN != 0
@@ -240,13 +242,13 @@ func (s *Store) UpsertNotifyState(ctx context.Context, st NotifyState) error {
 		ackN = 1
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO notify_events(event_id,host_id,item_id,host_name,name,severity,state,first_seen,fired_at,incident_start,ack_notified)
-		 VALUES(?,?,?,?,?,?,?,?,?,?,?)
+		`INSERT INTO notify_events(event_id,host_id,item_id,host_name,name,severity,state,first_seen,fired_at,incident_start,ack_notified,held_at)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(event_id) DO UPDATE SET
 		   host_id=excluded.host_id, item_id=excluded.item_id, host_name=excluded.host_name, name=excluded.name,
 		   severity=excluded.severity, state=excluded.state, fired_at=excluded.fired_at,
-		   incident_start=excluded.incident_start, ack_notified=excluded.ack_notified`,
-		st.EventID, st.HostID, st.ItemID, st.HostName, st.Name, st.Severity, st.State, st.FirstSeen, fired, st.IncidentStart, ackN)
+		   incident_start=excluded.incident_start, ack_notified=excluded.ack_notified, held_at=excluded.held_at`,
+		st.EventID, st.HostID, st.ItemID, st.HostName, st.Name, st.Severity, st.State, st.FirstSeen, fired, st.IncidentStart, ackN, st.HeldAt)
 	return err
 }
 

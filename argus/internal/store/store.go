@@ -306,6 +306,13 @@ CREATE TABLE IF NOT EXISTS tree_hidden (
 -- Argus overlay: which device class a host was provisioned as (§C). Keyed by Zabbix host id like the
 -- other overlays. class_id is an Argus registry id (e.g. 'linux-snmp'); source is 'manual' (attach
 -- UI) or 'discovered' (the §B pipeline).
+-- Per-host master sensor override (notifier dependency): while the master is down, the host's other
+-- alerts are held. No row = the default master (the ICMP ping sensor); item_id '' = no master.
+CREATE TABLE IF NOT EXISTS host_masters (
+  host_id TEXT PRIMARY KEY,
+  item_id TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS device_class (
   host_id    TEXT PRIMARY KEY,
   class_id   TEXT NOT NULL,
@@ -501,6 +508,11 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 	// across severity changes and, for "no data" alerts, set to when the data stopped - so "Recovered
 	// after" measures the whole outage, not just the last alert's lifetime.
 	if err := s.ensureColumn("notify_events", "incident_start INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	// When an alert was last held back because its master sensor (or its site's probe) was down; a held
+	// alert waits out the alert delay again after the master recovers.
+	if err := s.ensureColumn("notify_events", "held_at INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	// Set once the channels that got an alert have been told it was acknowledged; cleared on un-ack.

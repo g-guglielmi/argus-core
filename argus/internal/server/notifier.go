@@ -18,6 +18,9 @@ import (
 )
 
 const (
+	// minHoldGraceSecs is the least a held alert waits after its master recovers (the alert delay if
+	// longer): enough for a reconnecting probe's buffered data to close its "no data" problems.
+	minHoldGraceSecs   = 90
 	notifyPollInterval = 30 * time.Second
 	notifyBaselineKey  = "notifier_baseline"
 	// Set once the alerts already firing when per-channel delivery tracking arrived were credited to the
@@ -137,7 +140,8 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 
 	// Host -> group names, for per-site channel routing.
 	hostGroups := map[string][]string{}
-	if hosts, herr := zbx.Hosts(ctx); herr == nil {
+	hosts, herr := zbx.Hosts(ctx)
+	if herr == nil {
 		for _, h := range hosts {
 			names := make([]string, 0, len(h.Groups))
 			for _, g := range h.Groups {
@@ -168,6 +172,13 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	if err != nil {
 		logger.Warn("notifier: load deliveries", "err", err)
 		return
+	}
+
+	// Master sensors: a host's ping (or chosen sensor) and its site's probe hold its other alerts while down.
+	masters := loadMasters(ctx, st, zbx, hosts, problems, targets)
+	grace := int64(flapDelay / time.Second)
+	if grace < minHoldGraceSecs {
+		grace = minHoldGraceSecs
 	}
 
 	activeIDs := make(map[string]zabbix.Problem, len(problems))
@@ -266,10 +277,27 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		if stt.State == "baseline" {
 			continue
 		}
+		hv := masters.hold(hostID, masterRefs(t), atoi64(p.Clock), now.Unix())
 
 		if stt.State == "pending" {
 			if !alertable {
 				continue // acked/hidden/paused: keep waiting quietly
+			}
+			// Held by a master that is down (or yet to report): stay pending. Once a down master is back,
+			// wait out the alert delay again, so readings that settle as the device (or probe)
+			// reconnects don't alert on the way.
+			if hv.held {
+				if hv.down && stt.HeldAt != now.Unix() {
+					if stt.HeldAt == 0 {
+						logger.Info("notifier: alert held while its master sensor is down", "event", p.EventID, "host", hostName, "name", p.Name, "by", hv.by)
+					}
+					stt.HeldAt = now.Unix()
+					_ = st.UpsertNotifyState(ctx, stt)
+				}
+				continue
+			}
+			if stt.HeldAt > 0 && now.Unix()-stt.HeldAt < grace {
+				continue
 			}
 			// A "no data" trigger already waited its own period (that IS its flap guard), so it alerts
 			// straight away instead of sitting out the alert delay too.
@@ -321,8 +349,8 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			stt.AckNotified = false
 			_ = st.UpsertNotifyState(ctx, stt)
 		}
-		if !alertable {
-			continue // hidden or paused: no escalation or reminders meanwhile
+		if !alertable || hv.held {
+			continue // hidden, paused or held by a down master: no escalation or reminders meanwhile
 		}
 
 		plan := planDeliveries(dests, deliveries[p.EventID], groups, sev, incidentStart(stt), firedAtOf(stt), now.Unix())

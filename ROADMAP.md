@@ -180,7 +180,8 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   delay becomes a setting (Settings -> Alerting). - _(FE+BE)_ M
 - [ ] **Master sensor per host** - ICMP ping by default, selectable per host: while it's down, the
   host's other sensors don't notify (PRTG-style dependency), and a probe's reachability does the same
-  for its whole site. Held alerts go out normally once the master is back and they're still open.
+  for its whole site, including Zabbix's own per-proxy checks. Held alerts go out normally once the
+  master is back and they're still open.
   - _(FE+BE)_ M
 - [ ] **Alerts for sensors that stop collecting** - a sensor that goes "not supported" or stops
   getting new values raises no Zabbix problem (triggers just go unknown), so nothing alerts today

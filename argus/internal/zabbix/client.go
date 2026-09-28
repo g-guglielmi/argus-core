@@ -485,6 +485,21 @@ func (c *Client) Item(ctx context.Context, itemID string) (*Item, error) {
 	return &items[0], nil
 }
 
+// ItemsByKeys returns every host item whose key is exactly one of keys (e.g. each host's icmpping), with
+// its last value and time. Template items are left out.
+func (c *Client) ItemsByKeys(ctx context.Context, keys []string) ([]Item, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	params := map[string]any{
+		"output":    []string{"itemid", "hostid", "name", "key_", "lastvalue", "lastclock", "units", "value_type", "status", "state"},
+		"filter":    map[string]any{"key_": keys},
+		"templated": false,
+	}
+	var items []Item
+	return items, c.call(ctx, "item.get", params, true, &items)
+}
+
 // ItemsByIDs returns the requested items keyed by item id (name, last value, units).
 func (c *Client) ItemsByIDs(ctx context.Context, ids []string) (map[string]Item, error) {
 	out := map[string]Item{}
@@ -623,6 +638,7 @@ type TriggerTarget struct {
 	} `json:"hosts"`
 	Items []struct {
 		ItemID string `json:"itemid"`
+		Key    string `json:"key_"`
 	} `json:"items"`
 }
 
@@ -635,7 +651,7 @@ func (c *Client) TriggerTargets(ctx context.Context, triggerIDs []string) (map[s
 	params := map[string]any{
 		"output":      []string{"triggerid", "expression"},
 		"selectHosts": []string{"hostid", "name", "status"},
-		"selectItems": []string{"itemid"},
+		"selectItems": []string{"itemid", "key_"},
 		"triggerids":  triggerIDs,
 		// Without this the expression comes back as "{functionid}>=90"-style ids: the function names
 		// (nodata) and resolved macro values (thresholds) would be invisible to Argus.

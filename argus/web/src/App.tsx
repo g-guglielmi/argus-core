@@ -27,7 +27,9 @@ type ThrTemplate = { template: string; label: string; every_host?: boolean; opti
 type ThresholdsData = { templates: ThrTemplate[] }
 type AddOnMacro = { macro: string; label: string; hint?: string; options?: string[]; value: string }
 type AddOnCfg = { id: string; label: string; description: string; enabled: boolean; macros?: AddOnMacro[] }
-type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[] }
+type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg }
+// A host's master sensor: while it's down, the host's other alerts are held (item_id "" = none).
+type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; options: { id: string; label: string }[] }
 type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
@@ -4901,8 +4903,12 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [customOrder, setCustomOrder] = useState(false)
+  const [masterChoice, setMasterChoice] = useState('default') // 'default' | 'none' | a sensor id
   function loadCfg() {
-    fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : Promise.reject())).then((d: HostCfg) => { setCfg(d); setCustomOrder(!!(d.category_order && d.category_order.length)) }).catch(() => setErr('Could not load host settings'))
+    fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : Promise.reject())).then((d: HostCfg) => {
+      setCfg(d); setCustomOrder(!!(d.category_order && d.category_order.length))
+      setMasterChoice(!d.master || !d.master.custom ? 'default' : d.master.item_id || 'none')
+    }).catch(() => setErr('Could not load host settings'))
   }
   useEffect(() => {
     loadCfg()
@@ -4943,7 +4949,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
     // Per-host sensor order: send the current list when "custom" is on, else [] to clear the override.
     const category_order = cfg.categories && cfg.categories.length > 0 ? (customOrder ? cfg.categories : []) : undefined
     const addons = cfg.addons ? Object.fromEntries(cfg.addons.map((a) => [a.id, { enabled: a.enabled, macros: Object.fromEntries((a.macros || []).map((m) => [m.macro, m.value])) }])) : undefined
-    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order, addons }) }).catch(() => null)
+    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order, addons, master: cfg.master ? masterChoice : undefined }) }).catch(() => null)
     setBusy(false)
     if (!res || !res.ok) { setErr(await errText(res, 'Could not save host settings')); return }
     onSaved()
@@ -5124,6 +5130,23 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
               )}
             </div>
           ))}
+        </>
+      )}
+
+      {cfg.master && (
+        <>
+          <div className="hs-title">Master sensor</div>
+          <div className="hs-note" style={{ margin: '0 0 10px' }}>While this sensor is down, the host's other sensors don't send notifications, so an unreachable device alerts once instead of once per sensor. The held alerts go out if they're still open once it's back.{cfg.class_id === 'probe' ? " This probe's reporting sensor also holds the alerts of every device at its site while the probe is unreachable." : ''}</div>
+          <label className="field" style={{ maxWidth: 420 }}>
+            <span>Master</span>
+            <Select value={masterChoice} disabled={!canEdit} onChange={(e) => setMasterChoice(e.target.value)}>
+              <option value="default">{cfg.master.default_item_id
+                ? `Default: ${cfg.master.options.find((o) => o.id === cfg.master!.default_item_id)?.label || 'ping'}`
+                : 'Default: none (no ping sensor)'}</option>
+              <option value="none">None: never hold this host's alerts</option>
+              {cfg.master.options.filter((o) => o.id !== cfg.master!.default_item_id).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </Select>
+          </label>
         </>
       )}
 

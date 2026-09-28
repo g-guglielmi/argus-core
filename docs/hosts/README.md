@@ -97,6 +97,10 @@ options section. That same dialog also has:
 
 - a **Thresholds** section for per-device alert-threshold overrides (fleet-wide defaults live on the
   admin **Thresholds** screen - see [../thresholds.md](../thresholds.md));
+- a **Master sensor** section - the sensor whose failure means the whole device is down (its **ICMP
+  ping** by default; the Probe host's is its reporting sensor). While it's down, the host's other
+  sensors don't notify, so an unreachable device alerts once. Pick another sensor, or **None** to never
+  hold this host's alerts. Separately, while a probe isn't reporting, every device at its site is held;
 - a **Sensor order** section;
 - an **Add-ons** section - optional Argus checks you can layer on a host at any time (not just when
   adding it): the **HTTP/HTTPS endpoint** (reachability + response time on a web port) and **DNS

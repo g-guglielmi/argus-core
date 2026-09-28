@@ -1,0 +1,97 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 g-guglielmi
+
+package server
+
+import (
+	"encoding/json"
+	"testing"
+
+	"argus/internal/zabbix"
+)
+
+// A site with one probe (proxy 7, Probe host 70 with reporting sensor 700) monitoring host 10 (ping
+// sensor 100, CPU sensor 101). Host 20 is the Zabbix server, with Zabbix's per-proxy check 200.
+func testMasters(down ...string) masterSet {
+	m := masterSet{
+		byHost: map[string]masterItem{
+			"10": {itemID: "100", key: "icmpping", lastValue: "1", lastClock: 1000},
+			"70": {itemID: "700", key: "zabbix[uptime]", lastClock: 1000},
+		},
+		siteMaster:  map[string]masterItem{"7": {itemID: "700", key: "zabbix[uptime]", lastClock: 1000}},
+		probeHost:   map[string]string{"7": "70"},
+		hostProxy:   map[string]string{"10": "7", "70": "7", "20": "0"},
+		proxyByName: map[string]string{"proxy-site1": "7"},
+		down:        map[string]bool{},
+	}
+	for _, d := range down {
+		m.down[d] = true
+	}
+	return m
+}
+
+func TestMasterHold(t *testing.T) {
+	cpu := []masterRef{{id: "101", key: "system.cpu.util"}}
+	ping := []masterRef{{id: "100", key: "icmpping"}}
+
+	// Master up and reporting since the problem began: nothing is held.
+	if v := testMasters().hold("10", cpu, 990, 1100); v.held {
+		t.Fatalf("healthy master held an alert: %+v", v)
+	}
+	// Ping down: the CPU alert is held (down, so it waits out the delay after recovery)...
+	if v := testMasters("100").hold("10", cpu, 990, 1100); !v.held || !v.down || v.by != "host" {
+		t.Fatalf("down ping: %+v", v)
+	}
+	// ...but the ping alert itself goes out.
+	if v := testMasters("100").hold("10", ping, 990, 1100); v.held {
+		t.Fatalf("the master's own alert was held: %+v", v)
+	}
+	// Probe not reporting: everything on its site is held, ping included.
+	if v := testMasters("700").hold("10", ping, 990, 1100); !v.held || v.by != "site" {
+		t.Fatalf("site hold: %+v", v)
+	}
+	// ...but not the Probe host's own alerts.
+	if v := testMasters("700").hold("70", []masterRef{{id: "700", key: "zabbix[uptime]"}}, 990, 1100); v.held {
+		t.Fatalf("the Probe host held itself: %+v", v)
+	}
+	// Zabbix's own per-proxy check on the Zabbix server host follows that proxy's probe.
+	last := []masterRef{{id: "200", key: "zabbix.proxy.last_seen[proxy-site1]"}}
+	if v := testMasters("700").hold("20", last, 990, 1100); !v.held || v.by != "site" {
+		t.Fatalf("per-proxy check: %+v", v)
+	}
+	if v := testMasters().hold("20", last, 990, 1100); v.held {
+		t.Fatalf("per-proxy check held with the probe up: %+v", v)
+	}
+
+	// A problem that began after the master last reported waits for it (not "down": no extra delay
+	// once it reports), but only for a while.
+	if v := testMasters().hold("10", cpu, 1010, 1100); !v.held || v.down {
+		t.Fatalf("waiting for the master: %+v", v)
+	}
+	if v := testMasters().hold("10", cpu, 1010, 1010+masterWaitSecs); v.held {
+		t.Fatalf("waited past the limit: %+v", v)
+	}
+	// A failed ping check that hasn't tripped the trigger yet holds too.
+	m := testMasters()
+	m.byHost["10"] = masterItem{itemID: "100", key: "icmpping", lastValue: "0", lastClock: 1050}
+	if v := m.hold("10", cpu, 1010, 1100); !v.held {
+		t.Fatalf("failing ping: %+v", v)
+	}
+}
+
+func TestMasterDown(t *testing.T) {
+	var targets map[string]zabbix.TriggerTarget
+	_ = json.Unmarshal([]byte(`{
+		"1": {"expression": "max(/h/icmpping,#3)=0", "items": [{"itemid": "100"}]},
+		"2": {"expression": "min(/h/icmppingloss,#3)>=20", "items": [{"itemid": "102"}]},
+		"3": {"expression": "nodata(/p/zabbix[uptime],180,\"strict\")=1", "items": [{"itemid": "700"}]}
+	}`), &targets)
+	down := masterDown([]zabbix.Problem{
+		{EventID: "a", ObjectID: "1", Severity: "4"},
+		{EventID: "b", ObjectID: "2", Severity: "2"},
+		{EventID: "c", ObjectID: "3", Severity: "2"},
+	}, targets)
+	if !down["100"] || down["102"] || !down["700"] {
+		t.Fatalf("down = %v (want the error and the no-data warning, not the loss warning)", down)
+	}
+}

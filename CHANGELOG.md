@@ -24,6 +24,13 @@ GitHub Release from the matching section below.
 - **Acknowledged notice.** When someone acknowledges an alert, the channels that got it are told who
   took it and their note ("[ACKNOWLEDGED] ... Acknowledged by Alice"), so the team knows it's handled.
   Acknowledging also stops escalation and reminders; un-acknowledging resumes them.
+- **Master sensor.** While a device's master sensor is down, its other sensors don't notify, so an
+  unreachable device sends one alert instead of one per sensor. The master is the ICMP ping by
+  default; pick another sensor, or none, in the host's settings. Alerts held this way go out if they
+  are still open once the master is back.
+  - A probe that isn't reporting holds the alerts of every device at its site, and Zabbix's own
+    "proxy last seen" checks for it, so a probe outage sends only the probe's own alerts and one
+    recovery.
 - **Alert delay setting.** How long a problem must last before anyone is notified (60 seconds until
   now, fixed) is now in **Settings -> Alerting** (`ARGUS_ALERT_DELAY_SECONDS`).
 

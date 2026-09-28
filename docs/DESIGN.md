@@ -370,6 +370,17 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   **Remind for** severity (independent of its alert floor, so "alert on warnings, remind only about
   errors" is one channel); acknowledging, pausing or hiding stops them. A
   channel added after a problem went live isn't sent that problem.
+- **Master sensors (dependencies):** every host has a master sensor - its ICMP ping by default
+  (`icmpping`), another sensor or none per host (`host_masters`), and the Probe host's reporting
+  sensor (`zabbix[uptime]`). While the master has an open "down" problem (error level, or any "no
+  data" one), the host's other alerts are **held**: they stay pending, and firing ones get no
+  escalation or reminders. A probe's reporting sensor is also the master of **every host that proxy
+  monitors** and of Zabbix's own per-proxy checks (`zabbix.proxy.*[<proxy>]` on the Zabbix server
+  host), so a probe outage sends only the probe's alerts. To win the race with a slow master (ping
+  needs 3 failed checks), a new problem also waits up to 5 minutes while the master hasn't reported
+  since the problem began, or its last ping failed. A problem held by a down master waits out the
+  alert delay again (at least 90 s) after the master recovers, so readings that settle while a device
+  or probe reconnects don't alert; a held problem that is still open after that alerts normally.
 - **Deliveries decide the follow-ups:** `notify_deliveries` records which channels an alert reached.
   Reminders, the **acknowledged notice** (`[ACKNOWLEDGED]` with who took it and their note, sent once
   per ack; an un-ack re-arms it and resumes reminders) and the **recovery** go to exactly those
