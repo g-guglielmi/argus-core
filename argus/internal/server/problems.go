@@ -32,11 +32,21 @@ func (s *Server) handleProblems(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-
-	problems, err := s.zbx.AllProblems(ctx)
+	out, err := s.activeProblems(ctx)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// activeProblems is every active problem across all hosts (Zabbix's and Argus-raised), minus those on
+// hidden or paused hosts and those whose sensors are all hidden. Shared by the Overview and the
+// status pages.
+func (s *Server) activeProblems(ctx context.Context) ([]problemRow, error) {
+	problems, err := s.zbx.AllProblems(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	tids := make([]string, 0, len(problems))
@@ -100,5 +110,5 @@ func (s *Server) handleProblems(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, row)
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out, nil
 }

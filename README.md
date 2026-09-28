@@ -57,6 +57,8 @@ API key, and MAC):
   value + threshold, 2-hour trend graph, deep-links, one-click acknowledge). Shared channels are admin-managed;
   each user can also add their **own** Telegram/Discord in Account settings, and an email
   channel can fan out to every registered user's address.
+- **Status pages** - read-only wall-screen dashboards opened with a secret link (no login),
+  limited to chosen sites, optionally to your networks and an expiry; the link can be rotated.
 - **Auth** - three roles (admin / helpdesk / viewer), argon2id passwords, TOTP two-factor
   with recovery codes, WebAuthn passkeys, self-service password reset, admin user management,
   login rate-limiting.

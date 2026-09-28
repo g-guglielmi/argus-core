@@ -287,6 +287,17 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/users/{id}/mfa/reset", auth.RequireRole("admin", s.handleAdminResetMFA))
 	mux.HandleFunc("POST /api/users/{id}/passkeys/reset", auth.RequireRole("admin", s.handleAdminResetPasskeys))
 
+	// Status pages (a wall screen's read-only dashboard, opened with a secret link instead of a login):
+	// the public link + page + its data, and the admin API that manages them. See statuspage.go.
+	mux.HandleFunc("GET /status/{token}", s.handleStatusLink)
+	mux.HandleFunc("GET /status", s.handleStatusPage)
+	mux.HandleFunc("GET /status/data", s.handleStatusData)
+	mux.HandleFunc("GET /api/status-pages", auth.RequireRole("admin", s.handleListStatusPages))
+	mux.HandleFunc("POST /api/status-pages", auth.RequireRole("admin", s.handleCreateStatusPage))
+	mux.HandleFunc("PATCH /api/status-pages/{id}", auth.RequireRole("admin", s.handleUpdateStatusPage))
+	mux.HandleFunc("POST /api/status-pages/{id}/rotate", auth.RequireRole("admin", s.handleRotateStatusPage))
+	mux.HandleFunc("DELETE /api/status-pages/{id}", auth.RequireRole("admin", s.handleDeleteStatusPage))
+
 	mux.Handle("/", spaHandler())
 
 	// Every request passes the allowed-hosts check (a no-op until configured), then session

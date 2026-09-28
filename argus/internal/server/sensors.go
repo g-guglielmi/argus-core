@@ -43,11 +43,20 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-
-	items, err := s.zbx.AllItems(ctx)
+	out, err := s.sensorCensus(ctx)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// sensorCensus is every curated sensor across all hosts with its single state (see handleSensors),
+// sorted by host then name. Shared by the status pills and the status pages.
+func (s *Server) sensorCensus(ctx context.Context) ([]sensorRow, error) {
+	items, err := s.zbx.AllItems(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Per-item problem state: worst unacknowledged severity, and whether it has an acked problem.
@@ -158,5 +167,5 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 		}
 		return out[i].Name < out[j].Name
 	})
-	writeJSON(w, http.StatusOK, out)
+	return out, nil
 }

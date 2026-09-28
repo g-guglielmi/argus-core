@@ -321,6 +321,21 @@ CREATE TABLE IF NOT EXISTS notices_sent (
 
 -- Since when each system-notice condition (an update available, a probe behind, ...) has held, so a
 -- notice goes out only once its condition is old enough. Rows go when the condition ends.
+-- Status pages: read-only dashboards (a TV wall) opened with a secret link instead of a login. Only
+-- the token's SHA-256 is kept. sites = JSON array of host-group names ('' = all); allow_cidrs =
+-- comma-separated networks allowed to open it ('' = any); expires_at 0 = never.
+CREATE TABLE IF NOT EXISTS status_pages (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  name           TEXT NOT NULL,
+  token_hash     TEXT NOT NULL UNIQUE,
+  sites          TEXT NOT NULL DEFAULT '',
+  allow_cidrs    TEXT NOT NULL DEFAULT '',
+  expires_at     INTEGER NOT NULL DEFAULT 0,
+  created_at     INTEGER NOT NULL,
+  created_by     TEXT NOT NULL DEFAULT '',
+  last_viewed_at INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS notice_conditions (
   key   TEXT PRIMARY KEY,
   since INTEGER NOT NULL

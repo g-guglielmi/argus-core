@@ -985,8 +985,29 @@ change-class pickers, refused by the create and change-class APIs, no Base Ping 
 add-ons. The Probes page's Health cell shows the host's worst open problem (ok / warning / error)
 and links to it.
 
+## 18b. Status pages
+
+A read-only dashboard for a wall screen, opened with a secret link instead of a login (admin
+**Status pages** screen; `status_pages` table).
+
+- **Link:** `/status/<token>`, a 256-bit random token; only its SHA-256 is stored, and the link is shown
+  once. Opening it sets an `argus_status` cookie (HttpOnly, SameSite=Strict, Path=/status, Secure per
+  `ARGUS_COOKIE_SECURE`, lasting until the page expires or ~400 days) and redirects to a clean
+  `/status`, so the token doesn't sit in the address bar, history suggestions or screenshots.
+  **New link** (rotate) or deleting the page kills it, cookie included.
+- **Limits:** optional allowed networks (CIDRs, checked against the client IP, which honours
+  `ARGUS_TRUST_PROXY`) and an optional expiry; a page shows only its sites (host groups, a root
+  covering its subgroups).
+- **Content:** `/status/data`, built from the same census and active-problem lists as the app (hidden
+  hosts and sensors left out), cached 20 s per page: per site, hosts sorted worst first, each with its
+  open problems and the sensors that aren't OK (state + reading), plus the count of OK sensors. No
+  addresses, credentials or settings. The page itself is a standalone HTML file (not the SPA), dark and
+  sized for a TV, refreshing every 30 s, flagging a lost connection, and reloading itself every 6 h.
+- **Headers:** `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`, `X-Frame-Options: DENY` + CSP
+  `frame-ancestors 'none'`, `Cache-Control: no-store`. The routes sit outside `/api`, so the cookie
+  opens nothing else.
+
 ## 19. Parking lot / future
-- Public status page (Uptime-Kuma-style shareable page).
 - **Android native app** with push notifications (device registers with Argus → notifier delivers
   via a "push"/FCM channel) - the planned last step (ROADMAP §I). iOS undecided (would need APNs).
 - Token-based enrollment service (Phase 1 backend) + "Add probe" wizard (Phase 4/6 UI).

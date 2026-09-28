@@ -668,7 +668,7 @@ function ResetPassword({ token, onDone }: { token: string; onDone: () => void })
   )
 }
 
-type View = 'overview' | 'triggers' | 'monitoring' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'users' | 'settings' | 'account' | 'list'
+type View = 'overview' | 'triggers' | 'monitoring' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'users' | 'settings' | 'account' | 'list'
 const VIEW_TITLES: Record<View, [string, string]> = {
   overview: ['Overview', 'What needs attention right now'],
   triggers: ['Triggers', 'Alert rules - firing, or all by host'],
@@ -677,6 +677,7 @@ const VIEW_TITLES: Record<View, [string, string]> = {
   probes: ['Probes', 'Site probe enrollment'],
   discovery: ['Discovery', 'Scan a subnet, review what answers, adopt devices'],
   thresholds: ['Thresholds', 'Fleet-wide alert defaults per template'],
+  statuspages: ['Status pages', 'Read-only dashboards for a wall screen'],
   users: ['Users', 'Accounts and access'],
   settings: ['Settings', 'System configuration'],
   account: ['Account', 'Your security settings'],
@@ -691,6 +692,7 @@ const ic = {
   probes: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5" /></svg>,
   discovery: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4.6" /><path d="M12 12l5.6-5.6" /><circle cx="15.4" cy="14.6" r="1.1" fill="currentColor" stroke="none" /></svg>,
   thresholds: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M5 21v-6M5 11V3M12 21v-9M12 8V3M19 21v-4M19 13V3" /><circle cx="5" cy="13" r="2" /><circle cx="12" cy="6" r="2" /><circle cx="19" cy="15" r="2" /></svg>,
+  statuspages: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /><path d="M7 12l2.5-3 2.5 2 3-4 2 2" /></svg>,
   users: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><path d="M16 5.2a3.2 3.2 0 0 1 0 6M17 14.5a5.5 5.5 0 0 1 3.5 5.5" /></svg>,
   settings: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
   account: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="3.4" /><path d="M5 20a7 7 0 0 1 14 0" /></svg>,
@@ -727,7 +729,7 @@ function useTheme(): ['dark' | 'light', () => void] {
 // bookmark, shared link, or Back/Forward restores the exact screen - instead of always
 // resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
 // (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
-const NAV_VIEWS: View[] = ['overview', 'triggers', 'monitoring', 'notifications', 'probes', 'discovery', 'thresholds', 'users', 'settings', 'account', 'list']
+const NAV_VIEWS: View[] = ['overview', 'triggers', 'monitoring', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'users', 'settings', 'account', 'list']
 type NavState = { view: View; filter: string; host?: string; item?: string; group?: string; scan?: string; edit?: string }
 
 function parseNav(): NavState {
@@ -1224,7 +1226,7 @@ function VersionAbout() {
 
 function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }: { me: Me; onMe: (m: Me) => void; onLogout: () => void; passkeysAvailable: boolean; probeEnroll: boolean; enter?: boolean }) {
   // Admin-only views can't be restored from a shared/stale URL by a non-admin.
-  const clampView = (v: View): View => ((v === 'users' || v === 'settings' || v === 'discovery' || v === 'thresholds') && me.role !== 'admin' ? 'overview' : v)
+  const clampView = (v: View): View => ((v === 'users' || v === 'settings' || v === 'discovery' || v === 'thresholds' || v === 'statuspages') && me.role !== 'admin' ? 'overview' : v)
   // A fresh visit to the bare "/" (no query) honours the user's landing preference; any deep
   // link (?view=…, ?host=…, ?reset=… already handled) is respected as-is.
   const initialNav = (): NavState => {
@@ -1406,7 +1408,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         {me.role === 'admin' && nav('discovery', 'Discovery')}
         {nav('probes', 'Probes')}
         {nav('notifications', 'Notifications')}
-        {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('thresholds', 'Thresholds')}{nav('users', 'Users')}{nav('settings', 'Settings')}</>}
+        {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('thresholds', 'Thresholds')}{nav('statuspages', 'Status pages')}{nav('users', 'Users')}{nav('settings', 'Settings')}</>}
         <div className="side-foot">
           {ver && (
             <button type="button" className={'side-ver' + (ver.update_available ? ' upd' : '')} disabled={me.role !== 'admin'}
@@ -1471,6 +1473,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} goHost={goHost} />}
           {view === 'discovery' && me.role === 'admin' && <DiscoveryView scanId={discScan} onOpenScan={openDiscoveryScan} />}
           {view === 'thresholds' && me.role === 'admin' && <ThresholdsView />}
+          {view === 'statuspages' && me.role === 'admin' && <StatusPagesView />}
           {view === 'users' && me.role === 'admin' && <UsersView />}
           {view === 'settings' && me.role === 'admin' && <SettingsView me={me} onMe={onMe} />}
           {view === 'account' && <AccountView me={me} onMe={onMe} passkeysAvailable={passkeysAvailable} theme={theme} toggleTheme={toggleTheme} />}
@@ -4858,6 +4861,180 @@ function ThresholdDialog({ tpl, onClose, onSaved }: { tpl: ThrTemplate; onClose:
           </div>
         </div>
         <div className="hs-foot"><Button variant="ghost" onClick={onClose}>Done</Button></div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+type StatusPage = { id: number; name: string; sites: string[]; allow_cidrs: string; expires_at: number; created_at: number; created_by: string; last_viewed_at: number }
+
+// Expiry choices for a status page link, in days (0 = never).
+const STATUS_EXPIRY_DAYS = [0, 1, 7, 30, 90, 365]
+
+// statusLinkURL makes a status link absolute: the server returns one only when a Public URL is set.
+function statusLinkURL(link: string): string {
+  return link.startsWith('/') ? window.location.origin + link : link
+}
+
+// StatusPagesView manages the read-only status pages a wall screen opens with a secret link (admin).
+// The link is shown once, right after creating a page or giving it a new link.
+function StatusPagesView() {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [pages, setPages] = useState<StatusPage[] | null>(null)
+  const [sites, setSites] = useState<string[]>([])
+  const [editing, setEditing] = useState<StatusPage | 'new' | null>(null)
+  const [reveal, setReveal] = useState<{ name: string; link: string } | null>(null)
+  function load() { fetch('/api/status-pages').then((r) => (r.ok ? r.json() : Promise.reject())).then((p) => setPages(p || [])).catch(() => toast.error('Could not load status pages')) }
+  useEffect(() => {
+    load()
+    fetch('/api/notify/sites').then((r) => r.json()).then((s) => setSites(s || [])).catch(() => {})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function rotate(p: StatusPage) {
+    if (!(await confirm({ title: 'New link', message: `Make a new link for “${p.name}”? The current link stops working at once, so screens using it need the new one.`, confirmLabel: 'Make a new link', danger: true }))) return
+    const res = await fetch(`/api/status-pages/${p.id}/rotate`, { method: 'POST' })
+    if (!res.ok) { toast.error(await errText(res, 'Could not make a new link')); return }
+    const j = await res.json()
+    setReveal({ name: p.name, link: statusLinkURL(j.link) })
+  }
+  async function del(p: StatusPage) {
+    if (!(await confirm({ title: 'Delete status page', message: `Delete “${p.name}”? Its link stops working.`, confirmLabel: 'Delete', danger: true }))) return
+    const res = await fetch(`/api/status-pages/${p.id}`, { method: 'DELETE' })
+    if (!res.ok) { toast.error(await errText(res, 'Could not delete the status page')); return }
+    toast.success(`Status page “${p.name}” deleted.`)
+    load()
+  }
+
+  return (
+    <div className="panel">
+      <div className="phead">
+        <h2>Status pages</h2>
+        <span className="hint">{pages ? `${pages.length} page${pages.length === 1 ? '' : 's'}` : '…'}</span>
+        <div className="tools"><button className="btn primary" onClick={() => setEditing('new')}>+ Add status page</button></div>
+      </div>
+      <p className="panel-intro">
+        A status page is a read-only dashboard for a wall screen, opened with a secret link instead of a login. It shows the sites you choose, host by host, with the sensors that need attention, and refreshes every 30 seconds. Anyone with the link can see it, so keep it on the screen it's for: limit it to your networks, give it an expiry, or make a new link to shut the old one out.
+      </p>
+      {pages === null && <Skeleton rows={2} cols={3} />}
+      {pages && pages.length === 0 && (
+        <EmptyState icon={ic.statuspages} title="No status pages yet" text="Add one to put your sites on a wall screen without signing in there."
+          action={<Button variant="primary" onClick={() => setEditing('new')}>+ Add status page</Button>} />
+      )}
+      {pages && pages.length > 0 && (
+        <div className="chan-grid">
+          {pages.map((p) => {
+            const expired = p.expires_at > 0 && p.expires_at * 1000 <= Date.now()
+            return (
+              <div className={'chan' + (expired ? ' off' : '')} key={p.id}>
+                <div className="ct">
+                  <span className="ci" style={{ background: 'var(--accent)' }}>{ic.statuspages}</span>
+                  <span className="chan-name">{p.name}</span>
+                </div>
+                <p className="chan-meta">{sitesLabel(p.sites)} · {p.allow_cidrs ? `only ${p.allow_cidrs}` : 'any network'} · {p.expires_at ? (expired ? 'expired' : `expires ${new Date(p.expires_at * 1000).toLocaleDateString()}`) : 'never expires'}</p>
+                <div className="chan-status">{p.last_viewed_at ? `Last viewed ${relTime(p.last_viewed_at)}` : 'Not opened yet'}</div>
+                <div className="chan-actions">
+                  <Button onClick={() => rotate(p)}>New link</Button>
+                  <Kebab actions={[
+                    { label: 'Edit…', icon: kbIcon.edit, onClick: () => setEditing(p) },
+                    { sep: true, label: '' },
+                    { label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => del(p) },
+                  ]} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {editing && (
+        <StatusPageDialog initial={editing === 'new' ? null : editing} sites={sites} onCancel={() => setEditing(null)}
+          onSaved={(p, link) => { setEditing(null); load(); if (link) setReveal({ name: p.name, link: statusLinkURL(link) }); else toast.success('Status page saved.') }} />
+      )}
+      {reveal && <StatusLinkDialog name={reveal.name} link={reveal.link} onClose={() => setReveal(null)} />}
+    </div>
+  )
+}
+
+function StatusPageDialog({ initial, sites, onCancel, onSaved }: {
+  initial: StatusPage | null; sites: string[]; onCancel: () => void; onSaved: (p: StatusPage, link?: string) => void
+}) {
+  const [name, setName] = useState(initial?.name || '')
+  const [selSites, setSelSites] = useState<string[]>(initial?.sites || [])
+  const [cidrs, setCidrs] = useState(initial?.allow_cidrs || '')
+  // Expiry: keep an existing date as is unless another choice is picked.
+  const [expiry, setExpiry] = useState<number>(initial && initial.expires_at ? -1 : 0)
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onCancel])
+  async function save(e: FormEvent) {
+    e.preventDefault(); setErr('')
+    const expires_at = expiry === -1 ? (initial?.expires_at || 0) : expiry === 0 ? 0 : Math.floor(Date.now() / 1000) + expiry * 86400
+    setBusy(true)
+    const res = await fetch(initial ? `/api/status-pages/${initial.id}` : '/api/status-pages', {
+      method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, sites: selSites, allow_cidrs: cidrs, expires_at }),
+    }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { setErr(await errText(res, 'Could not save the status page')); return }
+    const j = await res.json()
+    if (initial) onSaved(j as StatusPage)
+    else onSaved(j.page as StatusPage, j.link as string)
+  }
+  return createPortal(
+    <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel() }}>
+      <form className="dlg" role="dialog" aria-modal="true" onSubmit={save} style={{ maxWidth: 'min(640px, 94vw)', maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
+        <div className="dlg-title">{initial ? `Edit ${initial.name}` : 'Add status page'}</div>
+        <div className="dlg-scroll"><div className="chan-form">
+          <ChanSection title="Page">
+            <label className="chan-field"><span className="flabel">Name</span>
+              <input className="input" placeholder="e.g. Rack room screen" value={name} onChange={(e) => setName(e.target.value)} required />
+            </label>
+            <div className="chan-field"><span className="flabel">Sites</span>
+              <SitePicker options={sites} value={selSites} onChange={setSelSites} />
+            </div>
+          </ChanSection>
+          <ChanSection title="Who can open it" note="The link works from anywhere unless you list the networks it may be opened from. It can also expire.">
+            <label className="chan-field"><span className="flabel">Allowed networks</span>
+              <input className="input" placeholder="e.g. 10.0.0.0/24, 192.168.1.20 (empty = any network)" value={cidrs} onChange={(e) => setCidrs(e.target.value)} />
+            </label>
+            <label className="chan-field" style={{ maxWidth: 260 }}><span className="flabel">Link expires</span>
+              <Select value={expiry} onChange={(e) => setExpiry(Number(e.target.value))}>
+                {initial && initial.expires_at > 0 && <option value={-1}>Keep: {new Date(initial.expires_at * 1000).toLocaleDateString()}</option>}
+                {STATUS_EXPIRY_DAYS.map((d) => <option key={d} value={d}>{d === 0 ? 'Never' : d === 1 ? 'In 1 day' : d === 365 ? 'In 1 year' : `In ${d} days`}</option>)}
+              </Select>
+            </label>
+          </ChanSection>
+          {err && <p className="set-note txt-err" style={{ margin: 0 }}>{err}</p>}
+        </div></div>
+        <div className="chan-dlg-foot">
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            <button type="button" className="btn" onClick={onCancel}>Cancel</button>
+            <button type="submit" className="btn primary" disabled={busy || !name.trim()}>{initial ? 'Save changes' : 'Add status page'}</button>
+          </div>
+        </div>
+      </form>
+    </div>,
+    document.body,
+  )
+}
+
+// StatusLinkDialog shows a status page's link once: Argus keeps only a hash of it.
+function StatusLinkDialog({ name, link, onClose }: { name: string; link: string; onClose: () => void }) {
+  return createPortal(
+    <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 'min(640px, 94vw)' }}>
+        <div className="dlg-title">Link for {name}</div>
+        <p className="dlg-msg">Open this link on the screen. It's shown only now: Argus keeps just a fingerprint of it, so copy it before closing. Once opened, the screen remembers it and the address bar shows a plain /status.</p>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12 }}>
+          <input className="input mono" readOnly value={link} onFocus={(e) => e.target.select()} style={{ flex: 1, minWidth: 0 }} />
+          <CopyButton text={link} />
+        </div>
+        <div className="dlg-foot"><Button variant="primary" onClick={onClose}>Done</Button></div>
       </div>
     </div>,
     document.body,

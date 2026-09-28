@@ -11,6 +11,20 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **Status pages** for a wall screen. A new admin screen, **Status pages**, makes read-only dashboards
+  that open with a secret link instead of a login: each chosen site, host by host, with the sensors
+  and problems that need attention (healthy hosts as compact chips), an overall status, a clock, and
+  a refresh every 30 seconds. It flags a lost connection and keeps showing the last known state.
+  - Opening the link swaps it for a cookie and a plain `/status` address, so the secret doesn't sit
+    in the address bar. Argus keeps only a fingerprint of it, and shows the link once.
+  - Each page can be limited to networks (like your LAN) and given an expiry. **New link** shuts the
+    old one out at once; deleting the page does too.
+  - The page shows only its sites, never addresses, credentials or settings, reads through its own
+    endpoint (never the app's API), and is kept out of search engines and other sites' frames.
+
 ## [0.5.10] - 2026-09-28
 
 **Added:**

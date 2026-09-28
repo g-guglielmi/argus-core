@@ -1,0 +1,155 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Argus status</title>
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #121821; --elev: #18202b; --border: #243040;
+    --text: #e8edf4; --muted: #8b98a8; --faint: #5d6b7c;
+    --ok: #3fa66a; --warn: #e0a53a; --err: #e2564d; --acked: #7c8cf5; --paused: #5b8def; --accent: #2ea8c9;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  body { display: flex; flex-direction: column; font-size: clamp(14px, 1.05vw, 26px); }
+  header { display: flex; align-items: center; gap: 1.2em; padding: 0.9em 1.4em; border-bottom: 1px solid var(--border); background: var(--panel); }
+  .brand { font-weight: 800; letter-spacing: 0.18em; font-size: 0.8em; color: var(--accent); }
+  h1 { margin: 0; font-size: 1.6em; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .overall { display: flex; align-items: center; gap: 0.5em; padding: 0.45em 1em; border-radius: 999px; font-weight: 700; font-size: 1.05em; border: 1px solid var(--border); }
+  .overall .dot { width: 0.7em; height: 0.7em; border-radius: 50%; background: currentColor; }
+  .overall.ok { color: var(--ok); } .overall.warning { color: var(--warn); } .overall.error { color: var(--err); }
+  .clock { text-align: right; line-height: 1.2; }
+  .clock .time { font-size: 1.6em; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .clock .upd { font-size: 0.75em; color: var(--muted); }
+  .banner { display: none; padding: 0.5em 1.4em; background: color-mix(in srgb, var(--err) 22%, var(--panel)); color: var(--text); font-weight: 600; }
+  .banner.on { display: block; }
+  main { flex: 1; overflow: auto; padding: 1.2em 1.4em; display: grid; gap: 1.1em;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 26em), 1fr)); align-content: start; }
+  .site { background: var(--panel); border: 1px solid var(--border); border-radius: 0.8em; padding: 0.9em 1em; border-top: 0.25em solid var(--ok); }
+  .site.warning { border-top-color: var(--warn); } .site.error { border-top-color: var(--err); } .site.acked { border-top-color: var(--acked); }
+  .site h2 { margin: 0 0 0.7em; font-size: 1.15em; display: flex; justify-content: space-between; gap: 0.6em; }
+  .site h2 .n { color: var(--muted); font-weight: 500; font-size: 0.85em; white-space: nowrap; }
+  .tiles { display: grid; gap: 0.6em; grid-template-columns: repeat(auto-fill, minmax(min(100%, 13em), 1fr)); }
+  .tile { background: var(--elev); border-radius: 0.6em; padding: 0.6em 0.75em; border-left: 0.3em solid var(--ok); min-width: 0; }
+  .tile.error { border-left-color: var(--err); background: color-mix(in srgb, var(--err) 14%, var(--elev)); }
+  .tile.warning { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--elev)); }
+  .tile.acked { border-left-color: var(--acked); } .tile.paused { border-left-color: var(--paused); opacity: 0.75; }
+  .tile .name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile ul { list-style: none; margin: 0.35em 0 0; padding: 0; font-size: 0.85em; }
+  .tile li { display: flex; gap: 0.4em; align-items: baseline; margin-top: 0.2em; min-width: 0; }
+  .tile li .d { flex: none; width: 0.55em; height: 0.55em; border-radius: 50%; background: var(--muted); transform: translateY(-0.05em); }
+  .tile li .d.error { background: var(--err); } .tile li .d.warning { background: var(--warn); } .tile li .d.acked { background: var(--acked); }
+  .tile li .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile li .v { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .tile .okn { margin-top: 0.35em; font-size: 0.8em; color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.4em; margin-top: 0.6em; }
+  .chip { display: inline-flex; align-items: center; gap: 0.4em; padding: 0.25em 0.6em; border-radius: 999px; background: var(--elev); font-size: 0.85em; max-width: 100%; }
+  .chip::before { content: ""; width: 0.5em; height: 0.5em; border-radius: 50%; background: var(--ok); flex: none; }
+  .chip.paused::before { background: var(--paused); }
+  .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty, .gone { color: var(--muted); padding: 3em 1em; text-align: center; grid-column: 1 / -1; font-size: 1.2em; }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">ARGUS</span>
+  <h1 id="title">Status</h1>
+  <div class="overall" id="overall" hidden><span class="dot"></span><span id="overall-text"></span></div>
+  <div class="clock"><div class="time" id="clock"></div><div class="upd" id="upd"></div></div>
+</header>
+<div class="banner" id="banner">Connection lost. Showing the last known state, retrying.</div>
+<main id="main"><div class="empty">Loading…</div></main>
+<script>
+(function () {
+  var tz = undefined, lastOK = 0, gone = false;
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function ago(ts) {
+    var s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
+    if (s < 60) return s + 's';
+    var m = Math.floor(s / 60); if (m < 60) return m + 'm';
+    var h = Math.floor(m / 60); if (h < 24) return h + 'h ' + (m % 60) + 'm';
+    return Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
+  }
+  function tick() {
+    var opts = { hour: '2-digit', minute: '2-digit' }; if (tz) opts.timeZone = tz;
+    try { document.getElementById('clock').textContent = new Date().toLocaleTimeString([], opts); } catch (e) { document.getElementById('clock').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+    document.getElementById('upd').textContent = lastOK ? 'Updated ' + ago(lastOK) + ' ago' : '';
+  }
+  function tile(h) {
+    var t = el('div', 'tile ' + h.state);
+    t.appendChild(el('div', 'name', h.name));
+    var ul = el('ul'), shown = 0, max = 4;
+    (h.problems || []).forEach(function (p) {
+      if (shown >= max) return; shown++;
+      var li = el('li'); li.appendChild(el('span', 'd ' + (p.acked ? 'acked' : p.state)));
+      li.appendChild(el('span', 't', p.name)); if (p.since) li.appendChild(el('span', 'v', ago(p.since)));
+      ul.appendChild(li);
+    });
+    (h.sensors || []).forEach(function (s) {
+      if (shown >= max) return; shown++;
+      var li = el('li'); li.appendChild(el('span', 'd ' + s.state));
+      li.appendChild(el('span', 't', s.label)); if (s.value) li.appendChild(el('span', 'v', s.value));
+      ul.appendChild(li);
+    });
+    var more = (h.problems || []).length + (h.sensors || []).length - shown;
+    if (more > 0) ul.appendChild(el('li', null, '+' + more + ' more'));
+    if (shown) t.appendChild(ul);
+    if (h.ok_sensors) t.appendChild(el('div', 'okn', '✓ ' + h.ok_sensors + (h.ok_sensors === 1 ? ' sensor OK' : ' sensors OK')));
+    return t;
+  }
+  function render(d) {
+    tz = d.timezone || undefined;
+    document.getElementById('title').textContent = d.name;
+    document.title = d.name + ' · Argus status';
+    var o = document.getElementById('overall'), ot = document.getElementById('overall-text');
+    o.hidden = false;
+    var c = d.counts || {};
+    if (c.error) { o.className = 'overall error'; ot.textContent = c.error + (c.error === 1 ? ' host down or failing' : ' hosts down or failing'); }
+    else if (c.warning) { o.className = 'overall warning'; ot.textContent = c.warning + (c.warning === 1 ? ' host with warnings' : ' hosts with warnings'); }
+    else { o.className = 'overall ok'; ot.textContent = 'All systems operational'; }
+    var main = document.getElementById('main'); main.textContent = '';
+    if (!d.sites || !d.sites.length) { main.appendChild(el('div', 'empty', 'Nothing to show for this page yet.')); return; }
+    d.sites.forEach(function (s) {
+      var card = el('section', 'site ' + s.state), h2 = el('h2');
+      h2.appendChild(el('span', null, s.name));
+      var bad = s.hosts.filter(function (h) { return h.state !== 'ok' && h.state !== 'paused'; }).length;
+      h2.appendChild(el('span', 'n', s.hosts.length + (s.hosts.length === 1 ? ' host' : ' hosts') + (bad ? ' · ' + bad + ' need attention' : '')));
+      card.appendChild(h2);
+      var tiles = el('div', 'tiles'), chips = el('div', 'chips');
+      s.hosts.forEach(function (h) {
+        if (h.state === 'ok' || h.state === 'paused') {
+          var ch = el('span', 'chip ' + h.state); ch.appendChild(el('span', null, h.name));
+          ch.title = h.state === 'paused' ? 'Paused' : (h.ok_sensors + ' sensors OK'); chips.appendChild(ch);
+        } else tiles.appendChild(tile(h));
+      });
+      if (tiles.childNodes.length) card.appendChild(tiles);
+      if (chips.childNodes.length) card.appendChild(chips);
+      main.appendChild(card);
+    });
+  }
+  function load() {
+    if (gone) return;
+    fetch('/status/data', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) {
+      return r.json().then(function (j) { return { ok: r.ok, code: r.status, j: j }; });
+    }).then(function (res) {
+      if (res.ok) { lastOK = Math.floor(Date.now() / 1000); document.getElementById('banner').className = 'banner'; render(res.j); tick(); return; }
+      if (res.code === 403 || res.code === 404 || res.code === 410) {
+        gone = true; var main = document.getElementById('main'); main.textContent = '';
+        main.appendChild(el('div', 'gone', (res.j && res.j.error) || 'This status page is no longer available.'));
+        document.getElementById('overall').hidden = true; return;
+      }
+      throw new Error('status ' + res.code);
+    }).catch(function () { document.getElementById('banner').className = 'banner on'; });
+  }
+  load(); tick();
+  setInterval(load, 30000); setInterval(tick, 1000);
+  setTimeout(function () { location.reload(); }, 6 * 3600 * 1000); // pick up a new Argus version now and then
+})();
+</script>
+</body>
+</html>

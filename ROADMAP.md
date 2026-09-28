@@ -195,7 +195,9 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   devices; a notification channel that keeps failing (told on the other channels). Per channel: a
   **System notices** switch (off by default) next to the alert level, which gains **None**, so a
   channel can carry alerts, notices, or both. - v0.5.10
-- [ ] Public status page (Uptime-Kuma-style shareable) - parking lot
+- [ ] **Status pages** (on `:testing`) - read-only wall-screen dashboards opened with a secret link
+  instead of a login: token swapped for a cookie + clean URL, stored hashed, rotatable, optional
+  networks allowlist and expiry, down to the sensors that need attention. - _(FE+BE)_ M
 
 ### I. Mobile app (last step)
 - [ ] **Android native app with push notifications** - the app registers a device with Argus; the notifier delivers alerts as **push** (e.g. FCM) via a new "push" notification channel type, alongside Discord/Telegram/email. A PWA + web push is a cheaper fallback if a full native app isn't warranted. - _(app + BE)_ **L**
