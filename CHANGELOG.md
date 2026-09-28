@@ -73,6 +73,10 @@ GitHub Release from the matching section below.
   seen, in seconds") now read in seconds in the app, on charts and in alerts, instead of a bare
   number.
 - A ping alert reads "No reply to ping" instead of a bare 0.
+- The status pills and a host's problem count in the tree include every problem: a sensor that
+  stopped collecting counts as an error, and so does a problem on a sensor the sensor lists leave out
+  (a collector's "reachable" flag, a sensor from one of Zabbix's own templates), which now also
+  appears in the pill's list while it lasts.
 - Alert thresholds carry the sensor's unit, scaled like the reading: "688 s (threshold >600 s)",
   "96 % (threshold >90 %)".
 

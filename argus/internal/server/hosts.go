@@ -182,6 +182,18 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Argus-raised problems count too (a sensor that stopped collecting, an unreachable agent).
+	synth := syntheticProblems(ctx, s.st, s.zbx, false)
+	for _, p := range synth.problems {
+		sev := atoi(p.Severity)
+		for _, h := range synth.targets[p.ObjectID].Hosts {
+			count[h.HostID]++
+			if sev > worst[h.HostID] {
+				worst[h.HostID] = sev
+			}
+		}
+	}
+
 	hideMap, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 	pauseMap, _ := s.st.ActiveSuppressionMap(ctx, "pause", "host")
 	classMap, _ := s.st.DeviceClasses(ctx)      // host id -> device-class id (drives the tree icon)

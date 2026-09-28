@@ -33,7 +33,9 @@ type sensorRow struct {
 // handleSensors returns a census of the curated ("key") sensors across every host, each tagged
 // with a single state, so the UI can show status-summary counts and per-state filtered lists.
 // State precedence: hidden > paused > error > warning > acknowledged > ok. Unsupported sensors
-// that are otherwise ok are skipped (they're "unknown", not ok).
+// that are otherwise ok are skipped (they're "unknown", not ok); one that stopped collecting has an
+// Argus-raised problem, so it counts as an error. A sensor outside the curated list is included only
+// while it has a problem.
 func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 	if !s.zbx.Authenticated() {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured (set ARGUS_ZABBIX_API_TOKEN)"})
@@ -55,6 +57,17 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 		tids = append(tids, p.ObjectID)
 	}
 	itemsByTrigger, _ := s.zbx.TriggerItems(ctx, tids)
+	if itemsByTrigger == nil {
+		itemsByTrigger = map[string][]string{}
+	}
+	// Argus-raised problems (a sensor that stopped collecting) put their sensor in error like any other.
+	synth := syntheticProblems(ctx, s.st, s.zbx, false)
+	for _, p := range synth.problems {
+		for _, it := range synth.targets[p.ObjectID].Items {
+			itemsByTrigger[p.ObjectID] = append(itemsByTrigger[p.ObjectID], it.ItemID)
+		}
+		problems = append(problems, p)
+	}
 	acked, _ := s.st.ActiveSuppressionMap(ctx, "ack", "event")
 	unackedRank := map[string]int{} // 1 = warning, 2 = error
 	hasAcked := map[string]bool{}
@@ -103,8 +116,14 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		cat, label, _, _, ok := classifyItem(it.Key, it.Name)
-		if !ok { // curated key sensors only
-			continue
+		if !ok {
+			// Curated key sensors only - except one with a problem: a flag the curated list leaves out
+			// (a collector's "reachable"), or a sensor from a stock Zabbix template, still counts
+			// while it is unhappy, under its Zabbix name.
+			if unackedRank[it.ItemID] == 0 && !hasAcked[it.ItemID] {
+				continue
+			}
+			label = it.Name
 		}
 		_, hiddenItem := hideItem[it.ItemID]
 		_, hiddenHost := hideHost[host.HostID]

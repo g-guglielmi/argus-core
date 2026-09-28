@@ -6,6 +6,7 @@ package server
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"argus/internal/store"
@@ -59,6 +60,29 @@ type synthSet struct {
 // "unsupported since" table in step; the read-only API paths pass false and only look it up, so a
 // sensor they see first isn't counted as unsupported for 10 minutes yet.
 func syntheticProblems(ctx context.Context, st *store.Store, zbx *zabbix.Client, record bool) synthSet {
+	if !record {
+		// The read-only callers (Overview, host list, sensor census, host page) poll from every open
+		// browser; share one lookup between them for a few seconds.
+		synthCache.mu.Lock()
+		defer synthCache.mu.Unlock()
+		if time.Since(synthCache.at) < synthCacheTTL {
+			return synthCache.set
+		}
+		synthCache.set, synthCache.at = collectSynthetic(ctx, st, zbx, false), time.Now()
+		return synthCache.set
+	}
+	return collectSynthetic(ctx, st, zbx, true)
+}
+
+const synthCacheTTL = 15 * time.Second
+
+var synthCache struct {
+	mu  sync.Mutex
+	at  time.Time
+	set synthSet
+}
+
+func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, record bool) synthSet {
 	out := synthSet{targets: map[string]zabbix.TriggerTarget{}, readings: map[string]string{}, silent: map[string]bool{}}
 	now := time.Now().Unix()
 
