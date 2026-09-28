@@ -695,8 +695,10 @@ different things:
   from the [adsb-feeder](https://github.com/dirkhh/adsb-feeder-image) first-boot web wizard. Once a
   token is present (either way), the service is inert on subsequent boots. **The page asks for a
   setup code** printed on the VM's console (and its login banner): anyone on the network can reach
-  the page, only someone at the console can submit it; every value is shape-checked (https enroll
-  URL unless a "lab" switch is ticked, a token, a host) before it reaches the container's env file.
+  the page, only someone at the console can submit it; with no console, an `ARGUSSEED` disk carrying
+  `ARGUS_SETUP_CODE=` supplies the code (Add-probe -> VM mints it as a tiny ISO). Every value is
+  shape-checked (https enroll URL unless a "lab" switch is ticked, a token, a host) before it reaches
+  the container's env file.
 - **Never** bake a token into the image (one-token-per-image, non-reusable, leaks the secret) - the
   image stays generic; the secret is always external.
 
@@ -733,7 +735,7 @@ paste path is retired). **Break-glass (§14a credential lifecycle) is implemente
 service creates a per-VM `argus` sudo user with a generated password, reports it over the probe
 check-in channel to `POST /api/probes/break-glass`, and Argus stores it encrypted and reveals it to
 admins on the Probes page (**Console** button); the user is in `sudo` only (no docker group), and
-SSH takes keys only (the password is for the console). SSH host keys regenerate on first boot
+SSH password login is allowed for that one account only (root and everything else: keys). SSH host keys regenerate on first boot
 (`argus-hostkeys.service`); the **console keyboard layout** is configurable per-VM (Add-probe → VM, or
 the setup page → `/etc/vconsole.conf`). **Static networking** for no-DHCP sites rides the seed too
 (`ARGUS_IP`/`ARGUS_GATEWAY`/`ARGUS_DNS` from Add-probe → VM → a static systemd-networkd file applied
@@ -842,8 +844,8 @@ one-form setup page on `http://<vm>/` (hostname · console keymap · timezone ·
 password, with per-role overrides under Advanced) and then configures everything behind a live,
 ground-truth progress page (idempotent steps; retry/edit on failure; reboot-safe resume):
 
-1. **system** - hostname/tz/keymap + the local Debian sudo user (console access; SSH keys only, no
-   docker group).
+1. **system** - hostname/tz/keymap + the local Debian sudo user (console + SSH access; password
+   login over SSH for this account only, no docker group).
 2. **database** - `timescaledb-tune` for the deployed RAM, `zabbix` role + DB with a **generated**
    password, schema import, TimescaleDB conversion.
 3. **pki** - CA (`CN=Monitoring Core CA`) + core server cert; CA mounted RO into Argus so **probe
@@ -867,7 +869,8 @@ ground-truth progress page (idempotent steps; retry/edit on failure; reboot-safe
    first-boot service.
 
 **The setup page asks for a setup code** printed on the VM's console and login banner (the page is
-open to the network until setup completes and creates every credential); forms carry a per-boot CSRF
+open to the network until setup completes and creates every credential), or read from an attached
+`ARGUSSEED` disk carrying `ARGUS_SETUP_CODE=` when there is no console; forms carry a per-boot CSRF
 field and answers are `no-store`.
 
 **Credential model:** one administrator password fans out to the Debian user, Zabbix `Admin`, and the

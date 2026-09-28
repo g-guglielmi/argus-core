@@ -29,10 +29,21 @@ by this; it is what a new deployment gets.
   setup is done (to the Public URL when it is https, else the VM's own address; never to whatever
   `Host` the request carried). Install `/etc/argus/pki/ca.crt` on your PCs to lose the browser
   warning, or front the VM with your own certificate.
-- **SSH takes keys only** (`PasswordAuthentication no`, no root login); the administrator password
-  is for the hypervisor console. The local admin user is no longer in the `docker` group.
+- **SSH password login is limited to the administrator account** created at setup: off for every
+  other account and for root (keys work for all). The local admin user is no longer in the `docker`
+  group.
+- **No console to read the setup code from?** A disk labelled `ARGUSSEED` with an `argus.env`
+  holding `ARGUS_SETUP_CODE=XXXX-XXXX` supplies your own code (`mkisofs -V ARGUSSEED -o code.iso
+  dir/`), attaching media being the same proof of hypervisor control as reading the console.
 - `setup-core.sh` (also used by the image build) doubles a quote inside the database password
   before it goes into SQL, and fetches the Zabbix release package over https only.
+
+## [Unreleased]
+
+**Added:**
+- **Add probe → VM → Download setup-code ISO**: for a probe VM whose console can't be reached, mints
+  the first-boot page's setup code, shows it, and puts it on a tiny `ARGUSSEED` disk the VM reads
+  instead of printing one (probe-vm 0.3.3 or later).
 
 ## [0.5.13] - 2026-09-29
 

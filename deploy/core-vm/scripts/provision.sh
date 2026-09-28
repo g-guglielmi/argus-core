@@ -56,9 +56,9 @@ install -d -m 0700 /var/lib/argus-core-setup
 # The VM's own https certificate for Argus (written by the first-boot "https" step).
 install -d -m 0700 /etc/nginx/argus
 
-echo "==> hardening SSH (keys only; the hypervisor console keeps password login)"
-# The setup password is for the console. Over the network a key is required: add one from the
-# console (or through Argus later) if you want SSH.
+echo "==> hardening SSH (no root login; password login only for the account first boot creates)"
+# Password login is off for every account (keys still work); first boot adds a Match block for the
+# administrator it creates, so that one password works over SSH when the console isn't at hand.
 install -d -m 0755 /etc/ssh/sshd_config.d
 printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\n' > /etc/ssh/sshd_config.d/10-argus.conf
 # The Argus data volume (/data in the container) and the CA dir (/ca, read-only in the container).

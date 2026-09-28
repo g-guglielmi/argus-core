@@ -37,8 +37,8 @@ The setup page collects: **hostname**, **console keyboard layout**, **timezone**
 username, and the Public URL). Then, step by step, with live progress and ground-truth checks:
 
 1. **System** - hostname, timezone, console keymap, and the **local Debian sudo user** (default
-   `argus`) with the password you chose - your hypervisor-console access (SSH takes keys only; add
-   your public key from the console if you want it).
+   `argus`) with the password you chose - your console and SSH access (password login over SSH is
+   allowed for this account only; root and any other account take keys).
 2. **Database** - `timescaledb-tune` against *this* VM's RAM, then the `zabbix` role + database with a
    **generated password** (root-only in the configs, never shown), the Zabbix schema import (the long
    step), and the TimescaleDB conversion.
@@ -99,7 +99,9 @@ Machine-generated and never displayed: the **database password** (in `zabbix_ser
   first, then a permanent redirect to Argus over https.
 - **The setup page asks for a setup code** that the VM prints on its console (the hypervisor's
   console window, and the console login banner). Anyone on the network can reach the page; only
-  someone who can see the console can use it.
+  someone who can see the console can use it. **No console?** Attach a CD/DVD labelled `ARGUSSEED`
+  holding an `argus.env` with `ARGUS_SETUP_CODE=XXXX-XXXX` (`mkisofs -V ARGUSSEED -o code.iso dir/`)
+  and the VM expects your code instead.
 - The Argus container reaches the host's Zabbix frontend as `host.docker.internal` (mapped to the
   Docker bridge gateway) - stable across DHCP address changes.
 
@@ -159,7 +161,6 @@ probes additionally need **:10051** published/forwarded to the VM.
 - The setup form travels over plain HTTP on your LAN, once, like the probe's first-boot page - do the
   setup from the network you trust. The setup code keeps a bystander on that network from running it
   for you.
-- SSH accepts keys only. The administrator password works at the hypervisor console; from there,
-  `~argus/.ssh/authorized_keys` opens SSH.
+- SSH password login works for the administrator account only; root and anything else need a key.
 - Refresh the golden image periodically (quarterly / on a Debian point release) so new deployments
   ship already-patched.

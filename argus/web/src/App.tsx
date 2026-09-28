@@ -2913,6 +2913,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
   const [created, setCreated] = useState<CreatedToken | null>(null)
   const [busy, setBusy] = useState(false)
   const [seeding, setSeeding] = useState(false)
+  const [setupCode, setSetupCode] = useState<string | null>(null) // a setup code minted here for the first-boot page, delivered on a tiny ISO
   const [err, setErr] = useState<string | null>(null)
   const [enrolled, setEnrolled] = useState<{ name: string; online: boolean } | null>(null)
   // Newest probe-vm appliance + its OVA/qcow2/VHD download links, resolved server-side from GitHub
@@ -2958,6 +2959,25 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
       const a = document.createElement('a'); a.href = url; a.download = `argus-seed-${created.proxy_name}.iso`
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
     } catch { setErr('Could not build the seed ISO') } finally { setSeeding(false) }
+  }
+
+  // The first-boot page wants a setup code the VM prints on its console. With no console at hand,
+  // mint the code here and hand it to the VM on a tiny disk instead (same ARGUSSEED reader).
+  async function downloadSetupCodeISO() {
+    if (!created) return
+    const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+    const buf = new Uint8Array(8); crypto.getRandomValues(buf)
+    const raw = Array.from(buf, (b) => alphabet[b % alphabet.length]).join('')
+    const code = raw.slice(0, 4) + '-' + raw.slice(4)
+    setSeeding(true); setErr(null)
+    try {
+      const res = await fetch('/api/probes/setup-code-iso', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, name: created.proxy_name }) })
+      if (!res.ok) { setErr(await errText(res, 'Could not build the setup-code ISO')); return }
+      const blob = await res.blob(); const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url; a.download = `argus-setup-code-${created.proxy_name}.iso`
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+      setSetupCode(code)
+    } catch { setErr('Could not build the setup-code ISO') } finally { setSeeding(false) }
   }
 
   const content = created ? (method === 'docker' ? probeDockerCmd(created, redeploy, selfupdate) : method === 'compose' ? probeComposeCmd(created) : method === 'unraid' ? probeUnraidXml(created) : '') : ''
@@ -3101,6 +3121,15 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
                   <div style={{ fontSize: 12.5, fontWeight: 600 }}>2 · Seed ISO <span style={{ color: 'var(--accent)' }}>· required for zero-touch provisioning and static IP</span></div>
                   <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>Attach it to the VM as a CD/DVD before first boot - it carries this probe's token and network settings, and the <strong>same ISO works with any</strong> of the three formats above. (No ISO? Boot the appliance on DHCP and finish at its first-boot page instead.)</p>
                   <div><Button variant="primary" onClick={downloadSeedISO} disabled={seeding}>{seeding ? 'Building the ISO...' : 'Download seed ISO'}</Button></div>
+                </div>
+                {/* Step 3 - the first-boot page's setup code, for a VM whose console can't be reached. */}
+                <div style={{ display: 'grid', gap: 7 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600 }}>3 · Using the first-boot page without a console? <span style={{ color: 'var(--faint)', fontWeight: 400 }}>· optional</span></div>
+                  <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>The page asks for a <strong>setup code</strong> the VM prints on its console, so a bystander on the network can't enrol it. If you can't see the console, download this tiny disk instead and attach it as a CD/DVD: the VM then expects the code shown here.</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <Button onClick={downloadSetupCodeISO} disabled={seeding}>{seeding ? 'Building the ISO...' : 'Download setup-code ISO'}</Button>
+                    {setupCode && <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 15, fontWeight: 700, letterSpacing: '0.08em' }}>{setupCode}</span>}
+                  </div>
                 </div>
               </div>
             ) : (

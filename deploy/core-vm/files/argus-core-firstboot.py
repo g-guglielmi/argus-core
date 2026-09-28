@@ -75,7 +75,15 @@ ARGUS_URL = "http://127.0.0.1:8081"
 ARGUS_UID = "65532"                                    # the distroless core's nonroot uid
 FIRSTBOOT_SERVICE = "argus-firstboot.service"
 LISTEN = ("0.0.0.0", 80)
+SSHD_DROPIN = "/etc/ssh/sshd_config.d/20-argus-user.conf"
 ISSUE_FILE = "/etc/issue.d/argus-setup.issue"
+# A disk labelled ARGUSSEED with an argus.env holding ARGUS_SETUP_CODE=XXXX-XXXX supplies the setup
+# code when there is no console to read it from (attaching media is the same proof of hypervisor
+# control). Same label and file as the probe's seed disk, matched case-insensitively (plain ISO9660
+# may uppercase names and add ";1").
+SEED_LABEL = "ARGUSSEED"
+SEED_ENV = "argus.env"
+SEED_MOUNT = "/run/argus-seed"
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/L: it's typed from a console
 CODE_MAX_FAILURES = 10
 
@@ -193,6 +201,37 @@ def clear_code_banner():
         pass
 
 
+def setup_code_from_disk():
+    """The ARGUS_SETUP_CODE of an attached ARGUSSEED disk, normalised ("XXXX-XXXX"), or ""."""
+    dev = None
+    for line in sh("blkid").splitlines():
+        m = re.match(r"^(\S+?):", line)
+        lab = re.search(r'LABEL="([^"]*)"', line)
+        if m and lab and lab.group(1).strip().upper() == SEED_LABEL:
+            dev = m.group(1)
+            break
+    if not dev:
+        return ""
+    os.makedirs(SEED_MOUNT, exist_ok=True)
+    try:
+        if subprocess.run(["mount", "-o", "ro", dev, SEED_MOUNT], capture_output=True, timeout=15).returncode != 0:
+            return ""
+        for fn in os.listdir(SEED_MOUNT):
+            if fn.split(";", 1)[0].lower() == SEED_ENV:
+                with open(os.path.join(SEED_MOUNT, fn), encoding="utf-8") as fh:
+                    for raw in fh:
+                        k, _, v = raw.strip().partition("=")
+                        if k.strip() == "ARGUS_SETUP_CODE":
+                            c = v.strip().upper().replace("-", "")
+                            if re.fullmatch(r"[A-Z0-9]{8}", c):
+                                return c[:4] + "-" + c[4:]
+        return ""
+    except Exception:
+        return ""
+    finally:
+        subprocess.run(["umount", SEED_MOUNT], check=False, capture_output=True)
+
+
 def replace_in_file(path, pattern, repl, append_if_missing=None):
     """Regex-replace (first match) in a file; optionally append a line when nothing matched."""
     with open(path, encoding="utf-8") as fh:
@@ -263,6 +302,12 @@ def step_system(cfg, state):
     # sudo is the whole privilege; a docker-group membership would be a second, unlogged root.
     run(["gpasswd", "-d", user, "docker"], check=False)
     run(["chpasswd"], input_text="%s:%s\n" % (user, cfg["linux_password"]))
+    # SSH: password login for this one account (the image turns it off for everyone else and for
+    # root), so the console password also works over the network when the console isn't at hand.
+    os.makedirs(os.path.dirname(SSHD_DROPIN), exist_ok=True)
+    with open(SSHD_DROPIN, "w", encoding="utf-8") as fh:
+        fh.write("# Written by the Argus core appliance first-boot setup.\nMatch User %s\n    PasswordAuthentication yes\n" % user)
+    run(["systemctl", "reload-or-restart", "ssh"], check=False)
 
 
 def step_database(cfg, state):
@@ -1122,11 +1167,14 @@ def main():
         return 0
     httpd = ThreadingHTTPServer(LISTEN, Handler)
     httpd.csrf = secrets.token_urlsafe(24)
-    httpd.setup_code = gen_setup_code()
+    disk_code = setup_code_from_disk()
+    httpd.setup_code = disk_code or gen_setup_code()
     httpd.code_failures = 0
     if os.path.exists(CONFIG_PATH):
         print("argus-core-firstboot: resuming an interrupted setup", flush=True)
         ORCH.start(fresh=False)
+    elif disk_code:
+        print("argus-core-firstboot: setup code taken from the attached disk", flush=True)
     else:
         announce_code(httpd.setup_code)
     threading.Thread(target=monitor, args=(httpd,), daemon=True).start()
