@@ -619,6 +619,41 @@ func jobView(j store.DiscoveryJob) discoveryJobView {
 		Found: j.Found, New: j.NewCount}
 }
 
+// adjustNewCounts live-adjusts the jobs' "new" counts: a result whose IP is already monitored isn't
+// actually new, whether it was adopted through Argus or added long before discovery existed. Same
+// check the review screen's "monitored" pill uses; best-effort - a Zabbix hiccup leaves the raw counts.
+// Shared by the scans list and the "scan finished" system notice.
+func (s *Server) adjustNewCounts(ctx context.Context, jobs []store.DiscoveryJob) {
+	if len(jobs) == 0 || !s.zbx.Authenticated() {
+		return
+	}
+	ips, err := s.zbx.HostIPs(ctx)
+	if err != nil {
+		return
+	}
+	monitored := make(map[string]bool, len(ips))
+	for _, ip := range ips {
+		monitored[ip] = true
+	}
+	ids := make([]int64, 0, len(jobs))
+	for _, j := range jobs {
+		ids = append(ids, j.ID)
+	}
+	newIPs, err := s.st.DiscoveryNewResultIPs(ctx, ids)
+	if err != nil {
+		return
+	}
+	for i := range jobs {
+		n := 0
+		for _, ip := range newIPs[jobs[i].ID] {
+			if !monitored[ip] {
+				n++
+			}
+		}
+		jobs[i].NewCount = n
+	}
+}
+
 // GET /api/discovery/jobs (admin) - recent scans, newest first.
 func (s *Server) handleListDiscoveryJobs(w http.ResponseWriter, r *http.Request) {
 	limit := 30
@@ -632,32 +667,7 @@ func (s *Server) handleListDiscoveryJobs(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not list scans"})
 		return
 	}
-	// Live-adjust the "new" counts: a result whose IP is already monitored isn't actually new,
-	// whether it was adopted through Argus or added long before discovery existed. Same check the
-	// review screen's "monitored" pill uses; best-effort - a Zabbix hiccup leaves the raw counts.
-	if len(jobs) > 0 && s.zbx.Authenticated() {
-		if ips, err := s.zbx.HostIPs(ctx); err == nil {
-			monitored := make(map[string]bool, len(ips))
-			for _, ip := range ips {
-				monitored[ip] = true
-			}
-			ids := make([]int64, 0, len(jobs))
-			for _, j := range jobs {
-				ids = append(ids, j.ID)
-			}
-			if newIPs, err := s.st.DiscoveryNewResultIPs(ctx, ids); err == nil {
-				for i := range jobs {
-					n := 0
-					for _, ip := range newIPs[jobs[i].ID] {
-						if !monitored[ip] {
-							n++
-						}
-					}
-					jobs[i].NewCount = n
-				}
-			}
-		}
-	}
+	s.adjustNewCounts(ctx, jobs)
 	out := make([]discoveryJobView, 0, len(jobs))
 	for _, j := range jobs {
 		out = append(out, jobView(j))

@@ -1251,8 +1251,15 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   }, [])
   // Remember the desktop sidebar collapsed/expanded choice across reloads.
   useEffect(() => { try { localStorage.setItem('argus-collapsed', collapsed ? '1' : '0') } catch { /* ignore */ } }, [collapsed])
-  const cnt = (st: string) => sensors.filter((s) => s.state === st).length
+  // Until the first census answers (it reads every sensor from Zabbix, so it takes a moment), the
+  // status pills show the last visit's counts, dimmed, instead of a row of zeros that reads as data.
+  const [lastCounts] = useState<Record<string, number> | null>(() => { try { return JSON.parse(localStorage.getItem('argus-status-counts') || 'null') } catch { return null } })
+  const cnt = (st: string) => (sensorsLoaded ? sensors.filter((s) => s.state === st).length : (lastCounts?.[st] ?? 0))
   const errN = cnt('error'), warnN = cnt('warning'), ackN = cnt('acked'), pausedN = cnt('paused'), hiddenN = cnt('hidden'), okN = cnt('ok')
+  useEffect(() => {
+    if (!sensorsLoaded) return
+    try { localStorage.setItem('argus-status-counts', JSON.stringify({ ok: okN, warning: warnN, error: errN, acked: ackN, paused: pausedN, hidden: hiddenN })) } catch { /* ignore */ }
+  }, [sensorsLoaded, okN, warnN, errN, ackN, pausedN, hiddenN])
 
   // Deep-link target: Overview / lists / a shared URL ask the tree to open a host (and optionally
   // a sensor's chart). Seeded from the URL so a reload restores the open host/sensor.
@@ -1374,8 +1381,8 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
     </button>
   )
   const chip = (st: string, icon: ReactNode, color: string, n: number, label: string) => (
-    <button className={'stat' + (view === 'list' && listFilter === st ? ' on' : '')} title={label} onClick={() => openList(st)}>
-      <span className="si" style={{ color }}>{icon}</span>{n}
+    <button className={'stat' + (view === 'list' && listFilter === st ? ' on' : '') + (sensorsLoaded ? '' : ' stale')} title={sensorsLoaded ? label : label + ' (loading…)'} onClick={() => openList(st)}>
+      <span className="si" style={{ color }}>{icon}</span>{sensorsLoaded || lastCounts ? n : '…'}
     </button>
   )
 

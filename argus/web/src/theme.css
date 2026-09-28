@@ -130,6 +130,7 @@ a { color: var(--accent); }
 .topbar .sub { color: var(--muted); font-size: 12px; }
 .summary { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .stat { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-variant-numeric: tabular-nums; }
+.stat.stale { opacity: 0.55; }
 .stat:hover { border-color: var(--accent); }
 .stat.on { border-color: var(--accent); background: var(--accent-weak); }
 .stat .si { display: inline-flex; align-items: center; }

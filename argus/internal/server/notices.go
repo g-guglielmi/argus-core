@@ -158,6 +158,14 @@ func noticeTargets(n notice, dests []notifyDest) []notifyDest {
 	return to
 }
 
+// plural renders "1 device" / "3 devices".
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
+}
+
 // viewLink deep-links to an Argus view ("" without a public URL).
 func viewLink(publicURL, view string) string {
 	if publicURL == "" || view == "" {
@@ -207,7 +215,7 @@ func (s *Server) coreOSNotices() []notice {
 	var out []notice
 	if v.SecUpdates > 0 {
 		out = append(out, notice{key: "core-os-updates", title: "Security updates pending on the core VM",
-			detail: fmt.Sprintf("%d security update(s) have been waiting for over two days; automatic patching may be stuck.", v.SecUpdates),
+			detail: plural(v.SecUpdates, "security update has", "security updates have") + " been waiting for over two days; automatic patching may be stuck.",
 			view:   "settings", minAge: 48 * time.Hour})
 	}
 	if v.RebootRequired {
@@ -249,7 +257,7 @@ func (s *Server) probeNotices(ctx context.Context) (conds, events []notice) {
 		}
 		if ag.OSReportedAt > 0 && ag.SecUpdates > 0 {
 			conds = append(conds, notice{key: "probe-os-updates:" + name, title: "Security updates pending on probe " + site,
-				detail: fmt.Sprintf("%d security update(s) have been waiting for over two days; automatic patching may be stuck.", ag.SecUpdates),
+				detail: plural(ag.SecUpdates, "security update has", "security updates have") + " been waiting for over two days; automatic patching may be stuck.",
 				host:   host, site: site, view: "probes", minAge: 48 * time.Hour})
 		}
 		if ag.OSReportedAt > 0 && ag.RebootRequired {
@@ -314,6 +322,14 @@ func (s *Server) scanNotices(ctx context.Context) []notice {
 	markRaw, seen, _ := s.st.MetaGet(ctx, noticeWatermarkScans)
 	mark := atoi64(markRaw)
 	newest := mark
+	var finished []store.DiscoveryJob
+	for _, j := range jobs {
+		if (j.State == "done" || j.State == "failed") && j.CompletedAt > mark {
+			finished = append(finished, j)
+		}
+	}
+	jobs = finished
+	s.adjustNewCounts(ctx, jobs) // devices already monitored aren't new, as on the Discovery page
 	var out []notice
 	for _, j := range jobs {
 		if (j.State != "done" && j.State != "failed") || j.CompletedAt <= mark {
@@ -336,7 +352,10 @@ func (s *Server) scanNotices(ctx context.Context) []notice {
 			n.detail = strings.TrimSpace(target + " on probe " + site + ": " + j.Error)
 		} else {
 			n.title = what + " finished"
-			n.detail = fmt.Sprintf("%s on probe %s: %d device(s) found, %d new. Review them in Discovery.", target, site, j.Found, j.NewCount)
+			n.detail = fmt.Sprintf("%s on probe %s: %s found, %d new.", target, site, plural(j.Found, "device", "devices"), j.NewCount)
+			if j.NewCount > 0 {
+				n.detail += " Review them in Discovery."
+			}
 		}
 		out = append(out, n)
 	}
