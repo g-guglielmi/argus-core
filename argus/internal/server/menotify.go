@@ -26,6 +26,8 @@ type userChannelView struct {
 	Enabled     bool              `json:"enabled"`
 	Sites       []string          `json:"sites"`
 	MinSeverity int               `json:"min_severity"`
+	DelayMin    int               `json:"delay_min"`
+	RepeatMin   int               `json:"repeat_min"`
 	Config      map[string]string `json:"config"`
 	// Delivery health for the card: last successful send, last failure (+ reason), sent count.
 	LastSentAt  int64  `json:"last_sent_at,omitempty"`
@@ -40,7 +42,8 @@ func toUserChannelView(c store.UserNotifyChannel) userChannelView {
 		cfg = map[string]string{}
 	}
 	return userChannelView{
-		ID: c.ID, Type: c.Type, Enabled: c.Enabled, Sites: c.Sites, MinSeverity: c.MinSeverity, Config: cfg,
+		ID: c.ID, Type: c.Type, Enabled: c.Enabled, Sites: c.Sites, MinSeverity: c.MinSeverity,
+		DelayMin: c.DelayMin, RepeatMin: c.RepeatMin, Config: cfg,
 		LastSentAt: c.LastSentAt, LastError: c.LastError, LastErrorAt: c.LastErrorAt, SentCount: c.SentCount,
 	}
 }
@@ -52,6 +55,8 @@ type userChannelRequest struct {
 	Enabled     bool              `json:"enabled"`
 	Sites       []string          `json:"sites"`
 	MinSeverity int               `json:"min_severity"`
+	DelayMin    int               `json:"delay_min"`
+	RepeatMin   int               `json:"repeat_min"`
 	Config      map[string]string `json:"config"`
 }
 
@@ -82,8 +87,10 @@ func (req userChannelRequest) validate() (store.UserNotifyChannel, string) {
 	} else if sev > 5 {
 		sev = 5
 	}
+	delay, repeat := clampEscalation(req.DelayMin, req.RepeatMin)
 	return store.UserNotifyChannel{
-		Type: t, Enabled: req.Enabled, Sites: cleanSites(req.Sites), MinSeverity: sev, Config: cfg,
+		Type: t, Enabled: req.Enabled, Sites: cleanSites(req.Sites), MinSeverity: sev,
+		DelayMin: delay, RepeatMin: repeat, Config: cfg,
 	}, ""
 }
 

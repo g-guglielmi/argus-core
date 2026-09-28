@@ -359,12 +359,28 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
 
 - **Routing:** Warning **and** Error → Telegram + Discord + email (same for all sites).
 - **Recovery (OK) notifications:** enabled.
-- **Flap debounce:** a sensor must hold a state for N consecutive polls before notifying.
+- **Flap debounce (alert delay):** a problem must stay open for the **alert delay** (Settings ->
+  Alerting, default 60 s, `ARGUS_ALERT_DELAY_SECONDS`) before anyone is notified.
+- **Escalation + reminders, per channel:** every channel (global or personal) has a **Notify after**
+  delay (0 = with the first alert) and a **Remind every** interval (0 = off). A channel hears of a
+  problem only once the incident has been open and unacknowledged for its delay (counted from when
+  the incident began, never before the alert delay has passed), so "team at once, managers after 30
+  min" is two channels. Reminders (`[HIGH REMINDER]`, "Still open after 1h 5m (reminder 2)") repeat
+  while the problem stays open and unacknowledged; acknowledging, pausing or hiding stops them. A
+  channel added after a problem went live isn't sent that problem.
+- **Deliveries decide the follow-ups:** `notify_deliveries` records which channels an alert reached.
+  Reminders, the **acknowledged notice** (`[ACKNOWLEDGED]` with who took it and their note, sent once
+  per ack; an un-ack re-arms it and resumes reminders) and the **recovery** go to exactly those
+  channels, so a delayed channel that was never told gets no RESOLVED either, and a High-only channel
+  that got the error still hears when an incident that eased to a warning finally clears. On a
+  severity change the deliveries move to the problem that took over, and a channel that already had
+  the incident gets the new severity straight away.
 - **Severity changes aren't recoveries:** warning and error thresholds are separate band triggers
   ("at or above warning and below error" / "at or above error"), so escalating closes the warning
   trigger. RESOLVED is sent only when the sensor has no open problem left; a problem that closes
   while another one on the same host + sensor at a different severity is open is a severity change,
-  and sends nothing (the new severity alerts on its own).
+  and sends nothing (the new severity alerts on its own, and the channels that had the old one keep
+  following the incident).
 - **"No data" alerts** (nodata() triggers, e.g. probe unreachable) read "No data for 4m (since
   HH:MM)" instead of the stale last value, and skip the flap debounce: the nodata period already is
   one. The notifier reads trigger expressions expanded (`expandExpression`), which is also where the
@@ -926,7 +942,6 @@ and links to it.
 - Public status page (Uptime-Kuma-style shareable page).
 - **Android native app** with push notifications (device registers with Argus → notifier delivers
   via a "push"/FCM channel) - the planned last step (ROADMAP §I). iOS undecided (would need APNs).
-- Escalation policies / repeat notifications beyond flap debounce.
 - Token-based enrollment service (Phase 1 backend) + "Add probe" wizard (Phase 4/6 UI).
 - Golden probe **VM template** (Packer) + cloud-init for scaled/work rollout (Phase 6).
 - Sizing pass before the ~6000-sensor work deployment.

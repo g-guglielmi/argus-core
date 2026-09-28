@@ -12,7 +12,7 @@ import (
 	"argus/internal/zabbix"
 )
 
-func TestSensorStillAlerting(t *testing.T) {
+func TestSensorSuccessor(t *testing.T) {
 	// Triggers: 1 = the probe's "not reporting" warning, 2 = its "unreachable" high (same item 900),
 	// 3 = a different sensor (item 901) on the same host.
 	var targets map[string]zabbix.TriggerTarget
@@ -30,19 +30,19 @@ func TestSensorStillAlerting(t *testing.T) {
 	warnOpen := []zabbix.Problem{{EventID: "e1b", ObjectID: "1", Severity: "2"}}
 	otherOpen := []zabbix.Problem{{EventID: "e3", ObjectID: "3", Severity: "4"}}
 
-	if !sensorStillAlerting(warn, highOpen, targets) {
-		t.Error("warning -> high on the same sensor must not read as a recovery")
+	if got := sensorSuccessor(warn, highOpen, targets); got != "e2" {
+		t.Errorf("warning -> high on the same sensor must hand over to the high alert, got %q", got)
 	}
-	if !sensorStillAlerting(high, warnOpen, targets) {
-		t.Error("high -> warning on the same sensor must not read as a recovery")
+	if got := sensorSuccessor(high, warnOpen, targets); got != "e1b" {
+		t.Errorf("high -> warning on the same sensor must hand over to the warning, got %q", got)
 	}
-	if sensorStillAlerting(warn, nil, targets) {
+	if got := sensorSuccessor(warn, nil, targets); got != "" {
 		t.Error("nothing left open on the sensor: that is a real recovery")
 	}
-	if sensorStillAlerting(warn, otherOpen, targets) {
+	if got := sensorSuccessor(warn, otherOpen, targets); got != "" {
 		t.Error("a problem on another sensor of the same host must not hold back this recovery")
 	}
-	if sensorStillAlerting(store.NotifyState{EventID: "e9", HostID: "50", Severity: 2}, highOpen, targets) {
+	if got := sensorSuccessor(store.NotifyState{EventID: "e9", HostID: "50", Severity: 2}, highOpen, targets); got != "" {
 		t.Error("without a recorded item there is nothing to correlate")
 	}
 }

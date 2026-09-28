@@ -11,6 +11,25 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **Escalation.** Every notification channel, shared or personal, has a **Notify after** setting:
+  Immediately (as before), or only if the problem is still open and unacknowledged after 5 minutes
+  up to 4 hours. For example, the team's Telegram at once and the managers' email after 30 minutes.
+- **Reminders.** A channel can repeat an open alert (**Remind every** 15 minutes up to a day) until
+  someone acknowledges it: "[HIGH REMINDER] ... Still open after 1h 5m (reminder 2)". Off by default.
+- **Acknowledged notice.** When someone acknowledges an alert, the channels that got it are told who
+  took it and their note ("[ACKNOWLEDGED] ... Acknowledged by Alice"), so the team knows it's handled.
+  Acknowledging also stops escalation and reminders; un-acknowledging resumes them.
+- **Alert delay setting.** How long a problem must last before anyone is notified (60 seconds until
+  now, fixed) is now in **Settings -> Alerting** (`ARGUS_ALERT_DELAY_SECONDS`).
+
+**Changed:**
+- Reminders, acknowledged notices and recoveries go to exactly the channels that received the alert.
+  A channel set to High and up now also hears when an incident it was alerted about ends, even if it
+  eased to a warning first; a delayed channel that was never alerted gets no recovery either.
+
 ## [0.5.8] - 2026-09-28
 
 **Added:**

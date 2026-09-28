@@ -19,8 +19,10 @@ import (
 
 const (
 	notifyPollInterval = 30 * time.Second
-	notifyDebounce     = 60 * time.Second // a problem must persist this long before it alerts (flap guard)
 	notifyBaselineKey  = "notifier_baseline"
+	// Set once the alerts already firing when per-channel delivery tracking arrived were credited to the
+	// channels that got them under the old "every matching channel" routing, so they still resolve there.
+	notifyDeliveriesKey = "notifier_deliveries_backfilled"
 )
 
 // StartNotifier runs the alerting loop: it polls Zabbix problems, applies the same
@@ -44,6 +46,49 @@ func StartNotifier(ctx context.Context, st *store.Store, zbx *zabbix.Client, log
 	}
 }
 
+// notifyDest is one alert destination - a global channel or a personal one - with its routing
+// (sites + severity floor), its escalation ("notify after") and reminder ("remind every") timing, and
+// a send that records the outcome on the channel's delivery-health line.
+type notifyDest struct {
+	key     string // store.DeliveryKey
+	kind    string // store.DeliveryGlobal | store.DeliveryUser
+	id      int64
+	sites   []string
+	minSev  int
+	delay   int64 // seconds
+	repeat  int64 // seconds, 0 = no reminders
+	created int64 // unix s
+	send    func(ctx context.Context, ev notify.Event)
+}
+
+func (d notifyDest) serves(groups []string, sev int) bool {
+	return channelMatches(d.sites, d.minSev, groups, sev)
+}
+
+// notifyDests turns the enabled global and personal channels into one destination list.
+func notifyDests(st *store.Store, channels []store.NotifyChannel, userChannels []store.UserNotifyChannel, userEmails []string, logger *slog.Logger) []notifyDest {
+	out := make([]notifyDest, 0, len(channels)+len(userChannels))
+	for _, c := range channels {
+		c := c
+		out = append(out, notifyDest{
+			key: store.DeliveryKey(store.DeliveryGlobal, c.ID), kind: store.DeliveryGlobal, id: c.ID,
+			sites: c.Sites, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
+			created: c.CreatedAt.Unix(),
+			send:    func(ctx context.Context, ev notify.Event) { sendGlobal(ctx, st, c, userEmails, ev, logger) },
+		})
+	}
+	for _, c := range userChannels {
+		c := c
+		out = append(out, notifyDest{
+			key: store.DeliveryKey(store.DeliveryUser, c.ID), kind: store.DeliveryUser, id: c.ID,
+			sites: c.Sites, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
+			created: c.CreatedAt.Unix(),
+			send:    func(ctx context.Context, ev notify.Event) { sendPersonal(ctx, st, c, ev, logger) },
+		})
+	}
+	return out
+}
+
 func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger, mgr *settings.Manager, secret string) {
 	if !zbx.Authenticated() {
 		return
@@ -51,6 +96,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	// Read the live values each tick so a Settings change takes effect without a restart.
 	publicURL := mgr.PublicURL()
 	loc := mgr.Location()
+	flapDelay := mgr.AlertDelay()
 	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 
@@ -107,9 +153,19 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	if anyEmailToUsers(channels) {
 		userEmails, _ = st.NotifyUserEmails(ctx)
 	}
+	dests := notifyDests(st, channels, userChannels, userEmails, logger)
 	states, err := st.NotifyStates(ctx)
 	if err != nil {
 		logger.Warn("notifier: load states", "err", err)
+		return
+	}
+	if _, done, _ := st.MetaGet(ctx, notifyDeliveriesKey); !done {
+		backfillDeliveries(ctx, st, states, dests, hostGroups)
+		_ = st.MetaSet(ctx, notifyDeliveriesKey, "1")
+	}
+	deliveries, err := st.NotifyDeliveries(ctx)
+	if err != nil {
+		logger.Warn("notifier: load deliveries", "err", err)
 		return
 	}
 
@@ -130,27 +186,41 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		// A warning that gives way to its sensor's error trigger (or the reverse) is a severity change,
 		// not a recovery: the band triggers ("warn and below high" / "high") hand over on the same
 		// sensor, so the old one closing would otherwise send a false RESOLVED mid-incident. RESOLVED
-		// goes out only once the sensor has no open problem left.
-		if stt.State == "firing" && sensorStillAlerting(stt, problems, targets) {
+		// goes out only once the sensor has no open problem left. The channels the old alert reached
+		// move over to the new one, so they all hear when the incident ends.
+		if succ := sensorSuccessor(stt, problems, targets); stt.State == "firing" && succ != "" {
 			logger.Info("notifier: severity change on the same sensor, no recovery sent", "event", eid, "host", stt.HostName, "name", stt.Name)
 			k := stt.HostID + "|" + stt.ItemID
 			if s := incidentStart(stt); inherited[k] == 0 || s < inherited[k] {
 				inherited[k] = s
 			}
-		} else if stt.State == "firing" {
-			since := time.Now().Unix() - incidentStart(stt)
+			_ = st.MoveNotifyDeliveries(ctx, eid, succ)
+			for key, d := range deliveries[eid] {
+				if deliveries[succ] == nil {
+					deliveries[succ] = map[string]store.NotifyDelivery{}
+				}
+				if _, has := deliveries[succ][key]; !has {
+					d.EventID = succ
+					deliveries[succ][key] = d
+				}
+			}
+		} else if stt.State == "firing" && len(deliveries[eid]) > 0 {
 			ev := notify.Event{
 				Kind: "recovery", Severity: stt.Severity, State: "ok",
 				Host: stt.HostName, Name: stt.Name, Site: primarySite(hostGroups[stt.HostID]), When: time.Now().In(loc),
-				SinceSecs: since, OpenURL: OpenLink(publicURL, stt.HostID, stt.ItemID),
+				SinceSecs: time.Now().Unix() - incidentStart(stt), OpenURL: OpenLink(publicURL, stt.HostID, stt.ItemID),
 				ChartPNG: alertChart(ctx, zbx, stt.ItemID, "ok"),
 			}
-			dispatch(ctx, st, channels, userChannels, userEmails, hostGroups[stt.HostID], ev, logger)
+			for _, d := range dests {
+				if _, got := deliveries[eid][d.key]; got {
+					d.send(ctx, ev)
+				}
+			}
 		}
 		_ = st.DeleteNotifyState(ctx, eid)
 	}
 
-	// --- new / pending -> firing ---
+	// --- new / pending -> firing, then escalation, reminders and acknowledged notices ---
 	now := time.Now()
 	for _, p := range problems {
 		sev := atoi(p.Severity)
@@ -166,7 +236,10 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		if len(t.Items) > 0 {
 			itemID = t.Items[0].ItemID
 		}
+		groups := hostGroups[hostID]
 		alertable := isAlertable(t, hiddenHosts, hiddenItems, acked, p.EventID)
+		_, isAcked := acked[p.EventID]
+		isNoData := strings.Contains(t.Expression, "nodata(")
 
 		stt, seen := states[p.EventID]
 		// The incident began when Zabbix raised this problem - or earlier, if it took over from an alert
@@ -189,54 +262,220 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			})
 			continue
 		}
-		if stt.State != "pending" {
-			continue // baseline or already firing
+		if stt.State == "baseline" {
+			continue
 		}
-		if !alertable {
-			continue // acked/hidden/paused: keep waiting quietly
-		}
-		// A "no data" trigger already waited its own period (that IS its flap guard), so it alerts
-		// straight away instead of sitting out the debounce too.
-		if now.Sub(time.Unix(stt.FirstSeen, 0)) < notifyDebounce && !strings.Contains(t.Expression, "nodata(") {
-			continue // still within the flap-debounce window
-		}
-		gMatches := matchingChannels(channels, hostGroups[hostID], sev)
-		uMatches := matchingUserChannels(userChannels, hostGroups[hostID], sev)
-		if len(gMatches) == 0 && len(uMatches) == 0 {
-			continue // nobody serves this site+severity yet; stay pending so it alerts once someone does
-		}
-		value := ""
-		if itemID != "" {
-			if items, e := zbx.ItemsByIDs(ctx, []string{itemID}); e == nil {
-				if it, ok := items[itemID]; ok {
-					value = notify.FormatReading(it.LastValue, it.Units)
-					// A "no data" alert's reading is when data stopped, not the stale last value - and
-					// that moment is when its incident really began.
-					if strings.Contains(t.Expression, "nodata(") {
-						lc := atoi64(it.LastClock)
-						value = noDataSince(lc, now.In(loc))
-						if lc > 0 && (start == 0 || lc < start) {
-							start = lc
-						}
+
+		if stt.State == "pending" {
+			if !alertable {
+				continue // acked/hidden/paused: keep waiting quietly
+			}
+			// A "no data" trigger already waited its own period (that IS its flap guard), so it alerts
+			// straight away instead of sitting out the alert delay too.
+			if now.Sub(time.Unix(stt.FirstSeen, 0)) < flapDelay && !isNoData {
+				continue // still within the flap-debounce window
+			}
+			if !anyServes(dests, groups, sev) {
+				continue // nobody serves this site+severity yet; stay pending so it alerts once someone does
+			}
+			// A "no data" alert's incident really began when the data stopped.
+			if isNoData && itemID != "" {
+				if items, e := zbx.ItemsByIDs(ctx, []string{itemID}); e == nil {
+					if lc := atoi64(items[itemID].LastClock); lc > 0 && lc < start {
+						start = lc
 					}
 				}
 			}
+			firedAt := now.Unix()
+			stt = store.NotifyState{
+				EventID: p.EventID, HostID: hostID, ItemID: itemID, HostName: hostName, Name: p.Name,
+				Severity: sev, State: "firing", FirstSeen: stt.FirstSeen, FiredAt: &firedAt, IncidentStart: start,
+			}
+			_ = st.UpsertNotifyState(ctx, stt)
 		}
-		ev := notify.Event{
+
+		// Firing. Acknowledging stops escalation and reminders; the channels that already got the alert
+		// are told once who took it, and hear again if it's un-acknowledged and still open.
+		if isAcked {
+			if !stt.AckNotified {
+				if len(deliveries[p.EventID]) > 0 {
+					ev := notify.Event{
+						Kind: "ack", Severity: sev, State: severityState(sev),
+						Host: hostName, Name: p.Name, Site: primarySite(groups), When: now.In(loc),
+						OpenURL: OpenLink(publicURL, hostID, itemID),
+					}
+					ev.AckBy, ev.AckNote = ackBy(ctx, st, p.EventID)
+					for _, d := range dests {
+						if _, got := deliveries[p.EventID][d.key]; got {
+							d.send(ctx, ev)
+						}
+					}
+				}
+				stt.AckNotified = true
+				_ = st.UpsertNotifyState(ctx, stt)
+			}
+			continue
+		}
+		if stt.AckNotified {
+			stt.AckNotified = false
+			_ = st.UpsertNotifyState(ctx, stt)
+		}
+		if !alertable {
+			continue // hidden or paused: no escalation or reminders meanwhile
+		}
+
+		plan := planDeliveries(dests, deliveries[p.EventID], groups, sev, incidentStart(stt), firedAtOf(stt), now.Unix())
+		if len(plan) == 0 {
+			continue
+		}
+		base := notify.Event{
 			Kind: "problem", Severity: sev, State: severityState(sev),
-			Host: hostName, Name: p.Name, Site: primarySite(hostGroups[hostID]), When: time.Unix(atoi64(p.Clock), 0).In(loc),
-			Value: value, Threshold: parseThreshold(t.Expression),
+			Host: hostName, Name: p.Name, Site: primarySite(groups), When: time.Unix(atoi64(p.Clock), 0).In(loc),
+			Value: reading(ctx, zbx, itemID, isNoData, now.In(loc)), Threshold: parseThreshold(t.Expression),
 			OpenURL: OpenLink(publicURL, hostID, itemID), AckURL: AckLink(publicURL, secret, p.EventID),
 			ChartPNG: alertChart(ctx, zbx, itemID, severityState(sev)),
 		}
-		sendAll(ctx, st, gMatches, userEmails, ev, logger)
-		sendUserChannels(ctx, st, uMatches, ev, logger)
-		firedAt := now.Unix()
-		_ = st.UpsertNotifyState(ctx, store.NotifyState{
-			EventID: p.EventID, HostID: hostID, ItemID: itemID, HostName: hostName, Name: p.Name,
-			Severity: sev, State: "firing", FirstSeen: stt.FirstSeen, FiredAt: &firedAt, IncidentStart: start,
-		})
+		for _, pd := range plan {
+			ev := base
+			row := pd.row
+			if pd.reminder {
+				ev.Kind = "reminder"
+				ev.Reminder = row.Reminders + 1
+				ev.SinceSecs = now.Unix() - incidentStart(stt)
+				row.Reminders++
+			} else {
+				row = store.NotifyDelivery{EventID: p.EventID, Kind: pd.dest.kind, ChannelID: pd.dest.id, FirstSent: now.Unix()}
+			}
+			pd.dest.send(ctx, ev)
+			row.Severity = sev
+			row.LastSent = now.Unix()
+			_ = st.UpsertNotifyDelivery(ctx, row)
+		}
 	}
+}
+
+// plannedDelivery is one send the notifier owes a destination this tick: the alert itself (the
+// channel's "notify after" is up) or a reminder (its "remind every" is up since the last send).
+type plannedDelivery struct {
+	dest     notifyDest
+	reminder bool
+	row      store.NotifyDelivery // the existing delivery (reminders)
+}
+
+// planDeliveries decides who hears about an open, unacknowledged, alertable problem this tick.
+//
+//   - A destination that serves the host's site and severity gets the alert once the incident has been
+//     open for its "notify after" delay (never before the problem went live, i.e. passed the alert
+//     delay). A destination created after that moment doesn't get it: adding a channel isn't a reason
+//     to replay every open problem at it. A destination that got the alert at another severity
+//     (the incident escalated or eased on the same sensor) gets the new one straight away.
+//   - A destination that already has the alert at this severity gets a reminder once "remind every"
+//     has passed since its last send.
+func planDeliveries(dests []notifyDest, got map[string]store.NotifyDelivery, groups []string, sev int, start, firedAt, now int64) []plannedDelivery {
+	var out []plannedDelivery
+	for _, d := range dests {
+		if !d.serves(groups, sev) {
+			continue
+		}
+		row, has := got[d.key]
+		if has && row.Severity == sev {
+			if d.repeat > 0 && now-row.LastSent >= d.repeat {
+				out = append(out, plannedDelivery{dest: d, reminder: true, row: row})
+			}
+			continue
+		}
+		if !has {
+			due := start + d.delay
+			if due < firedAt {
+				due = firedAt
+			}
+			if now < due || d.created > due {
+				continue
+			}
+		}
+		out = append(out, plannedDelivery{dest: d})
+	}
+	return out
+}
+
+// firedAtOf is when an alert went live (0 when it never did).
+func firedAtOf(stt store.NotifyState) int64 {
+	if stt.FiredAt != nil {
+		return *stt.FiredAt
+	}
+	return 0
+}
+
+// anyServes reports whether any destination serves a site+severity, whatever its delay.
+func anyServes(dests []notifyDest, groups []string, sev int) bool {
+	for _, d := range dests {
+		if d.serves(groups, sev) {
+			return true
+		}
+	}
+	return false
+}
+
+// backfillDeliveries runs once, when per-channel delivery tracking first starts: alerts already firing
+// were sent to every channel that matched their site and severity, so they are recorded as delivered
+// there - which is where their reminders and recovery must go.
+func backfillDeliveries(ctx context.Context, st *store.Store, states map[string]store.NotifyState, dests []notifyDest, hostGroups map[string][]string) {
+	for eid, stt := range states {
+		if stt.State != "firing" {
+			continue
+		}
+		at := firedAtOf(stt)
+		if at == 0 {
+			at = stt.FirstSeen
+		}
+		for _, d := range dests {
+			if d.serves(hostGroups[stt.HostID], stt.Severity) {
+				_ = st.UpsertNotifyDelivery(ctx, store.NotifyDelivery{
+					EventID: eid, Kind: d.kind, ChannelID: d.id, Severity: stt.Severity, FirstSent: at, LastSent: at,
+				})
+			}
+		}
+	}
+}
+
+// reading is an alert's current value for the message: the sensor's last value with its units or, for a
+// "no data" alert, how long data has been missing ("No data for 4m (since 00:56)").
+func reading(ctx context.Context, zbx *zabbix.Client, itemID string, noData bool, now time.Time) string {
+	if itemID == "" {
+		return ""
+	}
+	items, err := zbx.ItemsByIDs(ctx, []string{itemID})
+	if err != nil {
+		return ""
+	}
+	it, ok := items[itemID]
+	if !ok {
+		return ""
+	}
+	if noData {
+		return noDataSince(atoi64(it.LastClock), now)
+	}
+	return notify.FormatReading(it.LastValue, it.Units)
+}
+
+// ackBy names who acknowledged an event, with their note, for the acknowledged notice. An ack from the
+// signed link in an alert has no user behind it.
+func ackBy(ctx context.Context, st *store.Store, eventID string) (string, string) {
+	by, note, err := st.AckInfo(ctx, eventID)
+	if err != nil {
+		return "", ""
+	}
+	if by == 0 {
+		return "the link in an alert", note
+	}
+	u, err := st.UserByID(ctx, by)
+	if err != nil {
+		return "", note
+	}
+	if name := strings.TrimSpace(u.Name + " " + u.Surname); name != "" {
+		return name, note
+	}
+	return u.Email, note
 }
 
 // isAlertable reports whether a problem should notify: not on a hidden/paused host, not with
@@ -295,18 +534,7 @@ func siteCovers(s, g string) bool {
 	return g == s || strings.HasPrefix(g, s+"/")
 }
 
-// matchingChannels returns the global channels that serve a host's groups and severity.
-func matchingChannels(channels []store.NotifyChannel, groups []string, sev int) []store.NotifyChannel {
-	var out []store.NotifyChannel
-	for _, c := range channels {
-		if channelMatches(c.Sites, c.MinSeverity, groups, sev) {
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
-// matchingUserChannels is matchingChannels for personal (per-user) channels - same site/severity rule.
+// matchingUserChannels returns the personal channels that serve a host's groups and severity.
 func matchingUserChannels(channels []store.UserNotifyChannel, groups []string, sev int) []store.UserNotifyChannel {
 	var out []store.UserNotifyChannel
 	for _, c := range channels {
@@ -317,32 +545,23 @@ func matchingUserChannels(channels []store.UserNotifyChannel, groups []string, s
 	return out
 }
 
-// dispatch routes a recovery the same way its problem would have gone: global channels (including the
-// email-to-users fan-out) and personal channels that serve this site+severity.
-func dispatch(ctx context.Context, st *store.Store, channels []store.NotifyChannel, userChannels []store.UserNotifyChannel, userEmails []string, groups []string, ev notify.Event, logger *slog.Logger) {
-	sendAll(ctx, st, matchingChannels(channels, groups, ev.Severity), userEmails, ev, logger)
-	sendUserChannels(ctx, st, matchingUserChannels(userChannels, groups, ev.Severity), ev, logger)
-}
-
-// sendAll delivers ev to every global channel and records each outcome on the channel (the
+// sendGlobal delivers ev to one global channel and records the outcome on the channel (the
 // Notifications cards show "last sent" / "last failure"), so a broken webhook or SMTP password is
 // visible in the UI rather than only in the core's log. An email channel set to deliver to registered
 // users is fanned out to each active user's address. st may be nil in tests.
-func sendAll(ctx context.Context, st *store.Store, channels []store.NotifyChannel, userEmails []string, ev notify.Event, logger *slog.Logger) {
-	for _, c := range channels {
-		var err error
-		if c.Type == "email" && c.Config["recipients"] == "users" {
-			err = sendEmailToUsers(ctx, c, userEmails, ev, logger)
-		} else {
-			err = notify.Send(ctx, toNotifyChannel(c), ev)
-			if err != nil {
-				logger.Warn("notifier: send failed", "channel", c.Name, "type", c.Type, "kind", ev.Kind, "err", err)
-			}
+func sendGlobal(ctx context.Context, st *store.Store, c store.NotifyChannel, userEmails []string, ev notify.Event, logger *slog.Logger) {
+	var err error
+	if c.Type == "email" && c.Config["recipients"] == "users" {
+		err = sendEmailToUsers(ctx, c, userEmails, ev, logger)
+	} else {
+		err = notify.Send(ctx, toNotifyChannel(c), ev)
+		if err != nil {
+			logger.Warn("notifier: send failed", "channel", c.Name, "type", c.Type, "kind", ev.Kind, "err", err)
 		}
-		if st != nil {
-			if rerr := st.RecordNotifyDelivery(ctx, c.ID, err); rerr != nil {
-				logger.Warn("notifier: record delivery", "channel", c.Name, "err", rerr)
-			}
+	}
+	if st != nil {
+		if rerr := st.RecordNotifyDelivery(ctx, c.ID, err); rerr != nil {
+			logger.Warn("notifier: record delivery", "channel", c.Name, "err", rerr)
 		}
 	}
 }
@@ -380,18 +599,16 @@ func sendEmailToUsers(ctx context.Context, c store.NotifyChannel, emails []strin
 	return nil
 }
 
-// sendUserChannels delivers ev to personal (per-user) channels, recording each outcome on the channel
-// so a user sees their own delivery health. Reuses the leaf notify.Send with the channel's own config.
-func sendUserChannels(ctx context.Context, st *store.Store, channels []store.UserNotifyChannel, ev notify.Event, logger *slog.Logger) {
-	for _, c := range channels {
-		err := notify.Send(ctx, notify.Channel{ID: c.ID, Type: c.Type, Name: "personal", Enabled: c.Enabled, Config: c.Config}, ev)
-		if err != nil {
-			logger.Warn("notifier: personal send failed", "channel", c.ID, "user", c.UserID, "type", c.Type, "kind", ev.Kind, "err", err)
-		}
-		if st != nil {
-			if rerr := st.RecordUserNotifyDelivery(ctx, c.ID, err); rerr != nil {
-				logger.Warn("notifier: record personal delivery", "channel", c.ID, "err", rerr)
-			}
+// sendPersonal delivers ev to one personal (per-user) channel, recording the outcome on the channel so
+// its owner sees their own delivery health. Reuses the leaf notify.Send with the channel's own config.
+func sendPersonal(ctx context.Context, st *store.Store, c store.UserNotifyChannel, ev notify.Event, logger *slog.Logger) {
+	err := notify.Send(ctx, notify.Channel{ID: c.ID, Type: c.Type, Name: "personal", Enabled: c.Enabled, Config: c.Config}, ev)
+	if err != nil {
+		logger.Warn("notifier: personal send failed", "channel", c.ID, "user", c.UserID, "type", c.Type, "kind", ev.Kind, "err", err)
+	}
+	if st != nil {
+		if rerr := st.RecordUserNotifyDelivery(ctx, c.ID, err); rerr != nil {
+			logger.Warn("notifier: record personal delivery", "channel", c.ID, "err", rerr)
 		}
 	}
 }
@@ -413,8 +630,6 @@ func toNotifyChannel(c store.NotifyChannel) notify.Channel {
 
 var thresholdRe = regexp.MustCompile(`([<>]=?)\s*([0-9]+(?:\.[0-9]+)?)`)
 
-// parseThreshold pulls a best-effort threshold (e.g. ">90") from a trigger expression.
-// Complex expressions may not match, in which case it returns "" and the value shows alone.
 // incidentStart is when the incident behind a notifier state began: its recorded start, or - for rows
 // from before that was tracked - when Argus first saw the problem.
 func incidentStart(stt store.NotifyState) int64 {
@@ -424,12 +639,12 @@ func incidentStart(stt store.NotifyState) int64 {
 	return stt.FirstSeen
 }
 
-// sensorStillAlerting reports whether another open problem sits on the same host and sensor at a
-// different severity than this closed one: a band trigger escalating (warning -> high) or easing
-// (high -> warning), which must not read as a recovery.
-func sensorStillAlerting(stt store.NotifyState, problems []zabbix.Problem, targets map[string]zabbix.TriggerTarget) bool {
+// sensorSuccessor returns the open problem that sits on the same host and sensor as this closed one at
+// a different severity - a band trigger escalating (warning -> high) or easing (high -> warning), which
+// must not read as a recovery - or "" when there is none.
+func sensorSuccessor(stt store.NotifyState, problems []zabbix.Problem, targets map[string]zabbix.TriggerTarget) string {
 	if stt.HostID == "" || stt.ItemID == "" {
-		return false
+		return ""
 	}
 	for _, p := range problems {
 		if p.EventID == stt.EventID || atoi(p.Severity) == stt.Severity || atoi(p.Severity) < 2 {
@@ -441,11 +656,11 @@ func sensorStillAlerting(stt store.NotifyState, problems []zabbix.Problem, targe
 		}
 		for _, it := range t.Items {
 			if it.ItemID == stt.ItemID {
-				return true
+				return p.EventID
 			}
 		}
 	}
-	return false
+	return ""
 }
 
 // noDataSince renders a "no data" alert's reading: how long data has been missing and since when,
@@ -462,6 +677,8 @@ func noDataSince(lastClock int64, now time.Time) string {
 	return "No data for " + notify.FormatDuration(now.Unix()-lastClock) + " (since " + since + ")"
 }
 
+// parseThreshold pulls a best-effort threshold (e.g. ">90") from a trigger expression.
+// Complex expressions may not match, in which case it returns "" and the value shows alone.
 func parseThreshold(expr string) string {
 	m := thresholdRe.FindStringSubmatch(expr)
 	if m == nil {

@@ -171,9 +171,21 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   (probe image + golden VM), **[argus-updater](https://github.com/g-guglielmi/argus-updater)** (self-update
   sidecar). Image names unchanged. History preserved via `git filter-repo`.
 
-### H. Parking lot (maybe)
-- [ ] Public status page (Uptime-Kuma-style shareable)
-- [ ] Escalation policies / repeat notifications beyond flap debounce
+### H. Notification logic + parking lot
+- [ ] **Escalation, reminders, acknowledged notice** - each channel (global or personal) gets a
+  **Notify after** delay (it hears only of problems still open and unacknowledged by then, e.g. team
+  at once, managers after 30 min) and a **Remind every** interval (repeat until acknowledged, no cap).
+  Acknowledging stops both and tells the channels that got the alert who took it. Reminders, the
+  acknowledged notice and the recovery go to exactly the channels the alert reached. The 60 s flap
+  delay becomes a setting (Settings -> Alerting). - _(FE+BE)_ M
+- [ ] **Master sensor per host** - ICMP ping by default, selectable per host: while it's down, the
+  host's other sensors don't notify (PRTG-style dependency), and a probe's reachability does the same
+  for its whole site. Held alerts go out normally once the master is back and they're still open.
+  - _(FE+BE)_ M
+- [ ] **Alerts for sensors that stop collecting** - a sensor that goes "not supported" or stops
+  getting new values raises no Zabbix problem (triggers just go unknown), so nothing alerts today
+  (seen on a NUT sensor). Argus raises its own alert for it. - _(BE)_ S-M
+- [ ] Public status page (Uptime-Kuma-style shareable) - parking lot
 
 ### I. Mobile app (last step)
 - [ ] **Android native app with push notifications** - the app registers a device with Argus; the notifier delivers alerts as **push** (e.g. FCM) via a new "push" notification channel type, alongside Discord/Telegram/email. A PWA + web push is a cheaper fallback if a full native app isn't warranted. - _(app + BE)_ **L**
@@ -193,11 +205,13 @@ v0.4.38-v0.4.55) · ~~§B auto-discovery~~ ✅ (subnet scan + UniFi sweep + enri
 v0.4.56-v0.4.58) · plus the §14 lifecycle line (OS patching, core Zabbix minors, core time) ·
 ~~§D thresholds UI + sensor-category ordering~~ ✅ (the last 1.0-lift pillar).
 
-1. **Production rollout** - move real sites onto Argus. This is also the trigger for the rest of
+1. **Notification logic (§H)** - escalation, reminders, master sensors and alerts for sensors that
+   stop collecting, so production sites get the full alerting behaviour from day one.
+2. **Production rollout** - move real sites onto Argus. This is also the trigger for the rest of
    **C2** (Aruba/Instant On, QNAP, Sophos, NetScaler, Libraesva, Hyper-V, Nutanix Prism, Citrix,
    vSphere): build each class when a production site actually needs it, lab-first as always.
-2. **Scale & production readiness (§G)** - sizing pass + server-side census before the
+3. **Scale & production readiness (§G)** - sizing pass + server-side census before the
    ~6000-sensor deployment.
-3. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
+4. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
 
 Blocked / deferred: **site4** probe (§A) - its building is under renovation, so it won't come online in the near term; bring it online once that's done.

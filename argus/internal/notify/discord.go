@@ -24,27 +24,35 @@ func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 
 	// Structured fields for the at-a-glance context. Severity leads (the same label the UI shows).
 	var fields []map[string]any
-	if e.Kind != "recovery" {
+	if e.isAlert() {
 		fields = append(fields, map[string]any{"name": "Severity", "value": severityLabel(e.Severity), "inline": true})
 	}
 	fields = append(fields, map[string]any{"name": "Host", "value": e.Host, "inline": true})
 	if e.Site != "" {
 		fields = append(fields, map[string]any{"name": "Site", "value": e.Site, "inline": true})
 	}
-	if v := e.valueLine(); v != "" && e.Kind != "recovery" {
+	if v := e.valueLine(); v != "" && e.isAlert() {
 		fields = append(fields, map[string]any{"name": "Reading", "value": strings.TrimPrefix(v, "Value: "), "inline": true})
 	}
 
 	// Description: recovery duration + action links.
 	var desc []string
-	if e.Kind == "recovery" && e.SinceSecs > 0 {
+	switch {
+	case e.Kind == "recovery" && e.SinceSecs > 0:
 		desc = append(desc, fmt.Sprintf("Recovered after %s.", fmtDur(e.SinceSecs)))
+	case e.Kind == "reminder":
+		desc = append(desc, e.stillOpen())
+	case e.Kind == "ack":
+		desc = append(desc, e.ackLine())
+		if e.AckNote != "" {
+			desc = append(desc, "> "+e.AckNote)
+		}
 	}
 	var links []string
 	if e.OpenURL != "" {
 		links = append(links, "[Open in Argus]("+e.OpenURL+")")
 	}
-	if e.Kind != "recovery" && e.AckURL != "" {
+	if e.isAlert() && e.AckURL != "" {
 		links = append(links, "[Acknowledge]("+e.AckURL+")")
 	}
 	if len(links) > 0 {

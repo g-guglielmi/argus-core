@@ -30,7 +30,7 @@ type AddOnCfg = { id: string; label: string; description: string; enabled: boole
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[] }
 type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
-type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
+type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
 const SEVERITIES: { v: number; label: string }[] = [
   { v: 2, label: 'Warning & up' },
@@ -1577,6 +1577,7 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
   const groups: { name: string; title: string; note?: string }[] = [
     { name: 'Connection', title: 'Zabbix connection', note: 'Where Argus reads monitoring data from.' },
     { name: 'General', title: 'General', note: 'Timezone and the external URL used in notification links.' },
+    { name: 'Alerting', title: 'Alerting', note: 'When a problem turns into a notification. Per-channel escalation and reminders are set on each channel in Notifications.' },
     { name: 'Security', title: 'Login rate limiting', note: 'Brute-force protection thresholds.' },
     { name: 'Sessions', title: 'Sessions', note: 'How long a sign-in stays valid. Changes take effect immediately, including for existing sessions: lowering the max length can sign users out on their next request.' },
     { name: 'Access', title: 'Allowed FQDNs and IPs', note: "The addresses people type in the browser's address bar to open Argus, like monitoring.example.com or 10.0.0.10. With a list set, Argus refuses API requests for any other address and changes coming from other sites, which blocks DNS-rebinding and cross-site attacks." },
@@ -1900,7 +1901,7 @@ function NotificationsView() {
         <div className="tools"><button className="btn primary" onClick={() => setEditing('new')}>+ Add channel</button></div>
       </div>
       <p className="panel-intro">
-        Problems route to the channels below - globally or per site, each with its own severity floor (Warning by default). Acknowledged, paused and hidden items stay quiet; a recovery notice follows when things clear.
+        Problems route to the channels below, globally or per site, each with its own severity floor. A channel can also wait before it's told (escalation) and repeat the alert until someone acknowledges it. Acknowledging stops both and tells the channels that got the alert. Paused and hidden items stay quiet, and a recovery notice follows when things clear.
       </p>
 
       {editing && (
@@ -1931,7 +1932,7 @@ function NotificationsView() {
                   <span className="chan-name">{c.name}</span>
                   <Switch checked={c.enabled} onChange={() => toggle(c)} title={c.enabled ? 'Enabled - switch off to pause alerts to this channel' : 'Disabled - switch on to resume alerts'} />
                 </div>
-                <p className="chan-meta">{m.label} · {sitesLabel(c.sites)} · {sev}{c.type === 'email' && c.config?.recipients === 'users' ? ' · to all users' : ''}</p>
+                <p className="chan-meta">{m.label} · {sitesLabel(c.sites)} · {sev}{c.type === 'email' && c.config?.recipients === 'users' ? ' · to all users' : ''}{timingLabel(c)}</p>
                 <ChannelDelivery c={c} />
                 <div className="chan-actions">
                   <Button disabled={busy === c.id} onClick={() => test(c)}>{busy === c.id ? 'Sending…' : 'Send test'}</Button>
@@ -1947,6 +1948,46 @@ function NotificationsView() {
         </div>
       )}
     </div>
+  )
+}
+
+// Escalation and reminder choices for a channel, in minutes (0 = at once / off). A stored value outside
+// the list (set through the API) is kept as an extra option, so opening the editor never changes it.
+const DELAY_CHOICES = [0, 5, 15, 30, 60, 120, 240]
+const REPEAT_CHOICES = [0, 15, 30, 60, 120, 240, 720, 1440]
+
+function fmtMinutes(m: number): string {
+  if (m < 60) return `${m} min`
+  const h = Math.floor(m / 60), r = m % 60
+  return r ? `${h} h ${r} min` : `${h} h`
+}
+
+// timingLabel is the channel card's escalation summary, appended to its meta line ("" when immediate
+// with no reminders, which is how every channel behaved before escalation existed).
+function timingLabel(c: { delay_min?: number; repeat_min?: number }): string {
+  let out = ''
+  if (c.delay_min) out += ` · after ${fmtMinutes(c.delay_min)}`
+  if (c.repeat_min) out += ` · reminds every ${fmtMinutes(c.repeat_min)}`
+  return out
+}
+
+function EscalationFields({ delay, repeat, onDelay, onRepeat, who }: {
+  delay: number; repeat: number; onDelay: (m: number) => void; onRepeat: (m: number) => void; who: string
+}) {
+  const opts = (list: number[], cur: number) => (list.includes(cur) ? list : [...list, cur].sort((a, b) => a - b))
+  return (
+    <>
+      <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Notify after</span>
+        <Select value={delay} onChange={(e) => onDelay(Number(e.target.value))} title={`Escalation: ${who} hears only of problems still open and unacknowledged after this long`}>
+          {opts(DELAY_CHOICES, delay).map((m) => <option key={m} value={m}>{m ? fmtMinutes(m) : 'Immediately'}</option>)}
+        </Select>
+      </label>
+      <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Remind every</span>
+        <Select value={repeat} onChange={(e) => onRepeat(Number(e.target.value))} title="Repeat the alert while it stays open and unacknowledged">
+          {opts(REPEAT_CHOICES, repeat).map((m) => <option key={m} value={m}>{m ? fmtMinutes(m) : 'Off'}</option>)}
+        </Select>
+      </label>
+    </>
   )
 }
 
@@ -1966,13 +2007,15 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   const [name, setName] = useState(initial?.name || '')
   const [selSites, setSelSites] = useState<string[]>(initial?.sites || [])
   const [minSev, setMinSev] = useState(initial?.min_severity || 2)
+  const [delayMin, setDelayMin] = useState(initial?.delay_min || 0)
+  const [repeatMin, setRepeatMin] = useState(initial?.repeat_min || 0)
   const [enabled, setEnabled] = useState(initial ? initial.enabled : true)
   const [config, setConfig] = useState<Record<string, string>>(initial?.config || {})
   const setCfg = (k: string, v: string) => setConfig((c) => ({ ...c, [k]: v }))
 
   async function save(e: FormEvent) {
     e.preventDefault(); onError('')
-    const body = { type, name, sites: selSites, min_severity: minSev, enabled, config }
+    const body = { type, name, sites: selSites, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, enabled, config }
     const url = initial ? `/api/notify/channels/${initial.id}` : '/api/notify/channels'
     const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
@@ -1996,6 +2039,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
             {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
           </Select>
         </label>
+        <EscalationFields delay={delayMin} repeat={repeatMin} onDelay={setDelayMin} onRepeat={setRepeatMin} who="this channel" />
       </div>
       <div style={{ display: 'grid', gap: 6 }}><span className="flabel">Sites</span>
         <SitePicker options={sites} value={selSites} onChange={setSelSites} />
@@ -2038,7 +2082,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   )
 }
 
-type UserChannel = { id: number; type: string; enabled: boolean; sites: string[]; min_severity: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
+type UserChannel = { id: number; type: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 
 // PersonalNotifyCard lets any signed-in user manage their own Telegram/Discord alert destinations,
 // separate from the shared channels an admin configures in the Notifications tab. Self-service:
@@ -2107,7 +2151,7 @@ function PersonalNotifyCard() {
                   <span className="chan-name">{m.label}</span>
                   <Switch checked={c.enabled} onChange={() => toggle(c)} title={c.enabled ? 'Enabled - switch off to pause your alerts here' : 'Disabled - switch on to resume'} />
                 </div>
-                <p className="chan-meta">{sitesLabel(c.sites)} · {sev}</p>
+                <p className="chan-meta">{sitesLabel(c.sites)} · {sev}{timingLabel(c)}</p>
                 <ChannelDelivery c={c} />
                 <div className="chan-actions">
                   <Button disabled={busy === c.id} onClick={() => test(c)}>{busy === c.id ? 'Sending…' : 'Send test'}</Button>
@@ -2137,13 +2181,15 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   const [type, setType] = useState(initial?.type || 'telegram')
   const [selSites, setSelSites] = useState<string[]>(initial?.sites || [])
   const [minSev, setMinSev] = useState(initial?.min_severity || 2)
+  const [delayMin, setDelayMin] = useState(initial?.delay_min || 0)
+  const [repeatMin, setRepeatMin] = useState(initial?.repeat_min || 0)
   const [enabled, setEnabled] = useState(initial ? initial.enabled : true)
   const [config, setConfig] = useState<Record<string, string>>(initial?.config || {})
   const setCfg = (k: string, v: string) => setConfig((c) => ({ ...c, [k]: v }))
 
   async function save(e: FormEvent) {
     e.preventDefault(); onError('')
-    const body = { type, sites: selSites, min_severity: minSev, enabled, config }
+    const body = { type, sites: selSites, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, enabled, config }
     const url = initial ? `/api/me/notify/channels/${initial.id}` : '/api/me/notify/channels'
     const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
@@ -2168,6 +2214,7 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
             {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
           </Select>
         </label>
+        <EscalationFields delay={delayMin} repeat={repeatMin} onDelay={setDelayMin} onRepeat={setRepeatMin} who="you" />
       </div>
       <div style={{ display: 'grid', gap: 6 }}><span className="flabel">Sites</span>
         <SitePicker options={sites} value={selSites} onChange={setSelSites} />

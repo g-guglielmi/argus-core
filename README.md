@@ -50,9 +50,10 @@ API key, and MAC):
   inherit to sensors.
 - **Overview** - cross-site active-problem list, deep-linked to the tree, with a six-chip
   status summary (OK / Warning / Error / Acknowledged / Paused / Hidden).
-- **Notifications** - Argus-native alerting engine (Discord, Telegram, email) with
-  60-second debounce, recovery notices, rich messages (status icons, value + threshold,
-  2-hour trend graph, deep-links, one-click acknowledge). Shared channels are admin-managed;
+- **Notifications** - Argus-native alerting engine (Discord, Telegram, email) with an
+  adjustable alert delay (60 s by default), per-channel escalation ("notify after") and
+  reminders until acknowledged, acknowledged and recovery notices, rich messages (status icons,
+  value + threshold, 2-hour trend graph, deep-links, one-click acknowledge). Shared channels are admin-managed;
   each user can also add their **own** Telegram/Discord in Account settings, and an email
   channel can fan out to every registered user's address.
 - **Auth** - three roles (admin / helpdesk / viewer), argon2id passwords, TOTP two-factor
@@ -293,7 +294,7 @@ admin **Settings** page - a set env var takes precedence and locks the field.
 | **Core** | `ARGUS_ZABBIX_API_URL`, `ARGUS_ZABBIX_API_TOKEN`, `ARGUS_DATA_DIR`, `ARGUS_LISTEN` |
 | **First-run admin** | `ARGUS_ADMIN_EMAIL`, `ARGUS_ADMIN_PASSWORD` |
 | **Security** | `ARGUS_COOKIE_SECURE`, `ARGUS_SECRET_KEY`, `ARGUS_TRUST_PROXY`, `ARGUS_LOGIN_MAX_ATTEMPTS`, `ARGUS_LOGIN_WINDOW_MINUTES` |
-| **Notifications** | `ARGUS_PUBLIC_URL`, `ARGUS_TZ` |
+| **Notifications** | `ARGUS_PUBLIC_URL`, `ARGUS_TZ`, `ARGUS_ALERT_DELAY_SECONDS` |
 | **Probe enrollment** | `ARGUS_CA_CERT_FILE`, `ARGUS_CA_KEY_FILE`, `ARGUS_PROBE_CORE_HOST` |
 | **Passkeys** | `ARGUS_RP_ID`, `ARGUS_RP_DISPLAY_NAME`, `ARGUS_RP_ORIGINS` |
 

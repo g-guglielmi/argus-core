@@ -69,12 +69,22 @@ func telegramMessage(e Event) (string, [][]map[string]string) {
 	var b strings.Builder
 	b.WriteString(e.emoji() + " <b>" + htmlEscape(e.subject()) + "</b>\n")
 	b.WriteString(htmlEscape(e.whereLine()) + "\n")
-	if e.Kind == "recovery" {
+	switch e.Kind {
+	case "recovery":
 		if e.SinceSecs > 0 {
 			b.WriteString("Recovered after " + fmtDur(e.SinceSecs) + "\n")
 		}
 		b.WriteString("At " + e.When.Format("2006-01-02 15:04 MST") + "\n")
-	} else {
+	case "ack":
+		b.WriteString(htmlEscape(e.ackLine()) + "\n")
+		if e.AckNote != "" {
+			b.WriteString("<i>" + htmlEscape(e.AckNote) + "</i>\n")
+		}
+		b.WriteString("At " + e.When.Format("2006-01-02 15:04 MST") + "\n")
+	default:
+		if e.Kind == "reminder" {
+			b.WriteString(htmlEscape(e.stillOpen()) + "\n")
+		}
 		if v := e.valueLine(); v != "" {
 			b.WriteString(htmlEscape(v) + "\n")
 		}
@@ -89,7 +99,7 @@ func telegramMessage(e Event) (string, [][]map[string]string) {
 			links = append(links, `<a href="`+htmlEscape(e.OpenURL)+`">Open in Argus</a>`)
 		}
 	}
-	if e.Kind != "recovery" && e.AckURL != "" {
+	if e.isAlert() && e.AckURL != "" {
 		if isHTTP(e.AckURL) {
 			row = append(row, map[string]string{"text": "Acknowledge", "url": e.AckURL})
 		} else {

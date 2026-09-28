@@ -24,16 +24,19 @@ type Channel struct {
 
 // Event is a single alert to deliver.
 type Event struct {
-	Kind      string    // "problem" | "recovery"
+	Kind      string    // "problem" | "reminder" | "ack" | "recovery"
 	Severity  int       // Zabbix severity 0..5
-	State     string    // "warning" | "error" | "ok"
+	State     string    // "warning" | "error" | "ok" (an "ack" keeps its problem's state)
 	Host      string    // host display name
 	Name      string    // trigger / problem name
 	Site      string    // primary site (host group) for context, may be ""
 	When      time.Time // when the problem started (problem) or cleared (recovery)
 	Value     string    // current reading incl. units, e.g. "96 %" (optional)
 	Threshold string    // parsed trigger threshold, e.g. ">90" (optional)
-	SinceSecs int64     // how long it was in problem, for recovery notices (optional)
+	SinceSecs int64     // how long it has been (reminder) or was (recovery) in problem (optional)
+	Reminder  int       // which reminder this is, 1-based (reminders only)
+	AckBy     string    // who acknowledged it (ack notices only)
+	AckNote   string    // their note, if any (ack notices only)
 	OpenURL   string    // deep link to the sensor in Argus (optional)
 	AckURL    string    // signed one-click acknowledge link (problem alerts only, optional)
 	ChartPNG  []byte    // rendered 2-hour trend graph, uploaded inline (optional)
@@ -44,9 +47,17 @@ const (
 	colorError   = 0xE2564D
 	colorWarning = 0xE0A53A
 	colorOK      = 0x3FA66A
+	colorAck     = 0x3B82F6
 )
 
+// isAlert reports whether the event announces an open problem (the first alert or a reminder): those
+// carry the severity, the reading and the Acknowledge action.
+func (e Event) isAlert() bool { return e.Kind == "problem" || e.Kind == "reminder" }
+
 func (e Event) color() int {
+	if e.Kind == "ack" {
+		return colorAck
+	}
 	switch e.State {
 	case "error":
 		return colorError
@@ -61,6 +72,9 @@ func (e Event) color() int {
 func (e Event) emoji() string {
 	if e.Kind == "recovery" {
 		return "🟢"
+	}
+	if e.Kind == "ack" {
+		return "🔵"
 	}
 	switch e.State {
 	case "error":
@@ -90,14 +104,39 @@ func severityLabel(sev int) string {
 	}
 }
 
-// tag is the bracketed prefix of the subject: the Zabbix severity for a problem ("HIGH", "DISASTER") and
-// "RESOLVED" for a recovery. It used to be the coarse ERROR/WARNING state; the UI has always shown the
+// tag is the bracketed prefix of the subject: the Zabbix severity for a problem ("HIGH", "DISASTER"), with
+// REMINDER for a repeat, ACKNOWLEDGED for an acknowledged notice and RESOLVED for a recovery. It used to be the coarse ERROR/WARNING state; the UI has always shown the
 // severity, so the messages now say the same thing the screen does.
 func (e Event) tag() string {
-	if e.Kind == "recovery" {
+	switch e.Kind {
+	case "recovery":
 		return "RESOLVED"
+	case "ack":
+		return "ACKNOWLEDGED"
+	case "reminder":
+		return strings.ToUpper(severityLabel(e.Severity)) + " REMINDER"
 	}
 	return strings.ToUpper(severityLabel(e.Severity))
+}
+
+// stillOpen is a reminder's lead line: "Still open after 1h 5m (reminder 2)."
+func (e Event) stillOpen() string {
+	s := "Still open"
+	if e.SinceSecs > 0 {
+		s += " after " + fmtDur(e.SinceSecs)
+	}
+	if e.Reminder > 0 {
+		s += fmt.Sprintf(" (reminder %d)", e.Reminder)
+	}
+	return s + "."
+}
+
+// ackLine is an acknowledged notice's lead line: "Acknowledged by alice." (the note follows separately).
+func (e Event) ackLine() string {
+	if e.AckBy == "" {
+		return "Acknowledged."
+	}
+	return "Acknowledged by " + e.AckBy + "."
 }
 
 // subject is the one-line summary (no emoji) used as the email subject and message title.
@@ -130,13 +169,21 @@ func (e Event) valueLine() string {
 // bodyLines returns the human-readable detail lines shared across channels (plain text).
 func (e Event) bodyLines() []string {
 	var lines []string
-	if e.Kind == "recovery" {
+	switch e.Kind {
+	case "recovery":
 		if e.SinceSecs > 0 {
 			lines = append(lines, fmt.Sprintf("%s has recovered after %s.", e.Name, fmtDur(e.SinceSecs)))
 		} else {
 			lines = append(lines, e.Name+" has recovered.")
 		}
-	} else {
+	case "ack":
+		lines = append(lines, e.Name, e.ackLine())
+		if e.AckNote != "" {
+			lines = append(lines, "Note: "+e.AckNote)
+		}
+	case "reminder":
+		lines = append(lines, e.Name, e.stillOpen(), "Severity: "+severityLabel(e.Severity))
+	default:
 		lines = append(lines, e.Name)
 		lines = append(lines, "Severity: "+severityLabel(e.Severity))
 	}
@@ -144,12 +191,15 @@ func (e Event) bodyLines() []string {
 	if e.Site != "" {
 		lines = append(lines, "Site: "+e.Site)
 	}
-	if v := e.valueLine(); v != "" && e.Kind != "recovery" {
+	if v := e.valueLine(); v != "" && e.isAlert() {
 		lines = append(lines, v)
 	}
 	when := "problem"
-	if e.Kind == "recovery" {
+	switch e.Kind {
+	case "recovery":
 		when = "recovery"
+	case "ack":
+		when = "acknowledged"
 	}
 	lines = append(lines, fmt.Sprintf("Time (%s): %s", when, e.When.Format("2006-01-02 15:04:05 MST")))
 	return lines

@@ -182,7 +182,7 @@ func writeAlternative(b *strings.Builder, e Event) {
 	if e.OpenURL != "" {
 		b.WriteString("\r\nOpen in Argus: " + e.OpenURL)
 	}
-	if e.Kind != "recovery" && e.AckURL != "" {
+	if e.isAlert() && e.AckURL != "" {
 		b.WriteString("\r\nAcknowledge: " + e.AckURL)
 	}
 	b.WriteString("\r\n\r\n")
@@ -206,6 +206,9 @@ func wrap76(s string) string {
 }
 
 func htmlColor(e Event) string {
+	if e.Kind == "ack" {
+		return "#3b82f6"
+	}
 	switch e.State {
 	case "error":
 		return "#e2564d"
@@ -245,28 +248,42 @@ func htmlBody(e Event) string {
 		rows.WriteString(`<tr><td class="mut" style="padding:4px 0;color:#6b7280;width:110px;vertical-align:top">` + htmlEscape(k) + `</td><td class="txt" style="padding:4px 0;` + vs + `">` + htmlEscape(v) + `</td></tr>`)
 	}
 	c := htmlColor(e)
-	if e.Kind != "recovery" {
+	if e.isAlert() {
 		row("Severity", severityLabel(e.Severity), c)
 	}
 	row("Host", e.Host, "")
 	if e.Site != "" {
 		row("Site", e.Site, "")
 	}
-	if v := e.valueLine(); v != "" && e.Kind != "recovery" {
+	if v := e.valueLine(); v != "" && e.isAlert() {
 		row("Reading", strings.TrimPrefix(v, "Value: "), "")
 	}
 	if e.Kind == "recovery" && e.SinceSecs > 0 {
 		row("Duration", fmtDur(e.SinceSecs), "")
 	}
 	when := "Problem since"
-	if e.Kind == "recovery" {
+	switch e.Kind {
+	case "recovery":
 		when = "Recovered at"
+	case "ack":
+		when = "Acknowledged at"
 	}
 	row(when, e.When.Format("2006-01-02 15:04:05 MST"), "")
 
 	lead := ""
-	if e.Kind == "recovery" {
-		lead = `<div class="txt" style="font-size:14px;color:#111827;margin-bottom:12px">` + htmlEscape(e.bodyLines()[0]) + `</div>`
+	leadDiv := func(text string) string {
+		return `<div class="txt" style="font-size:14px;color:#111827;margin-bottom:12px">` + htmlEscape(text) + `</div>`
+	}
+	switch e.Kind {
+	case "recovery":
+		lead = leadDiv(e.bodyLines()[0])
+	case "reminder":
+		lead = leadDiv(e.stillOpen())
+	case "ack":
+		lead = leadDiv(e.ackLine())
+		if e.AckNote != "" {
+			lead += `<div class="mut" style="font-size:13px;color:#6b7280;margin:-6px 0 12px;font-style:italic">` + htmlEscape(e.AckNote) + `</div>`
+		}
 	}
 
 	var buttons strings.Builder
@@ -276,7 +293,7 @@ func htmlBody(e Event) string {
 	if e.OpenURL != "" {
 		btn("Open in Argus", e.OpenURL, "#2ea8c9")
 	}
-	if e.Kind != "recovery" && e.AckURL != "" {
+	if e.isAlert() && e.AckURL != "" {
 		btn("Acknowledge", e.AckURL, "#6b7280")
 	}
 

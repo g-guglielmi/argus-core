@@ -40,6 +40,7 @@ const (
 	KeySessionMax    = "session_max_hours"
 	KeySessionIdle   = "session_idle_minutes"
 	KeyAllowedHosts  = "allowed_hosts"
+	KeyAlertDelay    = "alert_delay_seconds"
 )
 
 const metaPrefix = "setting:"
@@ -67,6 +68,7 @@ var defs = []def{
 	{KeySessionMax, "ARGUS_SESSION_MAX_HOURS", "Max session length (hours)", "Sessions", "int", false, "12", "Absolute lifetime of a sign-in before it must re-authenticate.", 1},
 	{KeySessionIdle, "ARGUS_SESSION_IDLE_MINUTES", "Idle timeout (minutes)", "Sessions", "int", false, "0", "Sign out after this long with no activity. 0 disables the idle timeout.", 0},
 	{KeyAllowedHosts, "ARGUS_TRUSTED_ORIGINS", "FQDNs and IPs", "Access", "hostlist", false, "", "The FQDNs or IPs people type in the browser's address bar to open Argus, comma-separated (a pasted URL is reduced to its host). Empty turns the check off (any address works). The Public URL's host and localhost are always allowed, and probes are never checked. To recover from a lockout, set ARGUS_TRUSTED_ORIGINS=* and restart.", 0},
+	{KeyAlertDelay, "ARGUS_ALERT_DELAY_SECONDS", "Alert delay (seconds)", "Alerting", "int", false, "60", "How long a problem must last before anyone is notified, so a brief blip doesn't alert. 0 alerts at once. \"No data\" alerts skip it: their own period already is the wait.", 0},
 	{KeyProbeCoreHost, "ARGUS_PROBE_CORE_HOST", "Probe core host", "Probe enrollment", "text", false, "", "Address probes dial for :10051 (host or host:port). Prefer an IP: the proxy re-resolves this on every data send, so an FQDN here generates heavy DNS load. Baked into new enrollments and re-synced to existing probes at their next restart. Falls back to the Public URL host if empty.", 0},
 }
 
@@ -117,6 +119,7 @@ type Manager struct {
 	sessionMax    time.Duration
 	sessionIdle   time.Duration
 	allowedHosts  []string // nil = the allowed-hosts check is off
+	alertDelay    time.Duration
 }
 
 // New builds the manager, creates the login limiter, loads any stored overrides, and applies
@@ -189,6 +192,13 @@ func (m *Manager) AllowedHosts() []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.allowedHosts
+}
+
+// AlertDelay is how long a problem must persist before the notifier alerts on it (flap guard).
+func (m *Manager) AlertDelay() time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.alertDelay
 }
 
 // List returns every setting's current state for the admin UI.
@@ -297,6 +307,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	sessMaxH := atoiClamp(effective(snap[KeySessionMax]), 12, 1)
 	sessIdleMin := atoiClamp(effective(snap[KeySessionIdle]), 0, 0)
 	allowed, _ := ParseHostList(effective(snap[KeyAllowedHosts])) // validated on the way in
+	alertDelayS := atoiClamp(effective(snap[KeyAlertDelay]), 60, 0)
 
 	// Apply to the live subsystems (each is independently lock-guarded).
 	m.zbx.Configure(zURL, zTok)
@@ -310,6 +321,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	m.sessionMax = time.Duration(sessMaxH) * time.Hour
 	m.sessionIdle = time.Duration(sessIdleMin) * time.Minute
 	m.allowedHosts = allowed
+	m.alertDelay = time.Duration(alertDelayS) * time.Second
 	m.mu.Unlock()
 	return nil
 }

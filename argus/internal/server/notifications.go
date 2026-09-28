@@ -22,6 +22,8 @@ type channelView struct {
 	Enabled     bool              `json:"enabled"`
 	Sites       []string          `json:"sites"`
 	MinSeverity int               `json:"min_severity"`
+	DelayMin    int               `json:"delay_min"`
+	RepeatMin   int               `json:"repeat_min"`
 	Config      map[string]string `json:"config"`
 	// Delivery health for the channel card: last successful send, last failure (+ reason), sent count.
 	LastSentAt  int64  `json:"last_sent_at,omitempty"`
@@ -36,7 +38,8 @@ func toChannelView(c store.NotifyChannel) channelView {
 		cfg = map[string]string{}
 	}
 	return channelView{
-		ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Sites: c.Sites, MinSeverity: c.MinSeverity, Config: cfg,
+		ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Sites: c.Sites, MinSeverity: c.MinSeverity,
+		DelayMin: c.DelayMin, RepeatMin: c.RepeatMin, Config: cfg,
 		LastSentAt: c.LastSentAt, LastError: c.LastError, LastErrorAt: c.LastErrorAt, SentCount: c.SentCount,
 	}
 }
@@ -75,7 +78,35 @@ type channelRequest struct {
 	Enabled     bool              `json:"enabled"`
 	Sites       []string          `json:"sites"`
 	MinSeverity int               `json:"min_severity"`
+	DelayMin    int               `json:"delay_min"`
+	RepeatMin   int               `json:"repeat_min"`
 	Config      map[string]string `json:"config"`
+}
+
+// Escalation bounds: a channel can wait up to a day before it's told, and reminds at most every 5
+// minutes (a tighter loop is noise, since the notifier polls every 30 s anyway) and at least daily.
+const (
+	maxChannelDelayMin  = 1440
+	minChannelRepeatMin = 5
+	maxChannelRepeatMin = 1440
+)
+
+// clampEscalation bounds a channel's "notify after" and "remind every" minutes (0 = off for both).
+func clampEscalation(delay, repeat int) (int, int) {
+	if delay < 0 {
+		delay = 0
+	} else if delay > maxChannelDelayMin {
+		delay = maxChannelDelayMin
+	}
+	switch {
+	case repeat <= 0:
+		repeat = 0
+	case repeat < minChannelRepeatMin:
+		repeat = minChannelRepeatMin
+	case repeat > maxChannelRepeatMin:
+		repeat = maxChannelRepeatMin
+	}
+	return delay, repeat
 }
 
 func (req channelRequest) validate() (store.NotifyChannel, string) {
@@ -107,8 +138,10 @@ func (req channelRequest) validate() (store.NotifyChannel, string) {
 	} else if sev > 5 {
 		sev = 5
 	}
+	delay, repeat := clampEscalation(req.DelayMin, req.RepeatMin)
 	return store.NotifyChannel{
-		Type: t, Name: name, Enabled: req.Enabled, Sites: cleanSites(req.Sites), MinSeverity: sev, Config: cfg,
+		Type: t, Name: name, Enabled: req.Enabled, Sites: cleanSites(req.Sites), MinSeverity: sev,
+		DelayMin: delay, RepeatMin: repeat, Config: cfg,
 	}, ""
 }
 

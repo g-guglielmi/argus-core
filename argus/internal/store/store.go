@@ -208,6 +208,20 @@ CREATE TABLE IF NOT EXISTS notify_events (
   fired_at   INTEGER
 );
 
+-- Which channels an alert reached (kind 'g' = global channel, 'u' = personal channel), so reminders,
+-- the acknowledged notice and the recovery go to exactly those. severity is the level the channel was
+-- last alerted at; rows follow an alert across a severity change on the same sensor.
+CREATE TABLE IF NOT EXISTS notify_deliveries (
+  event_id   TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  channel_id INTEGER NOT NULL,
+  severity   INTEGER NOT NULL DEFAULT 0,
+  first_sent INTEGER NOT NULL,
+  last_sent  INTEGER NOT NULL,
+  reminders  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (event_id, kind, channel_id)
+);
+
 -- Per-probe fleet-update agents. A long-lived check-in credential is issued at enrollment
 -- (token_hash) so the probe can authenticate version check-ins; version/selfupdate/last_checkin
 -- are refreshed on each check-in and power the fleet-update view. Keyed by proxy name.
@@ -488,6 +502,20 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 	// after" measures the whole outage, not just the last alert's lifetime.
 	if err := s.ensureColumn("notify_events", "incident_start INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
+	}
+	// Set once the channels that got an alert have been told it was acknowledged; cleared on un-ack.
+	if err := s.ensureColumn("notify_events", "ack_notified INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	// Escalation + reminders, per channel (global and personal): "notify after" = minutes a problem must
+	// stay open and unacknowledged before this channel hears of it (0 = with the first alert); "remind
+	// every" = minutes between reminders while it stays open and unacknowledged (0 = no reminders).
+	for _, table := range []string{"notify_channels", "user_notify_channels"} {
+		for _, ddl := range []string{"delay_min INTEGER NOT NULL DEFAULT 0", "repeat_min INTEGER NOT NULL DEFAULT 0"} {
+			if err := s.ensureColumn(table, ddl); err != nil {
+				return err
+			}
+		}
 	}
 	// Per-channel minimum severity (Zabbix 0..5); default 2 = Warning, matching the old global floor.
 	if err := s.ensureColumn("notify_channels", "min_severity INTEGER NOT NULL DEFAULT 2"); err != nil {

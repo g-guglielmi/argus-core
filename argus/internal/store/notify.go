@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -20,6 +21,8 @@ type NotifyChannel struct {
 	Enabled     bool
 	Sites       []string // host-group names this channel serves; empty = all sites
 	MinSeverity int      // Zabbix severity floor (0..5); a problem below this doesn't reach this channel
+	DelayMin    int      // escalation: minutes open + unacknowledged before this channel is told (0 = at once)
+	RepeatMin   int      // reminders: minutes between repeats while open + unacknowledged (0 = none)
 	Config      map[string]string
 	CreatedAt   time.Time
 	// Delivery health, recorded per send (alerts and the Send-test button alike) and shown on the
@@ -43,6 +46,8 @@ type NotifyState struct {
 	FiredAt   *int64
 	// IncidentStart is when the incident behind this alert began (0 = unknown; use FirstSeen).
 	IncidentStart int64
+	// AckNotified is set once the channels that got the alert were told it was acknowledged.
+	AckNotified bool
 }
 
 // --- channels ---
@@ -84,7 +89,7 @@ func (s *Store) scanChannel(row rowScanner) (*NotifyChannel, error) {
 	var cfg string
 	var site string
 	var created int64
-	if err := row.Scan(&c.ID, &c.Type, &c.Name, &enabled, &site, &c.MinSeverity, &cfg, &created, &c.LastSentAt, &c.LastError, &c.LastErrorAt, &c.SentCount); err != nil {
+	if err := row.Scan(&c.ID, &c.Type, &c.Name, &enabled, &site, &c.MinSeverity, &cfg, &created, &c.LastSentAt, &c.LastError, &c.LastErrorAt, &c.SentCount, &c.DelayMin, &c.RepeatMin); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -98,7 +103,7 @@ func (s *Store) scanChannel(row rowScanner) (*NotifyChannel, error) {
 	return &c, nil
 }
 
-const channelColumns = `id,type,name,enabled,site,min_severity,config,created_at,last_sent_at,last_error,last_error_at,sent_count`
+const channelColumns = `id,type,name,enabled,site,min_severity,config,created_at,last_sent_at,last_error,last_error_at,sent_count,delay_min,repeat_min`
 
 func (s *Store) ListNotifyChannels(ctx context.Context) ([]NotifyChannel, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+channelColumns+` FROM notify_channels ORDER BY site, name`)
@@ -143,8 +148,8 @@ func (s *Store) CreateNotifyChannel(ctx context.Context, c NotifyChannel) (int64
 		enabled = 1
 	}
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO notify_channels(type,name,enabled,site,min_severity,config,created_at) VALUES(?,?,?,?,?,?,?)`,
-		c.Type, c.Name, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), time.Now().Unix())
+		`INSERT INTO notify_channels(type,name,enabled,site,min_severity,config,created_at,delay_min,repeat_min) VALUES(?,?,?,?,?,?,?,?,?)`,
+		c.Type, c.Name, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), time.Now().Unix(), c.DelayMin, c.RepeatMin)
 	if err != nil {
 		return 0, err
 	}
@@ -158,8 +163,8 @@ func (s *Store) UpdateNotifyChannel(ctx context.Context, c NotifyChannel) error 
 		enabled = 1
 	}
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE notify_channels SET type=?,name=?,enabled=?,site=?,min_severity=?,config=? WHERE id=?`,
-		c.Type, c.Name, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), c.ID)
+		`UPDATE notify_channels SET type=?,name=?,enabled=?,site=?,min_severity=?,config=?,delay_min=?,repeat_min=? WHERE id=?`,
+		c.Type, c.Name, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), c.DelayMin, c.RepeatMin, c.ID)
 	return err
 }
 
@@ -200,7 +205,7 @@ func (s *Store) RecordNotifyDelivery(ctx context.Context, id int64, sendErr erro
 // NotifyStates returns every tracked event keyed by event id.
 func (s *Store) NotifyStates(ctx context.Context) (map[string]NotifyState, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT event_id,host_id,item_id,host_name,name,severity,state,first_seen,fired_at,incident_start FROM notify_events`)
+		`SELECT event_id,host_id,item_id,host_name,name,severity,state,first_seen,fired_at,incident_start,ack_notified FROM notify_events`)
 	if err != nil {
 		return nil, err
 	}
@@ -209,9 +214,11 @@ func (s *Store) NotifyStates(ctx context.Context) (map[string]NotifyState, error
 	for rows.Next() {
 		var st NotifyState
 		var fired sql.NullInt64
-		if err := rows.Scan(&st.EventID, &st.HostID, &st.ItemID, &st.HostName, &st.Name, &st.Severity, &st.State, &st.FirstSeen, &fired, &st.IncidentStart); err != nil {
+		var ackN int
+		if err := rows.Scan(&st.EventID, &st.HostID, &st.ItemID, &st.HostName, &st.Name, &st.Severity, &st.State, &st.FirstSeen, &fired, &st.IncidentStart, &ackN); err != nil {
 			return nil, err
 		}
+		st.AckNotified = ackN != 0
 		if fired.Valid {
 			v := fired.Int64
 			st.FiredAt = &v
@@ -227,20 +234,109 @@ func (s *Store) UpsertNotifyState(ctx context.Context, st NotifyState) error {
 	if st.FiredAt != nil {
 		fired = *st.FiredAt
 	}
+	ackN := 0
+	if st.AckNotified {
+		ackN = 1
+	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO notify_events(event_id,host_id,item_id,host_name,name,severity,state,first_seen,fired_at,incident_start)
-		 VALUES(?,?,?,?,?,?,?,?,?,?)
+		`INSERT INTO notify_events(event_id,host_id,item_id,host_name,name,severity,state,first_seen,fired_at,incident_start,ack_notified)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(event_id) DO UPDATE SET
 		   host_id=excluded.host_id, item_id=excluded.item_id, host_name=excluded.host_name, name=excluded.name,
 		   severity=excluded.severity, state=excluded.state, fired_at=excluded.fired_at,
-		   incident_start=excluded.incident_start`,
-		st.EventID, st.HostID, st.ItemID, st.HostName, st.Name, st.Severity, st.State, st.FirstSeen, fired, st.IncidentStart)
+		   incident_start=excluded.incident_start, ack_notified=excluded.ack_notified`,
+		st.EventID, st.HostID, st.ItemID, st.HostName, st.Name, st.Severity, st.State, st.FirstSeen, fired, st.IncidentStart, ackN)
 	return err
 }
 
+// DeleteNotifyState forgets an event, along with the record of which channels it reached.
 func (s *Store) DeleteNotifyState(ctx context.Context, eventID string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM notify_deliveries WHERE event_id=?`, eventID); err != nil {
+		return err
+	}
 	_, err := s.db.ExecContext(ctx, `DELETE FROM notify_events WHERE event_id=?`, eventID)
 	return err
+}
+
+// --- per-channel deliveries (escalation, reminders, acknowledged + recovery routing) ---
+
+// Delivery kinds: which channel table a delivery's channel_id refers to.
+const (
+	DeliveryGlobal = "g" // notify_channels
+	DeliveryUser   = "u" // user_notify_channels
+)
+
+// NotifyDelivery records that an alert reached one channel.
+type NotifyDelivery struct {
+	EventID   string
+	Kind      string // DeliveryGlobal | DeliveryUser
+	ChannelID int64
+	Severity  int   // the level this channel was last alerted at
+	FirstSent int64 // unix s
+	LastSent  int64 // unix s: the alert or its latest reminder
+	Reminders int
+}
+
+// DeliveryKey identifies a channel across both channel tables.
+func DeliveryKey(kind string, channelID int64) string {
+	return kind + ":" + strconv.FormatInt(channelID, 10)
+}
+
+// NotifyDeliveries returns every recorded delivery, grouped by event id and keyed by DeliveryKey.
+func (s *Store) NotifyDeliveries(ctx context.Context) (map[string]map[string]NotifyDelivery, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT event_id,kind,channel_id,severity,first_sent,last_sent,reminders FROM notify_deliveries`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]map[string]NotifyDelivery{}
+	for rows.Next() {
+		var d NotifyDelivery
+		if err := rows.Scan(&d.EventID, &d.Kind, &d.ChannelID, &d.Severity, &d.FirstSent, &d.LastSent, &d.Reminders); err != nil {
+			return nil, err
+		}
+		if out[d.EventID] == nil {
+			out[d.EventID] = map[string]NotifyDelivery{}
+		}
+		out[d.EventID][DeliveryKey(d.Kind, d.ChannelID)] = d
+	}
+	return out, rows.Err()
+}
+
+// UpsertNotifyDelivery inserts or replaces one delivery row.
+func (s *Store) UpsertNotifyDelivery(ctx context.Context, d NotifyDelivery) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO notify_deliveries(event_id,kind,channel_id,severity,first_sent,last_sent,reminders) VALUES(?,?,?,?,?,?,?)
+		 ON CONFLICT(event_id,kind,channel_id) DO UPDATE SET
+		   severity=excluded.severity, first_sent=excluded.first_sent, last_sent=excluded.last_sent, reminders=excluded.reminders`,
+		d.EventID, d.Kind, d.ChannelID, d.Severity, d.FirstSent, d.LastSent, d.Reminders)
+	return err
+}
+
+// MoveNotifyDeliveries hands an alert's deliveries over to the problem that took over on the same
+// sensor at another severity, so its recovery still reaches every channel that heard of the incident.
+// A channel the successor already reached keeps the successor's row.
+func (s *Store) MoveNotifyDeliveries(ctx context.Context, fromEvent, toEvent string) error {
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO notify_deliveries(event_id,kind,channel_id,severity,first_sent,last_sent,reminders)
+		 SELECT ?,kind,channel_id,severity,first_sent,last_sent,reminders FROM notify_deliveries WHERE event_id=?`,
+		toEvent, fromEvent); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM notify_deliveries WHERE event_id=?`, fromEvent)
+	return err
+}
+
+// AckInfo returns who acknowledged an event and their note (byUser 0 = the signed alert link).
+func (s *Store) AckInfo(ctx context.Context, eventID string) (byUser int64, note string, err error) {
+	var by sql.NullInt64
+	err = s.db.QueryRowContext(ctx,
+		`SELECT by_user, note FROM suppressions WHERE kind='ack' AND scope='event' AND target_id=?`, eventID).Scan(&by, &note)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, "", ErrNotFound
+	}
+	return by.Int64, note, err
 }
 
 // --- app_meta ---
