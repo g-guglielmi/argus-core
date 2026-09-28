@@ -4867,7 +4867,7 @@ function ThresholdDialog({ tpl, onClose, onSaved }: { tpl: ThrTemplate; onClose:
   )
 }
 
-type StatusPage = { id: number; name: string; sites: string[]; allow_cidrs: string; expires_at: number; created_at: number; created_by: string; last_viewed_at: number }
+type StatusPage = { id: number; name: string; sites: string[]; allow_cidrs: string; expires_at: number; created_at: number; created_by: string; last_viewed_at: number; has_link?: boolean }
 
 // Expiry choices for a status page link, in days (0 = never).
 const STATUS_EXPIRY_DAYS = [0, 1, 7, 30, 90, 365]
@@ -4896,6 +4896,12 @@ function StatusPagesView() {
     if (!(await confirm({ title: 'New link', message: `Make a new link for “${p.name}”? The current link stops working at once, so screens using it need the new one.`, confirmLabel: 'Make a new link', danger: true }))) return
     const res = await fetch(`/api/status-pages/${p.id}/rotate`, { method: 'POST' })
     if (!res.ok) { toast.error(await errText(res, 'Could not make a new link')); return }
+    const j = await res.json()
+    setReveal({ name: p.name, link: statusLinkURL(j.link) })
+  }
+  async function showLink(p: StatusPage) {
+    const res = await fetch(`/api/status-pages/${p.id}/link`)
+    if (!res.ok) { toast.error(await errText(res, 'Could not get the link')); return }
     const j = await res.json()
     setReveal({ name: p.name, link: statusLinkURL(j.link) })
   }
@@ -4935,9 +4941,10 @@ function StatusPagesView() {
                 <p className="chan-meta">{sitesLabel(p.sites)} · {p.allow_cidrs ? `only ${p.allow_cidrs}` : 'any network'} · {p.expires_at ? (expired ? 'expired' : `expires ${new Date(p.expires_at * 1000).toLocaleDateString()}`) : 'never expires'}</p>
                 <div className="chan-status">{p.last_viewed_at ? `Last viewed ${relTime(p.last_viewed_at)}` : 'Not opened yet'}</div>
                 <div className="chan-actions">
-                  <Button onClick={() => rotate(p)}>New link</Button>
+                  {p.has_link ? <Button onClick={() => showLink(p)}>Show link</Button> : <Button onClick={() => rotate(p)}>New link</Button>}
                   <Kebab actions={[
                     { label: 'Edit…', icon: kbIcon.edit, onClick: () => setEditing(p) },
+                    ...(p.has_link ? [{ label: 'New link…', icon: kbIcon.edit, onClick: () => rotate(p) }] : []),
                     { sep: true, label: '' },
                     { label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => del(p) },
                   ]} />
@@ -5029,7 +5036,7 @@ function StatusLinkDialog({ name, link, onClose }: { name: string; link: string;
     <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 'min(640px, 94vw)' }}>
         <div className="dlg-title">Link for {name}</div>
-        <p className="dlg-msg">Open this link on the screen. It's shown only now: Argus keeps just a fingerprint of it, so copy it before closing. Once opened, the screen remembers it and the address bar shows a plain /status.</p>
+        <p className="dlg-msg">Open this link on the screen. Once opened, the screen remembers it and the address bar shows a plain /status. You can copy it again later with Show link; New link replaces it and shuts the old one out.</p>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12 }}>
           <input className="input mono" readOnly value={link} onFocus={(e) => e.target.select()} style={{ flex: 1, minWidth: 0 }} />
           <CopyButton text={link} />

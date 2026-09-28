@@ -296,6 +296,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/status-pages", auth.RequireRole("admin", s.handleCreateStatusPage))
 	mux.HandleFunc("PATCH /api/status-pages/{id}", auth.RequireRole("admin", s.handleUpdateStatusPage))
 	mux.HandleFunc("POST /api/status-pages/{id}/rotate", auth.RequireRole("admin", s.handleRotateStatusPage))
+	mux.HandleFunc("GET /api/status-pages/{id}/link", auth.RequireRole("admin", s.handleStatusPageLink))
 	mux.HandleFunc("DELETE /api/status-pages/{id}", auth.RequireRole("admin", s.handleDeleteStatusPage))
 
 	mux.Handle("/", spaHandler())
@@ -375,19 +376,34 @@ func normalizeLanding(v string) string {
 
 // clientIP returns the caller's IP, honouring X-Forwarded-For only when TrustProxy is set
 // (Argus behind a reverse proxy like HAProxy). Otherwise it uses the direct socket address.
+//
+// It takes the LAST address in X-Forwarded-For (across every copy of the header): that is the one the
+// trusted proxy itself appended - the address that actually connected to it. Anything before it came
+// from the client and can be forged, so trusting the first entry would let anyone pick their own IP
+// (dodging the login rate limit, or a status page's network allowlist).
 func (s *Server) clientIP(r *http.Request) string {
 	if s.cfg.TrustProxy {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if i := strings.IndexByte(xff, ','); i >= 0 {
-				return strings.TrimSpace(xff[:i])
-			}
-			return strings.TrimSpace(xff)
+		if ip := lastForwardedFor(r.Header.Values("X-Forwarded-For")); ip != "" {
+			return ip
 		}
 	}
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		return host
 	}
 	return r.RemoteAddr
+}
+
+// lastForwardedFor is the rightmost address across X-Forwarded-For header values ("" if none).
+func lastForwardedFor(values []string) string {
+	for i := len(values) - 1; i >= 0; i-- {
+		parts := strings.Split(values[i], ",")
+		for j := len(parts) - 1; j >= 0; j-- {
+			if p := strings.TrimSpace(parts[j]); p != "" {
+				return p
+			}
+		}
+	}
+	return ""
 }
 
 // rateBlocked returns true (and writes a 429 with Retry-After) if any key is currently throttled.

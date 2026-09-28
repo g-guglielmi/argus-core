@@ -990,13 +990,15 @@ and links to it.
 A read-only dashboard for a wall screen, opened with a secret link instead of a login (admin
 **Status pages** screen; `status_pages` table).
 
-- **Link:** `/status/<token>`, a 256-bit random token; only its SHA-256 is stored, and the link is shown
-  once. Opening it sets an `argus_status` cookie (HttpOnly, SameSite=Strict, Path=/status, Secure per
+- **Link:** `/status/<token>`, a 256-bit random token, looked up by its SHA-256 and kept encrypted at
+  rest (the same cipher as channel secrets), so an admin can copy it again (**Show link**, `GET
+  /api/status-pages/{id}/link`); pages made before that only have the hash and need a new link. Opening it sets an `argus_status` cookie (HttpOnly, SameSite=Strict, Path=/status, Secure per
   `ARGUS_COOKIE_SECURE`, lasting until the page expires or ~400 days) and redirects to a clean
   `/status`, so the token doesn't sit in the address bar, history suggestions or screenshots.
   **New link** (rotate) or deleting the page kills it, cookie included.
-- **Limits:** optional allowed networks (CIDRs, checked against the client IP, which honours
-  `ARGUS_TRUST_PROXY`) and an optional expiry; a page shows only its sites (host groups, a root
+- **Limits:** optional allowed networks (CIDRs, checked against the client IP: behind a proxy with
+  `ARGUS_TRUST_PROXY`, the LAST `X-Forwarded-For` entry, the one the proxy appended; earlier entries
+  are the client's to forge) and an optional expiry; a page shows only its sites (host groups, a root
   covering its subgroups).
 - **Content:** `/status/data`, built from the same active-problem list and sensor census as the app
   (hidden and paused hosts left out), cached 20 s per page: one row per open problem (kind error /

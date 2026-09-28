@@ -22,11 +22,18 @@ GitHub Release from the matching section below.
   than the screen pages itself every 15 seconds; data refreshes every 30, and a lost connection is
   flagged while the last known state stays up.
   - Opening the link swaps it for a cookie and a plain `/status` address, so the secret doesn't sit
-    in the address bar. Argus keeps only a fingerprint of it, and shows the link once.
+    in the address bar. The link is kept encrypted, so an admin can copy it again with **Show link**.
   - Each page can be limited to networks (like your LAN) and given an expiry. **New link** shuts the
     old one out at once; deleting the page does too.
   - The page shows only its sites, never addresses, credentials or settings, reads through its own
-    endpoint (never the app's API), and is kept out of search engines and other sites' frames.
+    endpoint (never the app's API), and is kept out of search engines and other sites' frames. It
+    uses the app's colours.
+
+**Fixed:**
+- Behind a reverse proxy (`ARGUS_TRUST_PROXY=true`), Argus took the client's address from the first
+  `X-Forwarded-For` entry, which the client itself can set. It now takes the last one, the address
+  the proxy actually saw, so the address can't be faked to dodge the login rate limit or a status
+  page's network list.
 
 ## [0.5.10] - 2026-09-28
 

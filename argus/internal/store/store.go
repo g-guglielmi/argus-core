@@ -321,8 +321,9 @@ CREATE TABLE IF NOT EXISTS notices_sent (
 
 -- Since when each system-notice condition (an update available, a probe behind, ...) has held, so a
 -- notice goes out only once its condition is old enough. Rows go when the condition ends.
--- Status pages: read-only dashboards (a TV wall) opened with a secret link instead of a login. Only
--- the token's SHA-256 is kept. sites = JSON array of host-group names ('' = all); allow_cidrs =
+-- Status pages: read-only dashboards (a TV wall) opened with a secret link instead of a login. The
+-- token is looked up by its SHA-256 and kept encrypted (like channel secrets) so an admin can copy the
+-- link again. sites = JSON array of host-group names ('' = all); allow_cidrs =
 -- comma-separated networks allowed to open it ('' = any); expires_at 0 = never.
 CREATE TABLE IF NOT EXISTS status_pages (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -546,6 +547,11 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 	// across severity changes and, for "no data" alerts, set to when the data stopped - so "Recovered
 	// after" measures the whole outage, not just the last alert's lifetime.
 	if err := s.ensureColumn("notify_events", "incident_start INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	// The status-page token, encrypted, so an admin can copy the link again (pages made before this
+	// only have the hash: they need a new link to become copyable).
+	if err := s.ensureColumn("status_pages", "token_enc TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	// When an alert was last held back because its master sensor (or its site's probe) was down; a held

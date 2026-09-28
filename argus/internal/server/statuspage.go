@@ -25,7 +25,8 @@ import (
 //
 //   - The link is /status/<token>. Opening it swaps the token for a cookie and redirects to a clean
 //     /status, so the token doesn't linger in the address bar, history suggestions or a screenshot.
-//     Only the token's SHA-256 is stored; rotating it or deleting the page kills the old link.
+//     It's looked up by its SHA-256 and kept encrypted (like channel secrets) so an admin can copy the
+//     link again; rotating it or deleting the page kills the old link.
 //   - A page can be limited to networks (CIDRs) and given an expiry; it shows only the sites it was
 //     given, and never addresses, credentials or settings. It reads through /status/data, never the
 //     app's API, so the cookie opens nothing else.
@@ -50,6 +51,7 @@ type statusPageView struct {
 	CreatedAt    int64    `json:"created_at"`
 	CreatedBy    string   `json:"created_by"`
 	LastViewedAt int64    `json:"last_viewed_at"`
+	HasLink      bool     `json:"has_link"` // the link can be copied again
 }
 
 func toStatusPageView(p store.StatusPage) statusPageView {
@@ -58,7 +60,7 @@ func toStatusPageView(p store.StatusPage) statusPageView {
 		sites = []string{}
 	}
 	return statusPageView{ID: p.ID, Name: p.Name, Sites: sites, AllowCIDRs: p.AllowCIDRs, ExpiresAt: p.ExpiresAt,
-		CreatedAt: p.CreatedAt, CreatedBy: p.CreatedBy, LastViewedAt: p.LastViewedAt}
+		CreatedAt: p.CreatedAt, CreatedBy: p.CreatedBy, LastViewedAt: p.LastViewedAt, HasLink: p.HasLink}
 }
 
 type statusPageRequest struct {
@@ -203,6 +205,16 @@ func (s *Server) handleRotateStatusPage(w http.ResponseWriter, r *http.Request) 
 	token := newStatusToken()
 	if err := s.st.RotateStatusPageToken(r.Context(), id, token); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"link": s.statusLink(token)})
+}
+
+// GET /api/status-pages/{id}/link - the page's current link, to copy it again (admin).
+func (s *Server) handleStatusPageLink(w http.ResponseWriter, r *http.Request) {
+	token, err := s.st.StatusPageToken(r.Context(), atoi64(r.PathValue("id")))
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "this page's link isn't kept (it predates copyable links): make a new link"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"link": s.statusLink(token)})

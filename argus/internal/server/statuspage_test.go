@@ -109,9 +109,21 @@ func TestStatusLinkFlow(t *testing.T) {
 		t.Fatalf("no cookie: %d", w.Code)
 	}
 
+	// The link can be copied again: the token is kept (encrypted), and the page says so.
+	if got, err := st.StatusPageToken(ctx, id); err != nil || got != token {
+		t.Fatalf("stored token: %q %v", got, err)
+	}
+	if pg, _ := st.GetStatusPage(ctx, id); !pg.HasLink {
+		t.Fatal("HasLink false for a page with a kept token")
+	}
+
 	// Rotating the token kills the old link and the cookie that carries it.
-	if err := st.RotateStatusPageToken(ctx, id, newStatusToken()); err != nil {
+	tok3 := newStatusToken()
+	if err := st.RotateStatusPageToken(ctx, id, tok3); err != nil {
 		t.Fatal(err)
+	}
+	if got, _ := st.StatusPageToken(ctx, id); got != tok3 {
+		t.Fatalf("rotated token not kept: %q", got)
 	}
 	if w := open("/status", "10.0.0.5:4000", ck); w.Code != http.StatusNotFound {
 		t.Fatalf("rotated: %d", w.Code)
@@ -139,5 +151,25 @@ func TestReachabilityReading(t *testing.T) {
 	}
 	if _, ok := reachabilityReading("system.cpu.util", "0"); ok {
 		t.Error("a CPU reading isn't a reachability")
+	}
+}
+
+// Behind a proxy the client's own address is the last X-Forwarded-For entry (the one the proxy added);
+// earlier entries are the client's to forge.
+func TestLastForwardedFor(t *testing.T) {
+	cases := []struct {
+		in   []string
+		want string
+	}{
+		{[]string{"203.0.113.7"}, "203.0.113.7"},
+		{[]string{"10.0.0.5, 203.0.113.7"}, "203.0.113.7"},
+		{[]string{"10.0.0.5", "203.0.113.7"}, "203.0.113.7"}, // a proxy that adds its own header line
+		{[]string{"203.0.113.7, "}, "203.0.113.7"},
+		{nil, ""},
+	}
+	for _, c := range cases {
+		if got := lastForwardedFor(c.in); got != c.want {
+			t.Errorf("lastForwardedFor(%q) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }

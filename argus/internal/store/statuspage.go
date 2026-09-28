@@ -12,8 +12,8 @@ import (
 	"time"
 )
 
-// StatusPage is a read-only dashboard opened with a secret link. The token itself is never stored,
-// only its SHA-256.
+// StatusPage is a read-only dashboard opened with a secret link. The token is looked up by its SHA-256
+// and also kept encrypted at rest, so an admin can copy the link again.
 type StatusPage struct {
 	ID           int64
 	Name         string
@@ -23,6 +23,7 @@ type StatusPage struct {
 	CreatedAt    int64
 	CreatedBy    string
 	LastViewedAt int64
+	HasLink      bool // the link can be copied again (false for pages made before it was kept)
 }
 
 // HashStatusToken is how a status-page token is stored and looked up.
@@ -31,12 +32,12 @@ func HashStatusToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-const statusPageColumns = `id,name,sites,allow_cidrs,expires_at,created_at,created_by,last_viewed_at`
+const statusPageColumns = `id,name,sites,allow_cidrs,expires_at,created_at,created_by,last_viewed_at,token_enc<>''`
 
 func scanStatusPage(row rowScanner) (*StatusPage, error) {
 	var p StatusPage
 	var sites string
-	if err := row.Scan(&p.ID, &p.Name, &sites, &p.AllowCIDRs, &p.ExpiresAt, &p.CreatedAt, &p.CreatedBy, &p.LastViewedAt); err != nil {
+	if err := row.Scan(&p.ID, &p.Name, &sites, &p.AllowCIDRs, &p.ExpiresAt, &p.CreatedAt, &p.CreatedBy, &p.LastViewedAt, &p.HasLink); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -80,8 +81,8 @@ func (s *Store) StatusPageByToken(ctx context.Context, token string) (*StatusPag
 // CreateStatusPage stores a new page with its token (hashed) and returns its id.
 func (s *Store) CreateStatusPage(ctx context.Context, p StatusPage, token string) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO status_pages(name,token_hash,sites,allow_cidrs,expires_at,created_at,created_by) VALUES(?,?,?,?,?,?,?)`,
-		p.Name, HashStatusToken(token), encodeSites(p.Sites), p.AllowCIDRs, p.ExpiresAt, time.Now().Unix(), p.CreatedBy)
+		`INSERT INTO status_pages(name,token_hash,token_enc,sites,allow_cidrs,expires_at,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)`,
+		p.Name, HashStatusToken(token), s.cipher.Encrypt(token), encodeSites(p.Sites), p.AllowCIDRs, p.ExpiresAt, time.Now().Unix(), p.CreatedBy)
 	if err != nil {
 		return 0, err
 	}
@@ -97,8 +98,21 @@ func (s *Store) UpdateStatusPage(ctx context.Context, p StatusPage) error {
 
 // RotateStatusPageToken replaces a page's token: the old link stops working at once.
 func (s *Store) RotateStatusPageToken(ctx context.Context, id int64, token string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE status_pages SET token_hash=? WHERE id=?`, HashStatusToken(token), id)
+	_, err := s.db.ExecContext(ctx, `UPDATE status_pages SET token_hash=?, token_enc=? WHERE id=?`, HashStatusToken(token), s.cipher.Encrypt(token), id)
 	return err
+}
+
+// StatusPageToken returns a page's current token (decrypted), or ErrNotFound when it isn't kept.
+func (s *Store) StatusPageToken(ctx context.Context, id int64) (string, error) {
+	var enc string
+	err := s.db.QueryRowContext(ctx, `SELECT token_enc FROM status_pages WHERE id=?`, id).Scan(&enc)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && enc == "") {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	return s.cipher.Decrypt(enc), nil
 }
 
 // TouchStatusPage records that the page was just viewed (at most once a minute).
