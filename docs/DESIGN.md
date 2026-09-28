@@ -383,10 +383,13 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   or probe reconnects don't alert; a held problem that is still open after that alerts normally.
 - **Argus-raised problems:** Zabbix raises no problem when monitoring itself stops, so Argus adds its
   own, shaped like Zabbix problems (event ids `argus-unsupported-<item>` / `argus-interface-<iface>`)
-  and merged into the notifier's list, the Overview and the host page: a sensor **not supported** for
-  10 minutes (Warning; `item_unsupported` records since when, as Zabbix doesn't say) and an **agent /
-  SNMP / IPMI / JMX interface** Zabbix marks unavailable (High, timed from its `errors_from`). The
-  reading is Zabbix's error. Acks stay in Argus (no Zabbix event to mirror). Those present when the
+  and merged into the notifier's list, the Overview and the host page: a sensor **not supported** on
+  its third failed check in a row, i.e. 2 of its own update intervals after Argus first saw it fail
+  (a dependent sensor uses its master's interval; an unreadable one counts as 1 min;
+  `item_unsupported` records since when, as Zabbix doesn't say), and an **agent / SNMP / IPMI / JMX
+  interface** Zabbix marks unavailable (timed from its `errors_from`). Both are High and skip the
+  alert delay, since failed checks or Zabbix's retries already are the wait. The reading is Zabbix's
+  error. Acks stay in Argus (no Zabbix event to mirror). Those present when the
   feature arrived were baselined. Supported sensors with no new values are deliberately not alerted:
   many store only changes, so an old last value is normal; a silent device or probe is caught by its
   master instead.
