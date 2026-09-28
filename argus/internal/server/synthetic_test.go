@@ -45,3 +45,15 @@ func TestSyntheticMerge(t *testing.T) {
 		t.Fatalf("merge into nil targets: %+v", ts2)
 	}
 }
+
+func TestIntervalSecs(t *testing.T) {
+	cases := map[string]int64{
+		"30s": 30, "1m": 60, "5m": 300, "1h": 3600, "1d": 86400, "90": 90,
+		"1m;50s/1-5,09:00-18:00": 60, "0": 60, "{$NUT.INTERVAL}": 60, "": 60,
+	}
+	for in, want := range cases {
+		if got := intervalSecs(in); got != want {
+			t.Errorf("intervalSecs(%q) = %d, want %d", in, got, want)
+		}
+	}
+}

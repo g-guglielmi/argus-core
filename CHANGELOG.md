@@ -33,9 +33,10 @@ GitHub Release from the matching section below.
     recovery.
 - **Alerts when monitoring stops working.** Zabbix raises no problem for these, so nothing alerted
   until now:
-  - a sensor that stays **not supported** for 10 minutes (a collector script that fails or times
-    out, like a UPS sensor losing its NUT server): a warning, "<sensor> stopped collecting", with
-    Zabbix's reason as the reading;
+  - a sensor that goes **not supported** (a collector script that fails or times out, like a UPS
+    sensor losing its NUT server): an error, "<sensor> stopped collecting", on its third failed
+    check in a row (about 2 minutes for a sensor checked every minute), with Zabbix's reason as the
+    reading;
   - a device's **Zabbix agent or SNMP** that stops answering while the device itself is up: an
     error, "Zabbix agent not reachable" or "SNMP not responding", with Zabbix's reason.
 

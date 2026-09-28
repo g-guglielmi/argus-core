@@ -314,8 +314,9 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 				continue
 			}
 			// A "no data" trigger already waited its own period (that IS its flap guard), so it alerts
-			// straight away instead of sitting out the alert delay too.
-			if now.Sub(time.Unix(stt.FirstSeen, 0)) < flapDelay && !isNoData {
+			// straight away instead of sitting out the alert delay too - as do Argus-raised problems,
+			// which only exist after failed checks (a sensor) or Zabbix's retries (an interface).
+			if now.Sub(time.Unix(stt.FirstSeen, 0)) < flapDelay && !isNoData && !isSynthetic(p.EventID) {
 				continue // still within the flap-debounce window
 			}
 			if !anyServes(dests, groups, sev) {

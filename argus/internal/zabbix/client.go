@@ -651,24 +651,45 @@ type TargetItem struct {
 // UnsupportedItem is an enabled sensor on a monitored host that Zabbix can't collect ("not
 // supported"), with Zabbix's reason.
 type UnsupportedItem struct {
-	ItemID string       `json:"itemid"`
-	HostID string       `json:"hostid"`
-	Name   string       `json:"name"`
-	Key    string       `json:"key_"`
-	Error  string       `json:"error"`
-	Hosts  []TargetHost `json:"hosts"`
+	ItemID       string       `json:"itemid"`
+	HostID       string       `json:"hostid"`
+	Name         string       `json:"name"`
+	Key          string       `json:"key_"`
+	Error        string       `json:"error"`
+	Delay        string       `json:"delay"`         // update interval ("1m", "30s"; "0" for a dependent item)
+	MasterItemID string       `json:"master_itemid"` // a dependent item's master ("0" otherwise)
+	Hosts        []TargetHost `json:"hosts"`
 }
 
 // UnsupportedItems returns every enabled, "not supported" sensor on a monitored host.
 func (c *Client) UnsupportedItems(ctx context.Context) ([]UnsupportedItem, error) {
 	params := map[string]any{
-		"output":      []string{"itemid", "hostid", "name", "key_", "error"},
+		"output":      []string{"itemid", "hostid", "name", "key_", "error", "delay", "master_itemid"},
 		"selectHosts": []string{"hostid", "name", "status"},
 		"filter":      map[string]any{"state": 1, "status": 0},
 		"monitored":   true,
 	}
 	var items []UnsupportedItem
 	return items, c.call(ctx, "item.get", params, true, &items)
+}
+
+// ItemDelays returns the update interval of each requested item (e.g. the masters of dependent items).
+func (c *Client) ItemDelays(ctx context.Context, ids []string) (map[string]string, error) {
+	out := map[string]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var items []struct {
+		ItemID string `json:"itemid"`
+		Delay  string `json:"delay"`
+	}
+	if err := c.call(ctx, "item.get", map[string]any{"output": []string{"itemid", "delay"}, "itemids": ids}, true, &items); err != nil {
+		return nil, err
+	}
+	for _, it := range items {
+		out[it.ItemID] = it.Delay
+	}
+	return out, nil
 }
 
 // UnavailableInterface is a host interface Zabbix has marked unavailable (the agent, SNMP, IPMI or

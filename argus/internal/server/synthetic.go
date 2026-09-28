@@ -24,12 +24,15 @@ import (
 // caught by its master sensor instead.
 
 const (
-	synthPrefix         = "argus-"
-	synthUnsupported    = synthPrefix + "unsupported-" // + item id
-	synthInterface      = synthPrefix + "interface-"   // + interface id
-	unsupportedAfterSec = 10 * 60                      // a sensor must stay "not supported" this long to alert
-	synthSevUnsupported = "2"                          // Warning
-	synthSevInterface   = "4"                          // High
+	synthPrefix      = "argus-"
+	synthUnsupported = synthPrefix + "unsupported-" // + item id
+	synthInterface   = synthPrefix + "interface-"   // + interface id
+	// A sensor alerts on its third failed check in a row: Argus notices the first within a poll, then
+	// waits unsupportedChecks more intervals of the sensor's own.
+	unsupportedChecks   = 2
+	defaultIntervalSecs = 60  // when a sensor's interval can't be read (a macro, a trapper)
+	synthSevUnsupported = "4" // High: the sensor is blind
+	synthSevInterface   = "4" // High
 )
 
 // isSynthetic reports whether an event id is an Argus-raised problem (not a Zabbix event).
@@ -61,9 +64,21 @@ func syntheticProblems(ctx context.Context, st *store.Store, zbx *zabbix.Client,
 		} else {
 			since, _ = st.UnsupportedSince(ctx)
 		}
+		// A dependent sensor has no interval of its own: it is collected with its master.
+		var masters []string
+		for _, it := range items {
+			if it.MasterItemID != "" && it.MasterItemID != "0" {
+				masters = append(masters, it.MasterItemID)
+			}
+		}
+		masterDelay, _ := zbx.ItemDelays(ctx, masters)
 		for _, it := range items {
 			start, ok := since[it.ItemID]
-			if !ok || now-start < unsupportedAfterSec || len(it.Hosts) == 0 {
+			delay := it.Delay
+			if d, dep := masterDelay[it.MasterItemID]; dep {
+				delay = d
+			}
+			if !ok || now-start < int64(unsupportedChecks)*intervalSecs(delay) || len(it.Hosts) == 0 {
 				continue
 			}
 			id := synthUnsupported + it.ItemID
@@ -95,6 +110,37 @@ func syntheticProblems(ctx context.Context, st *store.Store, zbx *zabbix.Client,
 		}
 	}
 	return out
+}
+
+// intervalSecs reads a Zabbix update interval ("30s", "1m", "2h", "90", or a flexible "1m;50s/1-5,9:00-18:00"
+// whose first part is the regular interval) as seconds; a macro, "0" or anything unreadable counts as
+// one minute.
+func intervalSecs(delay string) int64 {
+	d := strings.TrimSpace(delay)
+	if i := strings.IndexByte(d, ';'); i >= 0 {
+		d = d[:i]
+	}
+	if d == "" {
+		return defaultIntervalSecs
+	}
+	mult := int64(1)
+	switch d[len(d)-1] {
+	case 's':
+		d = d[:len(d)-1]
+	case 'm':
+		mult, d = 60, d[:len(d)-1]
+	case 'h':
+		mult, d = 3600, d[:len(d)-1]
+	case 'd':
+		mult, d = 86400, d[:len(d)-1]
+	case 'w':
+		mult, d = 7*86400, d[:len(d)-1]
+	}
+	n := atoi64(d)
+	if n <= 0 {
+		return defaultIntervalSecs
+	}
+	return n * mult
 }
 
 // merge adds the Argus-raised problems to Zabbix's (after the Zabbix trigger lookup, which would
