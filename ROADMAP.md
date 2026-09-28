@@ -185,6 +185,13 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [ ] **Alerts for sensors that stop collecting** - a sensor that goes "not supported" or stops
   getting new values raises no Zabbix problem (triggers just go unknown), so nothing alerts today
   (seen on a NUT sensor). Argus raises its own alert for it. - _(BE)_ S-M
+- [ ] **System notices** - Argus's own events as neutral `[INFO]` messages, sent once (no reminders,
+  no recovery): a new Argus release and self-update success/failure; a probe or updater behind, and
+  probe self-update success/failure; pending security updates or a needed reboot on the core or a
+  probe VM; a Zabbix minor update for the core; a finished discovery scan with its count of new
+  devices; a notification channel that keeps failing (told on the other channels). Per channel: a
+  **System notices** switch (off by default) next to the alert level, which gains **None**, so a
+  channel can carry alerts, notices, or both. - _(FE+BE)_ M
 - [ ] Public status page (Uptime-Kuma-style shareable) - parking lot
 
 ### I. Mobile app (last step)
@@ -205,8 +212,9 @@ v0.4.38-v0.4.55) · ~~§B auto-discovery~~ ✅ (subnet scan + UniFi sweep + enri
 v0.4.56-v0.4.58) · plus the §14 lifecycle line (OS patching, core Zabbix minors, core time) ·
 ~~§D thresholds UI + sensor-category ordering~~ ✅ (the last 1.0-lift pillar).
 
-1. **Notification logic (§H)** - escalation, reminders, master sensors and alerts for sensors that
-   stop collecting, so production sites get the full alerting behaviour from day one.
+1. **Notification logic (§H)** - escalation + reminders, master sensors, alerts for sensors that
+   stop collecting, then system notices, so production sites get the full alerting behaviour from
+   day one.
 2. **Production rollout** - move real sites onto Argus. This is also the trigger for the rest of
    **C2** (Aruba/Instant On, QNAP, Sophos, NetScaler, Libraesva, Hyper-V, Nutanix Prism, Citrix,
    vSphere): build each class when a production site actually needs it, lab-first as always.
