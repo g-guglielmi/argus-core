@@ -16,9 +16,15 @@ configures the whole core in place while a live progress page shows each step:
             nginx/php-fpm wiring, agent2 self-monitoring, services enabled
   accounts  rotate the default Zabbix Admin password; create the argus-svc super-admin + its API
             token (machine-managed - never shown to a human); housekeeping retention
+  https     a server certificate for this VM signed by the monitoring CA, nginx on :443 in front of
+            Argus (which listens on 127.0.0.1:8081 only)
   argus     write /etc/argus-core/argus.env (token, first-admin seed, secret key, CA/update mounts),
             start the argus + argus-updater containers, seed Public URL + timezone via the API
-  finish    scrub the one-time admin seed from argus.env, arm the :80 -> :8081 redirect, mark done
+  finish    scrub the one-time admin seed from argus.env, arm the :80 -> https redirect, mark done
+
+The page is reachable by anyone on the network until setup completes, and it creates every
+credential of this core, so a submission must carry a one-time SETUP CODE printed on the VM's
+console (and its login banner) when the page starts serving.
 
 The password model: one "administrator password" is used for the Debian user, the Zabbix Admin, and
 the Argus admin (each individually overridable under Advanced). The database password and the Zabbix
@@ -29,6 +35,7 @@ Steps are idempotent; a failed run can be retried (same answers) or edited. A re
 resumes automatically. Once done, the service disables itself and hands port 80 to nginx (which then
 just redirects to Argus on :8081). Stdlib only.
 """
+import hmac
 import html
 import json
 import os
@@ -57,6 +64,8 @@ ZBX_NGINX = "/etc/zabbix/nginx.conf"
 ZBX_PHP_FPM = "/etc/zabbix/php-fpm.conf"
 AGENT2_DROPIN = "/etc/zabbix/zabbix_agent2.d/argus.conf"
 NGINX_REDIRECT = "/etc/nginx/conf.d/argus-port80.conf"
+NGINX_HTTPS = "/etc/nginx/conf.d/argus-https.conf"
+WEB_CERT_DIR = "/etc/nginx/argus"                      # the VM's own https certificate for Argus
 PKI_DIR = "/etc/argus/pki"                             # mounted read-only into the core as /ca
 ZBX_CERTS = "/etc/zabbix/certs"
 CA_CN = "Monitoring Core CA"                           # matches deploy/pki/gen-certs.sh
@@ -66,6 +75,9 @@ ARGUS_URL = "http://127.0.0.1:8081"
 ARGUS_UID = "65532"                                    # the distroless core's nonroot uid
 FIRSTBOOT_SERVICE = "argus-firstboot.service"
 LISTEN = ("0.0.0.0", 80)
+ISSUE_FILE = "/etc/issue.d/argus-setup.issue"
+CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/L: it's typed from a console
+CODE_MAX_FAILURES = 10
 
 KEYMAPS = [("us", "US English"), ("uk", "UK English"), ("it", "Italian"), ("de", "German"),
            ("fr", "French"), ("es", "Spanish"), ("pt-latin1", "Portuguese")]
@@ -85,6 +97,7 @@ STEPS = [
     ("database", "Initializing the database"),
     ("pki", "Generating the monitoring PKI"),
     ("zabbix", "Starting Zabbix"),
+    ("https", "Enabling HTTPS"),
     ("accounts", "Securing Zabbix accounts"),
     ("argus", "Starting Argus"),
     ("finish", "Finishing up"),
@@ -146,6 +159,38 @@ def gen_password(n=24):
 def primary_ip():
     ips = [ip for ip in sh("hostname", "-I").split() if not ip.startswith("127.")]
     return ips[0] if ips else "<this-vm>"
+
+
+def gen_setup_code():
+    raw = "".join(secrets.choice(CODE_ALPHABET) for _ in range(8))
+    return raw[:4] + "-" + raw[4:]
+
+
+def announce_code(code):
+    """Show the setup code where only the console can see it: the login banner (/etc/issue.d, read
+    by agetty at each prompt) and the console itself, right now."""
+    text = ("\n  Argus core setup: open http://%s/ in a browser on this network\n"
+            "  and enter the setup code  %s\n\n" % (primary_ip(), code))
+    try:
+        os.makedirs(os.path.dirname(ISSUE_FILE), exist_ok=True)
+        with open(ISSUE_FILE, "w", encoding="utf-8") as fh:
+            fh.write(text)
+    except Exception:
+        pass
+    for dev in ("/dev/console", "/dev/tty1"):
+        try:
+            with open(dev, "w") as fh:
+                fh.write(text)
+        except Exception:
+            pass
+    print("argus-core-firstboot: setup code %s (shown on the console)" % code, flush=True)
+
+
+def clear_code_banner():
+    try:
+        os.remove(ISSUE_FILE)
+    except Exception:
+        pass
 
 
 def replace_in_file(path, pattern, repl, append_if_missing=None):
@@ -215,7 +260,8 @@ def step_system(cfg, state):
     user = cfg["linux_user"]
     if subprocess.run(["id", "-u", user], capture_output=True).returncode != 0:
         run(["useradd", "-m", "-s", "/bin/bash", "-G", "sudo", user])
-    run(["usermod", "-aG", "docker", user], check=False)
+    # sudo is the whole privilege; a docker-group membership would be a second, unlogged root.
+    run(["gpasswd", "-d", user, "docker"], check=False)
     run(["chpasswd"], input_text="%s:%s\n" % (user, cfg["linux_password"]))
 
 
@@ -380,6 +426,54 @@ $IMAGE_FORMAT_DEFAULT  = IMAGE_FORMAT_PNG;
         run(["systemctl", "restart", svc], timeout=180)
 
 
+def step_https(cfg, state):
+    """Argus over https on :443. nginx terminates TLS with a certificate for this VM (its hostname
+    and address) signed by the monitoring CA, so installing ca.crt on a PC makes the warning go
+    away, and proxies to the core on 127.0.0.1:8081 with the forwarded headers Argus reads from a
+    trusted proxy (seeded as 127.0.0.1 in the argus step)."""
+    os.makedirs(WEB_CERT_DIR, exist_ok=True)
+    os.chmod(WEB_CERT_DIR, 0o700)
+    ca_crt, ca_key = os.path.join(PKI_DIR, "ca.crt"), os.path.join(PKI_DIR, "ca.key")
+    crt, key = os.path.join(WEB_CERT_DIR, "argus-web.crt"), os.path.join(WEB_CERT_DIR, "argus-web.key")
+    ip = primary_ip()
+    if not os.path.exists(crt):
+        csr, ext = crt + ".csr", crt + ".ext"
+        run(["openssl", "req", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", csr,
+             "-subj", "/CN=" + cfg["hostname"]], timeout=120)
+        san = "DNS:" + cfg["hostname"]
+        if re.fullmatch(r"[0-9.]+|[0-9a-fA-F:]+", ip):
+            san += ",IP:" + ip
+        with open(ext, "w", encoding="utf-8") as fh:
+            fh.write("subjectAltName=%s\nextendedKeyUsage=serverAuth\nbasicConstraints=CA:FALSE\n" % san)
+        run(["openssl", "x509", "-req", "-in", csr, "-CA", ca_crt, "-CAkey", ca_key, "-CAcreateserial",
+             "-out", crt, "-days", "730", "-sha256", "-extfile", ext], timeout=120)
+        os.unlink(csr)
+        os.unlink(ext)
+        os.chmod(key, 0o600)
+    with open(NGINX_HTTPS, "w", encoding="utf-8") as fh:
+        fh.write("# Written by the Argus core appliance first-boot setup: Argus over https.\n"
+                 "server {\n"
+                 "    listen 443 ssl default_server;\n"
+                 "    server_name _;\n"
+                 "    ssl_certificate %s;\n"
+                 "    ssl_certificate_key %s;\n"
+                 "    ssl_protocols TLSv1.2 TLSv1.3;\n"
+                 "    ssl_prefer_server_ciphers off;\n"
+                 "    client_max_body_size 8m;\n"
+                 "    location / {\n"
+                 "        proxy_pass http://127.0.0.1:8081;\n"
+                 "        proxy_http_version 1.1;\n"
+                 "        proxy_set_header Host $host;\n"
+                 "        proxy_set_header X-Forwarded-For $remote_addr;\n"
+                 "        proxy_set_header X-Forwarded-Proto https;\n"
+                 "        proxy_set_header X-Forwarded-Host $host;\n"
+                 "        proxy_read_timeout 90s;\n"
+                 "    }\n"
+                 "}\n" % (crt, key))
+    run(["nginx", "-t"], timeout=30)
+    run(["systemctl", "reload-or-restart", "nginx"], timeout=60)
+
+
 def step_accounts(cfg, state):
     # Wait for the frontend API (php-fpm warm-up + first zabbix-server start).
     deadline = time.time() + 300
@@ -515,7 +609,9 @@ def step_argus(cfg, state):
 
     # Seed the UI-editable settings through the API (not env) so they stay changeable in Settings.
     cookie = argus_login(cfg["email"], cfg["argus_password"])
-    values = {"timezone": cfg["timezone"]}
+    # nginx on this VM is the proxy in front of Argus: its forwarded headers (client address, https)
+    # are believed from 127.0.0.1 only. Editable in Settings, like the Public URL.
+    values = {"timezone": cfg["timezone"], "trust_proxy": "127.0.0.1"}
     if cfg.get("public_url"):
         values["public_url"] = cfg["public_url"]
     argus_patch_settings(cookie, values)
@@ -533,13 +629,19 @@ def step_finish(cfg, state):
     except FileNotFoundError:
         pass
 
-    # Park a redirect on :80 so http://<vm>/ lands on Argus from now on. Written here, but nginx only
-    # picks it up when this service exits and releases the port (main() reloads nginx after shutdown).
+    # Park a redirect on :80 so http://<vm>/ lands on Argus (over https) from now on: the Public URL
+    # when it is https, else this VM's own address (never the request's Host header, which a client
+    # chooses). Written here, but nginx only picks it up when this service exits and releases the port
+    # (main() reloads nginx after shutdown).
+    target = "https://$server_addr$request_uri"
+    pu = (cfg.get("public_url") or "").rstrip("/")
+    if pu.startswith("https://"):
+        target = pu + "$request_uri"
     with open(NGINX_REDIRECT, "w", encoding="utf-8") as fh:
         fh.write("# Written by the Argus core appliance first-boot setup: the setup page is gone;\n"
-                 "# send http://<vm>/ visitors to Argus.\n"
+                 "# send http://<vm>/ visitors to Argus over https.\n"
                  "server {\n    listen 80 default_server;\n    server_name _;\n"
-                 "    return 301 http://$host:8081$request_uri;\n}\n")
+                 "    return 301 %s;\n}\n" % target)
 
     write_json(DONE_PATH, {"email": cfg["email"], "hostname": cfg["hostname"], "done_at": int(time.time())})
     try:
@@ -552,8 +654,8 @@ def step_finish(cfg, state):
 
 
 STEP_FUNCS = {"system": step_system, "database": step_database, "pki": step_pki,
-              "zabbix": step_zabbix, "accounts": step_accounts, "argus": step_argus,
-              "finish": step_finish}
+              "zabbix": step_zabbix, "https": step_https, "accounts": step_accounts,
+              "argus": step_argus, "finish": step_finish}
 
 
 # ---------------------------------------------------------------- orchestrator
@@ -572,7 +674,7 @@ class Orchestrator:
                 "state": self.overall,
                 "detail": self.detail,
                 "steps": [{"key": k, "label": lbl, "state": self.state_of[k]} for k, lbl in STEPS],
-                "argus_url": "http://%s:8081/" % primary_ip(),
+                "argus_url": "https://%s/" % primary_ip(),
             }
 
     def running(self):
@@ -722,7 +824,7 @@ def options_html(pairs, selected):
     return "\n".join(out)
 
 
-def form_page(error="", vals=None):
+def form_page(error="", vals=None, csrf=""):
     v = vals or {}
     ip = primary_ip()
     d = lambda key, default="": html.escape(v.get(key) or default)  # noqa: E731
@@ -734,6 +836,10 @@ def form_page(error="", vals=None):
   credential is created now, for this instance only.</p>
   {err}
   <form method="post" action="/">
+    <input type="hidden" name="csrf" value="{html.escape(csrf)}">
+    <label for="s">Setup code</label>
+    <input id="s" name="setup_code" placeholder="XXXX-XXXX" autocomplete="off" required>
+    <div class="sub">Shown on this VM's console (the hypervisor's console window), so only someone who can see it can set up this core.</div>
     <h2>System</h2>
     <div class="row"><div>
       <label for="h">Hostname</label>
@@ -770,9 +876,10 @@ def form_page(error="", vals=None):
       <label for="ap">Argus admin password <span style="font-weight:400;color:var(--faint)">(blank = administrator password)</span></label>
       <input id="ap" name="argus_password" type="password">
       <label for="pu">Public URL</label>
-      <input id="pu" name="public_url" value="{d('public_url', 'http://%s:8081' % ip)}">
-      <div class="sub">External base URL for links in notifications; set your reverse-proxy FQDN here if
-      you have one. Changeable later in Argus &rarr; Settings.</div>
+      <input id="pu" name="public_url" value="{d('public_url', 'https://%s' % ip)}">
+      <div class="sub">The address people open Argus at; links in notifications use it, and probes check
+      in there. Argus is served over https on this VM (a certificate from its own CA). Set your
+      reverse-proxy FQDN here if you have one. Changeable later in Argus &rarr; Settings.</div>
     </details>
 
     <button type="submit">Set up this core</button>
@@ -790,10 +897,11 @@ def render_steps(snap):
     return "\n".join(items)
 
 
-def progress_page(snap):
+def progress_page(snap, csrf=""):
     if snap["state"] == "failed":
         result = ('<div class="result bad" id="result">Setup failed: ' + html.escape(snap["detail"]) +
-                  '</div><form method="post" action="/retry"><button type="submit">Retry from the failed step</button></form>'
+                  '</div><form method="post" action="/retry"><input type="hidden" name="csrf" value="' + html.escape(csrf) + '">'
+                  '<button type="submit">Retry from the failed step</button></form>'
                   '<form method="get" action="/"><input type="hidden" name="edit" value="1">'
                   '<button class="ghost" type="submit">Change the answers</button></form>')
     elif snap["state"] == "done":
@@ -840,11 +948,14 @@ def success_fragment():
     return f"""
   <div class="result ok">✓ Your monitoring core is ready.</div>
   <div class="next">
-    <b>Argus:</b> <a href="http://{ip}:8081/">http://{ip}:8081/</a> &mdash; sign in as <b>{email}</b>.<br>
+    <b>Argus:</b> <a href="https://{ip}/">https://{ip}/</a> &mdash; sign in as <b>{email}</b>.
+    Your browser will warn about the certificate once: it is signed by this core's own CA
+    (<code>/etc/argus/pki/ca.crt</code>); install that CA on your PCs, or put your own certificate on
+    the reverse proxy later.<br>
     <b>Zabbix UI</b> (engine room, rarely needed): <a href="http://{ip}:8080/">http://{ip}:8080/</a> &mdash; user <b>Admin</b>.<br><br>
     Next steps: add your first probe (Argus &rarr; <b>Probes</b> &rarr; Add probe), and take a
     hypervisor snapshot of this VM. From now on <a href="http://{ip}/">http://{ip}/</a> redirects to
-    Argus &mdash; this setup page is gone after you leave it.
+    Argus over https &mdash; this setup page is gone after you leave it.
   </div>
 """
 
@@ -885,7 +996,7 @@ def validate(form):
     pu = vals["public_url"]
     if pu:
         u = urlparse(pu)
-        if u.scheme not in ("http", "https") or not u.netloc:
+        if u.scheme not in ("http", "https") or not u.netloc or re.search(r"[\s'\"\\]", pu):
             return None, "Public URL must start with http:// or https://."
         pu = pu.rstrip("/")
 
@@ -909,8 +1020,25 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Frame-Options", "DENY")
         self.end_headers()
         self.wfile.write(data)
+
+    def _code_ok(self, form):
+        """The setup code check: constant-time, counted, replaced after too many misses."""
+        given = (form.get("setup_code", [""])[0] or "").strip().upper().replace(" ", "")
+        want = self.server.setup_code
+        if hmac.compare_digest(given, want) or hmac.compare_digest(given, want.replace("-", "")):
+            self.server.code_failures = 0
+            return True
+        self.server.code_failures += 1
+        time.sleep(1)
+        if self.server.code_failures >= CODE_MAX_FAILURES:
+            self.server.setup_code = gen_setup_code()
+            self.server.code_failures = 0
+            announce_code(self.server.setup_code)
+        return False
 
     def _redirect(self, location="/"):
         # Post-Redirect-Get: a POST always answers with a 303 to a GET, so the progress page is only
@@ -932,18 +1060,21 @@ class Handler(BaseHTTPRequestHandler):
             cfg = read_json(CONFIG_PATH)
             safe = {k: cfg.get(k, "") for k in ("hostname", "keymap", "timezone", "email",
                                                 "linux_user", "public_url")}
-            self._send(form_page(vals=safe))
+            self._send(form_page(vals=safe, csrf=self.server.csrf))
             return
         if os.path.exists(CONFIG_PATH):
-            self._send(progress_page(ORCH.snapshot()))
+            self._send(progress_page(ORCH.snapshot(), csrf=self.server.csrf))
             return
-        self._send(form_page())
+        self._send(form_page(csrf=self.server.csrf))
 
     def do_POST(self):
-        length = int(self.headers.get("Content-Length", 0) or 0)
-        form = parse_qs(self.rfile.read(length).decode("utf-8"), keep_blank_values=True)
+        length = min(int(self.headers.get("Content-Length", 0) or 0), 16384)
+        form = parse_qs(self.rfile.read(length).decode("utf-8", "replace"), keep_blank_values=True)
         if setup_done():
             self._redirect("/")
+            return
+        if not hmac.compare_digest(form.get("csrf", [""])[0], self.server.csrf):
+            self._send(form_page(error="This form is stale; reload the page and try again.", csrf=self.server.csrf), status=400)
             return
         if self.path.startswith("/retry"):
             if os.path.exists(CONFIG_PATH) and not ORCH.running():
@@ -953,13 +1084,18 @@ class Handler(BaseHTTPRequestHandler):
         if ORCH.running():
             self._redirect("/")
             return
+        keep = {k: form.get(k, [""])[0] for k in ("hostname", "keymap", "timezone", "email",
+                                                  "linux_user", "public_url")}
+        if not self._code_ok(form):
+            self._send(form_page(error="That setup code isn't right. It's shown on this VM's console.",
+                                 vals=keep, csrf=self.server.csrf), status=403)
+            return
         cfg, err = validate(form)
         if not cfg:
-            keep = {k: form.get(k, [""])[0] for k in ("hostname", "keymap", "timezone", "email",
-                                                      "linux_user", "public_url")}
-            self._send(form_page(error=err, vals=keep), status=400)
+            self._send(form_page(error=err, vals=keep, csrf=self.server.csrf), status=400)
             return
         write_json(CONFIG_PATH, cfg)
+        clear_code_banner()
         ORCH.start(fresh=True)  # edited answers rerun every (idempotent) step against the new values
         self._redirect("/")
 
@@ -985,14 +1121,20 @@ def main():
         subprocess.run(["systemctl", "disable", FIRSTBOOT_SERVICE], check=False)
         return 0
     httpd = ThreadingHTTPServer(LISTEN, Handler)
+    httpd.csrf = secrets.token_urlsafe(24)
+    httpd.setup_code = gen_setup_code()
+    httpd.code_failures = 0
     if os.path.exists(CONFIG_PATH):
         print("argus-core-firstboot: resuming an interrupted setup", flush=True)
         ORCH.start(fresh=False)
+    else:
+        announce_code(httpd.setup_code)
     threading.Thread(target=monitor, args=(httpd,), daemon=True).start()
     print("argus-core-firstboot: serving setup page on http://%s:%d/" % LISTEN, flush=True)
     httpd.serve_forever()
     # We only get here after monitor() saw setup-done: retire this service and let nginx take :80
     # (the finish step already wrote the redirect site).
+    clear_code_banner()
     subprocess.run(["systemctl", "disable", FIRSTBOOT_SERVICE], check=False)
     subprocess.run(["systemctl", "reload-or-restart", "nginx"], check=False)
     return 0

@@ -11,6 +11,29 @@ GitHub Release from the matching section below.
 
 ---
 
+## [core-vm/v0.1.1] - 2026-09-29
+
+Security hardening of the core appliance golden image (review wave 2). Existing VMs are not changed
+by this; it is what a new deployment gets.
+
+**Security:**
+- **A setup code guards the first-boot page.** The one-form setup is reachable by anyone on the VM's
+  network until it completes and creates every credential of the core, so the VM now prints an
+  8-character code on its console (and the console login banner) and refuses a submission without it;
+  ten wrong codes replace it. Forms carry a per-boot CSRF field; answers are `no-store`.
+- **Argus is served over https from the start.** A new "Enabling HTTPS" step issues this VM a server
+  certificate (its hostname and address) signed by the monitoring CA and puts nginx on `:443` in
+  front of Argus, which now listens on `127.0.0.1:8081` only. The Public URL defaults to
+  `https://<vm-ip>`, Argus trusts nginx (`127.0.0.1`) as its proxy, session cookies are Secure, and
+  probes enrolled against the appliance check in over TLS. `http://<vm>/` redirects to https once
+  setup is done (to the Public URL when it is https, else the VM's own address; never to whatever
+  `Host` the request carried). Install `/etc/argus/pki/ca.crt` on your PCs to lose the browser
+  warning, or front the VM with your own certificate.
+- **SSH takes keys only** (`PasswordAuthentication no`, no root login); the administrator password
+  is for the hypervisor console. The local admin user is no longer in the `docker` group.
+- `setup-core.sh` (also used by the image build) doubles a quote inside the database password
+  before it goes into SQL, and fetches the Zabbix release package over https only.
+
 ## [0.5.13] - 2026-09-29
 
 Security hardening from a code review of the three repositories (wave 1: the core). Nothing here

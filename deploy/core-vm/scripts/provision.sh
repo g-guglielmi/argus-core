@@ -53,6 +53,14 @@ install -D -m 0600 "$FILES/argus.env.example"           /etc/argus-core/argus.en
 install -D -m 0644 /tmp/zabbix_server.conf.snippet      /etc/argus-core/zabbix_server.conf.snippet
 # First-boot setup state (config + step markers; scrubbed of secrets once setup completes).
 install -d -m 0700 /var/lib/argus-core-setup
+# The VM's own https certificate for Argus (written by the first-boot "https" step).
+install -d -m 0700 /etc/nginx/argus
+
+echo "==> hardening SSH (keys only; the hypervisor console keeps password login)"
+# The setup password is for the console. Over the network a key is required: add one from the
+# console (or through Argus later) if you want SSH.
+install -d -m 0755 /etc/ssh/sshd_config.d
+printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\n' > /etc/ssh/sshd_config.d/10-argus.conf
 # The Argus data volume (/data in the container) and the CA dir (/ca, read-only in the container).
 # The core runs as uid 65532 (distroless nonroot), so it must own what it writes.
 install -d -m 0755 /var/lib/argus-core

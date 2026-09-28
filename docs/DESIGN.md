@@ -693,7 +693,10 @@ different things:
   (paste the enroll command / claim code) on the VM's IP. This removes the hard dependency on a
   working cloud-init datasource (XCP-NG can be fiddly) and gives a graceful manual path. Idea borrowed
   from the [adsb-feeder](https://github.com/dirkhh/adsb-feeder-image) first-boot web wizard. Once a
-  token is present (either way), the service is inert on subsequent boots.
+  token is present (either way), the service is inert on subsequent boots. **The page asks for a
+  setup code** printed on the VM's console (and its login banner): anyone on the network can reach
+  the page, only someone at the console can submit it; every value is shape-checked (https enroll
+  URL unless a "lab" switch is ticked, a token, a host) before it reaches the container's env file.
 - **Never** bake a token into the image (one-token-per-image, non-reusable, leaks the secret) - the
   image stays generic; the secret is always external.
 
@@ -729,7 +732,8 @@ the first-boot service alone; the enrollment matrix is now seed ISO / first-boot
 paste path is retired). **Break-glass (§14a credential lifecycle) is implemented**: the first-boot
 service creates a per-VM `argus` sudo user with a generated password, reports it over the probe
 check-in channel to `POST /api/probes/break-glass`, and Argus stores it encrypted and reveals it to
-admins on the Probes page (**Console** button). SSH host keys regenerate on first boot
+admins on the Probes page (**Console** button); the user is in `sudo` only (no docker group), and
+SSH takes keys only (the password is for the console). SSH host keys regenerate on first boot
 (`argus-hostkeys.service`); the **console keyboard layout** is configurable per-VM (Add-probe → VM, or
 the setup page → `/etc/vconsole.conf`). **Static networking** for no-DHCP sites rides the seed too
 (`ARGUS_IP`/`ARGUS_GATEWAY`/`ARGUS_DNS` from Add-probe → VM → a static systemd-networkd file applied
@@ -838,7 +842,8 @@ one-form setup page on `http://<vm>/` (hostname · console keymap · timezone ·
 password, with per-role overrides under Advanced) and then configures everything behind a live,
 ground-truth progress page (idempotent steps; retry/edit on failure; reboot-safe resume):
 
-1. **system** - hostname/tz/keymap + the local Debian sudo user (console + SSH access).
+1. **system** - hostname/tz/keymap + the local Debian sudo user (console access; SSH keys only, no
+   docker group).
 2. **database** - `timescaledb-tune` for the deployed RAM, `zabbix` role + DB with a **generated**
    password, schema import, TimescaleDB conversion.
 3. **pki** - CA (`CN=Monitoring Core CA`) + core server cert; CA mounted RO into Argus so **probe
@@ -846,16 +851,24 @@ ground-truth progress page (idempotent steps; retry/edit on failure; reboot-safe
 4. **zabbix** - `zabbix_server.conf` (DB + TLS/tuning snippet), frontend `zabbix.conf.php` written
    directly (**the browser setup wizard never runs**), nginx `:8080`, php-fpm tz, agent2
    self-monitoring, services enabled.
-5. **accounts** - rotate the stock `Admin` password; create the **`argus-svc`** super-admin machine
+5. **https** - a server certificate for the VM (hostname + address) signed by the monitoring CA;
+   nginx on `:443` proxies to Argus on `127.0.0.1:8081` with forwarded headers; Argus trusts
+   `127.0.0.1` as its proxy (seeded in the argus step) and the Public URL defaults to `https://<ip>`.
+6. **accounts** - rotate the stock `Admin` password; create the **`argus-svc`** super-admin machine
    user and mint its **API token** (never shown to a human; rotating `Admin` never breaks Argus);
    housekeeping retention (30d/730d/compress 7d) via the API.
-6. **argus** - write `/etc/argus-core/argus.env` (token, first-admin seed via the existing
+7. **argus** - write `/etc/argus-core/argus.env` (token, first-admin seed via the existing
    `ARGUS_ADMIN_*` mechanism, generated `ARGUS_SECRET_KEY`, `/ca` + `/update` mounts), start both
    containers (systemd oneshot + docker-restart pattern from the probe VM), then seed Public URL +
    timezone through the settings API so they stay UI-editable (only the Zabbix URL/token are
    env-locked - the appliance owns its Zabbix).
-7. **finish** - scrub the one-time admin seed, park a permanent `:80 → :8081` nginx redirect, disable
-   the first-boot service.
+8. **finish** - scrub the one-time admin seed, park a permanent `:80 -> https` nginx redirect (to the
+   Public URL when https, else the VM's own address, never the request's Host), disable the
+   first-boot service.
+
+**The setup page asks for a setup code** printed on the VM's console and login banner (the page is
+open to the network until setup completes and creates every credential); forms carry a per-boot CSRF
+field and answers are `no-store`.
 
 **Credential model:** one administrator password fans out to the Debian user, Zabbix `Admin`, and the
 Argus admin (individually overridable); the DB password, the API token, and the encryption key are
@@ -864,8 +877,8 @@ machine-generated and never displayed. **The manual path stays first-class**: `s
 installer; Option B in the README covers non-Debian distros and split Zabbix/Argus layouts.
 
 **Limits:** first boot needs DHCP (static afterwards = swap the networkd file or use a reservation);
-HTTPS stays a fronting-reverse-proxy concern; Zabbix/PG package upgrades remain deliberate `apt`
-operations on the VM.
+the https certificate is signed by the appliance's own CA (install `ca.crt` or front it with your
+own); Zabbix/PG package upgrades remain deliberate `apt` operations on the VM.
 
 **Status: shipped (`core-vm/v0.1.0`, 2026-09-11).** Lab-validated on XCP-NG end to end: one-form
 setup completes the whole bring-up, sign-in works, the Zabbix connection is live, and a probe enrolled

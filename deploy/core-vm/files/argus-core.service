@@ -31,8 +31,10 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStartPre=-/usr/bin/docker rm -f argus
 ExecStartPre=-/usr/bin/docker pull ${ARGUS_CORE_IMAGE}:${ARGUS_CORE_TAG}
+# :8081 is bound to the loopback: nginx on this VM serves Argus over https on :443 and proxies here
+# (first-boot "https" step). Change to -p 8081:8080 to expose the plain port on the LAN as well.
 ExecStart=/usr/bin/docker run -d --name argus --restart unless-stopped \
-  -p 8081:8080 \
+  -p 127.0.0.1:8081:8080 \
   --add-host host.docker.internal:host-gateway \
   -v /var/lib/argus-core:/data \
   -v /etc/argus/pki:/ca:ro \

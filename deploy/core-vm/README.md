@@ -37,7 +37,8 @@ The setup page collects: **hostname**, **console keyboard layout**, **timezone**
 username, and the Public URL). Then, step by step, with live progress and ground-truth checks:
 
 1. **System** - hostname, timezone, console keymap, and the **local Debian sudo user** (default
-   `argus`, in `sudo` + `docker` groups) with the password you chose - your console/SSH access.
+   `argus`) with the password you chose - your hypervisor-console access (SSH takes keys only; add
+   your public key from the console if you want it).
 2. **Database** - `timescaledb-tune` against *this* VM's RAM, then the `zabbix` role + database with a
    **generated password** (root-only in the configs, never shown), the Zabbix schema import (the long
    step), and the TimescaleDB conversion.
@@ -47,16 +48,20 @@ username, and the Public URL). Then, step by step, with live progress and ground
 4. **Zabbix** - `zabbix_server.conf` (DB + the TLS/tuning snippet), the frontend `zabbix.conf.php`
    (what the browser wizard would have written - so the wizard never runs), nginx on **:8080**,
    php-fpm timezone, agent2 self-monitoring, services enabled.
-5. **Accounts** - signs in with the stock `Admin`/`zabbix`, **rotates the Admin password** to yours,
+5. **HTTPS** - a server certificate for this VM (its hostname and address) signed by the monitoring
+   CA, and nginx on **:443** in front of Argus, which listens on the loopback only. Install
+   `/etc/argus/pki/ca.crt` on your PCs and the browser warning goes away.
+6. **Accounts** - signs in with the stock `Admin`/`zabbix`, **rotates the Admin password** to yours,
    creates the **`argus-svc`** super-admin machine account and mints its **API token** (Argus talks
    through this token; a human never sees or handles it - and rotating `Admin` later never breaks
    Argus), and sets housekeeping retention (history 30d, trends 2y, compression after 7d).
-6. **Argus** - writes `/etc/argus-core/argus.env` (token, first-admin seed, generated
+7. **Argus** - writes `/etc/argus-core/argus.env` (token, first-admin seed, generated
    `ARGUS_SECRET_KEY`, CA + update-dir mounts), starts the **`argus`** + **`argus-updater`**
-   containers, waits for health, signs in as your admin and seeds **Public URL + timezone** through
-   the settings API (so they stay editable in the UI - not env-locked).
-7. **Finish** - scrubs the one-time `ARGUS_ADMIN_PASSWORD` from `argus.env`, parks a
-   **`:80 → :8081` redirect** on nginx (the setup page retires and `http://<vm>/` lands on Argus
+   containers, waits for health, signs in as your admin and seeds **Public URL + timezone** and the
+   trusted proxy (`127.0.0.1`, nginx) through the settings API (so they stay editable in the UI -
+   not env-locked).
+8. **Finish** - scrubs the one-time `ARGUS_ADMIN_PASSWORD` from `argus.env`, parks a
+   **`:80 → https` redirect** on nginx (the setup page retires and `http://<vm>/` lands on Argus
    from then on), and disables the first-boot service.
 
 Every step is **idempotent**: a failure shows red with the real error and offers **Retry** (same
@@ -89,8 +94,12 @@ Machine-generated and never displayed: the **database password** (in `zabbix_ser
 - **OS patching, core flavor** (DESIGN §14c): security-only unattended-upgrades, **no auto-reboot** -
   the reboot is operator-scheduled from Argus **Settings → OS updates**; the host reporter and
   reboot-window watcher are baked in via `setup-core.sh`.
-- **Ports**: Argus on **:8081**, Zabbix UI/API on **:8080**, proxies inbound on **:10051**, and
-  **:80** serves the setup page first, then a permanent redirect to Argus.
+- **Ports**: Argus on **:443** (https, via nginx; the container itself listens on `127.0.0.1:8081`
+  only), Zabbix UI/API on **:8080**, proxies inbound on **:10051**, and **:80** serves the setup page
+  first, then a permanent redirect to Argus over https.
+- **The setup page asks for a setup code** that the VM prints on its console (the hypervisor's
+  console window, and the console login banner). Anyone on the network can reach the page; only
+  someone who can see the console can use it.
 - The Argus container reaches the host's Zabbix frontend as `host.docker.internal` (mapped to the
   Docker bridge gateway) - stable across DHCP address changes.
 
@@ -117,19 +126,21 @@ packer build argus-core-vm.pkr.hcl        # -> output/argus-core-vm.qcow2
    Hyper-V; gunzip first). Give it **2+ vCPU and 4+ GB RAM** (more for bigger fleets, §14b).
 2. **Boot it on a network with DHCP** and find its address (your hypervisor console shows it, or your
    DHCP leases). First boot needs DHCP - see *Scope* below for static addressing.
-3. **Browse to `http://<vm-ip>/`**, fill in the form, and wait for *"Your monitoring core is ready"*
-   (a few minutes; the schema import is the long step).
-4. Sign in to **Argus at `http://<vm-ip>:8081/`**, add your first probe (**Probes → Add probe** - the
+3. **Browse to `http://<vm-ip>/`**, type the **setup code** shown on the VM's console, fill in the
+   form, and wait for *"Your monitoring core is ready"* (a few minutes; the schema import is the
+   long step).
+4. Sign in to **Argus at `https://<vm-ip>/`** (accept the certificate once, or install
+   `/etc/argus/pki/ca.crt` on your PC), add your first probe (**Probes → Add probe** - the
    enrollment PKI already works), and take a **hypervisor snapshot**.
 
-Afterwards, `http://<vm-ip>/` redirects to Argus. The Zabbix UI stays available on `:8080`
-(user `Admin`) for engine-room work.
+Afterwards, `http://<vm-ip>/` redirects to Argus over https. The Zabbix UI stays available on
+`:8080` (user `Admin`) for engine-room work.
 
-**Fronting it with HTTPS** (recommended before any internet exposure): point your reverse proxy
-(HAProxy/nginx/Caddy) at `:8081`, then update **Settings → Public URL** and add
-`ARGUS_COOKIE_SECURE=true` / `ARGUS_TRUST_PROXY=true` (and `ARGUS_RP_*` for passkeys) to
-`/etc/argus-core/argus.env` + `systemctl restart argus-core`. Remote probes additionally need
-**:10051** published/forwarded to the VM.
+**Your own certificate or FQDN**: either replace `/etc/nginx/argus/argus-web.crt` + `.key` and
+reload nginx, or put your reverse proxy (HAProxy/nginx/Caddy) in front of `:443`, then update
+**Settings → Public URL** and add the proxy's address to **Settings → Reverse proxy** (and
+`ARGUS_RP_*` for passkeys in `/etc/argus-core/argus.env` + `systemctl restart argus-core`). Remote
+probes additionally need **:10051** published/forwarded to the VM.
 
 ## Scope / notes
 
@@ -146,6 +157,9 @@ Afterwards, `http://<vm-ip>/` redirects to Argus. The Zabbix UI stays available 
   a reboot never to move versions. In-app updates (Settings → About) work from day one via the baked
   updater sidecar.
 - The setup form travels over plain HTTP on your LAN, once, like the probe's first-boot page - do the
-  setup from the network you trust.
+  setup from the network you trust. The setup code keeps a bystander on that network from running it
+  for you.
+- SSH accepts keys only. The administrator password works at the hypervisor console; from there,
+  `~argus/.ssh/authorized_keys` opens SSH.
 - Refresh the golden image periodically (quarterly / on a Debian point release) so new deployments
   ship already-patched.

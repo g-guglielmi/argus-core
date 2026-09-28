@@ -161,13 +161,23 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   community hidden from viewers, fail-closed at-rest encryption with a canary and a reset switch,
   atomic enrollment tokens, macro patterns for command-line values, validated updater tags. See
   DESIGN section 4. - _(BE+FE)_ M
-- [ ] **Security review, wave 2 (probe image, updater, appliances, supply chain)** - stop sourcing
-  `proxy.env` as shell (validate, keep it root-owned); https-only check-in on the probe side; a
-  one-time setup code on the first-boot pages; SSH password login off and no docker group on the
-  appliance users; image tags validated in the updater, digest hand-out and cosign signing +
-  verification; pinned actions/installers, job-level workflow permissions, `:latest` only from main;
-  UniFi controller keys scoped per site; TLS pinning for UniFi/XAPI; passwords off argv; an
-  intermediate enrollment CA. Each probe/updater change is a fleet release. - _(ops+BE)_ M-L
+- [x] **Security review, wave 1 (fleet side)** - `proxy.env` read as data and validated on the probe
+  (`probe/v7.0.31-r4`) and in the updater, image tags validated, https-only check-in unless
+  `ARGUS_ALLOW_INSECURE_CHECKIN=true`, update dir no longer world-writable (`updater v0.2.6`).
+- [x] **Security review, wave 2a (appliances)** - a console-printed setup code, CSRF field and
+  `no-store` on both first-boot pages; every value shape-checked; the core appliance serves Argus
+  over https from first boot (nginx `:443` with a CA-signed certificate, Argus on the loopback,
+  trusted proxy seeded); SSH keys only and no docker group on the appliance users
+  (`probe-vm/v0.3.3`, `core-vm/v0.1.1`).
+- [ ] **Security review, wave 2b (update chain + supply chain)** - the core resolves the digest of
+  the tag it hands out and the updater verifies the pulled image against it (tags stay `latest` /
+  `testing`; a mismatch is refused, not applied); pinned actions/installers, job-level workflow
+  permissions, provenance/SBOM, probe `:latest` only from main. - _(ops+BE)_ M
+- [ ] **Security review, wave 2c (probe-side credentials)** - UniFi controller keys scoped per
+  site; certificate verification toward UniFi controllers and XCP-NG hosts (trust on first use with
+  the fingerprint shown, plus a per-target "ignore certificate" switch); break-glass reveal logged
+  with the admin. Deferred by decision: collector passwords off argv (documented instead), an
+  intermediate enrollment CA (post-production). - _(BE+FE, probe image)_ M
 - [ ] **Sizing pass** before the ~6000-sensor deployment (proxies, DB, caches, NVPS) - analysis
 - [ ] **Server-side census/counts** - move the `/api/sensors` full census server-side at scale - _(BE)_ M
 - [ ] **Probe process autoscaling** - size each probe's Zabbix process counts (ICMP pingers first,

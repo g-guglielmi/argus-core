@@ -39,7 +39,7 @@ ZBX_RELEASE_DEB="${ZBX_RELEASE_DEB:-https://repo.zabbix.com/zabbix/${ZBX_MAJOR}/
 echo "==> [1/8] Zabbix ${ZBX_MAJOR} repo (${DISTRO_ID}/${CODENAME})"
 echo "    using ${ZBX_RELEASE_DEB}"
 tmp="$(mktemp -d)"; pushd "$tmp" >/dev/null
-wget -q "$ZBX_RELEASE_DEB" -O zbx.deb || {
+wget -q --https-only "$ZBX_RELEASE_DEB" -O zbx.deb || {
   echo "!! Could not fetch the zabbix-release deb. Confirm the URL for ${DISTRO_ID} ${CODENAME}"
   echo "   at https://repo.zabbix.com/zabbix/${ZBX_MAJOR}/release/${DISTRO_ID}/ and re-run with ZBX_RELEASE_DEB=..."
   exit 1
@@ -112,8 +112,10 @@ timescaledb-tune --quiet --yes || true
 systemctl restart postgresql
 
 echo "==> [5/8] Create DB + user"
+# The password is an SQL string literal here: a quote inside it is doubled, not left to break out.
+DBPASS_SQL="${DBPASS//\'/\'\'}"
 sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='zabbix'" | grep -q 1 || \
-  sudo -u postgres psql -c "CREATE USER zabbix WITH PASSWORD '${DBPASS}';"
+  sudo -u postgres psql -c "CREATE USER zabbix WITH PASSWORD '${DBPASS_SQL}';"
 sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='zabbix'" | grep -q 1 || \
   sudo -u postgres createdb -O zabbix zabbix
 sudo -u postgres psql -d zabbix -c "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"
