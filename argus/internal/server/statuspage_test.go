@@ -171,6 +171,7 @@ func TestReachabilityReading(t *testing.T) {
 	for _, c := range []struct{ key, v, want string }{
 		{"icmpping", "0", "No reply to ping"}, {"icmpping", "1", "Replying to ping"},
 		{"nut.reachable", "0", "Not reachable"}, {"xcp.reachable", "1", "Reachable"},
+		{"net.tcp.service[https,,443]", "0", "Not reachable"},
 	} {
 		if got, ok := reachabilityReading(c.key, c.v); !ok || got != c.want {
 			t.Errorf("reachabilityReading(%q, %q) = %q %v", c.key, c.v, got, ok)

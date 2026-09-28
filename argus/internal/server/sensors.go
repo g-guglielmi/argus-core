@@ -172,9 +172,14 @@ func (s *Server) sensorCensus(ctx context.Context) ([]sensorRow, error) {
 		if state == "ok" && !supported {
 			continue // unsupported & otherwise-ok = "unknown"; don't count as ok
 		}
+		// A 1/0 reachability (ping, a service check, a collector's "reachable") reads as words.
+		value, units := it.LastValue, it.Units
+		if r, ok := reachabilityReading(it.Key, it.LastValue); ok {
+			value, units = r, ""
+		}
 		out = append(out, sensorRow{
 			key: it.Key, HostID: host.HostID, HostName: host.Name, ItemID: it.ItemID, Name: it.Name,
-			Label: label, Category: cat, Value: it.LastValue, Units: it.Units, LastClock: atoi64(it.LastClock),
+			Label: label, Category: cat, Value: value, Units: units, LastClock: atoi64(it.LastClock),
 			State: state, Numeric: numericValueType(it.ValueType), Supported: supported,
 			Priority: priorityOf(prioMap, it.ItemID), Severity: itemSev[it.ItemID], Reason: itemReason[it.ItemID],
 			Since: itemSince[it.ItemID], EventIDs: itemEvents[it.ItemID],

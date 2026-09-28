@@ -40,7 +40,7 @@ var collectorMasterKeys = []string{"nut.reachable", "xcp.reachable", "linux.ssh.
 // isReachabilityKey reports whether a master's value is a 1/0 reachability (ping or a collector), so
 // a fresh 0 means "going down" even before its trigger fires.
 func isReachabilityKey(key string) bool {
-	if key == defaultMasterKey {
+	if key == defaultMasterKey || strings.HasPrefix(key, "net.tcp.service[") { // ping, a TCP/HTTP(S) service check
 		return true
 	}
 	for _, k := range collectorMasterKeys {
