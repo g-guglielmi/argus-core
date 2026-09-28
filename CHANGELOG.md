@@ -30,6 +30,13 @@ GitHub Release from the matching section below.
   A channel set to High and up now also hears when an incident it was alerted about ends, even if it
   eased to a warning first; a delayed channel that was never alerted gets no recovery either.
 
+**Fixed:**
+- Adding a device whose name has characters Zabbix doesn't allow in a host name (like `+`, `#`,
+  `/` or accented letters) no longer fails with "Incorrect characters used for host name". The name
+  you typed stays the visible name, and Argus derives a technical name Zabbix accepts
+  ("U6+ Salotto" becomes "U6_ Salotto"). Editing the technical name in host settings explains which
+  characters it can use.
+
 ## [0.5.8] - 2026-09-28
 
 **Added:**
