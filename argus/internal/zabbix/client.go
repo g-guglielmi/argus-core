@@ -656,6 +656,7 @@ type UnsupportedItem struct {
 	Name         string       `json:"name"`
 	Key          string       `json:"key_"`
 	Error        string       `json:"error"`
+	LastClock    string       `json:"lastclock"`     // last value's time ("0" = none in recent history)
 	Delay        string       `json:"delay"`         // update interval ("1m", "30s"; "0" for a dependent item)
 	MasterItemID string       `json:"master_itemid"` // a dependent item's master ("0" otherwise)
 	Hosts        []TargetHost `json:"hosts"`
@@ -664,7 +665,7 @@ type UnsupportedItem struct {
 // UnsupportedItems returns every enabled, "not supported" sensor on a monitored host.
 func (c *Client) UnsupportedItems(ctx context.Context) ([]UnsupportedItem, error) {
 	params := map[string]any{
-		"output":      []string{"itemid", "hostid", "name", "key_", "error", "delay", "master_itemid"},
+		"output":      []string{"itemid", "hostid", "name", "key_", "error", "lastclock", "delay", "master_itemid"},
 		"selectHosts": []string{"hostid", "name", "status"},
 		"filter":      map[string]any{"state": 1, "status": 0},
 		"monitored":   true,

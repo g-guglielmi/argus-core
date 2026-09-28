@@ -19,6 +19,11 @@ import (
 // the Overview, the host page, acknowledging and the whole notifier (alert delay, master holds,
 // escalation, reminders, recovery) treat them like any other.
 //
+// Only a sensor that has collected before "stopped": one that never had a value (a process that isn't
+// started, a second WAN a gateway doesn't have, a reading the hardware doesn't report) is a sensor that
+// doesn't apply, not an outage, so it stays silent - as does one gone quiet for over a day, which
+// Zabbix no longer reports a last value for.
+//
 // A sensor that is supported but gets no new values isn't one of them: many sensors store only
 // changes, so their last value can legitimately be hours old. A device or probe that goes silent is
 // caught by its master sensor instead.
@@ -44,13 +49,17 @@ type synthSet struct {
 	problems []zabbix.Problem
 	targets  map[string]zabbix.TriggerTarget
 	readings map[string]string
+	// silent: Argus problem ids for sensors that are not supported but don't alert (never collected, or
+	// not failing long enough yet). The notifier keeps their baseline and drops any alert already sent
+	// for them without a recovery notice.
+	silent map[string]bool
 }
 
 // syntheticProblems gathers the Argus-raised problems. record = true (the notifier) keeps the
 // "unsupported since" table in step; the read-only API paths pass false and only look it up, so a
 // sensor they see first isn't counted as unsupported for 10 minutes yet.
 func syntheticProblems(ctx context.Context, st *store.Store, zbx *zabbix.Client, record bool) synthSet {
-	out := synthSet{targets: map[string]zabbix.TriggerTarget{}, readings: map[string]string{}}
+	out := synthSet{targets: map[string]zabbix.TriggerTarget{}, readings: map[string]string{}, silent: map[string]bool{}}
 	now := time.Now().Unix()
 
 	if items, err := zbx.UnsupportedItems(ctx); err == nil {
@@ -78,10 +87,11 @@ func syntheticProblems(ctx context.Context, st *store.Store, zbx *zabbix.Client,
 			if d, dep := masterDelay[it.MasterItemID]; dep {
 				delay = d
 			}
-			if !ok || now-start < int64(unsupportedChecks)*intervalSecs(delay) || len(it.Hosts) == 0 {
+			id := synthUnsupported + it.ItemID
+			if !ok || atoi64(it.LastClock) == 0 || now-start < int64(unsupportedChecks)*intervalSecs(delay) || len(it.Hosts) == 0 {
+				out.silent[id] = true
 				continue
 			}
-			id := synthUnsupported + it.ItemID
 			out.problems = append(out.problems, zabbix.Problem{
 				EventID: id, ObjectID: id, Name: sensorLabel(it.Key, it.Name) + " stopped collecting",
 				Severity: synthSevUnsupported, Clock: itoa64(start), Acknowledged: "0",

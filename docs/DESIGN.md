@@ -372,7 +372,10 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   channel added after a problem went live isn't sent that problem.
 - **Master sensors (dependencies):** every host has a master sensor - its ICMP ping by default
   (`icmpping`), another sensor or none per host (`host_masters`), and the Probe host's reporting
-  sensor (`zabbix[uptime]`). While the master has an open "down" problem (error level, or any "no
+  sensor (`zabbix[uptime]`). A collector-based host also has its collector's reachability sensor
+  (`nut.reachable`, `xcp.reachable`, `linux.ssh.reachable`, `adguard.running`, `hass.running`) as a
+  second master, so a stopped service alerts once as "unreachable" while the machine still pings;
+  "none" drops both. While the master has an open "down" problem (error level, or any "no
   data" one), the host's other alerts are **held**: they stay pending, and firing ones get no
   escalation or reminders. A probe's reporting sensor is also the master of **every host that proxy
   monitors** and of Zabbix's own per-proxy checks (`zabbix.proxy.*[<proxy>]` on the Zabbix server
@@ -384,7 +387,9 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
 - **Argus-raised problems:** Zabbix raises no problem when monitoring itself stops, so Argus adds its
   own, shaped like Zabbix problems (event ids `argus-unsupported-<item>` / `argus-interface-<iface>`)
   and merged into the notifier's list, the Overview and the host page: a sensor **not supported** on
-  its third failed check in a row, i.e. 2 of its own update intervals after Argus first saw it fail
+  its third failed check in a row, if it has collected before (one with no last value never applied
+  to the device, or has been dead for over a day: silent, and an alert already sent for it is
+  dropped without a recovery), i.e. 2 of its own update intervals after Argus first saw it fail
   (a dependent sensor uses its master's interval; an unreadable one counts as 1 min;
   `item_unsupported` records since when, as Zabbix doesn't say), and an **agent / SNMP / IPMI / JMX
   interface** Zabbix marks unavailable (timed from its `errors_from`). Both are High and skip the

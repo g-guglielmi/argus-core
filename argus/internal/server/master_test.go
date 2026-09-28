@@ -14,13 +14,15 @@ import (
 // sensor 100, CPU sensor 101). Host 20 is the Zabbix server, with Zabbix's per-proxy check 200.
 func testMasters(down ...string) masterSet {
 	m := masterSet{
-		byHost: map[string]masterItem{
-			"10": {itemID: "100", key: "icmpping", lastValue: "1", lastClock: 1000},
-			"70": {itemID: "700", key: "zabbix[uptime]", lastClock: 1000},
+		byHost: map[string][]masterItem{
+			"10": {{itemID: "100", key: "icmpping", lastValue: "1", lastClock: 1000}},
+			"70": {{itemID: "700", key: "zabbix[uptime]", lastClock: 1000}},
+			// A UPS read through NUT: ping plus the collector's reachability sensor.
+			"30": {{itemID: "300", key: "icmpping", lastValue: "1", lastClock: 1000}, {itemID: "301", key: "nut.reachable", lastValue: "1", lastClock: 1000}},
 		},
 		siteMaster:  map[string]masterItem{"7": {itemID: "700", key: "zabbix[uptime]", lastClock: 1000}},
 		probeHost:   map[string]string{"7": "70"},
-		hostProxy:   map[string]string{"10": "7", "70": "7", "20": "0"},
+		hostProxy:   map[string]string{"10": "7", "70": "7", "20": "0", "30": "0"},
 		proxyByName: map[string]string{"proxy-site1": "7"},
 		down:        map[string]bool{},
 	}
@@ -73,9 +75,30 @@ func TestMasterHold(t *testing.T) {
 	}
 	// A failed ping check that hasn't tripped the trigger yet holds too.
 	m := testMasters()
-	m.byHost["10"] = masterItem{itemID: "100", key: "icmpping", lastValue: "0", lastClock: 1050}
+	m.byHost["10"] = []masterItem{{itemID: "100", key: "icmpping", lastValue: "0", lastClock: 1050}}
 	if v := m.hold("10", cpu, 1010, 1100); !v.held {
 		t.Fatalf("failing ping: %+v", v)
+	}
+
+	// NUT server stopped, machine still up: the collector holds the UPS readings, and its own
+	// "unreachable" alert goes out.
+	battery := []masterRef{{id: "302", key: "nut.battery.charge"}}
+	nutUnreach := []masterRef{{id: "301", key: "nut.reachable"}}
+	if v := testMasters("301").hold("30", battery, 990, 1100); !v.held || !v.down {
+		t.Fatalf("collector down: %+v", v)
+	}
+	if v := testMasters("301").hold("30", nutUnreach, 990, 1100); v.held {
+		t.Fatalf("the collector's own alert was held: %+v", v)
+	}
+	// The machine down: ping holds the collector's alert too.
+	if v := testMasters("300", "301").hold("30", nutUnreach, 990, 1100); !v.held {
+		t.Fatalf("ping down must hold the collector alert: %+v", v)
+	}
+	// A fresh 0 from the collector holds before its trigger fires.
+	m = testMasters()
+	m.byHost["30"][1].lastValue, m.byHost["30"][1].lastClock = "0", 1050
+	if v := m.hold("30", battery, 1010, 1100); !v.held {
+		t.Fatalf("failing collector: %+v", v)
 	}
 }
 

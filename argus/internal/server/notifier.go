@@ -140,12 +140,18 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	// first time this runs, the ones already present are baselined like a fresh install's problems.
 	synth := syntheticProblems(ctx, st, zbx, true)
 	if _, done, _ := st.MetaGet(ctx, notifySynthBaselineKey); !done {
-		for _, p := range synth.problems {
-			_ = st.UpsertNotifyState(ctx, store.NotifyState{
-				EventID: p.EventID, Name: p.Name, Severity: atoi(p.Severity), State: "baseline", FirstSeen: time.Now().Unix(),
-			})
+		// Every sensor already failing and every interface already down counts as known - including
+		// those not yet old enough to be a problem.
+		baseline := func(id, name string, sev int) {
+			_ = st.UpsertNotifyState(ctx, store.NotifyState{EventID: id, Name: name, Severity: sev, State: "baseline", FirstSeen: time.Now().Unix()})
 		}
-		_ = st.MetaSet(ctx, notifySynthBaselineKey, "1")
+		for _, p := range synth.problems {
+			baseline(p.EventID, p.Name, atoi(p.Severity))
+		}
+		for id := range synth.silent {
+			baseline(id, "not supported", atoi(synthSevUnsupported))
+		}
+		_ = st.MetaSet(ctx, notifySynthBaselineKey, "2")
 	}
 	problems, targets = synth.merge(problems, targets)
 	hiddenHosts, _ := st.ActiveSuppressionMap(ctx, "hide", "host")
@@ -207,6 +213,14 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	// --- recoveries: fired problems that are no longer active ---
 	for eid, stt := range states {
 		if _, stillActive := activeIDs[eid]; stillActive {
+			continue
+		}
+		// A sensor that is still not supported but no longer counts as an outage (it never collected):
+		// keep its baseline, and drop an alert already sent for it without a recovery notice.
+		if synth.silent[eid] {
+			if stt.State != "baseline" {
+				_ = st.DeleteNotifyState(ctx, eid)
+			}
 			continue
 		}
 		// A warning that gives way to its sensor's error trigger (or the reverse) is a severity change,
@@ -504,12 +518,16 @@ func reading(ctx context.Context, zbx *zabbix.Client, itemID string, noData bool
 	if noData {
 		return noDataSince(atoi64(it.LastClock), now), ""
 	}
-	if it.Key == defaultMasterKey { // ping reachability is 1/0, which reads as nothing on its own
+	if isReachabilityKey(it.Key) { // 1/0 reachability reads as nothing on its own
+		up, down := "Reachable", "Not reachable"
+		if it.Key == defaultMasterKey {
+			up, down = "Replying to ping", "No reply to ping"
+		}
 		switch strings.TrimSpace(it.LastValue) {
 		case "0":
-			return "No reply to ping", ""
+			return down, ""
 		case "1":
-			return "Replying to ping", ""
+			return up, ""
 		}
 	}
 	return notify.FormatReading(it.LastValue, it.Units), it.Units

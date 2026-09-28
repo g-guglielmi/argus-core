@@ -18,7 +18,9 @@ import (
 // Master sensors (PRTG-style dependencies). Every host has a master sensor - its ICMP ping by default,
 // or another sensor (or none) chosen in its settings. While the master is down, the host's other
 // alerts are held: an unreachable device then sends one "unavailable" alert rather than one per
-// sensor. On top of that, a probe's own reachability is the master of its whole site: while a probe
+// sensor. A host monitored through a collector (NUT, XAPI, SSH, an HTTP API) also has the collector's
+// reachability sensor as a second master: when the service stops but the machine still pings, only
+// "monitoring is unreachable" alerts, not every sensor it feeds. On top of that, a probe's own reachability is the master of its whole site: while a probe
 // isn't reporting, nothing it monitors alerts (including Zabbix's own per-proxy checks on the Zabbix
 // server host), since none of it can be told apart from the probe being gone.
 
@@ -30,6 +32,24 @@ const (
 	// (ping needs up to 3 failed checks, a minute apart, before its trigger fires).
 	masterWaitSecs = 5 * 60
 )
+
+// collectorMasterKeys are the Argus templates' collector reachability sensors (1 = the collector
+// reaches its target, 0 = it doesn't): each one feeds the rest of its host's sensors.
+var collectorMasterKeys = []string{"nut.reachable", "xcp.reachable", "linux.ssh.reachable", "adguard.running", "hass.running"}
+
+// isReachabilityKey reports whether a master's value is a 1/0 reachability (ping or a collector), so
+// a fresh 0 means "going down" even before its trigger fires.
+func isReachabilityKey(key string) bool {
+	if key == defaultMasterKey {
+		return true
+	}
+	for _, k := range collectorMasterKeys {
+		if key == k {
+			return true
+		}
+	}
+	return false
+}
 
 // proxyItemRe matches Zabbix's own per-proxy checks ("Zabbix server health" template), whose first key
 // parameter is the proxy name: zabbix.proxy.last_seen[proxy-site1].
@@ -45,19 +65,19 @@ type masterItem struct {
 
 // masterSet is everything the notifier needs to decide, per problem, whether a master holds it.
 type masterSet struct {
-	byHost      map[string]masterItem // host id -> its master sensor (absent = none)
-	siteMaster  map[string]masterItem // proxy id -> its Probe host's reporting sensor
-	probeHost   map[string]string     // proxy id -> its Probe host id
-	hostProxy   map[string]string     // host id -> the proxy monitoring it ("" / "0" = the server)
-	proxyByName map[string]string     // proxy name -> proxy id
-	down        map[string]bool       // master item id -> it has an open "down" problem
+	byHost      map[string][]masterItem // host id -> its master sensors (none = no hold)
+	siteMaster  map[string]masterItem   // proxy id -> its Probe host's reporting sensor
+	probeHost   map[string]string       // proxy id -> its Probe host id
+	hostProxy   map[string]string       // host id -> the proxy monitoring it ("" / "0" = the server)
+	proxyByName map[string]string       // proxy name -> proxy id
+	down        map[string]bool         // master item id -> it has an open "down" problem
 }
 
 // loadMasters builds the master set for one notifier tick. Best effort: whatever can't be read just
 // means no hold for the hosts it concerns.
 func loadMasters(ctx context.Context, st *store.Store, zbx *zabbix.Client, hosts []zabbix.Host, problems []zabbix.Problem, targets map[string]zabbix.TriggerTarget) masterSet {
 	m := masterSet{
-		byHost: map[string]masterItem{}, siteMaster: map[string]masterItem{}, probeHost: map[string]string{},
+		byHost: map[string][]masterItem{}, siteMaster: map[string]masterItem{}, probeHost: map[string]string{},
 		hostProxy: map[string]string{}, proxyByName: map[string]string{}, down: masterDown(problems, targets),
 	}
 	classes, _ := st.DeviceClasses(ctx)
@@ -73,14 +93,20 @@ func loadMasters(ctx context.Context, st *store.Store, zbx *zabbix.Client, hosts
 		}
 	}
 
-	// Default masters: each host's ping and each Probe host's reporting sensor, in one lookup.
+	// Default masters: each host's ping and each Probe host's reporting sensor, plus the collector
+	// reachability sensors, in one lookup.
 	defaults := map[string]masterItem{}
-	if items, err := zbx.ItemsByKeys(ctx, []string{defaultMasterKey, probeMasterKey}); err == nil {
+	collectors := map[string][]masterItem{}
+	if items, err := zbx.ItemsByKeys(ctx, append([]string{defaultMasterKey, probeMasterKey}, collectorMasterKeys...)); err == nil {
 		for _, it := range items {
 			if it.Status != "0" || it.State == "1" {
 				continue // a disabled or unsupported sensor never reports, so it can't vouch for the host
 			}
 			mi := masterItem{itemID: it.ItemID, key: it.Key, lastValue: it.LastValue, lastClock: atoi64(it.LastClock)}
+			if it.Key != defaultMasterKey && it.Key != probeMasterKey {
+				collectors[it.HostID] = append(collectors[it.HostID], mi)
+				continue
+			}
 			if it.Key == probeMasterKey {
 				if classes[it.HostID] != provision.ClassProbe {
 					continue
@@ -104,14 +130,16 @@ func loadMasters(ctx context.Context, st *store.Store, zbx *zabbix.Client, hosts
 	customItems, _ := zbx.ItemsByIDs(ctx, custom)
 	for _, h := range hosts {
 		if id, ok := overrides[h.HostID]; ok {
-			if it, found := customItems[id]; found && id != "" {
-				m.byHost[h.HostID] = masterItem{itemID: it.ItemID, key: it.Key, lastValue: it.LastValue, lastClock: atoi64(it.LastClock)}
+			if id == "" {
+				continue // "none": nothing holds this host's alerts, not even its collector
 			}
-			continue // an override (even "none") replaces the default
+			if it, found := customItems[id]; found {
+				m.byHost[h.HostID] = append(m.byHost[h.HostID], masterItem{itemID: it.ItemID, key: it.Key, lastValue: it.LastValue, lastClock: atoi64(it.LastClock)})
+			}
+		} else if mi, ok := defaults[h.HostID]; ok {
+			m.byHost[h.HostID] = append(m.byHost[h.HostID], mi)
 		}
-		if mi, ok := defaults[h.HostID]; ok {
-			m.byHost[h.HostID] = mi
-		}
+		m.byHost[h.HostID] = append(m.byHost[h.HostID], collectors[h.HostID]...)
 	}
 	return m
 }
@@ -159,7 +187,7 @@ func (m masterSet) hold(hostID string, items []masterRef, start, now int64) hold
 			return v
 		}
 	}
-	if hm, ok := m.byHost[hostID]; ok {
+	for _, hm := range m.byHost[hostID] {
 		if v := m.judge(hm, items, start, now); v.held {
 			v.by = "host"
 			return v
@@ -172,8 +200,9 @@ func (m masterSet) hold(hostID string, items []masterRef, start, now int64) hold
 type masterRef struct{ id, key string }
 
 // judge applies one master to a problem: never to the master's own problems; held when the master is
-// down; held for a while when the master hasn't reported since the problem began, or its ping just
-// failed (the "unavailable" trigger needs a few failed checks), so the device's real state decides.
+// down; held for a while when the master hasn't reported since the problem began, or its ping (or
+// collector) just failed (the "unreachable" trigger needs a few failed checks), so the device's real
+// state decides.
 func (m masterSet) judge(master masterItem, items []masterRef, start, now int64) holdVerdict {
 	for _, it := range items {
 		if it.id == master.itemID {
@@ -187,7 +216,7 @@ func (m masterSet) judge(master masterItem, items []masterRef, start, now int64)
 		if master.lastClock < start {
 			return holdVerdict{held: true}
 		}
-		if master.key == defaultMasterKey && strings.TrimSpace(master.lastValue) == "0" {
+		if isReachabilityKey(master.key) && strings.TrimSpace(master.lastValue) == "0" {
 			return holdVerdict{held: true}
 		}
 	}

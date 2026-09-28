@@ -28,21 +28,26 @@ GitHub Release from the matching section below.
   unreachable device sends one alert instead of one per sensor. The master is the ICMP ping by
   default; pick another sensor, or none, in the host's settings. Alerts held this way go out if they
   are still open once the master is back.
+  - Devices read through a collector (UPS via NUT, XCP-NG via XAPI, Linux via SSH, AdGuard Home,
+    Home Assistant) also have the collector's reachability as a master: if the service stops but
+    the machine still pings, you get "monitoring is unreachable" instead of one alert per reading.
   - A probe that isn't reporting holds the alerts of every device at its site, and Zabbix's own
     "proxy last seen" checks for it, so a probe outage sends only the probe's own alerts and one
     recovery.
 - **Alerts when monitoring stops working.** Zabbix raises no problem for these, so nothing alerted
   until now:
-  - a sensor that goes **not supported** (a collector script that fails or times out, like a UPS
-    sensor losing its NUT server): an error, "<sensor> stopped collecting", on its third failed
+  - a sensor that goes **not supported** after collecting before (a collector script that fails or
+    times out, like a UPS sensor losing its NUT server): an error, "<sensor> stopped collecting", on its third failed
     check in a row (about 2 minutes for a sensor checked every minute), with Zabbix's reason as the
     reading;
   - a device's **Zabbix agent or SNMP** that stops answering while the device itself is up: an
     error, "Zabbix agent not reachable" or "SNMP not responding", with Zabbix's reason.
 
   Both show in the Overview and on the host like any problem, and can be acknowledged; while the
-  device is down, its master sensor holds them. Sensors already not supported when you update count
-  as known and don't alert.
+  device is down, its master sensor holds them. A sensor that never had a value (a process that
+  isn't started, a second WAN a gateway doesn't have, a reading the hardware doesn't report) doesn't
+  apply to that device, so it never alerts; neither do sensors already not supported when you
+  update.
 - **Alert delay setting.** How long a problem must last before anyone is notified (60 seconds until
   now, fixed) is now in **Settings -> Alerting** (`ARGUS_ALERT_DELAY_SECONDS`).
 
