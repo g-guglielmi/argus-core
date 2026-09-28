@@ -168,8 +168,8 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   `no-store` on both first-boot pages; every value shape-checked; the core appliance serves Argus
   over https from first boot (nginx `:443` with a CA-signed certificate, Argus on the loopback,
   trusted proxy seeded); SSH password login limited to the one appliance account (root and the rest:
-  keys) and no docker group; a setup-code disk (and an Add-probe button that mints it) for VMs whose
-  console can't be reached (`probe-vm/v0.3.3`, `core-vm/v0.1.1`, core `v0.5.14`).
+  keys) and no docker group; the core appliance takes its setup code from an `ARGUSSEED` disk when
+  there is no console (probes use the seed ISO) (`probe-vm/v0.3.3`, `core-vm/v0.1.1`).
 - [ ] **Security review, wave 2b (update chain + supply chain)** - the core resolves the digest of
   the tag it hands out and the updater verifies the pulled image against it (tags stay `latest` /
   `testing`; a mismatch is refused, not applied); pinned actions/installers, job-level workflow

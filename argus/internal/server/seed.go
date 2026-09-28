@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -112,43 +111,6 @@ func (s *Server) handleSeedISO(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(iso)
 }
-
-// handleSetupCodeISO builds a tiny ARGUSSEED disk carrying only a setup code, for a probe VM whose
-// console can't be reached to read the code it would print. The browser generates the code (and
-// shows it to the admin); the ISO makes the VM use it instead. Admin.
-func (s *Server) handleSetupCodeISO(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Code string `json:"code"`
-		Name string `json:"name"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
-		return
-	}
-	code := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(req.Code), "-", ""))
-	if !setupCodeShape.MatchString(code) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a setup code is 8 letters or digits"})
-		return
-	}
-	iso, err := s.buildSeedISO("ARGUS_SETUP_CODE=" + code[:4] + "-" + code[4:] + "\n")
-	if err != nil {
-		s.logger.Warn("setup-code iso: build failed", "err", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not build the image"})
-		return
-	}
-	fname := "argus-setup-code.iso"
-	if n := slugify(req.Name); n != "" {
-		fname = "argus-setup-code-" + n + ".iso"
-	}
-	w.Header().Set("Content-Type", "application/x-iso9660-image")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+fname+`"`)
-	w.Header().Set("Content-Length", strconv.Itoa(len(iso)))
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(iso)
-}
-
-var setupCodeShape = regexp.MustCompile(`^[A-Z0-9]{8}$`)
 
 // validKeymap returns a sanitized console keymap code (e.g. "it", "de", "gb"), or "" if the input
 // isn't a plausible layout name. The probe VM's first-boot service feeds this to console tooling, so

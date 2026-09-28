@@ -250,7 +250,6 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("DELETE /api/probes/tokens/{id}", auth.RequireRole("admin", s.handleDeleteEnrollToken))
 	// build a first-boot seed ISO (label ARGUSSEED / ARGUS.ENV) for the probe VM (admin; see seed.go)
 	mux.HandleFunc("POST /api/probes/seed-iso", auth.RequireRole("admin", s.handleSeedISO))
-	mux.HandleFunc("POST /api/probes/setup-code-iso", auth.RequireRole("admin", s.handleSetupCodeISO))
 	mux.HandleFunc("GET /api/probes/vm-images", auth.RequireRole("admin", s.handleProbeVMImages))
 
 	// probe fleet target version (admin only) - the version probes should converge on

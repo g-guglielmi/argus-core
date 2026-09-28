@@ -38,13 +38,6 @@ by this; it is what a new deployment gets.
 - `setup-core.sh` (also used by the image build) doubles a quote inside the database password
   before it goes into SQL, and fetches the Zabbix release package over https only.
 
-## [Unreleased]
-
-**Added:**
-- **Add probe → VM → Download setup-code ISO**: for a probe VM whose console can't be reached, mints
-  the first-boot page's setup code, shows it, and puts it on a tiny `ARGUSSEED` disk the VM reads
-  instead of printing one (probe-vm 0.3.3 or later).
-
 ## [0.5.13] - 2026-09-29
 
 Security hardening from a code review of the three repositories (wave 1: the core). Nothing here

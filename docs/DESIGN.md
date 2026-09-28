@@ -695,9 +695,8 @@ different things:
   from the [adsb-feeder](https://github.com/dirkhh/adsb-feeder-image) first-boot web wizard. Once a
   token is present (either way), the service is inert on subsequent boots. **The page asks for a
   setup code** printed on the VM's console (and its login banner): anyone on the network can reach
-  the page, only someone at the console can submit it; with no console, an `ARGUSSEED` disk carrying
-  `ARGUS_SETUP_CODE=` supplies the code (Add-probe -> VM mints it as a tiny ISO). Every value is
-  shape-checked (https enroll URL unless a "lab" switch is ticked, a token, a host) before it reaches
+  the page, only someone at the console can submit it (with no console, the seed ISO is the path: it
+  needs no code). Every value is shape-checked (https enroll URL unless a "lab" switch is ticked, a token, a host) before it reaches
   the container's env file.
 - **Never** bake a token into the image (one-token-per-image, non-reusable, leaks the secret) - the
   image stays generic; the secret is always external.
