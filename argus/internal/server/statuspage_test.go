@@ -127,3 +127,17 @@ func TestStatusLinkFlow(t *testing.T) {
 		t.Fatalf("expired: %d", w.Code)
 	}
 }
+
+func TestReachabilityReading(t *testing.T) {
+	for _, c := range []struct{ key, v, want string }{
+		{"icmpping", "0", "No reply to ping"}, {"icmpping", "1", "Replying to ping"},
+		{"nut.reachable", "0", "Not reachable"}, {"xcp.reachable", "1", "Reachable"},
+	} {
+		if got, ok := reachabilityReading(c.key, c.v); !ok || got != c.want {
+			t.Errorf("reachabilityReading(%q, %q) = %q %v", c.key, c.v, got, ok)
+		}
+	}
+	if _, ok := reachabilityReading("system.cpu.util", "0"); ok {
+		t.Error("a CPU reading isn't a reachability")
+	}
+}

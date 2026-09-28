@@ -15,9 +15,12 @@ GitHub Release from the matching section below.
 
 **Added:**
 - **Status pages** for a wall screen. A new admin screen, **Status pages**, makes read-only dashboards
-  that open with a secret link instead of a login: each chosen site, host by host, with the sensors
-  and problems that need attention (healthy hosts as compact chips), an overall status, a clock, and
-  a refresh every 30 seconds. It flags a lost connection and keeps showing the last known state.
+  that open with a secret link instead of a login. The screen is a PRTG-style alarm list: one row per
+  open problem (host, site, problem, the sensor with its reading, how long it's been open), worst and
+  newest first, with **Errors / Warnings / Acknowledged** pills in a slim top bar to switch lists (the
+  screen remembers the choice). With no errors it just says "All systems operational". A list longer
+  than the screen pages itself every 15 seconds; data refreshes every 30, and a lost connection is
+  flagged while the last known state stays up.
   - Opening the link swaps it for a cookie and a plain `/status` address, so the secret doesn't sit
     in the address bar. Argus keeps only a fingerprint of it, and shows the link once.
   - Each page can be limited to networks (like your LAN) and given an expiry. **New link** shuts the

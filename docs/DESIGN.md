@@ -998,11 +998,14 @@ A read-only dashboard for a wall screen, opened with a secret link instead of a 
 - **Limits:** optional allowed networks (CIDRs, checked against the client IP, which honours
   `ARGUS_TRUST_PROXY`) and an optional expiry; a page shows only its sites (host groups, a root
   covering its subgroups).
-- **Content:** `/status/data`, built from the same census and active-problem lists as the app (hidden
-  hosts and sensors left out), cached 20 s per page: per site, hosts sorted worst first, each with its
-  open problems and the sensors that aren't OK (state + reading), plus the count of OK sensors. No
-  addresses, credentials or settings. The page itself is a standalone HTML file (not the SPA), dark and
-  sized for a TV, refreshing every 30 s, flagging a lost connection, and reloading itself every 6 h.
+- **Content:** `/status/data`, built from the same active-problem list and sensor census as the app
+  (hidden and paused hosts left out), cached 20 s per page: one row per open problem (kind error /
+  warning / acked, host, site group, problem, the sensor it's on with its reading, since), worst then
+  newest first, plus the counts. No addresses, credentials or settings. The page is a standalone HTML
+  file (not the SPA), dark and sized for a TV: a slim bar with Errors / Warnings / Acknowledged pills
+  that switch the list (remembered per screen), the list itself ("All systems operational" when there
+  are no errors), paged every 15 s when it doesn't fit, refreshing every 30 s, flagging a lost
+  connection, and reloading itself every 6 h.
 - **Headers:** `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`, `X-Frame-Options: DENY` + CSP
   `frame-ancestors 'none'`, `Cache-Control: no-store`. The routes sit outside `/api`, so the cookie
   opens nothing else.

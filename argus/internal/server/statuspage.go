@@ -314,161 +314,112 @@ func (s *Server) handleStatusData(w http.ResponseWriter, r *http.Request) {
 // --- the data ---
 
 type statusView struct {
-	Name        string       `json:"name"`
-	GeneratedAt int64        `json:"generated_at"`
-	Timezone    string       `json:"timezone"`
-	Counts      statusCounts `json:"counts"`
-	Sites       []statusSite `json:"sites"`
+	Name        string        `json:"name"`
+	GeneratedAt int64         `json:"generated_at"`
+	Timezone    string        `json:"timezone"`
+	Counts      statusCounts  `json:"counts"`
+	Issues      []statusIssue `json:"issues"`
 }
 
 type statusCounts struct {
-	Hosts   int `json:"hosts"`
+	Hosts   int `json:"hosts"` // hosts on the page (paused and hidden ones left out)
 	Error   int `json:"error"`
 	Warning int `json:"warning"`
+	Acked   int `json:"acked"`
 }
 
-type statusSite struct {
-	Name  string       `json:"name"`
-	State string       `json:"state"`
-	Hosts []statusHost `json:"hosts"`
-}
-
-type statusHost struct {
-	Name      string         `json:"name"`
-	State     string         `json:"state"` // error | warning | acked | paused | ok
-	Problems  []statusIssue  `json:"problems,omitempty"`
-	Sensors   []statusSensor `json:"sensors,omitempty"` // the sensors that aren't OK
-	OKSensors int            `json:"ok_sensors"`
-}
-
+// statusIssue is one row of the list: an open problem, where it is, the sensor it's on with its
+// reading, and since when. Kind is the list it belongs to: error | warning | acked.
 type statusIssue struct {
-	Name  string `json:"name"`
-	State string `json:"state"`
-	Since int64  `json:"since"`
-	Acked bool   `json:"acked,omitempty"`
+	Kind    string `json:"kind"`
+	Host    string `json:"host"`
+	Site    string `json:"site"`
+	Problem string `json:"problem"`
+	Sensor  string `json:"sensor,omitempty"`
+	Value   string `json:"value,omitempty"`
+	Since   int64  `json:"since"`
 }
 
-type statusSensor struct {
-	Label string `json:"label"`
-	State string `json:"state"`
-	Value string `json:"value,omitempty"`
-}
+var issueRank = map[string]int{"error": 0, "warning": 1, "acked": 2}
 
-var stateRank = map[string]int{"error": 0, "warning": 1, "acked": 2, "paused": 3, "ok": 4}
-
-// buildStatus assembles a page's view from the sensor census and the active problems - the same
-// sources as the app's pills and Overview - limited to the page's sites.
+// buildStatus assembles a page's view from the active problems and the sensor census - the same
+// sources as the app's Overview and pills - limited to the page's sites: one row per open problem,
+// with the reading of the sensor it's on.
 func (s *Server) buildStatus(ctx context.Context, p store.StatusPage) (statusView, error) {
 	hosts, err := s.zbx.Hosts(ctx)
 	if err != nil {
 		return statusView{}, err
 	}
-	sensors, err := s.sensorCensus(ctx)
+	problems, err := s.activeProblems(ctx)
 	if err != nil {
 		return statusView{}, err
 	}
-	problems, _ := s.activeProblems(ctx)
+	sensors, _ := s.sensorCensus(ctx) // best effort: without it the rows just carry no reading
 	hidden, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 
-	bySite := map[string][]*statusHost{}
-	byHost := map[string]*statusHost{}
+	v := statusView{Name: p.Name, GeneratedAt: time.Now().Unix(), Timezone: s.mgr.Location().String(), Issues: []statusIssue{}}
+	siteOf := map[string]string{}
 	for _, h := range hosts {
-		if _, isHidden := hidden[h.HostID]; isHidden {
+		if _, isHidden := hidden[h.HostID]; isHidden || h.Status == "1" {
 			continue
 		}
-		site := ""
 		for _, g := range h.Groups {
 			if statusCovers(p.Sites, g.Name) {
-				site = g.Name
+				siteOf[h.HostID] = g.Name
+				v.Counts.Hosts++
 				break
 			}
 		}
-		if site == "" {
-			continue
-		}
-		hv := &statusHost{Name: h.Name, State: "ok"}
-		if h.Status == "1" {
-			hv.State = "paused"
-		}
-		bySite[site] = append(bySite[site], hv)
-		byHost[h.HostID] = hv
 	}
+	byItem := make(map[string]sensorRow, len(sensors))
 	for _, sr := range sensors {
-		hv := byHost[sr.HostID]
-		if hv == nil || sr.State == "hidden" {
-			continue
-		}
-		if sr.State == "ok" {
-			hv.OKSensors++
-			continue
-		}
-		if sr.State == "paused" {
-			continue
-		}
-		label := sr.Label
-		if label == "" {
-			label = sr.Name
-		}
-		val := ""
-		if sr.Supported {
-			val = notify.FormatReading(sr.Value, sr.Units)
-		}
-		hv.Sensors = append(hv.Sensors, statusSensor{Label: label, State: sr.State, Value: val})
+		byItem[sr.ItemID] = sr
 	}
 	for _, pr := range problems {
-		hv := byHost[pr.HostID]
-		if hv == nil {
+		site, ok := siteOf[pr.HostID]
+		if !ok {
 			continue
 		}
-		iss := statusIssue{Name: pr.Name, State: pr.State, Since: pr.Clock, Acked: pr.Acknowledged}
-		hv.Problems = append(hv.Problems, iss)
-		if hv.State == "paused" {
-			continue
-		}
-		st := pr.State
+		kind := pr.State
 		if pr.Acknowledged {
-			st = "acked"
+			kind = "acked"
 		}
-		if stateRank[st] < stateRank[hv.State] {
-			hv.State = st
+		if _, known := issueRank[kind]; !known {
+			continue
 		}
-	}
-
-	v := statusView{Name: p.Name, GeneratedAt: time.Now().Unix(), Timezone: s.mgr.Location().String()}
-	names := make([]string, 0, len(bySite))
-	for n := range bySite {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	for _, n := range names {
-		st := &statusSite{Name: n, State: "ok"}
-		for _, h := range bySite[n] {
-			st.Hosts = append(st.Hosts, *h)
-		}
-		sort.SliceStable(st.Hosts, func(i, j int) bool {
-			a, b := st.Hosts[i], st.Hosts[j]
-			if stateRank[a.State] != stateRank[b.State] {
-				return stateRank[a.State] < stateRank[b.State]
-			}
-			return naturalLess(a.Name, b.Name)
-		})
-		for i := range st.Hosts {
-			h := &st.Hosts[i]
-			sort.SliceStable(h.Sensors, func(a, b int) bool { return stateRank[h.Sensors[a].State] < stateRank[h.Sensors[b].State] })
-			sort.SliceStable(h.Problems, func(a, b int) bool { return stateRank[h.Problems[a].State] < stateRank[h.Problems[b].State] })
-			v.Counts.Hosts++
-			switch h.State {
-			case "error":
-				v.Counts.Error++
-			case "warning":
-				v.Counts.Warning++
-			}
-			if stateRank[h.State] < stateRank[st.State] && h.State != "paused" {
-				st.State = h.State
+		is := statusIssue{Kind: kind, Host: pr.HostName, Site: site, Problem: pr.Name, Since: pr.Clock}
+		for _, id := range pr.ItemIDs {
+			if sr, ok := byItem[id]; ok {
+				is.Sensor = sr.Label
+				if is.Sensor == "" {
+					is.Sensor = sr.Name
+				}
+				if r, ok := reachabilityReading(sr.key, sr.Value); ok {
+					is.Value = r
+				} else if sr.Supported {
+					is.Value = notify.FormatReading(sr.Value, sr.Units)
+				}
+				break
 			}
 		}
-		v.Sites = append(v.Sites, *st)
+		switch kind {
+		case "error":
+			v.Counts.Error++
+		case "warning":
+			v.Counts.Warning++
+		case "acked":
+			v.Counts.Acked++
+		}
+		v.Issues = append(v.Issues, is)
 	}
+	// Worst first, then the newest.
+	sort.SliceStable(v.Issues, func(i, j int) bool {
+		a, b := v.Issues[i], v.Issues[j]
+		if issueRank[a.Kind] != issueRank[b.Kind] {
+			return issueRank[a.Kind] < issueRank[b.Kind]
+		}
+		return a.Since > b.Since
+	})
 	return v, nil
 }
 

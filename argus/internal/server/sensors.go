@@ -11,6 +11,7 @@ import (
 )
 
 type sensorRow struct {
+	key       string   // Zabbix item key (server-side only: formats 1/0 reachability readings)
 	HostID    string   `json:"host_id"`
 	HostName  string   `json:"host_name"`
 	ItemID    string   `json:"item_id"`
@@ -154,7 +155,7 @@ func (s *Server) sensorCensus(ctx context.Context) ([]sensorRow, error) {
 			continue // unsupported & otherwise-ok = "unknown"; don't count as ok
 		}
 		out = append(out, sensorRow{
-			HostID: host.HostID, HostName: host.Name, ItemID: it.ItemID, Name: it.Name,
+			key: it.Key, HostID: host.HostID, HostName: host.Name, ItemID: it.ItemID, Name: it.Name,
 			Label: label, Category: cat, Value: it.LastValue, Units: it.Units, LastClock: atoi64(it.LastClock),
 			State: state, Numeric: numericValueType(it.ValueType), Supported: supported,
 			Priority: priorityOf(prioMap, it.ItemID), Severity: itemSev[it.ItemID], Reason: itemReason[it.ItemID],

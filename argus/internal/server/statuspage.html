@@ -9,64 +9,80 @@
 <title>Argus status</title>
 <style>
   :root {
-    --bg: #0b0f14; --panel: #121821; --elev: #18202b; --border: #243040;
+    --bg: #0b0f14; --panel: #121821; --elev: #161d27; --border: #243040;
     --text: #e8edf4; --muted: #8b98a8; --faint: #5d6b7c;
-    --ok: #3fa66a; --warn: #e0a53a; --err: #e2564d; --acked: #7c8cf5; --paused: #5b8def; --accent: #2ea8c9;
+    --ok: #3fa66a; --warn: #e0a53a; --err: #e2564d; --acked: #7c8cf5; --accent: #2ea8c9;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
     font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  body { display: flex; flex-direction: column; font-size: clamp(14px, 1.05vw, 26px); }
-  header { display: flex; align-items: center; gap: 1.2em; padding: 0.9em 1.4em; border-bottom: 1px solid var(--border); background: var(--panel); }
-  .brand { font-weight: 800; letter-spacing: 0.18em; font-size: 0.8em; color: var(--accent); }
-  h1 { margin: 0; font-size: 1.6em; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .overall { display: flex; align-items: center; gap: 0.5em; padding: 0.45em 1em; border-radius: 999px; font-weight: 700; font-size: 1.05em; border: 1px solid var(--border); }
-  .overall .dot { width: 0.7em; height: 0.7em; border-radius: 50%; background: currentColor; }
-  .overall.ok { color: var(--ok); } .overall.warning { color: var(--warn); } .overall.error { color: var(--err); }
-  .clock { text-align: right; line-height: 1.2; }
-  .clock .time { font-size: 1.6em; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .clock .upd { font-size: 0.75em; color: var(--muted); }
-  .banner { display: none; padding: 0.5em 1.4em; background: color-mix(in srgb, var(--err) 22%, var(--panel)); color: var(--text); font-weight: 600; }
+  body { display: flex; flex-direction: column; font-size: clamp(13px, 0.95vw, 24px); overflow: hidden; }
+
+  header { display: flex; align-items: center; gap: 0.9em; padding: 0.35em 1em; border-bottom: 1px solid var(--border); background: var(--panel); }
+  .brand { font-weight: 800; letter-spacing: 0.18em; font-size: 0.72em; color: var(--accent); }
+  h1 { margin: 0; font-size: 1.05em; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pills { display: flex; gap: 0.45em; margin-left: auto; }
+  .pill { display: inline-flex; align-items: center; gap: 0.45em; padding: 0.2em 0.75em; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--elev); color: var(--text); font: inherit; font-weight: 700; cursor: pointer; font-variant-numeric: tabular-nums; }
+  .pill .dot { width: 0.6em; height: 0.6em; border-radius: 50%; }
+  .pill.error .dot { background: var(--err); } .pill.warning .dot { background: var(--warn); } .pill.acked .dot { background: var(--acked); }
+  .pill.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--elev)); }
+  .pill.error.hot { color: var(--err); }
+  .clock { text-align: right; line-height: 1.1; white-space: nowrap; }
+  .clock .time { font-size: 1.05em; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .clock .upd { font-size: 0.68em; color: var(--muted); }
+
+  .banner { display: none; padding: 0.3em 1em; background: color-mix(in srgb, var(--err) 22%, var(--panel)); font-weight: 600; font-size: 0.85em; }
   .banner.on { display: block; }
-  main { flex: 1; overflow: auto; padding: 1.2em 1.4em; display: grid; gap: 1.1em;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 26em), 1fr)); align-content: start; }
-  .site { background: var(--panel); border: 1px solid var(--border); border-radius: 0.8em; padding: 0.9em 1em; border-top: 0.25em solid var(--ok); }
-  .site.warning { border-top-color: var(--warn); } .site.error { border-top-color: var(--err); } .site.acked { border-top-color: var(--acked); }
-  .site h2 { margin: 0 0 0.7em; font-size: 1.15em; display: flex; justify-content: space-between; gap: 0.6em; }
-  .site h2 .n { color: var(--muted); font-weight: 500; font-size: 0.85em; white-space: nowrap; }
-  .tiles { display: grid; gap: 0.6em; grid-template-columns: repeat(auto-fill, minmax(min(100%, 13em), 1fr)); }
-  .tile { background: var(--elev); border-radius: 0.6em; padding: 0.6em 0.75em; border-left: 0.3em solid var(--ok); min-width: 0; }
-  .tile.error { border-left-color: var(--err); background: color-mix(in srgb, var(--err) 14%, var(--elev)); }
-  .tile.warning { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--elev)); }
-  .tile.acked { border-left-color: var(--acked); } .tile.paused { border-left-color: var(--paused); opacity: 0.75; }
-  .tile .name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tile ul { list-style: none; margin: 0.35em 0 0; padding: 0; font-size: 0.85em; }
-  .tile li { display: flex; gap: 0.4em; align-items: baseline; margin-top: 0.2em; min-width: 0; }
-  .tile li .d { flex: none; width: 0.55em; height: 0.55em; border-radius: 50%; background: var(--muted); transform: translateY(-0.05em); }
-  .tile li .d.error { background: var(--err); } .tile li .d.warning { background: var(--warn); } .tile li .d.acked { background: var(--acked); }
-  .tile li .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tile li .v { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .tile .okn { margin-top: 0.35em; font-size: 0.8em; color: var(--muted); }
-  .chips { display: flex; flex-wrap: wrap; gap: 0.4em; margin-top: 0.6em; }
-  .chip { display: inline-flex; align-items: center; gap: 0.4em; padding: 0.25em 0.6em; border-radius: 999px; background: var(--elev); font-size: 0.85em; max-width: 100%; }
-  .chip::before { content: ""; width: 0.5em; height: 0.5em; border-radius: 50%; background: var(--ok); flex: none; }
-  .chip.paused::before { background: var(--paused); }
-  .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .empty, .gone { color: var(--muted); padding: 3em 1em; text-align: center; grid-column: 1 / -1; font-size: 1.2em; }
+
+  main { flex: 1; overflow: hidden; position: relative; }
+  .list { height: 100%; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  thead th { position: sticky; top: 0; background: var(--bg); text-align: left; font-size: 0.68em; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--faint); padding: 0.55em 0.8em 0.4em; border-bottom: 1px solid var(--border); }
+  tbody td { padding: 0.42em 0.8em; border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+  tbody tr td:first-child { border-left: 0.3em solid var(--muted); }
+  tbody tr.error td:first-child { border-left-color: var(--err); }
+  tbody tr.warning td:first-child { border-left-color: var(--warn); }
+  tbody tr.acked td:first-child { border-left-color: var(--acked); }
+  tbody tr.error { background: color-mix(in srgb, var(--err) 7%, transparent); }
+  td.host { font-weight: 700; }
+  td.site, td.since { color: var(--muted); }
+  td.value { font-variant-numeric: tabular-nums; }
+  td.since { text-align: right; font-variant-numeric: tabular-nums; }
+  .sensor { color: var(--muted); }
+  col.c-host { width: 17%; } col.c-site { width: 15%; } col.c-problem { width: 33%; } col.c-sensor { width: 25%; } col.c-since { width: 10%; }
+
+  .calm { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.4em; text-align: center; padding: 1em; }
+  .calm .big { font-size: 3.2em; font-weight: 800; color: var(--ok); display: flex; align-items: center; gap: 0.35em; }
+  .calm .big::before { content: ""; width: 0.55em; height: 0.55em; border-radius: 50%; background: currentColor; box-shadow: 0 0 0.6em currentColor; }
+  .calm .big.neutral { color: var(--muted); } .calm .big.neutral::before { box-shadow: none; }
+  .calm .sub { color: var(--muted); font-size: 1.1em; }
+  .pager { position: absolute; right: 0.8em; bottom: 0.5em; font-size: 0.72em; color: var(--muted); background: var(--panel);
+    border: 1px solid var(--border); border-radius: 999px; padding: 0.15em 0.7em; font-variant-numeric: tabular-nums; }
+  .gone { color: var(--muted); font-size: 1.3em; }
 </style>
 </head>
 <body>
 <header>
   <span class="brand">ARGUS</span>
   <h1 id="title">Status</h1>
-  <div class="overall" id="overall" hidden><span class="dot"></span><span id="overall-text"></span></div>
+  <div class="pills" id="pills" hidden>
+    <button class="pill error" data-kind="error" title="Errors"><span class="dot"></span><span class="n">0</span> Errors</button>
+    <button class="pill warning" data-kind="warning" title="Warnings"><span class="dot"></span><span class="n">0</span> Warnings</button>
+    <button class="pill acked" data-kind="acked" title="Acknowledged"><span class="dot"></span><span class="n">0</span> Acknowledged</button>
+  </div>
   <div class="clock"><div class="time" id="clock"></div><div class="upd" id="upd"></div></div>
 </header>
 <div class="banner" id="banner">Connection lost. Showing the last known state, retrying.</div>
-<main id="main"><div class="empty">Loading…</div></main>
+<main id="main"><div class="calm"><div class="sub">Loading…</div></div></main>
 <script>
 (function () {
-  var tz = undefined, lastOK = 0, gone = false;
+  var tz, lastOK = 0, gone = false, data = null, page = 0, pages = 1;
+  var kind = 'error';
+  try { var saved = localStorage.getItem('argus-status-kind'); if (saved === 'error' || saved === 'warning' || saved === 'acked') kind = saved; } catch (e) {}
+  var EMPTY = { error: 'All systems operational', warning: 'No warnings', acked: 'Nothing acknowledged' };
+
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function ago(ts) {
     var s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
@@ -77,77 +93,94 @@
   }
   function tick() {
     var opts = { hour: '2-digit', minute: '2-digit' }; if (tz) opts.timeZone = tz;
-    try { document.getElementById('clock').textContent = new Date().toLocaleTimeString([], opts); } catch (e) { document.getElementById('clock').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+    var c = document.getElementById('clock');
+    try { c.textContent = new Date().toLocaleTimeString([], opts); } catch (e) { c.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
     document.getElementById('upd').textContent = lastOK ? 'Updated ' + ago(lastOK) + ' ago' : '';
   }
-  function tile(h) {
-    var t = el('div', 'tile ' + h.state);
-    t.appendChild(el('div', 'name', h.name));
-    var ul = el('ul'), shown = 0, max = 4;
-    (h.problems || []).forEach(function (p) {
-      if (shown >= max) return; shown++;
-      var li = el('li'); li.appendChild(el('span', 'd ' + (p.acked ? 'acked' : p.state)));
-      li.appendChild(el('span', 't', p.name)); if (p.since) li.appendChild(el('span', 'v', ago(p.since)));
-      ul.appendChild(li);
-    });
-    (h.sensors || []).forEach(function (s) {
-      if (shown >= max) return; shown++;
-      var li = el('li'); li.appendChild(el('span', 'd ' + s.state));
-      li.appendChild(el('span', 't', s.label)); if (s.value) li.appendChild(el('span', 'v', s.value));
-      ul.appendChild(li);
-    });
-    var more = (h.problems || []).length + (h.sensors || []).length - shown;
-    if (more > 0) ul.appendChild(el('li', null, '+' + more + ' more'));
-    if (shown) t.appendChild(ul);
-    if (h.ok_sensors) t.appendChild(el('div', 'okn', '✓ ' + h.ok_sensors + (h.ok_sensors === 1 ? ' sensor OK' : ' sensors OK')));
-    return t;
+
+  function setKind(k) {
+    kind = k; page = 0;
+    try { localStorage.setItem('argus-status-kind', k); } catch (e) {}
+    render();
   }
-  function render(d) {
-    tz = d.timezone || undefined;
-    document.getElementById('title').textContent = d.name;
-    document.title = d.name + ' · Argus status';
-    var o = document.getElementById('overall'), ot = document.getElementById('overall-text');
-    o.hidden = false;
-    var c = d.counts || {};
-    if (c.error) { o.className = 'overall error'; ot.textContent = c.error + (c.error === 1 ? ' host down or failing' : ' hosts down or failing'); }
-    else if (c.warning) { o.className = 'overall warning'; ot.textContent = c.warning + (c.warning === 1 ? ' host with warnings' : ' hosts with warnings'); }
-    else { o.className = 'overall ok'; ot.textContent = 'All systems operational'; }
+  Array.prototype.forEach.call(document.querySelectorAll('.pill'), function (b) {
+    b.addEventListener('click', function () { setKind(b.getAttribute('data-kind')); });
+  });
+
+  function render() {
+    if (!data) return;
+    tz = data.timezone || undefined;
+    document.getElementById('title').textContent = data.name;
+    document.title = data.name + ' · Argus status';
+    var c = data.counts || {};
+    document.getElementById('pills').hidden = false;
+    Array.prototype.forEach.call(document.querySelectorAll('.pill'), function (b) {
+      var k = b.getAttribute('data-kind');
+      b.querySelector('.n').textContent = c[k] || 0;
+      b.className = 'pill ' + k + (k === kind ? ' on' : '') + (k === 'error' && c.error ? ' hot' : '');
+    });
+    var rows = (data.issues || []).filter(function (i) { return i.kind === kind; });
     var main = document.getElementById('main'); main.textContent = '';
-    if (!d.sites || !d.sites.length) { main.appendChild(el('div', 'empty', 'Nothing to show for this page yet.')); return; }
-    d.sites.forEach(function (s) {
-      var card = el('section', 'site ' + s.state), h2 = el('h2');
-      h2.appendChild(el('span', null, s.name));
-      var bad = s.hosts.filter(function (h) { return h.state !== 'ok' && h.state !== 'paused'; }).length;
-      h2.appendChild(el('span', 'n', s.hosts.length + (s.hosts.length === 1 ? ' host' : ' hosts') + (bad ? ' · ' + bad + ' need attention' : '')));
-      card.appendChild(h2);
-      var tiles = el('div', 'tiles'), chips = el('div', 'chips');
-      s.hosts.forEach(function (h) {
-        if (h.state === 'ok' || h.state === 'paused') {
-          var ch = el('span', 'chip ' + h.state); ch.appendChild(el('span', null, h.name));
-          ch.title = h.state === 'paused' ? 'Paused' : (h.ok_sensors + ' sensors OK'); chips.appendChild(ch);
-        } else tiles.appendChild(tile(h));
-      });
-      if (tiles.childNodes.length) card.appendChild(tiles);
-      if (chips.childNodes.length) card.appendChild(chips);
-      main.appendChild(card);
+    if (!rows.length) {
+      var calm = el('div', 'calm');
+      calm.appendChild(el('div', 'big' + (kind === 'error' ? '' : ' neutral'), EMPTY[kind]));
+      calm.appendChild(el('div', 'sub', (c.hosts || 0) + (c.hosts === 1 ? ' host monitored' : ' hosts monitored')));
+      main.appendChild(calm);
+      pages = 1; return;
+    }
+    var list = el('div', 'list'), table = el('table'), cg = el('colgroup');
+    ['host', 'site', 'problem', 'sensor', 'since'].forEach(function (n) { var col = el('col'); col.className = 'c-' + n; cg.appendChild(col); });
+    table.appendChild(cg);
+    var thead = el('thead'), hr = el('tr');
+    ['Host', 'Site', 'Problem', 'Sensor', 'Since'].forEach(function (h) { hr.appendChild(el('th', null, h)); });
+    thead.appendChild(hr); table.appendChild(thead);
+    var tb = el('tbody');
+    rows.forEach(function (i) {
+      var tr = el('tr', i.kind);
+      tr.appendChild(el('td', 'host', i.host));
+      tr.appendChild(el('td', 'site', i.site));
+      tr.appendChild(el('td', 'problem', i.problem));
+      var td = el('td', 'value');
+      if (i.sensor) td.appendChild(el('span', 'sensor', i.sensor + (i.value ? '  ' : '')));
+      if (i.value) td.appendChild(document.createTextNode(i.value));
+      tr.appendChild(td);
+      tr.appendChild(el('td', 'since', i.since ? ago(i.since) : ''));
+      tb.appendChild(tr);
     });
+    table.appendChild(tb); list.appendChild(table); main.appendChild(list);
+    paginate(list);
   }
+
+  // A TV can't scroll: when the list is taller than the screen, show it a page at a time.
+  function paginate(list) {
+    var head = list.querySelector('thead'), body = list.querySelectorAll('tbody tr');
+    var room = list.clientHeight - (head ? head.offsetHeight : 0);
+    var rowH = body.length ? body[0].offsetHeight : 1;
+    var per = Math.max(1, Math.floor(room / rowH));
+    pages = Math.max(1, Math.ceil(body.length / per));
+    if (page >= pages) page = 0;
+    Array.prototype.forEach.call(body, function (tr, idx) { tr.style.display = (idx >= page * per && idx < (page + 1) * per) ? '' : 'none'; });
+    if (pages > 1) document.getElementById('main').appendChild(el('div', 'pager', (page + 1) + ' / ' + pages));
+  }
+
   function load() {
     if (gone) return;
     fetch('/status/data', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) {
       return r.json().then(function (j) { return { ok: r.ok, code: r.status, j: j }; });
     }).then(function (res) {
-      if (res.ok) { lastOK = Math.floor(Date.now() / 1000); document.getElementById('banner').className = 'banner'; render(res.j); tick(); return; }
+      if (res.ok) { data = res.j; lastOK = Math.floor(Date.now() / 1000); document.getElementById('banner').className = 'banner'; render(); tick(); return; }
       if (res.code === 403 || res.code === 404 || res.code === 410) {
         gone = true; var main = document.getElementById('main'); main.textContent = '';
-        main.appendChild(el('div', 'gone', (res.j && res.j.error) || 'This status page is no longer available.'));
-        document.getElementById('overall').hidden = true; return;
+        var calm = el('div', 'calm'); calm.appendChild(el('div', 'gone', (res.j && res.j.error) || 'This status page is no longer available.')); main.appendChild(calm);
+        document.getElementById('pills').hidden = true; return;
       }
       throw new Error('status ' + res.code);
     }).catch(function () { document.getElementById('banner').className = 'banner on'; });
   }
   load(); tick();
   setInterval(load, 30000); setInterval(tick, 1000);
+  setInterval(function () { if (pages > 1) { page = (page + 1) % pages; render(); } }, 15000);
+  window.addEventListener('resize', function () { render(); });
   setTimeout(function () { location.reload(); }, 6 * 3600 * 1000); // pick up a new Argus version now and then
 })();
 </script>

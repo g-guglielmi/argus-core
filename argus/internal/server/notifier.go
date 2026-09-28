@@ -521,19 +521,29 @@ func reading(ctx context.Context, zbx *zabbix.Client, itemID string, noData bool
 	if noData {
 		return noDataSince(atoi64(it.LastClock), now), ""
 	}
-	if isReachabilityKey(it.Key) { // 1/0 reachability reads as nothing on its own
-		up, down := "Reachable", "Not reachable"
-		if it.Key == defaultMasterKey {
-			up, down = "Replying to ping", "No reply to ping"
-		}
-		switch strings.TrimSpace(it.LastValue) {
-		case "0":
-			return down, ""
-		case "1":
-			return up, ""
-		}
+	if r, ok := reachabilityReading(it.Key, it.LastValue); ok {
+		return r, ""
 	}
 	return notify.FormatReading(it.LastValue, it.Units), it.Units
+}
+
+// reachabilityReading words a 1/0 reachability reading (ping, a collector's "reachable"), which reads
+// as nothing on its own. ok is false for any other sensor or value.
+func reachabilityReading(key, value string) (string, bool) {
+	if !isReachabilityKey(key) {
+		return "", false
+	}
+	up, down := "Reachable", "Not reachable"
+	if key == defaultMasterKey {
+		up, down = "Replying to ping", "No reply to ping"
+	}
+	switch strings.TrimSpace(value) {
+	case "0":
+		return down, true
+	case "1":
+		return up, true
+	}
+	return "", false
 }
 
 // formatThreshold gives a parsed threshold (">600") the sensor's units, scaled the way its reading is
