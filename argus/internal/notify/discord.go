@@ -27,7 +27,9 @@ func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 	if e.isAlert() {
 		fields = append(fields, map[string]any{"name": "Severity", "value": severityLabel(e.Severity), "inline": true})
 	}
-	fields = append(fields, map[string]any{"name": "Host", "value": e.Host, "inline": true})
+	if e.Host != "" {
+		fields = append(fields, map[string]any{"name": "Host", "value": e.Host, "inline": true})
+	}
 	if e.Site != "" {
 		fields = append(fields, map[string]any{"name": "Site", "value": e.Site, "inline": true})
 	}
@@ -42,6 +44,8 @@ func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 		desc = append(desc, fmt.Sprintf("Recovered after %s.", fmtDur(e.SinceSecs)))
 	case e.Kind == "reminder":
 		desc = append(desc, e.stillOpen())
+	case e.Kind == "info":
+		desc = append(desc, e.detailLines()...)
 	case e.Kind == "ack":
 		desc = append(desc, e.ackLine())
 		if e.AckNote != "" {

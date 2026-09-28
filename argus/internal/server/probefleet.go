@@ -127,11 +127,14 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 	//   update         -> recreate the PROXY onto this tag
 	//   updater_update -> the sidecar recreates ITSELF onto this argus-updater tag
 	if req.SelfUpdate != nil && *req.SelfUpdate {
+		// Each hand-out is remembered, so the system notices can tell when one didn't go through.
 		if tag, _ := s.st.TakeProbeUpdate(ctx, proxyName); tag != "" {
 			resp.Update = tag
+			_ = s.st.MetaSet(ctx, noticeProbePending+proxyName, tag+"|"+itoa64(time.Now().Unix()))
 		}
 		if tag, _ := s.st.TakeUpdaterUpdate(ctx, proxyName); tag != "" {
 			resp.UpdaterUpdate = tag
+			_ = s.st.MetaSet(ctx, noticeUpdPending+proxyName, tag+"|"+itoa64(time.Now().Unix()))
 		}
 	}
 	// Hand out (and mark dispatched) a queued discovery job exactly once - only to the proxy

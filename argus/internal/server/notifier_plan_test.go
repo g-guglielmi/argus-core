@@ -24,11 +24,11 @@ func planKeys(plan []plannedDelivery) map[string]bool {
 func TestPlanDeliveries(t *testing.T) {
 	// Incident started at 1000 and went live (passed the alert delay) at 1060.
 	const start, fired = int64(1000), int64(1060)
-	team := notifyDest{key: "g:1", kind: "g", id: 1, minSev: 2, repeat: 1800, created: 0}   // at once, remind every 30m
-	manager := notifyDest{key: "g:2", kind: "g", id: 2, minSev: 2, delay: 1800, created: 0} // after 30m
-	oncall := notifyDest{key: "u:7", kind: "u", id: 7, minSev: 4, created: 0}               // High and up only
-	other := notifyDest{key: "g:3", kind: "g", id: 3, minSev: 2, sites: []string{"site2"}}  // another site
-	late := notifyDest{key: "g:4", kind: "g", id: 4, minSev: 2, created: 5000}              // added after the problem went live
+	team := notifyDest{alerts: true, key: "g:1", kind: "g", id: 1, minSev: 2, repeat: 1800, created: 0}   // at once, remind every 30m
+	manager := notifyDest{alerts: true, key: "g:2", kind: "g", id: 2, minSev: 2, delay: 1800, created: 0} // after 30m
+	oncall := notifyDest{alerts: true, key: "u:7", kind: "u", id: 7, minSev: 4, created: 0}               // High and up only
+	other := notifyDest{alerts: true, key: "g:3", kind: "g", id: 3, minSev: 2, sites: []string{"site2"}}  // another site
+	late := notifyDest{alerts: true, key: "g:4", kind: "g", id: 4, minSev: 2, created: 5000}              // added after the problem went live
 	dests := []notifyDest{team, manager, oncall, other, late}
 	groups := []string{"site1/Servers"}
 
@@ -58,7 +58,7 @@ func TestPlanDeliveries(t *testing.T) {
 	}
 
 	// "Remind for" High and up: the warning is alerted but never reminded; the error is.
-	strict := notifyDest{key: "g:6", kind: "g", id: 6, minSev: 2, repeat: 900, remSev: 4}
+	strict := notifyDest{alerts: true, key: "g:6", kind: "g", id: 6, minSev: 2, repeat: 900, remSev: 4}
 	sent := map[string]store.NotifyDelivery{"g:6": {Kind: "g", ChannelID: 6, Severity: 2, LastSent: fired}}
 	if p := planKeys(planDeliveries([]notifyDest{strict}, sent, groups, 2, start, fired, fired+3600)); len(p) != 0 {
 		t.Fatalf("warning reminded below the remind-for floor: %v", p)
@@ -74,7 +74,7 @@ func TestPlanDeliveries(t *testing.T) {
 	}
 
 	// The delay counts from when the incident began, but never sends before the alert went live.
-	quick := notifyDest{key: "g:5", kind: "g", id: 5, minSev: 2, delay: 30}
+	quick := notifyDest{alerts: true, key: "g:5", kind: "g", id: 5, minSev: 2, delay: 30}
 	if p := planKeys(planDeliveries([]notifyDest{quick}, nil, groups, 2, start, fired, 1040)); len(p) != 0 {
 		t.Fatalf("sent before going live: %v", p)
 	}

@@ -25,6 +25,8 @@ type channelView struct {
 	DelayMin    int               `json:"delay_min"`
 	RepeatMin   int               `json:"repeat_min"`
 	RepeatSev   int               `json:"repeat_min_severity"`
+	Alerts      bool              `json:"alerts"`
+	Notices     bool              `json:"system_notices"`
 	Config      map[string]string `json:"config"`
 	// Delivery health for the channel card: last successful send, last failure (+ reason), sent count.
 	LastSentAt  int64  `json:"last_sent_at,omitempty"`
@@ -40,7 +42,7 @@ func toChannelView(c store.NotifyChannel) channelView {
 	}
 	return channelView{
 		ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Sites: c.Sites, MinSeverity: c.MinSeverity,
-		DelayMin: c.DelayMin, RepeatMin: c.RepeatMin, RepeatSev: c.RepeatSev, Config: cfg,
+		DelayMin: c.DelayMin, RepeatMin: c.RepeatMin, RepeatSev: c.RepeatSev, Alerts: c.Alerts, Notices: c.Notices, Config: cfg,
 		LastSentAt: c.LastSentAt, LastError: c.LastError, LastErrorAt: c.LastErrorAt, SentCount: c.SentCount,
 	}
 }
@@ -82,7 +84,18 @@ type channelRequest struct {
 	DelayMin    int               `json:"delay_min"`
 	RepeatMin   int               `json:"repeat_min"`
 	RepeatSev   int               `json:"repeat_min_severity"`
+	Alerts      *bool             `json:"alerts"`         // nil = true (a client from before system notices)
+	Notices     bool              `json:"system_notices"`
 	Config      map[string]string `json:"config"`
+}
+
+// channelCarries resolves what a channel carries and rejects one that would carry nothing.
+func channelCarries(alerts *bool, notices bool) (bool, bool, string) {
+	a := alerts == nil || *alerts
+	if !a && !notices {
+		return false, false, "a channel needs alerts, system notices, or both"
+	}
+	return a, notices, ""
 }
 
 // Escalation bounds: a channel can wait up to a day before it's told, and reminds at most every 5
@@ -153,9 +166,13 @@ func (req channelRequest) validate() (store.NotifyChannel, string) {
 	// The notifier never alerts below Warning, so clamp the floor to 2..5 (Warning..Disaster).
 	sev := alertLevel(req.MinSeverity)
 	delay, repeat := clampEscalation(req.DelayMin, req.RepeatMin)
+	alerts, notices, msg := channelCarries(req.Alerts, req.Notices)
+	if msg != "" {
+		return store.NotifyChannel{}, msg
+	}
 	return store.NotifyChannel{
 		Type: t, Name: name, Enabled: req.Enabled, Sites: cleanSites(req.Sites), MinSeverity: sev,
-		DelayMin: delay, RepeatMin: repeat, RepeatSev: alertLevel(req.RepeatSev), Config: cfg,
+		DelayMin: delay, RepeatMin: repeat, RepeatSev: alertLevel(req.RepeatSev), Alerts: alerts, Notices: notices, Config: cfg,
 	}, ""
 }
 

@@ -11,12 +11,24 @@ import (
 // SyncUnsupported records which sensors are "not supported" right now and returns since when each has
 // been: a sensor seen for the first time is stamped now, and sensors that collect again are forgotten.
 func (s *Store) SyncUnsupported(ctx context.Context, itemIDs []string) (map[string]int64, error) {
+	return s.syncSince(ctx, "item_unsupported", "item_id", itemIDs)
+}
+
+// SyncNoticeConditions records which system-notice conditions hold right now and returns since when
+// each has: a new one is stamped now, and ended ones are forgotten.
+func (s *Store) SyncNoticeConditions(ctx context.Context, keys []string) (map[string]int64, error) {
+	return s.syncSince(ctx, "notice_conditions", "key", keys)
+}
+
+// syncSince keeps an (id, since) table in step with the ids present now. table and col are fixed
+// names from this package, never user input.
+func (s *Store) syncSince(ctx context.Context, table, col string, itemIDs []string) (map[string]int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	rows, err := tx.QueryContext(ctx, `SELECT item_id, since FROM item_unsupported`)
+	rows, err := tx.QueryContext(ctx, `SELECT `+col+`, since FROM `+table)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +49,7 @@ func (s *Store) SyncUnsupported(ctx context.Context, itemIDs []string) (map[stri
 		since, ok := known[id]
 		if !ok {
 			since = now
-			if _, err := tx.ExecContext(ctx, `INSERT INTO item_unsupported(item_id, since) VALUES(?, ?)`, id, since); err != nil {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO `+table+`(`+col+`, since) VALUES(?, ?)`, id, since); err != nil {
 				return nil, err
 			}
 		}
@@ -45,7 +57,7 @@ func (s *Store) SyncUnsupported(ctx context.Context, itemIDs []string) (map[stri
 	}
 	for id := range known {
 		if _, still := out[id]; !still {
-			if _, err := tx.ExecContext(ctx, `DELETE FROM item_unsupported WHERE item_id=?`, id); err != nil {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE `+col+`=?`, id); err != nil {
 				return nil, err
 			}
 		}

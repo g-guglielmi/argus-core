@@ -209,6 +209,9 @@ func htmlColor(e Event) string {
 	if e.Kind == "ack" {
 		return "#3b82f6"
 	}
+	if e.Kind == "info" {
+		return "#2ea8c9"
+	}
 	switch e.State {
 	case "error":
 		return "#e2564d"
@@ -251,7 +254,9 @@ func htmlBody(e Event) string {
 	if e.isAlert() {
 		row("Severity", severityLabel(e.Severity), c)
 	}
-	row("Host", e.Host, "")
+	if e.Host != "" {
+		row("Host", e.Host, "")
+	}
 	if e.Site != "" {
 		row("Site", e.Site, "")
 	}
@@ -267,6 +272,8 @@ func htmlBody(e Event) string {
 		when = "Recovered at"
 	case "ack":
 		when = "Acknowledged at"
+	case "info":
+		when = "Time"
 	}
 	row(when, e.When.Format("2006-01-02 15:04:05 MST"), "")
 
@@ -279,6 +286,10 @@ func htmlBody(e Event) string {
 		lead = leadDiv(e.bodyLines()[0])
 	case "reminder":
 		lead = leadDiv(e.stillOpen())
+	case "info":
+		for _, l := range e.detailLines() {
+			lead += leadDiv(l)
+		}
 	case "ack":
 		lead = leadDiv(e.ackLine())
 		if e.AckNote != "" {

@@ -398,6 +398,21 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   feature arrived were baselined. Supported sensors with no new values are deliberately not alerted:
   many store only changes, so an old last value is normal; a silent device or probe is caught by its
   master instead.
+- **System notices:** Argus's own news as `[INFO]` messages (neutral colour, no reminders, no
+  recovery), for channels with **System notices** on (`system_notices`, off by default; a channel's
+  alert level can be **None** = `alerts` off, for a notices-only channel; one with neither is
+  refused). A loop in the server checks once a minute, since most sources are only read on request:
+  the release cache (`appUpdateStatus`), the update-dir status files (core self-update outcome), the
+  probes' check-in rows (versions, updater versions, OS patch status), the core OS report (security
+  updates, reboot, Zabbix candidate), discovery jobs past a watermark, and channels whose last
+  attempt failed. **Conditions** are tracked in `notice_conditions` (since when) and told once they
+  have held their minimum time (probe/updater behind 6 h, security updates 48 h, reboot and Zabbix
+  update 24 h, failing channel 30 min, a new release at once); **events** are told once. The
+  `notices_sent` ledger dedupes (a condition's row goes when it ends, so it can be told again;
+  events are kept a year). Probe self-update outcomes are inferred: a newly reported version is a
+  success, and an update handed out at check-in that isn't running 20 minutes later failed (the
+  updater rolled it back). Probe notices route by the probe's site; a failing shared channel isn't
+  told about itself, and a failing personal channel only reaches its owner's other channels.
 - **Deliveries decide the follow-ups:** `notify_deliveries` records which channels an alert reached.
   Reminders, the **acknowledged notice** (`[ACKNOWLEDGED]` with who took it and their note, sent once
   per ack; an un-ack re-arms it and resumes reminders) and the **recovery** go to exactly those

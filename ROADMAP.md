@@ -188,7 +188,7 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   problem, so nothing alerted. Argus raises its own problems for both, as errors (a sensor on
   its third failed check, by its own interval; an interface once Zabbix marks it unavailable), shown and acknowledged like any other. Supported sensors
   with old values are left alone: many store only changes. - v0.5.9
-- [ ] **System notices** - Argus's own events as neutral `[INFO]` messages, sent once (no reminders,
+- [ ] **System notices** (on `:testing`) - Argus's own events as neutral `[INFO]` messages, sent once (no reminders,
   no recovery): a new Argus release and self-update success/failure; a probe or updater behind, and
   probe self-update success/failure; pending security updates or a needed reboot on the core or a
   probe VM; a Zabbix minor update for the core; a finished discovery scan with its count of new

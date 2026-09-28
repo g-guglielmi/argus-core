@@ -142,3 +142,30 @@ func TestSyncUnsupported(t *testing.T) {
 		t.Fatalf("table after sync: %v", all)
 	}
 }
+
+// A notice is claimed once; releasing it lets it be told again; conditions track since when they hold.
+func TestNoticeLedger(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	if fresh, err := st.ClaimNotice(ctx, "argus-release:0.6.0", NoticeFact); err != nil || !fresh {
+		t.Fatalf("first claim: %v %v", fresh, err)
+	}
+	if fresh, _ := st.ClaimNotice(ctx, "argus-release:0.6.0", NoticeFact); fresh {
+		t.Fatal("a notice was claimed twice")
+	}
+	facts, _ := st.SentFacts(ctx)
+	if len(facts) != 1 {
+		t.Fatalf("facts: %v", facts)
+	}
+	_ = st.ReleaseNotice(ctx, "argus-release:0.6.0")
+	if fresh, _ := st.ClaimNotice(ctx, "argus-release:0.6.0", NoticeFact); !fresh {
+		t.Fatal("a released notice couldn't be claimed again")
+	}
+	since, err := st.SyncNoticeConditions(ctx, []string{"core-reboot"})
+	if err != nil || since["core-reboot"] == 0 {
+		t.Fatalf("conditions: %v %v", since, err)
+	}
+	if since, _ = st.SyncNoticeConditions(ctx, nil); len(since) != 0 {
+		t.Fatalf("ended condition kept: %v", since)
+	}
+}

@@ -310,6 +310,22 @@ CREATE TABLE IF NOT EXISTS tree_hidden (
 -- alerts are held. No row = the default master (the ICMP ping sensor); item_id '' = no master.
 -- Since when each sensor has been "not supported" (Zabbix doesn't say), so Argus can alert on one that
 -- stays that way and time the incident. Rows go when the sensor collects again.
+-- System notices already sent, so each goes out once. kind 'fact' = a condition that holds for a
+-- while (an update available, a probe behind): its row goes when the condition ends, so it can be
+-- told again if it comes back. kind 'event' = a one-off (a scan finished): kept for a year.
+CREATE TABLE IF NOT EXISTS notices_sent (
+  key     TEXT PRIMARY KEY,
+  kind    TEXT NOT NULL,
+  sent_at INTEGER NOT NULL
+);
+
+-- Since when each system-notice condition (an update available, a probe behind, ...) has held, so a
+-- notice goes out only once its condition is old enough. Rows go when the condition ends.
+CREATE TABLE IF NOT EXISTS notice_conditions (
+  key   TEXT PRIMARY KEY,
+  since INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS item_unsupported (
   item_id TEXT PRIMARY KEY,
   since   INTEGER NOT NULL
@@ -531,7 +547,10 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 	// every" = minutes between reminders while it stays open and unacknowledged (0 = no reminders).
 	for _, table := range []string{"notify_channels", "user_notify_channels"} {
 		// repeat_min_severity: reminders only for problems at or above it (2 = Warning, i.e. every alert).
-		for _, ddl := range []string{"delay_min INTEGER NOT NULL DEFAULT 0", "repeat_min INTEGER NOT NULL DEFAULT 0", "repeat_min_severity INTEGER NOT NULL DEFAULT 2"} {
+		// alerts / system_notices: what the channel carries - problem alerts (on by default, as before)
+		// and Argus's own system notices (off by default).
+		for _, ddl := range []string{"delay_min INTEGER NOT NULL DEFAULT 0", "repeat_min INTEGER NOT NULL DEFAULT 0", "repeat_min_severity INTEGER NOT NULL DEFAULT 2",
+			"alerts INTEGER NOT NULL DEFAULT 1", "system_notices INTEGER NOT NULL DEFAULT 0"} {
 			if err := s.ensureColumn(table, ddl); err != nil {
 				return err
 			}

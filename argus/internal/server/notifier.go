@@ -63,12 +63,15 @@ type notifyDest struct {
 	delay   int64 // seconds
 	repeat  int64 // seconds, 0 = no reminders
 	remSev  int   // reminders only at or above this severity
+	alerts  bool  // carries problem alerts (a channel can carry only system notices)
+	notices bool  // carries Argus's system notices
+	userID  int64 // a personal channel's owner (0 for a shared channel)
 	created int64 // unix s
 	send    func(ctx context.Context, ev notify.Event)
 }
 
 func (d notifyDest) serves(groups []string, sev int) bool {
-	return channelMatches(d.sites, d.minSev, groups, sev)
+	return d.alerts && channelMatches(d.sites, d.minSev, groups, sev)
 }
 
 // notifyDests turns the enabled global and personal channels into one destination list.
@@ -79,7 +82,7 @@ func notifyDests(st *store.Store, channels []store.NotifyChannel, userChannels [
 		out = append(out, notifyDest{
 			key: store.DeliveryKey(store.DeliveryGlobal, c.ID), kind: store.DeliveryGlobal, id: c.ID,
 			sites: c.Sites, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
-			remSev: c.RepeatSev, created: c.CreatedAt.Unix(),
+			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, created: c.CreatedAt.Unix(),
 			send: func(ctx context.Context, ev notify.Event) { sendGlobal(ctx, st, c, userEmails, ev, logger) },
 		})
 	}
@@ -88,7 +91,7 @@ func notifyDests(st *store.Store, channels []store.NotifyChannel, userChannels [
 		out = append(out, notifyDest{
 			key: store.DeliveryKey(store.DeliveryUser, c.ID), kind: store.DeliveryUser, id: c.ID,
 			sites: c.Sites, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
-			remSev: c.RepeatSev, created: c.CreatedAt.Unix(),
+			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, userID: c.UserID, created: c.CreatedAt.Unix(),
 			send: func(ctx context.Context, ev notify.Event) { sendPersonal(ctx, st, c, ev, logger) },
 		})
 	}

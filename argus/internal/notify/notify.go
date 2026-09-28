@@ -24,7 +24,7 @@ type Channel struct {
 
 // Event is a single alert to deliver.
 type Event struct {
-	Kind      string    // "problem" | "reminder" | "ack" | "recovery"
+	Kind      string    // "problem" | "reminder" | "ack" | "recovery" | "info" (a system notice)
 	Severity  int       // Zabbix severity 0..5
 	State     string    // "warning" | "error" | "ok" (an "ack" keeps its problem's state)
 	Host      string    // host display name
@@ -37,6 +37,7 @@ type Event struct {
 	Reminder  int       // which reminder this is, 1-based (reminders only)
 	AckBy     string    // who acknowledged it (ack notices only)
 	AckNote   string    // their note, if any (ack notices only)
+	Detail    string    // a system notice's explanation, one or more lines (info only)
 	OpenURL   string    // deep link to the sensor in Argus (optional)
 	AckURL    string    // signed one-click acknowledge link (problem alerts only, optional)
 	ChartPNG  []byte    // rendered 2-hour trend graph, uploaded inline (optional)
@@ -48,6 +49,7 @@ const (
 	colorWarning = 0xE0A53A
 	colorOK      = 0x3FA66A
 	colorAck     = 0x3B82F6
+	colorInfo    = 0x2EA8C9 // the Argus accent: a notice, not a status
 )
 
 // isAlert reports whether the event announces an open problem (the first alert or a reminder): those
@@ -57,6 +59,9 @@ func (e Event) isAlert() bool { return e.Kind == "problem" || e.Kind == "reminde
 func (e Event) color() int {
 	if e.Kind == "ack" {
 		return colorAck
+	}
+	if e.Kind == "info" {
+		return colorInfo
 	}
 	switch e.State {
 	case "error":
@@ -75,6 +80,9 @@ func (e Event) emoji() string {
 	}
 	if e.Kind == "ack" {
 		return "🔵"
+	}
+	if e.Kind == "info" {
+		return "ℹ️"
 	}
 	switch e.State {
 	case "error":
@@ -113,6 +121,8 @@ func (e Event) tag() string {
 		return "RESOLVED"
 	case "ack":
 		return "ACKNOWLEDGED"
+	case "info":
+		return "INFO"
 	case "reminder":
 		return strings.ToUpper(severityLabel(e.Severity)) + " REMINDER"
 	}
@@ -141,7 +151,21 @@ func (e Event) ackLine() string {
 
 // subject is the one-line summary (no emoji) used as the email subject and message title.
 func (e Event) subject() string {
+	if e.Host == "" { // a notice about Argus itself has no host
+		return fmt.Sprintf("[%s] %s", e.tag(), e.Name)
+	}
 	return fmt.Sprintf("[%s] %s - %s", e.tag(), e.Host, e.Name)
+}
+
+// detailLines splits a notice's explanation into its lines.
+func (e Event) detailLines() []string {
+	var out []string
+	for _, l := range strings.Split(e.Detail, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // whereLine is the compact "site · host" location line for the chat channels.
@@ -169,6 +193,17 @@ func (e Event) valueLine() string {
 // bodyLines returns the human-readable detail lines shared across channels (plain text).
 func (e Event) bodyLines() []string {
 	var lines []string
+	if e.Kind == "info" {
+		lines = append(lines, e.Name)
+		lines = append(lines, e.detailLines()...)
+		if e.Host != "" {
+			lines = append(lines, "Host: "+e.Host)
+		}
+		if e.Site != "" {
+			lines = append(lines, "Site: "+e.Site)
+		}
+		return append(lines, "Time: "+e.When.Format("2006-01-02 15:04:05 MST"))
+	}
 	switch e.Kind {
 	case "recovery":
 		if e.SinceSecs > 0 {

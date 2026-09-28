@@ -68,8 +68,15 @@ func sendTelegram(ctx context.Context, cfg map[string]string, e Event) error {
 func telegramMessage(e Event) (string, [][]map[string]string) {
 	var b strings.Builder
 	b.WriteString(e.emoji() + " <b>" + htmlEscape(e.subject()) + "</b>\n")
-	b.WriteString(htmlEscape(e.whereLine()) + "\n")
+	if e.Kind != "info" || e.Host != "" {
+		b.WriteString(htmlEscape(e.whereLine()) + "\n")
+	}
 	switch e.Kind {
+	case "info":
+		for _, l := range e.detailLines() {
+			b.WriteString(htmlEscape(l) + "\n")
+		}
+		b.WriteString("At " + e.When.Format("2006-01-02 15:04 MST") + "\n")
 	case "recovery":
 		if e.SinceSecs > 0 {
 			b.WriteString("Recovered after " + fmtDur(e.SinceSecs) + "\n")

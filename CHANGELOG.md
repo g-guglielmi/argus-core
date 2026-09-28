@@ -11,6 +11,25 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Added:**
+- **System notices.** Argus can now tell you about itself, as neutral `[INFO]` messages sent once
+  each. Turn on **System notices** on any channel, shared or personal (off by default):
+  - a new Argus release is available, and when a self-update finishes or fails;
+  - a probe or its updater is behind the newest release (for six hours: the fleet normally updates
+    itself sooner), and when a probe self-update goes through or doesn't;
+  - security updates still pending after two days, or a reboot needed for a day, on the core VM or
+    a probe VM (security updates normally apply by themselves);
+  - a Zabbix server update is available for the core;
+  - a discovery scan or UniFi sweep finished, with how many devices it found and how many are new;
+  - a notification channel keeps failing (for half an hour): told on your other channels, and a
+    personal channel's failure only to its owner.
+
+  A probe's notices follow the channel's sites. A condition that clears and comes back is told
+  again.
+- A channel's alert level can be **None**, for a channel that only carries system notices.
+
 ## [0.5.9] - 2026-09-28
 
 **Added:**

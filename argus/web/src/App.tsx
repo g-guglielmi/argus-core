@@ -32,7 +32,7 @@ type HostCfg = { hostid: string; host: string; name: string; monitored_by: numbe
 type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; options: { id: string; label: string }[] }
 type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
-type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
+type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
 // Alert levels a notification channel can choose (Zabbix severity floors). The app shows problems as
 // warnings (Zabbix Warning) or errors (Average, High, Disaster), so these are the two choices.
@@ -1934,7 +1934,7 @@ function NotificationsView() {
                   <span className="chan-name">{c.name}</span>
                   <Switch checked={c.enabled} onChange={() => toggle(c)} title={c.enabled ? 'Enabled - switch off to pause alerts to this channel' : 'Disabled - switch on to resume alerts'} />
                 </div>
-                <p className="chan-meta">{m.label} · {sitesLabel(c.sites)} · {sev}{c.type === 'email' && c.config?.recipients === 'users' ? ' · to all users' : ''}{timingLabel(c)}</p>
+                <p className="chan-meta">{m.label} · {sitesLabel(c.sites)} · {c.alerts === false ? 'No alerts' : sev}{c.type === 'email' && c.config?.recipients === 'users' ? ' · to all users' : ''}{c.alerts === false ? '' : timingLabel(c)}{c.system_notices ? ' · system notices' : ''}</p>
                 <ChannelDelivery c={c} />
                 <div className="chan-actions">
                   <Button disabled={busy === c.id} onClick={() => test(c)}>{busy === c.id ? 'Sending…' : 'Send test'}</Button>
@@ -2005,6 +2005,16 @@ function EscalationSection({ delay, repeat, remSev, onDelay, onRepeat, onRemSev,
   )
 }
 
+// NoticesSwitch turns on Argus's own system notices for a channel (off by default).
+function NoticesSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="chan-field">
+      <Switch checked={checked} onChange={onChange} label="System notices" />
+      <span className="set-note" style={{ margin: 0 }}>Argus's own news, sent once each: a new Argus release and self-update results, probes or updaters behind, pending OS updates or reboots, a Zabbix update for the core, finished discovery scans, and a channel that keeps failing.</span>
+    </div>
+  )
+}
+
 function ChanSection({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section className="chan-sec">
@@ -2065,13 +2075,15 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   const [delayMin, setDelayMin] = useState(initial?.delay_min || 0)
   const [repeatMin, setRepeatMin] = useState(initial?.repeat_min || 0)
   const [remSev, setRemSev] = useState(initial?.repeat_min_severity || 2)
+  const [alerts, setAlerts] = useState(initial ? initial.alerts !== false : true)
+  const [notices, setNotices] = useState(!!initial?.system_notices)
   const [enabled, setEnabled] = useState(initial ? initial.enabled : true)
   const [config, setConfig] = useState<Record<string, string>>(initial?.config || {})
   const setCfg = (k: string, v: string) => setConfig((c) => ({ ...c, [k]: v }))
 
   async function save(e: FormEvent) {
     e.preventDefault(); onError('')
-    const body = { type, name, sites: selSites, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, enabled, config }
+    const body = { type, name, sites: selSites, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, alerts, system_notices: notices, enabled, config }
     const url = initial ? `/api/notify/channels/${initial.id}` : '/api/notify/channels'
     const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
@@ -2126,19 +2138,22 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
           <div className="chan-field chan-wide"><span className="flabel">Sites</span>
             <SitePicker options={sites} value={selSites} onChange={setSelSites} />
           </div>
-          <label className="chan-field"><span className="flabel">Severity</span>
-            <Select value={minSev} onChange={(e) => setMinSev(Number(e.target.value))} title="Only problems at or above this severity reach this channel">
+          <label className="chan-field"><span className="flabel">Alerts</span>
+            <Select value={alerts ? minSev : 0} onChange={(e) => { const v = Number(e.target.value); setAlerts(v !== 0); if (v) setMinSev(v) }} title="Only problems at or above this severity reach this channel">
               {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
+              <option value={0}>None</option>
             </Select>
           </label>
         </div>
+        <NoticesSwitch checked={notices} onChange={setNotices} />
+        {!alerts && !notices && <p className="set-note txt-err" style={{ margin: 0 }}>Turn on alerts, system notices, or both.</p>}
       </ChanSection>
-      <EscalationSection delay={delayMin} repeat={repeatMin} remSev={remSev} onDelay={setDelayMin} onRepeat={setRepeatMin} onRemSev={setRemSev} who="This channel" />
+      {alerts && <EscalationSection delay={delayMin} repeat={repeatMin} remSev={remSev} onDelay={setDelayMin} onRepeat={setRepeatMin} onRemSev={setRemSev} who="This channel" />}
     </ChannelDialog>
   )
 }
 
-type UserChannel = { id: number; type: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
+type UserChannel = { id: number; type: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 
 // PersonalNotifyCard lets any signed-in user manage their own Telegram/Discord alert destinations,
 // separate from the shared channels an admin configures in the Notifications tab. Self-service:
@@ -2207,7 +2222,7 @@ function PersonalNotifyCard() {
                   <span className="chan-name">{m.label}</span>
                   <Switch checked={c.enabled} onChange={() => toggle(c)} title={c.enabled ? 'Enabled - switch off to pause your alerts here' : 'Disabled - switch on to resume'} />
                 </div>
-                <p className="chan-meta">{sitesLabel(c.sites)} · {sev}{timingLabel(c)}</p>
+                <p className="chan-meta">{sitesLabel(c.sites)} · {c.alerts === false ? 'No alerts' : sev}{c.alerts === false ? '' : timingLabel(c)}{c.system_notices ? ' · system notices' : ''}</p>
                 <ChannelDelivery c={c} />
                 <div className="chan-actions">
                   <Button disabled={busy === c.id} onClick={() => test(c)}>{busy === c.id ? 'Sending…' : 'Send test'}</Button>
@@ -2240,13 +2255,15 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   const [delayMin, setDelayMin] = useState(initial?.delay_min || 0)
   const [repeatMin, setRepeatMin] = useState(initial?.repeat_min || 0)
   const [remSev, setRemSev] = useState(initial?.repeat_min_severity || 2)
+  const [alerts, setAlerts] = useState(initial ? initial.alerts !== false : true)
+  const [notices, setNotices] = useState(!!initial?.system_notices)
   const [enabled, setEnabled] = useState(initial ? initial.enabled : true)
   const [config, setConfig] = useState<Record<string, string>>(initial?.config || {})
   const setCfg = (k: string, v: string) => setConfig((c) => ({ ...c, [k]: v }))
 
   async function save(e: FormEvent) {
     e.preventDefault(); onError('')
-    const body = { type, sites: selSites, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, enabled, config }
+    const body = { type, sites: selSites, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, alerts, system_notices: notices, enabled, config }
     const url = initial ? `/api/me/notify/channels/${initial.id}` : '/api/me/notify/channels'
     const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
@@ -2283,14 +2300,17 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
           <div className="chan-field chan-wide"><span className="flabel">Sites</span>
             <SitePicker options={sites} value={selSites} onChange={setSelSites} />
           </div>
-          <label className="chan-field"><span className="flabel">Severity</span>
-            <Select value={minSev} onChange={(e) => setMinSev(Number(e.target.value))} title="Only problems at or above this severity reach you">
+          <label className="chan-field"><span className="flabel">Alerts</span>
+            <Select value={alerts ? minSev : 0} onChange={(e) => { const v = Number(e.target.value); setAlerts(v !== 0); if (v) setMinSev(v) }} title="Only problems at or above this severity reach you">
               {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
+              <option value={0}>None</option>
             </Select>
           </label>
         </div>
+        <NoticesSwitch checked={notices} onChange={setNotices} />
+        {!alerts && !notices && <p className="set-note txt-err" style={{ margin: 0 }}>Turn on alerts, system notices, or both.</p>}
       </ChanSection>
-      <EscalationSection delay={delayMin} repeat={repeatMin} remSev={remSev} onDelay={setDelayMin} onRepeat={setRepeatMin} onRemSev={setRemSev} who="You" />
+      {alerts && <EscalationSection delay={delayMin} repeat={repeatMin} remSev={remSev} onDelay={setDelayMin} onRepeat={setRepeatMin} onRemSev={setRemSev} who="You" />}
     </ChannelDialog>
   )
 }

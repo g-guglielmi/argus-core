@@ -62,6 +62,9 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// Resolve the newest probe-vm appliance + its OVA/qcow2/VHD assets from GitHub Releases, so the
 	// Add-probe wizard can offer direct downloads instead of sending the user to GitHub.
 	s.startProbeVMRefresh(context.Background())
+	// System notices (updates available, self-update results, finished scans, ...) for the channels
+	// that opted in.
+	s.startNotices(context.Background())
 	// Mirror the stored core reboot window to the shared update dir so the host reboot timer sees it
 	// even if the setting is never touched after this boot (DESIGN §14c). Best-effort.
 	s.syncRebootWindowFile(context.Background())
