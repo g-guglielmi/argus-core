@@ -27,7 +27,7 @@ GitHub Release from the matching section below.
     old one out at once; deleting the page does too.
   - The page shows only its sites, never addresses, credentials or settings, reads through its own
     endpoint (never the app's API), and is kept out of search engines and other sites' frames. It
-    uses the app's colours: the pills are filled with their state's colour, and the tab icon is a
+    uses the app's colours: the pills are tinted with their state's colour, and the tab icon is a
     green check with no errors and a red "!" with any.
 
 **Changed:**

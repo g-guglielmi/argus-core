@@ -24,13 +24,17 @@
   .brand { font-weight: 800; letter-spacing: 0.18em; font-size: 0.72em; color: var(--accent); }
   .pills { display: flex; gap: 0.45em; margin-left: auto; }
   header { min-height: 2.4em; }
-  /* Pills take their state's colour. The one shown is solid with a white ring; the others are
-     softened, and one with nothing in it fades further. */
-  .pill { display: inline-flex; align-items: center; gap: 0.4em; padding: 0.2em 0.8em; border-radius: 999px; border: 2px solid transparent;
-    color: #fff; font: inherit; font-weight: 700; cursor: pointer; font-variant-numeric: tabular-nums; opacity: 0.6; }
-  .pill.error { background: var(--err); } .pill.warning { background: var(--warn); color: #1a1406; } .pill.acked { background: var(--acked); color: #1d1010; }
-  .pill.zero { opacity: 0.35; }
-  .pill.on { opacity: 1; border-color: #fff; }
+  /* Pills are tinted with their state's colour: a soft wash, a thin border and bright text. The one
+     shown gets a stronger wash and a full-colour border; one with nothing in it goes neutral grey. */
+  .pill { --c: var(--muted); display: inline-flex; align-items: center; gap: 0.45em; padding: 0.22em 0.85em; border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); background: color-mix(in srgb, var(--c) 14%, transparent);
+    color: var(--c); font: inherit; font-weight: 650; cursor: pointer; font-variant-numeric: tabular-nums;
+    transition: background 0.15s, border-color 0.15s; }
+  .pill .n { font-weight: 800; }
+  .pill.error { --c: var(--err); } .pill.acked { --c: var(--acked); } .pill.warning { --c: var(--warn); }
+  .pill.zero { --c: var(--faint); }
+  .pill:hover { background: color-mix(in srgb, var(--c) 22%, transparent); }
+  .pill.on { background: color-mix(in srgb, var(--c) 28%, transparent); border-color: var(--c); }
   .clock { text-align: right; line-height: 1.1; white-space: nowrap; }
   .clock .time { font-size: 1.05em; font-weight: 700; font-variant-numeric: tabular-nums; }
   .clock .upd { font-size: 0.68em; color: var(--muted); }
