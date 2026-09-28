@@ -570,6 +570,14 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 	}
 	// The status-page token, encrypted, so an admin can copy the link again (pages made before this
 	// only have the hash: they need a new link to become copyable).
+	// A saved UniFi controller: which sites' probes may receive it, and how its certificate is
+	// checked ("verify" against the system roots, "pin" a fingerprint, "ignore"). Rows from before
+	// the column existed keep the old behaviour explicitly, so nothing that worked stops working.
+	for _, col := range []string{"sites TEXT NOT NULL DEFAULT ''", "tls_mode TEXT NOT NULL DEFAULT 'ignore'", "fingerprint TEXT NOT NULL DEFAULT ''"} {
+		if err := s.ensureColumn("unifi_controllers", col); err != nil {
+			return err
+		}
+	}
 	if err := s.ensureColumn("status_pages", "token_enc TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}

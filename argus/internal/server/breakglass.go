@@ -79,6 +79,10 @@ func (s *Server) handleRevealBreakGlass(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no break-glass credential has been reported for this probe (it's set by the probe VM on first boot)"})
 		return
 	}
-	s.logger.Info("probe break-glass credential revealed", "proxy", name)
+	by := ""
+	if u, ok := auth.UserFrom(r.Context()); ok {
+		by = u.Email
+	}
+	s.logger.Info("probe break-glass credential revealed", "proxy", name, "by", by)
 	writeJSON(w, http.StatusOK, map[string]any{"username": user, "password": secret, "updated_at": at})
 }

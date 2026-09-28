@@ -352,6 +352,18 @@ socket (works under Docker's default `ping_group_range`, silently skipped elsewh
 The core has its own SNMP default (stored under proxy id "0", set via Probes → Core SNMP): it backs
 core-run scans and gives core-monitored hosts the same SNMP-credential inheritance as proxy hosts.
 
+**Controller scope and certificates.** A saved controller carries a **site scope** (`sites`; only
+the probes of those sites receive it and its API key at scan/sweep hand-out; empty = every site) and
+a **certificate policy** (`tls_mode` verify | pin | ignore, `fingerprint` for pin). Saving with
+*verify* makes the core inspect the certificate: trusted by the system roots -> saved; self-signed ->
+the admin is shown the certificate (subject, issuer, expiry, SHA-256) and asked to pin it; unreachable
+from the core -> paste a fingerprint or ignore. The Go client (`internal/unifi`, `Options`) and the
+probe scripts (`tls_opener` in `argus_netscan.py` / `argus_unifi_sweep.py`, the pinned connection
+compares the leaf SHA-256 right after the handshake) apply the same policy. XCP-NG (`{$XCP.TLS}`,
+default pin) pins on the collector itself: first contact stores the SHA-256 under
+`/var/lib/zabbix/argus-pins/`, a change is refused and reported as `tls_error`. The UniFi class
+templates' own HTTP items still don't verify (Zabbix can't pin).
+
 **Mechanics (UniFi controller sweep, shipped).** The second candidate source rides the exact same
 rails: a `discovery_jobs` row with `kind=unifi` referencing a saved controller (`unifi_controllers`,
 API key encrypted at rest, write-only from the browser). A probe advertising `"sweeps":true`

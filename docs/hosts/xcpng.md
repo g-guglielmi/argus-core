@@ -11,6 +11,13 @@ into the pool master over XML-RPC/HTTPS once per poll and reads everything in on
 - **Address**: the **pool master's IP**. A single host is its own master; if you point at a slave,
   the collector follows XAPI's redirect to the master automatically. One Argus device covers the
   whole pool - each member appears as its own set of sensors, named after the hypervisor.
+- **Certificate check** (`{$XCP.TLS}`, host settings): XCP-NG hosts run self-signed XAPI
+  certificates, so the default **pin** trusts the certificate on first contact and remembers its
+  SHA-256 on the collector (the probe or the core, under `/var/lib/zabbix/argus-pins/`, one file per
+  address); a different certificate later is refused and the host reads as down, with the reason in
+  the raw data's `tls_error`. After a deliberate certificate change, delete that pin file (or switch
+  to **ignore** once, then back). **verify** checks against the collector's CA store instead; **ignore**
+  checks nothing.
 - **Credentials**: the XAPI login. On a stock XCP-NG that is **`root`** and the host root password
   (local XAPI accounts are root-only; only pools with external/AD authentication have other users).
   The password is stored as a Zabbix **secret macro** (write-only after saving).

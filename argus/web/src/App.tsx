@@ -4080,7 +4080,12 @@ type DiscoveryUnifi = { name?: string; model?: string; type?: string; state?: nu
 type DiscoveryUnifiClient = { name?: string; hostname?: string; wired?: boolean }
 type DiscoveryResultRow = { id: number; ip: string; mac?: string; rdns?: string; tcp: number[]; sysdescr?: string; sysobjectid?: string; sysname?: string; http?: DiscoveryHTTP; dns?: boolean; ssh?: string; unifi?: DiscoveryUnifi; unifi_client?: DiscoveryUnifiClient; suggested_class?: string; state: string; host_id?: string; monitored_id?: string; monitored_name?: string }
 type DiscRowCfg = { name: string; classId: string; http: boolean; httpScheme: string; httpPort: string; macros: Record<string, string>; site?: string }
-type UnifiCtlRow = { id: number; name: string; url: string; has_key: boolean }
+type UnifiCtlRow = { id: number; name: string; url: string; has_key: boolean; sites: string[]; tls_mode: 'verify' | 'pin' | 'ignore'; fingerprint: string }
+type CtlForm = { id: number; name: string; url: string; key: string; sites: string[]; tls: 'verify' | 'pin' | 'ignore'; fingerprint: string }
+const emptyCtlForm = (): CtlForm => ({ id: 0, name: '', url: '', key: '', sites: [], tls: 'verify', fingerprint: '' })
+const ctlToForm = (c: UnifiCtlRow): CtlForm => ({ id: c.id, name: c.name, url: c.url, key: '', sites: c.sites || [], tls: c.tls_mode || 'verify', fingerprint: c.fingerprint || '' })
+// A pinned certificate reads as groups of four, like a fingerprint does elsewhere.
+const fpGroups = (fp: string) => (fp || '').replace(/(.{4})/g, '$1 ').trim()
 // The four controller macros the adopt path fills server-side for a sweep-adopted UniFi device
 // (the API key never travels through the browser) - the review UI shows them as auto-filled.
 const UNIFI_AUTOFILL = ['{$UNIFI.URL}', '{$UNIFI.KEY}', '{$UNIFI.MAC}', '{$UNIFI.SITE}']
@@ -4126,8 +4131,10 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
   const [sweepFrom, setSweepFrom] = useState('')
   const [sweepErr, setSweepErr] = useState<string | null>(null)
   const [sweepBusy, setSweepBusy] = useState(false)
-  const [ctlForm, setCtlForm] = useState<{ id: number; name: string; url: string; key: string } | null>(null)
+  const [ctlForm, setCtlForm] = useState<CtlForm | null>(null)
   const [ctlBusy, setCtlBusy] = useState(false)
+  const [siteNames, setSiteNames] = useState<string[]>([]) // for a controller's site scope
+  useEffect(() => { fetch('/api/notify/sites').then((r) => r.json()).then((s) => setSiteNames(s || [])).catch(() => {}) }, [])
   // Which action dialog is open - the landing page itself is just the scan history. 'new' is
   // the wizard's source-picker step; future discovery sources (other vendor APIs) slot in there.
   const [dlg, setDlg] = useState<null | 'new' | 'scan' | 'sweep' | 'ctls'>(null)
@@ -4295,12 +4302,30 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
     if (d.id) onOpenScan(d.id)
   }
 
-  async function saveCtl() {
+  async function saveCtl(override?: Partial<CtlForm>) {
     if (!ctlForm || ctlBusy) return
+    const f = { ...ctlForm, ...(override || {}) }
     setCtlBusy(true); setSweepErr(null)
-    const body = { id: ctlForm.id, name: ctlForm.name.trim(), url: ctlForm.url.trim(), api_key: ctlForm.key.trim() }
+    const body = { id: f.id, name: f.name.trim(), url: f.url.trim(), api_key: f.key.trim(), sites: f.sites, tls_mode: f.tls, fingerprint: f.fingerprint.trim() }
     const res = await fetch('/api/discovery/controllers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null)
     setCtlBusy(false)
+    if (res && res.status === 409) {
+      // The certificate needs a decision: self-signed (pin it?) or unreachable from the core.
+      const d = await res.json().catch(() => ({})) as { error?: string; unreachable?: boolean; certificate?: { fingerprint: string; subject: string; issuer: string; not_after: string } }
+      if (d.certificate) {
+        const c = d.certificate
+        const ok = await confirm({
+          title: 'Pin this certificate?',
+          message: `The controller presented a certificate that isn't trusted by the system roots (usually a console's own self-signed one).\n\nSubject: ${c.subject}\nIssuer: ${c.issuer}\nValid until: ${new Date(c.not_after).toLocaleDateString()}\nSHA-256: ${fpGroups(c.fingerprint)}\n\nPin it and every request will require exactly this certificate; a change later fails loudly.`,
+          confirmLabel: 'Pin and save',
+        })
+        if (ok) { setCtlForm({ ...f, tls: 'pin', fingerprint: c.fingerprint }); await saveCtl({ ...f, tls: 'pin', fingerprint: c.fingerprint }); return }
+        setSweepErr('Not saved. Choose "Pin" with a fingerprint, or "Ignore" for this controller.')
+        return
+      }
+      setSweepErr((d.error || 'Argus cannot reach this controller to check its certificate.') + ' If only a probe reaches it, enter its SHA-256 fingerprint under "Pin", or choose "Ignore".')
+      return
+    }
     if (!res || !res.ok) { setSweepErr(await errText(res, 'Could not save the controller')); return }
     setCtlForm(null)
     void loadCtls()
@@ -4431,7 +4456,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
         <h2>Network discovery</h2>
         <span className="hint">find devices, review what answered, adopt into monitoring · kept for 30 days</span>
         <div className="tools">
-          <Button onClick={() => { setCtlForm((ctls?.length || 0) === 0 ? { id: 0, name: '', url: '', key: '' } : null); setDlg('ctls') }}>Discovery settings</Button>
+          <Button onClick={() => { setCtlForm((ctls?.length || 0) === 0 ? emptyCtlForm() : null); setDlg('ctls') }}>Discovery settings</Button>
           <Button variant="primary" onClick={() => setDlg('new')} disabled={proxies === null || ctls === null}>+ New scan</Button>
         </div>
       </div>
@@ -4522,7 +4547,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
               <p style={{ color: 'var(--muted)', fontSize: 13, margin: 0 }}>No controllers saved yet.</p>
               <div className="dlg-foot">
                 <Button variant="ghost" onClick={() => setDlg('new')}>‹ Back</Button>
-                <Button variant="primary" onClick={() => { setCtlForm({ id: 0, name: '', url: '', key: '' }); setDlg('ctls') }}>Add a controller</Button>
+                <Button variant="primary" onClick={() => { setCtlForm(emptyCtlForm()); setDlg('ctls') }}>Add a controller</Button>
               </div>
             </>
           ) : (
@@ -4561,19 +4586,35 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
             <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', fontSize: 13, marginBottom: 8 }}>
               <b>{c.name}</b>
               <span className="mono" style={{ color: 'var(--muted)' }}>{c.url}</span>
+              <span style={{ color: 'var(--faint)', fontSize: 12 }}>{c.sites && c.sites.length ? c.sites.join(', ') : 'all sites'} · {c.tls_mode === 'pin' ? 'pinned certificate' : c.tls_mode === 'ignore' ? 'certificate ignored' : 'certificate verified'}</span>
               <span style={{ flex: 1 }} />
-              <Button variant="ghost" onClick={() => setCtlForm({ id: c.id, name: c.name, url: c.url, key: '' })}>Edit</Button>
+              <Button variant="ghost" onClick={() => setCtlForm(ctlToForm(c))}>Edit</Button>
               <Button variant="ghost" onClick={() => void deleteCtl(c)}>Delete</Button>
             </div>
           ))}
-          {ctlForm === null && <div style={{ marginTop: 4 }}><Button onClick={() => setCtlForm({ id: 0, name: '', url: '', key: '' })}>+ Add controller</Button></div>}
+          {ctlForm === null && <div style={{ marginTop: 4 }}><Button onClick={() => setCtlForm(emptyCtlForm())}>+ Add controller</Button></div>}
           {ctlForm !== null && (
             <>
               <Field label="Name" placeholder="site1" value={ctlForm.name} onChange={(e) => setCtlForm({ ...ctlForm, name: e.target.value })} />
               <Field label="Controller URL" placeholder="https://unifi.example.lan:11443" value={ctlForm.url} onChange={(e) => setCtlForm({ ...ctlForm, url: e.target.value })} />
               <Field label={ctlForm.id ? 'API key (blank = keep current)' : 'API key'} type="password" placeholder="from Control Plane → Integrations" value={ctlForm.key} onChange={(e) => setCtlForm({ ...ctlForm, key: e.target.value })} />
+              <label className="field"><span>Sites</span>
+                <SitePicker options={siteNames} value={ctlForm.sites} onChange={(v) => setCtlForm({ ...ctlForm, sites: v })} />
+              </label>
+              <p className="set-note">Which probes may use this controller (its API key travels to them for scans and sweeps). Leave empty for every site.</p>
+              <label className="field"><span>Certificate</span>
+                <Select value={ctlForm.tls} onChange={(e) => setCtlForm({ ...ctlForm, tls: e.target.value as CtlForm['tls'] })}>
+                  <option value="verify">Verify (system roots; self-signed consoles are offered for pinning)</option>
+                  <option value="pin">Pin a fingerprint</option>
+                  <option value="ignore">Ignore the certificate</option>
+                </Select>
+              </label>
+              {ctlForm.tls === 'pin' && (
+                <Field label="Certificate SHA-256 fingerprint" placeholder="64 hex characters, as the console or a browser shows it" value={ctlForm.fingerprint} onChange={(e) => setCtlForm({ ...ctlForm, fingerprint: e.target.value })} />
+              )}
+              {ctlForm.tls === 'ignore' && <p className="set-note">The API key is then sent to whatever answers at this address. Only for a network you trust end to end.</p>}
               <div style={{ display: 'flex', gap: '0.6rem' }}>
-                <Button variant="primary" onClick={saveCtl} disabled={ctlBusy}>{ctlBusy ? 'Saving…' : ctlForm.id ? 'Save changes' : 'Add controller'}</Button>
+                <Button variant="primary" onClick={() => void saveCtl()} disabled={ctlBusy}>{ctlBusy ? 'Saving…' : ctlForm.id ? 'Save changes' : 'Add controller'}</Button>
                 <Button variant="ghost" onClick={() => setCtlForm(null)}>Cancel</Button>
               </div>
             </>

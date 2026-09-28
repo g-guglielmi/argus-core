@@ -46,9 +46,11 @@ type scanJobPayload struct {
 }
 
 type scanCtlRef struct {
-	ID  int64  `json:"id"`
-	URL string `json:"url"`
-	Key string `json:"key"`
+	ID          int64  `json:"id"`
+	URL         string `json:"url"`
+	Key         string `json:"key"`
+	TLS         string `json:"tls,omitempty"`         // verify | pin | ignore (absent = verify)
+	Fingerprint string `json:"fingerprint,omitempty"` // for pin
 }
 
 type scanSNMP struct {
@@ -61,9 +63,11 @@ type scanSNMP struct {
 // The API key is decrypted at handout time only (the check-in channel is the same trust boundary
 // that already carries the SNMP community).
 type sweepJobPayload struct {
-	ID  int64  `json:"id"`
-	URL string `json:"url"`
-	Key string `json:"key"`
+	ID          int64  `json:"id"`
+	URL         string `json:"url"`
+	Key         string `json:"key"`
+	TLS         string `json:"tls,omitempty"`         // verify | pin | ignore (absent = verify)
+	Fingerprint string `json:"fingerprint,omitempty"` // for pin
 }
 
 // takeDiscoveryHandout pops the probe's oldest pending discovery job for the check-in response
@@ -87,9 +91,9 @@ func (s *Server) takeDiscoveryHandout(ctx context.Context, proxyName string) (*s
 				continue
 			}
 			s.logger.Info("discovery: sweep job dispatched", "proxy", proxyName, "job", job.ID, "controller", ctl.Name)
-			return nil, &sweepJobPayload{ID: job.ID, URL: ctl.URL, Key: ctl.APIKey}
+			return nil, &sweepJobPayload{ID: job.ID, URL: ctl.URL, Key: ctl.APIKey, TLS: ctl.TLSMode, Fingerprint: ctl.Fingerprint}
 		}
-		p := &scanJobPayload{ID: job.ID, CIDR: job.CIDR, Controllers: s.scanControllerRefs(ctx)}
+		p := &scanJobPayload{ID: job.ID, CIDR: job.CIDR, Controllers: s.scanControllerRefs(ctx, probeSite(proxyName))}
 		if job.SNMPCommunity != "" {
 			p.SNMP = &scanSNMP{Version: job.SNMPVersion, Community: job.SNMPCommunity, Port: job.SNMPPort}
 		}
@@ -386,20 +390,24 @@ func (s *Server) injectUniFiMacros(ctx context.Context, req *createHostRequest) 
 	set("{$UNIFI.SITE}", uf.Site)
 }
 
-// scanControllerRefs resolves every saved controller (key decrypted) for a probe scan handout.
-// Empty when none are saved, so the payload field stays absent.
-func (s *Server) scanControllerRefs(ctx context.Context) []scanCtlRef {
+// scanControllerRefs resolves the saved controllers a probe at site may receive (key decrypted)
+// for a scan handout: those scoped to the site, or to no site in particular. A probe never learns
+// another site's controller key. Empty when none apply, so the payload field stays absent.
+func (s *Server) scanControllerRefs(ctx context.Context, site string) []scanCtlRef {
 	ctls, err := s.st.ListUniFiControllers(ctx)
 	if err != nil || len(ctls) == 0 {
 		return nil
 	}
 	out := make([]scanCtlRef, 0, len(ctls))
 	for _, c := range ctls {
+		if !c.InScope(site) {
+			continue
+		}
 		ctl, err := s.st.UniFiControllerByID(ctx, c.ID)
 		if err != nil || ctl.APIKey == "" {
 			continue
 		}
-		out = append(out, scanCtlRef{ID: ctl.ID, URL: ctl.URL, Key: ctl.APIKey})
+		out = append(out, scanCtlRef{ID: ctl.ID, URL: ctl.URL, Key: ctl.APIKey, TLS: ctl.TLSMode, Fingerprint: ctl.Fingerprint})
 	}
 	return out
 }
@@ -433,14 +441,14 @@ func (s *Server) fetchControllerInventories(ctx context.Context) []controllerInv
 		if err != nil || ctl.APIKey == "" {
 			continue
 		}
-		devs, err := unifi.Sweep(ctx, ctl.URL, ctl.APIKey)
+		devs, err := unifi.Sweep(ctx, ctl.URL, ctl.APIKey, controllerOptions(ctl))
 		if err != nil {
 			s.logger.Debug("discovery: controller enrichment skipped", "controller", ctl.Name, "err", err)
 			continue
 		}
 		inv := controllerInventory{ID: ctl.ID, Devices: devs}
 		// Client naming hints are nice-to-have: a failure here keeps the device facts.
-		if clients, err := unifi.Clients(ctx, ctl.URL, ctl.APIKey); err == nil {
+		if clients, err := unifi.Clients(ctx, ctl.URL, ctl.APIKey, controllerOptions(ctl)); err == nil {
 			inv.Clients = clients
 		}
 		out = append(out, inv)
@@ -565,7 +573,7 @@ func (s *Server) runCoreSweep(job store.DiscoveryJob) {
 	if err != nil || ctl.APIKey == "" {
 		errMsg = "the saved controller no longer exists (or has no API key) - re-add it under Discovery"
 	} else {
-		devices, err := unifi.Sweep(ctx, ctl.URL, ctl.APIKey)
+		devices, err := unifi.Sweep(ctx, ctl.URL, ctl.APIKey, controllerOptions(ctl))
 		if err != nil {
 			errMsg = err.Error()
 			if len(errMsg) > 200 {

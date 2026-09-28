@@ -59,7 +59,7 @@ func serve(t *testing.T, prefix string, requireKey string) *httptest.Server {
 func TestSweepUniFiOSPrefix(t *testing.T) {
 	srv := serve(t, "/proxy/network", "k-123")
 	defer srv.Close()
-	devs, err := Sweep(context.Background(), srv.URL+"/", "k-123")
+	devs, err := Sweep(context.Background(), srv.URL+"/", "k-123", Options{TLSMode: TLSIgnore})
 	if err != nil {
 		t.Fatalf("Sweep: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestSweepUniFiOSPrefix(t *testing.T) {
 func TestSweepBarePathFallback(t *testing.T) {
 	srv := serve(t, "", "")
 	defer srv.Close()
-	devs, err := Sweep(context.Background(), srv.URL, "any")
+	devs, err := Sweep(context.Background(), srv.URL, "any", Options{TLSMode: TLSIgnore})
 	if err != nil {
 		t.Fatalf("Sweep with bare-path controller: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestSweepBarePathFallback(t *testing.T) {
 func TestClients(t *testing.T) {
 	srv := serve(t, "/proxy/network", "k-123")
 	defer srv.Close()
-	clients, err := Clients(context.Background(), srv.URL, "k-123")
+	clients, err := Clients(context.Background(), srv.URL, "k-123", Options{TLSMode: TLSIgnore})
 	if err != nil {
 		t.Fatalf("Clients: %v", err)
 	}
@@ -107,8 +107,34 @@ func TestClients(t *testing.T) {
 func TestSweepBadKey(t *testing.T) {
 	srv := serve(t, "/proxy/network", "k-123")
 	defer srv.Close()
-	_, err := Sweep(context.Background(), srv.URL, "wrong")
+	_, err := Sweep(context.Background(), srv.URL, "wrong", Options{TLSMode: TLSIgnore})
 	if err == nil || !strings.Contains(err.Error(), "rejected the API key") {
 		t.Fatalf("want an API-key rejection, got %v", err)
+	}
+}
+
+// The three certificate policies against the test server's self-signed certificate.
+func TestTLSPolicies(t *testing.T) {
+	srv := serve(t, "/proxy/network", "k-123")
+	defer srv.Close()
+	fp := Fingerprint(srv.Certificate().Raw)
+	if _, err := Sweep(context.Background(), srv.URL, "k-123", Options{TLSMode: TLSVerify}); err == nil {
+		t.Fatal("verify must refuse a self-signed certificate")
+	}
+	if _, err := Sweep(context.Background(), srv.URL, "k-123", Options{TLSMode: TLSPin, Fingerprint: fp}); err != nil {
+		t.Fatalf("pin with the right fingerprint: %v", err)
+	}
+	if _, err := Sweep(context.Background(), srv.URL, "k-123", Options{TLSMode: TLSPin, Fingerprint: "0000"}); err == nil {
+		t.Fatal("pin with a wrong fingerprint must refuse")
+	}
+	info, err := Inspect(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if info.Fingerprint != fp || info.Trusted {
+		t.Fatalf("Inspect: fingerprint %q trusted=%v", info.Fingerprint, info.Trusted)
+	}
+	if NormalizeFingerprint("AB:cd 12-34") != "abcd1234" {
+		t.Fatal("NormalizeFingerprint")
 	}
 }

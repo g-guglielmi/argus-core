@@ -68,4 +68,7 @@ You can change any of these later in **host settings → UniFi options** (the AP
   API key is valid, and the MAC matches a device on the named site. A wrong site name is a common
   cause of an empty device.
 - **HTTPS certificate errors** on a self-hosted controller are expected (self-signed); the template
-  does not verify the certificate for the Integration API call.
+  does not verify the certificate for the Integration API call (Zabbix HTTP items can only verify
+  against a CA store, which a console's own certificate never passes). The discovery sweep and scan
+  enrichment, which run from Argus and the probes, do check it: pin the controller's certificate
+  under Discovery settings (offered automatically when you save it), or choose Ignore there.

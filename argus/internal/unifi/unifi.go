@@ -4,12 +4,12 @@
 // Package unifi enumerates a UniFi Network controller's adopted devices for the §B discovery
 // sweep. It speaks the same API the UniFi class templates poll (X-API-KEY against the Network
 // API proxied through UniFi OS), so a controller that works for monitoring works for the sweep.
-// TLS is not verified - consoles ship self-signed certificates (same posture as the templates).
+// The certificate is checked per controller (tls.go): system roots, a pinned fingerprint, or
+// ignored when the admin chose so.
 package unifi
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -46,12 +46,12 @@ const requestTimeout = 30 * time.Second
 
 // Clients lists the controller's currently-known clients across all sites (naming hints for
 // scan enrichment). Same path/fallback/auth rules as Sweep.
-func Clients(ctx context.Context, baseURL, apiKey string) ([]Client, error) {
+func Clients(ctx context.Context, baseURL, apiKey string, o Options) ([]Client, error) {
 	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if base == "" {
 		return nil, fmt.Errorf("controller URL is empty")
 	}
-	client := newHTTPClient()
+	client := newHTTPClient(o)
 	sites, prefix, err := fetchSites(ctx, client, base, apiKey)
 	if err != nil {
 		return nil, err
@@ -83,15 +83,6 @@ func Clients(ctx context.Context, baseURL, apiKey string) ([]Client, error) {
 	return out, nil
 }
 
-func newHTTPClient() *http.Client {
-	return &http.Client{
-		Timeout: requestTimeout,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-}
-
 type siteRef struct {
 	Name string `json:"name"`
 	Desc string `json:"desc"`
@@ -121,12 +112,12 @@ func fetchSites(ctx context.Context, client *http.Client, base, apiKey string) (
 // Sweep lists every adopted device (with an IP) across all of the controller's sites. It tries
 // the UniFi OS path first (/proxy/network/...) and falls back to the bare Network-application
 // path on 404 (plain self-hosted controllers).
-func Sweep(ctx context.Context, baseURL, apiKey string) ([]Device, error) {
+func Sweep(ctx context.Context, baseURL, apiKey string, o Options) ([]Device, error) {
 	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if base == "" {
 		return nil, fmt.Errorf("controller URL is empty")
 	}
-	client := newHTTPClient()
+	client := newHTTPClient(o)
 	sites, prefix, err := fetchSites(ctx, client, base, apiKey)
 	if err != nil {
 		return nil, err

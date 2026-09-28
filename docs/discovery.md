@@ -103,8 +103,13 @@ Sweeps share the scan queue and history (same per-source queueing, same 30-day r
 ignore carry-over - a device ignored in a scan stays ignored in a sweep of the same source and
 vice versa). The sweep speaks the same API the UniFi class templates poll (`X-API-KEY` against the
 Network API, `/proxy/network/...` with a fallback to the bare path for plain self-hosted
-controllers), so a controller that works for monitoring works for the sweep. TLS is not verified -
-consoles ship self-signed certificates.
+controllers), so a controller that works for monitoring works for the sweep. Each saved controller
+has a **certificate policy**: *Verify* (the system roots; when you save a console with its own
+self-signed certificate, Argus shows you that certificate and offers to **pin** it), *Pin a
+fingerprint* (every request must present exactly that certificate; a change later fails loudly), or
+*Ignore*. A controller that only a probe's network can reach can't be inspected by the core: paste
+its fingerprint under Pin, or choose Ignore. Each controller also has a **site scope**: only the
+probes of those sites receive it (and its API key) for scans and sweeps; empty means every site.
 
 **Subnet scans use the controllers too.** Once a controller is saved, every subnet scan's results
 are cross-checked against its adopted devices (matched by MAC, or by IP where the scan saw no

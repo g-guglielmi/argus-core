@@ -463,6 +463,7 @@ var registry = []Class{
 			{Macro: "{$XCP.USER}", Label: "XAPI username", Hint: "root", Required: true},
 			{Macro: "{$XCP.PASS}", Label: "XAPI password", Hint: "the host root password", Required: true, Secret: true},
 			{Macro: "{$XCP.VM.MODE}", Label: "VM monitoring", Hint: "off", Options: []string{"off", "state", "full"}},
+			{Macro: "{$XCP.TLS}", Label: "Certificate check", Hint: "pin", Options: []string{"pin", "verify", "ignore"}},
 			// Rendered as a checklist of the discovered VMs in host settings (there is nothing to
 			// pick from at add time). Ignored VMs vanish from the per-VM sensors AND the counts.
 			{Macro: "{$XCP.VM.IGNORE}", Label: "Monitored VMs", Hint: "comma-separated VM names to ignore", SettingsOnly: true},

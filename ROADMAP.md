@@ -176,11 +176,12 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   self-update helper image is verified the same way); GitHub Actions pinned to commits, permissions
   per job, provenance + SBOM on image pushes, probe `:latest` only from main; Docker installed on
   the appliances from the apt repository with a pinned signing key (updater `v0.2.7`).
-- [ ] **Security review, wave 2c (probe-side credentials)** - UniFi controller keys scoped per
-  site; certificate verification toward UniFi controllers and XCP-NG hosts (trust on first use with
-  the fingerprint shown, plus a per-target "ignore certificate" switch); break-glass reveal logged
-  with the admin. Deferred by decision: collector passwords off argv (documented instead), an
-  intermediate enrollment CA (post-production). - _(BE+FE, probe image)_ M
+- [x] **Security review, wave 2c (probe-side credentials)** - UniFi controllers scoped per site
+  (only those sites' probes get the key); certificate policy per controller (verify with a pin
+  offered for self-signed consoles, pin a fingerprint, ignore) applied by the core client and the
+  probe scripts; XCP-NG `{$XCP.TLS}` (pin on first contact / verify / ignore); SSH collector argument
+  hardening; break-glass reveal logged with the admin. Deferred by decision: collector passwords
+  off argv (documented instead), an intermediate enrollment CA (post-production).
 - [ ] **Sizing pass** before the ~6000-sensor deployment (proxies, DB, caches, NVPS) - analysis
 - [ ] **Server-side census/counts** - move the `/api/sensors` full census server-side at scale - _(BE)_ M
 - [ ] **Probe process autoscaling** - size each probe's Zabbix process counts (ICMP pingers first,

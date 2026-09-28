@@ -4,14 +4,17 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"argus/internal/store"
+	"argus/internal/unifi"
 )
 
 // Saved UniFi controllers for the §B sweep (admin CRUD). The API key is write-only from the
@@ -19,10 +22,26 @@ import (
 // update keeps the stored one.
 
 type unifiControllerView struct {
-	ID     int64  `json:"id"`
-	Name   string `json:"name"`
-	URL    string `json:"url"`
-	HasKey bool   `json:"has_key"`
+	ID          int64    `json:"id"`
+	Name        string   `json:"name"`
+	URL         string   `json:"url"`
+	HasKey      bool     `json:"has_key"`
+	Sites       []string `json:"sites"`       // empty = every site
+	TLSMode     string   `json:"tls_mode"`    // verify | pin | ignore
+	Fingerprint string   `json:"fingerprint"` // the pinned certificate (hex SHA-256), for "pin"
+}
+
+func toControllerView(c store.UniFiController) unifiControllerView {
+	sites := c.Sites
+	if sites == nil {
+		sites = []string{}
+	}
+	return unifiControllerView{ID: c.ID, Name: c.Name, URL: c.URL, HasKey: c.HasKey, Sites: sites, TLSMode: c.TLSMode, Fingerprint: c.Fingerprint}
+}
+
+// controllerOptions is how the core (and, via the hand-out, a probe) talks to a saved controller.
+func controllerOptions(c *store.UniFiController) unifi.Options {
+	return unifi.Options{TLSMode: c.TLSMode, Fingerprint: c.Fingerprint}
 }
 
 // GET /api/discovery/controllers (admin)
@@ -34,7 +53,7 @@ func (s *Server) handleListUniFiControllers(w http.ResponseWriter, r *http.Reque
 	}
 	out := make([]unifiControllerView, 0, len(list))
 	for _, c := range list {
-		out = append(out, unifiControllerView{ID: c.ID, Name: c.Name, URL: c.URL, HasKey: c.HasKey})
+		out = append(out, toControllerView(c))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -61,12 +80,15 @@ func normalizeControllerURL(raw string) (string, string) {
 // POST /api/discovery/controllers (admin) - create (id 0/absent) or update a saved controller.
 func (s *Server) handleSaveUniFiController(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ID     int64  `json:"id"`
-		Name   string `json:"name"`
-		URL    string `json:"url"`
-		APIKey string `json:"api_key"` // empty on update = keep the stored key
+		ID          int64    `json:"id"`
+		Name        string   `json:"name"`
+		URL         string   `json:"url"`
+		APIKey      string   `json:"api_key"`     // empty on update = keep the stored key
+		Sites       []string `json:"sites"`       // empty = every site
+		TLSMode     string   `json:"tls_mode"`    // verify (default) | pin | ignore
+		Fingerprint string   `json:"fingerprint"` // with "pin": the certificate the admin confirmed
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
@@ -85,7 +107,45 @@ func (s *Server) handleSaveUniFiController(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "an API key is required (UniFi Network -> Settings -> Control Plane -> Integrations)"})
 		return
 	}
-	id, err := s.st.SaveUniFiController(r.Context(), store.UniFiController{ID: req.ID, Name: name, URL: u, APIKey: key})
+	// The certificate policy. "verify" is checked here and now: the core connects and looks at the
+	// certificate. Trusted by the system roots -> saved as verify. Self-signed (the usual console)
+	// -> the admin is shown the certificate and asked to pin it (409 with the details; the UI
+	// resubmits with tls_mode "pin" + the fingerprint). Unreachable from the core (a controller only
+	// a probe's network sees) -> 409 as well, with the choice of pasting a fingerprint or ignoring.
+	mode := strings.ToLower(strings.TrimSpace(req.TLSMode))
+	fp := unifi.NormalizeFingerprint(req.Fingerprint)
+	switch mode {
+	case "", unifi.TLSVerify:
+		mode = unifi.TLSVerify
+		fp = ""
+		if strings.HasPrefix(strings.ToLower(u), "https://") {
+			ictx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+			info, ierr := unifi.Inspect(ictx, u)
+			cancel()
+			if ierr != nil {
+				writeJSON(w, http.StatusConflict, map[string]any{"error": "Argus can't reach this controller to check its certificate: " + ierr.Error(),
+					"unreachable": true})
+				return
+			}
+			if !info.Trusted {
+				writeJSON(w, http.StatusConflict, map[string]any{"error": "this controller's certificate isn't trusted by the system roots (self-signed); pin it to continue",
+					"certificate": info})
+				return
+			}
+		}
+	case unifi.TLSPin:
+		if len(fp) != 64 || strings.Trim(fp, "0123456789abcdef") != "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a pinned certificate is its SHA-256 fingerprint: 64 hex characters"})
+			return
+		}
+	case unifi.TLSIgnore:
+		fp = ""
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tls_mode must be verify, pin or ignore"})
+		return
+	}
+	id, err := s.st.SaveUniFiController(r.Context(), store.UniFiController{ID: req.ID, Name: name, URL: u, APIKey: key,
+		Sites: cleanSites(req.Sites), TLSMode: mode, Fingerprint: fp})
 	if errors.Is(err, store.ErrNotFound) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "controller not found"})
 		return
@@ -94,7 +154,7 @@ func (s *Server) handleSaveUniFiController(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save the controller"})
 		return
 	}
-	s.logger.Info("discovery: unifi controller saved", "id", id, "name", name)
+	s.logger.Info("discovery: unifi controller saved", "id", id, "name", name, "tls", mode, "sites", len(req.Sites))
 	writeJSON(w, http.StatusOK, map[string]any{"id": id})
 }
 

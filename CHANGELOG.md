@@ -14,6 +14,20 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 **Security:**
+- **UniFi controllers get a site scope and a certificate policy.** Only the probes of a controller's
+  sites receive it (and its API key) for scans and sweeps; empty means every site, as before. The
+  certificate is now checked: *Verify* against the system roots (saving a console with its own
+  self-signed certificate shows it to you and offers to **pin** its SHA-256, so a later swap fails
+  loudly), *Pin a fingerprint* (paste one for a controller only a probe can reach), or *Ignore*.
+  Controllers saved before this keep working unchanged (they are marked *Ignore*; edit them to pin).
+  The probe scripts apply the same policy (probe image 7.0.31-r5 or later).
+- **XCP-NG hosts pin their XAPI certificate** (`{$XCP.TLS}` in host settings, default *pin*: trust
+  on first contact, remembered on the collector, a change refused and reported as `tls_error`);
+  *verify* and *ignore* are the alternatives. Existing XCP-NG hosts get the default at the next
+  template reconcile.
+- The Linux-by-SSH collector refuses a login name that would read as an ssh option, a port outside
+  1-65535 and a key outside `/var/lib/zabbix/ssh/`, and passes the target after `--`.
+- Revealing a probe's break-glass credential is logged with the admin who did it.
 - **Updates are verified by digest.** Every update the core hands out keeps naming a tag (`latest`,
   `testing`, a version), and now also carries the digest that tag pointed to at hand-out time: the
   fleet target and one-shot updates in the probe check-in (`target_digest`, `update_digest`,
