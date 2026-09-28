@@ -522,6 +522,18 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 	if err := s.ensureColumn("notify_channels", "min_severity INTEGER NOT NULL DEFAULT 2"); err != nil {
 		return err
 	}
+	// Channels pick "warnings and errors" (2) or "errors only" (3, Average and up); the older High and
+	// Disaster floors fold into errors only. Idempotent, so it runs on every start.
+	for _, q := range []string{
+		`UPDATE notify_channels SET min_severity=3 WHERE min_severity>3`,
+		`UPDATE notify_channels SET repeat_min_severity=3 WHERE repeat_min_severity>3`,
+		`UPDATE user_notify_channels SET min_severity=3 WHERE min_severity>3`,
+		`UPDATE user_notify_channels SET repeat_min_severity=3 WHERE repeat_min_severity>3`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			return err
+		}
+	}
 	// Per-channel delivery health (last successful send / last failure + reason / sent count), shown on
 	// the Notifications cards. Recorded by RecordNotifyDelivery after every send attempt.
 	for _, ddl := range []string{

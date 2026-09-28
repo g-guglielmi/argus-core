@@ -31,6 +31,10 @@ GitHub Release from the matching section below.
 - Notification channels (shared and personal) open in a dialog instead of an inline editor, with
   one row each for the channel itself, what it receives (sites and severity), and escalation and
   reminders.
+- A channel's severity is now one of two choices matching what the app shows: **Warnings and
+  errors** or **Errors only**. Errors only covers every problem shown in red (Zabbix's Average, High
+  and Disaster); the old "High & up" skipped Average errors like "HTTP/HTTPS endpoint down". Channels
+  set to High & up or Disaster only become Errors only.
 - Reminders, acknowledged notices and recoveries go to exactly the channels that received the alert.
   A channel set to High and up now also hears when an incident it was alerted about ends, even if it
   eased to a warning first; a delayed channel that was never alerted gets no recovery either.

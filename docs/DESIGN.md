@@ -392,7 +392,9 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
 - Secrets entered in the UI later (placeholders for now).
 
 **Status (2026-09).** Channels are managed in the **Notifications** tab (Discord webhook / Telegram
-bot + chat (+ forum topic) / SMTP), each scoped to one or more sites (or all) with a severity floor. Every send attempt -
+bot + chat (+ forum topic) / SMTP), each scoped to one or more sites (or all) with an alert level:
+**warnings and errors** (Zabbix Warning and up) or **errors only** (Average and up, i.e. everything the
+UI paints red; the older High / Disaster floors are folded into it at startup). Every send attempt -
 alert, recovery, or the **Send test** button - is recorded on the channel (`last_sent_at` /
 `sent_count` on success, `last_error` / `last_error_at` on failure) and shown on its card, so a broken
 webhook or SMTP password is visible in the UI rather than only in the core log. The message format is

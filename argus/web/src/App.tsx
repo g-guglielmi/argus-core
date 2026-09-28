@@ -32,11 +32,11 @@ type Proxy = { id: string; name: string; last_access: number; online: boolean; m
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
+// Alert levels a notification channel can choose (Zabbix severity floors). The app shows problems as
+// warnings (Zabbix Warning) or errors (Average, High, Disaster), so these are the two choices.
 const SEVERITIES: { v: number; label: string }[] = [
-  { v: 2, label: 'Warning & up' },
-  { v: 3, label: 'Average & up' },
-  { v: 4, label: 'High & up' },
-  { v: 5, label: 'Disaster only' },
+  { v: 2, label: 'Warnings and errors' },
+  { v: 3, label: 'Errors only' },
 ]
 type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr }
 // A sensor's effective warning/high values, read from its own triggers (below = lower is worse).
@@ -1901,7 +1901,7 @@ function NotificationsView() {
         <div className="tools"><button className="btn primary" onClick={() => setEditing('new')}>+ Add channel</button></div>
       </div>
       <p className="panel-intro">
-        Problems route to the channels below, globally or per site, each with its own severity floor. A channel can also wait before it's told (escalation) and repeat the alert until someone acknowledges it. Acknowledging stops both and tells the channels that got the alert. Paused and hidden items stay quiet, and a recovery notice follows when things clear.
+        Problems route to the channels below, globally or per site, each getting warnings and errors or errors only. A channel can also wait before it's told (escalation) and repeat the alert until someone acknowledges it. Acknowledging stops both and tells the channels that got the alert. Paused and hidden items stay quiet, and a recovery notice follows when things clear.
       </p>
 
       {editing && (
@@ -1924,7 +1924,7 @@ function NotificationsView() {
         <div className="chan-grid">
           {channels.map((c) => {
             const m = CH_META[c.type] || { c: '#6b7686', l: '?', label: c.type }
-            const sev = SEVERITIES.find((s) => s.v === c.min_severity)?.label || 'Warning & up'
+            const sev = SEVERITIES.find((s) => s.v === c.min_severity)?.label || 'Warnings and errors'
             return (
               <div className={'chan' + (c.enabled ? '' : ' off')} key={c.id}>
                 <div className="ct">
@@ -2197,7 +2197,7 @@ function PersonalNotifyCard() {
         <div className="chan-grid">
           {channels.map((c) => {
             const m = CH_META[c.type] || { c: '#6b7686', l: '?', label: c.type }
-            const sev = SEVERITIES.find((s) => s.v === c.min_severity)?.label || 'Warning & up'
+            const sev = SEVERITIES.find((s) => s.v === c.min_severity)?.label || 'Warnings and errors'
             return (
               <div className={'chan' + (c.enabled ? '' : ' off')} key={c.id}>
                 <div className="ct">

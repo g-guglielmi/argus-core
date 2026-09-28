@@ -79,3 +79,13 @@ func TestPlanDeliveries(t *testing.T) {
 		t.Fatalf("sent before going live: %v", p)
 	}
 }
+
+// A channel picks "warnings and errors" or "errors only"; stricter floors fold into errors only, so no
+// channel can skip an Average error by accident.
+func TestAlertLevel(t *testing.T) {
+	for in, want := range map[int]int{0: 2, 1: 2, 2: 2, 3: 3, 4: 3, 5: 3} {
+		if got := alertLevel(in); got != want {
+			t.Errorf("alertLevel(%d) = %d, want %d", in, got, want)
+		}
+	}
+}

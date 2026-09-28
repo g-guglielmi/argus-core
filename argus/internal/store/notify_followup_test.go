@@ -104,3 +104,20 @@ func TestAckInfo(t *testing.T) {
 		t.Fatalf("unknown event: %v", err)
 	}
 }
+
+// Opening the store folds the old High / Disaster floors into "errors only" (3).
+func TestAlertLevelMigration(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	id, err := st.CreateNotifyChannel(ctx, NotifyChannel{Type: "email", Name: "Managers", Enabled: true, MinSeverity: 5, RepeatSev: 4, Config: map[string]string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := st.GetNotifyChannel(ctx, id)
+	if c.MinSeverity != 3 || c.RepeatSev != 3 {
+		t.Fatalf("after migrate: min %d, remind %d", c.MinSeverity, c.RepeatSev)
+	}
+}

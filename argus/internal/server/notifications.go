@@ -111,16 +111,21 @@ func clampEscalation(delay, repeat int) (int, int) {
 	return delay, repeat
 }
 
-// clampSeverityFloor bounds a severity floor to Warning..Disaster (2..5): the notifier never alerts
-// below Warning, and 0 (not sent) means Warning.
-func clampSeverityFloor(sev int) int {
-	if sev < 2 {
-		return 2
+// Alert levels a channel can choose, as Zabbix severity floors. The app shows problems as warnings
+// (Zabbix Warning) or errors (Average, High, Disaster), so a channel picks one of those two:
+// "warnings and errors" or "errors only". Stricter floors (High, Disaster) would silently skip some
+// errors, like an Average "endpoint down", so they're folded into "errors only".
+const (
+	levelWarnings = 2 // Warning and up
+	levelErrors   = 3 // Average and up: everything the app shows as an error
+)
+
+// alertLevel maps a requested severity floor onto the two levels (0 = unset = warnings and errors).
+func alertLevel(sev int) int {
+	if sev >= levelErrors {
+		return levelErrors
 	}
-	if sev > 5 {
-		return 5
-	}
-	return sev
+	return levelWarnings
 }
 
 func (req channelRequest) validate() (store.NotifyChannel, string) {
@@ -146,16 +151,11 @@ func (req channelRequest) validate() (store.NotifyChannel, string) {
 		}
 	}
 	// The notifier never alerts below Warning, so clamp the floor to 2..5 (Warning..Disaster).
-	sev := req.MinSeverity
-	if sev < 2 {
-		sev = 2
-	} else if sev > 5 {
-		sev = 5
-	}
+	sev := alertLevel(req.MinSeverity)
 	delay, repeat := clampEscalation(req.DelayMin, req.RepeatMin)
 	return store.NotifyChannel{
 		Type: t, Name: name, Enabled: req.Enabled, Sites: cleanSites(req.Sites), MinSeverity: sev,
-		DelayMin: delay, RepeatMin: repeat, RepeatSev: clampSeverityFloor(req.RepeatSev), Config: cfg,
+		DelayMin: delay, RepeatMin: repeat, RepeatSev: alertLevel(req.RepeatSev), Config: cfg,
 	}, ""
 }
 

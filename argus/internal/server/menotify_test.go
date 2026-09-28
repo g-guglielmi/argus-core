@@ -118,13 +118,13 @@ func TestUserChannelRequestValidate(t *testing.T) {
 	if _, msg := (userChannelRequest{Type: "discord"}).validate(); msg == "" {
 		t.Fatalf("expected missing webhook to be rejected")
 	}
-	// A valid telegram channel with an out-of-range severity clamps to 2..5.
+	// A valid telegram channel with a floor above Average folds into "errors only" (3).
 	ch, msg := (userChannelRequest{Type: "telegram", MinSeverity: 9, Config: map[string]string{"bot_token": "t", "chat_id": "1"}}).validate()
 	if msg != "" {
 		t.Fatalf("unexpected validation error: %s", msg)
 	}
-	if ch.MinSeverity != 5 {
-		t.Fatalf("expected severity clamped to 5, got %d", ch.MinSeverity)
+	if ch.MinSeverity != 3 {
+		t.Fatalf("expected errors only (3), got %d", ch.MinSeverity)
 	}
 }
 

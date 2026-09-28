@@ -83,16 +83,11 @@ func (req userChannelRequest) validate() (store.UserNotifyChannel, string) {
 		}
 	}
 	// The notifier never alerts below Warning, so clamp the floor to 2..5 (Warning..Disaster).
-	sev := req.MinSeverity
-	if sev < 2 {
-		sev = 2
-	} else if sev > 5 {
-		sev = 5
-	}
+	sev := alertLevel(req.MinSeverity)
 	delay, repeat := clampEscalation(req.DelayMin, req.RepeatMin)
 	return store.UserNotifyChannel{
 		Type: t, Enabled: req.Enabled, Sites: cleanSites(req.Sites), MinSeverity: sev,
-		DelayMin: delay, RepeatMin: repeat, RepeatSev: clampSeverityFloor(req.RepeatSev), Config: cfg,
+		DelayMin: delay, RepeatMin: repeat, RepeatSev: alertLevel(req.RepeatSev), Config: cfg,
 	}, ""
 }
 
