@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.5.9] - 2026-09-28
 
 **Added:**
 - **Escalation.** Every notification channel, shared or personal, has a **Notify after** setting:
@@ -37,9 +37,9 @@ GitHub Release from the matching section below.
 - **Alerts when monitoring stops working.** Zabbix raises no problem for these, so nothing alerted
   until now:
   - a sensor that goes **not supported** after collecting before (a collector script that fails or
-    times out, like a UPS sensor losing its NUT server): an error, "<sensor> stopped collecting", on its third failed
-    check in a row (about 2 minutes for a sensor checked every minute), with Zabbix's reason as the
-    reading;
+    times out, like a UPS sensor losing its NUT server): an error, "<sensor> stopped collecting",
+    on its third failed check in a row (about 2 minutes for a sensor checked every minute), with
+    Zabbix's reason as the reading;
   - a device's **Zabbix agent or SNMP** that stops answering while the device itself is up: an
     error, "Zabbix agent not reachable" or "SNMP not responding", with Zabbix's reason.
 
@@ -60,7 +60,7 @@ GitHub Release from the matching section below.
   and Disaster); the old "High & up" skipped Average errors like "HTTP/HTTPS endpoint down". Channels
   set to High & up or Disaster only become Errors only.
 - Reminders, acknowledged notices and recoveries go to exactly the channels that received the alert.
-  A channel set to High and up now also hears when an incident it was alerted about ends, even if it
+  A channel set to errors only now also hears when an incident it was alerted about ends, even if it
   eased to a warning first; a delayed channel that was never alerted gets no recovery either.
 
 **Fixed:**

@@ -172,22 +172,22 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   sidecar). Image names unchanged. History preserved via `git filter-repo`.
 
 ### H. Notification logic + parking lot
-- [ ] **Escalation, reminders, acknowledged notice** - each channel (global or personal) gets a
+- [x] **Escalation, reminders, acknowledged notice** - each channel (global or personal) gets a
   **Notify after** delay (it hears only of problems still open and unacknowledged by then, e.g. team
   at once, managers after 30 min) and a **Remind every** interval (repeat until acknowledged, no cap).
   Acknowledging stops both and tells the channels that got the alert who took it. Reminders, the
   acknowledged notice and the recovery go to exactly the channels the alert reached. The 60 s flap
-  delay becomes a setting (Settings -> Alerting). - _(FE+BE)_ M
-- [ ] **Master sensor per host** - ICMP ping by default, selectable per host: while it's down, the
+  delay becomes a setting (Settings -> Alerting). - v0.5.9
+- [x] **Master sensor per host** - ICMP ping by default, selectable per host: while it's down, the
   host's other sensors don't notify (PRTG-style dependency), and a probe's reachability does the same
   for its whole site, including Zabbix's own per-proxy checks. Held alerts go out normally once the
-  master is back and they're still open.
-  - _(FE+BE)_ M
-- [ ] **Alerts for sensors that stop collecting** - a sensor that goes "not supported" (a failing
+  master is back and they're still open. Collector-based hosts also get their collector's
+  reachability as a second master. - v0.5.9
+- [x] **Alerts for sensors that stop collecting** - a sensor that goes "not supported" (a failing
   collector, seen on a NUT sensor) or an agent/SNMP endpoint that stops answering raises no Zabbix
   problem, so nothing alerted. Argus raises its own problems for both, as errors (a sensor on
   its third failed check, by its own interval; an interface once Zabbix marks it unavailable), shown and acknowledged like any other. Supported sensors
-  with old values are left alone: many store only changes. - _(BE)_ S-M
+  with old values are left alone: many store only changes. - v0.5.9
 - [ ] **System notices** - Argus's own events as neutral `[INFO]` messages, sent once (no reminders,
   no recovery): a new Argus release and self-update success/failure; a probe or updater behind, and
   probe self-update success/failure; pending security updates or a needed reboot on the core or a
