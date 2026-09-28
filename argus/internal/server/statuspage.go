@@ -341,33 +341,40 @@ type statusCounts struct {
 	Acked   int `json:"acked"`
 }
 
-// statusIssue is one row of the list: an open problem, where it is, the sensor it's on with its
-// reading, and since when. Kind is the list it belongs to: error | warning | acked.
+// statusIssue is one row of the list: a sensor that isn't OK - the same rows, in the same order, as
+// the app's Overview - with where it is, its reading and recent trend, its priority, and why. Kind is
+// the list it belongs to: error | warning | acked.
 type statusIssue struct {
-	Kind    string `json:"kind"`
-	Host    string `json:"host"`
-	Site    string `json:"site"`
-	Problem string `json:"problem"`
-	Sensor  string `json:"sensor,omitempty"`
-	Value   string `json:"value,omitempty"`
-	Since   int64  `json:"since"`
+	Kind     string    `json:"kind"`
+	Host     string    `json:"host"`
+	Site     string    `json:"site"`
+	Sensor   string    `json:"sensor"`
+	Reason   string    `json:"reason,omitempty"`
+	Severity int       `json:"severity"`
+	Value    string    `json:"value,omitempty"`
+	Units    string    `json:"units,omitempty"` // for the trend's scale (percentages keep a 10-point floor)
+	Spark    []float64 `json:"spark,omitempty"`
+	Priority int       `json:"priority"`
+	Since    int64     `json:"since"`
 }
 
 var issueRank = map[string]int{"error": 0, "warning": 1, "acked": 2}
 
-// buildStatus assembles a page's view from the active problems and the sensor census - the same
-// sources as the app's Overview and pills - limited to the page's sites: one row per open problem,
-// with the reading of the sensor it's on.
+// statusSparkMax caps how many rows get a trend line (one history read covers them all).
+const statusSparkMax = 200
+
+// buildStatus assembles a page's view from the sensor census - the rows behind the app's pills and
+// Overview - limited to the page's sites: every sensor in error, in warning or acknowledged, ordered
+// like the Overview (priority, then severity, then host and sensor).
 func (s *Server) buildStatus(ctx context.Context, p store.StatusPage) (statusView, error) {
 	hosts, err := s.zbx.Hosts(ctx)
 	if err != nil {
 		return statusView{}, err
 	}
-	problems, err := s.activeProblems(ctx)
+	sensors, err := s.sensorCensus(ctx)
 	if err != nil {
 		return statusView{}, err
 	}
-	sensors, _ := s.sensorCensus(ctx) // best effort: without it the rows just carry no reading
 	hidden, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 
 	v := statusView{Name: p.Name, GeneratedAt: time.Now().Unix(), Timezone: s.mgr.Location().String(), Clock24h: s.mgr.Clock24h(), Issues: []statusIssue{}}
@@ -384,38 +391,53 @@ func (s *Server) buildStatus(ctx context.Context, p store.StatusPage) (statusVie
 			}
 		}
 	}
-	byItem := make(map[string]sensorRow, len(sensors))
+	var rows []sensorRow
 	for _, sr := range sensors {
-		byItem[sr.ItemID] = sr
+		if _, onPage := siteOf[sr.HostID]; !onPage {
+			continue
+		}
+		if _, listed := issueRank[sr.State]; listed {
+			rows = append(rows, sr)
+		}
 	}
-	for _, pr := range problems {
-		site, ok := siteOf[pr.HostID]
-		if !ok {
-			continue
+	sort.SliceStable(rows, func(i, j int) bool {
+		a, b := rows[i], rows[j]
+		if a.Priority != b.Priority {
+			return a.Priority > b.Priority
 		}
-		kind := pr.State
-		if pr.Acknowledged {
-			kind = "acked"
+		if a.Severity != b.Severity {
+			return a.Severity > b.Severity
 		}
-		if _, known := issueRank[kind]; !known {
-			continue
+		if a.HostName != b.HostName {
+			return a.HostName < b.HostName
 		}
-		is := statusIssue{Kind: kind, Host: pr.HostName, Site: site, Problem: pr.Name, Since: pr.Clock}
-		for _, id := range pr.ItemIDs {
-			if sr, ok := byItem[id]; ok {
-				is.Sensor = sr.Label
-				if is.Sensor == "" {
-					is.Sensor = sr.Name
-				}
-				if r, ok := reachabilityReading(sr.key, sr.Value); ok {
-					is.Value = r
-				} else if sr.Supported {
-					is.Value = notify.FormatReading(sr.Value, sr.Units)
-				}
-				break
-			}
+		return a.Name < b.Name
+	})
+	var sparkIDs []string
+	for _, sr := range rows {
+		if sr.Numeric && sr.Supported && !sr.Synthetic && len(sparkIDs) < statusSparkMax {
+			sparkIDs = append(sparkIDs, sr.ItemID)
 		}
-		switch kind {
+	}
+	sparks, _ := s.sparkSeries(ctx, sparkIDs, 2*time.Hour) // best effort: rows just lose their trend
+	for _, sr := range rows {
+		label := sr.Label
+		if label == "" {
+			label = sr.Name
+		}
+		is := statusIssue{Kind: sr.State, Host: sr.HostName, Site: siteOf[sr.HostID], Sensor: label, Reason: sr.Reason,
+			Severity: sr.Severity, Priority: sr.Priority, Since: sr.Since, Spark: sparks[sr.ItemID]}
+		switch r, ok := reachabilityReading(sr.key, sr.Value); {
+		case ok:
+			is.Value = r
+		case !sr.Supported:
+			is.Value = "not supported"
+		case sr.Synthetic:
+			is.Value = sr.Value
+		default:
+			is.Value, is.Units = notify.FormatReading(sr.Value, sr.Units), sr.Units
+		}
+		switch sr.State {
 		case "error":
 			v.Counts.Error++
 		case "warning":
@@ -425,14 +447,6 @@ func (s *Server) buildStatus(ctx context.Context, p store.StatusPage) (statusVie
 		}
 		v.Issues = append(v.Issues, is)
 	}
-	// Worst first, then the newest.
-	sort.SliceStable(v.Issues, func(i, j int) bool {
-		a, b := v.Issues[i], v.Issues[j]
-		if issueRank[a.Kind] != issueRank[b.Kind] {
-			return issueRank[a.Kind] < issueRank[b.Kind]
-		}
-		return a.Since > b.Since
-	})
 	return v, nil
 }
 

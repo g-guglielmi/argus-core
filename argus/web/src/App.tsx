@@ -46,7 +46,7 @@ type Thr = { warn?: number; high?: number; below?: boolean }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
 type TriggerHost = { id: string; name: string }
 type Trigger = { id: string; description: string; severity: number; enabled: boolean; problem: boolean; since: number; hosts: TriggerHost[]; sensors: string[] }
-type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; since?: number; event_ids: string[] }
+type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; since?: number; event_ids: string[]; synthetic?: boolean }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
 type Series = { name: string; units: string; kind: 'history' | 'trend'; points: SeriesPoint[] }
 
@@ -6030,6 +6030,8 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
     const acts: KAction[] = []
     if (s.state === 'acked' && s.event_ids.length) acts.push({ label: 'Unacknowledge', icon: kbIcon.ack, onClick: () => unackEvents(s) }, { sep: true, label: '' })
     else if ((s.state === 'error' || s.state === 'warning') && s.event_ids.length) acts.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (sec) => ackEvents(s, sec) }, { sep: true, label: '' })
+    // An Argus-raised row (an unreachable agent) isn't a Zabbix sensor: it can be acknowledged, not paused or hidden.
+    if (s.synthetic) return acts.filter((a) => !a.sep)
     acts.push({ label: 'Pause', icon: kbIcon.pause, onPick: (sec) => itemAction(s, 'pause', sec) }, { label: 'Hide', icon: kbIcon.hide, onPick: (sec) => itemAction(s, 'hide', sec) })
     return acts
   }
@@ -6071,7 +6073,7 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
                     <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} width={168} fill units={s.units} /> : null}</td>
                     <td className="slprio" data-label="Priority"><PriorityStars value={s.priority} canEdit={false} /></td>
                     <td className="mono dur" data-label={durCol}>{relTime(s.last_clock)}</td>
-                    <td className="act">{canPause && <Kebab disabled={busy === s.item_id} actions={actionsFor(s)} />}</td>
+                    <td className="act">{canPause && actionsFor(s).length > 0 && <Kebab disabled={busy === s.item_id} actions={actionsFor(s)} />}</td>
                   </tr>
                 )
               })}

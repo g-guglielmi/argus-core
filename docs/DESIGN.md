@@ -1007,10 +1007,13 @@ A read-only dashboard for a wall screen, opened with a secret link instead of a 
 - **Limits:** optional allowed networks (CIDRs, checked against the client IP as resolved through the
   trusted proxies, see section 4) and an optional expiry; a page shows only its sites (host groups, a root
   covering its subgroups).
-- **Content:** `/status/data`, built from the same active-problem list and sensor census as the app
-  (hidden and paused hosts left out), cached 20 s per page: one row per open problem (kind error /
-  warning / acked, host, site group, problem, the sensor it's on with its reading, since), worst then
-  newest first, plus the counts. No addresses, credentials or settings. The page is a standalone HTML
+- **Content:** `/status/data`, built from the sensor census (the rows behind the pills and Overview;
+  hidden and paused hosts left out), cached 20 s per page: every sensor in error, in warning or
+  acknowledged, ordered like the Overview (priority, severity, host, sensor), with site group, the
+  reason (worst problem + severity), the reading, a 2 h trend series (the /api/spark data, up to 200
+  rows), the priority and since, plus the counts. Problems with no sensor (an unreachable agent or
+  SNMP endpoint) have a census row of their own ("Zabbix agent" / "SNMP", flagged synthetic: no chart,
+  can't be paused or hidden), so the pills, the Overview and the status pages all count them. No addresses, credentials or settings. The page is a standalone HTML
   file (not the SPA), dark and sized for a TV: a slim bar with Errors / Warnings / Acknowledged pills
   that switch the list (the address decides: `#acknowledged` / `#warnings`, which survives the link's
   redirect, else errors, so a plain `/status` always opens on errors; the pills stay grey until the

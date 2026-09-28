@@ -11,6 +11,18 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Changed:**
+- Status pages list the same rows as the Overview, in the same order (priority first): each sensor
+  that needs attention, with the reason under its name, and new **Value**, **Trend** (mini graph) and
+  **Priority** columns.
+
+**Fixed:**
+- A problem that belongs to no sensor (a Zabbix agent or SNMP endpoint that stopped answering) now
+  shows in the Overview and counts in the status pills, as a "Zabbix agent" or "SNMP" row. Before,
+  only the host's problem list and the status pages had it, so the counts disagreed.
+
 ## [0.5.11] - 2026-09-28
 
 **Added:**

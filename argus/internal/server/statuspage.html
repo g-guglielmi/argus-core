@@ -55,10 +55,19 @@
   tbody tr.error { background: color-mix(in srgb, var(--err) 7%, transparent); }
   td.host { font-weight: 700; }
   td.site, td.since { color: var(--muted); }
-  td.value { font-variant-numeric: tabular-nums; }
+  td.value { font-weight: 700; font-variant-numeric: tabular-nums; }
+  td.value .u { color: var(--muted); font-weight: 400; }
+  td.value.bad { color: var(--err); font-weight: 600; }
   td.since { text-align: right; font-variant-numeric: tabular-nums; }
-  .sensor { color: var(--muted); }
-  col.c-host { width: 17%; } col.c-site { width: 15%; } col.c-problem { width: 33%; } col.c-sensor { width: 25%; } col.c-since { width: 10%; }
+  td.sensor .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+  td.sensor .why { font-size: 0.8em; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  td.sensor .sev { font-weight: 700; }
+  td.trend svg { display: block; width: 100%; height: 1.5em; }
+  td.trend .none { color: var(--faint); }
+  .stars { letter-spacing: 0.05em; color: var(--faint); white-space: nowrap; }
+  .stars .on { color: #e7b416; }
+  col.c-host { width: 15%; } col.c-site { width: 14%; } col.c-sensor { width: 29%; } col.c-value { width: 12%; }
+  col.c-trend { width: 13%; } col.c-prio { width: 8%; } col.c-since { width: 9%; }
 
   .calm { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.4em; text-align: center; padding: 1em; }
   .calm .big { font-size: 3.2em; font-weight: 800; color: var(--ok); display: flex; align-items: center; gap: 0.35em; }
@@ -156,26 +165,76 @@
       pages = 1; return;
     }
     var list = el('div', 'list'), table = el('table'), cg = el('colgroup');
-    ['host', 'site', 'problem', 'sensor', 'since'].forEach(function (n) { var col = el('col'); col.className = 'c-' + n; cg.appendChild(col); });
+    ['host', 'site', 'sensor', 'value', 'trend', 'prio', 'since'].forEach(function (n) { var col = el('col'); col.className = 'c-' + n; cg.appendChild(col); });
     table.appendChild(cg);
     var thead = el('thead'), hr = el('tr');
-    ['Host', 'Site', 'Problem', 'Sensor', 'Since'].forEach(function (h) { hr.appendChild(el('th', null, h)); });
+    ['Host', 'Site', 'Sensor', 'Value', 'Trend', 'Priority', 'Since'].forEach(function (h) { var th = el('th', null, h); if (h === 'Since') th.style.textAlign = 'right'; hr.appendChild(th); });
     thead.appendChild(hr); table.appendChild(thead);
     var tb = el('tbody');
     rows.forEach(function (i) {
       var tr = el('tr', i.kind);
       tr.appendChild(el('td', 'host', i.host));
       tr.appendChild(el('td', 'site', i.site));
-      tr.appendChild(el('td', 'problem', i.problem));
-      var td = el('td', 'value');
-      if (i.sensor) td.appendChild(el('span', 'sensor', i.sensor + (i.value ? '  ' : '')));
-      if (i.value) td.appendChild(document.createTextNode(i.value));
-      tr.appendChild(td);
+      var sc = el('td', 'sensor');
+      sc.appendChild(el('div', 'nm', i.sensor));
+      if (i.reason) {
+        var why = el('div', 'why'), sv = sevInfo(i.severity);
+        var tag = el('span', 'sev', sv.label); tag.style.color = sv.color;
+        why.appendChild(tag); why.appendChild(document.createTextNode(' · ' + i.reason));
+        sc.appendChild(why);
+      }
+      tr.appendChild(sc);
+      tr.appendChild(valueCell(i.value || ''));
+      var tc = el('td', 'trend');
+      tc.appendChild(spark(i.spark, i.kind === 'warning' ? 'var(--warn)' : i.kind === 'acked' ? 'var(--acked)' : 'var(--err)', i.units));
+      tr.appendChild(tc);
+      var pc = el('td'); pc.appendChild(stars(i.priority || 3)); tr.appendChild(pc);
       tr.appendChild(el('td', 'since', i.since ? ago(i.since) : ''));
       tb.appendChild(tr);
     });
     table.appendChild(tb); list.appendChild(table); main.appendChild(list);
     paginate(list);
+  }
+
+  // Severity labels and colours, as in the app.
+  function sevInfo(n) {
+    return [{ label: 'Not classified', color: 'var(--faint)' }, { label: 'Information', color: 'var(--accent)' }, { label: 'Warning', color: 'var(--warn)' },
+      { label: 'Average', color: '#f08a4b' }, { label: 'High', color: 'var(--err)' }, { label: 'Disaster', color: '#ff4d4d' }][n] || { label: '', color: 'var(--muted)' };
+  }
+  // The reading, with its unit dimmed ("86.44 %"); "not supported" in red.
+  function valueCell(v) {
+    var td = el('td', 'value' + (v === 'not supported' ? ' bad' : ''));
+    var m = /^(-?[0-9.,]+)\s+(.+)$/.exec(v);
+    if (m) { td.appendChild(document.createTextNode(m[1])); td.appendChild(el('span', 'u', ' ' + m[2])); } else td.textContent = v;
+    return td;
+  }
+  function stars(n) {
+    var s = el('span', 'stars'); s.title = 'Priority ' + n + ' of 5';
+    for (var k = 1; k <= 5; k++) s.appendChild(el('span', k <= n ? 'on' : null, '★'));
+    return s;
+  }
+  // The same mini graph as the app's lists: a near-flat series draws flat (a minimum span around its
+  // middle; percentages keep at least 10 points inside 0-100).
+  function spark(vals, color, units) {
+    if (!vals || vals.length < 2) return el('span', 'none', '-');
+    var w = 168, h = 20, min = vals[0], max = vals[0];
+    vals.forEach(function (v) { if (v < min) min = v; if (v > max) max = v; });
+    var mid = (min + max) / 2, rng = Math.max(max - min, Math.max(Math.abs(min), Math.abs(max), 1e-9) * 0.1);
+    if (units === '%' && max - min < 10) { rng = 10; mid = Math.min(Math.max(mid, 5), 95); }
+    var px = function (i) { return (i / (vals.length - 1)) * (w - 2) + 1; };
+    var py = function (v) { return h - 2.5 - (((v - mid) / rng) + 0.5) * (h - 4); };
+    var d = '';
+    vals.forEach(function (v, i) { d += (i ? 'L' : 'M') + px(i).toFixed(1) + ' ' + py(v).toFixed(1) + ' '; });
+    var NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h); svg.setAttribute('preserveAspectRatio', 'none');
+    var area = document.createElementNS(NS, 'path');
+    area.setAttribute('d', 'M1 ' + (h - 1) + ' ' + d.replace('M', 'L').trim() + ' L' + (w - 1) + ' ' + (h - 1) + ' Z');
+    area.setAttribute('fill', color); area.setAttribute('opacity', '0.13');
+    var line = document.createElementNS(NS, 'path');
+    line.setAttribute('d', d.trim()); line.setAttribute('fill', 'none'); line.setAttribute('stroke', color); line.setAttribute('stroke-width', '1.5');
+    line.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.appendChild(area); svg.appendChild(line);
+    return svg;
   }
 
   // A TV can't scroll: when the list is taller than the screen, show it a page at a time.

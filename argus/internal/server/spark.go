@@ -37,11 +37,23 @@ func (s *Server) handleSpark(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-
-	types, err := s.zbx.ItemValueTypes(ctx, ids)
+	out, err := s.sparkSeries(ctx, ids, rng.dur)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// sparkSeries is each numeric item's recent series over dur, downsampled to ~24 values: the data
+// behind every sparkline (the app's lists and the status pages).
+func (s *Server) sparkSeries(ctx context.Context, ids []string, dur time.Duration) (map[string][]float64, error) {
+	if len(ids) == 0 {
+		return map[string][]float64{}, nil
+	}
+	types, err := s.zbx.ItemValueTypes(ctx, ids)
+	if err != nil {
+		return nil, err
 	}
 	byType := map[int][]string{}
 	for id, vt := range types {
@@ -49,7 +61,7 @@ func (s *Server) handleSpark(w http.ResponseWriter, r *http.Request) {
 			byType[atoi(vt)] = append(byType[atoi(vt)], id)
 		}
 	}
-	from := time.Now().Unix() - int64(rng.dur.Seconds())
+	from := time.Now().Unix() - int64(dur.Seconds())
 	series := map[string][]float64{}
 	for vt, group := range byType {
 		pts, err := s.zbx.HistoryMulti(ctx, group, vt, from)
@@ -66,7 +78,7 @@ func (s *Server) handleSpark(w http.ResponseWriter, r *http.Request) {
 	for id, vals := range series {
 		out[id] = downsample(vals, 24)
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out, nil
 }
 
 // --- Daily buckets for daily-resetting sensors (AdGuard queries/blocked/block rate) ---

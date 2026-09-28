@@ -29,6 +29,24 @@ type sensorRow struct {
 	Reason    string   `json:"reason,omitempty"` // name of the worst trigger, i.e. why the sensor is unhappy
 	Since     int64    `json:"since,omitempty"`  // unix time the worst problem started firing (for its age)
 	EventIDs  []string `json:"event_ids"`        // problem events on this sensor (for ack / unack from a list)
+	// Synthetic marks a row that isn't a Zabbix sensor but an Argus-raised problem with none (an agent
+	// or SNMP endpoint that stopped answering): it has no chart and can't be paused or hidden itself.
+	Synthetic bool `json:"synthetic,omitempty"`
+}
+
+// interfaceRowLabel names the census row of an unreachable interface after what stopped answering.
+func interfaceRowLabel(problem string) string {
+	switch problem {
+	case "Zabbix agent not reachable":
+		return "Zabbix agent"
+	case "SNMP not responding":
+		return "SNMP"
+	case "IPMI not reachable":
+		return "IPMI"
+	case "JMX not reachable":
+		return "JMX"
+	}
+	return "Monitoring interface"
 }
 
 // handleSensors returns a census of the curated ("key") sensors across every host, each tagged
@@ -160,6 +178,28 @@ func (s *Server) sensorCensus(ctx context.Context) ([]sensorRow, error) {
 			State: state, Numeric: numericValueType(it.ValueType), Supported: supported,
 			Priority: priorityOf(prioMap, it.ItemID), Severity: itemSev[it.ItemID], Reason: itemReason[it.ItemID],
 			Since: itemSince[it.ItemID], EventIDs: itemEvents[it.ItemID],
+		})
+	}
+	// Problems that belong to no sensor (Argus-raised: an agent or SNMP endpoint that stopped
+	// answering) get a row of their own, so the pills, the Overview and the status pages count them.
+	for _, p := range synth.problems {
+		t := synth.targets[p.ObjectID]
+		if len(t.Items) > 0 || len(t.Hosts) == 0 {
+			continue
+		}
+		h := t.Hosts[0]
+		if _, hidden := hideHost[h.HostID]; hidden || h.Status == "1" {
+			continue
+		}
+		state := severityState(atoi(p.Severity))
+		if _, isAcked := acked[p.EventID]; isAcked {
+			state = "acked"
+		}
+		out = append(out, sensorRow{
+			HostID: h.HostID, HostName: h.Name, ItemID: p.EventID, Name: interfaceRowLabel(p.Name), Label: interfaceRowLabel(p.Name),
+			Category: "Availability", Value: "Not reachable", State: state, Supported: true, Priority: defaultItemPriority,
+			Severity: atoi(p.Severity), Reason: p.Name, Since: atoi64(p.Clock), LastClock: atoi64(p.Clock), EventIDs: []string{p.EventID},
+			Synthetic: true,
 		})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
