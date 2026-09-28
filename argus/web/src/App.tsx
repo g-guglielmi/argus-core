@@ -30,7 +30,7 @@ type AddOnCfg = { id: string; label: string; description: string; enabled: boole
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[] }
 type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
-type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
+type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
 const SEVERITIES: { v: number; label: string }[] = [
   { v: 2, label: 'Warning & up' },
@@ -1964,15 +1964,19 @@ function fmtMinutes(m: number): string {
 
 // timingLabel is the channel card's escalation summary, appended to its meta line ("" when immediate
 // with no reminders, which is how every channel behaved before escalation existed).
-function timingLabel(c: { delay_min?: number; repeat_min?: number }): string {
+function timingLabel(c: { min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number }): string {
   let out = ''
   if (c.delay_min) out += ` · after ${fmtMinutes(c.delay_min)}`
-  if (c.repeat_min) out += ` · reminds every ${fmtMinutes(c.repeat_min)}`
+  if (c.repeat_min) {
+    out += ` · reminds every ${fmtMinutes(c.repeat_min)}`
+    const rs = c.repeat_min_severity || 2
+    if (rs > c.min_severity) out += ` (${SEVERITIES.find((s) => s.v === rs)?.label || ''})`
+  }
   return out
 }
 
-function EscalationFields({ delay, repeat, onDelay, onRepeat, who }: {
-  delay: number; repeat: number; onDelay: (m: number) => void; onRepeat: (m: number) => void; who: string
+function EscalationFields({ delay, repeat, remSev, onDelay, onRepeat, onRemSev, who }: {
+  delay: number; repeat: number; remSev: number; onDelay: (m: number) => void; onRepeat: (m: number) => void; onRemSev: (s: number) => void; who: string
 }) {
   const opts = (list: number[], cur: number) => (list.includes(cur) ? list : [...list, cur].sort((a, b) => a - b))
   return (
@@ -1985,6 +1989,11 @@ function EscalationFields({ delay, repeat, onDelay, onRepeat, who }: {
       <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Remind every</span>
         <Select value={repeat} onChange={(e) => onRepeat(Number(e.target.value))} title="Repeat the alert while it stays open and unacknowledged">
           {opts(REPEAT_CHOICES, repeat).map((m) => <option key={m} value={m}>{m ? fmtMinutes(m) : 'Off'}</option>)}
+        </Select>
+      </label>
+      <label style={{ display: 'grid', gap: 4 }}><span className="flabel">Remind for</span>
+        <Select value={remSev} onChange={(e) => onRemSev(Number(e.target.value))} disabled={!repeat} title="Only problems at or above this severity are repeated; lower ones are still alerted once">
+          {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
         </Select>
       </label>
     </>
@@ -2009,13 +2018,14 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   const [minSev, setMinSev] = useState(initial?.min_severity || 2)
   const [delayMin, setDelayMin] = useState(initial?.delay_min || 0)
   const [repeatMin, setRepeatMin] = useState(initial?.repeat_min || 0)
+  const [remSev, setRemSev] = useState(initial?.repeat_min_severity || 2)
   const [enabled, setEnabled] = useState(initial ? initial.enabled : true)
   const [config, setConfig] = useState<Record<string, string>>(initial?.config || {})
   const setCfg = (k: string, v: string) => setConfig((c) => ({ ...c, [k]: v }))
 
   async function save(e: FormEvent) {
     e.preventDefault(); onError('')
-    const body = { type, name, sites: selSites, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, enabled, config }
+    const body = { type, name, sites: selSites, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, enabled, config }
     const url = initial ? `/api/notify/channels/${initial.id}` : '/api/notify/channels'
     const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
@@ -2039,7 +2049,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
             {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
           </Select>
         </label>
-        <EscalationFields delay={delayMin} repeat={repeatMin} onDelay={setDelayMin} onRepeat={setRepeatMin} who="this channel" />
+        <EscalationFields delay={delayMin} repeat={repeatMin} remSev={remSev} onDelay={setDelayMin} onRepeat={setRepeatMin} onRemSev={setRemSev} who="this channel" />
       </div>
       <div style={{ display: 'grid', gap: 6 }}><span className="flabel">Sites</span>
         <SitePicker options={sites} value={selSites} onChange={setSelSites} />
@@ -2082,7 +2092,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   )
 }
 
-type UserChannel = { id: number; type: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
+type UserChannel = { id: number; type: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 
 // PersonalNotifyCard lets any signed-in user manage their own Telegram/Discord alert destinations,
 // separate from the shared channels an admin configures in the Notifications tab. Self-service:
@@ -2183,13 +2193,14 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   const [minSev, setMinSev] = useState(initial?.min_severity || 2)
   const [delayMin, setDelayMin] = useState(initial?.delay_min || 0)
   const [repeatMin, setRepeatMin] = useState(initial?.repeat_min || 0)
+  const [remSev, setRemSev] = useState(initial?.repeat_min_severity || 2)
   const [enabled, setEnabled] = useState(initial ? initial.enabled : true)
   const [config, setConfig] = useState<Record<string, string>>(initial?.config || {})
   const setCfg = (k: string, v: string) => setConfig((c) => ({ ...c, [k]: v }))
 
   async function save(e: FormEvent) {
     e.preventDefault(); onError('')
-    const body = { type, sites: selSites, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, enabled, config }
+    const body = { type, sites: selSites, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, enabled, config }
     const url = initial ? `/api/me/notify/channels/${initial.id}` : '/api/me/notify/channels'
     const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
@@ -2214,7 +2225,7 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
             {SEVERITIES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}
           </Select>
         </label>
-        <EscalationFields delay={delayMin} repeat={repeatMin} onDelay={setDelayMin} onRepeat={setRepeatMin} who="you" />
+        <EscalationFields delay={delayMin} repeat={repeatMin} remSev={remSev} onDelay={setDelayMin} onRepeat={setRepeatMin} onRemSev={setRemSev} who="you" />
       </div>
       <div style={{ display: 'grid', gap: 6 }}><span className="flabel">Sites</span>
         <SitePicker options={sites} value={selSites} onChange={setSelSites} />

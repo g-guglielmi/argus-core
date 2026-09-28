@@ -24,6 +24,7 @@ type channelView struct {
 	MinSeverity int               `json:"min_severity"`
 	DelayMin    int               `json:"delay_min"`
 	RepeatMin   int               `json:"repeat_min"`
+	RepeatSev   int               `json:"repeat_min_severity"`
 	Config      map[string]string `json:"config"`
 	// Delivery health for the channel card: last successful send, last failure (+ reason), sent count.
 	LastSentAt  int64  `json:"last_sent_at,omitempty"`
@@ -39,7 +40,7 @@ func toChannelView(c store.NotifyChannel) channelView {
 	}
 	return channelView{
 		ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Sites: c.Sites, MinSeverity: c.MinSeverity,
-		DelayMin: c.DelayMin, RepeatMin: c.RepeatMin, Config: cfg,
+		DelayMin: c.DelayMin, RepeatMin: c.RepeatMin, RepeatSev: c.RepeatSev, Config: cfg,
 		LastSentAt: c.LastSentAt, LastError: c.LastError, LastErrorAt: c.LastErrorAt, SentCount: c.SentCount,
 	}
 }
@@ -80,6 +81,7 @@ type channelRequest struct {
 	MinSeverity int               `json:"min_severity"`
 	DelayMin    int               `json:"delay_min"`
 	RepeatMin   int               `json:"repeat_min"`
+	RepeatSev   int               `json:"repeat_min_severity"`
 	Config      map[string]string `json:"config"`
 }
 
@@ -107,6 +109,18 @@ func clampEscalation(delay, repeat int) (int, int) {
 		repeat = maxChannelRepeatMin
 	}
 	return delay, repeat
+}
+
+// clampSeverityFloor bounds a severity floor to Warning..Disaster (2..5): the notifier never alerts
+// below Warning, and 0 (not sent) means Warning.
+func clampSeverityFloor(sev int) int {
+	if sev < 2 {
+		return 2
+	}
+	if sev > 5 {
+		return 5
+	}
+	return sev
 }
 
 func (req channelRequest) validate() (store.NotifyChannel, string) {
@@ -141,7 +155,7 @@ func (req channelRequest) validate() (store.NotifyChannel, string) {
 	delay, repeat := clampEscalation(req.DelayMin, req.RepeatMin)
 	return store.NotifyChannel{
 		Type: t, Name: name, Enabled: req.Enabled, Sites: cleanSites(req.Sites), MinSeverity: sev,
-		DelayMin: delay, RepeatMin: repeat, Config: cfg,
+		DelayMin: delay, RepeatMin: repeat, RepeatSev: clampSeverityFloor(req.RepeatSev), Config: cfg,
 	}, ""
 }
 

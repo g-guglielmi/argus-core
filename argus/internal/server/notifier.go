@@ -57,6 +57,7 @@ type notifyDest struct {
 	minSev  int
 	delay   int64 // seconds
 	repeat  int64 // seconds, 0 = no reminders
+	remSev  int   // reminders only at or above this severity
 	created int64 // unix s
 	send    func(ctx context.Context, ev notify.Event)
 }
@@ -73,8 +74,8 @@ func notifyDests(st *store.Store, channels []store.NotifyChannel, userChannels [
 		out = append(out, notifyDest{
 			key: store.DeliveryKey(store.DeliveryGlobal, c.ID), kind: store.DeliveryGlobal, id: c.ID,
 			sites: c.Sites, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
-			created: c.CreatedAt.Unix(),
-			send:    func(ctx context.Context, ev notify.Event) { sendGlobal(ctx, st, c, userEmails, ev, logger) },
+			remSev: c.RepeatSev, created: c.CreatedAt.Unix(),
+			send: func(ctx context.Context, ev notify.Event) { sendGlobal(ctx, st, c, userEmails, ev, logger) },
 		})
 	}
 	for _, c := range userChannels {
@@ -82,8 +83,8 @@ func notifyDests(st *store.Store, channels []store.NotifyChannel, userChannels [
 		out = append(out, notifyDest{
 			key: store.DeliveryKey(store.DeliveryUser, c.ID), kind: store.DeliveryUser, id: c.ID,
 			sites: c.Sites, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
-			created: c.CreatedAt.Unix(),
-			send:    func(ctx context.Context, ev notify.Event) { sendPersonal(ctx, st, c, ev, logger) },
+			remSev: c.RepeatSev, created: c.CreatedAt.Unix(),
+			send: func(ctx context.Context, ev notify.Event) { sendPersonal(ctx, st, c, ev, logger) },
 		})
 	}
 	return out
@@ -371,7 +372,7 @@ type plannedDelivery struct {
 //     to replay every open problem at it. A destination that got the alert at another severity
 //     (the incident escalated or eased on the same sensor) gets the new one straight away.
 //   - A destination that already has the alert at this severity gets a reminder once "remind every"
-//     has passed since its last send.
+//     has passed since its last send, if the problem is at or above its "remind for" severity.
 func planDeliveries(dests []notifyDest, got map[string]store.NotifyDelivery, groups []string, sev int, start, firedAt, now int64) []plannedDelivery {
 	var out []plannedDelivery
 	for _, d := range dests {
@@ -380,7 +381,7 @@ func planDeliveries(dests []notifyDest, got map[string]store.NotifyDelivery, gro
 		}
 		row, has := got[d.key]
 		if has && row.Severity == sev {
-			if d.repeat > 0 && now-row.LastSent >= d.repeat {
+			if d.repeat > 0 && sev >= d.remSev && now-row.LastSent >= d.repeat {
 				out = append(out, plannedDelivery{dest: d, reminder: true, row: row})
 			}
 			continue

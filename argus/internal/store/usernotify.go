@@ -24,6 +24,7 @@ type UserNotifyChannel struct {
 	MinSeverity int
 	DelayMin    int // escalation: minutes open + unacknowledged before this channel is told (0 = at once)
 	RepeatMin   int // reminders: minutes between repeats while open + unacknowledged (0 = none)
+	RepeatSev   int // reminders only for problems at or above this severity (2..5)
 	Config      map[string]string
 	CreatedAt   time.Time
 	// Delivery health, recorded per send (alerts and the Send-test button alike).
@@ -33,7 +34,7 @@ type UserNotifyChannel struct {
 	SentCount   int64
 }
 
-const userChannelColumns = `id,user_id,type,enabled,site,min_severity,config,created_at,last_sent_at,last_error,last_error_at,sent_count,delay_min,repeat_min`
+const userChannelColumns = `id,user_id,type,enabled,site,min_severity,config,created_at,last_sent_at,last_error,last_error_at,sent_count,delay_min,repeat_min,repeat_min_severity`
 
 func (s *Store) scanUserChannel(row rowScanner) (*UserNotifyChannel, error) {
 	var c UserNotifyChannel
@@ -41,7 +42,7 @@ func (s *Store) scanUserChannel(row rowScanner) (*UserNotifyChannel, error) {
 	var cfg string
 	var site string
 	var created int64
-	if err := row.Scan(&c.ID, &c.UserID, &c.Type, &enabled, &site, &c.MinSeverity, &cfg, &created, &c.LastSentAt, &c.LastError, &c.LastErrorAt, &c.SentCount, &c.DelayMin, &c.RepeatMin); err != nil {
+	if err := row.Scan(&c.ID, &c.UserID, &c.Type, &enabled, &site, &c.MinSeverity, &cfg, &created, &c.LastSentAt, &c.LastError, &c.LastErrorAt, &c.SentCount, &c.DelayMin, &c.RepeatMin, &c.RepeatSev); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -102,8 +103,8 @@ func (s *Store) CreateUserNotifyChannel(ctx context.Context, c UserNotifyChannel
 		enabled = 1
 	}
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO user_notify_channels(user_id,type,enabled,site,min_severity,config,created_at,delay_min,repeat_min) VALUES(?,?,?,?,?,?,?,?,?)`,
-		c.UserID, c.Type, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), time.Now().Unix(), c.DelayMin, c.RepeatMin)
+		`INSERT INTO user_notify_channels(user_id,type,enabled,site,min_severity,config,created_at,delay_min,repeat_min,repeat_min_severity) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		c.UserID, c.Type, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), time.Now().Unix(), c.DelayMin, c.RepeatMin, c.RepeatSev)
 	if err != nil {
 		return 0, err
 	}
@@ -117,8 +118,8 @@ func (s *Store) UpdateUserNotifyChannel(ctx context.Context, c UserNotifyChannel
 		enabled = 1
 	}
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE user_notify_channels SET type=?,enabled=?,site=?,min_severity=?,config=?,delay_min=?,repeat_min=? WHERE id=?`,
-		c.Type, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), c.DelayMin, c.RepeatMin, c.ID)
+		`UPDATE user_notify_channels SET type=?,enabled=?,site=?,min_severity=?,config=?,delay_min=?,repeat_min=?,repeat_min_severity=? WHERE id=?`,
+		c.Type, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), c.DelayMin, c.RepeatMin, c.RepeatSev, c.ID)
 	return err
 }
 

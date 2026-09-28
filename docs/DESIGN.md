@@ -366,7 +366,9 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   problem only once the incident has been open and unacknowledged for its delay (counted from when
   the incident began, never before the alert delay has passed), so "team at once, managers after 30
   min" is two channels. Reminders (`[HIGH REMINDER]`, "Still open after 1h 5m (reminder 2)") repeat
-  while the problem stays open and unacknowledged; acknowledging, pausing or hiding stops them. A
+  while the problem stays open and unacknowledged, for problems at or above the channel's own
+  **Remind for** severity (independent of its alert floor, so "alert on warnings, remind only about
+  errors" is one channel); acknowledging, pausing or hiding stops them. A
   channel added after a problem went live isn't sent that problem.
 - **Deliveries decide the follow-ups:** `notify_deliveries` records which channels an alert reached.
   Reminders, the **acknowledged notice** (`[ACKNOWLEDGED]` with who took it and their note, sent once

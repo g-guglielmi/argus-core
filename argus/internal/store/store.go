@@ -511,7 +511,8 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 	// stay open and unacknowledged before this channel hears of it (0 = with the first alert); "remind
 	// every" = minutes between reminders while it stays open and unacknowledged (0 = no reminders).
 	for _, table := range []string{"notify_channels", "user_notify_channels"} {
-		for _, ddl := range []string{"delay_min INTEGER NOT NULL DEFAULT 0", "repeat_min INTEGER NOT NULL DEFAULT 0"} {
+		// repeat_min_severity: reminders only for problems at or above it (2 = Warning, i.e. every alert).
+		for _, ddl := range []string{"delay_min INTEGER NOT NULL DEFAULT 0", "repeat_min INTEGER NOT NULL DEFAULT 0", "repeat_min_severity INTEGER NOT NULL DEFAULT 2"} {
 			if err := s.ensureColumn(table, ddl); err != nil {
 				return err
 			}

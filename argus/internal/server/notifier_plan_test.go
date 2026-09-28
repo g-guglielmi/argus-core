@@ -57,6 +57,17 @@ func TestPlanDeliveries(t *testing.T) {
 		t.Fatalf("severity change: %v", p)
 	}
 
+	// "Remind for" High and up: the warning is alerted but never reminded; the error is.
+	strict := notifyDest{key: "g:6", kind: "g", id: 6, minSev: 2, repeat: 900, remSev: 4}
+	sent := map[string]store.NotifyDelivery{"g:6": {Kind: "g", ChannelID: 6, Severity: 2, LastSent: fired}}
+	if p := planKeys(planDeliveries([]notifyDest{strict}, sent, groups, 2, start, fired, fired+3600)); len(p) != 0 {
+		t.Fatalf("warning reminded below the remind-for floor: %v", p)
+	}
+	sent["g:6"] = store.NotifyDelivery{Kind: "g", ChannelID: 6, Severity: 4, LastSent: fired}
+	if p := planKeys(planDeliveries([]notifyDest{strict}, sent, groups, 4, start, fired, fired+900)); !p["g:6+r"] {
+		t.Fatalf("error not reminded: %v", p)
+	}
+
 	// An alert that went live before a channel existed isn't replayed at it.
 	if p := planKeys(planDeliveries([]notifyDest{late}, nil, groups, 2, start, fired, 6000)); len(p) != 0 {
 		t.Fatalf("new channel replayed an old alert: %v", p)

@@ -19,6 +19,8 @@ GitHub Release from the matching section below.
   up to 4 hours. For example, the team's Telegram at once and the managers' email after 30 minutes.
 - **Reminders.** A channel can repeat an open alert (**Remind every** 15 minutes up to a day) until
   someone acknowledges it: "[HIGH REMINDER] ... Still open after 1h 5m (reminder 2)". Off by default.
+  **Remind for** sets which severities are repeated, separately from the alert floor: for example,
+  alert on warnings and errors, but remind only about errors.
 - **Acknowledged notice.** When someone acknowledges an alert, the channels that got it are told who
   took it and their note ("[ACKNOWLEDGED] ... Acknowledged by Alice"), so the team knows it's handled.
   Acknowledging also stops escalation and reminders; un-acknowledging resumes them.
