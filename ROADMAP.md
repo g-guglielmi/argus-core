@@ -170,10 +170,12 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   trusted proxy seeded); SSH password login limited to the one appliance account (root and the rest:
   keys) and no docker group; the core appliance takes its setup code from an `ARGUSSEED` disk when
   there is no console (probes use the seed ISO) (`probe-vm/v0.3.3`, `core-vm/v0.1.1`).
-- [ ] **Security review, wave 2b (update chain + supply chain)** - the core resolves the digest of
-  the tag it hands out and the updater verifies the pulled image against it (tags stay `latest` /
-  `testing`; a mismatch is refused, not applied); pinned actions/installers, job-level workflow
-  permissions, provenance/SBOM, probe `:latest` only from main. - _(ops+BE)_ M
+- [x] **Security review, wave 2b (update chain + supply chain)** - the core resolves the digest of
+  the tag it hands out and the updater verifies the pulled image against it before recreating (tags
+  stay `latest` / `testing`; a mismatch is refused and logged, the container left untouched; the
+  self-update helper image is verified the same way); GitHub Actions pinned to commits, permissions
+  per job, provenance + SBOM on image pushes, probe `:latest` only from main; Docker installed on
+  the appliances from the apt repository with a pinned signing key (updater `v0.2.7`).
 - [ ] **Security review, wave 2c (probe-side credentials)** - UniFi controller keys scoped per
   site; certificate verification toward UniFi controllers and XCP-NG hosts (trust on first use with
   the fingerprint shown, plus a per-target "ignore certificate" switch); break-glass reveal logged

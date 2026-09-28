@@ -998,6 +998,14 @@ plane; the probe checks in and converges.
   by hand with `-e ARGUS_UPDATER_MODE=probe-watch -e ARGUS_PROXY_CONTAINER=<name>` + the socket +
   `-v <proxy-data>:/probe:ro`. (The socket-on-proxy `ARGUS_PROBE_SELFUPDATE` path and the compose
   `probe-poll` mode were retired in favour of this one model.)
+- **Every hand-out carries a digest.** Tags stay tags (`latest`, `testing`, a version), but a tag is
+  a pointer the registry can move, so the core resolves what the tag points to when it hands it out
+  (`target_digest` / `update_digest` / `updater_update_digest` at check-in; `digests` per tag in the
+  core's `request.json`; `digest` in `updater-request.json`; GHCR `Docker-Content-Digest`, cached
+  5 minutes) and the updater compares the pulled image's repository digest against it before
+  recreating anything (`pull_verified` in `lib/recreate.sh`, also for the self-update helper image).
+  A mismatch is refused and logged, the container left untouched. No digest (an older core, the
+  registry unreachable at hand-out) means the tag is applied unverified, with a log line.
 - **The updater updates itself.** A long-running updater can't `rm -f` itself, so on request it spawns
   an ephemeral `argus-updater --rm` copy in `probe-recreate` mode targeting its own container (the
   self-update **primitive**). Argus drives it: the sidecar reports its own version at check-in

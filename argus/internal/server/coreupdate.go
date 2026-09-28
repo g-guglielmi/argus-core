@@ -38,13 +38,17 @@ const (
 
 // updateRequest is the command the core drops for the sidecar.
 type updateRequest struct {
-	ID            string `json:"id"`
-	Tag           string `json:"tag"`             // image tag to converge on, e.g. "v0.5.0"
-	Exact         bool   `json:"exact,omitempty"` // deliberate channel/version switch: use Tag verbatim (bypass channel-preserve)
-	From          string `json:"from"`            // running version at request time
-	RequestedBy   string `json:"requested_by"`    // admin email, for the audit line
-	RequestedAt   string `json:"requested_at"`    // RFC3339
-	CoreContainer string `json:"core_container"`  // hostname hint (= container id by default)
+	ID    string `json:"id"`
+	Tag   string `json:"tag"`             // image tag to converge on, e.g. "v0.5.0"
+	Exact bool   `json:"exact,omitempty"` // deliberate channel/version switch: use Tag verbatim (bypass channel-preserve)
+	// Digests maps each tag the sidecar might pull for this request (Tag, and the running channel's
+	// tag when it preserves the channel) to the digest it pointed to when the request was written.
+	// The sidecar refuses a pull whose digest differs. Absent entries are applied unverified.
+	Digests       map[string]string `json:"digests,omitempty"`
+	From          string            `json:"from"`           // running version at request time
+	RequestedBy   string            `json:"requested_by"`   // admin email, for the audit line
+	RequestedAt   string            `json:"requested_at"`   // RFC3339
+	CoreContainer string            `json:"core_container"` // hostname hint (= container id by default)
 }
 
 // coreUpdateStatus is the sidecar's report, overwritten in place through the job's lifecycle.
@@ -219,10 +223,19 @@ func (s *Server) handleUpdateStart(w http.ResponseWriter, r *http.Request) {
 		by = u.Email
 	}
 	host, _ := os.Hostname()
+	digests := map[string]string{}
+	for _, t := range []string{targetTag, s.resolveChannel()} {
+		if t != "" && digests[t] == "" {
+			if d := s.imageDigest(r.Context(), appImageRepo, t); d != "" {
+				digests[t] = d
+			}
+		}
+	}
 	req := updateRequest{
 		ID:            newUpdateID(),
 		Tag:           targetTag,
 		Exact:         exact,
+		Digests:       digests,
 		From:          cur,
 		RequestedBy:   by,
 		RequestedAt:   time.Now().UTC().Format(time.RFC3339),
@@ -266,9 +279,10 @@ func (s *Server) handleUpdaterSelfUpdate(w http.ResponseWriter, r *http.Request)
 	req := struct {
 		ID          string `json:"id"`
 		Tag         string `json:"tag"`
+		Digest      string `json:"digest,omitempty"` // what the tag points to now; the sidecar verifies its pull against it
 		RequestedBy string `json:"requested_by"`
 		RequestedAt string `json:"requested_at"`
-	}{newUpdateID(), tag, by, time.Now().UTC().Format(time.RFC3339)}
+	}{newUpdateID(), tag, s.imageDigest(r.Context(), updaterImageRepo, tag), by, time.Now().UTC().Format(time.RFC3339)}
 	if err := s.writeUpdateJSONAtomic(updaterRequestFile, req); err != nil {
 		s.logger.Error("updater self-update: could not write request", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the updater update"})

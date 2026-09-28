@@ -109,13 +109,21 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 	target, _ := s.st.ProbeTargetVersion(ctx)
 	var resp struct {
 		Target        string           `json:"target"`
+		TargetDigest  string           `json:"target_digest,omitempty"` // what the target tag points to right now
 		CoreHost      string           `json:"core_host,omitempty"`
 		Update        string           `json:"update,omitempty"`
+		UpdateDigest  string           `json:"update_digest,omitempty"`
 		UpdaterUpdate string           `json:"updater_update,omitempty"`
+		UpdaterDigest string           `json:"updater_update_digest,omitempty"`
 		Scan          *scanJobPayload  `json:"scan,omitempty"`
 		Sweep         *sweepJobPayload `json:"sweep,omitempty"`
 	}
 	resp.Target = target
+	// Only the sidecar acts on tags, and only it gets the digests (a plain reporter needn't cost a
+	// registry lookup per minute).
+	if req.SelfUpdate != nil && *req.SelfUpdate {
+		resp.TargetDigest = s.imageDigest(ctx, probeImageRepo, probeTargetTag(target))
+	}
 	// Hand out the current core host on every check-in (not gated on self-update capability, so a
 	// pure-reporter proxy gets it too). This lets an admin re-point the whole fleet by changing
 	// ARGUS_PROBE_CORE_HOST centrally: each probe applies the new value at its next restart. Omitted
@@ -130,10 +138,12 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		// Each hand-out is remembered, so the system notices can tell when one didn't go through.
 		if tag, _ := s.st.TakeProbeUpdate(ctx, proxyName); tag != "" {
 			resp.Update = tag
+			resp.UpdateDigest = s.imageDigest(ctx, probeImageRepo, probeTargetTag(tag))
 			_ = s.st.MetaSet(ctx, noticeProbePending+proxyName, tag+"|"+itoa64(time.Now().Unix()))
 		}
 		if tag, _ := s.st.TakeUpdaterUpdate(ctx, proxyName); tag != "" {
 			resp.UpdaterUpdate = tag
+			resp.UpdaterDigest = s.imageDigest(ctx, updaterImageRepo, tag)
 			_ = s.st.MetaSet(ctx, noticeUpdPending+proxyName, tag+"|"+itoa64(time.Now().Unix()))
 		}
 	}

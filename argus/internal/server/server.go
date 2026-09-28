@@ -44,6 +44,7 @@ type Server struct {
 	updaterLatest *probeLatestCache  // newest published argus-updater version, polled from public GHCR
 	appLatest     *appLatestCache    // newest published app release, polled from public GHCR
 	probeVM       *probeVMCache      // newest probe-vm appliance + assets, polled from GitHub Releases
+	digests       digestCache        // tag -> digest, handed out with every update so the updater can verify the pull
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {

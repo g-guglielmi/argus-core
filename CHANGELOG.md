@@ -11,6 +11,26 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+**Security:**
+- **Updates are verified by digest.** Every update the core hands out keeps naming a tag (`latest`,
+  `testing`, a version), and now also carries the digest that tag pointed to at hand-out time: the
+  fleet target and one-shot updates in the probe check-in (`target_digest`, `update_digest`,
+  `updater_update_digest`), the core's own update request (`digests` per tag, since the sidecar may
+  pull the preserved channel rather than the requested tag) and the sidecar self-update request
+  (`digest`). An updater from `v0.2.7` refuses to run a pulled image whose digest differs (an image
+  swapped under the tag in between); an older updater ignores the fields. Digests are resolved from
+  the registry with a 5-minute cache; when the registry can't be asked, the update goes out without
+  one and is applied unverified, logged as such.
+- **CI supply chain:** every GitHub Action is pinned to a commit (`# vN` comments say which release),
+  workflow permissions are granted per job (read-only where nothing is published), and image pushes
+  carry provenance and SBOM attestations.
+
+**Core VM (next image):**
+- Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
+  of the `get.docker.com` script.
+
 ## [core-vm/v0.1.1] - 2026-09-29
 
 Security hardening of the core appliance golden image (review wave 2). Existing VMs are not changed
