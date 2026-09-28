@@ -36,3 +36,15 @@ func TestTechnicalName(t *testing.T) {
 		}
 	}
 }
+
+func TestInferUnits(t *testing.T) {
+	if got := inferUnits("Zabbix server: Proxy [site1]: Last seen, in seconds", ""); got != "s" {
+		t.Errorf("unitless seconds counter: %q", got)
+	}
+	if got := inferUnits("Free disk space", ""); got != "" {
+		t.Errorf("unrelated item: %q", got)
+	}
+	if got := inferUnits("Uptime, in seconds", "uptime"); got != "uptime" {
+		t.Errorf("explicit units must win: %q", got)
+	}
+}

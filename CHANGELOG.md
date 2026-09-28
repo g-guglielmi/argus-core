@@ -36,6 +36,11 @@ GitHub Release from the matching section below.
   you typed stays the visible name, and Argus derives a technical name Zabbix accepts
   ("U6+ Salotto" becomes "U6_ Salotto"). Editing the technical name in host settings explains which
   characters it can use.
+- Sensors from Zabbix's own templates that count seconds but declare no unit (like a proxy's "Last
+  seen, in seconds") now read in seconds in the app, on charts and in alerts, instead of a bare
+  number.
+- Alert thresholds carry the sensor's unit, scaled like the reading: "688 s (threshold >600 s)",
+  "96 % (threshold >90 %)".
 
 ## [0.5.8] - 2026-09-28
 

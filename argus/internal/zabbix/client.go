@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -329,7 +330,25 @@ func (c *Client) Items(ctx context.Context, hostID string) ([]Item, error) {
 		"sortfield": "name",
 	}
 	var items []Item
-	return items, c.call(ctx, "item.get", params, true, &items)
+	if err := c.call(ctx, "item.get", params, true, &items); err != nil {
+		return nil, err
+	}
+	for i := range items {
+		items[i].Units = inferUnits(items[i].Name, items[i].Units)
+	}
+	return items, nil
+}
+
+// secondsNameRe matches the unitless second counters in Zabbix's own templates ("Proxy [x]: Last
+// seen, in seconds"): their units field is empty, so readings and alerts would show a bare number.
+var secondsNameRe = regexp.MustCompile(`(?i)\bin seconds\b`)
+
+// inferUnits fills in "s" for an item whose name says it counts seconds but whose units are empty.
+func inferUnits(name, units string) string {
+	if units == "" && secondsNameRe.MatchString(name) {
+		return "s"
+	}
+	return units
 }
 
 // DiscoveryRule is a low-level discovery (LLD) rule on a host (filesystem discovery, NIC discovery, …).
@@ -389,7 +408,13 @@ func (c *Client) AllItems(ctx context.Context) ([]ItemWithHosts, error) {
 		"sortfield":   "name",
 	}
 	var items []ItemWithHosts
-	return items, c.call(ctx, "item.get", params, true, &items)
+	if err := c.call(ctx, "item.get", params, true, &items); err != nil {
+		return nil, err
+	}
+	for i := range items {
+		items[i].Units = inferUnits(items[i].Name, items[i].Units)
+	}
+	return items, nil
 }
 
 // TriggerFull is a trigger with everything the Triggers tab needs: its name, severity, current
@@ -456,6 +481,7 @@ func (c *Client) Item(ctx context.Context, itemID string) (*Item, error) {
 	if len(items) == 0 {
 		return nil, fmt.Errorf("item %s not found", itemID)
 	}
+	items[0].Units = inferUnits(items[0].Name, items[0].Units)
 	return &items[0], nil
 }
 
@@ -474,6 +500,7 @@ func (c *Client) ItemsByIDs(ctx context.Context, ids []string) (map[string]Item,
 		return nil, err
 	}
 	for _, it := range items {
+		it.Units = inferUnits(it.Name, it.Units)
 		out[it.ItemID] = it
 	}
 	return out, nil

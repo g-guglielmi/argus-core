@@ -328,10 +328,11 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		if len(plan) == 0 {
 			continue
 		}
+		value, units := reading(ctx, zbx, itemID, isNoData, now.In(loc))
 		base := notify.Event{
 			Kind: "problem", Severity: sev, State: severityState(sev),
 			Host: hostName, Name: p.Name, Site: primarySite(groups), When: time.Unix(atoi64(p.Clock), 0).In(loc),
-			Value: reading(ctx, zbx, itemID, isNoData, now.In(loc)), Threshold: parseThreshold(t.Expression),
+			Value: value, Threshold: formatThreshold(parseThreshold(t.Expression), units),
 			OpenURL: OpenLink(publicURL, hostID, itemID), AckURL: AckLink(publicURL, secret, p.EventID),
 			ChartPNG: alertChart(ctx, zbx, itemID, severityState(sev)),
 		}
@@ -438,24 +439,38 @@ func backfillDeliveries(ctx context.Context, st *store.Store, states map[string]
 	}
 }
 
-// reading is an alert's current value for the message: the sensor's last value with its units or, for a
-// "no data" alert, how long data has been missing ("No data for 4m (since 00:56)").
-func reading(ctx context.Context, zbx *zabbix.Client, itemID string, noData bool, now time.Time) string {
+// reading is an alert's current value for the message - the sensor's last value with its units or, for
+// a "no data" alert, how long data has been missing ("No data for 4m (since 00:56)") - and the
+// sensor's units, for the threshold.
+func reading(ctx context.Context, zbx *zabbix.Client, itemID string, noData bool, now time.Time) (string, string) {
 	if itemID == "" {
-		return ""
+		return "", ""
 	}
 	items, err := zbx.ItemsByIDs(ctx, []string{itemID})
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	it, ok := items[itemID]
 	if !ok {
-		return ""
+		return "", ""
 	}
 	if noData {
-		return noDataSince(atoi64(it.LastClock), now)
+		return noDataSince(atoi64(it.LastClock), now), ""
 	}
-	return notify.FormatReading(it.LastValue, it.Units)
+	return notify.FormatReading(it.LastValue, it.Units), it.Units
+}
+
+// formatThreshold gives a parsed threshold (">600") the sensor's units, scaled the way its reading is
+// (">600 s", ">90 %", ">1 GB"), so the two read alike.
+func formatThreshold(th, units string) string {
+	if th == "" || units == "" {
+		return th
+	}
+	i := strings.IndexFunc(th, func(r rune) bool { return r != '<' && r != '>' && r != '=' })
+	if i <= 0 {
+		return th
+	}
+	return th[:i] + notify.FormatReading(th[i:], units)
 }
 
 // ackBy names who acknowledged an event, with their note, for the acknowledged notice. An ack from the

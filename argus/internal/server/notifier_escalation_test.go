@@ -84,3 +84,19 @@ func TestIncidentStartFallback(t *testing.T) {
 		t.Errorf("a row from before incident tracking falls back to first_seen: %d", got)
 	}
 }
+
+func TestFormatThreshold(t *testing.T) {
+	cases := []struct{ th, units, want string }{
+		{">600", "s", ">600 s"},
+		{">=0.5", "s", ">=500 ms"},
+		{">90", "%", ">90 %"},
+		{">1073741824", "B", ">1 GB"},
+		{">50", "", ">50"},
+		{"", "%", ""},
+	}
+	for _, c := range cases {
+		if got := formatThreshold(c.th, c.units); got != c.want {
+			t.Errorf("formatThreshold(%q, %q) = %q, want %q", c.th, c.units, got, c.want)
+		}
+	}
+}
