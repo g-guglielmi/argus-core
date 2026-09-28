@@ -28,7 +28,14 @@ GitHub Release from the matching section below.
   - The page shows only its sites, never addresses, credentials or settings, reads through its own
     endpoint (never the app's API), and is kept out of search engines and other sites' frames. It
     uses the app's colours: the pills are tinted with their state's colour, and the tab icon is a
-    green check with no errors and a red "!" with any.
+    green check with no errors and a red "!" with any. The pills start grey and take their colour
+    once the first data arrives.
+
+- **A clock in the top bar**, with how long ago the status data refreshed, in Argus's timezone.
+- **Time format** in Settings -> General (`ARGUS_TIME_FORMAT`): 24-hour (the default) or 12-hour,
+  for Argus's clocks and the status pages.
+- A status page opens on a chosen list with `#errors`, `#acknowledged` or `#warnings` at the end of
+  its address (the secret link too); picking a pill updates the address.
 
 **Changed:**
 - The status pills read by urgency: Errors, Acknowledged, Warnings, OK (then Paused and Hidden).

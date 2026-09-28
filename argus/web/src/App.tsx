@@ -1244,11 +1244,12 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   const [sensors, setSensors] = useState<SensorRow[]>([])
   // False until the first /api/sensors response: the lists show a skeleton instead of flashing "All clear".
   const [sensorsLoaded, setSensorsLoaded] = useState(false)
+  const [sensorsAt, setSensorsAt] = useState(0) // when the status data last refreshed (the header clock says so)
   const [listFilter, setListFilter] = useState<string>(() => initialNav().filter)
   const canPause = me.role === 'admin' || me.role === 'helpdesk'
 
   useEffect(() => {
-    const load = () => fetch('/api/sensors').then((r) => (r.ok ? r.json() : [])).then((s) => { setSensors(s || []); setSensorsLoaded(true) }).catch(() => setSensorsLoaded(true))
+    const load = () => fetch('/api/sensors').then((r) => (r.ok ? r.json() : Promise.reject())).then((s) => { setSensors(s || []); setSensorsLoaded(true); setSensorsAt(Date.now()) }).catch(() => setSensorsLoaded(true))
     load(); const t = setInterval(load, 30000); const off = onDataRefresh(load); return () => { clearInterval(t); off() }
   }, [])
   // Remember the desktop sidebar collapsed/expanded choice across reloads.
@@ -1463,6 +1464,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
             {chip('paused', ic.paused, 'var(--paused)', pausedN, 'Paused')}
             {chip('hidden', ic.hidden, 'var(--hidden)', hiddenN, 'Hidden')}
           </div>
+          <HeaderClock updatedAt={sensorsAt} />
         </div>
         <div className="content view-enter" key={`${view}:${listFilter}`}>
           {view === 'overview' && <StatusListView filter="attention" sensors={sensors} loading={!sensorsLoaded} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => {}} />}
@@ -1484,15 +1486,41 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
 }
 
 type SettingItem = {
-  key: string; label: string; group: string; type: string; secret: boolean; min?: number; hint: string
+  key: string; label: string; group: string; type: string; secret: boolean; min?: number; options?: string[]; hint: string
   env: string; value: string; source: string; locked: boolean; has_value: boolean
+}
+
+// HeaderClock is the top bar's clock, in Argus's timezone and time format (Settings -> General), with
+// how long ago the status data behind the pills last refreshed. Its own 1 s tick, so the shell doesn't
+// re-render every second.
+function HeaderClock({ updatedAt }: { updatedAt: number }) {
+  const [cfg, setCfg] = useState<{ tz?: string; h24: boolean }>({ h24: true })
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const load = () => fetch('/api/features').then((r) => r.json()).then((f) => setCfg({ tz: f.timezone || undefined, h24: f.clock_24h !== false })).catch(() => {})
+    load()
+    const cfgT = window.setInterval(load, 5 * 60 * 1000) // picks up a Settings change without a reload
+    const t = window.setInterval(() => setTick((n) => n + 1), 1000)
+    return () => { clearInterval(cfgT); clearInterval(t) }
+  }, [])
+  let time = ''
+  try { time = new Intl.DateTimeFormat(undefined, { timeZone: cfg.tz, hour: '2-digit', minute: '2-digit', hour12: !cfg.h24 }).format(new Date()) }
+  catch { time = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hour12: !cfg.h24 }).format(new Date()) }
+  const ago = updatedAt ? Math.max(0, Math.floor((Date.now() - updatedAt) / 1000)) : -1
+  const agoText = ago < 0 ? 'Loading…' : ago < 60 ? `Updated ${ago}s ago` : `Updated ${Math.floor(ago / 60)}m ago`
+  return (
+    <div className="hclock" title={cfg.tz ? `Time in ${cfg.tz}` : undefined}>
+      <div className="hclock-t">{time}</div>
+      <div className="hclock-u">{agoText}</div>
+    </div>
+  )
 }
 
 // VMClock is a live wall-clock in the core VM's timezone: the current instant is the same
 // everywhere, so formatting "now" in the VM's IANA zone IS the VM's local time (and the sync
 // pill next to it vouches that the VM's own clock agrees). Isolated so the 1s tick never
 // re-renders the whole settings form.
-function VMClock({ tz }: { tz: string }) {
+function VMClock({ tz, clock24 = true }: { tz: string; clock24?: boolean }) {
   const [, setTick] = useState(0)
   useEffect(() => {
     const t = window.setInterval(() => setTick((n) => n + 1), 1000)
@@ -1500,7 +1528,7 @@ function VMClock({ tz }: { tz: string }) {
   }, [])
   let text = ''
   try {
-    if (tz) text = new Intl.DateTimeFormat(undefined, { timeZone: tz, weekday: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date())
+    if (tz) text = new Intl.DateTimeFormat(undefined, { timeZone: tz, weekday: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: !clock24 }).format(new Date())
   } catch { /* unknown zone name: fall back to showing just the zone */ }
   // Just the time: the zone itself is the Timezone field right above (user's call - redundant).
   return <input className="input" disabled value={text || tz} aria-label="Core VM local time" />
@@ -1571,7 +1599,11 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
           {it.locked ? <span className="envpill" title={`Set via ${it.env}`}>via env</span>
             : it.source === 'default' && !editing ? <span className="set-src">default</span> : null}
         </div>
-        <input
+        {it.options && it.options.length > 0 ? (
+          <Select value={it.locked ? it.value : cur} disabled={it.locked || busy} onChange={(e) => setEdit(it.key, e.target.value)}>
+            {it.options.map((o) => <option key={o} value={o}>{o === '24h' ? '24-hour (16:43)' : o === '12h' ? '12-hour (4:43 PM)' : o}</option>)}
+          </Select>
+        ) : <input
           className="input"
           type={it.secret ? 'password' : it.type === 'int' ? 'number' : 'text'}
           value={it.locked ? (it.secret ? '' : it.value) : cur}
@@ -1580,7 +1612,7 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
           autoComplete={it.secret ? 'new-password' : 'off'}
           min={it.type === 'int' ? (it.min ?? 1) : undefined}
           onChange={(e) => setEdit(it.key, e.target.value)}
-        />
+        />}
         <span className="set-hint">{it.locked ? `Managed via ${it.env} - unset that variable to edit here.` : it.hint}</span>
       </label>
     )
@@ -1648,7 +1680,7 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
                     {coreTime.clock_sync === true && <span className="tag online" title="systemd-timesyncd reports the clock as NTP-synchronized">clock synced</span>}
                     {coreTime.clock_sync === false && <span className="tag avail" title="The VM clock is NOT NTP-synchronized - timestamps will drift; check systemd-timesyncd on the core">clock NOT synced</span>}
                   </div>
-                  <VMClock tz={coreTime.tz || ''} />
+                  <VMClock tz={coreTime.tz || ''} clock24={(items?.find((i) => i.key === 'time_format')?.value || '24h') !== '12h'} />
                   <span className="set-hint">Live time in the VM's timezone (the Timezone above, applied by a host timer via timedatectl); every schedule under OS updates runs on this clock.</span>
                 </div>
               )}

@@ -73,10 +73,10 @@
 <body>
 <header>
   <span class="brand">ARGUS</span>
-  <div class="pills" id="pills" hidden>
-    <button class="pill error" data-kind="error" title="Errors"><span class="n">0</span> Errors</button>
-    <button class="pill acked" data-kind="acked" title="Acknowledged"><span class="n">0</span> Acknowledged</button>
-    <button class="pill warning" data-kind="warning" title="Warnings"><span class="n">0</span> Warnings</button>
+  <div class="pills" id="pills">
+    <button class="pill error zero" data-kind="error" title="Errors"><span class="n">…</span> Errors</button>
+    <button class="pill acked zero" data-kind="acked" title="Acknowledged"><span class="n">…</span> Acknowledged</button>
+    <button class="pill warning zero" data-kind="warning" title="Warnings"><span class="n">…</span> Warnings</button>
   </div>
   <div class="clock"><div class="time" id="clock"></div><div class="upd" id="upd"></div></div>
 </header>
@@ -84,9 +84,19 @@
 <main id="main"><div class="calm"><div class="sub">Loading…</div></div></main>
 <script>
 (function () {
-  var tz, lastOK = 0, gone = false, data = null, page = 0, pages = 1;
-  var kind = 'error';
-  try { var saved = localStorage.getItem('argus-status-kind'); if (saved === 'error' || saved === 'warning' || saved === 'acked') kind = saved; } catch (e) {}
+  var tz, clock24 = true, lastOK = 0, gone = false, data = null, page = 0, pages = 1;
+  // Which list to show: the address's #errors / #acknowledged / #warnings, else this screen's last
+  // choice, else errors. A pill click writes it back into the address, so it can be bookmarked.
+  var HASH = { error: 'errors', acked: 'acknowledged', warning: 'warnings' };
+  function fromHash() {
+    var h = location.hash.replace('#', '').toLowerCase();
+    for (var k in HASH) { if (HASH[k] === h || k === h) return k; }
+    return null;
+  }
+  var kind = fromHash();
+  if (!kind) { try { var saved = localStorage.getItem('argus-status-kind'); if (HASH[saved]) kind = saved; } catch (e) {} }
+  if (!kind) kind = 'error';
+  window.addEventListener('hashchange', function () { var k = fromHash(); if (k && k !== kind) setKind(k); });
   var EMPTY = { error: 'All systems operational', warning: 'No warnings', acked: 'Nothing acknowledged' };
 
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -98,9 +108,9 @@
     return Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
   }
   function tick() {
-    var opts = { hour: '2-digit', minute: '2-digit' }; if (tz) opts.timeZone = tz;
+    var opts = { hour: '2-digit', minute: '2-digit', hour12: !clock24 }; if (tz) opts.timeZone = tz;
     var c = document.getElementById('clock');
-    try { c.textContent = new Date().toLocaleTimeString([], opts); } catch (e) { c.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+    try { c.textContent = new Date().toLocaleTimeString([], opts); } catch (e) { c.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: !clock24 }); }
     document.getElementById('upd').textContent = lastOK ? 'Updated ' + ago(lastOK) + ' ago' : '';
   }
 
@@ -118,18 +128,20 @@
   function setKind(k) {
     kind = k; page = 0;
     try { localStorage.setItem('argus-status-kind', k); } catch (e) {}
+    try { history.replaceState(null, '', '#' + HASH[k]); } catch (e) {}
     render();
   }
   Array.prototype.forEach.call(document.querySelectorAll('.pill'), function (b) {
+    if (b.getAttribute('data-kind') === kind) b.classList.add('on');
     b.addEventListener('click', function () { setKind(b.getAttribute('data-kind')); });
   });
 
   function render() {
     if (!data) return;
     tz = data.timezone || undefined;
+    clock24 = data.clock_24h !== false;
     document.title = data.name + ' · Argus status';
     var c = data.counts || {};
-    document.getElementById('pills').hidden = false;
     Array.prototype.forEach.call(document.querySelectorAll('.pill'), function (b) {
       var k = b.getAttribute('data-kind');
       b.querySelector('.n').textContent = c[k] || 0;

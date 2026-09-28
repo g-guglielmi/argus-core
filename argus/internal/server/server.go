@@ -340,7 +340,9 @@ func (s *Server) handleAPIHealth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleFeatures(w http.ResponseWriter, r *http.Request) {
 	// Self-service password reset needs an email channel to deliver the link.
 	resetReady := s.firstEmailChannel(r.Context()) != nil
-	writeJSON(w, http.StatusOK, map[string]bool{"passkeys": s.wa != nil, "password_reset": resetReady, "probe_enroll": s.ca != nil})
+	// The clock settings are for the app's header clock (install-wide, so the same for everyone).
+	writeJSON(w, http.StatusOK, map[string]any{"passkeys": s.wa != nil, "password_reset": resetReady, "probe_enroll": s.ca != nil,
+		"clock_24h": s.mgr.Clock24h(), "timezone": s.mgr.Location().String()})
 }
 
 // --- auth ---

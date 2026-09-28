@@ -42,7 +42,13 @@ const (
 	KeyAllowedHosts  = "allowed_hosts"
 	KeyAlertDelay    = "alert_delay_seconds"
 	KeyTrustProxy    = "trust_proxy"
+	KeyTimeFormat    = "time_format"
 )
+
+// choiceOptions lists the allowed values of the "choice" settings (the UI shows a select).
+var choiceOptions = map[string][]string{
+	KeyTimeFormat: {"24h", "12h"},
+}
 
 const metaPrefix = "setting:"
 
@@ -69,6 +75,7 @@ var defs = []def{
 	{KeySessionMax, "ARGUS_SESSION_MAX_HOURS", "Max session length (hours)", "Sessions", "int", false, "12", "Absolute lifetime of a sign-in before it must re-authenticate.", 1},
 	{KeySessionIdle, "ARGUS_SESSION_IDLE_MINUTES", "Idle timeout (minutes)", "Sessions", "int", false, "0", "Sign out after this long with no activity. 0 disables the idle timeout.", 0},
 	{KeyAllowedHosts, "ARGUS_TRUSTED_ORIGINS", "FQDNs and IPs", "Access", "hostlist", false, "", "The FQDNs or IPs people type in the browser's address bar to open Argus, comma-separated (a pasted URL is reduced to its host). Empty turns the check off (any address works). The Public URL's host and localhost are always allowed, and probes are never checked. To recover from a lockout, set ARGUS_TRUSTED_ORIGINS=* and restart.", 0},
+	{KeyTimeFormat, "ARGUS_TIME_FORMAT", "Time format", "General", "choice", false, "24h", "How clocks read in Argus and on status pages: 24h (16:43) or 12h (4:43 PM).", 0},
 	{KeyAlertDelay, "ARGUS_ALERT_DELAY_SECONDS", "Alert delay (seconds)", "Alerting", "int", false, "60", "How long a problem must last before anyone is notified, so a brief blip doesn't alert. 0 alerts at once. \"No data\" alerts skip it: their own period already is the wait.", 0},
 	{KeyTrustProxy, "ARGUS_TRUST_PROXY", "Trusted proxies", "Proxy", "proxylist", false, "", "Leave empty when people reach Argus directly. true = one reverse proxy in front of Argus (the client is the address it adds to X-Forwarded-For). Or list the proxies' addresses or networks, comma-separated, e.g. 10.0.0.2, 10.0.5.0/24: forwarded headers then count only from them, and a chain of proxies (NetScaler -> HAProxy -> Argus) resolves to the real client.", 0},
 	{KeyProbeCoreHost, "ARGUS_PROBE_CORE_HOST", "Probe core host", "Probe enrollment", "text", false, "", "Address probes dial for :10051 (host or host:port). Prefer an IP: the proxy re-resolves this on every data send, so an FQDN here generates heavy DNS load. Baked into new enrollments and re-synced to existing probes at their next restart. Falls back to the Public URL host if empty.", 0},
@@ -93,18 +100,19 @@ type resolved struct {
 
 // View is the JSON shape returned to the admin UI.
 type View struct {
-	Key      string `json:"key"`
-	Label    string `json:"label"`
-	Group    string `json:"group"`
-	Type     string `json:"type"`
-	Secret   bool   `json:"secret"`
-	Min      int    `json:"min"` // minimum for int inputs (0 allows a disabling zero)
-	Hint     string `json:"hint"`
-	Env      string `json:"env"` // backing env var (shown when the field is env-locked)
-	Value    string `json:"value"`
-	Source   string `json:"source"`
-	Locked   bool   `json:"locked"`
-	HasValue bool   `json:"has_value"`
+	Key      string   `json:"key"`
+	Label    string   `json:"label"`
+	Group    string   `json:"group"`
+	Type     string   `json:"type"`
+	Secret   bool     `json:"secret"`
+	Min      int      `json:"min"`               // minimum for int inputs (0 allows a disabling zero)
+	Options  []string `json:"options,omitempty"` // the allowed values of a "choice" setting
+	Hint     string   `json:"hint"`
+	Env      string   `json:"env"` // backing env var (shown when the field is env-locked)
+	Value    string   `json:"value"`
+	Source   string   `json:"source"`
+	Locked   bool     `json:"locked"`
+	HasValue bool     `json:"has_value"`
 }
 
 // Manager holds the effective runtime settings and applies changes to the live subsystems.
@@ -123,6 +131,7 @@ type Manager struct {
 	allowedHosts  []string // nil = the allowed-hosts check is off
 	alertDelay    time.Duration
 	trustProxy    TrustProxy
+	clock24h      bool
 }
 
 // New builds the manager, creates the login limiter, loads any stored overrides, and applies
@@ -204,6 +213,13 @@ func (m *Manager) AlertDelay() time.Duration {
 	return m.alertDelay
 }
 
+// Clock24h reports whether clocks read 24-hour (the default) rather than 12-hour.
+func (m *Manager) Clock24h() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.clock24h
+}
+
 // TrustProxy is which reverse proxies Argus believes about the client, host and scheme.
 func (m *Manager) TrustProxy() TrustProxy {
 	m.mu.RLock()
@@ -219,7 +235,7 @@ func (m *Manager) List() []View {
 	for _, d := range defs {
 		r := m.snap[d.key]
 		out = append(out, View{
-			Key: d.key, Label: d.label, Group: d.group, Type: d.typ, Secret: d.secret, Min: d.min,
+			Key: d.key, Label: d.label, Group: d.group, Type: d.typ, Secret: d.secret, Min: d.min, Options: choiceOptions[d.key],
 			Hint: d.hint, Env: d.env, Value: r.value, Source: r.source, Locked: r.locked, HasValue: r.hasValue,
 		})
 	}
@@ -319,6 +335,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	allowed, _ := ParseHostList(effective(snap[KeyAllowedHosts])) // validated on the way in
 	alertDelayS := atoiClamp(effective(snap[KeyAlertDelay]), 60, 0)
 	trust, _, _ := ParseTrustProxy(effective(snap[KeyTrustProxy])) // validated on the way in
+	clock24 := strings.ToLower(effective(snap[KeyTimeFormat])) != "12h"
 
 	// Apply to the live subsystems (each is independently lock-guarded).
 	m.zbx.Configure(zURL, zTok)
@@ -334,6 +351,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	m.allowedHosts = allowed
 	m.alertDelay = time.Duration(alertDelayS) * time.Second
 	m.trustProxy = trust
+	m.clock24h = clock24
 	m.mu.Unlock()
 	return nil
 }
@@ -399,6 +417,8 @@ func normalize(d def, v string) string {
 		if _, text, err := ParseTrustProxy(v); err == nil {
 			return text // "" (off) is stored as the default
 		}
+	case "choice":
+		return strings.ToLower(v)
 	}
 	return v
 }
@@ -418,6 +438,13 @@ func validate(d def, v string) error {
 		if _, _, err := ParseTrustProxy(v); err != nil {
 			return err
 		}
+	case "choice":
+		for _, o := range choiceOptions[d.key] {
+			if strings.EqualFold(v, o) {
+				return nil
+			}
+		}
+		return fmt.Errorf("%s must be one of %s", d.label, strings.Join(choiceOptions[d.key], ", "))
 	case "tz":
 		if _, err := time.LoadLocation(v); err != nil {
 			return fmt.Errorf("%q is not a valid IANA timezone", v)

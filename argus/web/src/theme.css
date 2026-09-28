@@ -131,6 +131,10 @@ a { color: var(--accent); }
 .summary { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .stat { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-variant-numeric: tabular-nums; }
 .stat.stale { opacity: 0.55; }
+.hclock { text-align: right; line-height: 1.15; margin-left: 14px; white-space: nowrap; }
+.hclock-t { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.hclock-u { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) { .hclock { display: none; } }
 .stat:hover { border-color: var(--accent); }
 .stat.on { border-color: var(--accent); background: var(--accent-weak); }
 .stat .si { display: inline-flex; align-items: center; }

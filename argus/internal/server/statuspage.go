@@ -329,6 +329,7 @@ type statusView struct {
 	Name        string        `json:"name"`
 	GeneratedAt int64         `json:"generated_at"`
 	Timezone    string        `json:"timezone"`
+	Clock24h    bool          `json:"clock_24h"`
 	Counts      statusCounts  `json:"counts"`
 	Issues      []statusIssue `json:"issues"`
 }
@@ -369,7 +370,7 @@ func (s *Server) buildStatus(ctx context.Context, p store.StatusPage) (statusVie
 	sensors, _ := s.sensorCensus(ctx) // best effort: without it the rows just carry no reading
 	hidden, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 
-	v := statusView{Name: p.Name, GeneratedAt: time.Now().Unix(), Timezone: s.mgr.Location().String(), Issues: []statusIssue{}}
+	v := statusView{Name: p.Name, GeneratedAt: time.Now().Unix(), Timezone: s.mgr.Location().String(), Clock24h: s.mgr.Clock24h(), Issues: []statusIssue{}}
 	siteOf := map[string]string{}
 	for _, h := range hosts {
 		if _, isHidden := hidden[h.HostID]; isHidden || h.Status == "1" {
