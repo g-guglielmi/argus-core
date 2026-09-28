@@ -85,18 +85,17 @@
 <script>
 (function () {
   var tz, clock24 = true, lastOK = 0, gone = false, data = null, page = 0, pages = 1;
-  // Which list to show: the address's #errors / #acknowledged / #warnings, else this screen's last
-  // choice, else errors. A pill click writes it back into the address, so it can be bookmarked.
+  // Which list to show: the address's #acknowledged / #warnings, else errors. A pill click writes it
+  // into the address (Errors, the default, leaves it clean), so a list can be bookmarked and a plain
+  // /status always opens on errors.
   var HASH = { error: 'errors', acked: 'acknowledged', warning: 'warnings' };
   function fromHash() {
     var h = location.hash.replace('#', '').toLowerCase();
     for (var k in HASH) { if (HASH[k] === h || k === h) return k; }
     return null;
   }
-  var kind = fromHash();
-  if (!kind) { try { var saved = localStorage.getItem('argus-status-kind'); if (HASH[saved]) kind = saved; } catch (e) {} }
-  if (!kind) kind = 'error';
-  window.addEventListener('hashchange', function () { var k = fromHash(); if (k && k !== kind) setKind(k); });
+  var kind = fromHash() || 'error';
+  window.addEventListener('hashchange', function () { var k = fromHash() || 'error'; if (k !== kind) setKind(k); });
   var EMPTY = { error: 'All systems operational', warning: 'No warnings', acked: 'Nothing acknowledged' };
 
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -127,8 +126,7 @@
 
   function setKind(k) {
     kind = k; page = 0;
-    try { localStorage.setItem('argus-status-kind', k); } catch (e) {}
-    try { history.replaceState(null, '', '#' + HASH[k]); } catch (e) {}
+    try { history.replaceState(null, '', k === 'error' ? location.pathname : '#' + HASH[k]); } catch (e) {}
     render();
   }
   Array.prototype.forEach.call(document.querySelectorAll('.pill'), function (b) {

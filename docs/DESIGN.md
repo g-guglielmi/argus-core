@@ -1012,8 +1012,9 @@ A read-only dashboard for a wall screen, opened with a secret link instead of a 
   warning / acked, host, site group, problem, the sensor it's on with its reading, since), worst then
   newest first, plus the counts. No addresses, credentials or settings. The page is a standalone HTML
   file (not the SPA), dark and sized for a TV: a slim bar with Errors / Warnings / Acknowledged pills
-  that switch the list (remembered per screen, or picked by the address's `#errors` / `#acknowledged` /
-  `#warnings`, which survives the link's redirect; the pills stay grey until the first data), the list itself ("All systems operational" when there
+  that switch the list (the address decides: `#acknowledged` / `#warnings`, which survives the link's
+  redirect, else errors, so a plain `/status` always opens on errors; the pills stay grey until the
+  first data), the list itself ("All systems operational" when there
   are no errors), paged every 15 s when it doesn't fit, refreshing every 30 s, flagging a lost
   connection, and reloading itself every 6 h.
 - **Headers:** `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`, `X-Frame-Options: DENY` + CSP
