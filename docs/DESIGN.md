@@ -112,23 +112,63 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
   cert, registers the proxy via the Zabbix API, returns cert + `ca.crt`. The **private key never
   leaves the probe**. Argus signs with the mounted CA (`ARGUS_CA_*`); the self-enrolling
   `argus-probe` image runs the probe side. `gen-certs.sh` remains the manual fallback.
-- **CSRF / allowed FQDNs and IPs:** the session cookie is `SameSite=Lax` (other sites can't send signed-in
-  requests), and **Settings → Allowed FQDNs and IPs** (`ARGUS_TRUSTED_ORIGINS`) adds a Host/Origin allow-list,
-  e.g. `monitoring.example.com` **+ the private IP**. With a list set, `/api/*` requests for any other
-  `Host` are refused (DNS rebinding), and so are state-changing requests from any other `Origin`
-  (sibling subdomains count as "same site" for Lax). Off until configured, so an upgrade can't lock
-  anyone out; the Public URL host and loopback are always allowed; the probes' machine endpoints
-  (enroll, check-in, OS status, break-glass, scan results) are never checked; a save that would lock
-  out the admin making it is refused; `ARGUS_TRUSTED_ORIGINS=*` is the recovery switch. Behind a
-  trusted proxy the host comes from `X-Forwarded-Host`.
+- **CSRF:** the session cookie is `SameSite=Lax` (other sites can't send signed-in requests), and on
+  top of that every state-changing `/api/*` request from a browser is checked, list or no list: a
+  `Sec-Fetch-Site: cross-site` is refused, an `Origin` must be one of Argus's own (the allow-list, the
+  Public URL, or the host the request was addressed to), and a body must be `application/json` (so a
+  cross-site `text/plain` form can't post a JSON-shaped login). The probes' machine endpoints and the
+  signed acknowledge form are exempt (they carry no session). **Allowed FQDNs and IPs** (Settings,
+  `ARGUS_TRUSTED_ORIGINS`) adds the Host allow-list on top, e.g. `monitoring.example.com` **+ the
+  private IP**: with a list set, `/api/*` requests for any other `Host` are refused (DNS rebinding).
+  Off until configured, so an upgrade can't lock anyone out; the Public URL host and loopback are
+  always allowed; a save that would lock out the admin making it is refused;
+  `ARGUS_TRUSTED_ORIGINS=*` is the recovery switch. Behind a trusted proxy the host comes from
+  `X-Forwarded-Host`.
+- **Response headers:** every answer carries `X-Content-Type-Options: nosniff`, `X-Frame-Options:
+  DENY`, `Referrer-Policy: same-origin` and a `Permissions-Policy`; the app pages a
+  Content-Security-Policy (`script-src 'self'`, no inline scripts, hence `theme.js` as a file;
+  `style-src` allows inline for React's style props; `img-src` allows `data:`/`blob:` for chart PNGs,
+  the TOTP QR and downloads; `frame-ancestors 'none'`); `/api/*` answers `Cache-Control: no-store`.
+  HSTS is the TLS proxy's job (Argus never knows it's behind TLS).
+- **Cookies:** `argus_session` is HttpOnly, `SameSite=Lax`, `Path=/`, `Secure` when
+  `ARGUS_COOKIE_SECURE` says so or, unset, when the Public URL is https; secure, it is named
+  `__Host-argus_session` (a browser only accepts that name from a Secure, `Path=/`, domain-less
+  setter, so plain-HTTP pages and sibling subdomains can't plant one). Sessions end at once when the
+  user is disabled, when an admin resets their password, and (all but the current one) when they
+  change their own.
+- **Second factor:** the password step returns a 10-minute challenge, `/api/login/totp` completes it;
+  a TOTP code is accepted once (the last accepted time step is stored per user). A passkey logs in
+  without the TOTP prompt, so user verification (PIN, biometric) is **required** at registration and
+  at every login, and an assertion whose signature counter didn't advance (a cloned credential) is
+  refused. Adding a passkey takes the password again; turning TOTP off takes the password and a
+  current code.
+- **Links that leave Argus** (reset emails, the enroll command shown to admins) are built from the
+  Public URL, else from the request's host only when that host is allow-listed or loopback; a probe's
+  check-in URL comes from the Public URL alone (probes write it into their own configuration, and
+  derive it from their enroll URL when there is none). "Probe core host" is validated as `host[:port]`.
+- **Secrets at rest** are AES-256-GCM under `ARGUS_SECRET_KEY` (SHA-256 of the value) or a generated
+  `secret.key` on the data volume. A canary (`app_meta.cipher_canary`) is checked at start: a key
+  that doesn't open it stops Argus with a clear message, unless `ARGUS_SECRET_KEY_RESET=true`, which
+  drops every unreadable secret once (channel/SNMP/UniFi credentials, break-glass passwords,
+  status-page link copies, the alert signing key, encrypted settings; TOTP is switched off for the
+  users affected). A corrupt keyfile is reported, never replaced. An unreadable value decrypts to
+  nothing, never to its ciphertext. Channel credentials (SMTP password, bot token, webhook) are
+  write-only through the API (`<key>_set` flags; blank keeps); the SNMP community is blank for the
+  viewer role.
+- **Outbound:** Discord webhooks are accepted only on Discord's hosts under `/api/webhooks/`, over
+  https, and the sender never follows redirects (anyone signed in can save a personal channel, so the
+  address must not be able to point inside the network). Telegram tokens are redacted from transport
+  errors before they are logged, stored as a channel's health line or sent as a system notice.
 - **Trusted proxies** (`ARGUS_TRUST_PROXY`, Settings -> Reverse proxy): empty = none (socket address
-  is the client, forwarded headers ignored); `true` = one proxy from anywhere (the client is the LAST
-  `X-Forwarded-For` entry, the one that proxy appended); or a list of proxy addresses / networks:
+  is the client, forwarded headers ignored); `true` = one proxy on a private or loopback address (the
+  client is the LAST `X-Forwarded-For` entry, the one that proxy appended; a public peer is a direct
+  client whatever it sends); or a list of proxy addresses / networks:
   forwarded headers count only on a connection from one of them, and the client is found by walking
   `X-Forwarded-For` (every copy of the header) from the right past listed proxies, so a chain like
   NetScaler -> HAProxy -> Argus resolves to the real client. Entries left of the first untrusted
-  address are the client's to forge and never believed. Feeds the login rate limit, status pages'
-  allowed networks, Allowed FQDNs and IPs (`X-Forwarded-Host`) and reset links (`X-Forwarded-Proto`).
+  address are the client's to forge and never believed, and a forwarded value that isn't an address
+  falls back to the peer. Feeds the login rate limit, status pages' allowed networks, Allowed FQDNs
+  and IPs (`X-Forwarded-Host`) and reset links (`X-Forwarded-Proto`).
 - **Passkey caveat (accepted):** WebAuthn RP IDs must be a domain, not a bare IP.
   → Passkey login works via `monitoring.example.com`; direct **private-IP** access
   (troubleshooting) falls back to **password + MFA**.
@@ -1000,8 +1040,8 @@ A read-only dashboard for a wall screen, opened with a secret link instead of a 
 
 - **Link:** `/status/<token>`, a 256-bit random token, looked up by its SHA-256 and kept encrypted at
   rest (the same cipher as channel secrets), so an admin can copy it again (**Show link**, `GET
-  /api/status-pages/{id}/link`); pages made before that only have the hash and need a new link. Opening it sets an `argus_status` cookie (HttpOnly, SameSite=Strict, Path=/status, Secure per
-  `ARGUS_COOKIE_SECURE`, lasting until the page expires or ~400 days) and redirects to a clean
+  /api/status-pages/{id}/link`); pages made before that only have the hash and need a new link. Opening it sets an `argus_status` cookie (HttpOnly, SameSite=Strict, Path=/status, Secure as the
+  session cookie is, lasting until the page expires or ~400 days) and redirects to a clean
   `/status`, so the token doesn't sit in the address bar, history suggestions or screenshots.
   **New link** (rotate) or deleting the page kills it, cookie included.
 - **Limits:** optional allowed networks (CIDRs, checked against the client IP as resolved through the

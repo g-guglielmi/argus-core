@@ -210,6 +210,10 @@ func (s *Server) handleTriggerUpdaterUpdate(w http.ResponseWriter, r *http.Reque
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 512)).Decode(&body) == nil && strings.TrimSpace(body.Tag) != "" {
 		tag = strings.TrimSpace(body.Tag)
 	}
+	if !validImageTag.MatchString(tag) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": `tag must be "latest", "testing" or a version like 0.2.5`})
+		return
+	}
 	if err := s.st.SetUpdaterUpdate(ctx, name, tag); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the updater update"})
 		return
@@ -217,6 +221,11 @@ func (s *Server) handleTriggerUpdaterUpdate(w http.ResponseWriter, r *http.Reque
 	s.logger.Info("updater self-update queued", "proxy", name, "tag", tag)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "queued", "tag": tag})
 }
+
+// validImageTag is the shape of an argus-updater image tag an admin may hand to the sidecars: the
+// updater turns it into an image reference and runs it with the Docker socket, so it is a fixed
+// vocabulary, not free text.
+var validImageTag = regexp.MustCompile(`^(latest|testing|v?[0-9]+\.[0-9]+\.[0-9]+)$`)
 
 // handleIssueCheckinToken mints a check-in credential for a probe that predates the fleet-update
 // feature (its enrollment never provisioned one). The admin drops the returned token into the
@@ -240,7 +249,7 @@ func (s *Server) handleIssueCheckinToken(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	s.logger.Info("probe check-in token issued", "proxy", name)
-	writeJSON(w, http.StatusOK, map[string]string{"token": raw, "checkin_url": s.baseURL(r) + "/api/probes/checkin"})
+	writeJSON(w, http.StatusOK, map[string]string{"token": raw, "checkin_url": s.probeCheckinURL()})
 }
 
 // handleGetProbeTarget returns the fleet's target probe version (admin).

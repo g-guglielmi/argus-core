@@ -11,11 +11,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"argus/internal/secret"
 
+	"modernc.org/sqlite"
 	_ "modernc.org/sqlite" // pure-Go SQLite driver (works with CGO_ENABLED=0)
 )
 
@@ -44,22 +47,35 @@ type Store struct {
 // SetCipher enables at-rest encryption/decryption of stored secrets. Call once after Open.
 func (s *Store) SetCipher(c *secret.Cipher) { s.cipher = c }
 
+// registerHook makes the driver apply the per-connection PRAGMAs to every connection it opens,
+// not only the first: database/sql replaces a connection it deems bad, and a replacement without
+// foreign_keys=ON would silently stop the ON DELETE CASCADE rules.
+var registerHook sync.Once
+
 func Open(path string) (*Store, error) {
+	registerHook.Do(func() {
+		sqlite.RegisterConnectionHook(func(conn sqlite.ExecQuerierContext, _ string) error {
+			for _, pragma := range []string{"PRAGMA busy_timeout=5000", "PRAGMA foreign_keys=ON"} {
+				if _, err := conn.ExecContext(context.Background(), pragma, nil); err != nil {
+					return fmt.Errorf("%s: %w", pragma, err)
+				}
+			}
+			return nil
+		})
+	})
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
 	}
 	// SQLite is single-writer; one connection + WAL keeps things simple and lock-free here.
 	db.SetMaxOpenConns(1)
-	for _, pragma := range []string{
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA busy_timeout=5000",
-		"PRAGMA foreign_keys=ON",
-	} {
-		if _, err := db.Exec(pragma); err != nil {
-			return nil, fmt.Errorf("pragma %q: %w", pragma, err)
-		}
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0)
+	db.SetConnMaxIdleTime(0)
+	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil { // persistent in the file
+		return nil, fmt.Errorf("pragma journal_mode: %w", err)
 	}
+	_ = os.Chmod(path, 0o600) // the file holds hashed and encrypted secrets; nobody else needs it
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		return nil, err
@@ -448,6 +464,9 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 		return err
 	}
 	if err := s.ensureColumn("users", "totp_enabled INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("users", "totp_last_step INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("users", "webauthn_handle BLOB"); err != nil {
@@ -917,6 +936,37 @@ func (s *Store) CreatePasswordReset(ctx context.Context, id string, userID int64
 }
 
 // PasswordResetUserID returns the user for a valid, unexpired reset token, deleting it if expired.
+// ConsumePasswordReset redeems a reset token: the row is deleted in the same statement that reads
+// it, so a token works exactly once however many confirmations race for it.
+func (s *Store) ConsumePasswordReset(ctx context.Context, id string) (int64, error) {
+	var userID int64
+	err := s.db.QueryRowContext(ctx,
+		`DELETE FROM password_resets WHERE id=? AND expires_at>=? RETURNING user_id`, id, time.Now().Unix()).Scan(&userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	return userID, err
+}
+
+// PruneExpiredAuth drops the sign-in state that outlived itself: sessions whose cookie was never
+// presented again, second-factor challenges never completed, reset links never clicked, passkey
+// ceremonies never finished. Each is also dropped when met individually; this keeps the tables
+// from growing with the ones nobody comes back for.
+func (s *Store) PruneExpiredAuth(ctx context.Context, now time.Time) error {
+	n := now.Unix()
+	for _, q := range []string{
+		`DELETE FROM sessions WHERE expires_at < ?`,
+		`DELETE FROM mfa_challenges WHERE expires_at < ?`,
+		`DELETE FROM password_resets WHERE expires_at < ?`,
+		`DELETE FROM webauthn_sessions WHERE expires_at < ?`,
+	} {
+		if _, err := s.db.ExecContext(ctx, q, n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Store) PasswordResetUserID(ctx context.Context, id string) (int64, error) {
 	var userID, expires int64
 	err := s.db.QueryRowContext(ctx,
@@ -1271,7 +1321,37 @@ func (s *Store) SessionUserTouch(ctx context.Context, id string, idle, maxLifeti
 	if nowUnix-lastSeen >= touchThreshold {
 		_, _ = s.db.ExecContext(ctx, `UPDATE sessions SET last_seen=? WHERE id=?`, nowUnix, id)
 	}
-	return s.UserByID(ctx, userID)
+	u, err := s.UserByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	// A disabled account's sessions end at its next request, not at their natural expiry.
+	if u.Disabled {
+		_ = s.DeleteSession(ctx, id)
+		return nil, ErrNotFound
+	}
+	return u, nil
+}
+
+// DeleteUserSessionsExcept ends every session of a user but the given one (the one they're using
+// to change their password).
+func (s *Store) DeleteUserSessionsExcept(ctx context.Context, userID int64, keepID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id=? AND id<>?`, userID, keepID)
+	return err
+}
+
+// TOTPLastStep is the time step (unix seconds / 30) of the last TOTP code the user signed in with,
+// so a code can't be used twice inside its validity window.
+func (s *Store) TOTPLastStep(ctx context.Context, userID int64) (int64, error) {
+	var step int64
+	err := s.db.QueryRowContext(ctx, `SELECT totp_last_step FROM users WHERE id=?`, userID).Scan(&step)
+	return step, err
+}
+
+// SetTOTPLastStep records the time step of an accepted TOTP code.
+func (s *Store) SetTOTPLastStep(ctx context.Context, userID, step int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET totp_last_step=? WHERE id=? AND totp_last_step<?`, step, userID, step)
+	return err
 }
 
 func (s *Store) DeleteSession(ctx context.Context, id string) error {

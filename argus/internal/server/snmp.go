@@ -9,9 +9,18 @@ import (
 	"net/http"
 	"time"
 
+	"argus/internal/auth"
 	"argus/internal/store"
 	"argus/internal/zabbix"
 )
+
+// canEditHosts says whether the caller may change host and proxy configuration (admin, helpdesk).
+// A viewer opens the same dialogs read-only, and a credential is not part of "read": the SNMP
+// community (v1/v2c's whole secret) is blanked for them, like the v3 passphrases are for everyone.
+func canEditHosts(r *http.Request) bool {
+	u, ok := auth.UserFrom(r.Context())
+	return ok && (u.Role == "admin" || u.Role == "helpdesk")
+}
 
 // defaultToView renders a stored SNMP default for the browser, masking the v3 passphrases.
 func defaultToView(d store.SNMPDefault) *snmpView {
@@ -65,7 +74,11 @@ func (s *Server) handleGetProxySNMP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"set": false, "snmp": &snmpView{Version: 2, Community: "public", Bulk: 1}})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"set": true, "snmp": defaultToView(d)})
+	v := defaultToView(d)
+	if !canEditHosts(r) {
+		v.Community = ""
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"set": true, "snmp": v})
 }
 
 // handleSetProxySNMP saves a proxy's SNMP default and propagates it to every inheriting host interface

@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -123,11 +122,9 @@ func (s *Server) handleSetThresholdDefault(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown threshold macro for this template"})
 		return
 	}
-	if req.Value != "" {
-		if _, err := strconv.ParseFloat(req.Value, 64); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a threshold must be a number"})
-			return
-		}
+	if req.Value != "" && !provision.ValidThresholdValue(req.Value) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a threshold must be a plain number"})
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)

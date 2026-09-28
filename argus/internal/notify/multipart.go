@@ -54,7 +54,7 @@ func postMultipart(ctx context.Context, url string, fields map[string]string, fi
 		return err
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := webhookClient.Do(req)
 	if err != nil {
 		return err
 	}

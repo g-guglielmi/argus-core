@@ -1809,11 +1809,13 @@ const CH_META: Record<string, { c: string; l: string; label: string }> = {
   telegram: { c: '#229ED9', l: 'T', label: 'Telegram' },
   email: { c: '#6b7686', l: '@', label: 'Email' },
 }
-type ChField = { key: string; label: string; ph?: string; type?: string; opt?: boolean }
+// A `secret` field is write-only: the server never sends its value back, only `<key>_set`, and a
+// blank submit keeps the stored one.
+type ChField = { key: string; label: string; ph?: string; type?: string; opt?: boolean; secret?: boolean }
 const CH_FIELDS: Record<string, ChField[]> = {
-  discord: [{ key: 'webhook_url', label: 'Webhook URL', ph: 'https://discord.com/api/webhooks/…' }],
+  discord: [{ key: 'webhook_url', label: 'Webhook URL', ph: 'https://discord.com/api/webhooks/…', type: 'password', secret: true }],
   telegram: [
-    { key: 'bot_token', label: 'Bot token', ph: '123456:ABC-DEF…' },
+    { key: 'bot_token', label: 'Bot token', ph: '123456:ABC-DEF…', type: 'password', secret: true },
     { key: 'chat_id', label: 'Chat ID', ph: '-1001234567890' },
     { key: 'thread_id', label: 'Topic ID', ph: 'forum topic, optional', opt: true },
   ],
@@ -1823,8 +1825,14 @@ const CH_FIELDS: Record<string, ChField[]> = {
     { key: 'from', label: 'From address', ph: 'argus@example.com' },
     { key: 'to', label: 'To (comma-separated)', ph: 'you@example.com' },
     { key: 'username', label: 'Username', ph: 'optional', opt: true },
-    { key: 'password', label: 'Password', ph: 'optional', type: 'password', opt: true },
+    { key: 'password', label: 'Password', ph: 'optional', type: 'password', opt: true, secret: true },
   ],
+}
+
+// chanFieldProps renders one channel field: a stored secret shows "unchanged" and isn't required.
+function chanFieldProps(f: ChField, config: Record<string, string>) {
+  const stored = !!f.secret && config[f.key + '_set'] === 'true'
+  return { type: f.type || 'text', placeholder: stored ? 'unchanged' : f.ph, required: !f.opt && !stored, autoComplete: f.secret ? 'new-password' : undefined }
 }
 
 // SitePicker is a multi-select for a channel's site scope: a compact dropdown that summarizes the
@@ -2159,7 +2167,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
           )}
           {fields.filter((f) => !(type === 'email' && f.key === 'to' && (config.recipients || 'fixed') === 'users')).map((f) => (
             <label key={f.key} className={'chan-field' + (fields.length === 1 ? ' chan-full' : '')}><span className="flabel">{f.label}</span>
-              <input className="input" type={f.type || 'text'} placeholder={f.ph} value={config[f.key] || ''} onChange={(e) => setCfg(f.key, e.target.value)} required={!f.opt} />
+              <input className="input" {...chanFieldProps(f, config)} value={config[f.key] || ''} onChange={(e) => setCfg(f.key, e.target.value)} />
             </label>
           ))}
           {type === 'email' && (
@@ -2332,7 +2340,7 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
         <div className="chan-row">
           {fields.map((f) => (
             <label key={f.key} className={'chan-field' + (fields.length === 1 ? ' chan-full' : '')}><span className="flabel">{f.label}</span>
-              <input className="input" type={f.type || 'text'} placeholder={f.ph} value={config[f.key] || ''} onChange={(e) => setCfg(f.key, e.target.value)} required={!f.opt} />
+              <input className="input" {...chanFieldProps(f, config)} value={config[f.key] || ''} onChange={(e) => setCfg(f.key, e.target.value)} />
             </label>
           ))}
         </div>
@@ -7234,9 +7242,11 @@ function MfaCard() {
   }
   async function disable() {
     setError(null); setCodes(null)
-    const pw = await prompt({ title: 'Turn off two-factor', label: 'Confirm your password', type: 'password', confirmLabel: 'Turn off', required: true })
+    const pw = await prompt({ title: 'Turn off two-factor', label: 'Confirm your password', type: 'password', confirmLabel: 'Continue', required: true })
     if (!pw) return
-    const res = await fetch('/api/me/mfa/disable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) })
+    const code = await prompt({ title: 'Turn off two-factor', label: 'Enter the current code from your authenticator', confirmLabel: 'Turn off', required: true })
+    if (!code) return
+    const res = await fetch('/api/me/mfa/disable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw, code }) })
     if (!res.ok) { setError(await errText(res, 'Could not disable 2FA')); return }
     toast.success('Two-factor has been turned off.'); loadStatus()
   }
@@ -7330,9 +7340,11 @@ function PasskeyCard() {
     setError(null)
     const name = await prompt({ title: 'Add a passkey', label: 'Name this passkey (e.g. "Bitwarden", "Phone", "YubiKey")', initial: 'Bitwarden', confirmLabel: 'Continue' })
     if (name === null) return
+    const pw = await prompt({ title: 'Add a passkey', label: 'Confirm your password', type: 'password', confirmLabel: 'Continue', required: true })
+    if (!pw) return
     setBusy(true)
     try {
-      await registerPasskey(name || 'Passkey')
+      await registerPasskey(name || 'Passkey', pw)
       toast.success('Passkey added.'); load()
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : 'Could not add passkey')

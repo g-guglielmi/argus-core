@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -229,7 +230,7 @@ func githubGetJSON(ctx context.Context, url string, out any) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode)
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out)
 }
 
 // updaterImageRepo is the public GHCR repository for the argus-updater sidecar image (semver-tagged
@@ -410,7 +411,7 @@ func ghcrListTags(ctx context.Context, repoPath, bearer string) ([]string, error
 		var page struct {
 			Tags []string `json:"tags"`
 		}
-		derr := json.NewDecoder(resp.Body).Decode(&page)
+		derr := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&page)
 		hasNext := strings.Contains(resp.Header.Get("Link"), `rel="next"`)
 		resp.Body.Close()
 		if derr != nil {
@@ -492,7 +493,7 @@ func ghcrGetManifestJSON(ctx context.Context, repoPath, ref, bearer string, out 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("GET %s: HTTP %d", u, resp.StatusCode)
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out)
 }
 
 // ghcrImageLabels reads the OCI config labels off the image a tag (or digest) points to. It drills
@@ -580,5 +581,5 @@ func ghcrGetJSON(ctx context.Context, url, bearer string, out any) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode)
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out)
 }

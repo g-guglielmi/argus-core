@@ -6,6 +6,12 @@
 // hand-authored class templates into Zabbix. It is a leaf on the store + zabbix client, like notify.
 package provision
 
+import (
+	"fmt"
+	"regexp"
+	"strings"
+)
+
 // Templates every host / add-on references by their Zabbix technical name. Base Ping is attached to
 // every provisioned host automatically; the HTTP endpoint is an optional add-on.
 const (
@@ -58,7 +64,40 @@ type MacroSpec struct {
 	Derive       string   `json:"derive,omitempty"`        // form auto-fills this from the host address ("{host}" -> the IP/DNS), overridable; e.g. "http://{host}". Only for host-addressed URLs, never a controller URL (UniFi) that differs from the device.
 	Options      []string `json:"options,omitempty"`       // fixed value set: the form renders a select instead of a text input (blank stays "template default"); e.g. XCP-NG's VM-monitoring mode off/state/full
 	SettingsOnly bool     `json:"settings_only,omitempty"` // shown only in host settings, not the Add-device wizard - for values that need discovered data first (XCP-NG's ignored-VMs list)
+	Pattern      string   `json:"-"`                       // optional regexp the value must match; for values that reach a command line on the probe
 }
+
+// Value patterns for macros that end up as command-line arguments of a probe's external check.
+// Zabbix passes each parameter as its own argv entry (no shell), but an argument that starts
+// with "-" is an option to the program, and a path is opened as given.
+const (
+	patternLogin = `^[A-Za-z0-9][A-Za-z0-9._@-]{0,63}$`                  // a login name: never a leading "-", no spaces
+	patternPort  = `^([1-9][0-9]{0,4})?$`                                // 1-65535 or blank (the template default)
+	patternKey   = `^(/var/lib/zabbix/ssh/[A-Za-z0-9][A-Za-z0-9._-]*)?$` // a key inside the proxy's ssh dir, or blank
+)
+
+// ValidateMacroValue checks an entered value against the spec's pattern (blank always passes: it
+// means "template default"). A macro without a pattern only refuses control characters, which no
+// Zabbix macro value needs and which break the files these values are written into.
+func ValidateMacroValue(ms MacroSpec, v string) error {
+	if v == "" {
+		return nil
+	}
+	if strings.ContainsAny(v, "\r\n\x00") {
+		return fmt.Errorf("%s can't contain line breaks", ms.Label)
+	}
+	if ms.Pattern != "" && !regexp.MustCompile(ms.Pattern).MatchString(v) {
+		return fmt.Errorf("%s: %q isn't an accepted value", ms.Label, v)
+	}
+	return nil
+}
+
+// ValidThresholdValue accepts a plain decimal number: what a trigger expression compares against.
+// strconv.ParseFloat would also take NaN, Inf and hex, which would make every comparison
+// "unknown" and silently stop the sensor alerting.
+func ValidThresholdValue(v string) bool { return thresholdNumber.MatchString(v) }
+
+var thresholdNumber = regexp.MustCompile(`^-?[0-9]+(\.[0-9]+)?$`)
 
 // ClassSetup is optional prerequisite guidance the Add-device form shows for a class that needs
 // something set up ON the device first - e.g. the Ugreen agent class needs a Zabbix agent 2
@@ -142,11 +181,11 @@ var registry = []Class{
 		OffersHTTP: true,
 		Icon:       "server",
 		Macros: []MacroSpec{
-			{Macro: "{$SSH.USER}", Label: "SSH user", Hint: "root (a read-only login is enough)"},
-			{Macro: "{$SSH.PORT}", Label: "SSH port", Hint: "22"},
+			{Macro: "{$SSH.USER}", Label: "SSH user", Hint: "root (a read-only login is enough)", Pattern: patternLogin},
+			{Macro: "{$SSH.PORT}", Label: "SSH port", Hint: "22", Pattern: patternPort},
 			{Macro: "{$SSH.AUTH}", Label: "Authentication", Hint: "key", Options: []string{"key", "password"}},
 			{Macro: "{$SSH.PASSWORD}", Label: "SSH password", Hint: "only for password auth", Secret: true},
-			{Macro: "{$SSH.KEYFILE}", Label: "Private key path (on the proxy)", Hint: "/var/lib/zabbix/ssh/argus_id"},
+			{Macro: "{$SSH.KEYFILE}", Label: "Private key path (on the proxy)", Hint: "/var/lib/zabbix/ssh/argus_id", Pattern: patternKey},
 		},
 		Setup: &ClassSetup{
 			Title: "Give the proxy read-only SSH access",

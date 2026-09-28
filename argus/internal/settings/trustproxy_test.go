@@ -37,14 +37,20 @@ func TestTrustProxyClientIP(t *testing.T) {
 		{"chain: skip our proxies from the right", chain, "10.0.0.2:5000", []string{"6.6.6.6, 203.0.113.7, 10.0.5.20"}, "203.0.113.7"},
 		{"chain: an untrusted peer's header is ignored", chain, "198.51.100.1:5000", []string{"10.0.0.99"}, "198.51.100.1"},
 		{"chain: every hop is ours", chain, "10.0.0.2:5000", []string{"10.0.5.20"}, "10.0.5.20"},
-		{"chain: garbage stops the walk", chain, "10.0.0.2:5000", []string{"203.0.113.7, unknown"}, "unknown"},
+		{"chain: garbage means the peer is the client", chain, "10.0.0.2:5000", []string{"203.0.113.7, unknown"}, "10.0.0.2"},
+		{"one proxy: garbage means the peer is the client", one, "10.0.0.2:5000", []string{"not-an-ip"}, "10.0.0.2"},
+		{"one proxy: a public peer is a direct client", one, "198.51.100.1:5000", []string{"1.2.3.4"}, "198.51.100.1"},
 	}
 	for _, c := range cases {
 		if got := c.t.ClientIP(c.remote, c.xff); got != c.want {
 			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
 		}
 	}
-	if !chain.Trusts("10.0.5.3:1") || chain.Trusts("10.0.6.3:1") || off.Trusts("10.0.0.2:1") || !one.Trusts("198.51.100.1:1") {
-		t.Error("Trusts")
+	if !chain.Trusts("10.0.5.3:1") || chain.Trusts("10.0.6.3:1") || off.Trusts("10.0.0.2:1") {
+		t.Error("Trusts (list)")
+	}
+	// "true" believes a proxy beside Argus (private, loopback), never a public peer.
+	if !one.Trusts("10.0.0.2:1") || !one.Trusts("127.0.0.1:1") || !one.Trusts("[::1]:1") || one.Trusts("198.51.100.1:1") {
+		t.Error("Trusts (true)")
 	}
 }

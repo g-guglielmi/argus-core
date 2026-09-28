@@ -284,7 +284,7 @@ func (s *Server) handleStatusLink(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	http.SetCookie(w, &http.Cookie{Name: statusCookie, Value: token, Path: "/status", MaxAge: maxAge,
-		HttpOnly: true, Secure: s.cfg.CookieSecure, SameSite: http.SameSiteStrictMode})
+		HttpOnly: true, Secure: s.cookieSecure(), SameSite: http.SameSiteStrictMode})
 	http.Redirect(w, r, "/status", http.StatusSeeOther)
 }
 

@@ -14,16 +14,18 @@ import (
 // Config holds runtime configuration, all sourced from environment variables so the
 // container is configured purely via `docker run -e ...` / --env-file.
 type Config struct {
-	Listen         string // ARGUS_LISTEN, e.g. ":8080"
-	ZabbixAPIURL   string // ARGUS_ZABBIX_API_URL
-	ZabbixAPIToken string // ARGUS_ZABBIX_API_TOKEN, for authenticated read calls
-	DataDir        string // ARGUS_DATA_DIR, SQLite + CA store live here (mounted volume)
-	PublicURL      string // ARGUS_PUBLIC_URL, external base URL for links in notifications
-	TimeZone       string // ARGUS_TZ, IANA name for timestamps in notifications (default UTC)
-	SecretKey      string // ARGUS_SECRET_KEY, encrypts stored secrets at rest (empty = keyfile)
-	AdminEmail    string // ARGUS_ADMIN_EMAIL, used once to seed the first admin
-	AdminPassword string // ARGUS_ADMIN_PASSWORD, used once to seed the first admin
-	CookieSecure  bool   // ARGUS_COOKIE_SECURE, set true when served over HTTPS
+	Listen          string // ARGUS_LISTEN, e.g. ":8080"
+	ZabbixAPIURL    string // ARGUS_ZABBIX_API_URL
+	ZabbixAPIToken  string // ARGUS_ZABBIX_API_TOKEN, for authenticated read calls
+	DataDir         string // ARGUS_DATA_DIR, SQLite + CA store live here (mounted volume)
+	PublicURL       string // ARGUS_PUBLIC_URL, external base URL for links in notifications
+	TimeZone        string // ARGUS_TZ, IANA name for timestamps in notifications (default UTC)
+	SecretKey       string // ARGUS_SECRET_KEY, encrypts stored secrets at rest (empty = keyfile)
+	SecretKeyReset  bool   // ARGUS_SECRET_KEY_RESET, one-off: drop secrets the current key can't read and start clean
+	AdminEmail      string // ARGUS_ADMIN_EMAIL, used once to seed the first admin
+	AdminPassword   string // ARGUS_ADMIN_PASSWORD, used once to seed the first admin
+	CookieSecure    bool   // ARGUS_COOKIE_SECURE, set true when served over HTTPS
+	CookieSecureSet bool   // whether ARGUS_COOKIE_SECURE was given at all (else it follows the Public URL's scheme)
 
 	// Login rate limiting (brute-force protection).
 	LoginMaxAttempts int           // ARGUS_LOGIN_MAX_ATTEMPTS, failures before a temporary block
@@ -59,24 +61,26 @@ func (c Config) PasskeysEnabled() bool {
 
 func Load() Config {
 	return Config{
-		Listen:         env("ARGUS_LISTEN", ":8080"),
-		ZabbixAPIURL:   env("ARGUS_ZABBIX_API_URL", ""),
-		ZabbixAPIToken: env("ARGUS_ZABBIX_API_TOKEN", ""),
-		DataDir:        env("ARGUS_DATA_DIR", "/data"),
-		PublicURL:      strings.TrimRight(env("ARGUS_PUBLIC_URL", ""), "/"),
-		TimeZone:       env("ARGUS_TZ", "UTC"),
-		SecretKey:      env("ARGUS_SECRET_KEY", ""),
-		AdminEmail:    env("ARGUS_ADMIN_EMAIL", ""),
-		AdminPassword: env("ARGUS_ADMIN_PASSWORD", ""),
-		CookieSecure:  envBool("ARGUS_COOKIE_SECURE", false),
+		Listen:           env("ARGUS_LISTEN", ":8080"),
+		ZabbixAPIURL:     env("ARGUS_ZABBIX_API_URL", ""),
+		ZabbixAPIToken:   env("ARGUS_ZABBIX_API_TOKEN", ""),
+		DataDir:          env("ARGUS_DATA_DIR", "/data"),
+		PublicURL:        strings.TrimRight(env("ARGUS_PUBLIC_URL", ""), "/"),
+		TimeZone:         env("ARGUS_TZ", "UTC"),
+		SecretKey:        env("ARGUS_SECRET_KEY", ""),
+		SecretKeyReset:   envBool("ARGUS_SECRET_KEY_RESET", false),
+		AdminEmail:       env("ARGUS_ADMIN_EMAIL", ""),
+		AdminPassword:    env("ARGUS_ADMIN_PASSWORD", ""),
+		CookieSecure:     envBool("ARGUS_COOKIE_SECURE", false),
+		CookieSecureSet:  os.Getenv("ARGUS_COOKIE_SECURE") != "",
 		LoginMaxAttempts: envInt("ARGUS_LOGIN_MAX_ATTEMPTS", 7),
 		LoginWindow:      time.Duration(envInt("ARGUS_LOGIN_WINDOW_MINUTES", 15)) * time.Minute,
 		CACertFile:       env("ARGUS_CA_CERT_FILE", ""),
 		CAKeyFile:        env("ARGUS_CA_KEY_FILE", ""),
-		RPID:          env("ARGUS_RP_ID", ""),
-		RPDisplayName: env("ARGUS_RP_DISPLAY_NAME", "Argus"),
-		RPOrigins:     envList("ARGUS_RP_ORIGINS"),
-		UpdateDir:     strings.TrimRight(env("ARGUS_UPDATE_DIR", ""), "/"),
+		RPID:             env("ARGUS_RP_ID", ""),
+		RPDisplayName:    env("ARGUS_RP_DISPLAY_NAME", "Argus"),
+		RPOrigins:        envList("ARGUS_RP_ORIGINS"),
+		UpdateDir:        strings.TrimRight(env("ARGUS_UPDATE_DIR", ""), "/"),
 	}
 }
 

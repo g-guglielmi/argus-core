@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/netip"
 	"regexp"
@@ -110,8 +111,11 @@ func (c *Client) call(ctx context.Context, method string, params any, withAuth b
 		return fmt.Errorf("unexpected HTTP status %d from Zabbix API", resp.StatusCode)
 	}
 
+	// A bound on what one answer may be: item history for a long window is large, anything past
+	// this is a misconfigured or hostile endpoint, not data.
+	const maxResponseBytes = 64 << 20
 	var rr rpcResponse
-	if err := json.NewDecoder(resp.Body).Decode(&rr); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&rr); err != nil {
 		return fmt.Errorf("decode response: %w", err)
 	}
 	if rr.Error != nil {

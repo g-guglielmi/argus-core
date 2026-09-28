@@ -245,9 +245,9 @@ func (e Event) bodyLines() []string {
 func Send(ctx context.Context, ch Channel, e Event) error {
 	switch ch.Type {
 	case "discord":
-		return sendDiscord(ctx, ch.Config, e)
+		return redactErr(sendDiscord(ctx, ch.Config, e))
 	case "telegram":
-		return sendTelegram(ctx, ch.Config, e)
+		return redactErr(sendTelegram(ctx, ch.Config, e))
 	case "email":
 		return sendEmail(ctx, ch.Config, e)
 	default:

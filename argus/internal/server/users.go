@@ -184,6 +184,10 @@ func (s *Server) handleSetUserDisabled(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
+	// Disabling is the lockout control: the person's open sessions end now, not at their expiry.
+	if req.Disabled {
+		_ = s.st.DeleteUserSessions(r.Context(), id)
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -215,6 +219,8 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
+	// An admin resets a password because the old one is suspect: whoever holds a session on it is out.
+	_ = s.st.DeleteUserSessions(r.Context(), id)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -277,6 +283,10 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 	if err := s.st.UpdatePassword(r.Context(), caller.ID, hash); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
+	}
+	// The other devices signed in with the old password are signed out; this one stays.
+	if raw := auth.SessionCookie(r); raw != "" {
+		_ = s.st.DeleteUserSessionsExcept(r.Context(), caller.ID, auth.HashToken(raw))
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

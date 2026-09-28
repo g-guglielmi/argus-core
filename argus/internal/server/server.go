@@ -100,7 +100,9 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
-	mux.HandleFunc("GET /api/health", s.handleAPIHealth)
+	// The detailed health (Zabbix version, its connection error text) is for the admin Settings
+	// view; load balancers and uptime monitors get /healthz, which says only "ok".
+	mux.HandleFunc("GET /api/health", auth.RequireRole("admin", s.handleAPIHealth))
 	mux.HandleFunc("GET /api/features", s.handleFeatures)
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
@@ -300,9 +302,54 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 
 	mux.Handle("/", spaHandler())
 
-	// Every request passes the allowed-hosts check (a no-op until configured), then session
-	// resolution (idle timeout read live from settings).
-	return s.hostGuard(auth.Middleware(s.st, s.mgr.SessionIdleTimeout, s.mgr.SessionMaxLifetime)(mux))
+	if !cfg.CookieSecureSet && !s.cookieSecure() {
+		logger.Info("session cookies are not marked Secure (no https Public URL and ARGUS_COOKIE_SECURE unset); fine for plain-HTTP LAN use, set ARGUS_COOKIE_SECURE=true behind TLS")
+	} else if cfg.CookieSecureSet && !cfg.CookieSecure && strings.HasPrefix(strings.ToLower(mgr.PublicURL()), "https://") {
+		logger.Warn("ARGUS_COOKIE_SECURE=false while the Public URL is https: session cookies would also travel over plain HTTP")
+	}
+
+	// Every request gets the security headers and passes the cross-site check (plus the
+	// allowed-hosts check once configured), then session resolution (idle timeout read live).
+	return securityHeaders(s.hostGuard(auth.Middleware(s.st, s.mgr.SessionIdleTimeout, s.mgr.SessionMaxLifetime)(mux)))
+}
+
+// cookieSecure says whether session cookies carry the Secure flag: ARGUS_COOKIE_SECURE when given,
+// else whatever the Public URL's scheme implies, so an https deployment doesn't depend on the
+// operator remembering a second switch.
+func (s *Server) cookieSecure() bool {
+	if s.cfg.CookieSecureSet {
+		return s.cfg.CookieSecure
+	}
+	return strings.HasPrefix(strings.ToLower(s.mgr.PublicURL()), "https://")
+}
+
+// spaCSP is the Content-Security-Policy of the app itself: only its own scripts (no inline ones,
+// which is why the theme bootstrap is a file), styles from itself plus React's inline style props,
+// images from itself and data:/blob: (chart PNGs, the TOTP QR code, downloads), and no framing.
+// The status pages set their own in statuspage.go.
+const spaCSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
+	"connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+
+// securityHeaders adds the response headers every page and API answer should carry. HSTS is left
+// to the TLS-terminating proxy, which is the only party that knows TLS is in use.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/"):
+			// Authenticated JSON is never worth caching, and some of it (credentials, links) must not be.
+			h.Set("Cache-Control", "no-store")
+		case strings.HasPrefix(r.URL.Path, "/status"):
+			// statusHeaders sets the status pages' own policy.
+		default:
+			h.Set("Content-Security-Policy", spaCSP)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // --- health ---
@@ -484,8 +531,18 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Accept either a current TOTP code or one of the user's one-time recovery codes.
+	// Accept either a current TOTP code or one of the user's one-time recovery codes. A TOTP code
+	// works once: the time step of the last accepted code is kept, so a code seen over a shoulder
+	// can't be replayed inside its validity window.
+	step := time.Now().Unix() / 30
 	valid := mfa.Validate(req.Code, u.TOTPSecret)
+	if valid {
+		if last, err := s.st.TOTPLastStep(r.Context(), u.ID); err == nil && step <= last {
+			valid = false
+		} else {
+			_ = s.st.SetTOTPLastStep(r.Context(), u.ID, step)
+		}
+	}
 	if !valid {
 		if consumed, _ := s.st.ConsumeRecoveryCode(r.Context(), u.ID, mfa.HashRecoveryCode(req.Code)); consumed {
 			valid = true
@@ -521,15 +578,15 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, u *store.U
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	auth.SetSessionCookie(w, raw, s.cfg.CookieSecure, ttl)
+	auth.SetSessionCookie(w, raw, s.cookieSecure(), ttl)
 	writeJSON(w, http.StatusOK, toUserResponse(u))
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	if c, err := r.Cookie(auth.CookieName); err == nil && c.Value != "" {
-		_ = s.st.DeleteSession(r.Context(), auth.HashToken(c.Value))
+	if raw := auth.SessionCookie(r); raw != "" {
+		_ = s.st.DeleteSession(r.Context(), auth.HashToken(raw))
 	}
-	auth.ClearSessionCookie(w, s.cfg.CookieSecure)
+	auth.ClearSessionCookie(w, s.cookieSecure())
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

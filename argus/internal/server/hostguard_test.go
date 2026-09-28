@@ -4,7 +4,9 @@
 package server
 
 import (
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -18,6 +20,12 @@ func TestHostGuardVerdict(t *testing.T) {
 		ok                                    bool
 	}{
 		{"off when the list is empty", "GET", "evil.example.net", "/api/hosts", "", "", nil, false, true},
+		{"no list: same-origin change", "POST", "10.0.0.10:8081", "/api/settings", "http://10.0.0.10:8081", "", nil, false, true},
+		{"no list: public URL origin", "POST", "argus:8081", "/api/settings", "https://monitoring.example.com", "", nil, false, true},
+		{"no list: foreign origin refused", "POST", "10.0.0.10:8081", "/api/login", "https://other.example.com", "", nil, false, false},
+		{"no list: null origin refused", "POST", "10.0.0.10:8081", "/api/login", "null", "", nil, false, false},
+		{"no list: cross-site GET passes", "GET", "10.0.0.10:8081", "/api/hosts", "https://other.example.com", "", nil, false, true},
+		{"no list: probe endpoints exempt", "POST", "10.9.9.9", "/api/probes/checkin", "https://other.example.com", "", nil, false, true},
 		{"listed IP", "GET", "10.0.0.10:8081", "/api/hosts", "", "", list, false, true},
 		{"public URL host always allowed", "GET", "monitoring.example.com", "/api/hosts", "", "", list, false, true},
 		{"loopback always allowed", "GET", "127.0.0.1:8081", "/api/me", "", "", list, false, true},
@@ -46,6 +54,41 @@ func TestHostGuardVerdict(t *testing.T) {
 		if ok, msg := hostGuardVerdict(r, c.list, pub, c.trust); ok != c.ok {
 			t.Errorf("%s: ok=%v (%s), want %v", c.name, ok, msg, c.ok)
 		}
+	}
+}
+
+func TestCrossSiteVerdictBodies(t *testing.T) {
+	post := func(path, ct, sfs string) *http.Request {
+		r := httptest.NewRequest("POST", "http://10.0.0.10:8081"+path, strings.NewReader(`{"email":"a@b","password":"x"}`))
+		r.Host = "10.0.0.10:8081"
+		if ct != "" {
+			r.Header.Set("Content-Type", ct)
+		}
+		if sfs != "" {
+			r.Header.Set("Sec-Fetch-Site", sfs)
+		}
+		return r
+	}
+	if ok, _ := hostGuardVerdict(post("/api/login", "application/json", "same-origin"), nil, "", false); !ok {
+		t.Error("a JSON same-origin post must pass")
+	}
+	if ok, _ := hostGuardVerdict(post("/api/login", "application/json; charset=utf-8", ""), nil, "", false); !ok {
+		t.Error("a JSON post with a charset must pass")
+	}
+	if ok, _ := hostGuardVerdict(post("/api/login", "text/plain", ""), nil, "", false); ok {
+		t.Error("a text/plain form post (login CSRF) must be refused")
+	}
+	if ok, _ := hostGuardVerdict(post("/api/login", "application/x-www-form-urlencoded", ""), nil, "", false); ok {
+		t.Error("a form-encoded post must be refused")
+	}
+	if ok, _ := hostGuardVerdict(post("/api/login", "application/json", "cross-site"), nil, "", false); ok {
+		t.Error("a cross-site fetch must be refused")
+	}
+	if ok, _ := hostGuardVerdict(post("/api/alert/ack", "application/x-www-form-urlencoded", "same-origin"), nil, "", false); !ok {
+		t.Error("the signed ack form must pass")
+	}
+	if ok, _ := hostGuardVerdict(post("/api/probes/checkin", "text/plain", "cross-site"), nil, "", false); !ok {
+		t.Error("probe endpoints are not browser endpoints")
 	}
 }
 

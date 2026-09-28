@@ -4,11 +4,13 @@
 package server
 
 import (
+	"argus/internal/settings"
 	"bytes"
 	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -46,6 +48,22 @@ func (s *Server) handleSeedISO(w http.ResponseWriter, r *http.Request) {
 	if token == "" || enrollURL == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "token and enroll_url are required"})
 		return
+	}
+	// The file is KEY=VALUE lines the VM reads as configuration: a value is one line, and the URL
+	// and host are the shapes they claim to be.
+	if u, err := url.Parse(enrollURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || strings.ContainsAny(enrollURL, " \r\n") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "enroll_url must be a full http(s) URL"})
+		return
+	}
+	if strings.ContainsAny(token, " \r\n") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid token"})
+		return
+	}
+	if h := strings.TrimSpace(req.CoreHost); h != "" {
+		if _, err := settings.ParseHostPort(h); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "core_host: " + err.Error()})
+			return
+		}
 	}
 
 	// The probe.env contract (see deploy/probe-vm/files/probe.env.example). The first-boot reader

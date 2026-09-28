@@ -40,10 +40,7 @@ type userChannelView struct {
 }
 
 func toUserChannelView(c store.UserNotifyChannel) userChannelView {
-	cfg := c.Config
-	if cfg == nil {
-		cfg = map[string]string{}
-	}
+	cfg := maskChannelConfig(c.Config)
 	return userChannelView{
 		ID: c.ID, Type: c.Type, Enabled: c.Enabled, Sites: c.Sites, MinSeverity: c.MinSeverity,
 		DelayMin: c.DelayMin, RepeatMin: c.RepeatMin, RepeatSev: c.RepeatSev, Alerts: c.Alerts, Notices: c.Notices, Config: cfg,
@@ -84,6 +81,9 @@ func (req userChannelRequest) validate() (store.UserNotifyChannel, string) {
 	case "discord":
 		if strings.TrimSpace(cfg["webhook_url"]) == "" {
 			return store.UserNotifyChannel{}, "Discord needs a webhook URL"
+		}
+		if !notify.ValidDiscordWebhook(cfg["webhook_url"]) {
+			return store.UserNotifyChannel{}, notify.DiscordWebhookHint
 		}
 	}
 	// The notifier never alerts below Warning, so clamp the floor to 2..5 (Warning..Disaster).
@@ -132,6 +132,7 @@ func (s *Server) handleCreateMyChannel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
+	req.Config = keepChannelSecrets(req.Config, nil)
 	ch, msg := req.validate()
 	if msg != "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
@@ -157,6 +158,7 @@ func (s *Server) handleUpdateMyChannel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
+	req.Config = keepChannelSecrets(req.Config, existing.Config)
 	ch, msg := req.validate()
 	if msg != "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
@@ -217,7 +219,7 @@ func (s *Server) handleTestMyChannel(w http.ResponseWriter, r *http.Request) {
 	err := notify.Send(ctx, notify.Channel{ID: ch.ID, Type: ch.Type, Name: "personal", Enabled: ch.Enabled, Config: ch.Config}, ev)
 	_ = s.st.RecordUserNotifyDelivery(ctx, ch.ID, err)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": notify.Redact(err.Error())})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})

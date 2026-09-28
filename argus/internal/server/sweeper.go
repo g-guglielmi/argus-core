@@ -49,4 +49,5 @@ func sweepOnce(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger 
 		_ = st.ClearSuppression(ctx, "pause", sp.Scope, sp.TargetID)
 	}
 	_ = st.DeleteExpiredNonPause(ctx)
+	_ = st.PruneExpiredAuth(ctx, time.Now())
 }

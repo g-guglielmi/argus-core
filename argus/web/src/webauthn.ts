@@ -27,8 +27,8 @@ async function errMsg(res: Response, fallback: string): Promise<string> {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function registerPasskey(name: string): Promise<void> {
-  const beginRes = await fetch('/api/me/passkeys/register/begin', { method: 'POST' })
+export async function registerPasskey(name: string, password: string): Promise<void> {
+  const beginRes = await fetch('/api/me/passkeys/register/begin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) })
   if (!beginRes.ok) throw new Error(await errMsg(beginRes, 'Could not start passkey setup'))
   const { options, session_token } = await beginRes.json()
   const pk = options.publicKey

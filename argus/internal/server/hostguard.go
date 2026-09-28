@@ -4,6 +4,7 @@
 package server
 
 import (
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -32,6 +33,50 @@ var machineAPIPaths = map[string]bool{
 	"/api/probes/os-status":    true,
 	"/api/probes/break-glass":  true,
 	"/api/probes/scan-results": true,
+}
+
+// formAPIPaths take a browser form post rather than JSON; they authenticate with a signed link,
+// never the session cookie, so a cross-site post gains nothing.
+var formAPIPaths = map[string]bool{
+	"/api/alert/ack": true,
+}
+
+// crossSiteVerdict is the part of the guard that runs whether or not an allowed-hosts list exists:
+// a state-changing API request from a browser must come from Argus's own pages, and must be JSON.
+// The session cookie is SameSite=Lax, which stops a foreign site from sending it, but not a
+// sibling subdomain (same site for Lax) and not a top-level form post to a cookie-less endpoint
+// like /api/login: a page elsewhere could sign the victim into an account of its choosing with a
+// text/plain form whose body happens to parse as JSON. So: the browser's Sec-Fetch-Site must not
+// say cross-site, an Origin must be one of Argus's own (the list, the Public URL, or the host the
+// request was addressed to), and a body must be application/json.
+func crossSiteVerdict(r *http.Request, list []string, publicURL string, trustProxy bool) (bool, string) {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true, ""
+	}
+	if strings.EqualFold(r.Header.Get("Sec-Fetch-Site"), "cross-site") {
+		return false, "Cross-origin request refused."
+	}
+	if o := r.Header.Get("Origin"); o != "" {
+		u, err := url.Parse(o)
+		oh := ""
+		if err == nil {
+			oh, _ = settings.NormalizeHost(u.Host)
+		}
+		if oh == "" || !(hostAllowed(oh, list, publicURL) || oh == requestHost(r, trustProxy)) {
+			return false, "Cross-origin request refused."
+		}
+	}
+	if formAPIPaths[r.URL.Path] {
+		return true, ""
+	}
+	if r.ContentLength != 0 {
+		ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if ct != "application/json" {
+			return false, "This endpoint takes a JSON body."
+		}
+	}
+	return true, ""
 }
 
 // hostAllowed reports whether a normalized host may be used to reach the browser-facing API.
@@ -74,30 +119,16 @@ func requestHost(r *http.Request, trustProxy bool) string {
 
 // hostGuardVerdict decides one request. ok=false carries the reason for the 403.
 func hostGuardVerdict(r *http.Request, list []string, publicURL string, trustProxy bool) (bool, string) {
-	if len(list) == 0 || !strings.HasPrefix(r.URL.Path, "/api/") || machineAPIPaths[r.URL.Path] {
+	if !strings.HasPrefix(r.URL.Path, "/api/") || machineAPIPaths[r.URL.Path] {
 		return true, ""
 	}
-	host := requestHost(r, trustProxy)
-	if !hostAllowed(host, list, publicURL) {
-		return false, "Argus doesn't accept requests addressed to \"" + host + "\". An admin can add it under Settings → Allowed FQDNs and IPs."
-	}
-	switch r.Method {
-	case http.MethodGet, http.MethodHead, http.MethodOptions:
-		return true, ""
-	}
-	// A state-changing request from a browser carries Origin; one from another origin is refused.
-	// No Origin at all is a non-browser client, which the Host check above already covered.
-	if o := r.Header.Get("Origin"); o != "" {
-		u, err := url.Parse(o)
-		oh := ""
-		if err == nil {
-			oh, _ = settings.NormalizeHost(u.Host)
-		}
-		if oh == "" || !hostAllowed(oh, list, publicURL) {
-			return false, "Cross-origin request refused."
+	if len(list) > 0 {
+		host := requestHost(r, trustProxy)
+		if !hostAllowed(host, list, publicURL) {
+			return false, "Argus doesn't accept requests addressed to \"" + host + "\". An admin can add it under Settings -> Allowed FQDNs and IPs."
 		}
 	}
-	return true, ""
+	return crossSiteVerdict(r, list, publicURL, trustProxy)
 }
 
 // hostGuard applies hostGuardVerdict in front of every route.

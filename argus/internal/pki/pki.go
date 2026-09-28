@@ -11,7 +11,10 @@ package pki
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -24,8 +27,8 @@ import (
 // CA is the loaded signing authority (certificate + private key) plus the PEM of the cert, which
 // is handed back to probes as their trust anchor (ca.crt).
 type CA struct {
-	cert   *x509.Certificate
-	key    crypto.Signer
+	cert    *x509.Certificate
+	key     crypto.Signer
 	certPEM []byte
 }
 
@@ -75,6 +78,15 @@ func (c *CA) SignCSR(csrPEM []byte, cn string, ttl time.Duration) ([]byte, error
 	}
 	if err := csr.CheckSignature(); err != nil {
 		return nil, fmt.Errorf("CSR signature invalid: %w", err)
+	}
+	switch k := csr.PublicKey.(type) {
+	case *rsa.PublicKey:
+		if k.N.BitLen() < 2048 {
+			return nil, fmt.Errorf("RSA key too small (%d bits; 2048 or more)", k.N.BitLen())
+		}
+	case *ecdsa.PublicKey, ed25519.PublicKey:
+	default:
+		return nil, fmt.Errorf("unsupported key type %T", csr.PublicKey)
 	}
 
 	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))

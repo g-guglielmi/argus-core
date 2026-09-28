@@ -78,9 +78,14 @@ docker run -d \
 > Argus falls back to password + TOTP. **`ARGUS_SECRET_KEY`** encrypts stored secrets at rest;
 > keep it off the volume and **stable** (changing it makes existing encrypted values unreadable).
 > **`ARGUS_TRUST_PROXY`** is required behind a reverse proxy for correct client addresses (login
-> rate limiting, status pages' allowed networks): `true` for one proxy, or the proxies' addresses or
-> networks (`10.0.0.2,10.0.5.0/24`) for a chain like NetScaler in front of HAProxy. Ensure the proxy
-> sends `X-Forwarded-For`. Also editable in **Settings -> Reverse proxy**.
+> rate limiting, status pages' allowed networks): `true` for one proxy on the LAN or the same host,
+> or the proxies' addresses or networks (`10.0.0.2,10.0.5.0/24`) for a chain like NetScaler in
+> front of HAProxy. Ensure the proxy sends `X-Forwarded-For`. Leave it empty when people reach Argus
+> directly. Also editable in **Settings -> Reverse proxy**.
+>
+> **TLS:** Argus itself speaks plain HTTP; put it behind a TLS-terminating proxy and set the
+> **Public URL** to the https address. Session cookies are then `Secure` by default, probes check
+> in over https, and the proxy should add `Strict-Transport-Security`.
 >
 > **Probe enrollment** (optional): mount the monitoring CA (`ca.crt` + `ca.key` from
 > `gen-certs.sh`) read-only and set `ARGUS_CA_CERT_FILE` / `ARGUS_CA_KEY_FILE` so Argus can sign
@@ -138,16 +143,17 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 **Security**
 | Var | Default | Purpose |
 |---|---|---|
-| `ARGUS_COOKIE_SECURE` | `false` | set `true` when served over HTTPS (Secure session cookie) |
-| `ARGUS_SECRET_KEY` | *(empty)* | key for at-rest encryption of stored secrets. Empty ⇒ auto keyfile on the volume; set a long random value (e.g. `openssl rand -hex 32`) to keep the key off the volume. **Keep it stable.** |
-| `ARGUS_TRUST_PROXY` | *(empty)* | _(UI)_ reverse proxies to believe: empty = none, `true` = one proxy, or a comma-separated list of proxy addresses / networks (only connections from those count, and `X-Forwarded-For` is read from the right past them, so a proxy chain resolves to the real client). Feeds the client IP (rate limiting, status-page networks) and `X-Forwarded-Host` / `-Proto` |
+| `ARGUS_COOKIE_SECURE` | *(follows the Public URL)* | `Secure` session cookies. Unset, they are Secure when the Public URL is https (and then named `__Host-argus_session`); set `true`/`false` to force it |
+| `ARGUS_SECRET_KEY` | *(empty)* | key for at-rest encryption of stored secrets. Empty ⇒ auto keyfile on the volume (`secret.key`, back it up with the database); set a long random value (e.g. `openssl rand -hex 32`) to keep the key off the volume. **Keep it stable**: a key that doesn't match the database stops Argus at start |
+| `ARGUS_SECRET_KEY_RESET` | `false` | one-off recovery when the key is lost: `true` drops the secrets the current key can't read (channel, SNMP and UniFi credentials, break-glass passwords, status-page link copies; two-factor is switched off for the users affected) so they can be entered again. Remove it afterwards |
+| `ARGUS_TRUST_PROXY` | *(empty)* | _(UI)_ reverse proxies to believe: empty = none, `true` = one proxy on a private or loopback address (a public peer is a direct client), or a comma-separated list of proxy addresses / networks (only connections from those count, and `X-Forwarded-For` is read from the right past them, so a proxy chain resolves to the real client). Feeds the client IP (rate limiting, status-page networks) and `X-Forwarded-Host` / `-Proto` |
 | `ARGUS_LOGIN_MAX_ATTEMPTS` | `7` | _(UI)_ failed logins per window before throttling |
 | `ARGUS_LOGIN_WINDOW_MINUTES` | `15` | _(UI)_ rate-limit sliding window |
 | `ARGUS_SESSION_MAX_HOURS` | `12` | _(UI)_ absolute session lifetime before re-authentication is required |
 | `ARGUS_SESSION_IDLE_MINUTES` | `0` | _(UI)_ sign out after this long with no activity (`0` disables the idle timeout) |
 | `ARGUS_TIME_FORMAT` | `24h` | _(UI)_ how clocks read in Argus and on status pages: `24h` or `12h` |
 | `ARGUS_ALERT_DELAY_SECONDS` | `60` | _(UI)_ how long a problem must last before anyone is notified (flap guard); `0` alerts at once. "No data" alerts skip it. Per-channel escalation and reminders are set on each channel |
-| `ARGUS_TRUSTED_ORIGINS` | *(empty)* | _(UI)_ **Allowed FQDNs and IPs**: the addresses people type in the browser to reach Argus, comma-separated; any other `Host` (and changes from any other `Origin`) is refused. Empty = off. The Public URL host and localhost are always allowed; probe endpoints are never checked. `*` turns it off (lockout recovery) |
+| `ARGUS_TRUSTED_ORIGINS` | *(empty)* | _(UI)_ **Allowed FQDNs and IPs**: the addresses people type in the browser to reach Argus, comma-separated; any other `Host` is refused (DNS rebinding). Empty = off. The Public URL host and localhost are always allowed; probe endpoints are never checked. `*` turns it off (lockout recovery). Independently of the list, a state-changing API request from another origin (or a non-JSON body) is always refused |
 
 **Notifications**
 | Var | Default | Purpose |

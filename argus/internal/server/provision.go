@@ -6,6 +6,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -204,13 +205,18 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 	if req.DiscoveryResultID > 0 {
 		source = "discovered"
 	}
+	macros, err := buildMacros(req, class)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	hostID, err := s.zbx.CreateHost(ctx, zabbix.CreateHostParams{
 		Host:        req.Name,
 		Name:        req.Visible,
 		GroupIDs:    []string{groupID},
 		TemplateIDs: tmplIDs,
 		Interfaces:  ifaces,
-		Macros:      buildMacros(req, class),
+		Macros:      macros,
 		MonitoredBy: monitoredBy,
 		ProxyID:     proxyID,
 		Tags: []zabbix.HostTag{
@@ -477,6 +483,9 @@ func (s *Server) applyNewClassMacros(ctx context.Context, hostID string, class p
 		if v == "" {
 			continue // required ones were validated by the caller; blanks are left as-is
 		}
+		if err := provision.ValidateMacroValue(ms, v); err != nil {
+			return err
+		}
 		if err := set(ms.Macro, v, ms.Secret); err != nil {
 			return err
 		}
@@ -532,7 +541,19 @@ func (s *Server) resolveInterface(ctx context.Context, class provision.Class, re
 // buildMacros turns the request's HTTP add-on port/scheme and any extra overrides into host macros.
 // Host-level macros override the template defaults (the §6 thresholds live in the templates). Macros
 // the class declares as secret (API keys) are stored as Zabbix secret macros - write-only afterwards.
-func buildMacros(req createHostRequest, class provision.Class) []zabbix.Macro {
+func buildMacros(req createHostRequest, class provision.Class) ([]zabbix.Macro, error) {
+	// Only what the class declares, its templates' thresholds and the HTTP add-on may be set: the
+	// curated model the settings editor enforces applies at creation too.
+	specs := map[string]provision.MacroSpec{}
+	for _, ms := range class.Macros {
+		specs[ms.Macro] = ms
+	}
+	thresholds := map[string]bool{}
+	for _, tt := range provision.ThresholdsForTemplates(class.HostTemplates()) {
+		for _, sp := range tt.Specs {
+			thresholds[sp.Macro] = true
+		}
+	}
 	secret := map[string]bool{}
 	for _, ms := range class.Macros {
 		if ms.Secret {
@@ -557,6 +578,20 @@ func buildMacros(req createHostRequest, class provision.Class) []zabbix.Macro {
 		} else if strings.TrimSpace(v) == "" {
 			continue // an empty optional field must not override the template default
 		}
+		v = strings.TrimSpace(v)
+		switch ms, declared := specs[k]; {
+		case declared:
+			if err := provision.ValidateMacroValue(ms, v); err != nil {
+				return nil, err
+			}
+		case thresholds[k]:
+			if !provision.ValidThresholdValue(v) {
+				return nil, fmt.Errorf("%s must be a plain number", k)
+			}
+		case k == "{$HTTP.PORT}" || k == "{$HTTP.SCHEME}":
+		default:
+			return nil, fmt.Errorf("%s is not a setting of this device class", k)
+		}
 		m := zabbix.Macro{Macro: k, Value: v}
 		if secret[k] {
 			m.Type = 1
@@ -570,5 +605,5 @@ func buildMacros(req createHostRequest, class provision.Class) []zabbix.Macro {
 			macros = append(macros, zabbix.Macro{Macro: pm.Macro, Value: pm.Value})
 		}
 	}
-	return macros
+	return macros, nil
 }

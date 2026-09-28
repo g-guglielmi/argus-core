@@ -42,6 +42,23 @@ func main() {
 		os.Exit(1)
 	}
 	st.SetCipher(cipher)
+	// The key must be the one the database was encrypted with; otherwise every stored credential
+	// is unreadable and the app must not run as if they were blank (or worse, use the ciphertext).
+	if err := st.VerifyCipher(context.Background()); err != nil {
+		if !cfg.SecretKeyReset {
+			logger.Error("at-rest encryption key does not match the database: restore secret.key / ARGUS_SECRET_KEY, or set ARGUS_SECRET_KEY_RESET=true once to drop the unreadable secrets and re-enter them",
+				"key_source", keySrc, "err", err)
+			os.Exit(1)
+		}
+		n, rerr := st.ResetEncryptedSecrets(context.Background())
+		if rerr != nil {
+			logger.Error("reset encrypted secrets", "err", rerr)
+			os.Exit(1)
+		}
+		logger.Warn("ARGUS_SECRET_KEY_RESET: dropped the secrets the current key can't read; re-enter channel, SNMP and UniFi credentials, and users set up two-factor again. Remove the variable now.", "rows", n)
+	} else if cfg.SecretKeyReset {
+		logger.Warn("ARGUS_SECRET_KEY_RESET is set but the key matches the database; nothing was reset. Remove the variable.")
+	}
 	if n, err := st.EncryptPlaintextSecrets(context.Background()); err != nil {
 		logger.Warn("encrypt existing secrets", "err", err)
 	} else {
@@ -81,7 +98,7 @@ func main() {
 		Handler:           server.New(cfg, zbx, st, logger, mgr),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
+		WriteTimeout:      60 * time.Second, // above the longest handler budget (a status build, a census)
 		IdleTimeout:       60 * time.Second,
 	}
 

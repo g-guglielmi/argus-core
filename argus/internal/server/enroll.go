@@ -107,6 +107,15 @@ type enrollResponse struct {
 	CheckinURL  string `json:"checkin_url"` // where the probe reports its version / reads the target
 }
 
+// enrollURLFrom is the enroll endpoint shown in the Add-probe command for a base origin, or an
+// obvious placeholder when Argus doesn't know its own address (no Public URL, unlisted host).
+func enrollURLFrom(base string) string {
+	if base == "" {
+		return "https://<argus-public-url>/api/enroll"
+	}
+	return strings.TrimRight(base, "/") + "/api/enroll"
+}
+
 // handleEnroll signs a probe's CSR and registers its active proxy in Zabbix, in exchange for a
 // valid single-use enrollment token. The probe's private key never reaches Argus.
 func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
@@ -131,31 +140,32 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	t, err := s.st.EnrollTokenByHash(ctx, auth.HashToken(token))
-	invalid := func() {
+	// The token is consumed before anything is issued, atomically, so the same token can't enrol
+	// two probes however closely they race. A failure past this point hands it back.
+	t, err := s.st.ClaimEnrollToken(ctx, auth.HashToken(token), time.Now())
+	if err != nil {
 		s.loginLimiter.Fail("enroll:ip:" + s.clientIP(r))
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid, used, or expired enrollment token"})
-	}
-	if err != nil || t.UsedAt != nil || time.Now().After(t.ExpiresAt) {
-		invalid()
 		return
 	}
+	release := func() { _ = s.st.ReleaseEnrollToken(ctx, t.ID) }
 
 	certPEM, err := s.ca.SignCSR([]byte(req.CSR), t.ProxyName, proxyCertTTL)
 	if err != nil {
+		release()
 		s.logger.Warn("enroll: sign CSR failed", "proxy", t.ProxyName, "err", err)
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not sign CSR: " + err.Error()})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the certificate request could not be signed; see the Argus log"})
 		return
 	}
 	// Register (or update) the active proxy, pinned to our CA + this proxy's subject.
 	issuer := "CN=" + s.ca.SubjectCN()
 	subject := "CN=" + t.ProxyName
 	if err := s.zbx.EnsureActiveProxyCert(ctx, t.ProxyName, issuer, subject); err != nil {
+		release()
 		s.logger.Warn("enroll: register proxy in Zabbix failed", "proxy", t.ProxyName, "err", err)
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not register the proxy in Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "the proxy could not be registered in Zabbix; ask an administrator to check the Argus log, then retry"})
 		return
 	}
-	_ = s.st.MarkEnrollTokenUsed(ctx, t.ID)
 
 	// Give the site its own top-level host group (named after the site, e.g. "site1"), so each probe
 	// gets its own group in the Monitoring tree. Best-effort + idempotent - a failure here shouldn't
@@ -194,7 +204,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		ProxyName:   t.ProxyName,
 		CoreHost:    s.probeCoreHost(),
 		ProbeToken:  probeToken,
-		CheckinURL:  s.baseURL(r) + "/api/probes/checkin",
+		CheckinURL:  s.probeCheckinURL(),
 	})
 }
 
@@ -282,7 +292,7 @@ func (s *Server) handleCreateEnrollToken(w http.ResponseWriter, r *http.Request)
 		"proxy_name": proxyName,
 		"site":       site,
 		"expires_at": expires.Unix(),
-		"enroll_url": s.baseURL(r) + "/api/enroll",
+		"enroll_url": enrollURLFrom(s.baseURL(r)),
 		"core_host":  s.probeCoreHost(),
 	})
 }

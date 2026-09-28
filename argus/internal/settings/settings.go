@@ -77,8 +77,8 @@ var defs = []def{
 	{KeyAllowedHosts, "ARGUS_TRUSTED_ORIGINS", "FQDNs and IPs", "Access", "hostlist", false, "", "The FQDNs or IPs people type in the browser's address bar to open Argus, comma-separated (a pasted URL is reduced to its host). Empty turns the check off (any address works). The Public URL's host and localhost are always allowed, and probes are never checked. To recover from a lockout, set ARGUS_TRUSTED_ORIGINS=* and restart.", 0},
 	{KeyTimeFormat, "ARGUS_TIME_FORMAT", "Time format", "General", "choice", false, "24h", "How clocks read in Argus and on status pages: 24h (16:43) or 12h (4:43 PM).", 0},
 	{KeyAlertDelay, "ARGUS_ALERT_DELAY_SECONDS", "Alert delay (seconds)", "Alerting", "int", false, "60", "How long a problem must last before anyone is notified, so a brief blip doesn't alert. 0 alerts at once. \"No data\" alerts skip it: their own period already is the wait.", 0},
-	{KeyTrustProxy, "ARGUS_TRUST_PROXY", "Trusted proxies", "Proxy", "proxylist", false, "", "Leave empty when people reach Argus directly. true = one reverse proxy in front of Argus (the client is the address it adds to X-Forwarded-For). Or list the proxies' addresses or networks, comma-separated, e.g. 10.0.0.2, 10.0.5.0/24: forwarded headers then count only from them, and a chain of proxies (NetScaler -> HAProxy -> Argus) resolves to the real client.", 0},
-	{KeyProbeCoreHost, "ARGUS_PROBE_CORE_HOST", "Probe core host", "Probe enrollment", "text", false, "", "Address probes dial for :10051 (host or host:port). Prefer an IP: the proxy re-resolves this on every data send, so an FQDN here generates heavy DNS load. Baked into new enrollments and re-synced to existing probes at their next restart. Falls back to the Public URL host if empty.", 0},
+	{KeyTrustProxy, "ARGUS_TRUST_PROXY", "Trusted proxies", "Proxy", "proxylist", false, "", "Leave empty when people reach Argus directly. true = one reverse proxy on the LAN or the same host in front of Argus (the client is the address it adds to X-Forwarded-For; a connection from a public address is taken as a direct client). Or list the proxies' addresses or networks, comma-separated, e.g. 10.0.0.2, 10.0.5.0/24: forwarded headers then count only from them, and a chain of proxies (NetScaler -> HAProxy -> Argus) resolves to the real client.", 0},
+	{KeyProbeCoreHost, "ARGUS_PROBE_CORE_HOST", "Probe core host", "Probe enrollment", "host", false, "", "Address probes dial for :10051 (host or host:port). Prefer an IP: the proxy re-resolves this on every data send, so an FQDN here generates heavy DNS load. Baked into new enrollments and re-synced to existing probes at their next restart. Falls back to the Public URL host if empty.", 0},
 }
 
 func defFor(key string) (def, bool) {
@@ -329,7 +329,9 @@ func (m *Manager) reload(ctx context.Context) error {
 	}
 	maxN := atoiOr(effective(snap[KeyLoginMax]), 7)
 	winMin := atoiOr(effective(snap[KeyLoginWindow]), 15)
-	pch := effective(snap[KeyProbeCoreHost])
+	// A malformed value (a stale env var, a hand-edited row) is dropped rather than handed to the
+	// probes, which write it into their own configuration.
+	pch, _ := ParseHostPort(effective(snap[KeyProbeCoreHost]))
 	sessMaxH := atoiClamp(effective(snap[KeySessionMax]), 12, 1)
 	sessIdleMin := atoiClamp(effective(snap[KeySessionIdle]), 0, 0)
 	allowed, _ := ParseHostList(effective(snap[KeyAllowedHosts])) // validated on the way in
@@ -434,6 +436,10 @@ func validate(d def, v string) error {
 		if _, err := ParseHostList(v); err != nil {
 			return err
 		}
+	case "host":
+		if _, err := ParseHostPort(v); err != nil {
+			return fmt.Errorf("%s: %v", d.label, err)
+		}
 	case "proxylist":
 		if _, _, err := ParseTrustProxy(v); err != nil {
 			return err
@@ -477,6 +483,36 @@ var hostLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
 // NormalizeHost reduces what an admin might paste (a bare host, host:port, [v6]:port, or a whole URL)
 // to a lower-case hostname or IP with no port, or an error if it isn't a valid one.
+// hostPortChars is every character a "host" or "host:port" value may contain. The value ends up in
+// files that other programs read as configuration (a probe's proxy.env, a Zabbix Server= line),
+// so anything else - whitespace, quotes, shell metacharacters, a scheme - is refused outright.
+var hostPortChars = regexp.MustCompile(`^[A-Za-z0-9.:_\[\]-]+$`)
+
+// ParseHostPort validates a "host" or "host:port" value (an IP, a name, or a bracketed IPv6
+// address, with an optional port) and returns it trimmed. Empty is allowed (it means unset).
+func ParseHostPort(raw string) (string, error) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return "", nil
+	}
+	if !hostPortChars.MatchString(v) {
+		return "", fmt.Errorf("%q must be a host or host:port, with no spaces or other characters", raw)
+	}
+	host, port := v, ""
+	if h, p, err := net.SplitHostPort(v); err == nil {
+		host, port = h, p
+	}
+	if port != "" {
+		if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+			return "", fmt.Errorf("%q has an invalid port", raw)
+		}
+	}
+	if _, err := NormalizeHost(host); err != nil {
+		return "", err
+	}
+	return v, nil
+}
+
 func NormalizeHost(raw string) (string, error) {
 	h := strings.ToLower(strings.TrimSpace(raw))
 	if strings.Contains(h, "://") {

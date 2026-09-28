@@ -14,8 +14,9 @@ import (
 // requested host and scheme (X-Forwarded-Host / -Proto). The setting (ARGUS_TRUST_PROXY) is one of:
 //
 //   - empty / "false": no proxy; headers are ignored and the socket address is the client;
-//   - "true": exactly one proxy in front of Argus, whoever connects; the client is the last
-//     X-Forwarded-For entry (the one that proxy appended);
+//   - "true": one proxy in front of Argus, on a private or loopback address (the usual place for
+//     it); the client is the last X-Forwarded-For entry (the one that proxy appended). A connection
+//     from a public address is taken as a direct client, whatever headers it carries;
 //   - a list of proxy networks ("10.0.0.2, 10.0.5.0/24"): headers count only on a connection from
 //     one of them, and the client is found by reading X-Forwarded-For from the right, skipping every
 //     address that belongs to a listed proxy - so a chain like NetScaler -> HAProxy -> Argus works.
@@ -77,11 +78,18 @@ func (t TrustProxy) Trusts(remoteAddr string) bool {
 	if !t.Enabled {
 		return false
 	}
-	if len(t.Nets) == 0 {
-		return true
-	}
 	a, err := netip.ParseAddr(peerAddr(remoteAddr))
-	return err == nil && t.inNets(a)
+	if err != nil {
+		return false
+	}
+	if len(t.Nets) == 0 {
+		// "true" without a list: a proxy sits beside Argus, not out on the internet. If the port is
+		// also reachable directly, this keeps a remote client from naming its own address (and with
+		// it dodging the login limit or a status page's network list) by sending the header itself.
+		a = a.Unmap()
+		return a.IsLoopback() || a.IsPrivate() || a.IsLinkLocalUnicast()
+	}
+	return t.inNets(a)
 }
 
 // ClientIP is the real client's address for a request that arrived from remoteAddr carrying these
@@ -102,14 +110,28 @@ func (t TrustProxy) ClientIP(remoteAddr string, xff []string) string {
 	if len(chain) == 0 {
 		return peer
 	}
+	// Whatever is picked must be an address: the value keys the login limiter and is matched
+	// against status-page networks, and a proxy never appends anything else. Garbage means the
+	// header wasn't the proxy's, so the peer itself is the client.
 	if len(t.Nets) == 0 { // one proxy: the address it appended
-		return chain[len(chain)-1]
+		return addrOr(chain[len(chain)-1], peer)
 	}
 	for i := len(chain) - 1; i >= 0; i-- {
 		a, err := netip.ParseAddr(chain[i])
-		if err != nil || !t.inNets(a) {
+		if err != nil {
+			return peer
+		}
+		if !t.inNets(a) {
 			return chain[i] // the first address that isn't one of our proxies
 		}
 	}
 	return chain[0] // every hop was a trusted proxy: the earliest is as close to the client as we get
+}
+
+// addrOr returns s when it parses as an IP address, else the fallback.
+func addrOr(s, fallback string) string {
+	if _, err := netip.ParseAddr(s); err != nil {
+		return fallback
+	}
+	return s
 }

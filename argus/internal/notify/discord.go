@@ -21,6 +21,9 @@ func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 	if url == "" {
 		return fmt.Errorf("discord: webhook_url is not set")
 	}
+	if !ValidDiscordWebhook(url) {
+		return fmt.Errorf("discord: %s", DiscordWebhookHint)
+	}
 
 	// Structured fields for the at-a-glance context. Severity leads (the same label the UI shows).
 	var fields []map[string]any
@@ -28,10 +31,10 @@ func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 		fields = append(fields, map[string]any{"name": "Severity", "value": severityLabel(e.Severity), "inline": true})
 	}
 	if e.Host != "" {
-		fields = append(fields, map[string]any{"name": "Host", "value": e.Host, "inline": true})
+		fields = append(fields, map[string]any{"name": "Host", "value": mdEscape(e.Host), "inline": true})
 	}
 	if e.Site != "" {
-		fields = append(fields, map[string]any{"name": "Site", "value": e.Site, "inline": true})
+		fields = append(fields, map[string]any{"name": "Site", "value": mdEscape(e.Site), "inline": true})
 	}
 	if v := e.valueLine(); v != "" && e.isAlert() {
 		fields = append(fields, map[string]any{"name": "Reading", "value": strings.TrimPrefix(v, "Value: "), "inline": true})
@@ -49,7 +52,7 @@ func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 	case e.Kind == "ack":
 		desc = append(desc, e.ackLine())
 		if e.AckNote != "" {
-			desc = append(desc, "> "+e.AckNote)
+			desc = append(desc, "> "+mdEscape(e.AckNote))
 		}
 	}
 	var links []string
@@ -92,6 +95,12 @@ func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 	return postJSON(ctx, url, body)
 }
 
+// mdEscape neutralises Discord Markdown in text that people typed (an acknowledgement note, a
+// host name), so it can't smuggle a masked link or formatting into the channel.
+var mdEscaper = strings.NewReplacer("\\", "\\\\", "*", "\\*", "_", "\\_", "~", "\\~", "`", "\\`", "|", "\\|", "[", "\\[", "]", "\\]", ">", "\\>", "#", "\\#", "-", "\\-")
+
+func mdEscape(s string) string { return mdEscaper.Replace(s) }
+
 // postJSON POSTs a JSON body and treats any 2xx as success. Shared by the webhook dispatchers.
 func postJSON(ctx context.Context, url string, body []byte) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -101,7 +110,7 @@ func postJSON(ctx context.Context, url string, body []byte) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := webhookClient.Do(req)
 	if err != nil {
 		return err
 	}

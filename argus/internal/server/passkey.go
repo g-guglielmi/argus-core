@@ -93,6 +93,11 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "passkeys are not enabled on this server"})
 		return
 	}
+	// Adding a passkey adds a way into the account, so it takes the password again: a session alone
+	// (a borrowed browser, a stolen cookie) can't plant a key that outlives a password change.
+	if !s.reauth(w, r) {
+		return
+	}
 	ctx := r.Context()
 	caller, _ := auth.UserFrom(ctx)
 	u, err := s.st.UserByID(ctx, caller.ID)
@@ -105,9 +110,12 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
+	// A passkey signs a user in on its own (no TOTP prompt), which is only sound when the
+	// authenticator verified the user (PIN, fingerprint, face): possession + verification are the two
+	// factors. So verification is required, at registration and at every login.
 	sel := protocol.AuthenticatorSelection{
 		ResidentKey:      protocol.ResidentKeyRequirementRequired,
-		UserVerification: protocol.VerificationPreferred,
+		UserVerification: protocol.VerificationRequired,
 	}
 	options, sessionData, err := s.wa.BeginRegistration(wu, webauthn.WithAuthenticatorSelection(sel))
 	if err != nil {
@@ -175,7 +183,7 @@ func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	ctx := r.Context()
-	options, sessionData, err := s.wa.BeginDiscoverableLogin()
+	options, sessionData, err := s.wa.BeginDiscoverableLogin(webauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not start passkey login"})
 		return
@@ -220,6 +228,12 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 		return
 	}
 	_ = s.st.DeleteWebAuthnSession(ctx, sid)
+	// A signature counter that didn't move forward means a second copy of this credential is in use.
+	if cred.Authenticator.CloneWarning {
+		s.logger.Warn("passkey login refused: credential may be cloned", "user", loggedIn.Email)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "passkey login failed"})
+		return
+	}
 	if blob, err := json.Marshal(cred); err == nil {
 		_ = s.st.UpdatePasskeyCredential(ctx, cred.ID, string(blob))
 	}

@@ -152,6 +152,22 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Per-user + multi-site notifications** - personal Telegram/Discord channels each user self-manages in **Account** (their own @BotFather bot / webhook, `/api/me/notify/*`, encrypted at rest); an email channel can deliver to **every registered user's** address; and channels (global + personal) can target **multiple sites** via a hierarchical picker where selecting a probe's root group covers its subgroups. Lays the groundwork for the mobile push channel (§I). - v0.4.35
 
 ### G. Scale & production readiness
+- [x] **Security review, wave 1 (core)** - a static review of the three repositories; the core-side
+  fixes shipped together: reset links never built from the request's Host, validated probe settings,
+  sessions ended on disable / password change, passkeys with user verification (and no TOTP bypass),
+  unconditional cross-site check + JSON-only bodies, security headers + CSP, Secure `__Host-` cookies
+  by default over https, trusted-proxy `true` limited to private peers, admin-only `/api/health`,
+  Discord-only webhooks with no redirects, write-only channel secrets, redacted Telegram tokens, SNMP
+  community hidden from viewers, fail-closed at-rest encryption with a canary and a reset switch,
+  atomic enrollment tokens, macro patterns for command-line values, validated updater tags. See
+  DESIGN section 4. - _(BE+FE)_ M
+- [ ] **Security review, wave 2 (probe image, updater, appliances, supply chain)** - stop sourcing
+  `proxy.env` as shell (validate, keep it root-owned); https-only check-in on the probe side; a
+  one-time setup code on the first-boot pages; SSH password login off and no docker group on the
+  appliance users; image tags validated in the updater, digest hand-out and cosign signing +
+  verification; pinned actions/installers, job-level workflow permissions, `:latest` only from main;
+  UniFi controller keys scoped per site; TLS pinning for UniFi/XAPI; passwords off argv; an
+  intermediate enrollment CA. Each probe/updater change is a fleet release. - _(ops+BE)_ M-L
 - [ ] **Sizing pass** before the ~6000-sensor deployment (proxies, DB, caches, NVPS) - analysis
 - [ ] **Server-side census/counts** - move the `/api/sensors` full census server-side at scale - _(BE)_ M
 - [ ] **Probe process autoscaling** - size each probe's Zabbix process counts (ICMP pingers first,

@@ -35,11 +35,46 @@ type channelView struct {
 	SentCount   int64  `json:"sent_count,omitempty"`
 }
 
-func toChannelView(c store.NotifyChannel) channelView {
-	cfg := c.Config
-	if cfg == nil {
-		cfg = map[string]string{}
+// channelSecretKeys are the config keys that are credentials. They're stored encrypted and never
+// read back out: a view carries "<key>_set" instead, and a blank value on update keeps the stored
+// one. So a session (or whoever reads its traffic) can use a channel but not copy its secret.
+var channelSecretKeys = map[string]bool{"password": true, "bot_token": true, "webhook_url": true}
+
+// maskChannelConfig returns cfg with every secret replaced by a "<key>_set" flag.
+func maskChannelConfig(cfg map[string]string) map[string]string {
+	out := make(map[string]string, len(cfg)+1)
+	for k, v := range cfg {
+		if channelSecretKeys[k] {
+			if v != "" {
+				out[k+"_set"] = "true"
+			}
+			continue
+		}
+		out[k] = v
 	}
+	return out
+}
+
+// keepChannelSecrets fills a submitted config's blank secrets from the stored one, and drops the
+// "_set" flags a view carries so they never get stored.
+func keepChannelSecrets(submitted, stored map[string]string) map[string]string {
+	out := make(map[string]string, len(submitted))
+	for k, v := range submitted {
+		if strings.HasSuffix(k, "_set") && channelSecretKeys[strings.TrimSuffix(k, "_set")] {
+			continue
+		}
+		out[k] = v
+	}
+	for k := range channelSecretKeys {
+		if strings.TrimSpace(out[k]) == "" && stored[k] != "" {
+			out[k] = stored[k]
+		}
+	}
+	return out
+}
+
+func toChannelView(c store.NotifyChannel) channelView {
+	cfg := maskChannelConfig(c.Config)
 	return channelView{
 		ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Sites: c.Sites, MinSeverity: c.MinSeverity,
 		DelayMin: c.DelayMin, RepeatMin: c.RepeatMin, RepeatSev: c.RepeatSev, Alerts: c.Alerts, Notices: c.Notices, Config: cfg,
@@ -163,6 +198,9 @@ func (req channelRequest) validate() (store.NotifyChannel, string) {
 			return store.NotifyChannel{}, "recipients must be 'fixed' or 'users'"
 		}
 	}
+	if t == "discord" && strings.TrimSpace(cfg["webhook_url"]) != "" && !notify.ValidDiscordWebhook(cfg["webhook_url"]) {
+		return store.NotifyChannel{}, notify.DiscordWebhookHint
+	}
 	// The notifier never alerts below Warning, so clamp the floor to 2..5 (Warning..Disaster).
 	sev := alertLevel(req.MinSeverity)
 	delay, repeat := clampEscalation(req.DelayMin, req.RepeatMin)
@@ -182,6 +220,7 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
+	req.Config = keepChannelSecrets(req.Config, nil)
 	ch, msg := req.validate()
 	if msg != "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
@@ -198,7 +237,8 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 	id := atoi64(r.PathValue("id"))
-	if _, err := s.st.GetNotifyChannel(r.Context(), id); err != nil {
+	cur, err := s.st.GetNotifyChannel(r.Context(), id)
+	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "channel not found"})
 		return
 	}
@@ -207,6 +247,7 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
+	req.Config = keepChannelSecrets(req.Config, cur.Config)
 	ch, msg := req.validate()
 	if msg != "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
@@ -263,7 +304,7 @@ func (s *Server) handleTestChannel(w http.ResponseWriter, r *http.Request) {
 	// A test counts as a delivery attempt too, so the card's health line reflects it either way.
 	_ = s.st.RecordNotifyDelivery(ctx, id, err)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": notify.Redact(err.Error())})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})

@@ -81,10 +81,29 @@ func (s *Server) handleMFAEnable(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/me/mfa/disable - turn MFA off (re-auth with the account password).
 func (s *Server) handleMFADisable(w http.ResponseWriter, r *http.Request) {
-	if !s.reauth(w, r) {
+	caller, _ := auth.UserFrom(r.Context())
+	var req struct {
+		Password string `json:"password"`
+		Code     string `json:"code"`
+	}
+	if !decode(w, r, &req) {
 		return
 	}
-	caller, _ := auth.UserFrom(r.Context())
+	u, err := s.st.UserByID(r.Context(), caller.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if ok, err := auth.VerifyPassword(req.Password, u.PasswordHash); err != nil || !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "password is incorrect"})
+		return
+	}
+	// Turning the second factor off takes the second factor: a password alone (the thing MFA
+	// guards against being enough) can't remove it.
+	if u.TOTPEnabled && !mfa.Validate(req.Code, u.TOTPSecret) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "that code isn't valid - check your authenticator and try again"})
+		return
+	}
 	if err := s.st.DisableTOTP(r.Context(), caller.ID); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return

@@ -262,9 +262,10 @@ docker run -d \
 > **stable** - changing it makes existing encrypted values unreadable.
 >
 > **`ARGUS_TRUST_PROXY`** is required behind a reverse proxy for correct client addresses:
-> `true` for one proxy, or the proxies' addresses / networks (`10.0.0.2,10.0.5.0/24`) for a chain
-> like NetScaler in front of HAProxy (ensure the proxy sends `X-Forwarded-For`). Also editable in
-> **Settings -> Reverse proxy**.
+> `true` for one proxy on the LAN or the same host, or the proxies' addresses / networks
+> (`10.0.0.2,10.0.5.0/24`) for a chain like NetScaler in front of HAProxy (ensure the proxy sends
+> `X-Forwarded-For`). Leave it empty when people reach Argus directly. Also editable in
+> **Settings -> Reverse proxy**. With an https Public URL, session cookies are `Secure` by default.
 
 #### 2c. Verify
 

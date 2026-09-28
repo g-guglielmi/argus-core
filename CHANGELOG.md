@@ -11,6 +11,74 @@ GitHub Release from the matching section below.
 
 ---
 
+## [Unreleased]
+
+Security hardening from a code review of the three repositories (wave 1: the core). Nothing here
+changes what Argus monitors; what changes is who can make it do things, and what leaves it.
+
+**Security:**
+- **Password-reset links** are built from the Public URL, or from the address the request was made
+  to only when that address is one Argus is known by (Allowed FQDNs and IPs, localhost). Before,
+  with no Public URL, the link pointed at whatever `Host` the request carried, which the sender
+  chooses: a reset asked for a victim's address could deliver the token to the attacker's server.
+  With neither set, no reset email is sent (and the login page hides "Forgot password").
+- **Probe settings can't carry anything but an address.** "Probe core host" must be a host or
+  `host:port` (it is written into every probe's configuration), the check-in URL handed to probes
+  comes from the Public URL alone, and a seed ISO's values are validated the same way.
+- **Disabling a user, resetting their password (admin) or changing your own** ends the affected
+  sessions at once. Before, a disabled account kept working until its session expired.
+- **Passkeys require user verification** (PIN, fingerprint, face) at registration and at every
+  login: a passkey signs in without a TOTP prompt, which is only sound when the authenticator
+  verified the user. A key whose signature counter didn't advance (a cloned credential) is refused.
+  Adding a passkey asks for the password again; turning two-factor off asks for a current code too.
+- **A TOTP code works once.** The time step of the last accepted code is kept per user.
+- **Cross-site requests are refused on every state-changing API call**, not only once Allowed
+  FQDNs and IPs is filled in: the browser's `Sec-Fetch-Site`/`Origin` must be Argus's own, and a
+  body must be JSON. This closes a sibling-subdomain write and a login-CSRF form post.
+- **Security headers** on the app and the API: a Content-Security-Policy (no inline scripts; the
+  theme bootstrap moved to a file), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: same-origin`, a `Permissions-Policy`, and `Cache-Control: no-store` on `/api`.
+- **Session cookies follow the Public URL:** `Secure` by default when it is https (the
+  `ARGUS_COOKIE_SECURE` switch still wins), and named `__Host-argus_session` then, which a browser
+  only accepts from a secure, path-wide, domain-less setter. Everyone signs in again once.
+- **Trusted proxies:** `true` now believes forwarded headers only from a private or loopback peer
+  (a proxy beside Argus); a public peer is a direct client whatever it sends. A forwarded value that
+  isn't an address is ignored. The Unraid template no longer defaults the setting to `true`.
+- `/api/health` (the Zabbix version and connection error) is admin-only; `/healthz` stays public.
+- **Discord webhooks must be `https://discord.com/api/webhooks/...`** (also `discordapp.com`, ptb,
+  canary), on admin and personal channels alike; the sender refuses anything else and never follows
+  a redirect. Before, any signed-in user could point a personal channel at an address inside the
+  network and have the core post there.
+- **Channel secrets are write-only:** the SMTP password, Telegram bot token and Discord webhook are
+  never sent back to the browser (a "set" flag is); editing a channel with the field blank keeps the
+  stored one. A Telegram token that surfaced inside a transport error is redacted before the error
+  is logged, shown or sent as a system notice.
+- **Viewers no longer receive SNMP communities** in host settings or proxy defaults (blank for them,
+  like the v3 passphrases are for everyone).
+- **At-rest encryption fails closed:** a key that doesn't match the database stops Argus at start
+  with a clear message instead of running with unreadable secrets (and handing ciphertext out as
+  tokens); an unreadable value decrypts to nothing, never to its ciphertext; a corrupt `secret.key`
+  is reported, not silently replaced. `ARGUS_SECRET_KEY_RESET=true` drops the unreadable secrets
+  once so credentials can be entered again (two-factor is switched off for the users affected).
+- **Enrollment tokens are claimed atomically**, so two probes racing with the same token can't both
+  enrol; a failed enrollment hands the token back. The error a probe sees no longer carries Zabbix's
+  internal detail (it is in the log).
+- **Device-class settings that reach a command line** (the SSH user, port and key path) must match a
+  pattern; a threshold must be a plain number (`ParseFloat` also took `NaN`, `Inf` and hex, which
+  silently turned a sensor's triggers "unknown"); creating a host accepts only the class's own
+  macros, its thresholds and the HTTP add-on, as editing already did.
+- Updater image tags handed to the sidecars must be `latest`, `testing` or a version.
+- Smaller: SMTP in `starttls` mode refuses a server that doesn't offer STARTTLS instead of sending
+  in clear; a probe's certificate request must carry an RSA key of 2048 bits or more (or an EC key);
+  Discord messages escape Markdown in host names, sites and acknowledgement notes; Zabbix and GitHub
+  responses are size-bounded; expired sessions, second-factor challenges, reset links and passkey
+  ceremonies are pruned; `foreign_keys`/`busy_timeout` apply to every SQLite connection, not only the
+  first; the database file is 0600; the HTTP write timeout covers the longest handlers.
+
+**Changed:**
+- Adding a passkey and turning two-factor off ask for the password (and a current code); Discord
+  webhooks must be Discord's own; channel credentials can't be read back out of Argus.
+
 ## [0.5.12] - 2026-09-28
 
 **Changed:**

@@ -255,6 +255,10 @@ func (s *Server) handleUpdaterSelfUpdate(w http.ResponseWriter, r *http.Request)
 	if tag == "" {
 		tag = "latest"
 	}
+	if !validImageTag.MatchString(tag) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": `tag must be "latest", "testing" or a version like 0.2.5`})
+		return
+	}
 	by := ""
 	if u, ok := auth.UserFrom(r.Context()); ok {
 		by = u.Email

@@ -97,13 +97,13 @@ type hostConfigView struct {
 	ProxyName     string               `json:"proxy_name,omitempty"`
 	ProxyDefault  *snmpView            `json:"proxy_default,omitempty"` // the host's proxy SNMP default (masked), if set
 	Interfaces    []ifaceView          `json:"interfaces"`
-	ClassID       string               `json:"class_id,omitempty"`    // device class, when known
-	ClassLabel    string               `json:"class_label,omitempty"` // human label for the class macro section
-	Macros        []macroFieldView     `json:"macros,omitempty"`      // class-declared per-host macros + current values
-	Thresholds    []thresholdFieldView `json:"thresholds,omitempty"`  // per-host threshold overrides (§D)
-	AddOns        []addOnView          `json:"addons,omitempty"`      // optional Argus templates toggleable on this host
-	VMNames       []string             `json:"vm_names,omitempty"`    // xcpng: discovered VM names, for the ignored-VMs checklist
-	Categories    []string             `json:"categories,omitempty"`  // the host's curated sensor categories, in effective order (§D)
+	ClassID       string               `json:"class_id,omitempty"`       // device class, when known
+	ClassLabel    string               `json:"class_label,omitempty"`    // human label for the class macro section
+	Macros        []macroFieldView     `json:"macros,omitempty"`         // class-declared per-host macros + current values
+	Thresholds    []thresholdFieldView `json:"thresholds,omitempty"`     // per-host threshold overrides (§D)
+	AddOns        []addOnView          `json:"addons,omitempty"`         // optional Argus templates toggleable on this host
+	VMNames       []string             `json:"vm_names,omitempty"`       // xcpng: discovered VM names, for the ignored-VMs checklist
+	Categories    []string             `json:"categories,omitempty"`     // the host's curated sensor categories, in effective order (§D)
 	CategoryOrder []string             `json:"category_order,omitempty"` // stored per-host order override (empty = inheriting)
 	Master        *masterView          `json:"master,omitempty"`         // the host's master sensor (notifier dependency)
 }
@@ -184,6 +184,17 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 	inherit, _ := s.st.SNMPInheritMap(ctx)
 	for _, i := range hd.Interfaces {
 		out.Interfaces = append(out.Interfaces, ifaceView{InterfaceID: i.InterfaceID, Type: i.Type, UseIP: i.UseIP, IP: i.IP, DNS: i.DNS, Port: i.Port, SNMP: snmpToView(i.SNMP), Inherit: i.Type == 2 && inherit[i.InterfaceID]})
+	}
+	// A viewer reads the configuration but not its credentials (see canEditHosts).
+	if !canEditHosts(r) {
+		if out.ProxyDefault != nil {
+			out.ProxyDefault.Community = ""
+		}
+		for _, i := range out.Interfaces {
+			if i.SNMP != nil {
+				i.SNMP.Community = ""
+			}
+		}
 	}
 
 	// The host's own macros, fetched once and reused for the class-macro, threshold and HTTP sections.
@@ -297,11 +308,11 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var req struct {
-		Host          string            `json:"host"`
-		Name          string            `json:"name"`
-		MonitoredBy   int               `json:"monitored_by"`
-		ProxyID       string            `json:"proxy_id"`
-		Interfaces    []ifaceView       `json:"interfaces"`
+		Host          string                  `json:"host"`
+		Name          string                  `json:"name"`
+		MonitoredBy   int                     `json:"monitored_by"`
+		ProxyID       string                  `json:"proxy_id"`
+		Interfaces    []ifaceView             `json:"interfaces"`
 		Macros        map[string]string       `json:"macros"`         // class macro / threshold name -> desired value (only known macros are applied)
 		CategoryOrder *[]string               `json:"category_order"` // §D per-host order; nil = leave as-is, [] = clear override
 		AddOns        map[string]addOnDesired `json:"addons"`         // add-on id -> desired {enabled, macros}; nil = leave as-is
@@ -604,15 +615,17 @@ func (s *Server) applyClassMacros(ctx context.Context, hostID string, desired ma
 	// Editable macros = the class's declared macros (some secret) plus its threshold macros (§D, all
 	// text: the class's templates + Base Ping). Nothing else the host carries is ever touched.
 	type editableMacro struct {
-		macro  string
-		secret bool
+		macro     string
+		secret    bool
+		threshold bool
+		spec      provision.MacroSpec
 	}
 	editable := make([]editableMacro, 0, len(class.Macros)+8)
 	seen := map[string]bool{}
 	for _, ms := range class.Macros {
 		if !seen[ms.Macro] {
 			seen[ms.Macro] = true
-			editable = append(editable, editableMacro{ms.Macro, ms.Secret})
+			editable = append(editable, editableMacro{macro: ms.Macro, secret: ms.Secret, spec: ms})
 		}
 	}
 	tset := class.HostTemplates()
@@ -620,7 +633,7 @@ func (s *Server) applyClassMacros(ctx context.Context, hostID string, desired ma
 		for _, sp := range tt.Specs {
 			if !seen[sp.Macro] {
 				seen[sp.Macro] = true
-				editable = append(editable, editableMacro{sp.Macro, false})
+				editable = append(editable, editableMacro{macro: sp.Macro, threshold: true})
 			}
 		}
 	}
@@ -641,6 +654,13 @@ func (s *Server) applyClassMacros(ctx context.Context, hostID string, desired ma
 			continue // the client didn't include this macro; leave it as-is
 		}
 		v = strings.TrimSpace(v)
+		if ms.threshold {
+			if v != "" && !provision.ValidThresholdValue(v) {
+				return fmt.Errorf("%s must be a plain number", ms.macro)
+			}
+		} else if err := provision.ValidateMacroValue(ms.spec, v); err != nil {
+			return err
+		}
 		existing, has := cur[ms.macro]
 		mType := 0
 		if ms.secret {

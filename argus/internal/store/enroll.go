@@ -109,6 +109,29 @@ func (s *Store) MarkEnrollTokenUsed(ctx context.Context, id int64) error {
 	return err
 }
 
+// ClaimEnrollToken redeems a token by hash in one statement, so two enrollments racing for the
+// same token can't both succeed: the claim (unused, unexpired -> used now) is the check. It
+// returns the claimed token, or ErrNotFound when it was invalid, used or expired.
+func (s *Store) ClaimEnrollToken(ctx context.Context, tokenHash string, now time.Time) (*EnrollToken, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE enroll_tokens SET used_at=? WHERE token_hash=? AND used_at IS NULL AND expires_at>?`,
+		now.Unix(), tokenHash, now.Unix())
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return nil, ErrNotFound
+	}
+	return s.EnrollTokenByHash(ctx, tokenHash)
+}
+
+// ReleaseEnrollToken returns a claimed token to unused, when the enrollment it was claimed for
+// failed after the claim (a Zabbix error), so the operator can retry with the same token.
+func (s *Store) ReleaseEnrollToken(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE enroll_tokens SET used_at=NULL WHERE id=?`, id)
+	return err
+}
+
 // DeleteEnrollToken revokes/removes a token.
 func (s *Store) DeleteEnrollToken(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM enroll_tokens WHERE id=?`, id)

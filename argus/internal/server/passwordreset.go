@@ -34,23 +34,54 @@ func (s *Server) firstEmailChannel(ctx context.Context) *store.NotifyChannel {
 	return nil
 }
 
-// baseURL is the external origin for building links in emails: the configured Public URL, else
-// the request's own scheme+host.
+// baseURL is the external origin for building links that leave Argus (a reset email, the enroll
+// command shown to an admin): the configured Public URL, else the request's own scheme and host,
+// but only when that host is one Argus is known by (the Allowed FQDNs and IPs list, or loopback).
+// A request's Host header is the client's to choose, so an unknown one yields "" rather than a
+// link to wherever the client said: with it, anyone could ask for a password reset for a victim
+// and have the email's button point at their own server, where the token lands at one click.
 func (s *Server) baseURL(r *http.Request) string {
 	if p := s.mgr.PublicURL(); p != "" {
 		return p
+	}
+	trusted := s.fromTrustedProxy(r)
+	host := requestHost(r, trusted)
+	if host == "" || !hostAllowed(host, s.mgr.AllowedHosts(), "") {
+		return ""
 	}
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	if s.fromTrustedProxy(r) {
-		if xf := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); xf != "" {
+	if trusted {
+		if xf := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))); xf == "https" || xf == "http" {
 			scheme = xf
 		}
 	}
-	if r.Host != "" {
-		return scheme + "://" + r.Host
+	raw := r.Host
+	if trusted {
+		if xf := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Host"), ",")[0]); xf != "" {
+			raw = xf
+		}
+	}
+	return scheme + "://" + raw
+}
+
+// probeBaseURL is the origin handed to probes for their check-in URL. Probes write it into their
+// own configuration, so it comes from the Public URL alone, never from a request: "" when unset,
+// and the probe then derives the check-in URL from the enroll URL it already dialled.
+func (s *Server) probeBaseURL() string {
+	p := strings.TrimRight(s.mgr.PublicURL(), "/")
+	if p != "" && !strings.HasPrefix(strings.ToLower(p), "https://") {
+		s.logger.Warn("the Public URL is not https: probes will check in over plain HTTP, exposing their tokens", "public_url", p)
+	}
+	return p
+}
+
+// probeCheckinURL is the check-in URL handed to probes, or "" when there is no Public URL.
+func (s *Server) probeCheckinURL() string {
+	if p := s.probeBaseURL(); p != "" {
+		return p + "/api/probes/checkin"
 	}
 	return ""
 }
@@ -151,7 +182,7 @@ func (s *Server) handleConfirmPasswordReset(w http.ResponseWriter, r *http.Reque
 
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
-	uid, err := s.st.PasswordResetUserID(ctx, auth.HashToken(req.Token))
+	uid, err := s.st.ConsumePasswordReset(ctx, auth.HashToken(req.Token))
 	if err != nil {
 		s.loginLimiter.Fail(ipKey)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "This reset link is invalid or has expired. Request a new one."})

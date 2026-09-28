@@ -16,6 +16,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,6 +25,13 @@ import (
 )
 
 const marker = "enc:v1:"
+
+// Marker is the prefix every encrypted value carries.
+const Marker = marker
+
+// ErrWrongKey is returned when a marked value doesn't open with this cipher: the key changed, or
+// the value is corrupt.
+var ErrWrongKey = errors.New("stored secret does not open with the current key")
 
 type Cipher struct {
 	aead    cipher.AEAD
@@ -44,7 +53,9 @@ func newFromKey(key []byte) (*Cipher, error) {
 // Load resolves the encryption key and returns a cipher plus a short source label for logging.
 // ARGUS_SECRET_KEY (any string, hashed to 32 bytes) takes precedence and keeps the key off the
 // data volume. Otherwise a random key is generated once and persisted to <dataDir>/secret.key
-// (mode 0600) so encryption is on by default with zero configuration.
+// (mode 0600) so encryption is on by default with zero configuration. An existing keyfile that
+// can't be read as a key is an error, never replaced: a new key would strand everything the old
+// one encrypted, and the file is the only copy.
 func Load(envKey, dataDir string) (*Cipher, string, error) {
 	if strings.TrimSpace(envKey) != "" {
 		sum := sha256.Sum256([]byte(envKey))
@@ -52,17 +63,31 @@ func Load(envKey, dataDir string) (*Cipher, string, error) {
 		return c, "env", err
 	}
 	path := filepath.Join(dataDir, "secret.key")
-	if b, err := os.ReadFile(path); err == nil {
-		if key, err := hex.DecodeString(strings.TrimSpace(string(b))); err == nil && len(key) == 32 {
-			c, err := newFromKey(key)
-			return c, "keyfile", err
+	b, err := os.ReadFile(path)
+	if err == nil {
+		key, derr := hex.DecodeString(strings.TrimSpace(string(b)))
+		if derr != nil || len(key) != 32 {
+			return nil, "", fmt.Errorf("%s is not a valid key (64 hex characters); restore it from a backup, or move it away to start over with new secrets", path)
 		}
+		c, err := newFromKey(key)
+		return c, "keyfile", err
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, "", fmt.Errorf("read %s: %w", path, err)
 	}
 	key := make([]byte, 32)
 	if _, err := io.ReadFull(rand.Reader, key); err != nil {
 		return nil, "", err
 	}
-	if err := os.WriteFile(path, []byte(hex.EncodeToString(key)), 0o600); err != nil {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return nil, "", fmt.Errorf("create %s: %w", path, err)
+	}
+	if _, err := f.Write([]byte(hex.EncodeToString(key))); err != nil {
+		f.Close()
+		return nil, "", err
+	}
+	if err := f.Close(); err != nil {
 		return nil, "", err
 	}
 	c, err := newFromKey(key)
@@ -82,29 +107,46 @@ func (c *Cipher) Encrypt(plaintext string) string {
 	}
 	nonce := make([]byte, c.aead.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return plaintext
+		// crypto/rand doesn't fail on any supported platform; if it ever does, storing the secret in
+		// the clear is not an acceptable fallback.
+		panic("secret: random nonce: " + err.Error())
 	}
 	ct := c.aead.Seal(nonce, nonce, []byte(plaintext), nil)
 	return marker + base64.StdEncoding.EncodeToString(ct)
 }
 
-// Decrypt reverses Encrypt. Unmarked (plaintext) values pass through, as do marked values when the
-// cipher is unavailable or the payload is corrupt (returned as-is rather than panicking).
-func (c *Cipher) Decrypt(s string) string {
-	if !IsEncrypted(s) || c == nil || !c.enabled {
-		return s
+// TryDecrypt reverses Encrypt. Unmarked (plaintext) values pass through. A marked value that
+// doesn't open (wrong key, corrupt payload, cipher disabled) is ErrWrongKey.
+func (c *Cipher) TryDecrypt(s string) (string, error) {
+	if !IsEncrypted(s) {
+		return s, nil
+	}
+	if c == nil || !c.enabled {
+		return "", ErrWrongKey
 	}
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(s, marker))
 	if err != nil {
-		return s
+		return "", ErrWrongKey
 	}
 	ns := c.aead.NonceSize()
 	if len(raw) < ns {
-		return s
+		return "", ErrWrongKey
 	}
 	pt, err := c.aead.Open(nil, raw[:ns], raw[ns:], nil)
 	if err != nil {
-		return s
+		return "", ErrWrongKey
 	}
-	return string(pt)
+	return string(pt), nil
+}
+
+// Decrypt is TryDecrypt for callers that treat an unreadable secret as absent: it returns "" for
+// a marked value that doesn't open, never the ciphertext (which would then be used as a password,
+// a token, an HMAC key). Startup verifies the key against a canary, so this only happens on a
+// corrupt row.
+func (c *Cipher) Decrypt(s string) string {
+	pt, err := c.TryDecrypt(s)
+	if err != nil {
+		return ""
+	}
+	return pt
 }

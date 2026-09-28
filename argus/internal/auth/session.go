@@ -15,7 +15,24 @@ import (
 	"argus/internal/store"
 )
 
-const CookieName = "argus_session"
+// CookieName is the session cookie; over HTTPS it carries the __Host- prefix, which the browser
+// only honours when the cookie is Secure, has Path=/ and no Domain - so a plain-HTTP page or a
+// sibling subdomain can't set one that Argus would then read.
+const (
+	CookieName       = "argus_session"
+	SecureCookieName = "__Host-" + CookieName
+)
+
+// SessionCookie returns the raw session token carried by a request, checking the secure name
+// first, and "" when there is none.
+func SessionCookie(r *http.Request) string {
+	for _, name := range []string{SecureCookieName, CookieName} {
+		if c, err := r.Cookie(name); err == nil && c.Value != "" {
+			return c.Value
+		}
+	}
+	return ""
+}
 
 type ctxKey int
 
@@ -44,8 +61,8 @@ func HashToken(raw string) string {
 func Middleware(st *store.Store, idle, maxLife func() time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if c, err := r.Cookie(CookieName); err == nil && c.Value != "" {
-				if u, err := st.SessionUserTouch(r.Context(), HashToken(c.Value), idle(), maxLife(), time.Now()); err == nil {
+			if raw := SessionCookie(r); raw != "" {
+				if u, err := st.SessionUserTouch(r.Context(), HashToken(raw), idle(), maxLife(), time.Now()); err == nil {
 					r = r.WithContext(context.WithValue(r.Context(), userKey, u))
 				}
 			}
@@ -97,8 +114,12 @@ func RequireRoles(next http.HandlerFunc, roles ...string) http.HandlerFunc {
 }
 
 func SetSessionCookie(w http.ResponseWriter, raw string, secure bool, ttl time.Duration) {
+	name := CookieName
+	if secure {
+		name = SecureCookieName
+	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     CookieName,
+		Name:     name,
 		Value:    raw,
 		Path:     "/",
 		HttpOnly: true,
@@ -108,14 +129,12 @@ func SetSessionCookie(w http.ResponseWriter, raw string, secure bool, ttl time.D
 	})
 }
 
+// ClearSessionCookie expires both names, so a sign-out works whichever one the browser holds.
 func ClearSessionCookie(w http.ResponseWriter, secure bool) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     CookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   secure,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1,
+		Name: SecureCookieName, Value: "", Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: -1,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name: CookieName, Value: "", Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: -1,
 	})
 }

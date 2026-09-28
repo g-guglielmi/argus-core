@@ -77,10 +77,13 @@ func (s SMTP) Send(ctx context.Context, to []string, msg []byte) error {
 	defer c.Close()
 
 	if mode == "starttls" {
-		if ok, _ := c.Extension("STARTTLS"); ok {
-			if err := c.StartTLS(&tls.Config{ServerName: s.Host}); err != nil {
-				return fmt.Errorf("email: starttls: %w", err)
-			}
+		// The upgrade is the point of this mode: a server (or someone in between) that doesn't offer
+		// it must not get the message in clear. Use tls "none" to send in clear on purpose.
+		if ok, _ := c.Extension("STARTTLS"); !ok {
+			return fmt.Errorf("email: the server does not offer STARTTLS (set the channel's tls to \"none\" to send in clear on purpose)")
+		}
+		if err := c.StartTLS(&tls.Config{ServerName: s.Host}); err != nil {
+			return fmt.Errorf("email: starttls: %w", err)
 		}
 	}
 
