@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.5.13] - 2026-09-29
 
 Security hardening from a code review of the three repositories (wave 1: the core). Nothing here
 changes what Argus monitors; what changes is who can make it do things, and what leaves it.
