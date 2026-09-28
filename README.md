@@ -261,8 +261,10 @@ docker run -d \
 > **`ARGUS_SECRET_KEY`** encrypts stored secrets at rest; keep it off the data volume and
 > **stable** - changing it makes existing encrypted values unreadable.
 >
-> **`ARGUS_TRUST_PROXY=true`** is required behind a reverse proxy for correct client-IP
-> rate limiting (ensure the proxy sends `X-Forwarded-For`).
+> **`ARGUS_TRUST_PROXY`** is required behind a reverse proxy for correct client addresses:
+> `true` for one proxy, or the proxies' addresses / networks (`10.0.0.2,10.0.5.0/24`) for a chain
+> like NetScaler in front of HAProxy (ensure the proxy sends `X-Forwarded-For`). Also editable in
+> **Settings -> Reverse proxy**.
 
 #### 2c. Verify
 

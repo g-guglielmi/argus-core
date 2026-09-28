@@ -41,6 +41,7 @@ const (
 	KeySessionIdle   = "session_idle_minutes"
 	KeyAllowedHosts  = "allowed_hosts"
 	KeyAlertDelay    = "alert_delay_seconds"
+	KeyTrustProxy    = "trust_proxy"
 )
 
 const metaPrefix = "setting:"
@@ -69,6 +70,7 @@ var defs = []def{
 	{KeySessionIdle, "ARGUS_SESSION_IDLE_MINUTES", "Idle timeout (minutes)", "Sessions", "int", false, "0", "Sign out after this long with no activity. 0 disables the idle timeout.", 0},
 	{KeyAllowedHosts, "ARGUS_TRUSTED_ORIGINS", "FQDNs and IPs", "Access", "hostlist", false, "", "The FQDNs or IPs people type in the browser's address bar to open Argus, comma-separated (a pasted URL is reduced to its host). Empty turns the check off (any address works). The Public URL's host and localhost are always allowed, and probes are never checked. To recover from a lockout, set ARGUS_TRUSTED_ORIGINS=* and restart.", 0},
 	{KeyAlertDelay, "ARGUS_ALERT_DELAY_SECONDS", "Alert delay (seconds)", "Alerting", "int", false, "60", "How long a problem must last before anyone is notified, so a brief blip doesn't alert. 0 alerts at once. \"No data\" alerts skip it: their own period already is the wait.", 0},
+	{KeyTrustProxy, "ARGUS_TRUST_PROXY", "Trusted proxies", "Proxy", "proxylist", false, "", "Leave empty when people reach Argus directly. true = one reverse proxy in front of Argus (the client is the address it adds to X-Forwarded-For). Or list the proxies' addresses or networks, comma-separated, e.g. 10.0.0.2, 10.0.5.0/24: forwarded headers then count only from them, and a chain of proxies (NetScaler -> HAProxy -> Argus) resolves to the real client.", 0},
 	{KeyProbeCoreHost, "ARGUS_PROBE_CORE_HOST", "Probe core host", "Probe enrollment", "text", false, "", "Address probes dial for :10051 (host or host:port). Prefer an IP: the proxy re-resolves this on every data send, so an FQDN here generates heavy DNS load. Baked into new enrollments and re-synced to existing probes at their next restart. Falls back to the Public URL host if empty.", 0},
 }
 
@@ -120,6 +122,7 @@ type Manager struct {
 	sessionIdle   time.Duration
 	allowedHosts  []string // nil = the allowed-hosts check is off
 	alertDelay    time.Duration
+	trustProxy    TrustProxy
 }
 
 // New builds the manager, creates the login limiter, loads any stored overrides, and applies
@@ -199,6 +202,13 @@ func (m *Manager) AlertDelay() time.Duration {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.alertDelay
+}
+
+// TrustProxy is which reverse proxies Argus believes about the client, host and scheme.
+func (m *Manager) TrustProxy() TrustProxy {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.trustProxy
 }
 
 // List returns every setting's current state for the admin UI.
@@ -308,6 +318,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	sessIdleMin := atoiClamp(effective(snap[KeySessionIdle]), 0, 0)
 	allowed, _ := ParseHostList(effective(snap[KeyAllowedHosts])) // validated on the way in
 	alertDelayS := atoiClamp(effective(snap[KeyAlertDelay]), 60, 0)
+	trust, _, _ := ParseTrustProxy(effective(snap[KeyTrustProxy])) // validated on the way in
 
 	// Apply to the live subsystems (each is independently lock-guarded).
 	m.zbx.Configure(zURL, zTok)
@@ -322,6 +333,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	m.sessionIdle = time.Duration(sessIdleMin) * time.Minute
 	m.allowedHosts = allowed
 	m.alertDelay = time.Duration(alertDelayS) * time.Second
+	m.trustProxy = trust
 	m.mu.Unlock()
 	return nil
 }
@@ -383,6 +395,10 @@ func normalize(d def, v string) string {
 		if list, err := ParseHostList(v); err == nil {
 			return strings.Join(list, ", ")
 		}
+	case "proxylist":
+		if _, text, err := ParseTrustProxy(v); err == nil {
+			return text // "" (off) is stored as the default
+		}
 	}
 	return v
 }
@@ -396,6 +412,10 @@ func validate(d def, v string) error {
 		}
 	case "hostlist":
 		if _, err := ParseHostList(v); err != nil {
+			return err
+		}
+	case "proxylist":
+		if _, _, err := ParseTrustProxy(v); err != nil {
 			return err
 		}
 	case "tz":

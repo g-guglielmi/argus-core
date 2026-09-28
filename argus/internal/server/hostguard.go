@@ -103,7 +103,7 @@ func hostGuardVerdict(r *http.Request, list []string, publicURL string, trustPro
 // hostGuard applies hostGuardVerdict in front of every route.
 func (s *Server) hostGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if ok, msg := hostGuardVerdict(r, s.mgr.AllowedHosts(), s.mgr.PublicURL(), s.cfg.TrustProxy); !ok {
+		if ok, msg := hostGuardVerdict(r, s.mgr.AllowedHosts(), s.mgr.PublicURL(), s.fromTrustedProxy(r)); !ok {
 			s.logger.Warn("request refused by the allowed FQDNs and IPs list", "host", r.Host, "origin", r.Header.Get("Origin"), "path", r.URL.Path, "ip", s.clientIP(r))
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": msg})
 			return

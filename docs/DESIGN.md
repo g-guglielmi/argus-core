@@ -120,7 +120,15 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
   anyone out; the Public URL host and loopback are always allowed; the probes' machine endpoints
   (enroll, check-in, OS status, break-glass, scan results) are never checked; a save that would lock
   out the admin making it is refused; `ARGUS_TRUSTED_ORIGINS=*` is the recovery switch. Behind a
-  trusted proxy (`ARGUS_TRUST_PROXY`) the host comes from `X-Forwarded-Host`.
+  trusted proxy the host comes from `X-Forwarded-Host`.
+- **Trusted proxies** (`ARGUS_TRUST_PROXY`, Settings -> Reverse proxy): empty = none (socket address
+  is the client, forwarded headers ignored); `true` = one proxy from anywhere (the client is the LAST
+  `X-Forwarded-For` entry, the one that proxy appended); or a list of proxy addresses / networks:
+  forwarded headers count only on a connection from one of them, and the client is found by walking
+  `X-Forwarded-For` (every copy of the header) from the right past listed proxies, so a chain like
+  NetScaler -> HAProxy -> Argus resolves to the real client. Entries left of the first untrusted
+  address are the client's to forge and never believed. Feeds the login rate limit, status pages'
+  allowed networks, Allowed FQDNs and IPs (`X-Forwarded-Host`) and reset links (`X-Forwarded-Proto`).
 - **Passkey caveat (accepted):** WebAuthn RP IDs must be a domain, not a bare IP.
   → Passkey login works via `monitoring.example.com`; direct **private-IP** access
   (troubleshooting) falls back to **password + MFA**.
@@ -996,9 +1004,8 @@ A read-only dashboard for a wall screen, opened with a secret link instead of a 
   `ARGUS_COOKIE_SECURE`, lasting until the page expires or ~400 days) and redirects to a clean
   `/status`, so the token doesn't sit in the address bar, history suggestions or screenshots.
   **New link** (rotate) or deleting the page kills it, cookie included.
-- **Limits:** optional allowed networks (CIDRs, checked against the client IP: behind a proxy with
-  `ARGUS_TRUST_PROXY`, the LAST `X-Forwarded-For` entry, the one the proxy appended; earlier entries
-  are the client's to forge) and an optional expiry; a page shows only its sites (host groups, a root
+- **Limits:** optional allowed networks (CIDRs, checked against the client IP as resolved through the
+  trusted proxies, see section 4) and an optional expiry; a page shows only its sites (host groups, a root
   covering its subgroups).
 - **Content:** `/status/data`, built from the same active-problem list and sensor census as the app
   (hidden and paused hosts left out), cached 20 s per page: one row per open problem (kind error /

@@ -29,11 +29,17 @@ GitHub Release from the matching section below.
     endpoint (never the app's API), and is kept out of search engines and other sites' frames. It
     uses the app's colours.
 
+**Changed:**
+- **Trusted proxies** are a setting now (**Settings -> Reverse proxy**, still `ARGUS_TRUST_PROXY`,
+  which locks it). Besides `true` (one proxy), it takes the proxies' addresses or networks, like
+  `10.0.0.2, 10.0.5.0/24`: forwarded headers then count only from those, and a chain of proxies
+  (NetScaler in front of HAProxy) resolves to the real client.
+
 **Fixed:**
-- Behind a reverse proxy (`ARGUS_TRUST_PROXY=true`), Argus took the client's address from the first
-  `X-Forwarded-For` entry, which the client itself can set. It now takes the last one, the address
-  the proxy actually saw, so the address can't be faked to dodge the login rate limit or a status
-  page's network list.
+- Behind a reverse proxy, Argus took the client's address from the first `X-Forwarded-For` entry,
+  which the client itself can set. It now reads from the right, where the proxies add the address
+  they actually saw, so the address can't be faked to dodge the login rate limit or a status page's
+  network list.
 
 ## [0.5.10] - 2026-09-28
 

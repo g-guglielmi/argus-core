@@ -1593,6 +1593,7 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
     { name: 'Security', title: 'Login rate limiting', note: 'Brute-force protection thresholds.' },
     { name: 'Sessions', title: 'Sessions', note: 'How long a sign-in stays valid. Changes take effect immediately, including for existing sessions: lowering the max length can sign users out on their next request.' },
     { name: 'Access', title: 'Allowed FQDNs and IPs', note: "The addresses people type in the browser's address bar to open Argus, like monitoring.example.com or 10.0.0.10. With a list set, Argus refuses API requests for any other address and changes coming from other sites, which blocks DNS-rebinding and cross-site attacks." },
+    { name: 'Proxy', title: 'Reverse proxy', note: "Which proxies in front of Argus it believes about who is connecting (X-Forwarded-For) and which address and scheme they used (X-Forwarded-Host / -Proto). That feeds the login rate limit, status pages' allowed networks and Allowed FQDNs and IPs. List your proxies' addresses when there's more than one, like NetScaler in front of HAProxy." },
     { name: 'Probe enrollment', title: 'Probe enrollment', note: 'The address new probes are told to dial for the Zabbix server (:10051).' },
   ]
 

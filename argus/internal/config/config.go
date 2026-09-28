@@ -28,7 +28,6 @@ type Config struct {
 	// Login rate limiting (brute-force protection).
 	LoginMaxAttempts int           // ARGUS_LOGIN_MAX_ATTEMPTS, failures before a temporary block
 	LoginWindow      time.Duration // ARGUS_LOGIN_WINDOW_MINUTES, the sliding window
-	TrustProxy       bool          // ARGUS_TRUST_PROXY, use X-Forwarded-For for the client IP
 
 	// Probe enrollment (token-based PKI). When the CA files are mounted, Argus can sign probe
 	// CSRs and register their proxies in Zabbix. CAKeyFile is the crown jewel - mount read-only.
@@ -72,7 +71,6 @@ func Load() Config {
 		CookieSecure:  envBool("ARGUS_COOKIE_SECURE", false),
 		LoginMaxAttempts: envInt("ARGUS_LOGIN_MAX_ATTEMPTS", 7),
 		LoginWindow:      time.Duration(envInt("ARGUS_LOGIN_WINDOW_MINUTES", 15)) * time.Minute,
-		TrustProxy:       envBool("ARGUS_TRUST_PROXY", false),
 		CACertFile:       env("ARGUS_CA_CERT_FILE", ""),
 		CAKeyFile:        env("ARGUS_CA_KEY_FILE", ""),
 		RPID:          env("ARGUS_RP_ID", ""),

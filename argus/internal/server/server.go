@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -374,36 +373,17 @@ func normalizeLanding(v string) string {
 	return "overview"
 }
 
-// clientIP returns the caller's IP, honouring X-Forwarded-For only when TrustProxy is set
-// (Argus behind a reverse proxy like HAProxy). Otherwise it uses the direct socket address.
-//
-// It takes the LAST address in X-Forwarded-For (across every copy of the header): that is the one the
-// trusted proxy itself appended - the address that actually connected to it. Anything before it came
-// from the client and can be forged, so trusting the first entry would let anyone pick their own IP
-// (dodging the login rate limit, or a status page's network allowlist).
+// clientIP returns the caller's IP. Behind trusted reverse proxies (Settings -> Trusted proxies,
+// ARGUS_TRUST_PROXY) it's read from X-Forwarded-For from the right, past the proxies' own addresses;
+// entries further left came from the client and can be forged (they'd let anyone pick their IP to
+// dodge the login rate limit or a status page's network list). Otherwise it's the socket address.
 func (s *Server) clientIP(r *http.Request) string {
-	if s.cfg.TrustProxy {
-		if ip := lastForwardedFor(r.Header.Values("X-Forwarded-For")); ip != "" {
-			return ip
-		}
-	}
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
-	}
-	return r.RemoteAddr
+	return s.mgr.TrustProxy().ClientIP(r.RemoteAddr, r.Header.Values("X-Forwarded-For"))
 }
 
-// lastForwardedFor is the rightmost address across X-Forwarded-For header values ("" if none).
-func lastForwardedFor(values []string) string {
-	for i := len(values) - 1; i >= 0; i-- {
-		parts := strings.Split(values[i], ",")
-		for j := len(parts) - 1; j >= 0; j-- {
-			if p := strings.TrimSpace(parts[j]); p != "" {
-				return p
-			}
-		}
-	}
-	return ""
+// fromTrustedProxy reports whether a request's forwarded headers (host, scheme) may be believed.
+func (s *Server) fromTrustedProxy(r *http.Request) bool {
+	return s.mgr.TrustProxy().Trusts(r.RemoteAddr)
 }
 
 // rateBlocked returns true (and writes a 429 with Retry-After) if any key is currently throttled.

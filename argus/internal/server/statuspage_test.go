@@ -12,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"argus/internal/settings"
 	"argus/internal/store"
+	"argus/internal/zabbix"
 )
 
 func TestNormalizeCIDRs(t *testing.T) {
@@ -54,8 +56,12 @@ func TestStatusLinkFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	s := &Server{st: st}
 	ctx := context.Background()
+	mgr, err := settings.New(ctx, st, zabbix.New("", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{st: st, mgr: mgr}
 	token := newStatusToken()
 	id, err := st.CreateStatusPage(ctx, store.StatusPage{Name: "Rack", AllowCIDRs: "10.0.0.0/24"}, token)
 	if err != nil {
@@ -102,6 +108,27 @@ func TestStatusLinkFlow(t *testing.T) {
 	if w := open("/status", "10.9.9.9:4000", ck); w.Code != http.StatusForbidden {
 		t.Fatalf("other network: %d", w.Code)
 	}
+	// Behind a trusted proxy the allowlist checks the real client, not the proxy.
+	if err := mgr.Set(ctx, map[string]string{settings.KeyTrustProxy: "192.168.9.1"}); err != nil {
+		t.Fatal(err)
+	}
+	viaProxy := func(xff string) int {
+		r := httptest.NewRequest("GET", "/status", nil)
+		r.RemoteAddr = "192.168.9.1:4000"
+		r.Header.Set("X-Forwarded-For", xff)
+		r.AddCookie(ck)
+		w := httptest.NewRecorder()
+		s.handleStatusPage(w, r)
+		return w.Code
+	}
+	if code := viaProxy("10.0.0.5"); code != http.StatusOK {
+		t.Fatalf("LAN client via proxy: %d", code)
+	}
+	if code := viaProxy("10.0.0.5, 203.0.113.9"); code != http.StatusForbidden {
+		t.Fatalf("outside client forging a LAN address via proxy: %d", code)
+	}
+	_ = mgr.Set(ctx, map[string]string{settings.KeyTrustProxy: ""})
+
 	if w := open("/status/wrong-token", "10.0.0.5:4000", nil); w.Code != http.StatusNotFound {
 		t.Fatalf("wrong token: %d", w.Code)
 	}
@@ -154,22 +181,3 @@ func TestReachabilityReading(t *testing.T) {
 	}
 }
 
-// Behind a proxy the client's own address is the last X-Forwarded-For entry (the one the proxy added);
-// earlier entries are the client's to forge.
-func TestLastForwardedFor(t *testing.T) {
-	cases := []struct {
-		in   []string
-		want string
-	}{
-		{[]string{"203.0.113.7"}, "203.0.113.7"},
-		{[]string{"10.0.0.5, 203.0.113.7"}, "203.0.113.7"},
-		{[]string{"10.0.0.5", "203.0.113.7"}, "203.0.113.7"}, // a proxy that adds its own header line
-		{[]string{"203.0.113.7, "}, "203.0.113.7"},
-		{nil, ""},
-	}
-	for _, c := range cases {
-		if got := lastForwardedFor(c.in); got != c.want {
-			t.Errorf("lastForwardedFor(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}

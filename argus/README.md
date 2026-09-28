@@ -77,8 +77,10 @@ docker run -d \
 > **Passkeys** (`ARGUS_RP_*`) need HTTPS + a real domain - omit them for a plain-HTTP/IP setup and
 > Argus falls back to password + TOTP. **`ARGUS_SECRET_KEY`** encrypts stored secrets at rest;
 > keep it off the volume and **stable** (changing it makes existing encrypted values unreadable).
-> **`ARGUS_TRUST_PROXY=true`** is required behind a reverse proxy for correct client-IP rate
-> limiting (ensure the proxy sends `X-Forwarded-For`).
+> **`ARGUS_TRUST_PROXY`** is required behind a reverse proxy for correct client addresses (login
+> rate limiting, status pages' allowed networks): `true` for one proxy, or the proxies' addresses or
+> networks (`10.0.0.2,10.0.5.0/24`) for a chain like NetScaler in front of HAProxy. Ensure the proxy
+> sends `X-Forwarded-For`. Also editable in **Settings -> Reverse proxy**.
 >
 > **Probe enrollment** (optional): mount the monitoring CA (`ca.crt` + `ca.key` from
 > `gen-certs.sh`) read-only and set `ARGUS_CA_CERT_FILE` / `ARGUS_CA_KEY_FILE` so Argus can sign
@@ -138,7 +140,7 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 |---|---|---|
 | `ARGUS_COOKIE_SECURE` | `false` | set `true` when served over HTTPS (Secure session cookie) |
 | `ARGUS_SECRET_KEY` | *(empty)* | key for at-rest encryption of stored secrets. Empty ⇒ auto keyfile on the volume; set a long random value (e.g. `openssl rand -hex 32`) to keep the key off the volume. **Keep it stable.** |
-| `ARGUS_TRUST_PROXY` | `false` | read the client IP from `X-Forwarded-For`, and the requested host from `X-Forwarded-Host` for Allowed FQDNs and IPs (set `true` behind a reverse proxy) |
+| `ARGUS_TRUST_PROXY` | *(empty)* | _(UI)_ reverse proxies to believe: empty = none, `true` = one proxy, or a comma-separated list of proxy addresses / networks (only connections from those count, and `X-Forwarded-For` is read from the right past them, so a proxy chain resolves to the real client). Feeds the client IP (rate limiting, status-page networks) and `X-Forwarded-Host` / `-Proto` |
 | `ARGUS_LOGIN_MAX_ATTEMPTS` | `7` | _(UI)_ failed logins per window before throttling |
 | `ARGUS_LOGIN_WINDOW_MINUTES` | `15` | _(UI)_ rate-limit sliding window |
 | `ARGUS_SESSION_MAX_HOURS` | `12` | _(UI)_ absolute session lifetime before re-authentication is required |
