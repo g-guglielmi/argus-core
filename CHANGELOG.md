@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.5.10] - 2026-09-28
 
 **Added:**
 - **System notices.** Argus can now tell you about itself, as neutral `[INFO]` messages sent once
@@ -29,6 +29,10 @@ GitHub Release from the matching section below.
   A probe's notices follow the channel's sites. A condition that clears and comes back is told
   again.
 - A channel's alert level can be **None**, for a channel that only carries system notices.
+
+**Changed:**
+- While the status pills load after opening Argus (it reads every sensor, so it takes a moment),
+  they show your last visit's counts, dimmed, instead of a row of zeros.
 
 ## [0.5.9] - 2026-09-28
 
