@@ -486,6 +486,14 @@ func reading(ctx context.Context, zbx *zabbix.Client, itemID string, noData bool
 	if noData {
 		return noDataSince(atoi64(it.LastClock), now), ""
 	}
+	if it.Key == defaultMasterKey { // ping reachability is 1/0, which reads as nothing on its own
+		switch strings.TrimSpace(it.LastValue) {
+		case "0":
+			return "No reply to ping", ""
+		case "1":
+			return "Replying to ping", ""
+		}
+	}
 	return notify.FormatReading(it.LastValue, it.Units), it.Units
 }
 

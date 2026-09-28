@@ -55,6 +55,7 @@ GitHub Release from the matching section below.
 - Sensors from Zabbix's own templates that count seconds but declare no unit (like a proxy's "Last
   seen, in seconds") now read in seconds in the app, on charts and in alerts, instead of a bare
   number.
+- A ping alert reads "No reply to ping" instead of a bare 0.
 - Alert thresholds carry the sensor's unit, scaled like the reading: "688 s (threshold >600 s)",
   "96 % (threshold >90 %)".
 
