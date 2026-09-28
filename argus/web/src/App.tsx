@@ -1455,10 +1455,10 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           </button>
           <div><h1>{title}</h1><div className="sub">{sub}</div></div>
           <div className="summary">
-            {chip('ok', ic.ok, 'var(--ok)', okN, 'OK')}
-            {chip('warning', ic.warn, 'var(--warn)', warnN, 'Warnings')}
             {chip('error', ic.err, 'var(--err)', errN, 'Errors')}
             {chip('acked', ic.acked, 'var(--acked)', ackN, 'Acknowledged')}
+            {chip('warning', ic.warn, 'var(--warn)', warnN, 'Warnings')}
+            {chip('ok', ic.ok, 'var(--ok)', okN, 'OK')}
             <span className="statdiv" />
             {chip('paused', ic.paused, 'var(--paused)', pausedN, 'Paused')}
             {chip('hidden', ic.hidden, 'var(--hidden)', hiddenN, 'Hidden')}

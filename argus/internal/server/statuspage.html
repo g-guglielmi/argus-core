@@ -7,6 +7,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <title>Argus status</title>
+<link rel="icon" id="favicon" href="data:,">
 <style>
   /* The Argus dark palette (web/src/theme.css), so the screen reads like the app. */
   :root {
@@ -21,14 +22,15 @@
 
   header { display: flex; align-items: center; gap: 0.9em; padding: 0.35em 1em; border-bottom: 1px solid var(--border); background: var(--panel); }
   .brand { font-weight: 800; letter-spacing: 0.18em; font-size: 0.72em; color: var(--accent); }
-  h1 { margin: 0; font-size: 1.05em; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pills { display: flex; gap: 0.45em; margin-left: auto; }
-  .pill { display: inline-flex; align-items: center; gap: 0.45em; padding: 0.2em 0.75em; border-radius: 999px; border: 1px solid var(--border);
-    background: var(--elev); color: var(--text); font: inherit; font-weight: 700; cursor: pointer; font-variant-numeric: tabular-nums; }
-  .pill .dot { width: 0.6em; height: 0.6em; border-radius: 50%; }
-  .pill.error .dot { background: var(--err); } .pill.warning .dot { background: var(--warn); } .pill.acked .dot { background: var(--acked); }
-  .pill.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--elev)); }
-  .pill.error.hot { color: var(--err); }
+  header { min-height: 2.4em; }
+  /* Pills take their state's colour. The one shown is solid with a white ring; the others are
+     softened, and one with nothing in it fades further. */
+  .pill { display: inline-flex; align-items: center; gap: 0.4em; padding: 0.2em 0.8em; border-radius: 999px; border: 2px solid transparent;
+    color: #fff; font: inherit; font-weight: 700; cursor: pointer; font-variant-numeric: tabular-nums; opacity: 0.6; }
+  .pill.error { background: var(--err); } .pill.warning { background: var(--warn); color: #1a1406; } .pill.acked { background: var(--acked); color: #1d1010; }
+  .pill.zero { opacity: 0.35; }
+  .pill.on { opacity: 1; border-color: #fff; }
   .clock { text-align: right; line-height: 1.1; white-space: nowrap; }
   .clock .time { font-size: 1.05em; font-weight: 700; font-variant-numeric: tabular-nums; }
   .clock .upd { font-size: 0.68em; color: var(--muted); }
@@ -67,11 +69,10 @@
 <body>
 <header>
   <span class="brand">ARGUS</span>
-  <h1 id="title">Status</h1>
   <div class="pills" id="pills" hidden>
-    <button class="pill error" data-kind="error" title="Errors"><span class="dot"></span><span class="n">0</span> Errors</button>
-    <button class="pill warning" data-kind="warning" title="Warnings"><span class="dot"></span><span class="n">0</span> Warnings</button>
-    <button class="pill acked" data-kind="acked" title="Acknowledged"><span class="dot"></span><span class="n">0</span> Acknowledged</button>
+    <button class="pill error" data-kind="error" title="Errors"><span class="n">0</span> Errors</button>
+    <button class="pill acked" data-kind="acked" title="Acknowledged"><span class="n">0</span> Acknowledged</button>
+    <button class="pill warning" data-kind="warning" title="Warnings"><span class="n">0</span> Warnings</button>
   </div>
   <div class="clock"><div class="time" id="clock"></div><div class="upd" id="upd"></div></div>
 </header>
@@ -99,6 +100,17 @@
     document.getElementById('upd').textContent = lastOK ? 'Updated ' + ago(lastOK) + ' ago' : '';
   }
 
+  // The tab icon says it at a glance: a green check with no errors, a red "!" with any (warnings and
+  // acknowledged problems don't change it).
+  var lastIcon = null;
+  function setFavicon(ok) {
+    if (ok === lastIcon) return; lastIcon = ok;
+    var svg = ok
+      ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="#3fa66a"/><path d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+      : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="#e2564d"/><path d="M16 8.5v10" stroke="#fff" stroke-width="3.8" stroke-linecap="round"/><circle cx="16" cy="23.5" r="2.2" fill="#fff"/></svg>';
+    document.getElementById('favicon').setAttribute('href', 'data:image/svg+xml,' + encodeURIComponent(svg));
+  }
+
   function setKind(k) {
     kind = k; page = 0;
     try { localStorage.setItem('argus-status-kind', k); } catch (e) {}
@@ -111,15 +123,15 @@
   function render() {
     if (!data) return;
     tz = data.timezone || undefined;
-    document.getElementById('title').textContent = data.name;
     document.title = data.name + ' · Argus status';
     var c = data.counts || {};
     document.getElementById('pills').hidden = false;
     Array.prototype.forEach.call(document.querySelectorAll('.pill'), function (b) {
       var k = b.getAttribute('data-kind');
       b.querySelector('.n').textContent = c[k] || 0;
-      b.className = 'pill ' + k + (k === kind ? ' on' : '') + (k === 'error' && c.error ? ' hot' : '');
+      b.className = 'pill ' + k + (k === kind ? ' on' : '') + (c[k] ? '' : ' zero');
     });
+    setFavicon(!c.error);
     var rows = (data.issues || []).filter(function (i) { return i.kind === kind; });
     var main = document.getElementById('main'); main.textContent = '';
     if (!rows.length) {

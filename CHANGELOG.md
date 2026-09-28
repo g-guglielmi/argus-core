@@ -27,9 +27,11 @@ GitHub Release from the matching section below.
     old one out at once; deleting the page does too.
   - The page shows only its sites, never addresses, credentials or settings, reads through its own
     endpoint (never the app's API), and is kept out of search engines and other sites' frames. It
-    uses the app's colours.
+    uses the app's colours: the pills are filled with their state's colour, and the tab icon is a
+    green check with no errors and a red "!" with any.
 
 **Changed:**
+- The status pills read by urgency: Errors, Acknowledged, Warnings, OK (then Paused and Hidden).
 - **Trusted proxies** are a setting now (**Settings -> Reverse proxy**, still `ARGUS_TRUST_PROXY`,
   which locks it). Besides `true` (one proxy), it takes the proxies' addresses or networks, like
   `10.0.0.2, 10.0.5.0/24`: forwarded headers then count only from those, and a chain of proxies
