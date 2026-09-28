@@ -11,7 +11,7 @@ GitHub Release from the matching section below.
 
 ---
 
-## [Unreleased]
+## [0.5.12] - 2026-09-28
 
 **Changed:**
 - Status pages list the same rows as the Overview, in the same order (priority first): each sensor
@@ -22,6 +22,8 @@ GitHub Release from the matching section below.
 - A problem that belongs to no sensor (a Zabbix agent or SNMP endpoint that stopped answering) now
   shows in the Overview and counts in the status pills, as a "Zabbix agent" or "SNMP" row. Before,
   only the host's problem list and the status pages had it, so the counts disagreed.
+- Reachability sensors read as words in the Overview, the status pages and alerts: "No reply to
+  ping", "Not reachable" (the HTTP/HTTPS check and the collectors' reachable flags) instead of 0 or 1.
 
 ## [0.5.11] - 2026-09-28
 
