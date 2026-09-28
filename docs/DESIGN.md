@@ -381,6 +381,15 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   since the problem began, or its last ping failed. A problem held by a down master waits out the
   alert delay again (at least 90 s) after the master recovers, so readings that settle while a device
   or probe reconnects don't alert; a held problem that is still open after that alerts normally.
+- **Argus-raised problems:** Zabbix raises no problem when monitoring itself stops, so Argus adds its
+  own, shaped like Zabbix problems (event ids `argus-unsupported-<item>` / `argus-interface-<iface>`)
+  and merged into the notifier's list, the Overview and the host page: a sensor **not supported** for
+  10 minutes (Warning; `item_unsupported` records since when, as Zabbix doesn't say) and an **agent /
+  SNMP / IPMI / JMX interface** Zabbix marks unavailable (High, timed from its `errors_from`). The
+  reading is Zabbix's error. Acks stay in Argus (no Zabbix event to mirror). Those present when the
+  feature arrived were baselined. Supported sensors with no new values are deliberately not alerted:
+  many store only changes, so an old last value is normal; a silent device or probe is caught by its
+  master instead.
 - **Deliveries decide the follow-ups:** `notify_deliveries` records which channels an alert reached.
   Reminders, the **acknowledged notice** (`[ACKNOWLEDGED]` with who took it and their note, sent once
   per ack; an un-ack re-arms it and resumes reminders) and the **recovery** go to exactly those

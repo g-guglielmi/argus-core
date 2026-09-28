@@ -219,18 +219,7 @@ func (s *Server) masterConfig(ctx context.Context, hostID string, items []zabbix
 		if len(trigs[it.ItemID]) == 0 {
 			continue
 		}
-		label := it.Name
-		if _, l, inst, ch, ok := classifyItem(it.Key, it.Name); ok && l != "" {
-			label = l
-			// Add the channel (or instance) only when the label doesn't already name it:
-			// "Reachable (ICMP)", not "Reachable (ICMP) · Reachable".
-			if ch != "" && !strings.Contains(l, ch) {
-				label += " · " + ch
-			} else if ch == "" && inst != "" && !strings.Contains(l, inst) {
-				label += " · " + inst
-			}
-		}
-		v.Options = append(v.Options, masterOption{ID: it.ItemID, Label: label})
+		v.Options = append(v.Options, masterOption{ID: it.ItemID, Label: sensorLabel(it.Key, it.Name)})
 	}
 	sort.SliceStable(v.Options, func(i, j int) bool { return naturalLess(v.Options[i].Label, v.Options[j].Label) })
 	v.ItemID = v.DefaultID

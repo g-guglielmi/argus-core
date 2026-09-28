@@ -630,16 +630,67 @@ func (c *Client) AllProblems(ctx context.Context) ([]Problem, error) {
 
 // TriggerTarget is the host(s) and item(s) a trigger references.
 type TriggerTarget struct {
-	Expression string `json:"expression"` // trigger expression (used to extract a threshold)
-	Hosts      []struct {
-		HostID string `json:"hostid"`
-		Name   string `json:"name"`
-		Status string `json:"status"` // "0" monitored, "1" disabled (paused)
-	} `json:"hosts"`
-	Items []struct {
-		ItemID string `json:"itemid"`
-		Key    string `json:"key_"`
-	} `json:"items"`
+	Expression string       `json:"expression"` // trigger expression (used to extract a threshold)
+	Hosts      []TargetHost `json:"hosts"`
+	Items      []TargetItem `json:"items"`
+}
+
+// TargetHost is a host a trigger (or an Argus-raised problem) is on.
+type TargetHost struct {
+	HostID string `json:"hostid"`
+	Name   string `json:"name"`
+	Status string `json:"status"` // "0" monitored, "1" disabled (paused)
+}
+
+// TargetItem is a sensor a trigger (or an Argus-raised problem) is on.
+type TargetItem struct {
+	ItemID string `json:"itemid"`
+	Key    string `json:"key_"`
+}
+
+// UnsupportedItem is an enabled sensor on a monitored host that Zabbix can't collect ("not
+// supported"), with Zabbix's reason.
+type UnsupportedItem struct {
+	ItemID string       `json:"itemid"`
+	HostID string       `json:"hostid"`
+	Name   string       `json:"name"`
+	Key    string       `json:"key_"`
+	Error  string       `json:"error"`
+	Hosts  []TargetHost `json:"hosts"`
+}
+
+// UnsupportedItems returns every enabled, "not supported" sensor on a monitored host.
+func (c *Client) UnsupportedItems(ctx context.Context) ([]UnsupportedItem, error) {
+	params := map[string]any{
+		"output":      []string{"itemid", "hostid", "name", "key_", "error"},
+		"selectHosts": []string{"hostid", "name", "status"},
+		"filter":      map[string]any{"state": 1, "status": 0},
+		"monitored":   true,
+	}
+	var items []UnsupportedItem
+	return items, c.call(ctx, "item.get", params, true, &items)
+}
+
+// UnavailableInterface is a host interface Zabbix has marked unavailable (the agent, SNMP, IPMI or
+// JMX endpoint stopped answering), with the reason and since when.
+type UnavailableInterface struct {
+	InterfaceID string       `json:"interfaceid"`
+	HostID      string       `json:"hostid"`
+	Type        string       `json:"type"` // 1 agent, 2 SNMP, 3 IPMI, 4 JMX
+	Error       string       `json:"error"`
+	ErrorsFrom  string       `json:"errors_from"`
+	Hosts       []TargetHost `json:"hosts"`
+}
+
+// UnavailableInterfaces returns every interface Zabbix currently reports as unavailable.
+func (c *Client) UnavailableInterfaces(ctx context.Context) ([]UnavailableInterface, error) {
+	params := map[string]any{
+		"output":      []string{"interfaceid", "hostid", "type", "error", "errors_from"},
+		"selectHosts": []string{"hostid", "name", "status"},
+		"filter":      map[string]any{"available": 2},
+	}
+	var out []UnavailableInterface
+	return out, c.call(ctx, "hostinterface.get", params, true, &out)
 }
 
 // TriggerTargets maps trigger ids to their host(s) and item(s), for the cross-host problem list.

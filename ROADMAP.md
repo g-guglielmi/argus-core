@@ -183,9 +183,11 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   for its whole site, including Zabbix's own per-proxy checks. Held alerts go out normally once the
   master is back and they're still open.
   - _(FE+BE)_ M
-- [ ] **Alerts for sensors that stop collecting** - a sensor that goes "not supported" or stops
-  getting new values raises no Zabbix problem (triggers just go unknown), so nothing alerts today
-  (seen on a NUT sensor). Argus raises its own alert for it. - _(BE)_ S-M
+- [ ] **Alerts for sensors that stop collecting** - a sensor that goes "not supported" (a failing
+  collector, seen on a NUT sensor) or an agent/SNMP endpoint that stops answering raises no Zabbix
+  problem, so nothing alerted. Argus raises its own problems for both (not supported for 10 min =
+  warning, interface unavailable = error), shown and acknowledged like any other. Supported sensors
+  with old values are left alone: many store only changes. - _(BE)_ S-M
 - [ ] **System notices** - Argus's own events as neutral `[INFO]` messages, sent once (no reminders,
   no recovery): a new Argus release and self-update success/failure; a probe or updater behind, and
   probe self-update success/failure; pending security updates or a needed reboot on the core or a

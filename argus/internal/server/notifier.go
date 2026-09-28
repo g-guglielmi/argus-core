@@ -26,6 +26,8 @@ const (
 	// Set once the alerts already firing when per-channel delivery tracking arrived were credited to the
 	// channels that got them under the old "every matching channel" routing, so they still resolve there.
 	notifyDeliveriesKey = "notifier_deliveries_backfilled"
+	// Set once the Argus-raised problems present when they were introduced were baselined.
+	notifySynthBaselineKey = "notifier_synth_baseline"
 )
 
 // StartNotifier runs the alerting loop: it polls Zabbix problems, applies the same
@@ -134,6 +136,18 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		tids = append(tids, p.ObjectID)
 	}
 	targets, _ := zbx.TriggerTargets(ctx, tids)
+	// Argus-raised problems (a sensor that stopped collecting, an unreachable agent) join Zabbix's. The
+	// first time this runs, the ones already present are baselined like a fresh install's problems.
+	synth := syntheticProblems(ctx, st, zbx, true)
+	if _, done, _ := st.MetaGet(ctx, notifySynthBaselineKey); !done {
+		for _, p := range synth.problems {
+			_ = st.UpsertNotifyState(ctx, store.NotifyState{
+				EventID: p.EventID, Name: p.Name, Severity: atoi(p.Severity), State: "baseline", FirstSeen: time.Now().Unix(),
+			})
+		}
+		_ = st.MetaSet(ctx, notifySynthBaselineKey, "1")
+	}
+	problems, targets = synth.merge(problems, targets)
 	hiddenHosts, _ := st.ActiveSuppressionMap(ctx, "hide", "host")
 	hiddenItems, _ := st.ActiveSuppressionMap(ctx, "hide", "item")
 	acked, _ := st.ActiveSuppressionMap(ctx, "ack", "event")
@@ -358,6 +372,9 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			continue
 		}
 		value, units := reading(ctx, zbx, itemID, isNoData, now.In(loc))
+		if r, ok := synth.readings[p.EventID]; ok {
+			value, units = r, "" // Zabbix's reason says more than the sensor's stale value
+		}
 		base := notify.Event{
 			Kind: "problem", Severity: sev, State: severityState(sev),
 			Host: hostName, Name: p.Name, Site: primarySite(groups), When: time.Unix(atoi64(p.Clock), 0).In(loc),

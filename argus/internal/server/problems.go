@@ -44,6 +44,8 @@ func (s *Server) handleProblems(w http.ResponseWriter, r *http.Request) {
 		tids = append(tids, p.ObjectID)
 	}
 	targets, _ := s.zbx.TriggerTargets(ctx, tids)
+	// Argus-raised problems: sensors that stopped collecting, unreachable agents/SNMP.
+	problems, targets = syntheticProblems(ctx, s.st, s.zbx, false).merge(problems, targets)
 	hiddenHosts, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 	hiddenItems, _ := s.st.ActiveSuppressionMap(ctx, "hide", "item")
 	acked, _ := s.st.ActiveSuppressionMap(ctx, "ack", "event")

@@ -308,6 +308,13 @@ CREATE TABLE IF NOT EXISTS tree_hidden (
 -- UI) or 'discovered' (the §B pipeline).
 -- Per-host master sensor override (notifier dependency): while the master is down, the host's other
 -- alerts are held. No row = the default master (the ICMP ping sensor); item_id '' = no master.
+-- Since when each sensor has been "not supported" (Zabbix doesn't say), so Argus can alert on one that
+-- stays that way and time the incident. Rows go when the sensor collects again.
+CREATE TABLE IF NOT EXISTS item_unsupported (
+  item_id TEXT PRIMARY KEY,
+  since   INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS host_masters (
   host_id TEXT PRIMARY KEY,
   item_id TEXT NOT NULL DEFAULT ''

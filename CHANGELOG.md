@@ -31,6 +31,17 @@ GitHub Release from the matching section below.
   - A probe that isn't reporting holds the alerts of every device at its site, and Zabbix's own
     "proxy last seen" checks for it, so a probe outage sends only the probe's own alerts and one
     recovery.
+- **Alerts when monitoring stops working.** Zabbix raises no problem for these, so nothing alerted
+  until now:
+  - a sensor that stays **not supported** for 10 minutes (a collector script that fails or times
+    out, like a UPS sensor losing its NUT server): a warning, "<sensor> stopped collecting", with
+    Zabbix's reason as the reading;
+  - a device's **Zabbix agent or SNMP** that stops answering while the device itself is up: an
+    error, "Zabbix agent not reachable" or "SNMP not responding", with Zabbix's reason.
+
+  Both show in the Overview and on the host like any problem, and can be acknowledged; while the
+  device is down, its master sensor holds them. Sensors already not supported when you update count
+  as known and don't alert.
 - **Alert delay setting.** How long a problem must last before anyone is notified (60 seconds until
   now, fixed) is now in **Settings -> Alerting** (`ARGUS_ALERT_DELAY_SECONDS`).
 

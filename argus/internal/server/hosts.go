@@ -251,6 +251,24 @@ func (s *Server) handleHostProblems(w http.ResponseWriter, r *http.Request) {
 	itemsByTrigger, _ := s.zbx.TriggerItems(ctx, tids)
 	acked, _ := s.st.ActiveSuppressionMap(ctx, "ack", "event") // Argus is the ack source of truth
 
+	// Argus-raised problems on this host (a sensor that stopped collecting, an unreachable agent).
+	synth := syntheticProblems(ctx, s.st, s.zbx, false)
+	if itemsByTrigger == nil {
+		itemsByTrigger = map[string][]string{}
+	}
+	for _, p := range synth.problems {
+		t := synth.targets[p.ObjectID]
+		if len(t.Hosts) == 0 || t.Hosts[0].HostID != r.PathValue("id") {
+			continue
+		}
+		ids := []string{}
+		for _, it := range t.Items {
+			ids = append(ids, it.ItemID)
+		}
+		itemsByTrigger[p.ObjectID] = ids
+		problems = append(problems, p)
+	}
+
 	out := make([]problemView, 0, len(problems))
 	for _, p := range problems {
 		sev := atoi(p.Severity)
@@ -301,7 +319,7 @@ func (s *Server) ackEvent(ctx context.Context, eventID string, by int64, note st
 	if err := s.st.SetSuppression(ctx, "ack", "event", eventID, by, note, until); err != nil {
 		return err
 	}
-	if s.zbx.Authenticated() {
+	if s.zbx.Authenticated() && !isSynthetic(eventID) { // Argus-raised problems have no Zabbix event
 		c, cancel := context.WithTimeout(ctx, 12*time.Second)
 		defer cancel()
 		_ = s.zbx.AcknowledgeEvent(c, eventID, note)
@@ -313,7 +331,7 @@ func (s *Server) ackEvent(ctx context.Context, eventID string, by int64, note st
 func (s *Server) handleUnackEvent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	_ = s.st.ClearSuppression(r.Context(), "ack", "event", id)
-	if s.zbx.Authenticated() {
+	if s.zbx.Authenticated() && !isSynthetic(id) {
 		ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 		defer cancel()
 		_ = s.zbx.UnacknowledgeEvent(ctx, id) // best-effort mirror
@@ -762,3 +780,5 @@ func (s *Server) handleItemHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func atoi64(s string) int64 { n, _ := strconv.ParseInt(s, 10, 64); return n }
+
+func itoa64(n int64) string { return strconv.FormatInt(n, 10) }

@@ -121,3 +121,24 @@ func TestAlertLevelMigration(t *testing.T) {
 		t.Fatalf("after migrate: min %d, remind %d", c.MinSeverity, c.RepeatSev)
 	}
 }
+
+// SyncUnsupported keeps the first time a sensor was seen unsupported, and forgets it once it collects.
+func TestSyncUnsupported(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	first, err := st.SyncUnsupported(ctx, []string{"a", "b"})
+	if err != nil || len(first) != 2 {
+		t.Fatalf("first sync: %v %v", first, err)
+	}
+	if _, err := st.db.Exec(`UPDATE item_unsupported SET since=100 WHERE item_id='a'`); err != nil {
+		t.Fatal(err)
+	}
+	second, err := st.SyncUnsupported(ctx, []string{"a"})
+	if err != nil || second["a"] != 100 || len(second) != 1 {
+		t.Fatalf("second sync must keep a's start and drop b: %v %v", second, err)
+	}
+	all, _ := st.UnsupportedSince(ctx)
+	if _, has := all["b"]; has || all["a"] != 100 {
+		t.Fatalf("table after sync: %v", all)
+	}
+}
