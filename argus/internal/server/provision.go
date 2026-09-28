@@ -109,6 +109,15 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a host name is required"})
 		return
 	}
+	// Zabbix's technical name takes only letters, digits, spaces, dots, dashes and underscores; the
+	// visible name takes anything. A name like "U6+ Salotto" keeps that as its visible name and gets a
+	// technical name Zabbix accepts ("U6_ Salotto").
+	if tech := zabbix.TechnicalName(req.Name); tech != req.Name {
+		if strings.TrimSpace(req.Visible) == "" {
+			req.Visible = req.Name
+		}
+		req.Name = tech
+	}
 	if req.Site == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a site (host group) is required"})
 		return

@@ -300,6 +300,10 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the technical host name is required"})
 		return
 	}
+	if !zabbix.ValidTechnicalName(req.Host) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the technical name can only use letters, digits, spaces, dots, dashes and underscores (for example " + zabbix.TechnicalName(req.Host) + "); the visible name can use any character"})
+		return
+	}
 	// "0" is Zabbix's server-monitored sentinel, never a real proxy id - a client that still
 	// carries it hasn't picked a proxy.
 	if req.MonitoredBy == 1 && (strings.TrimSpace(req.ProxyID) == "" || strings.TrimSpace(req.ProxyID) == "0") {
