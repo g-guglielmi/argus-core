@@ -13,6 +13,13 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Container health:**
+- The image declares a Docker `HEALTHCHECK`, so `docker ps`, the Unraid GUI and Dockhand show the core
+  as healthy or unhealthy. The image is distroless (no shell, no interpreter), so the binary checks
+  itself: `argus healthcheck` asks the running server's `/healthz` over the loopback (at
+  `ARGUS_LISTEN`) and exits 0 or 1. Every 30 s, a 60 s start period, unhealthy after 3 failures.
+  Zabbix being unreachable is not a container fault and stays out of it.
+
 **Core VM (next image):**
 - Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
   of the `get.docker.com` script.

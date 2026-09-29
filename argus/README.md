@@ -134,6 +134,11 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 | `ARGUS_DATA_DIR` | `/data` | SQLite DB + encryption keyfile location (mount a volume) |
 | `ARGUS_LISTEN` | `:8080` | address the server listens on inside the container |
 
+> **Container health.** The image declares a Docker `HEALTHCHECK`: the binary runs as
+> `/argus healthcheck`, asks its own `/healthz` over the loopback at `ARGUS_LISTEN`, and exits 0 or 1
+> (every 30 s, 60 s start period, 3 retries). `docker ps`, the Unraid GUI and Dockhand show the
+> result. Zabbix being unreachable doesn't make the container unhealthy.
+
 **First-run admin seed** (used only while the user table is empty)
 | Var | Default | Purpose |
 |---|---|---|

@@ -33,4 +33,8 @@ ENV ARGUS_LISTEN=":8080" ARGUS_DATA_DIR="/data"
 EXPOSE 8080
 VOLUME ["/data"]
 USER nonroot:nonroot
+# Container health for Docker, the Unraid GUI or Dockhand: the binary asks its own /healthz over the
+# loopback (healthcheck.go; the image has no shell to run anything else). A slow first start
+# (template import, migrations) is covered by the start period.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 CMD ["/argus", "healthcheck"]
 ENTRYPOINT ["/argus"]

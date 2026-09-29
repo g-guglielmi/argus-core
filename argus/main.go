@@ -25,6 +25,10 @@ import (
 )
 
 func main() {
+	// The Docker HEALTHCHECK runs the binary itself (healthcheck.go): check, exit, touch nothing else.
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(runHealthcheck())
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	cfg := config.Load()

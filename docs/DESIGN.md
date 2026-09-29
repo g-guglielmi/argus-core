@@ -768,6 +768,15 @@ the setup page → `/etc/vconsole.conf`). **Static networking** for no-DHCP site
 before enrollment); it's seed-only, since the first-boot page needs an IP to be reachable, and a stuck
 VM re-reads a corrected seed on reboot. Still open: the bare-metal Clonezilla SKU.
 
+**Container health (all three images).** Each image declares a Docker `HEALTHCHECK`, which
+`docker ps`, the Unraid GUI and Dockhand show. The **core** is distroless, so the binary checks
+itself (`/argus healthcheck`: its own `/healthz` over the loopback at `ARGUS_LISTEN`). The **probe**
+runs `/app/healthcheck.py`: the Zabbix proxy process is up and accepts connections on its listen port.
+The **updater** runs `/app/healthcheck.sh`: the Engine answers `/_ping` on the socket and, in the
+long-running modes, the watch loop's heartbeat is fresh (each round allows the next one its time,
+an update included). Faults outside the container (Zabbix, the core, the network) stay out of
+every check: a restart can't fix them, and Argus alerts on them already.
+
 ---
 
 ## 14b. Resource sizing
