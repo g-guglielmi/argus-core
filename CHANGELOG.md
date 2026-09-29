@@ -28,6 +28,11 @@ GitHub Release from the matching section below.
 - The Linux-by-SSH collector refuses a login name that would read as an ssh option, a port outside
   1-65535 and a key outside `/var/lib/zabbix/ssh/`, and passes the target after `--`.
 - Revealing a probe's break-glass credential is logged with the admin who did it.
+
+**Fixed:**
+- A cancelled or timed-out passkey setup or sign-in reads as such ("Passkey setup was cancelled or
+  timed out. Nothing was added.") instead of the browser's spec-pointing error text; the same for an
+  authenticator that already holds a passkey, a non-https address and an unsupported authenticator.
 - **Updates are verified by digest.** Every update the core hands out keeps naming a tag (`latest`,
   `testing`, a version), and now also carries the digest that tag pointed to at hand-out time: the
   fleet target and one-shot updates in the probe check-in (`target_digest`, `update_digest`,

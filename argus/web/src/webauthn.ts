@@ -21,6 +21,21 @@ function bufToB64url(buf: ArrayBuffer): string {
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+// The browser's own WebAuthn errors are terse and point at the spec ("The operation either timed
+// out or was not allowed. See: https://www.w3.org/..."). Say what happened in Argus's words.
+function friendly(e: unknown, action: 'setup' | 'login'): Error {
+  const name = e instanceof DOMException ? e.name : ''
+  const what = action === 'setup' ? 'Passkey setup' : 'Passkey sign-in'
+  switch (name) {
+    case 'NotAllowedError': return new Error(`${what} was cancelled or timed out. Nothing was ${action === 'setup' ? 'added' : 'changed'}; try again when you're ready.`)
+    case 'InvalidStateError': return new Error('This authenticator already holds a passkey for this account.')
+    case 'SecurityError': return new Error("Passkeys only work when you reach Argus through its HTTPS address (the one configured as the passkey domain).")
+    case 'AbortError': return new Error(`${what} was interrupted.`)
+    case 'NotSupportedError': return new Error("This browser or authenticator doesn't support the kind of passkey Argus asks for (a discoverable key with user verification).")
+  }
+  return e instanceof Error && e.message ? e : new Error(`${what} failed.`)
+}
+
 async function errMsg(res: Response, fallback: string): Promise<string> {
   const j = await res.json().catch(() => ({}))
   return (j && j.error) || fallback
@@ -36,7 +51,8 @@ export async function registerPasskey(name: string, password: string): Promise<v
   pk.user.id = b64urlToBuf(pk.user.id)
   if (pk.excludeCredentials) pk.excludeCredentials = pk.excludeCredentials.map((c: any) => ({ ...c, id: b64urlToBuf(c.id) }))
 
-  const cred = (await navigator.credentials.create({ publicKey: pk })) as PublicKeyCredential
+  let cred: PublicKeyCredential
+  try { cred = (await navigator.credentials.create({ publicKey: pk })) as PublicKeyCredential } catch (e) { throw friendly(e, 'setup') }
   const resp = cred.response as AuthenticatorAttestationResponse
   const body = {
     id: cred.id,
@@ -66,7 +82,8 @@ export async function loginWithPasskey(): Promise<any> {
   pk.challenge = b64urlToBuf(pk.challenge)
   if (pk.allowCredentials) pk.allowCredentials = pk.allowCredentials.map((c: any) => ({ ...c, id: b64urlToBuf(c.id) }))
 
-  const cred = (await navigator.credentials.get({ publicKey: pk })) as PublicKeyCredential
+  let cred: PublicKeyCredential
+  try { cred = (await navigator.credentials.get({ publicKey: pk })) as PublicKeyCredential } catch (e) { throw friendly(e, 'login') }
   const resp = cred.response as AuthenticatorAssertionResponse
   const body = {
     id: cred.id,
