@@ -13,6 +13,12 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Core VM (next image):**
+- Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
+  of the `get.docker.com` script.
+
+## [0.5.18] - 2026-09-29
+
 **Why a sensor isn't reading:**
 - Argus shows the reason next to a sensor that can't read. Hover a `not supported` value (or tap it on
   a phone) for Zabbix's error, and a down collector's `Not reachable` for what the collector reported.
@@ -27,7 +33,7 @@ GitHub Release from the matching section below.
   resolution) gain a **Collection error** item next to their down flag, filled by the collector:
   ssh's own message, upsd's `ERR` answer and what it means, the XAPI failure, the HTTP status, the
   DNS rcode. The collector scripts that print it (SSH, XCP-NG, NUT, DNS) ship in the core's own
-  scripts and in the next probe release; until a probe runs them the item stays empty.
+  scripts and in `probe/v7.0.31-r11`; until a probe runs them the item stays empty.
 - The AdGuard, Home Assistant and PeaNUT login hints name the setting to check the way Argus labels
   it, not the Zabbix macro.
 
@@ -36,14 +42,10 @@ GitHub Release from the matching section below.
   derived address, not the device MAC the controller knows it by, so the scan matched it to the
   controller by IP but kept the scanned MAC, and every sensor failed with
   `HTTP 400 (api.err.UnknownDevice)`. A matched row now carries the controller's own MAC, and adding
-  the device uses it. Rows from probes before `probe/v7.0.31-r12` don't carry it yet. A host added
+  the device uses it (probe scans from `probe/v7.0.31-r12`, which carries the probe side). A host added
   this way before the fix keeps its wrong MAC: its sensors read "not supported", with a hint to use
   the MAC the controller lists. Correct it in the host settings.
 - The UniFi templates add that hint for `api.err.UnknownDevice`.
-
-**Core VM (next image):**
-- Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
-  of the `get.docker.com` script.
 
 ## [0.5.17] - 2026-09-29
 
