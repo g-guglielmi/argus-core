@@ -160,3 +160,31 @@ func TestDiscoveryJobFailureAndPartial(t *testing.T) {
 		t.Fatalf("double completion: err = %v, want ErrNotFound", err)
 	}
 }
+
+// The history list must read every column the job select names (a column added to the select
+// without its scan destination made the whole list fail, and the page showed no discoveries).
+func TestListDiscoveryJobsReadsEveryColumn(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	id, err := st.CreateDiscoveryJob(ctx, DiscoveryJob{ProxyName: "proxy-site1", CIDR: "10.0.0.0/24", RequestedBy: "admin@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetDiscoveryJobCertificate(ctx, id, `{"fingerprint":"AA"}`); err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := st.ListDiscoveryJobs(ctx, 10)
+	if err != nil {
+		t.Fatalf("ListDiscoveryJobs: %v", err)
+	}
+	if len(jobs) != 1 || jobs[0].ID != id || jobs[0].Certificate != `{"fingerprint":"AA"}` {
+		t.Fatalf("list = %+v, want the one job with its certificate", jobs)
+	}
+	// Certificate-only jobs (asking a probe what a controller presents) stay out of the history.
+	if _, err := st.CreateDiscoveryJob(ctx, DiscoveryJob{ProxyName: "proxy-site1", Kind: "cert", CIDR: "https://10.0.0.5"}); err != nil {
+		t.Fatal(err)
+	}
+	if jobs, err = st.ListDiscoveryJobs(ctx, 10); err != nil || len(jobs) != 1 {
+		t.Fatalf("cert job listed: %d jobs, err %v", len(jobs), err)
+	}
+}

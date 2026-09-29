@@ -269,7 +269,7 @@ func (s *Store) ListDiscoveryJobs(ctx context.Context, limit int) ([]DiscoveryJo
 	for rows.Next() {
 		var j DiscoveryJob
 		if err := rows.Scan(&j.ID, &j.ProxyName, &j.Kind, &j.ControllerID, &j.ControllerName, &j.CIDR,
-			&j.SNMPVersion, &j.SNMPPort, &j.State, &j.Error,
+			&j.SNMPVersion, &j.SNMPPort, &j.State, &j.Error, &j.Certificate,
 			&j.RequestedBy, &j.CreatedAt, &j.DispatchedAt, &j.CompletedAt, &j.Found, &j.NewCount); err != nil {
 			return nil, err
 		}

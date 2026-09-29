@@ -40,6 +40,11 @@ GitHub Release from the matching section below.
   mirror of the scripts and the XCP-NG and Linux SSH guides say so; the earlier guide claim that the
   SSH password never appeared on a command line was wrong.
 
+**Fixed:**
+- Discovery: the history list failed since 0.5.14 (the job select gained the certificate column, its row
+  scan did not), so the page showed no discoveries and new scans seemed not to start. Nothing was lost;
+  every scan is listed again.
+
 **Core VM (next image):**
 - Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
   of the `get.docker.com` script.
