@@ -1543,7 +1543,7 @@ function HeaderClock({ updatedAt, nextAt }: { updatedAt: number; nextAt: number 
   catch { time = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hour12: !cfg.h24 }).format(new Date()) }
   const ago = updatedAt ? Math.max(0, Math.floor((Date.now() - updatedAt) / 1000)) : -1
   const left = nextAt ? Math.max(0, Math.ceil((nextAt - Date.now()) / 1000)) : -1
-  const agoText = left < 0 ? 'Loading…' : left > 0 ? `Refresh in ${left}s` : 'Updating…'
+  const agoText = left < 0 ? 'Loading…' : left > 0 ? `Refresh in ${left}s` : 'Refreshing…'
   const ageTip = ago < 0 ? '' : ago < 60 ? `Data read ${ago}s ago` : `Data read ${Math.floor(ago / 60)}m ago`
   return (
     <div className="hclock" title={[cfg.tz ? `Time in ${cfg.tz}` : '', ageTip].filter(Boolean).join(' · ') || undefined}>

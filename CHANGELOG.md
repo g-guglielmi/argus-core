@@ -51,7 +51,7 @@ GitHub Release from the matching section below.
 - The app fetches every state's count plus only the rows on screen (`GET /api/census`): the
   Overview's errors, warnings and acknowledged sensors, and the OK, paused or hidden list only
   while it is open. The whole census is no longer downloaded every 30 s.
-- The header counts down to the next refresh ("Refresh in 18s", then "Updating…"): the app times
+- The header counts down to the next refresh ("Refresh in 18s", then "Refreshing…"): the app times
   each fetch to just after the server's next build (`next_ms`), so the count runs to a fresh answer
   every 20 s. The data's age on the server is in the tooltip.
 - Template items are left out at Zabbix instead of after the download.
