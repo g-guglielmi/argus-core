@@ -31,6 +31,26 @@ zabbix_export:
           value_type: TEXT
           timeout: 30s
           description: 'Master item: the proxy''s argus_linux_ssh.py collector logs in once, reads /proc + df + /proc/net/dev and prints every reading as JSON. An SSH/auth/parse failure prints reachable=0 (not an error) so the down trigger fires instead of the items going unsupported.'
+        - uuid: 1fff703174b44c32b1c5b7c236d9db1e
+          name: 'Collection error'
+          type: DEPENDENT
+          key: linux.ssh.error
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: TEXT
+          description: 'Why the last poll failed, in one line (empty while it works). Not a curated sensor: Argus shows it next to the down reading and in the alert.'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.error'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: ''
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
         - uuid: 6aeb8117b4a84ad8be40517eb7fc17c0
           name: 'Monitoring reachable'
           type: DEPENDENT

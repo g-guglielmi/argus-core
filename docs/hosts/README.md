@@ -114,5 +114,11 @@ options section. That same dialog also has:
   host lacks it, and collects the new class's credentials. Sensors from templates only in the old
   class are removed.
 
+**Why a sensor isn't reading.** Hover (or tap) a `not supported` or `Not reachable` value anywhere in
+Argus to see the reason: Zabbix's error, or what the device's collector reported (a refused API key,
+an unknown site, `Permission denied (publickey)`, `ERR UNKNOWN-UPS`). Alerts carry the same text.
+Every Argus template reports its reasons this way ([../DESIGN.md](../DESIGN.md) section 5, "Every
+template says why").
+
 For the full device-class catalog (including classes still on the roadmap) and what each one collects,
 see [../DESIGN.md](../DESIGN.md) section 5.

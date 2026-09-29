@@ -71,6 +71,9 @@ A filesystem or interface that disappears is disabled immediately and deleted af
 
 ## Troubleshooting
 
+- **Start with the reason.** Hover (or tap) the sensor's value in Argus - `not supported`, or `Not reachable`
+  on a down collector - to see why, in ssh's own words (`Permission denied (publickey)`,
+  `Connection refused`, `Host key verification failed`); the alert carries the same text.
 - **"SSH monitoring is unreachable"** - the collector could not complete a poll on the last 3
   checks: the host is down, SSH is refused/filtered on `{$SSH.PORT}`, or the login is wrong. For key
   auth, confirm the private key is mounted at `{$SSH.KEYFILE}` on the proxy and its public half is in

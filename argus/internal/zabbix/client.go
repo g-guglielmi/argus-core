@@ -176,6 +176,7 @@ type Item struct {
 	ValueType string `json:"value_type"`
 	Status    string `json:"status"` // "0" enabled, "1" disabled
 	State     string `json:"state"`  // "0" normal, "1" not supported
+	Error     string `json:"error"`  // Zabbix's reason while State is "1"
 }
 
 type Trigger struct {
@@ -340,7 +341,7 @@ func (c *Client) PingLatencyItems(ctx context.Context) (map[string]Item, error) 
 // Items returns the items of one host, sorted by name.
 func (c *Client) Items(ctx context.Context, hostID string) ([]Item, error) {
 	params := map[string]any{
-		"output":    []string{"itemid", "hostid", "name", "key_", "lastvalue", "lastclock", "units", "value_type", "status", "state"},
+		"output":    []string{"itemid", "hostid", "name", "key_", "lastvalue", "lastclock", "units", "value_type", "status", "state", "error"},
 		"hostids":   hostID,
 		"sortfield": "name",
 	}
@@ -419,7 +420,7 @@ type ItemWithHosts struct {
 // host of status 3 as a second guard.
 func (c *Client) AllItems(ctx context.Context) ([]ItemWithHosts, error) {
 	params := map[string]any{
-		"output":      []string{"itemid", "hostid", "name", "key_", "lastvalue", "lastclock", "units", "value_type", "status", "state"},
+		"output":      []string{"itemid", "hostid", "name", "key_", "lastvalue", "lastclock", "units", "value_type", "status", "state", "error"},
 		"selectHosts": []string{"hostid", "name", "status"},
 		"templated":   false,
 		"sortfield":   "name",
@@ -509,12 +510,29 @@ func (c *Client) ItemsByKeys(ctx context.Context, keys []string) ([]Item, error)
 		return nil, nil
 	}
 	params := map[string]any{
-		"output":    []string{"itemid", "hostid", "name", "key_", "lastvalue", "lastclock", "units", "value_type", "status", "state"},
+		"output":    []string{"itemid", "hostid", "name", "key_", "lastvalue", "lastclock", "units", "value_type", "status", "state", "error"},
 		"filter":    map[string]any{"key_": keys},
 		"templated": false,
 	}
 	var items []Item
 	return items, c.call(ctx, "item.get", params, true, &items)
+}
+
+// HostItemLastValue returns the last value of one host's item by exact key ("" when it has none).
+func (c *Client) HostItemLastValue(ctx context.Context, hostID, key string) (string, error) {
+	params := map[string]any{
+		"output":  []string{"itemid", "lastvalue"},
+		"hostids": hostID,
+		"filter":  map[string]any{"key_": key},
+	}
+	var items []Item
+	if err := c.call(ctx, "item.get", params, true, &items); err != nil {
+		return "", err
+	}
+	if len(items) == 0 {
+		return "", nil
+	}
+	return items[0].LastValue, nil
 }
 
 // ItemsByIDs returns the requested items keyed by item id (name, last value, units).

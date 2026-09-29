@@ -14,8 +14,9 @@ into the pool master over XML-RPC/HTTPS once per poll and reads everything in on
 - **Certificate check** (`{$XCP.TLS}`, host settings): XCP-NG hosts run self-signed XAPI
   certificates, so the default **pin** trusts the certificate on first contact and remembers its
   SHA-256 on the collector (the probe or the core, under `/var/lib/zabbix/argus-pins/`, one file per
-  address); a different certificate later is refused and the host reads as down, with the reason in
-  the raw data's `tls_error`. After a deliberate certificate change, delete that pin file (or switch
+  address); a different certificate later is refused and the host reads as down, with the reason
+  (pinned and presented fingerprints, the pin file) shown on hover and in the alert. After a
+  deliberate certificate change, delete that pin file (or switch
   to **ignore** once, then back). **verify** checks against the collector's CA store instead; **ignore**
   checks nothing.
 - **Credentials**: the XAPI login. On a stock XCP-NG that is **`root`** and the host root password
@@ -97,6 +98,8 @@ and *overheating* (≥ `{$XCP.TEMP.HIGH}`, default 90 °C) alert.
 
 ## Troubleshooting
 
+- **Start with the reason.** Hover (or tap) the sensor's value in Argus - `not supported`, or `Not reachable`
+  on a down collector - to see why, as XAPI or the connection reported it; the alert carries the same text.
 - **"XCP-NG XAPI is unreachable"** - the proxy/core cannot reach `https://<master>` (host down,
   wrong address, or 443 blocked between the probe and the hypervisor).
 - **"XCP-NG credentials rejected"** - XAPI answers but refuses the login; fix the username or

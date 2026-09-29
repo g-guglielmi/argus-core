@@ -33,15 +33,16 @@ zabbix_export:
             var p = JSON.parse(value);
             if (!p.url || !p.token) { throw 'set {$HASS.URL} and {$HASS.TOKEN} on the host'; }
             var base = String(p.url).replace(/\/+$/, '');
-            var out = { running: 0, core: '' };
+            var out = { running: 0, core: '', error: '' };
+            function why(e) { return String((e && e.message) || e).replace(/\s+/g, ' ').substring(0, 200); }
             var req = new HttpRequest();
             req.addHeader('Authorization: Bearer ' + p.token);
             req.addHeader('Accept: application/json');
             var code;
             try { req.get(base + '/api/'); code = req.getStatus(); }
-            catch (e) { return JSON.stringify(out); }
-            if (code === 401 || code === 403) { throw 'Home Assistant: HTTP ' + code + ' - check {$HASS.TOKEN}'; }
-            if (code !== 200) { return JSON.stringify(out); }
+            catch (e) { out.error = 'no answer from the API: ' + why(e); return JSON.stringify(out); }
+            if (code === 401 || code === 403) { throw 'Home Assistant: HTTP ' + code + ' - check the access token'; }
+            if (code !== 200) { out.error = 'the API answered HTTP ' + code + (code === 502 || code === 503 ? ' (still starting, or a proxy in front of it has no answer)' : ''); return JSON.stringify(out); }
             out.running = 1;
             try { var cfg = JSON.parse(req.get(base + '/api/config')); out.core = cfg.version || ''; } catch (e) {}
             // Supervisor + OS versions live on the hassio "update" entities - present only on HA OS /
@@ -69,6 +70,26 @@ zabbix_export:
               value: '{$HASS.SUPERVISOR.ENTITY}'
             - name: os_entity
               value: '{$HASS.OS.ENTITY}'
+        - uuid: adba4991c4364cba93e984361a7d4953
+          name: 'Collection error'
+          type: DEPENDENT
+          key: hass.error
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: TEXT
+          description: 'Why the last poll failed, in one line (empty while it works). Not a curated sensor: Argus shows it next to the down reading and in the alert.'
+          master_item:
+            key: hass.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.error'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: ''
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
         - uuid: 7d85c0df2a9548e0b0c820da712aaebf
           name: 'API running'
           type: DEPENDENT

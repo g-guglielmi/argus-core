@@ -35,7 +35,8 @@ zabbix_export:
             var p = JSON.parse(value);
             if (!p.url) { throw 'set {$ADGUARD.URL} on the host'; }
             var base = String(p.url).replace(/\/+$/, '');
-            var out = { running: 0, protection: 0, version: '', queries_today: 0, blocked_today: 0, block_pct: 0, avg_time: 0 };
+            var out = { running: 0, protection: 0, version: '', queries_today: 0, blocked_today: 0, block_pct: 0, avg_time: 0, error: '' };
+            function why(e) { return String((e && e.message) || e).replace(/\s+/g, ' ').substring(0, 200); }
             // Today's counts come from AdGuard's own per-interval stats arrays - the same numbers
             // its dashboard shows. time_units 'days': the LAST entry is the current (partial) day.
             // time_units 'hours' (24h stats retention): the last entry is the current hour - sum
@@ -55,9 +56,9 @@ zabbix_export:
             if (p.user) { req.addHeader('Authorization: Basic ' + btoa(p.user + ':' + (p.pass || ''))); }
             var sresp, code;
             try { sresp = req.get(base + '/control/status'); code = req.getStatus(); }
-            catch (e) { return JSON.stringify(out); }
-            if (code === 401 || code === 403) { throw 'AdGuard: HTTP ' + code + ' - check {$ADGUARD.USER}/{$ADGUARD.PASSWORD}'; }
-            if (code !== 200) { return JSON.stringify(out); }
+            catch (e) { out.error = 'no answer from the admin API: ' + why(e); return JSON.stringify(out); }
+            if (code === 401 || code === 403) { throw 'AdGuard: HTTP ' + code + ' - check the user name and password'; }
+            if (code !== 200) { out.error = 'the admin API answered HTTP ' + code; return JSON.stringify(out); }
             out.running = 1;
             try {
               var status = JSON.parse(sresp);
@@ -85,6 +86,26 @@ zabbix_export:
               value: '{$ADGUARD.USER}'
             - name: pass
               value: '{$ADGUARD.PASSWORD}'
+        - uuid: c2d793e16fc14e529951cae37b34b565
+          name: 'Collection error'
+          type: DEPENDENT
+          key: adguard.error
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: TEXT
+          description: 'Why the last poll failed, in one line (empty while it works). Not a curated sensor: Argus shows it next to the down reading and in the alert.'
+          master_item:
+            key: adguard.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.error'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: ''
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
         - uuid: e75312b6ded340b0b7ab8f7177828f88
           name: 'Service running'
           type: DEPENDENT

@@ -30,6 +30,26 @@ zabbix_export:
           value_type: TEXT
           timeout: 15s
           description: 'Master item: the proxy''s argus_nut.py collector queries upsd (LIST VAR) and prints the fields the sensors use as JSON. A connection failure prints reachable=0 (not an error) so the down trigger fires.'
+        - uuid: 83dba7eea2f04e558db49c32d391e15b
+          name: 'Collection error'
+          type: DEPENDENT
+          key: nut.error
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: TEXT
+          description: 'Why the last poll failed, in one line (empty while it works). Not a curated sensor: Argus shows it next to the down reading and in the alert.'
+          master_item:
+            key: 'argus_nut.py[{HOST.CONN},{$NUT.PORT},{$NUT.UPS},{$NUT.USER},{$NUT.PASSWORD}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.error'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: ''
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
         - uuid: b2c2418e5ecd447e875b6aa3d7f404bb
           name: 'UPS monitoring reachable'
           type: DEPENDENT

@@ -316,6 +316,13 @@ a { color: var(--accent); }
 .slist-trig td.slgrow { overflow: hidden; }
 /* the "why" line under a sensor name: severity label + trigger reason (only when the sensor has one) */
 .slist .sreason { font-size: 11.5px; color: var(--muted); margin-top: 2px; line-height: 1.35; }
+/* A reading with a reason behind it (WhyText): dotted underline says "hover or tap me". */
+.why { cursor: help; }
+.why-mark { text-decoration: underline dotted; text-underline-offset: 3px; }
+.why-line { white-space: normal; overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.4; color: var(--muted); }
+.whyrow > td { padding: 0 12px 10px 20px; border-top: none; }
+/* The host table scrolls sideways on a phone: keep the reason inside the visible width. */
+.whyrow .why-line { position: sticky; left: 20px; max-width: min(80ch, calc(100vw - 72px)); }
 /* the acked action (tag + Unacknowledge) can wrap within its fixed column instead of overflowing */
 .slist-problems td:last-child .acktag { white-space: normal; }
 

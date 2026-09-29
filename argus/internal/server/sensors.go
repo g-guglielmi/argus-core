@@ -26,6 +26,7 @@ type sensorRow struct {
 	Priority  int      `json:"priority"`         // PRTG-style display priority 1..5 (Argus-only)
 	Severity  int      `json:"severity"`         // worst Zabbix trigger severity 0..5 (0 = none)
 	Reason    string   `json:"reason,omitempty"` // name of the worst trigger, i.e. why the sensor is unhappy
+	Why       string   `json:"why,omitempty"`    // why it isn't reading: Zabbix's error, or its collector's reason (reasons.go)
 	Since     int64    `json:"since,omitempty"`  // unix time the worst problem started firing (for its age)
 	EventIDs  []string `json:"event_ids"`        // problem events on this sensor (for ack / unack from a list)
 	// Synthetic marks a row that isn't a Zabbix sensor but an Argus-raised problem with none (an agent
@@ -143,6 +144,13 @@ func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 	hideHost, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 	prioMap, _ := s.st.ItemPriorities(ctx)
 
+	reasons := reasonIndex{}
+	for _, it := range items {
+		if len(it.Hosts) > 0 {
+			reasons.add(it.Hosts[0].HostID, it.Key, it.LastValue)
+		}
+	}
+
 	out := make([]sensorRow, 0, len(items))
 	for _, it := range items {
 		if len(it.Hosts) == 0 {
@@ -192,6 +200,7 @@ func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 			State: state, Numeric: numericValueType(it.ValueType), Supported: supported,
 			Priority: priorityOf(prioMap, it.ItemID), Severity: itemSev[it.ItemID], Reason: itemReason[it.ItemID],
 			Since: itemSince[it.ItemID], EventIDs: itemEvents[it.ItemID],
+			Why: reasons.why(host.HostID, it.Key, it.LastValue, it.Error, supported),
 		})
 	}
 	// Problems that belong to no sensor (Argus-raised: an agent or SNMP endpoint that stopped

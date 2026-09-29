@@ -204,15 +204,9 @@ func interfaceDownName(ifaceType string) string {
 	return "Monitoring interface not reachable"
 }
 
-// unsupportedReading is a "stopped collecting" alert's reading: Zabbix's reason, trimmed to one line.
+// unsupportedReading is a "stopped collecting" alert's reading: Zabbix's reason, trimmed (itemError).
 func unsupportedReading(msg string) string {
-	msg = strings.TrimSpace(msg)
-	if i := strings.IndexAny(msg, "\r\n"); i >= 0 {
-		msg = strings.TrimSpace(msg[:i])
-	}
-	if r := []rune(msg); len(r) > 200 {
-		msg = string(r[:200]) + "…"
-	}
+	msg = itemError(msg)
 	if msg == "" {
 		return "Not supported"
 	}

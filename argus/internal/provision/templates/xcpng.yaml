@@ -30,6 +30,26 @@ zabbix_export:
           value_type: TEXT
           timeout: 25s
           description: 'Master item: argus_xcpng.py logs into the pool master over XAPI and prints pool, hypervisor and VM data as one JSON object. A connection failure prints reachable=0 (not an error) so the down trigger fires; rejected credentials print authed=0.'
+        - uuid: efbf39a5c3df42adb9212a099eb4bbd9
+          name: 'Collection error'
+          type: DEPENDENT
+          key: xcp.error
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: TEXT
+          description: 'Why the last poll failed, in one line (empty while it works). Not a curated sensor: Argus shows it next to the down reading and in the alert.'
+          master_item:
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE},{$XCP.TLS}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.error'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: ''
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
         - uuid: a6c7e2695c9741b3a6da8d0677c0bea7
           name: 'XAPI reachable'
           type: DEPENDENT

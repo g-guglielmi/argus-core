@@ -521,8 +521,12 @@ func reading(ctx context.Context, zbx *zabbix.Client, itemID string, noData bool
 	if noData {
 		return noDataSince(atoi64(it.LastClock), now), ""
 	}
+	why := collectorReason(ctx, zbx, it.HostID, it.Key, it.LastValue)
 	if r, ok := reachabilityReading(it.Key, it.LastValue); ok {
-		return r, ""
+		return withReason(r, why), ""
+	}
+	if why != "" {
+		return withReason(it.LastValue, why), ""
 	}
 	return notify.FormatReading(it.LastValue, it.Units), it.Units
 }

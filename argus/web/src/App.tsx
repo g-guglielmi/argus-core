@@ -43,13 +43,13 @@ const SEVERITIES: { v: number; label: string }[] = [
   { v: 2, label: 'Warnings and errors' },
   { v: 3, label: 'Errors only' },
 ]
-type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr }
+type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string }
 // A sensor's effective warning/high values, read from its own triggers (below = lower is worse).
 type Thr = { warn?: number; high?: number; below?: boolean }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
 type TriggerHost = { id: string; name: string }
 type Trigger = { id: string; description: string; severity: number; enabled: boolean; problem: boolean; since: number; hosts: TriggerHost[]; sensors: string[] }
-type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; since?: number; event_ids: string[]; synthetic?: boolean }
+type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
 type Series = { name: string; units: string; kind: 'history' | 'trend'; points: SeriesPoint[] }
 
@@ -267,6 +267,24 @@ function fmtNum(n: number, units: string): string {
 
 // readingParts formats a raw stored value into [display, unit]; non-numeric values (text,
 // checksums) are returned untouched with no unit.
+// A reading shown with why it isn't a real one (Zabbix's error for a "not supported" sensor, or the
+// reason a collector printed when it reports its target down): hover for it, or click / tap to have
+// the row spell it out on a full-width line under the sensor (touch screens have no hover).
+function WhyText({ why, color, onToggle, children }: { why?: string; color?: string; onToggle: () => void; children: ReactNode }) {
+  if (!why) return <span style={{ color }}>{children}</span>
+  return (
+    <span className="why" style={{ color }} title={why} onClick={(e) => { e.stopPropagation(); onToggle() }}>
+      <span className="why-mark">{children}</span>
+    </span>
+  )
+}
+
+// Which rows have their reason spelled out (WhyText), by row id.
+function useWhyOpen(): [Record<string, boolean>, (id: string) => void] {
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+  return [open, (id: string) => setOpen((o) => ({ ...o, [id]: !o[id] }))]
+}
+
 function readingParts(raw: string, units: string): [string, string] {
   const t = (raw ?? '').trim()
   if (t === '') return ['-', '']
@@ -5833,6 +5851,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
   const [problems, setProblems] = useState<Problem[]>([])
   const [error, setError] = useState<string | null>(null)
   const [openItem, setOpenItem] = useState<string | null>(null)
+  const [whyOpen, toggleWhy] = useWhyOpen()
 
   function loadItems(reset = true) {
     if (reset) setItems(null)
@@ -6241,9 +6260,9 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                             // derived from the same counters as the row above) - the raw reading is
                             // AdGuard's own UTC-day rate, which straddles local midnight.
                             const dv0 = barRate && dailies[it.id]?.length ? String(dailies[it.id][dailies[it.id].length - 1]) : it.last_value
-                            const [dv, du] = readingParts(dv0, it.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span>
+                            const [dv, du] = readingParts(dv0, it.units); return <WhyText why={it.why} onToggle={() => toggleWhy(it.id)}>{dv}{du ? <span className="unit"> {du}</span> : null}</WhyText>
                           })()
-                          : <span style={{ color: 'var(--err)' }}>not supported</span>}
+                          : <WhyText why={it.why} color="var(--err)" onToggle={() => toggleWhy(it.id)}>not supported</WhyText>}
                       </td>
                       <td className="strend">{it.numeric && it.supported ? (barRate ? <BarSpark total={dailies[it.id]} width={168} /> : <Spark values={sparks[it.id]} color={trendColor} width={168} units={it.units} />) : null}</td>
                       <td className="prio-cell" data-label="Priority"><PriorityStars value={it.priority} canEdit={canPause} onSet={(p) => setItemPriority(it, p)} /></td>
@@ -6254,6 +6273,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                         </div>
                       </td>
                     </tr>
+                    {it.why && whyOpen[it.id] && <tr className="whyrow"><td colSpan={5}><div className="why-line">{it.why}</div></td></tr>}
                     {open && clickable && (
                       <tr className="chartrow"><td colSpan={5}><div className="chart-reveal"><SensorChart itemId={it.id} units={it.units} color={trendColor} bars={barRate} label={label} thr={it.thr} /></div></td></tr>
                     )}
@@ -6271,6 +6291,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
 // the chosen state, with deep-links to its host/chart and a per-row kebab.
 function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, onBack }: { filter: string; sensors: SensorRow[]; loading?: boolean; canPause: boolean; goHost: (h: string) => void; goSensor: (h: string, i: string, name?: string) => void; onBack: () => void }) {
   const [busy, setBusy] = useState<string | null>(null)
+  const [whyOpen, toggleWhy] = useWhyOpen()
   // The "attention" filter is the home Overview: every sensor that isn't OK (a PRTG-style unified list),
   // with a mode toggle. A concrete state (error/warning/…) is a top-bar status-chip drill-down.
   const attention = filter === 'attention'
@@ -6347,8 +6368,9 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
                     <td className="slgrow">
                       <span className="sl-name">{clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id, s.label || s.name)}>{s.label || s.name}</span> : (s.label || s.name)}</span>
                       {s.reason && <div className="sreason"><span style={{ color: sevInfo(s.severity).color, fontWeight: 600 }}>{sevInfo(s.severity).label}</span> · {s.reason}{s.since ? <span title={`Firing since ${new Date(s.since * 1000).toLocaleString()}`}> · {relTime(s.since)}</span> : null}</div>}
+                      {s.why && whyOpen[s.host_id + ':' + s.item_id] && <div className="sreason why-line">{s.why}</div>}
                     </td>
-                    <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <span>{dv}{du ? <span className="unit"> {du}</span> : null}</span> })() : <span style={{ color: 'var(--err)' }}>not supported</span>}</td>
+                    <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <WhyText why={s.why} onToggle={() => toggleWhy(s.host_id + ':' + s.item_id)}>{dv}{du ? <span className="unit"> {du}</span> : null}</WhyText> })() : <WhyText why={s.why} color="var(--err)" onToggle={() => toggleWhy(s.host_id + ':' + s.item_id)}>not supported</WhyText>}</td>
                     <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} width={168} fill units={s.units} /> : null}</td>
                     <td className="slprio" data-label="Priority"><PriorityStars value={s.priority} canEdit={false} /></td>
                     <td className="mono dur" data-label={durCol}>{relTime(s.last_clock)}</td>

@@ -33,6 +33,8 @@ and only overwrites when you type a new one).
 
 ## Troubleshooting
 
+- **Start with the reason.** Hover (or tap) the sensor's value in Argus - `not supported`, or `Not reachable`
+  on a down collector - to see why, as Home Assistant answered (the HTTP status, a rejected token); the alert carries the same text.
 - **API down but the box pings.** Check the URL and port, that you used the right scheme (http vs
   https), and that the token is valid and not revoked. A reverse proxy in front of Home Assistant must
   pass the `Authorization` header through.

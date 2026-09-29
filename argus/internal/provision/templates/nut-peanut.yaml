@@ -34,19 +34,20 @@ zabbix_export:
             var p = JSON.parse(value);
             if (!p.url || !p.ups) { throw 'set {$PEANUT.URL} and {$PEANUT.UPS} on the host'; }
             var base = String(p.url).replace(/\/+$/, '');
-            var out = { reachable: 0, status: '', charge: null, runtime: null, load: null, input_voltage: null, output_voltage: null, realpower: 0, on_battery: 0, low_battery: 0 };
+            var out = { reachable: 0, status: '', charge: null, runtime: null, load: null, input_voltage: null, output_voltage: null, realpower: 0, on_battery: 0, low_battery: 0, error: '' };
+            function why(e) { return String((e && e.message) || e).replace(/\s+/g, ' ').substring(0, 200); }
             var req = new HttpRequest();
             req.addHeader('Accept: application/json');
             if (p.user) { req.addHeader('Authorization: Basic ' + btoa(p.user + ':' + (p.pass || ''))); }
             var resp, code;
             try { resp = req.get(base + '/api/v1/devices/' + encodeURIComponent(p.ups) + '/vars'); code = req.getStatus(); }
-            catch (e) { return JSON.stringify(out); }
-            if (code === 401 || code === 403) { throw 'PeaNUT: HTTP ' + code + ' - check {$PEANUT.USER}/{$PEANUT.PASSWORD}'; }
-            if (code === 404) { throw 'PeaNUT: UPS "' + p.ups + '" not found (404) - check {$PEANUT.UPS}'; }
-            if (code !== 200) { return JSON.stringify(out); }
+            catch (e) { out.error = 'no answer from PeaNUT: ' + why(e); return JSON.stringify(out); }
+            if (code === 401 || code === 403) { throw 'PeaNUT: HTTP ' + code + ' - check the user name and password'; }
+            if (code === 404) { throw 'PeaNUT: UPS "' + p.ups + '" not found (404) - check the UPS name'; }
+            if (code !== 200) { out.error = 'PeaNUT answered HTTP ' + code; return JSON.stringify(out); }
             out.reachable = 1;
             var body;
-            try { body = JSON.parse(resp); } catch (e) { return JSON.stringify(out); }
+            try { body = JSON.parse(resp); } catch (e) { out.error = 'PeaNUT sent a reply that is not JSON'; return JSON.stringify(out); }
             var vars = (body && body.data) ? body.data : body;
             if (Array.isArray(vars)) {
               var m = {};
@@ -79,6 +80,26 @@ zabbix_export:
               value: '{$PEANUT.USER}'
             - name: pass
               value: '{$PEANUT.PASSWORD}'
+        - uuid: 9960e90cb4bb4dbab9382e86ded9a9a1
+          name: 'Collection error'
+          type: DEPENDENT
+          key: nut.error
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: TEXT
+          description: 'Why the last poll failed, in one line (empty while it works). Not a curated sensor: Argus shows it next to the down reading and in the alert.'
+          master_item:
+            key: nut.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.error'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: ''
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
         - uuid: 55d60c6655d24e6c971a3ca65c5ebb00
           name: 'UPS monitoring reachable'
           type: DEPENDENT

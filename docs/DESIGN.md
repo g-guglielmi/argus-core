@@ -266,6 +266,29 @@ so curation is shared with the SNMP classes.
 - **unRAID** disk temp & SMART → smartctl via Net-SNMP `extend`, or the unRAID API. **Hyper-V**
   per-VM → WMI/agent (host stays SNMP). **AdGuard** block/query stats → AdGuard HTTP API.
 
+### Every template says why (template rule)
+A sensor that can't read must say why, in words an admin can act on, and Argus shows that reason next
+to the reading (hover, or tap on a phone, for a line under the sensor) and puts it in the alert. Every
+Argus template follows one of two shapes, and a new one must too:
+- **Script items that throw** (the UniFi, AdGuard, Home Assistant and PeaNUT masters): the thrown
+  message names the cause and, where there is a usual fix, the setting to check. A refused HTTP call
+  passes on the service's own reason (`UniFi API HTTP 400 (api.err.NoSiteContext) - no site named
+  "x": the Site name must be the internal name ...`), never a bare status code. Zabbix keeps it as
+  the item's error; the dependents inherit it. Hints name the setting the way Argus labels it ("the
+  API key", "the Site name").
+- **Collectors that report "down" on purpose** (SSH, XCP-NG, NUT, and the HTTP masters' own down
+  paths; DNS per name): a connection or login failure is data, not an error, so the down trigger
+  fires instead of every sensor going unsupported. The JSON then carries `"error": "<one line>"`
+  (what ssh printed, upsd's `ERR` answer with its meaning, the XAPI failure, the rcode), and the
+  template keeps it in a **Collection error** item next to the down flag (`linux.ssh.error`,
+  `xcp.error`, `nut.error`, `adguard.error`, `hass.error`, `dns.resolve.error[<name>]`: text, not a
+  curated sensor, empty while it works, `JSONPATH $.error` with an empty value when an older collector
+  doesn't print it). Argus maps each flag to its reason item (`reasonKeys` in
+  `internal/server/reasons.go`; a test fails when a collector flag has none).
+
+Reasons never carry a secret: no password, token or key, only what the other side said and which
+setting to look at. Argus trims them to one line of at most 200 characters.
+
 ---
 
 ## 6. Thresholds (typed defaults, all overridable per device/sensor)
@@ -376,7 +399,8 @@ cert jobs are hidden from the scan history and the notices; or paste a fingerpri
 probe scripts (`tls_opener` in `argus_netscan.py` / `argus_unifi_sweep.py`, the pinned connection
 compares the leaf SHA-256 right after the handshake) apply the same policy. XCP-NG (`{$XCP.TLS}`,
 default pin) pins on the collector itself: first contact stores the SHA-256 under
-`/var/lib/zabbix/argus-pins/`, a change is refused and reported as `tls_error`. The UniFi class
+`/var/lib/zabbix/argus-pins/`, a change is refused and reported as `tls_error` (and as the poll's
+`error`, which Argus shows). The UniFi class
 templates' own HTTP items still don't verify (Zabbix can't pin).
 
 **Mechanics (UniFi controller sweep, shipped).** The second candidate source rides the exact same

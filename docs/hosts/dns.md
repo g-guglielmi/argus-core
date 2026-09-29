@@ -47,6 +47,8 @@ that day.
 
 ## Troubleshooting
 
+- **Start with the reason.** Hover (or tap) the sensor's value in Argus - a name that fails to resolve, or `Not reachable` on
+  AdGuard's admin API - to see why, as the server answered (`NXDOMAIN`, no answer within 3 s); the alert carries the same text.
 - **Resolve sensors missing.** Confirm `{$DNS.RESOLVE.NAMES}` is set and the proxy can reach the server
   on `:53`. Change the list in **host settings** and use **Discover now**.
 - **AdGuard stats empty but resolve works.** The admin API call is failing - check `{$ADGUARD.URL}`

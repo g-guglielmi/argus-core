@@ -37,6 +37,26 @@ zabbix_export:
               value_type: TEXT
               timeout: 10s
               description: 'Master item: one A-record query for {#DNSNAME} against this server, as JSON. The success/time/IP sensors depend on it.'
+            - uuid: db3a15e867324648910f52dbd23708b1
+              name: 'Collection error ({#DNSNAME})'
+              type: DEPENDENT
+              key: 'dns.resolve.error[{#DNSNAME}]'
+              delay: '0'
+              history: 7d
+              trends: '0'
+              value_type: TEXT
+              description: 'Why {#DNSNAME} did not resolve on the last check, in one line (empty while it resolves). Not a curated sensor: Argus shows it next to the failed reading and in the alert.'
+              master_item:
+                key: 'dns-resolver.py[check,{#DNSNAME},{HOST.CONN},{$DNS.PORT}]'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.error'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: ''
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
             - uuid: 5fc82a036dc947d4b265e4f17c056303
               name: 'Resolves ({#DNSNAME})'
               type: DEPENDENT

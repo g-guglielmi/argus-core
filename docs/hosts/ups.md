@@ -47,6 +47,9 @@ Use this if you already run PeaNUT in front of NUT. It is a plain HTTP-API class
 
 ## Troubleshooting
 
+- **Start with the reason.** Hover (or tap) the sensor's value in Argus - `not supported`, or `Not reachable`
+  on a down collector - to see why, in upsd's or PeaNUT's own words (for NUT, upsd's `ERR` answer
+  with what it means, e.g. `ERR UNKNOWN-UPS`: no UPS by that name); the alert carries the same text.
 - **No data (direct NUT).** Confirm the UPS name (`upsc -l <host>`), that `upsd` listens on the LAN and
   allows the proxy IP, and that port 3493 is open. If upsd requires auth to read, set the user/password.
 - **No data (PeaNUT).** Check `{$PEANUT.URL}` and port, the UPS name against `/api/v1/devices`, and the

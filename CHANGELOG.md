@@ -13,6 +13,24 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Why a sensor isn't reading:**
+- Argus shows the reason next to a sensor that can't read. Hover a `not supported` value (or tap it on
+  a phone) for Zabbix's error, and a down collector's `Not reachable` for what the collector reported.
+  The Overview, the status lists and the host page all have it, and the alert carries the same text
+  ("Not reachable: Permission denied (publickey)"). The reason is left off the public status pages.
+- The UniFi templates (switch, AP, gateway, console) pass on the controller's own reason for a refused
+  call instead of the bare status, with a hint for the usual causes:
+  `UniFi API HTTP 400 (api.err.NoSiteContext) - no site named "x": the Site name must be the internal
+  name (the first site is "default")`; a rejected API key, `http://` on the HTTPS port, a URL that
+  isn't a UniFi OS console. A device missing from the site says to check the MAC.
+- The collector templates (Linux by SSH, XCP-NG, NUT, PeaNUT, AdGuard Home, Home Assistant, DNS
+  resolution) gain a **Collection error** item next to their down flag, filled by the collector:
+  ssh's own message, upsd's `ERR` answer and what it means, the XAPI failure, the HTTP status, the
+  DNS rcode. The collector scripts that print it (SSH, XCP-NG, NUT, DNS) ship in the core's own
+  scripts and in the next probe release; until a probe runs them the item stays empty.
+- The AdGuard, Home Assistant and PeaNUT login hints name the setting to check the way Argus labels
+  it, not the Zabbix macro.
+
 **Core VM (next image):**
 - Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
   of the `get.docker.com` script.

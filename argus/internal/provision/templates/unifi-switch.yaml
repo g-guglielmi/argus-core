@@ -31,6 +31,25 @@ zabbix_export:
           description: 'Master item: one controller call for the switch (stat/device by MAC), trimmed to the fields the sensors use. Everything else is dependent on this.'
           params: |
             var p = JSON.parse(value);
+            // A refusal says why (meta.msg on the Network API, error.message on UniFi OS, the page
+            // title from the console's web server): pass that on, with a hint for the usual causes.
+            function refused(code, body, site) {
+              var why = '', text = String(body || '');
+              try {
+                var j = JSON.parse(text);
+                why = (j.meta && j.meta.msg) || (j.error && (j.error.message || j.error.code)) || j.message || '';
+              } catch (e) {
+                var t = text.match(/<title>([^<]*)<\/title>/i) || text.match(/<h1>([^<]*)<\/h1>/i);
+                why = t ? t[1] : '';
+              }
+              why = String(why).replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').substring(0, 120);
+              var hint = '';
+              if (code === 401 || code === 403) { hint = 'the controller rejected the API key'; }
+              else if (why === 'api.err.NoSiteContext') { hint = 'no site named "' + site + '": the Site name must be the internal name (the first site is "default")'; }
+              else if (/plain HTTP/i.test(text)) { hint = 'the Controller URL must start with https://'; }
+              else if (code === 404) { hint = 'the Controller URL must point at a UniFi OS console'; }
+              return 'UniFi API HTTP ' + code + (why ? ' (' + why + ')' : '') + (hint ? ' - ' + hint : '');
+            }
             if (!p.url || !p.key || !p.mac) { throw 'set {$UNIFI.URL}, {$UNIFI.KEY} and {$UNIFI.MAC} on the host'; }
             var mac = String(p.mac).toLowerCase().replace(/[^0-9a-f]/g, '');
             if (mac.length !== 12) { throw 'MAC address looks wrong: ' + p.mac; }
@@ -40,10 +59,10 @@ zabbix_export:
             req.addHeader('X-API-KEY: ' + p.key);
             req.addHeader('Accept: application/json');
             var resp = req.get(String(p.url).replace(/\/+$/, '') + '/proxy/network/api/s/' + site + '/stat/device/' + mac);
-            if (req.getStatus() !== 200) { throw 'UniFi API HTTP ' + req.getStatus(); }
+            if (req.getStatus() !== 200) { throw refused(req.getStatus(), resp, site); }
             var body = JSON.parse(resp);
             var d = (body.data && body.data[0]) || null;
-            if (!d) { throw 'UniFi: device ' + mac + ' not found on site "' + site + '"'; }
+            if (!d) { throw 'UniFi: device ' + mac + ' not found on site "' + site + '" - check the MAC address'; }
             var ss = d['system-stats'] || {};
             var out = {
               state: d.state,

@@ -64,9 +64,12 @@ You can change any of these later in **host settings → UniFi options** (the AP
 
 ## Troubleshooting
 
+- **Start with the reason.** Hover (or tap) the sensor's value in Argus - `not supported` - to see why, in the controller's own words; the alert carries the same text.
 - **No metrics but ping is up.** Check the controller URL and port are reachable from the proxy, the
   API key is valid, and the MAC matches a device on the named site. A wrong site name is a common
-  cause of an empty device.
+  cause of an empty device: `HTTP 400 (api.err.NoSiteContext)` means the controller has no site by
+  that name. The Site name is the site's internal name (the first site is `default`), not the name
+  the UniFi app shows; leave it empty for the first site.
 - **HTTPS certificate errors** on a self-hosted controller are expected (self-signed); the template
   does not verify the certificate for the Integration API call (Zabbix HTTP items can only verify
   against a CA store, which a console's own certificate never passes). The discovery sweep and scan
