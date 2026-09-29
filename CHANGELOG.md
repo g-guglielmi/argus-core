@@ -42,7 +42,9 @@ GitHub Release from the matching section below.
 - The app fetches every state's count plus only the rows on screen (`GET /api/census`): the
   Overview's errors, warnings and acknowledged sensors, and the OK, paused or hidden list only
   while it is open. The whole census is no longer downloaded every 30 s.
-- The header's "Updated ... ago" is the age of the data on the server, not of the last download.
+- The header's "Updated ... ago" is the age of the data on the server, not of the last download, and
+  the app times each fetch to just after the server's next build (`next_ms`), so it restarts from a
+  few seconds every 20 s instead of landing anywhere between two builds.
 - Template items are left out at Zabbix instead of after the download.
 
 **Core VM (next image):**

@@ -160,3 +160,22 @@ func TestCensusInvalidator(t *testing.T) {
 		}
 	}
 }
+
+// A browser is told to come back just after the next build: the cadence after the last build
+// started plus that build's duration, never less than a second.
+func TestCensusNextIn(t *testing.T) {
+	c := newCensusCache((&fakeCensus{}).build)
+	now := time.Now()
+	c.at, c.took, c.lastUse = now.Add(-5*time.Second), 2*time.Second, now
+	if got := c.nextIn(now); got != censusActiveEvery-5*time.Second+2*time.Second {
+		t.Fatalf("active: next in %v", got)
+	}
+	c.lastUse = now.Add(-censusActiveFor - time.Minute)
+	if got := c.nextIn(now); got != censusIdleEvery-5*time.Second+2*time.Second {
+		t.Fatalf("idle: next in %v", got)
+	}
+	c.at = now.Add(-2 * censusIdleEvery)
+	if got := c.nextIn(now); got != time.Second {
+		t.Fatalf("overdue: next in %v, want 1s", got)
+	}
+}

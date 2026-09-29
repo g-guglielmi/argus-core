@@ -1264,14 +1264,21 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
 
   useEffect(() => {
     let live = true
-    const load = () => fetch(`/api/census?rows=${rowStates}`).then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((c: { counts?: Record<string, number>; rows?: SensorRow[]; age_ms?: number }) => {
-        if (!live) return
-        setSensors(c.rows || []); setCounts(c.counts || {}); setRowsFor(rowStates); setSensorsLoaded(true)
-        setSensorsAt(Date.now() - Math.max(0, c.age_ms || 0))
-      })
-      .catch(() => { if (live) setSensorsLoaded(true) })
-    load(); const t = setInterval(load, 30000); const off = onDataRefresh(load); return () => { live = false; clearInterval(t); off() }
+    let timer: number | undefined
+    // The next fetch is timed to just after the server's next build (next_ms), so every answer is a
+    // fresh one and the header's "Updated ... ago" restarts from a few seconds each time.
+    const again = (ms: number) => { window.clearTimeout(timer); timer = window.setTimeout(load, Math.min(60000, Math.max(3000, ms))) }
+    function load() {
+      fetch(`/api/census?rows=${rowStates}`).then((r) => (r.ok ? r.json() : Promise.reject()))
+        .then((c: { counts?: Record<string, number>; rows?: SensorRow[]; age_ms?: number; next_ms?: number }) => {
+          if (!live) return
+          setSensors(c.rows || []); setCounts(c.counts || {}); setRowsFor(rowStates); setSensorsLoaded(true)
+          setSensorsAt(Date.now() - Math.max(0, c.age_ms || 0))
+          again(c.next_ms != null ? c.next_ms + 1500 : 30000)
+        })
+        .catch(() => { if (live) { setSensorsLoaded(true); again(30000) } })
+    }
+    load(); const off = onDataRefresh(load); return () => { live = false; window.clearTimeout(timer); off() }
   }, [rowStates])
   // Remember the desktop sidebar collapsed/expanded choice across reloads.
   useEffect(() => { try { localStorage.setItem('argus-collapsed', collapsed ? '1' : '0') } catch { /* ignore */ } }, [collapsed])

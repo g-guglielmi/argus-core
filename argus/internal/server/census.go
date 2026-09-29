@@ -28,7 +28,7 @@ const (
 	censusActiveFor   = 10 * time.Minute // a read keeps the fast cadence this long
 	censusMaxAge      = 90 * time.Second // older than this (the refresher stalled), a read rebuilds
 	censusBuildTime   = 25 * time.Second // one build's budget
-	censusTick        = 5 * time.Second
+	censusTick        = time.Second      // how often the refresher checks: builds start on time, so browsers can meet them
 )
 
 // censusCache holds the last census and runs at most one build per generation at a time.
@@ -145,6 +145,23 @@ func (c *censusCache) refreshDue(now time.Time) bool {
 	return now.Sub(c.at) >= every
 }
 
+// nextIn estimates how long until the next build is ready: the cadence after the last build started,
+// plus as long as that build took. A browser asks again just after it, so its "updated ... ago"
+// always restarts from a fresh build instead of landing at a random point between two.
+func (c *censusCache) nextIn(now time.Time) time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	every := censusIdleEvery
+	if now.Sub(c.lastUse) < censusActiveFor {
+		every = censusActiveEvery
+	}
+	d := c.at.Add(every + c.took).Sub(now)
+	if d < time.Second {
+		d = time.Second // due or building now
+	}
+	return d
+}
+
 // refresh starts a build without waiting for it.
 func (c *censusCache) refresh() {
 	c.mu.Lock()
@@ -207,7 +224,8 @@ var censusStates = []string{"ok", "warning", "error", "acked", "paused", "hidden
 //
 // returns every state's count and the rows of the requested states only (the OK list alone is most
 // of the census, and only the OK drill-down needs it). built_at is when the data was read, age_ms
-// how old it is now (so a browser with a skewed clock still shows the right "updated ... ago").
+// how old it is now (so a browser with a skewed clock still shows the right "updated ... ago"), and
+// next_ms when the next build should be ready (the app asks again just after it).
 func (s *Server) handleCensus(w http.ResponseWriter, r *http.Request) {
 	if !s.zbx.Authenticated() {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured (set ARGUS_ZABBIX_API_TOKEN)"})
@@ -242,6 +260,7 @@ func (s *Server) handleCensus(w http.ResponseWriter, r *http.Request) {
 		"rows":     rows,
 		"built_at": snap.At.Unix(),
 		"age_ms":   time.Since(snap.At).Milliseconds(),
+		"next_ms":  s.census.nextIn(time.Now()).Milliseconds(),
 		"build_ms": snap.Took.Milliseconds(),
 	})
 }

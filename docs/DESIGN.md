@@ -794,8 +794,10 @@ signed-in user or through an alert's signed link) marks it stale once the reques
 next read waits for a fresh build, so whoever acted sees the result. The app asks
 `GET /api/census?rows=<states>` for every state's count plus the rows of the states on screen (the
 Overview's error / warning / acknowledged; the OK, paused or hidden list only while it is open), so
-the browser no longer downloads the whole census every 30 s. The answer carries `build_ms`, the
-last build's duration, as a sizing input. Template items are excluded at Zabbix (`templated: false`).
+the browser no longer downloads the whole census every 30 s. The answer carries `age_ms` (how old
+the data is), `next_ms` (when the next build should be ready: the app fetches again just after it,
+so every answer is fresh and the header's "Updated ... ago" restarts from a few seconds) and
+`build_ms`, the last build's duration, as a sizing input. Template items are excluded at Zabbix (`templated: false`).
 `GET /api/sensors` still returns the full list from the same cache.
 
 ---
