@@ -13,6 +13,12 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Core VM (next image):**
+- Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
+  of the `get.docker.com` script.
+
+## [0.5.15] - 2026-09-29
+
 **Security review, wave 3 (the Low and Info findings):**
 - `ARGUS_SECRET_KEY` is stretched into the at-rest key with argon2id instead of a single SHA-256, so
   a passphrase can't be guessed offline from a database dump. A database written under the old
@@ -44,10 +50,6 @@ GitHub Release from the matching section below.
 - Discovery: the history list failed since 0.5.14 (the job select gained the certificate column, its row
   scan did not), so the page showed no discoveries and new scans seemed not to start. Nothing was lost;
   every scan is listed again.
-
-**Core VM (next image):**
-- Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
-  of the `get.docker.com` script.
 
 ## [0.5.14] - 2026-09-29
 
