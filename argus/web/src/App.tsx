@@ -4087,6 +4087,23 @@ const emptyCtlForm = (): CtlForm => ({ id: 0, name: '', url: '', key: '', sites:
 const ctlToForm = (c: UnifiCtlRow): CtlForm => ({ id: c.id, name: c.name, url: c.url, key: '', sites: c.sites || [], tls: c.tls_mode || 'verify', fingerprint: c.fingerprint || '' })
 // A pinned certificate reads as groups of four, like a fingerprint does elsewhere.
 const fpGroups = (fp: string) => (fp || '').replace(/(.{4})/g, '$1 ').trim()
+// The certificate facts a pin dialog shows, one per line, with the intro and the consequence around them.
+function certMessage(intro: string, c: { subject?: string; issuer?: string; not_after?: string; fingerprint: string }, outro: string) {
+  const when = c.not_after ? (isNaN(Date.parse(c.not_after)) ? c.not_after : new Date(c.not_after).toLocaleDateString()) : ''
+  const row = (k: string, v: ReactNode) => <div><span style={{ color: 'var(--faint)', display: 'inline-block', minWidth: 88 }}>{k}</span>{v || '(not readable)'}</div>
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      <div>{intro}</div>
+      <div style={{ fontSize: 12.5, lineHeight: 1.6 }}>
+        {row('Subject', c.subject)}
+        {row('Issuer', c.issuer)}
+        {row('Valid until', when)}
+        {row('SHA-256', <span className="mono" style={{ wordBreak: 'break-all' }}>{fpGroups(c.fingerprint)}</span>)}
+      </div>
+      <div>{outro}</div>
+    </div>
+  )
+}
 // The four controller macros the adopt path fills server-side for a sweep-adopted UniFi device
 // (the API key never travels through the browser) - the review UI shows them as auto-filled.
 const UNIFI_AUTOFILL = ['{$UNIFI.URL}', '{$UNIFI.KEY}', '{$UNIFI.MAC}', '{$UNIFI.SITE}']
@@ -4321,7 +4338,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
         const c = d.certificate
         const ok = await confirm({
           title: 'Pin this certificate?',
-          message: `The controller presented a certificate that isn't trusted by the system roots (usually a console's own self-signed one).\n\nSubject: ${c.subject}\nIssuer: ${c.issuer}\nValid until: ${new Date(c.not_after).toLocaleDateString()}\nSHA-256: ${fpGroups(c.fingerprint)}\n\nPin it and every request will require exactly this certificate; a change later fails loudly.`,
+          message: certMessage("The controller presented a certificate that isn't trusted by the system roots (usually a console's own self-signed one).", c, 'Pin it and every request will require exactly this certificate; a change later fails loudly.'),
           confirmLabel: 'Pin and save',
         })
         if (ok) { setCtlForm({ ...f, tls: 'pin', fingerprint: c.fingerprint }); await saveCtl({ ...f, tls: 'pin', fingerprint: c.fingerprint }); return }
@@ -4365,7 +4382,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
       const c = job.certificate
       const ok = await confirm({
         title: 'Pin this certificate?',
-        message: `Probe ${job.proxy_name} reached the controller and saw this certificate.\n\nSubject: ${c.subject || '(not readable)'}\nIssuer: ${c.issuer || '(not readable)'}\nValid until: ${c.not_after || '(not readable)'}\nSHA-256: ${fpGroups(c.fingerprint)}\n\nPin it and every request will require exactly this certificate; a change later fails loudly.`,
+        message: certMessage(`Probe ${job.proxy_name} reached the controller and saw this certificate.`, c, 'Pin it and every request will require exactly this certificate; a change later fails loudly.'),
         confirmLabel: 'Pin and save',
       })
       if (!ok) return
@@ -4380,7 +4397,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
     if (!c || !ctl) return
     const ok = await confirm({
       title: `Pin the certificate of ${ctl.name}?`,
-      message: `Subject: ${c.subject || '(not readable)'}\nIssuer: ${c.issuer || '(not readable)'}\nValid until: ${c.not_after || '(not readable)'}\nSHA-256: ${fpGroups(c.fingerprint)}\n\nFuture sweeps and scans will require exactly this certificate.`,
+      message: certMessage('The sweep was refused because this certificate is not trusted yet.', c, 'Future sweeps and scans will require exactly this certificate.'),
       confirmLabel: 'Pin',
     })
     if (!ok) return
@@ -4674,7 +4691,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
               )}
               {ctlForm.tls === 'ignore' && <p className="set-note">The API key is then sent to whatever answers at this address. Only for a network you trust end to end.</p>}
               {certOffer && ctlForm.tls === 'verify' && (
-                <div style={{ display: 'grid', gap: 6, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8 }}>
+                <div style={{ display: 'grid', gap: 6, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 600 }}>Ask a probe for the certificate</div>
                   <p className="set-note" style={{ margin: 0 }}>A probe of that site connects to the controller and reports the certificate it presents (no API key travels). You then decide whether to pin it.</p>
                   <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
