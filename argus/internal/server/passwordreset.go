@@ -126,7 +126,7 @@ func (s *Server) sendPasswordReset(email, baseURL string) {
 	}
 	ch := s.firstEmailChannel(ctx)
 	if ch == nil || baseURL == "" {
-		s.logger.Warn("password reset requested but no email channel / public URL is configured", "email", email)
+		s.logger.Warn("password reset requested but no email channel / public URL is configured")
 		return
 	}
 	raw, id, err := auth.NewSessionToken()

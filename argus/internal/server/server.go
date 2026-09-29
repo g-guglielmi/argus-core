@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"argus/internal/auth"
@@ -39,19 +40,23 @@ type Server struct {
 	wa            *webauthn.WebAuthn // nil when passkeys are not configured
 	signingSecret string             // HMAC secret for signed alert links
 	loginLimiter  *ratelimit.Limiter // brute-force protection for login (owned by mgr)
-	ca            *pki.CA            // nil when probe enrollment is not configured
-	probeLatest   *probeLatestCache  // newest published probe version, polled from public GHCR
-	updaterLatest *probeLatestCache  // newest published argus-updater version, polled from public GHCR
-	appLatest     *appLatestCache    // newest published app release, polled from public GHCR
-	probeVM       *probeVMCache      // newest probe-vm appliance + assets, polled from GitHub Releases
-	digests       digestCache        // tag -> digest, handed out with every update so the updater can verify the pull
+	pkLimiter     *ratelimit.Limiter // anonymous passkey-login begins per address (each stores a ceremony)
+	featMu        sync.Mutex         // guards the cached public /api/features answer
+	featResetOK   bool
+	featResetAt   time.Time
+	ca            *pki.CA           // nil when probe enrollment is not configured
+	probeLatest   *probeLatestCache // newest published probe version, polled from public GHCR
+	updaterLatest *probeLatestCache // newest published argus-updater version, polled from public GHCR
+	appLatest     *appLatestCache   // newest published app release, polled from public GHCR
+	probeVM       *probeVMCache     // newest probe-vm appliance + assets, polled from GitHub Releases
+	digests       digestCache       // tag -> digest, handed out with every update so the updater can verify the pull
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {
 	dummy, _ := auth.HashPassword("argus-nonexistent-user")
 	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, mgr: mgr, dummyHash: dummy,
 		signingSecret: GetSigningSecret(context.Background(), st),
-		loginLimiter:  mgr.Limiter(), probeLatest: &probeLatestCache{}, updaterLatest: &probeLatestCache{}, appLatest: &appLatestCache{}, probeVM: &probeVMCache{}}
+		loginLimiter:  mgr.Limiter(), pkLimiter: ratelimit.New(30, 5*time.Minute), probeLatest: &probeLatestCache{}, updaterLatest: &probeLatestCache{}, appLatest: &appLatestCache{}, probeVM: &probeVMCache{}}
 	// Poll public GHCR for the newest probe revision so the fleet view can flag "-rN available"
 	// even when the target is "latest". Background; a failure just leaves it unknown.
 	s.startProbeLatestRefresh(context.Background())
@@ -388,10 +393,23 @@ func (s *Server) handleAPIHealth(w http.ResponseWriter, r *http.Request) {
 // handleFeatures advertises optional capabilities so the UI can adapt (public).
 func (s *Server) handleFeatures(w http.ResponseWriter, r *http.Request) {
 	// Self-service password reset needs an email channel to deliver the link.
-	resetReady := s.firstEmailChannel(r.Context()) != nil
+	resetReady := s.passwordResetReady(r.Context())
 	// The clock settings are for the app's header clock (install-wide, so the same for everyone).
 	writeJSON(w, http.StatusOK, map[string]any{"passkeys": s.wa != nil, "password_reset": resetReady, "probe_enroll": s.ca != nil,
 		"clock_24h": s.mgr.Clock24h(), "timezone": s.mgr.Location().String()})
+}
+
+// passwordResetReady answers the public /api/features flag from a short cache: the endpoint is
+// unauthenticated, and the channel list needn't be re-read on every page load.
+func (s *Server) passwordResetReady(ctx context.Context) bool {
+	s.featMu.Lock()
+	defer s.featMu.Unlock()
+	if time.Since(s.featResetAt) < 30*time.Second {
+		return s.featResetOK
+	}
+	s.featResetOK = s.firstEmailChannel(ctx) != nil
+	s.featResetAt = time.Now()
+	return s.featResetOK
 }
 
 // --- auth ---
@@ -441,17 +459,31 @@ func (s *Server) fromTrustedProxy(r *http.Request) bool {
 func (s *Server) rateBlocked(w http.ResponseWriter, keys ...string) bool {
 	for _, k := range keys {
 		if blocked, retry := s.loginLimiter.Blocked(k); blocked {
-			secs := int(retry.Seconds())
-			if secs < 1 {
-				secs = 1
-			}
-			w.Header().Set("Retry-After", strconv.Itoa(secs))
-			writeJSON(w, http.StatusTooManyRequests, map[string]string{
-				"error": fmt.Sprintf("Too many attempts. Try again in about %d seconds.", secs)})
+			writeThrottled(w, retry)
 			return true
 		}
 	}
 	return false
+}
+
+// writeThrottled answers 429 with a Retry-After hint.
+func writeThrottled(w http.ResponseWriter, retry time.Duration) {
+	secs := int(retry.Seconds())
+	if secs < 1 {
+		secs = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(secs))
+	writeJSON(w, http.StatusTooManyRequests, map[string]string{
+		"error": fmt.Sprintf("Too many attempts. Try again in about %d seconds.", secs)})
+}
+
+// errText is an error as shown to the signed-in user: admins see it whole, everyone else sees a
+// Zabbix RPC error without its "data" part (SQL fragments, internal names).
+func (s *Server) errText(r *http.Request, err error) string {
+	if u, ok := auth.UserFrom(r.Context()); ok && u.Role == "admin" {
+		return err.Error()
+	}
+	return zabbix.UserMessage(err)
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -463,22 +495,32 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	ipKey := "login:ip:" + s.clientIP(r)
 	acctKey := "login:acct:" + strings.ToLower(strings.TrimSpace(req.Email))
-	if s.rateBlocked(w, ipKey, acctKey) {
+	if s.rateBlocked(w, ipKey) {
 		return
 	}
-	loginFailed := func() { s.loginLimiter.Fail(ipKey); s.loginLimiter.Fail(acctKey) }
+	// The account counter slows a guess spread over many addresses without letting anyone lock
+	// a user out: while it is over the limit a wrong password is answered 429 instead of 401,
+	// but the right one still signs in (and clears the counter).
+	acctBlocked, acctRetry := s.loginLimiter.Blocked(acctKey)
+	loginFailed := func() {
+		s.loginLimiter.Fail(ipKey)
+		s.loginLimiter.Fail(acctKey)
+		if acctBlocked {
+			writeThrottled(w, acctRetry)
+			return
+		}
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
+	}
 
 	u, err := s.st.UserByEmail(r.Context(), req.Email)
 	if err != nil {
 		_, _ = auth.VerifyPassword(req.Password, s.dummyHash) // equalize timing
 		loginFailed()
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
 	ok, err := auth.VerifyPassword(req.Password, u.PasswordHash)
 	if err != nil || !ok {
 		loginFailed()
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
 	// Password correct - clear the failure counters for this IP and account.
@@ -560,7 +602,12 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 
 	s.loginLimiter.Reset(ipKey)
 	s.loginLimiter.Reset(userKey)
-	_ = s.st.DeleteMFAChallenge(r.Context(), challengeID) // one-time use
+	// One sign-in per challenge: the row is deleted in the statement that redeems it, so two
+	// completions racing with the same code yield one session.
+	if ok, err := s.st.ConsumeMFAChallenge(r.Context(), challengeID); err != nil || !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "this sign-in has expired; please start again"})
+		return
+	}
 	s.issueSession(w, r, u)
 }
 

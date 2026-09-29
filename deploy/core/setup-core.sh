@@ -52,10 +52,30 @@ popd >/dev/null
 
 echo "==> [2/8] TimescaleDB repo"
 apt-get install -y gnupg postgresql-common apt-transport-https lsb-release wget
+
+# The release package only drops a sources file and the repository keyring. Before apt trusts
+# that keyring, make sure it holds Zabbix's published signing keys and nothing else (the .deb
+# itself is not signed; its URL is a rolling "latest", so a checksum can't be pinned).
+ZBX_KEYRING="/usr/share/keyrings/zabbix.gpg"
+ZBX_KEY_FPRS="4C3D6F2CC75F5146754FC374D913219AB5333005 A1848F5352D022B9471D83D0082AB56BA14FE591 84162C39F000750DDAEB816305A7FAEC227618D8"
+[[ -s "$ZBX_KEYRING" ]] || { echo "!! ${ZBX_KEYRING} missing after installing the release package"; exit 1; }
+zbx_fprs="$(gpg --show-keys --with-colons "$ZBX_KEYRING" 2>/dev/null | awk -F: '$1=="pub"{p=1;next} p&&$1=="fpr"{print $10;p=0}')"
+[[ -n "$zbx_fprs" ]] || { echo "!! could not read ${ZBX_KEYRING}"; exit 1; }
+for fpr in $zbx_fprs; do
+  case " $ZBX_KEY_FPRS " in
+    *" $fpr "*) ;;
+    *) echo "!! unexpected signing key in ${ZBX_KEYRING}: ${fpr}"; exit 1 ;;
+  esac
+done
+
 echo "deb https://packagecloud.io/timescale/timescaledb/${DISTRO_ID}/ ${CODENAME} main" \
   > /etc/apt/sources.list.d/timescaledb.list
-wget --quiet -O - https://packagecloud.io/timescale/timescaledb/gpgkey | \
-  gpg --dearmor -o /etc/apt/trusted.gpg.d/timescaledb.gpg
+# Same for TimescaleDB's key: pinned to the fingerprint packagecloud publishes for the repository.
+TS_KEY_FPR="1005FB68604CE9B8F6879CF759F18EDF47F24417"
+wget --quiet -O "$tmp/timescaledb.gpgkey" https://packagecloud.io/timescale/timescaledb/gpgkey
+ts_fpr="$(gpg --show-keys --with-colons "$tmp/timescaledb.gpgkey" 2>/dev/null | awk -F: '$1=="fpr"{print $10; exit}')"
+[[ "$ts_fpr" == "$TS_KEY_FPR" ]] || { echo "!! TimescaleDB signing key fingerprint mismatch: ${ts_fpr:-none}"; exit 1; }
+gpg --dearmor -o /etc/apt/trusted.gpg.d/timescaledb.gpg < "$tmp/timescaledb.gpgkey"
 apt-get update
 
 echo "==> [3/8] Install packages"

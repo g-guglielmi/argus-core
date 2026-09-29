@@ -13,6 +13,28 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Security review, wave 3 (the Low and Info findings):**
+- `ARGUS_SECRET_KEY` is stretched into the at-rest key with argon2id instead of a single SHA-256, so
+  a passphrase can't be guessed offline from a database dump. A database written under the old
+  derivation is re-encrypted once at the first start (same variable, nothing to do); an older image
+  started on it afterwards refuses to run, as with any key mismatch.
+- Sign-in: the per-account failure counter no longer locks a user out (over the limit a wrong password
+  is answered 429, the right one still signs in and clears it); anonymous passkey-login begins are
+  capped per address; concurrent argon2 runs are capped at eight; the rate limiter hashes long keys
+  and caps how many it tracks.
+- A second-factor challenge is redeemed in the statement that deletes it, so two completions racing
+  with the same code yield one session.
+- One-shot update hand-outs and the paired deletes (discovery jobs, notification state, proxy records)
+  run atomically; a probe update taken by a concurrent check-in is handed out once.
+- Per-day counters: at most 20 items and 93 days per request, one item list per host.
+- Zabbix RPC errors reach non-admin users without their `data` part; the password-reset log line no
+  longer records the requested address; the public features flag is answered from a short cache.
+- A probe check-in token is issued only for a proxy that exists in Zabbix.
+- CI: `govulncheck` and `npm audit` (production dependencies, high and above) gate the image build;
+  the Go toolchain is the pinned image's own (`GOTOOLCHAIN=local`).
+- `setup-core.sh` verifies the Zabbix repository keyring and the TimescaleDB signing key against their
+  published fingerprints before apt trusts them.
+
 **Core VM (next image):**
 - Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
   of the `get.docker.com` script.

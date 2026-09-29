@@ -36,7 +36,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
 	if err := s.mgr.Set(ctx, req.Values); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": s.errText(r, err)})
 		return
 	}
 	// The timezone setting also drives the core VM's clock: re-mirror it for the host timer

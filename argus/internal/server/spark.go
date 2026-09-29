@@ -98,11 +98,11 @@ func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ids := strings.Split(idsParam, ",")
-	if len(ids) > 50 { // a host has a handful of counter items; cap defensively
-		ids = ids[:50]
+	if len(ids) > 20 { // a host has a handful of counter items; every id costs Zabbix calls
+		ids = ids[:20]
 	}
 	days := atoi(r.URL.Query().Get("days"))
-	if days < 1 || days > 366 {
+	if days < 1 || days > 93 {
 		days = 7
 	}
 	// off is JS Date.getTimezoneOffset(): minutes such that UTC = local + off (UTC+2 -> -120).
@@ -167,6 +167,20 @@ func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
 		return b
 	}
 
+	// hostItems memoizes a host's item list: the rate items of one host all need the same list.
+	itemsCache := map[string][]zabbix.Item{}
+	hostItems := func(hostID string) ([]zabbix.Item, error) {
+		if items, ok := itemsCache[hostID]; ok {
+			return items, nil
+		}
+		items, err := s.zbx.Items(ctx, hostID)
+		if err != nil {
+			return nil, err
+		}
+		itemsCache[hostID] = items
+		return items, nil
+	}
+
 	out := make(map[string][]float64, len(ids))
 	for _, id := range ids {
 		it, err := s.zbx.Item(ctx, id)
@@ -186,7 +200,7 @@ func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
 			// The block rate's per-day value derives from its sibling counters on the same host
 			// (blocked/total per LOCAL day) - its own series can't be reconstructed into local
 			// days (a ratio isn't monotonic), and this keeps the whole DNS section on one math.
-			items, ierr := s.zbx.Items(ctx, it.HostID)
+			items, ierr := hostItems(it.HostID)
 			if ierr != nil {
 				if debug {
 					diag[id] = map[string]any{"key": it.Key, "mode": mode, "error": "item list failed: " + ierr.Error()}

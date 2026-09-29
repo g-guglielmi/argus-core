@@ -9,10 +9,11 @@ COPY web/ ./
 RUN npm run build          # tsc --noEmit && vite build -> /web/dist
 
 # ---- Stage 2: build the Go binary (embeds the frontend) ----
-FROM golang:1.25-alpine AS build
+FROM golang:1.25.14-alpine AS build
 WORKDIR /src
-# allow go to fetch a newer toolchain if a dependency requires one (default images pin 'local')
-ENV GOTOOLCHAIN=auto
+# The image's toolchain is the one that builds: a dependency that needs a newer Go fails loudly
+# here instead of downloading one at build time. Bump the tag with Go patch releases.
+ENV GOTOOLCHAIN=local
 # running version (git describe), stamped into the binary so the UI can show it + flag updates
 ARG ARGUS_VERSION=""
 # download pinned modules first (cached layer) from the committed go.mod + go.sum

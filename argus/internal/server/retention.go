@@ -141,7 +141,7 @@ func (s *Server) handleSetRetention(w http.ResponseWriter, r *http.Request) {
 	}
 	compressionAvailable := compressionAvailable(hk)
 	if err := u.validate(compressionAvailable); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": s.errText(r, err)})
 		return
 	}
 	fields := map[string]any{

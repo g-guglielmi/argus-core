@@ -81,7 +81,7 @@ func (s *Server) handleSeedISO(w http.ResponseWriter, r *http.Request) {
 	// bad address never reaches the VM's network config; the first-boot service writes a static
 	// systemd-networkd file from these before enrollment.
 	if cidr, err := staticCIDR(req.StaticIP, req.Prefix); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": s.errText(r, err)})
 		return
 	} else if cidr != "" {
 		env.WriteString("ARGUS_IP=" + cidr + "\n")

@@ -6,9 +6,25 @@
 package ratelimit
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"sync"
 	"time"
 )
+
+const (
+	maxKeyLen  = 128    // longer keys (an email is whatever the caller typed) are hashed
+	maxEntries = 100000 // hard ceiling on tracked keys: a spray past it evicts, never grows
+)
+
+// normKey bounds what a key costs to keep, whatever the caller put in it.
+func normKey(key string) string {
+	if len(key) <= maxKeyLen {
+		return key
+	}
+	sum := sha256.Sum256([]byte(key))
+	return "h:" + hex.EncodeToString(sum[:])
+}
 
 type Limiter struct {
 	mu     sync.Mutex
@@ -39,6 +55,7 @@ func (l *Limiter) Configure(max int, window time.Duration) {
 // Blocked reports whether the key currently has >= max failures inside the window, and if so how
 // long until the oldest counted failure ages out (the retry-after hint).
 func (l *Limiter) Blocked(key string) (bool, time.Duration) {
+	key = normKey(key)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Now().Unix()
@@ -60,6 +77,7 @@ func (l *Limiter) Blocked(key string) (bool, time.Duration) {
 
 // Fail records one failure against the key.
 func (l *Limiter) Fail(key string) {
+	key = normKey(key)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Now().Unix()
@@ -67,13 +85,21 @@ func (l *Limiter) Fail(key string) {
 	if len(l.fails) > 8192 { // guard against unbounded growth from spraying
 		l.sweep(now)
 	}
+	// Still too many live keys: someone is spraying distinct ones. Evict arbitrary entries down
+	// to the ceiling; losing a few counters is the lesser harm next to unbounded memory.
+	for k := range l.fails {
+		if len(l.fails) <= maxEntries {
+			break
+		}
+		delete(l.fails, k)
+	}
 }
 
 // Reset clears a key's failures (called after a successful authentication).
 func (l *Limiter) Reset(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	delete(l.fails, key)
+	delete(l.fails, normKey(key))
 }
 
 func (l *Limiter) sweep(now int64) {

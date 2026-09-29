@@ -147,7 +147,14 @@ func (s *Store) TakeProbeUpdate(ctx context.Context, name string) (string, error
 		return "", err
 	}
 	if tag != "" {
-		_, _ = s.db.ExecContext(ctx, `UPDATE probe_agents SET update_to='' WHERE proxy_name=?`, name)
+		// Clear exactly what was read: if another check-in took it meanwhile, this one gets nothing.
+		res, err := s.db.ExecContext(ctx, `UPDATE probe_agents SET update_to='' WHERE proxy_name=? AND update_to=?`, name, tag)
+		if err != nil {
+			return "", err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return "", nil
+		}
 	}
 	return tag, nil
 }
@@ -266,7 +273,13 @@ func (s *Store) TakeUpdaterUpdate(ctx context.Context, name string) (string, err
 		return "", err
 	}
 	if tag != "" {
-		_, _ = s.db.ExecContext(ctx, `UPDATE probe_agents SET updater_update_to='' WHERE proxy_name=?`, name)
+		res, err := s.db.ExecContext(ctx, `UPDATE probe_agents SET updater_update_to='' WHERE proxy_name=? AND updater_update_to=?`, name, tag)
+		if err != nil {
+			return "", err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return "", nil
+		}
 	}
 	return tag, nil
 }

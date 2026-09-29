@@ -249,6 +249,24 @@ func (s *Server) handleIssueCheckinToken(w http.ResponseWriter, r *http.Request)
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
+	// Only a proxy Zabbix knows gets a credential: a typo would otherwise leave a phantom probe
+	// record that can complete discovery jobs.
+	proxies, err := s.zbx.Proxies(ctx)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not read the proxy list from Zabbix"})
+		return
+	}
+	known := false
+	for _, p := range proxies {
+		if p.Name == name {
+			known = true
+			break
+		}
+	}
+	if !known {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no proxy with that name"})
+		return
+	}
 	raw, hash, err := auth.NewSessionToken()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})

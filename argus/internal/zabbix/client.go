@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -77,6 +78,16 @@ type rpcError struct {
 
 func (e *rpcError) Error() string {
 	return fmt.Sprintf("zabbix rpc error %d: %s (%s)", e.Code, e.Message, e.Data)
+}
+
+// UserMessage is an error's text for someone who isn't an admin: a Zabbix RPC error loses its
+// "data" part (SQL fragments, internal names); any other error is returned whole.
+func UserMessage(err error) string {
+	var re *rpcError
+	if errors.As(err, &re) {
+		return fmt.Sprintf("zabbix rpc error %d: %s", re.Code, re.Message)
+	}
+	return err.Error()
 }
 
 // call performs a JSON-RPC request. When withAuth is true, the configured API

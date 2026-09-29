@@ -207,7 +207,7 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 	}
 	macros, err := buildMacros(req, class)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": s.errText(r, err)})
 		return
 	}
 	hostID, err := s.zbx.CreateHost(ctx, zabbix.CreateHostParams{

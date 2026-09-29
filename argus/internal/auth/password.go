@@ -23,8 +23,18 @@ const (
 	saltLen      = 16
 )
 
+// hashSem caps concurrent argon2 runs: each takes 64 MiB, so a burst of sign-in attempts queues
+// here instead of multiplying memory.
+var hashSem = make(chan struct{}, 8)
+
+func acquireHash() func() {
+	hashSem <- struct{}{}
+	return func() { <-hashSem }
+}
+
 // HashPassword returns an argon2id PHC-format hash string.
 func HashPassword(password string) (string, error) {
+	defer acquireHash()()
 	salt := make([]byte, saltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
@@ -38,6 +48,7 @@ func HashPassword(password string) (string, error) {
 
 // VerifyPassword reports whether password matches the given PHC-format argon2id hash.
 func VerifyPassword(password, encoded string) (bool, error) {
+	defer acquireHash()()
 	parts := strings.Split(encoded, "$")
 	// ["", "argon2id", "v=19", "m=..,t=..,p=..", <salt>, <hash>]
 	if len(parts) != 6 || parts[1] != "argon2id" {

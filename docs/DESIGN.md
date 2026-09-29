@@ -146,8 +146,10 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
   Public URL, else from the request's host only when that host is allow-listed or loopback; a probe's
   check-in URL comes from the Public URL alone (probes write it into their own configuration, and
   derive it from their enroll URL when there is none). "Probe core host" is validated as `host[:port]`.
-- **Secrets at rest** are AES-256-GCM under `ARGUS_SECRET_KEY` (SHA-256 of the value) or a generated
-  `secret.key` on the data volume. A canary (`app_meta.cipher_canary`) is checked at start: a key
+- **Secrets at rest** are AES-256-GCM under `ARGUS_SECRET_KEY` (stretched into the key with argon2id,
+  so a passphrase can't be guessed from a database dump at hashing speed; a database written under
+  the earlier SHA-256 derivation is re-encrypted once at start) or a generated `secret.key` on the
+  data volume. A canary (`app_meta.cipher_canary`) is checked at start: a key
   that doesn't open it stops Argus with a clear message, unless `ARGUS_SECRET_KEY_RESET=true`, which
   drops every unreadable secret once (channel/SNMP/UniFi credentials, break-glass passwords,
   status-page link copies, the alert signing key, encrypted settings; TOTP is switched off for the
@@ -169,6 +171,15 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
   address are the client's to forge and never believed, and a forwarded value that isn't an address
   falls back to the peer. Feeds the login rate limit, status pages' allowed networks, Allowed FQDNs
   and IPs (`X-Forwarded-Host`) and reset links (`X-Forwarded-Proto`).
+- **Sign-in throttling** counts failures per address and per account; the account counter never locks
+  a user out (over the limit a wrong password gets 429 instead of 401, the right one still signs in).
+  Anonymous passkey-login begins are capped per address, argon2 runs are capped at eight at a time,
+  and the limiter bounds what it keeps (long keys hashed, a hard ceiling on tracked keys).
+  Second-factor challenges, reset links and passkey ceremonies are redeemed in the statement that
+  deletes them, so a race yields one session. Zabbix RPC errors reach non-admin users without their
+  `data` part. A check-in token is issued only for a proxy Zabbix knows. CI runs `govulncheck` and
+  `npm audit` on the production dependencies before any image is built, and the Go toolchain is the
+  pinned image's own.
 - **Passkey caveat (accepted):** WebAuthn RP IDs must be a domain, not a bare IP.
   → Passkey login works via `monitoring.example.com`; direct **private-IP** access
   (troubleshooting) falls back to **password + MFA**.

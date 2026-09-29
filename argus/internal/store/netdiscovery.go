@@ -47,17 +47,17 @@ type DiscoveryJob struct {
 	Kind           string // scan | unifi | cert (ask the probe which certificate a controller URL presents)
 	ControllerID   int64  // unifi_controllers.id (sweep jobs)
 	ControllerName string // display snapshot (sweep jobs)
-	CIDR          string // the subnet (scan) or the controller URL (cert)
-	SNMPVersion   int
-	SNMPCommunity string
-	SNMPPort      int
-	State         string // pending | dispatched | done | failed
-	Error         string
-	Certificate   string // JSON {fingerprint, subject, issuer, not_after} the probe saw (cert jobs; a sweep that failed the check)
-	RequestedBy   string
-	CreatedAt     int64
-	DispatchedAt  int64
-	CompletedAt   int64
+	CIDR           string // the subnet (scan) or the controller URL (cert)
+	SNMPVersion    int
+	SNMPCommunity  string
+	SNMPPort       int
+	State          string // pending | dispatched | done | failed
+	Error          string
+	Certificate    string // JSON {fingerprint, subject, issuer, not_after} the probe saw (cert jobs; a sweep that failed the check)
+	RequestedBy    string
+	CreatedAt      int64
+	DispatchedAt   int64
+	CompletedAt    int64
 	// Result counts, populated by ListDiscoveryJobs only (0 elsewhere).
 	Found    int
 	NewCount int
@@ -283,15 +283,22 @@ func (s *Store) ListDiscoveryJobs(ctx context.Context, limit int) ([]DiscoveryJo
 // result post then completes into ErrNotFound and is dropped. Note: results carry the ignore
 // memory, so a device ignored ONLY in the deleted scan shows as new on its next appearance.
 func (s *Store) DeleteDiscoveryJob(ctx context.Context, id int64) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM discovery_jobs WHERE id=?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `DELETE FROM discovery_jobs WHERE id=?`, id)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
-	_, err = s.db.ExecContext(ctx, `DELETE FROM discovery_results WHERE job_id=?`, id)
-	return err
+	if _, err := tx.ExecContext(ctx, `DELETE FROM discovery_results WHERE job_id=?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // DiscoveryNewResultIPs returns, for each given job, the IPs of its results still in state

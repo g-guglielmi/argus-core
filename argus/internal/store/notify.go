@@ -265,11 +265,18 @@ func (s *Store) UpsertNotifyState(ctx context.Context, st NotifyState) error {
 
 // DeleteNotifyState forgets an event, along with the record of which channels it reached.
 func (s *Store) DeleteNotifyState(ctx context.Context, eventID string) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM notify_deliveries WHERE event_id=?`, eventID); err != nil {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM notify_events WHERE event_id=?`, eventID)
-	return err
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM notify_deliveries WHERE event_id=?`, eventID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM notify_events WHERE event_id=?`, eventID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // --- per-channel deliveries (escalation, reminders, acknowledged + recovery routing) ---
@@ -332,14 +339,21 @@ func (s *Store) UpsertNotifyDelivery(ctx context.Context, d NotifyDelivery) erro
 // sensor at another severity, so its recovery still reaches every channel that heard of the incident.
 // A channel the successor already reached keeps the successor's row.
 func (s *Store) MoveNotifyDeliveries(ctx context.Context, fromEvent, toEvent string) error {
-	if _, err := s.db.ExecContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx,
 		`INSERT OR IGNORE INTO notify_deliveries(event_id,kind,channel_id,severity,first_sent,last_sent,reminders)
 		 SELECT ?,kind,channel_id,severity,first_sent,last_sent,reminders FROM notify_deliveries WHERE event_id=?`,
 		toEvent, fromEvent); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM notify_deliveries WHERE event_id=?`, fromEvent)
-	return err
+	if _, err := tx.ExecContext(ctx, `DELETE FROM notify_deliveries WHERE event_id=?`, fromEvent); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // AckInfo returns who acknowledged an event and their note (byUser 0 = the signed alert link).

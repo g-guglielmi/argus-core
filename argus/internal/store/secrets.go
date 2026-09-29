@@ -33,10 +33,94 @@ func (s *Store) VerifyCipher(ctx context.Context) error {
 	if !ok || raw == "" {
 		return s.MetaSet(ctx, cipherCanaryKey, s.cipher.Encrypt(cipherCanaryPlain))
 	}
-	if pt, err := s.cipher.TryDecrypt(raw); err != nil || pt != cipherCanaryPlain {
+	return s.VerifyCipherWith(ctx, s.cipher)
+}
+
+// VerifyCipherWith reports whether the given cipher opens the canary: ErrCipherMismatch when it
+// doesn't, or when there is no canary yet.
+func (s *Store) VerifyCipherWith(ctx context.Context, c *secret.Cipher) error {
+	raw, ok, err := s.MetaGet(ctx, cipherCanaryKey)
+	if err != nil {
+		return err
+	}
+	if !ok || raw == "" {
+		return ErrCipherMismatch
+	}
+	if pt, err := c.TryDecrypt(raw); err != nil || pt != cipherCanaryPlain {
 		return ErrCipherMismatch
 	}
 	return nil
+}
+
+// encryptedColumns lists every column that may hold a marked ciphertext (for key rotation).
+var encryptedColumns = [][2]string{
+	{"users", "totp_secret"},
+	{"notify_channels", "config"},
+	{"user_notify_channels", "config"},
+	{"snmp_defaults", "community"},
+	{"snmp_defaults", "auth_pass"},
+	{"snmp_defaults", "priv_pass"},
+	{"discovery_jobs", "snmp_community"},
+	{"unifi_controllers", "api_key"},
+	{"probe_agents", "bg_secret"},
+	{"status_pages", "token_enc"},
+	{"app_meta", "value"},
+}
+
+// RotateEncryptedSecrets re-encrypts every stored secret from old to the current cipher in one
+// transaction and leaves a fresh canary, so a database keeps opening with the same
+// ARGUS_SECRET_KEY after the key derivation changed. It returns the rows rewritten. A row old
+// can't open is left as it is (startup verified old against the canary, so that is a corrupt row).
+func (s *Store) RotateEncryptedSecrets(ctx context.Context, old *secret.Cipher) (int, error) {
+	if !s.cipher.Enabled() || old == nil {
+		return 0, nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	n := 0
+	for _, tc := range encryptedColumns {
+		table, col := tc[0], tc[1]
+		type upd struct {
+			id int64
+			v  string
+		}
+		var todo []upd
+		rows, err := tx.QueryContext(ctx, fmt.Sprintf(`SELECT rowid,%s FROM %s WHERE %s LIKE ?`, col, table, col), marker()+"%")
+		if err != nil {
+			return 0, fmt.Errorf("%s.%s: %w", table, col, err)
+		}
+		for rows.Next() {
+			var id int64
+			var v string
+			if err := rows.Scan(&id, &v); err != nil {
+				rows.Close()
+				return 0, err
+			}
+			pt, err := old.TryDecrypt(v)
+			if err != nil {
+				continue
+			}
+			todo = append(todo, upd{id, s.cipher.Encrypt(pt)})
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		rows.Close()
+		for _, u := range todo {
+			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET %s=? WHERE rowid=?`, table, col), u.v, u.id); err != nil {
+				return 0, fmt.Errorf("%s.%s: %w", table, col, err)
+			}
+			n++
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return n, s.MetaSet(ctx, cipherCanaryKey, s.cipher.Encrypt(cipherCanaryPlain))
 }
 
 // ResetEncryptedSecrets drops every value encrypted with a key that is no longer available, so

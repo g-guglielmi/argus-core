@@ -22,6 +22,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/crypto/argon2"
 )
 
 const marker = "enc:v1:"
@@ -51,15 +53,14 @@ func newFromKey(key []byte) (*Cipher, error) {
 }
 
 // Load resolves the encryption key and returns a cipher plus a short source label for logging.
-// ARGUS_SECRET_KEY (any string, hashed to 32 bytes) takes precedence and keeps the key off the
-// data volume. Otherwise a random key is generated once and persisted to <dataDir>/secret.key
+// ARGUS_SECRET_KEY (any string, stretched into the key with argon2id) takes precedence and keeps
+// the key off the data volume. Otherwise a random key is generated once and persisted to <dataDir>/secret.key
 // (mode 0600) so encryption is on by default with zero configuration. An existing keyfile that
 // can't be read as a key is an error, never replaced: a new key would strand everything the old
 // one encrypted, and the file is the only copy.
 func Load(envKey, dataDir string) (*Cipher, string, error) {
 	if strings.TrimSpace(envKey) != "" {
-		sum := sha256.Sum256([]byte(envKey))
-		c, err := newFromKey(sum[:])
+		c, err := newFromKey(deriveEnvKey(envKey))
 		return c, "env", err
 	}
 	path := filepath.Join(dataDir, "secret.key")
@@ -92,6 +93,28 @@ func Load(envKey, dataDir string) (*Cipher, string, error) {
 	}
 	c, err := newFromKey(key)
 	return c, "keyfile (generated)", err
+}
+
+// envKeySalt is the fixed salt for deriving the at-rest key from ARGUS_SECRET_KEY. The variable
+// is the secret; the salt only ties the derivation to Argus.
+const envKeySalt = "argus.at-rest.key.v2"
+
+// deriveEnvKey stretches ARGUS_SECRET_KEY into the 256-bit key with argon2id (64 MiB, 3 passes),
+// so a memorable passphrase can't be guessed offline from a database dump at hashing speed. It
+// runs once, at start.
+func deriveEnvKey(envKey string) []byte {
+	return argon2.IDKey([]byte(envKey), []byte(envKeySalt), 3, 64*1024, 4, 32)
+}
+
+// LegacyEnvCipher is the cipher earlier releases built from ARGUS_SECRET_KEY (a single SHA-256 of
+// the value). Startup uses it once to re-encrypt a database written under it.
+func LegacyEnvCipher(envKey string) *Cipher {
+	sum := sha256.Sum256([]byte(envKey))
+	c, err := newFromKey(sum[:])
+	if err != nil {
+		return nil
+	}
+	return c
 }
 
 func (c *Cipher) Enabled() bool { return c != nil && c.enabled }

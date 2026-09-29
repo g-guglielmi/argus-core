@@ -99,7 +99,8 @@ Per-host setup guides moved to [`../docs/hosts/`](../docs/hosts/README.md):
 They do the **same base steps** - the Zabbix installer page (repo → packages → DB → schema)
 is now confirmed exact for Debian 13 / Zabbix 7.0. `setup-core.sh` automates those *and* adds
 three things the basic doc flow does **not** cover: **TimescaleDB**, the **TLS config** for
-proxies, and **retention** tuning.
+proxies, and **retention** tuning. It also checks the Zabbix and TimescaleDB repository signing keys
+against their published fingerprints before apt trusts them.
 
 Recommended: run `setup-core.sh` for the whole thing, but keep the official page open as the
 reference. Two steps stay **manual either way** (neither the docs nor the script can finish them

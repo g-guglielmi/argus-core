@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 	_ "time/tzdata" // embed the IANA tz database so ARGUS_TZ works on distroless
@@ -44,10 +45,25 @@ func main() {
 	st.SetCipher(cipher)
 	// The key must be the one the database was encrypted with; otherwise every stored credential
 	// is unreadable and the app must not run as if they were blank (or worse, use the ciphertext).
-	if err := st.VerifyCipher(context.Background()); err != nil {
+	verr := st.VerifyCipher(context.Background())
+	if verr != nil && strings.TrimSpace(cfg.SecretKey) != "" {
+		// A database written by an earlier release under ARGUS_SECRET_KEY used a plain SHA-256 of
+		// the value as its key; the same variable now derives the key with argon2id. When the old
+		// derivation still opens the canary, re-encrypt everything once and carry on.
+		if old := secret.LegacyEnvCipher(cfg.SecretKey); old != nil && st.VerifyCipherWith(context.Background(), old) == nil {
+			n, rerr := st.RotateEncryptedSecrets(context.Background(), old)
+			if rerr != nil {
+				logger.Error("re-encrypt stored secrets under the new key derivation", "err", rerr)
+				os.Exit(1)
+			}
+			logger.Info("stored secrets re-encrypted under the stronger ARGUS_SECRET_KEY derivation", "rows", n)
+			verr = nil
+		}
+	}
+	if verr != nil {
 		if !cfg.SecretKeyReset {
 			logger.Error("at-rest encryption key does not match the database: restore secret.key / ARGUS_SECRET_KEY, or set ARGUS_SECRET_KEY_RESET=true once to drop the unreadable secrets and re-enter them",
-				"key_source", keySrc, "err", err)
+				"key_source", keySrc, "err", verr)
 			os.Exit(1)
 		}
 		n, rerr := st.ResetEncryptedSecrets(context.Background())

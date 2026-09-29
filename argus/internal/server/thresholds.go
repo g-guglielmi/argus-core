@@ -57,7 +57,7 @@ func (s *Server) handleThresholds(w http.ResponseWriter, r *http.Request) {
 	}
 	overrides, err := s.st.ThresholdDefaults(ctx)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": s.errText(r, err)})
 		return
 	}
 
@@ -136,14 +136,14 @@ func (s *Server) handleSetThresholdDefault(w http.ResponseWriter, r *http.Reques
 	target := req.Value
 	if req.Value == "" {
 		if err := s.st.DeleteThresholdDefault(ctx, req.Template, req.Macro); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": s.errText(r, err)})
 			return
 		}
 		factory, _ := provision.TemplateFactoryDefaults()
 		target = factory[req.Template][req.Macro]
 	} else {
 		if err := s.st.SetThresholdDefault(ctx, req.Template, req.Macro, req.Value); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": s.errText(r, err)})
 			return
 		}
 	}

@@ -59,11 +59,41 @@ jobs:
             echo "reason=docs only -> skip image build"; echo "build=false" >> "$GITHUB_OUTPUT"
           fi
 
+  # Dependency hygiene, gating the image: known vulnerabilities reachable from the Go code
+  # (govulncheck) and high-severity advisories in the frontend's production dependencies.
+  checks:
+    permissions:
+      contents: read
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: argus/go.mod
+          cache-dependency-path: argus/go.sum
+      - name: govulncheck
+        working-directory: argus
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: argus/web/package-lock.json
+      - name: npm audit (production dependencies)
+        working-directory: argus/web
+        run: |
+          npm ci --ignore-scripts
+          npm audit --omit=dev --audit-level=high
+
   docker:
     permissions:
       contents: read
       packages: write   # push images to GHCR
-    needs: changes
+    needs: [changes, checks]
     if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-latest
     steps:

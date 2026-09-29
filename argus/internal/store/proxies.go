@@ -12,6 +12,11 @@ import (
 // name): enrollment tokens, check-in/version state, and its per-proxy SNMP default. Called when a
 // proxy is deleted through Argus so no orphan rows are left behind.
 func (s *Store) DeleteProxyRecords(ctx context.Context, proxyID, proxyName string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	for _, stmt := range []struct {
 		q   string
 		arg string
@@ -20,11 +25,11 @@ func (s *Store) DeleteProxyRecords(ctx context.Context, proxyID, proxyName strin
 		{`DELETE FROM probe_agents WHERE proxy_name=?`, proxyName},
 		{`DELETE FROM snmp_defaults WHERE proxy_id=?`, proxyID},
 	} {
-		if _, err := s.db.ExecContext(ctx, stmt.q, stmt.arg); err != nil {
+		if _, err := tx.ExecContext(ctx, stmt.q, stmt.arg); err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
 // ReconcileProxies prunes Argus records left behind by proxies deleted directly in Zabbix (out of

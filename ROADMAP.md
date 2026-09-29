@@ -182,6 +182,13 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   probe scripts; XCP-NG `{$XCP.TLS}` (pin on first contact / verify / ignore); SSH collector argument
   hardening; break-glass reveal logged with the admin. Deferred by decision: collector passwords
   off argv (documented instead), an intermediate enrollment CA (post-production).
+- [x] **Security review, wave 3 (Low and Info findings)** - argon2id-derived `ARGUS_SECRET_KEY`
+  (with a one-time re-encryption of existing databases), lockout-free account throttling, capped
+  passkey begins and argon2 concurrency, bounded rate limiter, one-shot second-factor challenges,
+  atomic paired writes and update hand-outs, capped per-day counter queries, Zabbix error detail
+  for admins only, check-in tokens only for known proxies, `govulncheck` + `npm audit` gating CI,
+  pinned Go toolchain, repository signing keys verified in `setup-core.sh`. Still deferred:
+  collector passwords off argv, intermediate enrollment CA.
 - [ ] **Sizing pass** before the ~6000-sensor deployment (proxies, DB, caches, NVPS) - analysis
 - [ ] **Server-side census/counts** - move the `/api/sensors` full census server-side at scale - _(BE)_ M
 - [ ] **Probe process autoscaling** - size each probe's Zabbix process counts (ICMP pingers first,

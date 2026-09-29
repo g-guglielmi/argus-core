@@ -938,6 +938,17 @@ func (s *Store) DeleteMFAChallenge(ctx context.Context, id string) error {
 	return err
 }
 
+// ConsumeMFAChallenge deletes a live challenge and reports whether it was still there: the
+// completion that deletes it is the one that signs in.
+func (s *Store) ConsumeMFAChallenge(ctx context.Context, id string) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM mfa_challenges WHERE id=? AND expires_at>=?`, id, time.Now().Unix())
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}
+
 // --- password resets ---
 
 func (s *Store) CreatePasswordReset(ctx context.Context, id string, userID int64, expires time.Time) error {

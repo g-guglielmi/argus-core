@@ -182,6 +182,13 @@ func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "passkeys are not enabled on this server"})
 		return
 	}
+	// Each begin stores a ceremony row; keep an anonymous caller to a sane number per address.
+	pkKey := "pkbegin:ip:" + s.clientIP(r)
+	if blocked, retry := s.pkLimiter.Blocked(pkKey); blocked {
+		writeThrottled(w, retry)
+		return
+	}
+	s.pkLimiter.Fail(pkKey)
 	ctx := r.Context()
 	options, sessionData, err := s.wa.BeginDiscoverableLogin(webauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
@@ -237,6 +244,7 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 	if blob, err := json.Marshal(cred); err == nil {
 		_ = s.st.UpdatePasskeyCredential(ctx, cred.ID, string(blob))
 	}
+	s.pkLimiter.Reset("pkbegin:ip:" + s.clientIP(r))
 	s.issueSession(w, r, loggedIn)
 }
 

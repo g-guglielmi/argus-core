@@ -494,20 +494,20 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if err := s.st.SetCategoryOrder(ctx, "host:"+cur.HostID, *req.CategoryOrder); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": s.errText(r, err)})
 			return
 		}
 	}
 	// Optional add-ons: link/unlink each add-on's template and, when enabled, set its config macros.
 	if req.Master != nil {
 		if err := s.applyMaster(ctx, cur.HostID, *req.Master); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": s.errText(r, err)})
 			return
 		}
 	}
 	if req.AddOns != nil {
 		if err := s.applyAddOns(ctx, cur.HostID, req.AddOns); err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": s.errText(r, err)})
 			return
 		}
 	}
