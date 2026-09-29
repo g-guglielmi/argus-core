@@ -1126,6 +1126,42 @@ A read-only dashboard for a wall screen, opened with a secret link instead of a 
   `frame-ancestors 'none'`, `Cache-Control: no-store`. The routes sit outside `/api`, so the cookie
   opens nothing else.
 
+## 18c. Probe process autoscaling (implemented)
+
+**Why.** A Zabbix proxy starts a fixed number of each process kind (ICMP pingers, pollers, trappers,
+history syncers, preprocessing workers, the async agent / SNMP / HTTP agent pollers) and reads the
+numbers only at start. A site that outgrows them queues its checks and the "processes busy" warning
+fires; one sized by hand stays wrong as the site changes. The Probe health host (18a) already
+records `zabbix[process,<type>,avg,busy]` for every kind, so Argus sizes them.
+
+**Rule** (`internal/server/autoscale.go`, every 15 minutes, per probe):
+- Only counts that have run for 6 hours are judged (the clock restarts whenever they change), and
+  only while no earlier change is still waiting to be applied.
+- The load is the busiest hourly average (trends) since the counts started, at most a day back, and
+  at least three hours of it.
+- Busiest hour at or above 60%: raise to `ceil(count x busy / 50)` (at least one more), so the
+  busiest hour lands near 50%. At or below 20%: lower the same way. Never below the image's default
+  (5 pingers, 5 pollers, 5 trappers, 4 history syncers, 16 preprocessing workers, 1 of the rest),
+  never above a ceiling per kind (50 pingers, 100 pollers, 8 history syncers, 64 workers, 10 to 20
+  for the rest): past it the site needs a second probe, not more forks. History syncers stop at 8
+  because they write the proxy's SQLite buffer.
+- A count set on the container (`ZBX_START*`) wins and is left alone; the probe reports which.
+
+**Exchange.** The proxy reports the counts it started with (`procs`, `procs_pinned`) at every
+check-in; the first report seeds Argus's target with them, so nothing changes until the load has
+been watched. Every check-in answer carries the target (`procs`); the probe's start-time check-in
+saves it to `procs.env` on its data volume (root-owned, read as data, each value checked) and starts
+Zabbix with it, so a start without Argus keeps the last counts. The updater sidecar advertises
+`restarts` and, while a change waits, gets a one-shot `restart_proxy` (at most once per 6 hours per
+probe) and restarts the proxy container through the Engine API: a few seconds down, unsent data
+kept in the proxy's buffer, well under the 3-minute "not reporting" alert.
+
+**Mode** (`ARGUS_PROBE_AUTOSCALE`, Settings -> Probes): `restart` (default: the sidecar restarts the
+probe to apply a change), `next-restart` (a change applies whenever the probe next starts: an
+update, a reboot), `off` (no evaluation, no counts handed out; probes keep what they have). Each
+change is logged, shown on the Probes page (Processes: running count, busiest hour, target) and
+told once as a system notice.
+
 ## 19. Parking lot / future
 - **Android native app** with push notifications (device registers with Argus → notifier delivers
   via a "push"/FCM channel) - the planned last step (ROADMAP §I). iOS undecided (would need APNs).

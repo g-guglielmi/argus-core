@@ -167,6 +167,7 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 | `ARGUS_CA_CERT_FILE` | *(empty)* | path to the monitoring CA cert (`ca.crt`) mounted into the container |
 | `ARGUS_CA_KEY_FILE` | *(empty)* | path to the CA private key (`ca.key`) - mount **read-only**; both must be set to enable enrollment |
 | `ARGUS_PROBE_CORE_HOST` | *(Public URL host)* | _(UI)_ address probes dial for `:10051` (FQDN or LAN IP). Falls back to the Public URL's hostname |
+| `ARGUS_PROBE_AUTOSCALE` | `restart` | _(UI)_ probe process autoscaling: `restart` sizes each probe's Zabbix process counts from its load and has the updater sidecar restart it to apply a change; `next-restart` applies a change at the probe's next start; `off` leaves the counts alone |
 
 > Enrollment also needs the Zabbix API token to have **super-admin** rights (to run `proxy.create`).
 

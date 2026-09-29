@@ -62,6 +62,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// background and served from memory.
 	s.census = newCensusCache(s.buildCensus)
 	s.startCensusRefresh(context.Background())
+	// Size each probe's Zabbix process counts from its own load (autoscale.go).
+	s.startProcAutoscale(context.Background())
 	// Poll public GHCR for the newest probe revision so the fleet view can flag "-rN available"
 	// even when the target is "latest". Background; a failure just leaves it unknown.
 	s.startProbeLatestRefresh(context.Background())

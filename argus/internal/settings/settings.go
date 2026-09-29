@@ -43,11 +43,20 @@ const (
 	KeyAlertDelay    = "alert_delay_seconds"
 	KeyTrustProxy    = "trust_proxy"
 	KeyTimeFormat    = "time_format"
+	KeyAutoscale     = "probe_autoscale"
+)
+
+// Probe process autoscaling modes (KeyAutoscale).
+const (
+	AutoscaleRestart     = "restart"      // change the counts and have the updater sidecar restart the probe
+	AutoscaleNextRestart = "next-restart" // change the counts; they apply whenever the probe next starts
+	AutoscaleOff         = "off"          // leave the counts as they are
 )
 
 // choiceOptions lists the allowed values of the "choice" settings (the UI shows a select).
 var choiceOptions = map[string][]string{
 	KeyTimeFormat: {"24h", "12h"},
+	KeyAutoscale:  {AutoscaleRestart, AutoscaleNextRestart, AutoscaleOff},
 }
 
 const metaPrefix = "setting:"
@@ -78,7 +87,8 @@ var defs = []def{
 	{KeyTimeFormat, "ARGUS_TIME_FORMAT", "Time format", "General", "choice", false, "24h", "How clocks read in Argus and on status pages: 24h (16:43) or 12h (4:43 PM).", 0},
 	{KeyAlertDelay, "ARGUS_ALERT_DELAY_SECONDS", "Alert delay (seconds)", "Alerting", "int", false, "60", "How long a problem must last before anyone is notified, so a brief blip doesn't alert. 0 alerts at once. \"No data\" alerts skip it: their own period already is the wait.", 0},
 	{KeyTrustProxy, "ARGUS_TRUST_PROXY", "Trusted proxies", "Proxy", "proxylist", false, "", "Leave empty when people reach Argus directly. true = one reverse proxy on the LAN or the same host in front of Argus (the client is the address it adds to X-Forwarded-For; a connection from a public address is taken as a direct client). Or list the proxies' addresses or networks, comma-separated, e.g. 10.0.0.2, 10.0.5.0/24: forwarded headers then count only from them, and a chain of proxies (NetScaler -> HAProxy -> Argus) resolves to the real client.", 0},
-	{KeyProbeCoreHost, "ARGUS_PROBE_CORE_HOST", "Probe core host", "Probe enrollment", "host", false, "", "Address probes dial for :10051 (host or host:port). Prefer an IP: the proxy re-resolves this on every data send, so an FQDN here generates heavy DNS load. Baked into new enrollments and re-synced to existing probes at their next restart. Falls back to the Public URL host if empty.", 0},
+	{KeyProbeCoreHost, "ARGUS_PROBE_CORE_HOST", "Probe core host", "Probes", "host", false, "", "Address probes dial for :10051 (host or host:port). Prefer an IP: the proxy re-resolves this on every data send, so an FQDN here generates heavy DNS load. Baked into new enrollments and re-synced to existing probes at their next restart. Falls back to the Public URL host if empty.", 0},
+	{KeyAutoscale, "ARGUS_PROBE_AUTOSCALE", "Process autoscaling", "Probes", "choice", false, AutoscaleRestart, "Zabbix starts a fixed number of pingers, pollers, trappers and workers and reads them only at start. Argus watches how busy each kind is on every probe and raises a count whose busiest hour passed 60% (aiming for 50%), or lowers one that stayed under 20%, never below the image's own default. Counts set on the container (ZBX_START* variables) are left alone. With the updater sidecar the probe restarts to apply a change (a few seconds; collected data is kept); otherwise it applies at the probe's next start.", 0},
 }
 
 func defFor(key string) (def, bool) {
@@ -132,6 +142,7 @@ type Manager struct {
 	alertDelay    time.Duration
 	trustProxy    TrustProxy
 	clock24h      bool
+	autoscale     string // probe process autoscaling mode
 }
 
 // New builds the manager, creates the login limiter, loads any stored overrides, and applies
@@ -218,6 +229,17 @@ func (m *Manager) Clock24h() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.clock24h
+}
+
+// ProbeAutoscale is the probe process autoscaling mode: AutoscaleRestart, AutoscaleNextRestart or
+// AutoscaleOff.
+func (m *Manager) ProbeAutoscale() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.autoscale == "" {
+		return AutoscaleRestart
+	}
+	return m.autoscale
 }
 
 // TrustProxy is which reverse proxies Argus believes about the client, host and scheme.
@@ -338,6 +360,10 @@ func (m *Manager) reload(ctx context.Context) error {
 	alertDelayS := atoiClamp(effective(snap[KeyAlertDelay]), 60, 0)
 	trust, _, _ := ParseTrustProxy(effective(snap[KeyTrustProxy])) // validated on the way in
 	clock24 := strings.ToLower(effective(snap[KeyTimeFormat])) != "12h"
+	autoscale := strings.ToLower(strings.TrimSpace(effective(snap[KeyAutoscale])))
+	if autoscale != AutoscaleNextRestart && autoscale != AutoscaleOff {
+		autoscale = AutoscaleRestart
+	}
 
 	// Apply to the live subsystems (each is independently lock-guarded).
 	m.zbx.Configure(zURL, zTok)
@@ -354,6 +380,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	m.alertDelay = time.Duration(alertDelayS) * time.Second
 	m.trustProxy = trust
 	m.clock24h = clock24
+	m.autoscale = autoscale
 	m.mu.Unlock()
 	return nil
 }

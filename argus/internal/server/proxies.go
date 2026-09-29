@@ -45,6 +45,15 @@ type proxyView struct {
 	// exists) and its worst open problem: "ok" | "warning" | "error" ("" when there's no host).
 	ProbeHostID string `json:"probe_host_id,omitempty"`
 	ProbeHealth string `json:"probe_health,omitempty"`
+	// Zabbix process counts (autoscale.go): each kind's running count, Argus's target and the busiest
+	// hour at the last evaluation; whether a change waits for the probe's next start; the last change.
+	Procs         []procView `json:"procs,omitempty"`
+	ProcsPending  bool       `json:"procs_pending,omitempty"`
+	ProcsNote     string     `json:"procs_note,omitempty"`
+	ProcsNoteAt   int64      `json:"procs_note_at,omitempty"`
+	ProcsSince    int64      `json:"procs_since,omitempty"`
+	ProcsRestarts bool       `json:"procs_restarts,omitempty"` // the sidecar can restart the probe to apply a change
+	Autoscale     string     `json:"autoscale,omitempty"`      // the install-wide mode
 }
 
 // handleProxies lists Zabbix proxies (the per-site collectors) with their last-access time, so
@@ -78,6 +87,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 	probeHosts, probeHealth := s.probeHostHealth(ctx, proxies) // best-effort: empty maps on failure
 	latest := s.probeLatest.get()                              // newest published probe version from GHCR ("" if unresolved)
 	updaterLatest := s.updaterLatest.get()                     // newest published argus-updater version from GHCR
+	autoscale := s.mgr.ProbeAutoscale()
 	now := time.Now().Unix()
 	out := make([]proxyView, 0, len(proxies))
 	for _, p := range proxies {
@@ -123,6 +133,13 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			OSVersion:      ag.OSVersion,
 			ProbeHostID:    probeHosts[p.Name],
 			ProbeHealth:    probeHealth[p.Name],
+			Procs:          procViews(ag.Procs),
+			ProcsPending:   ag.Procs.Pending(),
+			ProcsNote:      ag.Procs.Note,
+			ProcsNoteAt:    ag.Procs.DecidedAt,
+			ProcsSince:     ag.Procs.Since,
+			ProcsRestarts:  ag.Procs.Restarts,
+			Autoscale:      autoscale,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

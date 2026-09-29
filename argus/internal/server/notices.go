@@ -11,6 +11,7 @@ import (
 
 	"argus/internal/buildinfo"
 	"argus/internal/notify"
+	"argus/internal/settings"
 	"argus/internal/store"
 )
 
@@ -263,6 +264,15 @@ func (s *Server) probeNotices(ctx context.Context) (conds, events []notice) {
 		if ag.OSReportedAt > 0 && ag.RebootRequired {
 			conds = append(conds, notice{key: "probe-reboot:" + name, title: "Probe " + site + " needs a reboot",
 				detail: "Updates installed on the probe VM need a restart to take effect.", host: host, site: site, view: "probes", minAge: 24 * time.Hour})
+		}
+		// Argus changed the probe's process counts: told once per decision, while it is recent.
+		if pc := ag.Procs; pc.Note != "" && pc.DecidedAt > 0 && time.Since(time.Unix(pc.DecidedAt, 0)) < procSettle {
+			how := "They apply at the probe's next start."
+			if s.mgr.ProbeAutoscale() == settings.AutoscaleRestart && pc.Restarts {
+				how = "Its updater restarts it to apply them (a few seconds; collected data is kept)."
+			}
+			events = append(events, notice{key: "probe-procs:" + name + ":" + itoa64(pc.DecidedAt), title: "Probe " + site + ": process counts adjusted",
+				detail: pc.Note + ". " + how, host: host, site: site, view: "probes"})
 		}
 		events = append(events, s.selfUpdateEvents(ctx, name, "probe", ag.Version, noticeProbeVerPrefix, noticeProbePending, host, site)...)
 		if ag.UpdaterVersion != "" {

@@ -534,6 +534,23 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 	if err := s.ensureColumn("probe_agents", "sweeps INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	// Zabbix process counts Argus manages per probe (probeprocs.go): JSON maps and lists, times in
+	// unix seconds, and whether the updater sidecar can restart the probe to apply them.
+	for _, col := range []string{
+		"procs_running TEXT NOT NULL DEFAULT ''",
+		"procs_pinned TEXT NOT NULL DEFAULT ''",
+		"procs_since INTEGER NOT NULL DEFAULT 0",
+		"procs_target TEXT NOT NULL DEFAULT ''",
+		"procs_peaks TEXT NOT NULL DEFAULT ''",
+		"procs_note TEXT NOT NULL DEFAULT ''",
+		"procs_decided_at INTEGER NOT NULL DEFAULT 0",
+		"procs_restart_at INTEGER NOT NULL DEFAULT 0",
+		"restarts INTEGER NOT NULL DEFAULT 0",
+	} {
+		if err := s.ensureColumn("probe_agents", col); err != nil {
+			return err
+		}
+	}
 	// Discovery job kind ('scan' = subnet scan, 'unifi' = controller sweep) plus the sweep's
 	// controller reference: the id resolves credentials at dispatch time, the name is a display
 	// snapshot that survives the controller's deletion.

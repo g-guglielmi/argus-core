@@ -30,7 +30,9 @@ type AddOnCfg = { id: string; label: string; description: string; enabled: boole
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg }
 // A host's master sensor: while it's down, the host's other alerts are held (item_id "" = none).
 type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; options: { id: string; label: string }[] }
-type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string }
+type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string }
+// One Zabbix process kind on a probe: what it runs, Argus's target, and the busiest hour at the last evaluation.
+type ProcRow = { name: string; label: string; running: number; target?: number; pinned?: boolean; peak?: number }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
@@ -67,6 +69,11 @@ const stateColor: Record<string, string> = { ok: 'var(--ok)', warning: 'var(--wa
 const stateRank: Record<string, number> = { ok: 0, warning: 1, error: 2 }
 // Census/summary state → CSS colour var and label (six buckets, incl. paused/hidden/acked).
 const STATE_VAR: Record<string, string> = { ok: 'var(--ok)', warning: 'var(--warn)', error: 'var(--err)', acked: 'var(--acked)', paused: 'var(--paused)', hidden: 'var(--hidden)' }
+// Readable names for the values of a choice setting.
+const OPTION_LABEL: Record<string, string> = {
+  '24h': '24-hour (16:43)', '12h': '12-hour (4:43 PM)',
+  restart: 'On: restart the probe to apply', 'next-restart': "On: apply at the probe's next start", off: 'Off',
+}
 const STATE_LABEL: Record<string, string> = { ok: 'OK', warning: 'Warning', error: 'Error', acked: 'Acknowledged', paused: 'Paused', hidden: 'Hidden' }
 const PAUSED_BLUE = 'var(--paused)'
 const HIDDEN_GREY = 'var(--hidden)'
@@ -1616,7 +1623,7 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
         </div>
         {it.options && it.options.length > 0 ? (
           <Select value={it.locked ? it.value : cur} disabled={it.locked || busy} onChange={(e) => setEdit(it.key, e.target.value)}>
-            {it.options.map((o) => <option key={o} value={o}>{o === '24h' ? '24-hour (16:43)' : o === '12h' ? '12-hour (4:43 PM)' : o}</option>)}
+            {it.options.map((o) => <option key={o} value={o}>{OPTION_LABEL[o] || o}</option>)}
           </Select>
         ) : <input
           className="input"
@@ -1641,7 +1648,7 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
     { name: 'Sessions', title: 'Sessions', note: 'How long a sign-in stays valid. Changes take effect immediately, including for existing sessions: lowering the max length can sign users out on their next request.' },
     { name: 'Access', title: 'Allowed FQDNs and IPs', note: "The addresses people type in the browser's address bar to open Argus, like monitoring.example.com or 10.0.0.10. With a list set, Argus refuses API requests for any other address and changes coming from other sites, which blocks DNS-rebinding and cross-site attacks." },
     { name: 'Proxy', title: 'Reverse proxy', note: "Which proxies in front of Argus it believes about who is connecting (X-Forwarded-For) and which address and scheme they used (X-Forwarded-Host / -Proto). That feeds the login rate limit, status pages' allowed networks and Allowed FQDNs and IPs. List your proxies' addresses when there's more than one, like NetScaler in front of HAProxy." },
-    { name: 'Probe enrollment', title: 'Probe enrollment', note: 'The address new probes are told to dial for the Zabbix server (:10051).' },
+    { name: 'Probes', title: 'Probes', note: 'The address probes dial for the Zabbix server (:10051), and how Argus sizes their Zabbix processes.' },
   ]
 
   return (
@@ -2453,6 +2460,7 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
   const [queued, setQueued] = useState<Record<string, string>>({}) // proxy name -> queued self-update tag
   const [report, setReport] = useState<{ name: string; token: string } | null>(null) // minted check-in token to show
   const [openSnmp, setOpenSnmp] = useState<string | null>(null) // proxy name whose SNMP-defaults band is open
+  const [openProcs, setOpenProcs] = useState<string | null>(null) // proxy name whose Zabbix-processes band is open
   const canEdit = role === 'admin' || role === 'helpdesk'
   const isAdmin = role === 'admin'
 
@@ -2630,6 +2638,11 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
                             : <span className="tag online">health: ok</span>}
                         </button>
                       )}
+                      {p.procs_pending && (
+                        <button type="button" className="linklike" onClick={() => setOpenProcs(p.name)} title={p.procs_note ? `Argus changed the process counts: ${p.procs_note}` : 'Argus changed the process counts'}>
+                          <span className="tag avail">{p.autoscale === 'restart' && p.procs_restarts ? 'processes: restart pending' : 'processes: next start'}</span>
+                        </button>
+                      )}
                     </span>
                     <span className="sub-line mono" title="When the core last received data from this probe" style={{ paddingLeft: 10, color: !p.last_access ? 'var(--faint)' : (Date.now() / 1000 - p.last_access > 60 ? 'var(--warn)' : undefined) }}>{p.last_access ? relTime(p.last_access) : 'never'}</span>
                   </div>
@@ -2645,6 +2658,7 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
                 <td className="row-actions">
                   <ProbeRowMenu items={[
                     canEdit && p.id ? { label: 'SNMP defaults', onClick: () => setOpenSnmp((n) => (n === p.name ? null : p.name)) } : null,
+                    { label: 'Processes', onClick: () => setOpenProcs((n) => (n === p.name ? null : p.name)) },
                     isAdmin && p.break_glass ? { label: p.break_glass_user ? `Console (${p.break_glass_user})` : 'Console', onClick: () => revealBreakGlass(p) } : null,
                     isAdmin && p.id ? 'sep' : null,
                     isAdmin && p.id ? { label: 'Delete probe', onClick: () => del(p), danger: true } : null,
@@ -2654,6 +2668,7 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
               {openCmd === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
               {report?.name === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
               {openSnmp === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></td></tr>}
+              {openProcs === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProbeProcesses p={p} onClose={() => setOpenProcs(null)} /></td></tr>}
             </Fragment>
           ))}
         </tbody>
@@ -2784,6 +2799,55 @@ function ProbeRowMenu({ items }: { items: Array<ProbeMenuItem | 'sep' | false | 
               : <button key={i} className={it.danger ? 'danger' : undefined} onClick={() => { setOpen(false); it.onClick() }}>{it.label}</button>)}
           </div>
         </>, document.body)}
+    </div>
+  )
+}
+
+// ProbeProcesses is the inline band listing a probe's Zabbix process counts: what each kind runs, how
+// busy its busiest hour was at Argus's last evaluation, and the count Argus wants (autoscale.go).
+function ProbeProcesses({ p, onClose }: { p: Proxy; onClose: () => void }) {
+  const rows = p.procs || []
+  const settling = p.procs_since ? Date.now() / 1000 - p.procs_since < 6 * 3600 : false
+  const pending = p.procs_pending
+    ? (p.autoscale === 'restart' && p.procs_restarts
+      ? 'A change is waiting: the updater restarts the probe to apply it within a few minutes (a few seconds of downtime; collected data is kept).'
+      : "A change is waiting: it applies when the probe next starts (it has no updater sidecar that can restart it, or autoscaling applies at the next start).")
+    : ''
+  return (
+    <div className="host-settings">
+      <div className="hs-title">Zabbix processes · {p.name}</div>
+      <div className="hs-note">
+        {p.autoscale === 'off'
+          ? 'Autoscaling is off (Settings, Probes): these counts stay as they are.'
+          : 'Argus sizes each kind from its busiest hour over the last day: over 60% raises the count (aiming for 50%), under 20% lowers it, never below the image default. Counts set on the container are left alone.'}
+      </div>
+      {rows.length === 0
+        ? <div className="hs-note">This probe doesn't report its process counts yet. It needs a probe image from 7.0.31-r8 on.</div>
+        : (
+          <table className="sensors" style={{ marginTop: 6 }}>
+            <thead><tr><th>Process</th><th>Running</th><th>Busiest hour</th><th>Argus</th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.name}>
+                  <td title={r.name}>{r.label}</td>
+                  <td className="mono">{r.running}</td>
+                  <td className="mono">{r.peak != null ? `${Math.round(r.peak)}%` : <span style={{ color: 'var(--faint)' }}>-</span>}</td>
+                  <td>
+                    {r.pinned
+                      ? <span className="tag" title={`Set on the container (ZBX_${r.name.toUpperCase()}): Argus leaves it alone`}>set on container</span>
+                      : r.target && r.target !== r.running
+                      ? <span className="tag avail">→ {r.target}</span>
+                      : <span className="okquiet">keep</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      {p.procs_note && <div className="hs-note" style={{ marginTop: 8 }}>Last change {p.procs_note_at ? relTime(p.procs_note_at) : ''}: {p.procs_note}.</div>}
+      {pending && <div className="hs-note">{pending}</div>}
+      {!pending && settling && rows.length > 0 && p.autoscale !== 'off' && <div className="hs-note">These counts started {relTime(p.procs_since!)}. Argus judges them once they have run for 6 hours.</div>}
+      <div className="hs-foot"><Button variant="ghost" onClick={onClose}>Close</Button></div>
     </div>
   )
 }

@@ -301,7 +301,7 @@ admin **Settings** page - a set env var takes precedence and locks the field.
 | **First-run admin** | `ARGUS_ADMIN_EMAIL`, `ARGUS_ADMIN_PASSWORD` |
 | **Security** | `ARGUS_COOKIE_SECURE`, `ARGUS_SECRET_KEY`, `ARGUS_TRUST_PROXY`, `ARGUS_LOGIN_MAX_ATTEMPTS`, `ARGUS_LOGIN_WINDOW_MINUTES` |
 | **Notifications** | `ARGUS_PUBLIC_URL`, `ARGUS_TZ`, `ARGUS_ALERT_DELAY_SECONDS` |
-| **Probe enrollment** | `ARGUS_CA_CERT_FILE`, `ARGUS_CA_KEY_FILE`, `ARGUS_PROBE_CORE_HOST` |
+| **Probes** | `ARGUS_CA_CERT_FILE`, `ARGUS_CA_KEY_FILE`, `ARGUS_PROBE_CORE_HOST`, `ARGUS_PROBE_AUTOSCALE` |
 | **Passkeys** | `ARGUS_RP_ID`, `ARGUS_RP_DISPLAY_NAME`, `ARGUS_RP_ORIGINS` |
 
 ---

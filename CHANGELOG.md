@@ -13,6 +13,23 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Probe process autoscaling:**
+- Argus sizes each probe's Zabbix process counts (ICMP pingers, pollers, unreachable pollers, agent,
+  SNMP and HTTP agent pollers, trappers, history syncers, preprocessing workers) from the probe's own
+  load: every 15 minutes it reads each kind's busiest hourly average from the Probe health host and
+  raises a count whose busiest hour reached 60% (aiming for 50%), or lowers one that stayed under
+  20%, never below the image's default and never above a ceiling per kind. Counts are judged only
+  after they have run for 6 hours. A `ZBX_START*` variable set on the container wins.
+- The counts go out at check-in and the probe starts with them. With the updater sidecar the probe
+  restarts to apply a change (at most once per 6 hours; a few seconds down, collected data kept);
+  otherwise it applies at the probe's next start. Needs probe image 7.0.31-r8 and argus-updater
+  0.2.9 or newer; older ones keep their counts.
+- New setting **Process autoscaling** (Settings, now **Probes**; `ARGUS_PROBE_AUTOSCALE` = `restart`
+  (default), `next-restart` or `off`). The Probes page gains a **Processes** panel per probe (running
+  count, busiest hour, what Argus wants) and a tag while a change waits; each change is sent once as
+  a system notice.
+- The Settings section "Probe enrollment" is now "Probes".
+
 **Server-side census:**
 - The sensor census behind the status pills, the Overview and the status pages is built in the
   background on the core and served from memory: every 20 s while someone has looked in the last

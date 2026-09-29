@@ -56,6 +56,8 @@ the per-host tunables.
   the probe is reaching the core (alerting when it stops), values waiting to be sent, items running
   late, cache use and how busy its processes are. It's linked from each probe's **Health** cell on
   the Probes page, and deleted along with the probe. Its thresholds are on the Thresholds screen.
+  Argus also reads its process load to size the probe's Zabbix process counts (Probes page,
+  **Processes**; Settings, **Probes**, Process autoscaling).
 
 ## Planned (TBD)
 

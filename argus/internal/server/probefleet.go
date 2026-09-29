@@ -96,8 +96,13 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		UpdaterVersion string `json:"updater_version"` // the sidecar reports its own version here
 		Scans          *bool  `json:"scans"`           // the proxy container advertises the network-scan capability
 		Sweeps         *bool  `json:"sweeps"`          // ... and the UniFi-sweep capability
+		// The proxy container reports the Zabbix process counts it started with, and which of them
+		// the operator set on the container; the sidecar says whether it can restart the proxy.
+		Procs       map[string]int `json:"procs"`
+		ProcsPinned []string       `json:"procs_pinned"`
+		Restarts    *bool          `json:"restarts"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
@@ -106,6 +111,13 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.st.SetUpdaterVersion(ctx, proxyName, strings.TrimSpace(req.UpdaterVersion))
+	if req.Procs != nil {
+		running, pinned := cleanProcs(req.Procs, req.ProcsPinned)
+		_ = s.st.RecordProbeProcs(ctx, proxyName, running, pinned)
+	}
+	if req.Restarts != nil {
+		_ = s.st.SetProbeRestarts(ctx, proxyName, *req.Restarts)
+	}
 	target, _ := s.st.ProbeTargetVersion(ctx)
 	var resp struct {
 		Target        string           `json:"target"`
@@ -117,8 +129,13 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		UpdaterDigest string           `json:"updater_update_digest,omitempty"`
 		Scan          *scanJobPayload  `json:"scan,omitempty"`
 		Sweep         *sweepJobPayload `json:"sweep,omitempty"`
+		// The process counts the probe should start with (absent: keep what it has), and a one-shot
+		// for the sidecar to restart the proxy so it starts with them.
+		Procs        map[string]int `json:"procs,omitempty"`
+		RestartProxy bool           `json:"restart_proxy,omitempty"`
 	}
 	resp.Target = target
+	s.procsHandout(ctx, proxyName, req.SelfUpdate, req.Restarts, &resp.Procs, &resp.RestartProxy)
 	// Only the sidecar acts on tags, and only it gets the digests (a plain reporter needn't cost a
 	// registry lookup per minute).
 	if req.SelfUpdate != nil && *req.SelfUpdate {

@@ -119,7 +119,7 @@ probe no longer needs `gen-certs.sh` or manual proxy registration:
 **Prerequisites (one-time):**
 - Mount the CA (`ca.crt` + `ca.key`) read-only into the Argus container and set the two
   `ARGUS_CA_*` paths; set the **probe core host** (the address probes dial for `:10051`) - either
-  via `ARGUS_PROBE_CORE_HOST` or in **Settings → Probe enrollment** (no redeploy). **Prefer an IP
+  via `ARGUS_PROBE_CORE_HOST` or in **Settings → Probes** (no redeploy). **Prefer an IP
   here, not an FQDN:** the Zabbix proxy re-resolves this address on every data send (very frequent),
   so a name generates heavy DNS load - an IP eliminates it. Changing this value re-points the
   **whole fleet**: each probe picks up the new host from its check-in and applies it at its next

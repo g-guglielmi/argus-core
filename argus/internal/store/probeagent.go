@@ -32,6 +32,8 @@ type ProbeAgent struct {
 	RebootRequired bool
 	OSReportedAt   int64
 	OSVersion      string
+	// Zabbix process counts Argus manages for this probe (probeprocs.go).
+	Procs ProbeProcs
 }
 
 // UpsertProbeCredential issues (or rotates) a probe's long-lived check-in credential at
@@ -104,16 +106,18 @@ func (s *Store) RecordProbeCheckin(ctx context.Context, proxyName, version strin
 func (s *Store) ProbeAgentByName(ctx context.Context, name string) (*ProbeAgent, error) {
 	var a ProbeAgent
 	var su, sc, sw, bg, rr int
+	var pr probeProcsScan
 	err := s.db.QueryRowContext(ctx,
-		`SELECT proxy_name,version,selfupdate,scans,sweeps,last_checkin,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version
+		`SELECT proxy_name,version,selfupdate,scans,sweeps,last_checkin,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version,`+probeProcsColumns+`
 		 FROM probe_agents WHERE proxy_name=?`, name).
-		Scan(&a.ProxyName, &a.Version, &su, &sc, &sw, &a.LastCheckin, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion)
+		Scan(append([]any{&a.ProxyName, &a.Version, &su, &sc, &sw, &a.LastCheckin, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion}, pr.dest(&a.Procs)...)...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
+	pr.decode(&a.Procs)
 	a.SelfUpdate = su != 0
 	a.Scans = sc != 0
 	a.Sweeps = sw != 0
@@ -161,7 +165,7 @@ func (s *Store) TakeProbeUpdate(ctx context.Context, name string) (string, error
 
 // ProbeAgents returns every probe's fleet-update state, keyed by proxy name (for the fleet view).
 func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,version,selfupdate,scans,sweeps,last_checkin,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version FROM probe_agents`)
+	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,version,selfupdate,scans,sweeps,last_checkin,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version,`+probeProcsColumns+` FROM probe_agents`)
 	if err != nil {
 		return nil, err
 	}
@@ -170,9 +174,11 @@ func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) 
 	for rows.Next() {
 		var a ProbeAgent
 		var su, sc, sw, bg, rr int
-		if err := rows.Scan(&a.ProxyName, &a.Version, &su, &sc, &sw, &a.LastCheckin, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion); err != nil {
+		var pr probeProcsScan
+		if err := rows.Scan(append([]any{&a.ProxyName, &a.Version, &su, &sc, &sw, &a.LastCheckin, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion}, pr.dest(&a.Procs)...)...); err != nil {
 			return nil, err
 		}
+		pr.decode(&a.Procs)
 		a.SelfUpdate = su != 0
 		a.Scans = sc != 0
 		a.Sweeps = sw != 0
