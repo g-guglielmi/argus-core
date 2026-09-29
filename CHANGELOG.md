@@ -13,6 +13,12 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Core VM (next image):**
+- Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
+  of the `get.docker.com` script.
+
+## [0.5.14] - 2026-09-29
+
 **Security:**
 - **UniFi controllers get a site scope and a certificate policy.** Only the probes of a controller's
   sites receive it (and its API key) for scans and sweeps; empty means every site, as before. The
@@ -49,10 +55,6 @@ GitHub Release from the matching section below.
 - **CI supply chain:** every GitHub Action is pinned to a commit (`# vN` comments say which release),
   workflow permissions are granted per job (read-only where nothing is published), and image pushes
   carry provenance and SBOM attestations.
-
-**Core VM (next image):**
-- Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
-  of the `get.docker.com` script.
 
 ## [core-vm/v0.1.1] - 2026-09-29
 
