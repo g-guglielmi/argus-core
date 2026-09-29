@@ -31,7 +31,7 @@ GitHub Release from the matching section below.
   longer records the requested address; the public features flag is answered from a short cache.
 - A probe check-in token is issued only for a proxy that exists in Zabbix.
 - CI: `govulncheck` and `npm audit` (production dependencies, high and above) gate the image build;
-  the Go toolchain is the pinned image's own (`GOTOOLCHAIN=local`).
+  the image builds with a pinned, supported Go (1.27) and its own toolchain (`GOTOOLCHAIN=local`).
 - `setup-core.sh` verifies the Zabbix repository keyring and the TimescaleDB signing key against their
   published fingerprints before apt trusts them.
 
