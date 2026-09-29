@@ -1254,7 +1254,8 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   const [counts, setCounts] = useState<Record<string, number>>({})
   // False until the first census answer: the lists show a skeleton instead of flashing "All clear".
   const [sensorsLoaded, setSensorsLoaded] = useState(false)
-  const [sensorsAt, setSensorsAt] = useState(0) // when the server read the status data (the header clock says so)
+  const [sensorsAt, setSensorsAt] = useState(0) // when the server read the status data (the header clock's tooltip)
+  const [sensorsNext, setSensorsNext] = useState(0) // when the next fetch runs (the header counts down to it)
   const [listFilter, setListFilter] = useState<string>(() => initialNav().filter)
   const canPause = me.role === 'admin' || me.role === 'helpdesk'
   // Rows come for the Overview's states always, plus the open drill-down's own state: the OK list is
@@ -1268,7 +1269,10 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
     let timer: number | undefined
     // The next fetch is timed to just after the server's next build (next_ms), so every answer is a
     // fresh one and the header's "Updated ... ago" restarts from a few seconds each time.
-    const again = (ms: number) => { window.clearTimeout(timer); timer = window.setTimeout(load, Math.min(60000, Math.max(3000, ms))) }
+    const again = (ms: number) => {
+      const d = Math.min(60000, Math.max(3000, ms))
+      window.clearTimeout(timer); timer = window.setTimeout(load, d); setSensorsNext(Date.now() + d)
+    }
     function load() {
       fetch(`/api/census?rows=${rowStates}`).then((r) => (r.ok ? r.json() : Promise.reject()))
         .then((c: { counts?: Record<string, number>; rows?: SensorRow[]; age_ms?: number; next_ms?: number }) => {
@@ -1494,7 +1498,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
             {chip('paused', ic.paused, 'var(--paused)', pausedN, 'Paused')}
             {chip('hidden', ic.hidden, 'var(--hidden)', hiddenN, 'Hidden')}
           </div>
-          <HeaderClock updatedAt={sensorsAt} />
+          <HeaderClock updatedAt={sensorsAt} nextAt={sensorsNext} />
         </div>
         <div className="content view-enter" key={`${view}:${listFilter}`}>
           {view === 'overview' && <StatusListView filter="attention" sensors={sensors} loading={!sensorsLoaded} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => {}} />}
@@ -1521,9 +1525,10 @@ type SettingItem = {
 }
 
 // HeaderClock is the top bar's clock, in Argus's timezone and time format (Settings -> General), with
-// how long ago the status data behind the pills last refreshed. Its own 1 s tick, so the shell doesn't
-// re-render every second.
-function HeaderClock({ updatedAt }: { updatedAt: number }) {
+// a countdown to the next refresh of the status data behind the pills (the fetch is timed to the
+// server's next build, so the count runs to a fresh answer); the data's age is in the tooltip. Its
+// own 1 s tick, so the shell doesn't re-render every second.
+function HeaderClock({ updatedAt, nextAt }: { updatedAt: number; nextAt: number }) {
   const [cfg, setCfg] = useState<{ tz?: string; h24: boolean }>({ h24: true })
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -1537,9 +1542,11 @@ function HeaderClock({ updatedAt }: { updatedAt: number }) {
   try { time = new Intl.DateTimeFormat(undefined, { timeZone: cfg.tz, hour: '2-digit', minute: '2-digit', hour12: !cfg.h24 }).format(new Date()) }
   catch { time = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hour12: !cfg.h24 }).format(new Date()) }
   const ago = updatedAt ? Math.max(0, Math.floor((Date.now() - updatedAt) / 1000)) : -1
-  const agoText = ago < 0 ? 'Loading…' : ago < 60 ? `Updated ${ago}s ago` : `Updated ${Math.floor(ago / 60)}m ago`
+  const left = nextAt ? Math.max(0, Math.ceil((nextAt - Date.now()) / 1000)) : -1
+  const agoText = left < 0 ? 'Loading…' : left > 0 ? `Next update in ${left}s` : 'Updating…'
+  const ageTip = ago < 0 ? '' : ago < 60 ? `Data read ${ago}s ago` : `Data read ${Math.floor(ago / 60)}m ago`
   return (
-    <div className="hclock" title={cfg.tz ? `Time in ${cfg.tz}` : undefined}>
+    <div className="hclock" title={[cfg.tz ? `Time in ${cfg.tz}` : '', ageTip].filter(Boolean).join(' · ') || undefined}>
       <div className="hclock-t">{time}</div>
       <div className="hclock-u">{agoText}</div>
     </div>
