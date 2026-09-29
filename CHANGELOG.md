@@ -13,6 +13,12 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Core VM (next image):**
+- Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
+  of the `get.docker.com` script.
+
+## [0.5.16] - 2026-09-29
+
 **Probe process autoscaling:**
 - Argus sizes each probe's Zabbix process counts (ICMP pingers, pollers, unreachable pollers, agent,
   SNMP and HTTP agent pollers, trappers, history syncers, preprocessing workers) from the probe's own
@@ -55,10 +61,6 @@ GitHub Release from the matching section below.
   each fetch to just after the server's next build (`next_ms`), so the count runs to a fresh answer
   every 20 s. The data's age on the server is in the tooltip.
 - Template items are left out at Zabbix instead of after the download.
-
-**Core VM (next image):**
-- Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
-  of the `get.docker.com` script.
 
 ## [0.5.15] - 2026-09-29
 
