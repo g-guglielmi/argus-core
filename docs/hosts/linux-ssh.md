@@ -20,8 +20,11 @@ can't but you do have SSH.
 - **Authentication** (`{$SSH.AUTH}`): **`key`** (recommended) or **`password`**.
 - **Private key path** (`{$SSH.KEYFILE}`, default `/var/lib/zabbix/ssh/argus_id`): for key auth, the
   path to the private key **on the proxy** (see below).
-- **SSH password** (`{$SSH.PASSWORD}`): for password auth, stored as a Zabbix **secret macro**. It is
-  handed to the collector through the environment, so it never appears in the command line or `ps`.
+- **SSH password** (`{$SSH.PASSWORD}`): for password auth, stored as a Zabbix **secret macro**. Zabbix
+  can hand it to the collector only as a command-line argument; the collector wipes its own command
+  line as soon as it has read it, and `ssh` gets it through the environment, so it shows in `ps` only
+  during the collector's start-up. The proxy's own configuration database holds the macro as well, as
+  for every secret macro.
 
 The first connection to a host is trust-on-first-use (`accept-new`); a later change to the host key
 is rejected.

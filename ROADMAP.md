@@ -187,8 +187,10 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   passkey begins and argon2 concurrency, bounded rate limiter, one-shot second-factor challenges,
   atomic paired writes and update hand-outs, capped per-day counter queries, Zabbix error detail
   for admins only, check-in tokens only for known proxies, `govulncheck` + `npm audit` gating CI,
-  pinned Go toolchain, repository signing keys verified in `setup-core.sh`. Still deferred:
-  collector passwords off argv, intermediate enrollment CA.
+  pinned Go toolchain, repository signing keys verified in `setup-core.sh`. Collector passwords:
+  Zabbix hands an external check its values only on argv and the proxy database holds the same
+  macros, so a file-based redesign was dropped as not worth it; the collectors wipe their own command
+  line at start instead (`probe/v7.0.31-r7`). Still deferred: intermediate enrollment CA.
 - [ ] **Sizing pass** before the ~6000-sensor deployment (proxies, DB, caches, NVPS) - analysis
 - [ ] **Server-side census/counts** - move the `/api/sensors` full census server-side at scale - _(BE)_ M
 - [ ] **Probe process autoscaling** - size each probe's Zabbix process counts (ICMP pingers first,

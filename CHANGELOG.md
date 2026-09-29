@@ -34,6 +34,11 @@ GitHub Release from the matching section below.
   the image builds with a pinned, supported Go (1.27) and its own toolchain (`GOTOOLCHAIN=local`).
 - `setup-core.sh` verifies the Zabbix repository keyring and the TimescaleDB signing key against their
   published fingerprints before apt trusts them.
+- Collector passwords (XCP-NG, Linux SSH): the scripts wipe their own command line once they have read
+  their arguments, so the password shows in `ps` only during start-up (Zabbix can pass a value to an
+  external check no other way; the proxy's configuration database holds the same macros). The core's
+  mirror of the scripts and the XCP-NG and Linux SSH guides say so; the earlier guide claim that the
+  SSH password never appeared on a command line was wrong.
 
 **Core VM (next image):**
 - Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead

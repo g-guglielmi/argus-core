@@ -20,7 +20,10 @@ into the pool master over XML-RPC/HTTPS once per poll and reads everything in on
   checks nothing.
 - **Credentials**: the XAPI login. On a stock XCP-NG that is **`root`** and the host root password
   (local XAPI accounts are root-only; only pools with external/AD authentication have other users).
-  The password is stored as a Zabbix **secret macro** (write-only after saving).
+  The password is stored as a Zabbix **secret macro** (write-only after saving). Zabbix hands it to
+  the collector as a command-line argument (the only way an external check receives a value); the
+  collector wipes its own command line as soon as it has read it, so it shows in `ps` only during
+  start-up.
 - **VM monitoring**: a dropdown, off by default (see below).
 
 > Multi-host pools are fully coded (the collector enumerates every member and reads each host's
