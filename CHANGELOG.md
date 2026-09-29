@@ -20,7 +20,11 @@ GitHub Release from the matching section below.
   self-signed certificate shows it to you and offers to **pin** its SHA-256, so a later swap fails
   loudly), *Pin a fingerprint* (paste one for a controller only a probe can reach), or *Ignore*.
   Controllers saved before this keep working unchanged (they are marked *Ignore*; edit them to pin).
-  The probe scripts apply the same policy (probe image 7.0.31-r5 or later).
+  The probe scripts apply the same policy (probe image 7.0.31-r5 or later). For a controller only a
+  probe can reach, **Ask a probe for the certificate** has that probe read it over its check-in
+  channel (a "cert" job: no API key travels, nothing is imported) and offers the same pin dialog
+  (probe image 7.0.31-r6); a sweep refused by the check reports the certificate it saw, and the
+  result page offers to pin it.
 - **XCP-NG hosts pin their XAPI certificate** (`{$XCP.TLS}` in host settings, default *pin*: trust
   on first contact, remembered on the collector, a change refused and reported as `tls_error`);
   *verify* and *ignore* are the alternatives. Existing XCP-NG hosts get the default at the next

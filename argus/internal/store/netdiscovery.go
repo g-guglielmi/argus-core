@@ -44,15 +44,16 @@ const (
 type DiscoveryJob struct {
 	ID             int64
 	ProxyName      string
-	Kind           string // scan | unifi
+	Kind           string // scan | unifi | cert (ask the probe which certificate a controller URL presents)
 	ControllerID   int64  // unifi_controllers.id (sweep jobs)
 	ControllerName string // display snapshot (sweep jobs)
-	CIDR          string
+	CIDR          string // the subnet (scan) or the controller URL (cert)
 	SNMPVersion   int
 	SNMPCommunity string
 	SNMPPort      int
 	State         string // pending | dispatched | done | failed
 	Error         string
+	Certificate   string // JSON {fingerprint, subject, issuer, not_after} the probe saw (cert jobs; a sweep that failed the check)
 	RequestedBy   string
 	CreatedAt     int64
 	DispatchedAt  int64
@@ -85,14 +86,21 @@ type DiscoveryResult struct {
 	HostID         string // Zabbix host id once adopted
 }
 
-const discoveryJobColumns = `id, proxy_name, kind, controller_id, controller_name, cidr, snmp_version, snmp_port, state, error, requested_by, created_at, dispatched_at, completed_at`
+const discoveryJobColumns = `id, proxy_name, kind, controller_id, controller_name, cidr, snmp_version, snmp_port, state, error, certificate, requested_by, created_at, dispatched_at, completed_at`
 
 func scanDiscoveryJob(row interface{ Scan(...any) error }) (DiscoveryJob, error) {
 	var j DiscoveryJob
 	err := row.Scan(&j.ID, &j.ProxyName, &j.Kind, &j.ControllerID, &j.ControllerName, &j.CIDR,
-		&j.SNMPVersion, &j.SNMPPort, &j.State, &j.Error,
+		&j.SNMPVersion, &j.SNMPPort, &j.State, &j.Error, &j.Certificate,
 		&j.RequestedBy, &j.CreatedAt, &j.DispatchedAt, &j.CompletedAt)
 	return j, err
+}
+
+// SetDiscoveryJobCertificate records the certificate a probe reported for a job (before the job
+// completes), so the admin can pin it.
+func (s *Store) SetDiscoveryJobCertificate(ctx context.Context, jobID int64, certJSON string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE discovery_jobs SET certificate=? WHERE id=?`, certJSON, jobID)
+	return err
 }
 
 // expireStaleDiscoveryJobs fails jobs stuck in pending/dispatched past their grace periods, so a
@@ -173,7 +181,7 @@ func (s *Store) TakeDiscoveryJob(ctx context.Context, proxyName string) (*Discov
 		 WHERE proxy_name=? AND state='pending' ORDER BY id LIMIT 1`, proxyName)
 	var j DiscoveryJob
 	err := row.Scan(&j.ID, &j.ProxyName, &j.Kind, &j.ControllerID, &j.ControllerName, &j.CIDR,
-		&j.SNMPVersion, &j.SNMPPort, &j.State, &j.Error,
+		&j.SNMPVersion, &j.SNMPPort, &j.State, &j.Error, &j.Certificate,
 		&j.RequestedBy, &j.CreatedAt, &j.DispatchedAt, &j.CompletedAt, &enc)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -252,7 +260,7 @@ func (s *Store) ListDiscoveryJobs(ctx context.Context, limit int) ([]DiscoveryJo
 		`SELECT `+discoveryJobColumns+`,
 		   (SELECT COUNT(*) FROM discovery_results r WHERE r.job_id = discovery_jobs.id),
 		   (SELECT COUNT(*) FROM discovery_results r WHERE r.job_id = discovery_jobs.id AND r.state='new')
-		 FROM discovery_jobs ORDER BY id DESC LIMIT ?`, limit)
+		 FROM discovery_jobs WHERE kind <> 'cert' ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}

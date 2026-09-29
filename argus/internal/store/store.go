@@ -578,6 +578,10 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 			return err
 		}
 	}
+	// The certificate a probe saw for a controller (a "cert" job, or a sweep that failed the check).
+	if err := s.ensureColumn("discovery_jobs", "certificate TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	if err := s.ensureColumn("status_pages", "token_enc TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}

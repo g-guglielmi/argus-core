@@ -107,9 +107,13 @@ controllers), so a controller that works for monitoring works for the sweep. Eac
 has a **certificate policy**: *Verify* (the system roots; when you save a console with its own
 self-signed certificate, Argus shows you that certificate and offers to **pin** it), *Pin a
 fingerprint* (every request must present exactly that certificate; a change later fails loudly), or
-*Ignore*. A controller that only a probe's network can reach can't be inspected by the core: paste
-its fingerprint under Pin, or choose Ignore. Each controller also has a **site scope**: only the
-probes of those sites receive it (and its API key) for scans and sweeps; empty means every site.
+*Ignore*. A controller that only a probe's network can reach can't be inspected by the core: the
+dialog then offers **Ask a probe for the certificate**, which has a probe of that site read the
+certificate over its check-in channel (no API key travels) and shows you the same pin confirmation;
+or paste its fingerprint under Pin, or choose Ignore. A sweep refused by the certificate check
+reports the certificate it saw, and its result page offers to pin it. Each controller also has a
+**site scope**: only the probes of those sites receive it (and its API key) for scans and sweeps;
+empty means every site.
 
 **Subnet scans use the controllers too.** Once a controller is saved, every subnet scan's results
 are cross-checked against its adopted devices (matched by MAC, or by IP where the scan saw no

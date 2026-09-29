@@ -4074,7 +4074,8 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
 // job rides the probe's check-in channel (picked up within a minute), the probe's scanner reports
 // raw fingerprints, and the review table below adopts (via the ordinary POST /api/hosts, tagged
 // discovered) or ignores what it found. Admin-only (gated in the shell nav + clampView).
-type DiscoveryJobRow = { id: number; proxy_name: string; kind?: string; controller_name?: string; cidr: string; state: string; error?: string; requested_by?: string; created_at: number; completed_at?: number; found?: number; new?: number }
+type CertReport = { fingerprint: string; subject: string; issuer: string; not_after: string }
+type DiscoveryJobRow = { id: number; proxy_name: string; kind?: string; controller_id?: number; controller_name?: string; cidr: string; state: string; error?: string; certificate?: CertReport; requested_by?: string; created_at: number; completed_at?: number; found?: number; new?: number }
 type DiscoveryHTTP = { port: number; scheme: string; status: number; server?: string; title?: string }
 type DiscoveryUnifi = { name?: string; model?: string; type?: string; state?: number; version?: string; site?: string; site_desc?: string }
 type DiscoveryUnifiClient = { name?: string; hostname?: string; wired?: boolean }
@@ -4126,6 +4127,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
   const [busy, setBusy] = useState(false)
   // UniFi sweep form + saved controllers
   const confirm = useConfirm()
+  const toast = useToast()
   const [ctls, setCtls] = useState<UnifiCtlRow[] | null>(null)
   const [sweepCtl, setSweepCtl] = useState('')
   const [sweepFrom, setSweepFrom] = useState('')
@@ -4134,6 +4136,9 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
   const [ctlForm, setCtlForm] = useState<CtlForm | null>(null)
   const [ctlBusy, setCtlBusy] = useState(false)
   const [siteNames, setSiteNames] = useState<string[]>([]) // for a controller's site scope
+  const [certProbe, setCertProbe] = useState('') // which probe to ask for a controller's certificate
+  const [certAsking, setCertAsking] = useState(false)
+  const [certOffer, setCertOffer] = useState(false) // shown after "Argus can't reach this controller"
   useEffect(() => { fetch('/api/notify/sites').then((r) => r.json()).then((s) => setSiteNames(s || [])).catch(() => {}) }, [])
   // Which action dialog is open - the landing page itself is just the scan history. 'new' is
   // the wizard's source-picker step; future discovery sources (other vendor APIs) slot in there.
@@ -4323,11 +4328,66 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
         setSweepErr('Not saved. Choose "Pin" with a fingerprint, or "Ignore" for this controller.')
         return
       }
-      setSweepErr((d.error || 'Argus cannot reach this controller to check its certificate.') + ' If only a probe reaches it, enter its SHA-256 fingerprint under "Pin", or choose "Ignore".')
+      setSweepErr((d.error || 'Argus cannot reach this controller to check its certificate.') + ' Ask a probe of that site to read it below, paste its SHA-256 fingerprint under "Pin", or choose "Ignore".')
+      setCertOffer(true)
+      if (!certProbe) {
+        const inSite = (proxies || []).find((p) => p.sweeps && f.sites.some((s) => p.name === 'proxy-' + s || p.name === s))
+        setCertProbe(inSite?.id || (proxies || []).find((p) => p.sweeps)?.id || '')
+      }
       return
     }
     if (!res || !res.ok) { setSweepErr(await errText(res, 'Could not save the controller')); return }
-    setCtlForm(null)
+    setCtlForm(null); setCertOffer(false)
+    void loadCtls()
+  }
+
+  // The controller is out of the core's reach: a probe reads its certificate over the check-in
+  // channel (a "cert" job: no key travels), and the same pin dialog follows.
+  async function askProbeForCertificate() {
+    if (!ctlForm || !certProbe || certAsking) return
+    setCertAsking(true); setSweepErr(null)
+    try {
+      const res = await fetch('/api/discovery/certificate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: ctlForm.url.trim(), proxy_id: certProbe }) })
+      if (!res.ok) { setSweepErr(await errText(res, 'Could not ask the probe')); return }
+      const { job_id } = await res.json() as { job_id: number }
+      const deadline = Date.now() + 3 * 60 * 1000
+      let job: DiscoveryJobRow | null = null
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 2000))
+        const jr = await fetch(`/api/discovery/jobs/${job_id}`).catch(() => null)
+        if (!jr || !jr.ok) continue
+        const d = await jr.json() as { job?: DiscoveryJobRow } & DiscoveryJobRow
+        job = (d.job || d) as DiscoveryJobRow
+        if (job.state === 'done' || job.state === 'failed') break
+      }
+      if (!job || (job.state !== 'done' && job.state !== 'failed')) { setSweepErr('The probe has not answered yet (it picks jobs up at check-in, once a minute). Try again in a moment.'); return }
+      if (!job.certificate) { setSweepErr(job.error ? `The probe could not read the certificate: ${job.error}` : 'The probe answered without a certificate; it needs the latest probe image.'); return }
+      const c = job.certificate
+      const ok = await confirm({
+        title: 'Pin this certificate?',
+        message: `Probe ${job.proxy_name} reached the controller and saw this certificate.\n\nSubject: ${c.subject || '(not readable)'}\nIssuer: ${c.issuer || '(not readable)'}\nValid until: ${c.not_after || '(not readable)'}\nSHA-256: ${fpGroups(c.fingerprint)}\n\nPin it and every request will require exactly this certificate; a change later fails loudly.`,
+        confirmLabel: 'Pin and save',
+      })
+      if (!ok) return
+      setCtlForm({ ...ctlForm, tls: 'pin', fingerprint: c.fingerprint })
+      await saveCtl({ ...ctlForm, tls: 'pin', fingerprint: c.fingerprint })
+    } catch { setSweepErr('Could not ask the probe') } finally { setCertAsking(false) }
+  }
+
+  // A sweep refused by the certificate check reports what it saw: pin it for that controller here.
+  async function pinFromJob(j: DiscoveryJobRow) {
+    const c = j.certificate; const ctl = (ctls || []).find((x) => x.id === j.controller_id)
+    if (!c || !ctl) return
+    const ok = await confirm({
+      title: `Pin the certificate of ${ctl.name}?`,
+      message: `Subject: ${c.subject || '(not readable)'}\nIssuer: ${c.issuer || '(not readable)'}\nValid until: ${c.not_after || '(not readable)'}\nSHA-256: ${fpGroups(c.fingerprint)}\n\nFuture sweeps and scans will require exactly this certificate.`,
+      confirmLabel: 'Pin',
+    })
+    if (!ok) return
+    const body = { id: ctl.id, name: ctl.name, url: ctl.url, api_key: '', sites: ctl.sites || [], tls_mode: 'pin', fingerprint: c.fingerprint }
+    const res = await fetch('/api/discovery/controllers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null)
+    if (!res || !res.ok) { setErr(await errText(res, 'Could not pin the certificate')); return }
+    toast.success(`Certificate pinned for ${ctl.name}. Run the sweep again.`)
     void loadCtls()
   }
 
@@ -4613,6 +4673,19 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
                 <Field label="Certificate SHA-256 fingerprint" placeholder="64 hex characters, as the console or a browser shows it" value={ctlForm.fingerprint} onChange={(e) => setCtlForm({ ...ctlForm, fingerprint: e.target.value })} />
               )}
               {ctlForm.tls === 'ignore' && <p className="set-note">The API key is then sent to whatever answers at this address. Only for a network you trust end to end.</p>}
+              {certOffer && ctlForm.tls === 'verify' && (
+                <div style={{ display: 'grid', gap: 6, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600 }}>Ask a probe for the certificate</div>
+                  <p className="set-note" style={{ margin: 0 }}>A probe of that site connects to the controller and reports the certificate it presents (no API key travels). You then decide whether to pin it.</p>
+                  <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <Select value={certProbe} onChange={(e) => setCertProbe(e.target.value)}>
+                      <option value="">Choose a probe…</option>
+                      {(proxies || []).map((p) => <option key={p.id} value={p.id} disabled={!p.sweeps}>{p.name}{p.sweeps ? '' : ' (needs probe update)'}</option>)}
+                    </Select>
+                    <Button onClick={() => void askProbeForCertificate()} disabled={!certProbe || certAsking}>{certAsking ? 'Asking the probe…' : 'Ask the probe'}</Button>
+                  </div>
+                </div>
+              )}
               <div style={{ display: 'flex', gap: '0.6rem' }}>
                 <Button variant="primary" onClick={() => void saveCtl()} disabled={ctlBusy}>{ctlBusy ? 'Saving…' : ctlForm.id ? 'Save changes' : 'Add controller'}</Button>
                 <Button variant="ghost" onClick={() => setCtlForm(null)}>Cancel</Button>
@@ -4647,7 +4720,15 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
             : `${job.proxy_name || 'The core server'} is scanning ${job.cidr}… this can take a few minutes.`}
         </div>
       )}
-      {job.state === 'failed' && <div style={{ padding: '14px 1rem' }}><Banner variant="error">{isSweep ? 'Sweep of' : 'Scan of'} {jobLabel} failed: {job.error || 'unknown error'}</Banner></div>}
+      {job.state === 'failed' && <div style={{ padding: '14px 1rem', display: 'grid', gap: 8 }}>
+        <Banner variant="error">{isSweep ? 'Sweep of' : 'Scan of'} {jobLabel} failed: {job.error || 'unknown error'}</Banner>
+        {isSweep && job.certificate && job.controller_id ? (
+          <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
+            <span style={{ color: 'var(--muted)' }}>The controller presented a certificate with SHA-256 <span className="mono">{fpGroups(job.certificate.fingerprint)}</span>.</span>
+            <Button onClick={() => void pinFromJob(job)}>Pin it for this controller</Button>
+          </div>
+        ) : null}
+      </div>}
 
       {job.state === 'done' && (
         <>

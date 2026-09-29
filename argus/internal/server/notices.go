@@ -337,6 +337,9 @@ func (s *Server) scanNotices(ctx context.Context) []notice {
 	newest := mark
 	var finished []store.DiscoveryJob
 	for _, j := range jobs {
+		if j.Kind == "cert" {
+			continue // a certificate check, not a discovery
+		}
 		if (j.State == "done" || j.State == "failed") && j.CompletedAt > mark {
 			finished = append(finished, j)
 		}

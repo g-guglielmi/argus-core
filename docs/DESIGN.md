@@ -357,7 +357,11 @@ the probes of those sites receive it and its API key at scan/sweep hand-out; emp
 a **certificate policy** (`tls_mode` verify | pin | ignore, `fingerprint` for pin). Saving with
 *verify* makes the core inspect the certificate: trusted by the system roots -> saved; self-signed ->
 the admin is shown the certificate (subject, issuer, expiry, SHA-256) and asked to pin it; unreachable
-from the core -> paste a fingerprint or ignore. The Go client (`internal/unifi`, `Options`) and the
+from the core -> "Ask a probe": a `cert` discovery job (`discovery_jobs.kind = cert`, the URL in
+`cidr`) rides the probe's check-in as a `cert_only` sweep payload without a key; the sweep script
+reports `{certificate: {fingerprint, subject, issuer, not_after}}` through scan-results, stored in
+`discovery_jobs.certificate` and offered for pinning (a refused sweep reports it the same way);
+cert jobs are hidden from the scan history and the notices; or paste a fingerprint, or ignore. The Go client (`internal/unifi`, `Options`) and the
 probe scripts (`tls_opener` in `argus_netscan.py` / `argus_unifi_sweep.py`, the pinned connection
 compares the leaf SHA-256 right after the handshake) apply the same policy. XCP-NG (`{$XCP.TLS}`,
 default pin) pins on the collector itself: first contact stores the SHA-256 under

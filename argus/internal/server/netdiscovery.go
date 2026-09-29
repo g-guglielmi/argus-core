@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -65,9 +66,19 @@ type scanSNMP struct {
 type sweepJobPayload struct {
 	ID          int64  `json:"id"`
 	URL         string `json:"url"`
-	Key         string `json:"key"`
+	Key         string `json:"key,omitempty"`
 	TLS         string `json:"tls,omitempty"`         // verify | pin | ignore (absent = verify)
 	Fingerprint string `json:"fingerprint,omitempty"` // for pin
+	CertOnly    bool   `json:"cert_only,omitempty"`   // just report which certificate the URL presents (no key, no devices)
+}
+
+// certReport is the certificate a probe saw at a controller URL, as it reports it and as the UI
+// shows it before pinning.
+type certReport struct {
+	Fingerprint string `json:"fingerprint"`
+	Subject     string `json:"subject"`
+	Issuer      string `json:"issuer"`
+	NotAfter    string `json:"not_after"`
 }
 
 // takeDiscoveryHandout pops the probe's oldest pending discovery job for the check-in response
@@ -82,6 +93,11 @@ func (s *Server) takeDiscoveryHandout(ctx context.Context, proxyName string) (*s
 		}
 		if job == nil {
 			return nil, nil
+		}
+		if job.Kind == "cert" {
+			// Ask the probe which certificate the URL presents: no key travels, nothing is imported.
+			s.logger.Info("discovery: certificate check dispatched", "proxy", proxyName, "job", job.ID, "url", job.CIDR)
+			return nil, &sweepJobPayload{ID: job.ID, URL: job.CIDR, CertOnly: true}
 		}
 		if job.Kind == "unifi" {
 			ctl, err := s.st.UniFiControllerByID(ctx, job.ControllerID)
@@ -608,23 +624,111 @@ func (s *Server) runCoreSweep(job store.DiscoveryJob) {
 type discoveryJobView struct {
 	ID             int64  `json:"id"`
 	ProxyName      string `json:"proxy_name"`
-	Kind           string `json:"kind"` // scan | unifi
+	Kind           string `json:"kind"` // scan | unifi | cert
+	ControllerID   int64  `json:"controller_id,omitempty"`
 	ControllerName string `json:"controller_name,omitempty"`
 	CIDR           string `json:"cidr"`
 	State          string `json:"state"` // pending | dispatched | done | failed
 	Error          string `json:"error,omitempty"`
-	RequestedBy    string `json:"requested_by,omitempty"`
-	CreatedAt      int64  `json:"created_at"`
-	CompletedAt    int64  `json:"completed_at,omitempty"`
-	Found          int    `json:"found"` // result counts (list only): live hosts / still up for review
-	New            int    `json:"new"`
+	// The certificate the probe saw (a cert job; a sweep that failed the certificate check), so the
+	// admin can pin it from the result.
+	Certificate *certReport `json:"certificate,omitempty"`
+	RequestedBy string      `json:"requested_by,omitempty"`
+	CreatedAt   int64       `json:"created_at"`
+	CompletedAt int64       `json:"completed_at,omitempty"`
+	Found       int         `json:"found"` // result counts (list only): live hosts / still up for review
+	New         int         `json:"new"`
 }
 
 func jobView(j store.DiscoveryJob) discoveryJobView {
-	return discoveryJobView{ID: j.ID, ProxyName: j.ProxyName, Kind: j.Kind, ControllerName: j.ControllerName,
+	v := discoveryJobView{ID: j.ID, ProxyName: j.ProxyName, Kind: j.Kind, ControllerID: j.ControllerID, ControllerName: j.ControllerName,
 		CIDR: j.CIDR, State: j.State,
 		Error: j.Error, RequestedBy: j.RequestedBy, CreatedAt: j.CreatedAt, CompletedAt: j.CompletedAt,
 		Found: j.Found, New: j.NewCount}
+	if j.Certificate != "" {
+		var c certReport
+		if json.Unmarshal([]byte(j.Certificate), &c) == nil && c.Fingerprint != "" {
+			v.Certificate = &c
+		}
+	}
+	return v
+}
+
+// clip shortens s to at most n runes.
+func clip(s string, n int) string {
+	r := []rune(strings.TrimSpace(s))
+	if len(r) > n {
+		return string(r[:n])
+	}
+	return string(r)
+}
+
+// POST /api/discovery/certificate (admin): ask a probe which certificate a controller URL presents,
+// for a controller the core itself can't reach. Queues a "cert" job on the probe's check-in channel
+// (the sweep script answers it with the certificate alone: no API key travels, nothing is imported)
+// and returns the job id; the UI polls the job and offers to pin what came back.
+func (s *Server) handleCertificateViaProbe(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		URL     string `json:"url"`
+		ProxyID string `json:"proxy_id"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	u, msg := normalizeControllerURL(req.URL)
+	if msg != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+		return
+	}
+	if !strings.HasPrefix(strings.ToLower(u), "https://") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "only an https controller has a certificate to check"})
+		return
+	}
+	if !s.zbx.Authenticated() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured (set ARGUS_ZABBIX_API_TOKEN)"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancel()
+	proxies, err := s.zbx.Proxies(ctx)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		return
+	}
+	proxyName := ""
+	for _, p := range proxies {
+		if p.ProxyID == req.ProxyID {
+			proxyName = p.Name
+			break
+		}
+	}
+	if proxyName == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown probe"})
+		return
+	}
+	if ag, err := s.st.ProbeAgentByName(ctx, proxyName); err != nil || !ag.Sweeps {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "this probe hasn't reported the UniFi-sweep capability - it needs the latest probe image (and check-in enabled)"})
+		return
+	}
+	by := ""
+	if usr, ok := auth.UserFrom(r.Context()); ok {
+		by = usr.Email
+	}
+	host := u
+	if pu, err := url.Parse(u); err == nil {
+		host = pu.Host
+	}
+	id, err := s.st.CreateDiscoveryJob(ctx, store.DiscoveryJob{ProxyName: proxyName, Kind: "cert", CIDR: u, ControllerName: host, RequestedBy: by, SNMPVersion: 2, SNMPPort: 161})
+	if errors.Is(err, store.ErrDiscoveryBusy) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "this probe already has scans queued - try again in a moment"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the certificate check"})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"job_id": id})
 }
 
 // adjustNewCounts live-adjusts the jobs' "new" counts: a result whose IP is already monitored isn't
@@ -883,13 +987,23 @@ func (s *Server) handleScanResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		JobID int64            `json:"job_id"`
-		Error string           `json:"error"`
-		Hosts []scanResultHost `json:"hosts"`
+		JobID       int64            `json:"job_id"`
+		Error       string           `json:"error"`
+		Hosts       []scanResultHost `json:"hosts"`
+		Certificate *certReport      `json:"certificate"` // what the controller presented (a cert job, or a sweep that failed the check)
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
+	}
+	if c := req.Certificate; c != nil {
+		c.Fingerprint = unifi.NormalizeFingerprint(c.Fingerprint)
+		if len(c.Fingerprint) == 64 && strings.Trim(c.Fingerprint, "0123456789abcdef") == "" {
+			c.Subject, c.Issuer, c.NotAfter = clip(c.Subject, 200), clip(c.Issuer, 200), clip(c.NotAfter, 40)
+			if b, err := json.Marshal(c); err == nil {
+				_ = s.st.SetDiscoveryJobCertificate(ctx, req.JobID, string(b))
+			}
+		}
 	}
 	if len(req.Hosts) > maxScanHosts {
 		req.Hosts = req.Hosts[:maxScanHosts]
