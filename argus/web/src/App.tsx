@@ -4227,7 +4227,7 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
 type CertReport = { fingerprint: string; subject: string; issuer: string; not_after: string }
 type DiscoveryJobRow = { id: number; proxy_name: string; kind?: string; controller_id?: number; controller_name?: string; cidr: string; state: string; error?: string; certificate?: CertReport; requested_by?: string; created_at: number; completed_at?: number; found?: number; new?: number }
 type DiscoveryHTTP = { port: number; scheme: string; status: number; server?: string; title?: string }
-type DiscoveryUnifi = { name?: string; model?: string; type?: string; state?: number; version?: string; site?: string; site_desc?: string }
+type DiscoveryUnifi = { name?: string; mac?: string; model?: string; type?: string; state?: number; version?: string; site?: string; site_desc?: string }
 type DiscoveryUnifiClient = { name?: string; hostname?: string; wired?: boolean }
 type DiscoveryResultRow = { id: number; ip: string; mac?: string; rdns?: string; tcp: number[]; sysdescr?: string; sysobjectid?: string; sysname?: string; http?: DiscoveryHTTP; dns?: boolean; ssh?: string; unifi?: DiscoveryUnifi; unifi_client?: DiscoveryUnifiClient; suggested_class?: string; state: string; host_id?: string; monitored_id?: string; monitored_name?: string }
 type DiscRowCfg = { name: string; classId: string; http: boolean; httpScheme: string; httpPort: string; macros: Record<string, string>; site?: string }
@@ -4348,7 +4348,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
   // otherwise it stays an editable required field instead of a disabled empty one.
   const autoFilled = (r: DiscoveryResultRow, classId: string, macro: string) => {
     if (!r.unifi || !classId.startsWith('unifi-') || !UNIFI_AUTOFILL.includes(macro)) return false
-    return macro !== '{$UNIFI.MAC}' || !!r.mac
+    return macro !== '{$UNIFI.MAC}' || !!(r.unifi.mac || r.mac)
   }
 
   function applyJob(d: { job: DiscoveryJobRow; results: DiscoveryResultRow[] }) {
@@ -5001,7 +5001,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
                                       <Field key={ms.macro} label={ms.label + ' (optional)'} placeholder={`${r.unifi?.site || 'default'} - from the controller`}
                                         value={cfg.macros[ms.macro] || ''} onChange={(e) => setCfg(r.id, { macros: { ...cfg.macros, [ms.macro]: e.target.value } })} />
                                     ) : (
-                                      <Field key={ms.macro} label={ms.label} value={ms.macro === '{$UNIFI.MAC}' ? (r.mac || '') : ''}
+                                      <Field key={ms.macro} label={ms.label} value={ms.macro === '{$UNIFI.MAC}' ? (r.unifi?.mac || r.mac || '') : ''}
                                         placeholder="auto-filled from the controller" disabled readOnly />
                                     )
                                   ) : ms.options && ms.options.length > 0 ? (

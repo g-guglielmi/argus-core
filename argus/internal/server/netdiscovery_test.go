@@ -4,6 +4,7 @@
 package server
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -47,18 +48,33 @@ func TestEnrichScanResults(t *testing.T) {
 	inv := []controllerInventory{{ID: 7, Devices: []unifi.Device{
 		{IP: "10.0.0.2", MAC: "aa:bb:cc:00:00:01", Name: "sw-rack", Model: "US8P60", Type: "usw", State: 1, Version: "7.1.26", Site: "default"},
 		{IP: "10.0.0.9", MAC: "aa:bb:cc:00:00:02", Name: "ap-hall", Model: "U7PG2", Type: "uap", State: 1, Site: "default"},
+		{IP: "10.0.0.1", MAC: "AA:BB:CC:00:00:03", Name: "gw", Model: "UDRULT", Type: "udm", State: 1, Site: "default"},
 	}, Clients: []unifi.Client{
 		{IP: "10.0.0.77", MAC: "aa:bb:cc:00:00:77", Name: "nas-lab", Hostname: "nas-lab.example.lan", Wired: true},
 	}}}
 	results := []store.DiscoveryResult{
-		{IP: "10.0.0.2", MAC: "AA-BB-CC-00-00-01"},                  // MAC match, other notation
-		{IP: "10.0.0.9"},                                            // no MAC (routed probe) -> IP match
-		{IP: "10.0.0.50", MAC: "11:22:33:44:55:66"},                 // unknown device
+		{IP: "10.0.0.2", MAC: "AA-BB-CC-00-00-01"}, // MAC match, other notation
+		{IP: "10.0.0.9"}, // no MAC (routed probe) -> IP match
+		{IP: "10.0.0.50", MAC: "11:22:33:44:55:66"},                     // unknown device
 		{IP: "10.0.0.60", UniFiJSON: `{"type":"usw"}`, ControllerID: 3}, // already has facts
-		{IP: "10.0.0.77"},                                           // controller CLIENT -> naming hint only
+		{IP: "10.0.0.77"},                          // controller CLIENT -> naming hint only
+		{IP: "10.0.0.1", MAC: "ae:bb:cc:00:00:04"}, // gateway: LAN-side MAC -> IP match
 	}
-	if n := enrichScanResults(results, inv); n != 3 {
-		t.Fatalf("enriched %d rows, want 3", n)
+	if n := enrichScanResults(results, inv); n != 4 {
+		t.Fatalf("enriched %d rows, want 4", n)
+	}
+	var gw unifiFacts
+	if err := json.Unmarshal([]byte(results[5].UniFiJSON), &gw); err != nil || gw.MAC != "aa:bb:cc:00:00:03" {
+		t.Fatalf("an IP-matched gateway must carry the controller's device MAC in its facts: %+v", results[5])
+	}
+	if results[5].MAC != "ae:bb:cc:00:00:04" {
+		t.Fatalf("the scanned MAC stays the row's own: %+v", results[5])
+	}
+	if got := unifiMACFor(results[5].MAC, gw); got != "aa:bb:cc:00:00:03" {
+		t.Fatalf("{$UNIFI.MAC} must be the controller's MAC, got %q", got)
+	}
+	if got := unifiMACFor("aa:bb:cc:00:00:09", unifiFacts{}); got != "aa:bb:cc:00:00:09" {
+		t.Fatalf("facts without a MAC (older probe) fall back to the scanned one, got %q", got)
 	}
 	if results[0].ControllerID != 7 || !strings.Contains(results[0].UniFiJSON, `"sw-rack"`) || results[0].SuggestedClass != "unifi-switch" {
 		t.Fatalf("MAC-matched row wrong: %+v", results[0])

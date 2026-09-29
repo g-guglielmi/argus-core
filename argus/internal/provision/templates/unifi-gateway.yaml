@@ -49,6 +49,7 @@ zabbix_export:
               var hint = '';
               if (code === 401 || code === 403) { hint = 'the controller rejected the API key'; }
               else if (why === 'api.err.NoSiteContext') { hint = 'no site named "' + site + '": the Site name must be the internal name (the first site is "default")'; }
+              else if (why === 'api.err.UnknownDevice') { hint = 'the controller has no device with this MAC on the site: use the device MAC it lists (a gateway answers on its LAN with a different one)'; }
               else if (/plain HTTP/i.test(text)) { hint = 'the Controller URL must start with https://'; }
               else if (code === 404) { hint = 'the Controller URL must point at a UniFi OS console'; }
               return 'UniFi API HTTP ' + code + (why ? ' (' + why + ')' : '') + (hint ? ' - ' + hint : '');

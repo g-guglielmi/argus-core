@@ -118,7 +118,8 @@ empty means every site.
 **Subnet scans use the controllers too.** Once a controller is saved, every subnet scan's results
 are cross-checked against its adopted devices (matched by MAC, or by IP where the scan saw no
 MAC): matching rows get the controller facts - exact model, real name, firmware, site - the
-certain class suggestion, and the same adopt-time macro injection as a sweep row. So a plain scan
+certain class suggestion, and the same adopt-time macro injection as a sweep row, with the MAC the
+controller knows the device by (a gateway shows the scan a different, LAN-side MAC). So a plain scan
 of a range with UniFi gear in it already reviews like a sweep; the standalone sweep remains the
 way to import a controller's whole estate (all sites, no wire scan) in one go.
 

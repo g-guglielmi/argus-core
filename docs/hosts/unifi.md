@@ -70,6 +70,11 @@ You can change any of these later in **host settings → UniFi options** (the AP
   cause of an empty device: `HTTP 400 (api.err.NoSiteContext)` means the controller has no site by
   that name. The Site name is the site's internal name (the first site is `default`), not the name
   the UniFi app shows; leave it empty for the first site.
+- **`HTTP 400 (api.err.UnknownDevice)`** - the controller has no device with that MAC on the site.
+  Use the MAC the controller lists for the device (UniFi Network, Devices). A gateway answers on its
+  LAN with a derived address (usually the second hex digit differs, often the last byte too), so a MAC
+  read from the network, `arp` or a scanner is not the one the controller knows. Discovery takes the
+  controller's MAC when it matches a device.
 - **HTTPS certificate errors** on a self-hosted controller are expected (self-signed); the template
   does not verify the certificate for the Integration API call (Zabbix HTTP items can only verify
   against a CA store, which a console's own certificate never passes). The discovery sweep and scan

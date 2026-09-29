@@ -357,9 +357,12 @@ func (s *Server) runCoreScan(job store.DiscoveryJob) {
 
 // unifiFacts is the controller-sourced device record stored per sweep result (unifi_json) and
 // carried to the review screen verbatim. Site is the API site name (the {$UNIFI.SITE} value);
-// SiteDesc its display name.
+// SiteDesc its display name. MAC is the device MAC as the controller knows it, which is what
+// {$UNIFI.MAC} must hold: a gateway answers ARP on its LAN side with a derived address, so a scan
+// row matched by IP carries a MAC the controller doesn't know (empty in rows from older probes).
 type unifiFacts struct {
 	Name     string `json:"name,omitempty"`
+	MAC      string `json:"mac,omitempty"`
 	Model    string `json:"model,omitempty"`
 	Type     string `json:"type,omitempty"`
 	State    int    `json:"state"`
@@ -402,8 +405,17 @@ func (s *Server) injectUniFiMacros(ctx context.Context, req *createHostRequest) 
 			set("{$UNIFI.KEY}", ctl.APIKey)
 		}
 	}
-	set("{$UNIFI.MAC}", res.MAC)
+	set("{$UNIFI.MAC}", unifiMACFor(res.MAC, uf))
 	set("{$UNIFI.SITE}", uf.Site)
+}
+
+// unifiMACFor is the {$UNIFI.MAC} for a controller-backed discovery row: the controller's own MAC
+// for the device when the row carries it, else the scanned one.
+func unifiMACFor(scanned string, uf unifiFacts) string {
+	if m := strings.TrimSpace(uf.MAC); m != "" {
+		return m
+	}
+	return scanned
 }
 
 // scanControllerRefs resolves the saved controllers a probe at site may receive (key decrypted)
@@ -541,7 +553,7 @@ func enrichScanResults(results []store.DiscoveryResult, inventories []controller
 				h, ok = byIP[results[i].IP]
 			}
 			if ok {
-				facts, _ := json.Marshal(unifiFacts{Name: h.d.Name, Model: h.d.Model, Type: h.d.Type,
+				facts, _ := json.Marshal(unifiFacts{Name: h.d.Name, MAC: strings.ToLower(h.d.MAC), Model: h.d.Model, Type: h.d.Type,
 					State: h.d.State, Version: h.d.Version, Site: h.d.Site, SiteDesc: h.d.SiteDesc})
 				results[i].UniFiJSON = string(facts)
 				results[i].ControllerID = h.ctlID

@@ -31,6 +31,16 @@ GitHub Release from the matching section below.
 - The AdGuard, Home Assistant and PeaNUT login hints name the setting to check the way Argus labels
   it, not the Zabbix macro.
 
+**Discovery:**
+- A UniFi gateway added from a network scan got the wrong MAC. A gateway answers on its LAN with a
+  derived address, not the device MAC the controller knows it by, so the scan matched it to the
+  controller by IP but kept the scanned MAC, and every sensor failed with
+  `HTTP 400 (api.err.UnknownDevice)`. A matched row now carries the controller's own MAC, and adding
+  the device uses it. Rows from probes before `probe/v7.0.31-r12` don't carry it yet. A host added
+  this way before the fix keeps its wrong MAC: its sensors read "not supported", with a hint to use
+  the MAC the controller lists. Correct it in the host settings.
+- The UniFi templates add that hint for `api.err.UnknownDevice`.
+
 **Core VM (next image):**
 - Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
   of the `get.docker.com` script.

@@ -425,7 +425,10 @@ table instead (name suggestion only, never a class, never an import). The core r
 merge at ingest (`enrichScanResults`, MAC-then-IP, best-effort bounded) for core-run scans and
 as the fallback for older probe images; the stored per-result `controller_id` is what the
 adopt-time macro injection resolves through - so a scan row for known UniFi gear behaves
-exactly like a sweep row.
+exactly like a sweep row. The facts carry the controller's own device MAC, and `{$UNIFI.MAC}` is
+filled from it rather than from the scanned MAC: a gateway answers ARP on its LAN side with a
+derived address, so a gateway matched by IP would otherwise get a MAC the controller doesn't know
+(`api.err.UnknownDevice`).
 
 **Discovery trigger (shipped with §C).** LLD rules run on a long interval (1h on the SNMP classes),
 so a freshly added host would sit without its per-instance sensors. Two seams close that gap:
