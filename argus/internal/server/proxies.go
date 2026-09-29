@@ -54,6 +54,14 @@ type proxyView struct {
 	ProcsSince    int64      `json:"procs_since,omitempty"`
 	ProcsRestarts bool       `json:"procs_restarts,omitempty"` // the sidecar can restart the probe to apply a change
 	Autoscale     string     `json:"autoscale,omitempty"`      // the install-wide mode
+	// The probe's CPU as reported (0 = never): count, usable (a container limit), load averages; the
+	// busiest hour's load per CPU at the last evaluation; whether it looked short on CPU.
+	CPUCount   int       `json:"cpu_count,omitempty"`
+	CPUUsable  float64   `json:"cpu_usable,omitempty"`
+	CPULoad    []float64 `json:"cpu_load,omitempty"`
+	CPUPeak    *float64  `json:"cpu_peak,omitempty"`
+	CPUStarved bool      `json:"cpu_starved,omitempty"`
+	IsVM       bool      `json:"is_vm,omitempty"` // a probe VM (it reports OS status), not a container on another host
 }
 
 // handleProxies lists Zabbix proxies (the per-site collectors) with their last-access time, so
@@ -140,9 +148,32 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			ProcsSince:     ag.Procs.Since,
 			ProcsRestarts:  ag.Procs.Restarts,
 			Autoscale:      autoscale,
+			CPUCount:       ag.Procs.CPU.Count,
+			CPUUsable:      ag.Procs.CPU.Effective(),
+			CPULoad:        cpuLoadView(ag.Procs.CPU),
+			CPUPeak:        cpuPeakView(ag.Procs.CPU),
+			CPUStarved:     ag.Procs.CPU.Starved,
+			IsVM:           ag.OSReportedAt > 0,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// cpuLoadView is the reported 1/5/15-minute load averages, or nothing before the first report.
+func cpuLoadView(c store.ProbeCPU) []float64 {
+	if c.At == 0 {
+		return nil
+	}
+	return []float64{c.Load1, c.Load5, c.Load15}
+}
+
+// cpuPeakView is the busiest hour's load per CPU at the last evaluation, or nothing when unknown.
+func cpuPeakView(c store.ProbeCPU) *float64 {
+	if c.Peak < 0 {
+		return nil
+	}
+	v := c.Peak
+	return &v
 }
 
 // probeHostHealth finds each proxy's Probe health host and its worst open problem, keyed by proxy

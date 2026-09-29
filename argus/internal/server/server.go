@@ -269,6 +269,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 
 	// probe fleet target version (admin only) - the version probes should converge on
 	mux.HandleFunc("GET /api/probes/target", auth.RequireRole("admin", s.handleGetProbeTarget))
+	mux.HandleFunc("POST /api/probes/{name}/procs/release", auth.RequireRole("admin", s.handleReleaseProcHolds))
 	mux.HandleFunc("PUT /api/probes/target", auth.RequireRole("admin", s.handleSetProbeTarget))
 	// trigger a dashboard-driven self-update for one probe (admin; probe must be socket-enabled)
 	mux.HandleFunc("POST /api/probes/{name}/update", auth.RequireRole("admin", s.handleTriggerProbeUpdate))

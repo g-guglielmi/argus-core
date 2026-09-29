@@ -30,9 +30,10 @@ type AddOnCfg = { id: string; label: string; description: string; enabled: boole
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg }
 // A host's master sensor: while it's down, the host's other alerts are held (item_id "" = none).
 type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; options: { id: string; label: string }[] }
-type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string }
-// One Zabbix process kind on a probe: what it runs, Argus's target, and the busiest hour at the last evaluation.
-type ProcRow = { name: string; label: string; running: number; target?: number; pinned?: boolean; peak?: number }
+type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean }
+// One Zabbix process kind on a probe: what it runs, Argus's target, the busiest hour at the last
+// evaluation, and a hold (put back after a raise that didn't lower its load).
+type ProcRow = { name: string; label: string; running: number; target?: number; pinned?: boolean; peak?: number; held?: { from: number; to: number; before: number; after: number; at: number; cpus: number } }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
@@ -2645,6 +2646,11 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
                             : <span className="tag online">health: ok</span>}
                         </button>
                       )}
+                      {(p.cpu_starved || (p.procs || []).some((r) => r.held)) && (
+                        <button type="button" className="linklike" onClick={() => setOpenProcs(p.name)} title="Argus stopped adding processes on this probe: see Processes">
+                          <span className="tag err">short on CPU?</span>
+                        </button>
+                      )}
                       {p.procs_pending && (
                         <button type="button" className="linklike" onClick={() => setOpenProcs(p.name)} title={p.procs_note ? `Argus changed the process counts: ${p.procs_note}` : 'Argus changed the process counts'}>
                           <span className="tag avail">{p.autoscale === 'restart' && p.procs_restarts ? 'processes: restart pending' : 'processes: next start'}</span>
@@ -2675,7 +2681,7 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
               {openCmd === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
               {report?.name === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
               {openSnmp === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></td></tr>}
-              {openProcs === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProbeProcesses p={p} onClose={() => setOpenProcs(null)} /></td></tr>}
+              {openProcs === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProbeProcesses p={p} isAdmin={isAdmin} onChanged={loadProxies} onClose={() => setOpenProcs(null)} /></td></tr>}
             </Fragment>
           ))}
         </tbody>
@@ -2812,8 +2818,21 @@ function ProbeRowMenu({ items }: { items: Array<ProbeMenuItem | 'sep' | false | 
 
 // ProbeProcesses is the inline band listing a probe's Zabbix process counts: what each kind runs, how
 // busy its busiest hour was at Argus's last evaluation, and the count Argus wants (autoscale.go).
-function ProbeProcesses({ p, onClose }: { p: Proxy; onClose: () => void }) {
+function ProbeProcesses({ p, isAdmin, onChanged, onClose }: { p: Proxy; isAdmin: boolean; onChanged: () => void; onClose: () => void }) {
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
   const rows = p.procs || []
+  const held = rows.filter((r) => r.held)
+  const fmtLoad = (v: number) => (Math.round(v * 100) / 100).toString()
+  async function release() {
+    setBusy(true)
+    try {
+      const r = await fetch(`/api/probes/${encodeURIComponent(p.name)}/procs/release`, { method: 'POST' })
+      if (!r.ok) { toast.error((await r.json().catch(() => ({}))).error || 'Could not release the holds'); return }
+      toast.success('Argus judges these counts again at its next evaluation.')
+      onChanged()
+    } finally { setBusy(false) }
+  }
   const settling = p.procs_since ? Date.now() / 1000 - p.procs_since < 6 * 3600 : false
   const pending = p.procs_pending
     ? (p.autoscale === 'restart' && p.procs_restarts
@@ -2828,6 +2847,24 @@ function ProbeProcesses({ p, onClose }: { p: Proxy; onClose: () => void }) {
           ? 'Autoscaling is off (Settings, Probes): these counts stay as they are.'
           : 'Argus sizes each kind from its busiest hour over the last day: over 60% raises the count (aiming for 50%), under 20% lowers it, never below the image default. Counts set on the container are left alone.'}
       </div>
+      {p.cpu_count ? (
+        <div className="hs-note">
+          CPU: {p.cpu_usable && p.cpu_usable !== p.cpu_count ? `${p.cpu_usable} usable of ${p.cpu_count}` : `${p.cpu_count}`} · load {p.cpu_load ? p.cpu_load.map(fmtLoad).join(' / ') : '-'} (1 / 5 / 15 min)
+          {p.cpu_peak != null ? ` · busiest hour ${fmtLoad(p.cpu_peak)} per CPU` : ''}
+          {!p.is_vm ? ' · a container sees its whole host, so this load includes the other containers there' : ''}
+        </div>
+      ) : null}
+      {p.cpu_starved && (
+        <div className="hs-note" style={{ color: 'var(--err)' }}>
+          The busiest hour kept every CPU busy, so Argus adds no processes: more of them would only queue for the CPU. {p.is_vm ? 'Give the VM more vCPUs, or split the site across two probes.' : 'The Docker host may be short on CPU, or the site needs a second probe.'}
+        </div>
+      )}
+      {held.length > 0 && (
+        <div className="hs-note" style={{ color: 'var(--err)' }}>
+          Raising {held.map((r) => r.label.toLowerCase()).join(', ')} didn't lower their load, so Argus put them back and holds them. The limit is likely the CPU (or the site grew meanwhile). Argus tries again when the CPU count changes{isAdmin ? ', or now:' : '.'}
+          {isAdmin && <> <Button variant="default" onClick={release} disabled={busy}>Try again</Button></>}
+        </div>
+      )}
       {rows.length === 0
         ? <div className="hs-note">This probe doesn't report its process counts yet. It needs a probe image from 7.0.31-r8 on.</div>
         : (
@@ -2842,6 +2879,8 @@ function ProbeProcesses({ p, onClose }: { p: Proxy; onClose: () => void }) {
                   <td>
                     {r.pinned
                       ? <span className="tag" title={`Set on the container (ZBX_${r.name.toUpperCase()}): Argus leaves it alone`}>set on container</span>
+                      : r.held && (!r.target || r.target === r.running)
+                      ? <span className="tag err" title={`Raised ${r.held.from} to ${r.held.to} ${relTime(r.held.at)}: busiest hour ${Math.round(r.held.before)}% before, ${Math.round(r.held.after)}% after. Put back and held.`}>held at {r.running}</span>
                       : r.target && r.target !== r.running
                       ? <span className="tag avail">→ {r.target}</span>
                       : <span className="okquiet">keep</span>}
@@ -2853,7 +2892,7 @@ function ProbeProcesses({ p, onClose }: { p: Proxy; onClose: () => void }) {
         )}
       {p.procs_note && <div className="hs-note" style={{ marginTop: 8 }}>Last change {p.procs_note_at ? relTime(p.procs_note_at) : ''}: {p.procs_note}.</div>}
       {pending && <div className="hs-note">{pending}</div>}
-      {!pending && settling && rows.length > 0 && p.autoscale !== 'off' && <div className="hs-note">These counts started {relTime(p.procs_since!)}. Argus judges them once they have run for 6 hours.</div>}
+      {!pending && settling && rows.length > 0 && p.autoscale !== 'off' && <div className="hs-note">These counts started {relTime(p.procs_since!)}. Argus judges them once they have run for 6 hours, and checks that every raise lowered the load (it puts back one that didn't).</div>}
       <div className="hs-foot"><Button variant="ghost" onClick={onClose}>Close</Button></div>
     </div>
   )

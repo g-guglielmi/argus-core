@@ -101,6 +101,13 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		Procs       map[string]int `json:"procs"`
 		ProcsPinned []string       `json:"procs_pinned"`
 		Restarts    *bool          `json:"restarts"`
+		// The proxy container's CPU: how many it sees, a container limit (0 = none) and the load
+		// average (1, 5, 15 minutes). The autoscaler tells a probe short on CPU from one short on processes.
+		CPU *struct {
+			Count int       `json:"count"`
+			Quota float64   `json:"quota"`
+			Load  []float64 `json:"load"`
+		} `json:"cpu"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -117,6 +124,11 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Restarts != nil {
 		_ = s.st.SetProbeRestarts(ctx, proxyName, *req.Restarts)
+	}
+	if req.CPU != nil {
+		if n, q, l, ok := cleanCPU(req.CPU.Count, req.CPU.Quota, req.CPU.Load); ok {
+			_ = s.st.RecordProbeCPU(ctx, proxyName, n, q, l[0], l[1], l[2])
+		}
 	}
 	target, _ := s.st.ProbeTargetVersion(ctx)
 	var resp struct {

@@ -260,6 +260,16 @@ CREATE TABLE IF NOT EXISTS probe_agents (
   os_version        TEXT NOT NULL DEFAULT ''     -- the probe VM's OS pretty-name (e.g. "Debian GNU/Linux 13 (trixie)")
 );
 
+-- A probe's load average, one row per check-in (a minute apart), kept a day: the autoscaler reads
+-- its busiest hour per CPU to tell a probe short on CPU from one short on processes.
+CREATE TABLE IF NOT EXISTS probe_load (
+  proxy_name TEXT NOT NULL,
+  at         INTEGER NOT NULL,
+  load1      REAL NOT NULL,
+  cpus       REAL NOT NULL   -- the CPUs the probe could use then (a container limit, else the count)
+);
+CREATE INDEX IF NOT EXISTS idx_probe_load ON probe_load(proxy_name, at);
+
 -- Small key/value store for app-level flags (e.g. the notifier's one-time baseline marker).
 CREATE TABLE IF NOT EXISTS app_meta (
   key   TEXT PRIMARY KEY,
@@ -546,6 +556,17 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 		"procs_decided_at INTEGER NOT NULL DEFAULT 0",
 		"procs_restart_at INTEGER NOT NULL DEFAULT 0",
 		"restarts INTEGER NOT NULL DEFAULT 0",
+		// Judging a change and holding a kind whose raise didn't help; the probe's CPU as reported.
+		"procs_changes TEXT NOT NULL DEFAULT ''",
+		"procs_held TEXT NOT NULL DEFAULT ''",
+		"cpu_count INTEGER NOT NULL DEFAULT 0",
+		"cpu_quota REAL NOT NULL DEFAULT 0",
+		"load1 REAL NOT NULL DEFAULT 0",
+		"load5 REAL NOT NULL DEFAULT 0",
+		"load15 REAL NOT NULL DEFAULT 0",
+		"cpu_at INTEGER NOT NULL DEFAULT 0",
+		"cpu_peak REAL NOT NULL DEFAULT -1",
+		"cpu_starved INTEGER NOT NULL DEFAULT 0",
 	} {
 		if err := s.ensureColumn("probe_agents", col); err != nil {
 			return err

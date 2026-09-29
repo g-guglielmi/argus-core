@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"argus/internal/auth"
 	"argus/internal/settings"
@@ -102,8 +103,15 @@ func TestProbeCheckinProcs(t *testing.T) {
 		t.Fatalf("seeded target handed out: %v", out["procs"])
 	}
 
+	// The CPU report is stored; one out of shape is ignored.
+	checkin(`{"version":"7.0.31-r9","scans":true,"cpu":{"count":2,"quota":1.5,"load":[0.8,0.6,0.5]}}`)
+	checkin(`{"version":"7.0.31-r9","scans":true,"cpu":{"count":2,"quota":0,"load":[-1,0.6]}}`)
+	if ag, err := st.ProbeAgentByName(ctx, "proxy-site1"); err != nil || ag.Procs.CPU.Count != 2 || ag.Procs.CPU.Effective() != 1.5 || ag.Procs.CPU.Load1 != 0.8 {
+		t.Fatalf("cpu report: %+v %v", ag.Procs.CPU, err)
+	}
+
 	// Argus raises the pingers; the sidecar that can restart gets a one-shot, once.
-	if err := st.SetProbeProcsEvaluation(ctx, "proxy-site1", map[string]float64{"StartPingers": 72}, map[string]int{"StartPingers": 8}, "ICMP pingers 5 -> 8", true); err != nil {
+	if err := st.SetProbeProcsEvaluation(ctx, "proxy-site1", store.ProcsEvaluation{Peaks: map[string]float64{"StartPingers": 72}, Target: map[string]int{"StartPingers": 8}, CPUPeak: -1, Note: "ICMP pingers 5 -> 8"}); err != nil {
 		t.Fatal(err)
 	}
 	var got map[string]int
@@ -129,5 +137,110 @@ func TestProbeCheckinProcs(t *testing.T) {
 	}
 	if out := checkin(`{"version":"7.0.31-r8","scans":true,"procs":{"StartPingers":5}}`); out["procs"] != nil {
 		t.Fatalf("off still hands out counts: %v", out["procs"])
+	}
+}
+
+// planProcs: every raise is remembered and judged at the next evaluation; one that didn't bring the
+// load down is put back and held; a new CPU count releases the hold; short on CPU, nothing is raised.
+func TestPlanProcs(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	base := store.ProbeProcs{
+		Running: map[string]int{"StartPingers": 5, "StartPollers": 5},
+		Target:  map[string]int{"StartPingers": 5, "StartPollers": 5},
+		CPU:     store.ProbeCPU{Count: 2},
+	}
+
+	// 1. A busy kind is raised, and the raise is remembered.
+	ev := planProcs(base, map[string]float64{"StartPingers": 72, "StartPollers": 30}, 0.4, 6, now)
+	if ev.Target["StartPingers"] != 8 || ev.Target["StartPollers"] != 5 {
+		t.Fatalf("raise: %v", ev.Target)
+	}
+	ch, ok := ev.Changes["StartPingers"]
+	if !ok || ch.From != 5 || ch.To != 8 || ch.Peak != 72 || ev.Note == "" {
+		t.Fatalf("raise remembered: %+v note=%q", ev.Changes, ev.Note)
+	}
+
+	// 2. Applied and the load came down as predicted: no hold, the judged raise is dropped.
+	applied := base
+	applied.Running = map[string]int{"StartPingers": 8, "StartPollers": 5}
+	applied.Target = ev.Target
+	applied.Changes = ev.Changes
+	ok2 := planProcs(applied, map[string]float64{"StartPingers": 46, "StartPollers": 30}, 0.4, 6, now.Add(7*time.Hour))
+	if len(ok2.Held) != 0 || len(ok2.Changes) != 0 || ok2.Target["StartPingers"] != 8 || ok2.Note != "" {
+		t.Fatalf("helped: %+v", ok2)
+	}
+
+	// 3. Applied but the load barely moved: put back to 5 and held, with the CPUs it had.
+	bad := planProcs(applied, map[string]float64{"StartPingers": 70, "StartPollers": 30}, 0.4, 6, now.Add(7*time.Hour))
+	h, held := bad.Held["StartPingers"]
+	if bad.Target["StartPingers"] != 5 || !held || h.CPUs != 2 || h.From != 5 || h.To != 8 || h.Before != 72 || h.After != 70 {
+		t.Fatalf("rollback: target=%v held=%+v", bad.Target, bad.Held)
+	}
+	if !strings.Contains(bad.Note, "back to 5") {
+		t.Fatalf("rollback note: %q", bad.Note)
+	}
+
+	// 4. Held: not raised again, however busy.
+	heldP := base
+	heldP.Held = bad.Held
+	again := planProcs(heldP, map[string]float64{"StartPingers": 95}, 0.4, 6, now.Add(14*time.Hour))
+	if again.Target["StartPingers"] != 5 || len(again.Held) != 1 {
+		t.Fatalf("held kind raised: %v", again.Target)
+	}
+
+	// 5. The probe got more CPUs: the hold is released and the kind judged (and raised) again.
+	moreCPU := heldP
+	moreCPU.CPU = store.ProbeCPU{Count: 4}
+	lifted := planProcs(moreCPU, map[string]float64{"StartPingers": 95}, 0.4, 6, now.Add(14*time.Hour))
+	if len(lifted.Held) != 0 || lifted.Target["StartPingers"] != 10 || !strings.Contains(lifted.Note, "released") {
+		t.Fatalf("release on a new CPU count: %+v", lifted)
+	}
+
+	// 6. Short on CPU: nothing is raised, but a quiet kind may still come down.
+	quiet := base
+	quiet.Running = map[string]int{"StartPingers": 5, "StartPollers": 20}
+	quiet.Target = map[string]int{"StartPingers": 5, "StartPollers": 20}
+	starved := planProcs(quiet, map[string]float64{"StartPingers": 90, "StartPollers": 10}, 1.4, 6, now)
+	if !starved.Starved || starved.Target["StartPingers"] != 5 || starved.Target["StartPollers"] != 5 {
+		t.Fatalf("starved: %+v", starved)
+	}
+	// Too few hours of load reports: not judged as starved.
+	if planProcs(base, map[string]float64{"StartPingers": 90}, 1.4, 2, now).Starved {
+		t.Fatal("two hours of load reports must not count as short on CPU")
+	}
+}
+
+func TestBusiestLoadPerCPU(t *testing.T) {
+	var samples []store.LoadSample
+	for m := 0; m < 60; m++ { // hour 0: load 1.0 on 2 CPUs
+		samples = append(samples, store.LoadSample{At: int64(m * 60), Load1: 1.0, CPUs: 2})
+	}
+	for m := 0; m < 60; m++ { // hour 1: load 3.0 on 2 CPUs
+		samples = append(samples, store.LoadSample{At: 3600 + int64(m*60), Load1: 3.0, CPUs: 2})
+	}
+	for m := 0; m < 10; m++ { // hour 2: too few samples to count
+		samples = append(samples, store.LoadSample{At: 7200 + int64(m*60), Load1: 9.0, CPUs: 2})
+	}
+	peak, hours := busiestLoadPerCPU(samples)
+	if peak != 1.5 || hours != 2 {
+		t.Fatalf("peak=%v hours=%d, want 1.5 over 2 hours", peak, hours)
+	}
+	if p, h := busiestLoadPerCPU(nil); p != -1 || h != 0 {
+		t.Fatalf("no samples: %v %d", p, h)
+	}
+}
+
+func TestProbeCPUNotice(t *testing.T) {
+	ag := store.ProbeAgent{Procs: store.ProbeProcs{
+		CPU:  store.ProbeCPU{Count: 2, Peak: 1.3, Starved: true},
+		Held: map[string]store.ProcHold{"StartPingers": {From: 5, To: 8}},
+	}}
+	title, detail := probeCPUNotice("site1", ag)
+	if title != "Probe site1 may be short on CPU" || !strings.Contains(detail, "icmp pingers") || !strings.Contains(detail, "Docker host") {
+		t.Fatalf("container: %q / %q", title, detail)
+	}
+	ag.OSReportedAt = 1
+	if _, detail := probeCPUNotice("site1", ag); !strings.Contains(detail, "more vCPUs") {
+		t.Fatalf("VM: %q", detail)
 	}
 }

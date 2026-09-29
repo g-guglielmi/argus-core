@@ -1148,6 +1148,20 @@ records `zabbix[process,<type>,avg,busy]` for every kind, so Argus sizes them.
   for the rest): past it the site needs a second probe, not more forks. History syncers stop at 8
   because they write the proxy's SQLite buffer.
 - A count set on the container (`ZBX_START*`) wins and is left alone; the probe reports which.
+- **Every raise is judged.** At the first evaluation after a raise applied, its busiest hour must
+  have come down by at least a third of what the raise predicted (5 to 8 pingers at 72% predicts
+  45%). If it didn't, the limit was somewhere else: the count goes back and the kind is **held**
+  (not raised again) until the probe's usable CPU count changes or an admin presses **Try again**
+  on the Processes panel.
+- **Short on CPU.** The probe reports its CPU count, a container CPU limit (cgroup v2 `cpu.max` or
+  v1 CFS quota) and its load average at every check-in; Argus keeps a day of them (`probe_load`).
+  When the busiest hour's load average reached the CPUs the probe can use (at least three hours of
+  reports), nothing is raised: more processes would only queue for the CPU. Lowering still works. A
+  change in the usable CPU count restarts the settle clock. Inside a container the load average is
+  the whole Docker host's, so the advice for a container probe names the host.
+- Short on CPU or holding a kind, the probe gets one system notice while it lasts ("Probe <site>
+  may be short on CPU"): what Argus saw, and for a VM probe "give the VM more vCPUs, or split the
+  site", for a container "the Docker host may be short on CPU, or the site needs a second probe".
 
 **Exchange.** The proxy reports the counts it started with (`procs`, `procs_pinned`) at every
 check-in; the first report seeds Argus's target with them, so nothing changes until the load has

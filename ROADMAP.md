@@ -204,7 +204,10 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   per kind, once the counts have run 6 hours; counts set on the container are left alone. The target
   goes out at check-in, the probe starts with it (`procs.env`), and the updater sidecar restarts the
   proxy to apply it (at most once per 6 h); `ARGUS_PROBE_AUTOSCALE` = restart / next-restart / off.
-  Probes page Processes panel, system notice per change. DESIGN 18c. - _(BE+probe+updater)_ M
+  Probes page Processes panel, system notice per change. Every raise is judged against its
+  prediction and put back and held if it didn't lower the load; with the probe's CPU count, limit
+  and load average reported at check-in, a probe short on CPU gets no raises and one notice (more
+  vCPUs for a VM, the Docker host for a container). DESIGN 18c. - _(BE+probe+updater)_ M
 - [x] **`testing` channel / release-gated `latest`** - `main` pushes now publish `:testing` (+ `:sha`)
   and only `v*` tag pushes move `:latest` (alongside `:vX.Y.Z`), so production can pin `:latest` and a
   test box tracks `:testing` without manual tagging. Pairs with the version indicator (a `:testing`

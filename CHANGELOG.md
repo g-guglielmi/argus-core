@@ -29,6 +29,15 @@ GitHub Release from the matching section below.
   count, busiest hour, what Argus wants) and a tag while a change waits; each change is sent once as
   a system notice.
 - The Settings section "Probe enrollment" is now "Probes".
+- Every raise is judged at the next evaluation: when the busiest hour didn't come down by at least
+  a third of what the raise predicted, the count goes back and that kind is held until the probe's
+  CPU count changes (or an admin presses **Try again** on the Processes panel).
+- Short on CPU: probes report their CPU count, a container CPU limit and the load average at every
+  check-in (probe image 7.0.31-r9). When the busiest hour's load average reached the usable CPUs,
+  Argus adds no processes. Short on CPU or holding a kind, the probe gets one system notice while it
+  lasts, with the advice for a VM (more vCPUs, or split the site) or a container (the Docker host
+  may be short on CPU, or the site needs a second probe). The Processes panel shows the CPU line,
+  the held kinds and a "short on CPU?" tag in the Health cell.
 
 **Server-side census:**
 - The sensor census behind the status pills, the Overview and the status pages is built in the
