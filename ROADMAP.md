@@ -192,7 +192,12 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   macros, so a file-based redesign was dropped as not worth it; the collectors wipe their own command
   line at start instead (`probe/v7.0.31-r7`). Still deferred: intermediate enrollment CA.
 - [ ] **Sizing pass** before the ~6000-sensor deployment (proxies, DB, caches, NVPS) - analysis
-- [ ] **Server-side census/counts** - move the `/api/sensors` full census server-side at scale - _(BE)_ M
+- [x] **Server-side census/counts** - the census is built in the background on the core and served
+  from memory (every 20 s while in use, every minute otherwise, rebuilt at once after a change made
+  through Argus); the app fetches counts plus only the rows of the states on screen
+  (`GET /api/census`), so the pills and the Overview answer at once and the OK list is downloaded
+  only while it is open; template items excluded at Zabbix; `build_ms` reported for the sizing
+  pass. - _(BE+FE)_ M
 - [ ] **Probe process autoscaling** - size each probe's Zabbix process counts (ICMP pingers first,
   then pollers, trappers, preprocessing workers) from its own load, since Zabbix only reads them at
   start. Argus already sees each probe's per-process busy % on its Probe host: it computes the count

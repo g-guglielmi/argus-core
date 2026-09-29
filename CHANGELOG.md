@@ -13,6 +13,21 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Server-side census:**
+- The sensor census behind the status pills, the Overview and the status pages is built in the
+  background on the core and served from memory: every 20 s while someone has looked in the last
+  10 minutes, every minute otherwise, one build shared by every open browser and status page.
+  Pages answer at once instead of waiting for Zabbix, and the pills no longer sit on dimmed counts
+  after a reload.
+- A change made through Argus (acknowledge, pause, hide, a threshold, any other change by a signed-in
+  user or through an alert link) marks the census stale, and the next read waits for a fresh one, so
+  the result of an action shows at once.
+- The app fetches every state's count plus only the rows on screen (`GET /api/census`): the
+  Overview's errors, warnings and acknowledged sensors, and the OK, paused or hidden list only
+  while it is open. The whole census is no longer downloaded every 30 s.
+- The header's "Updated ... ago" is the age of the data on the server, not of the last download.
+- Template items are left out at Zabbix instead of after the download.
+
 **Core VM (next image):**
 - Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
   of the `get.docker.com` script.

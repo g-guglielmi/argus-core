@@ -71,6 +71,12 @@ func Middleware(st *store.Store, idle, maxLife func() time.Duration) func(http.H
 	}
 }
 
+// WithUser returns ctx carrying u as the authenticated user (what Middleware does for a valid
+// session); for handlers and tests that build a request context themselves.
+func WithUser(ctx context.Context, u *store.User) context.Context {
+	return context.WithValue(ctx, userKey, u)
+}
+
 // UserFrom returns the authenticated user from the context, if any.
 func UserFrom(ctx context.Context) (*store.User, bool) {
 	u, ok := ctx.Value(userKey).(*store.User)

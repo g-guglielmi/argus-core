@@ -415,11 +415,13 @@ type ItemWithHosts struct {
 
 // AllItems returns every host item with its owning host, for the sensor census that powers the
 // status summary and filtered lists. No `monitored` filter, so items on disabled (paused) hosts
-// are included; template items are filtered out by the caller via host status.
+// are included. Template items are left out by Zabbix (`templated: false`); callers still skip a
+// host of status 3 as a second guard.
 func (c *Client) AllItems(ctx context.Context) ([]ItemWithHosts, error) {
 	params := map[string]any{
 		"output":      []string{"itemid", "hostid", "name", "key_", "lastvalue", "lastclock", "units", "value_type", "status", "state"},
 		"selectHosts": []string{"hostid", "name", "status"},
+		"templated":   false,
 		"sortfield":   "name",
 	}
 	var items []ItemWithHosts

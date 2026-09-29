@@ -50,6 +50,7 @@ type Server struct {
 	appLatest     *appLatestCache   // newest published app release, polled from public GHCR
 	probeVM       *probeVMCache     // newest probe-vm appliance + assets, polled from GitHub Releases
 	digests       digestCache       // tag -> digest, handed out with every update so the updater can verify the pull
+	census        *censusCache      // the sensor census, kept warm in memory (census.go)
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {
@@ -57,6 +58,10 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, mgr: mgr, dummyHash: dummy,
 		signingSecret: GetSigningSecret(context.Background(), st),
 		loginLimiter:  mgr.Limiter(), pkLimiter: ratelimit.New(30, 5*time.Minute), probeLatest: &probeLatestCache{}, updaterLatest: &probeLatestCache{}, appLatest: &appLatestCache{}, probeVM: &probeVMCache{}}
+	// The sensor census behind the pills, the Overview and the status pages, built in the
+	// background and served from memory.
+	s.census = newCensusCache(s.buildCensus)
+	s.startCensusRefresh(context.Background())
 	// Poll public GHCR for the newest probe revision so the fleet view can flag "-rN available"
 	// even when the target is "latest". Background; a failure just leaves it unknown.
 	s.startProbeLatestRefresh(context.Background())
@@ -151,6 +156,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// monitoring read path (any signed-in user)
 	mux.HandleFunc("GET /api/problems", auth.RequireAuth(s.handleProblems))
 	mux.HandleFunc("GET /api/sensors", auth.RequireAuth(s.handleSensors))
+	mux.HandleFunc("GET /api/census", auth.RequireAuth(s.handleCensus))
 	mux.HandleFunc("GET /api/search", auth.RequireAuth(s.handleSearch))
 	mux.HandleFunc("GET /api/triggers", auth.RequireAuth(s.handleTriggers))
 	mux.HandleFunc("GET /api/spark", auth.RequireAuth(s.handleSpark))
@@ -317,7 +323,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 
 	// Every request gets the security headers and passes the cross-site check (plus the
 	// allowed-hosts check once configured), then session resolution (idle timeout read live).
-	return securityHeaders(s.hostGuard(auth.Middleware(s.st, s.mgr.SessionIdleTimeout, s.mgr.SessionMaxLifetime)(mux)))
+	return securityHeaders(s.hostGuard(auth.Middleware(s.st, s.mgr.SessionIdleTimeout, s.mgr.SessionMaxLifetime)(s.censusInvalidator(mux))))
 }
 
 // cookieSecure says whether session cookies carry the Secure flag: ARGUS_COOKIE_SECURE when given,

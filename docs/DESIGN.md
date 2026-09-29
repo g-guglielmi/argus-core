@@ -785,6 +785,19 @@ As a VM ≈ 1-2 vCPU / 2 GB / ~15 GB.
 DB on fast SSD, likely with PostgreSQL/Timescale split onto its own VM. ~100-200 NVPS =
 moderate Zabbix load; architecture unchanged, resources scaled.
 
+**Sensor census (the pills, the Overview, the status pages).** The census reads every host item,
+every open problem and their triggers, so its cost grows with the fleet. It is built on the core in
+the background and served from memory (`internal/server/census.go`): every 20 s while someone has
+looked at it in the last 10 minutes, every minute otherwise, one build shared by every browser and
+status page. A change made through Argus (acknowledge, pause, hide, a threshold, any other write by a
+signed-in user or through an alert's signed link) marks it stale once the request completes, and the
+next read waits for a fresh build, so whoever acted sees the result. The app asks
+`GET /api/census?rows=<states>` for every state's count plus the rows of the states on screen (the
+Overview's error / warning / acknowledged; the OK, paused or hidden list only while it is open), so
+the browser no longer downloads the whole census every 30 s. The answer carries `build_ms`, the
+last build's duration, as a sizing input. Template items are excluded at Zabbix (`templated: false`).
+`GET /api/sensors` still returns the full list from the same cache.
+
 ---
 
 ## 14c. OS patching & lifecycle (core + probe VMs)
@@ -951,9 +964,8 @@ rollout; it is low priority for the homelab but important before the large deplo
 **Implementation - must be server-side at scale.**
 - Back it with a new endpoint `GET /api/search?q=…` that calls Zabbix `host.get` / `item.get`
   with `search` / `searchByAny` filters and a **result cap** (e.g. top ~50), **debounced** on
-  the client. Do **not** filter a full client-side census - the current `/api/sensors` census
-  is fine for the homelab but would mean shipping thousands of items to the browser at
-  production scale.
+  the client. Do **not** filter a full client-side census - shipping thousands of items to the
+  browser does not scale (the status pills fetch counts only, see section 14b).
 - Honour the same **role and suppression** model as the rest of the UI.
 
 **Nice-to-haves.** Recent/pinned hosts; filter tokens (`site:`, `tag:`, `down:`) for power

@@ -7,7 +7,6 @@ import (
 	"context"
 	"net/http"
 	"sort"
-	"time"
 )
 
 type sensorRow struct {
@@ -60,19 +59,29 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured (set ARGUS_ZABBIX_API_TOKEN)"})
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), censusBuildTime)
 	defer cancel()
 	out, err := s.sensorCensus(ctx)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
 // sensorCensus is every curated sensor across all hosts with its single state (see handleSensors),
-// sorted by host then name. Shared by the status pills and the status pages.
+// sorted by host then name, from the census kept in memory (census.go). Shared by the status pills,
+// the Overview and the status pages. The rows are shared: callers must not modify them.
 func (s *Server) sensorCensus(ctx context.Context) ([]sensorRow, error) {
+	if s.census == nil { // a Server assembled by hand (tests) has no cache
+		return s.buildCensus(ctx)
+	}
+	snap, err := s.census.get(ctx)
+	return snap.Rows, err
+}
+
+// buildCensus reads the census from Zabbix and the Argus store.
+func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 	items, err := s.zbx.AllItems(ctx)
 	if err != nil {
 		return nil, err

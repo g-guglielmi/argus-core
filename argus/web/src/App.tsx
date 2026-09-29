@@ -1241,23 +1241,38 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   const [navOpen, setNavOpen] = useState(false) // mobile drawer
   const [menuOpen, setMenuOpen] = useState(false)
   const [theme, toggleTheme] = useTheme()
+  // The census rows of the states the open view needs, and every state's count (the pills).
   const [sensors, setSensors] = useState<SensorRow[]>([])
-  // False until the first /api/sensors response: the lists show a skeleton instead of flashing "All clear".
+  const [counts, setCounts] = useState<Record<string, number>>({})
+  // False until the first census answer: the lists show a skeleton instead of flashing "All clear".
   const [sensorsLoaded, setSensorsLoaded] = useState(false)
-  const [sensorsAt, setSensorsAt] = useState(0) // when the status data last refreshed (the header clock says so)
+  const [sensorsAt, setSensorsAt] = useState(0) // when the server read the status data (the header clock says so)
   const [listFilter, setListFilter] = useState<string>(() => initialNav().filter)
   const canPause = me.role === 'admin' || me.role === 'helpdesk'
+  // Rows come for the Overview's states always, plus the open drill-down's own state: the OK list is
+  // most of the census, so it is fetched only while it is on screen.
+  const attentionStates = ['error', 'warning', 'acked']
+  const rowStates = [...attentionStates, ...(view === 'list' && !attentionStates.includes(listFilter) ? [listFilter] : [])].join(',')
+  const [rowsFor, setRowsFor] = useState('') // the states the loaded rows cover
 
   useEffect(() => {
-    const load = () => fetch('/api/sensors').then((r) => (r.ok ? r.json() : Promise.reject())).then((s) => { setSensors(s || []); setSensorsLoaded(true); setSensorsAt(Date.now()) }).catch(() => setSensorsLoaded(true))
-    load(); const t = setInterval(load, 30000); const off = onDataRefresh(load); return () => { clearInterval(t); off() }
-  }, [])
+    let live = true
+    const load = () => fetch(`/api/census?rows=${rowStates}`).then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((c: { counts?: Record<string, number>; rows?: SensorRow[]; age_ms?: number }) => {
+        if (!live) return
+        setSensors(c.rows || []); setCounts(c.counts || {}); setRowsFor(rowStates); setSensorsLoaded(true)
+        setSensorsAt(Date.now() - Math.max(0, c.age_ms || 0))
+      })
+      .catch(() => { if (live) setSensorsLoaded(true) })
+    load(); const t = setInterval(load, 30000); const off = onDataRefresh(load); return () => { live = false; clearInterval(t); off() }
+  }, [rowStates])
   // Remember the desktop sidebar collapsed/expanded choice across reloads.
   useEffect(() => { try { localStorage.setItem('argus-collapsed', collapsed ? '1' : '0') } catch { /* ignore */ } }, [collapsed])
-  // Until the first census answers (it reads every sensor from Zabbix, so it takes a moment), the
-  // status pills show the last visit's counts, dimmed, instead of a row of zeros that reads as data.
+  // Until the first census answers (right after a restart the server may still be reading every
+  // sensor from Zabbix), the status pills show the last visit's counts, dimmed, instead of a row of
+  // zeros that reads as data.
   const [lastCounts] = useState<Record<string, number> | null>(() => { try { return JSON.parse(localStorage.getItem('argus-status-counts') || 'null') } catch { return null } })
-  const cnt = (st: string) => (sensorsLoaded ? sensors.filter((s) => s.state === st).length : (lastCounts?.[st] ?? 0))
+  const cnt = (st: string) => (sensorsLoaded ? (counts[st] ?? 0) : (lastCounts?.[st] ?? 0))
   const errN = cnt('error'), warnN = cnt('warning'), ackN = cnt('acked'), pausedN = cnt('paused'), hiddenN = cnt('hidden'), okN = cnt('ok')
   useEffect(() => {
     if (!sensorsLoaded) return
@@ -1469,7 +1484,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         <div className="content view-enter" key={`${view}:${listFilter}`}>
           {view === 'overview' && <StatusListView filter="attention" sensors={sensors} loading={!sensorsLoaded} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => {}} />}
           {view === 'triggers' && <TriggersView goHost={goHost} />}
-          {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} loading={!sensorsLoaded} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
+          {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} loading={!sensorsLoaded || !rowsFor.split(',').includes(listFilter)} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
           {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} advanced={!!me.advanced} />}
           {view === 'notifications' && <NotificationsView />}
           {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} goHost={goHost} />}
