@@ -13,16 +13,22 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Core VM (next image):**
+- Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
+  of the `get.docker.com` script.
+
+## [0.5.17] - 2026-09-29
+
 **Container health:**
 - The image declares a Docker `HEALTHCHECK`, so `docker ps`, the Unraid GUI and Dockhand show the core
   as healthy or unhealthy. The image is distroless (no shell, no interpreter), so the binary checks
   itself: `argus healthcheck` asks the running server's `/healthz` over the loopback (at
   `ARGUS_LISTEN`) and exits 0 or 1. Every 30 s, a 60 s start period, unhealthy after 3 failures.
   Zabbix being unreachable is not a container fault and stays out of it.
-
-**Core VM (next image):**
-- Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
-  of the `get.docker.com` script.
+- The probe (`probe/v7.0.31-r10`, `/app/healthcheck.py`) and the updater sidecar (`v0.2.10`,
+  `/app/healthcheck.sh`) gained theirs in their own releases. A container picks the check up when it
+  is recreated from the new image (an update through Argus, the Unraid GUI or Dockhand), not on a
+  plain restart.
 
 ## [0.5.16] - 2026-09-29
 
