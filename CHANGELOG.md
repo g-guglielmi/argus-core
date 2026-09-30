@@ -43,6 +43,21 @@ GitHub Release from the matching section below.
 - Add-on options are now checked like device-class options before they reach the probe: the DNS
   add-on's names and port, and the TCP ports list.
 
+**Backups:**
+- The core now backs itself up. **Settings, Backups** turns on a daily backup at a time you choose. One
+  archive holds Argus's database, the Zabbix database (with its metric history, or only its settings)
+  and the configuration, keys and certificates a new core needs to take over, including the CA the
+  probes trust. The newest archives are kept on the VM (7 by default). With a passphrase set they are
+  encrypted (gpg, AES-256) and can be exported to an SMB share, an NFS export, rsync over SSH (Argus
+  makes the key) or an S3 bucket, where the newest are kept as well. **Back up now** and **Check the
+  target** act at once; the status line shows the last backup, the free space and the last export,
+  and a system notice goes out when a backup or an export fails or none succeeded for 36 hours.
+- `argus-restore` restores an archive onto a new core in one command, after checking its checksums
+  and versions: the probes reconnect by themselves. `argus-restore inspect` checks an archive without
+  changing anything. The guide is [docs/backup-and-restore.md](docs/backup-and-restore.md).
+- The tools run on the core host: the next core VM image has them; on an existing core, run
+  `deploy/core/host/install-backup.sh` once (or `setup-core-patching.sh` from a checkout).
+
 **Maintenance windows:**
 - **Configure, Maintenance** plans the times when some hosts' alerts should wait: a nightly backup, a
   monthly parity check, a patch night. A window covers sites (with their subgroups) and single hosts,

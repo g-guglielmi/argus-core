@@ -59,6 +59,10 @@ API key, and MAC):
   channel can fan out to every registered user's address.
 - **Heartbeat** - Argus pings an outside monitor (healthchecks.io, an Uptime Kuma push monitor)
   once a minute while it is healthy end to end, so you hear about it when Argus itself stops.
+- **Backups** - the core VM backs itself up every day (Argus's database, the Zabbix database, and the
+  configuration, keys and certificates), keeps the newest archives, encrypts them and exports them to
+  SMB, NFS, rsync over SSH or S3; one command restores it all onto a new core
+  ([docs/backup-and-restore.md](docs/backup-and-restore.md)).
 - **Maintenance windows and quiet hours** - recurring or one-off windows (sites or hosts) during
   which alerts wait for planned work and whatever is still wrong is alerted afterwards; and per-user
   quiet hours for personal channels, letting only the serious problems through at night.

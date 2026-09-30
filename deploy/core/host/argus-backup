@@ -1,0 +1,806 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+
+# argus-backup - back up the whole Argus core host and export the archives (DESIGN section 14e).
+#
+# Runs as root. argus-backup.timer starts it every 15 minutes and argus-backup.path as soon as Argus
+# drops a request ("Back up now", "Test" in Settings, Backups); it backs up when the plan says one is
+# due. One archive holds everything a new core needs to take over:
+#   - the Argus database (a consistent copy made inside the container: argus backup-db),
+#   - the Zabbix database (pg_dump, with or without metric history) and the PostgreSQL roles,
+#   - the files: /etc/argus-core (env files, at-rest key), /etc/argus/pki (the CA the probes trust),
+#     /etc/zabbix (server and frontend config, TLS), the nginx TLS front, the collector keys and pins,
+#     the external scripts and the Argus host units and scripts.
+# Archives stay in /var/backups/argus (root only), the newest N kept. With a passphrase set they are
+# encrypted (gpg, AES-256) and can be exported to SMB, NFS, rsync over SSH or S3, where the newest N
+# of this host are kept as well. Restore with argus-restore; see docs/backup-and-restore.md.
+#
+# The plan comes from Argus (docker exec argus /argus backup-plan), secrets included; the last one is
+# kept in /etc/argus-core/backup-plan.json (root, 0600) so backups carry on while Argus is down. The
+# outcome goes to backup-status.json in the shared state dir, which Argus shows and alerts on.
+#
+# Usage: argus-backup [tick|now|test|status]
+#   tick    what the timer runs: handle a request from Argus, or back up when due
+#   now     back up at once        test    check the remote target        status  print the status
+import datetime
+import fcntl
+import gzip
+import hashlib
+import json
+import os
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover - Python < 3.9
+    ZoneInfo = None
+
+STATE_DIR = os.environ.get("ARGUS_STATE_DIR", "/opt/argus/update")
+CONTAINER = os.environ.get("ARGUS_CONTAINER", "argus")
+PLAN_CACHE = os.environ.get("ARGUS_BACKUP_PLAN_CACHE", "/etc/argus-core/backup-plan.json")
+LOCAL_DIR = os.environ.get("ARGUS_BACKUP_DIR", "/var/backups/argus")
+RUN_DIR = os.environ.get("ARGUS_BACKUP_RUN_DIR", "/run/argus-backup")
+KNOWN_HOSTS = os.environ.get("ARGUS_BACKUP_KNOWN_HOSTS", "/etc/argus-core/backup_known_hosts")
+STATUS_FILE = os.path.join(STATE_DIR, "backup-status.json")
+REQUEST_FILE = os.path.join(STATE_DIR, "backup-request.json")
+PREFIX = "argus-backup-"
+ARCHIVE_RE = re.compile(r"^argus-backup-(?P<host>[A-Za-z0-9._-]+)-(?P<ts>\d{8}T\d{6}Z)\.tar(\.gpg)?$")
+RETRY_AFTER = 3600  # a failed scheduled backup is tried again an hour later
+
+# What the files part holds (paths under /; a missing one is skipped). The Argus data dir's own key
+# file is added when present (it only exists when ARGUS_SECRET_KEY is not set).
+FILE_PATHS = [
+    "etc/argus-core",
+    "etc/argus/pki",
+    "etc/zabbix",
+    "etc/nginx/conf.d/argus-https.conf",
+    "etc/nginx/conf.d/argus-port80.conf",
+    "etc/nginx/argus",
+    "etc/postgresql",
+    "etc/apt/preferences.d/timescaledb-pin.pref",
+    "usr/lib/zabbix/externalscripts",
+    "var/lib/zabbix/ssh",
+    "var/lib/zabbix/argus-pins",
+    "var/lib/argus-core-setup",
+]
+FILE_GLOBS = ["etc/systemd/system/argus-*", "usr/local/sbin/argus-*"]
+# Never archived: the plan cache holds the remote credentials, and they come back with Argus's database.
+FILE_EXCLUDES = ["etc/argus-core/backup-plan.json"]
+
+# The values below end up on mount, rsync and rclone command lines; Argus checks them, and so does this.
+RE = {
+    "share": re.compile(r"^//[A-Za-z0-9._\[\]:-]+/[A-Za-z0-9._ $-]+$"),
+    "path": re.compile(r"^([A-Za-z0-9._ -]+(/[A-Za-z0-9._ -]+)*)?$"),
+    "login": re.compile(r"^[A-Za-z0-9._@-]{0,64}$"),
+    "export": re.compile(r"^[A-Za-z0-9._\[\]:-]+:/[A-Za-z0-9._/ -]*$"),
+    "options": re.compile(r"^[A-Za-z0-9=,._-]{0,128}$"),
+    "target": re.compile(r"^[A-Za-z0-9._-]{1,32}@[A-Za-z0-9._\[\]:-]+:[A-Za-z0-9._/ ~-]+$"),
+    "endpoint": re.compile(r"^https?://[A-Za-z0-9._\[\]:-]+$"),
+    "region": re.compile(r"^[a-z0-9-]{0,32}$"),
+    "bucket": re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"),
+    "access_key": re.compile(r"^[A-Za-z0-9/+=_-]{1,128}$"),
+}
+SMB_VERSIONS = {"", "1.0", "2.0", "2.1", "3.0", "3.02", "3.1.1"}
+
+
+class Fail(Exception):
+    """A step failed; the message says why, in words an admin can act on."""
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+def run(cmd, *, stdout=None, input_bytes=None, env=None, timeout=None, pass_fds=(), check=True):
+    """Run a command (never through a shell); a failure raises Fail with the command's last error line."""
+    try:
+        p = subprocess.run(cmd, stdout=stdout if stdout is not None else subprocess.PIPE, stderr=subprocess.PIPE,
+                           input=input_bytes, env=env, timeout=timeout, pass_fds=pass_fds)
+    except FileNotFoundError:
+        raise Fail("%s is not installed on the core" % cmd[0])
+    except subprocess.TimeoutExpired:
+        raise Fail("%s did not finish within %d s" % (os.path.basename(cmd[0]), timeout))
+    if check and p.returncode != 0:
+        raise Fail("%s failed: %s" % (os.path.basename(cmd[0]), last_line(p.stderr) or "exit code %d" % p.returncode))
+    return p
+
+
+def last_line(b):
+    lines = [" ".join(l.split()) for l in (b or b"").decode("utf-8", "replace").splitlines()]
+    lines = [l for l in lines if l and not l.lower().startswith("warning")]
+    return lines[-1][:300] if lines else ""
+
+
+def write_atomic(path, data, mode):
+    d = os.path.dirname(path)
+    fd, tmp = tempfile.mkstemp(prefix=".tmp-", dir=d)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+# --- status ----------------------------------------------------------------------------------------
+
+def read_json(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def load_status():
+    st = read_json(STATUS_FILE) or {}
+    st["version"] = 1
+    return st
+
+
+def save_status(st):
+    st["at"] = int(time.time())
+    st["local_dir"] = LOCAL_DIR
+    st["local"] = local_archives_view()
+    try:
+        st["free_bytes"] = shutil.disk_usage(LOCAL_DIR if os.path.isdir(LOCAL_DIR) else "/").free
+    except OSError:
+        pass
+    if not os.path.isdir(STATE_DIR):
+        return  # no shared dir: nothing to report to (Argus shows the host as not reporting)
+    write_atomic(STATUS_FILE, json.dumps(st, indent=1).encode(), 0o644)
+
+
+def local_archives():
+    """This core's archives in the local dir, oldest first."""
+    try:
+        names = [n for n in os.listdir(LOCAL_DIR) if ARCHIVE_RE.match(n)]
+    except OSError:
+        return []
+    return sorted(names, key=lambda n: ARCHIVE_RE.match(n).group("ts"))
+
+
+def local_archives_view():
+    out = []
+    for n in local_archives():
+        try:
+            s = os.stat(os.path.join(LOCAL_DIR, n))
+            out.append({"name": n, "size": s.st_size, "at": int(s.st_mtime)})
+        except OSError:
+            pass
+    return out
+
+
+# --- the plan --------------------------------------------------------------------------------------
+
+def load_plan():
+    """The plan from Argus, else the last one it gave. Returns (plan or None, note)."""
+    reason = ""
+    try:
+        p = run(["docker", "exec", CONTAINER, "/argus", "backup-plan"], timeout=60)
+        plan = json.loads(p.stdout)
+        os.makedirs(os.path.dirname(PLAN_CACHE), exist_ok=True)
+        write_atomic(PLAN_CACHE, json.dumps(plan).encode(), 0o600)
+        return plan, ""
+    except (Fail, ValueError) as e:
+        reason = str(e)
+    plan = read_json(PLAN_CACHE)
+    if plan:
+        return plan, "Argus did not hand over its plan (%s); using the last one it gave" % reason
+    return None, "Argus did not hand over its plan (%s) and none is kept from before" % reason
+
+
+def check_plan(plan):
+    """Check the plan's shape again (its values reach command lines). Raises Fail."""
+    for k, lo, hi in (("hour", 0, 23), ("minute", 0, 59), ("keep", 1, 90)):
+        v = plan.get(k)
+        if not isinstance(v, int) or not lo <= v <= hi:
+            raise Fail("the backup plan has an invalid %s" % k)
+    r = plan.get("remote") or {}
+    t = r.get("type") or ""
+    checks = {
+        "": [],
+        "smb": [("share", True), ("username", False), ("domain", False), ("path", False)],
+        "nfs": [("export", True), ("options", False), ("path", False)],
+        "rsync": [("target", True)],
+        "s3": [("endpoint", True), ("region", False), ("bucket", True), ("access_key", True), ("path", False)],
+    }
+    if t not in checks:
+        raise Fail("the backup plan names an unknown remote type")
+    for field, required in checks[t]:
+        v = r.get(field) or ""
+        pat = RE["login"] if field in ("username", "domain") else RE[field]
+        if (required and not v) or not pat.match(v) or ".." in v:
+            raise Fail("the remote %s is not valid" % field)
+    if t == "smb" and (r.get("version") or "") not in SMB_VERSIONS:
+        raise Fail("the SMB version is not valid")
+    if t == "rsync" and not 1 <= int(r.get("port") or 22) <= 65535:
+        raise Fail("the SSH port is not valid")
+    if t and not plan.get("passphrase"):
+        raise Fail("exporting needs an encryption passphrase (Settings, Backups)")
+
+
+def plan_zone(plan):
+    if ZoneInfo is not None:
+        try:
+            return ZoneInfo(plan.get("timezone") or "UTC")
+        except Exception:
+            pass
+    return datetime.timezone.utc
+
+
+def last_slot(plan, now):
+    """The most recent scheduled time at or before now (the daily hour:minute, Argus timezone)."""
+    local = now.astimezone(plan_zone(plan))
+    slot = local.replace(hour=plan["hour"], minute=plan["minute"], second=0, microsecond=0)
+    if slot > local:
+        slot -= datetime.timedelta(days=1)
+    return slot
+
+
+def is_due(plan, status, now):
+    slot = last_slot(plan, now).timestamp()
+    if (status.get("last_ok_at") or 0) >= slot:
+        return False
+    last = (status.get("last_run") or {}).get("at") or 0
+    if last >= slot:  # tried since the slot and failed: again an hour later
+        return now.timestamp() - last >= RETRY_AFTER
+    return True
+
+
+def next_due(plan, status, now):
+    slot = last_slot(plan, now)
+    if (status.get("last_ok_at") or 0) >= slot.timestamp():
+        return int((slot + datetime.timedelta(days=1)).timestamp())
+    last = (status.get("last_run") or {}).get("at") or 0
+    if last >= slot.timestamp():
+        return int(last + RETRY_AFTER)
+    return int(now.timestamp())
+
+
+# --- the parts of an archive -----------------------------------------------------------------------
+
+def container_running():
+    try:
+        return run(["docker", "inspect", "-f", "{{.State.Running}}", CONTAINER], timeout=30).stdout.strip() == b"true"
+    except Fail:
+        return False
+
+
+def data_dir():
+    """The host folder mounted as the Argus container's /data."""
+    try:
+        mounts = json.loads(run(["docker", "inspect", "-f", "{{json .Mounts}}", CONTAINER], timeout=30).stdout)
+        for m in mounts or []:
+            if m.get("Destination") == "/data" and m.get("Source"):
+                return m["Source"]
+    except (Fail, ValueError):
+        pass
+    return "/var/lib/argus-core"
+
+
+def gzip_file(src, dst):
+    with open(src, "rb") as fi, gzip.open(dst, "wb", compresslevel=6) as fo:
+        shutil.copyfileobj(fi, fo, 1 << 20)
+
+
+def part_argus_db(work, manifest):
+    ddir = data_dir()
+    manifest["argus_data_dir"] = ddir
+    if container_running():
+        run(["docker", "exec", CONTAINER, "/argus", "backup-db", "/data/.argus-backup.db"], timeout=1800)
+        tmp = os.path.join(ddir, ".argus-backup.db")
+        try:
+            gzip_file(tmp, os.path.join(work, "argus.db.gz"))
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        manifest["argus_db"] = "consistent copy (VACUUM INTO)"
+        return
+    # Argus is stopped: nothing writes the database, so its files can be copied as they are.
+    src = os.path.join(ddir, "argus.db")
+    if not os.path.exists(src):
+        raise Fail("Argus is not running and its database is not at %s" % src)
+    for suffix in ("", "-wal", "-shm"):
+        if os.path.exists(src + suffix):
+            gzip_file(src + suffix, os.path.join(work, "argus.db" + suffix + ".gz"))
+    manifest["argus_db"] = "file copy (Argus was stopped)"
+
+
+def part_zabbix_db(work, manifest, history):
+    cmd = ["runuser", "-u", "postgres", "--", "pg_dump", "-Fc", "-Z", "6", "-d", "zabbix"]
+    if not history:
+        cmd += ["--exclude-table-data=public.history*", "--exclude-table-data=public.trends*",
+                "--exclude-table-data=_timescaledb_internal.*"]
+    with open(os.path.join(work, "zabbix.dump"), "wb") as f:
+        run(cmd, stdout=f)
+    with open(os.path.join(work, "postgres-globals.sql"), "wb") as f:
+        run(["runuser", "-u", "postgres", "--", "pg_dumpall", "--globals-only"], stdout=f, timeout=600)
+    manifest["zabbix_history"] = bool(history)
+
+
+def part_files(work, manifest):
+    import glob
+    paths = [p for p in FILE_PATHS if os.path.lexists("/" + p)]
+    for g in FILE_GLOBS:
+        paths += sorted(os.path.relpath(p, "/") for p in glob.glob("/" + g))
+    key = os.path.join(manifest.get("argus_data_dir") or data_dir(), "secret.key")
+    if os.path.exists(key):
+        paths.append(os.path.relpath(key, "/"))
+    # Owners are kept by name, so a new machine whose system users got other ids maps them right.
+    cmd = ["tar", "-czpf", os.path.join(work, "files.tar.gz"), "-C", "/"]
+    cmd += ["--exclude=" + x for x in FILE_EXCLUDES]
+    p = run(cmd + ["--"] + paths, timeout=1800, check=False)
+    if p.returncode not in (0, 1):  # 1 = a file changed while it was read: the archive is still whole
+        raise Fail("tar failed packing the configuration: %s" % (last_line(p.stderr) or "exit %d" % p.returncode))
+    manifest["files"] = paths
+
+
+def versions():
+    out = {"backup_format": 1}
+    try:
+        with open("/etc/os-release", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("PRETTY_NAME="):
+                    out["os"] = line.split("=", 1)[1].strip().strip('"')
+    except OSError:
+        pass
+    for pkg in ("zabbix-server-pgsql", "postgresql-17", "timescaledb-2-postgresql-17"):
+        try:
+            v = run(["dpkg-query", "-W", "-f=${Version}", pkg], timeout=30).stdout.decode().strip()
+            if v:
+                out[pkg] = v
+        except Fail:
+            pass
+    try:
+        v = run(["runuser", "-u", "postgres", "--", "psql", "-At", "-d", "zabbix", "-c",
+                 "SELECT extversion FROM pg_extension WHERE extname='timescaledb'"], timeout=60).stdout.decode().strip()
+        if v:
+            out["timescaledb_extension"] = v
+    except Fail:
+        pass
+    try:
+        out["argus_image"] = run(["docker", "inspect", "-f", "{{.Config.Image}}", CONTAINER], timeout=30).stdout.decode().strip()
+    except Fail:
+        pass
+    return out
+
+
+def encrypt(src, dst, passphrase, work):
+    """gpg, symmetric AES-256; the passphrase goes through a pipe, never the command line."""
+    home = tempfile.mkdtemp(prefix="gpg-", dir=work)
+    os.chmod(home, 0o700)
+    r, w = os.pipe()
+    try:
+        os.write(w, passphrase.encode("utf-8"))
+        os.close(w)
+        w = -1
+        run(["gpg", "--homedir", home, "--batch", "--yes", "--quiet", "--pinentry-mode", "loopback",
+             "--passphrase-fd", str(r), "--no-symkey-cache", "--symmetric", "--cipher-algo", "AES256", "--s2k-digest-algo", "SHA512",
+             "--compress-algo", "none", "-o", dst, src], pass_fds=(r,), timeout=6 * 3600)
+    finally:
+        os.close(r)
+        if w >= 0:
+            os.close(w)
+        run(["gpgconf", "--homedir", home, "--kill", "gpg-agent"], timeout=30, check=False)
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def host_label():
+    h = re.sub(r"[^A-Za-z0-9._-]", "-", socket.gethostname().split(".")[0]) or "core"
+    return h[:40]
+
+
+def make_archive(plan):
+    """Build one archive in LOCAL_DIR and return its name."""
+    os.makedirs(LOCAL_DIR, mode=0o700, exist_ok=True)
+    os.chmod(LOCAL_DIR, 0o700)
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    name = base = "%s%s-%s.tar" % (PREFIX, host_label(), ts)
+    work = tempfile.mkdtemp(prefix=".work-", dir=LOCAL_DIR)
+    try:
+        manifest = {"format": 1, "created_at": ts, "host": socket.gethostname(), "argus_version": plan.get("argus_version") or ""}
+        log("argus-backup: copying the Argus database")
+        part_argus_db(work, manifest)
+        log("argus-backup: dumping the Zabbix database%s" % ("" if plan.get("history") else " (settings only)"))
+        part_zabbix_db(work, manifest, plan.get("history", True))
+        log("argus-backup: packing the configuration, keys and certificates")
+        part_files(work, manifest)
+        manifest["versions"] = versions()
+        parts = sorted(n for n in os.listdir(work) if not n.startswith("gpg-"))
+        manifest["parts"] = {n: {"size": os.path.getsize(os.path.join(work, n)), "sha256": sha256(os.path.join(work, n))} for n in parts}
+        with open(os.path.join(work, "manifest.json"), "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=1)
+        partial = os.path.join(LOCAL_DIR, "." + name + ".partial")
+        run(["tar", "-cf", partial, "-C", work, "manifest.json"] + parts, timeout=6 * 3600)
+        if plan.get("passphrase"):
+            log("argus-backup: encrypting")
+            enc = os.path.join(LOCAL_DIR, "." + name + ".gpg.partial")
+            try:
+                encrypt(partial, enc, plan["passphrase"], work)
+            finally:
+                os.unlink(partial)
+            partial, name = enc, name + ".gpg"
+        os.chmod(partial, 0o600)
+        os.replace(partial, os.path.join(LOCAL_DIR, name))
+        return name
+    except OSError as e:
+        if getattr(e, "errno", 0) == 28:
+            raise Fail("the disk holding %s is full" % LOCAL_DIR)
+        raise Fail(str(e))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+        for n in os.listdir(LOCAL_DIR):
+            if n.startswith("." + base) and n.endswith(".partial"):
+                try:
+                    os.unlink(os.path.join(LOCAL_DIR, n))
+                except OSError:
+                    pass
+
+
+def prune_local(keep):
+    names = local_archives()
+    for n in names[:-keep] if keep > 0 else []:
+        try:
+            os.unlink(os.path.join(LOCAL_DIR, n))
+            log("argus-backup: removed the old archive %s" % n)
+        except OSError:
+            pass
+
+
+# --- remote targets --------------------------------------------------------------------------------
+
+def ensure_tool(binary, package):
+    if shutil.which(binary):
+        return
+    log("argus-backup: installing %s" % package)
+    env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    try:
+        run(["apt-get", "install", "-y", "--no-install-recommends", package], env=env, timeout=900)
+    except Fail as e:
+        raise Fail("%s is missing and could not be installed (%s)" % (package, e))
+    if not shutil.which(binary):
+        raise Fail("%s is missing and could not be installed" % package)
+
+
+def this_hosts(names):
+    """This core's archives among a remote listing, oldest first."""
+    me = host_label()
+    mine = [n for n in names if ARCHIVE_RE.match(n) and ARCHIVE_RE.match(n).group("host") == me]
+    return sorted(mine, key=lambda n: ARCHIVE_RE.match(n).group("ts"))
+
+
+class MountedTarget:
+    """An SMB share or NFS export mounted for the run, the archives in a folder inside it."""
+
+    def __init__(self, plan):
+        self.plan, self.r = plan, plan["remote"]
+        self.mnt = os.path.join(RUN_DIR, "mnt")
+        self.creds = None
+        self.mounted = False
+
+    def __enter__(self):
+        os.makedirs(self.mnt, mode=0o700, exist_ok=True)
+        t = self.r["type"]
+        if t == "smb":
+            ensure_tool("mount.cifs", "cifs-utils")
+            opts = ["uid=0", "gid=0", "file_mode=0600", "dir_mode=0700", "noperm"]
+            if self.r.get("version"):
+                opts.append("vers=" + self.r["version"])
+            if self.r.get("username"):
+                if "\n" in (self.plan.get("password") or ""):
+                    raise Fail("the SMB password can't hold a line break")
+                fd, self.creds = tempfile.mkstemp(prefix="smb-", dir=RUN_DIR)
+                with os.fdopen(fd, "w") as f:
+                    f.write("username=%s\npassword=%s\n" % (self.r["username"], self.plan.get("password") or ""))
+                    if self.r.get("domain"):
+                        f.write("domain=%s\n" % self.r["domain"])
+                opts.append("credentials=" + self.creds)
+            else:
+                opts.append("guest")
+            cmd = ["mount", "-t", "cifs", self.r["share"], self.mnt, "-o", ",".join(opts)]
+        else:
+            opts = self.r.get("options") or "soft,timeo=150,retrans=3"
+            fresh = not shutil.which("mount.nfs")
+            ensure_tool("mount.nfs", "nfs-common")
+            if fresh and not re.search(r"(^|,)(nfs)?vers=[23]\b", opts):
+                # nfs-common brings rpcbind, listening on port 111; NFSv4 doesn't need it.
+                run(["systemctl", "disable", "--now", "rpcbind.socket", "rpcbind.service"], timeout=60, check=False)
+            cmd = ["mount", "-t", "nfs", self.r["export"], self.mnt, "-o", opts]
+        run(cmd, timeout=120)
+        self.mounted = True
+        self.dir = os.path.join(self.mnt, self.r.get("path") or "")
+        os.makedirs(self.dir, exist_ok=True)
+        return self
+
+    def __exit__(self, *exc):
+        if self.mounted:
+            run(["umount", self.mnt], timeout=120, check=False)
+        if self.creds:
+            os.unlink(self.creds)
+
+    def list(self):
+        return os.listdir(self.dir)
+
+    def put(self, local_path, name):
+        tmp = os.path.join(self.dir, "." + name + ".partial")
+        shutil.copyfile(local_path, tmp)
+        os.replace(tmp, os.path.join(self.dir, name))
+
+    def delete(self, name):
+        os.unlink(os.path.join(self.dir, name))
+
+
+class RsyncTarget:
+    """rsync over SSH with the key Argus generated (a restricted rsync-only account works too)."""
+
+    def __init__(self, plan):
+        self.plan, self.r = plan, plan["remote"]
+        self.key = None
+
+    def __enter__(self):
+        ensure_tool("rsync", "rsync")
+        os.makedirs(RUN_DIR, mode=0o700, exist_ok=True)
+        if not self.plan.get("private_key"):
+            raise Fail("Argus has no SSH key for the rsync target yet (save the Backups settings again)")
+        fd, self.key = tempfile.mkstemp(prefix="key-", dir=RUN_DIR)
+        with os.fdopen(fd, "w") as f:
+            f.write(self.plan["private_key"].strip() + "\n")
+        self.ssh = " ".join(["ssh", "-i", self.key, "-p", str(int(self.r.get("port") or 22)), "-o", "BatchMode=yes",
+                             "-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=" + KNOWN_HOSTS,
+                             "-o", "ConnectTimeout=20"])
+        self.target = self.r["target"].rstrip("/") + "/"
+        return self
+
+    def __exit__(self, *exc):
+        if self.key:
+            os.unlink(self.key)
+
+    def _rsync(self, args, timeout=6 * 3600):
+        return run(["rsync", "-e", self.ssh] + args, timeout=timeout)
+
+    def list(self):
+        p = run(["rsync", "-e", self.ssh, "--list-only", self.target], timeout=300, check=False)
+        if p.returncode not in (0, 23):
+            raise Fail("rsync could not list %s: %s" % (self.target, last_line(p.stderr) or "exit %d" % p.returncode))
+        return [line.split()[-1] for line in p.stdout.decode("utf-8", "replace").splitlines() if line.split()]
+
+    def put(self, local_path, name):
+        self._rsync(["-t", "--partial", "--mkpath", local_path, self.target + name])
+
+    def delete(self, name):
+        # rsync-only accounts can't run rm: sync an empty folder with only this name included.
+        empty = tempfile.mkdtemp(prefix="empty-", dir=RUN_DIR)
+        try:
+            self._rsync(["-r", "--delete", "--include=" + name, "--exclude=*", empty + "/", self.target], timeout=600)
+        finally:
+            os.rmdir(empty)
+
+
+class S3Target:
+    """S3 or compatible, through rclone configured from the environment (no config file)."""
+
+    def __init__(self, plan):
+        self.plan, self.r = plan, plan["remote"]
+
+    def __enter__(self):
+        ensure_tool("rclone", "rclone")
+        self.env = dict(os.environ, RCLONE_CONFIG_ARGUSS3_TYPE="s3", RCLONE_CONFIG_ARGUSS3_PROVIDER="Other",
+                        RCLONE_CONFIG_ARGUSS3_ENV_AUTH="false", RCLONE_CONFIG_ARGUSS3_ACCESS_KEY_ID=self.r["access_key"],
+                        RCLONE_CONFIG_ARGUSS3_SECRET_ACCESS_KEY=self.plan.get("secret_key") or "",
+                        RCLONE_CONFIG_ARGUSS3_ENDPOINT=self.r["endpoint"], RCLONE_CONFIG_ARGUSS3_REGION=self.r.get("region") or "")
+        path = self.r["bucket"] + ("/" + self.r["path"] if self.r.get("path") else "")
+        self.base = "arguss3:" + path
+        return self
+
+    def __exit__(self, *exc):
+        pass
+
+    def _rclone(self, args, timeout=6 * 3600):
+        return run(["rclone", "--s3-no-check-bucket", "--config", "/dev/null"] + args, env=self.env, timeout=timeout)
+
+    def list(self):
+        return [l.strip() for l in self._rclone(["lsf", "--files-only", self.base], timeout=300).stdout.decode().splitlines() if l.strip()]
+
+    def put(self, local_path, name):
+        self._rclone(["copyto", local_path, self.base + "/" + name])
+
+    def delete(self, name):
+        self._rclone(["deletefile", self.base + "/" + name], timeout=300)
+
+
+def open_target(plan):
+    t = plan["remote"]["type"]
+    if t in ("smb", "nfs"):
+        return MountedTarget(plan)
+    if t == "rsync":
+        return RsyncTarget(plan)
+    if t == "s3":
+        return S3Target(plan)
+    raise Fail("unknown remote type")
+
+
+def export(plan):
+    """Copy this core's encrypted archives that the target lacks, then keep its newest N there."""
+    keep = plan["keep"]
+    mine = [n for n in local_archives() if n.endswith(".gpg")][-keep:]
+    with open_target(plan) as tgt:
+        present = set(tgt.list())
+        for n in mine:
+            if n not in present:
+                log("argus-backup: exporting %s" % n)
+                tgt.put(os.path.join(LOCAL_DIR, n), n)
+        there = this_hosts(tgt.list())
+        for n in there[:-keep]:
+            log("argus-backup: removing %s from the target" % n)
+            tgt.delete(n)
+        return len(this_hosts(tgt.list()))
+
+
+def test_target(plan):
+    """Write, list and delete a small file on the target."""
+    name = ".argus-backup-test-%d" % int(time.time())
+    local = os.path.join(RUN_DIR, name)
+    os.makedirs(RUN_DIR, mode=0o700, exist_ok=True)
+    with open(local, "w") as f:
+        f.write("argus-backup test\n")
+    try:
+        with open_target(plan) as tgt:
+            tgt.put(local, name)
+            if name not in tgt.list():
+                raise Fail("the test file was written but does not show up on the target")
+            tgt.delete(name)
+    finally:
+        os.unlink(local)
+
+
+# --- the runs --------------------------------------------------------------------------------------
+
+def do_backup(plan, trigger, note):
+    st = load_status()
+    st["configured"] = True
+    st["running"] = True
+    save_status(st)
+    started = time.time()
+    run_info = {"at": int(started), "ok": False, "trigger": trigger}
+    if note:
+        run_info["warning"] = note
+    try:
+        check_plan(plan)
+        name = make_archive(plan)
+        run_info.update(ok=True, archive=name, size=os.path.getsize(os.path.join(LOCAL_DIR, name)))
+        prune_local(plan["keep"])
+        st["last_ok_at"] = int(time.time())
+        log("argus-backup: %s is ready (%d bytes)" % (name, run_info["size"]))
+    except Fail as e:
+        run_info["error"] = str(e)
+        log("argus-backup: backup failed: %s" % e)
+    run_info["duration_s"] = int(time.time() - started)
+    st["last_run"] = run_info
+    if run_info["ok"] and (plan.get("remote") or {}).get("type"):
+        rm = {"type": plan["remote"]["type"], "at": int(time.time()), "ok": False}
+        try:
+            rm["files"] = export(plan)
+            rm["ok"] = True
+        except Fail as e:
+            rm["error"] = str(e)
+            log("argus-backup: export failed: %s" % e)
+        except OSError as e:
+            rm["error"] = "the target refused a file operation: %s" % e
+            log("argus-backup: export failed: %s" % e)
+        st["remote"] = rm
+    elif not (plan.get("remote") or {}).get("type"):
+        st.pop("remote", None)
+    st["running"] = False
+    st["next_due_at"] = next_due(plan, st, datetime.datetime.now(datetime.timezone.utc)) if plan.get("enabled") else 0
+    save_status(st)
+    return run_info["ok"]
+
+
+def do_test(plan):
+    st = load_status()
+    res = {"at": int(time.time()), "ok": False}
+    try:
+        check_plan(plan)
+        if not (plan.get("remote") or {}).get("type"):
+            raise Fail("no remote target is set")
+        test_target(plan)
+        res["ok"] = True
+        log("argus-backup: the remote target works")
+    except (Fail, OSError) as e:
+        res["error"] = str(e)
+        log("argus-backup: remote test failed: %s" % e)
+    st["test"] = res
+    save_status(st)
+    return res["ok"]
+
+
+def take_request():
+    """The request Argus left (and remove it), or None."""
+    req = read_json(REQUEST_FILE)
+    if os.path.exists(REQUEST_FILE):
+        try:
+            os.unlink(REQUEST_FILE)
+        except OSError:
+            pass
+    return req
+
+
+def lock():
+    os.makedirs(RUN_DIR, mode=0o700, exist_ok=True)
+    f = open(os.path.join(RUN_DIR, "lock"), "w")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return None
+    return f
+
+
+def main(argv):
+    cmd = argv[1] if len(argv) > 1 else "tick"
+    if cmd == "status":
+        print(json.dumps(load_status(), indent=1))
+        return 0
+    if cmd not in ("tick", "now", "test"):
+        sys.stderr.write("usage: argus-backup [tick|now|test|status]\n")
+        return 2
+    if os.geteuid() != 0:
+        sys.stderr.write("argus-backup: run as root\n")
+        return 1
+    held = lock()
+    if held is None:
+        log("argus-backup: another run is in progress")
+        return 0
+    req = take_request() if cmd == "tick" else None
+    plan, note = load_plan()
+    if plan is None:
+        st = load_status()
+        st.update(configured=False, running=False)
+        if req:
+            st["last_run"] = {"at": int(time.time()), "ok": False, "error": note, "trigger": req.get("kind", "")}
+        save_status(st)
+        log("argus-backup: " + note)
+        return 1 if cmd != "tick" else 0
+    kind = cmd if cmd != "tick" else (req or {}).get("kind")
+    if kind == "test":
+        return 0 if do_test(plan) else 1
+    if kind in ("now", "backup"):
+        return 0 if do_backup(plan, "manual", note) else 1
+    st = load_status()
+    st["configured"] = True
+    st["running"] = False  # we hold the lock: no run is in progress
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if not plan.get("enabled"):
+        st["next_due_at"] = 0
+        save_status(st)
+        return 0
+    if is_due(plan, st, now):
+        return 0 if do_backup(plan, "schedule", note) else 1
+    st["next_due_at"] = next_due(plan, st, now)
+    save_status(st)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

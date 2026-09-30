@@ -381,6 +381,13 @@ systemctl enable --now argus-os-report.timer argus-reboot-check.timer argus-zbx-
 echo "    unattended-upgrades (security only, no auto-reboot) + host reporter + zabbix-minor watcher installed"
 echo "    reporting OS status into ${ARGUS_STATE_DIR} (map this as ARGUS_UPDATE_DIR in the core container)"
 
+# Backups (DESIGN section 14e): argus-backup / argus-restore and their units, in BOTH modes. Argus
+# holds the plan (Settings -> Backups); the host does the work as root.
+if [[ -f "${SCRIPT_DIR}/host/install-backup.sh" ]]; then
+  echo "==> backup tools"
+  ARGUS_STATE_DIR="$ARGUS_STATE_DIR" bash "${SCRIPT_DIR}/host/install-backup.sh"
+fi
+
 if [[ "$SETUP_MODE" != "full" ]]; then
   echo
   echo ">>> Image mode: packages + OS patching installed. Database, zabbix_server.conf, TLS, and the"

@@ -121,6 +121,13 @@ build {
     destination = "/tmp"
   }
 
+  // The backup tools (argus-backup, argus-restore, their units): setup-core.sh installs them from its
+  // host/ sibling, so they too sit next to it at /tmp.
+  provisioner "file" {
+    source      = "../core/host"
+    destination = "/tmp"
+  }
+
   provisioner "shell" {
     execute_command = "sudo -E bash '{{ .Path }}'"
     script          = "scripts/provision.sh"

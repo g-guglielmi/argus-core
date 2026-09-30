@@ -138,6 +138,11 @@ packer build argus-core-vm.pkr.hcl        # -> output/argus-core-vm.qcow2
 Afterwards, `http://<vm-ip>/` redirects to Argus over https. The Zabbix UI stays available on
 `:8080` (user `Admin`) for engine-room work.
 
+**Backups**: turn them on in **Settings -> Backups** (daily, encrypted, exported to SMB, NFS, rsync or
+S3). The tools are in the image; a hypervisor snapshot is not a backup of the data on its own. To
+rebuild after a disaster, import a new VM from this image, finish first boot with any values, and run
+`sudo argus-restore restore <archive>`: [docs/backup-and-restore.md](../../docs/backup-and-restore.md).
+
 **Your own certificate or FQDN**: either replace `/etc/nginx/argus/argus-web.crt` + `.key` and
 reload nginx, or put your reverse proxy (HAProxy/nginx/Caddy) in front of `:443`, then update
 **Settings → Public URL** and add the proxy's address to **Settings → Reverse proxy** (and

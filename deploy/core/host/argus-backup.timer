@@ -1,0 +1,10 @@
+[Unit]
+Description=Check every 15 minutes whether an Argus core backup is due
+
+[Timer]
+OnBootSec=10min
+OnCalendar=*:0/15
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

@@ -174,6 +174,9 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Per-site visibility** - helpdesk and viewer accounts limited to some sites see, act on and
   are alerted about only those sites' hosts, filtered on the server for every request. DESIGN
   section 10. - _(BE+FE)_ M
+- [x] **Core backups + restore** - daily encrypted archives of the whole core (both databases, config,
+  keys, certificates) kept on the VM and exported to SMB, NFS, rsync over SSH or S3, with a
+  one-command restore and a disaster guide. DESIGN section 14e. - _(BE+FE+host)_ L
 - [x] **Maintenance windows + quiet hours** - planned-work windows (once, daily, weekly, monthly;
   sites or hosts) that hold alerts and alert what is still open afterwards, and per-user quiet hours
   for personal channels. DESIGN section 9. - _(BE+FE)_ M

@@ -1054,6 +1054,55 @@ and came online over mutual TLS. (Two first-boot bugs found and fixed during lab
 be appended by matching a self-authored marker, not the substring `TLSCAFile=` which the stock conf
 already carries in a commented example.)
 
+## 14e. Backups and restore (core host)
+
+The core backs itself up, and one command restores it onto a new core (the user guide is
+`docs/backup-and-restore.md`). The work runs **on the host as root**, since it needs `pg_dump`, the
+env files, the CA and the Zabbix config, none of which the distroless, non-root Argus container can
+reach; **Argus holds the plan** (Settings, Backups, `internal/server/backup.go`) and shows the outcome.
+
+- **Tools** (`deploy/core/host`, installed by `install-backup.sh`, which `setup-core.sh` runs in both
+  modes and `setup-core-patching.sh` runs on an existing core; the core VM image bakes them in):
+  `argus-backup` and `argus-restore` (Python 3, stdlib only: python3 is already on every core),
+  `argus-backup.timer` (every 15 minutes), `argus-backup.path` (on a request from Argus) and
+  `argus-backup.service` (oneshot, idle IO class, `Nice=10`).
+- **The plan**: `argus-backup` runs `docker exec argus /argus backup-plan` (a subcommand in the
+  image, `backupcmd.go`: it opens the database with the at-rest key, prints the schedule, keep,
+  history flag, passphrase and remote target with its credentials as JSON). `docker exec` takes root
+  on the host, so the secrets never cross the network or sit in a shared file. The last plan is kept
+  in `/etc/argus-core/backup-plan.json` (root, 0600) so backups carry on while Argus is down.
+- **An archive**: `argus backup-db` writes a consistent copy of the SQLite database inside the
+  container (`VACUUM INTO`; a plain file copy when Argus is stopped); `pg_dump -Fc` of the Zabbix
+  database (metric history optional: without it the data of `history*`, `trends*` and the
+  TimescaleDB chunks is left out) plus `pg_dumpall --globals-only`; `tar` of the core's files
+  (`/etc/argus-core`, `/etc/argus/pki`, `/etc/zabbix`, the nginx TLS front, `/etc/postgresql`, the
+  collectors' keys and pins, external scripts, Argus units and scripts, the setup marker; owners kept
+  by name); a `manifest.json` with versions and a SHA-256 per part. All in one `tar`, encrypted with
+  `gpg --symmetric` (AES-256, the passphrase through a pipe) when a passphrase is set. Local copies in
+  `/var/backups/argus` (0700), newest N kept.
+- **Export** (only encrypted archives; a passphrase is required to set a target): SMB and NFS are
+  mounted for the run (the SMB password through a root-only credentials file); rsync over SSH uses an
+  ed25519 key Argus generates (the public half shown in Settings, `accept-new` host keys) and deletes
+  with an rsync filter, so an `rrsync`-restricted account works; S3 goes through `rclone` configured
+  from the environment only. Each run uploads what the target lacks and keeps **this host's** newest N
+  there, never touching other files, so a rebuilt core can't wipe the history. Tools missing on an
+  older core are installed on first use (the NFS client's `rpcbind` is switched off again for NFSv4).
+- **Status** comes back in `backup-status.json` in the shared update dir (0644): the last run, the last
+  good one, the local archives and free space, the last export and target test, the next due time.
+  Argus shows it and raises system notices when a run or an export fails, or when the last good backup
+  is over 36 hours old. "Back up now" and "Check the target" drop `backup-request.json`, which the
+  path unit picks up at once.
+- **Restore** (`argus-restore restore ARCHIVE`, or `inspect` to check one): decrypt, unpack, verify
+  the checksums, compare Zabbix, PostgreSQL and TimescaleDB versions with the manifest (a TimescaleDB
+  dump restores only onto the same extension version; `--force` overrides), confirm, stop
+  argus-updater, argus-core and zabbix-server, put back the files (except `/etc/postgresql`: the new
+  VM keeps its own tuning), fix owners, recreate the `zabbix` database (globals, `CREATE EXTENSION`,
+  `timescaledb_pre_restore()`, `pg_restore -j`, `timescaledb_post_restore()`, analyze), put back the
+  Argus database, start everything. `--only files|zabbix|argus` restores one part. Probes reconnect
+  unchanged: the CA and the Zabbix server certificates come back with the files.
+- **Tests**: `deploy/core/host/tests/test_host_scripts.py` builds, encrypts, exports, decrypts and
+  restores real archives with the core's own commands faked; CI runs it on Linux.
+
 ## 15. Tech stack (confirmed)
 - **App name:** **Argus.** Split across three repos: **argus-core** (this repo - the app in `argus/`, docs, core deploy kit), **argus-probe** (the probe Docker image + self-configuring golden VM), and **argus-updater** (the core self-update sidecar). Image names stay `argus` / `argus-probe` / `argus-updater` regardless of repo names.
 - **Backend / notifier:** **Go** (single static binary, distroless image).

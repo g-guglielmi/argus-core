@@ -238,9 +238,18 @@ systemctl enable --now argus-os-report.timer argus-reboot-check.timer argus-zbx-
 # Report once now so Argus shows the core's status without waiting for the first hourly run.
 /usr/local/sbin/argus-os-report || true
 
+# The backup tools (DESIGN section 14e) ride along, when this script sits in a checkout with its host/
+# sibling: refreshing an existing core's host scripts refreshes them too.
+PATCH_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+if [[ -f "${PATCH_DIR}/host/install-backup.sh" ]]; then
+  echo "==> backup tools"
+  ARGUS_STATE_DIR="$ARGUS_STATE_DIR" bash "${PATCH_DIR}/host/install-backup.sh"
+fi
+
 echo
 echo "==> done. unattended-upgrades (security only, no auto-reboot) + reporter + reboot watcher + zabbix-minor watcher installed."
 echo "    status file: ${ARGUS_STATE_DIR}/os-status.json  (Argus reads it at ARGUS_UPDATE_DIR=/update)"
 echo "    In Argus -> Settings -> OS updates you should now see the core's status; set the reboot"
 echo "    window and the Zabbix minor-update window there."
 echo "    Check the timers:  systemctl list-timers 'argus-*'"
+echo "    Backups: Settings -> Backups in Argus (restore guide: docs/backup-and-restore.md)."

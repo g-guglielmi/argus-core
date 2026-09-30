@@ -1,0 +1,10 @@
+# Starts argus-backup.service as soon as Argus drops a request in the shared state dir.
+[Unit]
+Description=Watch for Argus core backup requests
+
+[Path]
+PathChanged=@STATE_DIR@/backup-request.json
+Unit=argus-backup.service
+
+[Install]
+WantedBy=multi-user.target

@@ -91,6 +91,10 @@ jobs:
         run: |
           npm ci --ignore-scripts
           npm audit --omit=dev --audit-level=high
+      # The core host's backup tools (argus-backup, argus-restore): real tar and gpg, the core's own
+      # commands faked. They ship in the core VM image and the manual install, not in the container.
+      - name: host backup tools
+        run: python3 deploy/core/host/tests/test_host_scripts.py
 
   docker:
     permissions:

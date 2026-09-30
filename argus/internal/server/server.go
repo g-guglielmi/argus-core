@@ -272,6 +272,10 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("PATCH /api/settings", auth.RequireRole("admin", s.handleUpdateSettings))
 	mux.HandleFunc("GET /api/settings/retention", auth.RequireRole("admin", s.handleGetRetention))
 	mux.HandleFunc("PUT /api/settings/retention", auth.RequireRole("admin", s.handleSetRetention))
+	mux.HandleFunc("GET /api/backup", auth.RequireRole("admin", s.handleGetBackup))
+	mux.HandleFunc("PUT /api/backup", auth.RequireRole("admin", s.handleSetBackup))
+	mux.HandleFunc("POST /api/backup/run", auth.RequireRole("admin", s.handleBackupRun))
+	mux.HandleFunc("POST /api/backup/ssh-key", auth.RequireRole("admin", s.handleBackupSSHKey))
 	mux.HandleFunc("GET /api/settings/heartbeat", auth.RequireRole("admin", s.handleHeartbeat))
 	mux.HandleFunc("POST /api/settings/heartbeat", auth.RequireRole("admin", s.handleHeartbeatNow))
 

@@ -29,6 +29,10 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		os.Exit(runHealthcheck())
 	}
+	// The core host's backup script asks for its plan and a database copy (backupcmd.go).
+	if len(os.Args) > 1 && (os.Args[1] == "backup-plan" || os.Args[1] == "backup-db") {
+		os.Exit(runBackupCommand(os.Args[1:]))
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	cfg := config.Load()

@@ -1,0 +1,15 @@
+# argus-backup: back up the Argus core (DESIGN section 14e). Started every 15 minutes by
+# argus-backup.timer (it backs up when the plan from Argus says one is due) and at once by
+# argus-backup.path when Argus asks ("Back up now", "Test").
+[Unit]
+Description=Argus core backup
+After=docker.service postgresql.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=ARGUS_STATE_DIR=@STATE_DIR@
+ExecStart=/usr/local/sbin/argus-backup tick
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=12h

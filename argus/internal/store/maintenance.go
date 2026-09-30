@@ -125,3 +125,10 @@ func (s *Store) DeleteMaintenanceWindow(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM maintenance_windows WHERE id=?`, id)
 	return err
 }
+
+// VacuumInto writes a consistent, compacted copy of the whole database to path (the core backup):
+// SQLite's own online copy, safe while the app keeps writing.
+func (s *Store) VacuumInto(ctx context.Context, path string) error {
+	_, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, path)
+	return err
+}

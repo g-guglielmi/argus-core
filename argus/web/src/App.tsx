@@ -1060,6 +1060,197 @@ function DataRetention() {
   )
 }
 
+type BackupRemote = { type: '' | 'smb' | 'nfs' | 'rsync' | 's3'; share?: string; username?: string; domain?: string; version?: string; export?: string; options?: string; target?: string; port?: number; endpoint?: string; region?: string; bucket?: string; access_key?: string; path?: string }
+type BackupConfig = { enabled: boolean; hour: number; minute: number; keep: number; history: boolean; remote: BackupRemote }
+type BackupStatus = {
+  at: number; configured: boolean; running?: boolean; last_ok_at?: number; local_dir?: string; free_bytes?: number; next_due_at?: number
+  last_run?: { at: number; ok: boolean; error?: string; archive?: string; size?: number; duration_s?: number; trigger?: string; warning?: string }
+  local?: { name: string; size: number; at: number }[]
+  remote?: { type: string; ok: boolean; at: number; error?: string; files?: number }
+  test?: { at: number; ok: boolean; error?: string }
+}
+type BackupView = { config: BackupConfig; has_passphrase: boolean; has_smb_password: boolean; has_s3_secret: boolean; ssh_public_key?: string; local_dir: string; status: BackupStatus | null; pending?: string; channel: boolean }
+const REMOTE_LABEL: Record<string, string> = { '': 'None: keep them on the core VM only', smb: 'SMB share (Windows, NAS)', nfs: 'NFS export', rsync: 'rsync over SSH', s3: 'S3 bucket (or compatible)' }
+
+// BackupsCard sets the core's backups up and shows how they went (DESIGN section 14e): the core VM
+// archives Argus's database, the Zabbix database and its configuration, keys and certificates, keeps
+// the newest on the VM and exports them encrypted.
+function BackupsCard() {
+  const toast = useToast()
+  const [v, setV] = useState<BackupView | null>(null)
+  const [cfg, setCfg] = useState<BackupConfig | null>(null)
+  const [time, setTime] = useState('02:30')
+  const [pass, setPass] = useState('')
+  const [smbPass, setSmbPass] = useState('')
+  const [s3Secret, setS3Secret] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [dirty, setDirty] = useState(false)
+
+  const apply = (d: BackupView, keepEdits = false) => {
+    setV(d)
+    if (!keepEdits) {
+      setCfg(d.config); setTime(fmtHM24(d.config.hour * 60 + d.config.minute)); setPass(''); setSmbPass(''); setS3Secret(''); setDirty(false)
+    }
+  }
+  const load = (keepEdits = false) => fetch('/api/backup').then((r) => (r.ok ? r.json() : null)).then((d: BackupView | null) => { if (d) apply(d, keepEdits) }).catch(() => {})
+  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // Follow a run or a test while the host works on it.
+  const active = !!v && (!!v.pending || !!v.status?.running)
+  useEffect(() => {
+    if (!active) return
+    const t = setInterval(() => load(true), 4000)
+    return () => clearInterval(t)
+  }, [active]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!v || !cfg) return <section className="set-card"><h3>Backups</h3><Skeleton rows={3} cols={2} /></section>
+  const set = (patch: Partial<BackupConfig>) => { setCfg({ ...cfg, ...patch }); setDirty(true) }
+  const setR = (patch: Partial<BackupRemote>) => { setCfg({ ...cfg, remote: { ...cfg.remote, ...patch } }); setDirty(true) }
+  const r = cfg.remote
+  const st = v.status
+
+  async function save(e?: FormEvent) {
+    e?.preventDefault()
+    if (!cfg) return
+    const [hh, mm] = time.split(':').map(Number)
+    setBusy(true)
+    try {
+      const res = await fetch('/api/backup', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: { ...cfg, hour: hh || 0, minute: mm || 0, keep: Number(cfg.keep), remote: { ...cfg.remote, port: Number(cfg.remote.port) || 0 } }, passphrase: pass, smb_password: smbPass, s3_secret: s3Secret }) })
+      if (!res.ok) { toast.error(await errText(res, 'Could not save the backup settings')); return }
+      apply(await res.json()); toast.success('Backup settings saved.')
+    } catch { toast.error('Could not save the backup settings') } finally { setBusy(false) }
+  }
+  async function request(kind: 'backup' | 'test') {
+    const res = await fetch('/api/backup/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind }) })
+    if (!res.ok) { toast.error(await errText(res, 'Could not reach the host')); return }
+    apply(await res.json(), true)
+    toast.success(kind === 'backup' ? 'The core starts a backup in a few seconds.' : 'The core checks the target in a few seconds.')
+  }
+  async function newKey() {
+    const res = await fetch('/api/backup/ssh-key', { method: 'POST' })
+    if (!res.ok) { toast.error(await errText(res, 'Could not create a new key')); return }
+    apply(await res.json(), true); toast.success('New key created: put it on the target in place of the old one.')
+  }
+
+  const lr = st?.last_run
+  const field = (label: string, value: string | number | undefined, on: (v: string) => void, ph: string, hint?: string, type = 'text') => (
+    <label className="set-row">
+      <div className="set-head"><span className="flabel">{label}</span></div>
+      <input className="input" type={type} value={value ?? ''} placeholder={ph} disabled={busy} onChange={(e) => on(e.target.value)} autoComplete="off" />
+      {hint && <span className="set-hint">{hint}</span>}
+    </label>
+  )
+  const secret = (label: string, has: boolean, value: string, on: (v: string) => void, hint: string) => (
+    <label className="set-row">
+      <div className="set-head"><span className="flabel">{label}</span></div>
+      <input className="input" type="password" value={value} placeholder={has ? '•••••••• (unchanged)' : 'not set'} disabled={busy} autoComplete="new-password" onChange={(e) => { on(e.target.value); setDirty(true) }} />
+      <span className="set-hint">{hint}</span>
+    </label>
+  )
+
+  return (
+    <form className="set-card" onSubmit={save}>
+      <h3>Backups</h3>
+      <p className="set-note">The core VM backs itself up: Argus&apos;s database, the Zabbix database{cfg.history ? ' with its metric history' : ''}, and the configuration, keys and certificates a new core needs to take over. Archives stay in <span className="mono">{v.local_dir}</span> on the VM; export them to keep a copy off it. Restoring is one command on a new core: see the guide, docs/backup-and-restore.md.</p>
+
+      {!v.channel ? <p className="set-hint" style={{ color: 'var(--warn)' }}>This Argus has no shared folder with its host (ARGUS_UPDATE_DIR), so it can't reach the backup tool. The core appliance VM has one.</p>
+        : !st ? <p className="set-hint" style={{ color: 'var(--warn)' }}>The core host hasn&apos;t reported yet. The core VM image has the backup tool built in; on an existing core, copy deploy/core/host to the VM and run <span className="mono">sudo ./install-backup.sh</span> once.</p>
+          : (
+            <div className="set-row bstatus">
+              <div className="set-head"><span className="flabel">Status</span>
+                {st.running || v.pending === 'backup' ? <span className="tag online">backing up…</span>
+                  : !lr ? <span className="set-src">no backup yet</span>
+                    : lr.ok ? <span className="tag online">ok</span> : <span className="tag avail">failed</span>}
+              </div>
+              <span className="set-hint">
+                {lr ? <>{lr.ok ? `Last backup ${fmtWhen(lr.at)}, ${fmtNum(lr.size || 0, 'B')}, in ${fmtDuration(lr.duration_s || 0)}.` : `The last backup (${fmtWhen(lr.at)}) failed: ${lr.error}.`}{!lr.ok && st.last_ok_at ? ` Last good one ${fmtWhen(st.last_ok_at)}.` : ''}</> : 'No backup has run yet.'}
+                {' '}{st.local && st.local.length > 0 ? `${st.local.length} on the VM` : ''}{st.free_bytes ? `, ${fmtNum(st.free_bytes, 'B')} free there.` : '.'}
+                {cfg.enabled && st.next_due_at ? ` Next ${fmtWhen(st.next_due_at)}.` : ''}
+              </span>
+              {lr?.warning && <span className="set-hint" style={{ color: 'var(--warn)' }}>{lr.warning}.</span>}
+              {st.remote && <span className="set-hint" style={st.remote.ok ? undefined : { color: 'var(--warn)' }}>{st.remote.ok ? `Exported ${fmtWhen(st.remote.at)}: ${st.remote.files || 0} on the target.` : `Export failed ${fmtWhen(st.remote.at)}: ${st.remote.error}.`}</span>}
+              {st.test && <span className="set-hint" style={st.test.ok ? undefined : { color: 'var(--warn)' }}>{st.test.ok ? `Target checked ${fmtWhen(st.test.at)}: it works.` : `Target check ${fmtWhen(st.test.at)} failed: ${st.test.error}.`}</span>}
+              <span className="set-hint">
+                <button type="button" className="btn" style={{ padding: '2px 10px' }} disabled={active || dirty} title={dirty ? 'Save first' : undefined} onClick={() => request('backup')}>Back up now</button>
+                {r.type && <button type="button" className="btn" style={{ padding: '2px 10px', marginLeft: 6 }} disabled={active || dirty} title={dirty ? 'Save first' : undefined} onClick={() => request('test')}>{v.pending === 'test' ? 'Checking…' : 'Check the target'}</button>}
+              </span>
+            </div>
+          )}
+
+      <div className="set-row set-toggle">
+        <div className="set-head"><span className="flabel">Daily backup</span></div>
+        <Switch checked={cfg.enabled} disabled={busy} onChange={(on) => set({ enabled: on })} label={cfg.enabled ? 'On' : 'Off'} />
+        <span className="set-hint">Once a day at the time below (Argus timezone). Turning it on runs the first one within 15 minutes.</span>
+      </div>
+      <div className="bgrid">
+        <label className="set-row"><div className="set-head"><span className="flabel">At</span></div>
+          <input className="input" type="time" value={time} disabled={busy} onChange={(e) => { setTime(e.target.value); setDirty(true) }} /></label>
+        <label className="set-row"><div className="set-head"><span className="flabel">Keep</span></div>
+          <input className="input" type="number" min={1} max={90} value={cfg.keep} disabled={busy} onChange={(e) => set({ keep: Number(e.target.value) })} />
+          <span className="set-hint">The newest this many, on the VM and on the target.</span></label>
+      </div>
+      <div className="set-row set-toggle">
+        <div className="set-head"><span className="flabel">Metric history</span></div>
+        <Switch checked={cfg.history} disabled={busy} onChange={(on) => set({ history: on })} label={cfg.history ? 'Included' : 'Settings only'} />
+        <span className="set-hint">{cfg.history ? 'Everything, charts included: the biggest part of an archive.' : 'Only the Zabbix settings (hosts, templates, triggers, users): small, but charts start empty after a restore.'}</span>
+      </div>
+      {secret('Encryption passphrase', v.has_passphrase, pass, setPass, 'Every archive is encrypted with it (gpg, AES-256), and exporting needs one. Keep it in your password manager: without it no archive can be opened, and Argus never shows it again. At least 12 characters.')}
+
+      <label className="set-row">
+        <div className="set-head"><span className="flabel">Export to</span></div>
+        <Select value={r.type} disabled={busy} onChange={(e) => setR({ type: e.target.value as BackupRemote['type'] })}>
+          {Object.entries(REMOTE_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        </Select>
+        {r.type && <span className="set-hint">Each run copies the new archive there and keeps this core&apos;s newest {cfg.keep}; other files are left alone.</span>}
+      </label>
+      {r.type === 'smb' && <>
+        {field('Share', r.share, (x) => setR({ share: x }), '//nas.example.lan/backups')}
+        {field('Folder', r.path, (x) => setR({ path: x }), 'argus', 'Inside the share; created when missing.')}
+        <div className="bgrid">
+          {field('User', r.username, (x) => setR({ username: x }), 'backup (empty = guest)')}
+          {field('Domain', r.domain, (x) => setR({ domain: x }), 'optional')}
+        </div>
+        {secret('Password', v.has_smb_password, smbPass, setSmbPass, 'Handed to the mount through a file only root can read, never on a command line.')}
+        <label className="set-row"><div className="set-head"><span className="flabel">SMB version</span></div>
+          <Select value={r.version || ''} disabled={busy} onChange={(e) => setR({ version: e.target.value })}>
+            {['', '3.1.1', '3.0', '2.1', '2.0', '1.0'].map((x) => <option key={x} value={x}>{x || 'Negotiate'}</option>)}
+          </Select></label>
+      </>}
+      {r.type === 'nfs' && <>
+        {field('Export', r.export, (x) => setR({ export: x }), 'nas.example.lan:/volume1/backups')}
+        {field('Folder', r.path, (x) => setR({ path: x }), 'argus', 'Inside the export; created when missing.')}
+        {field('Mount options', r.options, (x) => setR({ options: x }), 'soft,timeo=150,retrans=3', 'Empty uses these. The core must be allowed to write there (the export\'s client list, root squashing).')}
+      </>}
+      {r.type === 'rsync' && <>
+        <div className="bgrid">
+          {field('Target', r.target, (x) => setR({ target: x }), 'backup@nas.example.lan:/volume1/argus')}
+          {field('SSH port', r.port || '', (x) => setR({ port: Number(x) || 0 }), '22', undefined, 'number')}
+        </div>
+        <div className="set-row">
+          <div className="set-head"><span className="flabel">Key for the target</span></div>
+          {v.ssh_public_key ? <>
+            <textarea className="input mono bkey" readOnly value={v.ssh_public_key} rows={2} />
+            <span className="set-hint">Add this line to <span className="mono">~/.ssh/authorized_keys</span> of that user on the target. <CopyButton text={v.ssh_public_key} label="Copy" /> <button type="button" className="btn" style={{ padding: '2px 10px' }} onClick={newKey}>New key</button></span>
+          </> : <span className="set-hint">Save once and Argus creates a key pair; its public half shows here.</span>}
+        </div>
+      </>}
+      {r.type === 's3' && <>
+        {field('Endpoint', r.endpoint, (x) => setR({ endpoint: x }), 'https://s3.eu-central-1.amazonaws.com', 'Any S3-compatible service: AWS, Backblaze B2, Wasabi, Cloudflare R2, MinIO.')}
+        <div className="bgrid">
+          {field('Bucket', r.bucket, (x) => setR({ bucket: x }), 'argus-backups', 'It must exist already.')}
+          {field('Region', r.region, (x) => setR({ region: x }), 'eu-central-1')}
+        </div>
+        {field('Folder', r.path, (x) => setR({ path: x }), 'core', 'The key prefix inside the bucket.')}
+        {field('Access key', r.access_key, (x) => setR({ access_key: x }), 'AKIA…')}
+        {secret('Secret key', v.has_s3_secret, s3Secret, setS3Secret, 'A key limited to this bucket (list, read, write, delete) is all it needs.')}
+      </>}
+      <div className="set-row set-actions">
+        <button type="submit" className="btn primary" disabled={!dirty || busy}>{busy ? 'Saving…' : 'Save'}</button>
+      </div>
+    </form>
+  )
+}
+
 function VersionAbout() {
   const confirm = useConfirm()
   const [v, setV] = useState<VersionInfo | null>(null)
@@ -1770,6 +1961,8 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
         })}
         {/* Zabbix housekeeping (history / trends / compression), saved through its own endpoint. */}
         <DataRetention />
+        {/* The core host's own backups (backup.go, deploy/core/host/argus-backup). */}
+        <BackupsCard />
       </div>
     </div>
   )

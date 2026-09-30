@@ -1,0 +1,314 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+
+# argus-restore - restore the Argus core from an argus-backup archive (DESIGN section 14e,
+# docs/backup-and-restore.md).
+#
+# Run as root on the core that should take over: a new core VM from the appliance image (first boot
+# done, with any values: this replaces them), or a manual install of the same stack. It stops Argus,
+# the updater and zabbix-server, puts back the configuration, keys and certificates, recreates the
+# Zabbix database from the dump (with TimescaleDB's pre/post-restore steps) and the Argus database,
+# then starts everything again. Probes reconnect on their own: the CA they trust comes back with it.
+#
+# Usage:
+#   argus-restore inspect ARCHIVE                show what an archive holds, check it, change nothing
+#   argus-restore restore ARCHIVE [--only files|zabbix|argus] [--yes] [--force] [--passphrase-file F]
+# An encrypted archive (.tar.gpg) asks for its passphrase unless --passphrase-file is given.
+import argparse
+import gzip
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+WORK_BASE = os.environ.get("ARGUS_BACKUP_DIR", "/var/backups/argus")
+CONTAINER = os.environ.get("ARGUS_CONTAINER", "argus")
+UPDATER = os.environ.get("ARGUS_UPDATER_CONTAINER", "argus-updater")
+APP_UID = 65532  # the Argus container's user
+
+
+class Fail(Exception):
+    pass
+
+
+def say(msg=""):
+    print(msg, flush=True)
+
+
+def run(cmd, *, stdout=None, check=True, timeout=None, env=None, input_bytes=None):
+    try:
+        p = subprocess.run(cmd, stdout=stdout if stdout is not None else subprocess.PIPE, stderr=subprocess.PIPE,
+                           timeout=timeout, env=env, input=input_bytes)
+    except FileNotFoundError:
+        raise Fail("%s is not installed" % cmd[0])
+    if check and p.returncode != 0:
+        err = (p.stderr or b"").decode("utf-8", "replace").strip().splitlines()
+        raise Fail("%s failed: %s" % (" ".join(cmd[:4]), err[-1] if err else "exit %d" % p.returncode))
+    return p
+
+
+def psql(sql, db="postgres", check=True):
+    return run(["runuser", "-u", "postgres", "--", "psql", "-v", "ON_ERROR_STOP=1", "-At", "-d", db, "-c", sql], check=check)
+
+
+def unit_exists(name):
+    return run(["systemctl", "cat", name], check=False).returncode == 0
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def unpack(archive, work, passphrase_file):
+    """Decrypt (when needed) and unpack an archive into work; return its manifest."""
+    tar = archive
+    if archive.endswith(".gpg"):
+        home = tempfile.mkdtemp(prefix="gpg-", dir=work)
+        os.chmod(home, 0o700)
+        tar = os.path.join(work, "archive.tar")
+        cmd = ["gpg", "--homedir", home, "--pinentry-mode", "loopback", "--no-symkey-cache", "-o", tar, "-d", archive]
+        if passphrase_file:
+            cmd[1:1] = ["--batch", "--passphrase-file", passphrase_file]
+            run(cmd)
+        else:
+            say("The archive is encrypted: type its passphrase (Settings, Backups).")
+            if subprocess.run(cmd).returncode != 0:
+                raise Fail("gpg could not decrypt the archive (wrong passphrase?)")
+        run(["gpgconf", "--homedir", home, "--kill", "gpg-agent"], check=False)
+    run(["tar", "-xf", tar, "-C", work])
+    if tar != archive:
+        os.unlink(tar)
+    mpath = os.path.join(work, "manifest.json")
+    if not os.path.exists(mpath):
+        raise Fail("this is not an argus-backup archive (no manifest.json)")
+    with open(mpath, encoding="utf-8") as f:
+        manifest = json.load(f)
+    for name, meta in (manifest.get("parts") or {}).items():
+        p = os.path.join(work, name)
+        if not os.path.exists(p):
+            raise Fail("the archive is missing %s" % name)
+        if meta.get("sha256") and sha256(p) != meta["sha256"]:
+            raise Fail("%s is damaged (its checksum does not match)" % name)
+    return manifest
+
+
+def installed_versions():
+    out = {}
+    for pkg in ("zabbix-server-pgsql", "postgresql-17", "timescaledb-2-postgresql-17"):
+        p = run(["dpkg-query", "-W", "-f=${Version}", pkg], check=False)
+        if p.returncode == 0 and p.stdout.strip():
+            out[pkg] = p.stdout.decode().strip()
+    return out
+
+
+def major_minor(v):
+    """'1:7.0.31-1+debian13' -> '7.0'; '2.28.3~debian13' -> '2.28'."""
+    m = re.search(r"(\d+)\.(\d+)", v.split(":")[-1])
+    return m.group(0) if m else ""
+
+
+def version_problems(manifest):
+    have, was = installed_versions(), (manifest.get("versions") or {})
+    problems = []
+    for pkg, label in (("zabbix-server-pgsql", "Zabbix"), ("postgresql-17", "PostgreSQL"), ("timescaledb-2-postgresql-17", "TimescaleDB")):
+        if pkg in was and pkg in have and major_minor(was[pkg]) != major_minor(have[pkg]):
+            problems.append("%s here is %s, the backup was made on %s" % (label, have[pkg], was[pkg]))
+    ts_was = was.get("timescaledb_extension", "")
+    ts_have = have.get("timescaledb-2-postgresql-17", "")
+    if ts_was and ts_have and not ts_have.split("~")[0].startswith(ts_was):
+        problems.append("the TimescaleDB extension must be %s to restore this dump (installed: %s)" % (ts_was, ts_have))
+    return problems
+
+
+def describe(manifest, archive):
+    v = manifest.get("versions") or {}
+    say("Archive:   %s" % os.path.basename(archive))
+    say("Made:      %s on %s (Argus %s)" % (manifest.get("created_at", "?"), manifest.get("host", "?"), manifest.get("argus_version") or "?"))
+    say("Holds:     %s" % ", ".join(sorted((manifest.get("parts") or {}).keys())))
+    say("History:   %s" % ("included" if manifest.get("zabbix_history") else "settings only (no metric history)"))
+    for k in ("os", "zabbix-server-pgsql", "postgresql-17", "timescaledb-2-postgresql-17", "timescaledb_extension", "argus_image"):
+        if k in v:
+            say("  %-28s %s" % (k, v[k]))
+
+
+def stop_services(parts):
+    say("==> stopping services")
+    for unit, container in (("argus-updater", UPDATER), ("argus-core", CONTAINER)):
+        if "argus" in parts or "files" in parts:
+            if unit_exists(unit + ".service"):
+                run(["systemctl", "stop", unit], check=False)
+            run(["docker", "stop", container], check=False)
+    if "zabbix" in parts or "files" in parts:
+        run(["systemctl", "stop", "zabbix-server"], check=False)
+
+
+def restore_files(work, manifest):
+    say("==> restoring the configuration, keys and certificates")
+    # PostgreSQL's own tuning stays as this machine has it (sized for its memory); the old one is in
+    # the archive for reference.
+    run(["tar", "-xzpf", os.path.join(work, "files.tar.gz"), "-C", "/", "--exclude=etc/postgresql"])
+    # The system users' ids may differ on this machine: set the owners the stack expects.
+    fixes = [
+        (["chown", "-R", "%d:%d" % (APP_UID, APP_UID), "/etc/argus/pki"], "/etc/argus/pki"),
+        (["chown", "-R", "zabbix:zabbix", "/etc/zabbix/certs"], "/etc/zabbix/certs"),
+        (["chown", "root:www-data", "/etc/zabbix/web/zabbix.conf.php"], "/etc/zabbix/web/zabbix.conf.php"),
+        (["chown", "-R", "zabbix:zabbix", "/var/lib/zabbix/ssh"], "/var/lib/zabbix/ssh"),
+        (["chown", "-R", "zabbix:zabbix", "/var/lib/zabbix/argus-pins"], "/var/lib/zabbix/argus-pins"),
+    ]
+    for cmd, path in fixes:
+        if os.path.exists(path):
+            run(cmd, check=False)
+    for d in ("/etc/argus-core",):
+        if os.path.isdir(d):
+            run(["chmod", "700", d], check=False)
+    run(["systemctl", "daemon-reload"], check=False)
+
+
+def restore_zabbix(work):
+    say("==> recreating the Zabbix database (this can take a while with history)")
+    run(["runuser", "-u", "postgres", "--", "psql", "-q", "-d", "postgres", "-f", os.path.join(work, "postgres-globals.sql")], check=False)
+    psql("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='zabbix' AND pid <> pg_backend_pid()", check=False)
+    run(["runuser", "-u", "postgres", "--", "dropdb", "--if-exists", "zabbix"])
+    run(["runuser", "-u", "postgres", "--", "createdb", "-O", "zabbix", "zabbix"])
+    psql("CREATE EXTENSION IF NOT EXISTS timescaledb", db="zabbix")
+    psql("SELECT timescaledb_pre_restore()", db="zabbix")
+    jobs = str(max(1, min(4, os.cpu_count() or 1)))
+    log = os.path.join(work, "pg_restore.log")
+    with open(log, "wb") as f:
+        p = run(["runuser", "-u", "postgres", "--", "pg_restore", "-j", jobs, "-d", "zabbix", os.path.join(work, "zabbix.dump")],
+                stdout=f, check=False)
+        f.write(p.stderr or b"")
+    psql("SELECT timescaledb_post_restore()", db="zabbix")
+    run(["runuser", "-u", "postgres", "--", "vacuumdb", "--analyze-only", "-q", "-d", "zabbix"], check=False)
+    with open(log, encoding="utf-8", errors="replace") as f:
+        errors = [l.strip() for l in f if "error:" in l.lower()]
+    if p.returncode != 0 or errors:
+        keep = os.path.join(WORK_BASE, "pg_restore-%d.log" % int(time.time()))
+        shutil.copyfile(log, keep)
+        say("   pg_restore reported %d error line(s); the log is kept in %s" % (len(errors), keep))
+        for l in errors[:5]:
+            say("     " + l)
+        say("   (TimescaleDB dumps can print a few harmless ones; check that Zabbix starts and shows data.)")
+
+
+def restore_argus(work, manifest):
+    say("==> restoring the Argus database")
+    ddir = manifest.get("argus_data_dir") or "/var/lib/argus-core"
+    os.makedirs(ddir, exist_ok=True)
+    for suffix in ("", "-wal", "-shm"):
+        try:
+            os.unlink(os.path.join(ddir, "argus.db" + suffix))
+        except FileNotFoundError:
+            pass
+    for suffix in ("", "-wal", "-shm"):
+        src = os.path.join(work, "argus.db" + suffix + ".gz")
+        if os.path.exists(src):
+            dst = os.path.join(ddir, "argus.db" + suffix)
+            with gzip.open(src, "rb") as fi, open(dst, "wb") as fo:
+                shutil.copyfileobj(fi, fo, 1 << 20)
+            os.chmod(dst, 0o600)
+            os.chown(dst, APP_UID, APP_UID)
+    os.chown(ddir, APP_UID, APP_UID)
+    key = os.path.join(ddir, "secret.key")
+    if os.path.exists(key):
+        os.chown(key, APP_UID, APP_UID)
+        os.chmod(key, 0o600)
+
+
+def start_services(parts):
+    say("==> starting services")
+    if "zabbix" in parts or "files" in parts:
+        run(["systemctl", "enable", "--now", "zabbix-server"], check=False)
+        run(["systemctl", "restart", "zabbix-server"], check=False)
+        run(["systemctl", "reload-or-restart", "nginx"], check=False)
+    if "argus" in parts or "files" in parts:
+        started = False
+        for unit in ("argus-core", "argus-updater"):
+            if unit_exists(unit + ".service"):
+                run(["systemctl", "enable", "--now", unit], check=False)
+                run(["systemctl", "restart", unit], check=False)
+                started = True
+        if not started:
+            run(["docker", "start", CONTAINER], check=False)
+            run(["docker", "start", UPDATER], check=False)
+    if "files" in parts:
+        p = run(["systemctl", "list-unit-files", "argus-*.timer", "--no-legend"], check=False)
+        timers = [l.split()[0] for l in p.stdout.decode().splitlines() if l.split()]
+        if timers:
+            run(["systemctl", "enable", "--now"] + timers, check=False)
+        if unit_exists("argus-backup.path"):
+            run(["systemctl", "enable", "--now", "argus-backup.path"], check=False)
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(prog="argus-restore")
+    ap.add_argument("action", choices=["inspect", "restore"])
+    ap.add_argument("archive")
+    ap.add_argument("--only", choices=["files", "zabbix", "argus"])
+    ap.add_argument("--yes", action="store_true", help="don't ask for confirmation")
+    ap.add_argument("--force", action="store_true", help="restore even when the versions differ")
+    ap.add_argument("--passphrase-file")
+    a = ap.parse_args(argv[1:])
+    if os.geteuid() != 0:
+        say("argus-restore: run as root")
+        return 1
+    archive = os.path.abspath(a.archive)
+    if not os.path.isfile(archive):
+        say("argus-restore: %s is not a file" % archive)
+        return 1
+    os.makedirs(WORK_BASE, mode=0o700, exist_ok=True)
+    work = tempfile.mkdtemp(prefix=".restore-", dir=WORK_BASE)
+    try:
+        manifest = unpack(archive, work, a.passphrase_file)
+        describe(manifest, archive)
+        problems = version_problems(manifest)
+        for p in problems:
+            say("!! " + p)
+        if a.action == "inspect":
+            say("The archive is complete and its checksums match.")
+            return 0
+        parts = [a.only] if a.only else ["files", "zabbix", "argus"]
+        if problems and not a.force:
+            say("Not restoring over a different version (install the same versions, or pass --force).")
+            return 1
+        say()
+        say("This replaces on this machine: %s." % ", ".join({"files": "the configuration, keys and certificates",
+                                                          "zabbix": "the Zabbix database", "argus": "the Argus database"}[p] for p in parts))
+        if not a.yes:
+            if input("Type RESTORE to go ahead: ").strip() != "RESTORE":
+                say("Nothing changed.")
+                return 1
+        stop_services(parts)
+        if "files" in parts:
+            restore_files(work, manifest)
+        if "zabbix" in parts:
+            restore_zabbix(work)
+        if "argus" in parts:
+            restore_argus(work, manifest)
+        start_services(parts)
+        say()
+        say("Restored. Next:")
+        say("  - This machine must answer where the old core did: its IP (probes dial it on :10051) and")
+        say("    the Argus address people use. Probes reconnect by themselves: their CA came back with it.")
+        say("  - Sign in to Argus and check Probes (all online within a few minutes) and Settings, Backups.")
+        say("  - The old core's hostname was %s; this one keeps its own." % manifest.get("host", "?"))
+        return 0
+    except Fail as e:
+        say("argus-restore: %s" % e)
+        return 1
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

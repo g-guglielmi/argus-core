@@ -1103,3 +1103,8 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 /* Account -> Quiet hours: from / to / still send on one row (wrapping on a phone). */
 .quiet-row { display: flex; flex-wrap: wrap; gap: 12px; }
 .quiet-row > * { flex: 1 1 140px; min-width: 0; }
+
+/* Settings -> Backups: two fields side by side (time + keep, user + domain), the SSH key box. */
+.bgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 14px; }
+.bkey { width: 100%; resize: none; font-size: 12px; line-height: 1.4; word-break: break-all; }
+.bstatus .set-hint + .set-hint { margin-top: 2px; }

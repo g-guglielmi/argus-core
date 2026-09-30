@@ -88,6 +88,7 @@ func (s *Server) noticeTick(ctx context.Context) {
 	probeConds, probeEvents := s.probeNotices(ctx)
 	conds = append(conds, probeConds...)
 	conds = append(conds, channelFailingNotices(channels, userChannels)...)
+	conds = append(conds, s.backupNotices(ctx)...)
 
 	// Conditions: track since when each holds; tell the ones old enough; forget the ones that ended.
 	keys := make([]string, 0, len(conds))
