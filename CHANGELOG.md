@@ -90,6 +90,8 @@ GitHub Release from the matching section below.
   reach) with how many sensors it holds; the others fold behind it, and **Show held** lists them under
   it, dimmed, each with the master it waits on. The status pills count them apart, so a dead device
   counts as one error (the Errors pill says on hover how many more are held).
+- Status pages do the same: a dead device is one row, the master's, "holding 4 other sensors", and
+  one error in the pills.
 - A collector no longer holds the ping's own sensors: packet loss or a slow response while the service
   is down is a network problem of its own, and alerts (and lists) as one.
 

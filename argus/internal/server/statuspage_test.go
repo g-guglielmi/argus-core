@@ -182,3 +182,28 @@ func TestReachabilityReading(t *testing.T) {
 	}
 }
 
+// A dead device is one row on a status page: the sensors its down master holds fold into the
+// master's row. One whose master isn't listed keeps its row.
+func TestFoldHeld(t *testing.T) {
+	ping := &heldRef{HostID: "10", ItemID: "100", Name: "Reachable (ICMP)"}
+	gone := &heldRef{HostID: "70", ItemID: "700", Name: "Uptime"} // a master not on the page
+	rows := []sensorRow{
+		{ItemID: "100", State: "error"},
+		{ItemID: "103", State: "error", HeldBy: ping},
+		{ItemID: "104", State: "warning", HeldBy: ping},
+		{ItemID: "105", State: "acked", HeldBy: ping},
+		{ItemID: "200", State: "error"},
+		{ItemID: "300", State: "error", HeldBy: gone},
+	}
+	kept, holds := foldHeld(rows)
+	var ids []string
+	for _, r := range kept {
+		ids = append(ids, r.ItemID)
+	}
+	if strings.Join(ids, ",") != "100,200,300" {
+		t.Fatalf("kept %v, want the master, the other host and the one whose master is off the page", ids)
+	}
+	if holds["100"] != 3 || len(holds) != 1 {
+		t.Fatalf("holds %v, want 3 on the ping", holds)
+	}
+}

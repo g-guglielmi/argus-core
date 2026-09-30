@@ -261,7 +261,8 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   reachability as a second master. - v0.5.9
 - [x] **Held sensors fold under their master in the lists** - while a master is down, the Overview and
   the Error / Warning lists show only the master (with how many it holds, the rest behind **Show
-  held**), and the pills count the held ones apart. - _(BE+FE)_ S
+  held**), and the pills count the held ones apart; status pages fold them into the master's row. -
+  _(BE+FE)_ S
 - [x] **Alerts for sensors that stop collecting** - a sensor that goes "not supported" (a failing
   collector, seen on a NUT sensor) or an agent/SNMP endpoint that stops answering raises no Zabbix
   problem, so nothing alerted. Argus raises its own problems for both, as errors (a sensor on

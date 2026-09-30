@@ -563,7 +563,7 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   holds (not one merely yet to report, so rows don't flicker) carries `held_by` (the master's host,
   item and label), the master's row `holds` (how many), and `/api/census` counts them as `held`
   instead of their state. The lists show the master and fold the held rows behind a **Show held**
-  toggle; the status pages still see every row's own state.
+  toggle. A status page folds them into the master's row (`foldHeld`, below).
 - **Argus-raised problems:** Zabbix raises no problem when monitoring itself stops, so Argus adds its
   own, shaped like Zabbix problems (event ids `argus-unsupported-<item>` / `argus-interface-<iface>`)
   and merged into the notifier's list, the Overview and the host page: a sensor **not supported** on
@@ -1301,7 +1301,10 @@ A read-only dashboard for a wall screen, opened with a secret link instead of a 
   reason (worst problem + severity), the reading, a 2 h trend series (the /api/spark data, up to 200
   rows), the priority and since, plus the counts. Problems with no sensor (an unreachable agent or
   SNMP endpoint) have a census row of their own ("Zabbix agent" / "SNMP", flagged synthetic: no chart,
-  can't be paused or hidden), so the pills, the Overview and the status pages all count them. No addresses, credentials or settings. The page is a standalone HTML
+  can't be paused or hidden), so the pills, the Overview and the status pages all count them. A
+  sensor a down master holds (`held_by`) folds into its master's row (`foldHeld`): the row says
+  "holding N other sensors" (`holds`), and the page's counts leave it out (`held` counts them), so a
+  dead device is one row and one error. One whose master isn't on the page keeps its own row. No addresses, credentials or settings. The page is a standalone HTML
   file (not the SPA), dark and sized for a TV: a slim bar with Errors / Warnings / Acknowledged pills
   that switch the list (the address decides: `#acknowledged` / `#warnings`, which survives the link's
   redirect, else errors, so a plain `/status` always opens on errors; the pills stay grey until the

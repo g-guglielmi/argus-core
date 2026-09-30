@@ -340,6 +340,7 @@ type statusCounts struct {
 	Error   int `json:"error"`
 	Warning int `json:"warning"`
 	Acked   int `json:"acked"`
+	Held    int `json:"held"` // sensors folded into their down master's row (foldHeld), in none of the above
 }
 
 // statusIssue is one row of the list: a sensor that isn't OK - the same rows, in the same order, as
@@ -357,6 +358,7 @@ type statusIssue struct {
 	Spark    []float64 `json:"spark,omitempty"`
 	Priority int       `json:"priority"`
 	Since    int64     `json:"since"`
+	Holds    int       `json:"holds,omitempty"` // on a master's row: how many other sensors it holds (foldHeld)
 }
 
 var issueRank = map[string]int{"error": 0, "warning": 1, "acked": 2}
@@ -409,6 +411,10 @@ func (s *Server) buildStatus(ctx context.Context, p store.StatusPage) (statusVie
 			rows = append(rows, sr)
 		}
 	}
+	rows, holds := foldHeld(rows)
+	for _, n := range holds {
+		v.Counts.Held += n
+	}
 	sort.SliceStable(rows, func(i, j int) bool {
 		a, b := rows[i], rows[j]
 		if a.Priority != b.Priority {
@@ -435,7 +441,7 @@ func (s *Server) buildStatus(ctx context.Context, p store.StatusPage) (statusVie
 			label = sr.Name
 		}
 		is := statusIssue{Kind: sr.State, Host: sr.HostName, Site: siteOf[sr.HostID], Sensor: label, Reason: sr.Reason,
-			Severity: sr.Severity, Priority: sr.Priority, Since: sr.Since, Spark: sparks[sr.ItemID]}
+			Severity: sr.Severity, Priority: sr.Priority, Since: sr.Since, Spark: sparks[sr.ItemID], Holds: holds[sr.ItemID]}
 		switch r, ok := reachabilityReading(sr.key, sr.Value); {
 		case ok:
 			is.Value = r
@@ -457,6 +463,27 @@ func (s *Server) buildStatus(ctx context.Context, p store.StatusPage) (statusVie
 		v.Issues = append(v.Issues, is)
 	}
 	return v, nil
+}
+
+// foldHeld folds the sensors a down master holds into that master's row, as the app's lists do: a
+// dead device is one row on the page, and one error, whatever it takes down with it. A held sensor
+// whose master isn't among rows (hidden, paused, or off the page) keeps its own row, so nothing goes
+// unseen. It returns the rows left and, per master item, how many it folded.
+func foldHeld(rows []sensorRow) ([]sensorRow, map[string]int) {
+	listed := make(map[string]bool, len(rows))
+	for _, sr := range rows {
+		listed[sr.ItemID] = true
+	}
+	holds := map[string]int{}
+	kept := make([]sensorRow, 0, len(rows))
+	for _, sr := range rows {
+		if sr.HeldBy != nil && listed[sr.HeldBy.ItemID] {
+			holds[sr.HeldBy.ItemID]++
+			continue
+		}
+		kept = append(kept, sr)
+	}
+	return kept, holds
 }
 
 // statusCovers reports whether a page scoped to sites (empty = all) shows host group g.
