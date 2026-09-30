@@ -19,3 +19,8 @@ deploy/probe-vm/files/probe.env.example text eol=lf
 deploy/core-vm/build-seed/user-data text eol=lf
 deploy/core-vm/build-seed/meta-data text eol=lf
 deploy/core-vm/files/argus.env.example text eol=lf
+# The core host's backup tools (no extension) and their units.
+deploy/core/host/argus-backup  text eol=lf
+deploy/core/host/argus-restore text eol=lf
+*.timer     text eol=lf
+*.path      text eol=lf
