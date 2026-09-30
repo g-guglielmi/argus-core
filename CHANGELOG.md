@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.5.19] - 2026-09-30
+
 **Uptime:**
 - Every host card opens with its uptime over 24 hours, 7 days and 30 days and a strip of its last 60
   checks, measured on its master sensor when that is an up/down one, else on its ping. An up/down
@@ -35,7 +37,7 @@ GitHub Release from the matching section below.
 - Containers need the SSH login to run `docker ps`, which on a standard install means the `docker`
   group: root-equivalent on that host (see docs/hosts/linux-ssh.md). Without it the container sensors
   read "not supported" with that reason instead of Down.
-- The collector script that reads them ships in the core's scripts and in the next probe release;
+- The collector script that reads them ships in the core's scripts and in `probe/v7.0.31-r13`;
   until a probe runs it the options have no effect.
 
 **Incident history:**
