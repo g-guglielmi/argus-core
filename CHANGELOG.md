@@ -13,9 +13,25 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
-**Core VM (next image):**
+## [core-vm/v0.1.2] - 2026-09-30
+
+Refresh of the core appliance golden image (review waves 2 and 3, and the collector work since
+v0.1.1). Existing VMs are not changed by this; it is what a new deployment gets. Argus and the
+updater are pre-pulled at build time from their `:latest` images (v0.5.18 and v0.2.10 today).
+
+**Security:**
 - Docker is installed from Docker's apt repository with the signing key's fingerprint pinned, instead
   of the `get.docker.com` script.
+- The Zabbix and TimescaleDB repository signing keys are checked against pinned fingerprints before
+  they are trusted (`setup-core.sh`, the same script the manual install runs).
+
+**Collectors** (the scripts the core runs for the devices it monitors itself):
+- XCP-NG certificate pinning, the SSH collector's input checks, and the controller certificate policy
+  for UniFi sweeps, including reading a controller's certificate so it can be pinned.
+- The collectors wipe their own command line once they have read it, so a password passed as an
+  argument doesn't linger in `ps`.
+- Every failed poll says why (the reason Argus shows on hover and in the alert), and a network scan
+  matched to a UniFi controller keeps the device MAC the controller knows.
 
 ## [0.5.18] - 2026-09-29
 
