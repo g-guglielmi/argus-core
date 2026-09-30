@@ -260,6 +260,20 @@ func (s *Server) serveIncidents(w http.ResponseWriter, r *http.Request, hostIDs 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	from := incidentWindow(r, defDays)
+	// Per-site visibility (scope.go): the fleet feed of a scoped user asks Zabbix for their hosts
+	// only, so other sites' incidents can't crowd theirs out of the row limit either.
+	if sc := scopeFrom(r); hostIDs == nil && !sc.all {
+		vis, err := s.visibleHosts(ctx, sc)
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
+			return
+		}
+		if len(vis) == 0 {
+			writeJSON(w, http.StatusOK, map[string]any{"from": from, "incidents": []incidentView{}})
+			return
+		}
+		hostIDs = visibleHostIDs(vis)
+	}
 	out, err := s.collectIncidents(ctx, hostIDs, incidentItems(r), from, incidentsMaxRows)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})

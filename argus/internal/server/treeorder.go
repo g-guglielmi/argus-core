@@ -25,7 +25,50 @@ func (s *Server) handleTreeOrder(w http.ResponseWriter, r *http.Request) {
 	if sets == nil {
 		sets = []store.OrderSet{}
 	}
+	if sc := scopeFrom(r); !sc.all { // per-site visibility (scope.go)
+		vis, err := s.visibleHosts(ctx, sc)
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			return
+		}
+		sets = scopedOrderSets(sc, vis, sets)
+	}
 	writeJSON(w, http.StatusOK, sets)
+}
+
+// scopedOrderSets keeps the orderings a scoped user's tree uses, naming only their hosts and groups.
+// A "sibling" set mixes both: a host id is numeric, a group path isn't.
+func scopedOrderSets(sc siteScope, vis map[string]bool, sets []store.OrderSet) []store.OrderSet {
+	out := make([]store.OrderSet, 0, len(sets))
+	for _, set := range sets {
+		if set.Scope != "" && !sc.showsGroup(set.Scope) {
+			continue
+		}
+		items := make([]string, 0, len(set.Items))
+		for _, it := range set.Items {
+			if isNumericID(it) {
+				if vis[it] {
+					items = append(items, it)
+				}
+			} else if sc.showsGroup(it) {
+				items = append(items, it)
+			}
+		}
+		out = append(out, store.OrderSet{Scope: set.Scope, Kind: set.Kind, Items: items})
+	}
+	return out
+}
+
+func isNumericID(v string) bool {
+	if v == "" {
+		return false
+	}
+	for _, c := range v {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // handleSetTreeOrder replaces the manual order of one sibling set - a parent's child groups or its
@@ -42,6 +85,10 @@ func (s *Server) handleSetTreeOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Kind != "group" && req.Kind != "host" && req.Kind != "sibling" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": `kind must be "group", "host" or "sibling"`})
+		return
+	}
+	if sc := scopeFrom(r); !sc.all && (req.Scope == "" || !sc.coversGroup(req.Scope)) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "you can only reorder inside your sites"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
@@ -64,6 +111,15 @@ func (s *Server) handleHiddenGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	if paths == nil {
 		paths = []string{}
+	}
+	if sc := scopeFrom(r); !sc.all {
+		kept := paths[:0]
+		for _, p := range paths {
+			if sc.showsGroup(p) {
+				kept = append(kept, p)
+			}
+		}
+		paths = kept
 	}
 	writeJSON(w, http.StatusOK, paths)
 }

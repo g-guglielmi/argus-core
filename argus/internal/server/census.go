@@ -240,6 +240,10 @@ func (s *Server) handleCensus(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), censusBuildTime)
 	defer cancel()
 	snap, err := s.census.get(ctx)
+	var all []sensorRow
+	if err == nil {
+		all, err = s.scopedRows(ctx, scopeFrom(r), snap.Rows) // per-site visibility (scope.go)
+	}
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
@@ -249,7 +253,7 @@ func (s *Server) handleCensus(w http.ResponseWriter, r *http.Request) {
 		counts[st] = 0
 	}
 	rows := []sensorRow{}
-	for _, sr := range snap.Rows {
+	for _, sr := range all {
 		counts[sr.State]++
 		if want[sr.State] {
 			rows = append(rows, sr)

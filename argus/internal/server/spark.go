@@ -37,6 +37,11 @@ func (s *Server) handleSpark(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
+	ids, err := s.scopedItemIDs(ctx, scopeFrom(r), ids) // per-site visibility (scope.go)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		return
+	}
 	out, err := s.sparkSeries(ctx, ids, rng.dur)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
@@ -113,6 +118,11 @@ func (s *Server) handleDaily(w http.ResponseWriter, r *http.Request) {
 	loc := time.FixedZone("viewer", -off*60)
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
+	ids, err := s.scopedItemIDs(ctx, scopeFrom(r), ids) // per-site visibility (scope.go)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		return
+	}
 
 	now := time.Now()
 	y, mo, d := now.In(loc).Date()

@@ -37,6 +37,20 @@ func (s *Server) handleProblems(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return
 	}
+	if sc := scopeFrom(r); !sc.all { // per-site visibility (scope.go)
+		vis, err := s.visibleHosts(ctx, sc)
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			return
+		}
+		kept := out[:0]
+		for _, p := range out {
+			if vis[p.HostID] {
+				kept = append(kept, p)
+			}
+		}
+		out = kept
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 

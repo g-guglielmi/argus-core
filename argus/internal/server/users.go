@@ -24,18 +24,35 @@ func validRole(role string) bool {
 }
 
 type adminUser struct {
-	ID         int64  `json:"id"`
-	Email      string `json:"email"`
-	Name       string `json:"name"`
-	Surname    string `json:"surname"`
-	Role       string `json:"role"`
-	MFAEnabled bool   `json:"mfa_enabled"`
-	Passkeys   int    `json:"passkeys"`
-	Disabled   bool   `json:"disabled"`
+	ID         int64    `json:"id"`
+	Email      string   `json:"email"`
+	Name       string   `json:"name"`
+	Surname    string   `json:"surname"`
+	Role       string   `json:"role"`
+	MFAEnabled bool     `json:"mfa_enabled"`
+	Passkeys   int      `json:"passkeys"`
+	Disabled   bool     `json:"disabled"`
+	Sites      []string `json:"sites"` // the sites a helpdesk or viewer account sees; empty = all (scope.go)
 }
 
 func toAdminUser(u store.User) adminUser {
-	return adminUser{ID: u.ID, Email: u.Email, Name: u.Name, Surname: u.Surname, Role: u.Role, MFAEnabled: u.TOTPEnabled, Disabled: u.Disabled}
+	return adminUser{ID: u.ID, Email: u.Email, Name: u.Name, Surname: u.Surname, Role: u.Role, MFAEnabled: u.TOTPEnabled, Disabled: u.Disabled, Sites: nonNilSites(u.Sites)}
+}
+
+func nonNilSites(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
+// userSites is the site list to store for a role: an admin always sees every site, so an admin keeps
+// none (a later demotion then starts from every site, not from a list nobody saw).
+func userSites(role string, sites []string) []string {
+	if role == "admin" {
+		return nil
+	}
+	return cleanSites(sites)
 }
 
 func decode(w http.ResponseWriter, r *http.Request, dst any) bool {
@@ -72,11 +89,12 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Email    string `json:"email"`
-		Name     string `json:"name"`
-		Surname  string `json:"surname"`
-		Role     string `json:"role"`
-		Password string `json:"password"`
+		Email    string   `json:"email"`
+		Name     string   `json:"name"`
+		Surname  string   `json:"surname"`
+		Role     string   `json:"role"`
+		Password string   `json:"password"`
+		Sites    []string `json:"sites"`
 	}
 	if !decode(w, r, &req) {
 		return
@@ -102,7 +120,12 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	writeJSON(w, http.StatusCreated, adminUser{ID: id, Email: req.Email, Name: req.Name, Surname: req.Surname, Role: req.Role})
+	sites := userSites(req.Role, req.Sites)
+	if err := s.st.SetUserSites(r.Context(), id, sites); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	writeJSON(w, http.StatusCreated, adminUser{ID: id, Email: req.Email, Name: req.Name, Surname: req.Surname, Role: req.Role, Sites: nonNilSites(sites)})
 }
 
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -111,10 +134,11 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Email   string `json:"email"`
-		Name    string `json:"name"`
-		Surname string `json:"surname"`
-		Role    string `json:"role"`
+		Email   string    `json:"email"`
+		Name    string    `json:"name"`
+		Surname string    `json:"surname"`
+		Role    string    `json:"role"`
+		Sites   *[]string `json:"sites"` // absent = unchanged
 	}
 	if !decode(w, r, &req) {
 		return
@@ -148,7 +172,19 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	writeJSON(w, http.StatusOK, adminUser{ID: id, Email: req.Email, Name: req.Name, Surname: req.Surname, Role: req.Role, Disabled: target.Disabled})
+	sites := target.Sites
+	if req.Sites != nil {
+		sites = *req.Sites
+	}
+	sites = userSites(req.Role, sites)
+	if err := s.st.SetUserSites(r.Context(), id, sites); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if !sameSites(target.Sites, sites) {
+		s.logger.Info("user sites changed", "user", id, "sites", sites)
+	}
+	writeJSON(w, http.StatusOK, adminUser{ID: id, Email: req.Email, Name: req.Name, Surname: req.Surname, Role: req.Role, Disabled: target.Disabled, Sites: nonNilSites(sites)})
 }
 
 // handleSetUserDisabled suspends or re-enables an account. Guarded so an admin can't disable
@@ -289,4 +325,16 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		_ = s.st.DeleteUserSessionsExcept(r.Context(), caller.ID, auth.HashToken(raw))
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func sameSites(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

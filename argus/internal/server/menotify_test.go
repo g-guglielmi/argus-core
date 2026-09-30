@@ -81,21 +81,6 @@ func TestMatchingUserChannels(t *testing.T) {
 	}
 }
 
-func TestAnyEmailToUsers(t *testing.T) {
-	no := []store.NotifyChannel{
-		{Type: "telegram"},
-		{Type: "email", Config: map[string]string{"recipients": "fixed"}},
-		{Type: "email", Config: nil},
-	}
-	if anyEmailToUsers(no) {
-		t.Fatalf("did not expect a users-mode email channel")
-	}
-	yes := append(no, store.NotifyChannel{Type: "email", Config: map[string]string{"recipients": "users"}})
-	if !anyEmailToUsers(yes) {
-		t.Fatalf("expected a users-mode email channel to be detected")
-	}
-}
-
 func TestSendEmailToUsersNoRecipients(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	c := store.NotifyChannel{Type: "email", Config: map[string]string{"recipients": "users"}}

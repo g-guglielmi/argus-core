@@ -237,6 +237,15 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, hv)
 	}
+	if sc := scopeFrom(r); !sc.all { // per-site visibility (scope.go)
+		kept := out[:0]
+		for _, hv := range out {
+			if sc.sees(hv.Groups) {
+				kept = append(kept, hv)
+			}
+		}
+		out = kept
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 

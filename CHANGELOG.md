@@ -43,6 +43,16 @@ GitHub Release from the matching section below.
 - Add-on options are now checked like device-class options before they reach the probe: the DNS
   add-on's names and port, and the TCP ports list.
 
+**Per-site visibility:**
+- A helpdesk or viewer account can be limited to some sites in **Users, Sites** (a site covers its
+  subgroups; empty means every site; an admin always sees everything). Such a user sees only those
+  sites' hosts and sensors everywhere (the tree, the Overview and pills, problems, triggers, history,
+  search, charts and probes) and can act only on them; anything else answers as if it didn't exist.
+  The server enforces it on every request.
+- Alerts follow: their personal channels serve only their sites, an email channel that goes to every
+  registered user sends them only their sites' alerts, and news about the whole install isn't sent to
+  them. The labels above the cross-site lists name their sites.
+
 **Charts:**
 - An interface's traffic chart shows how much it moved over the range beside the range tabs ("In
   1.24 TB · Out 301 GB over 30 days"), and so does a VM's disk read and write chart.

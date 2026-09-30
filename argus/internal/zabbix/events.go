@@ -111,3 +111,47 @@ func (c *Client) HostItemID(ctx context.Context, hostID, key string) (string, er
 	}
 	return items[0].ItemID, nil
 }
+
+// EventHostIDs returns the hosts each event is on (an event of a trigger over several hosts has
+// several), for the events asked for.
+func (c *Client) EventHostIDs(ctx context.Context, eventIDs []string) (map[string][]string, error) {
+	out := map[string][]string{}
+	if len(eventIDs) == 0 {
+		return out, nil
+	}
+	params := map[string]any{
+		"output":      []string{"eventid"},
+		"eventids":    eventIDs,
+		"selectHosts": []string{"hostid"},
+	}
+	var rows []struct {
+		EventID string `json:"eventid"`
+		Hosts   []struct {
+			HostID string `json:"hostid"`
+		} `json:"hosts"`
+	}
+	if err := c.call(ctx, "event.get", params, true, &rows); err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		for _, h := range r.Hosts {
+			out[r.EventID] = append(out[r.EventID], h.HostID)
+		}
+	}
+	return out, nil
+}
+
+// InterfaceHostID returns the host an interface belongs to ("" when there is none).
+func (c *Client) InterfaceHostID(ctx context.Context, interfaceID string) (string, error) {
+	params := map[string]any{"output": []string{"interfaceid", "hostid"}, "interfaceids": interfaceID}
+	var rows []struct {
+		HostID string `json:"hostid"`
+	}
+	if err := c.call(ctx, "hostinterface.get", params, true, &rows); err != nil {
+		return "", err
+	}
+	if len(rows) == 0 {
+		return "", nil
+	}
+	return rows[0].HostID, nil
+}

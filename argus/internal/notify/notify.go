@@ -30,6 +30,7 @@ type Event struct {
 	Host      string    // host display name
 	Name      string    // trigger / problem name
 	Site      string    // primary site (host group) for context, may be ""
+	Groups    []string  // every host group of the host, for routing (who an email-to-users channel reaches); not shown
 	When      time.Time // when the problem started (problem) or cleared (recovery)
 	Value     string    // current reading incl. units, e.g. "96 %" (optional)
 	Threshold string    // parsed trigger threshold, e.g. ">90" (optional)

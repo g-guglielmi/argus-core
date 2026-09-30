@@ -36,7 +36,10 @@ type User struct {
 	Disabled     bool   // true = account suspended; cannot sign in
 	Landing      string // preferred landing view on a fresh visit: 'overview' | 'errors'
 	Advanced     bool   // show power-user controls in the monitoring tree (per-user opt-in)
-	CreatedAt    time.Time
+	// Sites limits a helpdesk or viewer account to these host groups (a root covers its subgroups);
+	// empty = every site. An admin always sees everything.
+	Sites     []string
+	CreatedAt time.Time
 }
 
 type Store struct {
@@ -521,6 +524,9 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 	if err := s.ensureColumn("users", "advanced INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	if err := s.ensureColumn("users", "sites TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	if err := s.ensureColumn("sessions", "last_seen INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
@@ -734,7 +740,7 @@ func (s *Store) CreateUser(ctx context.Context, u User) (int64, error) {
 	return res.LastInsertId()
 }
 
-const userColumns = `id,email,name,surname,password_hash,role,totp_secret,totp_enabled,disabled,landing,advanced,created_at`
+const userColumns = `id,email,name,surname,password_hash,role,totp_secret,totp_enabled,disabled,landing,advanced,created_at,sites`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (*User, error) {
 	return s.scanUser(s.db.QueryRowContext(ctx,
@@ -754,7 +760,8 @@ func (s *Store) scanUserRow(row rowScanner) (*User, error) {
 	var u User
 	var created int64
 	var totpEnabled, disabled, advanced int
-	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Surname, &u.PasswordHash, &u.Role, &u.TOTPSecret, &totpEnabled, &disabled, &u.Landing, &advanced, &created)
+	var sites string
+	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Surname, &u.PasswordHash, &u.Role, &u.TOTPSecret, &totpEnabled, &disabled, &u.Landing, &advanced, &created, &sites)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -765,6 +772,7 @@ func (s *Store) scanUserRow(row rowScanner) (*User, error) {
 	u.TOTPEnabled = totpEnabled != 0
 	u.Disabled = disabled != 0
 	u.Advanced = advanced != 0
+	u.Sites = decodeSites(sites)
 	u.CreatedAt = time.Unix(created, 0)
 	return &u, nil
 }
@@ -791,6 +799,12 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 
 func (s *Store) UpdateUserProfile(ctx context.Context, id int64, email, name, surname, role string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE users SET email=?,name=?,surname=?,role=? WHERE id=?`, email, name, surname, role, id)
+	return err
+}
+
+// SetUserSites limits an account to these sites (empty = every site).
+func (s *Store) SetUserSites(ctx context.Context, id int64, sites []string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET sites=? WHERE id=?`, encodeSites(sites), id)
 	return err
 }
 

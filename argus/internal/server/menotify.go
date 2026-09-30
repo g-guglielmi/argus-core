@@ -138,6 +138,10 @@ func (s *Server) handleCreateMyChannel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
 		return
 	}
+	if msg := outsideSites(scopeFrom(r), ch.Sites); msg != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+		return
+	}
 	ch.UserID = caller.ID
 	id, err := s.st.CreateUserNotifyChannel(r.Context(), ch)
 	if err != nil {
@@ -161,6 +165,10 @@ func (s *Server) handleUpdateMyChannel(w http.ResponseWriter, r *http.Request) {
 	req.Config = keepChannelSecrets(req.Config, existing.Config)
 	ch, msg := req.validate()
 	if msg != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+		return
+	}
+	if msg := outsideSites(scopeFrom(r), ch.Sites); msg != "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
 		return
 	}

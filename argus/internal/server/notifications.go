@@ -346,9 +346,12 @@ func (s *Server) handleNotifySites(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	sc := scopeFrom(r) // per-site visibility (scope.go): a scoped user picks among their own sites
 	out := make([]string, 0, len(seen))
 	for name := range seen {
-		out = append(out, name)
+		if sc.coversGroup(name) {
+			out = append(out, name)
+		}
 	}
 	sort.Strings(out)
 	writeJSON(w, http.StatusOK, out)

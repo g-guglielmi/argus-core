@@ -52,6 +52,7 @@ type Server struct {
 	digests       digestCache       // tag -> digest, handed out with every update so the updater can verify the pull
 	census        *censusCache      // the sensor census, kept warm in memory (census.go)
 	hb            heartbeat         // the outside monitor's ping (heartbeat.go)
+	hostGroups    hostGroupsCache   // host -> group names, for per-site visibility (scope.go)
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {
@@ -171,28 +172,28 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// device classes (§C): read the catalog (any user); create a host from a class (admin only).
 	mux.HandleFunc("GET /api/classes", auth.RequireAuth(s.handleClasses))
 	mux.HandleFunc("POST /api/hosts", auth.RequireRole("admin", s.handleCreateHost))
-	mux.HandleFunc("GET /api/hosts/{id}/items", auth.RequireAuth(s.handleHostItems))
-	mux.HandleFunc("GET /api/hosts/{id}/problems", auth.RequireAuth(s.handleHostProblems))
-	mux.HandleFunc("GET /api/items/{id}/history", auth.RequireAuth(s.handleItemHistory))
-	mux.HandleFunc("GET /api/items/{id}/availability", auth.RequireAuth(s.handleItemAvailability))
-	mux.HandleFunc("GET /api/hosts/{id}/availability", auth.RequireAuth(s.handleHostAvailability))
-	mux.HandleFunc("GET /api/hosts/{id}/incidents", auth.RequireAuth(s.handleHostIncidents))
+	mux.HandleFunc("GET /api/hosts/{id}/items", auth.RequireAuth(s.scopedHost(s.handleHostItems)))
+	mux.HandleFunc("GET /api/hosts/{id}/problems", auth.RequireAuth(s.scopedHost(s.handleHostProblems)))
+	mux.HandleFunc("GET /api/items/{id}/history", auth.RequireAuth(s.scopedItem(s.handleItemHistory)))
+	mux.HandleFunc("GET /api/items/{id}/availability", auth.RequireAuth(s.scopedItem(s.handleItemAvailability)))
+	mux.HandleFunc("GET /api/hosts/{id}/availability", auth.RequireAuth(s.scopedHost(s.handleHostAvailability)))
+	mux.HandleFunc("GET /api/hosts/{id}/incidents", auth.RequireAuth(s.scopedHost(s.handleHostIncidents)))
 	mux.HandleFunc("GET /api/incidents", auth.RequireAuth(s.handleIncidents))
 	// states: acknowledge (any user); pause = Zabbix enable/disable, hide = Argus suppression
 	// (both helpdesk/admin)
-	mux.HandleFunc("POST /api/events/{id}/ack", auth.RequireAuth(s.handleAckEvent))
-	mux.HandleFunc("DELETE /api/events/{id}/ack", auth.RequireAuth(s.handleUnackEvent))
-	mux.HandleFunc("POST /api/hosts/{id}/pause", auth.RequireRoles(s.zbxEnableHandler("host", false), "admin", "helpdesk"))
-	mux.HandleFunc("DELETE /api/hosts/{id}/pause", auth.RequireRoles(s.zbxEnableHandler("host", true), "admin", "helpdesk"))
-	mux.HandleFunc("POST /api/items/{id}/pause", auth.RequireRoles(s.zbxEnableHandler("item", false), "admin", "helpdesk"))
-	mux.HandleFunc("DELETE /api/items/{id}/pause", auth.RequireRoles(s.zbxEnableHandler("item", true), "admin", "helpdesk"))
-	mux.HandleFunc("POST /api/items/{id}/mute", auth.RequireRoles(s.muteHandler(true), "admin", "helpdesk"))
-	mux.HandleFunc("DELETE /api/items/{id}/mute", auth.RequireRoles(s.muteHandler(false), "admin", "helpdesk"))
-	mux.HandleFunc("POST /api/hosts/{id}/hide", auth.RequireRoles(s.hideHandler("host"), "admin", "helpdesk"))
-	mux.HandleFunc("DELETE /api/hosts/{id}/hide", auth.RequireRoles(s.unhideHandler("host"), "admin", "helpdesk"))
-	mux.HandleFunc("POST /api/items/{id}/hide", auth.RequireRoles(s.hideHandler("item"), "admin", "helpdesk"))
-	mux.HandleFunc("DELETE /api/items/{id}/hide", auth.RequireRoles(s.unhideHandler("item"), "admin", "helpdesk"))
-	mux.HandleFunc("POST /api/items/{id}/priority", auth.RequireRoles(s.handleItemPriority, "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/events/{id}/ack", auth.RequireAuth(s.scopedEvent(s.handleAckEvent)))
+	mux.HandleFunc("DELETE /api/events/{id}/ack", auth.RequireAuth(s.scopedEvent(s.handleUnackEvent)))
+	mux.HandleFunc("POST /api/hosts/{id}/pause", auth.RequireRoles(s.scopedHost(s.zbxEnableHandler("host", false)), "admin", "helpdesk"))
+	mux.HandleFunc("DELETE /api/hosts/{id}/pause", auth.RequireRoles(s.scopedHost(s.zbxEnableHandler("host", true)), "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/items/{id}/pause", auth.RequireRoles(s.scopedItem(s.zbxEnableHandler("item", false)), "admin", "helpdesk"))
+	mux.HandleFunc("DELETE /api/items/{id}/pause", auth.RequireRoles(s.scopedItem(s.zbxEnableHandler("item", true)), "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/items/{id}/mute", auth.RequireRoles(s.scopedItem(s.muteHandler(true)), "admin", "helpdesk"))
+	mux.HandleFunc("DELETE /api/items/{id}/mute", auth.RequireRoles(s.scopedItem(s.muteHandler(false)), "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/hosts/{id}/hide", auth.RequireRoles(s.scopedHost(s.hideHandler("host")), "admin", "helpdesk"))
+	mux.HandleFunc("DELETE /api/hosts/{id}/hide", auth.RequireRoles(s.scopedHost(s.unhideHandler("host")), "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/items/{id}/hide", auth.RequireRoles(s.scopedItem(s.hideHandler("item")), "admin", "helpdesk"))
+	mux.HandleFunc("DELETE /api/items/{id}/hide", auth.RequireRoles(s.scopedItem(s.unhideHandler("item")), "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/items/{id}/priority", auth.RequireRoles(s.scopedItem(s.handleItemPriority), "admin", "helpdesk"))
 
 	// tree groups (Zabbix host groups): list is read-only; create/rename/delete + host membership
 	// are config writes, so helpdesk/admin only.
@@ -204,14 +205,14 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("PUT /api/tree/order", auth.RequireRoles(s.handleSetTreeOrder, "admin", "helpdesk"))
 	mux.HandleFunc("GET /api/tree/hidden", auth.RequireAuth(s.handleHiddenGroups))
 	mux.HandleFunc("PUT /api/tree/hidden", auth.RequireRoles(s.handleSetHiddenGroup, "admin"))
-	mux.HandleFunc("POST /api/hosts/{id}/groups", auth.RequireRoles(s.handleSetHostGroups, "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/hosts/{id}/groups", auth.RequireRoles(s.scopedHost(s.handleSetHostGroups), "admin", "helpdesk"))
 
 	// host settings editor: read the identity + interfaces (any user), reconcile-save them (config write).
-	mux.HandleFunc("GET /api/hosts/{id}/config", auth.RequireAuth(s.handleHostConfig))
-	mux.HandleFunc("PATCH /api/hosts/{id}/config", auth.RequireRoles(s.handleUpdateHostConfig, "admin", "helpdesk"))
+	mux.HandleFunc("GET /api/hosts/{id}/config", auth.RequireAuth(s.scopedHost(s.handleHostConfig)))
+	mux.HandleFunc("PATCH /api/hosts/{id}/config", auth.RequireRoles(s.scopedHost(s.handleUpdateHostConfig), "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/hosts/{id}/class", auth.RequireRole("admin", s.handleChangeHostClass))
-	mux.HandleFunc("POST /api/hosts/{id}/proxy", auth.RequireRoles(s.handleSetHostProxy, "admin", "helpdesk"))
-	mux.HandleFunc("POST /api/hosts/{id}/discover", auth.RequireRoles(s.handleDiscoverNow, "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/hosts/{id}/proxy", auth.RequireRoles(s.scopedHost(s.handleSetHostProxy), "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/hosts/{id}/discover", auth.RequireRoles(s.scopedHost(s.handleDiscoverNow), "admin", "helpdesk"))
 
 	// network auto-discovery (§B): queue a subnet scan on a probe, review its results, adopt or
 	// ignore them (adoption itself goes through POST /api/hosts). Admin only.
@@ -232,9 +233,9 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("PUT /api/thresholds/default", auth.RequireRole("admin", s.handleSetThresholdDefault))
 
 	// per-proxy SNMP defaults (PRTG-style inheritance): read (any user), save + propagate (config write).
-	mux.HandleFunc("GET /api/proxies/{id}/snmp", auth.RequireAuth(s.handleGetProxySNMP))
-	mux.HandleFunc("PUT /api/proxies/{id}/snmp", auth.RequireRoles(s.handleSetProxySNMP, "admin", "helpdesk"))
-	mux.HandleFunc("POST /api/proxies/{id}/snmp/adopt", auth.RequireRoles(s.handleAdoptProxySNMP, "admin", "helpdesk"))
+	mux.HandleFunc("GET /api/proxies/{id}/snmp", auth.RequireAuth(s.scopedProxy(s.handleGetProxySNMP)))
+	mux.HandleFunc("PUT /api/proxies/{id}/snmp", auth.RequireRoles(s.scopedProxy(s.handleSetProxySNMP), "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/proxies/{id}/snmp/adopt", auth.RequireRoles(s.scopedProxy(s.handleAdoptProxySNMP), "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/proxies/reconcile", auth.RequireRole("admin", s.handleReconcileProxies))
 	mux.HandleFunc("DELETE /api/proxies/{id}", auth.RequireRole("admin", s.handleDeleteProxy))
 
@@ -438,17 +439,22 @@ type loginRequest struct {
 }
 
 type userResponse struct {
-	Email      string `json:"email"`
-	Name       string `json:"name"`
-	Surname    string `json:"surname"`
-	Role       string `json:"role"`
-	MFAEnabled bool   `json:"mfa_enabled"`
-	Landing    string `json:"landing"`
-	Advanced   bool   `json:"advanced"`
+	Email      string   `json:"email"`
+	Name       string   `json:"name"`
+	Surname    string   `json:"surname"`
+	Role       string   `json:"role"`
+	MFAEnabled bool     `json:"mfa_enabled"`
+	Landing    string   `json:"landing"`
+	Advanced   bool     `json:"advanced"`
+	Sites      []string `json:"sites"` // the sites this account sees; empty = every site (scope.go)
 }
 
 func toUserResponse(u *store.User) userResponse {
-	return userResponse{Email: u.Email, Name: u.Name, Surname: u.Surname, Role: u.Role, MFAEnabled: u.TOTPEnabled, Landing: normalizeLanding(u.Landing), Advanced: u.Advanced}
+	sites := []string{}
+	if sc := scopeOf(u); !sc.all {
+		sites = sc.sites
+	}
+	return userResponse{Email: u.Email, Name: u.Name, Surname: u.Surname, Role: u.Role, MFAEnabled: u.TOTPEnabled, Landing: normalizeLanding(u.Landing), Advanced: u.Advanced, Sites: sites}
 }
 
 // normalizeLanding coerces a stored landing value to a known option (defensive against a blank

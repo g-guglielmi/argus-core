@@ -43,6 +43,23 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	hosts, _ := s.zbx.Hosts(ctx)
 	ips, _ := s.zbx.HostIPs(ctx)
 	items, _ := s.zbx.AllItems(ctx)
+	// Per-site visibility (scope.go): only the user's hosts, their sensors and their groups.
+	sc := scopeFrom(r)
+	inScope := map[string]bool{}
+	if !sc.all {
+		kept := hosts[:0]
+		for _, h := range hosts {
+			groups := make([]string, 0, len(h.Groups))
+			for _, g := range h.Groups {
+				groups = append(groups, g.Name)
+			}
+			if sc.sees(groups) {
+				kept = append(kept, h)
+				inScope[h.HostID] = true
+			}
+		}
+		hosts = kept
+	}
 	hiddenPaths, _ := s.st.HiddenGroups(ctx)
 	hidden := make(map[string]bool, len(hiddenPaths))
 	for _, p := range hiddenPaths {
@@ -76,7 +93,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	var groupHits []ranked
 	for _, h := range hosts {
 		for _, g := range h.Groups {
-			if seenGroup[g.Name] || hidden[g.Name] {
+			if seenGroup[g.Name] || hidden[g.Name] || !sc.showsGroup(g.Name) {
 				continue
 			}
 			rk := matchRank(strings.ToLower(g.Name), q)
@@ -101,6 +118,9 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			hostID, hostName = it.Hosts[0].HostID, it.Hosts[0].Name
+		}
+		if !sc.all && !inScope[hostID] {
+			continue
 		}
 		sensorHits = append(sensorHits, ranked{searchResult{Type: "sensor", Label: it.Name, Sub: hostName, HostID: hostID, ItemID: it.ItemID}, rk})
 	}

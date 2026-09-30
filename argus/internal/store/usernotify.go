@@ -155,22 +155,3 @@ func (s *Store) RecordUserNotifyDelivery(ctx context.Context, id int64, sendErr 
 	_, err := s.db.ExecContext(ctx, `UPDATE user_notify_channels SET last_error=?, last_error_at=? WHERE id=?`, msg, now, id)
 	return err
 }
-
-// NotifyUserEmails returns the emails of all active (non-disabled) users, for an email channel that
-// delivers to registered users rather than a fixed address.
-func (s *Store) NotifyUserEmails(ctx context.Context) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT email FROM users WHERE disabled=0 ORDER BY email`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var e string
-		if err := rows.Scan(&e); err != nil {
-			return nil, err
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
-}

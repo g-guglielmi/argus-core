@@ -663,6 +663,10 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 /* Multi-select site scope: a compact dropdown that summarizes the selection and opens a scrollable,
    filterable checklist - scales to many host-groups. Empty selection ("All sites") = every site. */
 .msel { position: relative; max-width: 320px; }
+/* Users: the sites a helpdesk or viewer account sees (a compact site picker in its cell / the add form). */
+.usites .msel { min-width: 150px; max-width: 220px; }
+.usites .msel-btn { padding: 4px 8px; font-size: 13px; }
+.utable td.usites { white-space: normal; }
 .msel-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 9px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--elevated); color: var(--text); font: inherit; cursor: pointer; text-align: left; }
 .msel-btn:hover { border-color: var(--accent); }
 .msel-sum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

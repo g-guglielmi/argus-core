@@ -10,8 +10,8 @@ import { Button, Card, Field, Banner, Badge, CopyButton, Switch, Select, Combobo
 import { useConfirm, usePrompt, useAlert } from './dialog'
 import { useToast } from './toast'
 
-type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; landing?: 'overview' | 'errors'; advanced?: boolean }
-type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean }
+type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; landing?: 'overview' | 'errors'; advanced?: boolean; sites?: string[] }
+type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean; sites?: string[] }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number; unacked?: boolean }
 type Group = { id: string; name: string; hosts: number }
@@ -1259,6 +1259,7 @@ function VersionAbout() {
 }
 
 function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }: { me: Me; onMe: (m: Me) => void; onLogout: () => void; passkeysAvailable: boolean; probeEnroll: boolean; enter?: boolean }) {
+  SCOPE.sites = me.sites || []
   // Admin-only views can't be restored from a shared/stale URL by a non-admin.
   const clampView = (v: View): View => ((v === 'users' || v === 'settings' || v === 'discovery' || v === 'thresholds' || v === 'statuspages') && me.role !== 'admin' ? 'overview' : v)
   // A fresh visit to the bare "/" (no query) honours the user's landing preference; any deep
@@ -1959,7 +1960,7 @@ function chanFieldProps(f: ChField, config: Record<string, string>) {
 // selection and opens a scrollable, filterable, indented checklist of host-groups. Groups are
 // '/'-hierarchical, so selecting a root (site1) covers its subgroups (which then show as inherited).
 // Empty selection ("All sites") means every site. Used by the admin and personal channel editors.
-function SitePicker({ options, value, onChange }: { options: string[]; value: string[]; onChange: (v: string[]) => void }) {
+function SitePicker({ options, value, onChange, allLabel = 'All sites' }: { options: string[]; value: string[]; onChange: (v: string[]) => void; allLabel?: string }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const ref = useRef<HTMLDivElement>(null)
@@ -1980,7 +1981,7 @@ function SitePicker({ options, value, onChange }: { options: string[]; value: st
     onChange(value.filter((x) => !x.startsWith(p + '/')).concat(p))
   }
   const all = value.length === 0
-  const summary = all ? 'All sites' : value.length <= 2 ? value.join(', ') : `${value.length} sites selected`
+  const summary = all ? allLabel : value.length <= 2 ? value.join(', ') : `${value.length} sites selected`
   const needle = q.trim().toLowerCase()
   const shown = needle ? options.filter((o) => o.toLowerCase().includes(needle)) : options
 
@@ -1997,7 +1998,7 @@ function SitePicker({ options, value, onChange }: { options: string[]; value: st
           )}
           <div className="msel-list">
             <button type="button" role="option" aria-selected={all} className={'msel-opt' + (all ? ' on' : '')} onClick={() => onChange([])}>
-              <span className="msel-check">{all ? '✓' : ''}</span>All sites
+              <span className="msel-check">{all ? '✓' : ''}</span>{allLabel}
             </button>
             {shown.map((s) => {
               const on = value.includes(s)
@@ -2469,7 +2470,7 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
       <ChanSection title="What you receive">
         <div className="chan-row">
           <div className="chan-field chan-wide"><span className="flabel">Sites</span>
-            <SitePicker options={sites} value={selSites} onChange={setSelSites} />
+            <SitePicker options={sites} value={selSites} onChange={setSelSites} allLabel={SCOPE.sites.length ? 'All your sites' : 'All sites'} />
           </div>
           <label className="chan-field"><span className="flabel">Alerts</span>
             <Select value={alerts ? minSev : 0} onChange={(e) => { const v = Number(e.target.value); setAlerts(v !== 0); if (v) setMinSev(v) }} title="Only problems at or above this severity reach you">
@@ -5916,6 +5917,11 @@ function GroupEditor({ current, groups, onSave, onCancel }: { current: string[];
 // Argus's timezone and time format, for absolute times; HeaderClock keeps it current.
 const CLOCK: { tz?: string; h24: boolean } = { h24: true }
 
+// The signed-in user's sites (empty = every site), for the labels that name what a list covers. The
+// server already filters everything to them; AppShell keeps this current.
+const SCOPE: { sites: string[] } = { sites: [] }
+function watchEyebrow(): string { return SCOPE.sites.length ? `Watch · ${sitesLabel(SCOPE.sites)}` : 'Watch · all sites' }
+
 // fmtWhen renders a unix time in Argus's timezone: "29 Sep, 14:05".
 function fmtWhen(unix: number): string {
   const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: !CLOCK.h24, timeZone: CLOCK.tz }
@@ -6576,7 +6582,7 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
   return (
     <div className="panel">
       <div className="phead">
-        <PanelTitle eyebrow="Watch · all sites">{attention ? 'Active problems' : `${STATE_LABEL[filter]} sensors`}</PanelTitle>
+        <PanelTitle eyebrow={watchEyebrow()}>{attention ? 'Active problems' : `${STATE_LABEL[filter]} sensors`}</PanelTitle>
         <span className="hint">{rows.length} sensor{rows.length === 1 ? '' : 's'}</span>
         <div className="tools">
           {attention
@@ -6663,7 +6669,7 @@ function HistoryView({ goHost }: { goHost: (h: string) => void }) {
   return (
     <div className="panel">
       <div className="phead">
-        <PanelTitle eyebrow="Watch · all sites">Incidents</PanelTitle>
+        <PanelTitle eyebrow={watchEyebrow()}>Incidents</PanelTitle>
         <span className="hint">{rows ? `${shown.length} in ${period}${live ? ` · ${live} still open` : ''}` : ''}</span>
         <div className="tools hist-tools">
           <input className="input hist-q" placeholder="Host, sensor or reason" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter incidents" />
@@ -6699,7 +6705,7 @@ function TriggersView({ goHost }: { goHost: (h: string) => void }) {
   return (
     <div className="panel">
       <div className="phead">
-        <PanelTitle eyebrow="Watch · all sites">Triggers</PanelTitle>
+        <PanelTitle eyebrow={watchEyebrow()}>Triggers</PanelTitle>
         <span className="hint">{mode === 'firing' ? `${firing.length} firing` : `${(rows || []).length} trigger${(rows || []).length === 1 ? '' : 's'} · ${hostIds.length} host${hostIds.length === 1 ? '' : 's'}`}</span>
         <div className="tools"><div className="seg">
           <button className={mode === 'firing' ? 'on' : ''} onClick={() => setMode('firing')}>Firing</button>
@@ -7633,7 +7639,10 @@ function UsersView() {
   const [users, setUsers] = useState<User[]>([])
   const [loaded, setLoaded] = useState(false)
   const [adding, setAdding] = useState(false)
-  const [nu, setNu] = useState({ email: '', name: '', surname: '', role: 'viewer', password: '' })
+  const [nu, setNu] = useState<{ email: string; name: string; surname: string; role: string; password: string; sites: string[] }>({ email: '', name: '', surname: '', role: 'viewer', password: '', sites: [] })
+  // The sites an account can be limited to (the same picker as a channel's).
+  const [siteOptions, setSiteOptions] = useState<string[]>([])
+  useEffect(() => { fetch('/api/notify/sites').then((r) => (r.ok ? r.json() : [])).then((s) => setSiteOptions(s || [])).catch(() => {}) }, [])
   const usersRef = useRef<User[]>([])
   usersRef.current = users
 
@@ -7643,18 +7652,20 @@ function UsersView() {
   async function fail(res: Response) { toast.error(await errText(res, 'Request failed')); load() }
   function edit(id: number, patch: Partial<User>) { setUsers((us) => us.map((x) => (x.id === id ? { ...x, ...patch } : x))) }
 
-  // Persist the row's email/name/surname/role (called on blur of a field or role change).
+  // Persist the row's email/name/surname/role/sites (called on blur of a field, a role or sites change).
   async function saveUser(id: number) {
     const u = usersRef.current.find((x) => x.id === id); if (!u) return
-    const res = await fetch(`/api/users/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: u.email, name: u.name, surname: u.surname, role: u.role }) })
+    const res = await fetch(`/api/users/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: u.email, name: u.name, surname: u.surname, role: u.role, sites: u.sites || [] }) })
     if (!res.ok) return fail(res)
+    const saved: User = await res.json()
+    edit(id, { sites: saved.sites || [] }) // an admin keeps no sites
     toast.success('Saved')
   }
   async function create(e: FormEvent) {
     e.preventDefault()
     const res = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(nu) })
     if (!res.ok) return toast.error(await errText(res, 'Request failed'))
-    setNu({ email: '', name: '', surname: '', role: 'viewer', password: '' }); setAdding(false); toast.success('User created'); load()
+    setNu({ email: '', name: '', surname: '', role: 'viewer', password: '', sites: [] }); setAdding(false); toast.success('User created'); load()
   }
   async function resetPw(u: User) {
     const pw = await prompt({ title: 'Reset password', label: `New password for ${u.email} (min 8 characters)`, type: 'password', confirmLabel: 'Set password', required: true })
@@ -7713,6 +7724,7 @@ function UsersView() {
           <input className="input" placeholder="name" value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} />
           <input className="input" placeholder="surname" value={nu.surname} onChange={(e) => setNu({ ...nu, surname: e.target.value })} />
           <Select value={nu.role} onChange={(e) => setNu({ ...nu, role: e.target.value })}>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</Select>
+          {nu.role !== 'admin' && <div className="usites" title="Which sites this account sees"><SitePicker options={siteOptions} value={nu.sites} onChange={(v) => setNu({ ...nu, sites: v })} /></div>}
           <input className="input" type="password" placeholder="password (min 8)" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} required />
           <button type="submit" className="btn primary">Add</button>
         </form>
@@ -7720,7 +7732,7 @@ function UsersView() {
 
       {!loaded && <Skeleton rows={3} cols={6} />}
       {loaded && <table className="utable">
-        <thead><tr><th style={{ width: '28%' }}>Email</th><th style={{ width: '18%' }}>Name</th><th style={{ width: '18%' }}>Surname</th><th>Role</th><th>2FA</th><th>Passkeys</th><th style={{ textAlign: 'right' }}>Manage</th></tr></thead>
+        <thead><tr><th style={{ width: '24%' }}>Email</th><th style={{ width: '14%' }}>Name</th><th style={{ width: '14%' }}>Surname</th><th>Role</th><th>Sites</th><th>2FA</th><th>Passkeys</th><th style={{ textAlign: 'right' }}>Manage</th></tr></thead>
         <tbody>
           {users.map((u) => (
             <tr key={u.id} style={{ opacity: u.disabled ? 0.5 : 1 }}>
@@ -7728,6 +7740,9 @@ function UsersView() {
               <td data-label="Name"><input className="cellinput" value={u.name} placeholder="Name" onChange={(e) => edit(u.id, { name: e.target.value })} onBlur={() => saveUser(u.id)} /></td>
               <td data-label="Surname"><input className="cellinput" value={u.surname} placeholder="Surname" onChange={(e) => edit(u.id, { surname: e.target.value })} onBlur={() => saveUser(u.id)} /></td>
               <td data-label="Role"><Select className="roleselect" value={u.role} onChange={(e) => { edit(u.id, { role: e.target.value }); setTimeout(() => saveUser(u.id), 0) }}>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</Select></td>
+              <td data-label="Sites" className="usites">{u.role === 'admin'
+                ? <span className="okquiet" title="An admin always sees every site">All sites</span>
+                : <SitePicker options={siteOptions} value={u.sites || []} onChange={(v) => { edit(u.id, { sites: v }); setTimeout(() => saveUser(u.id), 0) }} />}</td>
               <td data-label="2FA">{u.mfa_enabled ? <span className="badge on">on</span> : <span className="badge off">off</span>}</td>
               <td data-label="Passkeys" className="mono">{u.passkeys || 0}</td>
               <td data-label="Manage" style={{ textAlign: 'right' }}>

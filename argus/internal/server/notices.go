@@ -75,12 +75,8 @@ func (s *Server) startNotices(ctx context.Context) {
 func (s *Server) noticeTick(ctx context.Context) {
 	channels, _ := s.st.EnabledNotifyChannels(ctx)
 	userChannels, _ := s.st.EnabledUserNotifyChannels(ctx)
-	var userEmails []string
-	if anyEmailToUsers(channels) {
-		userEmails, _ = s.st.NotifyUserEmails(ctx)
-	}
 	var dests []notifyDest
-	for _, d := range notifyDests(s.st, channels, userChannels, userEmails, s.logger) {
+	for _, d := range notifyDests(s.st, channels, userChannels, loadUserDirectory(ctx, s.st), s.logger) {
 		if d.notices {
 			dests = append(dests, d)
 		}
@@ -151,6 +147,9 @@ func noticeTargets(n notice, dests []notifyDest) []notifyDest {
 	for _, d := range dests {
 		if !d.notices || (n.skip != nil && n.skip(d)) {
 			continue
+		}
+		if n.site == "" && d.scoped {
+			continue // news about the whole install is not for a user limited to some sites
 		}
 		if n.site == "" || channelMatches(d.sites, 0, []string{n.site}, 0) {
 			to = append(to, d)

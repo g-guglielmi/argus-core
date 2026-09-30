@@ -102,29 +102,31 @@ func TestRecordUserNotifyDelivery(t *testing.T) {
 	}
 }
 
-func TestNotifyUserEmails(t *testing.T) {
+// A user's sites round-trip, and clearing them means every site again.
+func TestUserSites(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
-	active, err := st.CreateUser(ctx, User{Email: "active@example.com", PasswordHash: "x", Role: "viewer"})
+	id, err := st.CreateUser(ctx, User{Email: "local@example.com", PasswordHash: "x", Role: "viewer"})
 	if err != nil {
-		t.Fatalf("create active: %v", err)
+		t.Fatalf("create: %v", err)
 	}
-	off, err := st.CreateUser(ctx, User{Email: "off@example.com", PasswordHash: "x", Role: "viewer"})
-	if err != nil {
-		t.Fatalf("create off: %v", err)
+	if u, _ := st.UserByID(ctx, id); len(u.Sites) != 0 {
+		t.Fatalf("a new user sees every site, got %v", u.Sites)
 	}
-	if err := st.SetUserDisabled(ctx, off, true); err != nil {
-		t.Fatalf("disable: %v", err)
+	if err := st.SetUserSites(ctx, id, []string{"site1", " site2/Network ", ""}); err != nil {
+		t.Fatalf("set: %v", err)
 	}
-
-	emails, err := st.NotifyUserEmails(ctx)
-	if err != nil {
-		t.Fatalf("emails: %v", err)
+	u, _ := st.UserByID(ctx, id)
+	if len(u.Sites) != 2 || u.Sites[0] != "site1" || u.Sites[1] != "site2/Network" {
+		t.Fatalf("sites = %v", u.Sites)
 	}
-	if len(emails) != 1 || emails[0] != "active@example.com" {
-		t.Fatalf("expected only the active user, got %v", emails)
+	if users, _ := st.ListUsers(ctx); len(users) != 1 || len(users[0].Sites) != 2 {
+		t.Fatalf("ListUsers lost the sites: %+v", users)
 	}
-	_ = active
+	_ = st.SetUserSites(ctx, id, nil)
+	if u, _ := st.UserByID(ctx, id); len(u.Sites) != 0 {
+		t.Fatalf("cleared sites = %v", u.Sites)
+	}
 }
 
 func TestUserNotifyChannelCascade(t *testing.T) {

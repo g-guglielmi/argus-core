@@ -638,6 +638,23 @@ later.
   again returns to the same view. Other 401s (a wrong current password) are left to their form.
 - **Per-user landing page** preference - default Overview; user can switch to the Errors list in
   **Account → Landing page** (stored server-side, `POST /api/me/preferences`).
+- **Per-site visibility:** a helpdesk or viewer account can be limited to some **sites** (Users ->
+  Sites, the same hierarchical picker as a channel's: a root covers its subgroups; empty = every
+  site; an admin always sees everything). The server filters every read to the hosts in those groups
+  (`internal/server/scope.go`): the tree, groups and search, the census behind the pills and the
+  Overview, problems, triggers (a trigger over hosts in two sites names only the user's), sparklines
+  and daily bars (by each sensor's host), incidents (the fleet feed asks Zabbix for the user's hosts
+  only, so other sites can't crowd them out of the row limit) and probes (by the probe's site). A
+  host, sensor, problem, probe or group outside the sites answers **404**, as if it didn't exist,
+  for reads and for every action on it (acknowledge, pause, hide, mute, priority, host settings,
+  moving a host between groups or probes, group create / rename / delete, tree order); a problem
+  over hosts in two sites needs both. Alerts follow the same line: a scoped user's **personal
+  channels** serve only their sites (a channel set to a wider site is narrowed to theirs; "all
+  sites" means all of theirs), an email channel that goes to **every registered user** sends each
+  scoped user only their sites' alerts and their probes' notices, and news about the whole install
+  (updates, failing channels) is not sent to them. Host-to-group lookups are cached for 30 s, so a
+  host moved between groups follows within that; a change to a user's sites applies at their next
+  request.
 
 ---
 

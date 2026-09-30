@@ -66,6 +66,8 @@ API key, and MAC):
   who acknowledged it and the reason the device's collector gave, over 24 h to 90 days.
 - **Status pages** - read-only wall-screen dashboards opened with a secret link (no login),
   limited to chosen sites, optionally to your networks and an expiry; the link can be rotated.
+- **Per-site visibility** - a helpdesk or viewer account can be limited to some sites: they see,
+  act on and are alerted about only those sites' hosts, enforced on the server.
 - **Auth** - three roles (admin / helpdesk / viewer), argon2id passwords, TOTP two-factor
   with recovery codes, WebAuthn passkeys, self-service password reset, admin user management,
   login rate-limiting.

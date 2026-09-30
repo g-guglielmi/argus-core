@@ -79,6 +79,15 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return
 	}
+	if sc := scopeFrom(r); !sc.all { // per-site visibility (scope.go): only the user's sites' probes
+		kept := proxies[:0]
+		for _, p := range proxies {
+			if sc.coversGroup(probeSite(p.Name)) {
+				kept = append(kept, p)
+			}
+		}
+		proxies = kept
+	}
 	enrolled, err := s.st.EnrollmentTimes(ctx) // best-effort; a nil map still indexes safely below
 	if err != nil {
 		s.logger.Warn("proxies: enrollment times lookup failed", "err", err)

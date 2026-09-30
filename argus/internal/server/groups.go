@@ -41,11 +41,48 @@ func (s *Server) handleGroups(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return
 	}
-	out := make([]groupView, len(gs))
-	for i, g := range gs {
-		out[i] = groupView{ID: g.GroupID, Name: g.Name, Hosts: g.Hosts}
+	sc := scopeFrom(r) // per-site visibility (scope.go)
+	out := make([]groupView, 0, len(gs))
+	for _, g := range gs {
+		if !sc.showsGroup(g.Name) {
+			continue
+		}
+		v := groupView{ID: g.GroupID, Name: g.Name, Hosts: g.Hosts}
+		if !sc.coversGroup(g.Name) {
+			v.Hosts = 0 // a group on the path to the user's sites: its own hosts are outside them
+		}
+		out = append(out, v)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// groupNameByID is a host group's name ("" when there is no such group).
+func (s *Server) groupNameByID(ctx context.Context, id string) (string, error) {
+	gs, err := s.zbx.HostGroups(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, g := range gs {
+		if g.GroupID == id {
+			return g.Name, nil
+		}
+	}
+	return "", nil
+}
+
+// groupOutOfScope answers 404 when a scoped user names a group outside their sites (as if it didn't
+// exist), and reports whether it did.
+func (s *Server) groupOutOfScope(ctx context.Context, w http.ResponseWriter, r *http.Request, id string) bool {
+	sc := scopeFrom(r)
+	if sc.all {
+		return false
+	}
+	name, err := s.groupNameByID(ctx, id)
+	if err != nil || name == "" || !sc.coversGroup(name) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "group not found"})
+		return true
+	}
+	return false
 }
 
 // handleCreateGroup creates a new (empty) host group. Config write - admin/helpdesk only.
@@ -64,6 +101,10 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 	name, ok := cleanGroupName(req.Name)
 	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a group name (1-128 characters) is required"})
+		return
+	}
+	if sc := scopeFrom(r); !sc.coversGroup(name) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "you can only create groups inside your sites"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
@@ -96,6 +137,13 @@ func (s *Server) handleRenameGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 	defer cancel()
+	if s.groupOutOfScope(ctx, w, r, r.PathValue("id")) {
+		return
+	}
+	if sc := scopeFrom(r); !sc.coversGroup(name) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "a group can only move within your sites"})
+		return
+	}
 	if err := s.zbx.RenameHostGroup(ctx, r.PathValue("id"), name); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return
@@ -113,6 +161,9 @@ func (s *Server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 	defer cancel()
 	id := r.PathValue("id")
+	if s.groupOutOfScope(ctx, w, r, id) {
+		return
+	}
 	gs, err := s.zbx.HostGroups(ctx)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
@@ -151,6 +202,13 @@ func (s *Server) handleSetHostGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 	defer cancel()
+	// A scoped user moves a host only between groups inside their sites (the route already checked
+	// the host itself is one of theirs).
+	for _, gid := range req.GroupIDs {
+		if s.groupOutOfScope(ctx, w, r, gid) {
+			return
+		}
+	}
 	if err := s.zbx.SetHostGroups(ctx, r.PathValue("id"), req.GroupIDs); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return

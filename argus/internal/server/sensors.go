@@ -63,11 +63,33 @@ func (s *Server) handleSensors(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), censusBuildTime)
 	defer cancel()
 	out, err := s.sensorCensus(ctx)
+	if err == nil {
+		out, err = s.scopedRows(ctx, scopeFrom(r), out)
+	}
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// scopedRows keeps the census rows of the hosts the scope sees (a new slice; the census's own rows
+// are shared and never modified).
+func (s *Server) scopedRows(ctx context.Context, sc siteScope, rows []sensorRow) ([]sensorRow, error) {
+	if sc.all {
+		return rows, nil
+	}
+	vis, err := s.visibleHosts(ctx, sc)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]sensorRow, 0, len(rows))
+	for _, r := range rows {
+		if vis[r.HostID] {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 
 // sensorCensus is every curated sensor across all hosts with its single state (see handleSensors),

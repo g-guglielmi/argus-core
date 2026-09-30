@@ -44,6 +44,12 @@ func (s *Server) handleTriggers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hideHost, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
+	sc := scopeFrom(r)
+	vis, err := s.visibleHosts(ctx, sc) // per-site visibility (scope.go); nil = every host
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		return
+	}
 
 	out := make([]triggerRow, 0, len(trs))
 	for _, t := range trs {
@@ -51,6 +57,9 @@ func (s *Server) handleTriggers(w http.ResponseWriter, r *http.Request) {
 		allHidden := len(t.Hosts) > 0
 		for _, h := range t.Hosts {
 			if h.Status == "3" { // template host - skip (shouldn't appear with monitored:true, but be safe)
+				continue
+			}
+			if !sc.all && !vis[h.HostID] { // a host outside the user's sites is never named
 				continue
 			}
 			if _, hidden := hideHost[h.HostID]; !hidden {

@@ -338,6 +338,9 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a proxy is required when monitored by a proxy"})
 		return
 	}
+	if s.proxyOutOfScope(w, r, req.MonitoredBy, req.ProxyID) {
+		return
+	}
 	for _, i := range req.Interfaces {
 		if i.Type < 1 || i.Type > 4 {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid interface type"})
@@ -747,6 +750,9 @@ func (s *Server) handleSetHostProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.MonitoredBy == 1 && (strings.TrimSpace(req.ProxyID) == "" || strings.TrimSpace(req.ProxyID) == "0") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a proxy is required when monitored by a proxy"})
+		return
+	}
+	if s.proxyOutOfScope(w, r, req.MonitoredBy, req.ProxyID) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
