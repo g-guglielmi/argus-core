@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"argus/internal/store"
+	"argus/internal/zabbix"
 )
 
 // Incident history: what went wrong and when, per host and across the fleet. Zabbix keeps every
@@ -48,13 +49,38 @@ type incidentView struct {
 
 // collectIncidents gathers the incidents that started since from (or are still open), newest
 // first, for the given hosts (all when hostIDs is empty), at most limit. Warnings and above only.
-func (s *Server) collectIncidents(ctx context.Context, hostIDs []string, from int64, limit int) ([]incidentView, error) {
-	evs, err := s.zbx.ProblemEvents(ctx, hostIDs, from, limit)
-	if err != nil {
-		return nil, err
+// itemIDs narrows it to those sensors (a drilled-down sensor, or all channels of a group): Zabbix is
+// asked for their triggers' events only, so a busy host's other incidents can't crowd them out.
+func (s *Server) collectIncidents(ctx context.Context, hostIDs, itemIDs []string, from int64, limit int) ([]incidentView, error) {
+	var tids []string
+	if len(itemIDs) > 0 {
+		trigs, err := s.zbx.ItemTriggers(ctx, itemIDs)
+		if err != nil {
+			return nil, err
+		}
+		seen := map[string]bool{}
+		for _, id := range itemIDs {
+			for _, t := range trigs[id] {
+				if !seen[t.TriggerID] {
+					seen[t.TriggerID] = true
+					tids = append(tids, t.TriggerID)
+				}
+			}
+		}
+	}
+	var evs []zabbix.Event
+	if len(itemIDs) == 0 || len(tids) > 0 { // sensors without a trigger have no Zabbix incidents
+		var err error
+		if evs, err = s.zbx.ProblemEvents(ctx, hostIDs, tids, from, limit); err != nil {
+			return nil, err
+		}
+	}
+	wantItem := map[string]bool{}
+	for _, id := range itemIDs {
+		wantItem[id] = true
 	}
 	var out []incidentView
-	var rIDs, tids []string
+	var rIDs, evTids []string
 	for _, e := range evs {
 		if atoi(e.Severity) < 2 || len(e.Hosts) == 0 {
 			continue
@@ -62,14 +88,14 @@ func (s *Server) collectIncidents(ctx context.Context, hostIDs []string, from in
 		if e.REventID != "" && e.REventID != "0" {
 			rIDs = append(rIDs, e.REventID)
 		}
-		tids = append(tids, e.ObjectID)
+		evTids = append(evTids, e.ObjectID)
 	}
 	ends, _ := s.zbx.EventClocks(ctx, rIDs)
-	trigItems, _ := s.zbx.TriggerItems(ctx, tids)
-	var itemIDs []string
+	trigItems, _ := s.zbx.TriggerItems(ctx, evTids)
+	var labelIDs []string // the sensors to name
 	for _, e := range evs {
 		if ids := trigItems[e.ObjectID]; len(ids) > 0 {
-			itemIDs = append(itemIDs, ids[0])
+			labelIDs = append(labelIDs, ids...)
 		}
 	}
 	for _, e := range evs {
@@ -80,16 +106,25 @@ func (s *Server) collectIncidents(ctx context.Context, hostIDs []string, from in
 			Severity: atoi(e.Severity), Start: atoi64(e.Clock), End: ends[e.REventID]}
 		if ids := trigItems[e.ObjectID]; len(ids) > 0 {
 			v.ItemID = ids[0]
+			for _, id := range ids { // a multi-sensor trigger belongs to the channel asked for
+				if wantItem[id] {
+					v.ItemID = id
+					break
+				}
+			}
 		}
 		out = append(out, v)
 	}
 
 	argusRows, _ := s.st.ArgusIncidents(ctx, hostIDs, from, limit)
 	for _, a := range argusRows {
+		if len(wantItem) > 0 && !wantItem[a.ItemID] {
+			continue
+		}
 		out = append(out, incidentView{EventID: a.EventID, HostID: a.HostID, HostName: a.HostName, ItemID: a.ItemID,
 			Name: a.Name, Severity: a.Severity, Start: a.StartedAt, End: a.EndedAt, Reason: a.Reason, Argus: true})
 		if a.ItemID != "" {
-			itemIDs = append(itemIDs, a.ItemID)
+			labelIDs = append(labelIDs, a.ItemID)
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -103,7 +138,7 @@ func (s *Server) collectIncidents(ctx context.Context, hostIDs []string, from in
 	}
 
 	// The sensor each one was on, and for a collector flag the reason it gave then.
-	items, _ := s.zbx.ItemsByIDs(ctx, itemIDs)
+	items, _ := s.zbx.ItemsByIDs(ctx, labelIDs)
 	lookups := 0
 	for i := range out {
 		it, ok := items[out[i].ItemID]
@@ -198,9 +233,23 @@ func (s *Server) handleIncidents(w http.ResponseWriter, r *http.Request) {
 	s.serveIncidents(w, r, nil, incidentsDefaultDays)
 }
 
-// handleHostIncidents serves GET /api/hosts/{id}/incidents?days=N (default 30).
+// handleHostIncidents serves GET /api/hosts/{id}/incidents?days=N (default 30), and with
+// &items=a,b,c only those sensors' incidents (a drilled-down sensor).
 func (s *Server) handleHostIncidents(w http.ResponseWriter, r *http.Request) {
 	s.serveIncidents(w, r, []string{r.PathValue("id")}, 30)
+}
+
+// incidentItems reads ?items= (comma-separated sensor ids, at most 50).
+func incidentItems(r *http.Request) []string {
+	var out []string
+	for _, id := range strings.Split(r.URL.Query().Get("items"), ",") {
+		if id = strings.TrimSpace(id); id != "" && len(out) < 50 {
+			if _, err := strconv.ParseUint(id, 10, 64); err == nil {
+				out = append(out, id)
+			}
+		}
+	}
+	return out
 }
 
 func (s *Server) serveIncidents(w http.ResponseWriter, r *http.Request, hostIDs []string, defDays int) {
@@ -211,7 +260,7 @@ func (s *Server) serveIncidents(w http.ResponseWriter, r *http.Request, hostIDs 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	from := incidentWindow(r, defDays)
-	out, err := s.collectIncidents(ctx, hostIDs, from, incidentsMaxRows)
+	out, err := s.collectIncidents(ctx, hostIDs, incidentItems(r), from, incidentsMaxRows)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return

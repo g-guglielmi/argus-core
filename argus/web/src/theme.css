@@ -158,6 +158,11 @@ a { color: var(--accent); }
 .panel + .panel { margin-top: 14px; }
 .phead { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .phead h2 { font-size: 14px; margin: 0; font-weight: 650; }
+/* PanelTitle: a small label above the title (the sidebar section, and the scope of a cross-site list). */
+.phead:has(.ptitle) { align-items: flex-end; }
+.ptitle { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ptitle .eyebrow { font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); line-height: 1.2; }
+.phead:has(.ptitle) .hint { padding-bottom: 1px; }
 .phead .hint { color: var(--muted); font-size: 12px; }
 .phead .tools { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
 /* One-paragraph explainer under a panel header (Notifications, Probes). */
@@ -381,7 +386,9 @@ a { color: var(--accent); }
 .host-head .c-graph { border-left: 1px solid var(--border); } /* divider before the graph - hosts only */
 .c-val { display: flex; align-items: center; justify-content: flex-end; padding: 0 10px; }
 .c-act { display: flex; align-items: center; justify-content: center; border-left: 1px solid var(--border); } /* divider before the kebab - every row */
-.grpdot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.grpdot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--dot, var(--muted)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot, var(--muted)) 22%, transparent); }
+/* A state dot with a soft halo in its own colour (the tree's badges and group dots, a host's problem list). */
+.sdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--dot, var(--muted)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot, var(--muted)) 22%, transparent); }
 .probpill { min-width: 18px; height: 17px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; font-size: 11px; font-weight: 700; background: color-mix(in srgb, var(--err) 20%, transparent); color: var(--err); }
 .probpill.warn { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); } /* warnings only, no errors */
 .fold-ico { display: inline-flex; flex-shrink: 0; color: var(--accent); }
@@ -422,7 +429,7 @@ a { color: var(--accent); }
 /* Host device icon (type) with a small health-coloured status badge in the corner. */
 .dev-ico { position: relative; display: inline-flex; flex-shrink: 0; color: var(--muted); }
 .dev-ico svg { width: 18px; height: 18px; }
-.dev-badge { position: absolute; right: -3px; bottom: -3px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--panel); box-sizing: border-box; }
+.dev-badge { position: absolute; right: -3px; bottom: -3px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--panel); box-sizing: border-box; background: var(--dot, var(--muted)); box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--dot, var(--muted)) 30%, transparent); }
 .host-head:hover .dev-badge { border-color: var(--elevated); }
 /* Host row ICMP latency + sparkline - the per-host data groups don't carry, in aligned columns. */
 .hspark { display: inline-flex; width: 168px; } /* = the table/overview sparks; graph column is 190px */

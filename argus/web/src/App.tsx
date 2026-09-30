@@ -1694,8 +1694,8 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
   return (
     <div className="panel">
       <div className="phead">
-        <h2>Settings</h2>
-        <span className="hint">Admin only · each section saves on its own</span>
+        <PanelTitle eyebrow="Admin">Settings</PanelTitle>
+        <span className="hint">each section saves on its own</span>
       </div>
 
       <div className="set-body">
@@ -2011,7 +2011,7 @@ function NotificationsView() {
   return (
     <div className="panel">
       <div className="phead">
-        <h2>Notifications</h2>
+        <PanelTitle eyebrow="Configure">Notifications</PanelTitle>
         <span className="hint">{channels ? `${channels.length} channel${channels.length === 1 ? '' : 's'}` : '…'}</span>
         <div className="tools"><button className="btn primary" onClick={() => setEditing('new')}>+ Add channel</button></div>
       </div>
@@ -2604,7 +2604,7 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
   return (
     <div className="panel">
       <div className="phead">
-        <h2>Site probes</h2>
+        <PanelTitle eyebrow="Configure">Site probes</PanelTitle>
         <span className="hint">{proxies ? `${proxies.length} known to the core` : '…'}</span>
         {(() => {
           const needReboot = (proxies || []).filter((p) => p.reboot_required).length
@@ -3830,7 +3830,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
           {guides(depth)}
           <div className="c-name">
             <svg className={'chev' + (hopen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
-            <span className="dev-ico" title={h.class_id || undefined}>{hostGlyph(h.icon)}<span className="dev-badge" style={{ background: dotColor(h.paused, h.hidden, h.state) }} /></span>
+            <span className="dev-ico" title={h.class_id || undefined}>{hostGlyph(h.icon)}<span className="dev-badge" style={{ '--dot': dotColor(h.paused, h.hidden, h.state) } as CSSProperties} /></span>
             <span className="hn lnk-host" onClick={(e) => { e.stopPropagation(); drillHost(path, h.id) }}>{h.name}</span>
             {h.paused && <span className="kind" style={{ color: PAUSED_BLUE }}>· paused {untilLabel(h.paused_until)}</span>}
             {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
@@ -3884,7 +3884,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
           </div>
           <div className="c-graph" />
           <div className="c-val">
-            {reorder ? orderArrows(sibIds, index, scope, 'sibling') : <span className="grpdot" style={{ background: stateColor[nodeWorst(sub)] || 'var(--muted)' }} />}
+            {reorder ? orderArrows(sibIds, index, scope, 'sibling') : <span className="grpdot" style={{ '--dot': stateColor[nodeWorst(sub)] || 'var(--muted)' } as CSSProperties} />}
           </div>
           <div className="c-act">
             {canPause && g && !reorder && (
@@ -3935,7 +3935,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   return (
     <div className="panel">
       <div className="phead">
-        <h2>Sites &amp; hosts</h2>
+        <PanelTitle eyebrow="Watch">Sites &amp; hosts</PanelTitle>
         <span className="hint">{(showHiddenEff ? groups.length : groups.filter((g) => !hidden.has(g.name)).length)} group{groups.length === 1 ? '' : 's'}{!showHiddenEff && hidden.size > 0 ? ` (${hidden.size} hidden)` : ''} · {hosts.length} host{hosts.length === 1 ? '' : 's'}</span>
         {focus.level !== 'sensor' && (
           <div className="tools">
@@ -4687,7 +4687,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
       {!job && <>
       <section className="panel">
       <div className="phead">
-        <h2>Network discovery</h2>
+        <PanelTitle eyebrow="Configure">Network discovery</PanelTitle>
         <span className="hint">find devices, review what answered, adopt into monitoring · kept for 30 days</span>
         <div className="tools">
           <Button onClick={() => { setCtlForm((ctls?.length || 0) === 0 ? emptyCtlForm() : null); setDlg('ctls') }}>Discovery settings</Button>
@@ -4878,7 +4878,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
           (?scan=) and "Back to scans" (or the browser's Back) returns to the list. --- */}
       {job && <section className="panel">
         <div className="phead" style={job.state === 'done' ? { borderBottom: 'none' } : undefined}>
-          <h2>{isSweep ? 'Sweep results' : 'Scan results'} · {jobLabel} · {job.proxy_name || 'Core server'}</h2>
+          <PanelTitle eyebrow={`Configure · discovery · ${job.proxy_name || 'Core server'}`}>{isSweep ? 'Sweep results' : 'Scan results'} · {jobLabel}</PanelTitle>
           <span className="hint">{job.state === 'done' ? `${results.length} device${results.length === 1 ? '' : 's'} found · ${relTime(job.completed_at || job.created_at)}` : `started ${relTime(job.created_at)}`}</span>
           <div className="tools">
             <Button variant="ghost" onClick={() => void deleteJob(job)}>Delete</Button>
@@ -5253,7 +5253,7 @@ function StatusPagesView() {
   return (
     <div className="panel">
       <div className="phead">
-        <h2>Status pages</h2>
+        <PanelTitle eyebrow="Admin">Status pages</PanelTitle>
         <span className="hint">{pages ? `${pages.length} page${pages.length === 1 ? '' : 's'}` : '…'}</span>
         <div className="tools"><button className="btn primary" onClick={() => setEditing('new')}>+ Add status page</button></div>
       </div>
@@ -5986,17 +5986,25 @@ function useIncidents(url: string): [Incident[] | null, string] {
   return [rows, err]
 }
 
-// HostIncidents is the host card's history: the last 30 days, folded until opened.
-function HostIncidents({ hostId, goHost }: { hostId: string; goHost: ((h: string) => void) | null }) {
-  const [rows, err] = useIncidents(`/api/hosts/${hostId}/incidents?days=30`)
-  const [open, setOpen] = useState(false)
+// PanelTitle is a panel's title with a small label above it: the sidebar section it belongs to and,
+// for a list spanning sites, its scope ("Watch · all sites").
+function PanelTitle({ eyebrow, children }: { eyebrow: string; children: ReactNode }) {
+  return <div className="ptitle"><div className="eyebrow">{eyebrow}</div><h2>{children}</h2></div>
+}
+
+// HostIncidents is the host card's history: the last 30 days, folded until opened. With itemIds (a
+// drilled-down sensor, or every channel of its group) it is that sensor's history, open from the start.
+function HostIncidents({ hostId, goHost, itemIds }: { hostId: string; goHost: ((h: string) => void) | null; itemIds?: string[] }) {
+  const items = itemIds && itemIds.length ? itemIds.join(',') : ''
+  const [rows, err] = useIncidents(`/api/hosts/${hostId}/incidents?days=30${items ? `&items=${items}` : ''}`)
+  const [open, setOpen] = useState(!!items)
   if (err || !rows) return null
   const live = rows.filter((r) => !r.end).length
   return (
     <div className="hinc">
       <button type="button" className="hinc-head" onClick={() => setOpen((o) => !o)} aria-expanded={open} disabled={rows.length === 0}>
         {rows.length > 0 && <svg className={'chev' + (open ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>}
-        <span className="hinc-t">History</span>
+        <span className="hinc-t">{items ? 'Sensor history' : 'History'}</span>
         <span className="hinc-s">{rows.length === 0 ? 'no incidents in the last 30 days' : `${rows.length} incident${rows.length === 1 ? '' : 's'} in the last 30 days${live ? ` · ${live} open` : ''}`}</span>
       </button>
       {open && rows.length > 0 && <IncidentRows rows={rows} goHost={goHost} />}
@@ -6218,7 +6226,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
           <div style={{ color: probColor, fontSize: 12, marginBottom: 4, fontWeight: 600 }}>{probErr ? 'Active problems' : 'Active warnings'}</div>
           {problems.map((p, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.2rem 0' }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: healthColor(p.state, p.acknowledged) }} />
+              <span className="sdot" style={{ '--dot': healthColor(p.state, p.acknowledged) } as CSSProperties} />
               <span style={{ opacity: p.acknowledged ? 0.7 : 1 }}>{p.name}</span>
               <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 {p.acknowledged
@@ -6443,7 +6451,9 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
             </tbody>
           </table>
         )}
-      {!onlyItem && <HostIncidents hostId={hostId} goHost={null} />}
+      {onlyItem
+        ? <HostIncidents hostId={hostId} goHost={null} itemIds={shownItems.map((i) => i.id)} />
+        : <HostIncidents hostId={hostId} goHost={null} />}
     </div>
   )
 }
@@ -6500,8 +6510,8 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
   return (
     <div className="panel">
       <div className="phead">
-        <h2>{attention ? 'Active problems' : `${STATE_LABEL[filter]} sensors`}</h2>
-        <span className="hint">{rows.length} sensor{rows.length === 1 ? '' : 's'} · across all sites</span>
+        <PanelTitle eyebrow="Watch · all sites">{attention ? 'Active problems' : `${STATE_LABEL[filter]} sensors`}</PanelTitle>
+        <span className="hint">{rows.length} sensor{rows.length === 1 ? '' : 's'}</span>
         <div className="tools">
           {attention
             ? <div className="seg">
@@ -6587,7 +6597,7 @@ function HistoryView({ goHost }: { goHost: (h: string) => void }) {
   return (
     <div className="panel">
       <div className="phead">
-        <h2>Incidents</h2>
+        <PanelTitle eyebrow="Watch · all sites">Incidents</PanelTitle>
         <span className="hint">{rows ? `${shown.length} in ${period}${live ? ` · ${live} still open` : ''}` : ''}</span>
         <div className="tools hist-tools">
           <input className="input hist-q" placeholder="Host, sensor or reason" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter incidents" />
@@ -6623,8 +6633,8 @@ function TriggersView({ goHost }: { goHost: (h: string) => void }) {
   return (
     <div className="panel">
       <div className="phead">
-        <h2>Triggers</h2>
-        <span className="hint">{mode === 'firing' ? `${firing.length} firing` : `${(rows || []).length} trigger${(rows || []).length === 1 ? '' : 's'} · ${hostIds.length} host${hostIds.length === 1 ? '' : 's'}`} · across all sites</span>
+        <PanelTitle eyebrow="Watch · all sites">Triggers</PanelTitle>
+        <span className="hint">{mode === 'firing' ? `${firing.length} firing` : `${(rows || []).length} trigger${(rows || []).length === 1 ? '' : 's'} · ${hostIds.length} host${hostIds.length === 1 ? '' : 's'}`}</span>
         <div className="tools"><div className="seg">
           <button className={mode === 'firing' ? 'on' : ''} onClick={() => setMode('firing')}>Firing</button>
           <button className={mode === 'all' ? 'on' : ''} onClick={() => setMode('all')}>All</button>
@@ -7588,7 +7598,7 @@ function UsersView() {
   return (
     <div className="panel">
       <div className="phead">
-        <h2>Users</h2><span className="hint">{users.length} account{users.length === 1 ? '' : 's'}</span>
+        <PanelTitle eyebrow="Admin">Users</PanelTitle><span className="hint">{users.length} account{users.length === 1 ? '' : 's'}</span>
         <div className="tools"><button className="btn primary" onClick={() => setAdding((v) => !v)}>{adding ? 'Cancel' : '+ Add user'}</button></div>
       </div>
 

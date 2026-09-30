@@ -21,8 +21,9 @@ type Event struct {
 }
 
 // ProblemEvents returns the problem events that started since from, newest first, at most limit,
-// for the given hosts (all hosts when hostIDs is empty). Closed ones carry their recovery event.
-func (c *Client) ProblemEvents(ctx context.Context, hostIDs []string, from int64, limit int) ([]Event, error) {
+// for the given hosts (all hosts when hostIDs is empty) and, when triggerIDs is set, those triggers
+// only. Closed ones carry their recovery event.
+func (c *Client) ProblemEvents(ctx context.Context, hostIDs, triggerIDs []string, from int64, limit int) ([]Event, error) {
 	params := map[string]any{
 		"output":      []string{"eventid", "clock", "name", "severity", "r_eventid", "objectid"},
 		"selectHosts": []string{"hostid", "name", "status"},
@@ -36,6 +37,9 @@ func (c *Client) ProblemEvents(ctx context.Context, hostIDs []string, from int64
 	}
 	if len(hostIDs) > 0 {
 		params["hostids"] = hostIDs
+	}
+	if len(triggerIDs) > 0 {
+		params["objectids"] = triggerIDs
 	}
 	var evs []Event
 	return evs, c.call(ctx, "event.get", params, true, &evs)

@@ -377,7 +377,9 @@ Zabbix keeps every problem event with the recovery that closed it; the problems 
 open, so the notifier logs them in `argus_incidents` as they open and close (only from a complete
 lookup, so a failed read never closes them; the reason is kept from the moment they opened; closed
 ones kept 120 days). A host card ends with its last 30 days, folded (`GET
-/api/hosts/{id}/incidents?days=30`); the **History** page lists the fleet's, 24 h / 7 / 30 / 90 days,
+/api/hosts/{id}/incidents?days=30`), and a drilled-down sensor with its own history, open
+(`&items=<its id, or every channel of its group>`: Zabbix is asked for those sensors' triggers only,
+so a busy host's other incidents can't crowd them out); the **History** page lists the fleet's, 24 h / 7 / 30 / 90 days,
 Errors + Warnings or Errors only, filterable by host, sensor or reason (`GET
 /api/incidents?days=N`). Zabbix's events follow its housekeeping retention (Settings, Data retention).
 

@@ -33,12 +33,25 @@ func TestCollectIncidents(t *testing.T) {
 				result = []map[string]string{{"eventid": "501", "clock": "2500"}}
 				break
 			}
+			if obj, ok := req.Params["objectids"].([]any); ok { // a sensor's own triggers only
+				if len(obj) == 1 && obj[0] == "902" {
+					result = []map[string]any{{"eventid": "1", "clock": "2000", "name": "High CPU utilization", "severity": "2", "r_eventid": "501", "objectid": "902", "hosts": host}}
+				}
+				break
+			}
 			result = []map[string]any{
 				{"eventid": "3", "clock": "3000", "name": "SSH monitoring is unreachable", "severity": "4", "r_eventid": "0", "objectid": "900", "hosts": host},
 				{"eventid": "2", "clock": "2200", "name": "Info only", "severity": "1", "r_eventid": "0", "objectid": "901", "hosts": host},
 				{"eventid": "1", "clock": "2000", "name": "High CPU utilization", "severity": "2", "r_eventid": "501", "objectid": "902", "hosts": host},
 			}
 		case "trigger.get":
+			if ids, byItem := req.Params["itemids"].([]any); byItem {
+				result = []map[string]any{}
+				if len(ids) == 1 && ids[0] == "71" {
+					result = []map[string]any{{"triggerid": "902", "status": "0", "priority": "2", "expression": "x", "items": []map[string]string{{"itemid": "71"}}}}
+				}
+				break
+			}
 			result = []map[string]any{
 				{"triggerid": "900", "items": []map[string]string{{"itemid": "70"}}},
 				{"triggerid": "902", "items": []map[string]string{{"itemid": "71"}}},
@@ -83,7 +96,7 @@ func TestCollectIncidents(t *testing.T) {
 	}
 	s := &Server{st: st, zbx: zabbix.New(mock.URL, "test-token")}
 
-	got, err := s.collectIncidents(ctx, []string{"10"}, 0, 50)
+	got, err := s.collectIncidents(ctx, []string{"10"}, nil, 0, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,5 +112,21 @@ func TestCollectIncidents(t *testing.T) {
 	}
 	if cpu.EventID != "1" || cpu.End != 2500 || cpu.AckBy != "Ops" || cpu.AckNote != "looking" || cpu.Reason != "" {
 		t.Fatalf("closed, acknowledged incident wrong: %+v", cpu)
+	}
+
+	// A drilled-down sensor: only its own triggers' events, and only its own Argus incidents.
+	only, err := s.collectIncidents(ctx, []string{"10"}, []string{"71"}, 0, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(only) != 1 || only[0].EventID != "1" {
+		t.Fatalf("sensor 71: want just its CPU incident, got %+v", only)
+	}
+	argusOnly, err := s.collectIncidents(ctx, []string{"10"}, []string{"80"}, 0, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(argusOnly) != 1 || argusOnly[0].EventID != "argus-unsupported-80" {
+		t.Fatalf("sensor 80 (no trigger): want just its Argus incident, got %+v", argusOnly)
 	}
 }

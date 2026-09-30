@@ -46,6 +46,15 @@ GitHub Release from the matching section below.
 - The problems Argus raises itself (a sensor that stopped collecting, an interface that stopped
   answering) have no Zabbix event, so Argus now logs when each one opens and closes; they appear in
   the history from this version on.
+- A drilled-down sensor ends with its own history, open: its incidents over the last 30 days (every
+  channel of a group, such as a ping's loss and latency), read from its own triggers so a busy host's
+  other incidents can't push them out.
+
+**Look:**
+- Panel titles carry a small label above them: the sidebar section, and for a list across sites its
+  scope ("Watch · all sites" over Active problems, "Admin" over Users).
+- State dots (a host's badge in the tree, a group's dot, a host's problem list) have a soft halo in
+  their own colour.
 
 ## [core-vm/v0.1.2] - 2026-09-30
 
