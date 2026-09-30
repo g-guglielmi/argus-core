@@ -877,7 +877,7 @@ def form_page(error="", vals=None, csrf=""):
     body = f"""
   <h1>Set up your monitoring core</h1>
   <p class="hint">One form configures everything on this VM: Zabbix, its database, the probe
-  enrollment PKI, and Argus. Nothing here has defaults left over from the image &mdash; every
+  enrollment PKI, and Argus. Nothing here has defaults left over from the image: every
   credential is created now, for this instance only.</p>
   {err}
   <form method="post" action="/">
@@ -905,8 +905,8 @@ def form_page(error="", vals=None, csrf=""):
     <input id="p1" name="password" type="password" minlength="8" required>
     <label for="p2">Confirm password</label>
     <input id="p2" name="password2" type="password" minlength="8" required>
-    <div class="sub">Used for the Argus admin, the Zabbix <b>Admin</b> user, and the local Linux user
-    &mdash; rotate any of them independently later. The database password and the Zabbix API token are
+    <div class="sub">Used for the Argus admin, the Zabbix <b>Admin</b> user, and the local Linux user;
+    rotate any of them independently later. The database password and the Zabbix API token are
     generated for you and never shown.</div>
 
     <details>
@@ -956,7 +956,7 @@ def progress_page(snap, csrf=""):
     body = f"""
   <h1>Setting up your monitoring core…</h1>
   <p class="hint">This takes a few minutes (the database schema import is the long step). Keep this
-  page open &mdash; it follows the progress live.</p>
+  page open: it follows the progress live.</p>
   <ul class="steps" id="steps">
 {render_steps(snap)}
   </ul>
@@ -993,14 +993,14 @@ def success_fragment():
     return f"""
   <div class="result ok">✓ Your monitoring core is ready.</div>
   <div class="next">
-    <b>Argus:</b> <a href="https://{ip}/">https://{ip}/</a> &mdash; sign in as <b>{email}</b>.
+    <b>Argus:</b> <a href="https://{ip}/">https://{ip}/</a> - sign in as <b>{email}</b>.
     Your browser will warn about the certificate once: it is signed by this core's own CA
     (<code>/etc/argus/pki/ca.crt</code>); install that CA on your PCs, or put your own certificate on
     the reverse proxy later.<br>
-    <b>Zabbix UI</b> (engine room, rarely needed): <a href="http://{ip}:8080/">http://{ip}:8080/</a> &mdash; user <b>Admin</b>.<br><br>
+    <b>Zabbix UI</b> (engine room, rarely needed): <a href="http://{ip}:8080/">http://{ip}:8080/</a> - user <b>Admin</b>.<br><br>
     Next steps: add your first probe (Argus &rarr; <b>Probes</b> &rarr; Add probe), and take a
     hypervisor snapshot of this VM. From now on <a href="http://{ip}/">http://{ip}/</a> redirects to
-    Argus over https &mdash; this setup page is gone after you leave it.
+    Argus over https, and this setup page is gone after you leave it.
   </div>
 """
 
