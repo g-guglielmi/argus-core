@@ -389,6 +389,15 @@ a { color: var(--accent); }
 .grpdot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--dot, var(--muted)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot, var(--muted)) 22%, transparent); }
 /* A state dot with a soft halo in its own colour (the tree's badges and group dots, a host's problem list). */
 .sdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--dot, var(--muted)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot, var(--muted)) 22%, transparent); }
+/* A dot that needs someone's attention (an unacknowledged warning or error) pulses: its halo swells
+   and fades every 2 s. OK, acknowledged, paused and hidden dots keep the steady halo. */
+@keyframes dot-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--dot, var(--muted)) 60%, transparent); }
+  70% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--dot, var(--muted)) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--dot, var(--muted)) 0%, transparent); }
+}
+.grpdot.pulse, .sdot.pulse, .dev-badge.pulse { animation: dot-pulse 2s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { .grpdot.pulse, .sdot.pulse, .dev-badge.pulse { animation: none; } }
 .probpill { min-width: 18px; height: 17px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; font-size: 11px; font-weight: 700; background: color-mix(in srgb, var(--err) 20%, transparent); color: var(--err); }
 .probpill.warn { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); } /* warnings only, no errors */
 .fold-ico { display: inline-flex; flex-shrink: 0; color: var(--accent); }

@@ -13,7 +13,7 @@ import { useToast } from './toast'
 type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; landing?: 'overview' | 'errors'; advanced?: boolean }
 type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
-type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number }
+type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number; unacked?: boolean }
 type Group = { id: string; name: string; hosts: number }
 type MacroSpec = { macro: string; label: string; hint?: string; required?: boolean; secret?: boolean; derive?: string; options?: string[]; settings_only?: boolean }
 type ClassSetup = { title: string; intro?: string; steps?: string[]; command?: string; note?: string }
@@ -114,6 +114,12 @@ function healthColor(state: string, acked: boolean): string {
 }
 
 // dotColor: paused (blue) and hidden (grey) override the health colour.
+// needsEye: a host whose dot pulses - in warning or error with something nobody has acknowledged yet
+// (paused and hidden hosts never pulse; an acknowledged problem keeps a steady halo).
+function needsEye(h: { paused: boolean; hidden: boolean; state: string; unacked?: boolean }): boolean {
+  return !h.paused && !h.hidden && h.state !== 'ok' && !!h.unacked
+}
+
 function dotColor(paused: boolean, hidden: boolean, state: string): string {
   if (paused) return PAUSED_BLUE
   if (hidden) return HIDDEN_GREY
@@ -3830,7 +3836,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
           {guides(depth)}
           <div className="c-name">
             <svg className={'chev' + (hopen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
-            <span className="dev-ico" title={h.class_id || undefined}>{hostGlyph(h.icon)}<span className="dev-badge" style={{ '--dot': dotColor(h.paused, h.hidden, h.state) } as CSSProperties} /></span>
+            <span className="dev-ico" title={h.class_id || undefined}>{hostGlyph(h.icon)}<span className={'dev-badge' + (needsEye(h) ? ' pulse' : '')} style={{ '--dot': dotColor(h.paused, h.hidden, h.state) } as CSSProperties} /></span>
             <span className="hn lnk-host" onClick={(e) => { e.stopPropagation(); drillHost(path, h.id) }}>{h.name}</span>
             {h.paused && <span className="kind" style={{ color: PAUSED_BLUE }}>· paused {untilLabel(h.paused_until)}</span>}
             {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
@@ -3884,7 +3890,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
           </div>
           <div className="c-graph" />
           <div className="c-val">
-            {reorder ? orderArrows(sibIds, index, scope, 'sibling') : <span className="grpdot" style={{ '--dot': stateColor[nodeWorst(sub)] || 'var(--muted)' } as CSSProperties} />}
+            {reorder ? orderArrows(sibIds, index, scope, 'sibling') : <span className={'grpdot' + (sub.some(needsEye) ? ' pulse' : '')} style={{ '--dot': stateColor[nodeWorst(sub)] || 'var(--muted)' } as CSSProperties} />}
           </div>
           <div className="c-act">
             {canPause && g && !reorder && (
@@ -6226,7 +6232,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
           <div style={{ color: probColor, fontSize: 12, marginBottom: 4, fontWeight: 600 }}>{probErr ? 'Active problems' : 'Active warnings'}</div>
           {problems.map((p, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.2rem 0' }}>
-              <span className="sdot" style={{ '--dot': healthColor(p.state, p.acknowledged) } as CSSProperties} />
+              <span className={'sdot' + (p.acknowledged ? '' : ' pulse')} style={{ '--dot': healthColor(p.state, p.acknowledged) } as CSSProperties} />
               <span style={{ opacity: p.acknowledged ? 0.7 : 1 }}>{p.name}</span>
               <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 {p.acknowledged

@@ -54,7 +54,9 @@ GitHub Release from the matching section below.
 - Panel titles carry a small label above them: the sidebar section, and for a list across sites its
   scope ("Watch · all sites" over Active problems, "Admin" over Users).
 - State dots (a host's badge in the tree, a group's dot, a host's problem list) have a soft halo in
-  their own colour.
+  their own colour, and a dot that needs someone's attention pulses: a warning or error nobody has
+  acknowledged yet (a group pulses while any of its hosts does). OK, acknowledged, paused and hidden
+  dots keep a steady halo, and nothing pulses when the system asks for reduced motion.
 
 ## [core-vm/v0.1.2] - 2026-09-30
 

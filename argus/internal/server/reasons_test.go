@@ -145,3 +145,14 @@ func TestServiceContainerSensors(t *testing.T) {
 		t.Error("Containers has no place in the category order")
 	}
 }
+
+// A host's tree dot pulses only for a warning or error nobody has acknowledged.
+func TestUnackedHosts(t *testing.T) {
+	got := unackedHosts([]sensorRow{
+		{HostID: "1", State: "error"}, {HostID: "2", State: "acked"}, {HostID: "3", State: "warning"},
+		{HostID: "4", State: "ok"}, {HostID: "5", State: "paused"}, {HostID: "2", State: "hidden"},
+	})
+	if !got["1"] || !got["3"] || got["2"] || got["4"] || got["5"] {
+		t.Fatalf("unacked hosts = %v, want only 1 and 3", got)
+	}
+}

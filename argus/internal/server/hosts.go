@@ -51,6 +51,7 @@ type hostView struct {
 	Icon        string   `json:"icon"`                // tree glyph name (device/server/switch/…); see web devIcon
 	IcmpItem    string   `json:"icmp_item,omitempty"` // icmppingsec item id (for the row's sparkline), "" if none
 	IcmpMs      *float64 `json:"icmp_ms,omitempty"`   // last ICMP response time in ms, nil when unknown
+	Unacked     bool     `json:"unacked,omitempty"`   // has a warning or error nobody has acknowledged (its tree dot pulses)
 }
 
 type itemView struct {
@@ -61,7 +62,7 @@ type itemView struct {
 	Units       string `json:"units"`
 	LastClock   int64  `json:"last_clock"` // unix seconds, 0 if never
 	Supported   bool   `json:"supported"`
-	Why         string `json:"why,omitempty"` // why it isn't reading: Zabbix's error, or its collector's reason (reasons.go)
+	Why         string `json:"why,omitempty"`    // why it isn't reading: Zabbix's error, or its collector's reason (reasons.go)
 	UpDown      bool   `json:"updown,omitempty"` // reads 1 up / 0 down, so it has an uptime (uptime.go)
 	Enabled     bool   `json:"enabled"`
 	Numeric     bool   `json:"numeric"` // graphable (value_type float or unsigned)
@@ -69,12 +70,12 @@ type itemView struct {
 	Hidden      bool   `json:"hidden"`  // Argus-side suppression (still collecting)
 	PausedUntil *int64 `json:"paused_until,omitempty"`
 	HiddenUntil *int64 `json:"hidden_until,omitempty"`
-	Category    string `json:"category,omitempty"` // set in curated mode
-	Label       string `json:"label,omitempty"`    // friendly name in curated mode
-	Instance    string `json:"instance,omitempty"` // groups per-target sensors (a mount, a NIC) for stacking
-	Channel     string `json:"channel,omitempty"`  // the metric within an instance (Used %, In, …)
-	Priority    int    `json:"priority"`           // PRTG-style display priority 1..5 (Argus-only)
-	Alertable   bool   `json:"alertable,omitempty"` // has ≥1 trigger (so alerts can be muted)
+	Category    string `json:"category,omitempty"`   // set in curated mode
+	Label       string `json:"label,omitempty"`      // friendly name in curated mode
+	Instance    string `json:"instance,omitempty"`   // groups per-target sensors (a mount, a NIC) for stacking
+	Channel     string `json:"channel,omitempty"`    // the metric within an instance (Used %, In, …)
+	Priority    int    `json:"priority"`             // PRTG-style display priority 1..5 (Argus-only)
+	Alertable   bool   `json:"alertable,omitempty"`  // has ≥1 trigger (so alerts can be muted)
 	AlertsOff   bool   `json:"alerts_off,omitempty"` // all its triggers are disabled (muted)
 	// Effective warning/high values from its own triggers, so the chart can colour just the stretch
 	// of line past a threshold (nil when the sensor has no numeric threshold). See chartthr.go.
@@ -198,6 +199,10 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 
 	hideMap, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 	pauseMap, _ := s.st.ActiveSuppressionMap(ctx, "pause", "host")
+	var unacked map[string]bool
+	if rows, err := s.sensorCensus(ctx); err == nil { // the cached census: no extra Zabbix call
+		unacked = unackedHosts(rows)
+	}
 	classMap, _ := s.st.DeviceClasses(ctx)      // host id -> device-class id (drives the tree icon)
 	pingItems, _ := s.zbx.PingLatencyItems(ctx) // host id -> icmppingsec item (drives the row latency + sparkline)
 
@@ -220,6 +225,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 			hv.Problems = n
 			hv.Severity = worst[h.HostID]
 			hv.State = severityState(worst[h.HostID])
+			hv.Unacked = unacked[h.HostID]
 		}
 		if h.Status == "1" { // disabled in Zabbix
 			hv.Paused = true
@@ -232,6 +238,18 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 		out = append(out, hv)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// unackedHosts marks the hosts with a sensor in warning or error that nobody has acknowledged (the
+// census puts an acknowledged one in "acked").
+func unackedHosts(rows []sensorRow) map[string]bool {
+	out := map[string]bool{}
+	for _, r := range rows {
+		if r.State == "error" || r.State == "warning" {
+			out[r.HostID] = true
+		}
+	}
+	return out
 }
 
 type problemView struct {
