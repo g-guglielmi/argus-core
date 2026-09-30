@@ -17,8 +17,8 @@ GitHub Release from the matching section below.
 - Every container keeps its files in `/docker/<container name>`, on the core VM, on the probe VM and in
   the manual install: `/docker/argus` (the database), `/docker/argus/pki` (the CA the probes trust),
   `/docker/argus-update` (the self-update channel, shared with the sidecar) and `/docker/argus-probe`
-  on a probe VM. [docs/folder-layout.md](docs/folder-layout.md) lists what each holds. The next core
-  VM image uses them; `setup-core.sh`, `setup-core-patching.sh` and the backup tools default to them.
+  on a probe VM. [docs/folder-layout.md](docs/folder-layout.md) lists what each holds. The core VM
+  image uses them from `core-vm/v0.1.4`; `setup-core.sh`, `setup-core-patching.sh` and the backup tools default to them.
 - The CA is owned by root and only readable by the Argus container's group, and it is also mounted
   read-only over `/data/pki`, so the container can't change or replace it.
 
@@ -36,6 +36,25 @@ GitHub Release from the matching section below.
   updater containers ran (`containers.json`: image, environment, folders, ports), since on such a core
   the secret key and the Zabbix API token live only there; `argus-restore containers ARCHIVE` prints
   them back as the `docker run` commands to recreate the containers before restoring.
+
+## [core-vm/v0.1.4] - 2026-09-30
+
+Refresh of the core appliance golden image: the new folder layout and the backup fixes. It is what a
+new deployment gets. Argus and the updater are pre-pulled at build time from their `:latest` images
+(v0.6.0 and v0.2.10 today).
+
+**Folders:**
+- The containers keep their files in `/docker/<container name>`: `/docker/argus` (Argus's database, as
+  `/data`), `/docker/argus/pki` (the CA the probes trust, as `/ca`) and `/docker/argus-update` (the
+  self-update channel, as `/update`, shared with the sidecar). See
+  [docs/folder-layout.md](docs/folder-layout.md).
+- The CA is owned by root and readable by the Argus container's group only, and it is also mounted
+  read-only over `/data/pki`, so the container can't change or replace it.
+
+**Backups:**
+- The backup tools find the folder shared with Argus from the running container, pack every folder the
+  Argus container mounts, and keep the containers' settings (`containers.json`), which
+  `argus-restore containers` prints back as `docker run` commands.
 
 ## [core-vm/v0.1.3] - 2026-09-30
 
