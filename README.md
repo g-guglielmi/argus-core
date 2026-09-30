@@ -138,6 +138,10 @@ choice, an existing Zabbix, or Argus on a **separate VM** from the Zabbix core (
 to reach the API). The full guide below walks through the same stack the appliance ships -
 if you already have Zabbix, skip to [Deploy Argus](#2-deploy-argus).
 
+Both keep each container's files in **`/docker/<container name>`** (`/docker/argus`, its CA in
+`/docker/argus/pki`, `/docker/argus-update`, `/docker/argus-probe` on a probe VM):
+[docs/folder-layout.md](docs/folder-layout.md).
+
 ---
 
 ## Option B - manual deployment guide
@@ -250,6 +254,12 @@ docker run -d \
   --restart unless-stopped \
   -p 8081:8080 \
   -v /docker/argus:/data \
+  -v /docker/argus/pki:/data/pki:ro \
+  -v /docker/argus/pki:/ca:ro \
+  -v /docker/argus-update:/update \
+  -e ARGUS_UPDATE_DIR=/update \
+  -e ARGUS_CA_CERT_FILE=/ca/ca.crt \
+  -e ARGUS_CA_KEY_FILE=/ca/ca.key \
   -e ARGUS_ZABBIX_API_URL=http://10.0.0.10:8080/api_jsonrpc.php \
   -e ARGUS_ZABBIX_API_TOKEN=<zabbix-api-token> \
   -e ARGUS_ADMIN_EMAIL=admin@example.com \
@@ -267,6 +277,12 @@ docker run -d \
 
 > **First run:** `ARGUS_ADMIN_EMAIL` / `ARGUS_ADMIN_PASSWORD` seed the initial admin only
 > when the database is empty; they're ignored afterwards, so you can drop them on later runs.
+>
+> **Folders** ([docs/folder-layout.md](docs/folder-layout.md)): `/docker/argus` holds the database;
+> put the CA (`ca.crt` + `ca.key`, which the **Add probe** wizard signs probe certificates with) in
+> `/docker/argus/pki`, owned by root and readable by the container's group
+> (`sudo chown -R root:65532 /docker/argus/pki && sudo chmod 750 /docker/argus/pki && sudo chmod 440 /docker/argus/pki/ca.key`);
+> `/docker/argus-update` is the channel shared with the update sidecar (section 3).
 >
 > **Port note:** the Zabbix web UI usually holds host 8080, so Argus is published on host
 > 8081 (→ container 8080).

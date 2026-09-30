@@ -9,7 +9,7 @@
 # due. One archive holds everything a new core needs to take over:
 #   - the Argus database (a consistent copy made inside the container: argus backup-db),
 #   - the Zabbix database (pg_dump, with or without metric history) and the PostgreSQL roles,
-#   - the files: /etc/argus-core (env files, at-rest key), /etc/argus/pki (the CA the probes trust),
+#   - the files: /etc/argus-core (env files, at-rest key), /docker/argus/pki (the CA the probes trust),
 #     /etc/zabbix (server and frontend config, TLS), the nginx TLS front, the collector keys and pins,
 #     the external scripts and the Argus host units and scripts.
 # Archives stay in /var/backups/argus (root only), the newest N kept. With a passphrase set they are
@@ -42,7 +42,7 @@ try:
 except ImportError:  # pragma: no cover - Python < 3.9
     ZoneInfo = None
 
-DEFAULT_STATE_DIR = "/opt/argus/update"  # the appliance's; main() finds the real one (resolve_state_dir)
+DEFAULT_STATE_DIR = "/docker/argus-update"  # docs/folder-layout.md; main() finds the real one (resolve_state_dir)
 STATE_DIR = os.environ.get("ARGUS_STATE_DIR", DEFAULT_STATE_DIR)
 CONTAINER = os.environ.get("ARGUS_CONTAINER", "argus")
 UPDATER = os.environ.get("ARGUS_UPDATER_CONTAINER", "argus-updater")
@@ -60,7 +60,7 @@ RETRY_AFTER = 3600  # a failed scheduled backup is tried again an hour later
 # file is added when present (it only exists when ARGUS_SECRET_KEY is not set).
 FILE_PATHS = [
     "etc/argus-core",
-    "etc/argus/pki",
+    "docker/argus/pki",
     "etc/zabbix",
     "etc/nginx/conf.d/argus-https.conf",
     "etc/nginx/conf.d/argus-port80.conf",
@@ -336,7 +336,7 @@ def use_state_dir(d):
 
 def data_dir():
     """The host folder mounted as the Argus container's /data."""
-    return container_mounts().get("/data") or "/var/lib/argus-core"
+    return container_mounts().get("/data") or "/docker/argus"
 
 
 def under_root(path):
@@ -347,8 +347,7 @@ def under_root(path):
 
 def mounted_folders(mounts, update_dest):
     """The folders the Argus container mounts besides its database and its update dir, as paths under
-    /: the CA it signs probe certificates with (/ca) lives in one, which on a core installed by hand is
-    not the appliance's /etc/argus/pki."""
+    /: the CA it signs probe certificates with (/ca) lives in one, wherever a core keeps it."""
     out = []
     for dest, src in sorted(mounts.items()):
         if dest in ("/data", update_dest) or not os.path.isabs(src) or not os.path.isdir(src):

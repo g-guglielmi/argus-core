@@ -22,7 +22,7 @@ ExecStartPre=-/usr/bin/docker rm -f argus-updater
 ExecStartPre=-/usr/bin/docker pull ${ARGUS_UPDATER_IMAGE}:${ARGUS_UPDATER_TAG}
 ExecStart=/usr/bin/docker run -d --name argus-updater --restart unless-stopped \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  -v /opt/argus/update:/update \
+  -v /docker/argus-update:/update \
   -e ARGUS_CORE_CONTAINER=argus \
   ${ARGUS_UPDATER_IMAGE}:${ARGUS_UPDATER_TAG}
 ExecStop=-/usr/bin/docker stop argus-updater

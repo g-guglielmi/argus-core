@@ -172,7 +172,7 @@ echo "==> [8/8] OS patching & lifecycle (DESIGN §14c)"
 # (the self-update channel it already shares with the argus-updater sidecar). The reporter drops the
 # core's patch status there for Argus to read; Argus writes the chosen reboot window back for the
 # watcher below. Override if you mapped a different host path.
-ARGUS_STATE_DIR="${ARGUS_STATE_DIR:-/opt/argus/update}"
+ARGUS_STATE_DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
 apt-get install -y unattended-upgrades needrestart
 
 # Security-only, respect holds/pins, and DON'T reboot unattended (Argus schedules the core reboot).
@@ -201,7 +201,7 @@ cat > /usr/local/sbin/argus-os-report <<'REPORT'
 # Report the core VM's OS patch status for Argus (DESIGN §14c). Writes os-status.json into the shared
 # self-update dir the core container reads. Best-effort: an unknown count is reported as -1.
 set -u
-DIR="${ARGUS_STATE_DIR:-/opt/argus/update}"
+DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
 sec="$(apt-get -s -o Debug::NoLocking=true upgrade 2>/dev/null | awk '/^Inst/ && /[Ss]ecurity/ {n++} END{print n+0}')"
 [ -n "$sec" ] || sec=-1
 reboot=false; [ -f /var/run/reboot-required ] && reboot=true
@@ -232,7 +232,7 @@ chmod +x /usr/local/sbin/argus-os-report
 cat > /usr/local/sbin/argus-reboot-check <<'RCHK'
 #!/usr/bin/env bash
 set -u
-DIR="${ARGUS_STATE_DIR:-/opt/argus/update}"
+DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
 WIN="$DIR/reboot-window.json"
 [ -f "$WIN" ] || exit 0
 [ -f /var/run/reboot-required ] || exit 0
@@ -259,7 +259,7 @@ chmod +x /usr/local/sbin/argus-reboot-check
 cat > /usr/local/sbin/argus-zbx-update <<'ZUPD'
 #!/usr/bin/env bash
 set -u
-DIR="${ARGUS_STATE_DIR:-/opt/argus/update}"
+DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
 WIN="$DIR/zbx-update-window.json"
 [ -f "$WIN" ] || exit 0
 mode="$(sed -n 's/.*"mode":"\([a-z]*\)".*/\1/p' "$WIN")"
@@ -306,7 +306,7 @@ chmod +x /usr/local/sbin/argus-zbx-update
 cat > /usr/local/sbin/argus-tz-check <<'TZCK'
 #!/usr/bin/env bash
 set -u
-DIR="${ARGUS_STATE_DIR:-/opt/argus/update}"
+DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
 WANT="$DIR/timezone.json"
 [ -f "$WANT" ] || exit 0
 tz="$(sed -n 's/.*"tz":"\([A-Za-z0-9_+/-]*\)".*/\1/p' "$WANT")"

@@ -50,7 +50,7 @@ username, and the Public URL). Then, step by step, with live progress and ground
    php-fpm timezone, agent2 self-monitoring, services enabled.
 5. **HTTPS** - a server certificate for this VM (its hostname and address) signed by the monitoring
    CA, and nginx on **:443** in front of Argus, which listens on the loopback only. Install
-   `/etc/argus/pki/ca.crt` on your PCs and the browser warning goes away.
+   `/docker/argus/pki/ca.crt` on your PCs and the browser warning goes away.
 6. **Accounts** - signs in with the stock `Admin`/`zabbix`, **rotates the Admin password** to yours,
    creates the **`argus-svc`** super-admin machine account and mints its **API token** (Argus talks
    through this token; a human never sees or handles it - and rotating `Admin` later never breaks
@@ -80,6 +80,20 @@ scrubbed of secrets once setup completes.
 Machine-generated and never displayed: the **database password** (in `zabbix_server.conf` /
 `zabbix.conf.php`, root-only), the **`argus-svc` API token** (in `argus.env`, root-only), and the
 **at-rest encryption key**. Rotate any human password later without touching the others.
+
+## Folders
+
+The containers keep their files in `/docker/<container name>`, like a manual install
+([docs/folder-layout.md](../../docs/folder-layout.md)):
+
+| Host folder | Mounted in | Holds |
+|---|---|---|
+| `/docker/argus` | `argus` as `/data` | Argus's database |
+| `/docker/argus/pki` | `argus` as `/ca` and over `/data/pki`, both read-only | The CA the probes trust (root's, readable by the container's group) |
+| `/docker/argus-update` | `argus` and `argus-updater` as `/update` | The self-update channel and the host's reports (OS updates, backups) |
+
+The containers' settings are in `/etc/argus-core` (`argus.env`, `image.env`, root only); Zabbix,
+PostgreSQL and nginx keep their usual places.
 
 ## Design notes
 
@@ -132,7 +146,7 @@ packer build argus-core-vm.pkr.hcl        # -> output/argus-core-vm.qcow2
    form, and wait for *"Your monitoring core is ready"* (a few minutes; the schema import is the
    long step).
 4. Sign in to **Argus at `https://<vm-ip>/`** (accept the certificate once, or install
-   `/etc/argus/pki/ca.crt` on your PC), add your first probe (**Probes → Add probe** - the
+   `/docker/argus/pki/ca.crt` on your PC), add your first probe (**Probes → Add probe** - the
    enrollment PKI already works), and take a **hypervisor snapshot**.
 
 Afterwards, `http://<vm-ip>/` redirects to Argus over https. The Zabbix UI stays available on

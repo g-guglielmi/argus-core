@@ -33,12 +33,16 @@ ExecStartPre=-/usr/bin/docker rm -f argus
 ExecStartPre=-/usr/bin/docker pull ${ARGUS_CORE_IMAGE}:${ARGUS_CORE_TAG}
 # :8081 is bound to the loopback: nginx on this VM serves Argus over https on :443 and proxies here
 # (first-boot "https" step). Change to -p 8081:8080 to expose the plain port on the LAN as well.
+# Folders follow /docker/<container name> (docs/folder-layout.md). The CA sits inside the Argus folder,
+# so it is also mounted read-only over /data/pki: a mount point can't be renamed or replaced, so the
+# container can't swap the CA through its writable /data. It reads the CA as /ca.
 ExecStart=/usr/bin/docker run -d --name argus --restart unless-stopped \
   -p 127.0.0.1:8081:8080 \
   --add-host host.docker.internal:host-gateway \
-  -v /var/lib/argus-core:/data \
-  -v /etc/argus/pki:/ca:ro \
-  -v /opt/argus/update:/update \
+  -v /docker/argus:/data \
+  -v /docker/argus/pki:/data/pki:ro \
+  -v /docker/argus/pki:/ca:ro \
+  -v /docker/argus-update:/update \
   --env-file /etc/argus-core/argus.env \
   ${ARGUS_CORE_IMAGE}:${ARGUS_CORE_TAG}
 ExecStop=-/usr/bin/docker stop argus

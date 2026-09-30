@@ -1013,7 +1013,10 @@ the entire stack baked - Zabbix 7.0 (server + nginx frontend + agent2), PostgreS
 (pinned 2.28), Docker with the `argus` + `argus-updater` images pre-pulled, and §14c patching in the
 **core flavor** (security-only, reboot operator-scheduled). Same base (`generic` cloud qcow2, full
 driver set), same delivery (OVA / qcow2 / VHD from a `core-vm/v*` tag Release), same identity strip,
-same no-cloud-init model, same systemd-networkd DHCP.
+same no-cloud-init model, same systemd-networkd DHCP. Container folders follow
+`/docker/<container name>` on both VMs and in the manual install (`docs/folder-layout.md`):
+`/docker/argus` (`/data`), `/docker/argus/pki` (`/ca`), `/docker/argus-update` (`/update`), and
+`/docker/argus-probe` on a probe VM.
 
 **Nothing instance-specific is baked** - no passwords, no database, no certs. First boot serves a
 one-form setup page on `http://<vm>/` (hostname · console keymap · timezone · admin email +
@@ -1025,7 +1028,9 @@ ground-truth progress page (idempotent steps; retry/edit on failure; reboot-safe
 2. **database** - `timescaledb-tune` for the deployed RAM, `zabbix` role + DB with a **generated**
    password, schema import, TimescaleDB conversion.
 3. **pki** - CA (`CN=Monitoring Core CA`) + core server cert; CA mounted RO into Argus so **probe
-   enrollment works out of the box**.
+   enrollment works out of the box**. It lives in `/docker/argus/pki` (root's, readable by the
+   container's group), mounted as `/ca` and over `/data/pki`, both read-only, so the container can't
+   replace it through its writable `/data`.
 4. **zabbix** - `zabbix_server.conf` (DB + TLS/tuning snippet), frontend `zabbix.conf.php` written
    directly (**the browser setup wizard never runs**), nginx `:8080`, php-fpm tz, agent2
    self-monitoring, services enabled.
@@ -1087,7 +1092,7 @@ reach; **Argus holds the plan** (Settings, Backups, `internal/server/backup.go`)
   container (`VACUUM INTO`; a plain file copy when Argus is stopped); `pg_dump -Fc` of the Zabbix
   database (metric history optional: without it the data of `history*`, `trends*` and the
   TimescaleDB chunks is left out) plus `pg_dumpall --globals-only`; `tar` of the core's files
-  (`/etc/argus-core`, `/etc/argus/pki`, `/etc/zabbix`, the nginx TLS front, `/etc/postgresql`, the
+  (`/etc/argus-core`, `/docker/argus/pki`, `/etc/zabbix`, the nginx TLS front, `/etc/postgresql`, the
   collectors' keys and pins, external scripts, Argus units and scripts, the setup marker, and every
   other folder the Argus container mounts besides `/data` and its update dir, which on a core
   installed by hand is where its CA lives; owners kept by name); `containers.json`, the Argus and

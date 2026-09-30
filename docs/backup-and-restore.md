@@ -20,7 +20,7 @@ and export them off the VM, and how to restore after a disaster.
 | `argus.db.gz` | Argus's database: users, two-factor and passkeys, notification channels, status pages, maintenance windows, thresholds, discovery, the incident log, Settings | Everything you set up in Argus |
 | `zabbix.dump` | The Zabbix database (`pg_dump`), with its metric history or only its settings | Hosts, templates, triggers, the Argus service account and its API token, the probes and their TLS pins, secret macros (SSH and SNMP passwords), and the charts' data |
 | `postgres-globals.sql` | The PostgreSQL roles | The `zabbix` role and its password |
-| `files.tar.gz` | `/etc/argus-core` (the env files with the at-rest key and the Zabbix API token), `/etc/argus/pki` (**the CA the probes trust**, with its key), `/etc/zabbix` (server and frontend config, TLS certificates), the nginx TLS front, the collectors' SSH keys and XCP-NG pins, the external scripts, the Argus host units and scripts, and the other folders the Argus container mounts (on a core installed by hand, **its CA**, such as `/docker/argus/pki`) | Without the CA every probe would have to be enrolled again; without the at-rest key Argus can't read its own secrets |
+| `files.tar.gz` | `/etc/argus-core` (the env files with the at-rest key and the Zabbix API token), `/docker/argus/pki` (**the CA the probes trust**, with its key), `/etc/zabbix` (server and frontend config, TLS certificates), the nginx TLS front, the collectors' SSH keys and XCP-NG pins, the external scripts, the Argus host units and scripts, and any other folder the Argus container mounts besides its database and update folder | Without the CA every probe would have to be enrolled again; without the at-rest key Argus can't read its own secrets |
 | `containers.json` | How the Argus and updater containers ran: image, environment (with the secret key and the Zabbix API token), folders, ports, network | On a core installed by hand these settings live nowhere else; `argus-restore containers` prints them back as `docker run` commands |
 | `manifest.json` | When, where and from which versions the archive was made, with a checksum for each part | Checked before anything is restored |
 
@@ -200,9 +200,10 @@ runuser -u postgres -- psql -d zabbix -c "CREATE EXTENSION IF NOT EXISTS timesca
 runuser -u postgres -- psql -d zabbix -c "SELECT timescaledb_pre_restore()"
 runuser -u postgres -- pg_restore -j 4 -d zabbix zabbix.dump
 runuser -u postgres -- psql -d zabbix -c "SELECT timescaledb_post_restore()"
-gunzip -c argus.db.gz > /var/lib/argus-core/argus.db
-rm -f /var/lib/argus-core/argus.db-wal /var/lib/argus-core/argus.db-shm
-chown -R 65532:65532 /var/lib/argus-core /etc/argus/pki
+gunzip -c argus.db.gz > /docker/argus/argus.db
+rm -f /docker/argus/argus.db-wal /docker/argus/argus.db-shm
+chown -R 65532:65532 /docker/argus
+chown -R root:65532 /docker/argus/pki && chmod 750 /docker/argus/pki && chmod 440 /docker/argus/pki/ca.key
 chown -R zabbix:zabbix /etc/zabbix/certs
 systemctl daemon-reload && systemctl start zabbix-server argus-core argus-updater
 ```
@@ -210,13 +211,13 @@ systemctl daemon-reload && systemctl start zabbix-server argus-core argus-update
 ## Troubleshooting
 
 - **"The core host hasn't reported yet" although the tools are installed**: they report to another
-  folder than the one Argus reads. The installer of Argus 0.6.0 took the appliance's
-  `/opt/argus/update` unless told otherwise, and a core installed by hand often shares another one
-  (`/docker/argus-update`, say). See which folder the Argus container mounts:
+  folder than the one Argus reads. The installer takes the folder the Argus container mounts as its
+  update folder, or `/docker/argus-update` when Argus wasn't running then
+  ([folder-layout.md](folder-layout.md)). See which folder the container mounts:
   `docker inspect argus --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}'`,
   run the installer again with it, `sudo ARGUS_STATE_DIR=<that folder> ./install-backup.sh`, and then
-  `sudo systemctl start argus-backup.service`. Releases after 0.6.0 find the folder themselves.
-  `journalctl -u argus-backup -n 20` says so when the folder they were given doesn't exist.
+  `sudo systemctl start argus-backup.service`. `journalctl -u argus-backup -n 20` says so when the
+  folder it was given doesn't exist.
 
 - **"Not restoring over a different version"**: the new VM runs another Zabbix, PostgreSQL or
   TimescaleDB release than the old one. A TimescaleDB dump restores only onto the same extension

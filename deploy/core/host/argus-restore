@@ -216,10 +216,6 @@ def restore_files(work, manifest):
     run(["tar", "-xzpf", os.path.join(work, "files.tar.gz"), "-C", "/", "--exclude=etc/postgresql"])
     # The system users' ids may differ on this machine: set the owners the stack expects.
     fixes = [
-        (["chown", "-R", "%d:%d" % (APP_UID, APP_UID), "/etc/argus/pki"], "/etc/argus/pki"),
-        # the CA folder the old core's Argus container mounted (a core installed by hand keeps it elsewhere)
-        (["chown", "-R", "%d:%d" % (APP_UID, APP_UID), (manifest.get("argus_mounts") or {}).get("/ca", "")],
-         (manifest.get("argus_mounts") or {}).get("/ca", "")),
         (["chown", "-R", "zabbix:zabbix", "/etc/zabbix/certs"], "/etc/zabbix/certs"),
         (["chown", "root:www-data", "/etc/zabbix/web/zabbix.conf.php"], "/etc/zabbix/web/zabbix.conf.php"),
         (["chown", "-R", "zabbix:zabbix", "/var/lib/zabbix/ssh"], "/var/lib/zabbix/ssh"),
@@ -228,6 +224,15 @@ def restore_files(work, manifest):
     for cmd, path in fixes:
         if path and os.path.exists(path):
             run(cmd, check=False)
+    # The CA (the folder the old core's Argus container mounted as /ca): root's, readable by the
+    # container's group only, so Argus can read it but not change it.
+    ca = (manifest.get("argus_mounts") or {}).get("/ca") or "/docker/argus/pki"
+    if os.path.isdir(ca):
+        run(["chown", "-R", "root:%d" % APP_UID, ca], check=False)
+        run(["chmod", "750", ca], check=False)
+        for name, mode in (("ca.key", "440"), ("ca.crt", "444")):
+            if os.path.exists(os.path.join(ca, name)):
+                run(["chmod", mode, os.path.join(ca, name)], check=False)
     for d in ("/etc/argus-core",):
         if os.path.isdir(d):
             run(["chmod", "700", d], check=False)
@@ -263,7 +268,7 @@ def restore_zabbix(work):
 
 def restore_argus(work, manifest):
     say("==> restoring the Argus database")
-    ddir = manifest.get("argus_data_dir") or "/var/lib/argus-core"
+    ddir = manifest.get("argus_data_dir") or "/docker/argus"
     os.makedirs(ddir, exist_ok=True)
     for suffix in ("", "-wal", "-shm"):
         try:

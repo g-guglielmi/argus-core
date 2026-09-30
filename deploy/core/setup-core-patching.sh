@@ -18,14 +18,14 @@
 # Usage:  sudo ARGUS_STATE_DIR=/docker/argus-update ./setup-core-patching.sh
 #   ARGUS_STATE_DIR is the HOST path you bind-mount into the Argus core container as ARGUS_UPDATE_DIR
 #   (find it with:  docker inspect argus --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}'
-#   and take the Source whose Destination is /update). Defaults to /opt/argus/update.
+#   and take the Source whose Destination is /update). Defaults to /docker/argus-update (docs/folder-layout.md).
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
   echo "!! run as root (sudo)."; exit 1
 fi
 
-ARGUS_STATE_DIR="${ARGUS_STATE_DIR:-/opt/argus/update}"
+ARGUS_STATE_DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
 export DEBIAN_FRONTEND=noninteractive
 
 echo "==> installing unattended-upgrades + needrestart"
@@ -59,7 +59,7 @@ cat > /usr/local/sbin/argus-os-report <<'REPORT'
 # Report the core VM's OS patch status for Argus (DESIGN §14c). Writes os-status.json into the shared
 # self-update dir the core container reads. Best-effort: an unknown count is reported as -1.
 set -u
-DIR="${ARGUS_STATE_DIR:-/opt/argus/update}"
+DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
 sec="$(apt-get -s -o Debug::NoLocking=true upgrade 2>/dev/null | awk '/^Inst/ && /[Ss]ecurity/ {n++} END{print n+0}')"
 [ -n "$sec" ] || sec=-1
 reboot=false; [ -f /var/run/reboot-required ] && reboot=true
@@ -90,7 +90,7 @@ chmod +x /usr/local/sbin/argus-os-report
 cat > /usr/local/sbin/argus-reboot-check <<'RCHK'
 #!/usr/bin/env bash
 set -u
-DIR="${ARGUS_STATE_DIR:-/opt/argus/update}"
+DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
 WIN="$DIR/reboot-window.json"
 [ -f "$WIN" ] || exit 0
 [ -f /var/run/reboot-required ] || exit 0
@@ -117,7 +117,7 @@ chmod +x /usr/local/sbin/argus-reboot-check
 cat > /usr/local/sbin/argus-zbx-update <<'ZUPD'
 #!/usr/bin/env bash
 set -u
-DIR="${ARGUS_STATE_DIR:-/opt/argus/update}"
+DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
 WIN="$DIR/zbx-update-window.json"
 [ -f "$WIN" ] || exit 0
 mode="$(sed -n 's/.*"mode":"\([a-z]*\)".*/\1/p' "$WIN")"
@@ -164,7 +164,7 @@ chmod +x /usr/local/sbin/argus-zbx-update
 cat > /usr/local/sbin/argus-tz-check <<'TZCK'
 #!/usr/bin/env bash
 set -u
-DIR="${ARGUS_STATE_DIR:-/opt/argus/update}"
+DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
 WANT="$DIR/timezone.json"
 [ -f "$WANT" ] || exit 0
 tz="$(sed -n 's/.*"tz":"\([A-Za-z0-9_+/-]*\)".*/\1/p' "$WANT")"

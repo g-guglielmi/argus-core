@@ -43,7 +43,7 @@ Then apply the TLS + tuning snippet: `core/zabbix_server.conf.snippet`.
 It also sets up **OS patching** (DESIGN §14c): `unattended-upgrades` (security suite only - it respects
 the TimescaleDB 2.28 hold) + `needrestart`, with the core's **reboot left to you** (Argus schedules it
 in **Settings → OS updates**; default is notify-only). A host reporter writes the core's patch status
-into `ARGUS_STATE_DIR` (default `/opt/argus/update`) - set that to the **same host path** you map as the
+into `ARGUS_STATE_DIR` (default `/docker/argus-update`, see [docs/folder-layout.md](../docs/folder-layout.md)) - set that to the **same host path** you map as the
 Argus container's `ARGUS_UPDATE_DIR`, so the core shows its own status and the chosen reboot window is
 honoured locally. Probe VMs patch + reboot themselves (weekly ~03:00) and report status the same way.
 

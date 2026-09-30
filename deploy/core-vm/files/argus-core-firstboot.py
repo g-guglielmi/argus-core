@@ -66,7 +66,7 @@ AGENT2_DROPIN = "/etc/zabbix/zabbix_agent2.d/argus.conf"
 NGINX_REDIRECT = "/etc/nginx/conf.d/argus-port80.conf"
 NGINX_HTTPS = "/etc/nginx/conf.d/argus-https.conf"
 WEB_CERT_DIR = "/etc/nginx/argus"                      # the VM's own https certificate for Argus
-PKI_DIR = "/etc/argus/pki"                             # mounted read-only into the core as /ca
+PKI_DIR = "/docker/argus/pki"                          # mounted read-only into the core as /ca
 ZBX_CERTS = "/etc/zabbix/certs"
 CA_CN = "Monitoring Core CA"                           # matches deploy/pki/gen-certs.sh
 
@@ -384,12 +384,13 @@ def step_pki(cfg, state):
         os.unlink(csr)
     run(["bash", "-c", "cp -f '%s' '%s/ca.crt'" % (ca_crt, ZBX_CERTS)])
     # zabbix-server reads its copies; the Argus container (uid 65532) reads the CA to sign enrollments.
+    # The CA is root's and only readable by the container's group, so Argus can't change it.
     run(["bash", "-c",
          "chown -R zabbix:zabbix '%s' && chmod 644 '%s'/*.crt && chmod 600 '%s'/zabbix-core.key"
          % (ZBX_CERTS, ZBX_CERTS, ZBX_CERTS)])
     run(["bash", "-c",
-         "chown -R %s:%s '%s' && chmod 700 '%s' && chmod 400 '%s/ca.key' && chmod 444 '%s/ca.crt'"
-         % (ARGUS_UID, ARGUS_UID, PKI_DIR, PKI_DIR, PKI_DIR, PKI_DIR)])
+         "chown -R root:%s '%s' && chmod 750 '%s' && chmod 440 '%s/ca.key' && chmod 444 '%s/ca.crt'"
+         % (ARGUS_UID, PKI_DIR, PKI_DIR, PKI_DIR, PKI_DIR)])
 
 
 def php_fpm_unit():
@@ -995,7 +996,7 @@ def success_fragment():
   <div class="next">
     <b>Argus:</b> <a href="https://{ip}/">https://{ip}/</a> - sign in as <b>{email}</b>.
     Your browser will warn about the certificate once: it is signed by this core's own CA
-    (<code>/etc/argus/pki/ca.crt</code>); install that CA on your PCs, or put your own certificate on
+    (<code>/docker/argus/pki/ca.crt</code>); install that CA on your PCs, or put your own certificate on
     the reverse proxy later.<br>
     <b>Zabbix UI</b> (engine room, rarely needed): <a href="http://{ip}:8080/">http://{ip}:8080/</a> - user <b>Admin</b>.<br><br>
     Next steps: add your first probe (Argus &rarr; <b>Probes</b> &rarr; Add probe), and take a

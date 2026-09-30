@@ -49,7 +49,8 @@ docker run -d \
   --restart unless-stopped \
   -p 8081:8080 \
   -v /docker/argus:/data \
-  -v /docker/pki:/ca:ro \
+  -v /docker/argus/pki:/data/pki:ro \
+  -v /docker/argus/pki:/ca:ro \
   -e ARGUS_ZABBIX_API_URL=http://10.0.0.10:8080/api_jsonrpc.php \
   -e ARGUS_ZABBIX_API_TOKEN=<zabbix-api-token> \
   -e ARGUS_ADMIN_EMAIL=admin@example.com \
@@ -205,18 +206,18 @@ failure banner. The public-facing core never touches Docker.
 (fill in `.env` from the table above), then `docker compose up -d`. It runs both containers and the
 shared volume.
 
-**Manual (docker run):** add a shared volume + `ARGUS_UPDATE_DIR` to the core, and run the sidecar
-alongside it:
+**Manual (docker run):** add the shared folder + `ARGUS_UPDATE_DIR` to the core, and run the sidecar
+alongside it (the folders: [docs/folder-layout.md](../docs/folder-layout.md)):
 
 ```bash
 # core: add these to your `docker run` above
-  -v argus-update:/update \
+  -v /docker/argus-update:/update \
   -e ARGUS_UPDATE_DIR=/update \
 
 # the sidecar (holds the socket; not web-facing)
 docker run -d --name argus-updater --restart unless-stopped \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  -v argus-update:/update \
+  -v /docker/argus-update:/update \
   -e ARGUS_CORE_CONTAINER=argus \
   ghcr.io/<your-account>/argus-updater:latest
 ```

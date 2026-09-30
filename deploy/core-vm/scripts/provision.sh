@@ -25,7 +25,7 @@ apt-get install -y --no-install-recommends ca-certificates curl gnupg python3 sy
 echo "==> installing the Zabbix + PostgreSQL/TimescaleDB stack (setup-core.sh, image mode)"
 # The SAME script the manual install path runs - image mode does repos + packages + the TimescaleDB
 # 2.28 pin + OS patching (DESIGN §14c, core flavor: security-only, NO auto-reboot, os-report/reboot
-# watcher into /opt/argus/update), and skips the per-instance DB/config phases (first boot does those).
+# watcher into /docker/argus-update), and skips the per-instance DB/config phases (first boot does those).
 chmod +x /tmp/setup-core.sh
 SETUP_MODE=image bash /tmp/setup-core.sh
 
@@ -70,15 +70,18 @@ echo "==> hardening SSH (no root login; password login only for the account firs
 # administrator it creates, so that one password works over SSH when the console isn't at hand.
 install -d -m 0755 /etc/ssh/sshd_config.d
 printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\n' > /etc/ssh/sshd_config.d/10-argus.conf
-# The Argus data volume (/data in the container) and the CA dir (/ca, read-only in the container).
-# The core runs as uid 65532 (distroless nonroot), so it must own what it writes.
-install -d -m 0755 /var/lib/argus-core
-chown 65532:65532 /var/lib/argus-core
-install -d -m 0700 /etc/argus/pki
-# setup-core.sh created the shared self-update dir (/opt/argus/update); hand it to the core's uid at
+# The container folders follow /docker/<container name> (docs/folder-layout.md). The Argus folder is
+# /data in the container, and the core runs as uid 65532 (distroless nonroot), so it owns it. The CA
+# folder inside it is root's, readable by the core's group only (first boot fills it).
+install -d -m 0755 /docker
+install -d -m 0755 /docker/argus
+chown 65532:65532 /docker/argus
+install -d -m 0750 /docker/argus/pki
+chown root:65532 /docker/argus/pki
+# setup-core.sh created the shared self-update dir (/docker/argus-update); hand it to the core's uid at
 # IMAGE BUILD time only. Never chown/chmod an EXISTING deployment's dir - create-only rule (the core
 # container writes its update request.json here and owns the dir from first boot on).
-chown 65532:65532 /opt/argus/update
+chown 65532:65532 /docker/argus-update
 
 # Networking: systemd-networkd DHCPs the primary NIC. cloud-init is purged below, so networkd is the
 # sole network manager - no datasource dependency, no fight over the interface.

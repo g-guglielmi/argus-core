@@ -13,6 +13,15 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Folders:**
+- Every container keeps its files in `/docker/<container name>`, on the core VM, on the probe VM and in
+  the manual install: `/docker/argus` (the database), `/docker/argus/pki` (the CA the probes trust),
+  `/docker/argus-update` (the self-update channel, shared with the sidecar) and `/docker/argus-probe`
+  on a probe VM. [docs/folder-layout.md](docs/folder-layout.md) lists what each holds. The next core
+  VM image uses them; `setup-core.sh`, `setup-core-patching.sh` and the backup tools default to them.
+- The CA is owned by root and only readable by the Argus container's group, and it is also mounted
+  read-only over `/data/pki`, so the container can't change or replace it.
+
 **Fixed:**
 - Backups on a core installed by hand: the backup tools reported to the appliance's folder
   (`/opt/argus/update`) unless `install-backup.sh` was told otherwise, so on a core that shares another

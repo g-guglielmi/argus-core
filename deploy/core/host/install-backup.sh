@@ -10,8 +10,8 @@
 # setup-core.sh and setup-core-patching.sh run it. On an existing core, copy this folder to the VM and
 # run it:  sudo ./install-backup.sh
 # ARGUS_STATE_DIR is the host folder shared with the Argus container as its update dir. Left unset, it
-# is the folder the running Argus container actually mounts there (a core installed by hand often uses
-# another one than the appliance's /opt/argus/update).
+# is the folder the running Argus container actually mounts there (/docker/argus-update on a core laid
+# out as docs/folder-layout.md describes).
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
