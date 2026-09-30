@@ -13,6 +13,28 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-01
+
+Backups, tried on a real core: they now work on a core installed by hand, say what they are doing,
+and keep the core's address. Every container's files are in `/docker/<container name>`.
+
+**Backups:**
+- Backups tell what they are doing. **Settings, Backups** shows **Recent activity**: the last runs, what
+  started each (the daily time, or who pressed the button), how it went, and for a failure the step
+  it failed at ("failed while mounting //10.0.0.20/Backup: ..."). The page follows a check or a backup
+  until its result is in, instead of showing the previous one; an old export failure says so once a
+  newer check works. In the journal each run starts with what it does and why, names the target and
+  logs each step; a failed target check no longer shows as a failed service. `argus-backup log` prints
+  the recent activity on the VM.
+- Backups keep the core's network identity (`network.json`): its address, gateway, DNS, static routes
+  and hostname. `argus-restore network ARCHIVE` gives a new core the same address and hostname, so the
+  probes and the web certificate find it where they expect: on a core VM it sets them after you type
+  `TAKE OVER`; an address from DHCP is better moved to the new machine's MAC, which it prints; on a
+  machine whose network another tool manages it prints the settings to enter. `argus-restore inspect`
+  shows the old address, and a restore says when this machine doesn't have it yet.
+- The backup tools run on the core host: on an existing core, install them again from this release
+  (`deploy/core/host/install-backup.sh`, see docs/backup-and-restore.md).
+
 **Folders:**
 - Every container keeps its files in `/docker/<container name>`, on the core VM, on the probe VM and in
   the manual install: `/docker/argus` (the database), `/docker/argus/pki` (the CA the probes trust),
@@ -39,19 +61,6 @@ GitHub Release from the matching section below.
 - An SMB export that fails says why in plain words, instead of the mount's own run-together message:
   the server can't be reached on TCP 445 (a firewall, no route, SMB off), refused the login, has no
   such share, or its name doesn't resolve on the core. The mount's error code stays in brackets.
-- Backups tell what they are doing. **Settings, Backups** shows **Recent activity**: the last runs, what
-  started each (the daily time, or who pressed the button), how it went, and for a failure the step
-  it failed at ("failed while mounting //10.0.0.20/Backup: ..."). The page follows a check or a backup
-  until its result is in, instead of showing the previous one; an old export failure says so once a
-  newer check works. In the journal each run starts with what it does and why, names the target and
-  logs each step; a failed target check no longer shows as a failed service. `argus-backup log` prints
-  the recent activity on the VM.
-- Backups keep the core's network identity (`network.json`): its address, gateway, DNS, static routes
-  and hostname. `argus-restore network ARCHIVE` gives a new core the same address and hostname, so the
-  probes and the web certificate find it where they expect: on a core VM it sets them after you type
-  `TAKE OVER`; an address from DHCP is better moved to the new machine's MAC, which it prints; on a
-  machine whose network another tool manages it prints the settings to enter. `argus-restore inspect`
-  shows the old address, and a restore says when this machine doesn't have it yet.
 - **Check the target** catches up after a failed export: when the last export failed and the target
   works again, the check copies the archives it is missing right away, instead of the failure staying
   on screen until the next backup.
