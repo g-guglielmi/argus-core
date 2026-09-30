@@ -1170,8 +1170,8 @@ function BackupsCard() {
                 {cfg.enabled && st.next_due_at ? ` Next ${fmtWhen(st.next_due_at)}.` : ''}
               </span>
               {lr?.warning && <span className="set-hint" style={{ color: 'var(--warn)' }}>{lr.warning}.</span>}
-              {st.remote && <span className="set-hint" style={st.remote.ok ? undefined : { color: 'var(--warn)' }}>{st.remote.ok ? `Exported ${fmtWhen(st.remote.at)}: ${st.remote.files || 0} on the target.` : `Export failed ${fmtWhen(st.remote.at)}: ${st.remote.error}.`}</span>}
-              {st.test && <span className="set-hint" style={st.test.ok ? undefined : { color: 'var(--warn)' }}>{st.test.ok ? `Target checked ${fmtWhen(st.test.at)}: it works.` : `Target check ${fmtWhen(st.test.at)} failed: ${st.test.error}.`}</span>}
+              {st.remote && <span className="set-hint" style={st.remote.ok ? undefined : { color: 'var(--warn)' }}>{st.remote.ok ? `Exported ${fmtWhen(st.remote.at)}: ${st.remote.files || 0} on the target.` : `Export failed ${fmtWhen(st.remote.at)}: ${(st.remote.error || '').replace(/\.+$/, '')}.`}</span>}
+              {st.test && <span className="set-hint" style={st.test.ok ? undefined : { color: 'var(--warn)' }}>{st.test.ok ? `Target checked ${fmtWhen(st.test.at)}: it works.` : `Target check ${fmtWhen(st.test.at)} failed: ${(st.test.error || '').replace(/\.+$/, '')}.`}</span>}
               <span className="set-hint">
                 <button type="button" className="btn" style={{ padding: '2px 10px' }} disabled={active || dirty} title={dirty ? 'Save first' : undefined} onClick={() => request('backup')}>Back up now</button>
                 {r.type && <button type="button" className="btn" style={{ padding: '2px 10px', marginLeft: 6 }} disabled={active || dirty} title={dirty ? 'Save first' : undefined} onClick={() => request('test')}>{v.pending === 'test' ? 'Checking…' : 'Check the target'}</button>}

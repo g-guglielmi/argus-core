@@ -227,6 +227,10 @@ systemctl daemon-reload && systemctl start zabbix-server argus-core argus-update
   was made.
 - **"the checksum does not match"**: the archive was damaged on its way (a partial copy). Copy it again,
   or take an older one.
+- **The export says it "can't reach" the server on TCP 445**: SMB needs TCP 445 from the core to the
+  server and nothing else (not 137 to 139). A firewall between the two networks usually drops it; allow
+  that one port from the core's address. "can't resolve" means the core's DNS doesn't know the name:
+  use the server's IP address, or a DNS name the core resolves.
 - **The export fails with "Permission denied"**: the account can't write the folder (SMB), the core's
   address isn't allowed or root is squashed (NFS), or the public key isn't in `authorized_keys`
   (rsync). **Check the target** repeats the test at once.

@@ -258,6 +258,18 @@ class BackupTest(unittest.TestCase):
         # The data folder and the update folder are not packed as files: the database has its own part.
         self.assertNotIn(self.mod.under_root(self.dirs["data"]), manifest["files"])
 
+    def test_smb_errors_in_plain_words(self):
+        r = self.mod.smb_reason
+        timeout = "mount failed: mount error(115): could not connect to 10.0.0.20Unable to find suitable address."
+        self.assertEqual(r(timeout, "//10.0.0.20/Backup"),
+                         "can't reach 10.0.0.20 on TCP 445 (SMB): a firewall between the core and it drops the "
+                         "connection, the core has no route there, or SMB is off on it (mount error 115)")
+        self.assertIn("refused the login", r("mount failed: mount error(13): Permission denied", "//nas/Backup"))
+        self.assertIn("nas has no such share", r("mount failed: mount error(2): No such file or directory", "//nas/Backup"))
+        self.assertEqual(r("mount failed: mount error: could not resolve address for nas: Unknown error", "//nas/Backup"),
+                         "the core can't resolve nas: use its IP address, or a DNS name the core resolves")
+        self.assertEqual(r("mount failed: something new", "//nas/Backup"), "mount failed: something new")
+
     def test_history_off_excludes_metric_data(self):
         self.mod.do_backup(plan(history=False), "manual", "")
         dump = [c for c in self.fake.calls if "pg_dump" in c][0]

@@ -36,6 +36,9 @@ GitHub Release from the matching section below.
   updater containers ran (`containers.json`: image, environment, folders, ports), since on such a core
   the secret key and the Zabbix API token live only there; `argus-restore containers ARCHIVE` prints
   them back as the `docker run` commands to recreate the containers before restoring.
+- An SMB export that fails says why in plain words, instead of the mount's own run-together message:
+  the server can't be reached on TCP 445 (a firewall, no route, SMB off), refused the login, has no
+  such share, or its name doesn't resolve on the core. The mount's error code stays in brackets.
 
 ## [core-vm/v0.1.4] - 2026-09-30
 

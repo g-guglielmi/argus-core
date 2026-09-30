@@ -614,7 +614,11 @@ class MountedTarget:
                 opts.append("credentials=" + self.creds)
             else:
                 opts.append("guest")
-            cmd = ["mount", "-t", "cifs", self.r["share"], self.mnt, "-o", ",".join(opts)]
+            try:
+                run(["mount", "-t", "cifs", self.r["share"], self.mnt, "-o", ",".join(opts)], timeout=120)
+            except Fail as e:
+                raise Fail(smb_reason(str(e), self.r["share"]))
+            cmd = None
         else:
             opts = self.r.get("options") or "soft,timeo=150,retrans=3"
             fresh = not shutil.which("mount.nfs")
@@ -623,7 +627,8 @@ class MountedTarget:
                 # nfs-common brings rpcbind, listening on port 111; NFSv4 doesn't need it.
                 run(["systemctl", "disable", "--now", "rpcbind.socket", "rpcbind.service"], timeout=60, check=False)
             cmd = ["mount", "-t", "nfs", self.r["export"], self.mnt, "-o", opts]
-        run(cmd, timeout=120)
+        if cmd:
+            run(cmd, timeout=120)
         self.mounted = True
         self.dir = os.path.join(self.mnt, self.r.get("path") or "")
         os.makedirs(self.dir, exist_ok=True)
@@ -645,6 +650,32 @@ class MountedTarget:
 
     def delete(self, name):
         os.unlink(os.path.join(self.dir, name))
+
+
+# mount.cifs reports a failure as "mount error(N): ..." (often run together with a second line); these
+# say what it means and what to check.
+SMB_ERRORS = {
+    "115": "can't reach %s on TCP 445 (SMB): a firewall between the core and it drops the connection, "
+           "the core has no route there, or SMB is off on it",
+    "113": "no route from the core to %s",
+    "112": "%s is down or doesn't answer",
+    "111": "%s refused the connection on TCP 445: SMB is off on it",
+    "110": "%s didn't answer on TCP 445 in time",
+    "13": "%s refused the login: check the user, password and domain, and that the user may write to the share",
+    "2": "%s has no such share (the name after the server)",
+    "95": "%s doesn't speak the SMB version chosen: try Negotiate",
+}
+
+
+def smb_reason(err, share):
+    """Plain words for a failed CIFS mount, with the mount's own code kept for reference."""
+    server = (share[2:].split("/", 1)[0] if share.startswith("//") else share) or "the server"
+    if "could not resolve address" in err:
+        return "the core can't resolve %s: use its IP address, or a DNS name the core resolves" % server
+    m = re.search(r"mount error\((\d+)\)", err)
+    if m and m.group(1) in SMB_ERRORS:
+        return SMB_ERRORS[m.group(1)] % server + " (mount error %s)" % m.group(1)
+    return err
 
 
 class RsyncTarget:
