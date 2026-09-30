@@ -156,3 +156,62 @@ func TestUnackedHosts(t *testing.T) {
 		t.Fatalf("unacked hosts = %v, want only 1 and 3", got)
 	}
 }
+
+// The failed-units count shows the failed names while it is above 0, has no uptime, and is a Services
+// row; the CPU iowait and steal sensors are CPU rows.
+func TestFailedUnitsSensor(t *testing.T) {
+	key := "linux.ssh.units.failed[systemd]"
+	if got := reasonKeyFor(key); got != "linux.ssh.units.failed.names[systemd]" {
+		t.Fatalf("reason key = %q", got)
+	}
+	ri := reasonIndex{}
+	ri.add("10", "linux.ssh.units.failed.names[systemd]", "backup.service, certbot.timer")
+	if got := ri.why("10", key, "2", "", true); got != "backup.service, certbot.timer" {
+		t.Errorf("2 failed units: why = %q", got)
+	}
+	if got := ri.why("10", key, "0", "", true); got != "" {
+		t.Errorf("no failed units: why = %q", got)
+	}
+	if isUpDownKey(key) {
+		t.Error("a count has no uptime")
+	}
+	if cat, label, _, _, ok := classifyItem(key, "Failed units"); !ok || cat != "Services" || label != "Failed units" {
+		t.Errorf("failed units row = %q %q %v", cat, label, ok)
+	}
+	if _, _, _, _, ok := classifyItem("linux.ssh.units.failed.names[systemd]", "Failed unit names"); ok {
+		t.Error("the names item must not be a sensor row")
+	}
+	for k, want := range map[string]string{"system.cpu.util[ssh,iowait]": "CPU utilization (iowait)", "system.cpu.util[ssh,steal]": "CPU utilization (steal)"} {
+		if cat, label, _, _, ok := classifyItem(k, ""); !ok || cat != "CPU" || label != want {
+			t.Errorf("%s row = %q %q %v", k, cat, label, ok)
+		}
+	}
+}
+
+// A TCP port is one group named after it (connect time primary, reachability the Downtime band), its
+// error item is the reason while it reads down, and it has an uptime.
+func TestTCPPortSensors(t *testing.T) {
+	if cat, label, inst, ch, ok := classifyItem("tcp.port.up[3389]", "Port RDP (3389)"); !ok || cat != "TCP" || inst != "RDP (3389)" || ch != "Reachable" || label != "Port RDP (3389) reachable" {
+		t.Errorf("up row = %q %q %q %q %v", cat, label, inst, ch, ok)
+	}
+	if cat, _, inst, ch, ok := classifyItem("tcp.port.time[3389]", "Port RDP (3389) connect time"); !ok || cat != "TCP" || inst != "RDP (3389)" || ch != "Response time" {
+		t.Errorf("time row = %q %q %q %v", cat, inst, ch, ok)
+	}
+	if _, _, inst, _, _ := classifyItem("tcp.port.up[8443]", "Port {#PORTNAME}"); inst != "8443" {
+		t.Errorf("unexpanded name falls back to the port, got %q", inst)
+	}
+	if _, _, _, _, ok := classifyItem("tcp.port.error[3389]", "Port RDP (3389) error"); ok {
+		t.Error("a port's error item must not be a sensor row")
+	}
+	if got := reasonKeyFor("tcp.port.up[3389]"); got != "tcp.port.error[3389]" {
+		t.Errorf("reason key = %q", got)
+	}
+	if !isUpDownKey("tcp.port.up[3389]") {
+		t.Error("a TCP port has an uptime")
+	}
+	for _, order := range []map[string]int{categoryOrderServer, categoryOrderNet, categoryOrderNAS} {
+		if order["TCP"] != order["Web"]+1 {
+			t.Errorf("TCP should follow Web: %v", order)
+		}
+	}
+}

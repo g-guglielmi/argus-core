@@ -164,6 +164,13 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   (`systemctl show`, no rights needed) and the Docker containers matching a name filter (`docker ps
   -a`, needs docker rights), one Running / Down sensor each with its state as the reason, from the
   same SSH session. DESIGN section 5. - _(BE+probe)_ M
+- [x] **Heartbeat** - Argus pings an outside monitor (healthchecks.io, an Uptime Kuma push monitor)
+  once a minute while healthy end to end, so its own death is noticed. DESIGN section 7. - _(BE+FE)_ S
+- [x] **Linux (SSH): failed units, iowait, steal** - a no-setup failed-units count with the names as
+  the reason, and CPU iowait and steal with their own thresholds. - _(BE+probe)_ S
+- [x] **TCP ports add-on** - plain port checks from the probe, one sensor per port with its connect
+  time and why it doesn't answer. - _(BE+FE+probe)_ S
+- [x] **Traffic totals** - interface charts show the total moved over their range. - _(FE)_ S
 
 ### G. Scale & production readiness
 - [x] **Security review, wave 1 (core)** - a static review of the three repositories; the core-side

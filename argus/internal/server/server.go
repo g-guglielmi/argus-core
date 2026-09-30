@@ -51,6 +51,7 @@ type Server struct {
 	probeVM       *probeVMCache     // newest probe-vm appliance + assets, polled from GitHub Releases
 	digests       digestCache       // tag -> digest, handed out with every update so the updater can verify the pull
 	census        *censusCache      // the sensor census, kept warm in memory (census.go)
+	hb            heartbeat         // the outside monitor's ping (heartbeat.go)
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {
@@ -77,6 +78,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// System notices (updates available, self-update results, finished scans, ...) for the channels
 	// that opted in.
 	s.startNotices(context.Background())
+	// Ping the outside monitor once a minute while Argus is healthy (heartbeat.go).
+	s.startHeartbeat(context.Background())
 	// Mirror the stored core reboot window to the shared update dir so the host reboot timer sees it
 	// even if the setting is never touched after this boot (DESIGN §14c). Best-effort.
 	s.syncRebootWindowFile(context.Background())
@@ -262,6 +265,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("PATCH /api/settings", auth.RequireRole("admin", s.handleUpdateSettings))
 	mux.HandleFunc("GET /api/settings/retention", auth.RequireRole("admin", s.handleGetRetention))
 	mux.HandleFunc("PUT /api/settings/retention", auth.RequireRole("admin", s.handleSetRetention))
+	mux.HandleFunc("GET /api/settings/heartbeat", auth.RequireRole("admin", s.handleHeartbeat))
+	mux.HandleFunc("POST /api/settings/heartbeat", auth.RequireRole("admin", s.handleHeartbeatNow))
 
 	// probe enrollment tokens (admin only)
 	mux.HandleFunc("GET /api/probes/tokens", auth.RequireRole("admin", s.handleListEnrollTokens))

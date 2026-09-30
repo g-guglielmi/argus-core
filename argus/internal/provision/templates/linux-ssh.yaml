@@ -10,9 +10,9 @@ zabbix_export:
       description: |
         The agentless, no-SNMP fallback for a Linux box you can only reach over SSH. The proxy runs a
         small collector (argus_linux_ssh.py, an external check baked into the argus-probe image) that
-        opens ONE SSH session per poll, reads /proc + df + /proc/net/dev, and prints CPU utilisation,
-        load average, memory, uptime, per-filesystem usage and per-interface traffic (the last two via
-        LLD) as JSON - so every reading comes from a single login instead of one connection per item.
+        opens ONE SSH session per poll, reads /proc + df + /proc/net/dev, and prints CPU utilisation
+        (plus iowait and steal), load average, memory, uptime, failed systemd units, per-filesystem
+        usage and per-interface traffic (the last two via LLD) as JSON - so every reading comes from a single login instead of one connection per item.
         Item keys match the native agent/SNMP keys, so a host reads the same whichever way it is
         monitored. Set {$SSH.USER} to a read-only login, {$SSH.AUTH} to "key" (recommended) or
         "password", and either {$SSH.KEYFILE} (path to the private key ON the proxy) or {$SSH.PASSWORD}
@@ -100,6 +100,62 @@ zabbix_export:
               name: 'Very high CPU utilization'
               priority: HIGH
               description: 'CPU utilization at/above the high threshold on the last 3 checks.'
+        - uuid: 578ed2f66db648909a4fd5b518da6c9f
+          name: 'CPU iowait'
+          type: DEPENDENT
+          key: 'system.cpu.util[ssh,iowait]'
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of CPU time spent idle while waiting on storage, from the same two /proc/stat samples as CPU utilization. CPU utilization counts it as idle, so a box stuck on its disks reads idle there and high here.'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cpu_iowait'
+              error_handler: DISCARD_VALUE
+          triggers:
+            - uuid: 7f5c16abe9e94b36b7830f6ba798b89d
+              expression: 'min(/Argus Linux by SSH/system.cpu.util[ssh,iowait],#3)>={$CPU.IOWAIT.WARN} and min(/Argus Linux by SSH/system.cpu.util[ssh,iowait],#3)<{$CPU.IOWAIT.HIGH}'
+              name: 'High CPU iowait'
+              priority: WARNING
+              description: 'CPU iowait at/above the warning threshold on the last 3 checks: the host is waiting on its storage.'
+            - uuid: 989863f439754abca83503576598a792
+              expression: 'min(/Argus Linux by SSH/system.cpu.util[ssh,iowait],#3)>={$CPU.IOWAIT.HIGH}'
+              name: 'Very high CPU iowait'
+              priority: HIGH
+              description: 'CPU iowait at/above the high threshold on the last 3 checks: the host is waiting on its storage.'
+        - uuid: 8dacd9f792e34ff39a667575f7883eb7
+          name: 'CPU steal'
+          type: DEPENDENT
+          key: 'system.cpu.util[ssh,steal]'
+          delay: '0'
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of CPU time the hypervisor gave to other guests while this VM wanted to run (/proc/stat). CPU utilization counts it as busy: a high steal means the hypervisor or the VPS provider is overcommitted, not that this box is loaded. Always 0 on bare metal.'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cpu_steal'
+              error_handler: DISCARD_VALUE
+          triggers:
+            - uuid: c27931dcb7864ac1b3f654a26eced458
+              expression: 'min(/Argus Linux by SSH/system.cpu.util[ssh,steal],#3)>={$CPU.STEAL.WARN} and min(/Argus Linux by SSH/system.cpu.util[ssh,steal],#3)<{$CPU.STEAL.HIGH}'
+              name: 'High CPU steal'
+              priority: WARNING
+              description: 'CPU steal at/above the warning threshold on the last 3 checks: other guests on the same hypervisor are taking this VM''s CPU time.'
+            - uuid: 8eb97af8e4e64c9cad8a8db74ca910e8
+              expression: 'min(/Argus Linux by SSH/system.cpu.util[ssh,steal],#3)>={$CPU.STEAL.HIGH}'
+              name: 'Very high CPU steal'
+              priority: HIGH
+              description: 'CPU steal at/above the high threshold on the last 3 checks: other guests on the same hypervisor are taking this VM''s CPU time.'
         - uuid: b0d05050128e4e538aae3084fd0021f3
           name: 'Load average (1m)'
           type: DEPENDENT
@@ -380,6 +436,91 @@ zabbix_export:
                 - type: DISCARD_UNCHANGED_HEARTBEAT
                   parameters:
                     - 1h
+        - uuid: 3aec46b75b2e43459b408fc3f2f00340
+          name: 'systemd discovery'
+          type: DEPENDENT
+          key: linux.ssh.systemd.discovery
+          delay: '0'
+          lifetime: 1d
+          enabled_lifetime_type: DISABLE_NEVER
+          description: 'One row when the host runs systemd, none otherwise, so the failed-units sensor exists only where systemd does.'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  if (!JSON.parse(value).reachable) { throw 'the SSH poll did not complete'; }
+                  return value;
+              error_handler: DISCARD_VALUE
+            - type: JSONPATH
+              parameters:
+                - '$.systemd_discovery'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '[]'
+          item_prototypes:
+            - uuid: f69c40a7bd17423f8bae095dfcfb9ea4
+              name: 'Failed units'
+              type: DEPENDENT
+              key: 'linux.ssh.units.failed[{#SYSTEMD}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              description: 'How many units systemd reports failed (systemctl list-units --state=failed: services, timers, mounts, any unit, listed in Services or not). No privileges needed. Their names are the reason Argus shows. When systemctl itself fails the item is not supported, with its reason.'
+              master_item:
+                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      if (!JSON.parse(value).reachable) { throw 'the SSH poll did not complete'; }
+                      return value;
+                  error_handler: DISCARD_VALUE
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      if (d.failed_error) { throw d.failed_error; }
+                      if (d.failed_units === null || d.failed_units === undefined) { throw 'systemctl gave no answer'; }
+                      return d.failed_units;
+              trigger_prototypes:
+                - uuid: b2f64a5f276441c38d7f26067fdff69b
+                  expression: 'min(/Argus Linux by SSH/linux.ssh.units.failed[{#SYSTEMD}],#3)>={$SSH.FAILED.WARN} and min(/Argus Linux by SSH/linux.ssh.units.failed[{#SYSTEMD}],#3)<{$SSH.FAILED.HIGH}'
+                  name: 'Failed systemd units'
+                  priority: WARNING
+                  description: 'At least the warning number of systemd units has been failed on the last 3 checks. Their names are in the sensor''s reason.'
+                - uuid: cc53c01804274722aa681332ae54ce25
+                  expression: 'min(/Argus Linux by SSH/linux.ssh.units.failed[{#SYSTEMD}],#3)>={$SSH.FAILED.HIGH}'
+                  name: 'Many failed systemd units'
+                  priority: HIGH
+                  description: 'At least the high number of systemd units has been failed on the last 3 checks. Their names are in the sensor''s reason.'
+            - uuid: 5ea5f72c3c1f4922badba51029469e5e
+              name: 'Failed unit names'
+              type: DEPENDENT
+              key: 'linux.ssh.units.failed.names[{#SYSTEMD}]'
+              delay: '0'
+              history: 7d
+              trends: '0'
+              value_type: TEXT
+              description: 'The failed units by name ("backup.service, certbot.timer"), empty when none. Not a curated sensor: Argus shows it next to the failed-units count and in the alert.'
+              master_item:
+                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      if (!JSON.parse(value).reachable) { throw 'the SSH poll did not complete'; }
+                      return value;
+                  error_handler: DISCARD_VALUE
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      return d.failed_error || d.failed_names || '';
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
         - uuid: ec60eacf925f4888bfa8b8f60bc91fba
           name: 'Filesystem discovery'
           type: DEPENDENT
@@ -568,6 +709,24 @@ zabbix_export:
         - macro: '{$CPU.UTIL.HIGH}'
           value: '95'
           description: 'CPU utilization percentage that raises a high-severity alert.'
+        - macro: '{$CPU.IOWAIT.WARN}'
+          value: '20'
+          description: 'CPU iowait percentage that raises a warning.'
+        - macro: '{$CPU.IOWAIT.HIGH}'
+          value: '40'
+          description: 'CPU iowait percentage that raises a high-severity alert.'
+        - macro: '{$CPU.STEAL.WARN}'
+          value: '10'
+          description: 'CPU steal percentage that raises a warning (a VM losing CPU time to other guests).'
+        - macro: '{$CPU.STEAL.HIGH}'
+          value: '25'
+          description: 'CPU steal percentage that raises a high-severity alert.'
+        - macro: '{$SSH.FAILED.WARN}'
+          value: '1'
+          description: 'Number of failed systemd units that raises a warning.'
+        - macro: '{$SSH.FAILED.HIGH}'
+          value: '3'
+          description: 'Number of failed systemd units that raises a high-severity alert.'
         - macro: '{$MEM.USED.WARN}'
           value: '85'
           description: 'Memory-used percentage that raises a warning.'

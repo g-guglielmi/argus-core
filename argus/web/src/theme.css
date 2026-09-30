@@ -600,7 +600,11 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 
 /* expandable chart */
 .chartrow > td { background: var(--elevated); padding: 10px 12px 14px; }
-.rtabs { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; }
+.rtabs { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; align-items: center; }
+/* Traffic totals beside the range tabs ("In 1.24 TB · Out 301 GB over 30 days"). */
+.rtotal { margin-left: auto; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rtotal-l { color: var(--faint); }
+@media (max-width: 640px) { .rtotal { margin-left: 0; flex-basis: 100%; white-space: normal; } }
 .rtab { font: inherit; font-size: 11.5px; font-weight: 600; color: var(--muted); background: none; border: 1px solid transparent; padding: 3px 9px; border-radius: 6px; cursor: pointer; }
 .rtab:hover { color: var(--text); } .rtab.on { background: var(--panel); border-color: var(--border); color: var(--text); }
 .chartsvg { position: relative; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }

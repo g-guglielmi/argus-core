@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"argus/internal/zabbix"
@@ -29,9 +30,36 @@ var reasonKeys = map[string]string{
 	"adguard.running":     "adguard.error",
 	"hass.running":        "hass.error",
 	"dns.resolve.success": "dns.resolve.error",
+	"tcp.port.up":         "tcp.port.error",
 	// Linux by SSH, per systemd unit and per Docker container: the state text is the reason.
 	"linux.ssh.unit.active":       "linux.ssh.unit.state",
 	"linux.ssh.container.running": "linux.ssh.container.status",
+	// Linux by SSH, the failed systemd units: a count, whose reason is their names.
+	"linux.ssh.units.failed": "linux.ssh.units.failed.names",
+}
+
+// countKeys are the reason-carrying sensors that count problems rather than flag up/down: their
+// reason shows while the count is above 0, and they have no uptime.
+var countKeys = map[string]bool{"linux.ssh.units.failed": true}
+
+func keyBase(key string) string {
+	if i := strings.IndexByte(key, '['); i >= 0 {
+		return key[:i]
+	}
+	return key
+}
+
+// isCountKey reports whether key counts problems (countKeys).
+func isCountKey(key string) bool { return countKeys[keyBase(key)] }
+
+// reasonShows reports whether a sensor's reading is one its reason explains: a flag reading down (0),
+// or a count above 0.
+func reasonShows(key, value string) bool {
+	if isCountKey(key) {
+		n, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		return err == nil && n > 0
+	}
+	return flagDown(value)
 }
 
 // reasonKeyFor is the key of the item holding the reason for flag key (same parameters: a DNS
@@ -95,7 +123,7 @@ func (ri reasonIndex) why(hostID, key, value, zbxError string, supported bool) s
 	if !supported {
 		return itemError(zbxError)
 	}
-	if rk := reasonKeyFor(key); rk != "" && flagDown(value) {
+	if rk := reasonKeyFor(key); rk != "" && reasonShows(key, value) {
 		return ri[hostID+"\x00"+rk]
 	}
 	return ""
@@ -105,7 +133,7 @@ func (ri reasonIndex) why(hostID, key, value, zbxError string, supported bool) s
 // any other sensor, a flag that reads up, or a collector that gave no reason.
 func collectorReason(ctx context.Context, zbx *zabbix.Client, hostID, key, value string) string {
 	rk := reasonKeyFor(key)
-	if rk == "" || !flagDown(value) || hostID == "" {
+	if rk == "" || !reasonShows(key, value) || hostID == "" {
 		return ""
 	}
 	v, err := zbx.HostItemLastValue(ctx, hostID, rk)

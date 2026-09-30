@@ -44,7 +44,7 @@ API key, and MAC):
 
 - **Monitoring tree** - site → host → sensor, grouped by Zabbix host group, with curated
   "key sensor" views, live values, inline sparklines, and per-sensor uPlot charts
-  (2h/2d/1M/3M/6M/1Y with drag-to-zoom).
+  (2h/2d/1M/3M/6M/1Y with drag-to-zoom; traffic charts show the total moved over the range).
 - **States** - acknowledge (with expiry + undo), pause (stops Zabbix collection), hide
   (Argus-side suppression), each with duration picker and auto-expiry. Host-level states
   inherit to sensors.
@@ -57,6 +57,8 @@ API key, and MAC):
   value + threshold, 2-hour trend graph, deep-links, one-click acknowledge). Shared channels are admin-managed;
   each user can also add their **own** Telegram/Discord in Account settings, and an email
   channel can fan out to every registered user's address.
+- **Heartbeat** - Argus pings an outside monitor (healthchecks.io, an Uptime Kuma push monitor)
+  once a minute while it is healthy end to end, so you hear about it when Argus itself stops.
 - **Uptime** - 24 h, 7 day and 30 day uptime per host (on its master sensor, else its ping) and
   per up/down sensor, a strip of the last checks and a bar per day; status pages show their hosts'
   30-day uptime and the ones under 100%.
@@ -305,7 +307,7 @@ admin **Settings** page - a set env var takes precedence and locks the field.
 | **Core** | `ARGUS_ZABBIX_API_URL`, `ARGUS_ZABBIX_API_TOKEN`, `ARGUS_DATA_DIR`, `ARGUS_LISTEN` |
 | **First-run admin** | `ARGUS_ADMIN_EMAIL`, `ARGUS_ADMIN_PASSWORD` |
 | **Security** | `ARGUS_COOKIE_SECURE`, `ARGUS_SECRET_KEY`, `ARGUS_TRUST_PROXY`, `ARGUS_LOGIN_MAX_ATTEMPTS`, `ARGUS_LOGIN_WINDOW_MINUTES` |
-| **Notifications** | `ARGUS_PUBLIC_URL`, `ARGUS_TZ`, `ARGUS_ALERT_DELAY_SECONDS` |
+| **Notifications** | `ARGUS_PUBLIC_URL`, `ARGUS_TZ`, `ARGUS_ALERT_DELAY_SECONDS`, `ARGUS_HEARTBEAT_URL` |
 | **Probes** | `ARGUS_CA_CERT_FILE`, `ARGUS_CA_KEY_FILE`, `ARGUS_PROBE_CORE_HOST`, `ARGUS_PROBE_AUTOSCALE` |
 | **Passkeys** | `ARGUS_RP_ID`, `ARGUS_RP_DISPLAY_NAME`, `ARGUS_RP_ORIGINS` |
 

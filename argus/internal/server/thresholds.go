@@ -67,7 +67,7 @@ func (s *Server) handleThresholds(w http.ResponseWriter, r *http.Request) {
 			Template:  tt.Template,
 			Label:     displayTemplateName(tt.Template),
 			EveryHost: tt.Template == provision.TemplateBasePing,
-			Optional:  tt.Template == provision.TemplateHTTP,
+			Optional:  provision.IsAddOnTemplate(tt.Template),
 			Classes:   provision.TemplateClassLabels(tt.Template),
 		}
 		for _, sp := range tt.Specs {

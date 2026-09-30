@@ -44,6 +44,7 @@ const (
 	KeyTrustProxy    = "trust_proxy"
 	KeyTimeFormat    = "time_format"
 	KeyAutoscale     = "probe_autoscale"
+	KeyHeartbeatURL  = "heartbeat_url"
 )
 
 // Probe process autoscaling modes (KeyAutoscale).
@@ -88,6 +89,7 @@ var defs = []def{
 	{KeyAlertDelay, "ARGUS_ALERT_DELAY_SECONDS", "Alert delay (seconds)", "Alerting", "int", false, "60", "How long a problem must last before anyone is notified, so a brief blip doesn't alert. 0 alerts at once. \"No data\" alerts skip it: their own period already is the wait.", 0},
 	{KeyTrustProxy, "ARGUS_TRUST_PROXY", "Trusted proxies", "Proxy", "proxylist", false, "", "Leave empty when people reach Argus directly. true = one reverse proxy on the LAN or the same host in front of Argus (the client is the address it adds to X-Forwarded-For; a connection from a public address is taken as a direct client). Or list the proxies' addresses or networks, comma-separated, e.g. 10.0.0.2, 10.0.5.0/24: forwarded headers then count only from them, and a chain of proxies (NetScaler -> HAProxy -> Argus) resolves to the real client.", 0},
 	{KeyProbeCoreHost, "ARGUS_PROBE_CORE_HOST", "Probe core host", "Probes", "host", false, "", "Address probes dial for :10051 (host or host:port). Prefer an IP: the proxy re-resolves this on every data send, so an FQDN here generates heavy DNS load. Baked into new enrollments and re-synced to existing probes at their next restart. Falls back to the Public URL host if empty.", 0},
+	{KeyHeartbeatURL, "ARGUS_HEARTBEAT_URL", "Heartbeat URL", "Watchdog", "url", false, "", "An outside monitor's ping URL, e.g. a healthchecks.io check or an Uptime Kuma push monitor. Argus requests it once a minute while it is healthy end to end, so the monitor alerts you when the pings stop. Empty turns it off.", 0},
 	{KeyAutoscale, "ARGUS_PROBE_AUTOSCALE", "Process autoscaling", "Probes", "choice", false, AutoscaleRestart, "Zabbix starts a fixed number of pingers, pollers, trappers and workers and reads them only at start. Argus watches how busy each kind is on every probe and raises a count whose busiest hour passed 60% (aiming for 50%), or lowers one that stayed under 20%, never below the image's own default. Counts set on the container (ZBX_START* variables) are left alone. With the updater sidecar the probe restarts to apply a change (a few seconds; collected data is kept); otherwise it applies at the probe's next start.", 0},
 }
 
@@ -143,6 +145,7 @@ type Manager struct {
 	trustProxy    TrustProxy
 	clock24h      bool
 	autoscale     string // probe process autoscaling mode
+	heartbeatURL  string // the outside monitor's ping URL, "" = off
 }
 
 // New builds the manager, creates the login limiter, loads any stored overrides, and applies
@@ -240,6 +243,13 @@ func (m *Manager) ProbeAutoscale() string {
 		return AutoscaleRestart
 	}
 	return m.autoscale
+}
+
+// HeartbeatURL is the outside monitor Argus pings while healthy, or "" when the heartbeat is off.
+func (m *Manager) HeartbeatURL() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.heartbeatURL
 }
 
 // TrustProxy is which reverse proxies Argus believes about the client, host and scheme.
@@ -381,6 +391,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	m.trustProxy = trust
 	m.clock24h = clock24
 	m.autoscale = autoscale
+	m.heartbeatURL = effective(snap[KeyHeartbeatURL])
 	m.mu.Unlock()
 	return nil
 }

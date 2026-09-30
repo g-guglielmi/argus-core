@@ -34,7 +34,9 @@ const (
 )
 
 // isUpDownKey reports whether a sensor reads 1 up / 0 down, so its average over time is its uptime.
-func isUpDownKey(key string) bool { return isReachabilityKey(key) || reasonKeyFor(key) != "" }
+func isUpDownKey(key string) bool {
+	return isReachabilityKey(key) || (reasonKeyFor(key) != "" && !isCountKey(key))
+}
 
 // upAgg sums checks: up is the number found up (a fraction per hourly trend, weighted), num all of them.
 type upAgg struct {

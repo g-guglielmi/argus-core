@@ -1690,6 +1690,7 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
     { name: 'Connection', title: 'Zabbix connection', note: 'Where Argus reads monitoring data from.' },
     { name: 'General', title: 'General', note: 'Timezone and the external URL used in notification links.' },
     { name: 'Alerting', title: 'Alerting', note: 'When a problem turns into a notification. Per-channel escalation and reminders are set on each channel in Notifications.' },
+    { name: 'Watchdog', title: 'Heartbeat', note: "Nothing inside Argus can tell you Argus itself has stopped. Point this at an outside monitor and it alerts you when the pings stop: the VM is down, Zabbix stopped taking data, the alert loop stalled or every alert channel is failing." },
     { name: 'Security', title: 'Login rate limiting', note: 'Brute-force protection thresholds.' },
     { name: 'Sessions', title: 'Sessions', note: 'How long a sign-in stays valid. Changes take effect immediately, including for existing sessions: lowering the max length can sign users out on their next request.' },
     { name: 'Access', title: 'Allowed FQDNs and IPs', note: "The addresses people type in the browser's address bar to open Argus, like monitoring.example.com or 10.0.0.10. With a list set, Argus refuses API requests for any other address and changes coming from other sites, which blocks DNS-rebinding and cross-site attacks." },
@@ -1738,6 +1739,7 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
               )}
               {gi.map((it) => field(it, busy))}
               {g.name === 'Access' && <AllowedHostsStatus items={items} edits={edits} onUse={(v) => setEdit('allowed_hosts', v)} />}
+              {g.name === 'Watchdog' && <HeartbeatStatus configured={!!items.find((i) => i.key === 'heartbeat_url')?.value} />}
               {/* The core VM's clock follows the Timezone field above (mirrored through the
                   update-dir channel, applied by a host timer via timedatectl) - so its live
                   state belongs right here, styled like the fields around it. */}
@@ -1763,6 +1765,56 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
         {/* Zabbix housekeeping (history / trends / compression), saved through its own endpoint. */}
         <DataRetention />
       </div>
+    </div>
+  )
+}
+
+type Heartbeat = { configured: boolean; status: { at?: number; ok_at?: number; held?: string; error?: string; status?: number } }
+
+// HeartbeatStatus sits under the Heartbeat URL: the last check (a ping sent, held because Argus isn't
+// healthy, or refused by the monitor) and a Send-now button to try a new URL at once.
+function HeartbeatStatus({ configured }: { configured: boolean }) {
+  const toast = useToast()
+  const [hb, setHb] = useState<Heartbeat | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    const load = () => fetch('/api/settings/heartbeat').then((r) => (r.ok ? r.json() : null)).then(setHb).catch(() => {})
+    load()
+    const t = window.setInterval(load, 30000)
+    return () => window.clearInterval(t)
+  }, [configured])
+  async function sendNow() {
+    setBusy(true)
+    try {
+      const res = await fetch('/api/settings/heartbeat', { method: 'POST' })
+      if (!res.ok) { toast.error(await errText(res, 'Could not send the heartbeat')); return }
+      const next: Heartbeat = await res.json()
+      setHb(next)
+      if (next.status.held) toast.error('Held: ' + next.status.held)
+      else if (next.status.error) toast.error(next.status.error)
+      else toast.success('The monitor took the ping.')
+    } catch { toast.error('Could not send the heartbeat') } finally { setBusy(false) }
+  }
+  if (!configured || !hb) return null
+  const st = hb.status
+  let tag: ReactNode = <span className="set-src">waiting</span>
+  let line = 'The first ping goes out within a minute.'
+  if (st.at) {
+    if (st.held) { tag = <span className="tag avail">held</span>; line = `Not sent at ${fmtWhen(st.at)}: ${st.held}.` }
+    else if (st.error) { tag = <span className="tag avail">failing</span>; line = `${st.error} at ${fmtWhen(st.at)}.` }
+    else { tag = <span className="tag online">pinging</span>; line = `Last ping ${fmtWhen(st.at)}, accepted${st.status ? ` (HTTP ${st.status})` : ''}.` }
+    if ((st.held || st.error) && st.ok_at) line += ` Last accepted ping ${fmtWhen(st.ok_at)}.`
+  }
+  return (
+    <div className="set-row" style={{ marginBottom: 0 }}>
+      <div className="set-head">
+        <span className="flabel">Status</span>
+        {tag}
+      </div>
+      <span className="set-hint">
+        {line}{' '}
+        <button type="button" className="btn" style={{ padding: '2px 10px', marginLeft: 6 }} disabled={busy} onClick={sendNow}>{busy ? 'Sending…' : 'Send now'}</button>
+      </span>
     </div>
   )
 }
@@ -6168,10 +6220,17 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
 
   // Headline reading for a collapsed group: disk shows Used %, network shows down/up, else the first.
   const reading = (it?: SensorItem): ReactNode => { if (!it || !it.supported) return null; const [dv, du] = readingParts(it.last_value, it.units); return <>{dv}{du ? <span className="unit"> {du}</span> : null}</> }
-  function groupHeadline(cat: string, gi: SensorItem[]): { node: ReactNode; primary: SensorItem } {
+  // A group whose up/down channel reads down headlines that, with the channel's reason (why/whyId).
+  function groupHeadline(cat: string, gi: SensorItem[]): { node: ReactNode; primary: SensorItem; why?: string; whyId?: string } {
     if (cat === 'Network') { const inn = gi.find((x) => x.channel === 'In'), out = gi.find((x) => x.channel === 'Out'); return { node: <span>↓ {reading(inn) ?? '-'} &nbsp;&nbsp; ↑ {reading(out) ?? '-'}</span>, primary: inn || gi[0] } }
     if (cat === 'Disk') { const pu = gi.find((x) => (x.channel || '').startsWith('Used %')) || gi[0]; return { node: reading(pu), primary: pu } }
-    if (cat === 'Ping' || cat === 'Web') { const rt = gi.find((x) => x.channel === 'Response time') || gi[0]; return { node: reading(rt), primary: rt } }
+    if (cat === 'Ping' || cat === 'Web' || cat === 'TCP') {
+      const rt = gi.find((x) => x.channel === 'Response time') || gi[0]
+      // A TCP port that isn't answering says so (its reason is on the Reachable channel's row).
+      const up = gi.find((x) => x.channel === 'Reachable')
+      if (cat === 'TCP' && up && up.last_value !== '' && Number(up.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>not answering</span>, primary: rt, why: up.why, whyId: up.id }
+      return { node: reading(rt), primary: rt }
+    }
     // A temperature group (unRAID disk temps) or CPU cores group reads as its HOTTEST/BUSIEST
     // member - the one you'd act on; that member also drives the sparkline and the chart's main line.
     if (cat === 'Temperature' || cat === 'CPU' || cat === 'Probe') {
@@ -6215,7 +6274,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
       const rt = gi.find((x) => x.channel === 'Response time')
       const ok = gi.find((x) => x.channel === 'Resolves')
       const primary = rt || ip || gi[0]
-      if (ok && ok.last_value !== '' && Number(ok.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>not resolving</span>, primary }
+      if (ok && ok.last_value !== '' && Number(ok.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>not resolving</span>, primary, why: ok.why, whyId: ok.id }
       return { node: reading(ip) ?? '-', primary }
     }
     return { node: reading(gi[0]), primary: gi[0] }
@@ -6254,12 +6313,12 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                 if (row.kind === 'group') {
                   const gkey = 'g:' + row.cat + '|' + row.instance
                   const open = openItem === gkey
-                  const { node: headline, primary } = groupHeadline(row.cat, row.items)
+                  const { node: headline, primary, why: gWhy, whyId: gWhyId } = groupHeadline(row.cat, row.items)
                   // A spun-down unRAID disk drops out of the temperature extend: Zabbix flags its item
                   // "not supported" but keeps the last reading. Keep such a parked drive on the chart
                   // (its last value seeds a flat hold in buildMultiPlot) instead of filtering it out.
                   let channels: GroupChan[] = row.items.filter((i) => i.numeric && (i.supported || (row.cat === 'Temperature' && i.last_value !== ''))).map((i) => {
-                    if (((row.cat === 'Ping' || row.cat === 'Web') && i.channel === 'Reachable') || (row.cat === 'DNS' && i.channel === 'Resolves'))
+                    if (((row.cat === 'Ping' || row.cat === 'Web' || row.cat === 'TCP') && i.channel === 'Reachable') || (row.cat === 'DNS' && i.channel === 'Resolves'))
                       return { id: i.id, label: 'Downtime', units: '', invert: true } // show only when unreachable / not-resolving (PRTG-style)
                     // A port's Speed and Link are constants - start their lines hidden (legend keeps
                     // the value; a click reveals the line). Hiding Speed also lets the bps axis
@@ -6339,7 +6398,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                             {(() => { const al = row.items.filter((i) => i.alertable); if (!al.length) return null; const n = al.filter((i) => i.alerts_off).length; if (n === 0) return null; return <span style={{ color: 'var(--faint)', fontSize: 11 }}> ({n === al.length ? 'alerts off' : n + ' muted'})</span> })()}
                           </span>
                         </td>
-                        <td className="mono val">{headline ?? <span style={{ color: 'var(--muted)' }}>-</span>}</td>
+                        <td className="mono val">{gWhy && gWhyId ? <WhyText why={gWhy} onToggle={() => toggleWhy(gWhyId)}>{headline}</WhyText> : headline ?? <span style={{ color: 'var(--muted)' }}>-</span>}</td>
                         <td className="strend">{clickable ? (() => {
                           // Counter-total groups show the daily mini bars (a miniature of the big
                           // bar chart) instead of a drifting rolling-total line.
@@ -6356,6 +6415,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                         <td className="prio-cell" data-label="Priority"><PriorityStars value={gPrio} canEdit={canPause} onSet={(p) => row.items.forEach((i) => setItemPriority(i, p))} /></td>
                         <td><div className="lccell"><span className="when">{relTime(primary.last_clock)}</span>{canPause && actions.length > 0 && <Kebab actions={actions} />}</div></td>
                       </tr>
+                      {gWhy && gWhyId && whyOpen[gWhyId] && <tr className="whyrow"><td colSpan={5}><div className="why-line">{gWhy}</div></td></tr>}
                       {open && clickable && (
                         <tr className="chartrow"><td colSpan={5}><div className="chart-reveal">
                           {(() => {
@@ -7171,6 +7231,7 @@ function SensorChart({ itemId, units, color = 'var(--accent)', bars, label, thr 
         {(bars ? RANGES_BARS : RANGES).map((rk) => (
           <button key={rk} className={'rtab' + (range === rk ? ' on' : '')} onClick={() => setRange(rk)}>{rk}</button>
         ))}
+        {!bars && !loading && (() => { const b = rateTotal(data, units); return b != null ? <RateTotals totals={[{ label: label || '', bytes: b }]} range={range} /> : null })()}
       </div>
       {showLoading && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>Loading…</p>}
       {error && <p style={{ color: 'var(--err)', margin: '0.3rem 0' }}>{error}</p>}
@@ -7189,6 +7250,41 @@ function SensorChart({ itemId, units, color = 'var(--accent)', bars, label, thr 
 const SERIES_COLORS = ['#2ea8c9', '#e0b53a', '#3aa856', '#e0803a', '#c9564f', '#9b6fd6']
 // Lookback window per range key (seconds), so the group graph can pin its x-axis to the window.
 const RANGE_SECS: Record<string, number> = { '2h': 7200, '2d': 172800, '7d': 604800, '1M': 2592000, '3M': 7776000, '6M': 15552000, '1Y': 31536000 }
+// What each range key spans, spelled out for the traffic totals ("over 2 days").
+const RANGE_WORDS: Record<string, string> = { '2h': '2 hours', '2d': '2 days', '7d': '7 days', '1M': '30 days', '3M': '90 days', '6M': '180 days', '1Y': '365 days' }
+
+// rateTotal is how many bytes a rate sensor (bits or bytes per second: an interface's traffic, a VM's
+// disk reads) moved over a loaded series, or null for any other unit. Hourly trends count their
+// average for the hour; raw history counts each reading until the next one, and across a gap in the
+// data only for one usual poll interval (what happened in the gap isn't known).
+function rateTotal(d: Series | null, units: string): number | null {
+  const perByte = units === 'bps' ? 8 : units === 'Bps' || units === 'B/s' ? 1 : 0
+  if (!d || !perByte || d.points.length === 0) return null
+  let sum = 0
+  if (d.kind === 'trend') {
+    d.points.forEach((p) => { if (p.avg != null && isFinite(p.avg)) sum += p.avg * 3600 })
+  } else {
+    const pts = d.points.filter((p) => p.v != null && isFinite(p.v)).sort((a, b) => a.t - b.t)
+    const gaps: number[] = []
+    for (let i = 1; i < pts.length; i++) gaps.push(pts[i].t - pts[i - 1].t)
+    const usual = gaps.length ? [...gaps].sort((a, b) => a - b)[Math.floor(gaps.length / 2)] : 60
+    pts.forEach((p, i) => { const dt = i < gaps.length ? gaps[i] : usual; sum += (p.v as number) * Math.min(dt, 2 * usual) })
+  }
+  return sum / perByte
+}
+
+// RateTotals is the line beside the range tabs of a traffic chart: "In 1.24 TB · Out 301 GB over 30 days".
+function RateTotals({ totals, range }: { totals: { label: string; bytes: number }[]; range: string }) {
+  if (totals.length === 0) return null
+  const one = totals.length === 1
+  return (
+    <span className="rtotal" title="Total moved in the chart's range (zooming doesn't change it)">
+      {totals.map((t, i) => <span key={t.label + i}>{i > 0 && ' · '}{!one && <span className="rtotal-l">{t.label} </span>}{fmtNum(t.bytes, 'B')}</span>)}
+      {` over ${RANGE_WORDS[range] || range}`}
+    </span>
+  )
+}
+
 // Downtime channel (inverted reachability): a red band that only rises when the target is unreachable.
 const DOWNTIME_STROKE = '#d64550'
 const DOWNTIME_FILL = 'rgba(214, 69, 80, 0.30)'
@@ -7442,7 +7538,7 @@ function zoomHook(onZoom: ((z: boolean) => void) | undefined, xrange: [number, n
 // bars switches to the daily stacked-bar mode (counter totals) with its own day-scale range tabs.
 function SensorGroupChart({ channels, bars }: { channels: GroupChan[]; bars?: boolean }) {
   const [range, setRange] = useState(bars ? '7d' : '2h')
-  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; values?: number[]; downtime?: boolean; off?: boolean; hold?: boolean; seedValue?: number; seedClock?: number; thr?: Thr }[] | null>(null)
+  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; values?: number[]; downtime?: boolean; off?: boolean; hold?: boolean; seedValue?: number; seedClock?: number; thr?: Thr; total?: number | null }[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
   const [themeTick, setThemeTick] = useState(0)
@@ -7481,6 +7577,7 @@ function SensorGroupChart({ channels, bars }: { channels: GroupChan[]; bars?: bo
     Promise.all(channels.map((ch) =>
       fetch(`/api/items/${ch.id}/history?range=${range}`).then((r) => (r.ok ? r.json() : null)).then((d: Series | null) => ({
         label: ch.label, units: ch.units, downtime: !!ch.invert, off: !!ch.defaultOff, hold: !!ch.hold, seedValue: ch.seedValue, seedClock: ch.seedClock, thr: ch.thr,
+        total: ch.invert ? null : rateTotal(d, ch.units),
         // invert reachability into downtime: up (>0) -> 0, down -> 1. lo/hi carry the trend min/max
         // (present only on long ranges) so the primary channel can draw a shaded envelope.
         points: d ? d.points.map((p) => { let v = p.v ?? p.avg ?? null; if (ch.invert && v != null) v = v > 0 ? 0 : 1; return { t: p.t, v, lo: ch.invert ? null : (p.min ?? null), hi: ch.invert ? null : (p.max ?? null) } }) : [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[],
@@ -7515,10 +7612,12 @@ function SensorGroupChart({ channels, bars }: { channels: GroupChan[]; bars?: bo
   }, [])
 
   const empty = series && !series.some((s) => s.points.length > 0 || (s.values && s.values.length > 0) || (s.hold && s.seedValue != null))
+  const totals = bars || !series ? [] : series.filter((s) => s.total != null && s.points.length > 0).map((s) => ({ label: s.label, bytes: s.total as number }))
   return (
     <div>
       <div className="rtabs">
         {(bars ? RANGES_BARS : RANGES).map((rk) => <button key={rk} className={'rtab' + (range === rk ? ' on' : '')} onClick={() => setRange(rk)}>{rk}</button>)}
+        <RateTotals totals={totals} range={range} />
       </div>
       {error && <p style={{ color: 'var(--err)', margin: '0.3rem 0' }}>{error}</p>}
       {empty && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>No data in this range.</p>}

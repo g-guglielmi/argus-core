@@ -47,40 +47,42 @@ var cpuUtilKeep = map[string]bool{
 var categoryOrderServer = map[string]int{
 	"Ping":             0,
 	"Web":              1,
-	"DNS":              2, // a DNS server's headline is its resolving/filtering
-	"Power":            3, // before CPU (user call) - power-centric classes (PoE switches, UPS)
-	"Battery":          4, // a UPS's battery section (user call: after its Power section)
-	"CPU":              5,
-	"Temperature":      6, // right after CPU (user call) - on servers the temp IS the CPU temp
-	"Memory":           7,
-	"Disk":             8,
-	"Network":          9,
-	"Wireless":         10,
+	"TCP":              2, // a TCP-ports add-on: plain port checks, beside the Web checks
+	"DNS":              3, // a DNS server's headline is its resolving/filtering
+	"Power":            4, // before CPU (user call) - power-centric classes (PoE switches, UPS)
+	"Battery":          5, // a UPS's battery section (user call: after its Power section)
+	"CPU":              6,
+	"Temperature":      7, // right after CPU (user call) - on servers the temp IS the CPU temp
+	"Memory":           8,
+	"Disk":             9,
+	"Network":          10,
+	"Wireless":         11,
+	"Services":         12,
+	"Containers":       13,
+	"Virtual machines": 14,
+	"Uptime":           15,
+	"Ports":            16,
+	"Status":           17,
+}
+var categoryOrderNet = map[string]int{
+	"Ping":             0,
+	"Web":              1,
+	"TCP":              2, // a TCP-ports add-on: plain port checks, beside the Web checks
+	"DNS":              3,
+	"Wireless":         4, // an AP's headline is its clients/radios
+	"Network":          5,
+	"Power":            6, // before CPU (user call)
+	"Battery":          7,
+	"CPU":              8,
+	"Memory":           9,
+	"Disk":             10,
 	"Services":         11,
 	"Containers":       12,
 	"Virtual machines": 13,
 	"Uptime":           14,
 	"Ports":            15,
-	"Status":           16,
-}
-var categoryOrderNet = map[string]int{
-	"Ping":             0,
-	"Web":              1,
-	"DNS":              2,
-	"Wireless":         3, // an AP's headline is its clients/radios
-	"Network":          4,
-	"Power":            5, // before CPU (user call)
-	"Battery":          6,
-	"CPU":              7,
-	"Memory":           8,
-	"Disk":             9,
-	"Services":         10,
-	"Containers":       11,
-	"Virtual machines": 12,
-	"Uptime":           13,
-	"Ports":            14,
-	"Temperature":      15,
-	"Status":           16,
+	"Temperature":      16,
+	"Status":           17,
 }
 
 // Storage boxes (anything with a drive-temperature group: unRAID, later QNAP/Ugreen) read their
@@ -88,21 +90,22 @@ var categoryOrderNet = map[string]int{
 var categoryOrderNAS = map[string]int{
 	"Ping":             0,
 	"Web":              1,
-	"DNS":              2,
-	"Power":            3,
-	"Battery":          4,
-	"CPU":              5,
-	"Memory":           6,
-	"Temperature":      7, // before Disk (user call)
-	"Disk":             8,
-	"Network":          9,
-	"Wireless":         10,
-	"Services":         11,
-	"Containers":       12,
-	"Virtual machines": 13,
-	"Uptime":           14,
-	"Ports":            15,
-	"Status":           16,
+	"TCP":              2, // a TCP-ports add-on: plain port checks, beside the Web checks
+	"DNS":              3,
+	"Power":            4,
+	"Battery":          5,
+	"CPU":              6,
+	"Memory":           7,
+	"Temperature":      8, // before Disk (user call)
+	"Disk":             9,
+	"Network":          10,
+	"Wireless":         11,
+	"Services":         12,
+	"Containers":       13,
+	"Virtual machines": 14,
+	"Uptime":           15,
+	"Ports":            16,
+	"Status":           17,
 }
 
 // itemLabelOrder pins the reading order of the flat rows WITHIN a category where plain alphabetical
@@ -403,6 +406,8 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "Services", param(p, 0), "", "", true
 	case "linux.ssh.container.running":
 		return "Containers", param(p, 0), "", "", true
+	case "linux.ssh.units.failed":
+		return "Services", "Failed units", "", "", true
 
 	// UniFi devices, polled from the controller (Argus UniFi Switch by HTTP). The raw master item
 	// (unifi.switch.raw) deliberately doesn't match - it's plumbing, visible under "All sensors".
@@ -619,6 +624,16 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "Web", "HTTP/HTTPS reachable", "HTTP/HTTPS", "Reachable", true
 	case "net.tcp.service.perf":
 		return "Web", "HTTP/HTTPS response time", "HTTP/HTTPS", "Response time", true
+
+	// TCP ports add-on (Argus TCP ports): one group per port, named after it ("RDP (3389)"), grouped
+	// like Ping and Web: connect time is the primary channel, reachability the Downtime band. The
+	// port's name rides in the item name ("Port RDP (3389)"); its error item is the reason.
+	case "tcp.port.up":
+		inst := tcpPortInstance(name, p)
+		return "TCP", "Port " + inst + " reachable", inst, "Reachable", true
+	case "tcp.port.time":
+		inst := tcpPortInstance(name, p)
+		return "TCP", "Port " + inst + " connect time", inst, "Response time", true
 	}
 
 	// Heuristic fallback for temperature sensors, whose keys vary widely by template/SNMP.
@@ -627,4 +642,14 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "Temperature", name, "", "", true
 	}
 	return "", "", "", "", false
+}
+
+// tcpPortInstance is a TCP port's group name from its item name ("Port RDP (3389)" or "Port RDP (3389)
+// connect time" -> "RDP (3389)"), falling back to the bare port number from the key.
+func tcpPortInstance(name string, p []string) string {
+	inst := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(name, "Port "), " connect time"))
+	if inst == "" || strings.Contains(inst, "{#") {
+		return param(p, 0)
+	}
+	return inst
 }

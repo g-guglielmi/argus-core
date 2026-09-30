@@ -77,7 +77,15 @@ var thresholdCatalog = []TemplateThresholds{
 		{Macro: "{$PROBE.PROC.HIGH}", Label: "Process busy - high", Unit: "%"},
 	}},
 	{Template: "Argus Linux by SNMP", Specs: concat(cpuUtilSpecs(), memUsedSpecs(), diskUsedSpecs())},
-	{Template: "Argus Linux by SSH", Specs: concat(cpuUtilSpecs(), memUsedSpecs(), diskUsedSpecs())},
+	{Template: "Argus Linux by SSH", Specs: concat(cpuUtilSpecs(), []ThresholdSpec{
+		{Macro: "{$CPU.IOWAIT.WARN}", Label: "CPU iowait - warning", Unit: "%"},
+		{Macro: "{$CPU.IOWAIT.HIGH}", Label: "CPU iowait - high", Unit: "%"},
+		{Macro: "{$CPU.STEAL.WARN}", Label: "CPU steal - warning", Unit: "%"},
+		{Macro: "{$CPU.STEAL.HIGH}", Label: "CPU steal - high", Unit: "%"},
+	}, memUsedSpecs(), diskUsedSpecs(), []ThresholdSpec{
+		{Macro: "{$SSH.FAILED.WARN}", Label: "Failed systemd units - warning", Unit: ""},
+		{Macro: "{$SSH.FAILED.HIGH}", Label: "Failed systemd units - high", Unit: ""},
+	})},
 	{Template: "Argus Windows by SNMP", Specs: concat(cpuUtilSpecs(), memUsedSpecs(), diskUsedSpecs())},
 	{Template: "Argus unRAID by SNMP", Specs: []ThresholdSpec{
 		{Macro: "{$DISK.TEMP.WARN}", Label: "Array drive temp (HDD) - warning", Unit: "°C"},
@@ -106,6 +114,10 @@ var thresholdCatalog = []TemplateThresholds{
 	{Template: "Argus DNS resolution", Specs: []ThresholdSpec{
 		{Macro: "{$DNS.RTT.WARN}", Label: "Resolve time - warning", Unit: "s"},
 		{Macro: "{$DNS.RTT.HIGH}", Label: "Resolve time - high", Unit: "s"},
+	}},
+	{Template: TemplateTCP, Specs: []ThresholdSpec{
+		{Macro: "{$TCP.TIME.WARN}", Label: "Connect time - warning", Unit: "s"},
+		{Macro: "{$TCP.TIME.HIGH}", Label: "Connect time - high", Unit: "s"},
 	}},
 	{Template: "Argus XCP-NG by XAPI", Specs: []ThresholdSpec{
 		{Macro: "{$XCP.CPU.UTIL.WARN}", Label: "Hypervisor CPU - warning", Unit: "%"},

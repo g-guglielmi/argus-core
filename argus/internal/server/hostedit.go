@@ -547,8 +547,13 @@ func (s *Server) applyAddOns(ctx context.Context, hostID string, desired map[str
 		}
 		if d.Enabled {
 			for _, ms := range a.Macros {
-				if ms.Required && strings.TrimSpace(d.Macros[ms.Macro]) == "" {
+				v := strings.TrimSpace(d.Macros[ms.Macro])
+				if ms.Required && v == "" {
 					return fmt.Errorf("%s is required for the %s add-on", ms.Label, a.Label)
+				}
+				// The values reach an external check's command line on the probe.
+				if err := provision.ValidateMacroValue(ms, v); err != nil {
+					return err
 				}
 			}
 		}

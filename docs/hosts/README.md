@@ -105,14 +105,27 @@ options section. That same dialog also has:
   hold this host's alerts. Separately, while a probe isn't reporting, every device at its site is held;
 - a **Sensor order** section;
 - an **Add-ons** section - optional Argus checks you can layer on a host at any time (not just when
-  adding it): the **HTTP/HTTPS endpoint** (reachability + response time on a web port) and **DNS
-  resolution** (resolve names against the host). Toggling one on links its template and lets you set
-  its options; toggling off removes its sensors;
+  adding it): the **HTTP/HTTPS endpoint** (reachability + response time on a web port), **DNS
+  resolution** (resolve names against the host) and **TCP ports** (does each listed port accept a
+  connection, see below). Toggling one on links its template and lets you set its options; toggling
+  off removes its sensors;
 - a **Change class** control (admin) - switch a host to a different device class in place, without
   deleting and re-adding it. It swaps the class's templates (keeping Base Ping + add-ons), keeps
   history for any template the old and new class share, adds the new class's interface type if the
   host lacks it, and collects the new class's credentials. Sensors from templates only in the old
   class are removed.
+
+**TCP ports add-on.** For a port that isn't a web page: a mail server's SMTP, a Windows box's RDP, a
+database, a firewall's admin port. List the ports under **Ports**, each `port` or `name:port`
+(`SMTP:25, RDP:3389, 8443`, at most 32); a port without a name shows its usual service name
+(`3389` reads **RDP (3389)**). Once a minute the host's probe opens a plain TCP connection to every
+port at once (nothing is sent) and each port becomes its own sensor under **TCP**: its connect time,
+with a red band while it doesn't answer. A port that refuses or ignores the connection reads **not
+answering**, with why (`connection refused: nothing listens on 3389`, `no answer within 3 s (a
+firewall drops it, or the host is down)`, `no route to host`). Alerts: **Port RDP (3389) is not
+answering** (High, after 3 checks), and slow to connect (`{$TCP.TIME.WARN}` 0.5 s, `{$TCP.TIME.HIGH}`
+1 s). **Timeout** (default 3 s) is how long a port has to answer. Taking a port out of the list stops
+its sensor, which is deleted an hour later.
 
 **Why a sensor isn't reading.** Hover (or tap) a `not supported` or `Not reachable` value anywhere in
 Argus to see the reason: Zabbix's error, or what the device's collector reported (a refused API key,

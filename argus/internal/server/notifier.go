@@ -114,6 +114,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		logger.Warn("notifier: fetch problems", "err", err)
 		return
 	}
+	notifierRanAt.Store(time.Now().Unix()) // the heartbeat's "alert loop is running" (heartbeat.go)
 
 	// One-time baseline: on the very first run, record everything currently active as
 	// 'baseline' so a fresh install (or a Zabbix already full of problems) doesn't spam.

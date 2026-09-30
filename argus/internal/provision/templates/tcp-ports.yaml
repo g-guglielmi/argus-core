@@ -1,0 +1,141 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: 7c8cc673c04947ab91c9b1faf49c4461
+      template: 'Argus TCP ports'
+      name: 'Argus TCP ports'
+      description: |
+        Plain TCP port checks from the proxy (or the core): does each listed port accept a connection,
+        how long the connection takes, and when it doesn't, why (refused, no answer, no route). The
+        proxy runs argus_tcp.py, an external check baked into the image, once a minute for all the
+        host's ports at once; nothing is sent over the connection. Attach it to any device (a mail
+        server's SMTP, a Windows box's RDP, a database, a firewall's admin port); the host's own
+        interface is the address checked. Set {$TCP.PORTS} to the ports, each "port" or "name:port"
+        ("SMTP:25, RDP:3389, 8443"); each becomes its own sensor. DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: ad34d73deb8140b7af1c92b1724dafdf
+          name: 'TCP ports raw data'
+          type: EXTERNAL
+          key: 'argus_tcp.py[{HOST.CONN},"{$TCP.PORTS}",{$TCP.TIMEOUT}]'
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          timeout: 15s
+          description: 'Master item: the proxy''s argus_tcp.py connects to every port in {$TCP.PORTS} at once and prints, per port, whether it answered, the connect time and why not, as JSON. A bad port list is reported in its error field.'
+      discovery_rules:
+        - uuid: a72461b0a38c408c928a27187fb259dc
+          name: 'Port discovery'
+          type: DEPENDENT
+          key: tcp.port.discovery
+          delay: '0'
+          lifetime: 1h
+          enabled_lifetime_type: DISABLE_NEVER
+          description: 'One sensor set per port in {$TCP.PORTS}. The ports come from the macro, so a port taken out of it stops reading and is deleted an hour later. While the list is invalid the discovery keeps what it had.'
+          master_item:
+            key: 'argus_tcp.py[{HOST.CONN},"{$TCP.PORTS}",{$TCP.TIMEOUT}]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (d.error) { throw d.error; }
+                  return JSON.stringify(d.port_discovery || []);
+              error_handler: DISCARD_VALUE
+          item_prototypes:
+            - uuid: 404f2ff545bc4538a023f7188fba589a
+              name: 'Port {#PORTNAME}'
+              type: DEPENDENT
+              key: 'tcp.port.up[{#PORT}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              description: '1 = port {#PORT} accepted a TCP connection, 0 = it did not (its reason is in the error item).'
+              master_item:
+                key: 'argus_tcp.py[{HOST.CONN},"{$TCP.PORTS}",{$TCP.TIMEOUT}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var ps = JSON.parse(value).ports || [];
+                      for (var i = 0; i < ps.length; i++) { if (String(ps[i].port) === '{#PORT}') { return ps[i].up; } }
+                      throw 'port {#PORT} is no longer in {$TCP.PORTS}';
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: 11d06e8b37b24dd783ef531ba180fe84
+                  expression: 'max(/Argus TCP ports/tcp.port.up[{#PORT}],#3)=0'
+                  name: 'Port {#PORTNAME} is not answering'
+                  priority: HIGH
+                  description: 'Port {#PORT} has refused or ignored the connection on the last 3 checks. Why is in the sensor''s reason.'
+            - uuid: 387aa99496884024bce39b48c42bfeb6
+              name: 'Port {#PORTNAME} connect time'
+              type: DEPENDENT
+              key: 'tcp.port.time[{#PORT}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: s
+              description: 'How long the TCP connection to port {#PORT} took to open (no value while it is not answering).'
+              master_item:
+                key: 'argus_tcp.py[{HOST.CONN},"{$TCP.PORTS}",{$TCP.TIMEOUT}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var ps = JSON.parse(value).ports || [];
+                      for (var i = 0; i < ps.length; i++) { if (String(ps[i].port) === '{#PORT}' && ps[i].time !== null) { return ps[i].time; } }
+                      throw 'no connect time';
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: ffbd0f98410047a182ec8e11efe49d36
+                  expression: 'min(/Argus TCP ports/tcp.port.time[{#PORT}],#3)>={$TCP.TIME.WARN} and min(/Argus TCP ports/tcp.port.time[{#PORT}],#3)<{$TCP.TIME.HIGH} and max(/Argus TCP ports/tcp.port.up[{#PORT}],#3)=1'
+                  name: 'Port {#PORTNAME} is slow to connect'
+                  priority: WARNING
+                  description: 'Opening port {#PORT} took at least {$TCP.TIME.WARN}s (below the high threshold) on the last 3 checks, while it still answers.'
+                - uuid: 7661f86af46f4e7dad3bd606cc1353fc
+                  expression: 'min(/Argus TCP ports/tcp.port.time[{#PORT}],#3)>={$TCP.TIME.HIGH} and max(/Argus TCP ports/tcp.port.up[{#PORT}],#3)=1'
+                  name: 'Port {#PORTNAME} is very slow to connect'
+                  priority: HIGH
+                  description: 'Opening port {#PORT} took at least {$TCP.TIME.HIGH}s on the last 3 checks, while it still answers.'
+            - uuid: f2f3e16ce4f74d169751fb319d1cf260
+              name: 'Port {#PORTNAME} error'
+              type: DEPENDENT
+              key: 'tcp.port.error[{#PORT}]'
+              delay: '0'
+              history: 7d
+              trends: '0'
+              value_type: TEXT
+              description: 'Why port {#PORT} did not answer on the last check, in one line (empty while it answers). Not a curated sensor: Argus shows it next to the down reading and in the alert.'
+              master_item:
+                key: 'argus_tcp.py[{HOST.CONN},"{$TCP.PORTS}",{$TCP.TIMEOUT}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var ps = JSON.parse(value).ports || [];
+                      for (var i = 0; i < ps.length; i++) { if (String(ps[i].port) === '{#PORT}') { return ps[i].error || ''; } }
+                      throw 'port {#PORT} is no longer in {$TCP.PORTS}';
+                  error_handler: DISCARD_VALUE
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+      macros:
+        - macro: '{$TCP.PORTS}'
+          value: ''
+          description: 'The ports to check, comma or space separated, each "port" or "name:port" ("SMTP:25, RDP:3389, 8443"). At most 32. A port without a name shows its usual service name when it has one.'
+        - macro: '{$TCP.TIMEOUT}'
+          value: '3'
+          description: 'Seconds to wait for each connection before the port counts as not answering (0.5 to 10).'
+        - macro: '{$TCP.TIME.WARN}'
+          value: '0.5'
+          description: 'Connect time (seconds) that raises a warning.'
+        - macro: '{$TCP.TIME.HIGH}'
+          value: '1'
+          description: 'Connect time (seconds) that raises a high-severity alert.'

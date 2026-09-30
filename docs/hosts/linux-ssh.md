@@ -62,6 +62,12 @@ place a key.
 
 - **CPU**: overall utilization (two `/proc/stat` samples a second apart) and the 1 / 5 / 15-minute
   load averages. Alerts: high CPU (`{$CPU.UTIL.WARN}` 80%, `{$CPU.UTIL.HIGH}` 95%).
+- **CPU iowait and steal**, from the same two samples. **Iowait** is time the CPU sat idle waiting on
+  storage: utilization counts it as idle, so a box stuck on its disks reads idle there and high here.
+  **Steal** is time the hypervisor gave to other guests while this VM wanted to run: utilization
+  counts it as busy, so on a VPS or an overcommitted host it tells "the neighbours are busy" apart
+  from "this box is loaded" (always 0 on bare metal). Alerts: high iowait (`{$CPU.IOWAIT.WARN}` 20%,
+  `{$CPU.IOWAIT.HIGH}` 40%), high steal (`{$CPU.STEAL.WARN}` 10%, `{$CPU.STEAL.HIGH}` 25%).
 - **Memory**: total, available, and utilization %. Alerts: high memory (`{$MEM.USED.WARN}` 85%,
   `{$MEM.USED.HIGH}` 95%).
 - **Uptime**.
@@ -76,6 +82,13 @@ A filesystem or interface that disappears is disabled immediately and deleted af
 ## Services and containers
 
 The same SSH session can also report whether the services you care about are running.
+
+- **Failed units** (always on, when the host runs systemd): how many units systemd reports failed
+  (`systemctl list-units --state=failed`), any unit, listed in `{$SSH.UNITS}` or not: a service, a
+  timer, a mount. No setup and no extra rights. Their names are the reason (`backup.service,
+  certbot.timer`), so the alert says which. Alerts: **Failed systemd units** (Warning, from
+  `{$SSH.FAILED.WARN}` = 1) and **Many failed systemd units** (High, from `{$SSH.FAILED.HIGH}` = 3),
+  after 3 checks. A host without systemd (Alpine, a NAS with its own init) simply has no such sensor.
 
 - **systemd units** (`{$SSH.UNITS}`): one sensor per unit you list, under **Services**, reading
   **Running** or **Down**. Read with `systemctl show`, which any login may run: no extra rights. A

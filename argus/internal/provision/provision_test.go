@@ -325,3 +325,34 @@ func TestSSHServiceMacros(t *testing.T) {
 		t.Error("an unbounded container filter was accepted")
 	}
 }
+
+// The TCP ports add-on takes "port" and "name:port" lists and refuses anything that could reach the
+// collector's command line as something else; the DNS names are checked the same way.
+func TestAddOnMacroPatterns(t *testing.T) {
+	tcp, ok := AddOnByID("tcp")
+	if !ok || tcp.Template != TemplateTCP || !IsAddOnTemplate(TemplateTCP) {
+		t.Fatal("no TCP ports add-on")
+	}
+	ports := tcp.Macros[0]
+	for _, v := range []string{"22", "SMTP:25, RDP:3389, 8443", "22 443", "SQL_Server:1433,"} {
+		if err := ValidateMacroValue(ports, v); err != nil {
+			t.Errorf("%q refused: %v", v, err)
+		}
+	}
+	for _, v := range []string{"-p 22", "22;rm", "RDP:", ":3389", "\"22\"", "1:22", "22,x"} {
+		if err := ValidateMacroValue(ports, v); err == nil {
+			t.Errorf("%q accepted", v)
+		}
+	}
+	dns, _ := AddOnByID("dns-resolve")
+	for _, v := range []string{"example.com", "example.com, cloudflare.com", "_srv.example.com"} {
+		if err := ValidateMacroValue(dns.Macros[0], v); err != nil {
+			t.Errorf("%q refused: %v", v, err)
+		}
+	}
+	for _, v := range []string{"-x", "a.com;b", "a b\"c"} {
+		if err := ValidateMacroValue(dns.Macros[0], v); err == nil {
+			t.Errorf("%q accepted", v)
+		}
+	}
+}

@@ -16,7 +16,8 @@ type AddOn struct {
 }
 
 // addOns is the catalog. HTTP is the universal add-on (any device may expose a web UI worth watching);
-// DNS resolution layers per-name resolve checks onto a host that isn't already a DNS class.
+// DNS resolution layers per-name resolve checks onto a host that isn't already a DNS class; TCP ports
+// checks any listed port.
 var addOns = []AddOn{
 	{
 		ID:          "http",
@@ -34,10 +35,30 @@ var addOns = []AddOn{
 		Template:    "Argus DNS resolution",
 		Description: "Resolve one or more names against this host and alert on failures or slow answers.",
 		Macros: []MacroSpec{
-			{Macro: "{$DNS.RESOLVE.NAMES}", Label: "Names to resolve", Hint: "example.com,cloudflare.com", Required: true},
-			{Macro: "{$DNS.PORT}", Label: "DNS port", Hint: "53"},
+			{Macro: "{$DNS.RESOLVE.NAMES}", Label: "Names to resolve", Hint: "example.com,cloudflare.com", Required: true, Pattern: patternNames},
+			{Macro: "{$DNS.PORT}", Label: "DNS port", Hint: "53", Pattern: patternPort},
 		},
 	},
+	{
+		ID:          "tcp",
+		Label:       "TCP ports",
+		Template:    TemplateTCP,
+		Description: "Check that TCP ports accept a connection (SMTP, RDP, a database, an admin port), with the connect time and why a port doesn't answer, run from the host's proxy.",
+		Macros: []MacroSpec{
+			{Macro: "{$TCP.PORTS}", Label: "Ports", Hint: "SMTP:25, RDP:3389, 8443", Required: true, Pattern: patternPorts},
+			{Macro: "{$TCP.TIMEOUT}", Label: "Timeout (seconds)", Hint: "3", Pattern: patternSeconds},
+		},
+	},
+}
+
+// IsAddOnTemplate reports whether template is an add-on's (an opt-in template, not a class's own).
+func IsAddOnTemplate(template string) bool {
+	for _, a := range addOns {
+		if a.Template == template {
+			return true
+		}
+	}
+	return false
 }
 
 // AddOns returns the add-on catalog (stable order).

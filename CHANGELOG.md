@@ -13,6 +13,40 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Heartbeat:**
+- Argus can ping an outside monitor (a healthchecks.io check, an Uptime Kuma push monitor) once a
+  minute, set in **Settings, Heartbeat** or `ARGUS_HEARTBEAT_URL`. The ping only goes out while Argus
+  is healthy end to end: the Zabbix API answers, some probe delivered data in the last 5 minutes, the
+  alert loop is running, the database takes writes and not every alert channel is failing. When the
+  pings stop, the outside monitor tells you, even when the VM itself is down. Settings shows the last
+  check, why a ping was held, and has a **Send now** button.
+
+**Linux (SSH):**
+- **Failed units**: how many units systemd reports failed, any unit, whether it is listed in
+  Services or not, with their names as the reason. No setup and no extra rights; a host without
+  systemd has no such sensor. Warning from 1 failed unit, high from 3, both editable.
+- **CPU iowait** and **CPU steal**. CPU utilization counts iowait as idle and steal as busy, so a box
+  stuck on its disks looked idle and a VM losing CPU time to other guests looked loaded. Warning and
+  high thresholds for both (iowait 20% / 40%, steal 10% / 25%).
+- CPU utilization no longer counts guest time twice on a host that runs VMs itself.
+- The collector comes with `probe/v7.0.31-r14`; a host monitored by the core server needs the core's
+  copy of `argus_linux_ssh.py` updated too (`setup-core.sh` installs it).
+
+**TCP ports add-on:**
+- A new add-on in host settings checks that TCP ports accept a connection: a mail server's SMTP, a
+  Windows box's RDP, a database, a firewall's admin port. List them as `port` or `name:port`
+  (`SMTP:25, RDP:3389, 8443`); each becomes its own sensor under **TCP** with its connect time and a
+  red band while it doesn't answer, and says why it doesn't (`connection refused: nothing listens on
+  3389`, `no answer within 3 s`, `no route to host`). Alerts when a port stops answering and when it
+  is slow to connect. The probe checks every port of a host at once, once a minute (`argus_tcp.py`,
+  in `probe/v7.0.31-r14`).
+- Add-on options are now checked like device-class options before they reach the probe: the DNS
+  add-on's names and port, and the TCP ports list.
+
+**Charts:**
+- An interface's traffic chart shows how much it moved over the range beside the range tabs ("In
+  1.24 TB · Out 301 GB over 30 days"), and so does a VM's disk read and write chart.
+
 ## [0.5.19] - 2026-09-30
 
 **Uptime:**

@@ -165,6 +165,7 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 |---|---|---|
 | `ARGUS_PUBLIC_URL` | *(empty)* | _(UI)_ external base URL, for "Open in Argus" / acknowledge links in alerts |
 | `ARGUS_TZ` | `UTC` | _(UI)_ IANA timezone for timestamps in notifications, e.g. `Europe/Rome` |
+| `ARGUS_HEARTBEAT_URL` | *(empty)* | _(UI)_ an outside monitor's ping URL (a healthchecks.io check, an Uptime Kuma push monitor). Argus requests it once a minute while it is healthy end to end (Zabbix API answers, some probe delivered data in the last 5 minutes, the alert loop runs, the database takes writes, not every alert channel is failing), so the monitor alerts when the pings stop. Empty = off |
 
 **Probe enrollment** (optional; enables the Probes → Add probe wizard when the CA is mounted)
 | Var | Default | Purpose |

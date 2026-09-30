@@ -190,7 +190,11 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
 
 Every host gets the **Base** template (Ping - latency + loss, always) and, optionally, the
 **HTTP/HTTPS** add-on (up + response time + TLS-cert expiry on a configurable `{$HTTP.PORT}` -
-attachable to any host, not a class). On top, one or more **class templates** attach - manually
+attachable to any host, not a class), the **DNS resolution** add-on and the **TCP ports** add-on
+(`Argus TCP ports`: `argus_tcp.py` on the probe connects to every port in `{$TCP.PORTS}` at once,
+one sensor group per port under **TCP** with its connect time, reachability as the Downtime band and
+why it doesn't answer as the reason; add-on values are checked against a pattern before they reach
+the collector's command line). On top, one or more **class templates** attach - manually
 in the first cut (§C), automatically by fingerprint once discovery lands (§8, §B). Templates are
 hand-authored Zabbix YAML, version-controlled under `argus/internal/provision/templates/` (in-module
 so they can be embedded) and imported into zabbix-server via `configuration.import` (Argus reconciles
@@ -234,7 +238,7 @@ pre-§C fleet) falls back to a best-effort guess from its name, else a generic d
 | **unRAID** | SNMP | sysDescr `Unraid` | CPU load, RAM %, uptime, per-share free, NIC; disk + CPU temp via optional NET-SNMP extends (setup: [docs/hosts/unraid.md](hosts/unraid.md)) | shares, disks, NICs |
 | **Libraesva ESG** | SNMP (+HTTPS) | sysObjectID/sysDescr | host CPU/RAM/disk + mail-queue + admin-cert | fs |
 | **Windows server** | SNMP | sysObjectID (Windows) | CPU, RAM, disk, net, uptime + **selected services** (LANMGR `svSvcTable`; opt-in via `{$WIN.SERVICE.MATCHES}`, set at add time or in host settings) | disks, NICs, services |
-| **Linux (SSH)** | Agentless | SSH login (no-SNMP fallback) | CPU, load, RAM, uptime, disk, net via `argus_linux_ssh.py` (one login/poll; key or password auth); opt-in systemd units (`{$SSH.UNITS}`) and Docker containers (`{$SSH.CONTAINERS}`, needs `docker ps` rights), each Running / Down with its state as the reason | fs, NICs, units, containers |
+| **Linux (SSH)** | Agentless | SSH login (no-SNMP fallback) | CPU (+ iowait and steal), load, RAM, uptime, disk, net via `argus_linux_ssh.py` (one login/poll; key or password auth); failed systemd units (any unit, `systemctl list-units --state=failed`, the names as the reason; only where systemd runs); opt-in systemd units (`{$SSH.UNITS}`) and Docker containers (`{$SSH.CONTAINERS}`, needs `docker ps` rights), each Running / Down with its state as the reason | fs, NICs, units, containers, systemd |
 | **DNS server** (incl. **AdGuard**) | Collector (+HTTP-API) | :53 + admin | per-name resolve (success/time/IP) via `dns-resolver.py`; AdGuard stats via its API | names |
 | **UPS (NUT via PeaNUT)** | HTTP-API | PeaNUT :8080 → upsd | battery %, on-battery/low-battery, runtime, load, input V, power draw | - |
 | **Home Assistant** | HTTP-API | :8123 REST + token | API up, version, integrations, entity count, unavailable entities | - |
@@ -509,6 +513,15 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   **Remind for** severity (independent of its alert floor, so "alert on warnings, remind only about
   errors" is one channel); acknowledging, pausing or hiding stops them. A
   channel added after a problem went live isn't sent that problem.
+- **Heartbeat (who watches Argus):** nothing inside Argus can report that Argus itself stopped, so
+  with a **Heartbeat URL** set (Settings -> Heartbeat, `ARGUS_HEARTBEAT_URL`) it pings an outside
+  monitor (a healthchecks.io check, an Uptime Kuma push monitor) once a minute, but only while it is
+  healthy end to end: the Zabbix API answers with the token, some probe delivered data in the last 5
+  minutes (so `zabbix_server` is taking it), the alert loop read the problem list in the last 90 s,
+  the database takes a write, and not every enabled alert channel failed its last send. Anything else
+  holds the ping and the outside monitor raises the alarm after its own grace period. Settings shows
+  the last check (pinging / held and why / failing and the HTTP status) and a **Send now** button;
+  the URL is never logged, since it usually carries the check's secret.
 - **Master sensors (dependencies):** every host has a master sensor - its ICMP ping by default
   (`icmpping`), another sensor or none per host (`host_masters`), and the Probe host's reporting
   sensor (`zabbix[uptime]`). A collector-based host also has its collector's reachability sensor

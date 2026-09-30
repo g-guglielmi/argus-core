@@ -19,6 +19,7 @@ const (
 	// ClassProbe is the Argus-managed class of the per-site Probe health host.
 	ClassProbe   = "probe"
 	TemplateHTTP = "Argus HTTP Endpoint"
+	TemplateTCP  = "Argus TCP ports"
 	// TemplateProbeHealth is the per-probe health template (internal checks run on the proxy).
 	TemplateProbeHealth = "Argus Probe Health"
 )
@@ -78,6 +79,12 @@ const (
 	patternUnits = `^([A-Za-z0-9][A-Za-z0-9@._:-]*([ ,]+[A-Za-z0-9][A-Za-z0-9@._:-]*)*[ ,]*)?$`
 	// a regular expression the collector applies itself (never a shell): one line, bounded
 	patternRegexLine = `^[^\r\n\x00]{0,256}$`
+	// TCP ports, comma or space separated, each "port" or "name:port" (argus_tcp.py checks them again)
+	patternPorts = `^(([A-Za-z][A-Za-z0-9._-]{0,31}:)?[0-9]{1,5}([ ,]+([A-Za-z][A-Za-z0-9._-]{0,31}:)?[0-9]{1,5})*[ ,]*)?$`
+	// host names to resolve, comma or space separated: never a leading "-"
+	patternNames = `^([A-Za-z0-9_][A-Za-z0-9_.-]*([ ,]+[A-Za-z0-9_][A-Za-z0-9_.-]*)*[ ,]*)?$`
+	// a timeout in seconds, blank for the template default
+	patternSeconds = `^([0-9]{1,2}(\.[0-9]{1,2})?)?$`
 )
 
 // ValidateMacroValue checks an entered value against the spec's pattern (blank always passes: it
