@@ -234,7 +234,7 @@ pre-§C fleet) falls back to a best-effort guess from its name, else a generic d
 | **unRAID** | SNMP | sysDescr `Unraid` | CPU load, RAM %, uptime, per-share free, NIC; disk + CPU temp via optional NET-SNMP extends (setup: [docs/hosts/unraid.md](hosts/unraid.md)) | shares, disks, NICs |
 | **Libraesva ESG** | SNMP (+HTTPS) | sysObjectID/sysDescr | host CPU/RAM/disk + mail-queue + admin-cert | fs |
 | **Windows server** | SNMP | sysObjectID (Windows) | CPU, RAM, disk, net, uptime + **selected services** (LANMGR `svSvcTable`; opt-in via `{$WIN.SERVICE.MATCHES}`, set at add time or in host settings) | disks, NICs, services |
-| **Linux (SSH)** | Agentless | SSH login (no-SNMP fallback) | CPU, load, RAM, uptime, disk, net via `argus_linux_ssh.py` (one login/poll; key or password auth) | fs, NICs |
+| **Linux (SSH)** | Agentless | SSH login (no-SNMP fallback) | CPU, load, RAM, uptime, disk, net via `argus_linux_ssh.py` (one login/poll; key or password auth); opt-in systemd units (`{$SSH.UNITS}`) and Docker containers (`{$SSH.CONTAINERS}`, needs `docker ps` rights), each Running / Down with its state as the reason | fs, NICs, units, containers |
 | **DNS server** (incl. **AdGuard**) | Collector (+HTTP-API) | :53 + admin | per-name resolve (success/time/IP) via `dns-resolver.py`; AdGuard stats via its API | names |
 | **UPS (NUT via PeaNUT)** | HTTP-API | PeaNUT :8080 → upsd | battery %, on-battery/low-battery, runtime, load, input V, power draw | - |
 | **Home Assistant** | HTTP-API | :8123 REST + token | API up, version, integrations, entity count, unavailable entities | - |
@@ -281,7 +281,8 @@ Argus template follows one of two shapes, and a new one must too:
   fires instead of every sensor going unsupported. The JSON then carries `"error": "<one line>"`
   (what ssh printed, upsd's `ERR` answer with its meaning, the XAPI failure, the rcode), and the
   template keeps it in a **Collection error** item next to the down flag (`linux.ssh.error`,
-  `xcp.error`, `nut.error`, `adguard.error`, `hass.error`, `dns.resolve.error[<name>]`: text, not a
+  `xcp.error`, `nut.error`, `adguard.error`, `hass.error`, `dns.resolve.error[<name>]`, and per
+  systemd unit / Docker container `linux.ssh.unit.state[<unit>]` / `linux.ssh.container.status[<name>]`: text, not a
   curated sensor, empty while it works, `JSONPATH $.error` with an empty value when an older collector
   doesn't print it). Argus maps each flag to its reason item (`reasonKeys` in
   `internal/server/reasons.go`; a test fails when a collector flag has none).

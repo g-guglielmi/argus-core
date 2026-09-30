@@ -74,6 +74,10 @@ const (
 	patternLogin = `^[A-Za-z0-9][A-Za-z0-9._@-]{0,63}$`                  // a login name: never a leading "-", no spaces
 	patternPort  = `^([1-9][0-9]{0,4})?$`                                // 1-65535 or blank (the template default)
 	patternKey   = `^(/var/lib/zabbix/ssh/[A-Za-z0-9][A-Za-z0-9._-]*)?$` // a key inside the proxy's ssh dir, or blank
+	// systemd unit names, comma or space separated: systemd's own characters, never a leading "-"
+	patternUnits = `^([A-Za-z0-9][A-Za-z0-9@._:-]*([ ,]+[A-Za-z0-9][A-Za-z0-9@._:-]*)*[ ,]*)?$`
+	// a regular expression the collector applies itself (never a shell): one line, bounded
+	patternRegexLine = `^[^\r\n\x00]{0,256}$`
 )
 
 // ValidateMacroValue checks an entered value against the spec's pattern (blank always passes: it
@@ -186,6 +190,8 @@ var registry = []Class{
 			{Macro: "{$SSH.AUTH}", Label: "Authentication", Hint: "key", Options: []string{"key", "password"}},
 			{Macro: "{$SSH.PASSWORD}", Label: "SSH password", Hint: "only for password auth", Secret: true},
 			{Macro: "{$SSH.KEYFILE}", Label: "Private key path (on the proxy)", Hint: "/var/lib/zabbix/ssh/argus_id", Pattern: patternKey},
+			{Macro: "{$SSH.UNITS}", Label: "Services to watch (systemd units)", Hint: "nginx, jellyfin, docker", Pattern: patternUnits},
+			{Macro: "{$SSH.CONTAINERS}", Label: "Containers to watch (regex)", Hint: "^(jellyfin|immich.*)$ - needs docker ps rights", Pattern: patternRegexLine},
 		},
 		Setup: &ClassSetup{
 			Title: "Give the proxy read-only SSH access",
@@ -195,6 +201,7 @@ var registry = []Class{
 				"Key auth (recommended): generate a monitoring keypair, add the public key to the target's ~/.ssh/authorized_keys, and place the private key ON the proxy at the path in \"Private key path\" (default /var/lib/zabbix/ssh/argus_id) - mount it into the argus-probe container there. Set Authentication to \"key\".",
 				"Password auth: set Authentication to \"password\" and fill in the SSH password (stored as a secret). The proxy image ships sshpass for this.",
 				"The first connection is trust-on-first-use (accept-new); later host-key changes are rejected.",
+				"Optional: list the systemd units to watch (no extra rights needed) and a name pattern for the Docker containers to watch. Containers need the login to run docker ps, which on a standard install means the docker group: root-equivalent on that host, so decide per host.",
 			},
 			Note: "The same key/credential is reused for every host on a given proxy, so one monitoring key per site is enough. To lock it down further, restrict the key in authorized_keys (from=, no-pty).",
 		},

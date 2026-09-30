@@ -24,6 +24,20 @@ GitHub Release from the matching section below.
   100% (worst first, at most ten) when there's nothing wrong. Complete days are kept in Argus, so a
   page covering hundreds of hosts reads only today from Zabbix.
 
+**Linux services and containers:**
+- The Linux (SSH, agentless) class can watch the host's services. List systemd units in **Services
+  to watch** (`nginx, jellyfin`) and each gets a sensor under Services reading Running or Down, from
+  `systemctl show` (no extra rights); a Down one says why (`failed (failed), result exit-code`, `not
+  found`). Give **Containers to watch** a name pattern (`^(jellyfin|immich.*)$`) and each matching
+  Docker container gets a sensor under Containers: Running when up and healthy, Down when exited,
+  restarting, paused, unhealthy or removed, with docker's status as the reason. Each alerts on its own
+  (Service down / Container down) and has an uptime.
+- Containers need the SSH login to run `docker ps`, which on a standard install means the `docker`
+  group: root-equivalent on that host (see docs/hosts/linux-ssh.md). Without it the container sensors
+  read "not supported" with that reason instead of Down.
+- The collector script that reads them ships in the core's scripts and in the next probe release;
+  until a probe runs it the options have no effect.
+
 **Incident history:**
 - A new **History** page lists what went wrong and when across the fleet: each problem at Warning and
   above with its start, how long it lasted (or that it is still open), the sensor, who acknowledged it

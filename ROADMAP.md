@@ -160,6 +160,11 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   reason, from Zabbix's problem events plus an Argus log of the problems Argus raises itself. DESIGN
   7b. - _(BE+FE)_ M
 
+- [x] **Linux services and containers** - the Linux (SSH) class watches the systemd units you list
+  (`systemctl show`, no rights needed) and the Docker containers matching a name filter (`docker ps
+  -a`, needs docker rights), one Running / Down sensor each with its state as the reason, from the
+  same SSH session. DESIGN section 5. - _(BE+probe)_ M
+
 ### G. Scale & production readiness
 - [x] **Security review, wave 1 (core)** - a static review of the three repositories; the core-side
   fixes shipped together: reset links never built from the request's Host, validated probe settings,

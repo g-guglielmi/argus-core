@@ -24,7 +24,7 @@ zabbix_export:
         - uuid: de0852df5f4642b18e0591a5be794e3b
           name: 'Linux SSH raw data'
           type: EXTERNAL
-          key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+          key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
           delay: 1m
           history: '0'
           trends: '0'
@@ -41,7 +41,7 @@ zabbix_export:
           value_type: TEXT
           description: 'Why the last poll failed, in one line (empty while it works). Not a curated sensor: Argus shows it next to the down reading and in the alert.'
           master_item:
-            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -61,7 +61,7 @@ zabbix_export:
           value_type: UNSIGNED
           description: '1 = the SSH poll completed, 0 = the host is unreachable or the login failed. Not a curated sensor - it drives the down trigger.'
           master_item:
-            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -83,7 +83,7 @@ zabbix_export:
           units: '%'
           description: 'Overall CPU utilization, computed from two /proc/stat samples one second apart (100 - idle%).'
           master_item:
-            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -110,7 +110,7 @@ zabbix_export:
           value_type: FLOAT
           description: '1-minute load average (/proc/loadavg).'
           master_item:
-            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -126,7 +126,7 @@ zabbix_export:
           value_type: FLOAT
           description: '5-minute load average (/proc/loadavg).'
           master_item:
-            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -142,7 +142,7 @@ zabbix_export:
           value_type: FLOAT
           description: '15-minute load average (/proc/loadavg).'
           master_item:
-            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -159,7 +159,7 @@ zabbix_export:
           units: B
           description: 'MemTotal from /proc/meminfo, in bytes.'
           master_item:
-            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -176,7 +176,7 @@ zabbix_export:
           units: B
           description: 'MemAvailable from /proc/meminfo (what applications can claim without swapping), in bytes.'
           master_item:
-            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -193,7 +193,7 @@ zabbix_export:
           units: '%'
           description: 'Memory in use as a percentage of total (100 * (MemTotal - MemAvailable) / MemTotal).'
           master_item:
-            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -221,13 +221,165 @@ zabbix_export:
           units: uptime
           description: 'System uptime from /proc/uptime.'
           master_item:
-            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
           preprocessing:
             - type: JSONPATH
               parameters:
                 - '$.uptime'
               error_handler: DISCARD_VALUE
       discovery_rules:
+        - uuid: 60209f5032aa47ab8769de17c4b080b5
+          name: 'Service discovery'
+          type: DEPENDENT
+          key: linux.ssh.unit.discovery
+          delay: '0'
+          lifetime: 1d
+          enabled_lifetime_type: DISABLE_NEVER
+          description: 'One sensor per systemd unit in {$SSH.UNITS} (a list, not real discovery: a unit the host lacks reads "not found"). A unit removed from the list is deleted after a day.'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.unit_discovery'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '[]'
+          item_prototypes:
+            - uuid: a7cb1e1d63d64a8eb8f7827517717110
+              name: 'Service {#UNIT}'
+              type: DEPENDENT
+              key: 'linux.ssh.unit.active[{#UNIT}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              description: '1 = the unit is active (systemctl), 0 = anything else: failed, inactive, restarting, not found. The state item next to it says which.'
+              master_item:
+                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      if (!JSON.parse(value).reachable) { throw 'the SSH poll did not complete'; }
+                      return value;
+                  error_handler: DISCARD_VALUE
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var us = JSON.parse(value).units || [];
+                      for (var i = 0; i < us.length; i++) { if (us[i].name === '{#UNIT}') { return us[i].active; } }
+                      return 0;
+              trigger_prototypes:
+                - uuid: 4c328783beab476286579cdbeabfb39f
+                  expression: 'max(/Argus Linux by SSH/linux.ssh.unit.active[{#UNIT}],#3)=0'
+                  name: 'Service down: {#UNIT}'
+                  priority: HIGH
+                  description: 'The unit has not been active on the last 3 checks (failed, stopped, restarting, or not on this host).'
+            - uuid: bff68c2bbb944fee8cee22d1bbb9d70c
+              name: 'Service {#UNIT} state'
+              type: DEPENDENT
+              key: 'linux.ssh.unit.state[{#UNIT}]'
+              delay: '0'
+              history: 7d
+              trends: '0'
+              value_type: TEXT
+              description: 'What systemctl says about the unit ("active (running)", "failed (failed), result exit-code", "not found"). Not a curated sensor: Argus shows it next to a unit that is down and in the alert.'
+              master_item:
+                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      if (!JSON.parse(value).reachable) { throw 'the SSH poll did not complete'; }
+                      return value;
+                  error_handler: DISCARD_VALUE
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var us = JSON.parse(value).units || [];
+                      for (var i = 0; i < us.length; i++) { if (us[i].name === '{#UNIT}') { return us[i].state; } }
+                      return 'not reported';
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+        - uuid: eeec982042134639a72a2845b8e0aa05
+          name: 'Container discovery'
+          type: DEPENDENT
+          key: linux.ssh.container.discovery
+          delay: '0'
+          lifetime: 1d
+          enabled_lifetime_type: DISABLE_NEVER
+          description: 'Docker containers (docker ps -a) whose name matches {$SSH.CONTAINERS}; empty = none. A container that disappears reads "not listed" until it is deleted a day later.'
+          master_item:
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.container_discovery'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '[]'
+          item_prototypes:
+            - uuid: 7fece1b4dc1a44b58042538ef97366f8
+              name: 'Container {#CONTAINER}'
+              type: DEPENDENT
+              key: 'linux.ssh.container.running[{#CONTAINER}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              description: '1 = the container is up (and healthy, when it has a healthcheck), 0 = exited, restarting, paused, unhealthy or gone. When docker ps itself fails the item is not supported, with docker''s reason.'
+              master_item:
+                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      if (!JSON.parse(value).reachable) { throw 'the SSH poll did not complete'; }
+                      return value;
+                  error_handler: DISCARD_VALUE
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      if (d.docker_error) { throw d.docker_error; }
+                      var cs = d.containers || [];
+                      for (var i = 0; i < cs.length; i++) { if (cs[i].name === '{#CONTAINER}') { return cs[i].running; } }
+                      return 0;
+              trigger_prototypes:
+                - uuid: 76b99fe5fca64b2cbfddb43241cd8be2
+                  expression: 'max(/Argus Linux by SSH/linux.ssh.container.running[{#CONTAINER}],#3)=0'
+                  name: 'Container down: {#CONTAINER}'
+                  priority: HIGH
+                  description: 'The container has not been up and healthy on the last 3 checks (exited, restarting, paused, unhealthy, or removed).'
+            - uuid: 12575228849144728b0a3e2842dc5544
+              name: 'Container {#CONTAINER} status'
+              type: DEPENDENT
+              key: 'linux.ssh.container.status[{#CONTAINER}]'
+              delay: '0'
+              history: 7d
+              trends: '0'
+              value_type: TEXT
+              description: 'docker ps status ("Up 3 hours", "Exited (1) 2 hours ago", "Up 5 minutes (unhealthy)"). Not a curated sensor: Argus shows it next to a container that is down and in the alert.'
+              master_item:
+                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      if (!JSON.parse(value).reachable) { throw 'the SSH poll did not complete'; }
+                      return value;
+                  error_handler: DISCARD_VALUE
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      if (d.docker_error) { return d.docker_error; }
+                      var cs = d.containers || [];
+                      for (var i = 0; i < cs.length; i++) { if (cs[i].name === '{#CONTAINER}') { return cs[i].status; } }
+                      return 'not listed by docker ps -a (removed?)';
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
         - uuid: ec60eacf925f4888bfa8b8f60bc91fba
           name: 'Filesystem discovery'
           type: DEPENDENT
@@ -237,7 +389,7 @@ zabbix_export:
           enabled_lifetime_type: DISABLE_IMMEDIATELY
           description: 'Mounted filesystems reported by df (pseudo/temporary filesystems already dropped by the collector; {$FS.NAME.SKIP} trims further). A mount that disappears is disabled immediately and deleted after 7 days.'
           master_item:
-            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -260,7 +412,7 @@ zabbix_export:
               value_type: FLOAT
               units: B
               master_item:
-                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -279,7 +431,7 @@ zabbix_export:
               value_type: FLOAT
               units: B
               master_item:
-                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -298,7 +450,7 @@ zabbix_export:
               value_type: FLOAT
               units: '%'
               master_item:
-                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -327,7 +479,7 @@ zabbix_export:
           enabled_lifetime_type: DISABLE_IMMEDIATELY
           description: 'Network interfaces from /proc/net/dev (loopback dropped by the collector; {$NET.IF.SKIP} trims virtual / container NICs). An interface that disappears is disabled immediately and deleted after 7 days.'
           master_item:
-            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+            key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -351,7 +503,7 @@ zabbix_export:
               units: bps
               description: 'Receive octets from /proc/net/dev as a bit rate.'
               master_item:
-                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -375,7 +527,7 @@ zabbix_export:
               units: bps
               description: 'Transmit octets from /proc/net/dev as a bit rate.'
               master_item:
-                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE}]'
+                key: 'argus_linux_ssh.py[{HOST.CONN},{$SSH.USER},{$SSH.PORT},{$SSH.AUTH},{$SSH.PASSWORD},{$SSH.KEYFILE},{$SSH.UNITS},{$SSH.CONTAINERS}]'
               preprocessing:
                 - type: JAVASCRIPT
                   parameters:
@@ -404,6 +556,12 @@ zabbix_export:
         - macro: '{$SSH.KEYFILE}'
           value: /var/lib/zabbix/ssh/argus_id
           description: 'Path ON THE PROXY to the private key, for {$SSH.AUTH}=key. Mount your monitoring key here (its public half goes in each target''s authorized_keys).'
+        - macro: '{$SSH.UNITS}'
+          value: ''
+          description: 'systemd units to watch, comma or space separated (nginx, jellyfin.service). Empty = none. Read with systemctl show: no privileges needed.'
+        - macro: '{$SSH.CONTAINERS}'
+          value: ''
+          description: 'Regular expression of Docker container names to watch (^(jellyfin|immich.*)$). Empty = none. The SSH login must be allowed to run docker ps, which means the docker group (root-equivalent on that host).'
         - macro: '{$CPU.UTIL.WARN}'
           value: '80'
           description: 'CPU utilization percentage that raises a warning.'

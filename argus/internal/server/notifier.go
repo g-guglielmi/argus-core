@@ -535,6 +535,9 @@ func reading(ctx context.Context, zbx *zabbix.Client, itemID string, noData bool
 // reachabilityReading words a 1/0 reachability reading (ping, a collector's "reachable"), which reads
 // as nothing on its own. ok is false for any other sensor or value.
 func reachabilityReading(key, value string) (string, bool) {
+	if r, ok := runningReading(key, value); ok {
+		return r, true
+	}
 	if !isReachabilityKey(key) {
 		return "", false
 	}

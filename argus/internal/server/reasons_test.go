@@ -114,3 +114,34 @@ func TestTemplatesSayWhy(t *testing.T) {
 		t.Error("a UniFi template still throws the bare HTTP status")
 	}
 }
+
+// A systemd unit or a Docker container reads Running / Down, rows under Services / Containers named
+// after it, has an uptime, and its state text is its reason.
+func TestServiceContainerSensors(t *testing.T) {
+	for key, want := range map[string]string{"linux.ssh.unit.active[nginx]": "Running", "linux.ssh.container.running[jellyfin]": "Running"} {
+		if got, ok := reachabilityReading(key, "1"); !ok || got != want {
+			t.Errorf("%s = 1 reads %q", key, got)
+		}
+		if got, _ := reachabilityReading(key, "0"); got != "Down" {
+			t.Errorf("%s = 0 reads %q", key, got)
+		}
+		if !isUpDownKey(key) {
+			t.Errorf("%s has no uptime", key)
+		}
+	}
+	if cat, label, _, _, ok := classifyItem("linux.ssh.unit.active[nginx]", "Service nginx"); !ok || cat != "Services" || label != "nginx" {
+		t.Errorf("unit row = %q %q %v", cat, label, ok)
+	}
+	if cat, label, _, _, ok := classifyItem("linux.ssh.container.running[jellyfin]", "Container jellyfin"); !ok || cat != "Containers" || label != "jellyfin" {
+		t.Errorf("container row = %q %q %v", cat, label, ok)
+	}
+	if _, _, _, _, ok := classifyItem("linux.ssh.unit.state[nginx]", "Service nginx state"); ok {
+		t.Error("a unit's state item must not be a sensor row")
+	}
+	if got := reasonKeyFor("linux.ssh.container.running[jellyfin]"); got != "linux.ssh.container.status[jellyfin]" {
+		t.Errorf("container reason key = %q", got)
+	}
+	if _, ok := categoryOrderServer["Containers"]; !ok {
+		t.Error("Containers has no place in the category order")
+	}
+}

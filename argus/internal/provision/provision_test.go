@@ -287,3 +287,41 @@ func TestRegistry(t *testing.T) {
 		t.Fatalf("ugreen needs no credential macros: %+v", ug.Macros)
 	}
 }
+
+// The Linux-over-SSH service and container options reach the collector's command line (units) or its
+// regex engine (containers): unit names keep to systemd's characters, the filter to one bounded line.
+func TestSSHServiceMacros(t *testing.T) {
+	var units, containers MacroSpec
+	for _, c := range Classes() {
+		if c.ID != "linux-ssh" {
+			continue
+		}
+		for _, m := range c.Macros {
+			switch m.Macro {
+			case "{$SSH.UNITS}":
+				units = m
+			case "{$SSH.CONTAINERS}":
+				containers = m
+			}
+		}
+	}
+	if units.Macro == "" || containers.Macro == "" {
+		t.Fatal("the linux-ssh class must offer {$SSH.UNITS} and {$SSH.CONTAINERS}")
+	}
+	for _, ok := range []string{"", "nginx", "nginx, jellyfin", "docker.service ssh", "getty@tty1.service,cron"} {
+		if err := ValidateMacroValue(units, ok); err != nil {
+			t.Errorf("units %q refused: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"-nginx", "nginx;reboot", "nginx $(id)", "a|b", "nginx\ncron"} {
+		if ValidateMacroValue(units, bad) == nil {
+			t.Errorf("units %q accepted", bad)
+		}
+	}
+	if err := ValidateMacroValue(containers, `^(jellyfin|immich.*)$`); err != nil {
+		t.Errorf("container regex refused: %v", err)
+	}
+	if ValidateMacroValue(containers, strings.Repeat("a", 300)) == nil {
+		t.Error("an unbounded container filter was accepted")
+	}
+}

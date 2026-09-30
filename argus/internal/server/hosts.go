@@ -513,6 +513,9 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			Paused:    it.Status == "1", // disabled in Zabbix
 			Priority:  priorityOf(prioMap, it.ItemID),
 		}
+		if r, ok := runningReading(it.Key, it.LastValue); ok {
+			iv.LastValue = r // a service / container reads Running or Down, not 1 / 0
+		}
 		if iv.Paused {
 			iv.PausedUntil = pauseMap[it.ItemID]
 		}

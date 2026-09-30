@@ -20,6 +20,10 @@ can't but you do have SSH.
 - **Authentication** (`{$SSH.AUTH}`): **`key`** (recommended) or **`password`**.
 - **Private key path** (`{$SSH.KEYFILE}`, default `/var/lib/zabbix/ssh/argus_id`): for key auth, the
   path to the private key **on the proxy** (see below).
+- **Services to watch** (`{$SSH.UNITS}`, optional): systemd units, comma or space separated
+  (`nginx, jellyfin, docker`; a name without a suffix means `.service`). See below.
+- **Containers to watch** (`{$SSH.CONTAINERS}`, optional): a regular expression of Docker container
+  names (`^(jellyfin|immich.*)$`). See below; it needs `docker ps` rights.
 - **SSH password** (`{$SSH.PASSWORD}`): for password auth, stored as a Zabbix **secret macro**. Zabbix
   can hand it to the collector only as a command-line argument; the collector wipes its own command
   line as soon as it has read it, and `ssh` gets it through the environment, so it shows in `ps` only
@@ -69,6 +73,32 @@ place a key.
 
 A filesystem or interface that disappears is disabled immediately and deleted after 7 days.
 
+## Services and containers
+
+The same SSH session can also report whether the services you care about are running.
+
+- **systemd units** (`{$SSH.UNITS}`): one sensor per unit you list, under **Services**, reading
+  **Running** or **Down**. Read with `systemctl show`, which any login may run: no extra rights. A
+  unit that is failed, inactive, restarting (`activating (auto-restart)`) or missing reads Down, and
+  the reason says which (`failed (failed), result exit-code`, `not found (no such unit on this
+  host)`). The list is not a discovery: a unit the host doesn't have reads Down until you take it
+  off the list (its sensor is deleted a day later).
+- **Docker containers** (`{$SSH.CONTAINERS}`): one sensor per container whose name matches the
+  expression (matched by the collector, among `docker ps -a`), under **Containers**. **Running**
+  means up and, when it has a healthcheck, healthy; exited, restarting, paused, unhealthy or removed
+  reads Down, with docker's status as the reason (`Exited (1) 2 hours ago`, `Up 5 minutes
+  (unhealthy)`, `not listed by docker ps -a (removed?)`). A new container that matches appears on
+  the next discovery; one that is removed reads Down until its sensor is deleted a day later.
+- **Rights for containers.** `docker ps` talks to the Docker socket, and on a standard install only
+  root and the `docker` group may. Membership of the `docker` group is **root-equivalent** on that
+  host (anyone in it can start a privileged container), so give it to the monitoring login only if
+  that trade is acceptable there, or leave containers off and watch the container's own service or
+  port instead. Without the rights, the container sensors read "not supported" with the reason
+  ("the SSH login may not run docker ps (permission denied on the Docker socket)") rather than Down.
+- Each unit and container has an uptime (its chart shows the last checks and 30 days), and alerts on
+  its own: **Service down: nginx**, **Container down: jellyfin** (High, after 3 checks). While the
+  whole host is unreachable, its SSH down alert speaks for them.
+
 ## Troubleshooting
 
 - **Start with the reason.** Hover (or tap) the sensor's value in Argus - `not supported`, or `Not reachable`
@@ -83,5 +113,9 @@ A filesystem or interface that disappears is disabled immediately and deleted af
   just delete that file - it re-learns on the next poll).
 - **A mount or NIC is missing** - it may be matched by `{$FS.NAME.SKIP}` / `{$NET.IF.SKIP}`, or (for
   filesystems) it is a pseudo/tmpfs mount the collector filters out by design.
+- **A service reads Down but it runs** - hover the reading for systemd's answer: a unit name without
+  a suffix means `.service`, so a timer or a socket needs its full name (`backup.timer`).
+- **Containers read "not supported"** - hover it: usually the login can't run `docker ps` (see
+  "Rights for containers" above), or docker isn't installed on that host.
 - **Works from your shell but not the proxy** - remember the collector connects **from the proxy**,
   not your workstation: the key/authorized_keys and any `from=` restriction must match the proxy's IP.

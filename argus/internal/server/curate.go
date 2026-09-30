@@ -57,10 +57,11 @@ var categoryOrderServer = map[string]int{
 	"Network":          9,
 	"Wireless":         10,
 	"Services":         11,
-	"Virtual machines": 12,
-	"Uptime":           13,
-	"Ports":            14,
-	"Status":           15,
+	"Containers":       12,
+	"Virtual machines": 13,
+	"Uptime":           14,
+	"Ports":            15,
+	"Status":           16,
 }
 var categoryOrderNet = map[string]int{
 	"Ping":             0,
@@ -74,11 +75,12 @@ var categoryOrderNet = map[string]int{
 	"Memory":           8,
 	"Disk":             9,
 	"Services":         10,
-	"Virtual machines": 11,
-	"Uptime":           12,
-	"Ports":            13,
-	"Temperature":      14,
-	"Status":           15,
+	"Containers":       11,
+	"Virtual machines": 12,
+	"Uptime":           13,
+	"Ports":            14,
+	"Temperature":      15,
+	"Status":           16,
 }
 
 // Storage boxes (anything with a drive-temperature group: unRAID, later QNAP/Ugreen) read their
@@ -96,10 +98,11 @@ var categoryOrderNAS = map[string]int{
 	"Network":          9,
 	"Wireless":         10,
 	"Services":         11,
-	"Virtual machines": 12,
-	"Uptime":           13,
-	"Ports":            14,
-	"Status":           15,
+	"Containers":       12,
+	"Virtual machines": 13,
+	"Uptime":           14,
+	"Ports":            15,
+	"Status":           16,
 }
 
 // itemLabelOrder pins the reading order of the flat rows WITHIN a category where plain alphabetical
@@ -393,6 +396,13 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	// the item name (the LLD prototype is named "{#WINSVC}"); each is its own flat row.
 	case "win.service.state":
 		return "Services", name, "", "", true
+
+	// Linux by SSH: one flat row per systemd unit under Services and per Docker container under
+	// Containers, named after it. Their state items are the reasons (reasons.go), not sensors.
+	case "linux.ssh.unit.active":
+		return "Services", param(p, 0), "", "", true
+	case "linux.ssh.container.running":
+		return "Containers", param(p, 0), "", "", true
 
 	// UniFi devices, polled from the controller (Argus UniFi Switch by HTTP). The raw master item
 	// (unifi.switch.raw) deliberately doesn't match - it's plumbing, visible under "All sensors".

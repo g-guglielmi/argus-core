@@ -29,6 +29,9 @@ var reasonKeys = map[string]string{
 	"adguard.running":     "adguard.error",
 	"hass.running":        "hass.error",
 	"dns.resolve.success": "dns.resolve.error",
+	// Linux by SSH, per systemd unit and per Docker container: the state text is the reason.
+	"linux.ssh.unit.active":       "linux.ssh.unit.state",
+	"linux.ssh.container.running": "linux.ssh.container.status",
 }
 
 // reasonKeyFor is the key of the item holding the reason for flag key (same parameters: a DNS
@@ -110,6 +113,27 @@ func collectorReason(ctx context.Context, zbx *zabbix.Client, hostID, key, value
 		return ""
 	}
 	return itemError(v)
+}
+
+// runningKeys are the per-service flags (1 running, 0 down) that read as words.
+var runningKeys = map[string]bool{"linux.ssh.unit.active": true, "linux.ssh.container.running": true}
+
+// runningReading words a service or container flag: "Running" or "Down" (its state item says why).
+func runningReading(key, value string) (string, bool) {
+	base := key
+	if i := strings.IndexByte(key, '['); i >= 0 {
+		base = key[:i]
+	}
+	if !runningKeys[base] {
+		return "", false
+	}
+	switch strings.TrimSpace(value) {
+	case "1":
+		return "Running", true
+	case "0":
+		return "Down", true
+	}
+	return "", false
 }
 
 // withReason words a reading with its reason: "Not reachable: Permission denied (publickey)", or the
