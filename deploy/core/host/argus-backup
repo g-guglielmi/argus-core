@@ -946,6 +946,9 @@ def do_test(plan, why=""):
     st = load_status()
     st["busy"] = "test"
     save_status(st)
+    # The last export failed: once the target works again, this run copies what it is missing, so the
+    # failure doesn't linger until the next backup.
+    catch_up = bool(st.get("remote")) and not st["remote"].get("ok")
     res = {"at": int(started), "ok": False}
     target = describe_target(plan)
     try:
@@ -961,8 +964,22 @@ def do_test(plan, why=""):
         res["error"] = reason_of(e)
         text = "failed %s" % res["error"] if res["error"].startswith("while ") else "failed: %s" % res["error"]
         log("argus-backup: the target check %s" % text)
+    rm = None
+    if res["ok"] and catch_up:
+        log("argus-backup: the last export failed; copying what the target is missing now")
+        rm = {"type": plan["remote"]["type"], "at": int(time.time()), "ok": False}
+        try:
+            rm["files"], copied, _ = export(plan)
+            rm["ok"] = True
+            text += "; the last export had failed, so it copied the %d archive%s the target was missing" % (copied, "" if copied == 1 else "s")
+        except Fail as e:
+            rm["error"] = str(e)
+            text += "; copying what the last export missed failed %s" % e
+            log("argus-backup: the export failed %s" % e)
     st = load_status()
     st["test"] = res
+    if rm:
+        st["remote"] = rm
     note_activity(st, "check", why, res["ok"], text, started)
     st.pop("busy", None)
     save_status(st)

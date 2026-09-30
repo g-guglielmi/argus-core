@@ -72,7 +72,8 @@ minutes, or at once after `sudo systemctl start argus-backup.service`).
 Each run copies the new archive to the target and keeps this core's newest ones there (as many as
 **Keep**). It never touches other files, or another core's archives in the same folder. **Check the
 target** writes, lists and deletes a small test file, so you know the settings work before the first
-backup needs them.
+backup needs them. When the last export failed and the check works, the same run copies the archives
+the target is missing, so the failure doesn't wait for the next backup to clear.
 
 ### SMB share (Windows, a NAS)
 

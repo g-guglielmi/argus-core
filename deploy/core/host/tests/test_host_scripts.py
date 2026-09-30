@@ -366,6 +366,36 @@ class BackupTest(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(m.main(["argus-backup", "test"]), 1)
 
+    def test_check_catches_up_a_failed_export(self):
+        # The export failed (the share was unreachable); once a check finds the target working, the same
+        # run copies the archive the target is missing, and the failure is gone.
+        m = self.mod
+        mnt = os.path.join(self.dirs["run"], "mnt")
+        os.makedirs(os.path.join(mnt, "argus"))
+        self.fake.plan.update(passphrase=PASS, remote={"type": "smb", "share": "//10.0.0.20/Backup", "username": "rclone", "path": "argus"})
+        archive = "argus-backup-core1-20260930T224513Z.tar.gpg"
+        with open(os.path.join(m.LOCAL_DIR, archive), "wb") as f:
+            f.write(b"encrypted")
+        with open(m.STATUS_FILE, "w") as f:
+            json.dump({"version": 1, "remote": {"type": "smb", "ok": False, "at": 1, "error": "while mounting //unraid/Backup: ..."}}, f)
+        with open(m.REQUEST_FILE, "w") as f:
+            json.dump({"kind": "test"}, f)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(m.main(["argus-backup", "tick"]), 0)
+        st = self.status()
+        self.assertTrue(st["test"]["ok"])
+        self.assertTrue(st["remote"]["ok"], st["remote"])
+        self.assertEqual(st["remote"]["files"], 1)
+        self.assertIn(archive, os.listdir(os.path.join(mnt, "argus")))
+        self.assertIn("the last export had failed, so it copied the 1 archive the target was missing", st["activity"][0]["text"])
+        # With the export fine, a check only checks.
+        self.fake.calls.clear()
+        with open(m.REQUEST_FILE, "w") as f:
+            json.dump({"kind": "test"}, f)
+        with contextlib.redirect_stdout(io.StringIO()):
+            m.main(["argus-backup", "tick"])
+        self.assertNotIn("copied", self.status()["activity"][0]["text"])
+
     def test_backup_activity_tells_the_export(self):
         m = self.mod
         mnt = os.path.join(self.dirs["run"], "mnt")

@@ -46,6 +46,9 @@ GitHub Release from the matching section below.
   newer check works. In the journal each run starts with what it does and why, names the target and
   logs each step; a failed target check no longer shows as a failed service. `argus-backup log` prints
   the recent activity on the VM.
+- **Check the target** catches up after a failed export: when the last export failed and the target
+  works again, the check copies the archives it is missing right away, instead of the failure staying
+  on screen until the next backup.
 
 ## [core-vm/v0.1.4] - 2026-09-30
 
