@@ -151,6 +151,15 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Monitoring tree: direct-parent hosts** - a host that belongs directly to a parent group now renders at the group's own level (above its subgroups) rather than looking nested in one; a group's hosts and subgroups reorder as one interleaved list; and row dividers stay consistent in any order. - v0.4.36
 - [x] **Per-user + multi-site notifications** - personal Telegram/Discord channels each user self-manages in **Account** (their own @BotFather bot / webhook, `/api/me/notify/*`, encrypted at rest); an email channel can deliver to **every registered user's** address; and channels (global + personal) can target **multiple sites** via a hierarchical picker where selecting a probe's root group covers its subgroups. Lays the groundwork for the mobile push channel (§I). - v0.4.35
 
+- [x] **Uptime** - 24 h / 7 day / 30 day uptime for every host (on its master sensor, else its
+  ping) and every up/down sensor, from Zabbix's hourly trends weighted by their samples, with a strip
+  of the last checks and a bar per day; status pages show their hosts' 30-day average and the ones
+  under 100%, from complete days kept in `uptime_days`. DESIGN 7b. - _(BE+FE)_ M
+- [x] **Incident history** - per host (the last 30 days on its card) and fleet-wide (a **History**
+  page, 24 h to 90 days, filterable): start, duration, sensor, who acknowledged and the collector's
+  reason, from Zabbix's problem events plus an Argus log of the problems Argus raises itself. DESIGN
+  7b. - _(BE+FE)_ M
+
 ### G. Scale & production readiness
 - [x] **Security review, wave 1 (core)** - a static review of the three repositories; the core-side
   fixes shipped together: reset links never built from the request's Host, validated probe settings,

@@ -57,6 +57,11 @@ API key, and MAC):
   value + threshold, 2-hour trend graph, deep-links, one-click acknowledge). Shared channels are admin-managed;
   each user can also add their **own** Telegram/Discord in Account settings, and an email
   channel can fan out to every registered user's address.
+- **Uptime** - 24 h, 7 day and 30 day uptime per host (on its master sensor, else its ping) and
+  per up/down sensor, a strip of the last checks and a bar per day; status pages show their hosts'
+  30-day uptime and the ones under 100%.
+- **Incident history** - what went wrong and when, per host and across the fleet: start, duration,
+  who acknowledged it and the reason the device's collector gave, over 24 h to 90 days.
 - **Status pages** - read-only wall-screen dashboards opened with a secret link (no login),
   limited to chosen sites, optionally to your networks and an expiry; the link can be rotated.
 - **Auth** - three roles (admin / helpdesk / viewer), argon2id passwords, TOTP two-factor

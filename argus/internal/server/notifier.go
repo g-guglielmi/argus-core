@@ -142,6 +142,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	// Argus-raised problems (a sensor that stopped collecting, an unreachable agent) join Zabbix's. The
 	// first time this runs, the ones already present are baselined like a fresh install's problems.
 	synth := syntheticProblems(ctx, st, zbx, true)
+	recordArgusIncidents(ctx, st, synth) // the incident history keeps what Zabbix doesn't
 	if _, done, _ := st.MetaGet(ctx, notifySynthBaselineKey); !done {
 		// Every sensor already failing and every interface already down counts as known - including
 		// those not yet old enough to be a problem.

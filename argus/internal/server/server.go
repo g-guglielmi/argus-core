@@ -171,6 +171,10 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/hosts/{id}/items", auth.RequireAuth(s.handleHostItems))
 	mux.HandleFunc("GET /api/hosts/{id}/problems", auth.RequireAuth(s.handleHostProblems))
 	mux.HandleFunc("GET /api/items/{id}/history", auth.RequireAuth(s.handleItemHistory))
+	mux.HandleFunc("GET /api/items/{id}/availability", auth.RequireAuth(s.handleItemAvailability))
+	mux.HandleFunc("GET /api/hosts/{id}/availability", auth.RequireAuth(s.handleHostAvailability))
+	mux.HandleFunc("GET /api/hosts/{id}/incidents", auth.RequireAuth(s.handleHostIncidents))
+	mux.HandleFunc("GET /api/incidents", auth.RequireAuth(s.handleIncidents))
 	// states: acknowledge (any user); pause = Zabbix enable/disable, hide = Argus suppression
 	// (both helpdesk/admin)
 	mux.HandleFunc("POST /api/events/{id}/ack", auth.RequireAuth(s.handleAckEvent))

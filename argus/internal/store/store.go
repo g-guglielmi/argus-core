@@ -270,6 +270,36 @@ CREATE TABLE IF NOT EXISTS probe_load (
 );
 CREATE INDEX IF NOT EXISTS idx_probe_load ON probe_load(proxy_name, at);
 
+-- Uptime per sensor and local calendar day, from Zabbix's hourly trends of an up/down sensor (1 up,
+-- 0 down): up = the sum of hourly averages weighted by their sample counts, num = the samples. A day
+-- is stored once it is complete, so a status page covering hundreds of hosts reads 30 rows each
+-- instead of 720 trends; num = 0 marks a day without data.
+CREATE TABLE IF NOT EXISTS uptime_days (
+  item_id TEXT NOT NULL,
+  day     TEXT NOT NULL,        -- YYYY-MM-DD in the Argus timezone
+  up      REAL NOT NULL,
+  num     INTEGER NOT NULL,
+  PRIMARY KEY (item_id, day)
+);
+
+-- Argus-raised incidents (a sensor that stopped collecting, an interface that stopped answering):
+-- Zabbix keeps no event for these, so the notifier logs when each one opens and closes, for the
+-- incident history. event_id is the synthetic problem id (argus-unsupported-..., argus-interface-...).
+CREATE TABLE IF NOT EXISTS argus_incidents (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id   TEXT NOT NULL,
+  host_id    TEXT NOT NULL,
+  host_name  TEXT NOT NULL,
+  item_id    TEXT NOT NULL DEFAULT '',
+  name       TEXT NOT NULL,
+  severity   INTEGER NOT NULL,
+  reason     TEXT NOT NULL DEFAULT '',
+  started_at INTEGER NOT NULL,
+  ended_at   INTEGER NOT NULL DEFAULT 0   -- 0 = still open
+);
+CREATE INDEX IF NOT EXISTS idx_argus_incidents_open ON argus_incidents(ended_at, event_id);
+CREATE INDEX IF NOT EXISTS idx_argus_incidents_started ON argus_incidents(started_at);
+
 -- Small key/value store for app-level flags (e.g. the notifier's one-time baseline marker).
 CREATE TABLE IF NOT EXISTS app_meta (
   key   TEXT PRIMARY KEY,

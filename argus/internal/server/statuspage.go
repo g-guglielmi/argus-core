@@ -332,6 +332,7 @@ type statusView struct {
 	Clock24h    bool          `json:"clock_24h"`
 	Counts      statusCounts  `json:"counts"`
 	Issues      []statusIssue `json:"issues"`
+	Uptime      *statusUptime `json:"uptime,omitempty"` // the page's hosts over 30 days (uptime.go)
 }
 
 type statusCounts struct {
@@ -379,6 +380,7 @@ func (s *Server) buildStatus(ctx context.Context, p store.StatusPage) (statusVie
 
 	v := statusView{Name: p.Name, GeneratedAt: time.Now().Unix(), Timezone: s.mgr.Location().String(), Clock24h: s.mgr.Clock24h(), Issues: []statusIssue{}}
 	siteOf := map[string]string{}
+	nameOf := map[string]string{}
 	for _, h := range hosts {
 		if _, isHidden := hidden[h.HostID]; isHidden || h.Status == "1" {
 			continue
@@ -386,11 +388,18 @@ func (s *Server) buildStatus(ctx context.Context, p store.StatusPage) (statusVie
 		for _, g := range h.Groups {
 			if statusCovers(p.Sites, g.Name) {
 				siteOf[h.HostID] = g.Name
+				nameOf[h.HostID] = h.Name
 				v.Counts.Hosts++
 				break
 			}
 		}
 	}
+	onPage := make([]string, 0, len(siteOf))
+	for h := range siteOf {
+		onPage = append(onPage, h)
+	}
+	up := statusUptimeFor(s.hostUptimes(ctx, onPage), siteOf, nameOf)
+	v.Uptime = &up
 	var rows []sensorRow
 	for _, sr := range sensors {
 		if _, onPage := siteOf[sr.HostID]; !onPage {

@@ -62,6 +62,7 @@ type itemView struct {
 	LastClock   int64  `json:"last_clock"` // unix seconds, 0 if never
 	Supported   bool   `json:"supported"`
 	Why         string `json:"why,omitempty"` // why it isn't reading: Zabbix's error, or its collector's reason (reasons.go)
+	UpDown      bool   `json:"updown,omitempty"` // reads 1 up / 0 down, so it has an uptime (uptime.go)
 	Enabled     bool   `json:"enabled"`
 	Numeric     bool   `json:"numeric"` // graphable (value_type float or unsigned)
 	Paused      bool   `json:"paused"`  // disabled in Zabbix (stopped collecting)
@@ -507,6 +508,7 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			LastClock: clock,
 			Supported: it.State == "0",
 			Why:       reasons.why(it.HostID, it.Key, it.LastValue, it.Error, it.State == "0"),
+			UpDown:    isUpDownKey(it.Key),
 			Numeric:   numericValueType(it.ValueType),
 			Paused:    it.Status == "1", // disabled in Zabbix
 			Priority:  priorityOf(prioMap, it.ItemID),

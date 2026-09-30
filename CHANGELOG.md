@@ -13,6 +13,26 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Uptime:**
+- Every host card opens with its uptime over 24 hours, 7 days and 30 days and a strip of its last 60
+  checks, measured on its master sensor when that is an up/down one, else on its ping. An up/down
+  sensor (ping, an HTTP/HTTPS or TCP check, a collector's reachable flag, a DNS name resolving) shows
+  the same in its chart, plus one bar per day for the last 30 days. 7 and 30 days are calendar days in
+  the Argus timezone, from Zabbix's hourly trends weighted by their samples. A figure never rounds up
+  to 100%: one missed check in a month reads 99.99%.
+- Status pages show the average 30-day uptime of their hosts in the header, and list the hosts under
+  100% (worst first, at most ten) when there's nothing wrong. Complete days are kept in Argus, so a
+  page covering hundreds of hosts reads only today from Zabbix.
+
+**Incident history:**
+- A new **History** page lists what went wrong and when across the fleet: each problem at Warning and
+  above with its start, how long it lasted (or that it is still open), the sensor, who acknowledged it
+  and the reason the device's collector gave. 24 hours to 90 days, Errors + Warnings or Errors only,
+  filterable by host, sensor or reason. Every host card ends with its own last 30 days.
+- The problems Argus raises itself (a sensor that stopped collecting, an interface that stopped
+  answering) have no Zabbix event, so Argus now logs when each one opens and closes; they appear in
+  the history from this version on.
+
 ## [core-vm/v0.1.2] - 2026-09-30
 
 Refresh of the core appliance golden image (review waves 2 and 3, and the collector work since

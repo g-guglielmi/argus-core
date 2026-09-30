@@ -43,7 +43,7 @@ const SEVERITIES: { v: number; label: string }[] = [
   { v: 2, label: 'Warnings and errors' },
   { v: 3, label: 'Errors only' },
 ]
-type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string }
+type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string; updown?: boolean }
 // A sensor's effective warning/high values, read from its own triggers (below = lower is worse).
 type Thr = { warn?: number; high?: number; below?: boolean }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
@@ -694,10 +694,11 @@ function ResetPassword({ token, onDone }: { token: string; onDone: () => void })
   )
 }
 
-type View = 'overview' | 'triggers' | 'monitoring' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'users' | 'settings' | 'account' | 'list'
+type View = 'overview' | 'triggers' | 'history' | 'monitoring' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'users' | 'settings' | 'account' | 'list'
 const VIEW_TITLES: Record<View, [string, string]> = {
   overview: ['Overview', 'What needs attention right now'],
   triggers: ['Triggers', 'Alert rules - firing, or all by host'],
+  history: ['History', 'What went wrong, and when'],
   monitoring: ['Monitoring', 'Sites, hosts and sensors'],
   notifications: ['Notifications', 'Alert routing and channels'],
   probes: ['Probes', 'Site probe enrollment'],
@@ -713,6 +714,7 @@ const VIEW_TITLES: Record<View, [string, string]> = {
 const ic = {
   overview: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><g transform="translate(0 4)"><path d="M3 12a9 9 0 0 1 18 0" /><path d="M12 12l4-2" /><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" /></g></svg>,
   triggers: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l2-6 4 12 2-6h6" /></svg>,
+  history: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" /><path d="M3 4.5V8.5h4" /><path d="M12 7.5V12l3 2" /></svg>,
   monitoring: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"><rect x="9" y="3" width="6" height="5" rx="1.5" /><rect x="3" y="16" width="6" height="5" rx="1.5" /><rect x="15" y="16" width="6" height="5" rx="1.5" /><path d="M12 8v4" /><path d="M6 16v-2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" /></svg>,
   notifications: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>,
   probes: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5" /></svg>,
@@ -755,7 +757,7 @@ function useTheme(): ['dark' | 'light', () => void] {
 // bookmark, shared link, or Back/Forward restores the exact screen - instead of always
 // resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
 // (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
-const NAV_VIEWS: View[] = ['overview', 'triggers', 'monitoring', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'users', 'settings', 'account', 'list']
+const NAV_VIEWS: View[] = ['overview', 'triggers', 'history', 'monitoring', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'users', 'settings', 'account', 'list']
 type NavState = { view: View; filter: string; host?: string; item?: string; group?: string; scan?: string; edit?: string }
 
 function parseNav(): NavState {
@@ -1456,6 +1458,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         <div className="navlabel">Watch</div>
         {nav('overview', 'Overview', { count: errN })}
         {nav('triggers', 'Triggers')}
+        {nav('history', 'History')}
         {nav('monitoring', 'Monitoring')}
         <div className="navlabel">Configure</div>
         {me.role === 'admin' && nav('discovery', 'Discovery')}
@@ -1521,6 +1524,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         <div className="content view-enter" key={`${view}:${listFilter}`}>
           {view === 'overview' && <StatusListView filter="attention" sensors={sensors} loading={!sensorsLoaded} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => {}} />}
           {view === 'triggers' && <TriggersView goHost={goHost} />}
+          {view === 'history' && <HistoryView goHost={goHost} />}
           {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} loading={!sensorsLoaded || !rowsFor.split(',').includes(listFilter)} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
           {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} advanced={!!me.advanced} />}
           {view === 'notifications' && <NotificationsView />}
@@ -1550,7 +1554,10 @@ function HeaderClock({ updatedAt, nextAt }: { updatedAt: number; nextAt: number 
   const [cfg, setCfg] = useState<{ tz?: string; h24: boolean }>({ h24: true })
   const [, setTick] = useState(0)
   useEffect(() => {
-    const load = () => fetch('/api/features').then((r) => r.json()).then((f) => setCfg({ tz: f.timezone || undefined, h24: f.clock_24h !== false })).catch(() => {})
+    const load = () => fetch('/api/features').then((r) => r.json()).then((f) => {
+      CLOCK.tz = f.timezone || undefined; CLOCK.h24 = f.clock_24h !== false
+      setCfg({ tz: CLOCK.tz, h24: CLOCK.h24 })
+    }).catch(() => {})
     load()
     const cfgT = window.setInterval(load, 5 * 60 * 1000) // picks up a Settings change without a reload
     const t = window.setInterval(() => setTick((n) => n + 1), 1000)
@@ -5846,6 +5853,157 @@ function GroupEditor({ current, groups, onSave, onCancel }: { current: string[];
   )
 }
 
+// --- Uptime and incident history (uptime.go, incidents.go) --------------------------------------
+
+// Argus's timezone and time format, for absolute times; HeaderClock keeps it current.
+const CLOCK: { tz?: string; h24: boolean } = { h24: true }
+
+// fmtWhen renders a unix time in Argus's timezone: "29 Sep, 14:05".
+function fmtWhen(unix: number): string {
+  const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: !CLOCK.h24, timeZone: CLOCK.tz }
+  try { return new Intl.DateTimeFormat(undefined, opts).format(new Date(unix * 1000)) }
+  catch { delete opts.timeZone; return new Intl.DateTimeFormat(undefined, opts).format(new Date(unix * 1000)) }
+}
+
+type Availability = { item_id: string; label?: string; uptime_24h: number | null; uptime_7d: number | null; uptime_30d: number | null; checks: [number, number][]; days: { day: string; pct: number | null }[] }
+
+// fmtUptime never rounds up to 100%: one missed check in a month still reads 99.99%.
+function fmtUptime(v: number | null | undefined): string {
+  if (v == null) return '-'
+  if (v >= 100) return '100%'
+  return String(parseFloat((Math.floor(v * 100) / 100).toFixed(2))) + '%'
+}
+function uptimeColor(v: number | null | undefined): string {
+  if (v == null) return 'var(--faint)'
+  if (v >= 99.9) return 'var(--ok)'
+  if (v >= 99) return 'var(--warn)'
+  return 'var(--err)'
+}
+
+function useAvailability(url: string): Availability | null {
+  const [a, setA] = useState<Availability | null>(null)
+  useEffect(() => {
+    let live = true
+    const load = () => fetch(url).then((r) => (r.ok ? r.json() : null)).then((v) => { if (live) setA(v) }).catch(() => {})
+    load()
+    const t = window.setInterval(load, 60000)
+    return () => { live = false; clearInterval(t) }
+  }, [url])
+  return a
+}
+
+// UptimeChecks is the strip of the last checks, one tick each, newest on the right.
+function UptimeChecks({ checks }: { checks: [number, number][] }) {
+  if (!checks.length) return null
+  return (
+    <span className="upchecks" role="img" aria-label={`Last ${checks.length} checks: ${checks.filter((c) => !c[1]).length} down`}>
+      {checks.map(([t, up]) => <span key={t} className={up ? 'up' : 'down'} title={`${fmtWhen(t)} · ${up ? 'up' : 'down'}`} />)}
+    </span>
+  )
+}
+
+function UptimeFigures({ a }: { a: Availability }) {
+  const figs: [string, number | null][] = [['24h', a.uptime_24h], ['7 days', a.uptime_7d], ['30 days', a.uptime_30d]]
+  return <>{figs.map(([l, v]) => (
+    <span key={l} className="upfig"><span className="upfig-l">{l}</span><span className="upfig-v" style={{ color: uptimeColor(v) }}>{fmtUptime(v)}</span></span>
+  ))}</>
+}
+
+// HostUptime is the band at the top of a host card: the host's uptime and its last checks, measured
+// on its master sensor when that is an up/down one, else its ping.
+function HostUptime({ hostId }: { hostId: string }) {
+  const a = useAvailability(`/api/hosts/${hostId}/availability`)
+  if (!a || !a.item_id) return null
+  return (
+    <div className="upband">
+      <span className="upband-l" title={a.label ? `Measured on ${a.label}` : undefined}>Uptime</span>
+      <UptimeFigures a={a} />
+      <UptimeChecks checks={a.checks} />
+    </div>
+  )
+}
+
+// AvailabilityPanel is an up/down sensor's uptime in its chart reveal: the figures, the last checks,
+// and one bar per day for the last 30 days.
+function AvailabilityPanel({ itemId }: { itemId: string }) {
+  const a = useAvailability(`/api/items/${itemId}/availability`)
+  if (!a) return <div className="upanel"><span className="upanel-l">Loading uptime…</span></div>
+  return (
+    <div className="upanel">
+      <div className="upanel-figs"><span className="upband-l">Uptime</span><UptimeFigures a={a} /></div>
+      <div className="upanel-row"><span className="upanel-l">Last {a.checks.length} checks</span><UptimeChecks checks={a.checks} /></div>
+      <div className="upanel-row"><span className="upanel-l">Last 30 days</span>
+        <span className="updays" role="img" aria-label="Uptime per day, last 30 days">
+          {a.days.map((d) => <span key={d.day} style={{ background: uptimeColor(d.pct) }} title={`${d.day} · ${d.pct == null ? 'no data' : fmtUptime(d.pct)}`} />)}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+type Incident = { event_id: string; host_id: string; host_name: string; site?: string; item_id?: string; sensor?: string; name: string; severity: number; start: number; end?: number; ack_by?: string; ack_note?: string; reason?: string; argus?: boolean }
+
+// IncidentRows lists incidents newest first; the host column only in the fleet-wide list.
+function IncidentRows({ rows, goHost }: { rows: Incident[]; goHost: ((h: string) => void) | null }) {
+  const now = Math.floor(Date.now() / 1000)
+  return (
+    <div className="enroll-scroll">
+      <table className={'slist slist-inc' + (goHost ? '' : ' nohost')}>
+        <thead><tr><th className="slgrow">What happened</th>{goHost && <th>Host</th>}<th>Started</th><th>Duration</th><th>Acknowledged</th></tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.event_id + ':' + r.start}>
+              <td className="slgrow" style={{ borderLeft: `3px solid ${sevInfo(r.severity).color}`, paddingLeft: 13 }}>
+                <div className="inc-name">{r.name}</div>
+                <div className="sreason"><SevText sev={r.severity} />{r.sensor && r.sensor !== r.name ? <> · {r.sensor}</> : null}</div>
+                {r.reason && <div className="sreason inc-why">{r.reason}</div>}
+              </td>
+              {goHost && <td data-label="Host"><span><span className="lnk-host" onClick={() => goHost(r.host_id)}>{r.host_name}</span>{r.site ? <span className="inc-site"> · {r.site}</span> : null}</span></td>}
+              <td className="mono" data-label="Started">{fmtWhen(r.start)}</td>
+              <td data-label="Duration">{r.end ? <span className="mono">{fmtDuration(r.end - r.start)}</span> : <span className="tag inc-open">ongoing · {fmtDuration(now - r.start)}</span>}</td>
+              <td data-label="Acknowledged" title={r.ack_note || undefined}>{r.ack_by || <span className="muted">-</span>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function useIncidents(url: string): [Incident[] | null, string] {
+  const [rows, setRows] = useState<Incident[] | null>(null)
+  const [err, setErr] = useState('')
+  useEffect(() => {
+    let live = true
+    setRows(null); setErr('')
+    const load = () => fetch(url).then(async (r) => { if (!r.ok) throw new Error('incidents'); return r.json() })
+      .then((d) => { if (live) { setRows(d.incidents || []); setErr('') } })
+      .catch(() => { if (live) setErr('Could not load the incident history') })
+    load()
+    const t = window.setInterval(load, 60000)
+    return () => { live = false; clearInterval(t) }
+  }, [url])
+  return [rows, err]
+}
+
+// HostIncidents is the host card's history: the last 30 days, folded until opened.
+function HostIncidents({ hostId, goHost }: { hostId: string; goHost: ((h: string) => void) | null }) {
+  const [rows, err] = useIncidents(`/api/hosts/${hostId}/incidents?days=30`)
+  const [open, setOpen] = useState(false)
+  if (err || !rows) return null
+  const live = rows.filter((r) => !r.end).length
+  return (
+    <div className="hinc">
+      <button type="button" className="hinc-head" onClick={() => setOpen((o) => !o)} aria-expanded={open} disabled={rows.length === 0}>
+        {rows.length > 0 && <svg className={'chev' + (open ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>}
+        <span className="hinc-t">History</span>
+        <span className="hinc-s">{rows.length === 0 ? 'no incidents in the last 30 days' : `${rows.length} incident${rows.length === 1 ? '' : 's'} in the last 30 days${live ? ` · ${live} open` : ''}`}</span>
+      </button>
+      {open && rows.length > 0 && <IncidentRows rows={rows} goHost={goHost} />}
+    </div>
+  )
+}
+
 function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpenItem, onlyItem, onDrillSensor, onItemName, onNavigate }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; showAll: boolean; autoOpenItem?: string; onlyItem?: string; onDrillSensor?: (itemId: string, itemName: string) => void; onItemName?: (itemId: string, itemName: string) => void; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
   const [items, setItems] = useState<SensorItem[] | null>(null)
   const [problems, setProblems] = useState<Problem[]>([])
@@ -6054,6 +6212,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
   const probColor = probErr ? 'var(--err)' : 'var(--warn)'
   return (
     <div>
+      {!onlyItem && <HostUptime hostId={hostId} />}
       {problems.length > 0 && (
         <div style={{ border: `1px solid color-mix(in srgb, ${probColor} 30%, var(--border))`, background: `color-mix(in srgb, ${probColor} 7%, var(--panel))`, borderRadius: 8, padding: '0.5rem 0.75rem', marginBottom: '0.5rem' }}>
           <div style={{ color: probColor, fontSize: 12, marginBottom: 4, fontWeight: 600 }}>{probErr ? 'Active problems' : 'Active warnings'}</div>
@@ -6204,6 +6363,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                               </div>
                             )
                           })()}
+                          {(() => { const ud = row.items.find((i) => i.updown); return ud ? <AvailabilityPanel itemId={ud.id} /> : null })()}
                           <SensorGroupChart channels={channels} bars={barGroup} />
                         </div></td></tr>
                       )}
@@ -6275,7 +6435,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
                     </tr>
                     {it.why && whyOpen[it.id] && <tr className="whyrow"><td colSpan={5}><div className="why-line">{it.why}</div></td></tr>}
                     {open && clickable && (
-                      <tr className="chartrow"><td colSpan={5}><div className="chart-reveal"><SensorChart itemId={it.id} units={it.units} color={trendColor} bars={barRate} label={label} thr={it.thr} /></div></td></tr>
+                      <tr className="chartrow"><td colSpan={5}><div className="chart-reveal">{it.updown ? <AvailabilityPanel itemId={it.id} /> : <SensorChart itemId={it.id} units={it.units} color={trendColor} bars={barRate} label={label} thr={it.thr} />}</div></td></tr>
                     )}
                   </Fragment>
                 )
@@ -6283,6 +6443,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
             </tbody>
           </table>
         )}
+      {!onlyItem && <HostIncidents hostId={hostId} goHost={null} />}
     </div>
   )
 }
@@ -6411,6 +6572,43 @@ function SevText({ sev }: { sev: number }) {
 // TriggersView is the alert-rules tab, with a Firing / All toggle (like the Overview's filter). Firing
 // is a flat cross-host table of triggers currently in problem; All groups every monitored trigger by
 // host. Both surface which sensor(s) each trigger watches, so multi-sensor triggers are visible.
+// HistoryView is the fleet-wide incident feed: what went wrong and when, newest first, with how long
+// it lasted, who took it, and the reason when the device's collector gave one.
+function HistoryView({ goHost }: { goHost: (h: string) => void }) {
+  const [days, setDays] = useState(7)
+  const [level, setLevel] = useState<'all' | 'errors'>('all')
+  const [q, setQ] = useState('')
+  const [rows, err] = useIncidents(`/api/incidents?days=${days}`)
+  const needle = q.trim().toLowerCase()
+  const shown = (rows || []).filter((r) => (level === 'all' || r.severity >= 3) &&
+    (!needle || [r.host_name, r.site, r.sensor, r.name, r.reason].some((v) => (v || '').toLowerCase().includes(needle))))
+  const live = shown.filter((r) => !r.end).length
+  const period = days === 1 ? 'the last 24 hours' : `the last ${days} days`
+  return (
+    <div className="panel">
+      <div className="phead">
+        <h2>Incidents</h2>
+        <span className="hint">{rows ? `${shown.length} in ${period}${live ? ` · ${live} still open` : ''}` : ''}</span>
+        <div className="tools hist-tools">
+          <input className="input hist-q" placeholder="Host, sensor or reason" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter incidents" />
+          <div className="seg">
+            {[1, 7, 30, 90].map((d) => <button key={d} className={days === d ? 'on' : ''} onClick={() => setDays(d)}>{d === 1 ? '24h' : `${d}d`}</button>)}
+          </div>
+          <div className="seg">
+            <button className={level === 'all' ? 'on' : ''} onClick={() => setLevel('all')}>Errors + Warnings</button>
+            <button className={level === 'errors' ? 'on' : ''} onClick={() => setLevel('errors')}>Errors</button>
+          </div>
+        </div>
+      </div>
+      {err && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{err}</div>}
+      {rows === null && !err && <Skeleton rows={5} cols={5} />}
+      {rows !== null && !err && (shown.length === 0
+        ? <EmptyState tone="ok" icon={ic.ok} title="Nothing went wrong" text={needle ? 'No incident in this period matches the filter.' : `No incidents in ${period}.`} />
+        : <IncidentRows rows={shown} goHost={goHost} />)}
+    </div>
+  )
+}
+
 function TriggersView({ goHost }: { goHost: (h: string) => void }) {
   const [rows, error] = useTriggers()
   const [mode, setMode] = useState<'firing' | 'all'>('firing')

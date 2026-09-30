@@ -54,6 +54,9 @@ type synthSet struct {
 	// not failing long enough yet). The notifier keeps their baseline and drops any alert already sent
 	// for them without a recovery notice.
 	silent map[string]bool
+	// complete: both lookups answered, so the set is the whole truth (the incident log closes what's
+	// missing from it only then).
+	complete bool
 }
 
 // syntheticProblems gathers the Argus-raised problems. record = true (the notifier) keeps the
@@ -86,7 +89,8 @@ func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, 
 	out := synthSet{targets: map[string]zabbix.TriggerTarget{}, readings: map[string]string{}, silent: map[string]bool{}}
 	now := time.Now().Unix()
 
-	if items, err := zbx.UnsupportedItems(ctx); err == nil {
+	items, uerr := zbx.UnsupportedItems(ctx)
+	if uerr == nil {
 		ids := make([]string, 0, len(items))
 		for _, it := range items {
 			ids = append(ids, it.ItemID)
@@ -125,7 +129,8 @@ func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, 
 		}
 	}
 
-	if ifaces, err := zbx.UnavailableInterfaces(ctx); err == nil {
+	ifaces, ierr := zbx.UnavailableInterfaces(ctx)
+	if ierr == nil {
 		for _, f := range ifaces {
 			if len(f.Hosts) == 0 {
 				continue
@@ -143,6 +148,7 @@ func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, 
 			out.readings[id] = strings.TrimSpace(f.Error)
 		}
 	}
+	out.complete = uerr == nil && ierr == nil
 	return out
 }
 

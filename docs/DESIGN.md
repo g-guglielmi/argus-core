@@ -346,6 +346,40 @@ Dashboards (list views, same event stream):
 - **Errors-only** → shows Error; **hides Acknowledged and Paused**.
 - **Errors + Warnings** → shows Error + Warning, **including acknowledged (dimmed/tagged)**.
 
+## 7b. Uptime and incident history
+
+**Uptime** (`internal/server/uptime.go`). An up/down sensor reads 1 while up and 0 while down (ping,
+a TCP/HTTP(S) service check, a collector's reachable flag, XCP-NG's login flag, a DNS name
+resolving), so its average over a period is the share of checks that found it up. 24 h comes from
+the raw history; 7 and 30 days are calendar days in the Argus timezone (today and the days before
+it), summed from Zabbix's hourly trends weighted by their sample counts, plus the raw values of the
+hour the trends don't cover yet. A host's uptime is measured on its master sensor when that is an
+up/down one, else on its ping, else on a collector's reachable flag.
+- **Host card:** a band at the top with the 24 h / 7 day / 30 day figures and a strip of the last 60
+  checks (`GET /api/hosts/{id}/availability`); an up/down sensor's chart reveal shows the same plus
+  one bar per day for 30 days (`GET /api/items/{id}/availability`), above the group's chart for a
+  group (ping loss and latency, HTTP response time), in place of the flat 0/1 chart for a lone flag.
+  Cached a minute per sensor.
+- **Status pages** read many hosts at once, so complete days (a day counts as complete two hours
+  after it ends, once its last trends are in) are kept in `uptime_days` (per sensor and day: the
+  weighted up count and the samples; 120 days kept) and read from Zabbix once; only the days still
+  open are read each time, and a new host reads its window without making the others read theirs.
+- Figures never round up to 100%: one missed check in a month reads 99.99%. Colour: green from
+  99.9%, amber from 99%, red below.
+
+**Incident history** (`internal/server/incidents.go`). What went wrong and when: every problem at
+Warning and above, with its start, its end (or "ongoing"), the sensor it was on, who acknowledged it
+(Argus's own acknowledgements, while on record) and, for a collector flag, the reason the collector
+gave when it started (read from the reason item's history, section 5 "Every template says why").
+Zabbix keeps every problem event with the recovery that closed it; the problems Argus raises itself
+(a sensor that stopped collecting, an interface that stopped answering) exist only while they are
+open, so the notifier logs them in `argus_incidents` as they open and close (only from a complete
+lookup, so a failed read never closes them; the reason is kept from the moment they opened; closed
+ones kept 120 days). A host card ends with its last 30 days, folded (`GET
+/api/hosts/{id}/incidents?days=30`); the **History** page lists the fleet's, 24 h / 7 / 30 / 90 days,
+Errors + Warnings or Errors only, filterable by host, sensor or reason (`GET
+/api/incidents?days=N`). Zabbix's events follow its housekeeping retention (Settings, Data retention).
+
 ---
 
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")
@@ -1161,6 +1195,9 @@ A read-only dashboard for a wall screen, opened with a secret link instead of a 
   first data), the list itself ("All systems operational" when there
   are no errors), paged every 15 s when it doesn't fit, refreshing every 30 s, flagging a lost
   connection, and reloading itself every 6 h.
+- **Uptime:** the header shows the average 30-day uptime of the page's hosts, and the calm screen
+  ("All systems operational") lists the ones under 100% over 30 days, worst first, at most ten, with
+  their 7 and 30 day figures (section 7b; from `uptime_days`, so a page of hundreds of hosts stays cheap).
 - **Headers:** `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`, `X-Frame-Options: DENY` + CSP
   `frame-ancestors 'none'`, `Cache-Control: no-store`. The routes sit outside `/api`, so the cookie
   opens nothing else.
