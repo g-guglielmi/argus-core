@@ -1070,6 +1070,8 @@ type BackupStatus = {
   local?: { name: string; size: number; at: number }[]
   remote?: { type: string; ok: boolean; at: number; error?: string; files?: number }
   test?: { at: number; ok: boolean; error?: string }
+  busy?: 'test' | 'backup'
+  activity?: { at: number; what: 'check' | 'backup'; why?: string; ok: boolean; text: string; took_s?: number }[]
 }
 type BackupView = { config: BackupConfig; has_passphrase: boolean; has_smb_password: boolean; has_s3_secret: boolean; ssh_public_key?: string; local_dir: string; status: BackupStatus | null; pending?: string; channel: boolean }
 const REMOTE_LABEL: Record<string, string> = { '': 'None: keep them on the core VM only', smb: 'SMB share (Windows, NAS)', nfs: 'NFS export', rsync: 'rsync over SSH', s3: 'S3 bucket (or compatible)' }
@@ -1077,6 +1079,13 @@ const REMOTE_LABEL: Record<string, string> = { '': 'None: keep them on the core 
 // BackupsCard sets the core's backups up and shows how they went (DESIGN section 14e): the core VM
 // archives Argus's database, the Zabbix database and its configuration, keys and certificates, keeps
 // the newest on the VM and exports them encrypted.
+// failedWhy joins a failure's reason to "failed": "failed while mounting ...: why" when the host says at
+// which step, "failed: why" otherwise; the sentence gets its own full stop.
+function failedWhy(err?: string): string {
+  const e = (err || '').replace(/\.+$/, '')
+  return e.startsWith('while ') ? ' ' + e : ': ' + e
+}
+
 function BackupsCard() {
   const toast = useToast()
   const [v, setV] = useState<BackupView | null>(null)
@@ -1096,8 +1105,10 @@ function BackupsCard() {
   }
   const load = (keepEdits = false) => fetch('/api/backup').then((r) => (r.ok ? r.json() : null)).then((d: BackupView | null) => { if (d) apply(d, keepEdits) }).catch(() => {})
   useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
-  // Follow a run or a test while the host works on it.
-  const active = !!v && (!!v.pending || !!v.status?.running)
+  // Follow a run or a test while the host works on it, and for a while after asking, so a result that
+  // lands between two looks is still shown.
+  const [followUntil, setFollowUntil] = useState(0)
+  const active = !!v && (!!v.pending || !!v.status?.running || !!v.status?.busy || Date.now() < followUntil)
   useEffect(() => {
     if (!active) return
     const t = setInterval(() => load(true), 4000)
@@ -1126,6 +1137,7 @@ function BackupsCard() {
     const res = await fetch('/api/backup/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind }) })
     if (!res.ok) { toast.error(await errText(res, 'Could not reach the host')); return }
     apply(await res.json(), true)
+    setFollowUntil(Date.now() + 20000)
     toast.success(kind === 'backup' ? 'The core starts a backup in a few seconds.' : 'The core checks the target in a few seconds.')
   }
   async function newKey() {
@@ -1160,7 +1172,7 @@ function BackupsCard() {
           : (
             <div className="set-row bstatus">
               <div className="set-head"><span className="flabel">Status</span>
-                {st.running || v.pending === 'backup' ? <span className="tag online">backing up…</span>
+                {st.running || st.busy === 'backup' || v.pending === 'backup' ? <span className="tag online">backing up…</span>
                   : !lr ? <span className="set-src">no backup yet</span>
                     : lr.ok ? <span className="tag online">ok</span> : <span className="tag avail">failed</span>}
               </div>
@@ -1170,11 +1182,23 @@ function BackupsCard() {
                 {cfg.enabled && st.next_due_at ? ` Next ${fmtWhen(st.next_due_at)}.` : ''}
               </span>
               {lr?.warning && <span className="set-hint" style={{ color: 'var(--warn)' }}>{lr.warning}.</span>}
-              {st.remote && <span className="set-hint" style={st.remote.ok ? undefined : { color: 'var(--warn)' }}>{st.remote.ok ? `Exported ${fmtWhen(st.remote.at)}: ${st.remote.files || 0} on the target.` : `Export failed ${fmtWhen(st.remote.at)}: ${(st.remote.error || '').replace(/\.+$/, '')}.`}</span>}
-              {st.test && <span className="set-hint" style={st.test.ok ? undefined : { color: 'var(--warn)' }}>{st.test.ok ? `Target checked ${fmtWhen(st.test.at)}: it works.` : `Target check ${fmtWhen(st.test.at)} failed: ${(st.test.error || '').replace(/\.+$/, '')}.`}</span>}
+              {st.remote && <span className="set-hint" style={st.remote.ok ? undefined : { color: 'var(--warn)' }}>{st.remote.ok ? `Exported ${fmtWhen(st.remote.at)}: ${st.remote.files || 0} on the target.` : `Export failed ${fmtWhen(st.remote.at)}${failedWhy(st.remote.error)}.`}{!st.remote.ok && st.test?.ok && st.test.at > st.remote.at ? ` The target works again (checked ${fmtWhen(st.test.at)}): the next backup exports.` : ''}</span>}
+              {st.test && <span className="set-hint" style={st.test.ok ? undefined : { color: 'var(--warn)' }}>{st.test.ok ? `Target checked ${fmtWhen(st.test.at)}: it works.` : `Target check ${fmtWhen(st.test.at)} failed${failedWhy(st.test.error)}.`}</span>}
+              {st.activity && st.activity.length > 0 && (
+                <details className="bactivity">
+                  <summary>Recent activity</summary>
+                  <ul>
+                    {st.activity.slice(0, 10).map((e, i) => (
+                      <li key={i} className={e.ok ? undefined : 'bad'}>
+                        <span className="mono">{fmtWhen(e.at)}</span> {e.what === 'check' ? 'Target check' : 'Backup'}{e.why ? ` (${e.why})` : ''}: {e.text}{e.what === 'check' && e.took_s ? ` (${e.took_s < 60 ? e.took_s + 's' : fmtDuration(e.took_s)})` : ''}.
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
               <span className="set-hint">
                 <button type="button" className="btn" style={{ padding: '2px 10px' }} disabled={active || dirty} title={dirty ? 'Save first' : undefined} onClick={() => request('backup')}>Back up now</button>
-                {r.type && <button type="button" className="btn" style={{ padding: '2px 10px', marginLeft: 6 }} disabled={active || dirty} title={dirty ? 'Save first' : undefined} onClick={() => request('test')}>{v.pending === 'test' ? 'Checking…' : 'Check the target'}</button>}
+                {r.type && <button type="button" className="btn" style={{ padding: '2px 10px', marginLeft: 6 }} disabled={active || dirty} title={dirty ? 'Save first' : undefined} onClick={() => request('test')}>{v.pending === 'test' || st.busy === 'test' ? 'Checking…' : 'Check the target'}</button>}
               </span>
             </div>
           )}

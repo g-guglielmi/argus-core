@@ -55,6 +55,7 @@ REQUEST_FILE = os.path.join(STATE_DIR, "backup-request.json")
 PREFIX = "argus-backup-"
 ARCHIVE_RE = re.compile(r"^argus-backup-(?P<host>[A-Za-z0-9._-]+)-(?P<ts>\d{8}T\d{6}Z)\.tar(\.gpg)?$")
 RETRY_AFTER = 3600  # a failed scheduled backup is tried again an hour later
+ACTIVITY_KEEP = 20  # runs listed under Recent activity in Settings, Backups
 
 # What the files part holds (paths under /; a missing one is skipped). The Argus data dir's own key
 # file is added when present (it only exists when ARGUS_SECRET_KEY is not set).
@@ -756,6 +757,67 @@ class S3Target:
         self._rclone(["deletefile", self.base + "/" + name], timeout=300)
 
 
+# --- what the runs tell --------------------------------------------------------------------------
+
+def describe_target(plan):
+    """The export target in words, for the logs: what it is, where, and as whom."""
+    r = plan.get("remote") or {}
+    t = r.get("type") or ""
+    folder = ", folder %s" % r["path"] if r.get("path") else ""
+    if t == "smb":
+        who = " as %s" % r["username"] if r.get("username") else " as guest"
+        if r.get("domain"):
+            who += " (domain %s)" % r["domain"]
+        return "SMB share %s%s%s" % (r.get("share", ""), folder, who)
+    if t == "nfs":
+        return "NFS export %s%s" % (r.get("export", ""), folder)
+    if t == "rsync":
+        return "rsync over SSH to %s, port %d" % (r.get("target", ""), int(r.get("port") or 22))
+    if t == "s3":
+        return "S3 bucket %s at %s%s" % (r.get("bucket", ""), r.get("endpoint", ""), folder)
+    return "no export target"
+
+
+def opening_step(plan):
+    """What opening the target does, for a failure's "while ...": mounting it, or setting up a client."""
+    r = plan.get("remote") or {}
+    return {"smb": "mounting %s" % r.get("share", ""), "nfs": "mounting %s" % r.get("export", ""),
+            "rsync": "preparing the SSH connection", "s3": "setting up the S3 client"}.get(r.get("type"), "opening the target")
+
+
+def reason_of(e):
+    """An error's reason: a file operation's own words, without the local mount path."""
+    if isinstance(e, OSError) and e.strerror:
+        return "the target refused it: %s" % e.strerror
+    return str(e)
+
+
+def note_activity(st, what, why, ok, text, started):
+    """One line of the recent activity Settings shows (newest first)."""
+    entry = {"at": int(started), "what": what, "why": why, "ok": bool(ok), "text": text,
+             "took_s": int(time.time() - started)}
+    st["activity"] = ([entry] + [e for e in (st.get("activity") or []) if isinstance(e, dict)])[:ACTIVITY_KEEP]
+
+
+def fmt_size(n):
+    n = float(n)
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024:
+            return "%d %s" % (n, unit) if unit == "B" else "%.1f %s" % (n, unit)
+        n /= 1024
+    return "%.1f TB" % n
+
+
+def fmt_secs(n):
+    n = int(n)
+    return "%ds" % n if n < 60 else "%dm %02ds" % (n // 60, n % 60) if n < 3600 else "%dh %02dm" % (n // 3600, n % 3600 // 60)
+
+
+def fmt_when(ts, plan):
+    """A time in the Argus timezone, for the logs."""
+    return datetime.datetime.fromtimestamp(ts, plan_zone(plan)).strftime("%Y-%m-%d %H:%M %Z")
+
+
 def open_target(plan):
     t = plan["remote"]["type"]
     if t in ("smb", "nfs"):
@@ -768,45 +830,73 @@ def open_target(plan):
 
 
 def export(plan):
-    """Copy this core's encrypted archives that the target lacks, then keep its newest N there."""
+    """Copy this core's encrypted archives that the target lacks, then keep its newest N there. Returns
+    (archives of this core there, copied, removed); a failure says at which step."""
     keep = plan["keep"]
     mine = [n for n in local_archives() if n.endswith(".gpg")][-keep:]
-    with open_target(plan) as tgt:
-        present = set(tgt.list())
-        for n in mine:
-            if n not in present:
-                log("argus-backup: exporting %s" % n)
+    log("argus-backup: exporting to %s" % describe_target(plan))
+    step = opening_step(plan)
+    copied = removed = 0
+    try:
+        with open_target(plan) as tgt:
+            step = "listing the target folder"
+            present = set(tgt.list())
+            todo = [n for n in mine if n not in present]
+            log("argus-backup: %s to copy" % ("%d archive%s" % (len(todo), "" if len(todo) == 1 else "s") if todo else "nothing new"))
+            for n in todo:
+                step = "copying %s" % n
+                t0 = time.time()
+                log("argus-backup: copying %s (%s)" % (n, fmt_size(os.path.getsize(os.path.join(LOCAL_DIR, n)))))
                 tgt.put(os.path.join(LOCAL_DIR, n), n)
-        there = this_hosts(tgt.list())
-        for n in there[:-keep]:
-            log("argus-backup: removing %s from the target" % n)
-            tgt.delete(n)
-        return len(this_hosts(tgt.list()))
+                copied += 1
+                log("argus-backup: copied %s in %s" % (n, fmt_secs(time.time() - t0)))
+            step = "listing the target folder"
+            there = this_hosts(tgt.list())
+            for n in there[:-keep]:
+                step = "removing %s" % n
+                log("argus-backup: removing %s from the target (it keeps this core's newest %d)" % (n, keep))
+                tgt.delete(n)
+                removed += 1
+            held = len(this_hosts(tgt.list()))
+    except (Fail, OSError) as e:
+        raise Fail("while %s: %s" % (step, reason_of(e)))
+    log("argus-backup: the target holds %d of this core's archives" % held)
+    return held, copied, removed
 
 
 def test_target(plan):
-    """Write, list and delete a small file on the target."""
+    """Write, list and delete a small file on the target; a failure says at which step."""
     name = ".argus-backup-test-%d" % int(time.time())
     local = os.path.join(RUN_DIR, name)
     os.makedirs(RUN_DIR, mode=0o700, exist_ok=True)
     with open(local, "w") as f:
         f.write("argus-backup test\n")
+    step = opening_step(plan)
     try:
+        log("argus-backup: " + step)
         with open_target(plan) as tgt:
-            tgt.put(local, name)
-            if name not in tgt.list():
-                raise Fail("the test file was written but does not show up on the target")
-            tgt.delete(name)
+            for step, act in (("writing a test file", lambda: tgt.put(local, name)),
+                              ("listing the target folder", lambda: name in tgt.list() or fail_listing()),
+                              ("deleting the test file", lambda: tgt.delete(name))):
+                log("argus-backup: " + step)
+                act()
+    except (Fail, OSError) as e:
+        raise Fail("while %s: %s" % (step, reason_of(e)))
     finally:
         os.unlink(local)
 
 
+def fail_listing():
+    raise Fail("the test file was written but does not show up there")
+
+
 # --- the runs --------------------------------------------------------------------------------------
 
-def do_backup(plan, trigger, note):
+def do_backup(plan, trigger, note, why=""):
     st = load_status()
     st["configured"] = True
     st["running"] = True
+    st["busy"] = "backup"
     save_status(st)
     started = time.time()
     run_info = {"at": int(started), "ok": False, "trigger": trigger}
@@ -824,40 +914,57 @@ def do_backup(plan, trigger, note):
         log("argus-backup: backup failed: %s" % e)
     run_info["duration_s"] = int(time.time() - started)
     st["last_run"] = run_info
+    if run_info["ok"]:
+        text = "%s, %s, in %s" % (run_info["archive"], fmt_size(run_info["size"]), fmt_secs(time.time() - started))
+    else:
+        text = "failed: %s" % run_info["error"]
+    ok = run_info["ok"]
     if run_info["ok"] and (plan.get("remote") or {}).get("type"):
         rm = {"type": plan["remote"]["type"], "at": int(time.time()), "ok": False}
         try:
-            rm["files"] = export(plan)
+            rm["files"], copied, removed = export(plan)
             rm["ok"] = True
+            text += "; exported to %s: copied %d, %d there" % (describe_target(plan), copied, rm["files"])
         except Fail as e:
             rm["error"] = str(e)
-            log("argus-backup: export failed: %s" % e)
-        except OSError as e:
-            rm["error"] = "the target refused a file operation: %s" % e
-            log("argus-backup: export failed: %s" % e)
+            ok = False
+            text += "; the export failed %s" % e
+            log("argus-backup: the export failed %s" % e)
         st["remote"] = rm
     elif not (plan.get("remote") or {}).get("type"):
         st.pop("remote", None)
+    note_activity(st, "backup", why or trigger, ok, text, started)
     st["running"] = False
+    st.pop("busy", None)
     st["next_due_at"] = next_due(plan, st, datetime.datetime.now(datetime.timezone.utc)) if plan.get("enabled") else 0
     save_status(st)
     return run_info["ok"]
 
 
-def do_test(plan):
+def do_test(plan, why=""):
+    started = time.time()
     st = load_status()
-    res = {"at": int(time.time()), "ok": False}
+    st["busy"] = "test"
+    save_status(st)
+    res = {"at": int(started), "ok": False}
+    target = describe_target(plan)
     try:
         check_plan(plan)
         if not (plan.get("remote") or {}).get("type"):
-            raise Fail("no remote target is set")
+            raise Fail("no export target is set")
+        log("argus-backup: target: %s" % target)
         test_target(plan)
         res["ok"] = True
-        log("argus-backup: the remote target works")
+        text = "works: wrote, listed and deleted a test file on the %s" % target
+        log("argus-backup: the target works (%s)" % fmt_secs(time.time() - started))
     except (Fail, OSError) as e:
-        res["error"] = str(e)
-        log("argus-backup: remote test failed: %s" % e)
+        res["error"] = reason_of(e)
+        text = "failed %s" % res["error"] if res["error"].startswith("while ") else "failed: %s" % res["error"]
+        log("argus-backup: the target check %s" % text)
+    st = load_status()
     st["test"] = res
+    note_activity(st, "check", why, res["ok"], text, started)
+    st.pop("busy", None)
     save_status(st)
     return res["ok"]
 
@@ -892,8 +999,13 @@ def main(argv):
     if cmd == "status":
         print(json.dumps(load_status(), indent=1))
         return 0
+    if cmd == "log":  # the recent activity Settings shows, as text
+        for e in load_status().get("activity") or []:
+            when = datetime.datetime.fromtimestamp(e.get("at") or 0).strftime("%Y-%m-%d %H:%M")
+            print("%s  %-6s %s  (%s, %s)" % (when, e.get("what", ""), e.get("text", ""), e.get("why", ""), fmt_secs(e.get("took_s") or 0)))
+        return 0
     if cmd not in ("tick", "now", "test"):
-        sys.stderr.write("usage: argus-backup [tick|now|test|status|state-dir]\n")
+        sys.stderr.write("usage: argus-backup [tick|now|test|status|log|state-dir]\n")
         return 2
     if os.geteuid() != 0:
         sys.stderr.write("argus-backup: run as root\n")
@@ -903,20 +1015,37 @@ def main(argv):
         log("argus-backup: another run is in progress")
         return 0
     req = take_request() if cmd == "tick" else None
+    kind = cmd if cmd != "tick" else (req or {}).get("kind")
+    if req:
+        why = "asked in Settings by %s" % req["by"] if req.get("by") else "asked in Settings"
+        # Settings shows the run as under way from now on, before the plan is even read.
+        st = load_status()
+        st["busy"] = "test" if kind == "test" else "backup"
+        save_status(st)
+    else:
+        why = "from the command line"
+    if kind == "test":
+        log("argus-backup: checking the export target, %s" % why)
+    elif kind in ("now", "backup"):
+        log("argus-backup: backing up now, %s" % why)
+    started = time.time()
     plan, note = load_plan()
     if plan is None:
         st = load_status()
         st.update(configured=False, running=False)
+        st.pop("busy", None)
         if req:
             st["last_run"] = {"at": int(time.time()), "ok": False, "error": note, "trigger": req.get("kind", "")}
+            note_activity(st, "check" if kind == "test" else "backup", why, False, note, started)
         save_status(st)
         log("argus-backup: " + note)
         return 1 if cmd != "tick" else 0
-    kind = cmd if cmd != "tick" else (req or {}).get("kind")
     if kind == "test":
-        return 0 if do_test(plan) else 1
+        ok = do_test(plan, why)
+        # A failed check is reported to Argus and in the log; it is not the service failing.
+        return 0 if ok or cmd == "tick" else 1
     if kind in ("now", "backup"):
-        return 0 if do_backup(plan, "manual", note) else 1
+        return 0 if do_backup(plan, "manual", note, why) else 1
     st = load_status()
     st["configured"] = True
     st["running"] = False  # we hold the lock: no run is in progress
@@ -924,11 +1053,20 @@ def main(argv):
     if not plan.get("enabled"):
         st["next_due_at"] = 0
         save_status(st)
+        log("argus-backup: the daily backup is off in Settings, nothing to do")
         return 0
     if is_due(plan, st, now):
-        return 0 if do_backup(plan, "schedule", note) else 1
+        at = "%02d:%02d" % (plan["hour"], plan["minute"])
+        last = st.get("last_run") or {}
+        if (last.get("at") or 0) >= last_slot(plan, now).timestamp() and not last.get("ok"):
+            why = "daily at %s, again an hour after it failed" % at
+        else:
+            why = "daily at %s" % at
+        log("argus-backup: backing up, %s" % why)
+        return 0 if do_backup(plan, "schedule", note, why) else 1
     st["next_due_at"] = next_due(plan, st, now)
     save_status(st)
+    log("argus-backup: nothing due; the next backup is at %s" % fmt_when(st["next_due_at"], plan))
     return 0
 
 

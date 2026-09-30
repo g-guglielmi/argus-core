@@ -39,6 +39,13 @@ GitHub Release from the matching section below.
 - An SMB export that fails says why in plain words, instead of the mount's own run-together message:
   the server can't be reached on TCP 445 (a firewall, no route, SMB off), refused the login, has no
   such share, or its name doesn't resolve on the core. The mount's error code stays in brackets.
+- Backups tell what they are doing. **Settings, Backups** shows **Recent activity**: the last runs, what
+  started each (the daily time, or who pressed the button), how it went, and for a failure the step
+  it failed at ("failed while mounting //10.0.0.20/Backup: ..."). The page follows a check or a backup
+  until its result is in, instead of showing the previous one; an old export failure says so once a
+  newer check works. In the journal each run starts with what it does and why, names the target and
+  logs each step; a failed target check no longer shows as a failed service. `argus-backup log` prints
+  the recent activity on the VM.
 
 ## [core-vm/v0.1.4] - 2026-09-30
 

@@ -130,9 +130,14 @@ core can't destroy the archives already there (a delete only hides the newest ve
 
 ## Checking your backups
 
-- The status line in Settings, Backups, and the notices when something fails.
-- On the VM, `sudo argus-backup status` prints the same status, and `ls -l /var/backups/argus`
-  lists the archives.
+- The status line in Settings, Backups, and the notices when something fails. **Recent activity**
+  under it lists the last runs: each backup and target check, what started it (the daily time, or who
+  pressed the button), how it went and, when it failed, at which step (mounting the share, writing
+  the test file, copying an archive) and why. While a run is under way the status says so.
+- On the VM, `sudo argus-backup log` prints the same list, `sudo argus-backup status` the whole
+  status, and `ls -l /var/backups/argus` lists the archives. The detailed log of every run is in the
+  journal: `sudo journalctl -u argus-backup -n 50` (it needs sudo). Each run starts by saying what
+  it does and why, names the target, and logs each step.
 - `sudo argus-restore inspect /var/backups/argus/<archive>` opens an archive (asking for the
   passphrase when it is encrypted), checks every part against its checksum, and shows when, where and
   from which versions it was made. It changes nothing.

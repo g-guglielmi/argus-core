@@ -95,6 +95,7 @@ class FakeRun:
         self.update_dir = ""  # the host folder the container shares as /update ("" = none)
         self.ca_dir = ""  # the host folder it mounts as /ca ("" = none)
         self.inspect = None  # what `docker inspect argus` says (None = no such container)
+        self.mount_fails = ""  # mount.cifs's error, when the share can't be mounted
 
     def __call__(self, cmd, *, stdout=None, input_bytes=None, env=None, timeout=None, pass_fds=(), check=True):
         self.calls.append(list(cmd))
@@ -144,6 +145,8 @@ class FakeRun:
             return done()
         if c[0] in ("chown", "chmod"):
             return done()
+        if c[0] == "mount" and self.mount_fails:
+            raise self.mod.Fail("mount failed: " + self.mount_fails)
         if c[0] in ("mount", "umount", "gpgconf", "apt-get", "systemctl", "rsync"):
             return done()
         if c[0] == "gpg" and NT and "--passphrase-fd" in c:  # Windows can't hand a pipe to a child
@@ -335,6 +338,49 @@ class BackupTest(unittest.TestCase):
         self.assertTrue(st["test"]["ok"], st.get("test"))
         self.assertFalse(os.path.exists(m.REQUEST_FILE), "the request is taken")
         self.assertFalse(any(c[:1] == ["runuser"] for c in self.fake.calls), "a test doesn't back up")
+        # Settings lists it under Recent activity, saying who asked and what it did.
+        act = st["activity"][0]
+        self.assertEqual((act["what"], act["ok"], act["why"]), ("check", True, "asked in Settings by ops@example.com"))
+        self.assertIn("wrote, listed and deleted a test file on the NFS export nas.example.lan:/volume1/backups", act["text"])
+        self.assertNotIn("busy", st, "nothing is under way any more")
+
+    def test_failed_check_says_where_and_is_not_a_service_failure(self):
+        m = self.mod
+        self.fake.plan.update(passphrase=PASS, remote={"type": "smb", "share": "//10.0.0.20/Backup", "username": "rclone", "path": "Argus"})
+        self.fake.mount_fails = "mount error(115): could not connect to 10.0.0.20Unable to find suitable address."
+        with open(m.REQUEST_FILE, "w") as f:
+            json.dump({"kind": "test", "by": "ops@example.com"}, f)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(m.main(["argus-backup", "tick"]), 0, "a failed check is reported, not a failed service")
+        st = self.status()
+        self.assertTrue(st["test"]["error"].startswith("while mounting //10.0.0.20/Backup: can't reach 10.0.0.20 on TCP 445"), st["test"])
+        self.assertFalse(st["activity"][0]["ok"])
+        log = out.getvalue()
+        for line in ("checking the export target, asked in Settings by ops@example.com",
+                     "target: SMB share //10.0.0.20/Backup, folder Argus as rclone",
+                     "mounting //10.0.0.20/Backup",
+                     "the target check failed while mounting //10.0.0.20/Backup: can't reach"):
+            self.assertIn(line, log)
+        # From the command line a failed check still exits non-zero, for scripts.
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(m.main(["argus-backup", "test"]), 1)
+
+    def test_backup_activity_tells_the_export(self):
+        m = self.mod
+        mnt = os.path.join(self.dirs["run"], "mnt")
+        os.makedirs(os.path.join(mnt, "argus"))
+        p = plan(passphrase=PASS, remote={"type": "smb", "share": "//nas.example.lan/backups", "username": "argus", "path": "argus"}, password="p@ss")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertTrue(m.do_backup(p, "schedule", "", "daily at 02:30"))
+        act = self.status()["activity"][0]
+        self.assertEqual((act["what"], act["ok"], act["why"]), ("backup", True, "daily at 02:30"))
+        self.assertIn("; exported to SMB share //nas.example.lan/backups, folder argus as argus: copied 1, 1 there", act["text"])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(m.main(["argus-backup", "log"]), 0)
+        self.assertIn("backup", out.getvalue())
+        self.assertIn("(daily at 02:30,", out.getvalue())
 
     def test_state_dir_found_from_the_container(self):
         # A core installed by hand shares another folder than the one the tools were told: they find

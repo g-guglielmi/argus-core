@@ -285,6 +285,17 @@ type backupStatus struct {
 		Error string `json:"error,omitempty"`
 	} `json:"test,omitempty"`
 	NextDueAt int64 `json:"next_due_at,omitempty"`
+	// Busy is what the host is doing right now ("test" or "backup"), from the moment it takes a request.
+	Busy string `json:"busy,omitempty"`
+	// Activity is the recent runs, newest first: what, why, how it went, in words.
+	Activity []struct {
+		At   int64  `json:"at"`
+		What string `json:"what"` // "check" | "backup"
+		Why  string `json:"why,omitempty"`
+		OK   bool   `json:"ok"`
+		Text string `json:"text"`
+		Took int64  `json:"took_s,omitempty"`
+	} `json:"activity,omitempty"`
 }
 
 func (s *Server) readBackupStatus() (*backupStatus, error) {

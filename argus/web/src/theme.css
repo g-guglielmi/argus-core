@@ -1093,6 +1093,12 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .maint-ico { color: var(--maint); display: inline-flex; flex: none; }
 .maint-ico svg { width: 18px; height: 18px; }
 .sreason.maint-tag { color: var(--maint); }
+/* Settings, Backups: the host's recent runs. */
+.bactivity { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.bactivity summary { cursor: pointer; color: var(--accent); width: max-content; }
+.bactivity ul { margin: 6px 0 2px; padding-left: 18px; display: grid; gap: 3px; }
+.bactivity li { overflow-wrap: anywhere; }
+.bactivity li.bad { color: var(--warn); }
 /* A sensor a down master holds, listed under it on "show": dimmed, with what it waits on. */
 .slist tr.held-row > td { opacity: .62; }
 .slist tr.held-row > td.slhost { border-left-color: var(--border) !important; }
