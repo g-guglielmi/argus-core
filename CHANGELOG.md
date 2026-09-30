@@ -13,6 +13,14 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Fixed:**
+- Backups on a core installed by hand: the backup tools reported to the appliance's folder
+  (`/opt/argus/update`) unless `install-backup.sh` was told otherwise, so on a core that shares another
+  folder with Argus, Settings, Backups kept saying the core host hadn't reported. The installer and
+  `argus-backup` now find the folder the Argus container actually mounts as its update dir, the
+  installer stops with the command to find it when it can't, and the journal says so when the folder
+  is missing. `argus-backup status` reads the same folder the service writes to.
+
 ## [core-vm/v0.1.3] - 2026-09-30
 
 Refresh of the core appliance golden image, for Argus 0.6.0. Existing VMs are not changed by this; it

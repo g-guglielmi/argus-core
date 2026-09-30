@@ -42,7 +42,8 @@ try:
 except ImportError:  # pragma: no cover - Python < 3.9
     ZoneInfo = None
 
-STATE_DIR = os.environ.get("ARGUS_STATE_DIR", "/opt/argus/update")
+DEFAULT_STATE_DIR = "/opt/argus/update"  # the appliance's; main() finds the real one (resolve_state_dir)
+STATE_DIR = os.environ.get("ARGUS_STATE_DIR", DEFAULT_STATE_DIR)
 CONTAINER = os.environ.get("ARGUS_CONTAINER", "argus")
 PLAN_CACHE = os.environ.get("ARGUS_BACKUP_PLAN_CACHE", "/etc/argus-core/backup-plan.json")
 LOCAL_DIR = os.environ.get("ARGUS_BACKUP_DIR", "/var/backups/argus")
@@ -159,7 +160,12 @@ def save_status(st):
     except OSError:
         pass
     if not os.path.isdir(STATE_DIR):
-        return  # no shared dir: nothing to report to (Argus shows the host as not reporting)
+        # No shared dir: nothing to report to, and Argus shows the host as not reporting. Say so in the
+        # journal, since that is where someone looks next.
+        log("argus-backup: the folder shared with Argus (%s) does not exist, so Argus can't see this; "
+            "re-run install-backup.sh with ARGUS_STATE_DIR set to the folder the Argus container "
+            "mounts as its update dir" % STATE_DIR)
+        return
     write_atomic(STATUS_FILE, json.dumps(st, indent=1).encode(), 0o644)
 
 
@@ -277,6 +283,46 @@ def container_running():
         return run(["docker", "inspect", "-f", "{{.State.Running}}", CONTAINER], timeout=30).stdout.strip() == b"true"
     except Fail:
         return False
+
+
+def update_dir_of_container():
+    """The host folder the Argus container shares as its update dir (its ARGUS_UPDATE_DIR), or ""."""
+    try:
+        env = json.loads(run(["docker", "inspect", "-f", "{{json .Config.Env}}", CONTAINER], timeout=30).stdout) or []
+        mounts = json.loads(run(["docker", "inspect", "-f", "{{json .Mounts}}", CONTAINER], timeout=30).stdout) or []
+    except (Fail, ValueError):
+        return ""
+    dest = ""
+    for e in env:
+        if isinstance(e, str) and e.startswith("ARGUS_UPDATE_DIR="):
+            dest = e.split("=", 1)[1].rstrip("/")
+    if not dest:
+        return ""
+    for m in mounts:
+        if (m.get("Destination") or "").rstrip("/") == dest and m.get("Source"):
+            return m["Source"]
+    return ""
+
+
+def resolve_state_dir():
+    """The folder shared with Argus, where the status goes and requests come from: ARGUS_STATE_DIR when
+    it exists, else the folder the Argus container actually shares, else the appliance's default. A
+    core installed by hand often shares another folder than the appliance's, and a status written
+    anywhere else never reaches Argus."""
+    env = os.environ.get("ARGUS_STATE_DIR", "")
+    if env and os.path.isdir(env):
+        return env
+    found = update_dir_of_container()
+    if found and os.path.isdir(found):
+        return found
+    return env or DEFAULT_STATE_DIR
+
+
+def use_state_dir(d):
+    global STATE_DIR, STATUS_FILE, REQUEST_FILE
+    STATE_DIR = d
+    STATUS_FILE = os.path.join(d, "backup-status.json")
+    REQUEST_FILE = os.path.join(d, "backup-request.json")
 
 
 def data_dir():
@@ -759,11 +805,15 @@ def lock():
 
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else "tick"
+    use_state_dir(resolve_state_dir())
+    if cmd == "state-dir":  # the folder shared with Argus, for install-backup.sh
+        print(STATE_DIR)
+        return 0
     if cmd == "status":
         print(json.dumps(load_status(), indent=1))
         return 0
     if cmd not in ("tick", "now", "test"):
-        sys.stderr.write("usage: argus-backup [tick|now|test|status]\n")
+        sys.stderr.write("usage: argus-backup [tick|now|test|status|state-dir]\n")
         return 2
     if os.geteuid() != 0:
         sys.stderr.write("argus-backup: run as root\n")

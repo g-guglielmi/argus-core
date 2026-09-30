@@ -1156,7 +1156,7 @@ function BackupsCard() {
       <p className="set-note">The core VM backs itself up: Argus&apos;s database, the Zabbix database{cfg.history ? ' with its metric history' : ''}, and the configuration, keys and certificates a new core needs to take over. Archives stay in <span className="mono">{v.local_dir}</span> on the VM; export them to keep a copy off it. Restoring is one command on a new core: see the guide, docs/backup-and-restore.md.</p>
 
       {!v.channel ? <p className="set-hint" style={{ color: 'var(--warn)' }}>This Argus has no shared folder with its host (ARGUS_UPDATE_DIR), so it can't reach the backup tool. The core appliance VM has one.</p>
-        : !st ? <p className="set-hint" style={{ color: 'var(--warn)' }}>The core host hasn&apos;t reported yet. The core VM image has the backup tool built in; on an existing core, copy deploy/core/host to the VM and run <span className="mono">sudo ./install-backup.sh</span> once.</p>
+        : !st ? <p className="set-hint" style={{ color: 'var(--warn)' }}>The core host hasn&apos;t reported yet. The core VM image has the backup tool built in; on an existing core, copy deploy/core/host to the VM and run <span className="mono">sudo ./install-backup.sh</span> once. Installed already? Then it reports to another folder than the one Argus reads: see &quot;The core host hasn&apos;t reported&quot; in docs/backup-and-restore.md.</p>
           : (
             <div className="set-row bstatus">
               <div className="set-head"><span className="flabel">Status</span>

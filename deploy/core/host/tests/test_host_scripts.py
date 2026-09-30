@@ -77,6 +77,7 @@ class FakeRun:
     def __init__(self, mod, data_dir, the_plan):
         self.mod, self.real, self.data, self.plan = mod, mod.run, data_dir, the_plan
         self.calls, self.plan_fails = [], False
+        self.update_dir = ""  # the host folder the container shares as /update ("" = none)
 
     def __call__(self, cmd, *, stdout=None, input_bytes=None, env=None, timeout=None, pass_fds=(), check=True):
         self.calls.append(list(cmd))
@@ -94,7 +95,12 @@ class FakeRun:
             if "{{.State.Running}}" in c:
                 return done(b"true\n")
             if "{{json .Mounts}}" in c:
-                return done(json.dumps([{"Destination": "/data", "Source": self.data}]).encode())
+                mounts = [{"Destination": "/data", "Source": self.data}]
+                if self.update_dir:
+                    mounts.append({"Destination": "/update", "Source": self.update_dir})
+                return done(json.dumps(mounts).encode())
+            if "{{json .Config.Env}}" in c:
+                return done(json.dumps(["PATH=/usr/bin", "ARGUS_UPDATE_DIR=/update/"]).encode())
             return done(b"ghcr.io/g-guglielmi/argus:latest\n")
         if c[0] == "docker":  # stop / start
             return done()
@@ -279,6 +285,24 @@ class BackupTest(unittest.TestCase):
         self.assertTrue(st["test"]["ok"], st.get("test"))
         self.assertFalse(os.path.exists(m.REQUEST_FILE), "the request is taken")
         self.assertFalse(any(c[:1] == ["runuser"] for c in self.fake.calls), "a test doesn't back up")
+
+    def test_state_dir_found_from_the_container(self):
+        # A core installed by hand shares another folder than the one the tools were told: they find
+        # the folder the Argus container really mounts as its update dir, and report there.
+        real = os.path.join(self.tmp, "docker-argus-update")
+        os.makedirs(real)
+        self.fake.update_dir = real
+        os.environ["ARGUS_STATE_DIR"] = os.path.join(self.tmp, "missing")
+        self.addCleanup(os.environ.__setitem__, "ARGUS_STATE_DIR", self.dirs["state"])
+        self.assertEqual(self.mod.resolve_state_dir(), real)
+        self.assertEqual(self.mod.main(["argus-backup", "tick"]), 0)
+        with open(os.path.join(real, "backup-status.json"), encoding="utf-8") as f:
+            self.assertTrue(json.load(f)["configured"])
+        # A folder that exists is used as given, without asking Docker.
+        os.environ["ARGUS_STATE_DIR"] = self.dirs["state"]
+        self.fake.calls.clear()
+        self.assertEqual(self.mod.resolve_state_dir(), self.dirs["state"])
+        self.assertFalse(any(c[:2] == ["docker", "inspect"] for c in self.fake.calls))
 
     def test_tick_not_due_reports_next(self):
         m = self.mod

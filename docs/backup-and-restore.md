@@ -53,9 +53,18 @@ no backup has succeeded for 36 hours, Argus sends a system notice to the channel
 (**Notifications**, "System notices").
 
 **On an existing core.** The core VM image has the backup tools from `core-vm/v0.1.3` on. On a core
-installed before that (or by hand), install them once: copy the repository's `deploy/core/host`
-folder to the VM and run `sudo ./install-backup.sh` in it (or re-run `setup-core-patching.sh` from a
-checkout, which does the same). Settings, Backups shows "The core host hasn't reported yet" until then.
+installed before that (or by hand), install them once, as root on the core:
+
+```
+cd /tmp && curl -fsSL https://github.com/g-guglielmi/argus-core/archive/refs/tags/vX.Y.Z.tar.gz | tar -xz
+cd argus-core-X.Y.Z/deploy/core/host && sudo ./install-backup.sh
+```
+
+(`vX.Y.Z` is the Argus release the core runs; re-running `setup-core-patching.sh` from a checkout does
+the same.) The tools report to the folder Argus shares with the host as its update dir, and the
+installer finds it from the running Argus container; `ARGUS_STATE_DIR=<folder>` names it instead.
+Settings, Backups shows "The core host hasn't reported yet" until the first report arrives (within 15
+minutes, or at once after `sudo systemctl start argus-backup.service`).
 
 ## Export targets
 
@@ -196,6 +205,15 @@ systemctl daemon-reload && systemctl start zabbix-server argus-core argus-update
 ```
 
 ## Troubleshooting
+
+- **"The core host hasn't reported yet" although the tools are installed**: they report to another
+  folder than the one Argus reads. The installer of Argus 0.6.0 took the appliance's
+  `/opt/argus/update` unless told otherwise, and a core installed by hand often shares another one
+  (`/docker/argus-update`, say). See which folder the Argus container mounts:
+  `docker inspect argus --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}'`,
+  run the installer again with it, `sudo ARGUS_STATE_DIR=<that folder> ./install-backup.sh`, and then
+  `sudo systemctl start argus-backup.service`. Releases after 0.6.0 find the folder themselves.
+  `journalctl -u argus-backup -n 20` says so when the folder they were given doesn't exist.
 
 - **"Not restoring over a different version"**: the new VM runs another Zabbix, PostgreSQL or
   TimescaleDB release than the old one. A TimescaleDB dump restores only onto the same extension
