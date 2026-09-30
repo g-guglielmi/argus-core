@@ -61,6 +61,9 @@ type masterItem struct {
 	key       string
 	lastValue string
 	lastClock int64
+	// rank orders a host's masters: 0 is its main one (the ping, or the sensor chosen in its settings),
+	// 1 a collector's reachability sensor. A master holds only what ranks below it.
+	rank int
 }
 
 // masterSet is everything the notifier needs to decide, per problem, whether a master holds it.
@@ -104,6 +107,7 @@ func loadMasters(ctx context.Context, st *store.Store, zbx *zabbix.Client, hosts
 			}
 			mi := masterItem{itemID: it.ItemID, key: it.Key, lastValue: it.LastValue, lastClock: atoi64(it.LastClock)}
 			if it.Key != defaultMasterKey && it.Key != probeMasterKey {
+				mi.rank = 1
 				collectors[it.HostID] = append(collectors[it.HostID], mi)
 				continue
 			}
@@ -187,13 +191,35 @@ func (m masterSet) hold(hostID string, items []masterRef, start, now int64) hold
 			return v
 		}
 	}
+	// A host's masters hold only what ranks below them: the ping holds the collector's "unreachable"
+	// alert and every other sensor, a collector holds the sensors it feeds, and masters of one rank never
+	// hold each other. When the whole machine goes down its ping and its collector are both down, and
+	// each would otherwise hold the other's alert for good: nothing at all would go out.
+	limit := m.rankOf(hostID, items)
 	for _, hm := range m.byHost[hostID] {
+		if hm.rank >= limit {
+			continue
+		}
 		if v := m.judge(hm, items, start, now); v.held {
 			v.by = "host"
 			return v
 		}
 	}
 	return holdVerdict{}
+}
+
+// rankOf is the rank of the highest of the host's masters a problem is on, or one below every rank
+// when it isn't on a master.
+func (m masterSet) rankOf(hostID string, items []masterRef) int {
+	limit := 1 << 30
+	for _, hm := range m.byHost[hostID] {
+		for _, it := range items {
+			if it.id == hm.itemID && hm.rank < limit {
+				limit = hm.rank
+			}
+		}
+	}
+	return limit
 }
 
 // masterRef is a sensor a problem is on.

@@ -18,11 +18,17 @@ func testMasters(down ...string) masterSet {
 			"10": {{itemID: "100", key: "icmpping", lastValue: "1", lastClock: 1000}},
 			"70": {{itemID: "700", key: "zabbix[uptime]", lastClock: 1000}},
 			// A UPS read through NUT: ping plus the collector's reachability sensor.
-			"30": {{itemID: "300", key: "icmpping", lastValue: "1", lastClock: 1000}, {itemID: "301", key: "nut.reachable", lastValue: "1", lastClock: 1000}},
+			"30": {{itemID: "300", key: "icmpping", lastValue: "1", lastClock: 1000}, {itemID: "301", key: "nut.reachable", lastValue: "1", lastClock: 1000, rank: 1}},
+			// A Linux host read over SSH that also runs NUT: two collectors, one rank.
+			"40": {
+				{itemID: "400", key: "icmpping", lastValue: "1", lastClock: 1000},
+				{itemID: "401", key: "linux.ssh.reachable", lastValue: "1", lastClock: 1000, rank: 1},
+				{itemID: "402", key: "nut.reachable", lastValue: "1", lastClock: 1000, rank: 1},
+			},
 		},
 		siteMaster:  map[string]masterItem{"7": {itemID: "700", key: "zabbix[uptime]", lastClock: 1000}},
 		probeHost:   map[string]string{"7": "70"},
-		hostProxy:   map[string]string{"10": "7", "70": "7", "20": "0", "30": "0"},
+		hostProxy:   map[string]string{"10": "7", "70": "7", "20": "0", "30": "0", "40": "0"},
 		proxyByName: map[string]string{"proxy-site1": "7"},
 		down:        map[string]bool{},
 	}
@@ -90,9 +96,40 @@ func TestMasterHold(t *testing.T) {
 	if v := testMasters("301").hold("30", nutUnreach, 990, 1100); v.held {
 		t.Fatalf("the collector's own alert was held: %+v", v)
 	}
-	// The machine down: ping holds the collector's alert too.
+	// The machine down: ping holds the collector's alert too...
 	if v := testMasters("300", "301").hold("30", nutUnreach, 990, 1100); !v.held {
 		t.Fatalf("ping down must hold the collector alert: %+v", v)
+	}
+	// ...and its own "unavailable" alert goes out: the down collector must not hold it back, or the
+	// two would hold each other and nothing would be sent.
+	upsPing := []masterRef{{id: "300", key: "icmpping"}}
+	if v := testMasters("300", "301").hold("30", upsPing, 990, 1100); v.held {
+		t.Fatalf("a down collector held the ping alert: %+v", v)
+	}
+	if v := testMasters("300", "301").hold("30", battery, 990, 1100); !v.held {
+		t.Fatalf("the readings must stay held: %+v", v)
+	}
+	// Nor does a collector that just failed hold the ping alert while it waits.
+	m = testMasters("300")
+	m.byHost["30"][1].lastValue, m.byHost["30"][1].lastClock = "0", 1050
+	if v := m.hold("30", upsPing, 1010, 1100); v.held {
+		t.Fatalf("a failing collector held the ping alert: %+v", v)
+	}
+	// Two collectors on one host, both down, the machine up: each alerts on its own.
+	for _, c := range []masterRef{{id: "401", key: "linux.ssh.reachable"}, {id: "402", key: "nut.reachable"}} {
+		if v := testMasters("401", "402").hold("40", []masterRef{c}, 990, 1100); v.held {
+			t.Fatalf("collector %s held by its peer: %+v", c.key, v)
+		}
+	}
+	// A collector chosen as the host's main master ranks first, so the ping (now just a sensor) is
+	// held by it and it by nothing.
+	m = testMasters("301", "300")
+	m.byHost["30"] = []masterItem{{itemID: "301", key: "nut.reachable", lastClock: 1000}, {itemID: "301", key: "nut.reachable", lastClock: 1000, rank: 1}}
+	if v := m.hold("30", nutUnreach, 990, 1100); v.held {
+		t.Fatalf("the chosen master was held: %+v", v)
+	}
+	if v := m.hold("30", upsPing, 990, 1100); !v.held {
+		t.Fatalf("the chosen master must hold the ping: %+v", v)
 	}
 	// A fresh 0 from the collector holds before its trigger fires.
 	m = testMasters()

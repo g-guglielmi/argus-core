@@ -87,6 +87,15 @@ GitHub Release from the matching section below.
 - An interface's traffic chart shows how much it moved over the range beside the range tabs ("In
   1.24 TB · Out 301 GB over 30 days"), and so does a VM's disk read and write chart.
 
+**Fixed:**
+- Alerts: a device read through a collector (AdGuard Home, Home Assistant, a UPS through NUT, XCP-NG,
+  Linux over SSH) that went down completely sent no alert at all, since 0.5.9. Its ping and its
+  collector were both down, and as its two master sensors each held the other's alert back, so every
+  alert on the device stayed held. The ping now ranks above the collector: the machine going down
+  sends "Unavailable by ICMP ping", and a service that stops while the machine still answers sends the
+  collector's "unreachable" alert, as intended. A device already down when the new version starts
+  alerts then.
+
 ## [0.5.19] - 2026-09-30
 
 **Uptime:**

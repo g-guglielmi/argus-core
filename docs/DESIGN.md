@@ -546,7 +546,10 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   sensor (`zabbix[uptime]`). A collector-based host also has its collector's reachability sensor
   (`nut.reachable`, `xcp.reachable`, `linux.ssh.reachable`, `adguard.running`, `hass.running`) as a
   second master, so a stopped service alerts once as "unreachable" while the machine still pings;
-  "none" drops both. While the master has an open "down" problem (error level, or any "no
+  "none" drops both. Masters are ranked (the ping, or the chosen sensor, above the collector) and
+  hold only what ranks below them, so when the whole machine is down the ping's own alert goes out
+  and the collector's is held; two masters down together never hold each other, which would leave
+  the device with no alert at all. While the master has an open "down" problem (error level, or any "no
   data" one), the host's other alerts are **held**: they stay pending, and firing ones get no
   escalation or reminders. A probe's reporting sensor is also the master of **every host that proxy
   monitors** and of Zabbix's own per-proxy checks (`zabbix.proxy.*[<proxy>]` on the Zabbix server
