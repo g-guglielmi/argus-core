@@ -57,7 +57,8 @@ func demoThresholds() *itemThresholds {
 // alertChart renders a sensor's 2-hour trend PNG, or nil when there's no usable history
 // (non-numeric item, no data, or a fetch error) - the alert then omits the graph. It reads the item's
 // units so the Y axis scales them like the app (bytes, bits, uptime). A sensor with numeric thresholds
-// is banded by value like the app's charts (see chartthr.go); one without keeps the state colour.
+// is banded by value like the app's charts (see chartthr.go); one without keeps the state colour. An
+// up/down sensor (ping, a collector's reachability, a TCP port) is drawn as its states instead.
 func alertChart(ctx context.Context, zbx *zabbix.Client, itemID, state string) []byte {
 	if itemID == "" {
 		return nil
@@ -73,6 +74,9 @@ func alertChart(ctx context.Context, zbx *zabbix.Client, itemID, state string) [
 	series := alertSeries(ctx, zbx, itemID, it.ValueType)
 	if len(series) < 2 {
 		return nil
+	}
+	if isUpDownKey(it.Key) {
+		return renderStateChart(series)
 	}
 	var thr *itemThresholds
 	if trigs, err := zbx.ItemTriggers(ctx, []string{itemID}); err == nil {
@@ -282,26 +286,112 @@ func renderChart(vals []float64, cr, cg, cb uint8, units string, thr *itemThresh
 		draw.Draw(img, image.Rect(x0, cy-tagH/2, x0+tw, cy-tagH/2+tagH), image.NewUniform(t.c), image.Point{}, draw.Src)
 		drawText(img, x0+4, cy+4, t.text, t.ink)
 	}
-	// baseline (x axis)
-	for x := mL; x < w-mR; x++ {
+	drawTimeAxis(img, mL, w-mR, baseY, axis, label)
+	return encodePNG(img)
+}
+
+// drawTimeAxis draws the x axis from left to right at baseY, labelled by elapsed time: the series
+// spans about 2 hours ending now.
+func drawTimeAxis(img *image.RGBA, left, right, baseY int, axis, label color.RGBA) {
+	for x := left; x < right; x++ {
 		img.Set(x, baseY, axis)
 	}
-	// X labels: the series spans ~2 hours ending now, so label thirds by elapsed time.
 	xTicks := []struct {
 		frac float64
 		s    string
 	}{{0, "2h ago"}, {0.5, "1h ago"}, {1, "now"}}
 	for _, xt := range xTicks {
-		cx := mL + int(xt.frac*float64(pw))
+		cx := left + int(xt.frac*float64(right-left))
 		tw := textWidth(xt.s)
 		tx := cx - tw/2
-		if tx < mL {
-			tx = mL
-		} else if tx+tw > w-mR {
-			tx = w - mR - tw
+		if tx < left {
+			tx = left
+		} else if tx+tw > right {
+			tx = right - tw
 		}
 		drawText(img, tx, baseY+16, xt.s, label)
 	}
+}
+
+// renderStateChart draws an up/down sensor's last 2 hours: the time it was down shaded red across the
+// whole plot, like the app's Downtime band, and a step line on the "up" or the "down" level. Drawn as
+// a plain 1/0 line with its area filled, the shaded blocks would be the time it was up.
+func renderStateChart(vals []float64) []byte {
+	const w, h = 600, 200
+	const mL, mR, mT, mB = 60, 12, 12, 26
+	const inset = 14 // the two levels sit inside the plot, clear of its edges
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	draw.Draw(img, img.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
+	n := len(vals)
+	if n < 2 {
+		return encodePNG(img)
+	}
+	pw, baseY := w-mL-mR, h-mB
+	yUp, yDown := mT+inset, baseY-inset
+	grid := color.RGBA{236, 236, 236, 255}
+	axis := color.RGBA{206, 206, 206, 255}
+	label := color.RGBA{120, 120, 120, 255}
+	// Each reading holds its own slot of the width, up to the next one; the last runs to "now".
+	xAt := func(i int) int { return mL + i*pw/n }
+	isDown := func(v float64) bool { return v < 0.5 }
+	level := func(v float64) (int, color.RGBA) {
+		if isDown(v) {
+			return yDown, bandErr
+		}
+		return yUp, bandNormal
+	}
+
+	// The two levels, labelled; then the down time over them.
+	for _, gl := range []struct {
+		y int
+		s string
+	}{{yUp, "up"}, {yDown, "down"}} {
+		for x := mL; x < w-mR; x++ {
+			img.Set(x, gl.y, grid)
+		}
+		drawText(img, mL-6-textWidth(gl.s), gl.y+4, gl.s, label)
+	}
+	shade := blendWhite(bandErr.R, bandErr.G, bandErr.B, 0.18)
+	for i := 0; i < n; i++ {
+		if !isDown(vals[i]) {
+			continue
+		}
+		for x := xAt(i); x < xAt(i+1); x++ {
+			for y := mT; y < baseY; y++ {
+				img.Set(x, y, shade)
+			}
+		}
+	}
+
+	// The step line (~2px): teal while up, red while down, and red where it goes down or comes back.
+	for i := 0; i < n; i++ {
+		y, c := level(vals[i])
+		x1 := xAt(i + 1)
+		for x := xAt(i); x < x1; x++ {
+			for d := -1; d <= 1; d++ {
+				img.Set(x, y+d, c)
+			}
+		}
+		if i == n-1 {
+			break
+		}
+		if ny, _ := level(vals[i+1]); ny != y {
+			for yy := yUp - 1; yy <= yDown+1; yy++ {
+				img.Set(x1-1, yy, bandErr)
+				img.Set(x1, yy, bandErr)
+			}
+		}
+	}
+	lx := xAt(n) - 1
+	ly, mc := level(vals[n-1])
+	for dy := -3; dy <= 3; dy++ {
+		for dx := -3; dx <= 3; dx++ {
+			if dx*dx+dy*dy <= 9 {
+				img.Set(lx+dx, ly+dy, mc)
+			}
+		}
+	}
+	drawTimeAxis(img, mL, w-mR, baseY, axis, label)
 	return encodePNG(img)
 }
 

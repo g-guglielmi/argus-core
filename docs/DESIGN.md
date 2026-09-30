@@ -739,7 +739,10 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   the data's range is not drawn - the y-scale is never stretched to fit it. The **alert-notification
   PNG** (`chart.go`) applies the same banding server-side: its fill is tinted per pixel row by the
   band of that height (matching the app's vertical gradient), with dashed reference lines and the
-  same filled value tags in its Y-axis gutter (an axis label a tag would cover is dropped).
+  same filled value tags in its Y-axis gutter (an axis label a tag would cover is dropped). An up/down
+  sensor's PNG (`isUpDownKey`: ping, collector reachability, HTTP and TCP checks, units and
+  containers) is drawn as states instead (`renderStateChart`): the time it was down shaded red over
+  the full height, like the app's Downtime band, and a step line on labelled "up" and "down" levels.
 - Storage: **PostgreSQL + TimescaleDB** as Zabbix's DB (native integration, partitioning +
   compression). Single source of truth; app data lives in the same instance (separate schema).
 

@@ -86,6 +86,9 @@ GitHub Release from the matching section below.
 **Charts:**
 - An interface's traffic chart shows how much it moved over the range beside the range tabs ("In
   1.24 TB · Out 301 GB over 30 days"), and so does a VM's disk read and write chart.
+- The graph in an alert for an up/down sensor (ping, a collector's reachability, an HTTP endpoint, a
+  TCP port, a service or container) shades the time it was down in red and reads "up" and "down", like
+  the app's Downtime band. It used to fill under a 1/0 line, so the red blocks were the time it was up.
 
 **Fixed:**
 - Alerts: a device read through a collector (AdGuard Home, Home Assistant, a UPS through NUT, XCP-NG,
