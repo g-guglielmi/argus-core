@@ -1098,7 +1098,11 @@ reach; **Argus holds the plan** (Settings, Backups, `internal/server/backup.go`)
   installed by hand is where its CA lives; owners kept by name); `containers.json`, the Argus and
   updater containers' `docker inspect` (on a core installed by hand the secret key and the Zabbix API
   token exist only in their environment; `argus-restore containers` prints them back as `docker run`
-  commands); a `manifest.json` with versions, the Argus container's mounts and a SHA-256 per part.
+  commands); `network.json`, the core's network identity (the addresses on the interface with the
+  default route, gateway, DNS, static routes, hostname, DHCP or fixed, and a copy of the network
+  settings files for reference), which `argus-restore network` sets on a new core (systemd-networkd:
+  a `05-argus-restored.network` matched by the new card's MAC; other managers get the settings
+  printed); a `manifest.json` with versions, the Argus container's mounts and a SHA-256 per part.
   The shared update dir is resolved, not assumed: `ARGUS_STATE_DIR` when it exists, else the folder
   the Argus container mounts as its `ARGUS_UPDATE_DIR` (`install-backup.sh` writes that into the units). All in one `tar`, encrypted with
   `gpg --symmetric` (AES-256, the passphrase through a pipe) when a passphrase is set. Local copies in

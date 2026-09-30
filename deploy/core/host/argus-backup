@@ -381,6 +381,100 @@ def part_containers(work, manifest):
     manifest["containers"] = [(c.get("Name") or "").lstrip("/") for c in found]
 
 
+# Where a machine's network settings live, kept in network.json for reference (never restored as files:
+# interface names and hardware differ on a new machine; argus-restore network applies the settings).
+NETWORK_FILES = ["/etc/network/interfaces", "/etc/network/interfaces.d", "/etc/systemd/network", "/etc/netplan",
+                 "/etc/NetworkManager/system-connections"]
+RESOLV_FILES = ["/run/systemd/resolve/resolv.conf", "/etc/resolv.conf"]  # resolved's upstream list first
+
+
+def ip_json(args):
+    try:
+        return json.loads(run(["ip", "-j"] + args, timeout=30).stdout or b"[]") or []
+    except (Fail, ValueError):
+        return []
+
+
+def resolv_conf():
+    """The DNS servers and search domains this machine uses (not resolved's local stub)."""
+    for path in RESOLV_FILES:
+        servers, search = [], []
+        try:
+            with open(path, encoding="utf-8") as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[0] == "nameserver" and not parts[1].startswith("127."):
+                        servers.append(parts[1])
+                    elif parts and parts[0] in ("search", "domain"):
+                        search += parts[1:]
+        except OSError:
+            continue
+        if servers:
+            return servers, search
+    return [], []
+
+
+def network_manager():
+    for unit in ("systemd-networkd", "NetworkManager"):
+        if run(["systemctl", "is-active", "--quiet", unit], timeout=30, check=False).returncode == 0:
+            return unit
+    return "ifupdown" if os.path.exists("/etc/network/interfaces") else ""
+
+
+def network_files():
+    out = {}
+    for base in NETWORK_FILES:
+        try:
+            paths = [os.path.join(base, n) for n in sorted(os.listdir(base))] if os.path.isdir(base) else [base]
+        except OSError:  # a folder only its owner may read
+            continue
+        for p in paths:
+            try:
+                if os.path.isfile(p) and os.path.getsize(p) <= 65536:
+                    with open(p, encoding="utf-8", errors="replace") as f:
+                        out[p] = f.read()
+            except OSError:
+                pass
+    return out
+
+
+def network_view():
+    """This core's network identity, which a new core can take over (argus-restore network): the
+    addresses on the interface with the default route, the gateway, DNS, static routes, the hostname,
+    and whether the address came from DHCP. None when there is no default route."""
+    routes = ip_json(["route", "show"])
+    default = next((r for r in routes if r.get("dst") == "default" and r.get("gateway")), None)
+    if not default:
+        return None
+    dev = default.get("dev") or ""
+    link = next((l for l in ip_json(["addr", "show", "dev", dev]) if l.get("ifname") == dev), {})
+    v4 = [a for a in link.get("addr_info") or [] if a.get("family") == "inet" and a.get("scope") == "global"]
+    # IPv6: only the fixed addresses; SLAAC and DHCPv6 ones come back by themselves.
+    v6 = [a for a in link.get("addr_info") or [] if a.get("family") == "inet6" and a.get("scope") == "global" and not a.get("dynamic")]
+    gw6 = next((r.get("gateway") for r in ip_json(["-6", "route", "show", "default"]) if r.get("gateway")), "")
+    servers, search = resolv_conf()
+    return {
+        "hostname": socket.gethostname(), "interface": dev, "mac": link.get("address", ""),
+        "addresses": ["%s/%d" % (a["local"], a["prefixlen"]) for a in v4 + v6 if a.get("local")],
+        "dhcp": any(a.get("dynamic") for a in v4), "gateway": default["gateway"], "gateway6": gw6,
+        "dns": servers, "search": search,
+        "routes": [{"to": r["dst"], "via": r["gateway"]} for r in routes
+                   if r.get("dst") not in (None, "default") and r.get("gateway") and r.get("protocol") not in ("dhcp", "ra")],
+        "managed_by": network_manager(), "files": network_files(),
+    }
+
+
+def part_network(work, manifest):
+    net = network_view()
+    if not net:
+        return
+    path = os.path.join(work, "network.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(net, f, indent=1)
+    os.chmod(path, 0o600)
+    manifest["network"] = {k: net[k] for k in ("hostname", "interface", "addresses", "gateway", "dns", "dhcp", "managed_by")}
+
+
 def gzip_file(src, dst):
     with open(src, "rb") as fi, gzip.open(dst, "wb", compresslevel=6) as fo:
         shutil.copyfileobj(fi, fo, 1 << 20)
@@ -523,6 +617,7 @@ def make_archive(plan):
         log("argus-backup: packing the configuration, keys and certificates")
         part_files(work, manifest)
         part_containers(work, manifest)
+        part_network(work, manifest)
         manifest["versions"] = versions()
         parts = sorted(n for n in os.listdir(work) if not n.startswith("gpg-"))
         manifest["parts"] = {n: {"size": os.path.getsize(os.path.join(work, n)), "sha256": sha256(os.path.join(work, n))} for n in parts}

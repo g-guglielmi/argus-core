@@ -15,6 +15,8 @@
 #   argus-restore inspect ARCHIVE                show what an archive holds, check it, change nothing
 #   argus-restore containers ARCHIVE             print the docker run commands the old core's Argus
 #                                                containers ran with (a core installed by hand)
+#   argus-restore network ARCHIVE [--yes] [--keep-hostname] [--static]
+#                                                give this machine the old core's address and hostname
 #   argus-restore restore ARCHIVE [--only files|zabbix|argus] [--yes] [--force] [--passphrase-file F]
 # An encrypted archive (.tar.gpg) asks for its passphrase unless --passphrase-file is given.
 import argparse
@@ -25,6 +27,7 @@ import os
 import re
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -34,6 +37,9 @@ WORK_BASE = os.environ.get("ARGUS_BACKUP_DIR", "/var/backups/argus")
 CONTAINER = os.environ.get("ARGUS_CONTAINER", "argus")
 UPDATER = os.environ.get("ARGUS_UPDATER_CONTAINER", "argus-updater")
 APP_UID = 65532  # the Argus container's user
+NETWORKD_DIR = os.environ.get("ARGUS_NETWORKD_DIR", "/etc/systemd/network")
+# Sorts before the appliance's 10-argus-dhcp.network: systemd-networkd applies the first file that matches.
+NETWORKD_FILE = "05-argus-restored.network"
 
 
 class Fail(Exception):
@@ -142,6 +148,11 @@ def describe(manifest, archive):
     for k in ("os", "zabbix-server-pgsql", "postgresql-17", "timescaledb-2-postgresql-17", "timescaledb_extension", "argus_image"):
         if k in v:
             say("  %-28s %s" % (k, v[k]))
+    n = manifest.get("network")
+    if n:
+        say("Network:   %s (%s) on %s, gateway %s, DNS %s, from %s" % (", ".join(n.get("addresses") or []) or "?",
+            "DHCP" if n.get("dhcp") else "static", n.get("interface") or "?", n.get("gateway") or "?",
+            ", ".join(n.get("dns") or []) or "none", n.get("managed_by") or "?"))
 
 
 # Environment an image sets for itself: not part of how the container was run.
@@ -195,6 +206,152 @@ def show_containers(work):
     for c in found:
         say()
         say(run_command(c))
+    return 0
+
+
+# --- the old core's address -----------------------------------------------------------------------
+
+def ip_json(args):
+    p = run(["ip", "-j"] + args, check=False)
+    try:
+        return json.loads(p.stdout or b"[]") or []
+    except ValueError:
+        return []
+
+
+def this_network():
+    """This machine's interface with the default route: its name, MAC and global addresses, and who
+    manages the network."""
+    default = next((r for r in ip_json(["route", "show"]) if r.get("dst") == "default" and r.get("gateway")), {})
+    dev = default.get("dev") or ""
+    link = next((l for l in ip_json(["addr", "show", "dev", dev]) if l.get("ifname") == dev), {}) if dev else {}
+    addrs = ["%s/%d" % (a["local"], a["prefixlen"]) for a in link.get("addr_info") or []
+             if a.get("scope") == "global" and a.get("local")]
+    manager = ""
+    for unit in ("systemd-networkd", "NetworkManager"):
+        if run(["systemctl", "is-active", "--quiet", unit], check=False).returncode == 0:
+            manager = unit
+            break
+    if not manager and os.path.exists("/etc/network/interfaces"):
+        manager = "ifupdown"
+    return {"interface": dev, "mac": link.get("address", ""), "addresses": addrs, "gateway": default.get("gateway", ""),
+            "hostname": socket.gethostname(), "managed_by": manager}
+
+
+def ipv4_of(addrs):
+    return [a for a in addrs if ":" not in a]
+
+
+def bare(addrs):
+    """Addresses without their prefix length, the way one connects to them."""
+    return ", ".join(a.split("/")[0] for a in addrs)
+
+
+def networkd_unit(old, mac, archive):
+    lines = ["# Written by argus-restore: the address of the core this machine took over from",
+             "# (%s, archive %s). Remove it to go back to the next file's settings." % (old.get("hostname", "?"), archive),
+             "[Match]", "MACAddress=%s" % mac, "", "[Network]"]
+    lines += ["Address=%s" % a for a in old.get("addresses") or []]
+    lines += ["Gateway=%s" % g for g in (old.get("gateway"), old.get("gateway6")) if g]
+    lines += ["DNS=%s" % d for d in old.get("dns") or []]
+    if old.get("search"):
+        lines.append("Domains=%s" % " ".join(old["search"]))
+    for rt in old.get("routes") or []:
+        lines += ["", "[Route]", "Destination=%s" % rt["to"], "Gateway=%s" % rt["via"]]
+    return "\n".join(lines) + "\n"
+
+
+def show_other_network_steps(old, cur):
+    """Where this tool doesn't manage the network itself: the settings to enter, in that tool's words."""
+    dev = cur.get("interface") or "<interface>"
+    say("This machine's network is managed by %s: set it there (from the hypervisor's console, since an"
+        % (cur.get("managed_by") or "an unknown tool"))
+    say("SSH connection through the current address drops when it changes).")
+    say()
+    v4 = ipv4_of(old.get("addresses") or [])
+    if cur.get("managed_by") == "ifupdown":
+        say("In /etc/network/interfaces, replace the stanza of %s with:" % dev)
+        say("  auto %s" % dev)
+        say("  iface %s inet static" % dev)
+        for a in v4:
+            say("      address %s" % a)
+        if old.get("gateway"):
+            say("      gateway %s" % old["gateway"])
+        if old.get("dns"):
+            say("      dns-nameservers %s" % " ".join(old["dns"]))
+        if old.get("search"):
+            say("      dns-search %s" % " ".join(old["search"]))
+        for rt in old.get("routes") or []:
+            say("      up ip route add %s via %s" % (rt["to"], rt["via"]))
+        say("then: sudo systemctl restart networking")
+    elif cur.get("managed_by") == "NetworkManager":
+        say("  nmcli con mod '<connection of %s>' ipv4.method manual ipv4.addresses '%s' ipv4.gateway %s ipv4.dns '%s'%s"
+            % (dev, ",".join(v4), old.get("gateway") or "", " ".join(old.get("dns") or []),
+               (" ipv4.dns-search '%s'" % " ".join(old["search"])) if old.get("search") else ""))
+        for rt in old.get("routes") or []:
+            say("  nmcli con mod '<connection of %s>' +ipv4.routes '%s %s'" % (dev, rt["to"], rt["via"]))
+        say("  nmcli con up '<connection of %s>'" % dev)
+    else:
+        say("  address %s, gateway %s, DNS %s%s" % (", ".join(v4), old.get("gateway") or "?", ", ".join(old.get("dns") or []) or "none",
+                                                  (", search %s" % " ".join(old["search"])) if old.get("search") else ""))
+        for rt in old.get("routes") or []:
+            say("  route %s via %s" % (rt["to"], rt["via"]))
+    if old.get("hostname") and old["hostname"] != cur.get("hostname"):
+        say()
+        say("And the hostname: sudo hostnamectl set-hostname %s" % old["hostname"])
+
+
+def take_network(work, archive, yes=False, keep_hostname=False, static=False):
+    path = os.path.join(work, "network.json")
+    if not os.path.exists(path):
+        say("This archive has no network settings (it was made before they were kept).")
+        return 1
+    with open(path, encoding="utf-8") as f:
+        old = json.load(f)
+    cur = this_network()
+    want_host = old.get("hostname") if not keep_hostname and old.get("hostname") != cur["hostname"] else ""
+    say("The old core: %s on %s, gateway %s, hostname %s (%s)." % (", ".join(old.get("addresses") or []), old.get("interface"),
+        old.get("gateway"), old.get("hostname"), "from DHCP" if old.get("dhcp") else "static"))
+    say("This machine: %s on %s, hostname %s." % (", ".join(cur["addresses"]) or "no address", cur["interface"] or "?", cur["hostname"]))
+    if set(ipv4_of(old.get("addresses") or [])) <= set(cur["addresses"]) and not want_host:
+        say("This machine already answers at the old core's address.")
+        return 0
+    if old.get("dhcp") and not static:
+        say()
+        say("The old core got its address from DHCP. Give this machine the same reservation instead: move it in")
+        say("the DHCP server to this machine's MAC, %s, and reboot (or renew the lease). To set it as a fixed" % (cur["mac"] or "?"))
+        say("address on this machine anyway, run this again with --static.")
+        if want_host:
+            say("The hostname: sudo hostnamectl set-hostname %s" % want_host)
+        return 0
+    if cur["managed_by"] != "systemd-networkd" or not cur["mac"]:
+        show_other_network_steps(old, cur)
+        return 0
+    unit = networkd_unit(old, cur["mac"], os.path.basename(archive))
+    target = os.path.join(NETWORKD_DIR, NETWORKD_FILE)
+    say()
+    say("This writes %s:" % target)
+    say()
+    for line in unit.splitlines():
+        say("  " + line)
+    say()
+    if want_host:
+        say("and sets the hostname to %s." % want_host)
+    say("Connected over SSH through %s? The connection drops when the address changes: reconnect to %s."
+        % (bare(ipv4_of(cur["addresses"])) or "this machine", bare(ipv4_of(old.get("addresses") or []))))
+    say("Running this from the hypervisor's console is the safest.")
+    if not yes and input("Type TAKE OVER to go ahead: ").strip() != "TAKE OVER":
+        say("Nothing changed.")
+        return 1
+    os.makedirs(NETWORKD_DIR, exist_ok=True)
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(unit)
+    os.chmod(target, 0o644)
+    if want_host:
+        run(["hostnamectl", "set-hostname", want_host], check=False)
+    run(["networkctl", "reload"], check=False)
+    run(["networkctl", "reconfigure", cur["interface"]], check=False)
+    say("Done: this machine now answers at %s." % bare(ipv4_of(old.get("addresses") or [])))
     return 0
 
 
@@ -317,12 +474,14 @@ def start_services(parts):
 
 def main(argv):
     ap = argparse.ArgumentParser(prog="argus-restore")
-    ap.add_argument("action", choices=["inspect", "containers", "restore"])
+    ap.add_argument("action", choices=["inspect", "containers", "network", "restore"])
     ap.add_argument("archive")
     ap.add_argument("--only", choices=["files", "zabbix", "argus"])
     ap.add_argument("--yes", action="store_true", help="don't ask for confirmation")
     ap.add_argument("--force", action="store_true", help="restore even when the versions differ")
     ap.add_argument("--passphrase-file")
+    ap.add_argument("--keep-hostname", action="store_true", help="network: leave this machine's hostname as it is")
+    ap.add_argument("--static", action="store_true", help="network: set an address the old core had from DHCP as fixed")
     a = ap.parse_args(argv[1:])
     if os.geteuid() != 0:
         say("argus-restore: run as root")
@@ -337,6 +496,8 @@ def main(argv):
         manifest = unpack(archive, work, a.passphrase_file)
         if a.action == "containers":
             return show_containers(work)
+        if a.action == "network":
+            return take_network(work, archive, a.yes, a.keep_hostname, a.static)
         describe(manifest, archive)
         problems = version_problems(manifest)
         for p in problems:
@@ -368,7 +529,15 @@ def main(argv):
         say("  - This machine must answer where the old core did: its IP (probes dial it on :10051) and")
         say("    the Argus address people use. Probes reconnect by themselves: their CA came back with it.")
         say("  - Sign in to Argus and check Probes (all online within a few minutes) and Settings, Backups.")
-        say("  - The old core's hostname was %s; this one keeps its own." % manifest.get("host", "?"))
+        old_net = manifest.get("network") or {}
+        cur = this_network()
+        old_v4 = ipv4_of(old_net.get("addresses") or [])
+        if old_v4 and not set(old_v4) <= set(cur["addresses"]):
+            say("  - The old core was at %s (hostname %s); this machine is at %s. To take over its address and"
+                % (bare(old_v4), old_net.get("hostname") or manifest.get("host", "?"), bare(ipv4_of(cur["addresses"])) or "?"))
+            say("    hostname: sudo argus-restore network %s" % archive)
+        else:
+            say("  - The old core's hostname was %s; this one keeps its own." % manifest.get("host", "?"))
         return 0
     except Fail as e:
         say("argus-restore: %s" % e)

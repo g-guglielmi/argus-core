@@ -46,6 +46,12 @@ GitHub Release from the matching section below.
   newer check works. In the journal each run starts with what it does and why, names the target and
   logs each step; a failed target check no longer shows as a failed service. `argus-backup log` prints
   the recent activity on the VM.
+- Backups keep the core's network identity (`network.json`): its address, gateway, DNS, static routes
+  and hostname. `argus-restore network ARCHIVE` gives a new core the same address and hostname, so the
+  probes and the web certificate find it where they expect: on a core VM it sets them after you type
+  `TAKE OVER`; an address from DHCP is better moved to the new machine's MAC, which it prints; on a
+  machine whose network another tool manages it prints the settings to enter. `argus-restore inspect`
+  shows the old address, and a restore says when this machine doesn't have it yet.
 - **Check the target** catches up after a failed export: when the last export failed and the target
   works again, the check copies the archives it is missing right away, instead of the failure staying
   on screen until the next backup.

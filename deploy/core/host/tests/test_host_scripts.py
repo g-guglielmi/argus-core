@@ -96,6 +96,7 @@ class FakeRun:
         self.ca_dir = ""  # the host folder it mounts as /ca ("" = none)
         self.inspect = None  # what `docker inspect argus` says (None = no such container)
         self.mount_fails = ""  # mount.cifs's error, when the share can't be mounted
+        self.net = None  # the machine's network: {"dev", "mac", "addr", "gw", "routes", "dhcp"} (None = no default route)
 
     def __call__(self, cmd, *, stdout=None, input_bytes=None, env=None, timeout=None, pass_fds=(), check=True):
         self.calls.append(list(cmd))
@@ -144,6 +145,25 @@ class FakeRun:
         if c[0] == "tar" and "-xzpf" in c:  # restoring the files part would write under /
             return done()
         if c[0] in ("chown", "chmod"):
+            return done()
+        if c[0] == "ip":
+            n = self.net
+            if not n:
+                return done(b"[]")
+            if c[1:] == ["-j", "route", "show"]:
+                rts = [{"dst": "default", "gateway": n["gw"], "dev": n["dev"], "protocol": "dhcp" if n.get("dhcp") else "static"}]
+                rts += [{"dst": to, "gateway": via, "dev": n["dev"], "protocol": "static"} for to, via in n.get("routes", [])]
+                rts += [{"dst": "172.17.0.0/16", "dev": "docker0", "protocol": "kernel"}]
+                return done(json.dumps(rts).encode())
+            if c[1:4] == ["-j", "addr", "show"]:
+                ip, plen = n["addr"].split("/")
+                v4 = {"family": "inet", "local": ip, "prefixlen": int(plen), "scope": "global"}
+                if n.get("dhcp"):
+                    v4["dynamic"] = True
+                return done(json.dumps([{"ifname": n["dev"], "address": n["mac"], "addr_info": [
+                    v4, {"family": "inet6", "local": "fe80::1", "prefixlen": 64, "scope": "link"}]}]).encode())
+            return done(b"[]")
+        if c[0] in ("networkctl", "hostnamectl"):
             return done()
         if c[0] == "mount" and self.mount_fails:
             raise self.mod.Fail("mount failed: " + self.mount_fails)
@@ -272,6 +292,24 @@ class BackupTest(unittest.TestCase):
         self.assertEqual(r("mount failed: mount error: could not resolve address for nas: Unknown error", "//nas/Backup"),
                          "the core can't resolve nas: use its IP address, or a DNS name the core resolves")
         self.assertEqual(r("mount failed: something new", "//nas/Backup"), "mount failed: something new")
+
+    def test_network_is_kept(self):
+        resolv = os.path.join(self.tmp, "resolv.conf")
+        with open(resolv, "w") as f:
+            f.write("nameserver 127.0.0.53\nnameserver 10.0.0.1\nsearch example.lan\n")
+        self.mod.RESOLV_FILES = [resolv]
+        self.fake.net = {"dev": "ens18", "mac": "aa:bb:cc:00:11:22", "addr": "10.0.0.10/24", "gw": "10.0.0.1",
+                         "routes": [("10.9.0.0/16", "10.0.0.254")]}
+        self.assertTrue(self.mod.do_backup(self.plan, "manual", ""))
+        with tarfile.open(os.path.join(self.mod.LOCAL_DIR, self.mod.local_archives()[-1])) as t:
+            net = json.load(t.extractfile("network.json"))
+            manifest = json.load(t.extractfile("manifest.json"))
+        self.assertEqual(net["addresses"], ["10.0.0.10/24"], "the link-local address is left out")
+        self.assertEqual((net["interface"], net["mac"], net["gateway"], net["dhcp"]), ("ens18", "aa:bb:cc:00:11:22", "10.0.0.1", False))
+        self.assertEqual((net["dns"], net["search"]), (["10.0.0.1"], ["example.lan"]), "resolved's local stub is left out")
+        self.assertEqual(net["routes"], [{"to": "10.9.0.0/16", "via": "10.0.0.254"}], "only routes through a gateway, not docker0's")
+        self.assertEqual(net["managed_by"], "systemd-networkd")
+        self.assertEqual(manifest["network"]["addresses"], ["10.0.0.10/24"])
 
     def test_history_off_excludes_metric_data(self):
         self.mod.do_backup(plan(history=False), "manual", "")
@@ -488,6 +526,12 @@ class RestoreTest(unittest.TestCase):
                                   "ARGUS_BACKUP_PLAN_CACHE": os.path.join(self.tmp, "plan.json")})
         bf = FakeRun(b, self.data, plan())
         bf.inspect = ARGUS_INSPECT
+        bf.net = {"dev": "ens18", "mac": "aa:bb:cc:00:11:22", "addr": "10.0.0.10/24", "gw": "10.0.0.1",
+                  "routes": [("10.9.0.0/16", "10.0.0.254")]}
+        resolv = os.path.join(self.tmp, "resolv.conf")
+        with open(resolv, "w") as f:
+            f.write("nameserver 10.0.0.1\nsearch example.lan\n")
+        b.RESOLV_FILES = [resolv]
         b.run, b.host_label = bf, (lambda: "core1")
         self.assertTrue(b.do_backup(plan(), "manual", ""))
         self.archive = os.path.join(self.local, b.local_archives()[-1])
@@ -525,6 +569,48 @@ class RestoreTest(unittest.TestCase):
         with open(restored, "rb") as f:
             self.assertTrue(f.read().startswith(b"SQLite format 3"))
         self.assertIn((restored, 65532, 65532), self.chowns)
+
+    def test_network_takes_over_the_old_address(self):
+        # A new core VM came up on DHCP with another address: it takes the old core's, matched by its own
+        # MAC, in a file that sorts before the appliance's DHCP one.
+        self.fake.net = {"dev": "enX0", "mac": "52:54:00:aa:bb:cc", "addr": "10.0.0.99/24", "gw": "10.0.0.1"}
+        self.r.NETWORKD_DIR = os.path.join(self.tmp, "network")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.r.main(["argus-restore", "network", self.archive, "--yes"]), 0)
+        with open(os.path.join(self.r.NETWORKD_DIR, "05-argus-restored.network"), encoding="utf-8") as f:
+            unit = f.read()
+        for line in ("MACAddress=52:54:00:aa:bb:cc", "Address=10.0.0.10/24", "Gateway=10.0.0.1", "DNS=10.0.0.1",
+                     "Domains=example.lan", "[Route]", "Destination=10.9.0.0/16", "Gateway=10.0.0.254"):
+            self.assertIn(line, unit)
+        flat = [" ".join(c) for c in self.fake.calls]
+        self.assertIn("networkctl reload", flat)
+        self.assertIn("networkctl reconfigure enX0", flat)
+        self.assertFalse(any(c.startswith("hostnamectl") for c in flat), "the hostname is the same here")
+
+    def test_network_nothing_to_do_or_dhcp(self):
+        self.r.NETWORKD_DIR = os.path.join(self.tmp, "network")
+        # Already at the old address: nothing is written.
+        self.fake.net = {"dev": "enX0", "mac": "52:54:00:aa:bb:cc", "addr": "10.0.0.10/24", "gw": "10.0.0.1"}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.r.main(["argus-restore", "network", self.archive, "--yes"]), 0)
+        self.assertIn("already answers at the old core's address", out.getvalue())
+        self.assertFalse(os.path.exists(self.r.NETWORKD_DIR))
+        # The old core's address came from DHCP: move the reservation, don't pin it (unless --static).
+        work = tempfile.mkdtemp(dir=self.tmp)
+        with open(os.path.join(work, "network.json"), "w") as f:
+            json.dump({"hostname": __import__("socket").gethostname(), "interface": "ens18", "addresses": ["10.0.0.10/24"],
+                       "gateway": "10.0.0.1", "dns": [], "dhcp": True}, f)
+        self.fake.net = {"dev": "enX0", "mac": "52:54:00:aa:bb:cc", "addr": "10.0.0.99/24", "gw": "10.0.0.1"}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.r.take_network(work, "a.tar", yes=True), 0)
+        self.assertIn("move it in", out.getvalue())
+        self.assertIn("52:54:00:aa:bb:cc", out.getvalue())
+        self.assertFalse(os.path.exists(self.r.NETWORKD_DIR))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.r.take_network(work, "a.tar", yes=True, static=True), 0)
+        self.assertTrue(os.path.exists(os.path.join(self.r.NETWORKD_DIR, "05-argus-restored.network")))
 
     def test_containers_prints_docker_run(self):
         out = io.StringIO()

@@ -21,6 +21,7 @@ and export them off the VM, and how to restore after a disaster.
 | `zabbix.dump` | The Zabbix database (`pg_dump`), with its metric history or only its settings | Hosts, templates, triggers, the Argus service account and its API token, the probes and their TLS pins, secret macros (SSH and SNMP passwords), and the charts' data |
 | `postgres-globals.sql` | The PostgreSQL roles | The `zabbix` role and its password |
 | `files.tar.gz` | `/etc/argus-core` (the env files with the at-rest key and the Zabbix API token), `/docker/argus/pki` (**the CA the probes trust**, with its key), `/etc/zabbix` (server and frontend config, TLS certificates), the nginx TLS front, the collectors' SSH keys and XCP-NG pins, the external scripts, the Argus host units and scripts, and any other folder the Argus container mounts besides its database and update folder | Without the CA every probe would have to be enrolled again; without the at-rest key Argus can't read its own secrets |
+| `network.json` | The core's address and prefix, gateway, DNS servers and search domains, static routes, hostname, whether the address was fixed or from DHCP, and a copy of the network settings files for reference | `argus-restore network` gives a new core the same address and hostname, so probes and the web certificate find it where they expect |
 | `containers.json` | How the Argus and updater containers ran: image, environment (with the secret key and the Zabbix API token), folders, ports, network | On a core installed by hand these settings live nowhere else; `argus-restore containers` prints them back as `docker run` commands |
 | `manifest.json` | When, where and from which versions the archive was made, with a checksum for each part | Checked before anything is restored |
 
@@ -150,8 +151,8 @@ The old core is gone; a new one takes over, with the same data, the same probes 
 
 1. **Get a new core VM** from the appliance image (the same `core-vm` release as the old one, or a
    newer one with the same Zabbix, PostgreSQL and TimescaleDB versions: `argus-restore` checks).
-   Give it **the old core's IP address** if you can: probes dial it on port 10051, and the web
-   certificate names it. Go through the first-boot page with any values; the restore replaces them.
+   Boot it on DHCP and go through the first-boot page with any values; the restore replaces them.
+   It takes over the old core's address and hostname in step 5.
    (A core installed by hand: run `setup-core.sh` with the same versions, copy the archive over (step
    2), and create the Argus containers from `sudo argus-restore containers /var/backups/argus/<archive>`,
    which prints the `docker run` commands they ran with, secret key and Zabbix API token included:
@@ -164,11 +165,20 @@ The old core is gone; a new one takes over, with the same data, the same probes 
    asks. It stops Argus, the updater and Zabbix, puts back the configuration, keys and certificates,
    recreates the Zabbix database from the dump (with TimescaleDB's pre- and post-restore steps) and
    the Argus database, and starts everything again. With metric history this takes a while.
-5. **Check**: sign in to Argus as before (same users, same two-factor). Within a few minutes the probes
+5. **Take over the address**: `sudo argus-restore network /var/backups/argus/<archive>`, best from the
+   hypervisor's console (an SSH session drops when the address changes). It shows the old core's
+   address, gateway, DNS and hostname next to this machine's, and on a core VM (systemd-networkd) sets
+   them on this machine's network card, matched by its MAC, after you type `TAKE OVER`. Probes dial the
+   core's address on port 10051, and the restored web certificate names that address and hostname.
+   An address the old core had from DHCP is better moved: the tool prints this machine's MAC to put on
+   the DHCP reservation (`--static` sets it as fixed anyway). On a machine whose network another tool
+   manages (ifupdown, NetworkManager) it prints the settings to enter there and changes nothing.
+   `--keep-hostname` leaves the hostname alone.
+6. **Check**: sign in to Argus as before (same users, same two-factor). Within a few minutes the probes
    are online again: they trust the CA that came back. Look at a few hosts' charts, then at Settings,
    Backups: the plan came back too, and the next backup runs from the new VM.
 
-**If the address changed.** Point the Argus FQDN at the new IP. Probes check in by that address and
+**If the address changed** (the old one can't be taken over). Point the Argus FQDN at the new IP. Probes check in by that address and
 learn the core host from Argus (Settings, Probes, **Probe core host**): set it to the new IP, and each
 probe follows at its next restart. The restored web certificate still names the old hostname and IP,
 so browsers warn until you replace it (`/etc/nginx/argus`).
