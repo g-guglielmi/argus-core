@@ -43,6 +43,21 @@ GitHub Release from the matching section below.
 - Add-on options are now checked like device-class options before they reach the probe: the DNS
   add-on's names and port, and the TCP ports list.
 
+**Maintenance windows:**
+- **Configure, Maintenance** plans the times when some hosts' alerts should wait: a nightly backup, a
+  monthly parity check, a patch night. A window covers sites (with their subgroups) and single hosts,
+  and runs once, every day, on chosen weekdays or on a day of the month (or its last day), in the
+  Argus timezone, for 5 minutes to 7 days; it may run past midnight. Admins and helpdesk edit them,
+  viewers see them.
+- While a window is on its hosts keep collecting and their problems stay on screen, marked as in
+  maintenance in the tree, on the host card and in the Overview, and nobody is alerted about them.
+  When it ends, whatever is still wrong is alerted straight away.
+
+**Quiet hours:**
+- **Account, Quiet hours** lets each user quiet their personal channels overnight (or any daily
+  stretch): only problems at or above a chosen severity come through (High by default). A quieter one
+  that is still open when the quiet hours end is sent then. Shared channels are not affected.
+
 **Per-site visibility:**
 - A helpdesk or viewer account can be limited to some sites in **Users, Sites** (a site covers its
   subgroups; empty means every site; an admin always sees everything). Such a user sees only those

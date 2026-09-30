@@ -59,6 +59,9 @@ API key, and MAC):
   channel can fan out to every registered user's address.
 - **Heartbeat** - Argus pings an outside monitor (healthchecks.io, an Uptime Kuma push monitor)
   once a minute while it is healthy end to end, so you hear about it when Argus itself stops.
+- **Maintenance windows and quiet hours** - recurring or one-off windows (sites or hosts) during
+  which alerts wait for planned work and whatever is still wrong is alerted afterwards; and per-user
+  quiet hours for personal channels, letting only the serious problems through at night.
 - **Uptime** - 24 h, 7 day and 30 day uptime per host (on its master sensor, else its ping) and
   per up/down sensor, a strip of the last checks and a bar per day; status pages show their hosts'
   30-day uptime and the ones under 100%.

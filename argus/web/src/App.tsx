@@ -10,10 +10,11 @@ import { Button, Card, Field, Banner, Badge, CopyButton, Switch, Select, Combobo
 import { useConfirm, usePrompt, useAlert } from './dialog'
 import { useToast } from './toast'
 
-type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; landing?: 'overview' | 'errors'; advanced?: boolean; sites?: string[] }
+type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; landing?: 'overview' | 'errors'; advanced?: boolean; sites?: string[]; quiet?: { start: number; end: number; floor: number } }
 type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean; sites?: string[] }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
-type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number; unacked?: boolean }
+type MaintHit = { id: number; name: string; until: number }
+type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number; unacked?: boolean; maintenance?: MaintHit }
 type Group = { id: string; name: string; hosts: number }
 type MacroSpec = { macro: string; label: string; hint?: string; required?: boolean; secret?: boolean; derive?: string; options?: string[]; settings_only?: boolean }
 type ClassSetup = { title: string; intro?: string; steps?: string[]; command?: string; note?: string }
@@ -49,7 +50,7 @@ type Thr = { warn?: number; high?: number; below?: boolean }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
 type TriggerHost = { id: string; name: string }
 type Trigger = { id: string; description: string; severity: number; enabled: boolean; problem: boolean; since: number; hosts: TriggerHost[]; sensors: string[] }
-type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean }
+type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean; maintenance?: MaintHit }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
 type Series = { name: string; units: string; kind: 'history' | 'trend'; points: SeriesPoint[] }
 
@@ -116,8 +117,8 @@ function healthColor(state: string, acked: boolean): string {
 // dotColor: paused (blue) and hidden (grey) override the health colour.
 // needsEye: a host whose dot pulses - in warning or error with something nobody has acknowledged yet
 // (paused and hidden hosts never pulse; an acknowledged problem keeps a steady halo).
-function needsEye(h: { paused: boolean; hidden: boolean; state: string; unacked?: boolean }): boolean {
-  return !h.paused && !h.hidden && h.state !== 'ok' && !!h.unacked
+function needsEye(h: { paused: boolean; hidden: boolean; state: string; unacked?: boolean; maintenance?: MaintHit }): boolean {
+  return !h.paused && !h.hidden && !h.maintenance && h.state !== 'ok' && !!h.unacked
 }
 
 function dotColor(paused: boolean, hidden: boolean, state: string): string {
@@ -700,12 +701,13 @@ function ResetPassword({ token, onDone }: { token: string; onDone: () => void })
   )
 }
 
-type View = 'overview' | 'triggers' | 'history' | 'monitoring' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'users' | 'settings' | 'account' | 'list'
+type View = 'overview' | 'triggers' | 'history' | 'monitoring' | 'maintenance' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'users' | 'settings' | 'account' | 'list'
 const VIEW_TITLES: Record<View, [string, string]> = {
   overview: ['Overview', 'What needs attention right now'],
   triggers: ['Triggers', 'Alert rules - firing, or all by host'],
   history: ['History', 'What went wrong, and when'],
   monitoring: ['Monitoring', 'Sites, hosts and sensors'],
+  maintenance: ['Maintenance', 'When alerts wait for planned work'],
   notifications: ['Notifications', 'Alert routing and channels'],
   probes: ['Probes', 'Site probe enrollment'],
   discovery: ['Discovery', 'Scan a subnet, review what answers, adopt devices'],
@@ -723,6 +725,7 @@ const ic = {
   history: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" /><path d="M3 4.5V8.5h4" /><path d="M12 7.5V12l3 2" /></svg>,
   monitoring: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"><rect x="9" y="3" width="6" height="5" rx="1.5" /><rect x="3" y="16" width="6" height="5" rx="1.5" /><rect x="15" y="16" width="6" height="5" rx="1.5" /><path d="M12 8v4" /><path d="M6 16v-2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" /></svg>,
   notifications: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>,
+  maintenance: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" /></svg>,
   probes: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5" /></svg>,
   discovery: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4.6" /><path d="M12 12l5.6-5.6" /><circle cx="15.4" cy="14.6" r="1.1" fill="currentColor" stroke="none" /></svg>,
   thresholds: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M5 21v-6M5 11V3M12 21v-9M12 8V3M19 21v-4M19 13V3" /><circle cx="5" cy="13" r="2" /><circle cx="12" cy="6" r="2" /><circle cx="19" cy="15" r="2" /></svg>,
@@ -763,7 +766,7 @@ function useTheme(): ['dark' | 'light', () => void] {
 // bookmark, shared link, or Back/Forward restores the exact screen - instead of always
 // resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
 // (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
-const NAV_VIEWS: View[] = ['overview', 'triggers', 'history', 'monitoring', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'users', 'settings', 'account', 'list']
+const NAV_VIEWS: View[] = ['overview', 'triggers', 'history', 'monitoring', 'maintenance', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'users', 'settings', 'account', 'list']
 type NavState = { view: View; filter: string; host?: string; item?: string; group?: string; scan?: string; edit?: string }
 
 function parseNav(): NavState {
@@ -1469,6 +1472,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         {nav('monitoring', 'Monitoring')}
         <div className="navlabel">Configure</div>
         {me.role === 'admin' && nav('discovery', 'Discovery')}
+        {nav('maintenance', 'Maintenance')}
         {nav('probes', 'Probes')}
         {nav('notifications', 'Notifications')}
         {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('thresholds', 'Thresholds')}{nav('statuspages', 'Status pages')}{nav('users', 'Users')}{nav('settings', 'Settings')}</>}
@@ -1534,6 +1538,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           {view === 'history' && <HistoryView goHost={goHost} />}
           {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} loading={!sensorsLoaded || !rowsFor.split(',').includes(listFilter)} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
           {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} advanced={!!me.advanced} />}
+          {view === 'maintenance' && <MaintenanceView canEdit={me.role === 'admin' || me.role === 'helpdesk'} />}
           {view === 'notifications' && <NotificationsView />}
           {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} goHost={goHost} />}
           {view === 'discovery' && me.role === 'admin' && <DiscoveryView scanId={discScan} onOpenScan={openDiscoveryScan} />}
@@ -1960,7 +1965,7 @@ function chanFieldProps(f: ChField, config: Record<string, string>) {
 // selection and opens a scrollable, filterable, indented checklist of host-groups. Groups are
 // '/'-hierarchical, so selecting a root (site1) covers its subgroups (which then show as inherited).
 // Empty selection ("All sites") means every site. Used by the admin and personal channel editors.
-function SitePicker({ options, value, onChange, allLabel = 'All sites' }: { options: string[]; value: string[]; onChange: (v: string[]) => void; allLabel?: string }) {
+function SitePicker({ options, value, onChange, allLabel = 'All sites', labelOf, noAll, placeholder }: { options: string[]; value: string[]; onChange: (v: string[]) => void; allLabel?: string; labelOf?: (v: string) => string; noAll?: boolean; placeholder?: string }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const ref = useRef<HTMLDivElement>(null)
@@ -1981,9 +1986,10 @@ function SitePicker({ options, value, onChange, allLabel = 'All sites' }: { opti
     onChange(value.filter((x) => !x.startsWith(p + '/')).concat(p))
   }
   const all = value.length === 0
-  const summary = all ? allLabel : value.length <= 2 ? value.join(', ') : `${value.length} sites selected`
+  const name = (v: string) => (labelOf ? labelOf(v) : v)
+  const summary = all ? (noAll ? (placeholder || 'None') : allLabel) : value.length <= 2 ? value.map(name).join(', ') : `${value.length} selected`
   const needle = q.trim().toLowerCase()
-  const shown = needle ? options.filter((o) => o.toLowerCase().includes(needle)) : options
+  const shown = needle ? options.filter((o) => name(o).toLowerCase().includes(needle)) : options
 
   return (
     <div className="msel" ref={ref}>
@@ -1997,15 +2003,17 @@ function SitePicker({ options, value, onChange, allLabel = 'All sites' }: { opti
             <input className="input msel-search" placeholder="Filter sites…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
           )}
           <div className="msel-list">
-            <button type="button" role="option" aria-selected={all} className={'msel-opt' + (all ? ' on' : '')} onClick={() => onChange([])}>
-              <span className="msel-check">{all ? '✓' : ''}</span>{allLabel}
-            </button>
+            {!noAll && (
+              <button type="button" role="option" aria-selected={all} className={'msel-opt' + (all ? ' on' : '')} onClick={() => onChange([])}>
+                <span className="msel-check">{all ? '✓' : ''}</span>{allLabel}
+              </button>
+            )}
             {shown.map((s) => {
               const on = value.includes(s)
               const parent = on ? undefined : coveredBy(s)
               const covered = !!parent
-              const depth = needle ? 0 : s.split('/').length - 1
-              const label = needle ? s : s.slice(s.lastIndexOf('/') + 1)
+              const depth = needle || labelOf ? 0 : s.split('/').length - 1
+              const label = labelOf ? labelOf(s) : needle ? s : s.slice(s.lastIndexOf('/') + 1)
               return (
                 <button type="button" role="option" aria-selected={on || covered} key={s}
                   className={'msel-opt' + (on ? ' on' : '') + (covered ? ' covered' : '')}
@@ -3893,6 +3901,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
             <span className="hn lnk-host" onClick={(e) => { e.stopPropagation(); drillHost(path, h.id) }}>{h.name}</span>
             {h.paused && <span className="kind" style={{ color: PAUSED_BLUE }}>· paused {untilLabel(h.paused_until)}</span>}
             {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
+            {h.maintenance && <span className="kind maint" title={`${h.maintenance.name}: alerts wait until ${fmtWhen(h.maintenance.until)}`}>· maintenance</span>}
             {!h.paused && !h.hidden && h.problems > 0 && <span className={'probpill' + (h.state === 'warning' ? ' warn' : '')} title={`${h.problems} problem${h.problems === 1 ? '' : 's'}`}>{h.problems}</span>}
           </div>
           <div className="c-graph">
@@ -3917,7 +3926,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
           </div>
         </div>
         {editGroupsHost === h.id && <GroupEditor current={h.groups || []} groups={groups} onSave={(ids) => setHostGroups(h.id, ids)} onCancel={() => setEditGroupsHost(null)} />}
-        {hopen && <div className="host-body" style={{ paddingLeft: indent(depth) }}><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} showAll={showAllEff} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(path, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} /></div>}
+        {hopen && <div className="host-body" style={{ paddingLeft: indent(depth) }}><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} maintenance={h.maintenance} showAll={showAllEff} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(path, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} /></div>}
       </div>
     )
   }
@@ -5275,6 +5284,203 @@ function statusLinkURL(link: string): string {
 
 // StatusPagesView manages the read-only status pages a wall screen opens with a secret link (admin).
 // The link is shown once, right after creating a page or giving it a new link.
+type MaintWindow = { id: number; name: string; sites: string[]; host_ids: string[]; kind: 'once' | 'daily' | 'weekly' | 'monthly'; start_at?: number; minute: number; weekdays?: number; month_day?: number; duration_min: number; enabled: boolean; created_by?: string; active?: boolean; until?: number; next_start?: number }
+const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0] // Monday first
+
+function fmtHM(minute: number): string {
+  const h = Math.floor(minute / 60), m = minute % 60
+  if (CLOCK.h24) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+}
+function fmtDurMin(min: number): string {
+  const d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60), m = min % 60
+  return [d ? `${d} d` : '', h ? `${h} h` : '', m ? `${m} min` : ''].filter(Boolean).join(' ') || '0 min'
+}
+// scheduleText words when a window runs: "Mon, Wed at 02:00 for 2 h".
+function scheduleText(w: MaintWindow): string {
+  const dur = ` for ${fmtDurMin(w.duration_min)}`
+  if (w.kind === 'once') return `${w.start_at ? fmtWhen(w.start_at) : 'once'}${dur}`
+  const at = ` at ${fmtHM(w.minute)}`
+  if (w.kind === 'daily') return `Every day${at}${dur}`
+  if (w.kind === 'weekly') {
+    const days = WEEK_ORDER.filter((d) => ((w.weekdays || 0) & (1 << d)) !== 0).map((d) => WEEKDAYS_SHORT[d])
+    return `${days.length === 7 ? 'Every day' : days.join(', ')}${at}${dur}`
+  }
+  return `${w.month_day === -1 ? 'Last day of the month' : `Day ${w.month_day} of the month`}${at}${dur}`
+}
+
+// MaintenanceView lists the maintenance windows and edits them (admin, helpdesk): when some hosts'
+// alerts wait for planned work (maintenance.go).
+function MaintenanceView({ canEdit }: { canEdit: boolean }) {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [wins, setWins] = useState<MaintWindow[] | null>(null)
+  const [sites, setSites] = useState<string[]>([])
+  const [hosts, setHosts] = useState<Host[]>([])
+  const [editing, setEditing] = useState<MaintWindow | 'new' | null>(null)
+  function load() {
+    fetch('/api/maintenance').then((r) => (r.ok ? r.json() : Promise.reject(r))).then((w) => setWins(w || [])).catch(() => { setWins([]); toast.error('Failed to load the maintenance windows') })
+  }
+  useEffect(() => {
+    load()
+    fetch('/api/me/notify/sites').then((r) => (r.ok ? r.json() : [])).then((s) => setSites(s || [])).catch(() => {})
+    fetch('/api/hosts').then((r) => (r.ok ? r.json() : [])).then((h) => setHosts(h || [])).catch(() => {})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const hostName = (id: string) => hosts.find((h) => h.id === id)?.name || `host ${id}`
+  const targets = (w: MaintWindow) => [...w.sites, ...w.host_ids.map(hostName)].join(', ')
+
+  async function del(w: MaintWindow) {
+    if (!(await confirm({ title: 'Delete window', message: `Delete "${w.name}"? Its hosts' alerts stop waiting for it.`, confirmLabel: 'Delete', danger: true }))) return
+    const res = await fetch(`/api/maintenance/${w.id}`, { method: 'DELETE' })
+    if (!res.ok) { toast.error(await errText(res, 'Could not delete the window')); return }
+    toast.success('Window deleted'); load()
+  }
+  async function toggle(w: MaintWindow, enabled: boolean) {
+    const res = await fetch(`/api/maintenance/${w.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...w, enabled }) })
+    if (!res.ok) { toast.error(await errText(res, 'Could not save the window')); return }
+    load()
+  }
+
+  return (
+    <div className="panel">
+      <div className="phead">
+        <PanelTitle eyebrow="Configure">Maintenance windows</PanelTitle>
+        <span className="hint">times in the Argus timezone{CLOCK.tz ? ` (${CLOCK.tz})` : ''}</span>
+        {canEdit && <div className="tools"><button className="btn primary" onClick={() => setEditing('new')}>+ Add window</button></div>}
+      </div>
+      <p className="set-note" style={{ padding: '10px 16px 0', margin: 0 }}>
+        During a window its hosts keep collecting and their problems stay on screen, but nobody is alerted about them. When it ends, whatever is still wrong is alerted.
+      </p>
+      {wins === null ? <Skeleton rows={3} cols={4} /> : wins.length === 0 ? (
+        <div className="empty-state" style={{ padding: '28px 16px' }}>No maintenance windows yet.{canEdit ? ' Add one for a nightly backup, a monthly parity check or a patch night.' : ''}</div>
+      ) : (
+        <table className="utable mtable">
+          <thead><tr><th style={{ width: '22%' }}>Name</th><th>Covers</th><th>When</th><th>Status</th>{canEdit && <th style={{ textAlign: 'right' }}>Manage</th>}</tr></thead>
+          <tbody>
+            {wins.map((w) => (
+              <tr key={w.id} style={{ opacity: w.enabled ? 1 : 0.55 }}>
+                <td data-label="Name"><b>{w.name}</b></td>
+                <td data-label="Covers" className="mwrap">{targets(w) || '-'}</td>
+                <td data-label="When" className="mwrap">{scheduleText(w)}</td>
+                <td data-label="Status">{!w.enabled ? <span className="set-src">off</span>
+                  : w.active ? <span className="tag avail" title="Alerts for its hosts are waiting">on until {fmtWhen(w.until || 0)}</span>
+                    : w.next_start ? <span className="okquiet">next {fmtWhen(w.next_start)}</span> : <span className="set-src">over</span>}</td>
+                {canEdit && (
+                  <td data-label="Manage" style={{ textAlign: 'right' }}>
+                    <Kebab actions={[
+                      { label: 'Edit…', icon: kbIcon.gear, onClick: () => setEditing(w) },
+                      w.enabled ? { label: 'Turn off', icon: kbIcon.pause, onClick: () => toggle(w, false) } : { label: 'Turn on', icon: kbIcon.resume, onClick: () => toggle(w, true) },
+                      { sep: true, label: '' },
+                      { label: 'Delete', icon: uIcon.trash, danger: true, onClick: () => del(w) },
+                    ]} />
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {editing && <MaintenanceDialog initial={editing === 'new' ? null : editing} sites={sites} hosts={hosts}
+        onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); toast.success('Window saved'); load() }} />}
+    </div>
+  )
+}
+
+// MaintenanceDialog adds or edits one window.
+function MaintenanceDialog({ initial, sites, hosts, onCancel, onSaved }: { initial: MaintWindow | null; sites: string[]; hosts: Host[]; onCancel: () => void; onSaved: () => void }) {
+  const toast = useToast()
+  const [name, setName] = useState(initial?.name || '')
+  const [selSites, setSelSites] = useState<string[]>(initial?.sites || [])
+  const [selHosts, setSelHosts] = useState<string[]>(initial?.host_ids || [])
+  const [kind, setKind] = useState<MaintWindow['kind']>(initial?.kind || 'weekly')
+  const [time, setTime] = useState(fmtHM24(initial?.minute ?? 120))
+  const [weekdays, setWeekdays] = useState(initial?.weekdays || (1 << 0))
+  const [monthDay, setMonthDay] = useState(initial?.month_day || 1)
+  const [onceAt, setOnceAt] = useState(() => { const d = new Date(((initial?.start_at) || (Math.ceil(Date.now() / 3600000) * 3600)) * 1000); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16) })
+  const [hours, setHours] = useState(Math.floor((initial?.duration_min ?? 120) / 60))
+  const [mins, setMins] = useState((initial?.duration_min ?? 120) % 60)
+  const [enabled, setEnabled] = useState(initial ? initial.enabled : true)
+  const [busy, setBusy] = useState(false)
+
+  async function save(e: FormEvent) {
+    e.preventDefault()
+    const [hh, mm] = time.split(':').map(Number)
+    const body = {
+      name, sites: selSites, host_ids: selHosts, kind, enabled,
+      minute: (hh || 0) * 60 + (mm || 0), weekdays: kind === 'weekly' ? weekdays : 0, month_day: kind === 'monthly' ? monthDay : 0,
+      start_at: kind === 'once' ? Math.floor(new Date(onceAt).getTime() / 1000) : 0,
+      duration_min: Number(hours) * 60 + Number(mins),
+    }
+    setBusy(true)
+    try {
+      const res = await fetch(initial ? `/api/maintenance/${initial.id}` : '/api/maintenance', { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      if (!res.ok) { toast.error(await errText(res, 'Could not save the window')); return }
+      onSaved()
+    } catch { toast.error('Could not save the window') } finally { setBusy(false) }
+  }
+
+  return (
+    <ChannelDialog title={initial ? 'Edit maintenance window' : 'Add a maintenance window'} submitLabel={busy ? 'Saving…' : initial ? 'Save changes' : 'Add window'}
+      enabled={enabled} setEnabled={setEnabled} onCancel={onCancel} onSubmit={save}>
+      <ChanSection title="Window">
+        <div className="chan-row">
+          <label className="chan-field chan-full"><span className="flabel">Name</span>
+            <input className="input" value={name} maxLength={80} placeholder="Nightly backups" onChange={(e) => setName(e.target.value)} required />
+          </label>
+        </div>
+        <div className="chan-row">
+          <div className="chan-field chan-wide"><span className="flabel">Sites</span>
+            <SitePicker options={sites} value={selSites} onChange={setSelSites} noAll placeholder="No site" />
+          </div>
+          <div className="chan-field chan-wide"><span className="flabel">Hosts</span>
+            <SitePicker options={hosts.map((h) => h.id)} labelOf={(id) => hosts.find((h) => h.id === id)?.name || id} value={selHosts} onChange={setSelHosts} noAll placeholder="No single host" />
+          </div>
+        </div>
+        <p className="set-note">A site covers every host in it and below it; add single hosts on top.</p>
+      </ChanSection>
+      <ChanSection title="When">
+        <div className="chan-row">
+          <label className="chan-field"><span className="flabel">Repeats</span>
+            <Select value={kind} onChange={(e) => setKind(e.target.value as MaintWindow['kind'])}>
+              <option value="once">Once</option>
+              <option value="daily">Every day</option>
+              <option value="weekly">Every week</option>
+              <option value="monthly">Every month</option>
+            </Select>
+          </label>
+          {kind === 'once'
+            ? <label className="chan-field"><span className="flabel">Starts</span><input className="input" type="datetime-local" value={onceAt} onChange={(e) => setOnceAt(e.target.value)} required /></label>
+            : <label className="chan-field"><span className="flabel">Starts at</span><input className="input" type="time" value={time} onChange={(e) => setTime(e.target.value)} required /></label>}
+          <div className="chan-field"><span className="flabel">Lasts</span>
+            <span className="mdur"><input className="input" type="number" min={0} max={168} value={hours} onChange={(e) => setHours(Number(e.target.value))} /> h <input className="input" type="number" min={0} max={59} step={5} value={mins} onChange={(e) => setMins(Number(e.target.value))} /> min</span>
+          </div>
+        </div>
+        {kind === 'weekly' && (
+          <div className="chan-row"><div className="chan-field chan-full"><span className="flabel">On</span>
+            <div className="wdays">{WEEK_ORDER.map((d) => {
+              const on = (weekdays & (1 << d)) !== 0
+              return <button type="button" key={d} className={'wday' + (on ? ' on' : '')} aria-pressed={on} onClick={() => setWeekdays(weekdays ^ (1 << d))}>{WEEKDAYS_SHORT[d]}</button>
+            })}</div>
+          </div></div>
+        )}
+        {kind === 'monthly' && (
+          <div className="chan-row"><label className="chan-field"><span className="flabel">On day</span>
+            <Select value={monthDay} onChange={(e) => setMonthDay(Number(e.target.value))}>
+              {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
+              <option value={-1}>Last day</option>
+            </Select>
+          </label></div>
+        )}
+        <p className="set-note">{kind === 'once' ? 'In your browser\'s time.' : `In the Argus timezone${CLOCK.tz ? ` (${CLOCK.tz})` : ''}. A window can run past midnight.`}</p>
+      </ChanSection>
+    </ChannelDialog>
+  )
+}
+
+// fmtHM24 is a minute of the day as an <input type=time> value ("02:00").
+function fmtHM24(minute: number): string { return `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}` }
+
 function StatusPagesView() {
   const toast = useToast()
   const confirm = useConfirm()
@@ -6076,7 +6282,7 @@ function HostIncidents({ hostId, goHost, itemIds }: { hostId: string; goHost: ((
   )
 }
 
-function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpenItem, onlyItem, onDrillSensor, onItemName, onNavigate }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; showAll: boolean; autoOpenItem?: string; onlyItem?: string; onDrillSensor?: (itemId: string, itemName: string) => void; onItemName?: (itemId: string, itemName: string) => void; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
+function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, showAll, autoOpenItem, onlyItem, onDrillSensor, onItemName, onNavigate }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; maintenance?: MaintHit; showAll: boolean; autoOpenItem?: string; onlyItem?: string; onDrillSensor?: (itemId: string, itemName: string) => void; onItemName?: (itemId: string, itemName: string) => void; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
   const [items, setItems] = useState<SensorItem[] | null>(null)
   const [problems, setProblems] = useState<Problem[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -6292,6 +6498,12 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, showAll, autoOpen
   return (
     <div>
       {!onlyItem && <HostUptime hostId={hostId} />}
+      {maintenance && (
+        <div className="maint-band">
+          <span className="maint-ico">{ic.maintenance}</span>
+          <span>In maintenance: <b>{maintenance.name}</b>, until {fmtWhen(maintenance.until)}. Alerts for this host wait meanwhile; whatever is still wrong when it ends is alerted then.</span>
+        </div>
+      )}
       {problems.length > 0 && (
         <div style={{ border: `1px solid color-mix(in srgb, ${probColor} 30%, var(--border))`, background: `color-mix(in srgb, ${probColor} 7%, var(--panel))`, borderRadius: 8, padding: '0.5rem 0.75rem', marginBottom: '0.5rem' }}>
           <div style={{ color: probColor, fontSize: 12, marginBottom: 4, fontWeight: 600 }}>{probErr ? 'Active problems' : 'Active warnings'}</div>
@@ -6612,6 +6824,7 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
                       <span className="sl-name">{clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id, s.label || s.name)}>{s.label || s.name}</span> : (s.label || s.name)}</span>
                       {s.reason && <div className="sreason"><span style={{ color: sevInfo(s.severity).color, fontWeight: 600 }}>{sevInfo(s.severity).label}</span> · {s.reason}{s.since ? <span title={`Firing since ${new Date(s.since * 1000).toLocaleString()}`}> · {relTime(s.since)}</span> : null}</div>}
                       {s.why && whyOpen[s.host_id + ':' + s.item_id] && <div className="sreason why-line">{s.why}</div>}
+                      {s.maintenance && <div className="sreason maint-tag" title="Alerts wait until the window ends">In maintenance ({s.maintenance.name}) until {fmtWhen(s.maintenance.until)}</div>}
                     </td>
                     <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <WhyText why={s.why} onToggle={() => toggleWhy(s.host_id + ':' + s.item_id)}>{dv}{du ? <span className="unit"> {du}</span> : null}</WhyText> })() : <WhyText why={s.why} color="var(--err)" onToggle={() => toggleWhy(s.host_id + ':' + s.item_id)}>not supported</WhyText>}</td>
                     <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} width={168} fill units={s.units} /> : null}</td>
@@ -7767,10 +7980,57 @@ function AccountView({ me, onMe, passkeysAvailable, theme, toggleTheme }: { me: 
       </Card>
       <LandingCard me={me} onMe={onMe} />
       <PersonalNotifyCard />
+      <QuietHoursCard me={me} onMe={onMe} />
       <PasswordCard />
       <MfaCard />
       {passkeysAvailable && <PasskeyCard />}
     </div>
+  )
+}
+
+// QuietHoursCard sets the quiet hours of the user's personal channels: during them only the more
+// serious problems come through; a quieter one that is still open when they end is sent then.
+function QuietHoursCard({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
+  const toast = useToast()
+  const q = me.quiet || { start: -1, end: -1, floor: 4 }
+  const [on, setOn] = useState(q.start >= 0 && q.end >= 0)
+  const [from, setFrom] = useState(fmtHM24(q.start >= 0 ? q.start : 22 * 60))
+  const [to, setTo] = useState(fmtHM24(q.end >= 0 ? q.end : 7 * 60))
+  const [floor, setFloor] = useState(q.floor >= 3 && q.floor <= 5 ? q.floor : 4)
+  const [busy, setBusy] = useState(false)
+  const mins = (v: string) => { const [h, m] = v.split(':').map(Number); return (h || 0) * 60 + (m || 0) }
+
+  async function save(next: { on: boolean; from: string; to: string; floor: number }) {
+    setBusy(true)
+    try {
+      const quiet = next.on ? { start: mins(next.from), end: mins(next.to), floor: next.floor } : { start: -1, end: -1, floor: next.floor }
+      const res = await fetch('/api/me/preferences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quiet }) })
+      if (!res.ok) { toast.error(await errText(res, 'Could not save quiet hours')); return }
+      onMe(await res.json()); toast.success(next.on ? 'Quiet hours saved.' : 'Quiet hours off.')
+    } catch { toast.error('Could not save quiet hours') } finally { setBusy(false) }
+  }
+
+  return (
+    <Card title="Quiet hours" note={`For your personal channels, in the Argus timezone${CLOCK.tz ? ` (${CLOCK.tz})` : ''}. Shared channels are not affected.`}>
+      <div className="set-row set-toggle">
+        <div className="set-head"><span className="flabel">Quiet hours</span></div>
+        <Switch checked={on} disabled={busy} onChange={(v) => { setOn(v); save({ on: v, from, to, floor }) }} label={on ? 'On' : 'Off'} />
+      </div>
+      {on && (
+        <div className="quiet-row">
+          <Field label="From"><input className="input" type="time" value={from} disabled={busy} onChange={(e) => setFrom(e.target.value)} onBlur={() => save({ on, from, to, floor })} /></Field>
+          <Field label="To"><input className="input" type="time" value={to} disabled={busy} onChange={(e) => setTo(e.target.value)} onBlur={() => save({ on, from, to, floor })} /></Field>
+          <Field label="Still send">
+            <select value={floor} disabled={busy} onChange={(e) => { const f = Number(e.target.value); setFloor(f); save({ on, from, to, floor: f }) }}>
+              <option value={3}>Average and above</option>
+              <option value={4}>High and above</option>
+              <option value={5}>Disaster only</option>
+            </select>
+          </Field>
+        </div>
+      )}
+      <p className="set-note">During quiet hours anything below that waits: if it is still open when they end, you get it then. Reminders, acknowledgements and recoveries below it are not sent meanwhile.</p>
+    </Card>
   )
 }
 

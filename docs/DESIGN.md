@@ -522,6 +522,25 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   holds the ping and the outside monitor raises the alarm after its own grace period. Settings shows
   the last check (pinging / held and why / failing and the HTTP status) and a **Send now** button;
   the URL is never logged, since it usually carries the check's secret.
+- **Maintenance windows (planned work):** **Configure -> Maintenance** lists windows (admin and
+  helpdesk edit, a viewer reads), each covering sites (a root covers its subgroups) and/or single
+  hosts, once or every day, week (chosen weekdays) or month (a day, a short month runs it on its last
+  day, or the last day), from a start time for a duration of 5 minutes to 7 days, in the Argus
+  timezone (a window may run past midnight; local start times hold across DST). While a window is on,
+  its hosts keep collecting and their problems stay on screen, tagged (the tree says
+  `· maintenance`, the host card has a band with the window and its end, an Overview row says
+  "In maintenance (name) until ..."), the tree dot stops pulsing, and the notifier treats their
+  problems as not alertable, like a paused host's: no first alert, no escalation, no reminder.
+  When the window ends, whatever is still open alerts at once (its alert delay is long over).
+  Acknowledgements and recoveries of alerts sent before the window still go out. A scoped user
+  (section 10) sees the windows that touch their sites and edits only those that cover nothing
+  else. `internal/server/maintenance.go`.
+- **Quiet hours (per user):** **Account -> Quiet hours** sets a daily stretch (may wrap past
+  midnight, Argus timezone) during which the user's **personal** channels only get problems at or
+  above a floor (Average, High or Disaster; High by default). A quieter problem waits: it is sent
+  when the quiet hours end if still open (the delivery was never recorded, so the plan picks it up).
+  Reminders, acknowledgements and recoveries below the floor are skipped meanwhile. Shared channels
+  are not affected.
 - **Master sensors (dependencies):** every host has a master sensor - its ICMP ping by default
   (`icmpping`), another sensor or none per host (`host_masters`), and the Probe host's reporting
   sensor (`zabbix[uptime]`). A collector-based host also has its collector's reachability sensor

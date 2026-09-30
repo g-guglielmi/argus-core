@@ -53,6 +53,7 @@ type Server struct {
 	census        *censusCache      // the sensor census, kept warm in memory (census.go)
 	hb            heartbeat         // the outside monitor's ping (heartbeat.go)
 	hostGroups    hostGroupsCache   // host -> group names, for per-site visibility (scope.go)
+	maint         maintCache        // the hosts in a maintenance window right now (maintenance.go)
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {
@@ -197,6 +198,11 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 
 	// tree groups (Zabbix host groups): list is read-only; create/rename/delete + host membership
 	// are config writes, so helpdesk/admin only.
+	// maintenance windows: when some hosts' alerts are held (list: any user, their sites' windows)
+	mux.HandleFunc("GET /api/maintenance", auth.RequireAuth(s.handleListMaintenance))
+	mux.HandleFunc("POST /api/maintenance", auth.RequireRoles(s.handleCreateMaintenance, "admin", "helpdesk"))
+	mux.HandleFunc("PATCH /api/maintenance/{id}", auth.RequireRoles(s.handleUpdateMaintenance, "admin", "helpdesk"))
+	mux.HandleFunc("DELETE /api/maintenance/{id}", auth.RequireRoles(s.handleDeleteMaintenance, "admin", "helpdesk"))
 	mux.HandleFunc("GET /api/groups", auth.RequireAuth(s.handleGroups))
 	mux.HandleFunc("POST /api/groups", auth.RequireRoles(s.handleCreateGroup, "admin", "helpdesk"))
 	mux.HandleFunc("PATCH /api/groups/{id}", auth.RequireRoles(s.handleRenameGroup, "admin", "helpdesk"))
@@ -439,14 +445,22 @@ type loginRequest struct {
 }
 
 type userResponse struct {
-	Email      string   `json:"email"`
-	Name       string   `json:"name"`
-	Surname    string   `json:"surname"`
-	Role       string   `json:"role"`
-	MFAEnabled bool     `json:"mfa_enabled"`
-	Landing    string   `json:"landing"`
-	Advanced   bool     `json:"advanced"`
-	Sites      []string `json:"sites"` // the sites this account sees; empty = every site (scope.go)
+	Email      string    `json:"email"`
+	Name       string    `json:"name"`
+	Surname    string    `json:"surname"`
+	Role       string    `json:"role"`
+	MFAEnabled bool      `json:"mfa_enabled"`
+	Landing    string    `json:"landing"`
+	Advanced   bool      `json:"advanced"`
+	Sites      []string  `json:"sites"` // the sites this account sees; empty = every site (scope.go)
+	Quiet      quietView `json:"quiet"`
+}
+
+// quietView is a user's quiet hours (start/end in minutes after midnight, -1 = off).
+type quietView struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
+	Floor int `json:"floor"`
 }
 
 func toUserResponse(u *store.User) userResponse {
@@ -454,7 +468,8 @@ func toUserResponse(u *store.User) userResponse {
 	if sc := scopeOf(u); !sc.all {
 		sites = sc.sites
 	}
-	return userResponse{Email: u.Email, Name: u.Name, Surname: u.Surname, Role: u.Role, MFAEnabled: u.TOTPEnabled, Landing: normalizeLanding(u.Landing), Advanced: u.Advanced, Sites: sites}
+	return userResponse{Email: u.Email, Name: u.Name, Surname: u.Surname, Role: u.Role, MFAEnabled: u.TOTPEnabled, Landing: normalizeLanding(u.Landing), Advanced: u.Advanced, Sites: sites,
+		Quiet: quietView{Start: u.QuietStart, End: u.QuietEnd, Floor: u.QuietFloor}}
 }
 
 // normalizeLanding coerces a stored landing value to a known option (defensive against a blank
@@ -675,6 +690,13 @@ func (s *Server) handleUpdatePreferences(w http.ResponseWriter, r *http.Request)
 	var req struct {
 		Landing  *string `json:"landing"`
 		Advanced *bool   `json:"advanced"`
+		// Quiet hours of the user's personal channels: minutes after midnight (Argus timezone), both
+		// -1 to turn them off, and the lowest severity still sent during them.
+		Quiet *struct {
+			Start int `json:"start"`
+			End   int `json:"end"`
+			Floor int `json:"floor"`
+		} `json:"quiet"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -697,6 +719,22 @@ func (s *Server) handleUpdatePreferences(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		u.Advanced = *req.Advanced
+	}
+	if q := req.Quiet; q != nil {
+		off := q.Start == -1 && q.End == -1
+		if !off && (q.Start < 0 || q.Start >= 24*60 || q.End < 0 || q.End >= 24*60 || q.Start == q.End) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "quiet hours need a start and an end time that differ"})
+			return
+		}
+		if q.Floor < 3 || q.Floor > 5 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "choose the lowest severity still sent during quiet hours: Average, High or Disaster"})
+			return
+		}
+		if err := s.st.SetUserQuietHours(r.Context(), u.ID, q.Start, q.End, q.Floor); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save preference"})
+			return
+		}
+		u.QuietStart, u.QuietEnd, u.QuietFloor = q.Start, q.End, q.Floor
 	}
 	writeJSON(w, http.StatusOK, toUserResponse(u))
 }

@@ -174,6 +174,9 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Per-site visibility** - helpdesk and viewer accounts limited to some sites see, act on and
   are alerted about only those sites' hosts, filtered on the server for every request. DESIGN
   section 10. - _(BE+FE)_ M
+- [x] **Maintenance windows + quiet hours** - planned-work windows (once, daily, weekly, monthly;
+  sites or hosts) that hold alerts and alert what is still open afterwards, and per-user quiet hours
+  for personal channels. DESIGN section 9. - _(BE+FE)_ M
 
 ### G. Scale & production readiness
 - [x] **Security review, wave 1 (core)** - a static review of the three repositories; the core-side

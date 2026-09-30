@@ -36,22 +36,23 @@ func severityState(sev int) string {
 }
 
 type hostView struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Problems    int      `json:"problems"`
-	Severity    int      `json:"severity"` // -1 when no active problem, else 0..5
-	State       string   `json:"state"`    // ok | warning | error
-	Paused      bool     `json:"paused"`   // disabled in Zabbix (stopped collecting)
-	Hidden      bool     `json:"hidden"`   // Argus-side suppression (still collecting)
-	PausedUntil *int64   `json:"paused_until,omitempty"`
-	HiddenUntil *int64   `json:"hidden_until,omitempty"`
-	Groups      []string `json:"groups"`              // host groups (drive the site tree)
-	ProxyID     string   `json:"proxy_id,omitempty"`  // "" / "0" = monitored by the server
-	ClassID     string   `json:"class_id,omitempty"`  // device class overlay id, "" when unclassified
-	Icon        string   `json:"icon"`                // tree glyph name (device/server/switch/…); see web devIcon
-	IcmpItem    string   `json:"icmp_item,omitempty"` // icmppingsec item id (for the row's sparkline), "" if none
-	IcmpMs      *float64 `json:"icmp_ms,omitempty"`   // last ICMP response time in ms, nil when unknown
-	Unacked     bool     `json:"unacked,omitempty"`   // has a warning or error nobody has acknowledged (its tree dot pulses)
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Problems    int       `json:"problems"`
+	Severity    int       `json:"severity"` // -1 when no active problem, else 0..5
+	State       string    `json:"state"`    // ok | warning | error
+	Paused      bool      `json:"paused"`   // disabled in Zabbix (stopped collecting)
+	Hidden      bool      `json:"hidden"`   // Argus-side suppression (still collecting)
+	PausedUntil *int64    `json:"paused_until,omitempty"`
+	HiddenUntil *int64    `json:"hidden_until,omitempty"`
+	Groups      []string  `json:"groups"`                // host groups (drive the site tree)
+	Maintenance *maintHit `json:"maintenance,omitempty"` // the maintenance window it is in right now
+	ProxyID     string    `json:"proxy_id,omitempty"`    // "" / "0" = monitored by the server
+	ClassID     string    `json:"class_id,omitempty"`    // device class overlay id, "" when unclassified
+	Icon        string    `json:"icon"`                  // tree glyph name (device/server/switch/…); see web devIcon
+	IcmpItem    string    `json:"icmp_item,omitempty"`   // icmppingsec item id (for the row's sparkline), "" if none
+	IcmpMs      *float64  `json:"icmp_ms,omitempty"`     // last ICMP response time in ms, nil when unknown
+	Unacked     bool      `json:"unacked,omitempty"`     // has a warning or error nobody has acknowledged (its tree dot pulses)
 }
 
 type itemView struct {
@@ -245,6 +246,13 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		out = kept
+	}
+	inMaint := s.maintenanceNow(ctx)
+	for i := range out {
+		if h, ok := inMaint[out[i].ID]; ok {
+			h := h
+			out[i].Maintenance = &h
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

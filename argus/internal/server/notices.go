@@ -76,7 +76,7 @@ func (s *Server) noticeTick(ctx context.Context) {
 	channels, _ := s.st.EnabledNotifyChannels(ctx)
 	userChannels, _ := s.st.EnabledUserNotifyChannels(ctx)
 	var dests []notifyDest
-	for _, d := range notifyDests(s.st, channels, userChannels, loadUserDirectory(ctx, s.st), s.logger) {
+	for _, d := range notifyDests(s.st, channels, userChannels, loadUserDirectory(ctx, s.st, time.Now(), s.mgr.Location()), s.logger) {
 		if d.notices {
 			dests = append(dests, d)
 		}

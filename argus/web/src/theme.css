@@ -9,6 +9,7 @@
   --paused: #5b8def;
   --hidden: #8b93a0;
   --acked: #cf8585;
+  --maint: #2fa39a; /* a host in a maintenance window: its alerts wait */
   /* Motion - subtle & quick; every consumer is disabled under prefers-reduced-motion. */
   --dur-fast: 120ms;
   --dur-base: 180ms;
@@ -1083,3 +1084,22 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .thr-row-input .input { max-width: 130px; }
 .thr-row-input .thr-reset { font-size: 12px; }
 .thr-row-def { font-size: 11px; color: var(--faint); }
+
+/* Maintenance windows (MaintenanceView, maintenance.go): the tree tag, the host card band, the
+   Overview row line, and the window dialog's duration and weekday pickers. */
+.host-head .kind.maint { color: var(--maint); }
+.maint-band { display: flex; align-items: center; gap: 10px; border: 1px solid color-mix(in srgb, var(--maint) 35%, var(--border)); background: color-mix(in srgb, var(--maint) 8%, var(--panel)); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; font-size: 13px; }
+.maint-band b { font-weight: 650; }
+.maint-ico { color: var(--maint); display: inline-flex; flex: none; }
+.maint-ico svg { width: 18px; height: 18px; }
+.sreason.maint-tag { color: var(--maint); }
+.mtable td.mwrap { white-space: normal; }
+.mdur { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.mdur .input { width: 68px; }
+.wdays { display: flex; flex-wrap: wrap; gap: 6px; }
+.wday { font: inherit; font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--elevated); color: var(--muted); cursor: pointer; }
+.wday.on { color: var(--text); border-color: var(--maint); background: color-mix(in srgb, var(--maint) 16%, var(--elevated)); }
+
+/* Account -> Quiet hours: from / to / still send on one row (wrapping on a phone). */
+.quiet-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.quiet-row > * { flex: 1 1 140px; min-width: 0; }

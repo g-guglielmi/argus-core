@@ -32,6 +32,9 @@ type sensorRow struct {
 	// Synthetic marks a row that isn't a Zabbix sensor but an Argus-raised problem with none (an agent
 	// or SNMP endpoint that stopped answering): it has no chart and can't be paused or hidden itself.
 	Synthetic bool `json:"synthetic,omitempty"`
+	// Maintenance is the window its host is in right now (alerts held); set per response, never on
+	// the shared census rows.
+	Maintenance *maintHit `json:"maintenance,omitempty"`
 }
 
 // interfaceRowLabel names the census row of an unreachable interface after what stopped answering.

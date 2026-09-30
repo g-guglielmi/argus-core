@@ -67,13 +67,19 @@ type notifyDest struct {
 	notices bool  // carries Argus's system notices
 	userID  int64 // a personal channel's owner (0 for a shared channel)
 	scoped  bool  // a personal channel of a user limited to some sites (scope.go)
-	created int64 // unix s
-	send    func(ctx context.Context, ev notify.Event)
+	// quietFloor > 0 while its owner's quiet hours are on: only problems at or above it are sent now;
+	// a quieter one waits (and goes out once the quiet hours end, if still open).
+	quietFloor int
+	created    int64 // unix s
+	send       func(ctx context.Context, ev notify.Event)
 }
 
 func (d notifyDest) serves(groups []string, sev int) bool {
 	return d.alerts && channelMatches(d.sites, d.minSev, groups, sev)
 }
+
+// quietFor reports whether the destination's owner is in quiet hours that hold this severity.
+func (d notifyDest) quietFor(sev int) bool { return d.quietFloor > 0 && sev < d.quietFloor }
 
 // noSite is a site no host group can be in: a personal channel whose sites don't meet its owner's
 // serves it alone, so it serves nothing (an empty list would mean every site).
@@ -99,24 +105,46 @@ func (u userRecipient) reaches(ev notify.Event) bool {
 	return ev.Site != "" && u.scope.coversGroup(ev.Site)
 }
 
-// userDirectory is who the notifier can reach and what each user may see (per-site visibility).
+// userDirectory is who the notifier can reach and what each user may see (per-site visibility), and
+// whose quiet hours are on.
 type userDirectory struct {
 	recipients []userRecipient     // active users, for the email-to-users channels
 	scopes     map[int64]siteScope // every user's sites, for their personal channels
+	quiet      map[int64]int       // users in their quiet hours now -> the lowest severity still sent
+}
+
+// inQuietHours reports whether minute-of-day m falls in [start, end), which may wrap past midnight.
+func inQuietHours(start, end, m int) bool {
+	if start < 0 || end < 0 || start == end {
+		return false
+	}
+	if start < end {
+		return m >= start && m < end
+	}
+	return m >= start || m < end
 }
 
 // loadUserDirectory reads the users once per tick. A user it can't find sees nothing, so a personal
 // channel never outlives its owner's limits.
-func loadUserDirectory(ctx context.Context, st *store.Store) userDirectory {
-	dir := userDirectory{scopes: map[int64]siteScope{}}
+func loadUserDirectory(ctx context.Context, st *store.Store, now time.Time, loc *time.Location) userDirectory {
+	dir := userDirectory{scopes: map[int64]siteScope{}, quiet: map[int64]int{}}
 	users, err := st.ListUsers(ctx)
 	if err != nil {
 		return dir
 	}
+	lt := now.In(loc)
+	minute := lt.Hour()*60 + lt.Minute()
 	for i := range users {
 		u := &users[i]
 		sc := scopeOf(u)
 		dir.scopes[u.ID] = sc
+		if inQuietHours(u.QuietStart, u.QuietEnd, minute) {
+			floor := u.QuietFloor
+			if floor < 2 || floor > 5 {
+				floor = 4
+			}
+			dir.quiet[u.ID] = floor
+		}
 		if !u.Disabled {
 			dir.recipients = append(dir.recipients, userRecipient{email: u.Email, scope: sc})
 		}
@@ -147,7 +175,7 @@ func notifyDests(st *store.Store, channels []store.NotifyChannel, userChannels [
 		out = append(out, notifyDest{
 			key: store.DeliveryKey(store.DeliveryUser, c.ID), kind: store.DeliveryUser, id: c.ID,
 			sites: sites, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
-			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, userID: c.UserID, scoped: !sc.all, created: c.CreatedAt.Unix(),
+			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, userID: c.UserID, scoped: !sc.all, quietFloor: dir.quiet[c.UserID], created: c.CreatedAt.Unix(),
 			send: func(ctx context.Context, ev notify.Event) { sendPersonal(ctx, st, c, ev, logger) },
 		})
 	}
@@ -234,7 +262,10 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 
 	channels, _ := st.EnabledNotifyChannels(ctx)
 	userChannels, _ := st.EnabledUserNotifyChannels(ctx)
-	dests := notifyDests(st, channels, userChannels, loadUserDirectory(ctx, st), logger)
+	dests := notifyDests(st, channels, userChannels, loadUserDirectory(ctx, st, time.Now(), loc), logger)
+	// Hosts in a maintenance window (maintenance.go): their problems wait, as a paused host's do.
+	windows, _ := st.MaintenanceWindows(ctx)
+	inMaint := maintenanceHits(windows, hostGroups, loc, time.Now())
 	states, err := st.NotifyStates(ctx)
 	if err != nil {
 		logger.Warn("notifier: load states", "err", err)
@@ -308,7 +339,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 				ChartPNG: alertChart(ctx, zbx, stt.ItemID, "ok"),
 			}
 			for _, d := range dests {
-				if _, got := deliveries[eid][d.key]; got {
+				if _, got := deliveries[eid][d.key]; got && !d.quietFor(stt.Severity) {
 					d.send(ctx, ev)
 				}
 			}
@@ -334,6 +365,9 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		}
 		groups := hostGroups[hostID]
 		alertable := isAlertable(t, hiddenHosts, hiddenItems, acked, p.EventID)
+		if _, held := inMaint[hostID]; held {
+			alertable = false // in a maintenance window: alerted once it ends, if still open
+		}
 		_, isAcked := acked[p.EventID]
 		isNoData := strings.Contains(t.Expression, "nodata(")
 
@@ -420,7 +454,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 					}
 					ev.AckBy, ev.AckNote = ackBy(ctx, st, p.EventID)
 					for _, d := range dests {
-						if _, got := deliveries[p.EventID][d.key]; got {
+						if _, got := deliveries[p.EventID][d.key]; got && !d.quietFor(sev) {
 							d.send(ctx, ev)
 						}
 					}
@@ -492,8 +526,8 @@ type plannedDelivery struct {
 func planDeliveries(dests []notifyDest, got map[string]store.NotifyDelivery, groups []string, sev int, start, firedAt, now int64) []plannedDelivery {
 	var out []plannedDelivery
 	for _, d := range dests {
-		if !d.serves(groups, sev) {
-			continue
+		if !d.serves(groups, sev) || d.quietFor(sev) {
+			continue // a destination in quiet hours hears of it later, if it is still open then
 		}
 		row, has := got[d.key]
 		if has && row.Severity == sev {

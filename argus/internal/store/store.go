@@ -38,8 +38,13 @@ type User struct {
 	Advanced     bool   // show power-user controls in the monitoring tree (per-user opt-in)
 	// Sites limits a helpdesk or viewer account to these host groups (a root covers its subgroups);
 	// empty = every site. An admin always sees everything.
-	Sites     []string
-	CreatedAt time.Time
+	Sites []string
+	// Quiet hours for the user's personal channels: from QuietStart to QuietEnd (minutes after local
+	// midnight, may wrap past midnight; -1 = off), only problems at or above QuietFloor are sent.
+	QuietStart int
+	QuietEnd   int
+	QuietFloor int
+	CreatedAt  time.Time
 }
 
 type Store struct {
@@ -303,6 +308,23 @@ CREATE TABLE IF NOT EXISTS argus_incidents (
 CREATE INDEX IF NOT EXISTS idx_argus_incidents_open ON argus_incidents(ended_at, event_id);
 CREATE INDEX IF NOT EXISTS idx_argus_incidents_started ON argus_incidents(started_at);
 
+-- Maintenance windows: when some hosts' alerts are held (maintenance.go).
+CREATE TABLE IF NOT EXISTS maintenance_windows (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  name         TEXT NOT NULL,
+  sites        TEXT NOT NULL DEFAULT '',
+  host_ids     TEXT NOT NULL DEFAULT '',
+  kind         TEXT NOT NULL,
+  start_at     INTEGER NOT NULL DEFAULT 0,
+  minute       INTEGER NOT NULL DEFAULT 0,
+  weekdays     INTEGER NOT NULL DEFAULT 0,
+  month_day    INTEGER NOT NULL DEFAULT 0,
+  duration_min INTEGER NOT NULL,
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  created_by   TEXT NOT NULL DEFAULT '',
+  created_at   INTEGER NOT NULL
+);
+
 -- Small key/value store for app-level flags (e.g. the notifier's one-time baseline marker).
 CREATE TABLE IF NOT EXISTS app_meta (
   key   TEXT PRIMARY KEY,
@@ -527,6 +549,17 @@ CREATE TABLE IF NOT EXISTS discovery_results (
 	if err := s.ensureColumn("users", "sites TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// Quiet hours for a user's personal channels: minutes after local midnight (-1 = off) and the
+	// lowest severity still sent during them.
+	if err := s.ensureColumn("users", "quiet_start INTEGER NOT NULL DEFAULT -1"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("users", "quiet_end INTEGER NOT NULL DEFAULT -1"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("users", "quiet_floor INTEGER NOT NULL DEFAULT 4"); err != nil {
+		return err
+	}
 	if err := s.ensureColumn("sessions", "last_seen INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
@@ -740,7 +773,7 @@ func (s *Store) CreateUser(ctx context.Context, u User) (int64, error) {
 	return res.LastInsertId()
 }
 
-const userColumns = `id,email,name,surname,password_hash,role,totp_secret,totp_enabled,disabled,landing,advanced,created_at,sites`
+const userColumns = `id,email,name,surname,password_hash,role,totp_secret,totp_enabled,disabled,landing,advanced,created_at,sites,quiet_start,quiet_end,quiet_floor`
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (*User, error) {
 	return s.scanUser(s.db.QueryRowContext(ctx,
@@ -761,7 +794,7 @@ func (s *Store) scanUserRow(row rowScanner) (*User, error) {
 	var created int64
 	var totpEnabled, disabled, advanced int
 	var sites string
-	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Surname, &u.PasswordHash, &u.Role, &u.TOTPSecret, &totpEnabled, &disabled, &u.Landing, &advanced, &created, &sites)
+	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Surname, &u.PasswordHash, &u.Role, &u.TOTPSecret, &totpEnabled, &disabled, &u.Landing, &advanced, &created, &sites, &u.QuietStart, &u.QuietEnd, &u.QuietFloor)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -799,6 +832,12 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 
 func (s *Store) UpdateUserProfile(ctx context.Context, id int64, email, name, surname, role string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE users SET email=?,name=?,surname=?,role=? WHERE id=?`, email, name, surname, role, id)
+	return err
+}
+
+// SetUserQuietHours sets the quiet hours of a user's personal channels (start/end -1 = off).
+func (s *Store) SetUserQuietHours(ctx context.Context, id int64, start, end, floor int) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET quiet_start=?, quiet_end=?, quiet_floor=? WHERE id=?`, start, end, floor, id)
 	return err
 }
 

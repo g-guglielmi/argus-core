@@ -253,9 +253,14 @@ func (s *Server) handleCensus(w http.ResponseWriter, r *http.Request) {
 		counts[st] = 0
 	}
 	rows := []sensorRow{}
+	inMaint := s.maintenanceNow(ctx)
 	for _, sr := range all {
 		counts[sr.State]++
 		if want[sr.State] {
+			if h, ok := inMaint[sr.HostID]; ok {
+				h := h
+				sr.Maintenance = &h // sr is this loop's copy, not the shared census row
+			}
 			rows = append(rows, sr)
 		}
 	}
