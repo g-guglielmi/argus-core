@@ -13,6 +13,31 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [core-vm/v0.1.3] - 2026-09-30
+
+Refresh of the core appliance golden image, for Argus 0.6.0. Existing VMs are not changed by this; it
+is what a new deployment gets. Argus and the updater are pre-pulled at build time from their
+`:latest` images (v0.6.0 and v0.2.10 today).
+
+**Backups:**
+- The backup tools are in the image (`argus-backup`, `argus-restore` and their systemd units, with
+  gpg, rsync, the SMB client and rclone), so **Settings, Backups** works on a new core from its first
+  boot. See [docs/backup-and-restore.md](docs/backup-and-restore.md).
+
+**Collectors:**
+- The core's copies of the collectors match `probe/v7.0.31-r14`: the Linux SSH collector's failed
+  units, CPU iowait and steal, and the TCP ports check (`argus_tcp.py`).
+
+**Look:**
+- The first-boot setup page no longer uses long dashes in its text.
+
+## [0.6.0] - 2026-09-30
+
+A minor release: backups with export and a one-command restore, per-site visibility, maintenance
+windows and quiet hours, an outside heartbeat, and alerts that treat a device that goes down as one
+incident everywhere. It also fixes a device read through a collector that went down completely and
+sent no alert at all (since 0.5.9).
+
 **Heartbeat:**
 - Argus can ping an outside monitor (a healthchecks.io check, an Uptime Kuma push monitor) once a
   minute, set in **Settings, Heartbeat** or `ARGUS_HEARTBEAT_URL`. The ping only goes out while Argus
@@ -55,8 +80,8 @@ GitHub Release from the matching section below.
 - `argus-restore` restores an archive onto a new core in one command, after checking its checksums
   and versions: the probes reconnect by themselves. `argus-restore inspect` checks an archive without
   changing anything. The guide is [docs/backup-and-restore.md](docs/backup-and-restore.md).
-- The tools run on the core host: the next core VM image has them; on an existing core, run
-  `deploy/core/host/install-backup.sh` once (or `setup-core-patching.sh` from a checkout).
+- The tools run on the core host: the core VM image has them from `core-vm/v0.1.3`; on an existing
+  core, run `deploy/core/host/install-backup.sh` once (or `setup-core-patching.sh` from a checkout).
 
 **Maintenance windows:**
 - **Configure, Maintenance** plans the times when some hosts' alerts should wait: a nightly backup, a
