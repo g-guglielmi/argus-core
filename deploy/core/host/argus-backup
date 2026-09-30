@@ -45,6 +45,7 @@ except ImportError:  # pragma: no cover - Python < 3.9
 DEFAULT_STATE_DIR = "/opt/argus/update"  # the appliance's; main() finds the real one (resolve_state_dir)
 STATE_DIR = os.environ.get("ARGUS_STATE_DIR", DEFAULT_STATE_DIR)
 CONTAINER = os.environ.get("ARGUS_CONTAINER", "argus")
+UPDATER = os.environ.get("ARGUS_UPDATER_CONTAINER", "argus-updater")
 PLAN_CACHE = os.environ.get("ARGUS_BACKUP_PLAN_CACHE", "/etc/argus-core/backup-plan.json")
 LOCAL_DIR = os.environ.get("ARGUS_BACKUP_DIR", "/var/backups/argus")
 RUN_DIR = os.environ.get("ARGUS_BACKUP_RUN_DIR", "/run/argus-backup")
@@ -285,23 +286,31 @@ def container_running():
         return False
 
 
-def update_dir_of_container():
-    """The host folder the Argus container shares as its update dir (its ARGUS_UPDATE_DIR), or ""."""
+def container_mounts():
+    """The Argus container's mounts, {destination: host source} ({} when Docker can't say)."""
     try:
-        env = json.loads(run(["docker", "inspect", "-f", "{{json .Config.Env}}", CONTAINER], timeout=30).stdout) or []
         mounts = json.loads(run(["docker", "inspect", "-f", "{{json .Mounts}}", CONTAINER], timeout=30).stdout) or []
     except (Fail, ValueError):
+        return {}
+    return {(m.get("Destination") or "").rstrip("/"): m["Source"] for m in mounts if m.get("Destination") and m.get("Source")}
+
+
+def container_update_dest():
+    """Where the Argus container keeps its update dir (its ARGUS_UPDATE_DIR), or ""."""
+    try:
+        env = json.loads(run(["docker", "inspect", "-f", "{{json .Config.Env}}", CONTAINER], timeout=30).stdout) or []
+    except (Fail, ValueError):
         return ""
-    dest = ""
     for e in env:
         if isinstance(e, str) and e.startswith("ARGUS_UPDATE_DIR="):
-            dest = e.split("=", 1)[1].rstrip("/")
-    if not dest:
-        return ""
-    for m in mounts:
-        if (m.get("Destination") or "").rstrip("/") == dest and m.get("Source"):
-            return m["Source"]
+            return e.split("=", 1)[1].rstrip("/")
     return ""
+
+
+def update_dir_of_container():
+    """The host folder the Argus container shares as its update dir, or ""."""
+    dest = container_update_dest()
+    return container_mounts().get(dest, "") if dest else ""
 
 
 def resolve_state_dir():
@@ -327,14 +336,49 @@ def use_state_dir(d):
 
 def data_dir():
     """The host folder mounted as the Argus container's /data."""
-    try:
-        mounts = json.loads(run(["docker", "inspect", "-f", "{{json .Mounts}}", CONTAINER], timeout=30).stdout)
-        for m in mounts or []:
-            if m.get("Destination") == "/data" and m.get("Source"):
-                return m["Source"]
-    except (Fail, ValueError):
-        pass
-    return "/var/lib/argus-core"
+    return container_mounts().get("/data") or "/var/lib/argus-core"
+
+
+def under_root(path):
+    """path relative to the root of its filesystem, the way tar -C / names it."""
+    drive, _ = os.path.splitdrive(path)
+    return os.path.relpath(path, drive + os.sep)
+
+
+def mounted_folders(mounts, update_dest):
+    """The folders the Argus container mounts besides its database and its update dir, as paths under
+    /: the CA it signs probe certificates with (/ca) lives in one, which on a core installed by hand is
+    not the appliance's /etc/argus/pki."""
+    out = []
+    for dest, src in sorted(mounts.items()):
+        if dest in ("/data", update_dest) or not os.path.isabs(src) or not os.path.isdir(src):
+            continue
+        rel = under_root(src)
+        if rel.startswith("..") or rel == ".":
+            continue
+        out.append(rel)
+    return out
+
+
+def part_containers(work, manifest):
+    """How the Argus containers run: image, environment, folders, ports and network. On a core
+    installed by hand the secret key that opens Argus's database and the Zabbix API token live only
+    there. `argus-restore containers` turns it back into docker run commands."""
+    found = []
+    for name in (CONTAINER, UPDATER):
+        try:
+            info = json.loads(run(["docker", "inspect", name], timeout=30).stdout)
+        except (Fail, ValueError):
+            continue
+        if isinstance(info, list) and info:
+            found.append(info[0])
+    if not found:
+        return
+    path = os.path.join(work, "containers.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(found, f, indent=1)
+    os.chmod(path, 0o600)
+    manifest["containers"] = [(c.get("Name") or "").lstrip("/") for c in found]
 
 
 def gzip_file(src, dst):
@@ -387,6 +431,11 @@ def part_files(work, manifest):
     key = os.path.join(manifest.get("argus_data_dir") or data_dir(), "secret.key")
     if os.path.exists(key):
         paths.append(os.path.relpath(key, "/"))
+    mounts = container_mounts()
+    manifest["argus_mounts"] = mounts
+    for rel in mounted_folders(mounts, container_update_dest()):
+        if not any(rel == p or rel.startswith(p + "/") for p in paths):
+            paths.append(rel)
     # Owners are kept by name, so a new machine whose system users got other ids maps them right.
     cmd = ["tar", "-czpf", os.path.join(work, "files.tar.gz"), "-C", "/"]
     cmd += ["--exclude=" + x for x in FILE_EXCLUDES]
@@ -473,6 +522,7 @@ def make_archive(plan):
         part_zabbix_db(work, manifest, plan.get("history", True))
         log("argus-backup: packing the configuration, keys and certificates")
         part_files(work, manifest)
+        part_containers(work, manifest)
         manifest["versions"] = versions()
         parts = sorted(n for n in os.listdir(work) if not n.startswith("gpg-"))
         manifest["parts"] = {n: {"size": os.path.getsize(os.path.join(work, n)), "sha256": sha256(os.path.join(work, n))} for n in parts}

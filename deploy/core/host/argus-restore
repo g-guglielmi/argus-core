@@ -13,6 +13,8 @@
 #
 # Usage:
 #   argus-restore inspect ARCHIVE                show what an archive holds, check it, change nothing
+#   argus-restore containers ARCHIVE             print the docker run commands the old core's Argus
+#                                                containers ran with (a core installed by hand)
 #   argus-restore restore ARCHIVE [--only files|zabbix|argus] [--yes] [--force] [--passphrase-file F]
 # An encrypted archive (.tar.gpg) asks for its passphrase unless --passphrase-file is given.
 import argparse
@@ -21,6 +23,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -141,6 +144,60 @@ def describe(manifest, archive):
             say("  %-28s %s" % (k, v[k]))
 
 
+# Environment an image sets for itself: not part of how the container was run.
+IMAGE_ENV = {"PATH", "HOME", "HOSTNAME", "TERM", "SSL_CERT_FILE"}
+
+
+def run_command(c):
+    """The docker run command that recreates a container as it ran: name, restart policy, network,
+    ports, extra hosts, folders, environment and image."""
+    cfg, hc = c.get("Config") or {}, c.get("HostConfig") or {}
+    args = ["docker", "run", "-d", "--name", (c.get("Name") or "").lstrip("/")]
+    policy = (hc.get("RestartPolicy") or {}).get("Name") or ""
+    if policy and policy != "no":
+        args += ["--restart", policy]
+    net = hc.get("NetworkMode") or ""
+    if net and net not in ("default", "bridge"):
+        args += ["--network", net]
+        ipam = (((c.get("NetworkSettings") or {}).get("Networks") or {}).get(net) or {}).get("IPAMConfig") or {}
+        if ipam.get("IPv4Address"):
+            args += ["--ip", ipam["IPv4Address"]]
+    for cport, binds in sorted((hc.get("PortBindings") or {}).items()):
+        port, _, proto = cport.partition("/")
+        for bnd in binds or []:
+            spec = ((bnd.get("HostIp") + ":") if bnd.get("HostIp") else "") + (bnd.get("HostPort") or "") + ":" + port
+            args += ["-p", spec + ("/" + proto if proto and proto != "tcp" else "")]
+    for h in hc.get("ExtraHosts") or []:
+        args += ["--add-host", h]
+    for m in c.get("Mounts") or []:
+        ro = "" if m.get("RW", True) else ":ro"
+        if m.get("Type") == "bind" and m.get("Source"):
+            args += ["-v", "%s:%s%s" % (m["Source"], m["Destination"], ro)]
+        elif m.get("Type") == "volume" and m.get("Name"):
+            args += ["-v", "%s:%s%s" % (m["Name"], m["Destination"], ro)]
+    for e in cfg.get("Env") or []:
+        if e.split("=", 1)[0] not in IMAGE_ENV:
+            args += ["-e", e]
+    args.append(cfg.get("Image") or "")
+    return " ".join(shlex.quote(a) for a in args)
+
+
+def show_containers(work):
+    path = os.path.join(work, "containers.json")
+    if not os.path.exists(path):
+        say("This archive has no container settings (made before they were kept, or Docker didn't say).")
+        return 1
+    with open(path, encoding="utf-8") as f:
+        found = json.load(f)
+    say("How the old core's Argus containers ran. On a core installed by hand, create them with these")
+    say("(they hold the secret key and the Zabbix API token: keep this output private), then restore.")
+    say("A core from the appliance image has its own units instead: restore puts their settings back.")
+    for c in found:
+        say()
+        say(run_command(c))
+    return 0
+
+
 def stop_services(parts):
     say("==> stopping services")
     for unit, container in (("argus-updater", UPDATER), ("argus-core", CONTAINER)):
@@ -160,13 +217,16 @@ def restore_files(work, manifest):
     # The system users' ids may differ on this machine: set the owners the stack expects.
     fixes = [
         (["chown", "-R", "%d:%d" % (APP_UID, APP_UID), "/etc/argus/pki"], "/etc/argus/pki"),
+        # the CA folder the old core's Argus container mounted (a core installed by hand keeps it elsewhere)
+        (["chown", "-R", "%d:%d" % (APP_UID, APP_UID), (manifest.get("argus_mounts") or {}).get("/ca", "")],
+         (manifest.get("argus_mounts") or {}).get("/ca", "")),
         (["chown", "-R", "zabbix:zabbix", "/etc/zabbix/certs"], "/etc/zabbix/certs"),
         (["chown", "root:www-data", "/etc/zabbix/web/zabbix.conf.php"], "/etc/zabbix/web/zabbix.conf.php"),
         (["chown", "-R", "zabbix:zabbix", "/var/lib/zabbix/ssh"], "/var/lib/zabbix/ssh"),
         (["chown", "-R", "zabbix:zabbix", "/var/lib/zabbix/argus-pins"], "/var/lib/zabbix/argus-pins"),
     ]
     for cmd, path in fixes:
-        if os.path.exists(path):
+        if path and os.path.exists(path):
             run(cmd, check=False)
     for d in ("/etc/argus-core",):
         if os.path.isdir(d):
@@ -252,7 +312,7 @@ def start_services(parts):
 
 def main(argv):
     ap = argparse.ArgumentParser(prog="argus-restore")
-    ap.add_argument("action", choices=["inspect", "restore"])
+    ap.add_argument("action", choices=["inspect", "containers", "restore"])
     ap.add_argument("archive")
     ap.add_argument("--only", choices=["files", "zabbix", "argus"])
     ap.add_argument("--yes", action="store_true", help="don't ask for confirmation")
@@ -270,6 +330,8 @@ def main(argv):
     work = tempfile.mkdtemp(prefix=".restore-", dir=WORK_BASE)
     try:
         manifest = unpack(archive, work, a.passphrase_file)
+        if a.action == "containers":
+            return show_containers(work)
         describe(manifest, archive)
         problems = version_problems(manifest)
         for p in problems:

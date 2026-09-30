@@ -20,6 +20,13 @@ GitHub Release from the matching section below.
   `argus-backup` now find the folder the Argus container actually mounts as its update dir, the
   installer stops with the command to find it when it can't, and the journal says so when the folder
   is missing. `argus-backup status` reads the same folder the service writes to.
+- Backups of a core installed by hand now hold everything a restore needs. They missed the CA when it
+  lives outside `/etc/argus/pki` (a folder the Argus container mounts, such as `/docker/argus/pki`), so
+  after a restore every probe would have had to be enrolled again; they now pack every folder the
+  Argus container mounts besides its database and update dir. They also keep how the Argus and
+  updater containers ran (`containers.json`: image, environment, folders, ports), since on such a core
+  the secret key and the Zabbix API token live only there; `argus-restore containers ARCHIVE` prints
+  them back as the `docker run` commands to recreate the containers before restoring.
 
 ## [core-vm/v0.1.3] - 2026-09-30
 

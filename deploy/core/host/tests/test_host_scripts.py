@@ -8,8 +8,10 @@
 # workstation with Git for Windows (tar and gpg from its usr/bin).
 #
 #   python3 deploy/core/host/tests/test_host_scripts.py
+import contextlib
 import datetime
 import importlib.machinery
+import io
 import importlib.util
 import itertools
 import json
@@ -63,6 +65,19 @@ def load(script, env):
 
 PASS = "correct horse battery staple"
 
+# `docker inspect argus` on a core installed by hand: the CA in a folder of its own, the secret key
+# and the Zabbix token only in the container's settings.
+ARGUS_INSPECT = {
+    "Name": "/argus",
+    "Config": {"Image": "ghcr.io/g-guglielmi/argus:latest",
+               "Env": ["PATH=/usr/bin", "ARGUS_SECRET_KEY=k3y with space", "ARGUS_UPDATE_DIR=/update"]},
+    "HostConfig": {"RestartPolicy": {"Name": "unless-stopped"}, "NetworkMode": "bridge",
+                   "PortBindings": {"8080/tcp": [{"HostIp": "", "HostPort": "8081"}]},
+                   "ExtraHosts": ["host.docker.internal:host-gateway"]},
+    "Mounts": [{"Type": "bind", "Source": "/docker/argus", "Destination": "/data", "RW": True},
+               {"Type": "bind", "Source": "/docker/argus/pki", "Destination": "/ca", "RW": False}],
+}
+
 
 def plan(**kw):
     p = {"version": 1, "argus_version": "v0.5.20", "enabled": True, "hour": 2, "minute": 30, "timezone": "Europe/Rome",
@@ -78,6 +93,8 @@ class FakeRun:
         self.mod, self.real, self.data, self.plan = mod, mod.run, data_dir, the_plan
         self.calls, self.plan_fails = [], False
         self.update_dir = ""  # the host folder the container shares as /update ("" = none)
+        self.ca_dir = ""  # the host folder it mounts as /ca ("" = none)
+        self.inspect = None  # what `docker inspect argus` says (None = no such container)
 
     def __call__(self, cmd, *, stdout=None, input_bytes=None, env=None, timeout=None, pass_fds=(), check=True):
         self.calls.append(list(cmd))
@@ -98,9 +115,13 @@ class FakeRun:
                 mounts = [{"Destination": "/data", "Source": self.data}]
                 if self.update_dir:
                     mounts.append({"Destination": "/update", "Source": self.update_dir})
+                if self.ca_dir:
+                    mounts.append({"Destination": "/ca", "Source": self.ca_dir})
                 return done(json.dumps(mounts).encode())
             if "{{json .Config.Env}}" in c:
                 return done(json.dumps(["PATH=/usr/bin", "ARGUS_UPDATE_DIR=/update/"]).encode())
+            if "-f" not in c:  # the whole record of one container
+                return done(json.dumps([self.inspect] if self.inspect and c[-1] == "argus" else []).encode())
             return done(b"ghcr.io/g-guglielmi/argus:latest\n")
         if c[0] == "docker":  # stop / start
             return done()
@@ -219,6 +240,23 @@ class BackupTest(unittest.TestCase):
         self.assertFalse(st["running"])
         self.assertFalse(os.path.exists(os.path.join(self.dirs["data"], ".argus-backup.db")), "the temporary database copy is removed")
         self.assertEqual([n for n in os.listdir(m.LOCAL_DIR) if n.startswith(".")], [], "no work or partial files left")
+
+    def test_hand_installed_core_keeps_its_ca_and_container_settings(self):
+        # A core installed by hand keeps its CA in a folder of its own (mounted as /ca), and the secret
+        # key and the Zabbix token only in the container's settings: both go into the archive.
+        ca = os.path.join(self.tmp, "pki")
+        os.makedirs(ca)
+        self.fake.ca_dir, self.fake.inspect = ca, ARGUS_INSPECT
+        self.assertTrue(self.mod.do_backup(self.plan, "manual", ""))
+        with tarfile.open(os.path.join(self.mod.LOCAL_DIR, self.mod.local_archives()[-1])) as t:
+            manifest = json.load(t.extractfile("manifest.json"))
+            kept = json.load(t.extractfile("containers.json"))
+        self.assertIn(self.mod.under_root(ca), manifest["files"])
+        self.assertEqual(manifest["argus_mounts"]["/ca"], ca)
+        self.assertEqual(manifest["containers"], ["argus"])
+        self.assertIn("ARGUS_SECRET_KEY=k3y with space", kept[0]["Config"]["Env"])
+        # The data folder and the update folder are not packed as files: the database has its own part.
+        self.assertNotIn(self.mod.under_root(self.dirs["data"]), manifest["files"])
 
     def test_history_off_excludes_metric_data(self):
         self.mod.do_backup(plan(history=False), "manual", "")
@@ -361,6 +399,7 @@ class RestoreTest(unittest.TestCase):
                                   "ARGUS_BACKUP_RUN_DIR": os.path.join(self.tmp, "run"),
                                   "ARGUS_BACKUP_PLAN_CACHE": os.path.join(self.tmp, "plan.json")})
         bf = FakeRun(b, self.data, plan())
+        bf.inspect = ARGUS_INSPECT
         b.run, b.host_label = bf, (lambda: "core1")
         self.assertTrue(b.do_backup(plan(), "manual", ""))
         self.archive = os.path.join(self.local, b.local_archives()[-1])
@@ -398,6 +437,17 @@ class RestoreTest(unittest.TestCase):
         with open(restored, "rb") as f:
             self.assertTrue(f.read().startswith(b"SQLite format 3"))
         self.assertIn((restored, 65532, 65532), self.chowns)
+
+    def test_containers_prints_docker_run(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.r.main(["argus-restore", "containers", self.archive]), 0)
+        text = out.getvalue()
+        self.assertIn("docker run -d --name argus --restart unless-stopped -p 8081:8080 "
+                      "--add-host host.docker.internal:host-gateway -v /docker/argus:/data -v /docker/argus/pki:/ca:ro "
+                      "-e 'ARGUS_SECRET_KEY=k3y with space' -e ARGUS_UPDATE_DIR=/update ghcr.io/g-guglielmi/argus:latest", text)
+        self.assertNotIn("PATH=", text)
+        self.assertFalse(any(c[0] in ("systemctl", "runuser") for c in self.fake.calls), "printing changes nothing")
 
     def test_version_mismatch_stops(self):
         real = self.fake.__call__

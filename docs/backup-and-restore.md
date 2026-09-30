@@ -20,7 +20,8 @@ and export them off the VM, and how to restore after a disaster.
 | `argus.db.gz` | Argus's database: users, two-factor and passkeys, notification channels, status pages, maintenance windows, thresholds, discovery, the incident log, Settings | Everything you set up in Argus |
 | `zabbix.dump` | The Zabbix database (`pg_dump`), with its metric history or only its settings | Hosts, templates, triggers, the Argus service account and its API token, the probes and their TLS pins, secret macros (SSH and SNMP passwords), and the charts' data |
 | `postgres-globals.sql` | The PostgreSQL roles | The `zabbix` role and its password |
-| `files.tar.gz` | `/etc/argus-core` (the env files with the at-rest key and the Zabbix API token), `/etc/argus/pki` (**the CA the probes trust**, with its key), `/etc/zabbix` (server and frontend config, TLS certificates), the nginx TLS front, the collectors' SSH keys and XCP-NG pins, the external scripts, the Argus host units and scripts | Without the CA every probe would have to be enrolled again; without the at-rest key Argus can't read its own secrets |
+| `files.tar.gz` | `/etc/argus-core` (the env files with the at-rest key and the Zabbix API token), `/etc/argus/pki` (**the CA the probes trust**, with its key), `/etc/zabbix` (server and frontend config, TLS certificates), the nginx TLS front, the collectors' SSH keys and XCP-NG pins, the external scripts, the Argus host units and scripts, and the other folders the Argus container mounts (on a core installed by hand, **its CA**, such as `/docker/argus/pki`) | Without the CA every probe would have to be enrolled again; without the at-rest key Argus can't read its own secrets |
+| `containers.json` | How the Argus and updater containers ran: image, environment (with the secret key and the Zabbix API token), folders, ports, network | On a core installed by hand these settings live nowhere else; `argus-restore containers` prints them back as `docker run` commands |
 | `manifest.json` | When, where and from which versions the archive was made, with a checksum for each part | Checked before anything is restored |
 
 An archive holds **every secret of the core**: the CA's private key, the at-rest key, the Zabbix API
@@ -145,8 +146,10 @@ The old core is gone; a new one takes over, with the same data, the same probes 
    newer one with the same Zabbix, PostgreSQL and TimescaleDB versions: `argus-restore` checks).
    Give it **the old core's IP address** if you can: probes dial it on port 10051, and the web
    certificate names it. Go through the first-boot page with any values; the restore replaces them.
-   (A core installed by hand: run `setup-core.sh` and start Argus as the README describes, with the
-   same versions.)
+   (A core installed by hand: run `setup-core.sh` with the same versions, copy the archive over (step
+   2), and create the Argus containers from `sudo argus-restore containers /var/backups/argus/<archive>`,
+   which prints the `docker run` commands they ran with, secret key and Zabbix API token included:
+   keep that output private. The restore then puts their folders back where they were.)
 2. **Copy the archive** into `/var/backups/argus` on the new VM: `scp` it from wherever you keep it,
    mount the share, or fetch it from the bucket (`rclone copy`).
 3. **Check it**: `sudo argus-restore inspect /var/backups/argus/<archive>`. It asks for the passphrase
