@@ -83,6 +83,16 @@ GitHub Release from the matching section below.
   registered user sends them only their sites' alerts, and news about the whole install isn't sent to
   them. The labels above the cross-site lists name their sites.
 
+**Master sensors:**
+- A device whose master sensor is down is one incident in the lists too, as it already was in the
+  alerts. The Overview and the Error and Warning lists show the master ("Reachable (ICMP)" when the
+  device is gone, the collector when only its service stopped, the probe when a whole site is out of
+  reach) with how many sensors it holds; the others fold behind it, and **Show held** lists them under
+  it, dimmed, each with the master it waits on. The status pills count them apart, so a dead device
+  counts as one error (the Errors pill says on hover how many more are held).
+- A collector no longer holds the ping's own sensors: packet loss or a slow response while the service
+  is down is a network problem of its own, and alerts (and lists) as one.
+
 **Charts:**
 - An interface's traffic chart shows how much it moved over the range beside the range tabs ("In
   1.24 TB · Out 301 GB over 30 days"), and so does a VM's disk read and write chart.

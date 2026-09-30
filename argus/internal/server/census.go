@@ -215,8 +215,10 @@ func (s *Server) censusInvalidator(next http.Handler) http.Handler {
 	})
 }
 
-// censusStates are the sensor states the census reports.
-var censusStates = []string{"ok", "warning", "error", "acked", "paused", "hidden"}
+// censusStates are the sensor states the census reports. "held" counts the errors and warnings a down
+// master holds (master.go): they are listed with their own state, but counted apart, so the pills
+// count incidents rather than every sensor a dead device takes down with it.
+var censusStates = []string{"ok", "warning", "error", "acked", "paused", "hidden", "held"}
 
 // handleCensus answers the status pills and the sensor lists in one call:
 //
@@ -255,7 +257,11 @@ func (s *Server) handleCensus(w http.ResponseWriter, r *http.Request) {
 	rows := []sensorRow{}
 	inMaint := s.maintenanceNow(ctx)
 	for _, sr := range all {
-		counts[sr.State]++
+		if sr.HeldBy != nil {
+			counts["held"]++
+		} else {
+			counts[sr.State]++
+		}
 		if want[sr.State] {
 			if h, ok := inMaint[sr.HostID]; ok {
 				h := h

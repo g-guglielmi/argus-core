@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"argus/internal/provision"
 	"argus/internal/store"
@@ -170,7 +171,9 @@ func masterDown(problems []zabbix.Problem, targets map[string]zabbix.TriggerTarg
 // delay again once the master recovers, since its readings settle only after reconnecting.
 type holdVerdict struct {
 	held, down bool
-	by         string // which master: "site" or "host", for the log
+	by         string     // which master: "site" or "host", for the log
+	master     masterItem // the master that holds it
+	host       string     // the master's host (the Probe host for a site hold)
 }
 
 // hold decides for one open problem: on host hostID, on the sensors items (ids + keys), begun at start.
@@ -187,25 +190,39 @@ func (m masterSet) hold(hostID string, items []masterRef, start, now int64) hold
 	}
 	if sm, ok := m.siteMaster[proxyID]; ok && m.probeHost[proxyID] != hostID {
 		if v := m.judge(sm, items, start, now); v.held {
-			v.by = "site"
+			v.by, v.master, v.host = "site", sm, m.probeHost[proxyID]
 			return v
 		}
 	}
 	// A host's masters hold only what ranks below them: the ping holds the collector's "unreachable"
 	// alert and every other sensor, a collector holds the sensors it feeds, and masters of one rank never
 	// hold each other. When the whole machine goes down its ping and its collector are both down, and
-	// each would otherwise hold the other's alert for good: nothing at all would go out.
+	// each would otherwise hold the other's alert for good: nothing at all would go out. A collector
+	// holds only what it feeds, so never the ping's loss or response time: those measure the network,
+	// and a lossy link says something the stopped service doesn't.
 	limit := m.rankOf(hostID, items)
+	ping := onPing(items)
 	for _, hm := range m.byHost[hostID] {
-		if hm.rank >= limit {
+		if hm.rank >= limit || (hm.rank > 0 && ping) {
 			continue
 		}
 		if v := m.judge(hm, items, start, now); v.held {
-			v.by = "host"
+			v.by, v.master, v.host = "host", hm, hostID
 			return v
 		}
 	}
 	return holdVerdict{}
+}
+
+// onPing reports whether a problem is on the ping's sensors (Base Ping: reachability, loss, response
+// time).
+func onPing(items []masterRef) bool {
+	for _, it := range items {
+		if strings.HasPrefix(it.key, defaultMasterKey) {
+			return true
+		}
+	}
+	return false
 }
 
 // rankOf is the rank of the highest of the host's masters a problem is on, or one below every rank
@@ -247,6 +264,60 @@ func (m masterSet) judge(master masterItem, items []masterRef, start, now int64)
 		}
 	}
 	return holdVerdict{}
+}
+
+// heldRef names the master a sensor waits on while that master is down.
+type heldRef struct {
+	HostID   string `json:"host_id"`
+	HostName string `json:"host_name"`
+	ItemID   string `json:"item_id"`
+	Name     string `json:"name"`
+}
+
+// markHeld applies the notifier's rule to the census: an unacknowledged error or warning whose alerts
+// a down master holds names that master (HeldBy), and the master's row counts it (Holds). The lists
+// then show the master and fold the rest behind it, so the page and the alerts agree on what is one
+// incident. Only a master that is down holds here, not one yet to report, so rows don't come and go
+// while a device settles. Best effort: whatever can't be read leaves the rows as they are.
+func (s *Server) markHeld(ctx context.Context, rows []sensorRow, problems []zabbix.Problem, targets map[string]zabbix.TriggerTarget) {
+	if len(masterDown(problems, targets)) == 0 {
+		return // nothing is down, so nothing is held
+	}
+	hosts, err := s.zbx.Hosts(ctx)
+	if err != nil {
+		return
+	}
+	set := loadMasters(ctx, s.st, s.zbx, hosts, problems, targets)
+	hostName := make(map[string]string, len(hosts))
+	for _, h := range hosts {
+		hostName[h.HostID] = h.Name
+	}
+	byItem := make(map[string]int, len(rows))
+	for i := range rows {
+		byItem[rows[i].ItemID] = i
+	}
+	now := time.Now().Unix()
+	for i := range rows {
+		r := &rows[i]
+		if r.State != "error" && r.State != "warning" {
+			continue
+		}
+		// Begun long ago as far as the hold goes: only a master that is down holds, not one yet to report.
+		v := set.hold(r.HostID, []masterRef{{id: r.ItemID, key: r.key}}, 0, now)
+		if !v.down {
+			continue
+		}
+		ref := &heldRef{HostID: v.host, HostName: hostName[v.host], ItemID: v.master.itemID, Name: sensorLabel(v.master.key, v.master.key)}
+		if j, ok := byItem[v.master.itemID]; ok {
+			if rows[j].Label != "" {
+				ref.Name = rows[j].Label
+			} else {
+				ref.Name = rows[j].Name
+			}
+			rows[j].Holds++
+		}
+		r.HeldBy = ref
+	}
 }
 
 // masterRefs lists the sensors a trigger is on.

@@ -1093,6 +1093,11 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .maint-ico { color: var(--maint); display: inline-flex; flex: none; }
 .maint-ico svg { width: 18px; height: 18px; }
 .sreason.maint-tag { color: var(--maint); }
+/* A sensor a down master holds, listed under it on "show": dimmed, with what it waits on. */
+.slist tr.held-row > td { opacity: .62; }
+.slist tr.held-row > td.slhost { border-left-color: var(--border) !important; }
+.sreason.held-tag { color: var(--muted); font-style: italic; }
+.sreason.held-note .linkbtn, .phead .held-toggle { color: var(--accent); }
 .mtable td.mwrap { white-space: normal; }
 .mdur { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .mdur .input { width: 68px; }

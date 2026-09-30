@@ -7,6 +7,8 @@ import (
 	"context"
 	"net/http"
 	"sort"
+
+	"argus/internal/zabbix"
 )
 
 type sensorRow struct {
@@ -35,6 +37,10 @@ type sensorRow struct {
 	// Maintenance is the window its host is in right now (alerts held); set per response, never on
 	// the shared census rows.
 	Maintenance *maintHit `json:"maintenance,omitempty"`
+	// HeldBy is the master whose outage holds this sensor's alerts (master.go); the lists fold it under
+	// that master. Holds is, on a master's row, how many sensors it holds.
+	HeldBy *heldRef `json:"held_by,omitempty"`
+	Holds  int      `json:"holds,omitempty"`
 }
 
 // interfaceRowLabel names the census row of an unreachable interface after what stopped answering.
@@ -119,9 +125,16 @@ func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 	for _, p := range problems {
 		tids = append(tids, p.ObjectID)
 	}
-	itemsByTrigger, _ := s.zbx.TriggerItems(ctx, tids)
-	if itemsByTrigger == nil {
-		itemsByTrigger = map[string][]string{}
+	// The triggers' sensors (and expressions and hosts, which the master holds need).
+	targets, _ := s.zbx.TriggerTargets(ctx, tids)
+	if targets == nil {
+		targets = map[string]zabbix.TriggerTarget{}
+	}
+	itemsByTrigger := make(map[string][]string, len(targets))
+	for tid, t := range targets {
+		for _, it := range t.Items {
+			itemsByTrigger[tid] = append(itemsByTrigger[tid], it.ItemID)
+		}
 	}
 	// Argus-raised problems (a sensor that stopped collecting) put their sensor in error like any other.
 	synth := syntheticProblems(ctx, s.st, s.zbx, false)
@@ -129,6 +142,7 @@ func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 		for _, it := range synth.targets[p.ObjectID].Items {
 			itemsByTrigger[p.ObjectID] = append(itemsByTrigger[p.ObjectID], it.ItemID)
 		}
+		targets[p.ObjectID] = synth.targets[p.ObjectID]
 		problems = append(problems, p)
 	}
 	acked, _ := s.st.ActiveSuppressionMap(ctx, "ack", "event")
@@ -250,6 +264,7 @@ func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 			Synthetic: true,
 		})
 	}
+	s.markHeld(ctx, out, problems, targets)
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].HostName != out[j].HostName {
 			return out[i].HostName < out[j].HostName

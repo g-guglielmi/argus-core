@@ -50,7 +50,9 @@ type Thr = { warn?: number; high?: number; below?: boolean }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
 type TriggerHost = { id: string; name: string }
 type Trigger = { id: string; description: string; severity: number; enabled: boolean; problem: boolean; since: number; hosts: TriggerHost[]; sensors: string[] }
-type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean; maintenance?: MaintHit }
+type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean; maintenance?: MaintHit; held_by?: HeldBy; holds?: number }
+// The master whose outage holds a sensor's alerts: the lists fold the sensor under it.
+type HeldBy = { host_id: string; host_name: string; item_id: string; name: string }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
 type Series = { name: string; units: string; kind: 'history' | 'trend'; points: SeriesPoint[] }
 
@@ -1514,6 +1516,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   const [lastCounts] = useState<Record<string, number> | null>(() => { try { return JSON.parse(localStorage.getItem('argus-status-counts') || 'null') } catch { return null } })
   const cnt = (st: string) => (sensorsLoaded ? (counts[st] ?? 0) : (lastCounts?.[st] ?? 0))
   const errN = cnt('error'), warnN = cnt('warning'), ackN = cnt('acked'), pausedN = cnt('paused'), hiddenN = cnt('hidden'), okN = cnt('ok')
+  const heldN = sensorsLoaded ? (counts.held ?? 0) : 0 // errors and warnings a down master holds, counted apart
   useEffect(() => {
     if (!sensorsLoaded) return
     try { localStorage.setItem('argus-status-counts', JSON.stringify({ ok: okN, warning: warnN, error: errN, acked: ackN, paused: pausedN, hidden: hiddenN })) } catch { /* ignore */ }
@@ -1713,7 +1716,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           </button>
           <div><h1>{title}</h1><div className="sub">{sub}</div></div>
           <div className="summary">
-            {chip('error', ic.err, 'var(--err)', errN, 'Errors')}
+            {chip('error', ic.err, 'var(--err)', errN, heldN ? `Errors (${heldN} more held by a master sensor that is down)` : 'Errors')}
             {chip('acked', ic.acked, 'var(--acked)', ackN, 'Acknowledged')}
             {chip('warning', ic.warn, 'var(--warn)', warnN, 'Warnings')}
             {chip('ok', ic.ok, 'var(--ok)', okN, 'OK')}
@@ -6944,12 +6947,31 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
   // with a mode toggle. A concrete state (error/warning/…) is a top-bar status-chip drill-down.
   const attention = filter === 'attention'
   const [attMode, setAttMode] = useState<'errors' | 'both'>('errors')
-  const rows = sensors.filter((s) => attention
+  const [showHeld, setShowHeld] = useState(false)
+  const matched = sensors.filter((s) => attention
     ? (attMode === 'errors' ? s.state === 'error' : (s.state === 'error' || s.state === 'warning' || s.state === 'acked'))
     : s.state === filter)
+  // A sensor whose master is down (its ping, its collector, its site's probe) is part of that one
+  // incident: the list shows the master, how many it holds, and lists the rest after it on "show".
+  const held = matched.filter((s) => s.held_by)
+  const main = matched.filter((s) => !s.held_by)
   // Priority leads the ordering (except the OK list, where it'd just shuffle healthy sensors); severity
   // and host/name break ties. The backend already returns them host/name-sorted as a final fallback.
-  if (attention || filter !== 'ok') rows.sort((a, b) => (b.priority - a.priority) || (b.severity - a.severity) || a.host_name.localeCompare(b.host_name) || a.name.localeCompare(b.name))
+  if (attention || filter !== 'ok') main.sort((a, b) => (b.priority - a.priority) || (b.severity - a.severity) || a.host_name.localeCompare(b.host_name) || a.name.localeCompare(b.name))
+  const heldUnder: Record<string, SensorRow[]> = {}
+  for (const s of held) (heldUnder[s.held_by!.item_id] = heldUnder[s.held_by!.item_id] || []).push(s)
+  const rows: SensorRow[] = []
+  for (const s of main) {
+    rows.push(s)
+    if (showHeld) rows.push(...(heldUnder[s.item_id] || []))
+  }
+  if (showHeld) { // held by a master this list doesn't show (acknowledged, or at the other severity)
+    const listed = new Set(main.map((s) => s.item_id))
+    for (const s of held) if (!listed.has(s.held_by!.item_id)) rows.push(s)
+  }
+  const heldToggle = held.length > 0 && (
+    <button className="linkbtn held-toggle" onClick={() => setShowHeld(!showHeld)}>{showHeld ? 'Hide' : 'Show'} {held.length} held</button>
+  )
   const sparks = useSparks(rows.filter((s) => s.numeric && s.supported).map((s) => s.item_id))
 
   async function itemAction(s: SensorRow, action: 'pause' | 'hide', seconds: number | null) {
@@ -6988,7 +7010,7 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
     <div className="panel">
       <div className="phead">
         <PanelTitle eyebrow={watchEyebrow()}>{attention ? 'Active problems' : `${STATE_LABEL[filter]} sensors`}</PanelTitle>
-        <span className="hint">{rows.length} sensor{rows.length === 1 ? '' : 's'}</span>
+        <span className="hint">{main.length} sensor{main.length === 1 ? '' : 's'}{heldToggle && <> · {heldToggle}</>}</span>
         <div className="tools">
           {attention
             ? <div className="seg">
@@ -7000,6 +7022,8 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
       </div>
       {loading
         ? <Skeleton rows={4} cols={5} />
+        : rows.length === 0 && held.length > 0
+        ? <EmptyState icon={STATE_ICON.paused} title="Only held sensors" text={`${held.length} sensor${held.length === 1 ? ' waits' : 's wait'} on a master sensor that is down and not in this list (acknowledged, or at another severity).`} action={heldToggle} />
         : rows.length === 0
         ? (attention
           ? <EmptyState tone="ok" icon={ic.ok} title="All clear" text={attMode === 'errors' ? 'No sensor is in error right now.' : 'No errors or warnings right now.'} />
@@ -7010,14 +7034,18 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
             <tbody>
               {rows.map((s) => {
                 const clickable = s.numeric && s.supported
+                const holds = (heldUnder[s.item_id] || []).length
+                const h = s.held_by
                 return (
-                  <tr key={s.item_id} style={{ opacity: s.state === 'acked' ? 0.72 : 1 }}>
+                  <tr key={s.item_id} className={h ? 'held-row' : undefined} style={{ opacity: s.state === 'acked' ? 0.72 : 1 }}>
                     <td className="slhost" style={{ borderLeftColor: STATE_VAR[s.state] || 'var(--border)' }}><span className="lnk-host" onClick={() => goHost(s.host_id)}>{s.host_name}</span></td>
                     <td className="slgrow">
                       <span className="sl-name">{clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id, s.label || s.name)}>{s.label || s.name}</span> : (s.label || s.name)}</span>
                       {s.reason && <div className="sreason"><span style={{ color: sevInfo(s.severity).color, fontWeight: 600 }}>{sevInfo(s.severity).label}</span> · {s.reason}{s.since ? <span title={`Firing since ${new Date(s.since * 1000).toLocaleString()}`}> · {relTime(s.since)}</span> : null}</div>}
                       {s.why && whyOpen[s.host_id + ':' + s.item_id] && <div className="sreason why-line">{s.why}</div>}
                       {s.maintenance && <div className="sreason maint-tag" title="Alerts wait until the window ends">In maintenance ({s.maintenance.name}) until {fmtWhen(s.maintenance.until)}</div>}
+                      {holds > 0 && <div className="sreason held-note">Holding {holds} other sensor{holds === 1 ? '' : 's'} while it is down · <button className="linkbtn" onClick={() => setShowHeld(!showHeld)}>{showHeld ? 'hide' : 'show'}</button></div>}
+                      {h && <div className="sreason held-tag" title="Its alerts wait until the master sensor is back">Held: {h.name}{h.host_id !== s.host_id ? ` on ${h.host_name}` : ''} is down</div>}
                     </td>
                     <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <WhyText why={s.why} onToggle={() => toggleWhy(s.host_id + ':' + s.item_id)}>{dv}{du ? <span className="unit"> {du}</span> : null}</WhyText> })() : <WhyText why={s.why} color="var(--err)" onToggle={() => toggleWhy(s.host_id + ':' + s.item_id)}>not supported</WhyText>}</td>
                     <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} width={168} fill units={s.units} /> : null}</td>

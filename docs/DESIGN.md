@@ -549,7 +549,8 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   "none" drops both. Masters are ranked (the ping, or the chosen sensor, above the collector) and
   hold only what ranks below them, so when the whole machine is down the ping's own alert goes out
   and the collector's is held; two masters down together never hold each other, which would leave
-  the device with no alert at all. While the master has an open "down" problem (error level, or any "no
+  the device with no alert at all. A collector holds only what it feeds, never the ping's own
+  sensors (`icmpping*`: loss and response time measure the network). While the master has an open "down" problem (error level, or any "no
   data" one), the host's other alerts are **held**: they stay pending, and firing ones get no
   escalation or reminders. A probe's reporting sensor is also the master of **every host that proxy
   monitors** and of Zabbix's own per-proxy checks (`zabbix.proxy.*[<proxy>]` on the Zabbix server
@@ -558,6 +559,11 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   since the problem began, or its last ping failed. A problem held by a down master waits out the
   alert delay again (at least 90 s) after the master recovers, so readings that settle while a device
   or probe reconnects don't alert; a held problem that is still open after that alerts normally.
+  The census applies the same rule (`markHeld`): an unacknowledged error or warning a **down** master
+  holds (not one merely yet to report, so rows don't flicker) carries `held_by` (the master's host,
+  item and label), the master's row `holds` (how many), and `/api/census` counts them as `held`
+  instead of their state. The lists show the master and fold the held rows behind a **Show held**
+  toggle; the status pages still see every row's own state.
 - **Argus-raised problems:** Zabbix raises no problem when monitoring itself stops, so Argus adds its
   own, shaped like Zabbix problems (event ids `argus-unsupported-<item>` / `argus-interface-<iface>`)
   and merged into the notifier's list, the Overview and the host page: a sensor **not supported** on
