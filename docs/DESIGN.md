@@ -203,8 +203,9 @@ Every host gets the **Base** template (Ping - latency + loss, always) and, optio
 `{$HTTP.PORT}`, a blank list being the host itself - one sensor group per URL under **Web**: up when it
 answers with an accepted status code after redirects (`{$HTTP.EXPECT}`), has the text a `#text` /
 `#!text` suffix asks for, and presents an accepted certificate (`{$HTTP.TLS.VERIFY}`: `verify` a known
-CA's, `self-signed` also one no CA vouches for - checked by trusting that very certificate, so its name
-and dates still count - `ignore` any);
+CA's, `self-signed` also one no CA vouches for - checked by trusting that very certificate, so its dates
+still count, and its name for a URL by name (not by IP: device certificates rarely list their address)
+- `ignore` any);
 the response time; for https the certificate's days left, read even when untrusted, in a second LLD
 rule so plain http URLs have none; why it isn't up as the reason, and a list the collector refuses
 makes the URL sensors unsupported with why - attachable to any host, not a class), the **DNS

@@ -26,7 +26,7 @@ var addOns = []AddOn{
 		Description: "A real request to each URL, from the host's proxy: an accepted status code, text the page must have, the response time and the certificate's days left. " +
 			"Full URLs (https://portal.example.com/app) or paths on this host (/login); blank checks the host itself on the scheme and port below. " +
 			"End a URL in #text for text the page must contain (%20 for a space), #!text for text it must not. " +
-			"Certificate: verify wants one a known CA issued; self-signed also takes the device's own, still for the URL's name and not expired; ignore takes any.",
+			"Certificate: verify wants one a known CA issued; self-signed also takes the device's own, still not expired and, for a URL by name, for that name; ignore takes any.",
 		Macros: []MacroSpec{
 			{Macro: "{$HTTP.URLS}", Label: "URLs or paths", Hint: "https://portal.example.com/app, /login", Check: checkURLList},
 			{Macro: "{$HTTP.SCHEME}", Label: "Scheme (for paths)", Hint: "https", Options: []string{"https", "http"}},

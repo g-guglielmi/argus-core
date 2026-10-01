@@ -7120,7 +7120,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                           return <Spark values={vals} color={trendColor} width={168} units={gin && gout ? undefined : primary.units} />
                         })() : null}</td>
                         <td className="prio-cell" data-label="Priority"><PriorityStars value={gPrio} canEdit={canPause} onSet={(p) => row.items.forEach((i) => setItemPriority(i, p))} /></td>
-                        <td><div className="lccell"><span className="when">{relTime(primary.last_clock)}</span>{canPause && actions.length > 0 && <Kebab actions={actions} />}</div></td>
+                        <td><div className="lccell"><span className="when">{relTime(Math.max(...row.items.map((x) => x.last_clock || 0)))}</span>{canPause && actions.length > 0 && <Kebab actions={actions} />}</div></td>
                       </tr>
                       {gWhy && gWhyId && whyOpen[gWhyId] && <tr className="whyrow"><td colSpan={5}><div className="why-line">{gWhy}</div></td></tr>}
                       {open && clickable && (

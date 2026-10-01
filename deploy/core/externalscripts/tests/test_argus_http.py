@@ -172,8 +172,8 @@ class HTTPSTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp()
-        # One for the address the test connects to (127.0.0.1), one for another name.
-        cls.crt, ctx = self_signed(cls.tmp, "device", "IP:127.0.0.1")
+        # A device's own certificate for its name (localhost), and one for another name.
+        cls.crt, ctx = self_signed(cls.tmp, "device", "DNS:localhost")
         cls.srv, cls.port = serve(ctx)
         _, ctx = self_signed(cls.tmp, "other", "DNS:other.example.lan")
         cls.other, cls.other_port = serve(ctx)
@@ -185,8 +185,8 @@ class HTTPSTest(unittest.TestCase):
             s.server_close()
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def run_mode(self, port, mode):
-        es = ah.parse_urls("https://127.0.0.1:%d/ok" % port, "h", "https", 443)
+    def run_mode(self, port, mode, host="127.0.0.1"):
+        es = ah.parse_urls("https://%s:%d/ok" % (host, port), "h", "https", 443)
         return ah.run(es, ah.parse_codes(""), mode, 5)[0]
 
     def test_der_not_after(self):
@@ -202,11 +202,13 @@ class HTTPSTest(unittest.TestCase):
         self.assertAlmostEqual(r["cert_days"], 30, delta=1, msg="its expiry is read anyway")
 
     def test_self_signed_mode(self):
-        r = self.run_mode(self.port, "self-signed")
-        self.assertEqual((r["up"], r["status"], r["error"]), (1, 200, ""), "its own certificate, for its address")
+        r = self.run_mode(self.port, "self-signed", "localhost")
+        self.assertEqual((r["up"], r["status"], r["error"]), (1, 200, ""), "its own certificate, for its name")
         self.assertAlmostEqual(r["cert_days"], 30, delta=1)
+        r = self.run_mode(self.other_port, "self-signed", "localhost")
+        self.assertEqual((r["up"], r["error"]), (0, "the certificate is for another name"), "a URL by name still checks the name")
         r = self.run_mode(self.other_port, "self-signed")
-        self.assertEqual((r["up"], r["error"]), (0, "the certificate is for another name"), "still checks the name")
+        self.assertEqual((r["up"], r["error"]), (1, ""), "a URL by IP address isn't name-checked")
 
     def test_ignore_mode(self):
         r = self.run_mode(self.other_port, "ignore")

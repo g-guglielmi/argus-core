@@ -143,10 +143,10 @@ presents a trusted certificate for its name. When it isn't, it says why (`return
 `the page does not contain "Welcome"`, `the certificate is not trusted: self-signed certificate`, `the
 certificate is for another name`, `no answer within 10 s`). **Certificate** sets how the certificate
 is checked: `verify` wants one a known CA issued, for the URL's name and not expired; `self-signed`
-also takes one no CA vouches for (the device's own, or one from a private CA), still for the URL's name
-and not expired; `ignore` takes any. The expiry counts in every mode. A device reached by its IP whose
-own certificate only names its hostname fails `self-signed` with `the certificate is for another
-name`: list it by that name, or use `ignore`. Taking a URL out of the list deletes its sensors, and any
+also takes one no CA vouches for (the device's own, or one from a private CA), still not expired and,
+when the URL uses a name, for that name. A URL by IP address (a blank list on a host added by IP) isn't
+name-checked, since a device's own certificate rarely lists its address. `ignore` takes any. The
+expiry counts in every mode. Taking a URL out of the list deletes its sensors, and any
 open problem of theirs, at the next check. If the probe can't run the check at all (it doesn't have
 `argus_http.py` yet), the host shows an **HTTP checks** sensor under **Web** saying so, and it alerts.
 Alerts: **portal.example.com/app is down** (High, after 3 checks), slow (`{$HTTP.RESPONSE.WARN}` 1 s,

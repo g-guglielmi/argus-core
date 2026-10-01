@@ -14,8 +14,8 @@ zabbix_export:
         text ("#!text": it must not); with the response time and, for https, the days its certificate
         has left. The certificate is checked ({$HTTP.TLS.VERIFY}): "verify" wants one a known CA issued,
         for the URL's name and valid now; "self-signed" also takes one no CA vouches for (a device's own,
-        a private CA), still for the URL's name and valid now; "ignore" takes any. Its expiry counts in
-        every mode. A URL that doesn't answer as expected says why. A path ("/login") is on
+        a private CA), still valid now and, for a URL by name, for that name (a URL by IP address isn't
+        name-checked); "ignore" takes any. Its expiry counts in every mode. A URL that doesn't answer as expected says why. A path ("/login") is on
         the host's own address with {$HTTP.SCHEME} and {$HTTP.PORT}; a blank list checks that address.
         The proxy runs argus_http.py once a minute for all of the host's URLs at once. Attach to any
         host (DESIGN section 5).
@@ -222,7 +222,7 @@ zabbix_export:
           description: 'The status codes that count as up, of the final answer after redirects: "200-299", "200,204,401".'
         - macro: '{$HTTP.TLS.VERIFY}'
           value: verify
-          description: 'How the certificate is checked: "verify" wants one a known CA issued, for the URL''s name and valid now; "self-signed" also takes one no CA vouches for (a device''s own), still for its name and valid now; "ignore" takes any.'
+          description: 'How the certificate is checked: "verify" wants one a known CA issued, for the URL''s name and valid now; "self-signed" also takes one no CA vouches for (a device''s own), still valid now and, for a URL by name, for that name; "ignore" takes any.'
         - macro: '{$HTTP.TIMEOUT}'
           value: '10'
           description: 'Seconds to wait for each answer (1 to 15).'
