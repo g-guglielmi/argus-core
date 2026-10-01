@@ -20,6 +20,8 @@ const (
 	ClassProbe   = "probe"
 	TemplateHTTP = "Argus HTTP Endpoint"
 	TemplateTCP  = "Argus TCP ports"
+	// TemplatePush reads a host's push sensors back from Argus (push.go); Argus links it itself.
+	TemplatePush = "Argus Push"
 	// TemplateProbeHealth is the per-probe health template (internal checks run on the proxy).
 	TemplateProbeHealth = "Argus Probe Health"
 )

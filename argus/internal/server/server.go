@@ -141,6 +141,11 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// signed one-click acknowledge link from notifications (public; HMAC-verified, GET confirms)
 	mux.HandleFunc("GET /api/alert/ack", s.handleAlertAck)
 	mux.HandleFunc("POST /api/alert/ack", s.handleAlertAck)
+	// push sensors: a job reports a run at its own URL (public; the token is the credential), and the
+	// host's template reads them back through its proxy (public; the host's key). See push.go.
+	mux.HandleFunc("GET /api/push/{token}", s.handlePushIngest)
+	mux.HandleFunc("POST /api/push/{token}", s.handlePushIngest)
+	mux.HandleFunc("GET /api/push/host/{id}", s.handlePushPoll)
 	mux.HandleFunc("POST /api/login/totp", s.handleLoginTOTP)
 	mux.HandleFunc("POST /api/login/passkey/begin", s.handlePasskeyLoginBegin)
 	mux.HandleFunc("POST /api/login/passkey/finish", s.handlePasskeyLoginFinish)
@@ -216,6 +221,11 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// host settings editor: read the identity + interfaces (any user), reconcile-save them (config write).
 	mux.HandleFunc("GET /api/hosts/{id}/config", auth.RequireAuth(s.scopedHost(s.handleHostConfig)))
 	mux.HandleFunc("PATCH /api/hosts/{id}/config", auth.RequireRoles(s.scopedHost(s.handleUpdateHostConfig), "admin", "helpdesk"))
+	mux.HandleFunc("GET /api/hosts/{id}/push", auth.RequireAuth(s.scopedHost(s.handleListPush)))
+	mux.HandleFunc("POST /api/hosts/{id}/push", auth.RequireRoles(s.scopedHost(s.handleCreatePush), "admin", "helpdesk"))
+	mux.HandleFunc("PATCH /api/push-sensors/{id}", auth.RequireRoles(s.handleUpdatePush, "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/push-sensors/{id}/rotate", auth.RequireRoles(s.handleRotatePush, "admin", "helpdesk"))
+	mux.HandleFunc("DELETE /api/push-sensors/{id}", auth.RequireRoles(s.handleDeletePush, "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/hosts/{id}/class", auth.RequireRole("admin", s.handleChangeHostClass))
 	mux.HandleFunc("POST /api/hosts/{id}/proxy", auth.RequireRoles(s.scopedHost(s.handleSetHostProxy), "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/hosts/{id}/discover", auth.RequireRoles(s.scopedHost(s.handleDiscoverNow), "admin", "helpdesk"))

@@ -116,8 +116,9 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
   top of that every state-changing `/api/*` request from a browser is checked, list or no list: a
   `Sec-Fetch-Site: cross-site` is refused, an `Origin` must be one of Argus's own (the allow-list, the
   Public URL, or the host the request was addressed to), and a body must be `application/json` (so a
-  cross-site `text/plain` form can't post a JSON-shaped login). The probes' machine endpoints and the
-  signed acknowledge form are exempt (they carry no session). **Allowed FQDNs and IPs** (Settings,
+  cross-site `text/plain` form can't post a JSON-shaped login). The probes' machine endpoints, the push
+  sensor endpoints (`/api/push/...`: a job's report, authenticated by its URL's token, and a host's
+  template read, by the host's key) and the signed acknowledge form are exempt (they carry no session). **Allowed FQDNs and IPs** (Settings,
   `ARGUS_TRUSTED_ORIGINS`) adds the Host allow-list on top, e.g. `monitoring.example.com` **+ the
   private IP**: with a list set, `/api/*` requests for any other `Host` are refused (DNS rebinding).
   Off until configured, so an upgrade can't lock anyone out; the Public URL host and loopback are
@@ -202,7 +203,15 @@ attachable to any host, not a class), the **DNS resolution** add-on and the **TC
 (`Argus TCP ports`: `argus_tcp.py` on the probe connects to every port in `{$TCP.PORTS}` at once,
 one sensor group per port under **TCP** with its connect time, reachability as the Downtime band and
 why it doesn't answer as the reason; add-on values are checked against a pattern before they reach
-the collector's command line). On top, one or more **class templates** attach - manually
+the collector's command line). **Push sensors** (`Argus Push`, docs/push-sensors.md) are a job's
+own reports: the job calls its push sensor's secret URL (`/api/push/{token}`, ok or fail and a
+message), Argus keeps the last run (`push_sensors`), and the template, which Argus links with a host's
+first push sensor and unlinks with its last, reads the host's push sensors back once a minute through
+the host's own proxy (a SCRIPT item on `{$PUSH.URL}` = `/api/push/host/{id}` with the host's secret
+`{$PUSH.KEY}`, stored hashed; dependent LLD carries each sensor's late and missed times as
+`{#PUSH.LATE}` / `{#PUSH.MISSED}`). A trapper item can't do it: Zabbix accepts a pushed value for a
+host behind a proxy only through that proxy, which the core can't reach. When Argus can't be read,
+every push sensor shows why. On top, one or more **class templates** attach - manually
 in the first cut (§C), automatically by fingerprint once discovery lands (§8, §B). Templates are
 hand-authored Zabbix YAML, version-controlled under `argus/internal/provision/templates/` (in-module
 so they can be embedded) and imported into zabbix-server via `configuration.import` (Argus reconciles

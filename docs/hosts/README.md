@@ -105,6 +105,9 @@ options section. That same dialog also has:
   Warning lists show only the master, with the rest behind **Show held**. Pick another sensor, or
   **None** to never hold this host's alerts. Separately, while a probe isn't reporting, every device at its site is held;
 - a **Sensor order** section;
+- a **Push sensors** section - jobs that report their runs to Argus at their own URL (a backup, a cron
+  job, a scheduled task): a failed run, a late one and a missed one alert. See
+  [../push-sensors.md](../push-sensors.md);
 - an **Add-ons** section - optional Argus checks you can layer on a host at any time (not just when
   adding it): the **HTTP/HTTPS endpoint** (reachability + response time on a web port), **DNS
   resolution** (resolve names against the host) and **TCP ports** (does each listed port accept a

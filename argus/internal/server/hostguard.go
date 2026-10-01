@@ -117,9 +117,14 @@ func requestHost(r *http.Request, trustProxy bool) string {
 	return h
 }
 
+// isPushPath reports whether path is a push sensor's machine endpoint: a job reporting a run at its
+// URL (often a form post from curl or PowerShell), or a host's template reading them back. Both
+// authenticate with their own token, never the session cookie.
+func isPushPath(path string) bool { return strings.HasPrefix(path, "/api/push/") }
+
 // hostGuardVerdict decides one request. ok=false carries the reason for the 403.
 func hostGuardVerdict(r *http.Request, list []string, publicURL string, trustProxy bool) (bool, string) {
-	if !strings.HasPrefix(r.URL.Path, "/api/") || machineAPIPaths[r.URL.Path] {
+	if !strings.HasPrefix(r.URL.Path, "/api/") || machineAPIPaths[r.URL.Path] || isPushPath(r.URL.Path) {
 		return true, ""
 	}
 	if len(list) > 0 {

@@ -31,6 +31,8 @@ var reasonKeys = map[string]string{
 	"hass.running":        "hass.error",
 	"dns.resolve.success": "dns.resolve.error",
 	"tcp.port.up":         "tcp.port.error",
+	// A push sensor's last run: the job's own message is the reason.
+	"argus.push.ok": "argus.push.message",
 	// Linux by SSH, per systemd unit and per Docker container: the state text is the reason.
 	"linux.ssh.unit.active":       "linux.ssh.unit.state",
 	"linux.ssh.container.running": "linux.ssh.container.status",
@@ -143,23 +145,29 @@ func collectorReason(ctx context.Context, zbx *zabbix.Client, hostID, key, value
 	return itemError(v)
 }
 
-// runningKeys are the per-service flags (1 running, 0 down) that read as words.
-var runningKeys = map[string]bool{"linux.ssh.unit.active": true, "linux.ssh.container.running": true}
+// runningKeys are the flags (1 up, 0 down) that read as words: a service or a container runs or is
+// down, a push sensor's last run was OK or failed.
+var runningKeys = map[string][2]string{
+	"linux.ssh.unit.active":       {"Running", "Down"},
+	"linux.ssh.container.running": {"Running", "Down"},
+	"argus.push.ok":               {"OK", "Failed"},
+}
 
-// runningReading words a service or container flag: "Running" or "Down" (its state item says why).
+// runningReading words such a flag: "Running" or "Down", "OK" or "Failed" (its reason item says why).
 func runningReading(key, value string) (string, bool) {
 	base := key
 	if i := strings.IndexByte(key, '['); i >= 0 {
 		base = key[:i]
 	}
-	if !runningKeys[base] {
+	words, ok := runningKeys[base]
+	if !ok {
 		return "", false
 	}
 	switch strings.TrimSpace(value) {
 	case "1":
-		return "Running", true
+		return words[0], true
 	case "0":
-		return "Down", true
+		return words[1], true
 	}
 	return "", false
 }

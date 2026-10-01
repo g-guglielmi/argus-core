@@ -64,6 +64,7 @@ var encryptedColumns = [][2]string{
 	{"unifi_controllers", "api_key"},
 	{"probe_agents", "bg_secret"},
 	{"status_pages", "token_enc"},
+	{"push_sensors", "token_enc"},
 	{"app_meta", "value"},
 }
 
@@ -165,6 +166,7 @@ func (s *Store) ResetEncryptedSecrets(ctx context.Context) (int, error) {
 		{`UPDATE unifi_controllers SET api_key='' WHERE api_key LIKE ?`, []any{enc}},
 		{`UPDATE probe_agents SET bg_secret='' WHERE bg_secret LIKE ?`, []any{enc}},
 		{`UPDATE status_pages SET token_enc='' WHERE token_enc LIKE ?`, []any{enc}},
+		{`UPDATE push_sensors SET token_enc='' WHERE token_enc LIKE ?`, []any{enc}},
 		{`DELETE FROM app_meta WHERE value LIKE ?`, []any{enc}},
 	}
 	for _, st := range steps {

@@ -1,0 +1,169 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: 7ecdde579d9040eb941be4bd204809c9
+      template: 'Argus Push'
+      name: 'Argus Push'
+      description: |
+        Push sensors: jobs that report to Argus when they run (a backup, a cron job, a scheduled task),
+        each at its own secret URL, with ok or fail and a message. Argus keeps each one's last run; this
+        template reads the host's push sensors back from Argus once a minute ({$PUSH.URL}, with the
+        host's key {$PUSH.KEY}), run by the host's own proxy (or the core), so each push sensor is an
+        ordinary sensor: the last run's result, the time since it, and the job's message as the reason.
+        A run that reports a failure is an error; no run for longer than the sensor's "late" time is a
+        warning, longer than its "missed" time an error. Both times are set per push sensor in Argus and
+        arrive with the discovery. Argus links this template with a host's first push sensor, sets both
+        macros, and unlinks it with the last; it isn't attached by hand. DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: e0c22f874b8f4cf29f1386ee673ecc80
+          name: 'Push sensors raw data'
+          type: SCRIPT
+          key: argus.push.raw
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          timeout: 15s
+          description: 'Master item: the host''s push sensors as Argus has them, read from {$PUSH.URL}. When Argus can''t be read, the answer carries why, and every push sensor shows it as its reason instead of going quiet.'
+          params: |
+            var p = JSON.parse(value);
+            function why(e) { return String((e && e.message) || e).replace(/\s+/g, ' ').substring(0, 200); }
+            if (!p.url || !p.key) {
+              return JSON.stringify({ error: 'Argus has not set the push URL and key on this host: save one of its push sensors again in Argus' });
+            }
+            var req = new HttpRequest();
+            req.addHeader('Authorization: Bearer ' + p.key);
+            req.addHeader('Accept: application/json');
+            var body, code;
+            try { body = req.get(p.url); code = req.getStatus(); }
+            catch (e) { return JSON.stringify({ error: 'Argus did not answer at ' + p.url + ': ' + why(e) }); }
+            if (code === 401 || code === 403) { return JSON.stringify({ error: 'Argus refused this host''s push key (HTTP ' + code + '): save one of its push sensors again in Argus' }); }
+            if (code !== 200) { return JSON.stringify({ error: 'Argus answered HTTP ' + code + ' at ' + p.url }); }
+            try { JSON.parse(body); } catch (e) { return JSON.stringify({ error: 'Argus answered something that is not JSON at ' + p.url + ' (a proxy or a login page in front of it?)' }); }
+            return body;
+          parameters:
+            - name: url
+              value: '{$PUSH.URL}'
+            - name: key
+              value: '{$PUSH.KEY}'
+      discovery_rules:
+        - uuid: 048f0eb9b3a54c5a9419973c9b0f508a
+          name: 'Push sensor discovery'
+          type: DEPENDENT
+          key: argus.push.discovery
+          delay: '0'
+          lifetime: 1h
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          description: 'One sensor set per push sensor Argus has for this host, with its late and missed times. A push sensor deleted in Argus is disabled here at the next read and deleted an hour later. While Argus can''t be read the discovery keeps what it had.'
+          master_item:
+            key: argus.push.raw
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (d.error) { throw d.error; }
+                  var out = [];
+                  var ss = d.sensors || [];
+                  for (var i = 0; i < ss.length; i++) {
+                    out.push({ '{#PUSH.ID}': String(ss[i].id), '{#PUSH.NAME}': ss[i].name, '{#PUSH.LATE}': String(ss[i].late), '{#PUSH.MISSED}': String(ss[i].missed) });
+                  }
+                  return JSON.stringify(out);
+              error_handler: DISCARD_VALUE
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          item_prototypes:
+            - uuid: 1db7c4435aba47ed97e18cfc54249e37
+              name: '{#PUSH.NAME} last run'
+              type: DEPENDENT
+              key: 'argus.push.ok[{#PUSH.ID}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: UNSIGNED
+              description: '1 = the last run reported success (also before the first run), 0 = it reported a failure. Its message item says why.'
+              master_item:
+                key: argus.push.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      if (d.error) { throw d.error; }
+                      var ss = d.sensors || [];
+                      for (var i = 0; i < ss.length; i++) { if (String(ss[i].id) === '{#PUSH.ID}') { return ss[i].ok; } }
+                      throw 'push sensor {#PUSH.ID} was deleted in Argus';
+              trigger_prototypes:
+                - uuid: f05c571f3778495084cbebef6604b92e
+                  expression: 'last(/Argus Push/argus.push.ok[{#PUSH.ID}])=0'
+                  name: '{#PUSH.NAME} reported a failure'
+                  priority: HIGH
+                  description: 'The last run of {#PUSH.NAME} reported a failure. Its message is the sensor''s reason; the next successful run clears it.'
+            - uuid: aef55d979b1b4db89a879d509ace76cc
+              name: '{#PUSH.NAME} since last run'
+              type: DEPENDENT
+              key: 'argus.push.age[{#PUSH.ID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              units: uptime
+              description: 'Time since the last run reported to Argus (since the push sensor was made, before its first run).'
+              master_item:
+                key: argus.push.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      if (d.error) { throw d.error; }
+                      var ss = d.sensors || [];
+                      for (var i = 0; i < ss.length; i++) { if (String(ss[i].id) === '{#PUSH.ID}') { return ss[i].age; } }
+                      throw 'push sensor {#PUSH.ID} was deleted in Argus';
+              trigger_prototypes:
+                - uuid: 2ac7ba9a11204b3ca9e742873955826b
+                  expression: 'last(/Argus Push/argus.push.age[{#PUSH.ID}])>{#PUSH.LATE} and last(/Argus Push/argus.push.age[{#PUSH.ID}])<={#PUSH.MISSED}'
+                  name: '{#PUSH.NAME} is late'
+                  priority: WARNING
+                  description: 'No run of {#PUSH.NAME} reported for longer than its late time ({#PUSH.LATE} s), but not yet its missed time.'
+                - uuid: 1d0f07fec5dc42beb9c5b8c6bd9cbdfb
+                  expression: 'last(/Argus Push/argus.push.age[{#PUSH.ID}])>{#PUSH.MISSED}'
+                  name: '{#PUSH.NAME} has not run'
+                  priority: HIGH
+                  description: 'No run of {#PUSH.NAME} reported for longer than its missed time ({#PUSH.MISSED} s).'
+            - uuid: a01c1ddcd40d41f09959325ce0ab8c00
+              name: '{#PUSH.NAME} message'
+              type: DEPENDENT
+              key: 'argus.push.message[{#PUSH.ID}]'
+              delay: '0'
+              history: 30d
+              trends: '0'
+              value_type: TEXT
+              description: 'The last run''s message, as the job sent it (or what Argus says when it had none). Not a curated sensor: Argus shows it next to a failed run and in the alert.'
+              master_item:
+                key: argus.push.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      if (d.error) { throw d.error; }
+                      var ss = d.sensors || [];
+                      for (var i = 0; i < ss.length; i++) { if (String(ss[i].id) === '{#PUSH.ID}') { return ss[i].message || ''; } }
+                      throw 'push sensor {#PUSH.ID} was deleted in Argus';
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+      macros:
+        - macro: '{$PUSH.URL}'
+          value: ''
+          description: 'Where the proxy reads this host''s push sensors from Argus. Set by Argus.'
+        - macro: '{$PUSH.KEY}'
+          value: ''
+          description: 'The key this host reads its push sensors with. Set by Argus, as a secret macro.'

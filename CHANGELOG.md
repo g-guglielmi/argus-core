@@ -13,6 +13,15 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Push sensors:**
+- A backup, a cron job or a scheduled task can now report to Argus when it runs: give it a push sensor
+  in the host's settings (**Push sensors**) and have the job call its URL at the end, with
+  `status=ok` or `status=fail` and an optional message (curl and PowerShell examples are next to the
+  URL). A failed run is an error with the job's message as the reason; no run for longer than the
+  late time is a warning, longer than the missed time an error. The sensors show under **Push** on the
+  host, with their history, uptime and alerts like any other. The host's probe reads them from Argus
+  at its Public URL once a minute (docs/push-sensors.md).
+
 **Alert channels:**
 - Six new channel types. **Microsoft Teams** takes the URL of a Teams Workflow (the "Send webhook
   alerts to a channel" template) and shows each alert as a card in the status colour, with **Open in

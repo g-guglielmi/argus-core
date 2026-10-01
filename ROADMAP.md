@@ -282,6 +282,9 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   webhook), ntfy, Gotify and Pushover (phone push, priority by severity), and a generic JSON webhook;
   personal channels can be Teams, Slack, ntfy or Pushover too, sent only to public addresses. -
   _Unreleased_
+- [x] **Push sensors** - a job (backup, cron, scheduled task) calls its own secret URL when it runs,
+  with ok or fail and a message; the host's `Argus Push` template reads them back through its proxy,
+  so a failed run is an error and a late or missed one a warning, then an error. - _Unreleased_
 
 ### I. Mobile app (last step)
 - [ ] **Android native app with push notifications** - the app registers a device with Argus; the notifier delivers alerts as **push** (e.g. FCM) via a new "push" notification channel type, alongside Discord/Telegram/email. A PWA + web push is a cheaper fallback if a full native app isn't warranted. - _(app + BE)_ **L**

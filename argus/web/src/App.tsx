@@ -5950,6 +5950,143 @@ function ThresholdsView() {
   )
 }
 
+type PushSensor = { id: number; host_id: string; name: string; late_secs: number; missed_secs: number; created_at: number; created_by?: string; last_at?: number; last_ok: boolean; last_msg?: string; runs: number; url?: string }
+
+// A push sensor's times are entered as a number and a unit; PUSH_UNITS are the units offered.
+const PUSH_UNITS: { s: number; label: string }[] = [{ s: 60, label: 'minutes' }, { s: 3600, label: 'hours' }, { s: 86400, label: 'days' }]
+function pushParts(secs: number): [string, number] {
+  for (const u of [...PUSH_UNITS].reverse()) if (secs >= u.s && secs % u.s === 0) return [String(secs / u.s), u.s]
+  return [String(Math.round(secs / 60)), 60]
+}
+
+// pushExamples are the calls a job makes at the end of its run, for Linux (curl) and Windows
+// (PowerShell). A run that went wrong sends status=fail; msg is optional and shows as the reason.
+function pushExamples(url: string): string {
+  return [
+    '# Linux, macOS, a NAS (curl): at the end of the job',
+    `curl -fsS -m 10 --retry 3 "${url}?status=ok&msg=Backup+done"`,
+    '# ...or when it went wrong',
+    `curl -fsS -m 10 --retry 3 "${url}?status=fail&msg=Backup+failed"`,
+    '',
+    '# Windows (PowerShell)',
+    `Invoke-RestMethod -Method Post -Uri "${url}" -Body @{ status = 'ok'; msg = 'Backup done' }`,
+  ].join('\n')
+}
+
+// PushSensorsSection lists a host's push sensors (jobs that report their runs to Argus) with each
+// one's last run, and lets admins and helpdesk add, edit, re-key and delete them. It saves each
+// change at once, apart from the host settings' Save.
+function PushSensorsSection({ hostId, canEdit }: { hostId: string; canEdit: boolean }) {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [list, setList] = useState<PushSensor[] | null>(null)
+  const [editing, setEditing] = useState<PushSensor | 'new' | null>(null)
+  const [shown, setShown] = useState<number | null>(null)
+  function load() {
+    fetch(`/api/hosts/${hostId}/push`).then((r) => (r.ok ? r.json() : Promise.reject())).then((l: PushSensor[]) => setList(l || [])).catch(() => setList([]))
+  }
+  useEffect(load, [hostId]) // eslint-disable-line react-hooks/exhaustive-deps
+  const abs = (u?: string) => (!u ? '' : u.startsWith('/') ? window.location.origin + u : u)
+
+  async function rotate(p: PushSensor) {
+    if (!(await confirm({ title: 'New URL', message: `Give ${p.name} a new URL? The current one stops working at once, so update the job to call the new one.`, confirmLabel: 'New URL', danger: true }))) return
+    const res = await fetch(`/api/push-sensors/${p.id}/rotate`, { method: 'POST' })
+    if (!res.ok) { toast.error(await errText(res, 'Could not change the URL')); return }
+    toast.success('New URL made. Update the job to call it.'); setShown(p.id); load()
+  }
+  async function del(p: PushSensor) {
+    if (!(await confirm({ title: 'Delete push sensor', message: `Delete ${p.name}? Its URL stops working at once, and its sensors stop and are removed with their history within the hour.`, confirmLabel: 'Delete', danger: true }))) return
+    const res = await fetch(`/api/push-sensors/${p.id}`, { method: 'DELETE' })
+    if (!res.ok) { toast.error(await errText(res, 'Could not delete the push sensor')); return }
+    toast.success('Push sensor deleted.'); load()
+  }
+
+  if (list === null) return null
+  if (!canEdit && list.length === 0) return null
+  return (
+    <>
+      <div className="hs-title">Push sensors</div>
+      <div className="hs-note" style={{ margin: '0 0 10px' }}>Jobs that report to Argus when they run: a backup, a cron job, a scheduled task. Each has its own URL the job calls at the end, with <span className="mono">status=ok</span> or <span className="mono">status=fail</span> and an optional <span className="mono">msg</span>. A failed run is an error; no run for longer than the late time is a warning, longer than the missed time an error. The sensors show up within a minute. Changes here are saved at once.</div>
+      {list.map((p) => (
+        <div className="push-row" key={p.id}>
+          <div className="push-head">
+            <span className={'sdot' + (p.last_at && !p.last_ok ? ' pulse' : '')} style={{ '--dot': !p.last_at ? 'var(--faint)' : p.last_ok ? 'var(--ok)' : 'var(--err)' } as CSSProperties} />
+            <b className="push-name">{p.name}</b>
+            <span className="push-meta">
+              {!p.last_at ? 'No run yet' : `${p.last_ok ? 'OK' : 'Failed'} ${relTime(p.last_at)}`}{p.last_at && p.last_msg ? `: ${p.last_msg}` : ''}
+            </span>
+            {canEdit && (
+              <span className="push-actions">
+                <Button variant="ghost" onClick={() => setShown(shown === p.id ? null : p.id)}>{shown === p.id ? 'Hide URL' : 'URL'}</Button>
+                <Kebab actions={[
+                  { label: 'Edit…', icon: kbIcon.edit, onClick: () => setEditing(p) },
+                  { label: 'New URL…', onClick: () => rotate(p) },
+                  { sep: true, label: '' },
+                  { label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => del(p) },
+                ]} />
+              </span>
+            )}
+          </div>
+          <div className="push-sub">Late after {fmtDuration(p.late_secs)}, missed after {fmtDuration(p.missed_secs)} · {p.runs} run{p.runs === 1 ? '' : 's'} reported</div>
+          {shown === p.id && p.url && (
+            <div className="push-url">
+              <div className="push-urlline"><span className="mono">{abs(p.url)}</span><CopyButton text={abs(p.url)} /></div>
+              <pre className="push-pre"><code>{pushExamples(abs(p.url))}</code></pre>
+              <div className="push-sub">Anyone with this URL can report runs for this job, so keep it in the job's settings, not in a shared document. <b>New URL</b> replaces it.</div>
+            </div>
+          )}
+          {editing !== 'new' && editing?.id === p.id && <PushEditor hostId={hostId} initial={p} onDone={(saved) => { setEditing(null); if (saved) load() }} />}
+        </div>
+      ))}
+      {editing === 'new' && (
+        <div className="push-row">
+          <b className="push-name">New push sensor</b>
+          <PushEditor hostId={hostId} initial={null} onDone={(saved) => { setEditing(null); if (saved) { setShown(saved.id); load() } }} />
+        </div>
+      )}
+      {canEdit && editing !== 'new' && <div className="hs-add"><Button onClick={() => setEditing('new')}>+ Add push sensor</Button></div>}
+    </>
+  )
+}
+
+function PushEditor({ hostId, initial, onDone }: { hostId: string; initial: PushSensor | null; onDone: (saved: PushSensor | null) => void }) {
+  const toast = useToast()
+  const [name, setName] = useState(initial?.name || '')
+  const [late, setLate] = useState(pushParts(initial?.late_secs || 25 * 3600))
+  const [missed, setMissed] = useState(pushParts(initial?.missed_secs || 49 * 3600))
+  const [busy, setBusy] = useState(false)
+  async function save() {
+    setBusy(true)
+    const body = { name, late_secs: Math.round(Number(late[0]) * late[1]), missed_secs: Math.round(Number(missed[0]) * missed[1]) }
+    const res = await fetch(initial ? `/api/push-sensors/${initial.id}` : `/api/hosts/${hostId}/push`, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the push sensor')); return }
+    toast.success(initial ? 'Push sensor saved.' : 'Push sensor added. Copy its URL into the job.')
+    onDone(await res.json())
+  }
+  const dur = (v: [string, number], set: (v: [string, number]) => void) => (
+    <span className="push-dur">
+      <input className="input" type="text" inputMode="numeric" value={v[0]} onChange={(e) => set([e.target.value, v[1]])} />
+      <Select value={v[1]} onChange={(e) => set([v[0], Number(e.target.value)])}>{PUSH_UNITS.map((u) => <option key={u.s} value={u.s}>{u.label}</option>)}</Select>
+    </span>
+  )
+  return (
+    <div className="push-edit">
+      <div className="hs-grid">
+        <label className="field"><span>Name</span><input className="input" value={name} placeholder="e.g. Nightly backup" maxLength={64} onChange={(e) => setName(e.target.value)} /></label>
+        <div />
+        <label className="field"><span>Warning when no run for</span>{dur(late, setLate)}</label>
+        <label className="field"><span>Error when no run for</span>{dur(missed, setMissed)}</label>
+      </div>
+      <div className="hs-note">For a daily job, 25 and 49 hours give it an hour of slack before each.</div>
+      <div className="hs-add">
+        <Button variant="primary" disabled={busy || !name.trim()} onClick={save}>{busy ? 'Saving…' : initial ? 'Save push sensor' : 'Add push sensor'}</Button>
+        <Button variant="ghost" onClick={() => onDone(null)}>Cancel</Button>
+      </div>
+    </div>
+  )
+}
+
 function HostSettingsModal({ hostId, hostName, canEdit, isAdmin, onClose, onSaved }: { hostId: string; hostName?: string; canEdit: boolean; isAdmin?: boolean; onClose: () => void; onSaved: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -6206,6 +6343,8 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
           ))}
         </>
       )}
+
+      {cfg.class_id !== 'probe' && <PushSensorsSection hostId={hostId} canEdit={canEdit} />}
 
       {cfg.master && (
         <>
@@ -6704,6 +6843,13 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
       if (cat === 'TCP' && up && up.last_value !== '' && Number(up.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>not answering</span>, primary: rt, why: up.why, whyId: up.id }
       return { node: reading(rt), primary: rt }
     }
+    // A push sensor reads how long ago its job last ran; a failed last run says so, with the job's message.
+    if (cat === 'Push') {
+      const age = gi.find((x) => x.channel === 'Since last run'), last = gi.find((x) => x.channel === 'Last run')
+      const primary = age || gi[0]
+      if (last && last.last_value === 'Failed') return { node: <span style={{ color: 'var(--muted)' }}>failed</span>, primary, why: last.why, whyId: last.id }
+      return { node: age && age.supported ? <>{reading(age)} ago</> : reading(primary), primary }
+    }
     // A temperature group (unRAID disk temps) or CPU cores group reads as its HOTTEST/BUSIEST
     // member - the one you'd act on; that member also drives the sparkline and the chart's main line.
     if (cat === 'Temperature' || cat === 'CPU' || cat === 'Probe') {
@@ -6799,6 +6945,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                   let channels: GroupChan[] = row.items.filter((i) => i.numeric && (i.supported || (row.cat === 'Temperature' && i.last_value !== ''))).map((i) => {
                     if (((row.cat === 'Ping' || row.cat === 'Web' || row.cat === 'TCP') && i.channel === 'Reachable') || (row.cat === 'DNS' && i.channel === 'Resolves'))
                       return { id: i.id, label: 'Downtime', units: '', invert: true } // show only when unreachable / not-resolving (PRTG-style)
+                    if (row.cat === 'Push' && i.channel === 'Last run') return { id: i.id, label: 'Failed', units: '', invert: true } // a band while the last run failed
                     // A port's Speed and Link are constants - start their lines hidden (legend keeps
                     // the value; a click reveals the line). Hiding Speed also lets the bps axis
                     // range to the In/Out traffic instead of pinning at the negotiated gigabits.

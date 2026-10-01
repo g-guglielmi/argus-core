@@ -479,6 +479,20 @@ a { color: var(--accent); }
 .host-settings .if-inherit-note { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
 .host-settings .hs-add { display: flex; gap: 8px; margin-top: 4px; }
 .host-settings .hs-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+/* Push sensors in host settings: one bordered row per job, its URL and examples revealed under it. */
+.host-settings .push-row { border: 1px solid var(--border); border-radius: 7px; padding: 9px 12px; margin-bottom: 8px; background: var(--panel); }
+.host-settings .push-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.host-settings .push-name { font-size: 13px; }
+.host-settings .push-meta { font-size: 12.5px; color: var(--muted); min-width: 0; overflow-wrap: anywhere; flex: 1 1 160px; }
+.host-settings .push-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.host-settings .push-sub { font-size: 12px; color: var(--faint); margin-top: 4px; }
+.host-settings .push-url { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.host-settings .push-urlline { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.host-settings .push-urlline .mono { font-size: 12px; overflow-wrap: anywhere; min-width: 0; flex: 1; }
+.host-settings .push-pre { margin: 8px 0 0; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; overflow-x: auto; font-size: 11.5px; line-height: 1.5; white-space: pre; }
+.host-settings .push-edit { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.host-settings .push-dur { display: flex; gap: 6px; }
+.host-settings .push-dur .input { width: 90px; flex: 0 0 auto; }
 .host-settings select.input { cursor: pointer; }
 /* Inside the settings dialog the band chrome is redundant - the .dlg supplies it. */
 .host-settings.in-dlg { margin: 0; padding: 2px 0 0; background: none; border: none; border-radius: 0; }

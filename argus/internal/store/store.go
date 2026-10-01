@@ -520,6 +520,30 @@ CREATE TABLE IF NOT EXISTS discovery_results (
   state            TEXT NOT NULL DEFAULT 'new', -- new|ignored|added
   host_id          TEXT NOT NULL DEFAULT ''     -- Zabbix host id once adopted
 );
+
+-- Push sensors: jobs that report to Argus at their own secret URL (looked up by its SHA-256, kept
+-- encrypted so the URL can be copied again). Argus keeps the last run; the host's "Argus Push" template
+-- reads them back through its proxy with the host's key (push_hosts, SHA-256 only).
+CREATE TABLE IF NOT EXISTS push_sensors (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id     TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  token_hash  TEXT NOT NULL UNIQUE,
+  token_enc   TEXT NOT NULL DEFAULT '',
+  late_secs   INTEGER NOT NULL,
+  missed_secs INTEGER NOT NULL,
+  created_at  INTEGER NOT NULL,
+  created_by  TEXT NOT NULL DEFAULT '',
+  last_at     INTEGER NOT NULL DEFAULT 0, -- 0 = it hasn't run yet
+  last_ok     INTEGER NOT NULL DEFAULT 1,
+  last_msg    TEXT NOT NULL DEFAULT '',
+  runs        INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_push_sensors_host ON push_sensors(host_id);
+CREATE TABLE IF NOT EXISTS push_hosts (
+  host_id  TEXT PRIMARY KEY,
+  key_hash TEXT NOT NULL
+);
 `); err != nil {
 		return err
 	}

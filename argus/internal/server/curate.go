@@ -63,6 +63,7 @@ var categoryOrderServer = map[string]int{
 	"Uptime":           15,
 	"Ports":            16,
 	"Status":           17,
+	"Push":             18, // push sensors: jobs that report their runs to Argus
 }
 var categoryOrderNet = map[string]int{
 	"Ping":             0,
@@ -83,6 +84,7 @@ var categoryOrderNet = map[string]int{
 	"Ports":            15,
 	"Temperature":      16,
 	"Status":           17,
+	"Push":             18, // push sensors: jobs that report their runs to Argus
 }
 
 // Storage boxes (anything with a drive-temperature group: unRAID, later QNAP/Ugreen) read their
@@ -106,6 +108,7 @@ var categoryOrderNAS = map[string]int{
 	"Uptime":           15,
 	"Ports":            16,
 	"Status":           17,
+	"Push":             18, // push sensors: jobs that report their runs to Argus
 }
 
 // itemLabelOrder pins the reading order of the flat rows WITHIN a category where plain alphabetical
@@ -634,6 +637,15 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	case "tcp.port.time":
 		inst := tcpPortInstance(name, p)
 		return "TCP", "Port " + inst + " connect time", inst, "Response time", true
+
+	// Push sensors (Argus Push, push.go): one group per job, named after it. The time since the last
+	// run is the primary channel, the last run's result the Failed band; the message is the reason.
+	case "argus.push.ok":
+		inst := pushInstance(name, " last run", p)
+		return "Push", inst + " last run", inst, "Last run", true
+	case "argus.push.age":
+		inst := pushInstance(name, " since last run", p)
+		return "Push", inst + " since last run", inst, "Since last run", true
 	}
 
 	// Heuristic fallback for temperature sensors, whose keys vary widely by template/SNMP.
@@ -642,6 +654,16 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "Temperature", name, "", "", true
 	}
 	return "", "", "", "", false
+}
+
+// pushInstance is a push sensor's group name from its item name ("Nightly backup last run" ->
+// "Nightly backup"), falling back to its id from the key.
+func pushInstance(name, suffix string, p []string) string {
+	inst := strings.TrimSpace(strings.TrimSuffix(name, suffix))
+	if inst == "" || strings.Contains(inst, "{#") {
+		return "Push sensor " + param(p, 0)
+	}
+	return inst
 }
 
 // tcpPortInstance is a TCP port's group name from its item name ("Port RDP (3389)" or "Port RDP (3389)

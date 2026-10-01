@@ -42,7 +42,8 @@ func TestLoadTemplates(t *testing.T) {
 		"Argus UPS by NUT", "argus_nut.py[{HOST.CONN}", "{$NUT.UPS}", "{$NUT.PORT}", "nut.output.voltage",
 		"Argus DNS resolution", "dns-resolver.py[discover", "dns.resolve.success", "dns.resolve.time", "{$DNS.RESOLVE.NAMES}",
 		"Argus XCP-NG by XAPI", "argus_xcpng.py[{HOST.CONN}", "xcp.host.discovery", "xcp.vm.discovery", "xcp.vmperf.discovery", "{$XCP.VM.MODE}", "{$XCP.VM.IGNORE}", "{$XCP.TEMP.WARN}",
-		"Argus Linux by SSH", "argus_linux_ssh.py[{HOST.CONN}", "linux.ssh.reachable", "system.cpu.util[ssh]", "vfs.fs.discovery[ssh]", "net.if.discovery[ssh]", "{$SSH.AUTH}", "{$SSH.KEYFILE}", "{$SSH.PASSWORD}"} {
+		"Argus Linux by SSH", "argus_linux_ssh.py[{HOST.CONN}", "linux.ssh.reachable", "system.cpu.util[ssh]", "vfs.fs.discovery[ssh]", "net.if.discovery[ssh]", "{$SSH.AUTH}", "{$SSH.KEYFILE}", "{$SSH.PASSWORD}",
+		TemplatePush, "argus.push.raw", "argus.push.discovery", "argus.push.ok[{#PUSH.ID}]", "argus.push.age[{#PUSH.ID}]", "argus.push.message[{#PUSH.ID}]", "{$PUSH.URL}", "{$PUSH.KEY}"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("templates missing %q", want)
 		}

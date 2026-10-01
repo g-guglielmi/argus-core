@@ -71,6 +71,9 @@ API key, and MAC):
 - **Uptime** - 24 h, 7 day and 30 day uptime per host (on its master sensor, else its ping) and
   per up/down sensor, a strip of the last checks and a bar per day; status pages show their hosts'
   30-day uptime and the ones under 100%.
+- **Push sensors** - a backup, a cron job or a scheduled task calls its own secret URL when it runs,
+  with ok or fail and a message; Argus raises an error for a failed run and a warning, then an error,
+  when the job is late or didn't run ([docs/push-sensors.md](docs/push-sensors.md)).
 - **Incident history** - what went wrong and when, per host and across the fleet: start, duration,
   who acknowledged it and the reason the device's collector gave, over 24 h to 90 days.
 - **Status pages** - read-only wall-screen dashboards opened with a secret link (no login),
