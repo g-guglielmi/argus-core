@@ -22,6 +22,13 @@ GitHub Release from the matching section below.
   host, with their history, uptime and alerts like any other. The host's probe reads them from Argus
   at its Public URL once a minute (docs/push-sensors.md).
 
+**Status pages:**
+- Pin a note on a status page (**Add note** on its card in Status pages): what's going on, what's being
+  done, when it's expected back. It shows in a bar at the top of the page in its style (info, warning
+  or problem) for the time you pick, or until you remove it.
+- A status page shows the maintenance windows of its hosts: the ones in progress with their end, and
+  the next ones within a week. A problem whose host is in a window says so.
+
 **Alert channels:**
 - Six new channel types. **Microsoft Teams** takes the URL of a Teams Workflow (the "Send webhook
   alerts to a channel" template) and shows each alert as a card in the status colour, with **Open in

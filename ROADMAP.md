@@ -285,6 +285,9 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Push sensors** - a job (backup, cron, scheduled task) calls its own secret URL when it runs,
   with ok or fail and a message; the host's `Argus Push` template reads them back through its proxy,
   so a failed run is an error and a late or missed one a warning, then an error. - _Unreleased_
+- [x] **Status page notes + maintenance** - a pinned note per page (info, warning or problem, for a
+  time or until removed), and the maintenance windows of the page's hosts, in progress and coming up;
+  problem rows say when their host is in one. - _Unreleased_
 
 ### I. Mobile app (last step)
 - [ ] **Android native app with push notifications** - the app registers a device with Argus; the notifier delivers alerts as **push** (e.g. FCM) via a new "push" notification channel type, alongside Discord/Telegram/email. A PWA + web push is a cheaper fallback if a full native app isn't warranted. - _(app + BE)_ **L**

@@ -341,6 +341,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /status/data", s.handleStatusData)
 	mux.HandleFunc("GET /api/status-pages", auth.RequireRole("admin", s.handleListStatusPages))
 	mux.HandleFunc("POST /api/status-pages", auth.RequireRole("admin", s.handleCreateStatusPage))
+	mux.HandleFunc("PUT /api/status-pages/{id}/note", auth.RequireRole("admin", s.handleSetStatusNote))
+	mux.HandleFunc("DELETE /api/status-pages/{id}/note", auth.RequireRole("admin", s.handleClearStatusNote))
 	mux.HandleFunc("PATCH /api/status-pages/{id}", auth.RequireRole("admin", s.handleUpdateStatusPage))
 	mux.HandleFunc("POST /api/status-pages/{id}/rotate", auth.RequireRole("admin", s.handleRotateStatusPage))
 	mux.HandleFunc("GET /api/status-pages/{id}/link", auth.RequireRole("admin", s.handleStatusPageLink))

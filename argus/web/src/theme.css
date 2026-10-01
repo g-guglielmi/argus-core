@@ -662,6 +662,10 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .chan { border: 1px solid var(--border); border-radius: 12px; padding: 15px; background: var(--elevated); display: flex; flex-direction: column; }
 .chan .ct { display: flex; align-items: center; gap: 10px; font-weight: 650; margin-bottom: 6px; }
 .chan .ci { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: #fff; flex-shrink: 0; font-weight: 700; }
+/* A status page card's pinned note: a line in its style's colour, cut to two lines. */
+.sp-note { --c: var(--accent); display: flex; flex-direction: column; gap: 2px; margin: 6px 0 2px; padding: 6px 9px; border-left: 3px solid var(--c); border-radius: 6px; background: color-mix(in srgb, var(--c) 10%, transparent); font-size: 12.5px; }
+.sp-note-t { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; white-space: pre-line; }
+.sp-note-w { font-size: 11px; color: var(--muted); }
 .chan .chan-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chan .chan-meta { color: var(--muted); font-size: 12.5px; margin: 0 0 8px; }
 /* One-line channel health: neutral (never sent), green (last delivery ok), red (last delivery failed). */

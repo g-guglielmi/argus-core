@@ -77,7 +77,9 @@ API key, and MAC):
 - **Incident history** - what went wrong and when, per host and across the fleet: start, duration,
   who acknowledged it and the reason the device's collector gave, over 24 h to 90 days.
 - **Status pages** - read-only wall-screen dashboards opened with a secret link (no login),
-  limited to chosen sites, optionally to your networks and an expiry; the link can be rotated.
+  limited to chosen sites, optionally to your networks and an expiry; the link can be rotated. Pin a
+  note on a page ("the ISP has a ticket open") for whoever is looking, and it shows the maintenance
+  windows of its hosts, in progress and coming up.
 - **Per-site visibility** - a helpdesk or viewer account can be limited to some sites: they see,
   act on and are alerted about only those sites' hosts, enforced on the server.
 - **Auth** - three roles (admin / helpdesk / viewer), argon2id passwords, TOTP two-factor

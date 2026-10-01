@@ -713,6 +713,14 @@ CREATE TABLE IF NOT EXISTS push_hosts (
 	if err := s.ensureColumn("discovery_jobs", "certificate TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// A status page's pinned note: what people looking at the page should know ("the ISP has a ticket
+	// open"), with a style (info, warning, problem) and an optional end.
+	for _, col := range []string{"note_text TEXT NOT NULL DEFAULT ''", "note_style TEXT NOT NULL DEFAULT ''", "note_until INTEGER NOT NULL DEFAULT 0",
+		"note_at INTEGER NOT NULL DEFAULT 0", "note_by TEXT NOT NULL DEFAULT ''"} {
+		if err := s.ensureColumn("status_pages", col); err != nil {
+			return err
+		}
+	}
 	if err := s.ensureColumn("status_pages", "token_enc TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}

@@ -24,7 +24,20 @@ type StatusPage struct {
 	CreatedBy    string
 	LastViewedAt int64
 	HasLink      bool // the link can be copied again (false for pages made before it was kept)
+	Note         StatusNote
 }
+
+// StatusNote is a note pinned on a status page. Text "" = none.
+type StatusNote struct {
+	Text  string
+	Style string // info | warning | problem
+	Until int64  // unix s it stops showing; 0 = until removed
+	At    int64  // when it was posted
+	By    string // who posted it
+}
+
+// Showing reports whether the note is on the page at now.
+func (n StatusNote) Showing(now int64) bool { return n.Text != "" && (n.Until == 0 || now < n.Until) }
 
 // HashStatusToken is how a status-page token is stored and looked up.
 func HashStatusToken(token string) string {
@@ -32,12 +45,13 @@ func HashStatusToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-const statusPageColumns = `id,name,sites,allow_cidrs,expires_at,created_at,created_by,last_viewed_at,token_enc<>''`
+const statusPageColumns = `id,name,sites,allow_cidrs,expires_at,created_at,created_by,last_viewed_at,token_enc<>'',note_text,note_style,note_until,note_at,note_by`
 
 func scanStatusPage(row rowScanner) (*StatusPage, error) {
 	var p StatusPage
 	var sites string
-	if err := row.Scan(&p.ID, &p.Name, &sites, &p.AllowCIDRs, &p.ExpiresAt, &p.CreatedAt, &p.CreatedBy, &p.LastViewedAt, &p.HasLink); err != nil {
+	if err := row.Scan(&p.ID, &p.Name, &sites, &p.AllowCIDRs, &p.ExpiresAt, &p.CreatedAt, &p.CreatedBy, &p.LastViewedAt, &p.HasLink,
+		&p.Note.Text, &p.Note.Style, &p.Note.Until, &p.Note.At, &p.Note.By); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -93,6 +107,16 @@ func (s *Store) CreateStatusPage(ctx context.Context, p StatusPage, token string
 func (s *Store) UpdateStatusPage(ctx context.Context, p StatusPage) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE status_pages SET name=?,sites=?,allow_cidrs=?,expires_at=? WHERE id=?`,
 		p.Name, encodeSites(p.Sites), p.AllowCIDRs, p.ExpiresAt, p.ID)
+	return err
+}
+
+// SetStatusNote pins a note on a page (replacing the one it had); a blank text removes it.
+func (s *Store) SetStatusNote(ctx context.Context, id int64, n StatusNote) error {
+	if n.Text == "" {
+		n = StatusNote{}
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE status_pages SET note_text=?, note_style=?, note_until=?, note_at=?, note_by=? WHERE id=?`,
+		n.Text, n.Style, n.Until, n.At, n.By, id)
 	return err
 }
 

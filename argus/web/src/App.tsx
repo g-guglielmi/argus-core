@@ -5533,7 +5533,13 @@ function ThresholdDialog({ tpl, onClose, onSaved }: { tpl: ThrTemplate; onClose:
   )
 }
 
-type StatusPage = { id: number; name: string; sites: string[]; allow_cidrs: string; expires_at: number; created_at: number; created_by: string; last_viewed_at: number; has_link?: boolean }
+type StatusNote = { text: string; style: 'info' | 'warning' | 'problem'; at: number; until?: number; by?: string }
+type StatusPage = { id: number; name: string; sites: string[]; allow_cidrs: string; expires_at: number; created_at: number; created_by: string; last_viewed_at: number; has_link?: boolean; note?: StatusNote }
+const NOTE_STYLES: { v: StatusNote['style']; label: string; color: string }[] = [
+  { v: 'info', label: 'Info', color: 'var(--accent)' }, { v: 'warning', label: 'Warning', color: 'var(--warn)' }, { v: 'problem', label: 'Problem', color: 'var(--err)' },
+]
+// How long a new note shows, in hours (0 = until it's removed).
+const NOTE_FOR_HOURS = [0, 1, 4, 12, 24, 72, 168]
 
 // Expiry choices for a status page link, in days (0 = never).
 const STATUS_EXPIRY_DAYS = [0, 1, 7, 30, 90, 365]
@@ -5749,6 +5755,7 @@ function StatusPagesView() {
   const [sites, setSites] = useState<string[]>([])
   const [editing, setEditing] = useState<StatusPage | 'new' | null>(null)
   const [reveal, setReveal] = useState<{ name: string; link: string } | null>(null)
+  const [noting, setNoting] = useState<StatusPage | null>(null)
   function load() { fetch('/api/status-pages').then((r) => (r.ok ? r.json() : Promise.reject())).then((p) => setPages(p || [])).catch(() => toast.error('Could not load status pages')) }
   useEffect(() => {
     load()
@@ -5784,7 +5791,7 @@ function StatusPagesView() {
         <div className="tools"><button className="btn primary" onClick={() => setEditing('new')}>+ Add status page</button></div>
       </div>
       <p className="panel-intro">
-        A status page is a read-only dashboard for a wall screen, opened with a secret link instead of a login. It shows the sites you choose, host by host, with the sensors that need attention, and refreshes every 30 seconds. Anyone with the link can see it, so keep it on the screen it's for: limit it to your networks, give it an expiry, or make a new link to shut the old one out.
+        A status page is a read-only dashboard for a wall screen, opened with a secret link instead of a login. It shows the sites you choose, host by host, with the sensors that need attention, and refreshes every 30 seconds. Anyone with the link can see it, so keep it on the screen it's for: limit it to your networks, give it an expiry, or make a new link to shut the old one out. Pin a note on a page to tell whoever is looking what's going on; a page also shows the maintenance windows of its hosts, in progress and coming up.
       </p>
       {pages === null && <Skeleton rows={2} cols={3} />}
       {pages && pages.length === 0 && (
@@ -5803,8 +5810,15 @@ function StatusPagesView() {
                 </div>
                 <p className="chan-meta">{sitesLabel(p.sites)} · {p.allow_cidrs ? `only ${p.allow_cidrs}` : 'any network'} · {p.expires_at ? (expired ? 'expired' : `expires ${new Date(p.expires_at * 1000).toLocaleDateString()}`) : 'never expires'}</p>
                 <div className="chan-status">{p.last_viewed_at ? `Last viewed ${relTime(p.last_viewed_at)}` : 'Not opened yet'}</div>
+                {p.note && (
+                  <div className="sp-note" style={{ '--c': NOTE_STYLES.find((s) => s.v === p.note!.style)?.color } as CSSProperties} title={p.note.text}>
+                    <span className="sp-note-t">{p.note.text}</span>
+                    <span className="sp-note-w">{p.note.until ? `until ${fmtWhen(p.note.until)}` : 'until removed'}</span>
+                  </div>
+                )}
                 <div className="chan-actions">
                   {p.has_link ? <Button onClick={() => showLink(p)}>Show link</Button> : <Button onClick={() => rotate(p)}>New link</Button>}
+                  <Button variant="ghost" onClick={() => setNoting(p)}>{p.note ? 'Note' : 'Add note'}</Button>
                   <Kebab actions={[
                     { label: 'Edit…', icon: kbIcon.edit, onClick: () => setEditing(p) },
                     ...(p.has_link ? [{ label: 'New link…', icon: kbIcon.edit, onClick: () => rotate(p) }] : []),
@@ -5822,7 +5836,73 @@ function StatusPagesView() {
           onSaved={(p, link) => { setEditing(null); load(); if (link) setReveal({ name: p.name, link: statusLinkURL(link) }); else toast.success('Status page saved.') }} />
       )}
       {reveal && <StatusLinkDialog name={reveal.name} link={reveal.link} onClose={() => setReveal(null)} />}
+      {noting && <StatusNoteDialog page={noting} onClose={(changed) => { setNoting(null); if (changed) load() }} />}
     </div>
+  )
+}
+
+// StatusNoteDialog pins a note on a status page for whoever is looking at it ("site3's internet is
+// down, the ISP has a ticket open"), in a style and for a time, or takes the current one down.
+function StatusNoteDialog({ page, onClose }: { page: StatusPage; onClose: (changed: boolean) => void }) {
+  const toast = useToast()
+  const cur = page.note
+  const [text, setText] = useState(cur?.text || '')
+  const [style, setStyle] = useState<StatusNote['style']>(cur?.style || 'info')
+  // How long: keep the current end, or a fresh one from now.
+  const [hours, setHours] = useState<number>(cur ? -1 : 0)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  async function save(e: FormEvent) {
+    e.preventDefault()
+    const until = hours === -1 ? (cur?.until || 0) : hours === 0 ? 0 : Math.floor(Date.now() / 1000) + hours * 3600
+    setBusy(true)
+    const res = await fetch(`/api/status-pages/${page.id}/note`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, style, until }) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the note')); return }
+    toast.success('Note on the page.'); onClose(true)
+  }
+  async function remove() {
+    setBusy(true)
+    const res = await fetch(`/api/status-pages/${page.id}/note`, { method: 'DELETE' }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not remove the note')); return }
+    toast.success('Note removed.'); onClose(true)
+  }
+  const left = 500 - text.length
+  return createPortal(
+    <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(false) }}>
+      <form className="dlg" role="dialog" aria-modal="true" onSubmit={save} style={{ maxWidth: 'min(600px, 94vw)' }}>
+        <div className="dlg-title">Note on {page.name}</div>
+        <p className="dlg-msg">A note shows at the top of the page, for whoever is looking at it: what's going on, what's being done about it, when it's expected back.{cur?.by ? ` Posted by ${cur.by} ${relTime(cur.at)}.` : ''}</p>
+        <div className="chan-form" style={{ marginTop: 10 }}>
+          <label className="chan-field"><span className="flabel">Note</span>
+            <textarea className="input" rows={4} maxLength={500} value={text} placeholder="e.g. The internet at site3 is down. The ISP has a ticket open; next update by 15:00." onChange={(e) => setText(e.target.value)} style={{ resize: 'vertical', minHeight: 84 }} />
+            <span className="flabel" style={{ textAlign: 'right', marginTop: 4, color: left < 50 ? 'var(--warn)' : undefined }}>{left} left</span>
+          </label>
+          <div className="chan-row">
+            <label className="chan-field"><span className="flabel">Style</span>
+              <Select value={style} onChange={(e) => setStyle(e.target.value as StatusNote['style'])}>{NOTE_STYLES.map((s) => <option key={s.v} value={s.v}>{s.label}</option>)}</Select>
+            </label>
+            <label className="chan-field"><span className="flabel">Shows</span>
+              <Select value={hours} onChange={(e) => setHours(Number(e.target.value))}>
+                {cur && <option value={-1}>{cur.until ? `Keep: until ${fmtWhen(cur.until)}` : 'Keep: until removed'}</option>}
+                {NOTE_FOR_HOURS.map((h) => <option key={h} value={h}>{h === 0 ? 'Until I remove it' : h < 24 ? `For ${h} hour${h === 1 ? '' : 's'}` : `For ${h / 24} day${h === 24 ? '' : 's'}`}</option>)}
+              </Select>
+            </label>
+          </div>
+        </div>
+        <div className="dlg-foot">
+          {cur && <Button variant="danger" disabled={busy} onClick={remove} style={{ marginRight: 'auto' }}>Remove note</Button>}
+          <Button onClick={() => onClose(false)}>Cancel</Button>
+          <Button variant="primary" type="submit" disabled={busy || !text.trim()}>{cur ? 'Save note' : 'Put on the page'}</Button>
+        </div>
+      </form>
+    </div>,
+    document.body,
   )
 }
 

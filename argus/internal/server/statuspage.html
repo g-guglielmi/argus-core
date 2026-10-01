@@ -41,6 +41,19 @@
 
   .banner { display: none; padding: 0.3em 1em; background: color-mix(in srgb, var(--err) 22%, var(--panel)); font-weight: 600; font-size: 0.85em; }
   .banner.on { display: block; }
+  /* The page's pinned note, in its style's colour, and the maintenance windows touching its hosts. */
+  .note { --c: var(--accent); display: none; align-items: baseline; gap: 1em; padding: 0.55em 1em; border-bottom: 1px solid var(--border);
+    border-left: 0.35em solid var(--c); background: color-mix(in srgb, var(--c) 15%, var(--panel)); }
+  .note.on { display: flex; }
+  .note.warning { --c: var(--warn); } .note.problem { --c: var(--err); }
+  .note .t { flex: 1; font-size: 1.15em; font-weight: 650; white-space: pre-line; overflow-wrap: anywhere; }
+  .note .w { font-size: 0.7em; color: var(--muted); white-space: nowrap; text-align: right; line-height: 1.3; }
+  .maint { display: none; flex-wrap: wrap; gap: 0.3em 1.6em; padding: 0.35em 1em; border-bottom: 1px solid var(--border); background: var(--panel); font-size: 0.85em; color: var(--muted); }
+  .maint.on { display: flex; }
+  .maint .k { font-size: 0.8em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); margin-right: 0.5em; }
+  .maint .m.act .k { color: var(--accent); }
+  .maint b { color: var(--text); font-weight: 650; }
+  td.sensor .mt { color: var(--accent); }
 
   main { flex: 1; overflow: hidden; position: relative; }
   .list { height: 100%; overflow: hidden; }
@@ -103,6 +116,8 @@
   <div class="clock"><div class="time" id="clock"></div><div class="upd" id="upd"></div></div>
 </header>
 <div class="banner" id="banner">Connection lost. Showing the last known state, retrying.</div>
+<div class="note" id="note"><div class="t"></div><div class="w"></div></div>
+<div class="maint" id="maint"></div>
 <main id="main"><div class="calm"><div class="sub">Loading…</div></div></main>
 <script>
 (function () {
@@ -169,6 +184,8 @@
     });
     setFavicon(!c.error);
     renderUptime(data.uptime);
+    renderNote(data.note);
+    renderMaint(data.maintenance);
     var rows = (data.issues || []).filter(function (i) { return i.kind === kind; });
     var main = document.getElementById('main'); main.textContent = '';
     if (!rows.length) {
@@ -193,14 +210,16 @@
       tr.appendChild(el('td', 'site', i.site));
       var sc = el('td', 'sensor');
       sc.appendChild(el('div', 'nm', i.sensor));
-      if (i.reason || i.holds) {
-        var why = el('div', 'why'), sv = sevInfo(i.severity);
+      if (i.reason || i.holds || i.maintenance) {
+        var why = el('div', 'why'), sv = sevInfo(i.severity), sep = '';
         if (i.reason) {
           var tag = el('span', 'sev', sv.label); tag.style.color = sv.color;
-          why.appendChild(tag); why.appendChild(document.createTextNode(' · ' + i.reason));
+          why.appendChild(tag); why.appendChild(document.createTextNode(' · ' + i.reason)); sep = ' · ';
         }
+        // A host in a maintenance window: planned work, whose alerts wait until it ends.
+        if (i.maintenance) { why.appendChild(el('span', 'mt', sep + 'maintenance: ' + i.maintenance)); sep = ' · '; }
         // A master that is down: the sensors it takes down with it are this one row, not rows of their own.
-        if (i.holds) why.appendChild(el('span', 'held', (i.reason ? ' · ' : '') + 'holding ' + i.holds + (i.holds === 1 ? ' other sensor' : ' other sensors')));
+        if (i.holds) why.appendChild(el('span', 'held', sep + 'holding ' + i.holds + (i.holds === 1 ? ' other sensor' : ' other sensors')));
         sc.appendChild(why);
       }
       tr.appendChild(sc);
@@ -214,6 +233,44 @@
     });
     table.appendChild(tb); list.appendChild(table); main.appendChild(list);
     paginate(list);
+  }
+
+  // A time on the page's clock: "14:30" today (or on the day of from, for the end of a span), "Sat
+  // 22:00" this week, "12 Oct 22:00" later.
+  function when(ts, from) {
+    var d = new Date(ts * 1000), base = { hour: '2-digit', minute: '2-digit', hour12: !clock24 }, day = { year: 'numeric', month: '2-digit', day: '2-digit' };
+    if (tz) { base.timeZone = tz; day.timeZone = tz; }
+    try {
+      var same = d.toLocaleDateString([], day) === (from ? new Date(from * 1000) : new Date()).toLocaleDateString([], day);
+      if (same) return d.toLocaleTimeString([], base);
+      var o = {}; for (var k in base) o[k] = base[k];
+      if (ts - Date.now() / 1000 < 6 * 86400) o.weekday = 'short'; else { o.day = 'numeric'; o.month = 'short'; }
+      return d.toLocaleString([], o);
+    } catch (e) { return d.toLocaleString(); }
+  }
+  // The pinned note: its text, when it was posted and until when it shows.
+  function renderNote(n) {
+    var box = document.getElementById('note');
+    if (!n || !n.text) { box.className = 'note'; return; }
+    box.className = 'note on ' + (n.style || 'info');
+    box.querySelector('.t').textContent = n.text;
+    var w = box.querySelector('.w'); w.textContent = '';
+    w.appendChild(el('div', null, 'Posted ' + ago(n.at) + ' ago'));
+    if (n.until) w.appendChild(el('div', null, 'until ' + when(n.until)));
+  }
+  // Maintenance: the windows in progress (until when) and the next ones, with the hosts they cover.
+  function renderMaint(list) {
+    var box = document.getElementById('maint'); box.textContent = '';
+    if (!list || !list.length) { box.className = 'maint'; return; }
+    box.className = 'maint on';
+    list.forEach(function (m) {
+      var e = el('span', 'm' + (m.active ? ' act' : ''));
+      e.appendChild(el('span', 'k', m.active ? 'Maintenance now' : 'Next maintenance'));
+      e.appendChild(el('b', null, m.name));
+      var hosts = m.hosts === 1 ? (m.names && m.names[0]) || '1 host' : m.hosts + ' hosts' + (m.names && m.names.length === m.hosts ? ' (' + m.names.join(', ') + ')' : '');
+      e.appendChild(document.createTextNode((m.active ? ' until ' + when(m.end) : ' ' + when(m.start) + ' to ' + when(m.end, m.start)) + ' · ' + hosts));
+      box.appendChild(e);
+    });
   }
 
   // Uptime never rounds up to 100%: one missed check in a month still reads 99.99%.

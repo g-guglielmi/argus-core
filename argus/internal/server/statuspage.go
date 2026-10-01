@@ -9,6 +9,7 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/netip"
 	"sort"
@@ -43,15 +44,16 @@ const (
 // --- admin API ---
 
 type statusPageView struct {
-	ID           int64    `json:"id"`
-	Name         string   `json:"name"`
-	Sites        []string `json:"sites"`
-	AllowCIDRs   string   `json:"allow_cidrs"`
-	ExpiresAt    int64    `json:"expires_at"`
-	CreatedAt    int64    `json:"created_at"`
-	CreatedBy    string   `json:"created_by"`
-	LastViewedAt int64    `json:"last_viewed_at"`
-	HasLink      bool     `json:"has_link"` // the link can be copied again
+	ID           int64     `json:"id"`
+	Name         string    `json:"name"`
+	Sites        []string  `json:"sites"`
+	AllowCIDRs   string    `json:"allow_cidrs"`
+	ExpiresAt    int64     `json:"expires_at"`
+	CreatedAt    int64     `json:"created_at"`
+	CreatedBy    string    `json:"created_by"`
+	LastViewedAt int64     `json:"last_viewed_at"`
+	HasLink      bool      `json:"has_link"`       // the link can be copied again
+	Note         *noteView `json:"note,omitempty"` // the pinned note, while it shows
 }
 
 func toStatusPageView(p store.StatusPage) statusPageView {
@@ -60,7 +62,116 @@ func toStatusPageView(p store.StatusPage) statusPageView {
 		sites = []string{}
 	}
 	return statusPageView{ID: p.ID, Name: p.Name, Sites: sites, AllowCIDRs: p.AllowCIDRs, ExpiresAt: p.ExpiresAt,
-		CreatedAt: p.CreatedAt, CreatedBy: p.CreatedBy, LastViewedAt: p.LastViewedAt, HasLink: p.HasLink}
+		CreatedAt: p.CreatedAt, CreatedBy: p.CreatedBy, LastViewedAt: p.LastViewedAt, HasLink: p.HasLink, Note: toNoteView(p.Note, time.Now().Unix())}
+}
+
+// noteView is a status page's pinned note, for the page and the admin screen.
+type noteView struct {
+	Text  string `json:"text"`
+	Style string `json:"style"`
+	At    int64  `json:"at"`
+	Until int64  `json:"until,omitempty"`
+	By    string `json:"by,omitempty"` // the admin screen only
+}
+
+// toNoteView is the note while it shows, nil otherwise.
+func toNoteView(n store.StatusNote, now int64) *noteView {
+	if !n.Showing(now) {
+		return nil
+	}
+	return &noteView{Text: n.Text, Style: n.Style, At: n.At, Until: n.Until, By: n.By}
+}
+
+// Notes: up to maxNoteRunes, shown for at most maxNoteDays.
+const (
+	maxNoteRunes = 500
+	maxNoteDays  = 90
+)
+
+var noteStyles = map[string]bool{"info": true, "warning": true, "problem": true}
+
+// cleanNote trims a note's lines and drops control characters, keeping the line breaks (at most a
+// blank line between paragraphs).
+func cleanNote(text string) string {
+	var lines []string
+	blank := false
+	for _, l := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
+		l = strings.TrimSpace(strings.Map(func(c rune) rune {
+			if c == '\t' {
+				return ' '
+			}
+			if c < 32 || c == 127 {
+				return -1
+			}
+			return c
+		}, l))
+		if l == "" {
+			if !blank && len(lines) > 0 {
+				lines = append(lines, "")
+			}
+			blank = true
+			continue
+		}
+		blank = false
+		lines = append(lines, l)
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+// PUT /api/status-pages/{id}/note - pin a note on the page (replacing the one it had).
+func (s *Server) handleSetStatusNote(w http.ResponseWriter, r *http.Request) {
+	id := atoi64(r.PathValue("id"))
+	if _, err := s.st.GetStatusPage(r.Context(), id); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "status page not found"})
+		return
+	}
+	var req struct {
+		Text  string `json:"text"`
+		Style string `json:"style"`
+		Until int64  `json:"until"` // unix s; 0 = until removed
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	text := cleanNote(req.Text)
+	now := time.Now().Unix()
+	switch {
+	case text == "":
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "write the note first"})
+		return
+	case len([]rune(text)) > maxNoteRunes:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("a note can be up to %d characters", maxNoteRunes)})
+		return
+	case !noteStyles[req.Style]:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the style must be info, warning or problem"})
+		return
+	case req.Until < 0 || (req.Until > 0 && req.Until <= now) || req.Until > now+maxNoteDays*86400:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("the note must end in the future, within %d days", maxNoteDays)})
+		return
+	}
+	n := store.StatusNote{Text: text, Style: req.Style, Until: req.Until, At: now}
+	if caller, _ := auth.UserFrom(r.Context()); caller != nil {
+		n.By = caller.Email
+	}
+	if err := s.st.SetStatusNote(r.Context(), id, n); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database error"})
+		return
+	}
+	statusData.forget(id)
+	updated, _ := s.st.GetStatusPage(r.Context(), id)
+	writeJSON(w, http.StatusOK, toStatusPageView(*updated))
+}
+
+// DELETE /api/status-pages/{id}/note - take the note down.
+func (s *Server) handleClearStatusNote(w http.ResponseWriter, r *http.Request) {
+	id := atoi64(r.PathValue("id"))
+	if err := s.st.SetStatusNote(r.Context(), id, store.StatusNote{}); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database error"})
+		return
+	}
+	statusData.forget(id)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
 
 type statusPageRequest struct {
@@ -333,6 +444,66 @@ type statusView struct {
 	Counts      statusCounts  `json:"counts"`
 	Issues      []statusIssue `json:"issues"`
 	Uptime      *statusUptime `json:"uptime,omitempty"` // the page's hosts over 30 days (uptime.go)
+	Note        *noteView     `json:"note,omitempty"`   // the page's pinned note, while it shows
+	Maintenance []statusMaint `json:"maintenance"`      // windows touching the page's hosts: in progress, then the next ones
+}
+
+// statusMaint is a maintenance window on the page: one in progress (Active, ending at End) or one
+// coming up (starting at Start). Hosts counts the page's hosts it covers; Names are the first few.
+type statusMaint struct {
+	Name   string   `json:"name"`
+	Active bool     `json:"active"`
+	Start  int64    `json:"start"`
+	End    int64    `json:"end"`
+	Hosts  int      `json:"hosts"`
+	Names  []string `json:"names,omitempty"`
+}
+
+// The page lists the windows in progress and the next ones starting within statusMaintAhead, at
+// most statusMaintNext of those.
+const (
+	statusMaintAhead = 7 * 24 * time.Hour
+	statusMaintNext  = 3
+	statusMaintNames = 5
+)
+
+// statusMaintenance is the maintenance windows touching the page's hosts (id -> name, groups) at now:
+// those in progress first (soonest to end), then the ones coming up within a week (soonest first).
+func statusMaintenance(windows []store.MaintenanceWindow, hosts map[string][]string, names map[string]string, loc *time.Location, now time.Time) []statusMaint {
+	var active, next []statusMaint
+	for _, w := range windows {
+		if !w.Enabled {
+			continue
+		}
+		var covered []string
+		for id, groups := range hosts {
+			if windowCovers(w, id, groups) {
+				covered = append(covered, names[id])
+			}
+		}
+		if len(covered) == 0 {
+			continue
+		}
+		sort.Strings(covered)
+		m := statusMaint{Name: w.Name, Hosts: len(covered), Names: covered[:min(len(covered), statusMaintNames)]}
+		dur := time.Duration(w.DurationMin) * time.Minute
+		if start, on := occurrenceAt(w, now, loc); on {
+			a := m
+			a.Active, a.Start, a.End = true, start.Unix(), start.Add(dur).Unix()
+			active = append(active, a)
+		}
+		// The next occurrence (for one in progress, the one after it).
+		if n := nextStart(w, now, loc); !n.IsZero() && n.Sub(now) <= statusMaintAhead {
+			m.Start, m.End = n.Unix(), n.Add(dur).Unix()
+			next = append(next, m)
+		}
+	}
+	sort.SliceStable(active, func(i, j int) bool { return active[i].End < active[j].End })
+	sort.SliceStable(next, func(i, j int) bool { return next[i].Start < next[j].Start })
+	if len(next) > statusMaintNext {
+		next = next[:statusMaintNext]
+	}
+	return append(append([]statusMaint{}, active...), next...)
 }
 
 type statusCounts struct {
@@ -359,6 +530,8 @@ type statusIssue struct {
 	Priority int       `json:"priority"`
 	Since    int64     `json:"since"`
 	Holds    int       `json:"holds,omitempty"` // on a master's row: how many other sensors it holds (foldHeld)
+	// Maintenance is the window the sensor's host is in right now, if any: its alerts wait meanwhile.
+	Maintenance string `json:"maintenance,omitempty"`
 }
 
 var issueRank = map[string]int{"error": 0, "warning": 1, "acked": 2}
@@ -380,9 +553,15 @@ func (s *Server) buildStatus(ctx context.Context, p store.StatusPage) (statusVie
 	}
 	hidden, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 
-	v := statusView{Name: p.Name, GeneratedAt: time.Now().Unix(), Timezone: s.mgr.Location().String(), Clock24h: s.mgr.Clock24h(), Issues: []statusIssue{}}
+	now := time.Now()
+	v := statusView{Name: p.Name, GeneratedAt: now.Unix(), Timezone: s.mgr.Location().String(), Clock24h: s.mgr.Clock24h(), Issues: []statusIssue{},
+		Note: toNoteView(p.Note, now.Unix()), Maintenance: []statusMaint{}}
+	if v.Note != nil {
+		v.Note.By = "" // who posted it is for the admin screen, not the wall
+	}
 	siteOf := map[string]string{}
 	nameOf := map[string]string{}
+	groupsOf := map[string][]string{}
 	for _, h := range hosts {
 		if _, isHidden := hidden[h.HostID]; isHidden || h.Status == "1" {
 			continue
@@ -392,10 +571,17 @@ func (s *Server) buildStatus(ctx context.Context, p store.StatusPage) (statusVie
 				siteOf[h.HostID] = g.Name
 				nameOf[h.HostID] = h.Name
 				v.Counts.Hosts++
+				for _, gg := range h.Groups {
+					groupsOf[h.HostID] = append(groupsOf[h.HostID], gg.Name)
+				}
 				break
 			}
 		}
 	}
+	if windows, err := s.st.MaintenanceWindows(ctx); err == nil { // best effort: the page just lists none
+		v.Maintenance = statusMaintenance(windows, groupsOf, nameOf, s.location(), now)
+	}
+	inMaint := s.maintenanceNow(ctx)
 	onPage := make([]string, 0, len(siteOf))
 	for h := range siteOf {
 		onPage = append(onPage, h)
@@ -441,7 +627,8 @@ func (s *Server) buildStatus(ctx context.Context, p store.StatusPage) (statusVie
 			label = sr.Name
 		}
 		is := statusIssue{Kind: sr.State, Host: sr.HostName, Site: siteOf[sr.HostID], Sensor: label, Reason: sr.Reason,
-			Severity: sr.Severity, Priority: sr.Priority, Since: sr.Since, Spark: sparks[sr.ItemID], Holds: holds[sr.ItemID]}
+			Severity: sr.Severity, Priority: sr.Priority, Since: sr.Since, Spark: sparks[sr.ItemID], Holds: holds[sr.ItemID],
+			Maintenance: inMaint[sr.HostID].Name}
 		switch r, ok := reachabilityReading(sr.key, sr.Value); {
 		case ok:
 			is.Value = r

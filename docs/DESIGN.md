@@ -1352,6 +1352,15 @@ A read-only dashboard for a wall screen, opened with a secret link instead of a 
   first data), the list itself ("All systems operational" when there
   are no errors), paged every 15 s when it doesn't fit, refreshing every 30 s, flagging a lost
   connection, and reloading itself every 6 h.
+- **Note:** an admin can pin a note on a page (**Add note** on its card; `PUT` / `DELETE
+  /api/status-pages/{id}/note`): up to 500 characters of plain text (line breaks kept, control
+  characters dropped), a style (info, warning, problem) and an end (an hour to 90 days, or until
+  removed). It shows in a bar under the header in its style's colour, with when it was posted and
+  until when; who posted it is on the admin card only. Kept on the `status_pages` row (`note_*`).
+- **Maintenance:** a strip under the note lists the windows touching the page's hosts (section 9): the
+  ones in progress with their end, then up to three starting within a week, each with how many of the
+  page's hosts it covers (named when five or fewer); a problem row whose host is in a window says so
+  (`maintenance` on the issue). From `maintenance_windows`, computed with the page's data.
 - **Uptime:** the header shows the average 30-day uptime of the page's hosts, and the calm screen
   ("All systems operational") lists the ones under 100% over 30 days, worst first, at most ten, with
   their 7 and 30 day figures (section 7b; from `uptime_days`, so a page of hundreds of hosts stays cheap).
