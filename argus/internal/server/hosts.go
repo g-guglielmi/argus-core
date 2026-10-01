@@ -551,6 +551,10 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 		if r, ok := runningReading(it.Key, it.LastValue); ok {
 			iv.LastValue = r // a service / container reads Running or Down, not 1 / 0
 		}
+		coll, isColl := collectorOf(it.Key)
+		if isColl && !iv.Supported {
+			iv.Why = collectorWhy(it.Key, it.Error)
+		}
 		if iv.Paused {
 			iv.PausedUntil = pauseMap[it.ItemID]
 		}
@@ -561,7 +565,11 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 		if !all {
 			cat, label, inst, ch, ok := classifyItem(it.Key, it.Name)
 			if !ok {
-				continue // hide un-curated "noise" in the default view
+				if !isColl || iv.Supported {
+					continue // hide un-curated "noise" in the default view
+				}
+				// A collector that can't run is shown with its sensors, saying why (collectors.go).
+				cat, label = coll.category, coll.label
 			}
 			// Capability placeholders: a UniFi device without a temperature probe, or a switch
 			// without PoE, reports a constant 0 - hide the meaningless row (the template also stops

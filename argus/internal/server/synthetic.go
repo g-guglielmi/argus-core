@@ -116,7 +116,9 @@ func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, 
 				delay = d
 			}
 			id := synthUnsupported + it.ItemID
-			if !ok || atoi64(it.LastClock) == 0 || now-start < int64(unsupportedChecks)*intervalSecs(delay) || len(it.Hosts) == 0 {
+			// A collector alerts even when it never collected: its sensors only exist once it runs.
+			_, isColl := collectorOf(it.Key)
+			if !ok || (atoi64(it.LastClock) == 0 && !isColl) || now-start < int64(unsupportedChecks)*intervalSecs(delay) || len(it.Hosts) == 0 {
 				out.silent[id] = true
 				continue
 			}
@@ -126,6 +128,9 @@ func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, 
 			})
 			out.targets[id] = zabbix.TriggerTarget{Hosts: it.Hosts, Items: []zabbix.TargetItem{{ItemID: it.ItemID, Key: it.Key}}}
 			out.readings[id] = unsupportedReading(it.Error)
+			if isColl {
+				out.readings[id] = "Not supported: " + collectorWhy(it.Key, it.Error)
+			}
 		}
 	}
 
@@ -222,6 +227,9 @@ func unsupportedReading(msg string) string {
 // sensorLabel names a sensor the way the tree does ("Disk temperature · nvme0"), falling back to its
 // Zabbix name.
 func sensorLabel(key, name string) string {
+	if c, ok := collectorOf(key); ok {
+		return c.label
+	}
 	_, l, inst, ch, ok := classifyItem(key, name)
 	if !ok || l == "" {
 		return name

@@ -12,9 +12,10 @@ zabbix_export:
         the core). Each URL is its own sensor: it is up when it answers with an accepted status code
         ({$HTTP.EXPECT}, redirects followed) and, when the URL ends in "#text", the page contains that
         text ("#!text": it must not); with the response time and, for https, the days its certificate
-        has left. The certificate is checked ({$HTTP.TLS.VERIFY} "verify": an untrusted one, one for
-        another name or an expired one is a failure; "ignore" for a self-signed device page, whose
-        expiry still counts). A URL that doesn't answer as expected says why. A path ("/login") is on
+        has left. The certificate is checked ({$HTTP.TLS.VERIFY}): "verify" wants one a known CA issued,
+        for the URL's name and valid now; "self-signed" also takes one no CA vouches for (a device's own,
+        a private CA), still for the URL's name and valid now; "ignore" takes any. Its expiry counts in
+        every mode. A URL that doesn't answer as expected says why. A path ("/login") is on
         the host's own address with {$HTTP.SCHEME} and {$HTTP.PORT}; a blank list checks that address.
         The proxy runs argus_http.py once a minute for all of the host's URLs at once. Attach to any
         host (DESIGN section 5).
@@ -37,9 +38,8 @@ zabbix_export:
           type: DEPENDENT
           key: http.url.discovery
           delay: '0'
-          lifetime: 1h
-          enabled_lifetime_type: DISABLE_NEVER
-          description: 'One sensor set per URL in {$HTTP.URLS}. A URL taken out of it stops reading and is deleted an hour later. While the list is invalid the discovery keeps what it had.'
+          lifetime_type: DELETE_IMMEDIATELY
+          description: 'One sensor set per URL in {$HTTP.URLS}. A URL taken out of it is deleted at the next check, with its sensors and problems. While the list is invalid the discovery keeps what it had.'
           master_item:
             key: 'argus_http.py[{HOST.CONN},"{$HTTP.URLS}","{$HTTP.SCHEME}","{$HTTP.PORT}","{$HTTP.EXPECT}","{$HTTP.TLS.VERIFY}","{$HTTP.TIMEOUT}"]'
           preprocessing:
@@ -163,8 +163,7 @@ zabbix_export:
           type: DEPENDENT
           key: http.cert.discovery
           delay: '0'
-          lifetime: 1h
-          enabled_lifetime_type: DISABLE_NEVER
+          lifetime_type: DELETE_IMMEDIATELY
           description: 'One certificate sensor per https URL in {$HTTP.URLS} (a plain http URL has none).'
           master_item:
             key: 'argus_http.py[{HOST.CONN},"{$HTTP.URLS}","{$HTTP.SCHEME}","{$HTTP.PORT}","{$HTTP.EXPECT}","{$HTTP.TLS.VERIFY}","{$HTTP.TIMEOUT}"]'
@@ -223,7 +222,7 @@ zabbix_export:
           description: 'The status codes that count as up, of the final answer after redirects: "200-299", "200,204,401".'
         - macro: '{$HTTP.TLS.VERIFY}'
           value: verify
-          description: '"verify" checks the certificate (an untrusted one, one for another name or an expired one is a failure); "ignore" accepts any, for a self-signed device page.'
+          description: 'How the certificate is checked: "verify" wants one a known CA issued, for the URL''s name and valid now; "self-signed" also takes one no CA vouches for (a device''s own), still for its name and valid now; "ignore" takes any.'
         - macro: '{$HTTP.TIMEOUT}'
           value: '10'
           description: 'Seconds to wait for each answer (1 to 15).'

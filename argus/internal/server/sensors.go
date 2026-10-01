@@ -208,6 +208,9 @@ func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 				continue
 			}
 			label = it.Name
+			if c, isColl := collectorOf(it.Key); isColl {
+				cat, label = c.category, c.label
+			}
 		}
 		_, hiddenItem := hideItem[it.ItemID]
 		_, hiddenHost := hideHost[host.HostID]
@@ -239,7 +242,7 @@ func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 			State: state, Numeric: numericValueType(it.ValueType), Supported: supported,
 			Priority: priorityOf(prioMap, it.ItemID), Severity: itemSev[it.ItemID], Reason: itemReason[it.ItemID],
 			Since: itemSince[it.ItemID], EventIDs: itemEvents[it.ItemID],
-			Why: reasons.why(host.HostID, it.Key, it.LastValue, it.Error, supported),
+			Why: sensorWhy(reasons, host.HostID, it.Key, it.LastValue, it.Error, supported),
 		})
 	}
 	// Problems that belong to no sensor (Argus-raised: an agent or SNMP endpoint that stopped

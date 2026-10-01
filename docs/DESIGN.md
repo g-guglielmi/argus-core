@@ -202,7 +202,9 @@ Every host gets the **Base** template (Ping - latency + loss, always) and, optio
 `{$HTTP.URLS}` at once - full URLs, or paths on the host's address with `{$HTTP.SCHEME}` /
 `{$HTTP.PORT}`, a blank list being the host itself - one sensor group per URL under **Web**: up when it
 answers with an accepted status code after redirects (`{$HTTP.EXPECT}`), has the text a `#text` /
-`#!text` suffix asks for, and presents a trusted certificate (`{$HTTP.TLS.VERIFY}` verify / ignore);
+`#!text` suffix asks for, and presents an accepted certificate (`{$HTTP.TLS.VERIFY}`: `verify` a known
+CA's, `self-signed` also one no CA vouches for - checked by trusting that very certificate, so its name
+and dates still count - `ignore` any);
 the response time; for https the certificate's days left, read even when untrusted, in a second LLD
 rule so plain http URLs have none; why it isn't up as the reason, and a list the collector refuses
 makes the URL sensors unsupported with why - attachable to any host, not a class), the **DNS
@@ -314,6 +316,14 @@ Argus template follows one of two shapes, and a new one must too:
   curated sensor, empty while it works, `JSONPATH $.error` with an empty value when an older collector
   doesn't print it). Argus maps each flag to its reason item (`reasonKeys` in
   `internal/server/reasons.go`; a test fails when a collector flag has none).
+
+A collector that can't run at all (an external script the probe doesn't have yet, a timeout) leaves
+its master item unsupported, and since its sensors are discovered from its answer, nothing else would
+show it. So the probe's external collectors (`collectors` in `internal/server/collectors.go`:
+`argus_http.py`, `argus_tcp.py`, `argus_linux_ssh.py`, `argus_nut.py`, `argus_xcpng.py`,
+`dns-resolver.py`) show as a sensor of their own while unsupported ("HTTP checks", in their sensors'
+category), and alert even when they never collected; a missing script reads as which probe release
+brings it.
 
 Reasons never carry a secret: no password, token or key, only what the other side said and which
 setting to look at. Argus trims them to one line of at most 200 characters.

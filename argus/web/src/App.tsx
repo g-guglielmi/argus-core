@@ -7030,8 +7030,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                     // A port's Speed and Link are constants - start their lines hidden (legend keeps
                     // the value; a click reveals the line). Hiding Speed also lets the bps axis
                     // range to the In/Out traffic instead of pinning at the negotiated gigabits.
-                    // A URL's certificate days ride on their own scale: its line starts hidden too.
-                    const c: GroupChan = { id: i.id, label: i.channel || i.label || i.name, units: i.units, defaultOff: (row.cat === 'Ports' && (i.channel === 'Speed' || i.channel === 'Link')) || (row.cat === 'Web' && i.channel === 'Certificate'), thr: i.thr }
+                    const c: GroupChan = { id: i.id, label: i.channel || i.label || i.name, units: i.units, defaultOff: row.cat === 'Ports' && (i.channel === 'Speed' || i.channel === 'Link'), thr: i.thr }
                     // Temperature channels hold their last reading flat while the drive is parked - seed
                     // the hold from the current last value/time (see buildMultiPlot's LOCF pass).
                     if (row.cat === 'Temperature') { const sv = Number(i.last_value); c.hold = true; if (Number.isFinite(sv)) c.seedValue = sv; c.seedClock = i.last_clock }

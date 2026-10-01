@@ -25,13 +25,14 @@ var addOns = []AddOn{
 		Template: TemplateHTTP,
 		Description: "A real request to each URL, from the host's proxy: an accepted status code, text the page must have, the response time and the certificate's days left. " +
 			"Full URLs (https://portal.example.com/app) or paths on this host (/login); blank checks the host itself on the scheme and port below. " +
-			"End a URL in #text for text the page must contain (%20 for a space), #!text for text it must not.",
+			"End a URL in #text for text the page must contain (%20 for a space), #!text for text it must not. " +
+			"Certificate: verify wants one a known CA issued; self-signed also takes the device's own, still for the URL's name and not expired; ignore takes any.",
 		Macros: []MacroSpec{
 			{Macro: "{$HTTP.URLS}", Label: "URLs or paths", Hint: "https://portal.example.com/app, /login", Check: checkURLList},
 			{Macro: "{$HTTP.SCHEME}", Label: "Scheme (for paths)", Hint: "https", Options: []string{"https", "http"}},
 			{Macro: "{$HTTP.PORT}", Label: "Port (for paths)", Hint: "443", Pattern: patternPort},
 			{Macro: "{$HTTP.EXPECT}", Label: "Accepted status codes", Hint: "200-299", Pattern: patternCodes},
-			{Macro: "{$HTTP.TLS.VERIFY}", Label: "Certificate", Hint: "verify", Options: []string{"verify", "ignore"}},
+			{Macro: "{$HTTP.TLS.VERIFY}", Label: "Certificate", Hint: "verify", Options: []string{"verify", "self-signed", "ignore"}},
 			{Macro: "{$HTTP.TIMEOUT}", Label: "Timeout (seconds)", Hint: "10", Pattern: patternSeconds},
 		},
 	},

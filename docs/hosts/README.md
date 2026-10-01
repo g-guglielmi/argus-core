@@ -128,8 +128,8 @@ with a red band while it doesn't answer. A port that refuses or ignores the conn
 answering**, with why (`connection refused: nothing listens on 3389`, `no answer within 3 s (a
 firewall drops it, or the host is down)`, `no route to host`). Alerts: **Port RDP (3389) is not
 answering** (High, after 3 checks), and slow to connect (`{$TCP.TIME.WARN}` 0.5 s, `{$TCP.TIME.HIGH}`
-1 s). **Timeout** (default 3 s) is how long a port has to answer. Taking a port out of the list stops
-its sensor, which is deleted an hour later.
+1 s). **Timeout** (default 3 s) is how long a port has to answer. Taking a port out of the list deletes
+its sensor, and any open problem of it, at the next check.
 
 **HTTP/HTTPS endpoint add-on.** A real request to each web page you list, from the host's probe, once
 a minute. Under **URLs or paths** list full URLs (`https://portal.example.com/app`, any host, subdomain,
@@ -141,8 +141,14 @@ is down, and for https the days its certificate has left. A URL is up when it an
 **Accepted status codes** (`200-299` by default, after following up to 5 redirects), has its text, and
 presents a trusted certificate for its name. When it isn't, it says why (`returned 502 Bad Gateway`,
 `the page does not contain "Welcome"`, `the certificate is not trusted: self-signed certificate`, `the
-certificate is for another name`, `no answer within 10 s`). Set **Certificate** to `ignore` for a
-device page with a self-signed certificate: any certificate is accepted, and its expiry still counts.
+certificate is for another name`, `no answer within 10 s`). **Certificate** sets how the certificate
+is checked: `verify` wants one a known CA issued, for the URL's name and not expired; `self-signed`
+also takes one no CA vouches for (the device's own, or one from a private CA), still for the URL's name
+and not expired; `ignore` takes any. The expiry counts in every mode. A device reached by its IP whose
+own certificate only names its hostname fails `self-signed` with `the certificate is for another
+name`: list it by that name, or use `ignore`. Taking a URL out of the list deletes its sensors, and any
+open problem of theirs, at the next check. If the probe can't run the check at all (it doesn't have
+`argus_http.py` yet), the host shows an **HTTP checks** sensor under **Web** saying so, and it alerts.
 Alerts: **portal.example.com/app is down** (High, after 3 checks), slow (`{$HTTP.RESPONSE.WARN}` 1 s,
 `{$HTTP.RESPONSE.HIGH}` 3 s) and the certificate expiring (`{$HTTP.CERT.WARN}` 21 days,
 `{$HTTP.CERT.HIGH}` 7 days); all four thresholds are on the Thresholds screen. **Timeout** (default 10 s)

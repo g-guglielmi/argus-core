@@ -122,7 +122,7 @@ class HTTPTest(unittest.TestCase):
 
     def check(self, entry, codes="200-299", timeout=5):
         es = ah.parse_urls(entry, "127.0.0.1", "http", self.port)
-        return ah.run(es, ah.parse_codes(codes), True, timeout)[0]
+        return ah.run(es, ah.parse_codes(codes), "verify", timeout)[0]
 
     def test_up(self):
         r = self.check("/ok")
@@ -149,7 +149,7 @@ class HTTPTest(unittest.TestCase):
 
     def test_not_answering(self):
         es = ah.parse_urls("http://127.0.0.1:%d/" % free_port(), "h", "http", 80)
-        r = ah.run(es, ah.parse_codes(""), True, 3)[0]
+        r = ah.run(es, ah.parse_codes(""), "verify", 3)[0]
         self.assertEqual(r["up"], 0)
         self.assertIn("connection refused", r["error"])
         r = self.check("/slow", timeout=1)
@@ -157,23 +157,37 @@ class HTTPTest(unittest.TestCase):
         self.assertIn("no answer within 1 s", r["error"])
 
 
+def self_signed(tmp, name, san):
+    """A self-signed certificate for 30 days: (cert path, server context)."""
+    crt, key = os.path.join(tmp, name + ".pem"), os.path.join(tmp, name + ".key")
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "30", "-subj", "/CN=" + name,
+                    "-addext", "subjectAltName=" + san, "-keyout", key, "-out", crt], check=True, capture_output=True)
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(crt, key)
+    return crt, ctx
+
+
 @unittest.skipUnless(shutil.which("openssl"), "needs openssl")
 class HTTPSTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp()
-        cls.crt, key = os.path.join(cls.tmp, "c.pem"), os.path.join(cls.tmp, "k.pem")
-        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "30", "-subj", "/CN=localhost",
-                        "-keyout", key, "-out", cls.crt], check=True, capture_output=True)
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.load_cert_chain(cls.crt, key)
+        # One for the address the test connects to (127.0.0.1), one for another name.
+        cls.crt, ctx = self_signed(cls.tmp, "device", "IP:127.0.0.1")
         cls.srv, cls.port = serve(ctx)
+        _, ctx = self_signed(cls.tmp, "other", "DNS:other.example.lan")
+        cls.other, cls.other_port = serve(ctx)
 
     @classmethod
     def tearDownClass(cls):
-        cls.srv.shutdown()
-        cls.srv.server_close()
+        for s in (cls.srv, cls.other):
+            s.shutdown()
+            s.server_close()
         shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def run_mode(self, port, mode):
+        es = ah.parse_urls("https://127.0.0.1:%d/ok" % port, "h", "https", 443)
+        return ah.run(es, ah.parse_codes(""), mode, 5)[0]
 
     def test_der_not_after(self):
         with open(self.crt) as f:
@@ -182,14 +196,21 @@ class HTTPSTest(unittest.TestCase):
         want = ssl.cert_time_to_seconds(out.strip().split("=", 1)[1])
         self.assertEqual(ah.der_not_after(der), want)
 
-    def test_self_signed(self):
-        es = ah.parse_urls("https://127.0.0.1:%d/ok" % self.port, "h", "https", 443)
-        r = ah.run(es, ah.parse_codes(""), True, 5)[0]
-        self.assertEqual(r["up"], 0)
-        self.assertTrue(r["error"].startswith("the certificate is not trusted") or r["error"] == "the certificate is for another name", r["error"])
+    def test_verify_refuses_self_signed(self):
+        r = self.run_mode(self.port, "verify")
+        self.assertEqual((r["up"], r["error"]), (0, "the certificate is not trusted: self-signed certificate"))
         self.assertAlmostEqual(r["cert_days"], 30, delta=1, msg="its expiry is read anyway")
-        r = ah.run(es, ah.parse_codes(""), False, 5)[0]
-        self.assertEqual((r["up"], r["status"], r["error"]), (1, 200, ""), "ignore accepts it")
+
+    def test_self_signed_mode(self):
+        r = self.run_mode(self.port, "self-signed")
+        self.assertEqual((r["up"], r["status"], r["error"]), (1, 200, ""), "its own certificate, for its address")
+        self.assertAlmostEqual(r["cert_days"], 30, delta=1)
+        r = self.run_mode(self.other_port, "self-signed")
+        self.assertEqual((r["up"], r["error"]), (0, "the certificate is for another name"), "still checks the name")
+
+    def test_ignore_mode(self):
+        r = self.run_mode(self.other_port, "ignore")
+        self.assertEqual((r["up"], r["status"], r["error"]), (1, 200, ""), "ignore takes any certificate")
         self.assertAlmostEqual(r["cert_days"], 30, delta=1)
 
 

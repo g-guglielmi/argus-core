@@ -20,13 +20,20 @@ GitHub Release from the matching section below.
   or path) or paths on the host (`/login`); left blank it checks the host itself, as before. Each URL is
   its own sensor under **Web** with its response time and, for https, the days its certificate has
   left. A URL is up when it answers with an accepted status code (`200-299` by default, redirects
-  followed), has the text a `#text` suffix asks for (`#!text`: must not), and presents a trusted
-  certificate (**Certificate** `ignore` accepts a self-signed one and still tracks its expiry); when it
-  isn't, it says why. New alerts for a certificate expiring in under 21 days (warning) and 7 days
+  followed), has the text a `#text` suffix asks for (`#!text`: must not), and presents an accepted
+  certificate; when it isn't, it says why. **Certificate** sets the check: `verify` wants one a known
+  CA issued; `self-signed` also takes the device's own (or a private CA's), still for the URL's name
+  and not expired; `ignore` takes any. The expiry is tracked in every mode. New alerts for a certificate expiring in under 21 days (warning) and 7 days
   (high), both on the Thresholds screen.
-- The check runs in the probe (`argus_http.py`, `probe/v7.0.31-r15`); a host monitored by the core
-  server needs the core's copy too (`setup-core.sh` installs it). The add-on's two old sensors are
-  replaced by the new ones, so their history goes.
+- Taking a URL out of the list (or a port out of the TCP ports add-on) deletes its sensors and their
+  open problems at the next check, instead of an hour later.
+- The check runs in the probe (`argus_http.py`, `probe/v7.0.31-r15`, the `self-signed` mode from
+  `probe/v7.0.31-r16`; before that it checks like `verify`); a host monitored by the core server needs
+  the core's copy too (`setup-core.sh` installs it). The add-on's two old sensors are replaced by the
+  new ones, so their history goes.
+- A probe collector that can't run (a script the probe doesn't have yet, a timeout) now shows as a
+  sensor of its own on the host, **HTTP checks** under **Web** for instance, says why (for a missing
+  script, which probe release brings it), and alerts. Before, the host just had no such sensors.
 
 **Push sensors:**
 - A backup, a cron job or a scheduled task can now report to Argus when it runs: give it a push sensor

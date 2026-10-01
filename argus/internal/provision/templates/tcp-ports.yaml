@@ -34,9 +34,8 @@ zabbix_export:
           type: DEPENDENT
           key: tcp.port.discovery
           delay: '0'
-          lifetime: 1h
-          enabled_lifetime_type: DISABLE_NEVER
-          description: 'One sensor set per port in {$TCP.PORTS}. The ports come from the macro, so a port taken out of it stops reading and is deleted an hour later. While the list is invalid the discovery keeps what it had.'
+          lifetime_type: DELETE_IMMEDIATELY
+          description: 'One sensor set per port in {$TCP.PORTS}. The ports come from the macro, so a port taken out of it is deleted at the next check, with its sensors and problems. While the list is invalid the discovery keeps what it had.'
           master_item:
             key: 'argus_tcp.py[{HOST.CONN},"{$TCP.PORTS}",{$TCP.TIMEOUT}]'
           preprocessing:
