@@ -37,6 +37,10 @@ func TestFormatReading(t *testing.T) {
 		{"96", "%", "96 %"},
 		{"0", "%", "0 %"},
 		{"up", "", "up"},
+		{"325.2361", "days", "325 days"},
+		{"6.98", "days", "6 days"},
+		{"1.5", "days", "1 day"},
+		{"-0.25", "days", "-1 day"},
 	}
 	for _, c := range cases {
 		if got := FormatReading(c.val, c.units); got != c.want {

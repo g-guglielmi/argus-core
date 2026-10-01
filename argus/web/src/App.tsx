@@ -266,6 +266,9 @@ function fmtNumParts(n: number, units: string): [string, string] {
   if (units === 'bps') return scaleBy(n, 1000, BIT_UNITS)
   if (units === 'uptime') return [fmtDuration(n), '']
   if (units === 's') return scaleSeconds(n)
+  // A certificate's days left read as whole days, rounded down: 6.6 days left is "6 days", so the
+  // reading never contradicts an alert for "less than 7 days" (alerts do the same).
+  if (units === 'days') { const d = Math.floor(n); return [String(d), Math.abs(d) === 1 ? 'day' : 'days'] }
   return [roundNum(n), units || '']
 }
 
@@ -8180,7 +8183,8 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   const grid = { stroke: c.grid, width: 1 }
   const ticks = { stroke: c.grid, width: 1 }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const yv = (u: string) => ((_up: any, splits: number[]) => splits.map((v) => fmtNum(v, u))) as unknown as uPlot.Axis['values']
+  // Day labels round to the nearest day (a reading rounds down), so each one names its gridline.
+  const yv = (u: string) => ((_up: any, splits: number[]) => splits.map((v) => fmtNum(u === 'days' ? Math.round(v) : v, u))) as unknown as uPlot.Axis['values']
   // Loss beside Downtime (the ping chart) pins the % scale to exactly 0-100 (applied to scaleCfg
   // below): a pinned scale never re-ranges, which makes it the ideal GRID OWNER (user's idea).
   const hasDown = series.some((s) => s.downtime)

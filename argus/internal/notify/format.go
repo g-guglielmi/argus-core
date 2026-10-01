@@ -42,9 +42,21 @@ func scaleReading(n float64, units string) (string, string) {
 		return fmtDur(int64(n)), ""
 	case "s":
 		return scaleSeconds(n)
+	case "days":
+		return wholeDays(n)
 	default:
 		return roundNum(n), units
 	}
+}
+
+// wholeDays reads a certificate's days left as whole days, rounded down: 6.6 days left is "6 days", so
+// the reading never contradicts an alert for "less than 7 days" (the UI does the same).
+func wholeDays(n float64) (string, string) {
+	d := math.Floor(n)
+	if d == 1 || d == -1 {
+		return strconv.FormatFloat(d, 'f', 0, 64), "day"
+	}
+	return strconv.FormatFloat(d, 'f', 0, 64), "days"
 }
 
 // scaleSeconds renders seconds at a human-friendly magnitude: sub-second values as ms/µs/ns.

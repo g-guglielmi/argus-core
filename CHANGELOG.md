@@ -38,6 +38,9 @@ GitHub Release from the matching section below.
   "invalid ca certificate", as some NAS and gateway firmware sends); a host monitored by the core server needs
   the core's copy too (`setup-core.sh` installs it). The add-on's two old sensors are replaced by the
   new ones, so their history goes.
+- A certificate's days left read as whole days, rounded down (6.6 days left is "6 days", in the
+  sensor list, the chart and alerts), while the chart draws the precise countdown (from
+  `probe/v7.0.31-r20`) as a smooth line instead of a step every 2.4 hours.
 - A URL's chart keeps at least 15 days on the certificate's axis, so its slow countdown reads flat
   instead of a cliff every time the days left tick down, and that axis is the right-hand one (the
   downtime band no longer takes it).
