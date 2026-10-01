@@ -8,57 +8,234 @@ zabbix_export:
       template: 'Argus HTTP Endpoint'
       name: 'Argus HTTP Endpoint'
       description: |
-        Optional HTTP/HTTPS reachability add-on: service up plus response time on a
-        configurable port ({$HTTP.PORT}). Agentless simple checks, run by the host's proxy.
-        Attach to any host (DESIGN section 5). TLS-cert expiry is a later enhancement.
+        Optional HTTP/HTTPS add-on: a real request to each URL in {$HTTP.URLS}, from the host's proxy (or
+        the core). Each URL is its own sensor: it is up when it answers with an accepted status code
+        ({$HTTP.EXPECT}, redirects followed) and, when the URL ends in "#text", the page contains that
+        text ("#!text": it must not); with the response time and, for https, the days its certificate
+        has left. The certificate is checked ({$HTTP.TLS.VERIFY} "verify": an untrusted one, one for
+        another name or an expired one is a failure; "ignore" for a self-signed device page, whose
+        expiry still counts). A URL that doesn't answer as expected says why. A path ("/login") is on
+        the host's own address with {$HTTP.SCHEME} and {$HTTP.PORT}; a blank list checks that address.
+        The proxy runs argus_http.py once a minute for all of the host's URLs at once. Attach to any
+        host (DESIGN section 5).
       groups:
         - name: Templates/Argus
       items:
-        - uuid: afc6aea4e1d24ca29f61dfe17976bf78
-          name: 'HTTP/HTTPS reachable'
-          type: SIMPLE
-          key: 'net.tcp.service[{$HTTP.SCHEME},,{$HTTP.PORT}]'
+        - uuid: 7bdbc9ad97e849e9b3c3fdf77e89fe72
+          name: 'HTTP checks raw data'
+          type: EXTERNAL
+          key: 'argus_http.py[{HOST.CONN},"{$HTTP.URLS}","{$HTTP.SCHEME}","{$HTTP.PORT}","{$HTTP.EXPECT}","{$HTTP.TLS.VERIFY}","{$HTTP.TIMEOUT}"]'
           delay: 1m
-          history: 7d
-          trends: 365d
-          value_type: UNSIGNED
-          description: '1 = the service accepted a connection on the configured port, 0 = it did not.'
-          triggers:
-            - uuid: 99500d285b1143e8833ca51e971ddf42
-              expression: 'max(/Argus HTTP Endpoint/net.tcp.service[{$HTTP.SCHEME},,{$HTTP.PORT}],#3)=0'
-              name: 'HTTP/HTTPS endpoint down'
-              priority: AVERAGE
-              description: 'No connection accepted on the configured port for the last 3 checks.'
-        - uuid: 119c856845e347fcb643a3ab0a0bce4c
-          name: 'HTTP/HTTPS response time'
-          type: SIMPLE
-          key: 'net.tcp.service.perf[{$HTTP.SCHEME},,{$HTTP.PORT}]'
-          delay: 1m
-          history: 7d
-          trends: 365d
-          value_type: FLOAT
-          units: s
-          triggers:
-            - uuid: 643105a64ad949d89e85ef7ef6d3a8d8
-              expression: 'min(/Argus HTTP Endpoint/net.tcp.service.perf[{$HTTP.SCHEME},,{$HTTP.PORT}],#3)>={$HTTP.RESPONSE.WARN} and min(/Argus HTTP Endpoint/net.tcp.service.perf[{$HTTP.SCHEME},,{$HTTP.PORT}],#3)<{$HTTP.RESPONSE.HIGH}'
-              name: 'HTTP/HTTPS slow response'
-              priority: WARNING
-              description: 'Response time at or above the warning threshold (below the high threshold) on the last 3 checks.'
-            - uuid: 743105a64ad949d89e85ef7ef6d3a8d9
-              expression: 'min(/Argus HTTP Endpoint/net.tcp.service.perf[{$HTTP.SCHEME},,{$HTTP.PORT}],#3)>={$HTTP.RESPONSE.HIGH}'
-              name: 'HTTP/HTTPS very slow response'
-              priority: HIGH
-              description: 'Response time at or above the high threshold on the last 3 checks.'
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          timeout: 60s
+          description: 'Master item: the proxy''s argus_http.py fetches every URL in {$HTTP.URLS} at once and prints, per URL, whether it answered as expected, the status code, the response time, the certificate''s days left and why not, as JSON. A bad URL list is reported in its error field.'
+      discovery_rules:
+        - uuid: 6537d3d52e254d9880b18fe7fb29cd07
+          name: 'URL discovery'
+          type: DEPENDENT
+          key: http.url.discovery
+          delay: '0'
+          lifetime: 1h
+          enabled_lifetime_type: DISABLE_NEVER
+          description: 'One sensor set per URL in {$HTTP.URLS}. A URL taken out of it stops reading and is deleted an hour later. While the list is invalid the discovery keeps what it had.'
+          master_item:
+            key: 'argus_http.py[{HOST.CONN},"{$HTTP.URLS}","{$HTTP.SCHEME}","{$HTTP.PORT}","{$HTTP.EXPECT}","{$HTTP.TLS.VERIFY}","{$HTTP.TIMEOUT}"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (d.error) { throw d.error; }
+                  return JSON.stringify(d.url_discovery || []);
+              error_handler: DISCARD_VALUE
+          item_prototypes:
+            - uuid: 029a4bcb84a24b68a6e5765d5072b828
+              name: '{#URLNAME} reachable'
+              type: DEPENDENT
+              key: 'http.url.up[{#URLID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              description: '1 = {#URLNAME} answered as expected (an accepted status code, the text it must have, a trusted certificate), 0 = it did not (its reason is in the error item).'
+              master_item:
+                key: 'argus_http.py[{HOST.CONN},"{$HTTP.URLS}","{$HTTP.SCHEME}","{$HTTP.PORT}","{$HTTP.EXPECT}","{$HTTP.TLS.VERIFY}","{$HTTP.TIMEOUT}"]'
+              preprocessing:
+                # A URL list the collector refused makes this sensor unsupported with why, so it shows.
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      if (d.error) { throw d.error; }
+                      return value;
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var us = JSON.parse(value).urls || [];
+                      for (var i = 0; i < us.length; i++) { if (us[i].id === '{#URLID}') { return us[i].up; } }
+                      throw '{#URLNAME} is no longer in the URL list';
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: 024a05bf00ee4126bd33ac8f8ed08b18
+                  expression: 'max(/Argus HTTP Endpoint/http.url.up[{#URLID}],#3)=0'
+                  name: '{#URLNAME} is down'
+                  priority: HIGH
+                  description: '{#URLNAME} has not answered as expected on the last 3 checks. Why is in the sensor''s reason.'
+            - uuid: 6b953cc6b74e46b4972189dfc29d1e92
+              name: '{#URLNAME} response time'
+              type: DEPENDENT
+              key: 'http.url.time[{#URLID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: s
+              description: 'How long {#URLNAME} took to answer, redirects included (no value while it does not answer).'
+              master_item:
+                key: 'argus_http.py[{HOST.CONN},"{$HTTP.URLS}","{$HTTP.SCHEME}","{$HTTP.PORT}","{$HTTP.EXPECT}","{$HTTP.TLS.VERIFY}","{$HTTP.TIMEOUT}"]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var us = JSON.parse(value).urls || [];
+                      for (var i = 0; i < us.length; i++) { if (us[i].id === '{#URLID}' && us[i].time !== null) { return us[i].time; } }
+                      throw 'no response time';
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: c4a7f7ea3af4418da11686898c458285
+                  expression: 'min(/Argus HTTP Endpoint/http.url.time[{#URLID}],#3)>={$HTTP.RESPONSE.WARN} and min(/Argus HTTP Endpoint/http.url.time[{#URLID}],#3)<{$HTTP.RESPONSE.HIGH} and max(/Argus HTTP Endpoint/http.url.up[{#URLID}],#3)=1'
+                  name: '{#URLNAME} is slow'
+                  priority: WARNING
+                  description: '{#URLNAME} took at least {$HTTP.RESPONSE.WARN}s (below the high threshold) on the last 3 checks, while it still answers.'
+                - uuid: 5767062228bd417db5e8663898b353de
+                  expression: 'min(/Argus HTTP Endpoint/http.url.time[{#URLID}],#3)>={$HTTP.RESPONSE.HIGH} and max(/Argus HTTP Endpoint/http.url.up[{#URLID}],#3)=1'
+                  name: '{#URLNAME} is very slow'
+                  priority: HIGH
+                  description: '{#URLNAME} took at least {$HTTP.RESPONSE.HIGH}s on the last 3 checks, while it still answers.'
+            - uuid: 697351ee1d4849c6982c566ed3a3e7a9
+              name: '{#URLNAME} status code'
+              type: DEPENDENT
+              key: 'http.url.status[{#URLID}]'
+              delay: '0'
+              history: 7d
+              trends: '0'
+              value_type: UNSIGNED
+              description: 'The status code of the last answer (none when it did not answer). Not a curated sensor: the reachable flag carries it, and a wrong code is in its reason.'
+              master_item:
+                key: 'argus_http.py[{HOST.CONN},"{$HTTP.URLS}","{$HTTP.SCHEME}","{$HTTP.PORT}","{$HTTP.EXPECT}","{$HTTP.TLS.VERIFY}","{$HTTP.TIMEOUT}"]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var us = JSON.parse(value).urls || [];
+                      for (var i = 0; i < us.length; i++) { if (us[i].id === '{#URLID}' && us[i].status !== null) { return us[i].status; } }
+                      throw 'no status code';
+                  error_handler: DISCARD_VALUE
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+            - uuid: 3a096247d9ed46b2bcb1156ed3da300d
+              name: '{#URLNAME} error'
+              type: DEPENDENT
+              key: 'http.url.error[{#URLID}]'
+              delay: '0'
+              history: 7d
+              trends: '0'
+              value_type: TEXT
+              description: 'Why {#URLNAME} did not answer as expected on the last check, in one line (empty while it does). Not a curated sensor: Argus shows it next to the down reading and in the alert.'
+              master_item:
+                key: 'argus_http.py[{HOST.CONN},"{$HTTP.URLS}","{$HTTP.SCHEME}","{$HTTP.PORT}","{$HTTP.EXPECT}","{$HTTP.TLS.VERIFY}","{$HTTP.TIMEOUT}"]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var us = JSON.parse(value).urls || [];
+                      for (var i = 0; i < us.length; i++) { if (us[i].id === '{#URLID}') { return us[i].error || ''; } }
+                      throw '{#URLNAME} is no longer in the URL list';
+                  error_handler: DISCARD_VALUE
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+        - uuid: 170abc0db55244499aace1aee06ee435
+          name: 'Certificate discovery'
+          type: DEPENDENT
+          key: http.cert.discovery
+          delay: '0'
+          lifetime: 1h
+          enabled_lifetime_type: DISABLE_NEVER
+          description: 'One certificate sensor per https URL in {$HTTP.URLS} (a plain http URL has none).'
+          master_item:
+            key: 'argus_http.py[{HOST.CONN},"{$HTTP.URLS}","{$HTTP.SCHEME}","{$HTTP.PORT}","{$HTTP.EXPECT}","{$HTTP.TLS.VERIFY}","{$HTTP.TIMEOUT}"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (d.error) { throw d.error; }
+                  return JSON.stringify(d.tls_discovery || []);
+              error_handler: DISCARD_VALUE
+          item_prototypes:
+            - uuid: 8c301fb08f3345f19799ccba762a8bbd
+              name: '{#URLNAME} certificate expires in'
+              type: DEPENDENT
+              key: 'http.url.cert[{#URLID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: days
+              description: 'Days until the certificate {#URLNAME} presents expires (below 0 once it has). Read whether or not the certificate is trusted.'
+              master_item:
+                key: 'argus_http.py[{HOST.CONN},"{$HTTP.URLS}","{$HTTP.SCHEME}","{$HTTP.PORT}","{$HTTP.EXPECT}","{$HTTP.TLS.VERIFY}","{$HTTP.TIMEOUT}"]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var us = JSON.parse(value).urls || [];
+                      for (var i = 0; i < us.length; i++) { if (us[i].id === '{#URLID}' && us[i].cert_days !== null) { return us[i].cert_days; } }
+                      throw 'no certificate read';
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: 6b69ad6b796246499515c35f3b2d21d8
+                  expression: 'last(/Argus HTTP Endpoint/http.url.cert[{#URLID}])<{$HTTP.CERT.WARN} and last(/Argus HTTP Endpoint/http.url.cert[{#URLID}])>={$HTTP.CERT.HIGH}'
+                  name: '{#URLNAME} certificate expires soon'
+                  priority: WARNING
+                  description: 'The certificate {#URLNAME} presents expires in less than {$HTTP.CERT.WARN} days.'
+                - uuid: bc8bec144606453ba93269afe4604b11
+                  expression: 'last(/Argus HTTP Endpoint/http.url.cert[{#URLID}])<{$HTTP.CERT.HIGH}'
+                  name: '{#URLNAME} certificate expires very soon'
+                  priority: HIGH
+                  description: 'The certificate {#URLNAME} presents expires in less than {$HTTP.CERT.HIGH} days, or has expired.'
       macros:
+        - macro: '{$HTTP.URLS}'
+          value: ''
+          description: 'The URLs to check, comma or space separated, at most 16: each a full http(s) URL ("https://portal.example.com/app") or a path on the host''s own address ("/login"). End one in "#text" for text the page must contain (%20 for a space), "#!text" for text it must not. Blank checks the host''s own address.'
         - macro: '{$HTTP.SCHEME}'
           value: https
-          description: 'Service to check: http or https.'
+          description: 'For paths and a blank list: http or https.'
         - macro: '{$HTTP.PORT}'
           value: '443'
-          description: 'TCP port of the HTTP/HTTPS service.'
+          description: 'For paths and a blank list: the TCP port.'
+        - macro: '{$HTTP.EXPECT}'
+          value: 200-299
+          description: 'The status codes that count as up, of the final answer after redirects: "200-299", "200,204,401".'
+        - macro: '{$HTTP.TLS.VERIFY}'
+          value: verify
+          description: '"verify" checks the certificate (an untrusted one, one for another name or an expired one is a failure); "ignore" accepts any, for a self-signed device page.'
+        - macro: '{$HTTP.TIMEOUT}'
+          value: '10'
+          description: 'Seconds to wait for each answer (1 to 15).'
         - macro: '{$HTTP.RESPONSE.WARN}'
           value: '1'
           description: 'Response time (seconds) that raises a warning.'
         - macro: '{$HTTP.RESPONSE.HIGH}'
           value: '3'
           description: 'Response time (seconds) that raises a high-severity alert.'
+        - macro: '{$HTTP.CERT.WARN}'
+          value: '21'
+          description: 'Days left on a certificate that raise a warning.'
+        - macro: '{$HTTP.CERT.HIGH}'
+          value: '7'
+          description: 'Days left on a certificate that raise a high-severity alert.'

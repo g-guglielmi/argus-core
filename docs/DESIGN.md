@@ -198,8 +198,15 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
 ## 5. Device classes & templates
 
 Every host gets the **Base** template (Ping - latency + loss, always) and, optionally, the
-**HTTP/HTTPS** add-on (up + response time + TLS-cert expiry on a configurable `{$HTTP.PORT}` -
-attachable to any host, not a class), the **DNS resolution** add-on and the **TCP ports** add-on
+**HTTP/HTTPS** add-on (`Argus HTTP Endpoint`: `argus_http.py` on the probe fetches every URL in
+`{$HTTP.URLS}` at once - full URLs, or paths on the host's address with `{$HTTP.SCHEME}` /
+`{$HTTP.PORT}`, a blank list being the host itself - one sensor group per URL under **Web**: up when it
+answers with an accepted status code after redirects (`{$HTTP.EXPECT}`), has the text a `#text` /
+`#!text` suffix asks for, and presents a trusted certificate (`{$HTTP.TLS.VERIFY}` verify / ignore);
+the response time; for https the certificate's days left, read even when untrusted, in a second LLD
+rule so plain http URLs have none; why it isn't up as the reason, and a list the collector refuses
+makes the URL sensors unsupported with why - attachable to any host, not a class), the **DNS
+resolution** add-on and the **TCP ports** add-on
 (`Argus TCP ports`: `argus_tcp.py` on the probe connects to every port in `{$TCP.PORTS}` at once,
 one sensor group per port under **TCP** with its connect time, reachability as the Downtime band and
 why it doesn't answer as the reason; add-on values are checked against a pattern before they reach
@@ -329,8 +336,8 @@ setting to look at. Argus trims them to one line of at most 200 characters.
 | Probe items delayed over 10 min | ≥ 50 for 15 min | ≥ 200 for 15 min |
 | Probe cache used (history / configuration) | ≥ 75% | ≥ 90% |
 | Probe process busy (per process type) | ≥ 75% (5 min avg) | ≥ 90% (5 min avg) |
-| HTTP/HTTPS | resp ≥ 1 s | resp ≥ 3 s, or non-2xx/3xx / timeout (down) |
-| TLS cert expiry | ≤ 14 days | ≤ 3 days |
+| HTTP/HTTPS | resp ≥ 1 s | resp ≥ 3 s, or a status code outside `{$HTTP.EXPECT}` (200-299) / missing text / untrusted certificate / timeout (down) |
+| TLS cert expiry | < 21 days | < 7 days |
 | DNS | resolve ≥ 0.5 s | resolve ≥ 1 s, or no/incorrect answer |
 | UPS | - | **on battery** / runtime < 5 min / replace battery |
 | Printer supply | (not monitored) | (not monitored) |

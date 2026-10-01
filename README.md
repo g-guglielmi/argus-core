@@ -71,6 +71,9 @@ API key, and MAC):
 - **Uptime** - 24 h, 7 day and 30 day uptime per host (on its master sensor, else its ping) and
   per up/down sensor, a strip of the last checks and a bar per day; status pages show their hosts'
   30-day uptime and the ones under 100%.
+- **Web checks** - the HTTP/HTTPS add-on requests each URL you list (any host, subdomain or path) once a
+  minute from the probe: the status code, text the page must have, the response time and the days its
+  certificate has left, with why when it isn't up ([docs/hosts/README.md](docs/hosts/README.md)).
 - **Push sensors** - a backup, a cron job or a scheduled task calls its own secret URL when it runs,
   with ok or fail and a message; Argus raises an error for a failed run and a warning, then an error,
   when the job is late or didn't run ([docs/push-sensors.md](docs/push-sensors.md)).

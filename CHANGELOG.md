@@ -13,6 +13,21 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**HTTP checks:**
+- The HTTP/HTTPS add-on now makes a real request instead of only checking that the port answers, so a
+  page serving an error or an expired certificate no longer counts as up. List any number of pages
+  under **URLs or paths** (up to 16): full URLs (`https://portal.example.com/app`, any host, subdomain
+  or path) or paths on the host (`/login`); left blank it checks the host itself, as before. Each URL is
+  its own sensor under **Web** with its response time and, for https, the days its certificate has
+  left. A URL is up when it answers with an accepted status code (`200-299` by default, redirects
+  followed), has the text a `#text` suffix asks for (`#!text`: must not), and presents a trusted
+  certificate (**Certificate** `ignore` accepts a self-signed one and still tracks its expiry); when it
+  isn't, it says why. New alerts for a certificate expiring in under 21 days (warning) and 7 days
+  (high), both on the Thresholds screen.
+- The check runs in the probe (`argus_http.py`, `probe/v7.0.31-r15`); a host monitored by the core
+  server needs the core's copy too (`setup-core.sh` installs it). The add-on's two old sensors are
+  replaced by the new ones, so their history goes.
+
 **Push sensors:**
 - A backup, a cron job or a scheduled task can now report to Argus when it runs: give it a push sensor
   in the host's settings (**Push sensors**) and have the job call its URL at the end, with

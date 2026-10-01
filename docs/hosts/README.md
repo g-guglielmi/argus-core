@@ -109,7 +109,7 @@ options section. That same dialog also has:
   job, a scheduled task): a failed run, a late one and a missed one alert. See
   [../push-sensors.md](../push-sensors.md);
 - an **Add-ons** section - optional Argus checks you can layer on a host at any time (not just when
-  adding it): the **HTTP/HTTPS endpoint** (reachability + response time on a web port), **DNS
+  adding it): the **HTTP/HTTPS endpoint** (a real request to each URL, see below), **DNS
   resolution** (resolve names against the host) and **TCP ports** (does each listed port accept a
   connection, see below). Toggling one on links its template and lets you set its options; toggling
   off removes its sensors;
@@ -130,6 +130,23 @@ firewall drops it, or the host is down)`, `no route to host`). Alerts: **Port RD
 answering** (High, after 3 checks), and slow to connect (`{$TCP.TIME.WARN}` 0.5 s, `{$TCP.TIME.HIGH}`
 1 s). **Timeout** (default 3 s) is how long a port has to answer. Taking a port out of the list stops
 its sensor, which is deleted an hour later.
+
+**HTTP/HTTPS endpoint add-on.** A real request to each web page you list, from the host's probe, once
+a minute. Under **URLs or paths** list full URLs (`https://portal.example.com/app`, any host, subdomain,
+port or path) or paths on the host's own address (`/login`), comma or space separated, at most 16; left
+blank, it checks the host itself on **Scheme** and **Port**. End a URL in `#text` for text the page must
+contain (case-insensitive, `%20` for a space: `https://app.example.com/health#ok`), or `#!text` for text
+it must not. Each URL becomes its own sensor under **Web**: its response time, with a red band while it
+is down, and for https the days its certificate has left. A URL is up when it answers with one of the
+**Accepted status codes** (`200-299` by default, after following up to 5 redirects), has its text, and
+presents a trusted certificate for its name. When it isn't, it says why (`returned 502 Bad Gateway`,
+`the page does not contain "Welcome"`, `the certificate is not trusted: self-signed certificate`, `the
+certificate is for another name`, `no answer within 10 s`). Set **Certificate** to `ignore` for a
+device page with a self-signed certificate: any certificate is accepted, and its expiry still counts.
+Alerts: **portal.example.com/app is down** (High, after 3 checks), slow (`{$HTTP.RESPONSE.WARN}` 1 s,
+`{$HTTP.RESPONSE.HIGH}` 3 s) and the certificate expiring (`{$HTTP.CERT.WARN}` 21 days,
+`{$HTTP.CERT.HIGH}` 7 days); all four thresholds are on the Thresholds screen. **Timeout** (default 10 s)
+is how long each page has to answer.
 
 **Why a sensor isn't reading.** Hover (or tap) a `not supported` or `Not reachable` value anywhere in
 Argus to see the reason: Zabbix's error, or what the device's collector reported (a refused API key,

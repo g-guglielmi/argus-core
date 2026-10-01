@@ -130,6 +130,8 @@ var thresholdCatalog = []TemplateThresholds{
 	{Template: TemplateHTTP, Specs: []ThresholdSpec{
 		{Macro: "{$HTTP.RESPONSE.WARN}", Label: "Response time - warning", Unit: "s"},
 		{Macro: "{$HTTP.RESPONSE.HIGH}", Label: "Response time - high", Unit: "s"},
+		{Macro: "{$HTTP.CERT.WARN}", Label: "Certificate days left - warning", Unit: "days"},
+		{Macro: "{$HTTP.CERT.HIGH}", Label: "Certificate days left - high", Unit: "days"},
 	}},
 }
 

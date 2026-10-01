@@ -6918,9 +6918,10 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
     if (cat === 'Disk') { const pu = gi.find((x) => (x.channel || '').startsWith('Used %')) || gi[0]; return { node: reading(pu), primary: pu } }
     if (cat === 'Ping' || cat === 'Web' || cat === 'TCP') {
       const rt = gi.find((x) => x.channel === 'Response time') || gi[0]
-      // A TCP port that isn't answering says so (its reason is on the Reachable channel's row).
+      // A TCP port that isn't answering, or a URL that doesn't answer as expected, says so (its reason
+      // is on the Reachable channel's row).
       const up = gi.find((x) => x.channel === 'Reachable')
-      if (cat === 'TCP' && up && up.last_value !== '' && Number(up.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>not answering</span>, primary: rt, why: up.why, whyId: up.id }
+      if ((cat === 'TCP' || cat === 'Web') && up && up.last_value !== '' && Number(up.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>{cat === 'TCP' ? 'not answering' : 'down'}</span>, primary: rt, why: up.why, whyId: up.id }
       return { node: reading(rt), primary: rt }
     }
     // A push sensor reads how long ago its job last ran; a failed last run says so, with the job's message.
@@ -7029,7 +7030,8 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                     // A port's Speed and Link are constants - start their lines hidden (legend keeps
                     // the value; a click reveals the line). Hiding Speed also lets the bps axis
                     // range to the In/Out traffic instead of pinning at the negotiated gigabits.
-                    const c: GroupChan = { id: i.id, label: i.channel || i.label || i.name, units: i.units, defaultOff: row.cat === 'Ports' && (i.channel === 'Speed' || i.channel === 'Link'), thr: i.thr }
+                    // A URL's certificate days ride on their own scale: its line starts hidden too.
+                    const c: GroupChan = { id: i.id, label: i.channel || i.label || i.name, units: i.units, defaultOff: (row.cat === 'Ports' && (i.channel === 'Speed' || i.channel === 'Link')) || (row.cat === 'Web' && i.channel === 'Certificate'), thr: i.thr }
                     // Temperature channels hold their last reading flat while the drive is parked - seed
                     // the hold from the current last value/time (see buildMultiPlot's LOCF pass).
                     if (row.cat === 'Temperature') { const sv = Number(i.last_value); c.hold = true; if (Number.isFinite(sv)) c.seedValue = sv; c.seedClock = i.last_clock }

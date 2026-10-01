@@ -619,10 +619,9 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	case "ugreen.cpu.temp":
 		return "Temperature", "CPU temperature", "", "", true
 
-	// HTTP/HTTPS endpoint add-on (Argus HTTP Endpoint template). The key params are macros
-	// ({$HTTP.SCHEME}/{$HTTP.PORT}), so the label is fixed rather than derived from them. The two
-	// items group like ICMP: response time is the primary channel, reachability the Downtime band
-	// (same "Reachable"/"Response time" channel names the Ping/Web frontend branches key on).
+	// The HTTP add-on's checks before argus_http.py (a TCP-level check on {$HTTP.SCHEME}/{$HTTP.PORT}),
+	// for a Zabbix that hasn't re-imported the template yet. They group like ICMP: response time is the
+	// primary channel, reachability the Downtime band (the channel names the Ping/Web frontend keys on).
 	case "net.tcp.service":
 		return "Web", "HTTP/HTTPS reachable", "HTTP/HTTPS", "Reachable", true
 	case "net.tcp.service.perf":
@@ -637,6 +636,20 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	case "tcp.port.time":
 		inst := tcpPortInstance(name, p)
 		return "TCP", "Port " + inst + " connect time", inst, "Response time", true
+
+	// HTTP checks (Argus HTTP Endpoint, argus_http.py): one group per URL, named after it ("portal.
+	// example.com/app"), grouped like Ping and TCP: the response time is the primary channel,
+	// reachability the Downtime band, the certificate's days left a channel of its own (its line
+	// starts hidden). The URL's error item is the reason.
+	case "http.url.up":
+		inst := urlInstance(name, " reachable", p)
+		return "Web", inst + " reachable", inst, "Reachable", true
+	case "http.url.time":
+		inst := urlInstance(name, " response time", p)
+		return "Web", inst + " response time", inst, "Response time", true
+	case "http.url.cert":
+		inst := urlInstance(name, " certificate expires in", p)
+		return "Web", inst + " certificate expires in", inst, "Certificate", true
 
 	// Push sensors (Argus Push, push.go): one group per job, named after it. The time since the last
 	// run is the primary channel, the last run's result the Failed band; the message is the reason.
@@ -654,6 +667,16 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "Temperature", name, "", "", true
 	}
 	return "", "", "", "", false
+}
+
+// urlInstance is an HTTP check's group name from its item name ("portal.example.com/app reachable"
+// -> "portal.example.com/app"), falling back to its id from the key.
+func urlInstance(name, suffix string, p []string) string {
+	inst := strings.TrimSpace(strings.TrimSuffix(name, suffix))
+	if inst == "" || strings.Contains(inst, "{#") {
+		return "URL " + param(p, 0)
+	}
+	return inst
 }
 
 // pushInstance is a push sensor's group name from its item name ("Nightly backup last run" ->

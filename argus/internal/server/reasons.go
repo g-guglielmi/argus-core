@@ -31,6 +31,7 @@ var reasonKeys = map[string]string{
 	"hass.running":        "hass.error",
 	"dns.resolve.success": "dns.resolve.error",
 	"tcp.port.up":         "tcp.port.error",
+	"http.url.up":         "http.url.error",
 	// A push sensor's last run: the job's own message is the reason.
 	"argus.push.ok": "argus.push.message",
 	// Linux by SSH, per systemd unit and per Docker container: the state text is the reason.

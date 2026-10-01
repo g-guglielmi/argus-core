@@ -285,6 +285,10 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Push sensors** - a job (backup, cron, scheduled task) calls its own secret URL when it runs,
   with ok or fail and a message; the host's `Argus Push` template reads them back through its proxy,
   so a failed run is an error and a late or missed one a warning, then an error. - _Unreleased_
+- [x] **Real HTTP checks** - the HTTP/HTTPS add-on requests each listed URL (full URLs or paths on the
+  host): accepted status codes after redirects, text the page must (not) contain, response time, the
+  certificate's days left and a trusted-certificate check, with why when it isn't up (`argus_http.py`,
+  probe r15). - _Unreleased_
 - [x] **Status page notes + maintenance** - a pinned note per page (info, warning or problem, for a
   time or until removed), and the maintenance windows of the page's hosts, in progress and coming up;
   problem rows say when their host is in one. - _Unreleased_

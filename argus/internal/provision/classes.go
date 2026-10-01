@@ -8,7 +8,9 @@ package provision
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -59,15 +61,16 @@ type PresetMacro struct {
 // MacroSpec is a per-host macro the attach UI asks for when creating a host of this class - how
 // API-source classes (UniFi, later Nutanix/XCP-NG/…) receive their endpoint and credentials.
 type MacroSpec struct {
-	Macro        string   `json:"macro"`                   // Zabbix macro name, e.g. "{$UNIFI.URL}"
-	Label        string   `json:"label"`                   // form label
-	Hint         string   `json:"hint"`                    // placeholder / example
-	Required     bool     `json:"required"`                // creation fails without it
-	Secret       bool     `json:"secret"`                  // stored as a Zabbix secret macro (write-only afterwards)
-	Derive       string   `json:"derive,omitempty"`        // form auto-fills this from the host address ("{host}" -> the IP/DNS), overridable; e.g. "http://{host}". Only for host-addressed URLs, never a controller URL (UniFi) that differs from the device.
-	Options      []string `json:"options,omitempty"`       // fixed value set: the form renders a select instead of a text input (blank stays "template default"); e.g. XCP-NG's VM-monitoring mode off/state/full
-	SettingsOnly bool     `json:"settings_only,omitempty"` // shown only in host settings, not the Add-device wizard - for values that need discovered data first (XCP-NG's ignored-VMs list)
-	Pattern      string   `json:"-"`                       // optional regexp the value must match; for values that reach a command line on the probe
+	Macro        string             `json:"macro"`                   // Zabbix macro name, e.g. "{$UNIFI.URL}"
+	Label        string             `json:"label"`                   // form label
+	Hint         string             `json:"hint"`                    // placeholder / example
+	Required     bool               `json:"required"`                // creation fails without it
+	Secret       bool               `json:"secret"`                  // stored as a Zabbix secret macro (write-only afterwards)
+	Derive       string             `json:"derive,omitempty"`        // form auto-fills this from the host address ("{host}" -> the IP/DNS), overridable; e.g. "http://{host}". Only for host-addressed URLs, never a controller URL (UniFi) that differs from the device.
+	Options      []string           `json:"options,omitempty"`       // fixed value set: the form renders a select instead of a text input (blank stays "template default"); e.g. XCP-NG's VM-monitoring mode off/state/full
+	SettingsOnly bool               `json:"settings_only,omitempty"` // shown only in host settings, not the Add-device wizard - for values that need discovered data first (XCP-NG's ignored-VMs list)
+	Pattern      string             `json:"-"`                       // optional regexp the value must match; for values that reach a command line on the probe
+	Check        func(string) error `json:"-"`                       // optional check beyond the pattern (a URL list), saying what is wrong
 }
 
 // Value patterns for macros that end up as command-line arguments of a probe's external check.
@@ -87,6 +90,8 @@ const (
 	patternNames = `^([A-Za-z0-9_][A-Za-z0-9_.-]*([ ,]+[A-Za-z0-9_][A-Za-z0-9_.-]*)*[ ,]*)?$`
 	// a timeout in seconds, blank for the template default
 	patternSeconds = `^([0-9]{1,2}(\.[0-9]{1,2})?)?$`
+	// accepted HTTP status codes: codes and ranges, comma separated ("200-299, 401")
+	patternCodes = `^([1-5][0-9]{2}( *- *[1-5][0-9]{2})?( *, *[1-5][0-9]{2}( *- *[1-5][0-9]{2})?)*)?$`
 )
 
 // ValidateMacroValue checks an entered value against the spec's pattern (blank always passes: it
@@ -101,6 +106,53 @@ func ValidateMacroValue(ms MacroSpec, v string) error {
 	}
 	if ms.Pattern != "" && !regexp.MustCompile(ms.Pattern).MatchString(v) {
 		return fmt.Errorf("%s: %q isn't an accepted value", ms.Label, v)
+	}
+	if ms.Check != nil {
+		if err := ms.Check(v); err != nil {
+			return fmt.Errorf("%s: %v", ms.Label, err)
+		}
+	}
+	return nil
+}
+
+// maxHTTPURLs is how many URLs the HTTP add-on checks on one host (argus_http.py's MAX_URLS).
+const maxHTTPURLs = 16
+
+// urlEntry is the characters argus_http.py takes in a URL entry: what URLs use, without spaces,
+// quotes, backslashes, backticks or "$".
+var urlEntry = regexp.MustCompile(`^[A-Za-z0-9._~:/?#\[\]@!&'()*+,;=%-]+$`)
+
+// checkURLList checks the HTTP add-on's URL list the way argus_http.py reads it, so a list it would
+// refuse is caught where it's typed: full http(s) URLs or paths on the host ("/login"), each with an
+// optional "#text" / "#!text", comma or space separated.
+func checkURLList(v string) error {
+	n := 0
+	for _, e := range regexp.MustCompile(`[,\s]+`).Split(strings.TrimSpace(v), -1) {
+		if e == "" {
+			continue
+		}
+		if n++; n > maxHTTPURLs {
+			return fmt.Errorf("at most %d URLs per host", maxHTTPURLs)
+		}
+		if len(e) > 2048 || !urlEntry.MatchString(e) {
+			return fmt.Errorf("%q has characters a URL can't have", e)
+		}
+		target, _, _ := strings.Cut(e, "#")
+		if strings.HasPrefix(target, "/") {
+			continue
+		}
+		u, err := url.Parse(target)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+			return fmt.Errorf("%q is not an http(s) URL or a path starting with /", e)
+		}
+		if u.User != nil {
+			return fmt.Errorf("%q has a user name or password in it, which is not supported", e)
+		}
+		if p := u.Port(); p != "" {
+			if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+				return fmt.Errorf("%q has a port outside 1-65535", e)
+			}
+		}
 	}
 	return nil
 }

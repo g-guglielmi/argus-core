@@ -43,6 +43,7 @@ func TestLoadTemplates(t *testing.T) {
 		"Argus DNS resolution", "dns-resolver.py[discover", "dns.resolve.success", "dns.resolve.time", "{$DNS.RESOLVE.NAMES}",
 		"Argus XCP-NG by XAPI", "argus_xcpng.py[{HOST.CONN}", "xcp.host.discovery", "xcp.vm.discovery", "xcp.vmperf.discovery", "{$XCP.VM.MODE}", "{$XCP.VM.IGNORE}", "{$XCP.TEMP.WARN}",
 		"Argus Linux by SSH", "argus_linux_ssh.py[{HOST.CONN}", "linux.ssh.reachable", "system.cpu.util[ssh]", "vfs.fs.discovery[ssh]", "net.if.discovery[ssh]", "{$SSH.AUTH}", "{$SSH.KEYFILE}", "{$SSH.PASSWORD}",
+		"argus_http.py[{HOST.CONN}", "http.url.discovery", "http.cert.discovery", "http.url.up[{#URLID}]", "http.url.cert[{#URLID}]", "{$HTTP.URLS}", "{$HTTP.CERT.WARN}", "{$HTTP.TLS.VERIFY}",
 		TemplatePush, "argus.push.raw", "argus.push.discovery", "argus.push.ok[{#PUSH.ID}]", "argus.push.age[{#PUSH.ID}]", "argus.push.message[{#PUSH.ID}]", "{$PUSH.URL}", "{$PUSH.KEY}"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("templates missing %q", want)
@@ -343,6 +344,33 @@ func TestAddOnMacroPatterns(t *testing.T) {
 	for _, v := range []string{"-p 22", "22;rm", "RDP:", ":3389", "\"22\"", "1:22", "22,x"} {
 		if err := ValidateMacroValue(ports, v); err == nil {
 			t.Errorf("%q accepted", v)
+		}
+	}
+	// The HTTP add-on's URL list is read the way argus_http.py reads it.
+	web, _ := AddOnByID("http")
+	urls, codes := web.Macros[0], web.Macros[3]
+	if urls.Macro != "{$HTTP.URLS}" || codes.Macro != "{$HTTP.EXPECT}" {
+		t.Fatalf("HTTP add-on macros: %+v", web.Macros)
+	}
+	for _, v := range []string{"https://portal.example.com/app", "/login, https://a.example.com:8443/x?y=1#Welcome%20back", "http://10.0.0.20/health#!Error", "https://[fe80::1]/"} {
+		if err := ValidateMacroValue(urls, v); err != nil {
+			t.Errorf("%q refused: %v", v, err)
+		}
+	}
+	for _, v := range []string{"portal.example.com", "ftp://a.example.com", "https://a.example.com/$(id)", "https://u:p@a.example.com/", "https://a.example.com/\"x\"",
+		"https://a.example.com:70000/", strings.Repeat("/p ", 17)} {
+		if err := ValidateMacroValue(urls, v); err == nil {
+			t.Errorf("%q accepted", v)
+		}
+	}
+	for _, v := range []string{"200-299", "200, 204, 301-302", "401"} {
+		if err := ValidateMacroValue(codes, v); err != nil {
+			t.Errorf("codes %q refused: %v", v, err)
+		}
+	}
+	for _, v := range []string{"2xx", "200-", "600", "200;rm"} {
+		if err := ValidateMacroValue(codes, v); err == nil {
+			t.Errorf("codes %q accepted", v)
 		}
 	}
 	dns, _ := AddOnByID("dns-resolve")

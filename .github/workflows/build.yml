@@ -95,6 +95,9 @@ jobs:
       # commands faked. They ship in the core VM image and the manual install, not in the container.
       - name: host backup tools
         run: python3 deploy/core/host/tests/test_host_scripts.py
+      # The HTTP collector (argus_http.py, mirrored in argus-probe) against real local servers.
+      - name: HTTP collector
+        run: python3 deploy/core/externalscripts/tests/test_argus_http.py
 
   docker:
     permissions:

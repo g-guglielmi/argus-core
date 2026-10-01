@@ -214,6 +214,26 @@ func TestPushClassify(t *testing.T) {
 	}
 }
 
+// An HTTP check reads as one group per URL under Web, its error as the reason.
+func TestHTTPClassify(t *testing.T) {
+	for key, want := range map[string][2]string{
+		"http.url.up[ab12]":   {"portal.example.com/app reachable", "Reachable"},
+		"http.url.time[ab12]": {"portal.example.com/app response time", "Response time"},
+		"http.url.cert[ab12]": {"portal.example.com/app certificate expires in", "Certificate"},
+	} {
+		cat, label, inst, ch, ok := classifyItem(key, want[0])
+		if !ok || cat != "Web" || inst != "portal.example.com/app" || ch != want[1] || label != want[0] {
+			t.Errorf("%s: %q %q %q %q %v", key, cat, label, inst, ch, ok)
+		}
+	}
+	if _, _, _, _, ok := classifyItem("http.url.error[ab12]", "portal.example.com/app error"); ok {
+		t.Error("the error item is the reason, not a sensor")
+	}
+	if reasonKeyFor("http.url.up[ab12]") != "http.url.error[ab12]" || !isUpDownKey("http.url.up[ab12]") {
+		t.Error("a URL's reason and uptime")
+	}
+}
+
 // zbxRecorder is a Zabbix API mock for the push template steps: it keeps the host's macros and
 // whether the template is linked, and records the methods called.
 type zbxRecorder struct {
