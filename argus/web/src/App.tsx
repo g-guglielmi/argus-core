@@ -6035,7 +6035,8 @@ function ThresholdsView() {
 
 // The HTTP add-on's URL list ({$HTTP.URLS}) as rows: each URL with its own certificate check and the
 // text its page must (or must not) contain, written back as "url#tls=...&text=..." entries, the way
-// argus_http.py reads them (the older "url#text" / "url#!text" entries are read too).
+// argus_http.py reads them (the older "url#text" / "url#!text" entries are read too). A row always
+// names its certificate check: one stored without it follows the add-on's, so it shows that one.
 type UrlRow = { url: string; tls: '' | 'verify' | 'self-signed' | 'ignore'; text: string; absent: boolean }
 const URL_MODES = ['verify', 'self-signed', 'ignore'] as const
 function decodeSafe(s: string): string { try { return decodeURIComponent(s) } catch { return s } }
@@ -6078,13 +6079,25 @@ function urlRowProblem(u: string): string {
   } catch { return 'This isn’t a URL (https://portal.example.com/app), a host (10.0.0.20:8443) or a path (/login).' }
   return ''
 }
-function HttpUrlsEditor({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
-  const [rows, setRows] = useState<UrlRow[]>(() => parseUrlList(value))
+// httpFieldUsed says whether one of the HTTP add-on's other fields applies to the URL list as it
+// stands, so host settings show only those: a blank list checks the host itself on all of them;
+// otherwise Scheme serves hosts and paths without one, Port paths, and Certificate nothing (each row
+// sets its own).
+function httpFieldUsed(macro: string, urls: string): boolean {
+  const rows = parseUrlList(urls)
+  if (rows.length === 0) return true
+  if (macro === '{$HTTP.SCHEME}') return rows.some((r) => !r.url.includes('://'))
+  if (macro === '{$HTTP.PORT}') return rows.some((r) => r.url.startsWith('/'))
+  return macro !== '{$HTTP.TLS.VERIFY}'
+}
+function HttpUrlsEditor({ value, tlsDefault, onChange, disabled }: { value: string; tlsDefault: string; onChange: (v: string) => void; disabled?: boolean }) {
+  const def = ((URL_MODES as readonly string[]).includes(tlsDefault) ? tlsDefault : 'verify') as UrlRow['tls']
+  const [rows, setRows] = useState<UrlRow[]>(() => parseUrlList(value).map((r) => ({ ...r, tls: r.tls || def })))
   function update(next: UrlRow[]) { setRows(next); onChange(serializeUrlList(next)) }
   function set(i: number, p: Partial<UrlRow>) { update(rows.map((r, n) => (n === i ? { ...r, ...p } : r))) }
   return (
     <div className="url-rows">
-      {rows.length === 0 && <div className="hs-note" style={{ margin: '0 0 6px' }}>No URLs: the host itself is checked, on the scheme and port below.</div>}
+      {rows.length === 0 && <div className="hs-note" style={{ margin: '0 0 6px' }}>No URLs: the host itself is checked, on the scheme, port and certificate check below.</div>}
       {rows.map((r, i) => {
         const prob = urlRowProblem(r.url)
         return (
@@ -6092,7 +6105,6 @@ function HttpUrlsEditor({ value, onChange, disabled }: { value: string; onChange
             <input className={'input url-url' + (prob ? ' bad' : '')} value={r.url} disabled={disabled} aria-label="URL"
               placeholder="https://portal.example.com/app, 10.0.0.20:8443 or /login" onChange={(e) => set(i, { url: e.target.value })} />
             <Select value={r.tls} disabled={disabled} aria-label="Certificate" onChange={(e) => set(i, { tls: e.target.value as UrlRow['tls'] })}>
-              <option value="">Certificate: host default</option>
               {URL_MODES.map((m) => <option key={m} value={m}>Certificate: {m}</option>)}
             </Select>
             <Select value={r.absent ? 'notext' : 'text'} disabled={disabled} aria-label="Page text" onChange={(e) => set(i, { absent: e.target.value === 'notext' })}>
@@ -6105,7 +6117,7 @@ function HttpUrlsEditor({ value, onChange, disabled }: { value: string; onChange
           </div>
         )
       })}
-      {!disabled && rows.length < 16 && <div className="hs-add"><Button onClick={() => update([...rows, { url: '', tls: '', text: '', absent: false }])}>+ Add URL</Button></div>}
+      {!disabled && rows.length < 16 && <div className="hs-add"><Button onClick={() => update([...rows, { url: '', tls: def, text: '', absent: false }])}>+ Add URL</Button></div>}
     </div>
   )
 }
@@ -6491,10 +6503,14 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
               </label>
               {a.enabled && a.macros && a.macros.length > 0 && (
                 <div className="hs-grid">
-                  {a.macros.map((m) => m.macro === '{$HTTP.URLS}' ? (
+                  {a.macros.filter((m) => {
+                    const urls = a.macros!.find((x) => x.macro === '{$HTTP.URLS}')
+                    return !urls || httpFieldUsed(m.macro, urls.value)
+                  }).map((m) => m.macro === '{$HTTP.URLS}' ? (
                     <div className="field" key={m.macro} style={{ gridColumn: '1 / -1' }}>
                       <span>{m.label}</span>
-                      <HttpUrlsEditor value={m.value} disabled={!canEdit} onChange={(v) => setAddonMacro(a.id, m.macro, v)} />
+                      <HttpUrlsEditor value={m.value} disabled={!canEdit} onChange={(v) => setAddonMacro(a.id, m.macro, v)}
+                        tlsDefault={a.macros!.find((x) => x.macro === '{$HTTP.TLS.VERIFY}')?.value || 'verify'} />
                     </div>
                   ) : (
                     <label className="field" key={m.macro}>

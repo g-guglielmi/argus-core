@@ -26,8 +26,9 @@ GitHub Release from the matching section below.
   a URL by name, for that name (a URL by IP address isn't name-checked); `ignore` takes any. The
   expiry is tracked in every mode. New alerts for a certificate expiring in under 21 days (warning) and 7 days
   (high), both on the Thresholds screen.
-- The URLs are rows in host settings, each with its own **Certificate** check (or the add-on's) and
-  text its page must or must not contain. A row takes a full URL, a host without a scheme (`10.7.0.2`,
+- The URLs are rows in host settings, each with its own **Certificate** check and text its page must
+  or must not contain; the add-on's **Scheme**, **Port** and **Certificate** fields show only while
+  something uses them (a blank list, a host without a scheme, a path). A row takes a full URL, a host without a scheme (`10.7.0.2`,
   `10.7.0.2:8443/admin`) or a path, and a mistake shows under its row as you type. A host settings
   save that fails also shows its error as a toast, not only at the bottom of the dialog.
 - Taking a URL out of the list (or a port out of the TCP ports add-on) deletes its sensors and their

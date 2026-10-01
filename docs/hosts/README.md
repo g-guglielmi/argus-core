@@ -133,12 +133,13 @@ its sensor, and any open problem of it, at the next check.
 
 **HTTP/HTTPS endpoint add-on.** A real request to each web page you list, from the host's probe, once
 a minute. Under **URLs**, **+ Add URL** adds a row, up to 16; with no rows, it checks the host itself on
-**Scheme** and **Port**. A row takes:
+**Scheme**, **Port** and **Certificate**. Those fields show only while something uses them: a blank
+list all three, a host without a scheme or a path **Scheme**, a path **Port**. A row takes:
 
 - the URL: a full one (`https://portal.example.com/app`, any host, subdomain, port or path), a host
   without a scheme (`10.7.0.2`, `10.7.0.2:8443/admin`, which gets **Scheme**), or a path on the host's
   own address (`/login`). The port goes in the URL;
-- its **Certificate** check, when it should differ from the add-on's (see below);
+- its **Certificate** check (see below), starting from the add-on's;
 - text the page must contain, or must not (**Page doesn't contain**), case-insensitive. Optional.
 
 A mistake in a URL shows under its row as you type. Each URL becomes its own sensor under **Web**: its response time, with a red band while it
@@ -146,8 +147,8 @@ is down, and for https the days its certificate has left. A URL is up when it an
 **Accepted status codes** (`200-299` by default, after following up to 5 redirects), has its text, and
 presents a trusted certificate for its name. When it isn't, it says why (`returned 502 Bad Gateway`,
 `the page does not contain "Welcome"`, `the certificate is not trusted: self-signed certificate`, `the
-certificate is for another name`, `no answer within 10 s`). **Certificate** sets how the certificate
-is checked, for every URL that doesn't set its own: `verify` wants one a known CA issued, for the URL's name and not expired; `self-signed`
+certificate is for another name`, `no answer within 10 s`). A URL's **Certificate** sets how the
+certificate is checked: `verify` wants one a known CA issued, for the URL's name and not expired; `self-signed`
 also takes one no CA vouches for (the device's own, or one from a private CA), still not expired and,
 when the URL uses a name, for that name. A URL by IP address (a blank list on a host added by IP) isn't
 name-checked, since a device's own certificate rarely lists its address. `ignore` takes any. The
