@@ -7897,6 +7897,22 @@ function pctRange(_u: any, dataMin: number | null, dataMax: number | null): [num
   return [Math.max(0, lo), Math.min(100, hi)]
 }
 
+// A certificate's days left drop a tenth of a day every couple of hours: auto-ranged, that sliver
+// fills the plot and every step reads as a cliff. Days get a minimum span (DAYS_MIN_SPAN), kept at or
+// above 0 unless the certificate has expired, so a short range reads flat and a long one still shows
+// the countdown.
+const DAYS_MIN_SPAN = 15
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function daysRange(_u: any, dataMin: number | null, dataMax: number | null): [number, number] {
+  if (dataMin == null || dataMax == null) return [0, DAYS_MIN_SPAN]
+  const span = dataMax - dataMin
+  let lo: number, hi: number
+  if (span >= DAYS_MIN_SPAN) { const pad = span * 0.1; lo = dataMin - pad; hi = dataMax + pad }
+  else { const mid = (dataMin + dataMax) / 2; lo = mid - DAYS_MIN_SPAN / 2; hi = mid + DAYS_MIN_SPAN / 2 }
+  if (lo < 0 && dataMin >= 0) { hi -= lo; lo = 0 }
+  return [lo, hi]
+}
+
 // thr (optional) bands the line by value - see thrPaint - and adds dashed warning/high reference lines.
 function buildPlot(data: Series, units: string, width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void, thr?: Thr): [uPlot.Options, uPlot.AlignedData] {
   const banded = thrOn(thr)
@@ -7927,6 +7943,7 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
   // the hovered value, so the dot is pure noise. This is the real source of the long-standing "stray dot".
   const scales: uPlot.Scales = { x: { time: true } }
   if (units === '%') scales.y = { range: pctRange as unknown as uPlot.Scale['range'] }
+  if (units === 'days') scales.y = { range: daysRange as unknown as uPlot.Scale['range'] }
   const base: Partial<uPlot.Options> = { width, height: 320, scales, axes: [xAxis, yAxis], legend: { show: true }, cursor: { points: { show: false } }, ...zoomHook(onZoom, xs.length ? [xs[0], xs[xs.length - 1]] : undefined) }
 
   // Uptime is a monotonic counter - min ≈ avg ≈ max, so its band is meaningless; fall through to a
@@ -8156,7 +8173,9 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
       else carry = ys[si][j]
     }
   })
-  const units = [...new Set(series.map((s) => s.units))]
+  // Axes go to the first two units; the Downtime band's 0-1 scale comes last, so a real second unit
+  // (a URL's certificate days beside its response time) gets the right axis, not the band.
+  const units = [...new Set([...series.filter((s) => !s.downtime), ...series.filter((s) => s.downtime)].map((s) => s.units))]
   const scaleKey = (u: string) => 'y' + units.indexOf(u)
   const grid = { stroke: c.grid, width: 1 }
   const ticks = { stroke: c.grid, width: 1 }
@@ -8220,6 +8239,8 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   // A non-pinned % scale (disk Used %, memory %, radio utilization) gets a minimum span so a
   // near-constant percentage reads flat instead of a full-height ramp with identical gridlines.
   else if (units.includes('%')) scaleCfg[scaleKey('%')] = { range: pctRange }
+  // A certificate's days left: a minimum span, so the slow countdown doesn't read as steps.
+  if (units.includes('days')) scaleCfg[scaleKey('days')] = { range: daysRange }
   // Primary channel min/max envelope (a shaded band), when it carries trend min/max - long ranges
   // only; short ranges are raw history (no min/max), so the band simply doesn't appear there.
   const p0 = series[0]

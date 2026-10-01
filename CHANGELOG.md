@@ -38,6 +38,9 @@ GitHub Release from the matching section below.
   "invalid ca certificate", as some NAS and gateway firmware sends); a host monitored by the core server needs
   the core's copy too (`setup-core.sh` installs it). The add-on's two old sensors are replaced by the
   new ones, so their history goes.
+- A URL's chart keeps at least 15 days on the certificate's axis, so its slow countdown reads flat
+  instead of a cliff every time the days left tick down, and that axis is the right-hand one (the
+  downtime band no longer takes it).
 - A group of sensors (a URL, a port) shows its latest check, not "never" while its response time has
   no value because it is down.
 - A probe collector that can't run (a script the probe doesn't have yet, a timeout) now shows as a
