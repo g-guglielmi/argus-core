@@ -81,13 +81,23 @@ class ParseTest(unittest.TestCase):
         es = ah.parse_urls("https://portal.example.com/app, /login  http://10.0.0.20:8080/health#ok%20now /x#!Error", "10.0.0.10", "https", 8443)
         self.assertEqual([e.url for e in es], ["https://portal.example.com/app", "https://10.0.0.10:8443/login",
                                               "http://10.0.0.20:8080/health", "https://10.0.0.10:8443/x"])
-        self.assertEqual([e.name for e in es], ["portal.example.com/app", "10.0.0.10:8443/login",
-                                               '10.0.0.20:8080/health with "ok now"', '10.0.0.10:8443/x without "Error"'])
-        self.assertEqual((es[2].text, es[2].absent, es[3].text, es[3].absent), ("ok now", False, "Error", True))
+        self.assertEqual([e.name for e in es], ["portal.example.com/app", "10.0.0.10:8443/login", "10.0.0.20:8080/health", "10.0.0.10:8443/x"])
+        self.assertEqual((es[2].text, es[2].absent, es[3].text, es[3].absent), ("ok now", False, "Error", True), "the older #text / #!text")
         self.assertEqual([e.tls for e in es], [True, True, False, True])
         self.assertEqual(len({e.id for e in es}), 4, "each URL has its own id")
         self.assertEqual(ah.parse_urls("https://a.example.com/x", "h", "https", 443)[0].id,
-                         ah.parse_urls("https://a.example.com/x", "other", "http", 80)[0].id, "the id stays the same")
+                         ah.parse_urls("https://a.example.com/x#tls=ignore&text=hi", "other", "http", 80)[0].id,
+                         "the id is the URL's: its options can change and keep its sensors")
+
+    def test_hosts_and_options(self):
+        es = ah.parse_urls("10.7.0.2, 10.7.0.4:8443/admin#tls=self-signed&text=Sign%20in, portal.example.com#notext=Error&tls=verify",
+                           "10.0.0.10", "https", 443)
+        self.assertEqual([e.url for e in es], ["https://10.7.0.2", "https://10.7.0.4:8443/admin", "https://portal.example.com"])
+        self.assertEqual([(e.mode, e.text, e.absent) for e in es], [("", "", False), ("self-signed", "Sign in", False), ("verify", "Error", True)])
+        self.assertEqual(ah.parse_urls("10.7.0.2", "h", "http", 80)[0].url, "http://10.7.0.2", "a host gets the scheme")
+        for bad in ["https://a.example.com#tls=maybe", "https://a.example.com#text=", "https://a.example.com#color=red"]:
+            with self.assertRaises(ValueError, msg=bad):
+                ah.parse_urls(bad, "h", "https", 443)
 
     def test_blank_list_checks_the_host(self):
         es = ah.parse_urls("  ", "10.0.0.10", "https", 443)
@@ -96,7 +106,7 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(es[0].url, "http://[fe80::1]:8080/")
 
     def test_bad_lists(self):
-        for bad in ['https://a.example.com/"x"', "ftp://a.example.com/", "https://a.example.com/$(id)", "portal.example.com",
+        for bad in ['https://a.example.com/"x"', "ftp://a.example.com/", "https://a.example.com/$(id)", "://portal.example.com",
                     "https://user:pw@a.example.com/", "https://a.example.com:99999/", ",".join("/p%d" % i for i in range(20))]:
             with self.assertRaises(ValueError, msg=bad):
                 ah.parse_urls(bad, "10.0.0.10", "https", 443)
@@ -209,6 +219,11 @@ class HTTPSTest(unittest.TestCase):
         self.assertEqual((r["up"], r["error"]), (0, "the certificate is for another name"), "a URL by name still checks the name")
         r = self.run_mode(self.other_port, "self-signed")
         self.assertEqual((r["up"], r["error"]), (1, ""), "a URL by IP address isn't name-checked")
+
+    def test_per_url_mode(self):
+        es = ah.parse_urls("https://localhost:%d/ok#tls=ignore" % self.other_port, "h", "https", 443)
+        r = ah.run(es, ah.parse_codes(""), "verify", 5)[0]
+        self.assertEqual((r["up"], r["error"]), (1, ""), "the URL's own tls wins over the host's verify")
 
     def test_ignore_mode(self):
         r = self.run_mode(self.other_port, "ignore")

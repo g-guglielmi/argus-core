@@ -6030,6 +6030,83 @@ function ThresholdsView() {
   )
 }
 
+// The HTTP add-on's URL list ({$HTTP.URLS}) as rows: each URL with its own certificate check and the
+// text its page must (or must not) contain, written back as "url#tls=...&text=..." entries, the way
+// argus_http.py reads them (the older "url#text" / "url#!text" entries are read too).
+type UrlRow = { url: string; tls: '' | 'verify' | 'self-signed' | 'ignore'; text: string; absent: boolean }
+const URL_MODES = ['verify', 'self-signed', 'ignore'] as const
+function decodeSafe(s: string): string { try { return decodeURIComponent(s) } catch { return s } }
+function parseUrlList(v: string): UrlRow[] {
+  return (v || '').split(/[,\s]+/).filter(Boolean).map((e) => {
+    const i = e.indexOf('#')
+    const r: UrlRow = { url: i < 0 ? e : e.slice(0, i), tls: '', text: '', absent: false }
+    const frag = i < 0 ? '' : e.slice(i + 1)
+    if (frag && !frag.includes('=')) { r.absent = frag.startsWith('!'); r.text = decodeSafe(r.absent ? frag.slice(1) : frag) }
+    else if (frag) {
+      for (const p of frag.split('&')) {
+        const j = p.indexOf('='), k = j < 0 ? p : p.slice(0, j), val = decodeSafe(j < 0 ? '' : p.slice(j + 1))
+        if (k === 'tls' && (URL_MODES as readonly string[]).includes(val)) r.tls = val as UrlRow['tls']
+        else if (k === 'text' || k === 'notext') { r.text = val; r.absent = k === 'notext' }
+      }
+    }
+    return r
+  })
+}
+function serializeUrlList(rows: UrlRow[]): string {
+  return rows.filter((r) => r.url.trim()).map((r) => {
+    const opts: string[] = []
+    if (r.tls) opts.push('tls=' + r.tls)
+    if (r.text.trim()) opts.push((r.absent ? 'notext=' : 'text=') + encodeURIComponent(r.text.trim()))
+    return r.url.trim() + (opts.length ? '#' + opts.join('&') : '')
+  }).join(', ')
+}
+// urlRowProblem is what's wrong with a typed URL ("" when fine): the checks Argus and the collector make.
+function urlRowProblem(u: string): string {
+  const s = u.trim()
+  if (!s) return ''
+  if (/[\s,]/.test(s)) return 'One URL per row, without spaces or commas.'
+  if (s.includes('#')) return 'Put the text the page must have in the text field, not after #.'
+  if (!/^[A-Za-z0-9._~:/?[\]@!&'()*+;=%-]+$/.test(s)) return 'It has characters a URL can’t have (quotes, $ or a backslash).'
+  if (s.startsWith('/')) return ''
+  try {
+    const x = new URL(s.includes('://') ? s : 'https://' + s)
+    if (x.protocol !== 'http:' && x.protocol !== 'https:') return 'Only http and https URLs can be checked.'
+    if (x.username || x.password) return 'A user name or password in the URL isn’t supported.'
+  } catch { return 'This isn’t a URL (https://portal.example.com/app), a host (10.0.0.20:8443) or a path (/login).' }
+  return ''
+}
+function HttpUrlsEditor({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
+  const [rows, setRows] = useState<UrlRow[]>(() => parseUrlList(value))
+  function update(next: UrlRow[]) { setRows(next); onChange(serializeUrlList(next)) }
+  function set(i: number, p: Partial<UrlRow>) { update(rows.map((r, n) => (n === i ? { ...r, ...p } : r))) }
+  return (
+    <div className="url-rows">
+      {rows.length === 0 && <div className="hs-note" style={{ margin: '0 0 6px' }}>No URLs: the host itself is checked, on the scheme and port below.</div>}
+      {rows.map((r, i) => {
+        const prob = urlRowProblem(r.url)
+        return (
+          <div className="url-row" key={i}>
+            <input className={'input url-url' + (prob ? ' bad' : '')} value={r.url} disabled={disabled} aria-label="URL"
+              placeholder="https://portal.example.com/app, 10.0.0.20:8443 or /login" onChange={(e) => set(i, { url: e.target.value })} />
+            <Select value={r.tls} disabled={disabled} aria-label="Certificate" onChange={(e) => set(i, { tls: e.target.value as UrlRow['tls'] })}>
+              <option value="">Certificate: host default</option>
+              {URL_MODES.map((m) => <option key={m} value={m}>Certificate: {m}</option>)}
+            </Select>
+            <Select value={r.absent ? 'notext' : 'text'} disabled={disabled} aria-label="Page text" onChange={(e) => set(i, { absent: e.target.value === 'notext' })}>
+              <option value="text">Page contains</option>
+              <option value="notext">Page doesn’t contain</option>
+            </Select>
+            <input className="input" value={r.text} disabled={disabled} placeholder="text (optional)" aria-label="Text" onChange={(e) => set(i, { text: e.target.value })} />
+            {!disabled && <button type="button" className="btn ghost url-del" aria-label="Remove this URL" title="Remove" onClick={() => update(rows.filter((_, n) => n !== i))}>✕</button>}
+            {prob && <div className="url-err">{prob}</div>}
+          </div>
+        )
+      })}
+      {!disabled && rows.length < 16 && <div className="hs-add"><Button onClick={() => update([...rows, { url: '', tls: '', text: '', absent: false }])}>+ Add URL</Button></div>}
+    </div>
+  )
+}
+
 type PushSensor = { id: number; host_id: string; name: string; late_secs: number; missed_secs: number; created_at: number; created_by?: string; last_at?: number; last_ok: boolean; last_msg?: string; runs: number; url?: string }
 
 // A push sensor's times are entered as a number and a unit; PUSH_UNITS are the units offered.
@@ -6189,6 +6266,7 @@ function HostSettingsModal({ hostId, hostName, canEdit, isAdmin, onClose, onSave
 function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: { hostId: string; canEdit: boolean; isAdmin?: boolean; onClose: () => void; onSaved: () => void; inDialog?: boolean }) {
   const rootCls = 'host-settings' + (inDialog ? ' in-dlg' : '')
   const confirm = useConfirm()
+  const toast = useToast()
   const [cfg, setCfg] = useState<HostCfg | null>(null)
   const [proxies, setProxies] = useState<Proxy[]>([])
   const [err, setErr] = useState<string | null>(null)
@@ -6242,7 +6320,8 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
     const addons = cfg.addons ? Object.fromEntries(cfg.addons.map((a) => [a.id, { enabled: a.enabled, macros: Object.fromEntries((a.macros || []).map((m) => [m.macro, m.value])) }])) : undefined
     const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order, addons, master: cfg.master ? masterChoice : undefined }) }).catch(() => null)
     setBusy(false)
-    if (!res || !res.ok) { setErr(await errText(res, 'Could not save host settings')); return }
+    // The error also pops up: the dialog is long, and its line by the Save button may be scrolled away.
+    if (!res || !res.ok) { const m = await errText(res, 'Could not save host settings'); setErr(m); toast.error(m); return }
     onSaved()
   }
 
@@ -6409,7 +6488,12 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
               </label>
               {a.enabled && a.macros && a.macros.length > 0 && (
                 <div className="hs-grid">
-                  {a.macros.map((m) => (
+                  {a.macros.map((m) => m.macro === '{$HTTP.URLS}' ? (
+                    <div className="field" key={m.macro} style={{ gridColumn: '1 / -1' }}>
+                      <span>{m.label}</span>
+                      <HttpUrlsEditor value={m.value} disabled={!canEdit} onChange={(v) => setAddonMacro(a.id, m.macro, v)} />
+                    </div>
+                  ) : (
                     <label className="field" key={m.macro}>
                       <span>{m.label}</span>
                       {m.options && m.options.length > 0

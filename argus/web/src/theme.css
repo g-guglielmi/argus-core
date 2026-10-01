@@ -479,6 +479,16 @@ a { color: var(--accent); }
 .host-settings .if-inherit-note { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
 .host-settings .hs-add { display: flex; gap: 8px; margin-top: 4px; }
 .host-settings .hs-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+/* The HTTP add-on's URL rows: the URL, its certificate check, the page text (contains / doesn't), remove. */
+.host-settings .url-rows { display: flex; flex-direction: column; gap: 6px; }
+.host-settings .url-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1fr) 32px; gap: 6px; align-items: center; }
+.host-settings .url-row .input.bad { border-color: var(--err); }
+.host-settings .url-err { grid-column: 1 / -1; font-size: 12px; color: var(--err); margin-top: -2px; }
+.host-settings .url-del { padding: 0; width: 32px; height: 32px; }
+@media (max-width: 640px) {
+  .host-settings .url-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px; padding-bottom: 8px; border-bottom: 1px dashed var(--border); }
+  .host-settings .url-row .url-url { grid-column: 1 / -1; }
+}
 /* Push sensors in host settings: one bordered row per job, its URL and examples revealed under it. */
 .host-settings .push-row { border: 1px solid var(--border); border-radius: 7px; padding: 9px 12px; margin-bottom: 8px; background: var(--panel); }
 .host-settings .push-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }

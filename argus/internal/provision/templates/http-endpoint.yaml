@@ -10,13 +10,16 @@ zabbix_export:
       description: |
         Optional HTTP/HTTPS add-on: a real request to each URL in {$HTTP.URLS}, from the host's proxy (or
         the core). Each URL is its own sensor: it is up when it answers with an accepted status code
-        ({$HTTP.EXPECT}, redirects followed) and, when the URL ends in "#text", the page contains that
-        text ("#!text": it must not); with the response time and, for https, the days its certificate
-        has left. The certificate is checked ({$HTTP.TLS.VERIFY}): "verify" wants one a known CA issued,
+        ({$HTTP.EXPECT}, redirects followed) and its page contains the text its options ask for (or
+        not); with the response time and, for https, the days its certificate has left. A URL's options
+        go after "#": "tls=self-signed&text=Welcome%20back" (tls, text, notext; the older "#text" and
+        "#!text" still read). The certificate is checked by the URL's tls, else {$HTTP.TLS.VERIFY}: "verify" wants one a known CA issued,
         for the URL's name and valid now; "self-signed" also takes one no CA vouches for (a device's own,
         a private CA), still valid now and, for a URL by name, for that name (a URL by IP address isn't
-        name-checked); "ignore" takes any. Its expiry counts in every mode. A URL that doesn't answer as expected says why. A path ("/login") is on
-        the host's own address with {$HTTP.SCHEME} and {$HTTP.PORT}; a blank list checks that address.
+        name-checked); "ignore" takes any. Its expiry counts in every mode. A URL that doesn't answer
+        as expected says why. A path ("/login") is on the host's own address with {$HTTP.SCHEME} and
+        {$HTTP.PORT}, a host without a scheme ("10.0.0.20:8443") gets {$HTTP.SCHEME}, and a blank list
+        checks the host's own address.
         The proxy runs argus_http.py once a minute for all of the host's URLs at once. Attach to any
         host (DESIGN section 5).
       groups:
@@ -210,7 +213,7 @@ zabbix_export:
       macros:
         - macro: '{$HTTP.URLS}'
           value: ''
-          description: 'The URLs to check, comma or space separated, at most 16: each a full http(s) URL ("https://portal.example.com/app") or a path on the host''s own address ("/login"). End one in "#text" for text the page must contain (%20 for a space), "#!text" for text it must not. Blank checks the host''s own address.'
+          description: 'The URLs to check, comma or space separated, at most 16: each a full http(s) URL ("https://portal.example.com/app"), a host without a scheme ("10.0.0.20:8443") or a path on the host''s own address ("/login"), with options after "#": tls=verify|self-signed|ignore, text=... or notext=... (joined by &, %20 for a space). Blank checks the host''s own address. Argus host settings edit it as rows.'
         - macro: '{$HTTP.SCHEME}'
           value: https
           description: 'For paths and a blank list: http or https.'

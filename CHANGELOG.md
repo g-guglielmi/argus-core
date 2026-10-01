@@ -26,11 +26,15 @@ GitHub Release from the matching section below.
   a URL by name, for that name (a URL by IP address isn't name-checked); `ignore` takes any. The
   expiry is tracked in every mode. New alerts for a certificate expiring in under 21 days (warning) and 7 days
   (high), both on the Thresholds screen.
+- The URLs are rows in host settings, each with its own **Certificate** check (or the add-on's) and
+  text its page must or must not contain. A row takes a full URL, a host without a scheme (`10.7.0.2`,
+  `10.7.0.2:8443/admin`) or a path, and a mistake shows under its row as you type. A host settings
+  save that fails also shows its error as a toast, not only at the bottom of the dialog.
 - Taking a URL out of the list (or a port out of the TCP ports add-on) deletes its sensors and their
   open problems at the next check, instead of an hour later.
-- The check runs in the probe (`argus_http.py`, `probe/v7.0.31-r15`, the `self-signed` mode from
-  `probe/v7.0.31-r17`; before that it checks like `verify`, or in r16 also checks the name of a URL by
-  IP address); a host monitored by the core server needs
+- The check runs in the probe (`argus_http.py`, `probe/v7.0.31-r15`; the `self-signed` mode as
+  described from `probe/v7.0.31-r17`, hosts without a scheme and per-URL options from
+  `probe/v7.0.31-r18`); a host monitored by the core server needs
   the core's copy too (`setup-core.sh` installs it). The add-on's two old sensors are replaced by the
   new ones, so their history goes.
 - A group of sensors (a URL, a port) shows its latest check, not "never" while its response time has

@@ -123,8 +123,9 @@ const maxHTTPURLs = 16
 var urlEntry = regexp.MustCompile(`^[A-Za-z0-9._~:/?#\[\]@!&'()*+,;=%-]+$`)
 
 // checkURLList checks the HTTP add-on's URL list the way argus_http.py reads it, so a list it would
-// refuse is caught where it's typed: full http(s) URLs or paths on the host ("/login"), each with an
-// optional "#text" / "#!text", comma or space separated.
+// refuse is caught where it's typed: full http(s) URLs, hosts without a scheme ("10.0.0.20:8443") or
+// paths on the host ("/login"), comma or space separated, each with optional options after "#"
+// ("tls=self-signed&text=Welcome", or the older "#text" / "#!text").
 func checkURLList(v string) error {
 	n := 0
 	for _, e := range regexp.MustCompile(`[,\s]+`).Split(strings.TrimSpace(v), -1) {
@@ -137,9 +138,15 @@ func checkURLList(v string) error {
 		if len(e) > 2048 || !urlEntry.MatchString(e) {
 			return fmt.Errorf("%q has characters a URL can't have", e)
 		}
-		target, _, _ := strings.Cut(e, "#")
+		target, frag, _ := strings.Cut(e, "#")
+		if err := checkURLOptions(e, frag); err != nil {
+			return err
+		}
 		if strings.HasPrefix(target, "/") {
 			continue
+		}
+		if !strings.Contains(target, "://") {
+			target = "https://" + target // a host without a scheme gets the add-on's
 		}
 		u, err := url.Parse(target)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
@@ -152,6 +159,35 @@ func checkURLList(v string) error {
 			if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
 				return fmt.Errorf("%q has a port outside 1-65535", e)
 			}
+		}
+	}
+	return nil
+}
+
+// checkURLOptions checks one URL's options after "#": "tls=verify|self-signed|ignore", "text=..." and
+// "notext=...", joined by "&". A fragment without "=" is the older "#text" form, always fine.
+func checkURLOptions(entry, frag string) error {
+	if !strings.Contains(frag, "=") {
+		return nil
+	}
+	for _, part := range strings.Split(frag, "&") {
+		k, v, _ := strings.Cut(part, "=")
+		val, err := url.PathUnescape(v)
+		if err != nil {
+			return fmt.Errorf("%q: %s has a bad %%-escape", entry, k)
+		}
+		switch k {
+		case "tls":
+			if val != "verify" && val != "self-signed" && val != "ignore" {
+				return fmt.Errorf("%q: tls must be verify, self-signed or ignore", entry)
+			}
+		case "text", "notext":
+			if strings.TrimSpace(val) == "" {
+				return fmt.Errorf("%q: %s needs the text to look for", entry, k)
+			}
+		case "":
+		default:
+			return fmt.Errorf("%q: %q is not an option (tls, text or notext)", entry, k)
 		}
 	}
 	return nil

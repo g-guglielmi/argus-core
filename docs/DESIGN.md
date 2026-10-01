@@ -199,8 +199,10 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
 
 Every host gets the **Base** template (Ping - latency + loss, always) and, optionally, the
 **HTTP/HTTPS** add-on (`Argus HTTP Endpoint`: `argus_http.py` on the probe fetches every URL in
-`{$HTTP.URLS}` at once - full URLs, or paths on the host's address with `{$HTTP.SCHEME}` /
-`{$HTTP.PORT}`, a blank list being the host itself - one sensor group per URL under **Web**: up when it
+`{$HTTP.URLS}` at once - full URLs, hosts without a scheme (given `{$HTTP.SCHEME}`), or paths on the
+host's address with `{$HTTP.SCHEME}` / `{$HTTP.PORT}`, a blank list being the host itself, each with
+options after `#` (`tls=`, `text=`, `notext=`; host settings edit the list as rows, and a URL's id
+is its URL alone, so changing its options keeps its history) - one sensor group per URL under **Web**: up when it
 answers with an accepted status code after redirects (`{$HTTP.EXPECT}`), has the text a `#text` /
 `#!text` suffix asks for, and presents an accepted certificate (`{$HTTP.TLS.VERIFY}`: `verify` a known
 CA's, `self-signed` also one no CA vouches for - checked by trusting that very certificate, so its dates

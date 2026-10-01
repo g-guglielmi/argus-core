@@ -352,12 +352,14 @@ func TestAddOnMacroPatterns(t *testing.T) {
 	if urls.Macro != "{$HTTP.URLS}" || codes.Macro != "{$HTTP.EXPECT}" {
 		t.Fatalf("HTTP add-on macros: %+v", web.Macros)
 	}
-	for _, v := range []string{"https://portal.example.com/app", "/login, https://a.example.com:8443/x?y=1#Welcome%20back", "http://10.0.0.20/health#!Error", "https://[fe80::1]/"} {
+	for _, v := range []string{"https://portal.example.com/app", "/login, https://a.example.com:8443/x?y=1#Welcome%20back", "http://10.0.0.20/health#!Error", "https://[fe80::1]/",
+		"10.7.0.2, 10.7.0.4:8443/admin#tls=self-signed&text=Sign%20in", "portal.example.com#notext=Error&tls=ignore"} {
 		if err := ValidateMacroValue(urls, v); err != nil {
 			t.Errorf("%q refused: %v", v, err)
 		}
 	}
-	for _, v := range []string{"portal.example.com", "ftp://a.example.com", "https://a.example.com/$(id)", "https://u:p@a.example.com/", "https://a.example.com/\"x\"",
+	for _, v := range []string{"://portal.example.com", "ftp://a.example.com", "https://a.example.com/$(id)", "https://u:p@a.example.com/", "https://a.example.com/\"x\"",
+		"https://a.example.com#tls=maybe", "https://a.example.com#text=", "https://a.example.com#color=red",
 		"https://a.example.com:70000/", strings.Repeat("/p ", 17)} {
 		if err := ValidateMacroValue(urls, v); err == nil {
 			t.Errorf("%q accepted", v)

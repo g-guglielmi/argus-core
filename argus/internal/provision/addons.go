@@ -23,16 +23,15 @@ var addOns = []AddOn{
 		ID:       "http",
 		Label:    "HTTP/HTTPS endpoint",
 		Template: TemplateHTTP,
-		Description: "A real request to each URL, from the host's proxy: an accepted status code, text the page must have, the response time and the certificate's days left. " +
-			"Full URLs (https://portal.example.com/app) or paths on this host (/login); blank checks the host itself on the scheme and port below. " +
-			"End a URL in #text for text the page must contain (%20 for a space), #!text for text it must not. " +
+		Description: "A real request to each URL, from the host's proxy: an accepted status code, the response time and the certificate's days left. " +
+			"Add full URLs, hosts (10.0.0.20:8443) or paths on this host (/login), each with its own certificate check and text its page must or must not contain; with none, the host itself is checked on the scheme and port below. " +
 			"Certificate: verify wants one a known CA issued; self-signed also takes the device's own, still not expired and, for a URL by name, for that name; ignore takes any.",
 		Macros: []MacroSpec{
-			{Macro: "{$HTTP.URLS}", Label: "URLs or paths", Hint: "https://portal.example.com/app, /login", Check: checkURLList},
-			{Macro: "{$HTTP.SCHEME}", Label: "Scheme (for paths)", Hint: "https", Options: []string{"https", "http"}},
-			{Macro: "{$HTTP.PORT}", Label: "Port (for paths)", Hint: "443", Pattern: patternPort},
+			{Macro: "{$HTTP.URLS}", Label: "URLs", Hint: "https://portal.example.com/app, /login", Check: checkURLList},
+			{Macro: "{$HTTP.SCHEME}", Label: "Scheme (for paths and hosts)", Hint: "https", Options: []string{"https", "http"}},
+			{Macro: "{$HTTP.PORT}", Label: "Port (for paths and a blank list)", Hint: "443", Pattern: patternPort},
 			{Macro: "{$HTTP.EXPECT}", Label: "Accepted status codes", Hint: "200-299", Pattern: patternCodes},
-			{Macro: "{$HTTP.TLS.VERIFY}", Label: "Certificate", Hint: "verify", Options: []string{"verify", "self-signed", "ignore"}},
+			{Macro: "{$HTTP.TLS.VERIFY}", Label: "Certificate (unless a URL sets its own)", Hint: "verify", Options: []string{"verify", "self-signed", "ignore"}},
 			{Macro: "{$HTTP.TIMEOUT}", Label: "Timeout (seconds)", Hint: "10", Pattern: patternSeconds},
 		},
 	},
