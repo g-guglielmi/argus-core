@@ -205,9 +205,10 @@ options after `#` (`tls=`, `text=`, `notext=`; host settings edit the list as ro
 is its URL alone, so changing its options keeps its history) - one sensor group per URL under **Web**: up when it
 answers with an accepted status code after redirects (`{$HTTP.EXPECT}`), has the text a `#text` /
 `#!text` suffix asks for, and presents an accepted certificate (`{$HTTP.TLS.VERIFY}`: `verify` a known
-CA's, `self-signed` also one no CA vouches for - checked by trusting that very certificate, so its dates
-still count, and its name for a URL by name (not by IP: device certificates rarely list their address)
-- `ignore` any);
+CA's, `self-signed` also one no CA vouches for - the collector reads the certificate itself (validity,
+subject alternative names, else the common name) instead of asking the TLS library, which refuses a
+device chain whose own "CA" isn't marked as one, so its dates still count, and its name for a URL by
+name (not by IP: device certificates rarely list their address) - `ignore` any);
 the response time; for https the certificate's days left, read even when untrusted, in a second LLD
 rule so plain http URLs have none; why it isn't up as the reason, and a list the collector refuses
 makes the URL sensors unsupported with why - attachable to any host, not a class), the **DNS

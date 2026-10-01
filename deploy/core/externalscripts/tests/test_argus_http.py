@@ -167,14 +167,43 @@ class HTTPTest(unittest.TestCase):
         self.assertIn("no answer within 1 s", r["error"])
 
 
-def self_signed(tmp, name, san):
-    """A self-signed certificate for 30 days: (cert path, server context)."""
-    crt, key = os.path.join(tmp, name + ".pem"), os.path.join(tmp, name + ".key")
-    subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "30", "-subj", "/CN=" + name,
-                    "-addext", "subjectAltName=" + san, "-keyout", key, "-out", crt], check=True, capture_output=True)
+def self_signed(tmp, name, san, cn=None):
+    """A device's own certificate for 30 days, made the way devices make theirs: self-signed but not a
+    CA (CA:FALSE, a server key usage), with these subject alternative names ("" = none) and common
+    name. Returns (cert path, server context)."""
+    crt, key, cfg = (os.path.join(tmp, name + ext) for ext in (".pem", ".key", ".cnf"))
+    with open(cfg, "w") as f:
+        f.write("[req]\ndistinguished_name = dn\nx509_extensions = ext\nprompt = no\n[dn]\nCN = %s\n"
+                "[ext]\nbasicConstraints = critical, CA:FALSE\nkeyUsage = critical, digitalSignature, keyEncipherment\n"
+                "extendedKeyUsage = serverAuth\n%s" % (cn or name, ("subjectAltName = %s\n" % san) if san else ""))
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "30", "-config", cfg,
+                    "-keyout", key, "-out", crt], check=True, capture_output=True)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(crt, key)
     return crt, ctx
+
+
+def device_chain(tmp):
+    """A device certificate signed by the device's own "CA" that isn't marked as one, both sent by the
+    server, as some NAS and gateway firmware does: a strict TLS check refuses it ("invalid ca
+    certificate"). Returns a server context."""
+    def cnf(name, body):
+        with open(os.path.join(tmp, name), "w") as f:
+            f.write(body)
+        return os.path.join(tmp, name)
+    p = lambda n: os.path.join(tmp, n)
+    run = lambda *a: subprocess.run(list(a), check=True, capture_output=True)
+    run("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "300", "-keyout", p("dca.key"), "-out", p("dca.pem"), "-config",
+        cnf("dca.cnf", "[req]\ndistinguished_name = dn\nx509_extensions = ext\nprompt = no\n[dn]\nCN = Device CA\n[ext]\nbasicConstraints = critical, CA:FALSE\n"))
+    run("openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", p("dleaf.key"), "-out", p("dleaf.csr"), "-config",
+        cnf("dleaf.cnf", "[req]\ndistinguished_name = dn\nprompt = no\n[dn]\nCN = localhost\n"))
+    run("openssl", "x509", "-req", "-in", p("dleaf.csr"), "-CA", p("dca.pem"), "-CAkey", p("dca.key"), "-CAcreateserial", "-days", "200",
+        "-out", p("dleaf.pem"), "-extfile", cnf("dleaf.ext", "basicConstraints = CA:FALSE\nsubjectAltName = DNS:localhost\n"))
+    with open(p("dchain.pem"), "w") as f, open(p("dleaf.pem")) as a, open(p("dca.pem")) as b:
+        f.write(a.read() + b.read())
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(p("dchain.pem"), p("dleaf.key"))
+    return ctx
 
 
 @unittest.skipUnless(shutil.which("openssl"), "needs openssl")
@@ -185,12 +214,16 @@ class HTTPSTest(unittest.TestCase):
         # A device's own certificate for its name (localhost), and one for another name.
         cls.crt, ctx = self_signed(cls.tmp, "device", "DNS:localhost")
         cls.srv, cls.port = serve(ctx)
-        _, ctx = self_signed(cls.tmp, "other", "DNS:other.example.lan")
+        _, ctx = self_signed(cls.tmp, "other", "DNS:other.example.lan, IP:10.0.0.30")
         cls.other, cls.other_port = serve(ctx)
+        # A common name and no alternative names, like many older device certificates.
+        _, ctx = self_signed(cls.tmp, "cnonly", "", cn="localhost")
+        cls.cnonly, cls.cnonly_port = serve(ctx)
+        cls.chain, cls.chain_port = serve(device_chain(cls.tmp))
 
     @classmethod
     def tearDownClass(cls):
-        for s in (cls.srv, cls.other):
+        for s in (cls.srv, cls.other, cls.cnonly, cls.chain):
             s.shutdown()
             s.server_close()
         shutil.rmtree(cls.tmp, ignore_errors=True)
@@ -198,6 +231,19 @@ class HTTPSTest(unittest.TestCase):
     def run_mode(self, port, mode, host="127.0.0.1"):
         es = ah.parse_urls("https://%s:%d/ok" % (host, port), "h", "https", 443)
         return ah.run(es, ah.parse_codes(""), mode, 5)[0]
+
+    def test_der_cert(self):
+        with open(os.path.join(self.tmp, "other.pem")) as f:
+            info = ah.der_cert(ssl.PEM_cert_to_DER_cert(f.read()))
+        self.assertEqual((info["cn"], info["dns"], info["ips"]), ("other", ["other.example.lan"], ["10.0.0.30"]))
+        self.assertLess(info["not_before"], time.time())
+        self.assertAlmostEqual((info["not_after"] - time.time()) / 86400, 30, delta=1)
+
+    def test_name_matches(self):
+        for host, pattern, want in [("a.example.com", "a.example.com", True), ("A.Example.com.", "a.example.com", True),
+                                    ("a.example.com", "*.example.com", True), ("b.a.example.com", "*.example.com", False),
+                                    ("example.com", "*.example.com", False), ("a.example.com", "b.example.com", False)]:
+            self.assertEqual(ah.name_matches(host, pattern), want, (host, pattern))
 
     def test_der_not_after(self):
         with open(self.crt) as f:
@@ -208,7 +254,8 @@ class HTTPSTest(unittest.TestCase):
 
     def test_verify_refuses_self_signed(self):
         r = self.run_mode(self.port, "verify")
-        self.assertEqual((r["up"], r["error"]), (0, "the certificate is not trusted: self-signed certificate"))
+        self.assertEqual(r["up"], 0)
+        self.assertTrue(r["error"].startswith("the certificate is not trusted"), r["error"])
         self.assertAlmostEqual(r["cert_days"], 30, delta=1, msg="its expiry is read anyway")
 
     def test_self_signed_mode(self):
@@ -216,9 +263,21 @@ class HTTPSTest(unittest.TestCase):
         self.assertEqual((r["up"], r["status"], r["error"]), (1, 200, ""), "its own certificate, for its name")
         self.assertAlmostEqual(r["cert_days"], 30, delta=1)
         r = self.run_mode(self.other_port, "self-signed", "localhost")
-        self.assertEqual((r["up"], r["error"]), (0, "the certificate is for another name"), "a URL by name still checks the name")
+        self.assertEqual((r["up"], r["error"]), (0, "the certificate is for another name (other.example.lan)"), "a URL by name still checks the name")
         r = self.run_mode(self.other_port, "self-signed")
         self.assertEqual((r["up"], r["error"]), (1, ""), "a URL by IP address isn't name-checked")
+        r = self.run_mode(self.cnonly_port, "self-signed", "localhost")
+        self.assertEqual((r["up"], r["error"]), (1, ""), "with no alternative names, the common name is the name")
+
+    def test_self_signed_device_chain(self):
+        # The case seen on a NAS and a gateway: a strict check calls it "invalid ca certificate".
+        for host in ("127.0.0.1", "localhost"):
+            r = self.run_mode(self.chain_port, "self-signed", host)
+            self.assertEqual((r["up"], r["error"]), (1, ""), host)
+            self.assertAlmostEqual(r["cert_days"], 200, delta=1)
+        r = self.run_mode(self.chain_port, "verify")
+        self.assertEqual(r["up"], 0)
+        self.assertTrue(r["error"].startswith("the certificate is not trusted"), r["error"])
 
     def test_per_url_mode(self):
         es = ah.parse_urls("https://localhost:%d/ok#tls=ignore" % self.other_port, "h", "https", 443)

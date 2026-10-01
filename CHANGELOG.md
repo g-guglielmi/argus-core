@@ -32,9 +32,10 @@ GitHub Release from the matching section below.
   save that fails also shows its error as a toast, not only at the bottom of the dialog.
 - Taking a URL out of the list (or a port out of the TCP ports add-on) deletes its sensors and their
   open problems at the next check, instead of an hour later.
-- The check runs in the probe (`argus_http.py`, `probe/v7.0.31-r15`; the `self-signed` mode as
-  described from `probe/v7.0.31-r17`, hosts without a scheme and per-URL options from
-  `probe/v7.0.31-r18`); a host monitored by the core server needs
+- The check runs in the probe (`argus_http.py`, `probe/v7.0.31-r15`; hosts without a scheme and
+  per-URL options from `probe/v7.0.31-r18`; the `self-signed` mode as described from
+  `probe/v7.0.31-r19`, which also takes a device whose own certificate chain a strict check calls
+  "invalid ca certificate", as some NAS and gateway firmware sends); a host monitored by the core server needs
   the core's copy too (`setup-core.sh` installs it). The add-on's two old sensors are replaced by the
   new ones, so their history goes.
 - A group of sensors (a URL, a port) shows its latest check, not "never" while its response time has
