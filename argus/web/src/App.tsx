@@ -2151,10 +2151,19 @@ function SearchPalette({ onClose, onPick }: { onClose: () => void; onPick: (r: S
 }
 
 const CH_META: Record<string, { c: string; l: string; label: string }> = {
+  teams: { c: '#4B53BC', l: 'Tm', label: 'Microsoft Teams' },
+  slack: { c: '#4A154B', l: 'S', label: 'Slack' },
   discord: { c: '#5865F2', l: 'D', label: 'Discord' },
   telegram: { c: '#229ED9', l: 'T', label: 'Telegram' },
   email: { c: '#6b7686', l: '@', label: 'Email' },
+  ntfy: { c: '#338574', l: 'n', label: 'ntfy' },
+  gotify: { c: '#2C7CD1', l: 'G', label: 'Gotify' },
+  pushover: { c: '#249DF1', l: 'P', label: 'Pushover' },
+  webhook: { c: '#6b7686', l: '{}', label: 'Webhook' },
 }
+// The types a personal channel can be: public services only (a webhook or Gotify usually lives on the
+// core's own network, which a personal channel can't reach), as the server's notify.PersonalTypes.
+const PERSONAL_TYPES = ['telegram', 'discord', 'teams', 'slack', 'ntfy', 'pushover']
 // A `secret` field is write-only: the server never sends its value back, only `<key>_set`, and a
 // blank submit keeps the stored one.
 type ChField = { key: string; label: string; ph?: string; type?: string; opt?: boolean; secret?: boolean }
@@ -2165,6 +2174,26 @@ const CH_FIELDS: Record<string, ChField[]> = {
     { key: 'chat_id', label: 'Chat ID', ph: '-1001234567890' },
     { key: 'thread_id', label: 'Topic ID', ph: 'forum topic, optional', opt: true },
   ],
+  teams: [{ key: 'webhook_url', label: 'Workflow URL', ph: 'https://….logic.azure.com/workflows/…', type: 'password', secret: true }],
+  slack: [{ key: 'webhook_url', label: 'Webhook URL', ph: 'https://hooks.slack.com/services/…', type: 'password', secret: true }],
+  ntfy: [
+    { key: 'server', label: 'Server', ph: 'https://ntfy.sh', opt: true },
+    { key: 'topic', label: 'Topic', ph: 'argus-alerts-x7k2', secret: true },
+    { key: 'token', label: 'Access token', ph: 'optional', type: 'password', opt: true, secret: true },
+  ],
+  gotify: [
+    { key: 'server', label: 'Server', ph: 'https://gotify.example.lan' },
+    { key: 'token', label: 'Application token', ph: 'Apps → Create application', type: 'password', secret: true },
+  ],
+  pushover: [
+    { key: 'user_key', label: 'User key', ph: 'from your Pushover dashboard', type: 'password', secret: true },
+    { key: 'token', label: 'Application API token', ph: 'from an application you create', type: 'password', secret: true },
+    { key: 'device', label: 'Device', ph: 'optional, blank = all your devices', opt: true },
+  ],
+  webhook: [
+    { key: 'webhook_url', label: 'URL', ph: 'https://n8n.example.lan/webhook/…', type: 'password', secret: true },
+    { key: 'auth_header', label: 'Authorization header', ph: 'optional, e.g. Bearer …', type: 'password', opt: true, secret: true },
+  ],
   email: [
     { key: 'host', label: 'SMTP host', ph: 'smtp.example.com' },
     { key: 'port', label: 'Port', ph: '587' },
@@ -2173,6 +2202,16 @@ const CH_FIELDS: Record<string, ChField[]> = {
     { key: 'username', label: 'Username', ph: 'optional', opt: true },
     { key: 'password', label: 'Password', ph: 'optional', type: 'password', opt: true, secret: true },
   ],
+}
+
+// CH_HINT is how to get a type's settings, under its fields (both editors).
+const CH_HINT: Record<string, string> = {
+  teams: 'In the Teams channel, open Workflows, pick the “Send webhook alerts to a channel” template and paste the URL it gives you.',
+  slack: 'Add an incoming webhook for the channel (api.slack.com/apps → your app → Incoming Webhooks) and paste its URL.',
+  ntfy: 'Subscribe to the topic in the ntfy app. On the public ntfy.sh anyone who knows a topic can read it, so pick one that’s hard to guess, or protect it with a token.',
+  gotify: 'The Gotify server’s address and an application token (Gotify → Apps → Create application).',
+  pushover: 'Your user key is on the Pushover dashboard; the API token comes from an application you create there. Pushover messages carry the graph too.',
+  webhook: 'Argus POSTs each alert as JSON to this URL: kind, state, severity, host, site, the sensor, its reading, the links, and the whole message as plain text in “text”.',
 }
 
 // chanFieldProps renders one channel field: a stored secret shows "unchanged" and isn't required.
@@ -2318,7 +2357,7 @@ function NotificationsView() {
 
       {channels === null && <Skeleton rows={2} cols={3} />}
       {channels && channels.length === 0 && !editing && (
-        <EmptyState icon={ic.notifications} title="No channels yet" text="Add a Discord webhook, a Telegram bot, or an email target to start receiving alerts."
+        <EmptyState icon={ic.notifications} title="No channels yet" text="Add Teams, Slack, Discord, Telegram, email, a phone push service or a webhook to start receiving alerts."
           action={<Button variant="primary" onClick={() => setEditing('new')}>+ Add channel</Button>} />
       )}
 
@@ -2502,7 +2541,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
             </Select>
           </label>
           <label className="chan-field chan-wide"><span className="flabel">Name</span>
-            <input className="input" placeholder="e.g. Discord - site1" value={name} onChange={(e) => setName(e.target.value)} required />
+            <input className="input" placeholder={`e.g. ${CH_META[type]?.label || 'Discord'} - site1`} value={name} onChange={(e) => setName(e.target.value)} required />
           </label>
         </div>
         <div className="chan-row">
@@ -2532,6 +2571,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
         {type === 'email' && (config.recipients || 'fixed') === 'users' && (
           <p className="set-note">Sends to every active user’s account email. The “To” field is ignored.</p>
         )}
+        {CH_HINT[type] && <p className="set-note">{CH_HINT[type]}</p>}
       </ChanSection>
       <ChanSection title="What it receives">
         <div className="chan-row">
@@ -2555,7 +2595,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
 
 type UserChannel = { id: number; type: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 
-// PersonalNotifyCard lets any signed-in user manage their own Telegram/Discord alert destinations,
+// PersonalNotifyCard lets any signed-in user manage their own alert destinations (PERSONAL_TYPES),
 // separate from the shared channels an admin configures in the Notifications tab. Self-service:
 // everything here hits /api/me/notify/* and only ever touches the caller's own channels.
 function PersonalNotifyCard() {
@@ -2596,7 +2636,7 @@ function PersonalNotifyCard() {
   }
 
   return (
-    <Card title="Personal notifications" note="Get alerts on your own Telegram or Discord. Only you receive these - they’re separate from the shared channels an admin manages.">
+    <Card title="Personal notifications" note="Get alerts on your own Telegram, Discord, Teams, Slack, ntfy or Pushover. Only you receive these - they’re separate from the shared channels an admin manages.">
       {editing && (
         <PersonalChannelEditor
           initial={editing === 'new' ? null : editing}
@@ -2608,7 +2648,7 @@ function PersonalNotifyCard() {
       )}
       {channels === null && <Skeleton rows={1} cols={2} />}
       {channels && channels.length === 0 && !editing && (
-        <p className="set-note">No personal channels yet. Add your Telegram or Discord to get your own alerts.</p>
+        <p className="set-note">No personal channels yet. Add your own Telegram, Discord, Teams, Slack, ntfy or Pushover to get your own alerts.</p>
       )}
       {channels && channels.length > 0 && (
         <div className="chan-grid">
@@ -2673,7 +2713,9 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   const fields = CH_FIELDS[type] || []
   const hint = type === 'telegram'
     ? 'Create your own bot with @BotFather for the token, and message the bot once so it’s allowed to reach you.'
-    : 'Paste a Discord channel webhook URL (Server Settings → Integrations → Webhooks).'
+    : type === 'discord' ? 'Paste a Discord channel webhook URL (Server Settings → Integrations → Webhooks).'
+    : type === 'ntfy' ? CH_HINT.ntfy + ' A personal channel can only use a server on the internet (blank = ntfy.sh).'
+    : CH_HINT[type] || ''
   return (
     <ChannelDialog title={initial ? `Edit your ${CH_META[initial.type]?.label || initial.type} channel` : 'Add a personal channel'} submitLabel={initial ? 'Save changes' : 'Add channel'}
       enabled={enabled} setEnabled={setEnabled} onCancel={onCancel} onSubmit={save}>
@@ -2681,8 +2723,7 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
         <div className="chan-row">
           <label className="chan-field"><span className="flabel">Type</span>
             <Select value={type} onChange={(e) => setType(e.target.value)} disabled={!!initial}>
-              <option value="telegram">Telegram</option>
-              <option value="discord">Discord</option>
+              {PERSONAL_TYPES.map((t) => <option key={t} value={t}>{CH_META[t].label}</option>)}
             </Select>
           </label>
         </div>

@@ -50,12 +50,14 @@ API key, and MAC):
   inherit to sensors.
 - **Overview** - cross-site active-problem list, deep-linked to the tree, with a six-chip
   status summary (OK / Warning / Error / Acknowledged / Paused / Hidden).
-- **Notifications** - Argus-native alerting engine (Discord, Telegram, email) with an
+- **Notifications** - Argus-native alerting engine (Microsoft Teams, Slack, Discord, Telegram, email,
+  ntfy, Gotify, Pushover and a generic JSON webhook) with an
   adjustable alert delay (60 s by default), per-channel escalation ("notify after") and
   reminders until acknowledged, acknowledged and recovery notices, opt-in system notices (updates
   available, self-update results, finished scans, failing channels), rich messages (status icons,
   value + threshold, 2-hour trend graph, deep-links, one-click acknowledge). Shared channels are admin-managed;
-  each user can also add their **own** Telegram/Discord in Account settings, and an email
+  each user can also add their **own** Telegram, Discord, Teams, Slack, ntfy or Pushover in Account
+  settings (sent only to addresses on the internet), and an email
   channel can fan out to every registered user's address.
 - **Heartbeat** - Argus pings an outside monitor (healthchecks.io, an Uptime Kuma push monitor)
   once a minute while it is healthy end to end, so you hear about it when Argus itself stops.

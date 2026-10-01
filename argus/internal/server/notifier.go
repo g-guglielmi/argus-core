@@ -807,7 +807,7 @@ func sendEmailToUsers(ctx context.Context, c store.NotifyChannel, users []userRe
 // sendPersonal delivers ev to one personal (per-user) channel, recording the outcome on the channel so
 // its owner sees their own delivery health. Reuses the leaf notify.Send with the channel's own config.
 func sendPersonal(ctx context.Context, st *store.Store, c store.UserNotifyChannel, ev notify.Event, logger *slog.Logger) {
-	err := notify.Send(ctx, notify.Channel{ID: c.ID, Type: c.Type, Name: "personal", Enabled: c.Enabled, Config: c.Config}, ev)
+	err := notify.Send(ctx, notify.Channel{ID: c.ID, Type: c.Type, Name: "personal", Enabled: c.Enabled, Config: c.Config, PublicOnly: true}, ev)
 	if err != nil {
 		logger.Warn("notifier: personal send failed", "channel", c.ID, "user", c.UserID, "type", c.Type, "kind", ev.Kind, "err", err)
 	}

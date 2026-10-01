@@ -278,6 +278,10 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Status pages** - read-only wall-screen dashboards opened with a secret link instead of a
   login: a PRTG-style alarm list (Errors / Acknowledged / Warnings), token swapped for a cookie + clean
   URL, kept encrypted and rotatable, optional networks allowlist and expiry. - v0.5.11
+- [x] **More alert channels** - Microsoft Teams (a Workflow webhook, Adaptive Card), Slack (incoming
+  webhook), ntfy, Gotify and Pushover (phone push, priority by severity), and a generic JSON webhook;
+  personal channels can be Teams, Slack, ntfy or Pushover too, sent only to public addresses. -
+  _Unreleased_
 
 ### I. Mobile app (last step)
 - [ ] **Android native app with push notifications** - the app registers a device with Argus; the notifier delivers alerts as **push** (e.g. FCM) via a new "push" notification channel type, alongside Discord/Telegram/email. A PWA + web push is a cheaper fallback if a full native app isn't warranted. - _(app + BE)_ **L**

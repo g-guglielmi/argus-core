@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 g-guglielmi
 
-// Package notify delivers alert events to external channels (Discord, Telegram, email).
+// Package notify delivers alert events to external channels (Discord, Telegram, email, Microsoft
+// Teams, Slack, ntfy, Gotify, Pushover and a generic JSON webhook).
 // It is a leaf package: it knows how to render and send a single Event to a single Channel,
 // and holds no state. The polling/state-machine logic lives in the server package.
 package notify
@@ -16,10 +17,13 @@ import (
 // Channel is a delivery target with its type-specific configuration.
 type Channel struct {
 	ID      int64
-	Type    string // "discord" | "telegram" | "email"
+	Type    string // one of Types
 	Name    string
 	Enabled bool
 	Config  map[string]string // type-specific keys (see each dispatcher)
+	// PublicOnly limits the send to public internet addresses: set for a personal channel, which any
+	// signed-in user can point anywhere (see publicClient).
+	PublicOnly bool
 }
 
 // Event is a single alert to deliver.
@@ -241,9 +245,60 @@ func (e Event) bodyLines() []string {
 	return lines
 }
 
+// cardLines are the compact card's lines under the title, as plain text: "site · host", then what
+// happened (still open, recovered after, acknowledged by and the note, a notice's detail), the
+// reading, and the time. The channels without a layout of their own (Teams, Slack, ntfy, Gotify,
+// Pushover, the webhook's text) share them, the way Telegram's card reads.
+func (e Event) cardLines() []string {
+	var out []string
+	if e.Kind != "info" || e.Host != "" {
+		out = append(out, e.whereLine())
+	}
+	at := "At "
+	switch e.Kind {
+	case "info":
+		out = append(out, e.detailLines()...)
+	case "recovery":
+		if e.SinceSecs > 0 {
+			out = append(out, "Recovered after "+fmtDur(e.SinceSecs))
+		}
+	case "ack":
+		out = append(out, e.ackLine())
+		if e.AckNote != "" {
+			out = append(out, "Note: "+e.AckNote)
+		}
+	default:
+		if e.Kind == "reminder" {
+			out = append(out, e.stillOpen())
+		}
+		if v := e.valueLine(); v != "" {
+			out = append(out, v)
+		}
+		at = "Since "
+	}
+	return append(out, at+e.When.Format("2006-01-02 15:04 MST"))
+}
+
+// links are the event's actions with an http(s) address: Open in Argus, and Acknowledge on an alert.
+func (e Event) links() []link {
+	var out []link
+	if isHTTP(e.OpenURL) {
+		out = append(out, link{"Open in Argus", e.OpenURL})
+	}
+	if e.isAlert() && isHTTP(e.AckURL) {
+		out = append(out, link{"Acknowledge", e.AckURL})
+	}
+	return out
+}
+
+type link struct{ label, url string }
+
 // Send delivers one Event through one Channel. Returns an error on delivery failure so the
 // caller can log it; it never panics on bad config (missing keys yield a descriptive error).
 func Send(ctx context.Context, ch Channel, e Event) error {
+	if ch.PublicOnly {
+		ctx = context.WithValue(ctx, publicKey{}, true)
+	}
 	switch ch.Type {
 	case "discord":
 		return redactErr(sendDiscord(ctx, ch.Config, e))
@@ -251,6 +306,18 @@ func Send(ctx context.Context, ch Channel, e Event) error {
 		return redactErr(sendTelegram(ctx, ch.Config, e))
 	case "email":
 		return sendEmail(ctx, ch.Config, e)
+	case "teams":
+		return redactErr(sendTeams(ctx, ch.Config, e))
+	case "slack":
+		return redactErr(sendSlack(ctx, ch.Config, e))
+	case "ntfy":
+		return redactErr(sendNtfy(ctx, ch.Config, e))
+	case "gotify":
+		return redactErr(sendGotify(ctx, ch.Config, e))
+	case "pushover":
+		return redactErr(sendPushover(ctx, ch.Config, e))
+	case "webhook":
+		return redactErr(sendWebhook(ctx, ch.Config, e))
 	default:
 		return fmt.Errorf("unknown channel type %q", ch.Type)
 	}

@@ -16,7 +16,7 @@ import (
 )
 
 // Personal (per-user) notification channels. Every signed-in user (any role) manages their own
-// Telegram/Discord destinations here, under /api/me/notify/*; they never see or touch another user's
+// destinations here (the public services in notify.PersonalTypes, sent to public addresses only), under /api/me/notify/*; they never see or touch another user's
 // channels or the admin/global channels. A personal channel is the same editable config a global
 // channel uses (reusing the leaf notify.Send), scoped to the caller.
 
@@ -48,8 +48,6 @@ func toUserChannelView(c store.UserNotifyChannel) userChannelView {
 	}
 }
 
-var userChannelTypes = map[string]bool{"telegram": true, "discord": true}
-
 type userChannelRequest struct {
 	Type        string            `json:"type"`
 	Enabled     bool              `json:"enabled"`
@@ -65,26 +63,16 @@ type userChannelRequest struct {
 
 func (req userChannelRequest) validate() (store.UserNotifyChannel, string) {
 	t := strings.TrimSpace(req.Type)
-	if !userChannelTypes[t] {
-		return store.UserNotifyChannel{}, "type must be telegram or discord"
+	if !notify.PersonalTypes[t] {
+		return store.UserNotifyChannel{}, "a personal channel can't be of this type"
 	}
 	cfg := req.Config
 	if cfg == nil {
 		cfg = map[string]string{}
 	}
 	// Require the destination keys up front so a user gets a clear message rather than a silent no-send.
-	switch t {
-	case "telegram":
-		if strings.TrimSpace(cfg["bot_token"]) == "" || strings.TrimSpace(cfg["chat_id"]) == "" {
-			return store.UserNotifyChannel{}, "Telegram needs a bot token and chat ID"
-		}
-	case "discord":
-		if strings.TrimSpace(cfg["webhook_url"]) == "" {
-			return store.UserNotifyChannel{}, "Discord needs a webhook URL"
-		}
-		if !notify.ValidDiscordWebhook(cfg["webhook_url"]) {
-			return store.UserNotifyChannel{}, notify.DiscordWebhookHint
-		}
+	if msg := notify.CheckConfig(t, cfg, true); msg != "" {
+		return store.UserNotifyChannel{}, msg
 	}
 	// The notifier never alerts below Warning, so clamp the floor to 2..5 (Warning..Disaster).
 	sev := alertLevel(req.MinSeverity)
@@ -224,7 +212,7 @@ func (s *Server) handleTestMyChannel(w http.ResponseWriter, r *http.Request) {
 	ev := notify.SampleEvent(time.Now().In(s.mgr.Location()), s.mgr.PublicURL())
 	dr, dg, db := statusRGB(ev.State)
 	ev.ChartPNG = renderChart(demoSeries(), dr, dg, db, "", demoThresholds())
-	err := notify.Send(ctx, notify.Channel{ID: ch.ID, Type: ch.Type, Name: "personal", Enabled: ch.Enabled, Config: ch.Config}, ev)
+	err := notify.Send(ctx, notify.Channel{ID: ch.ID, Type: ch.Type, Name: "personal", Enabled: ch.Enabled, Config: ch.Config, PublicOnly: true}, ev)
 	_ = s.st.RecordUserNotifyDelivery(ctx, ch.ID, err)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": notify.Redact(err.Error())})

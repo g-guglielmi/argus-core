@@ -103,14 +103,24 @@ func mdEscape(s string) string { return mdEscaper.Replace(s) }
 
 // postJSON POSTs a JSON body and treats any 2xx as success. Shared by the webhook dispatchers.
 func postJSON(ctx context.Context, url string, body []byte) error {
+	return doPost(ctx, url, "application/json", body, nil)
+}
+
+// doPost POSTs body with the given content type and extra headers, treating any 2xx as success; a
+// failure carries the start of the answer, which is usually the service's own reason.
+func doPost(ctx context.Context, url, contentType string, body []byte, headers map[string]string) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := webhookClient.Do(req)
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("User-Agent", "Argus")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := clientFor(ctx).Do(req)
 	if err != nil {
 		return err
 	}

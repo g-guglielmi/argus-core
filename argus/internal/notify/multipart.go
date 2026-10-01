@@ -23,7 +23,7 @@ type filePart struct {
 }
 
 // postMultipart uploads form fields and file parts as multipart/form-data, treating any 2xx as
-// success. Used to push chart images directly to Discord webhooks and Telegram sendPhoto.
+// success. Used to push chart images directly to Discord webhooks, Telegram sendPhoto and Pushover.
 func postMultipart(ctx context.Context, url string, fields map[string]string, files []filePart) error {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
@@ -54,7 +54,7 @@ func postMultipart(ctx context.Context, url string, fields map[string]string, fi
 		return err
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
-	resp, err := webhookClient.Do(req)
+	resp, err := clientFor(ctx).Do(req)
 	if err != nil {
 		return err
 	}

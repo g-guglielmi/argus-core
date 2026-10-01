@@ -38,7 +38,7 @@ type channelView struct {
 // channelSecretKeys are the config keys that are credentials. They're stored encrypted and never
 // read back out: a view carries "<key>_set" instead, and a blank value on update keeps the stored
 // one. So a session (or whoever reads its traffic) can use a channel but not copy its secret.
-var channelSecretKeys = map[string]bool{"password": true, "bot_token": true, "webhook_url": true}
+var channelSecretKeys = notify.SecretKeys
 
 // maskChannelConfig returns cfg with every secret replaced by a "<key>_set" flag.
 func maskChannelConfig(cfg map[string]string) map[string]string {
@@ -81,8 +81,6 @@ func toChannelView(c store.NotifyChannel) channelView {
 		LastSentAt: c.LastSentAt, LastError: c.LastError, LastErrorAt: c.LastErrorAt, SentCount: c.SentCount,
 	}
 }
-
-var validChannelTypes = map[string]bool{"discord": true, "telegram": true, "email": true}
 
 // cleanSites trims and drops empty entries from a submitted site list. An empty result means the
 // channel serves all sites. Shared by the admin and personal channel editors.
@@ -178,8 +176,8 @@ func alertLevel(sev int) int {
 
 func (req channelRequest) validate() (store.NotifyChannel, string) {
 	t := strings.TrimSpace(req.Type)
-	if !validChannelTypes[t] {
-		return store.NotifyChannel{}, "type must be discord, telegram or email"
+	if !notify.Types[t] {
+		return store.NotifyChannel{}, "unknown channel type"
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
@@ -198,8 +196,8 @@ func (req channelRequest) validate() (store.NotifyChannel, string) {
 			return store.NotifyChannel{}, "recipients must be 'fixed' or 'users'"
 		}
 	}
-	if t == "discord" && strings.TrimSpace(cfg["webhook_url"]) != "" && !notify.ValidDiscordWebhook(cfg["webhook_url"]) {
-		return store.NotifyChannel{}, notify.DiscordWebhookHint
+	if msg := notify.CheckConfig(t, cfg, false); msg != "" {
+		return store.NotifyChannel{}, msg
 	}
 	// The notifier never alerts below Warning, so clamp the floor to 2..5 (Warning..Disaster).
 	sev := alertLevel(req.MinSeverity)

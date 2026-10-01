@@ -11,7 +11,8 @@ Zabbix/TimescaleDB and are read through the API. Single distroless container, no
 dependencies beyond a running Zabbix.
 
 Current state: **v0.2.8** - monitoring tree with live data and charts, full auth (roles,
-TOTP, passkeys), cross-site overview, Discord/Telegram/email notifications with trend
+TOTP, passkeys), cross-site overview, Teams/Slack/Discord/Telegram/email/ntfy/Gotify/Pushover/webhook
+notifications with trend
 graphs, mobile-responsive layout, login rate-limiting, and at-rest encryption.
 
 ## Layout

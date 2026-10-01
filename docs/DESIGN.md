@@ -157,10 +157,18 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
   nothing, never to its ciphertext. Channel credentials (SMTP password, bot token, webhook) are
   write-only through the API (`<key>_set` flags; blank keeps); the SNMP community is blank for the
   viewer role.
-- **Outbound:** Discord webhooks are accepted only on Discord's hosts under `/api/webhooks/`, over
-  https, and the sender never follows redirects (anyone signed in can save a personal channel, so the
-  address must not be able to point inside the network). Telegram tokens are redacted from transport
-  errors before they are logged, stored as a channel's health line or sent as a system notice.
+- **Outbound:** Discord webhooks are accepted only on Discord's hosts under `/api/webhooks/`, Slack
+  webhooks only on `hooks.slack.com` under `/services/`, Teams webhooks only on the Workflows hosts
+  (`*.logic.azure.com`, `*.api.powerplatform.com`, the older `*.webhook.office.com`), all over https,
+  and the sender never follows redirects. Anyone signed in can save a personal channel, so its address
+  must not be able to point inside the network: a personal channel is one of the public services
+  (Telegram, Discord, Teams, Slack, ntfy over https, Pushover) and connects only to public internet
+  addresses, checked when the connection is made (after DNS, so a name that resolves to a private,
+  loopback, link-local or CGNAT address is refused too), directly rather than through a proxy. A
+  generic webhook, Gotify or a self-hosted ntfy on the LAN is a global channel, which only admins set
+  up. Bot tokens, webhook tokens and Teams signatures are redacted from transport errors, and a
+  webhook's or server's path is cut from them, before they are logged, stored as a channel's health
+  line or sent as a system notice.
 - **Trusted proxies** (`ARGUS_TRUST_PROXY`, Settings -> Reverse proxy): empty = none (socket address
   is the client, forwarded headers ignored); `true` = one proxy on a private or loopback address (the
   client is the LAST `X-Forwarded-For` entry, the one that proxy appended; a public peer is a direct
@@ -615,7 +623,8 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
 - Secrets entered in the UI later (placeholders for now).
 
 **Status (2026-09).** Channels are managed in the **Notifications** tab (Discord webhook / Telegram
-bot + chat (+ forum topic) / SMTP), each scoped to one or more sites (or all) with an alert level:
+bot + chat (+ forum topic) / SMTP, and from 2026-10 Microsoft Teams, Slack, ntfy, Gotify, Pushover and a
+generic JSON webhook), each scoped to one or more sites (or all) with an alert level:
 **warnings and errors** (Zabbix Warning and up) or **errors only** (Average and up, i.e. everything the
 UI paints red; the older High / Disaster floors are folded into it at startup). Every send attempt -
 alert, recovery, or the **Send test** button - is recorded on the channel (`last_sent_at` /
@@ -627,11 +636,19 @@ shared across channels: `[SEVERITY] host - trigger` with the status emoji (the Z
 message with a plain-text alternative, the inline 2-hour chart, a dark-mode override for clients that
 honour it, and a footer linking back to the channel page; Telegram is a compact card whose links are
 inline-keyboard buttons (a photo message when a chart is attached); Discord is an embed with
-Severity / Host / Site / Reading fields.
+Severity / Host / Site / Reading fields. Microsoft Teams gets an Adaptive Card (a header in the status
+style, the details as plain text runs so nothing typed is read as Markdown, Open in Argus /
+Acknowledge buttons; a Workflow message is capped near 28 KB, so no chart); Slack a classic attachment
+with the status colour, Severity / Host / Site / Reading fields and link buttons; ntfy, Gotify and
+Pushover a phone push whose priority follows the severity (an acknowledgement is quiet; Pushover also
+carries the chart); the generic webhook POSTs the event as JSON (`notify.WebhookPayload`: kind, state,
+severity, host, site, name, value, threshold, time, links) with the whole message as plain text in
+`text`, and an optional `Authorization` header.
 
 **Personal channels + email-to-users (2026-09).** Two per-recipient additions sit alongside the global
 channels above. (1) **Personal channels** let any signed-in user (any role) register their own Telegram
-(their own @BotFather bot: token + chat id) or Discord (webhook URL) in **Account → Personal
+(their own @BotFather bot: token + chat id) or Discord (webhook URL), and from 2026-10 Teams, Slack, ntfy
+or Pushover, in **Account → Personal
 notifications** and receive alerts there, scoped by one or more sites (a multi-select of host-groups; selecting a
 probe's root group covers its subgroups) and a severity floor, exactly like a global channel.
 They are self-service and self-owned (`user_notify_channels`, config encrypted at rest, managed under

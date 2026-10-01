@@ -13,6 +13,17 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Alert channels:**
+- Six new channel types. **Microsoft Teams** takes the URL of a Teams Workflow (the "Send webhook
+  alerts to a channel" template) and shows each alert as a card in the status colour, with **Open in
+  Argus** and **Acknowledge** buttons. **Slack** takes an incoming webhook. **ntfy**, **Gotify** and
+  **Pushover** send a phone push that is louder for errors than for warnings; Pushover carries the
+  graph too. A generic **webhook** POSTs each alert as JSON, for n8n, Node-RED, Home Assistant and
+  similar tools.
+- Personal channels (Account, Personal notifications) can be Teams, Slack, ntfy or Pushover too. They
+  only send to addresses on the internet, so a personal channel can't point inside the network; a
+  webhook, Gotify or an ntfy server on the LAN is a shared channel an admin sets up.
+
 ## [0.6.1] - 2026-10-01
 
 Backups, tried on a real core: they now work on a core installed by hand, say what they are doing,
