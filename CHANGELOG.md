@@ -78,6 +78,11 @@ GitHub Release from the matching section below.
   only send to addresses on the internet, so a personal channel can't point inside the network; a
   webhook, Gotify or an ntfy server on the LAN is a shared channel an admin sets up.
 
+**Host settings:**
+- **Thresholds** is folded, since most hosts keep the defaults: its title says which values the host
+  sets ("1 set for this host: CPU utilization - warning 90%") or that all are at the defaults, and
+  opens the fields.
+
 ## [0.6.1] - 2026-10-01
 
 Backups, tried on a real core: they now work on a core installed by hand, say what they are doing,

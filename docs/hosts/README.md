@@ -97,8 +97,9 @@ Class tunables (the Windows service filter, API credentials, and the like) can b
 device **and** changed later in **host settings** (the settings panel on the host row) under the class
 options section. That same dialog also has:
 
-- a **Thresholds** section for per-device alert-threshold overrides (fleet-wide defaults live on the
-  admin **Thresholds** screen - see [../thresholds.md](../thresholds.md));
+- a **Thresholds** section for per-device alert-threshold overrides, folded until you open it: its
+  title says which values the host sets, or that it keeps the defaults (fleet-wide defaults live on
+  the admin **Thresholds** screen - see [../thresholds.md](../thresholds.md));
 - a **Master sensor** section - the sensor whose failure means the whole device is down (its **ICMP
   ping** by default; the Probe host's is its reporting sensor). While it's down, the host's other
   sensors don't notify, so an unreachable device alerts once, and the Overview and the Error and

@@ -14,7 +14,8 @@ fleet-wide defaults is **admin-only** and lives in the sidebar under **Admin →
   same template (`Argus Linux by SNMP`, `Argus NAS by Zabbix agent`, ...), so a change there applies to
   every host of those classes that has no override.
 - **Per-device override** - a value for one host only. Edited in that host's settings dialog
-  (**Monitoring → a host → Settings → Thresholds**). An override always wins over the fleet-wide
+  (**Monitoring → a host → Settings → Thresholds**, a folded section: its title says which values the
+  host sets, or that it keeps the defaults, and opens it). An override always wins over the fleet-wide
   default.
 
 In both places, a field left blank means "use the level above": a blank per-host field inherits the

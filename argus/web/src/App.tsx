@@ -6287,6 +6287,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [customOrder, setCustomOrder] = useState(false)
+  const [thrOpen, setThrOpen] = useState(false) // the Thresholds section starts folded: most hosts keep the defaults
   const [masterChoice, setMasterChoice] = useState('default') // 'default' | 'none' | a sensor id
   function loadCfg() {
     fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : Promise.reject())).then((d: HostCfg) => {
@@ -6546,20 +6547,33 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
         </>
       )}
 
-      {cfg.thresholds && cfg.thresholds.length > 0 && (
-        <>
-          <div className="hs-title">Thresholds</div>
-          <div className="hs-note" style={{ margin: '0 0 10px' }}>Per-host overrides. Leave a field blank to use the current default (shown in the field). Set a number to override it for this host only; fleet-wide defaults live in the Thresholds screen.</div>
-          <div className="hs-grid">
-            {cfg.thresholds.map((t) => (
-              <label className="field" key={t.macro}>
-                <span>{t.label}{t.unit ? ` (${t.unit})` : ''}</span>
-                <input className="input" type="text" inputMode="decimal" placeholder={t.default ? `default ${t.default}${t.unit || ''}` : 'default'} value={t.value || ''} disabled={!canEdit} onChange={(e) => setThreshold(t.macro, e.target.value)} />
-              </label>
-            ))}
-          </div>
-        </>
-      )}
+      {cfg.thresholds && cfg.thresholds.length > 0 && (() => {
+        // Folded, the title says which thresholds this host sets (or that it keeps the defaults).
+        const own = cfg.thresholds.filter((t) => (t.value || '').trim())
+        return (
+          <>
+            <button type="button" className="hs-title hs-toggle" aria-expanded={thrOpen} onClick={() => setThrOpen((o) => !o)}>
+              <svg className={'chev' + (thrOpen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+              <span>Thresholds</span>
+              <span className="hs-toggle-sum">{own.length === 0 ? 'all at the defaults'
+                : `${own.length} set for this host: ` + own.map((t) => `${t.label} ${t.value!.trim()}${t.unit || ''}`).join(', ')}</span>
+            </button>
+            {thrOpen && (
+              <>
+                <div className="hs-note" style={{ margin: '0 0 10px' }}>Per-host overrides. Leave a field blank to use the current default (shown in the field). Set a number to override it for this host only; fleet-wide defaults live in the Thresholds screen.</div>
+                <div className="hs-grid">
+                  {cfg.thresholds.map((t) => (
+                    <label className="field" key={t.macro}>
+                      <span>{t.label}{t.unit ? ` (${t.unit})` : ''}</span>
+                      <input className="input" type="text" inputMode="decimal" placeholder={t.default ? `default ${t.default}${t.unit || ''}` : 'default'} value={t.value || ''} disabled={!canEdit} onChange={(e) => setThreshold(t.macro, e.target.value)} />
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )
+      })()}
 
       {cfg.categories && cfg.categories.length > 1 && (
         <>
