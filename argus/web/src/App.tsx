@@ -1392,11 +1392,12 @@ function VersionAbout() {
   // The sidecar row works like the core's: check for a newer sidecar, then update to it.
   const [sideChecking, setSideChecking] = useState(false)
   const [sideMsg, setSideMsg] = useState('')
+  const SIDE_NEWEST = 'The sidecar is on the newest version.'
   const checkSidecar = () => {
     setSideChecking(true); setSideMsg(''); setErr('')
     fetch('/api/update/updater/check', { method: 'POST' })
       .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'the check failed'); return r.json() })
-      .then((d: UpdateState) => { setUpd(d); if (d.updater_status === 'current') setSideMsg('The sidecar is on the newest version.') })
+      .then((d: UpdateState) => { setUpd(d); if (d.updater_status === 'current') setSideMsg(SIDE_NEWEST) })
       .catch((e) => setSideMsg(String(e.message || e)))
       .finally(() => setSideChecking(false))
   }
@@ -1478,7 +1479,7 @@ function VersionAbout() {
         )}
       </div>
       {v?.check_error && <p className="set-hint" style={{ margin: '0 0 8px', color: 'var(--warn)' }}>{v.check_error} to check for updates - {v.checked_at ? `showing the result from ${relTime(v.checked_at)}` : 'no successful check yet'}. Retry in a moment.</p>}
-      {checkedMsg && <p className="set-hint" style={{ margin: '0 0 8px' }}>{checkedMsg}</p>}
+      {checkedMsg && <p className="set-hint" style={{ margin: '0 0 8px', color: 'var(--ok)' }}>{checkedMsg}</p>}
 
       {/* The core update, step by step, while it runs and once it ends (driven by the argus-updater). */}
       {upd && upd.state !== 'idle' && (
@@ -1575,7 +1576,7 @@ function VersionAbout() {
             {upd.updater_status === 'outdated' && sideLatest && <span className="vtag upd">↑ {sideLatest} available</span>}
             {upd.updater_status === 'current' && <span className="vtag ok">latest</span>}
           </div>
-          {sideMsg && <p className="set-hint" style={{ margin: '6px 0 0' }}>{sideMsg}</p>}
+          {sideMsg && <p className="set-hint" style={{ margin: '6px 0 0', color: sideMsg === SIDE_NEWEST ? 'var(--ok)' : 'var(--warn)' }}>{sideMsg}</p>}
           <p className="set-hint" style={{ marginTop: 6 }}>Holds the Docker socket and performs the core updates above. Updating it recreates it onto the newer image (rolling back on failure); the core keeps running throughout.</p>
           {(sideBusy || (upd.updater_status === 'outdated' && sideLatest)) && (
             <div className="set-row" style={{ marginBottom: 0 }}>

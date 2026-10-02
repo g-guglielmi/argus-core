@@ -98,7 +98,8 @@ GitHub Release from the matching section below.
   outcome.
 - The updater sidecar's row works like the core's: **Check for updates** looks up the newest
   published sidecar, the version reads **latest** or **vX available**, and **Update to vX** shows only
-  when there is a newer one (it read **Update sidecar** at all times before).
+  when there is a newer one (it read **Update sidecar** at all times before). A check that finds
+  nothing newer says so in green, for the core and the sidecar alike.
 - The Probes page keeps showing a probe or sidecar update after a reload too: **update queued**
   until the sidecar's next check-in takes it, then **updating** (with how long ago it was handed
   over) until the probe reports the new version, and **update didn't take** when it still runs the
