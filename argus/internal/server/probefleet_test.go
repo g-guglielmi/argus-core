@@ -3,7 +3,76 @@
 
 package server
 
-import "testing"
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"argus/internal/auth"
+	"argus/internal/settings"
+	"argus/internal/store"
+	"argus/internal/zabbix"
+)
+
+// A sidecar asked for both a proxy and its own update gets them one check-in apart, the proxy first:
+// its own update replaces it, so the two never run side by side.
+func TestCheckinHandsOutOneUpdate(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	mgr, err := settings.New(ctx, st, zabbix.New("", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{st: st, mgr: mgr, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	// Known digests, so the hand-outs don't ask the registry.
+	s.digests.entries = map[string]digestEntry{}
+	for _, k := range []string{probeImageRepo + ":latest", updaterImageRepo + ":latest"} {
+		s.digests.entries[k] = digestEntry{digest: "sha256:" + strings.Repeat("a", 64), at: time.Now()}
+	}
+	const raw = "probe-token"
+	if err := st.UpsertProbeCredential(ctx, "proxy-site1", auth.HashToken(raw)); err != nil {
+		t.Fatal(err)
+	}
+	checkin := func() map[string]any {
+		t.Helper()
+		r := httptest.NewRequest("POST", "/api/probes/checkin", strings.NewReader(`{"selfupdate":true,"updater_version":"v0.2.11"}`))
+		r.Header.Set("Authorization", "Bearer "+raw)
+		w := httptest.NewRecorder()
+		s.handleProbeCheckin(w, r)
+		if w.Code != 200 {
+			t.Fatalf("check-in: %d %s", w.Code, w.Body.String())
+		}
+		var out map[string]any
+		_ = json.Unmarshal(w.Body.Bytes(), &out)
+		return out
+	}
+	checkin() // the probe is known from here on
+	if err := st.SetProbeUpdate(ctx, "proxy-site1", "latest"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetUpdaterUpdate(ctx, "proxy-site1", "latest"); err != nil {
+		t.Fatal(err)
+	}
+	if out := checkin(); out["update"] != "latest" || out["updater_update"] != nil {
+		t.Fatalf("first check-in: want the proxy update alone, got %v", out)
+	}
+	if out := checkin(); out["update"] != nil || out["updater_update"] != "latest" {
+		t.Fatalf("second check-in: want the sidecar update, got %v", out)
+	}
+	if out := checkin(); out["update"] != nil || out["updater_update"] != nil {
+		t.Fatalf("third check-in: want nothing left, got %v", out)
+	}
+}
 
 // updateStatus must never propose a downgrade: a probe at or ahead of the GHCR-resolved latest is
 // current (the latest cache lags a just-published release), while a genuinely older probe is outdated.

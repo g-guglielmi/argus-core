@@ -163,14 +163,15 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 	// version-report check-in would consume the one-shot before the sidecar could act, losing it.
 	//   update         -> recreate the PROXY onto this tag
 	//   updater_update -> the sidecar recreates ITSELF onto this argus-updater tag
+	// One per check-in, the proxy first: the sidecar's own update replaces it, and could do so while it
+	// is still recreating the proxy. The other stays queued for the next check-in, a minute later.
 	if req.SelfUpdate != nil && *req.SelfUpdate {
 		// Each hand-out is remembered, so the system notices can tell when one didn't go through.
 		if tag, _ := s.st.TakeProbeUpdate(ctx, proxyName); tag != "" {
 			resp.Update = tag
 			resp.UpdateDigest = s.imageDigest(ctx, probeImageRepo, probeTargetTag(tag))
 			_ = s.st.MetaSet(ctx, noticeProbePending+proxyName, tag+"|"+itoa64(time.Now().Unix()))
-		}
-		if tag, _ := s.st.TakeUpdaterUpdate(ctx, proxyName); tag != "" {
+		} else if tag, _ := s.st.TakeUpdaterUpdate(ctx, proxyName); tag != "" {
 			resp.UpdaterUpdate = tag
 			resp.UpdaterDigest = s.imageDigest(ctx, updaterImageRepo, tag)
 			_ = s.st.MetaSet(ctx, noticeUpdPending+proxyName, tag+"|"+itoa64(time.Now().Unix()))
