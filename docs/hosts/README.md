@@ -161,7 +161,7 @@ doesn't track it: that URL has no certificate sensor and no expiry alerts. Takin
 open problem of theirs, at the next check. If the probe can't run the check at all (it doesn't have
 `argus_http.py` yet), the host shows an **HTTP checks** sensor under **Web** saying so, and it alerts.
 On the core, the collectors come with each Argus update: the argus-updater installs them
-(**Settings, About** shows whether it did).
+(the **Updates** page shows whether it did).
 Alerts: **portal.example.com/app is down** (High, after 3 checks), slow (`{$HTTP.RESPONSE.WARN}` 1 s,
 `{$HTTP.RESPONSE.HIGH}` 3 s), the certificate having expired (High) and expiring (`{$HTTP.CERT.WARN}` 21 days,
 `{$HTTP.CERT.HIGH}` 7 days); all four thresholds are on the Thresholds screen. **Timeout** (default 10 s)

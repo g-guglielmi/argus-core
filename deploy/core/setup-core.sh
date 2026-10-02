@@ -113,7 +113,7 @@ fi
 # above) back the SSH collector's key / password auth. The argus-probe image bakes the same scripts
 # (kept byte-identical) for proxy-monitored devices. Installed in BOTH modes (manual install + appliance);
 # after that the argus-updater keeps them current: the Argus image carries them and it copies the
-# running version's in after every core update (Settings, About shows it).
+# running version's in after every core update (the Updates page shows it).
 EXT_DST=/usr/lib/zabbix/externalscripts
 if [[ -d "${SCRIPT_DIR}/externalscripts" ]]; then
   install -d -m 0755 "$EXT_DST"
@@ -167,7 +167,7 @@ echo "==> [8/8] OS patching & lifecycle (DESIGN §14c)"
 # Keep the core's Debian OS patched without dragging pinned packages forward. unattended-upgrades
 # applies the SECURITY suite only; it honours apt holds/pins, so the TimescaleDB 2.28 hold/pin above
 # is safe (it will never pull 2.29). The core is a "pet": patches auto-apply but the REBOOT is
-# operator-scheduled from Argus (Settings -> OS updates), never unattended - it hosts the DB + Zabbix.
+# operator-scheduled from Argus (the Updates page), never unattended - it hosts the DB + Zabbix.
 # needrestart auto-restarts services after a libc/openssl bump so most updates need no reboot at all.
 #
 # ARGUS_STATE_DIR is the HOST path you bind-mount into the Argus core container as ARGUS_UPDATE_DIR

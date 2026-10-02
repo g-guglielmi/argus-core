@@ -38,7 +38,7 @@ const (
 	noticeUpdVerPrefix   = "notice_ver_updater:"   // app_meta: last seen updater version, per proxy
 	noticeProbePending   = "notice_pending_probe:" // app_meta: update handed out to a probe, "tag|unix"
 	noticeUpdPending     = "notice_pending_updater:"
-	noticeProbeFailed    = "notice_failed_probe:" // app_meta: a hand-out that didn't take, "tag|unix" (the Probes page says so)
+	noticeProbeFailed    = "notice_failed_probe:" // app_meta: a hand-out that didn't take, "tag|unix" (the Updates and Probes pages say so)
 	noticeUpdFailed      = "notice_failed_updater:"
 )
 
@@ -185,9 +185,9 @@ func (s *Server) releaseNotices() []notice {
 	}
 	detail := "This instance runs " + buildinfo.Version + "."
 	if s.cfg.SelfUpdateEnabled() {
-		detail += "\nUpdate from Settings -> About."
+		detail += "\nUpdate it on the Updates page."
 	}
-	return []notice{{key: "argus-release:" + latest, title: "Argus " + latest + " is available", detail: detail, view: "settings"}}
+	return []notice{{key: "argus-release:" + latest, title: "Argus " + latest + " is available", detail: detail, view: "updates"}}
 }
 
 // coreUpdateNotices: the outcome of a core self-update (the sidecar reports it in the update dir;
@@ -199,13 +199,13 @@ func (s *Server) coreUpdateNotices() []notice {
 	}
 	id := st.Target + "|" + st.FinishedAt
 	if st.State == "success" {
-		return []notice{{key: "core-update:" + id, title: "Argus updated to " + st.Target, detail: "The update from " + st.From + " finished and Argus restarted on the new version.", view: "settings"}}
+		return []notice{{key: "core-update:" + id, title: "Argus updated to " + st.Target, detail: "The update from " + st.From + " finished and Argus restarted on the new version.", view: "updates"}}
 	}
 	detail := "Argus is still on " + st.From + "."
 	if st.Message != "" {
 		detail = st.Message + "\n" + detail
 	}
-	return []notice{{key: "core-update:" + id, title: "Argus update to " + st.Target + " failed", detail: detail, view: "settings"}}
+	return []notice{{key: "core-update:" + id, title: "Argus update to " + st.Target + " failed", detail: detail, view: "updates"}}
 }
 
 // coreOSNotices: the core VM's pending security updates, a reboot it needs, and a Zabbix server minor
@@ -219,17 +219,17 @@ func (s *Server) coreOSNotices() []notice {
 	if v.SecUpdates > 0 {
 		out = append(out, notice{key: "core-os-updates", title: "Security updates pending on the core VM",
 			detail: plural(v.SecUpdates, "security update has", "security updates have") + " been waiting for over two days; automatic patching may be stuck.",
-			view:   "settings", minAge: 48 * time.Hour})
+			view:   "updates", minAge: 48 * time.Hour})
 	}
 	if v.RebootRequired {
 		out = append(out, notice{key: "core-reboot", title: "The core VM needs a reboot",
 			detail: "Updates installed on the core VM need a restart to take effect. It reboots in its reboot window, or restart it yourself.",
-			view:   "settings", minAge: 24 * time.Hour})
+			view:   "updates", minAge: 24 * time.Hour})
 	}
 	if v.ZbxCandidate != "" && v.ZbxServer != "" && v.ZbxCandidate != v.ZbxServer {
 		out = append(out, notice{key: "core-zabbix:" + v.ZbxCandidate, title: "Zabbix " + v.ZbxCandidate + " is available for the core",
-			detail: "The core runs Zabbix server " + v.ZbxServer + ". It updates in its Zabbix update window, or from Settings.",
-			view:   "settings", minAge: 24 * time.Hour})
+			detail: "The core runs Zabbix server " + v.ZbxServer + ". It updates in its Zabbix update window, set on the Updates page.",
+			view:   "updates", minAge: 24 * time.Hour})
 	}
 	return out
 }
@@ -252,20 +252,20 @@ func (s *Server) probeNotices(ctx context.Context) (conds, events []notice) {
 		host := "Probe " + site
 		if ag.Version != "" && updateStatus(ag.Version, target, latest) == "outdated" {
 			conds = append(conds, notice{key: "probe-behind:" + name + ":" + latest, title: "Probe " + site + " is behind",
-				detail: "It runs " + ag.Version + "; " + latest + " is available.", host: host, site: site, view: "probes", minAge: 6 * time.Hour})
+				detail: "It runs " + ag.Version + "; " + latest + " is available.", host: host, site: site, view: "updates", minAge: 6 * time.Hour})
 		}
 		if ag.SelfUpdate && ag.UpdaterVersion != "" && updaterStatus(ag.UpdaterVersion, updLatest) == "outdated" {
 			conds = append(conds, notice{key: "updater-behind:" + name + ":" + updLatest, title: "The updater of probe " + site + " is behind",
-				detail: "It runs " + ag.UpdaterVersion + "; " + updLatest + " is available.", host: host, site: site, view: "probes", minAge: 6 * time.Hour})
+				detail: "It runs " + ag.UpdaterVersion + "; " + updLatest + " is available.", host: host, site: site, view: "updates", minAge: 6 * time.Hour})
 		}
 		if ag.OSReportedAt > 0 && ag.SecUpdates > 0 {
 			conds = append(conds, notice{key: "probe-os-updates:" + name, title: "Security updates pending on probe " + site,
 				detail: plural(ag.SecUpdates, "security update has", "security updates have") + " been waiting for over two days; automatic patching may be stuck.",
-				host:   host, site: site, view: "probes", minAge: 48 * time.Hour})
+				host:   host, site: site, view: "updates", minAge: 48 * time.Hour})
 		}
 		if ag.OSReportedAt > 0 && ag.RebootRequired {
 			conds = append(conds, notice{key: "probe-reboot:" + name, title: "Probe " + site + " needs a reboot",
-				detail: "Updates installed on the probe VM need a restart to take effect.", host: host, site: site, view: "probes", minAge: 24 * time.Hour})
+				detail: "Updates installed on the probe VM need a restart to take effect.", host: host, site: site, view: "updates", minAge: 24 * time.Hour})
 		}
 		// Argus changed the probe's process counts: told once per decision, while it is recent. A
 		// decision that put a kind back after a raise that didn't help says so in its title.
@@ -320,7 +320,7 @@ func (s *Server) selfUpdateEvents(ctx context.Context, proxy, what, version, ver
 		if seen && prev != "" && prev != version {
 			changed = true
 			out = append(out, notice{key: what + "-updated:" + proxy + ":" + version, title: subject + " updated to " + version,
-				detail: "It was on " + prev + ".", host: host, site: site, view: "probes"})
+				detail: "It was on " + prev + ".", host: host, site: site, view: "updates"})
 			_ = s.st.MetaDelete(ctx, failPrefix+proxy) // an earlier update that didn't take is moot now
 		}
 		if !seen || prev != version {
@@ -332,7 +332,7 @@ func (s *Server) selfUpdateEvents(ctx context.Context, proxy, what, version, ver
 		// A hand-out is done when the probe reports the tag's version. A rolling tag (latest,
 		// testing) has no version of its own: it's done when the version changed since the hand-out
 		// (the "updated to" notice above), or when the probe already runs the newest published
-		// version (an "Update now" on a current probe re-pulls the same image).
+		// version (an Update on a current probe re-pulls the same image).
 		newest := s.probeLatest.get()
 		if what == "updater" {
 			newest = s.updaterLatest.get()
@@ -343,7 +343,7 @@ func (s *Server) selfUpdateEvents(ctx context.Context, proxy, what, version, ver
 		case time.Since(time.Unix(atoi64(at), 0)) > selfUpdateGrace:
 			out = append(out, notice{key: what + "-update-failed:" + proxy + ":" + tag + ":" + at, title: subject + " failed to update to " + tag,
 				detail: "It's still on " + version + " " + fmt.Sprint(int(selfUpdateGrace.Minutes())) + " minutes after the update was handed out; the updater rolls back a version that doesn't start healthy.",
-				host:   host, site: site, view: "probes"})
+				host:   host, site: site, view: "updates"})
 			_ = s.st.MetaDelete(ctx, pendPrefix+proxy)
 			_ = s.st.MetaSet(ctx, failPrefix+proxy, tag+"|"+itoa64(time.Now().Unix()))
 		}

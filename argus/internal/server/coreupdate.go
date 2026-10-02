@@ -21,7 +21,7 @@ import (
 // argus-updater sidecar (which alone holds the Docker socket). The two share a small volume
 // (ARGUS_UPDATE_DIR, e.g. /update); the core never touches Docker.
 //
-//	request.json  - written by the core when an admin clicks "Update now" (the command)
+//	request.json  - written by the core when an admin clicks Update (the command)
 //	status.json   - written by the sidecar as it works: running -> success | failed (the result)
 //
 // The sidecar pulls the target image, recreates the core cloning its config, verifies the new
@@ -64,7 +64,7 @@ type sidecarStatus struct {
 	Steps      []jobStep `json:"steps"`
 }
 
-// sidecarJob is a sidecar self-update as Settings shows it, step by step.
+// sidecarJob is a sidecar self-update as the Updates page shows it, step by step.
 type sidecarJob struct {
 	ID          string    `json:"id"`
 	State       string    `json:"state"` // queued | running | success | failed | unknown
@@ -188,7 +188,7 @@ type coreUpdateStatus struct {
 	FinishedAt string    `json:"finished_at,omitempty"`
 }
 
-// updateStateResponse drives the Settings UI: the button, the poll, and the banner.
+// updateStateResponse drives the Updates page's core section: the button, the poll, and the log.
 type updateStateResponse struct {
 	SelfUpdateEnabled bool   `json:"self_update_enabled"`
 	State             string `json:"state"` // idle | requested | running | success | failed
@@ -424,7 +424,7 @@ func (s *Server) handleUpdaterSelfUpdate(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "a sidecar update is already under way"})
 		return
 	}
-	// Remember the job first: the sidecar consumes the request, and Settings follows the job by its id.
+	// Remember the job first: the sidecar consumes the request, and the Updates page follows the job by its id.
 	job := sidecarJobFile{ID: req.ID, Tag: tag, From: s.updaterVersion(), RequestedBy: by, RequestedAt: req.RequestedAt}
 	if err := s.writeUpdateJSONAtomic(updaterJobFile, job); err != nil {
 		s.logger.Error("updater self-update: could not record the job", "err", err)
@@ -450,7 +450,7 @@ func (s *Server) handleUpdaterCheck(w http.ResponseWriter, r *http.Request) {
 	s.handleUpdateState(w, r)
 }
 
-// handleUpdaterDismiss closes a finished sidecar update in Settings (admin).
+// handleUpdaterDismiss closes a finished sidecar update on the Updates page (admin).
 func (s *Server) handleUpdaterDismiss(w http.ResponseWriter, _ *http.Request) {
 	if !s.cfg.SelfUpdateEnabled() {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

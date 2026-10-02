@@ -74,8 +74,8 @@ func TestAckMessages(t *testing.T) {
 // A system notice: its own tag and colour, no host when it's about Argus itself, its explanation in the
 // body, and no Acknowledge action.
 func TestInfoMessages(t *testing.T) {
-	e := Event{Kind: "info", Name: "Argus 0.6.0 is available", Detail: "You run 0.5.9.\nUpdate from Settings -> About.",
-		When: sampleProblem().When, OpenURL: "https://monitoring.example.com/?view=settings"}
+	e := Event{Kind: "info", Name: "Argus 0.6.0 is available", Detail: "You run 0.5.9.\nUpdate it on the Updates page.",
+		When: sampleProblem().When, OpenURL: "https://monitoring.example.com/?view=updates"}
 	if got := e.subject(); got != "[INFO] Argus 0.6.0 is available" {
 		t.Fatalf("subject = %q", got)
 	}
@@ -83,7 +83,7 @@ func TestInfoMessages(t *testing.T) {
 		t.Fatalf("info colour: %x %s", e.color(), htmlColor(e))
 	}
 	body := strings.Join(e.bodyLines(), "\n")
-	if !strings.Contains(body, "You run 0.5.9.") || !strings.Contains(body, "Update from Settings") || strings.Contains(body, "Host:") || strings.Contains(body, "Severity") {
+	if !strings.Contains(body, "You run 0.5.9.") || !strings.Contains(body, "Update it on the Updates page") || strings.Contains(body, "Host:") || strings.Contains(body, "Severity") {
 		t.Fatalf("body:\n%s", body)
 	}
 	text, kb := telegramMessage(e)

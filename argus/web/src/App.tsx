@@ -713,7 +713,7 @@ function ResetPassword({ token, onDone }: { token: string; onDone: () => void })
   )
 }
 
-type View = 'overview' | 'triggers' | 'history' | 'monitoring' | 'maintenance' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'users' | 'settings' | 'account' | 'list'
+type View = 'overview' | 'triggers' | 'history' | 'monitoring' | 'maintenance' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'users' | 'updates' | 'settings' | 'account' | 'list'
 const VIEW_TITLES: Record<View, [string, string]> = {
   overview: ['Overview', 'What needs attention right now'],
   triggers: ['Triggers', 'Alert rules - firing, or all by host'],
@@ -726,6 +726,7 @@ const VIEW_TITLES: Record<View, [string, string]> = {
   thresholds: ['Thresholds', 'Fleet-wide alert defaults per template'],
   statuspages: ['Status pages', 'Read-only dashboards for a wall screen'],
   users: ['Users', 'Accounts and access'],
+  updates: ['Updates', "Argus, the probes and the VMs' operating systems"],
   settings: ['Settings', 'System configuration'],
   account: ['Account', 'Your security settings'],
   list: ['Sensors', 'Filtered across all sites'],
@@ -743,6 +744,7 @@ const ic = {
   thresholds: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M5 21v-6M5 11V3M12 21v-9M12 8V3M19 21v-4M19 13V3" /><circle cx="5" cy="13" r="2" /><circle cx="12" cy="6" r="2" /><circle cx="19" cy="15" r="2" /></svg>,
   statuspages: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /><path d="M7 12l2.5-3 2.5 2 3-4 2 2" /></svg>,
   users: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><path d="M16 5.2a3.2 3.2 0 0 1 0 6M17 14.5a5.5 5.5 0 0 1 3.5 5.5" /></svg>,
+  updates: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6" /><path d="M20.5 3.5v4.5H16" /><path d="M12 8v7.5M9 12.5l3 3 3-3" /></svg>,
   settings: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
   account: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="3.4" /><path d="M5 20a7 7 0 0 1 14 0" /></svg>,
   logout: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M15 12H3M9 6l-6 6 6 6M15 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" /></svg>,
@@ -778,7 +780,7 @@ function useTheme(): ['dark' | 'light', () => void] {
 // bookmark, shared link, or Back/Forward restores the exact screen - instead of always
 // resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
 // (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
-const NAV_VIEWS: View[] = ['overview', 'triggers', 'history', 'monitoring', 'maintenance', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'users', 'settings', 'account', 'list']
+const NAV_VIEWS: View[] = ['overview', 'triggers', 'history', 'monitoring', 'maintenance', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'users', 'updates', 'settings', 'account', 'list']
 type NavState = { view: View; filter: string; host?: string; item?: string; group?: string; scan?: string; edit?: string }
 
 function parseNav(): NavState {
@@ -862,46 +864,22 @@ function UpdateLog({ title, state, steps, message, note, children }: { title: st
 // update (the core's Zabbix is a host package, so they can't ride the image by themselves).
 type CollectorsReport = { state: 'ok' | 'failed' | 'skipped'; message?: string; at?: string; version?: string; installed?: string[]; dir?: string }
 
-// CollectorsLine says whether this server's Zabbix has the running version's collectors, and what to
+// collectorsState says whether this server's Zabbix has the running version's collectors, and what to
 // do when it hasn't: the sidecar installs them, so the only fix ever needed is updating it.
-function CollectorsLine({ c, running }: { c?: CollectorsReport; running?: string }) {
+function collectorsState(c: CollectorsReport | undefined, running?: string): { pill: ReactNode; text: string; warn: boolean } {
   const when = c?.at ? Date.parse(c.at) / 1000 : 0
   const ago = when ? relTime(when) : ''
-  let tag: ReactNode, text: string, warn = false
-  if (!c) {
-    tag = <span className="vtag upd">not installed by the sidecar</span>
-    text = "This sidecar version doesn't install them yet: Update sidecar, and it copies this version's collectors in by itself."
-  } else if (c.state === 'ok') {
-    const behind = !!(c.version && running && c.version !== running)
-    tag = behind ? <span className="vtag upd">updating</span> : <span className="okquiet">up to date</span>
-    text = behind ? `Installed from ${c.version}; this version's are going in now.`
-      : `Installed from this version${ago ? `, checked ${ago}` : ''}${c.installed && c.installed.length ? `; last copied in: ${c.installed.join(', ')}` : ''}.`
-  } else if (c.state === 'skipped') {
-    tag = <span className="vtag dev">not needed</span>
-    text = (c.message || 'Skipped.') + (ago ? ` (${ago})` : '')
-  } else {
-    warn = true
-    tag = <span className="vtag upd">not installed</span>
-    text = `The sidecar couldn't install them: ${c.message || 'no reason given'}. It tries again every 10 minutes.`
+  if (!c) return { pill: <UpdPill kind="avail">not installed by the sidecar</UpdPill>, warn: false,
+    text: "This sidecar version doesn't install them yet: update the sidecar, and it copies this version's collectors in by itself." }
+  if (c.state === 'ok') {
+    if (c.version && running && vv(c.version) !== vv(running)) return { pill: <UpdPill kind="busy">updating</UpdPill>, warn: false, text: "This version's are going in now." }
+    return { pill: <UpdPill kind="ok">up to date</UpdPill>, warn: false,
+      text: `Installed from this version${ago ? `, checked ${ago}` : ''}${c.installed && c.installed.length ? `; last copied in: ${c.installed.join(', ')}` : ''}.` }
   }
-  return (
-    <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
-        <span className="complabel">Collectors</span>{tag}
-      </div>
-      <p className="set-hint" style={{ marginTop: 4, color: warn ? 'var(--warn)' : undefined }}>The scripts this server's Zabbix runs for the hosts it monitors itself (HTTP, TCP, SSH, UPS...). {text}</p>
-    </>
-  )
+  if (c.state === 'skipped') return { pill: <UpdPill kind="info">not needed</UpdPill>, warn: false, text: (c.message || 'Skipped.') + (ago ? ` (${ago})` : '') }
+  return { pill: <UpdPill kind="bad">not installed</UpdPill>, warn: true, text: `The sidecar couldn't install them: ${c.message || 'no reason given'}. It tries again every 10 minutes.` }
 }
 
-// VersionAbout shows the running build at the top of Settings, with a verdict badge so an admin can
-// tell at a glance whether this instance is on the newest release:
-//   current     -> green "latest" tick (a clean release tag equal to the newest published release)
-//   development -> neutral "development build" tag (a :testing/git-describe build ahead of its tag)
-//   outdated    -> amber "update available" pill + a "What's new" changelog disclosure + (when the
-//                  argus-updater sidecar is wired up) a one-click "Update now" button
-// The one-click update is performed by the argus-updater sidecar (which holds the Docker socket); the
-// core just drops a request and polls /api/update/state, showing a running / success / failure banner.
 type OSWindow = { mode: string; weekday: number; hour: number; minute: number }
 type OSStatus = {
   core: { available: boolean; sec_updates: number; reboot_required: boolean; reported_at: number; os?: string; zbx_server?: string; zbx_candidate?: string; tz?: string; clock_sync?: boolean }
@@ -911,17 +889,64 @@ type OSStatus = {
 }
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-// OSUpdates is the Settings card for OS patching & lifecycle (DESIGN §14c). The Debian OS under the
-// core VM and every probe VM patches itself locally (unattended-upgrades, security suite only) - Argus
-// never triggers apt remotely. This card shows the core's own patch status and lets an admin schedule
-// the core's reboot (a pet that must not bounce unannounced), which a host timer honours locally.
-function OSUpdates() {
+// osPill is a VM's patch state in the same words for the core and every probe VM: a reboot it needs
+// first, then security updates still pending, else patched.
+function osPill(sec: number, reboot: boolean, when: string): ReactNode {
+  if (reboot) return <UpdPill kind="avail" title={`Updates are installed and need a restart to take effect. ${when}`}>reboot needed</UpdPill>
+  if (sec > 0) return <UpdPill kind="avail" title={`Pending; they apply by themselves (security suite only). ${when}`}>{sec} security update{sec === 1 ? '' : 's'}</UpdPill>
+  if (sec === 0) return <UpdPill kind="ok" title={`No pending security updates. ${when}`}>patched</UpdPill>
+  return <UpdPill kind="none" title={`The security-update count is unknown. ${when}`}>count unknown</UpdPill>
+}
+
+// vmsPill sums the probe VMs up in osPill's words: the worst of them, counted.
+function vmsPill(vms: Proxy[]): ReactNode {
+  if (vms.length === 0) return <UpdPill kind="none">none reporting</UpdPill>
+  const reboot = vms.filter((p) => p.reboot_required).length
+  const sec = vms.filter((p) => !p.reboot_required && (p.sec_updates ?? -1) > 0).length
+  if (reboot) return <UpdPill kind="avail">{reboot === 1 ? '1 needs' : `${reboot} need`} a reboot</UpdPill>
+  if (sec) return <UpdPill kind="avail">{sec === 1 ? '1 has' : `${sec} have`} security updates pending</UpdPill>
+  if (vms.every((p) => p.sec_updates === 0)) return <UpdPill kind="ok">all patched</UpdPill>
+  return undefined
+}
+
+// osName trims the "GNU/Linux" filler off a reported PRETTY_NAME: "Debian 13 (trixie)".
+function osName(s?: string): string { return (s || '').replace('GNU/Linux ', '') }
+
+// WeeklyWindow picks when something on the core happens by itself: never (notify only), or weekly at
+// a day and time on the core VM's clock. Shared by the core's reboot and its Zabbix minor updates.
+function WeeklyWindow({ autoLabel, mode, weekday, time, onMode, onWeekday, onTime, onSave, busy, dirty }: {
+  autoLabel: string; mode: string; weekday: number; time: string
+  onMode: (m: string) => void; onWeekday: (d: number) => void; onTime: (t: string) => void; onSave: () => void; busy: boolean; dirty: boolean
+}) {
+  // Widths are deliberate: the caps keep the Save button from wrapping on font-rendering hairlines.
+  return (
+    <div className="upd-window">
+      <select className="input" value={mode} onChange={(e) => onMode(e.target.value)} style={{ maxWidth: 220 }}>
+        <option value="notify">Notify only</option>
+        <option value="auto">{autoLabel}</option>
+      </select>
+      {mode === 'auto' && <>
+        <select className="input" value={weekday} onChange={(e) => onWeekday(parseInt(e.target.value, 10))} style={{ maxWidth: 140 }}>
+          {WEEKDAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
+        </select>
+        <input className="input" type="time" value={time} onChange={(e) => onTime(e.target.value)} style={{ maxWidth: 120 }} />
+      </>}
+      <Button variant="default" onClick={onSave} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save'}</Button>
+    </div>
+  )
+}
+
+// OSUpdatesCard is the Updates page's Operating systems section (DESIGN section 14c). The Debian under
+// the core VM and every probe VM patches itself locally (unattended-upgrades, security suite only);
+// Argus never runs apt remotely. It shows where each VM stands and schedules the core's reboot and its
+// Zabbix minor updates (a pet that must not bounce unannounced), which host timers honour locally.
+function OSUpdatesCard({ proxies, vmLatest }: { proxies: Proxy[] | null; vmLatest: string }) {
   const toast = useToast()
   const [os, setOs] = useState<OSStatus | null>(null)
   const [mode, setMode] = useState('notify')
   const [weekday, setWeekday] = useState(0)
   const [time, setTime] = useState('03:00')
-  // Zabbix minor-update window (same shape, separate policy).
+  // The Zabbix minor-update window (same shape, its own policy).
   const [zMode, setZMode] = useState('notify')
   const [zWeekday, setZWeekday] = useState(0)
   const [zTime, setZTime] = useState('04:00')
@@ -954,100 +979,74 @@ function OSUpdates() {
       toast.success(`${label[0].toUpperCase()}${label.slice(1)} saved.`); await load()
     } finally { setBusy(false) }
   }
-  const save = () => saveWindow('/api/os/reboot-window', 'reboot window', mode, weekday, time)
-  const saveZ = () => saveWindow('/api/os/zbx-window', 'update window', zMode, zWeekday, zTime)
 
   const c = os?.core
-  const sec = c ? c.sec_updates : -1
+  const reported = c?.available && c.reported_at > 0 ? `Reported ${relTime(c.reported_at)}.` : ''
+  const vms = (proxies || []).filter((p) => p.os_reported_at)
   return (
     <section className="set-card">
-      {/* The reported-at stamp lives in the card header: ONE host report feeds every section
-          below (OS status AND the Zabbix versions), so it must not read as belonging to just
-          the first row. */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-        <h3>OS updates</h3>
-        {c?.available && c.reported_at > 0 && <span className="set-hint" style={{ margin: 0 }}>core status reported {relTime(c.reported_at)} - covers the OS and Zabbix sections below</span>}
-      </div>
-      <p className="set-note">The Debian OS under the core and probe VMs patches itself locally - security updates only, applied automatically. Argus reports status and schedules the core's reboot and Zabbix minor updates; it never runs apt remotely (there's no clean rollback). Per-probe status is on the <strong>Probes</strong> page.</p>
+      <h3>Operating systems</h3>
+      <p className="set-note">The Debian under the core and probe VMs patches itself: security updates only, applied automatically. Argus shows how each VM stands and schedules what mustn't happen unannounced on the core: its reboot and its Zabbix minor updates. It never runs apt remotely, since there's no clean rollback.</p>
+      {!os ? <Skeleton rows={3} cols={2} /> : <>
+        <UpdRow label="Core VM" version={c?.available && c.os ? <UpdVer v={osName(c.os)} title="The operating system the core VM reports" /> : undefined}
+          pill={c?.available ? osPill(c.sec_updates, c.reboot_required, reported) : <UpdPill kind="none">not reporting</UpdPill>}>
+          {!c?.available
+            ? <p className="set-hint">The core's OS patch status isn't wired up yet. Run the host reporter from <span className="mono">deploy/core/setup-core.sh</span> and share the self-update dir with the core container.</p>
+            : reported && <p className="set-hint">{reported} The same report carries the Zabbix version below.</p>}
+          <span className="flabel">Reboot window</span>
+          <WeeklyWindow autoLabel="Auto-reboot weekly" mode={mode} weekday={weekday} time={time} onMode={setMode} onWeekday={setWeekday} onTime={setTime}
+            onSave={() => saveWindow('/api/os/reboot-window', 'reboot window', mode, weekday, time)} busy={busy} dirty={dirty} />
+          {mode === 'auto'
+            ? <p className="set-hint">The core reboots only when an update needs it, on <strong>{WEEKDAYS[weekday]}</strong> at <strong>{time}</strong> (the core VM's local time). Take a hypervisor snapshot as your safety net.</p>
+            : <p className="set-hint">Notify only: Argus flags "reboot needed" and leaves the reboot to you. The core hosts the database and Zabbix, so it never reboots unattended unless you pick a window.</p>}
+        </UpdRow>
 
-      <div className="set-row">
-        <div className="set-head"><span className="complabel">Core</span></div>
-        {!c?.available ? (
-          <p className="set-hint">The core's OS patch status isn't wired up yet. Run the host reporter from <span className="mono">deploy/core/setup-core.sh</span> and share the self-update dir with the core container.</p>
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {c.os && <span className="mono">{c.os}</span>}
-            {c.reboot_required && <span className="tag avail" title="The core needs a reboot to finish applying updates - schedule it below">reboot needed</span>}
-            {sec > 0 && <span className="tag avail">{sec} security update{sec === 1 ? '' : 's'}</span>}
-            {sec === 0 && !c.reboot_required && <span className="tag online">patched</span>}
-            {sec < 0 && !c.reboot_required && <span className="mono" style={{ color: 'var(--faint)' }}>count unknown</span>}
-          </div>
-        )}
-      </div>
-
-      {/* The VM's timezone + clock-sync status render in the GENERAL settings card, next to the
-          Timezone setting that drives them - not here (user's call: this card is about updates).
-          The window hints below still note that schedules run on the VM's clock. */}
-      <div className="set-row">
-        <div className="set-head"><span className="complabel">Core reboot window</span></div>
-        <p className="set-hint" style={{ marginTop: 0 }}>Security patches apply automatically, but the core hosts the database and Zabbix, so its <strong>reboot</strong> is never unattended by default. Probe VMs reboot themselves in a weekly ~03:00 window.</p>
-        {/* Widths are deliberate: the caps must sum well under .set-row's 560px so the Save
-            button never wraps on font-rendering hairlines (it did). Same caps on both rows. */}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <select className="input" value={mode} onChange={(e) => setMode(e.target.value)} style={{ maxWidth: 220 }}>
-            <option value="notify">Notify only</option>
-            <option value="auto">Auto-reboot weekly</option>
-          </select>
-          {mode === 'auto' && <>
-            <select className="input" value={weekday} onChange={(e) => setWeekday(parseInt(e.target.value, 10))} style={{ maxWidth: 140 }}>
-              {WEEKDAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
-            </select>
-            <input className="input" type="time" value={time} onChange={(e) => setTime(e.target.value)} style={{ maxWidth: 120 }} />
+        {/* Core Zabbix minor updates (same major only). The Zabbix apt repo is pinned per major line
+            and the host applier double-guards on the major.minor prefix: a major upgrade is always a
+            planned manual event (database migration, TimescaleDB compatibility). */}
+        <UpdRow label="Core Zabbix" version={c?.zbx_server ? <UpdVer v={c.zbx_server} title="The Zabbix server version on the core" /> : undefined}
+          pill={!c?.zbx_server ? <UpdPill kind="none">not reporting</UpdPill>
+            : c.zbx_candidate && c.zbx_candidate !== c.zbx_server ? <UpdPill kind="avail" title="A minor update is available from the Zabbix repo">{c.zbx_candidate} available</UpdPill>
+            : <UpdPill kind="ok">up to date</UpdPill>}>
+          {c?.available && !c.zbx_server ? <p className="set-hint">The host reporter predates Zabbix version reporting: re-run <span className="mono">deploy/core/setup-core-patching.sh</span> from the repo to enable this row.</p> : <>
+            <p className="set-hint">Minor updates within the same Zabbix line (7.0.x): the server restart is a seconds-long blip the probes buffer through.{os.fleet_zbx && c?.zbx_server && os.fleet_zbx !== c.zbx_server ? ` The probes run ${os.fleet_zbx}.` : ''} Major upgrades are never automated: they migrate the database and are a planned, snapshot-first event.</p>
+            <span className="flabel">Update window</span>
+            <WeeklyWindow autoLabel="Auto-update weekly" mode={zMode} weekday={zWeekday} time={zTime} onMode={setZMode} onWeekday={setZWeekday} onTime={setZTime}
+              onSave={() => saveWindow('/api/os/zbx-window', 'update window', zMode, zWeekday, zTime)} busy={busy} dirty={zDirty} />
+            {zMode === 'auto'
+              ? <p className="set-hint">Pending zabbix-* minors apply on <strong>{WEEKDAYS[zWeekday]}</strong> at <strong>{zTime}</strong> (the core VM's local time), then zabbix-server restarts.</p>
+              : <p className="set-hint">Notify only: Argus shows when a minor is available and leaves applying it to you.</p>}
           </>}
-          <Button variant="default" onClick={save} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save'}</Button>
-        </div>
-        {mode === 'notify' && <p className="set-hint" style={{ marginBottom: 0 }}>Notify only: Argus flags "reboot needed" and leaves the reboot to you.</p>}
-        {mode === 'auto' && <p className="set-hint" style={{ marginBottom: 0 }}>The core reboots only when an update requires it, on <strong>{WEEKDAYS[weekday]}</strong> at <strong>{time}</strong> (the core VM's local time). Take a hypervisor snapshot as your safety net.</p>}
-      </div>
+        </UpdRow>
+      </>}
 
-      {/* Core Zabbix minor updates (same-major only). The Zabbix apt repo is pinned per major
-          line, and the host applier double-guards on the major.minor prefix - a major upgrade is
-          always a planned manual event (DB migration + Timescale compatibility). */}
-      <div className="set-row" style={{ marginBottom: 0 }}>
-        <div className="set-head"><span className="complabel">Core Zabbix updates</span></div>
-        {c?.available && !c.zbx_server ? (
-          <p className="set-hint" style={{ marginTop: 0 }}>The host reporter predates Zabbix version reporting - re-run <span className="mono">deploy/core/setup-core-patching.sh</span> from the repo to enable this section.</p>
-        ) : (
-          <>
-            {c?.zbx_server && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
-                <span className="mono">Zabbix server {c.zbx_server}</span>
-                {c.zbx_candidate && c.zbx_candidate !== c.zbx_server
-                  ? <span className="tag avail" title="A minor update is available from the Zabbix repo">{c.zbx_candidate} available</span>
-                  : <span className="tag online">up to date</span>}
-                {os?.fleet_zbx && os.fleet_zbx !== c.zbx_server && <span className="set-hint" style={{ margin: 0 }}>fleet probes are on {os.fleet_zbx}</span>}
-              </div>
-            )}
-            <p className="set-hint" style={{ marginTop: 0 }}>Minor updates within the same Zabbix line (e.g. 7.0.x) - the server restart is a seconds-long blip the probes buffer through. Major upgrades are never automated: they migrate the database and are a planned, snapshot-first event.</p>
-            {/* Same deliberate width caps as the reboot row - see the comment there. */}
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <select className="input" value={zMode} onChange={(e) => setZMode(e.target.value)} style={{ maxWidth: 220 }}>
-                <option value="notify">Notify only</option>
-                <option value="auto">Auto-update weekly</option>
-              </select>
-              {zMode === 'auto' && <>
-                <select className="input" value={zWeekday} onChange={(e) => setZWeekday(parseInt(e.target.value, 10))} style={{ maxWidth: 140 }}>
-                  {WEEKDAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
-                </select>
-                <input className="input" type="time" value={zTime} onChange={(e) => setZTime(e.target.value)} style={{ maxWidth: 120 }} />
-              </>}
-              <Button variant="default" onClick={saveZ} disabled={busy || !zDirty}>{busy ? 'Saving…' : 'Save'}</Button>
-            </div>
-            {zMode === 'auto' && <p className="set-hint" style={{ marginBottom: 0 }}>Pending zabbix-* minors apply on <strong>{WEEKDAYS[zWeekday]}</strong> at <strong>{zTime}</strong> (the core VM's local time), then zabbix-server restarts.</p>}
-            {zMode === 'notify' && <p className="set-hint" style={{ marginBottom: 0 }}>Notify only: Argus shows when a minor is available and leaves applying it to you.</p>}
-          </>
-        )}
-      </div>
+      <UpdRow label="Probe VMs" version={vms.length ? <UpdVer v={`${vms.length} VM${vms.length === 1 ? '' : 's'}`} title="Probe VMs that report their patch state" /> : undefined}
+        pill={!proxies ? undefined : vmsPill(vms)}>
+        <p className="set-hint">A probe VM reboots by itself in a weekly window around 03:00 when an update needs it. A container probe patches with its Docker host, so it isn't listed here.</p>
+      </UpdRow>
+      {vms.length > 0 && (
+        <div className="upd-table enroll-scroll">
+          <table className="enroll enroll-probes">
+            <thead><tr><th>Probe</th><th>Operating system</th><th>Patches</th></tr></thead>
+            <tbody>
+              {vms.map((p) => {
+                const when = `Reported ${relTime(p.os_reported_at!)}.`
+                return (
+                  <tr key={p.name}>
+                    <td data-label="Probe"><strong>{p.name}</strong></td>
+                    <td data-label="Operating system"><UpdVer v={osName(p.os_version)} title="The operating system this VM reports" /></td>
+                    <td data-label="Patches"><span className="vcell">{osPill(typeof p.sec_updates === 'number' ? p.sec_updates : -1, !!p.reboot_required, when)}<span className="sub-line">reported {relTime(p.os_reported_at!)}</span></span></td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <UpdRow label="Probe VM image" version={vmLatest ? <UpdVer v={vv(vmLatest)} title="The newest probe appliance release" /> : undefined} pill={vmLatest ? undefined : <UpdPill kind="none">not looked up yet</UpdPill>}>
+        <p className="set-hint">What Add probe installs for a new probe VM. A VM already running doesn't need it: its probe updates through its sidecar, and its OS patches itself.</p>
+      </UpdRow>
     </section>
   )
 }
@@ -1361,242 +1360,498 @@ function BackupsCard() {
   )
 }
 
-function VersionAbout() {
+// --- Updates ---------------------------------------------------------------------------------------
+// The Updates page (admin) gathers every update in one place: Argus and its updater sidecar, the
+// probes and theirs, and the operating systems under the VMs. Every component reads the same way, in
+// a row or in a table cell: its version, one status pill (UpdPill) and its Update button. An update in
+// hand is a pill too, with its step log underneath where the updater reports steps.
+
+type PillKind = 'ok' | 'avail' | 'busy' | 'bad' | 'info' | 'none'
+
+// UpdPill is a component's status word: a green tick when it's up to date, amber when there's
+// something to do, a spinner while an update is in hand, red when one failed, neutral otherwise. The
+// Probes page's version cells use it too, so both pages say it the same way.
+function UpdPill({ kind, title, children }: { kind: PillKind; title?: string; children: ReactNode }) {
+  if (kind === 'ok') return <span className="okquiet" title={title}>{children}</span>
+  if (kind === 'none') return <span className="upd-none" title={title}>{children}</span>
+  const cls = kind === 'avail' ? 'tag avail' : kind === 'busy' ? 'tag pending jobtag' : kind === 'bad' ? 'tag err' : 'tag'
+  return <span className={cls} title={title}>{kind === 'busy' && <span className="spinner sm" aria-hidden="true" />}{children}</span>
+}
+
+// vv shows a semver version (the core's, an updater's) with its "v", however it was reported.
+function vv(s?: string): string { return s ? 'v' + s.replace(/^v/, '') : '' }
+
+// UpdVer is a component's running version, at the same weight everywhere.
+function UpdVer({ v, title }: { v?: string; title?: string }) {
+  return <span className="mono upd-ver" title={title} style={v ? undefined : { color: 'var(--faint)' }}>{v || '-'}</span>
+}
+
+// UpdRow is one component of a section: its label, then version, pill and action on one line, and
+// below them, aligned under the version, what it needs to say (a hint, its update log, a disclosure).
+function UpdRow({ label, version, pill, action, children }: { label: string; version?: ReactNode; pill?: ReactNode; action?: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="upd-row">
+      <div className="upd-row-head">
+        <span className="complabel">{label}</span>
+        <span className="vcell">{version}{pill}{action}</span>
+      </div>
+      {children && <div className="upd-row-body">{children}</div>}
+    </div>
+  )
+}
+
+// logTitle heads an update's step log the same way for every component.
+function logTitle(state: string, to?: string): string {
+  const t = to ? ` to ${to}` : ''
+  if (state === 'success') return `Updated${t}`
+  if (state === 'failed') return `Update${t} failed`
+  if (state === 'unknown') return `Update${t}: no word back`
+  return `Updating${t}`
+}
+
+// jobInHand: a probe update queued or under way (one that didn't take is no longer in hand).
+function jobInHand(j?: ProbeJob): boolean { return !!j && j.state !== 'failed' }
+
+// jobPill is a probe update in hand, on the Updates and the Probes page alike: queued for the
+// sidecar's next check-in, updating until the new version reports in, or failed (it didn't take).
+function jobPill(job: ProbeJob, what: string): ReactNode {
+  const to = job.tag === 'latest' ? 'the latest version' : job.tag
+  if (job.state === 'queued') return <UpdPill kind="busy" title={`The update of the ${what} to ${to} is queued: its sidecar picks it up at its next check-in, within a minute.`}>update queued</UpdPill>
+  if (job.state === 'updating') return <UpdPill kind="busy" title={`Handed to the sidecar${job.at ? ` ${relTime(job.at)}` : ''}: it pulls ${to} and recreates the ${what}, rolling back if the new one doesn't start healthy. This reads as up to date once the new version reports in.`}>updating{job.at ? ` · ${relTime(job.at)}` : ''}</UpdPill>
+  return <UpdPill kind="bad" title={`The update to ${to} didn't take: 20 minutes after it was handed out, the ${what} still ran the old version (the updater rolls back one that doesn't start healthy; its log says why). Update again to retry.`}>update failed</UpdPill>
+}
+
+// probeTo is the version a probe updates to: the fleet target, or the newest published one when the
+// target is latest.
+function probeTo(p: Proxy): string { return (!p.target || p.target === 'latest' ? p.latest : p.target) || 'latest' }
+
+// proxyState is where a probe's proxy stands against the fleet target, and how it can update: through
+// its sidecar ('self'), by hand on a probe without one ('manual'), or not now ('').
+function proxyState(p: Proxy): { pill: ReactNode; can: 'self' | 'manual' | '' } {
+  const job = p.update_job
+  if (job && jobInHand(job)) return { pill: jobPill(job, 'probe'), can: '' }
+  if (!p.update_status || p.update_status === 'external') return { pill: <UpdPill kind="none" title="This probe doesn't report its version to Argus (it's updated outside Argus, like an unRAID app). An admin can turn reporting on from its row on the Probes page.">not reporting</UpdPill>, can: '' }
+  const can = p.selfupdate ? 'self' : 'manual'
+  if (job) return { pill: jobPill(job, 'probe'), can }
+  if (p.update_status === 'outdated') return { pill: <UpdPill kind="avail">{probeTo(p)} available</UpdPill>, can }
+  if (p.update_status === 'tracking') return { pill: <UpdPill kind="info" title="The fleet target is latest and the newest published version isn't known yet: Check for updates looks it up">tracking latest</UpdPill>, can: p.selfupdate ? 'self' : '' }
+  return { pill: <UpdPill kind="ok" title="Running the fleet target version">up to date</UpdPill>, can: '' }
+}
+
+// updaterState is where a probe's argus-updater sidecar stands against the newest published one.
+function updaterState(p: Proxy): { pill: ReactNode; can: boolean } {
+  if (!p.selfupdate) return { pill: <UpdPill kind="none" title="No argus-updater sidecar manages this probe: it's updated outside Argus">no sidecar</UpdPill>, can: false }
+  const job = p.updater_job
+  if (job && jobInHand(job)) return { pill: jobPill(job, 'sidecar'), can: false }
+  if (job) return { pill: jobPill(job, 'sidecar'), can: true }
+  if (p.updater_status === 'outdated') return { pill: <UpdPill kind="avail">{p.updater_latest ? `${vv(p.updater_latest)} available` : 'update available'}</UpdPill>, can: true }
+  if (p.updater_status === 'current') return { pill: <UpdPill kind="ok" title="Running the newest published argus-updater">up to date</UpdPill>, can: false }
+  return { pill: <UpdPill kind="info" title="The newest published argus-updater isn't known yet: Check for updates looks it up">newest unknown</UpdPill>, can: true }
+}
+
+// CoreUpdates is the Argus core section: the core, the argus-updater sidecar that installs its
+// updates, and the collectors that sidecar copies into this server's Zabbix.
+function CoreUpdates({ v, upd, onChanged }: { v: VersionInfo | null; upd: UpdateState | null; onChanged: () => void }) {
+  if (!v || !upd) return <section className="set-card"><h3>Argus core</h3><Skeleton rows={3} cols={2} /></section>
+  return <CoreRows v={v} upd={upd} onChanged={onChanged} />
+}
+
+function CoreRows({ v, upd, onChanged }: { v: VersionInfo; upd: UpdateState; onChanged: () => void }) {
   const confirm = useConfirm()
-  const [v, setV] = useState<VersionInfo | null>(null)
   const [notes, setNotes] = useState<string | null>(null)
-  const [upd, setUpd] = useState<UpdateState | null>(null)
   const [busy, setBusy] = useState(false)
-  const [checking, setChecking] = useState(false)
-  const [checkedMsg, setCheckedMsg] = useState('')
   const [targets, setTargets] = useState<{ channels: string[]; releases: string[] } | null>(null)
   const [switchTo, setSwitchTo] = useState('')
   const [err, setErr] = useState('')
-  useEffect(() => { fetch('/api/version').then((r) => (r.ok ? r.json() : null)).then(setV).catch(() => {}) }, [])
   useEffect(() => { fetch('/api/version/tags').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setTargets(d) }).catch(() => {}) }, [])
-  // Poll the self-update state so the button + banner track the sidecar (and reconnect after the brief
-  // restart an update causes - a failed fetch keeps the last state rather than clearing it).
-  useEffect(() => {
-    const refresh = () => fetch('/api/update/state').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setUpd(d) }).catch(() => {})
-    refresh()
-    const t = setInterval(refresh, 3000)
-    return () => clearInterval(t)
-  }, [])
-  const refreshUpd = () => fetch('/api/update/state').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setUpd(d) }).catch(() => {})
-  const running = v && (v.version || 'development build')
+  // A check that finds a newer release has other notes to show.
+  useEffect(() => { setNotes(null) }, [v.latest])
   const loadNotes = () => {
     if (notes !== null) return
     fetch('/api/version/notes').then((r) => (r.ok ? r.json() : null)).then((d) => setNotes((d && d.notes) || '')).catch(() => setNotes(''))
   }
-  const active = upd != null && (upd.state === 'requested' || upd.state === 'running')
-  // The sidecar row works like the core's: check for a newer sidecar, then update to it.
-  const [sideChecking, setSideChecking] = useState(false)
-  const [sideMsg, setSideMsg] = useState('')
-  const SIDE_NEWEST = 'The sidecar is on the newest version.'
-  const checkSidecar = () => {
-    setSideChecking(true); setSideMsg(''); setErr('')
-    fetch('/api/update/updater/check', { method: 'POST' })
-      .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'the check failed'); return r.json() })
-      .then((d: UpdateState) => { setUpd(d); if (d.updater_status === 'current') setSideMsg(SIDE_NEWEST) })
-      .catch((e) => setSideMsg(String(e.message || e)))
-      .finally(() => setSideChecking(false))
-  }
-  // The newest sidecar as the core's versions read: with its "v".
-  const sideLatest = upd?.updater_latest ? 'v' + upd.updater_latest.replace(/^v/, '') : ''
-  const updateSidecar = async () => {
-    const to = sideLatest || 'the newest version'
-    if (!(await confirm({ title: 'Update the updater sidecar', message: `Update the argus-updater sidecar to ${to}? It recreates itself and rolls back if the new one fails. The core is not affected.`, confirmLabel: `Update to ${to}` }))) return
-    setErr(''); setSideMsg('')
-    fetch('/api/update/updater', { method: 'POST' })
-      .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'could not queue the sidecar update') })
-      .then(refreshUpd)
+
+  const self = upd.self_update_enabled
+  const active = upd.state === 'requested' || upd.state === 'running'
+  const running = v.version ? vv(v.version) : 'local build'
+  const coreTo = v.dev_update ? (v.dev_target || 'the newest testing build') : (v.latest || 'the newest release')
+  const post = (url: string, body: unknown, fail: string) => {
+    setErr('')
+    return fetch(url, { method: 'POST', ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) })
+      .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || fail) })
+      .then(onChanged)
       .catch((e) => setErr(String(e.message || e)))
   }
-  const startUpdate = () => {
-    setBusy(true); setErr('')
-    fetch('/api/update/start', { method: 'POST' })
-      .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'could not start the update') })
-      .then(refreshUpd)
-      .catch((e) => setErr(String(e.message || e)))
-      .finally(() => setBusy(false))
+  const updateCore = async () => {
+    if (!(await confirm({ title: 'Update Argus', message: `Update Argus from ${running} to ${coreTo}? The sidecar pulls the new image and recreates the core, which is away for a few seconds; it keeps the old version if the new one doesn't start healthy.`, confirmLabel: `Update to ${coreTo}` }))) return
+    setBusy(true); await post('/api/update/start', null, 'could not start the update'); setBusy(false)
   }
-  const dismiss = () => fetch('/api/update/dismiss', { method: 'POST' }).then(refreshUpd).catch(() => {})
-  const dismissSidecar = () => fetch('/api/update/updater/dismiss', { method: 'POST' }).then(refreshUpd).catch(() => {})
-  const side = upd?.sidecar
-  const sideBusy = !!side && (side.state === 'queued' || side.state === 'running')
-  // The core update, step by step: who asked, then what the sidecar reported (a sidecar from before
-  // 0.2.12 reports only its latest step).
-  const coreSteps: JobStep[] = upd && upd.state !== 'idle' ? [
-    { at: upd.requested_at, msg: `queued by ${upd.requested_by || 'an admin'}: update to ${upd.target} (the sidecar looks for it every 10 seconds)` },
-    ...(upd.steps && upd.steps.length ? upd.steps : upd.message && upd.state !== 'requested' ? [{ msg: upd.message }] : []),
-  ] : []
-  // Deliberately switch the core to a chosen channel/version (bypassing the in-place channel-preserve).
+  // Deliberately switch the core to a chosen channel or version (bypassing the in-place channel-preserve).
   const doSwitch = async () => {
     if (!switchTo) return
     const isVer = /^v?\d+\.\d+\.\d+$/.test(switchTo)
     const msg = isVer
-      ? `Switch Argus to ${switchTo}? This pins the core to that exact version - it won't track a channel until you switch back to latest or testing. The core will pull the image and restart briefly.`
-      : `Switch Argus to the "${switchTo}" channel? The core will pull that image and restart briefly.`
+      ? `Switch Argus to ${switchTo}? This pins the core to that exact version: it won't track a channel until you switch back to latest or testing. The core pulls the image and restarts briefly.`
+      : `Switch Argus to the "${switchTo}" channel? The core pulls that image and restarts briefly.`
     if (!(await confirm({ title: 'Switch version', message: msg, confirmLabel: 'Switch' }))) return
-    setBusy(true); setErr('')
-    fetch('/api/update/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: switchTo }) })
-      .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'could not start the switch') })
-      .then(refreshUpd)
-      .catch((e) => setErr(String(e.message || e)))
-      .finally(() => setBusy(false))
+    setBusy(true); await post('/api/update/start', { target: switchTo }, 'could not start the switch'); setBusy(false)
   }
-  // Force an immediate GHCR re-check (the automatic check is nightly), then reflect the fresh verdict.
-  const checkNow = () => {
-    setChecking(true); setCheckedMsg(''); setErr('')
-    fetch('/api/version/check', { method: 'POST' })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('check failed'))))
-      .then((d: VersionInfo) => { setV(d); setNotes(null); setCheckedMsg(!d.check_error && !d.update_available ? "You're on the latest available build." : '') })
-      .catch(() => setErr('Update check failed'))
-      .finally(() => setChecking(false))
-  }
-  // After a successful update the running SPA is still the OLD bundle (and shows the old version):
-  // clear the finished job, then reload to pull the new frontend + version. Dismiss-then-reload so
-  // the success banner doesn't reappear on the fresh load.
+  const dismiss = () => fetch('/api/update/dismiss', { method: 'POST' }).then(onChanged).catch(() => {})
+  // After an update the running page is still the OLD bundle: close the finished job, then reload for
+  // the new frontend (closing first, so the success log doesn't come back on the fresh load).
   const reloadNow = () => fetch('/api/update/dismiss', { method: 'POST' }).catch(() => {}).finally(() => window.location.reload())
+
+  let corePill: ReactNode = null
+  if (upd.state === 'requested') corePill = <UpdPill kind="busy">update queued</UpdPill>
+  else if (upd.state === 'running') corePill = <UpdPill kind="busy">updating</UpdPill>
+  else if (upd.state === 'success') corePill = <UpdPill kind="ok">updated</UpdPill>
+  else if (upd.state === 'failed') corePill = <UpdPill kind="bad">update failed</UpdPill>
+  else if (v.update_available) corePill = <UpdPill kind="avail">{coreTo} available</UpdPill>
+  else if (v.check_error) corePill = <UpdPill kind="info" title="The last check couldn't reach the registry: the verdict may be out of date">check failed</UpdPill>
+  else if (v.status === 'development') corePill = <UpdPill kind="info">development build</UpdPill>
+  else if (v.status === 'current') corePill = <UpdPill kind="ok">up to date</UpdPill>
+  const coreAction = upd.state === 'success' ? <Button variant="success" onClick={reloadNow}>Reload to finish</Button>
+    : v.update_available && self && !active ? <button className="btn" onClick={updateCore} disabled={busy}>Update</button> : null
+  // The core update, step by step: who asked, then what the sidecar reported (a sidecar from before
+  // 0.2.12 reports only its latest step).
+  const coreSteps: JobStep[] = upd.state !== 'idle' ? [
+    { at: upd.requested_at, msg: `queued by ${upd.requested_by || 'an admin'}: update to ${upd.target} (the sidecar looks for it every 10 seconds)` },
+    ...(upd.steps && upd.steps.length ? upd.steps : upd.message && upd.state !== 'requested' ? [{ msg: upd.message }] : []),
+  ] : []
+  // What the update brings. The testing channel is digest-based and usually lands on an unreleased
+  // build with no notes; right after a cut, though, its tip IS the release and the notes exist.
+  const norm = (s?: string) => (s || '').replace(/^v/, '')
+  const devIsRelease = !!(v.dev_update && v.dev_target && v.latest && norm(v.dev_target) === norm(v.latest))
+  const whatsNew = (
+    <details className="upd-more" onToggle={loadNotes}>
+      <summary>What's new in {v.latest}</summary>
+      {notes === null ? <p className="set-hint">Loading…</p> : notes === '' ? <p className="set-hint">Release notes unavailable.</p> : <pre className="release-notes">{notes}</pre>}
+    </details>
+  )
+  const brings = !v.update_available || upd.state === 'success' ? null
+    : !self ? <p className="set-hint">Self-update isn't set up here: pull the new image and redeploy, or add the <span className="mono">argus-updater</span> sidecar for one-click updates (see the README).</p>
+    : !v.dev_update ? whatsNew
+    : devIsRelease ? <><p className="set-hint">The <span className="mono">:testing</span> channel is at the <span className="mono">{v.dev_target}</span> release now; updating re-pulls the testing channel in place.</p>{whatsNew}</>
+    : <p className="set-hint">A newer <span className="mono">:testing</span> build is out: changes on top of the build you run, not in a release yet. Updating re-pulls the testing channel in place.</p>
+
+  const side = upd.sidecar
+  const sideBusy = !!side && (side.state === 'queued' || side.state === 'running')
+  const sideLatest = vv(upd.updater_latest)
+  const updateSidecar = async () => {
+    const to = sideLatest || 'the newest version'
+    if (!(await confirm({ title: 'Update the sidecar', message: `Update the argus-updater sidecar from ${vv(upd.updater_version) || 'its version'} to ${to}? It recreates itself onto the new image and rolls back if the new one fails. The core keeps running.`, confirmLabel: `Update to ${to}` }))) return
+    await post('/api/update/updater', null, 'could not queue the sidecar update')
+  }
+  const dismissSidecar = () => fetch('/api/update/updater/dismiss', { method: 'POST' }).then(onChanged).catch(() => {})
+  const sidePill = !self ? <UpdPill kind="none">not set up</UpdPill>
+    : side?.state === 'queued' ? <UpdPill kind="busy">update queued</UpdPill>
+    : side?.state === 'running' ? <UpdPill kind="busy">updating</UpdPill>
+    : side?.state === 'failed' ? <UpdPill kind="bad">update failed</UpdPill>
+    : side?.state === 'unknown' ? <UpdPill kind="info" title="The sidecar hasn't said how its update went">no word back</UpdPill>
+    : upd.updater_status === 'outdated' ? <UpdPill kind="avail">{sideLatest ? `${sideLatest} available` : 'update available'}</UpdPill>
+    : upd.updater_status === 'current' ? <UpdPill kind="ok">up to date</UpdPill>
+    : <UpdPill kind="info" title="The newest published argus-updater isn't known yet: Check for updates looks it up">newest unknown</UpdPill>
+  const sideAction = self && !sideBusy && upd.updater_status === 'outdated' ? <button className="btn" onClick={updateSidecar}>Update</button> : null
+  const coll = collectorsState(upd.collectors, v.version)
+
+  return (
+    <section className="set-card">
+      <h3>Argus core</h3>
+      <p className="set-note">The Argus app on this server, and the argus-updater sidecar that installs its updates. Argus looks for a newer release by itself every night.</p>
+      <UpdRow label="Argus" version={<UpdVer v={running} title="The Argus version this server runs" />} pill={corePill} action={coreAction}>
+        {v.check_error && <p className="set-hint" style={{ color: 'var(--warn)' }}>{v.check_error} to check for updates: {v.checked_at ? `showing the result from ${relTime(v.checked_at)}` : 'no check has worked yet'}. Try again in a moment.</p>}
+        {upd.state !== 'idle' && (
+          <UpdateLog title={logTitle(upd.state, upd.target)} state={upd.state} steps={coreSteps}
+            message={upd.state === 'failed' ? `${upd.message || 'no reason given'}. The previous version was kept.` : undefined}
+            note={upd.state === 'running' ? 'Argus restarts briefly near the end; this page reconnects by itself.' : upd.state === 'success' ? 'Reload to load the new version.' : undefined}>
+            {upd.state === 'failed' && <Button variant="ghost" onClick={dismiss}>Close</Button>}
+          </UpdateLog>
+        )}
+        {brings}
+        {self && upd.state !== 'success' && targets && (
+          <details className="upd-more">
+            <summary>Change channel or version</summary>
+            <div className="upd-window">
+              <select className="input" value={switchTo} onChange={(e) => setSwitchTo(e.target.value)} style={{ maxWidth: 240 }}>
+                <option value="">Select a target…</option>
+                <optgroup label="Channels">
+                  <option value="latest">latest - stable releases</option>
+                  <option value="testing">testing - main, unreleased</option>
+                </optgroup>
+                {targets.releases.length > 0 && (
+                  <optgroup label="Recent releases">
+                    {targets.releases.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </optgroup>
+                )}
+              </select>
+              <Button variant="default" onClick={doSwitch} disabled={busy || active || !switchTo}>Switch</Button>
+            </div>
+            <p className="set-hint">Switches the running image to the chosen channel or version. A version pins the core: it stays there until you switch back to <span className="mono">latest</span> or <span className="mono">testing</span>.</p>
+          </details>
+        )}
+        {err && <Banner variant="error">{err}</Banner>}
+      </UpdRow>
+
+      <UpdRow label="Updater sidecar" version={self ? <UpdVer v={vv(upd.updater_version)} title="The argus-updater container that installs the core's updates" /> : undefined} pill={sidePill} action={sideAction}>
+        <p className="set-hint">{self
+          ? "Holds the Docker socket and installs the core's updates. Updating it recreates it onto the newer image, rolling back on failure; the core keeps running."
+          : "Without it, the core updates by hand: pull the new image and redeploy. With it, Argus updates in one click and keeps this server's collectors in step with each update (see the README)."}</p>
+        {side && (
+          <UpdateLog title={logTitle(side.state, side.to || (side.tag && side.tag !== 'latest' ? side.tag : ''))} state={side.state} steps={side.steps} message={side.message}>
+            {!sideBusy && <Button variant="ghost" onClick={dismissSidecar}>Close</Button>}
+          </UpdateLog>
+        )}
+      </UpdRow>
+
+      {self && (
+        <UpdRow label="Collectors" version={upd.collectors?.version ? <UpdVer v={vv(upd.collectors.version)} title="The Argus version they were installed from" /> : undefined} pill={coll.pill}>
+          <p className="set-hint" style={coll.warn ? { color: 'var(--warn)' } : undefined}>The scripts this server's Zabbix runs for the hosts it monitors itself (HTTP, TCP, SSH, UPS...). The sidecar copies them in after each update. {coll.text}</p>
+        </UpdRow>
+      )}
+    </section>
+  )
+}
+
+// FleetTarget is the version every probe converges on: 'latest' (rolling) or an exact pin like
+// '7.0.29-r1'. The sidecars and the manual command both honour it.
+function FleetTarget({ target, latest, onSaved }: { target: string | null; latest?: string; onSaved: (t: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [val, setVal] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  function start() { setVal(target || 'latest'); setError(null); setEditing(true) }
+  const valid = (v: string) => v === 'latest' || /^[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+$/.test(v.trim())
+
+  async function save() {
+    const v = val.trim()
+    if (!valid(v)) { setError('Use "latest" or a pin like 7.0.29-r1'); return }
+    setBusy(true); setError(null)
+    try {
+      const res = await fetch('/api/probes/target', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: v }) })
+      if (!res.ok) { setError(await errText(res, 'Could not save target')); return }
+      const d = await res.json(); onSaved(d.target); setEditing(false)
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <UpdRow label="Fleet target"
+      version={editing
+        ? <input className="input" style={{ width: 160 }} value={val} autoFocus placeholder="latest" aria-label="Fleet target version" onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }} />
+        : <UpdVer v={target ?? '…'} title="The version every probe should run" />}
+      action={editing
+        ? <><button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button><button className="btn" disabled={busy} onClick={() => setEditing(false)}>Cancel</button></>
+        : <button className="btn" onClick={start}>Change</button>}>
+      {error
+        ? <p className="set-hint" style={{ color: 'var(--err)' }}>{error}</p>
+        : <p className="set-hint">What every probe runs: <span className="mono">latest</span>, or a pin like <span className="mono">7.0.29-r1</span>.{latest ? <> The newest published is <span className="mono">{latest}</span>.</> : null}</p>}
+    </UpdRow>
+  )
+}
+
+// ProbeUpdates is the Probes section: the fleet target, then each probe's proxy and argus-updater
+// sidecar with their Update buttons. A sidecar takes what is queued for it at its next check-in.
+function ProbeUpdates({ proxies, error, target, onTarget, onChanged }: { proxies: Proxy[] | null; error: string; target: string | null; onTarget: (t: string) => void; onChanged: () => void }) {
+  const confirm = useConfirm()
+  const toast = useToast()
+  const [openCmd, setOpenCmd] = useState<string | null>(null) // probe whose manual update command is open
+  const list = proxies || []
+  const behind = list.filter((p) => p.selfupdate && p.update_status === 'outdated' && !jobInHand(p.update_job))
+  const behindUpd = list.filter((p) => p.selfupdate && p.updater_status === 'outdated' && !jobInHand(p.updater_job))
+  const n = behind.length + behindUpd.length
+  const queue = async (p: Proxy, what: 'probe' | 'updater'): Promise<string> => {
+    const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/${what === 'probe' ? 'update' : 'updater-update'}`, { method: 'POST' }).catch(() => null)
+    if (!res) return 'Argus could not be reached'
+    return res.ok ? '' : errText(res, 'could not queue the update')
+  }
+  async function updateProbe(p: Proxy) {
+    const to = probeTo(p)
+    if (!(await confirm({ title: `Update ${p.name}`, message: `Update the probe ${p.name} from ${p.version || 'its version'} to ${to}? Its sidecar pulls it at its next check-in, within a minute, and rolls back if the new one doesn't start healthy. The proxy is away for a few seconds while it restarts.`, confirmLabel: `Update to ${to}` }))) return
+    const e = await queue(p, 'probe')
+    if (e) toast.error(e)
+    onChanged()
+  }
+  async function updateUpdater(p: Proxy) {
+    const to = vv(p.updater_latest) || 'the newest version'
+    if (!(await confirm({ title: `Update the sidecar of ${p.name}`, message: `Update the argus-updater sidecar of ${p.name} from ${vv(p.updater_version) || 'its version'} to ${to}? It recreates itself at its next check-in and rolls back if the new one fails. The probe keeps running.`, confirmLabel: `Update to ${to}` }))) return
+    const e = await queue(p, 'updater')
+    if (e) toast.error(e)
+    onChanged()
+  }
+  // Update all queues every update that is behind. A sidecar asked for both gets them one per
+  // check-in, the proxy first (its own update replaces it, so it never runs alongside the other).
+  async function updateAll() {
+    const plural = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`
+    const updTo = vv(behindUpd.find((p) => p.updater_latest)?.updater_latest)
+    const what = [
+      behind.length ? `${plural(behind.length, 'probe')} to ${probeTo(behind[0])}` : '',
+      behindUpd.length ? `${plural(behindUpd.length, 'probe sidecar')}${updTo ? ` to ${updTo}` : ''}` : '',
+    ].filter(Boolean).join(' and ')
+    if (!(await confirm({ title: 'Update all probes', message: `Update ${what}? Each sidecar takes its updates at its next check-in, within a minute, one at a time with the proxy first, and rolls back one that doesn't start healthy.`, confirmLabel: `Update ${n}` }))) return
+    const errs = (await Promise.all([...behind.map((p) => queue(p, 'probe')), ...behindUpd.map((p) => queue(p, 'updater'))])).filter(Boolean)
+    if (errs.length) toast.error(`${errs.length} of ${n} couldn't be queued: ${errs[0]}`)
+    else toast.success(`${plural(n, 'update')} queued.`)
+    onChanged()
+  }
+
+  return (
+    <section className="set-card">
+      <div className="upd-card-head">
+        <h3>Probes</h3>
+        {n > 0 && <Button variant="primary" onClick={updateAll} title="Queue an update for every probe and sidecar that is behind">Update all ({n})</Button>}
+      </div>
+      <p className="set-note">The Zabbix proxy each site runs, and the argus-updater sidecar that updates it. A sidecar takes a queued update at its next check-in, within a minute, and rolls back one that doesn't start healthy. Argus looks for newer versions by itself every 3 hours.</p>
+      <FleetTarget target={target} latest={list.find((p) => p.latest)?.latest} onSaved={onTarget} />
+      {error ? <p className="set-hint" style={{ color: 'var(--err)', marginTop: 12 }}>{error}</p>
+        : proxies === null ? <Skeleton rows={3} cols={3} />
+        : list.length === 0 ? <p className="set-hint" style={{ marginTop: 12 }}>No probes yet: a probe shows here once it enrolls and checks in.</p>
+        : (
+          <div className="upd-table enroll-scroll">
+            <table className="enroll enroll-probes">
+              <thead><tr><th>Probe</th><th>Proxy</th><th>Updater sidecar</th></tr></thead>
+              <tbody>
+                {list.map((p) => {
+                  const ps = proxyState(p), us = updaterState(p)
+                  return (
+                    <Fragment key={p.name}>
+                      <tr>
+                        <td data-label="Probe">
+                          <div className="cell-stack">
+                            <strong>{p.name}</strong>
+                            <span className="sub-line" style={p.online ? undefined : { color: 'var(--warn)' }}>{p.online ? 'online' : 'offline: updates once back'}</span>
+                          </div>
+                        </td>
+                        <td data-label="Proxy">
+                          <span className="vcell">
+                            <UpdVer v={p.version} title="The Zabbix proxy version this probe runs" />{ps.pill}
+                            {ps.can === 'self' && <button className="btn" onClick={() => updateProbe(p)}>Update</button>}
+                            {ps.can === 'manual' && <button className="btn" onClick={() => setOpenCmd((o) => (o === p.name ? null : p.name))} title="This probe has no sidecar: show how to update it by hand">{openCmd === p.name ? 'Hide' : 'Update…'}</button>}
+                          </span>
+                        </td>
+                        <td data-label="Updater sidecar">
+                          <span className="vcell">
+                            {p.selfupdate && <UpdVer v={vv(p.updater_version) || '?'} title="The argus-updater sidecar managing this probe" />}{us.pill}
+                            {us.can && <button className="btn" onClick={() => updateUpdater(p)}>Update</button>}
+                          </span>
+                        </td>
+                      </tr>
+                      {openCmd === p.name && <tr><td colSpan={3} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+    </section>
+  )
+}
+
+// updatesVerdict is what a Check for updates found, in one line: what can update (in green when
+// nothing can), what is already updating, and which lookups couldn't reach the registry.
+function updatesVerdict(v: VersionInfo | null, pv: { probe_latest?: string; updater_latest?: string; failed?: string[] } | null, st: UpdateState | null, list: Proxy[]): { text: string; ok: boolean } {
+  const plural = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`
+  const failed: string[] = []
+  if (!v || v.check_error) failed.push('the Argus image')
+  if (!pv) failed.push('the probes')
+  else failed.push(...(pv.failed || []))
+  const side = st?.sidecar
+  const sideBusy = !!side && (side.state === 'queued' || side.state === 'running')
+  const todo: string[] = []
+  if (v?.update_available) todo.push(`Argus ${v.dev_update ? (v.dev_target || 'testing build') : v.latest}`)
+  if (st?.self_update_enabled && st.updater_status === 'outdated' && !sideBusy) todo.push(`the core's sidecar ${vv(st.updater_latest)}`)
+  const pb = list.filter((p) => p.update_status === 'outdated' && !jobInHand(p.update_job)).length
+  const ub = list.filter((p) => p.selfupdate && p.updater_status === 'outdated' && !jobInHand(p.updater_job)).length
+  if (pb) todo.push(`${plural(pb, 'probe')}${pv?.probe_latest ? ` (${pv.probe_latest})` : ''}`)
+  if (ub) todo.push(`${plural(ub, 'probe sidecar')}${pv?.updater_latest ? ` (${vv(pv.updater_latest)})` : ''}`)
+  const going = (st && (st.state === 'requested' || st.state === 'running') ? 1 : 0) + (sideBusy ? 1 : 0)
+    + list.filter((p) => jobInHand(p.update_job)).length + list.filter((p) => jobInHand(p.updater_job)).length
+  const goingText = going ? ` ${going === 1 ? 'One more is' : `${going} more are`} updating already.` : ''
+  if (failed.length) return { ok: false, text: `Couldn't reach the registry to check ${failed.join(', ')}; try again in a moment.${todo.length ? ` Updates available: ${todo.join(', ')}.` : ''}` }
+  if (todo.length) return { ok: false, text: `Updates available: ${todo.join(', ')}.${goingText}` }
+  if (going) return { ok: false, text: `${going === 1 ? 'One update is' : `${going} updates are`} under way; everything else is on the newest version.` }
+  return { ok: true, text: 'Everything is on the newest version.' }
+}
+
+// UpdatesView is the Updates page (admin): one Check for updates for everything, then the core, the
+// probes and the operating systems, each in its own section.
+function UpdatesView() {
+  const [v, setV] = useState<VersionInfo | null>(null)
+  const [upd, setUpd] = useState<UpdateState | null>(null)
+  const [proxies, setProxies] = useState<Proxy[] | null>(null)
+  const [proxyErr, setProxyErr] = useState('')
+  const [target, setTarget] = useState<string | null>(null)
+  const [vmLatest, setVmLatest] = useState('')
+  const [checking, setChecking] = useState(false)
+  const [checkMsg, setCheckMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const getJSON = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+  // A failed fetch keeps the last state (the core restarts during its own update).
+  const loadUpd = () => getJSON('/api/update/state').then((d) => { if (d) setUpd(d) })
+  const loadProxies = () => fetch('/api/proxies')
+    .then(async (r) => { if (!r.ok) throw new Error(await errText(r, 'Failed to load probes')); return r.json() })
+    .then((p: Proxy[]) => { setProxies(p || []); setProxyErr('') })
+    .catch((e) => setProxyErr(e instanceof Error ? e.message : 'Failed to load probes'))
+  useEffect(() => {
+    getJSON('/api/version').then((d) => { if (d) setV(d) })
+    getJSON('/api/probes/target').then((d) => { if (d && d.target) setTarget(d.target) })
+    getJSON('/api/probes/vm-images').then((d) => { if (d && d.version) setVmLatest(d.version) })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // The core's and its sidecar's jobs every 3 s while one runs, every 15 s otherwise, so one asked for
+  // in another tab still shows; the probes every 30 s, every 5 s while one of theirs is in hand.
+  const coreBusy = !!upd && (upd.state === 'requested' || upd.state === 'running' || upd.sidecar?.state === 'queued' || upd.sidecar?.state === 'running')
+  useEffect(() => { loadUpd(); const t = setInterval(loadUpd, coreBusy ? 3000 : 15000); return () => clearInterval(t) }, [coreBusy]) // eslint-disable-line react-hooks/exhaustive-deps
+  const probeBusy = (proxies || []).some((p) => jobInHand(p.update_job) || jobInHand(p.updater_job))
+  useEffect(() => { loadProxies(); const t = setInterval(loadProxies, probeBusy ? 5000 : 30000); return () => clearInterval(t) }, [probeBusy]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Check for updates looks up everything at once (the core's release, the probe image, both
+  // updaters, the probe VM image), then reloads what it decides and says it in one line.
+  async function checkAll() {
+    setChecking(true); setCheckMsg(null)
+    try {
+      const post = (url: string) => fetch(url, { method: 'POST' }).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+      const [cv, pv] = await Promise.all([post('/api/version/check'), post('/api/probes/check-updates')])
+      const [st, list] = await Promise.all([getJSON('/api/update/state'), getJSON('/api/proxies')])
+      if (cv) setV(cv)
+      if (st) setUpd(st)
+      if (list) { setProxies(list); setProxyErr('') }
+      if (pv && pv.vm_latest) setVmLatest(pv.vm_latest)
+      setCheckMsg(updatesVerdict(cv, pv, st || upd, list || proxies || []))
+    } finally { setChecking(false) }
+  }
+
+  return (
+    <div className="panel">
+      <div className="phead">
+        <PanelTitle eyebrow="Admin">Updates</PanelTitle>
+        <span className="hint">Argus looks by itself too: nightly for the core, every 3 hours for the probes</span>
+        <div className="tools"><button className="btn" onClick={checkAll} disabled={checking}>{checking ? 'Checking…' : 'Check for updates'}</button></div>
+      </div>
+      {checkMsg && <p className={'upd-check ' + (checkMsg.ok ? 'ok' : 'warn')} role="status">{checkMsg.text}</p>}
+      <div className="set-body">
+        <CoreUpdates v={v} upd={upd} onChanged={loadUpd} />
+        <ProbeUpdates proxies={proxies} error={proxyErr} target={target} onTarget={setTarget} onChanged={loadProxies} />
+        <OSUpdatesCard proxies={proxies} vmLatest={vmLatest} />
+      </div>
+    </div>
+  )
+}
+
+// AboutCard names the running Argus and its licence; updates have their own page.
+function AboutCard({ onOpenUpdates }: { onOpenUpdates: () => void }) {
+  const [v, setV] = useState<VersionInfo | null>(null)
+  useEffect(() => { fetch('/api/version').then((r) => (r.ok ? r.json() : null)).then(setV).catch(() => {}) }, [])
+  const pill = !v ? null
+    : v.update_available ? <button type="button" className="linklike" onClick={onOpenUpdates} title="Update it on the Updates page"><UpdPill kind="avail">{v.dev_update ? (v.dev_target || 'testing build') : v.latest} available</UpdPill></button>
+    : v.status === 'current' ? <UpdPill kind="ok">up to date</UpdPill>
+    : v.status === 'development' ? <UpdPill kind="info">development build</UpdPill> : null
   return (
     <section className="set-card">
       <h3>About</h3>
-      <p className="set-note">The Argus components running on this instance - the core app, and its updater sidecar when wired up - and whether newer versions are available.</p>
-      <div className="set-row" style={{ marginBottom: v && v.update_available ? undefined : 0 }}>
-        <div className="set-head">
-          <span className="complabel">Core</span>
-          {v && <Button variant="default" style={{ marginLeft: 'auto' }} onClick={checkNow} disabled={checking}>{checking ? 'Checking…' : 'Check for updates'}</Button>}
-        </div>
-        {!v ? <span className="set-hint">Checking…</span> : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span className="mono">{running}</span>
-            {v.update_available && !v.dev_update && <span className="vtag upd">↑ {v.latest} available</span>}
-            {v.dev_update && <span className="vtag upd">↑ {v.dev_target || 'new testing build'}</span>}
-            {v.status === 'current' && !v.check_error && <span className="vtag ok">latest</span>}
-            {v.status === 'development' && <span className="vtag dev">development build</span>}
-            {v.check_error && !v.update_available && <span className="vtag dev" title="The last update check couldn't reach the registry - the verdict may be out of date">check failed</span>}
-          </div>
-        )}
-      </div>
-      {v?.check_error && <p className="set-hint" style={{ margin: '0 0 8px', color: 'var(--warn)' }}>{v.check_error} to check for updates - {v.checked_at ? `showing the result from ${relTime(v.checked_at)}` : 'no successful check yet'}. Retry in a moment.</p>}
-      {checkedMsg && <p className="set-hint" style={{ margin: '0 0 8px', color: 'var(--ok)' }}>{checkedMsg}</p>}
-
-      {/* The core update, step by step, while it runs and once it ends (driven by the argus-updater). */}
-      {upd && upd.state !== 'idle' && (
-        <UpdateLog
-          title={upd.state === 'success' ? `Core updated to ${upd.target}` : upd.state === 'failed' ? `Core update to ${upd.target} failed` : `Updating the core to ${upd.target}`}
-          state={upd.state} steps={coreSteps}
-          message={upd.state === 'failed' ? `${upd.message || 'no reason given'}. The previous version was kept.` : undefined}
-          note={upd.state === 'running' ? 'Argus restarts briefly near the end; this page reconnects by itself.' : upd.state === 'success' ? 'Reload to load the new version.' : undefined}>
-          {upd.state === 'failed' && <Button variant="ghost" onClick={dismiss}>Close</Button>}
-        </UpdateLog>
-      )}
-      {err && <Banner variant="error">{err}</Banner>}
-
-      {upd && upd.state === 'success' ? (
-        // The update landed; the running SPA is still the old bundle. Replace the "Update" button with
-        // a Reload button so the only action offered is the one that actually finishes the update.
-        <div className="set-row" style={{ marginBottom: 0 }}>
-          <Button variant="success" onClick={reloadNow}>Reload to finish updating</Button>
-        </div>
-      ) : v && v.update_available && (
-        <>
-          {(() => {
-            // The testing-channel update is digest-based and its target is usually an unreleased
-            // dev build - there are no notes to show for those. But right after a cut the testing
-            // tip IS the release (dev_target = a clean vX.Y.Z equal to the newest release), and its
-            // changelog exists - show the same "What's new" disclosure there too.
-            const norm = (s?: string) => (s || '').replace(/^v/, '')
-            const devIsRelease = !!(v.dev_update && v.dev_target && v.latest && norm(v.dev_target) === norm(v.latest))
-            const whatsNew = (
-              <details className="set-row" onToggle={loadNotes}>
-                <summary className="set-hint" style={{ cursor: 'pointer' }}>What's new in {v.latest}</summary>
-                {notes === null ? <p className="set-hint">Loading…</p>
-                  : notes === '' ? <p className="set-hint">Release notes unavailable.</p>
-                  : <pre className="release-notes">{notes}</pre>}
-              </details>
-            )
-            if (!v.dev_update) return whatsNew
-            if (devIsRelease) return (
-              <>
-                {/* NOT .set-row: that class is display:grid, which stacks every inline span on
-                    its own line inside a sentence. */}
-                <p className="set-hint" style={{ marginBottom: 8, maxWidth: 560 }}>The <span className="mono">:testing</span> channel is now at the <span className="mono">{v.dev_target}</span> release. Updating re-pulls the testing channel in place.</p>
-                {whatsNew}
-              </>
-            )
-            {/* No version here on purpose: it already shows in the pill above and on the update
-                button below (user feedback - the sentence read three times over). */}
-            return <p className="set-hint" style={{ marginBottom: 8, maxWidth: 560 }}>A newer <span className="mono">:testing</span> build has been published - changes on top of the build you are running, not yet in a tagged release. Updating re-pulls the testing channel in place.</p>
-          })()}
-          <div className="set-row" style={{ marginBottom: 0 }}>
-            {upd && upd.self_update_enabled ? (
-              <Button variant="primary" onClick={startUpdate} disabled={busy || active}>
-                {active ? 'Updating…' : v.dev_update ? `Update to ${v.dev_target || 'the latest testing build'}` : `Update to ${v.latest}`}
-              </Button>
-            ) : (
-              <p className="set-hint">Self-update isn't configured on this instance. Pull the new image and redeploy, or add the <span className="mono">argus-updater</span> sidecar to enable one-click updates (see the README). The sidecar also keeps the collectors this server's Zabbix runs for the hosts it monitors itself in step with each update; without it they stay as setup installed them.</p>
-            )}
-          </div>
-        </>
-      )}
-
-      {/* Deliberate channel / version switch (latest <-> testing <-> a pinned release). */}
-      {upd && upd.self_update_enabled && upd.state !== 'success' && targets && (
-        <details className="set-row" style={{ marginBottom: 0 }}>
-          <summary className="set-hint" style={{ cursor: 'pointer' }}>Change channel or version</summary>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-            <select className="input" value={switchTo} onChange={(e) => setSwitchTo(e.target.value)} style={{ maxWidth: 240 }}>
-              <option value="">Select a target…</option>
-              <optgroup label="Channels">
-                <option value="latest">latest - stable releases</option>
-                <option value="testing">testing - main, unreleased</option>
-              </optgroup>
-              {targets.releases.length > 0 && (
-                <optgroup label="Recent releases">
-                  {targets.releases.map((t) => <option key={t} value={t}>{t}</option>)}
-                </optgroup>
-              )}
-            </select>
-            <Button variant="default" onClick={doSwitch} disabled={busy || active || !switchTo}>Switch</Button>
-          </div>
-          <p className="set-hint" style={{ marginTop: 6 }}>Switches the running image to the selected channel or version. Picking a specific version pins the core - it won't track a channel until you switch back to <span className="mono">latest</span> or <span className="mono">testing</span>.</p>
-        </details>
-      )}
-
-      {/* The argus-updater sidecar - same row layout as Core, so the two components read in parallel. */}
-      {upd && upd.self_update_enabled && (
-        <div className="set-row" style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)', marginBottom: 0 }}>
-          <div className="set-head">
-            <span className="complabel">Updater sidecar</span>
-            <Button variant="default" style={{ marginLeft: 'auto' }} onClick={checkSidecar} disabled={sideChecking}>{sideChecking ? 'Checking\u2026' : 'Check for updates'}</Button>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span className="mono" title="Version of the argus-updater container that performs the updates above">{upd.updater_version || '-'}</span>
-            {upd.updater_status === 'outdated' && sideLatest && <span className="vtag upd">↑ {sideLatest} available</span>}
-            {upd.updater_status === 'current' && <span className="vtag ok">latest</span>}
-          </div>
-          {sideMsg && <p className="set-hint" style={{ margin: '6px 0 0', color: sideMsg === SIDE_NEWEST ? 'var(--ok)' : 'var(--warn)' }}>{sideMsg}</p>}
-          <p className="set-hint" style={{ marginTop: 6 }}>Holds the Docker socket and performs the core updates above. Updating it recreates it onto the newer image (rolling back on failure); the core keeps running throughout.</p>
-          {(sideBusy || (upd.updater_status === 'outdated' && sideLatest)) && (
-            <div className="set-row" style={{ marginBottom: 0 }}>
-              <Button variant="primary" onClick={updateSidecar} disabled={sideBusy}>{sideBusy ? 'Updating\u2026' : `Update to ${sideLatest}`}</Button>
-            </div>
-          )}
-          {side && (
-            <UpdateLog
-              title={side.state === 'success' ? `Sidecar updated${side.to ? ` to ${side.to}` : ''}` : side.state === 'failed' ? 'Sidecar update failed' : side.state === 'unknown' ? 'Sidecar update: no word back' : `Updating the sidecar${side.tag && side.tag !== 'latest' ? ` to ${side.tag}` : ''}`}
-              state={side.state} steps={side.steps} message={side.message}>
-              {!sideBusy && <Button variant="ghost" onClick={dismissSidecar}>Close</Button>}
-            </UpdateLog>
-          )}
-          <CollectorsLine c={upd.collectors} running={v?.version} />
-        </div>
-      )}
-      {/* AGPL-3.0 §13: network users must be able to reach the corresponding source. */}
-      <p className="set-hint" style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)', marginBottom: 0 }}>
-        Argus is free software under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer">GNU AGPL-3.0</a> - <a href="https://github.com/g-guglielmi/argus-core" target="_blank" rel="noopener noreferrer">source code</a>.
-      </p>
+      <p className="set-note">Updates to Argus, its updater sidecar, the probes and the VMs' operating systems are on the <button type="button" className="linkbtn" style={{ color: 'var(--accent)' }} onClick={onOpenUpdates}>Updates</button> page.</p>
+      <UpdRow label="Argus" version={<UpdVer v={v ? (v.version ? vv(v.version) : 'local build') : '…'} title="The Argus version this server runs" />} pill={pill}>
+        {/* AGPL-3.0 section 13: network users must be able to reach the corresponding source. */}
+        <p className="set-hint">Argus is free software under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener noreferrer">GNU AGPL-3.0</a> - <a href="https://github.com/g-guglielmi/argus-core" target="_blank" rel="noopener noreferrer">source code</a>.</p>
+      </UpdRow>
     </section>
   )
 }
@@ -1604,7 +1859,7 @@ function VersionAbout() {
 function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }: { me: Me; onMe: (m: Me) => void; onLogout: () => void; passkeysAvailable: boolean; probeEnroll: boolean; enter?: boolean }) {
   SCOPE.sites = me.sites || []
   // Admin-only views can't be restored from a shared/stale URL by a non-admin.
-  const clampView = (v: View): View => ((v === 'users' || v === 'settings' || v === 'discovery' || v === 'thresholds' || v === 'statuspages') && me.role !== 'admin' ? 'overview' : v)
+  const clampView = (v: View): View => ((v === 'users' || v === 'updates' || v === 'settings' || v === 'discovery' || v === 'thresholds' || v === 'statuspages') && me.role !== 'admin' ? 'overview' : v)
   // A fresh visit to the bare "/" (no query) honours the user's landing preference; any deep
   // link (?view=…, ?host=…, ?reset=… already handled) is respected as-is.
   const initialNav = (): NavState => {
@@ -1759,7 +2014,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
     window.history.pushState({}, '', buildNav({ view: 'discovery', filter: listFilter, scan: id ? String(id) : undefined }))
   }
 
-  // Running version for the sidebar footer (the full About card lives in Settings). This poll is also
+  // Running version for the sidebar footer (updating it is on the Updates page). This poll is also
   // the stale-bundle guard: an already-loaded SPA never re-fetches its own index.html, so after the core
   // is updated the tab keeps running the OLD JS until a full reload. The version endpoint is cheap
   // (a compile-time build id + cached latest, no network), so we poll it and, when the running build id
@@ -1816,12 +2071,12 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         {nav('maintenance', 'Maintenance')}
         {nav('probes', 'Probes')}
         {nav('notifications', 'Notifications')}
-        {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('thresholds', 'Thresholds')}{nav('statuspages', 'Status pages')}{nav('users', 'Users')}{nav('settings', 'Settings')}</>}
+        {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('thresholds', 'Thresholds')}{nav('statuspages', 'Status pages')}{nav('users', 'Users')}{nav('updates', 'Updates')}{nav('settings', 'Settings')}</>}
         <div className="side-foot">
           {ver && (
             <button type="button" className={'side-ver' + (ver.update_available ? ' upd' : '')} disabled={me.role !== 'admin'}
-              title={ver.update_available ? `Update available${ver.latest ? `: ${ver.latest}` : ''} - open Settings` : `Argus ${ver.version || 'development build'}`}
-              onClick={() => goto('settings')}>
+              title={ver.update_available ? `Update available${ver.latest ? `: ${ver.latest}` : ''} - open Updates` : `Argus ${ver.version || 'development build'}`}
+              onClick={() => goto('updates')}>
               <span className={'vtag ' + (ver.update_available ? 'upd' : ver.status === 'current' ? 'ok' : 'dev')}>{ver.version || 'dev'}</span>
               {ver.update_available && <span className="side-ver-txt">update available</span>}
             </button>
@@ -1881,12 +2136,13 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} advanced={!!me.advanced} />}
           {view === 'maintenance' && <MaintenanceView canEdit={me.role === 'admin' || me.role === 'helpdesk'} />}
           {view === 'notifications' && <NotificationsView />}
-          {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} goHost={goHost} />}
+          {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} goHost={goHost} goUpdates={me.role === 'admin' ? () => goto('updates') : undefined} />}
           {view === 'discovery' && me.role === 'admin' && <DiscoveryView scanId={discScan} onOpenScan={openDiscoveryScan} />}
           {view === 'thresholds' && me.role === 'admin' && <ThresholdsView />}
           {view === 'statuspages' && me.role === 'admin' && <StatusPagesView />}
           {view === 'users' && me.role === 'admin' && <UsersView />}
-          {view === 'settings' && me.role === 'admin' && <SettingsView me={me} onMe={onMe} />}
+          {view === 'updates' && me.role === 'admin' && <UpdatesView />}
+          {view === 'settings' && me.role === 'admin' && <SettingsView me={me} onMe={onMe} onOpenUpdates={() => goto('updates')} />}
           {view === 'account' && <AccountView me={me} onMe={onMe} passkeysAvailable={passkeysAvailable} theme={theme} toggleTheme={toggleTheme} />}
         </div>
       </div>
@@ -1949,7 +2205,7 @@ function VMClock({ tz, clock24 = true }: { tz: string; clock24?: boolean }) {
   return <input className="input" disabled value={text || tz} aria-label="Core VM local time" />
 }
 
-function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
+function SettingsView({ me, onMe, onOpenUpdates }: { me: Me; onMe: (m: Me) => void; onOpenUpdates: () => void }) {
   const toast = useToast()
   const [items, setItems] = useState<SettingItem[] | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
@@ -2053,10 +2309,8 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
       </div>
 
       <div className="set-body">
-        {/* Running version + update check, at the top so it's the first thing an admin sees. */}
-        <VersionAbout />
-        {/* OS patching & lifecycle (DESIGN §14c): core patch status + the operator-scheduled reboot window. */}
-        <OSUpdates />
+        {/* The running version and its licence; updating it, the probes and the VMs is on Updates. */}
+        <AboutCard onOpenUpdates={onOpenUpdates} />
         {/* Advanced mode - a per-user preference (saved on this admin's account), kept here so only an
             admin can turn it on, and only for their own view. Theme is likewise a per-device preference,
             but lives in Account (reachable by every role) rather than this admin-only server-settings tab. */}
@@ -2098,7 +2352,7 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
                     {coreTime.clock_sync === false && <span className="tag avail" title="The VM clock is NOT NTP-synchronized - timestamps will drift; check systemd-timesyncd on the core">clock NOT synced</span>}
                   </div>
                   <VMClock tz={coreTime.tz || ''} clock24={(items?.find((i) => i.key === 'time_format')?.value || '24h') !== '12h'} />
-                  <span className="set-hint">Live time in the VM's timezone (the Timezone above, applied by a host timer via timedatectl); every schedule under OS updates runs on this clock.</span>
+                  <span className="set-hint">Live time in the VM's timezone (the Timezone above, applied by a host timer via timedatectl); the core's reboot and Zabbix update windows, on the Updates page, run on this clock.</span>
                 </div>
               )}
               {gi.some((it) => !it.locked) && (
@@ -2944,67 +3198,23 @@ function probeComposeCmd(c: CreatedToken): string {
 // The core's default is stored under proxy id "0" and is what core-monitored hosts inherit and
 // core-run discovery scans fingerprint with.
 
-function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; goHost: (hostId: string) => void }) {
+function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll: boolean; goHost: (hostId: string) => void; goUpdates?: () => void }) {
   const confirm = useConfirm()
   const alert = useAlert()
   const [proxies, setProxies] = useState<Proxy[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tokens, setTokens] = useState<EnrollTokenRow[] | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
-  const [target, setTarget] = useState<string | null>(null)
-  const [openCmd, setOpenCmd] = useState<string | null>(null) // proxy name whose update command is expanded
   const [report, setReport] = useState<{ name: string; token: string } | null>(null) // minted check-in token to show
   const [openSnmp, setOpenSnmp] = useState<string | null>(null) // proxy name whose SNMP-defaults band is open
   const [openProcs, setOpenProcs] = useState<string | null>(null) // proxy name whose Zabbix-processes band is open
   const canEdit = role === 'admin' || role === 'helpdesk'
   const isAdmin = role === 'admin'
 
-  // "Check for updates": look up the newest probe, updater and probe VM now, reload the rows and say
-  // what that means for the fleet (in green when nothing needs updating).
-  const [checking, setChecking] = useState(false)
-  const [checkMsg, setCheckMsg] = useState<{ text: string; ok: boolean } | null>(null)
-  async function checkUpdates() {
-    setChecking(true); setCheckMsg(null)
-    try {
-      const res = await fetch('/api/probes/check-updates', { method: 'POST' })
-      if (!res.ok) { setCheckMsg({ text: await errText(res, 'The check failed'), ok: false }); return }
-      const d: { probe_latest?: string; updater_latest?: string; failed?: string[] } = await res.json()
-      const lr = await fetch('/api/proxies')
-      const list: Proxy[] = lr.ok ? (await lr.json()) || [] : []
-      if (lr.ok) { setProxies(list); setError(null) }
-      // An update already in hand is "updating", not one still to do.
-      const inHand = (j?: ProbeJob) => !!j && j.state !== 'failed'
-      const probes = list.filter((p) => p.update_status === 'outdated' && !inHand(p.update_job)).length
-      const updaters = list.filter((p) => p.updater_status === 'outdated' && !inHand(p.updater_job)).length
-      const going = list.filter((p) => inHand(p.update_job) || inHand(p.updater_job)).length
-      const newest = [d.probe_latest && `probe ${d.probe_latest}`, d.updater_latest && `updater v${d.updater_latest.replace(/^v/, '')}`].filter(Boolean).join(', ')
-      const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
-      const nw = newest ? ` (newest: ${newest})` : ''
-      if (d.failed && d.failed.length) setCheckMsg({ text: `Couldn't reach the registry to check ${d.failed.join(', ')}; try again in a moment.`, ok: false })
-      else if (probes + updaters > 0) setCheckMsg({ text: `${[probes && plural(probes, 'probe'), updaters && plural(updaters, 'updater')].filter(Boolean).join(' and ')} can update${nw}: use Update on their rows.${going ? ` ${going} already updating.` : ''}`, ok: false })
-      else if (going > 0) setCheckMsg({ text: `${going === 1 ? '1 probe is' : `${going} probes are`} updating now${nw}; nothing else to update.`, ok: false })
-      else setCheckMsg({ text: `Every probe is on the newest version${newest ? ` (${newest})` : ''}.`, ok: true })
-    } catch { setCheckMsg({ text: 'The check failed', ok: false }) } finally { setChecking(false) }
-  }
-
-  async function triggerUpdate(p: Proxy) {
-    try {
-      const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/update`, { method: 'POST' })
-      if (!res.ok) { alert({ title: 'Update', message: await errText(res, 'Could not queue the update'), danger: true }); return }
-      loadProxies() // the row shows the update from here on, queued then updating, until it ends
-    } catch { alert({ title: 'Update', message: 'Could not queue the update', danger: true }) }
-  }
-
-  // Update the argus-updater sidecar itself. It recreates itself (via an ephemeral probe-recreate
-  // copy) onto the latest argus-updater image at its next check-in.
-  async function triggerUpdaterUpdate(p: Proxy) {
-    if (!(await confirm({ title: 'Update the updater', message: `Recreate the argus-updater sidecar managing ${p.name} onto the latest version? It rolls back if the new one fails.`, confirmLabel: 'Update updater' }))) return
-    try {
-      const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/updater-update`, { method: 'POST' })
-      if (!res.ok) { alert({ title: 'Update updater', message: await errText(res, 'Could not queue the updater update'), danger: true }); return }
-      loadProxies()
-    } catch { alert({ title: 'Update updater', message: 'Could not queue the updater update', danger: true }) }
-  }
+  // The version cells say where each probe stands, in the Updates page's words. Updating is done
+  // there, so a pill with something to do links to it (for an admin; helpdesk sees the same words).
+  const toUpdates = (st: { pill: ReactNode; can: string | boolean }) => st.can && goUpdates
+    ? <button type="button" className="linklike" onClick={goUpdates} title="Update it on the Updates page">{st.pill}</button> : st.pill
 
   // Reveal a probe VM's break-glass console credential (admin). Fetched on demand - it's never part
   // of the /api/proxies list - and shown in an in-app dialog with copy buttons.
@@ -3041,16 +3251,12 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
 
   const loadProxies = () => fetch('/api/proxies')
     .then(async (r) => { if (!r.ok) throw new Error(await errText(r, 'Failed to load probes')); return r.json() })
-    .then((p: Proxy[]) => { setProxies(p || []); setError(null); if (p && p.length) setTarget(p[0].target ?? 'latest') })
+    .then((p: Proxy[]) => { setProxies(p || []); setError(null) })
     .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load probes'))
   useEffect(() => { loadProxies(); const t = setInterval(loadProxies, 30000); return () => clearInterval(t) }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // While an update is queued or under way, look every 5 s, so its row moves on as it happens.
   const jobBusy = (proxies || []).some((p) => [p.update_job, p.updater_job].some((j) => j && j.state !== 'failed'))
   useEffect(() => { if (!jobBusy) return; const t = setInterval(loadProxies, 5000); return () => clearInterval(t) }, [jobBusy]) // eslint-disable-line react-hooks/exhaustive-deps
-  // The fleet target lives in app_meta, not on a proxy row, so read it directly - otherwise a core
-  // with no probes yet (or all removed) shows it blank instead of the real value ('latest' by default,
-  // but an admin may have pinned one while no probes exist, so fetch rather than assume).
-  useEffect(() => { if (isAdmin) fetch('/api/probes/target').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d && d.target) setTarget(d.target) }).catch(() => {}) }, [isAdmin])
 
   function loadTokens() {
     if (!isAdmin || !enroll) return
@@ -3093,16 +3299,13 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
         <span className="hint">{proxies ? `${proxies.length} known to the core` : '…'}</span>
         {(() => {
           const needReboot = (proxies || []).filter((p) => p.reboot_required).length
-          return needReboot > 0 ? <span className="tag avail" title="These probe VMs need a reboot to finish applying OS updates; each reboots in its weekly ~03:00 window">{needReboot} need a reboot</span> : null
+          return needReboot > 0 ? <span className="tag avail" title="These probe VMs need a reboot to finish applying OS updates; each reboots in its weekly ~03:00 window">{needReboot === 1 ? '1 needs' : `${needReboot} need`} a reboot</span> : null
         })()}
         {canEdit && <div className="tools">
-          {isAdmin && <button className="btn" onClick={checkUpdates} disabled={checking} title="Look up the newest probe, updater and probe VM versions now (Argus otherwise looks every 3 hours)">{checking ? 'Checking\u2026' : 'Check for updates'}</button>}
           {isAdmin && <button className="btn" onClick={reconcile} title="Prune Argus records left behind by probes deleted directly in Zabbix">Clean up</button>}
           {isAdmin && enroll && <button className="btn primary" onClick={() => setWizardOpen(true)}>+ Add probe</button>}
         </div>}
       </div>
-
-      {checkMsg && <p style={{ color: checkMsg.ok ? 'var(--ok)' : 'var(--warn)', fontSize: 12.5, padding: '2px 16px 6px', margin: 0 }}>{checkMsg.text}</p>}
 
       {isAdmin && !enroll && (
         <p style={{ color: 'var(--muted)', fontSize: 12.5, padding: '2px 16px 0', margin: 0 }}>
@@ -3127,9 +3330,6 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
           </tbody>
         </table>
       )}
-
-      {isAdmin && <FleetTarget target={target} latest={(proxies || []).find((p) => p.latest)?.latest} onSaved={setTarget} />}
-
 
       <div className="enroll-scroll">
       <table className="enroll enroll-probes">
@@ -3180,11 +3380,16 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
                 </td>
                 <td data-label="Proxy Version">
                   <span className="vcell">
-                    <span className="mono" style={{ fontWeight: 600, color: p.version ? undefined : 'var(--faint)' }} title="Zabbix proxy version running on this probe">{p.version || '-'}</span>
-                    <UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} hideAuto />
+                    <UpdVer v={p.version} title="Zabbix proxy version running on this probe" />
+                    {/* Probes that don't check in (updated outside Argus) can report with a minted token. */}
+                    {isAdmin && !p.last_checkin && (!p.update_status || p.update_status === 'external')
+                      ? <button className="btn" onClick={() => enableReporting(p)} title="Issue a check-in token so this probe reports its exact version to Argus">Enable reporting</button>
+                      : toUpdates(proxyState(p))}
                   </span>
                 </td>
-                <td data-label="Updater Version"><UpdaterVersionCell p={p} onUpdate={isAdmin ? triggerUpdaterUpdate : undefined} /></td>
+                <td data-label="Updater Version">
+                  <span className="vcell">{p.selfupdate && <UpdVer v={vv(p.updater_version) || '?'} title="Version of the argus-updater sidecar managing this probe" />}{toUpdates(updaterState(p))}</span>
+                </td>
                 <td data-label="VM OS Version"><OSCell p={p} /></td>
                 <td className="row-actions">
                   <ProbeRowMenu items={[
@@ -3196,7 +3401,6 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
                   ]} />
                 </td>
               </tr>
-              {openCmd === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProbeUpdateCommand p={p} /></td></tr>}
               {report?.name === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
               {openSnmp === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></td></tr>}
               {openProcs === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProbeProcesses p={p} isAdmin={isAdmin} onChanged={loadProxies} onClose={() => setOpenProcs(null)} /></td></tr>}
@@ -3214,94 +3418,17 @@ function probeUpdateTag(target?: string): string {
   return target && target !== 'latest' ? target : 'latest'
 }
 
-// UpdateBadge shows a probe's state versus the fleet target, and (for drift) a toggle that reveals
-// the one-click manual update command.
-// ProbeJobTag is an update in hand: queued for the sidecar's next check-in, updating until the probe
-// reports the new version, or one that didn't take (a new try clears it).
-function ProbeJobTag({ job, what }: { job: ProbeJob; what: string }) {
-  const to = job.tag === 'latest' ? 'the latest version' : job.tag
-  if (job.state === 'queued') return <span className="tag pending jobtag" title={`The update of the ${what} to ${to} is queued: its sidecar picks it up at its next check-in, within a minute.`}><span className="spinner sm" aria-hidden="true" />update queued</span>
-  if (job.state === 'updating') return <span className="tag pending jobtag" title={`Handed to the sidecar ${job.at ? relTime(job.at) : ''}: it pulls ${to} and recreates the ${what}, rolling back if the new one doesn't start healthy. This reads as up to date once the new version reports in.`}><span className="spinner sm" aria-hidden="true" />updating{job.at ? ` \u00b7 ${relTime(job.at)}` : ''}</span>
-  return <span className="tag avail" title={`The update to ${to} didn't take: 20 minutes after it was handed out, the ${what} still ran the old version (the updater rolls back one that doesn't start healthy; its log says why). Update again to retry.`}>update didn't take</span>
-}
-
-function UpdateBadge({ p, open, onToggle, onSelfUpdate, canReport, onEnableReporting, hideAuto }: { p: Proxy; open: boolean; onToggle: () => void; onSelfUpdate: (p: Proxy) => void; canReport?: boolean; onEnableReporting: (p: Proxy) => void; hideAuto?: boolean }) {
-  // One shared row: the button, the "→ version" chip and the auto tag stay on a single line so the
-  // Update column reports an honest one-line width to the auto-sized table (a wrapping cell would
-  // collapse to its widest item and let the column starve). The table's scroll wrapper handles the
-  // rare too-narrow desktop instead of wrapping mid-cell.
-  const wrap: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }
-  // "auto" = an argus-updater sidecar manages this probe (Argus can drive updates). The sidecar's own
-  // version + its self-update control live in the separate "Updater" column.
-  const auto = p.selfupdate && !hideAuto ? <span className="tag" title="Managed by an argus-updater sidecar; Argus can trigger updates from here">auto</span> : null
-  const job = p.update_job
-  if (job && job.state !== 'failed') return <span style={wrap}><ProbeJobTag job={job} what="probe" /></span>
-  const failed = job ? <ProbeJobTag job={job} what="probe" /> : null
-  // A socket-enabled probe updates itself when triggered; otherwise we expand the manual command.
-  const selfBtn = <button className="btn" onClick={() => onSelfUpdate(p)} title="Tell the probe to update itself to the fleet target on its next check-in">Update now</button>
-  // Probes that don't check in (external/unknown) can be turned on with a minted token.
-  const reportBtn = canReport
-    ? <button className="btn" onClick={() => onEnableReporting(p)} title="Issue a check-in token so this probe reports its exact version to Argus">Enable reporting</button>
-    : <span className="mono" style={{ color: 'var(--faint)' }} title="This probe isn't reporting its exact version to Argus (updates handled outside Argus, e.g. unRAID).">-</span>
-  switch (p.update_status) {
-    case 'current':
-      // An update that didn't take wins over "up to date": the newest version is looked up every few hours.
-      if (failed) return <span style={wrap}>{p.selfupdate ? selfBtn : null}{failed}{auto}</span>
-      return <span style={wrap}><span className="okquiet" title="Running the fleet target version">up to date</span>{auto}</span>
-    case 'tracking':
-      return <span style={wrap}><span className="tag" title="Fleet target is 'latest'; the probe converges on the newest image">tracking latest</span>{p.selfupdate ? selfBtn : null}{failed}{auto}</span>
-    case 'outdated': {
-      const avail = p.target === 'latest' ? p.latest : p.target
-      return <span style={wrap}>{p.selfupdate ? selfBtn : <button className="btn avail" onClick={onToggle}>{open ? 'Hide' : 'Update…'}</button>}{failed || (avail ? <span className="tag avail" title="Update available">→ {avail}</span> : null)}{auto}</span>
-    }
-    case 'external':
-    default:
-      return reportBtn
-  }
-}
-
 // OSCell is the "OS" column: a VM probe's Debian patch status (DESIGN §14c). The OS patches itself
 // (unattended-upgrades, security only) and auto-reboots in a weekly window; this only *reports*. A
 // dash means no report (a container probe, or a VM that hasn't reported yet).
 function OSCell({ p }: { p: Proxy }) {
   if (!p.os_reported_at) return <span className="mono" style={{ color: 'var(--faint)' }} title="No OS patch report - a container probe, or a VM probe that hasn't reported yet">-</span>
-  const when = `Reported ${relTime(p.os_reported_at)}`
-  const sec = typeof p.sec_updates === 'number' ? p.sec_updates : -1
-  // The reporter sends the full PRETTY_NAME (e.g. "Debian GNU/Linux 13 (trixie)"); trim the "GNU/Linux"
-  // filler so the cell reads "Debian 13 (trixie)".
-  const osName = (p.os_version || '').replace('GNU/Linux ', '')
-  const chip = p.reboot_required
-    ? <span className="tag avail" title={`This VM needs a reboot to finish applying updates; it reboots in its weekly ~03:00 window. ${when}`}>reboot</span>
-    : sec > 0 ? <span className="tag avail" title={`${sec} pending security update${sec === 1 ? '' : 's'}; applied automatically (security suite only). ${when}`}>{sec} security</span>
-    : sec === 0 ? <span className="okquiet" title={`No pending security updates. ${when}`}>patched</span>
-    : <span className="mono" style={{ color: 'var(--faint)' }} title={`Security-update count unknown. ${when}`}>?</span>
   return (
     <span className="vcell">
-      {osName && <span className="mono" style={{ fontWeight: 600 }} title="Operating system reported by the VM">{osName}</span>}
-      {chip}
+      {p.os_version && <UpdVer v={osName(p.os_version)} title="Operating system reported by the VM" />}
+      {osPill(typeof p.sec_updates === 'number' ? p.sec_updates : -1, !!p.reboot_required, `Reported ${relTime(p.os_reported_at)}.`)}
     </span>
   )
-}
-
-// UpdaterVersionCell is the "Argus-Updater Version" column: the argus-updater sidecar's version, its
-// drift vs the newest published updater, and (admin) an Update button when it's behind - the same shape
-// as the proxy-version cell. A dash means no sidecar manages this probe (e.g. an unRAID-native probe).
-function UpdaterVersionCell({ p, onUpdate }: { p: Proxy; onUpdate?: (p: Proxy) => void }) {
-  if (!p.selfupdate) return <span className="mono" style={{ color: 'var(--faint)' }} title="No argus-updater sidecar manages this probe">-</span>
-  const ver = <span className="mono" style={{ fontWeight: 600 }} title="Version of the argus-updater sidecar managing this probe">{p.updater_version || '?'}</span>
-  const updateBtn = onUpdate ? <button className="btn" onClick={() => onUpdate(p)} title="Update the argus-updater sidecar to the newest version (it recreates itself)">Update</button> : null
-  const job = p.updater_job
-  if (job && job.state !== 'failed') return <span className="vcell">{ver}<ProbeJobTag job={job} what="sidecar" /></span>
-  const failed = job ? <ProbeJobTag job={job} what="sidecar" /> : null
-  switch (p.updater_status) {
-    case 'current':
-      if (failed) return <span className="vcell">{ver}{failed}{updateBtn}</span>
-      return <span className="vcell">{ver}<span className="okquiet" title="Running the newest published argus-updater">up to date</span></span>
-    case 'outdated':
-      return <span className="vcell">{ver}{failed || (p.updater_latest ? <span className="tag avail" title="A newer argus-updater has been published">→ {p.updater_latest}</span> : null)}{updateBtn}</span>
-    default: // unknown: version reported but GHCR not resolved yet, or version not reported
-      return <span className="vcell">{ver}{failed}{updateBtn}</span>
-  }
 }
 
 // ProbeRowMenu is the per-row "⋯" actions menu on the Probes table: the low-frequency, action-only
@@ -3459,53 +3586,10 @@ function ProbeUpdateCommand({ p }: { p: Proxy }) {
   return (
     <div style={{ padding: '10px 16px', background: 'var(--elevated)', borderBottom: '1px solid var(--border)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-        <span style={{ color: 'var(--muted)', fontSize: 12.5 }}>Run on {p.name}'s Docker host{p.version ? ` (currently ${p.version})` : ''}:</span>
+        <span style={{ color: 'var(--muted)', fontSize: 12.5 }}>{p.name} has no argus-updater sidecar, so it updates by hand. On its Docker host{p.version ? ` (it runs ${p.version})` : ''}:</span>
         <CopyButton text={cmd} variant="default" style={{ marginLeft: 'auto' }} />
       </div>
       <pre style={{ margin: 0, padding: '10px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12 }}><code>{cmd}</code></pre>
-    </div>
-  )
-}
-
-// FleetTarget lets an admin pick the version every probe should converge on: 'latest' (rolling)
-// or an exact pin like '7.0.29-r1'. The self-updater and the manual command both honour it.
-function FleetTarget({ target, latest, onSaved }: { target: string | null; latest?: string; onSaved: (t: string) => void }) {
-  const [editing, setEditing] = useState(false)
-  const [val, setVal] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  function start() { setVal(target || 'latest'); setError(null); setEditing(true) }
-  const valid = (v: string) => v === 'latest' || /^[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+$/.test(v.trim())
-
-  async function save() {
-    const v = val.trim()
-    if (!valid(v)) { setError('Use "latest" or a pin like 7.0.29-r1'); return }
-    setBusy(true); setError(null)
-    try {
-      const res = await fetch('/api/probes/target', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: v }) })
-      if (!res.ok) { setError(await errText(res, 'Could not save target')); return }
-      const d = await res.json(); onSaved(d.target); setEditing(false)
-    } finally { setBusy(false) }
-  }
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
-      <span className="flabel">Fleet target version</span>
-      {!editing ? (
-        <>
-          <code style={{ background: 'var(--elevated)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 8px' }}>{target ?? '…'}</code>
-          <button className="btn" onClick={start}>Change</button>
-          <span style={{ color: 'var(--muted)', fontSize: 12 }}>What every probe should run - <code>latest</code> or a pin like <code>7.0.29-r1</code>.{latest ? <> Newest published: <code>{latest}</code>.</> : null}</span>
-        </>
-      ) : (
-        <>
-          <input className="input" style={{ width: 160 }} value={val} autoFocus placeholder="latest" onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }} />
-          <button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
-          <button className="btn" disabled={busy} onClick={() => setEditing(false)}>Cancel</button>
-          {error && <span style={{ color: 'var(--err)', fontSize: 12.5 }}>{error}</span>}
-        </>
-      )}
     </div>
   )
 }

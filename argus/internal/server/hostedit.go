@@ -417,7 +417,7 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 					return
 				}
 				if !hasProxyDef {
-					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no SNMP default is set for this host's collector - set one in the Probes tab (the probe's Defaults, or Core SNMP), or override on the host"})
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no SNMP default is set for this host's collector - set one in the Probes tab (the probe's SNMP defaults) or in Settings (Core SNMP default), or override on the host"})
 					return
 				}
 				iface.SNMP = defaultToDetails(proxyDef)

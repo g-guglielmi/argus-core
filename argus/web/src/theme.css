@@ -233,6 +233,40 @@ a { color: var(--accent); }
 .upd-log-why { margin: 8px 0 0; font-size: 12.5px; color: var(--err); }
 .upd-log-note { margin: 8px 0 0; font-size: 12px; color: var(--faint); }
 .upd-log-act { margin-top: 10px; display: flex; gap: 8px; }
+/* Updates page: every component is one row (label, then version + status pill + action), with what
+   it needs to say underneath, aligned under the version. Table cells carry the same version + pill +
+   action, so a probe reads like the core. */
+.upd-row { padding: 12px 0; border-top: 1px solid var(--border); }
+.upd-row:last-child { padding-bottom: 0; }
+.upd-row-head { display: grid; grid-template-columns: 136px minmax(0, 1fr); align-items: center; gap: 4px 14px; min-height: 28px; }
+.upd-row-body { display: grid; gap: 6px; justify-items: start; margin: 6px 0 0 150px; max-width: 640px; }
+.upd-row-body > .set-hint { margin: 0; }
+.upd-row-body > .flabel { margin-top: 4px; }
+.upd-row-body > .upd-log { margin: 2px 0; width: 100%; box-sizing: border-box; }
+.upd-row .release-notes { background: var(--panel); }
+.upd-ver { font-weight: 600; }
+.upd-none { font-size: 12px; color: var(--faint); white-space: nowrap; }
+.upd-window { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.upd-more > summary { font-size: 11.5px; color: var(--faint); cursor: pointer; width: fit-content; }
+.upd-more > summary:hover { color: var(--text); }
+.upd-more[open] > summary { margin-bottom: 8px; }
+.upd-more > .set-hint { margin: 6px 0 0; }
+.upd-card-head { display: flex; align-items: center; gap: 10px; min-height: 28px; }
+.upd-card-head .btn { margin-left: auto; }
+.upd-check { margin: 0; padding: 10px 16px 0; font-size: 12.5px; }
+.upd-check.ok { color: var(--ok); }
+.upd-check.warn { color: var(--warn); }
+.upd-table { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); margin: 4px 0 12px; }
+.upd-row + .upd-table { margin-top: 0; }
+/* A version cell stays on one line on desktop, so the auto-sized table gives its column an honest
+   width (a wrapping cell collapses to its widest item and starves the column); the scroll wrapper
+   takes the rare desktop too narrow for it. Phones stack the cell instead (below). */
+@media (min-width: 769px) { .enroll-probes td > .vcell { flex-wrap: nowrap; } }
+@media (max-width: 768px) {
+  .upd-row-head { grid-template-columns: minmax(0, 1fr); }
+  .upd-row-body { margin-left: 0; }
+  .upd-more > summary { font-size: 12.5px; }
+}
 .spinner { width: 15px; height: 15px; border: 2px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: argus-spin 0.7s linear infinite; display: inline-block; flex: none; }
 .view-enter { animation: fade-rise var(--dur-base) var(--ease-out) both; }
 .chart-reveal { animation: fade-rise var(--dur-base) var(--ease-out) both; }
@@ -857,7 +891,8 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .field input, .field select { width: 100%; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--elevated); color: var(--text); font: inherit; }
 
 /* Settings page */
-.set-body { display: grid; gap: 14px; padding: 14px 16px 18px; }
+/* minmax(0, 1fr): a card never grows past the page for a wide child (a table scrolls inside it). */
+.set-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 14px 16px 18px; }
 .set-card { border: 1px solid var(--border); border-radius: 10px; background: var(--elevated); padding: 14px 16px; }
 .set-card h3 { margin: 0 0 2px; font-size: 14px; }
 /* Width-capped like .panel-intro: an intro spanning the whole panel while the rows below cap at

@@ -13,6 +13,27 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Updates page:**
+- A new admin page, **Updates**, puts every update in one place, with one **Check for updates** that
+  looks up the core, its sidecar, the probe image, the probe sidecar and the probe VM image at once
+  and says in one line what can update. Three sections read the same way: each component shows its
+  version, one status (up to date, available, queued, updating, failed) and its **Update** button,
+  with the step log underneath while an update runs.
+  - **Argus core:** the core (release notes, channel or version switch), its updater sidecar and the
+    collectors it installs.
+  - **Probes:** the fleet target, then every probe's proxy and sidecar, with **Update all** for every
+    one that is behind. A probe without a sidecar shows how to update it by hand.
+  - **Operating systems:** the core VM's patch state and reboot window, the core's Zabbix and its
+    minor-update window, each probe VM's patch state, and the newest probe VM image.
+- Every update now asks first, naming the version it goes from and to.
+- The Probes page keeps the versions as read-only status in the same words; a probe or sidecar that
+  is behind links to Updates. Its Check for updates, update buttons and fleet target moved there.
+- Settings keeps a short **About** (version and licence); the old About and OS updates cards moved to
+  Updates. The version pill in the sidebar and the update notices (a new release, a core or probe
+  update, a probe behind, OS updates and reboots) open Updates.
+- A sidecar asked for both a proxy update and its own gets them one check-in apart, the proxy first:
+  its own update replaces it, and could do so while it was still recreating the proxy.
+
 ## [0.7.0] - 2026-10-02
 
 A minor release: real HTTP checks (any URL, subdomain or path, each with its own certificate check

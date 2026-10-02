@@ -640,11 +640,12 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   `notices_sent` ledger dedupes (a condition's row goes when it ends, so it can be told again;
   events are kept a year). Probe self-update outcomes are inferred: a newly reported version is a
   success, and an update handed out at check-in that isn't running 20 minutes later failed (the
-  updater rolled it back). The Probes page shows the same records per row (`update_job` /
+  updater rolled it back). The Updates and Probes pages show the same records per row (`update_job` /
   `updater_job`: queued while `update_to` waits, updating while the hand-out record stands, failed for
   a day or until retried), so a reload never hides an update in hand. **Check for updates** on the
-  page (`POST /api/probes/check-updates`, admin) runs the three 3-hourly lookups (probe image,
-  argus-updater, probe-vm) at once. Probe notices route by the probe's site; a failing shared channel isn't
+  Updates page runs the core's lookup (`POST /api/version/check`) and the three 3-hourly probe
+  lookups (`POST /api/probes/check-updates`, admin: probe image, argus-updater, probe-vm) at once.
+  Update notices open the Updates page. Probe notices route by the probe's site; a failing shared channel isn't
   told about itself, and a failing personal channel only reaches its owner's other channels.
 - **Deliveries decide the follow-ups:** `notify_deliveries` records which channels an alert reached.
   Reminders, the **acknowledged notice** (`[ACKNOWLEDGED]` with who took it and their note, sent once
@@ -758,7 +759,8 @@ later.
 class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Thresholds
 (fleet-wide defaults per template + per-class sensor-category order) · 10) Notifications
 (instances, credentials, targets, test-send) · 11) Users & security ·
-12) Settings (FQDN/allowed-hosts, retention, proxy status).
+12) Updates (the core, its sidecar, the probes and the VMs' operating systems) ·
+13) Settings (FQDN/allowed-hosts, retention, proxy status).
 
 ---
 
@@ -1033,7 +1035,7 @@ the remote-trigger-with-rollback pattern stays reserved for container images.
 base-image rebuilds, but the core's `zabbix-*` packages come from the per-major-pinned Zabbix apt repo
 and are outside unattended-upgrades' security-only origins - so without help the core slowly drifts
 behind its own fleet. The §14c file channel closes that gap: the host reporter adds the installed +
-candidate `zabbix-server-pgsql` version to `os-status.json`, Settings → OS updates shows "core x.y.z /
+candidate `zabbix-server-pgsql` version to `os-status.json`, the Updates page shows "core x.y.z /
 candidate / fleet" with a second operator mask (notify-only default), Argus mirrors it to
 `zbx-update-window.json`, and a host timer (`argus-zbx-update`, every 5 min) applies
 `apt-get install --only-upgrade zabbix-*` in the window - **same major.minor line only** (the repo
@@ -1063,9 +1065,9 @@ posts its security-update count + reboot-required flag to `POST /api/probes/os-s
 auth). `setup-core.sh` installs the same on the core with **auto-reboot off** (it respects the
 TimescaleDB 2.28 hold), a host reporter that writes `os-status.json` into the shared self-update dir,
 and a reboot watcher that honours the operator window. Argus surfaces per-probe status on the **Probes**
-page (the **OS** column + a "N need a reboot" rollup) and the core's own status + the reboot-window mask
-in **Settings -> OS updates** (`GET /api/os/status`, `PUT /api/os/reboot-window`, default **notify
-only**). The window is mirrored to `reboot-window.json` for the core's host watcher; patching stays
+page (the **OS** column + a "N need a reboot" rollup) and on the **Updates** page (Operating systems:
+every probe VM, the core's own status and the reboot-window mask; `GET /api/os/status`,
+`PUT /api/os/reboot-window`, default **notify only**). The window is mirrored to `reboot-window.json` for the core's host watcher; patching stays
 strictly local (Argus never runs `apt` remotely).
 
 ## 14d. Self-installing core appliance VM (`deploy/core-vm/`)
@@ -1286,12 +1288,12 @@ plane; the probe checks in and converges.
   admin): `latest`, or an exact pin in the **decoupled probe scheme** - `7.0.29-r1`, *not* app
   semver (see the probe-image versioning in `deploy/README.md`). `/api/proxies` reports each
   probe's version / target / `update_status` (`unknown | tracking | current | outdated`).
-- **Manual path (always available).** Drifted probes surface in the Probes view with a one-click
-  `docker pull … && docker restart …` command - no Docker socket involved.
+- **Manual path (always available).** A drifted probe without a sidecar shows a
+  `docker pull … && docker restart …` command on the Updates page - no Docker socket involved.
 - **One self-update model: proxy + updater sidecar (v0.4.30).** Every Argus-driven probe is **two
   containers** - the proxy (a pure reporter; never gets the socket, no `docker-cli` in its image) and
   the shared **argus-updater** image in `probe-watch` mode. The sidecar holds the socket and recreates
-  the proxy via the Docker Engine API on an **Update now** (`POST /api/probes/{name}/update`, handed
+  the proxy via the Docker Engine API on an **Update** (`POST /api/probes/{name}/update`, handed
   to the sidecar once at its next check-in as `{"update":"<tag>"}`) or a fleet-target change, cloning
   the proxy's config onto the new image and **rolling back on any failure**. This is the same
   principle as the core's updater - the socket is isolated to the minimal sidecar, never on the
@@ -1311,8 +1313,10 @@ plane; the probe checks in and converges.
 - **The updater updates itself.** A long-running updater can't `rm -f` itself, so on request it spawns
   an ephemeral `argus-updater --rm` copy in `probe-recreate` mode targeting its own container (the
   self-update **primitive**). Argus drives it: the sidecar reports its own version at check-in
-  (stored as `probe_agents.updater_version`), and **⟳** next to a probe's **auto** tag queues a
+  (stored as `probe_agents.updater_version`), and its **Update** on the Updates page queues a
   one-shot (`POST /api/probes/{name}/updater-update`) handed back as `{"updater_update":"<tag>"}`.
+  A check-in hands out one update at most, the proxy's first: the sidecar's own update replaces it,
+  and could do so while it is still recreating the proxy, so the other waits a check-in.
 - **One image, one engine.** The core self-updater and both probe roles are the same image,
   `ghcr.io/g-guglielmi/argus-updater` (its own version line), sharing one recreate engine
   (`lib/recreate.sh`) selected by `ARGUS_UPDATER_MODE` (`core` | `probe-watch` | `probe-recreate`) -
@@ -1321,7 +1325,7 @@ plane; the probe checks in and converges.
   reports no proxy version - the check-in fields are sticky (an omitted field keeps the stored value),
   and one-shots are handed only to a capability-advertising caller, so the two never clobber each
   other or race. See the [argus-updater](https://github.com/g-guglielmi/argus-updater) repo.
-- **Updates show their steps.** Settings follows a core update and a sidecar self-update step by
+- **Updates show their steps.** The Updates page follows a core update and a sidecar self-update step by
   step until it ends. The core update's `status.json` keeps every message in `steps`; a sidecar
   self-update is remembered by the core in `updater-job.json` (the request file is consumed when the
   sidecar picks it up) and reported by the sidecar and its swap helper in `updater-status.json`
@@ -1329,9 +1333,17 @@ plane; the probe checks in and converges.
   newest image says so instead of swapping). A sidecar older than 0.2.12 reports nothing: its new
   version is the outcome, and three minutes without one read "no word back". A finished update stays
   shown for 5 minutes, a failed one until it is closed (`POST /api/update/updater/dismiss`). The
-  sidecar row checks for updates like the core's: the newest published argus-updater (the Probes
-  page's 3-hourly lookup, or now with `POST /api/update/updater/check`) against its version, and
-  **Update to vX** only when a newer one is out.
+  sidecar row reads like the core's: the newest published argus-updater (the 3-hourly lookup, or
+  now with Check for updates) against its version, and **Update** only when a newer one is out.
+- **One page for every update.** The admin **Updates** page has a single **Check for updates** and
+  three sections that read the same way: each component is a row (or a table cell) with its version,
+  one status pill (up to date, available, queued, updating, failed) and its **Update** button, plus
+  the step log where the updater reports steps. **Argus core**: the core (channel switch, release
+  notes), its sidecar, the collectors. **Probes**: the fleet target and every probe's proxy and
+  sidecar, with **Update all** for every one that is behind. **Operating systems**: the core VM (patch
+  state, reboot window), the core's Zabbix (minor-update window), each probe VM, and the newest probe
+  VM image. The Probes page keeps the versions as read-only status in the same words; a probe that
+  is behind links to Updates (admins only: helpdesk sees Probes, not Updates).
 - **The core host's collectors ride the image.** The core's Zabbix server is a host package, so the
   collectors (external checks) it runs for the hosts it monitors live in the host's
   `/usr/lib/zabbix/externalscripts`, out of reach of a container update. The Argus image carries them
@@ -1341,7 +1353,7 @@ plane; the probe checks in and converges.
   once - as root, `--network none`, read-only, only that folder bound in - whenever the core's image
   changes, a day after a success (puts back a deleted or edited collector) and ten minutes after a
   failure, and reports in `collectors.json` (`ok` | `failed` | `skipped`, with the version and what
-  it wrote); Settings, About shows it. The long-running core never gets write access to a folder
+  it wrote); the Updates page shows it. The long-running core never gets write access to a folder
   the Zabbix server executes from. `setup-core.sh` still installs them on a fresh core.
 
 **Tradeoff acknowledged.** Any automatic in-place container update needs Docker socket access at

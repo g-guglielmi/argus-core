@@ -186,22 +186,23 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 | `ARGUS_RP_DISPLAY_NAME` | `Argus` | name shown by the authenticator |
 | `ARGUS_RP_ORIGINS` | *(empty)* | comma-separated origins, e.g. `https://monitoring.example.com` |
 
-**One-click self-update** (optional; enables the "Update now" button - see [Self-update](#one-click-self-update-optional))
+**One-click self-update** (optional; enables the core's **Update** button - see [Self-update](#one-click-self-update-optional))
 | Var | Default | Purpose |
 |---|---|---|
-| `ARGUS_UPDATE_DIR` | *(empty)* | path of a volume shared with the `argus-updater` sidecar. Set (e.g. `/update`) to enable admin-triggered self-update; empty leaves it off (Settings then shows a manual update command instead). The core never gets the Docker socket - the sidecar does |
+| `ARGUS_UPDATE_DIR` | *(empty)* | path of a volume shared with the `argus-updater` sidecar. Set (e.g. `/update`) to enable admin-triggered self-update; empty leaves it off (the Updates page then says to pull the new image and redeploy). The core never gets the Docker socket - the sidecar does |
 
 ## One-click self-update (optional)
 
-Argus **Settings → About** shows the running build and flags when a newer release is published. You
-can wire up an in-app **"Update now"** button that upgrades the core to the latest release.
+The admin **Updates** page shows the running build and flags when a newer release is published (one
+**Check for updates** looks up the core, its sidecar and the probes at once). You can wire up an in-app
+**Update** button that upgrades the core to the latest release.
 
 The Argus core is a public-facing, distroless, non-root container with **no Docker socket**, so it
 cannot recreate itself. Instead, a small companion container - **`argus-updater`** - holds the socket
 and does the work on the core's behalf. The two share a tiny volume: the core drops an update request
 there, the updater pulls the newest release, recreates the core cloning its config, verifies it comes
 up healthy, and **rolls back on failure** - reporting the result back so Argus shows a success or
-failure banner. The public-facing core never touches Docker.
+failure, step by step. The public-facing core never touches Docker.
 
 **Recommended (Docker Compose):** use [`deploy/updater/docker-compose.yml`](../deploy/updater/docker-compose.yml)
 (fill in `.env` from the table above), then `docker compose up -d`. It runs both containers and the
@@ -227,8 +228,8 @@ docker run -d --name argus-updater --restart unless-stopped \
 `/update`, then add the **Argus-Updater** template ([`deploy/unraid/argus-updater.xml`](../deploy/unraid/argus-updater.xml))
 with the **same** host folder and your Argus container's name.
 
-Beyond the plain "Update now" button (which updates in place, preserving the core's `latest` /
-`testing` channel), Settings → About has a **Change channel or version** control to deliberately switch
+Beyond the plain **Update** button (which updates in place, preserving the core's `latest` /
+`testing` channel), the Updates page has a **Change channel or version** control to deliberately switch
 the core between `latest`, `testing`, and recent pinned releases. A version pin sticks until you switch
 back to a channel.
 

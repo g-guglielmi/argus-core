@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// probeJob is an update Argus asked a probe's sidecar for, as the Probes page shows it until it ends,
+// probeJob is an update Argus asked a probe's sidecar for, as the Updates and Probes pages show it until it ends,
 // so a page reload never hides one that is still going.
 type probeJob struct {
 	State string `json:"state"`        // queued | updating | failed
@@ -17,7 +17,7 @@ type probeJob struct {
 	At    int64  `json:"at,omitempty"` // when it was handed to the sidecar (updating) or given up on (failed)
 }
 
-// probeFailedShown is how long an update that didn't take stays on the Probes page (a new try, or
+// probeFailedShown is how long an update that didn't take stays shown (a new try, or
 // the version changing, clears it sooner).
 const probeFailedShown = 24 * time.Hour
 

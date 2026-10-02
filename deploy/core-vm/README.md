@@ -24,7 +24,7 @@ the identical stack: the appliance image is built with the same
 | `scripts/provision.sh` | Bakes the stack into the image: `setup-core.sh SETUP_MODE=image` (Zabbix + PG/Timescale + OS patching), Docker, pre-pulled `argus`/`argus-updater` images, the units below. |
 | `scripts/make-ova.sh` | Packages the built qcow2 into an OVA (stream-optimized VMDK + OVF + manifest). |
 | `files/argus-core.service` | Runs the `argus` container from `/etc/argus-core/argus.env` (detached, Docker-restarted, updater-recreatable). |
-| `files/argus-updater.service` | The socket-holding update sidecar in its core (file-channel) mode - one-click "Update now" from Argus Settings. |
+| `files/argus-updater.service` | The socket-holding update sidecar in its core (file-channel) mode - one-click **Update** from the Argus Updates page. |
 | `files/argus-firstboot.service` + `argus-core-firstboot.py` | The first-boot setup: one-form page on `http://<vm>/`, then a live progress page while it configures the whole core. Disables itself when done. |
 | `files/argus-hostkeys.service` | Regenerates SSH host keys on first boot (they're stripped from the golden image). |
 | `files/10-argus-dhcp.network` | systemd-networkd DHCP for the primary NIC (cloud-init is purged from the image). |
@@ -106,7 +106,7 @@ PostgreSQL and nginx keep their usual places.
   held at 2.28 for Zabbix 7.0); Argus + updater stay containers with the existing one-click
   self-update flow.
 - **OS patching, core flavor** (DESIGN §14c): security-only unattended-upgrades, **no auto-reboot** -
-  the reboot is operator-scheduled from Argus **Settings → OS updates**; the host reporter and
+  the reboot is operator-scheduled from the Argus **Updates** page; the host reporter and
   reboot-window watcher are baked in via `setup-core.sh`.
 - **Ports**: Argus on **:443** (https, via nginx; the container itself listens on `127.0.0.1:8081`
   only), Zabbix UI/API on **:8080**, proxies inbound on **:10051**, and **:80** serves the setup page
@@ -170,12 +170,12 @@ probes additionally need **:10051** published/forwarded to the VM.
   `.network` file (template in the DHCP file's comments) - or just give the VM a DHCP reservation.
 - **Zabbix / PostgreSQL package upgrades stay deliberate** - security patches are automatic and
   TimescaleDB is pinned to 2.28 for Zabbix 7.0. For **Zabbix minors** (7.0.x) you can opt into a
-  weekly update window under **Settings → OS updates** (notify-only by default; a host timer
+  weekly update window on the **Updates** page (notify-only by default; a host timer
   applies same-major `zabbix-*` updates locally and restarts the server) - or keep running
   `apt upgrade` yourself. Major Zabbix upgrades and a major Debian upgrade stay manual; the
   latter is a re-image event, as with the probe VM.
 - **Argus + updater track `:latest`** by default; pin tags in `/etc/argus-core/image.env` if you want
-  a reboot never to move versions. In-app updates (Settings → About) work from day one via the baked
+  a reboot never to move versions. In-app updates (the Updates page) work from day one via the baked
   updater sidecar.
 - The setup form travels over plain HTTP on your LAN, once, like the probe's first-boot page - do the
   setup from the network you trust. The setup code keeps a bystander on that network from running it

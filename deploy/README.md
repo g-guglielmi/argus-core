@@ -42,13 +42,13 @@ Then apply the TLS + tuning snippet: `core/zabbix_server.conf.snippet`.
 
 It also sets up **OS patching** (DESIGN §14c): `unattended-upgrades` (security suite only - it respects
 the TimescaleDB 2.28 hold) + `needrestart`, with the core's **reboot left to you** (Argus schedules it
-in **Settings → OS updates**; default is notify-only). A host reporter writes the core's patch status
+on the **Updates** page, under Operating systems; default is notify-only). A host reporter writes the core's patch status
 into `ARGUS_STATE_DIR` (default `/docker/argus-update`, see [docs/folder-layout.md](../docs/folder-layout.md)) - set that to the **same host path** you map as the
 Argus container's `ARGUS_UPDATE_DIR`, so the core shows its own status and the chosen reboot window is
 honoured locally. Probe VMs patch + reboot themselves (weekly ~03:00) and report status the same way.
 
 The same channel handles **core Zabbix minor updates**: the reporter includes the installed +
-candidate `zabbix-*` version, Settings → OS updates shows "core vs fleet" and offers a second
+candidate `zabbix-*` version, the Updates page shows "core vs fleet" and offers a second
 weekly window (notify-only by default) in which a host timer applies same-major `zabbix-*` updates
 and restarts `zabbix-server` (a seconds-long blip the proxies buffer through). Major Zabbix
 upgrades are never automated. It also carries **core time**: the VM's timezone and NTP sync
@@ -192,18 +192,18 @@ pick it up. (Pin a specific tag instead if you'd rather gate probe updates - see
 
 ### Fleet updates - Argus-coordinated (v0.4.8)
 
-Argus is a **control plane** for probe versions: it holds a **fleet target** (Probes → *Fleet
-target version*: `latest` or an exact pin like `7.0.29-r1`) and shows each probe's running version
+Argus is a **control plane** for probe versions: it holds a **fleet target** (Updates → Probes →
+*Fleet target*: `latest` or an exact pin like `7.0.29-r1`) and shows each probe's running version
 against it. Every probe self-reports its baked-in version every ~5 min over an outbound-only
 check-in (a long-lived token issued at enrollment) - nothing inbound is opened.
 
-- **Visibility + manual update (any deployment).** The Probes view flags drift and offers a
-  one-click `docker pull … && docker restart argus-<proxy>` for each outdated probe. No Docker
+- **Visibility + manual update (any deployment).** The Probes page flags drift, and the Updates
+  page shows a `docker pull … && docker restart argus-<proxy>` for an outdated probe without a sidecar. No Docker
   socket involved. Version is shown even for probes that never check in (read from Zabbix).
 - **Two containers: proxy + updater sidecar (the one self-update model).** Every Argus-driven probe
   is the proxy plus the shared **[argus-updater](https://github.com/g-guglielmi/argus-updater)** image
   in `probe-watch` mode as a sidecar. The sidecar holds the socket and recreates the proxy via the
-  Docker Engine API on an **Update now** or a fleet-target change (rolling back if the new one fails),
+  Docker Engine API on an **Update** (Updates page, or **Update all**) or a fleet-target change (rolling back if the new one fails),
   so **the proxy container never gets the socket** - the same principle as the core's updater. The
   Add-probe wizard's **Docker run** and **Compose** tabs both emit the two containers. Deploy the
   sidecar by hand next to a `docker run` proxy:
@@ -217,9 +217,9 @@ check-in (a long-lived token issued at enrollment) - nothing inbound is opened.
   `<proxy-data-dir>` is the proxy's `/var/lib/zabbix` host path (holds the enrollment + check-in
   credential). Sidecar env: `ARGUS_UPDATE_INTERVAL` (poll seconds, default 300).
 - **Updating the updater itself.** The sidecar can recreate itself too (via an ephemeral
-  `probe-recreate` copy): the **⟳** control next to a probe's **auto** tag queues it, or your platform
-  (Dockhand / `docker compose pull` / the VM's systemd unit) updates the small image. Its version
-  shows on the **auto** tag's tooltip.
+  `probe-recreate` copy): its **Update** on the Updates page queues it, or your platform
+  (Dockhand / `docker compose pull` / the VM's systemd unit) updates the small image. A sidecar asked
+  for both gets them one check-in apart, the proxy first.
 - **VM probes** run the same two containers as two systemd units (`argus-probe` + `argus-updater`),
   installed by the golden image and enabled together at enrollment - so a VM probe is Argus-managed
   like any other. See the argus-probe `deploy/probe-vm` README.

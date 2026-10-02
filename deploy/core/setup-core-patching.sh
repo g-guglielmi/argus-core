@@ -8,7 +8,7 @@
 # Keeps the core's Debian OS patched with unattended-upgrades (SECURITY suite only; it honours apt
 # holds/pins, so the TimescaleDB 2.28 hold is safe) + needrestart (auto-restart services after a
 # libc/openssl bump, so most updates need no reboot). The core is a "pet": patches auto-apply, but the
-# REBOOT is operator-scheduled from Argus (Settings -> OS updates), never unattended.
+# REBOOT is operator-scheduled from Argus (the Updates page), never unattended.
 #
 # It also installs a host reporter (posts the core's status to Argus), a reboot watcher (honours the
 # window Argus picks), and a Zabbix minor-update watcher (applies same-major zabbix-* updates in an
@@ -249,7 +249,7 @@ fi
 echo
 echo "==> done. unattended-upgrades (security only, no auto-reboot) + reporter + reboot watcher + zabbix-minor watcher installed."
 echo "    status file: ${ARGUS_STATE_DIR}/os-status.json  (Argus reads it at ARGUS_UPDATE_DIR=/update)"
-echo "    In Argus -> Settings -> OS updates you should now see the core's status; set the reboot"
+echo "    In Argus -> Updates you should now see the core's status; set the reboot"
 echo "    window and the Zabbix minor-update window there."
 echo "    Check the timers:  systemctl list-timers 'argus-*'"
 echo "    Backups: Settings -> Backups in Argus (restore guide: docs/backup-and-restore.md)."

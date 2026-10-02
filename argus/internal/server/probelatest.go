@@ -67,7 +67,7 @@ func (s *Server) startProbeLatestRefresh(ctx context.Context) {
 	}()
 }
 
-// refreshProbeLatest looks up the newest published probe image now (the poll, and the Probes page's
+// refreshProbeLatest looks up the newest published probe image now (the poll, and the Updates page's
 // "Check for updates").
 func (s *Server) refreshProbeLatest(ctx context.Context) error {
 	c, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -152,7 +152,7 @@ func (s *Server) refreshProbeVM(ctx context.Context) error {
 }
 
 // handleProbesCheckUpdates looks up the newest probe image, argus-updater and probe-vm appliance now,
-// instead of waiting for the 3-hourly poll, for the Probes page's "Check for updates" (admin). It
+// instead of waiting for the 3-hourly poll, for the Updates page's "Check for updates" (admin). It
 // answers what it found; the page reloads its rows for the verdicts.
 func (s *Server) handleProbesCheckUpdates(w http.ResponseWriter, r *http.Request) {
 	checks := []struct {
