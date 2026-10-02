@@ -77,6 +77,13 @@ def free_port():
 
 
 class ParseTest(unittest.TestCase):
+    def test_tls_discovery(self):
+        es = ah.parse_urls("https://a.example.com, https://b.example.com#tls=ignore, http://c.example.com, "
+                           "https://d.example.com#tls=verify", "h", "https", 443)
+        names = lambda mode: [x["{#URLNAME}"] for x in ah.tls_discovery(es, mode)]
+        self.assertEqual(names("verify"), ["a.example.com", "d.example.com"], "no certificate sensor for ignore or http")
+        self.assertEqual(names("ignore"), ["d.example.com"], "the host's ignore leaves out all but a URL's own check")
+
     def test_urls(self):
         es = ah.parse_urls("https://portal.example.com/app, /login  http://10.0.0.20:8080/health#ok%20now /x#!Error", "10.0.0.10", "https", 8443)
         self.assertEqual([e.url for e in es], ["https://portal.example.com/app", "https://10.0.0.10:8443/login",
@@ -287,7 +294,7 @@ class HTTPSTest(unittest.TestCase):
     def test_ignore_mode(self):
         r = self.run_mode(self.other_port, "ignore")
         self.assertEqual((r["up"], r["status"], r["error"]), (1, 200, ""), "ignore takes any certificate")
-        self.assertAlmostEqual(r["cert_days"], 30, delta=1)
+        self.assertIsNone(r["cert_days"], "ignore doesn't read the certificate")
 
 
 class MainTest(unittest.TestCase):

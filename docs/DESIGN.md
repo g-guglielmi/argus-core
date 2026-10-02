@@ -209,9 +209,9 @@ answers with an accepted status code after redirects (`{$HTTP.EXPECT}`), has the
 CA's, `self-signed` also one no CA vouches for - the collector reads the certificate itself (validity,
 subject alternative names, else the common name) instead of asking the TLS library, which refuses a
 device chain whose own "CA" isn't marked as one, so its dates still count, and its name for a URL by
-name (not by IP: device certificates rarely list their address) - `ignore` any);
+name (not by IP: device certificates rarely list their address) - `ignore` any, and doesn't read it);
 the response time; for https the certificate's days left, read even when untrusted, in a second LLD
-rule so plain http URLs have none; why it isn't up as the reason, and a list the collector refuses
+rule so plain http URLs and `ignore` ones have none (alerts: expires soon, very soon, has expired); why it isn't up as the reason, and a list the collector refuses
 makes the URL sensors unsupported with why - attachable to any host, not a class), the **DNS
 resolution** add-on and the **TCP ports** add-on
 (`Argus TCP ports`: `argus_tcp.py` on the probe connects to every port in `{$TCP.PORTS}` at once,

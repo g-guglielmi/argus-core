@@ -66,6 +66,16 @@ func TestItemThresholdsFrom(t *testing.T) {
 			want: &itemThresholds{Warn: f(30), High: f(10), Below: true},
 		},
 		{
+			name: "certificate days: the expired alert doesn't move the high band",
+			key:  "http.url.cert[abc]",
+			trigs: []zabbix.ItemTrigger{
+				trig(2, 1, `last(/web1/http.url.cert[abc])<21 and last(/web1/http.url.cert[abc])>=7`),
+				trig(4, 1, `last(/web1/http.url.cert[abc])<0`),
+				trig(4, 1, `last(/web1/http.url.cert[abc])<7 and last(/web1/http.url.cert[abc])>=0`),
+			},
+			want: &itemThresholds{Warn: f(21), High: f(7), Below: true},
+		},
+		{
 			name:  "unit suffix",
 			key:   "vfs.fs.size[/,free]",
 			trigs: []zabbix.ItemTrigger{trig(3, 1, `last(/srv1/vfs.fs.size[/,free])<10G`)},

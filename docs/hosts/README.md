@@ -155,12 +155,12 @@ certificate is for another name`, `no answer within 10 s`). A URL's **Certificat
 certificate is checked: `verify` wants one a known CA issued, for the URL's name and not expired; `self-signed`
 also takes one no CA vouches for (the device's own, or one from a private CA), still not expired and,
 when the URL uses a name, for that name. A URL by IP address (a blank list on a host added by IP) isn't
-name-checked, since a device's own certificate rarely lists its address. `ignore` takes any. The
-expiry counts in every mode. Taking a URL out of the list deletes its sensors, and any
+name-checked, since a device's own certificate rarely lists its address. `ignore` takes any and
+doesn't track it: that URL has no certificate sensor and no expiry alerts. Taking a URL out of the list deletes its sensors, and any
 open problem of theirs, at the next check. If the probe can't run the check at all (it doesn't have
 `argus_http.py` yet), the host shows an **HTTP checks** sensor under **Web** saying so, and it alerts.
 Alerts: **portal.example.com/app is down** (High, after 3 checks), slow (`{$HTTP.RESPONSE.WARN}` 1 s,
-`{$HTTP.RESPONSE.HIGH}` 3 s) and the certificate expiring (`{$HTTP.CERT.WARN}` 21 days,
+`{$HTTP.RESPONSE.HIGH}` 3 s), the certificate having expired (High) and expiring (`{$HTTP.CERT.WARN}` 21 days,
 `{$HTTP.CERT.HIGH}` 7 days); all four thresholds are on the Thresholds screen. **Timeout** (default 10 s)
 is how long each page has to answer.
 

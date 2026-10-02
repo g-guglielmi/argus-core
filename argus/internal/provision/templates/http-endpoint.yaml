@@ -16,7 +16,7 @@ zabbix_export:
         "#!text" still read). The certificate is checked by the URL's tls, else {$HTTP.TLS.VERIFY}: "verify" wants one a known CA issued,
         for the URL's name and valid now; "self-signed" also takes one no CA vouches for (a device's own,
         a private CA), still valid now and, for a URL by name, for that name (a URL by IP address isn't
-        name-checked); "ignore" takes any. Its expiry counts in every mode. A URL that doesn't answer
+        name-checked); "ignore" takes any and doesn't track it (no days-left sensor). A URL that doesn't answer
         as expected says why. A path ("/login") is on the host's own address with {$HTTP.SCHEME} and
         {$HTTP.PORT}, a host without a scheme ("10.0.0.20:8443") gets {$HTTP.SCHEME}, and a blank list
         checks the host's own address.
@@ -167,7 +167,7 @@ zabbix_export:
           key: http.cert.discovery
           delay: '0'
           lifetime_type: DELETE_IMMEDIATELY
-          description: 'One certificate sensor per https URL in {$HTTP.URLS} (a plain http URL has none).'
+          description: 'One certificate sensor per https URL in {$HTTP.URLS} whose certificate check is not "ignore" (a plain http URL has none).'
           master_item:
             key: 'argus_http.py[{HOST.CONN},"{$HTTP.URLS}","{$HTTP.SCHEME}","{$HTTP.PORT}","{$HTTP.EXPECT}","{$HTTP.TLS.VERIFY}","{$HTTP.TIMEOUT}"]'
           preprocessing:
@@ -206,10 +206,15 @@ zabbix_export:
                   priority: WARNING
                   description: 'The certificate {#URLNAME} presents expires in less than {$HTTP.CERT.WARN} days.'
                 - uuid: bc8bec144606453ba93269afe4604b11
-                  expression: 'last(/Argus HTTP Endpoint/http.url.cert[{#URLID}])<{$HTTP.CERT.HIGH}'
+                  expression: 'last(/Argus HTTP Endpoint/http.url.cert[{#URLID}])<{$HTTP.CERT.HIGH} and last(/Argus HTTP Endpoint/http.url.cert[{#URLID}])>=0'
                   name: '{#URLNAME} certificate expires very soon'
                   priority: HIGH
-                  description: 'The certificate {#URLNAME} presents expires in less than {$HTTP.CERT.HIGH} days, or has expired.'
+                  description: 'The certificate {#URLNAME} presents expires in less than {$HTTP.CERT.HIGH} days.'
+                - uuid: e168c4f06b3c48b0acfafb372c3ebc13
+                  expression: 'last(/Argus HTTP Endpoint/http.url.cert[{#URLID}])<0'
+                  name: '{#URLNAME} certificate has expired'
+                  priority: HIGH
+                  description: 'The certificate {#URLNAME} presents has expired.'
       macros:
         - macro: '{$HTTP.URLS}'
           value: ''
@@ -225,7 +230,7 @@ zabbix_export:
           description: 'The status codes that count as up, of the final answer after redirects: "200-299", "200,204,401".'
         - macro: '{$HTTP.TLS.VERIFY}'
           value: verify
-          description: 'How the certificate is checked: "verify" wants one a known CA issued, for the URL''s name and valid now; "self-signed" also takes one no CA vouches for (a device''s own), still valid now and, for a URL by name, for that name; "ignore" takes any.'
+          description: 'How the certificate is checked: "verify" wants one a known CA issued, for the URL''s name and valid now; "self-signed" also takes one no CA vouches for (a device''s own), still valid now and, for a URL by name, for that name; "ignore" takes any and doesn''t track its expiry.'
         - macro: '{$HTTP.TIMEOUT}'
           value: '10'
           description: 'Seconds to wait for each answer (1 to 15).'

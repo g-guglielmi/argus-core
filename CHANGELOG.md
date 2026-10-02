@@ -23,9 +23,10 @@ GitHub Release from the matching section below.
   followed), has the text a `#text` suffix asks for (`#!text`: must not), and presents an accepted
   certificate; when it isn't, it says why. **Certificate** sets the check: `verify` wants one a known
   CA issued; `self-signed` also takes the device's own (or a private CA's), still not expired and, for
-  a URL by name, for that name (a URL by IP address isn't name-checked); `ignore` takes any. The
-  expiry is tracked in every mode. New alerts for a certificate expiring in under 21 days (warning) and 7 days
-  (high), both on the Thresholds screen.
+  a URL by name, for that name (a URL by IP address isn't name-checked); `ignore` takes any and
+  leaves the certificate out: no days-left sensor and no expiry alerts. In the other two modes, new
+  alerts for a certificate expiring in under 21 days (warning) and 7 days (high), both on the
+  Thresholds screen, and one for a certificate that has expired.
 - The URLs are rows in host settings, each with its own **Certificate** check and text its page must
   or must not contain; the add-on's **Scheme**, **Port** and **Certificate** fields show only while
   something uses them (a blank list, a host without a scheme, a path). A row takes a full URL, a host without a scheme (`10.7.0.2`,
@@ -36,7 +37,8 @@ GitHub Release from the matching section below.
 - The check runs in the probe (`argus_http.py`, `probe/v7.0.31-r15`; hosts without a scheme and
   per-URL options from `probe/v7.0.31-r18`; the `self-signed` mode as described from
   `probe/v7.0.31-r19`, which also takes a device whose own certificate chain a strict check calls
-  "invalid ca certificate", as some NAS and gateway firmware sends); a host monitored by the core server needs
+  "invalid ca certificate", as some NAS and gateway firmware sends; `ignore` leaving the certificate
+  out from `probe/v7.0.31-r21`); a host monitored by the core server needs
   the core's copy too (`setup-core.sh` installs it). The add-on's two old sensors are replaced by the
   new ones, so their history goes.
 - A certificate's days left read as whole days, rounded down (6.6 days left is "6 days", in the
