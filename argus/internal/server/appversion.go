@@ -424,6 +424,9 @@ type versionResponse struct {
 	Status          string `json:"status"`                // current | development | outdated | dev | unknown
 	CheckedAt       int64  `json:"checked_at,omitempty"`  // unix secs the update check last succeeded (verdict is as-of this)
 	CheckError      string `json:"check_error,omitempty"` // set when the last check couldn't reach the registry
+	// Channel is the tag the core runs under: latest, testing or a pinned version. The sidecar reports
+	// it; without a report it is the channel the version implies (resolveChannel).
+	Channel string `json:"channel,omitempty"`
 }
 
 // appUpdateStatus compares the running version against the newest published release and returns a
@@ -502,6 +505,11 @@ func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 		resp.CheckedAt = lastOK.Unix()
 	}
 	resp.CheckError = errMsg
+	if tag, ok := s.reportedCoreTag(); ok {
+		resp.Channel = tag
+	} else {
+		resp.Channel = s.resolveChannel()
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 

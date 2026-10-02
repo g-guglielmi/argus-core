@@ -1336,13 +1336,15 @@ plane; the probe checks in and converges.
   sidecar row reads like the core's: the newest published argus-updater (the 3-hourly lookup, or
   now with Check for updates) against its version, and **Update** only when a newer one is out.
 - **One page for every update.** The admin **Updates** page has a single **Check for updates** and
-  three sections that read the same way: each component is a row (or a table cell) with its version,
-  one status pill (up to date, available, queued, updating, failed) and its **Update** button, plus
-  the step log where the updater reports steps. **Argus core**: the core (channel switch, release
-  notes), its sidecar, the collectors. **Probes**: the fleet target and every probe's proxy and
-  sidecar, with **Update all** for every one that is behind. **Operating systems**: the core VM (patch
-  state, reboot window), the core's Zabbix (minor-update window), each probe VM, and the newest probe
-  VM image. The Probes page keeps the versions as read-only status in the same words; a probe that
+  three sections laid out the same way, in rows. A group is one machine or one setting: its label on
+  the left, then one line per part with its version, one status pill (up to date, available, queued,
+  updating, failed) and its **Update** button, and under a part its step log or a hint. Settings
+  (the core's channel, the fleet target, the core's reboot and Zabbix windows) are groups of their
+  own whose value reads like a version and is changed in place. **Argus core**: the channel (the tag
+  the core runs under, `channel` in `GET /api/version`), then the core, its sidecar and the
+  collectors. **Probes**: the fleet target, then every probe's proxy and sidecar, with **Update all**
+  for every one that is behind. **Operating systems**: the two core windows, the core VM (OS, Zabbix),
+  each probe VM, and the newest probe VM image. The Probes page keeps the versions as read-only status in the same words; a probe that
   is behind links to Updates (admins only: helpdesk sees Probes, not Updates).
 - **The core host's collectors ride the image.** The core's Zabbix server is a host package, so the
   collectors (external checks) it runs for the hosts it monitors live in the host's
