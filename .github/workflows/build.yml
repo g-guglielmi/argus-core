@@ -153,6 +153,9 @@ jobs:
         with:
           context: ./argus
           file: ./argus/Dockerfile
+          # The core's collectors ride the image (/collectors) for the argus-updater to install.
+          build-contexts: |
+            collectors=./deploy/core/externalscripts
           push: true
           provenance: true
           sbom: true

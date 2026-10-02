@@ -815,6 +815,42 @@ type UpdateState = {
   requested_by?: string
   updater_version?: string // the core's argus-updater sidecar version
   updater_pending?: boolean // a sidecar self-update is queued
+  collectors?: CollectorsReport // the sidecar's word on this server's collectors
+}
+// The argus-updater copies the running image's collectors into this server's Zabbix after each core
+// update (the core's Zabbix is a host package, so they can't ride the image by themselves).
+type CollectorsReport = { state: 'ok' | 'failed' | 'skipped'; message?: string; at?: string; version?: string; installed?: string[]; dir?: string }
+
+// CollectorsLine says whether this server's Zabbix has the running version's collectors, and what to
+// do when it hasn't: the sidecar installs them, so the only fix ever needed is updating it.
+function CollectorsLine({ c, running }: { c?: CollectorsReport; running?: string }) {
+  const when = c?.at ? Date.parse(c.at) / 1000 : 0
+  const ago = when ? relTime(when) : ''
+  let tag: ReactNode, text: string, warn = false
+  if (!c) {
+    tag = <span className="vtag upd">not installed by the sidecar</span>
+    text = "This sidecar version doesn't install them yet: Update sidecar, and it copies this version's collectors in by itself."
+  } else if (c.state === 'ok') {
+    const behind = !!(c.version && running && c.version !== running)
+    tag = behind ? <span className="vtag upd">updating</span> : <span className="okquiet">up to date</span>
+    text = behind ? `Installed from ${c.version}; this version's are going in now.`
+      : `Installed from this version${ago ? `, checked ${ago}` : ''}${c.installed && c.installed.length ? `; last copied in: ${c.installed.join(', ')}` : ''}.`
+  } else if (c.state === 'skipped') {
+    tag = <span className="vtag dev">not needed</span>
+    text = (c.message || 'Skipped.') + (ago ? ` (${ago})` : '')
+  } else {
+    warn = true
+    tag = <span className="vtag upd">not installed</span>
+    text = `The sidecar couldn't install them: ${c.message || 'no reason given'}. It tries again every 10 minutes.`
+  }
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+        <span className="complabel">Collectors</span>{tag}
+      </div>
+      <p className="set-hint" style={{ marginTop: 4, color: warn ? 'var(--warn)' : undefined }}>The scripts this server's Zabbix runs for the hosts it monitors itself (HTTP, TCP, SSH, UPS...). {text}</p>
+    </>
+  )
 }
 
 // VersionAbout shows the running build at the top of Settings, with a verdict badge so an admin can
@@ -1433,7 +1469,7 @@ function VersionAbout() {
                 {active ? 'Updating…' : v.dev_update ? `Update to ${v.dev_target || 'the latest testing build'}` : `Update to ${v.latest}`}
               </Button>
             ) : (
-              <p className="set-hint">Self-update isn't configured on this instance. Pull the new image and redeploy, or add the <span className="mono">argus-updater</span> sidecar to enable one-click updates (see the README).</p>
+              <p className="set-hint">Self-update isn't configured on this instance. Pull the new image and redeploy, or add the <span className="mono">argus-updater</span> sidecar to enable one-click updates (see the README). The sidecar also keeps the collectors this server's Zabbix runs for the hosts it monitors itself in step with each update; without it they stay as setup installed them.</p>
             )}
           </div>
         </>
@@ -1475,6 +1511,7 @@ function VersionAbout() {
             <span className="mono" title="Version of the argus-updater container that performs the updates above">{upd.updater_version || '-'}</span>
           </div>
           <p className="set-hint" style={{ marginTop: 6 }}>Holds the Docker socket and performs the core updates above. <strong>Update sidecar</strong> recreates it onto the latest image (rolling back on failure); the core keeps running throughout.</p>
+          <CollectorsLine c={upd.collectors} running={v?.version} />
         </div>
       )}
       {/* AGPL-3.0 §13: network users must be able to reach the corresponding source. */}

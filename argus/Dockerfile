@@ -29,6 +29,14 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X 'argus/internal/buildin
 # ---- Stage 3: minimal runtime ----
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /argus /argus
+# The core's collectors (deploy/core/externalscripts), from the "collectors" build context CI passes
+# in (a local build: docker build --build-context collectors=deploy/core/externalscripts argus). The
+# core's Zabbix server runs them for the hosts it monitors, but it is a host package, not a
+# container: after each core update the argus-updater runs this image once with the host's Zabbix
+# ExternalScripts folder bound in and `/argus install-collectors` copies them there (collectors.go).
+# The label tells the updater the image carries them.
+COPY --from=collectors *.py /collectors/
+LABEL io.argus.collectors="/collectors"
 ENV ARGUS_LISTEN=":8080" ARGUS_DATA_DIR="/data"
 EXPOSE 8080
 VOLUME ["/data"]

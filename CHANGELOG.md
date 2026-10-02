@@ -38,8 +38,8 @@ GitHub Release from the matching section below.
   per-URL options from `probe/v7.0.31-r18`; the `self-signed` mode as described from
   `probe/v7.0.31-r19`, which also takes a device whose own certificate chain a strict check calls
   "invalid ca certificate", as some NAS and gateway firmware sends; `ignore` leaving the certificate
-  out from `probe/v7.0.31-r21`); a host monitored by the core server needs
-  the core's copy too (`setup-core.sh` installs it). The add-on's two old sensors are replaced by the
+  out from `probe/v7.0.31-r21`); for a host the core server monitors, the core's copy now comes with
+  each Argus update (below). The add-on's two old sensors are replaced by the
   new ones, so their history goes.
 - A certificate's days left read as whole days, rounded down (6.6 days left is "6 days", in the
   sensor list, the chart and alerts), while the chart draws the precise countdown (from
@@ -79,6 +79,14 @@ GitHub Release from the matching section below.
 - Personal channels (Account, Personal notifications) can be Teams, Slack, ntfy or Pushover too. They
   only send to addresses on the internet, so a personal channel can't point inside the network; a
   webhook, Gotify or an ntfy server on the LAN is a shared channel an admin sets up.
+
+**The core's collectors:**
+- The scripts the core's own Zabbix runs for the hosts it monitors itself (HTTP, TCP ports, SSH, UPS,
+  XCP-ng and the rest) now update with Argus. Before, they stayed as setup installed them, so a fix to
+  a collector needed copying by hand on the core. The Argus image carries them and the argus-updater
+  sidecar copies the ones that changed into the core host's Zabbix after every update (and puts back
+  a deleted one within a day). **Settings, Updates** shows whether they're current, and what to do
+  if they aren't: an updater from before this needs **Update sidecar** once (argus-updater 0.2.11).
 
 **Acknowledged problems:**
 - Everything about an acknowledged problem now takes the acknowledged colour: the host's dot, problem

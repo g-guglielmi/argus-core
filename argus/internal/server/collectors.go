@@ -45,9 +45,9 @@ func collectorWhy(key, zbxErr string) string {
 	low := strings.ToLower(zbxErr)
 	if strings.Contains(zbxErr, script) && (strings.Contains(low, "no such file") || strings.Contains(low, "not found")) {
 		if c.since != "" {
-			return fmt.Sprintf("%s isn't on the probe yet: update the probe to %s or later (a host the core monitors needs the core's copy, which setup-core.sh installs)", script, c.since)
+			return fmt.Sprintf("%s isn't where this host is monitored yet: a probe has it from %s on; the core gets it from the argus-updater after an update (Settings, Updates says whether it did)", script, c.since)
 		}
-		return script + " isn't installed where this host is monitored"
+		return script + " isn't installed where this host is monitored (on the core, Settings, Updates says whether the argus-updater installed it)"
 	}
 	return itemError(zbxErr)
 }

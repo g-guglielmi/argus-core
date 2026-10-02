@@ -34,7 +34,19 @@ const (
 	updateStatusFile   = "status.json"
 	updaterInfoFile    = "updater.json"         // the sidecar reports its OWN version here
 	updaterRequestFile = "updater-request.json" // the core drops this to update the sidecar itself
+	collectorsFile     = "collectors.json"      // the sidecar reports installing the core's collectors here
 )
+
+// collectorsReport is the sidecar's word on the core host's collectors: after each core update it
+// copies the running image's collectors into the host's Zabbix ExternalScripts folder.
+type collectorsReport struct {
+	State     string   `json:"state"`               // ok | failed | skipped
+	Message   string   `json:"message,omitempty"`   // why, for failed and skipped
+	At        string   `json:"at,omitempty"`        // RFC3339
+	Version   string   `json:"version,omitempty"`   // the Argus build whose collectors are installed
+	Installed []string `json:"installed,omitempty"` // written that time (the rest were current)
+	Dir       string   `json:"dir,omitempty"`       // the host folder
+}
 
 // updateRequest is the command the core drops for the sidecar.
 type updateRequest struct {
@@ -75,6 +87,8 @@ type updateStateResponse struct {
 	// The argus-updater sidecar itself (independent of the core-update job above).
 	UpdaterVersion string `json:"updater_version,omitempty"` // version the sidecar reports for itself
 	UpdaterPending bool   `json:"updater_pending,omitempty"` // a sidecar self-update is queued, not yet consumed
+	// The core host's collectors, as the sidecar last installed them (nil: no report yet).
+	Collectors *collectorsReport `json:"collectors,omitempty"`
 }
 
 func (s *Server) updatePath(name string) string { return filepath.Join(s.cfg.UpdateDir, name) }
@@ -128,6 +142,10 @@ func (s *Server) currentUpdateState() (updateStateResponse, error) {
 	}
 	if _, err := os.Stat(s.updatePath(updaterRequestFile)); err == nil {
 		resp.UpdaterPending = true
+	}
+	var cr collectorsReport
+	if ok, _ := readUpdateJSON(s.updatePath(collectorsFile), &cr); ok && cr.State != "" {
+		resp.Collectors = &cr
 	}
 	var req updateRequest
 	hasReq, err := readUpdateJSON(s.updatePath(updateRequestFile), &req)

@@ -1312,6 +1312,17 @@ plane; the probe checks in and converges.
   reports no proxy version - the check-in fields are sticky (an omitted field keeps the stored value),
   and one-shots are handed only to a capability-advertising caller, so the two never clobber each
   other or race. See the [argus-updater](https://github.com/g-guglielmi/argus-updater) repo.
+- **The core host's collectors ride the image.** The core's Zabbix server is a host package, so the
+  collectors (external checks) it runs for the hosts it monitors live in the host's
+  `/usr/lib/zabbix/externalscripts`, out of reach of a container update. The Argus image carries them
+  (`/collectors`, from `deploy/core/externalscripts` as a named build context, labelled
+  `io.argus.collectors`) and `/argus install-collectors <dir>` copies the ones that changed
+  (atomically, 0755, nothing else in the folder touched). The `core`-mode updater runs that same image
+  once - as root, `--network none`, read-only, only that folder bound in - whenever the core's image
+  changes, a day after a success (puts back a deleted or edited collector) and ten minutes after a
+  failure, and reports in `collectors.json` (`ok` | `failed` | `skipped`, with the version and what
+  it wrote); Settings, Updates shows it. The long-running core never gets write access to a folder
+  the Zabbix server executes from. `setup-core.sh` still installs them on a fresh core.
 
 **Tradeoff acknowledged.** Any automatic in-place container update needs Docker socket access at
 the site (the same mechanism Watchtower uses). The win over Watchtower is **central version control

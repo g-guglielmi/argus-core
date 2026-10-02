@@ -33,6 +33,10 @@ func main() {
 	if len(os.Args) > 1 && (os.Args[1] == "backup-plan" || os.Args[1] == "backup-db") {
 		os.Exit(runBackupCommand(os.Args[1:]))
 	}
+	// The argus-updater copies this image's collectors into the core host's Zabbix (collectors.go).
+	if len(os.Args) > 1 && os.Args[1] == "install-collectors" {
+		os.Exit(runInstallCollectors(os.Args[1:]))
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	cfg := config.Load()
