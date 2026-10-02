@@ -6148,7 +6148,27 @@ function pushExamples(url: string): string {
 // PushSensorsSection lists a host's push sensors (jobs that report their runs to Argus) with each
 // one's last run, and lets admins and helpdesk add, edit, re-key and delete them. It saves each
 // change at once, apart from the host settings' Save.
-function PushSensorsSection({ hostId, canEdit }: { hostId: string; canEdit: boolean }) {
+// HsSection is one foldable section of host settings. Folded, its title row says what the section
+// holds (summary; warn colours it when something there needs a look), so a host left at its defaults
+// reads as a short list. The title opens and closes it.
+function HsSection({ title, summary, warn, open, onToggle, children }: { title: string; summary?: string; warn?: boolean; open: boolean; onToggle: () => void; children: ReactNode }) {
+  return (
+    <section className="hs-sec">
+      <button type="button" className="hs-title hs-toggle" aria-expanded={open} onClick={onToggle}>
+        <svg className={'chev' + (open ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+        <span className="hs-toggle-txt">
+          <span>{title}</span>
+          {!open && summary && <span className={'hs-toggle-sum' + (warn ? ' warn' : '')}>{summary}</span>}
+        </span>
+      </button>
+      {open && <div className="hs-sec-body">{children}</div>}
+    </section>
+  )
+}
+// hsShort shortens a value for a folded section's summary.
+function hsShort(s: string): string { return s.length > 40 ? s.slice(0, 39) + '…' : s }
+
+function PushSensorsSection({ hostId, canEdit, open, onToggle }: { hostId: string; canEdit: boolean; open: boolean; onToggle: () => void }) {
   const toast = useToast()
   const confirm = useConfirm()
   const [list, setList] = useState<PushSensor[] | null>(null)
@@ -6175,9 +6195,10 @@ function PushSensorsSection({ hostId, canEdit }: { hostId: string; canEdit: bool
 
   if (list === null) return null
   if (!canEdit && list.length === 0) return null
+  const failed = list.filter((p) => p.last_at && !p.last_ok)
   return (
-    <>
-      <div className="hs-title">Push sensors</div>
+    <HsSection title="Push sensors" open={open} onToggle={onToggle} warn={failed.length > 0}
+      summary={list.length === 0 ? 'none' : list.map((p) => p.name + (p.last_at && !p.last_ok ? ' (failed)' : '')).join(', ')}>
       <div className="hs-note" style={{ margin: '0 0 10px' }}>Jobs that report to Argus when they run: a backup, a cron job, a scheduled task. Each has its own URL the job calls at the end, with <span className="mono">status=ok</span> or <span className="mono">status=fail</span> and an optional <span className="mono">msg</span>. A failed run is an error; no run for longer than the late time is a warning, longer than the missed time an error. The sensors show up within a minute. Changes here are saved at once.</div>
       {list.map((p) => (
         <div className="push-row" key={p.id}>
@@ -6217,7 +6238,7 @@ function PushSensorsSection({ hostId, canEdit }: { hostId: string; canEdit: bool
         </div>
       )}
       {canEdit && editing !== 'new' && <div className="hs-add"><Button onClick={() => setEditing('new')}>+ Add push sensor</Button></div>}
-    </>
+    </HsSection>
   )
 }
 
@@ -6287,7 +6308,9 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [customOrder, setCustomOrder] = useState(false)
-  const [thrOpen, setThrOpen] = useState(false) // the Thresholds section starts folded: most hosts keep the defaults
+  // Every section starts folded (most hosts keep their defaults); openSecs holds the ones opened.
+  const [openSecs, setOpenSecs] = useState<Set<string>>(() => new Set())
+  const sec = (id: string) => ({ open: openSecs.has(id), onToggle: () => setOpenSecs((s) => { const n = new Set(s); if (!n.delete(id)) n.add(id); return n }) })
   const [masterChoice, setMasterChoice] = useState('default') // 'default' | 'none' | a sensor id
   function loadCfg() {
     fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : Promise.reject())).then((d: HostCfg) => {
@@ -6370,7 +6393,8 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
 
       {isAdmin && cfg.class_id && <ClassChanger hostId={hostId} currentClassId={cfg.class_id} currentClassLabel={cfg.class_label} onChanged={loadCfg} />}
 
-      <div className="hs-title">Interfaces</div>
+      <HsSection title="Interfaces" {...sec('ifaces')} summary={cfg.interfaces.length === 0 ? 'none'
+        : cfg.interfaces.map((i) => `${IFTYPE[i.type] || 'Type ' + i.type} ${((i.useip === 1 ? i.ip : i.dns) || '(no address)') + (i.port ? ':' + i.port : '')}`).join(', ')}>
       {cfg.interfaces.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13 }}>No interfaces.</div>}
       {cfg.interfaces.map((i, idx) => (
         <div className="iface-row" key={i.interfaceid || 'new' + idx}>
@@ -6434,10 +6458,15 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
         </div>
       ))}
       {canEdit && <div className="hs-add"><button className="btn" onClick={() => addIface(1)}>+ Agent interface</button><button className="btn" onClick={() => addIface(2)}>+ SNMP interface</button></div>}
+      </HsSection>
 
-      {cfg.macros && cfg.macros.length > 0 && (
-        <>
-          <div className="hs-title">{cfg.class_label ? cfg.class_label + ' options' : 'Monitoring options'}</div>
+      {cfg.macros && cfg.macros.length > 0 && (() => {
+        const own = cfg.macros.filter((m) => m.value.trim() || (m.secret && m.set))
+        const said = (m: MacroField) => m.macro === '{$XCP.VM.IGNORE}' ? `${m.value.split(',').filter((s) => s.trim()).length} VMs left out`
+          : `${m.label} ${m.secret ? 'set' : hsShort(m.value.trim())}`
+        return (
+        <HsSection title={cfg.class_label ? cfg.class_label + ' options' : 'Monitoring options'} {...sec('class')}
+          summary={own.length === 0 ? 'all at the defaults' : own.map(said).join(', ')}>
           {/* Intro line ABOVE the fields: rendered after the grid it strands below the tallest
               column (the XCP-NG VM checklist) and reads as an unaligned orphan. */}
           <div className="hs-note" style={{ margin: '0 0 10px' }}>These tune the class monitoring for this host. Leave a field blank to use the template default; changes take effect on the next discovery cycle.</div>
@@ -6489,12 +6518,22 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
               )
             })}
           </div>
-        </>
-      )}
+        </HsSection>
+        )
+      })()}
 
-      {cfg.addons && cfg.addons.length > 0 && (
-        <>
-          <div className="hs-title">Add-ons</div>
+      {cfg.addons && cfg.addons.length > 0 && (() => {
+        const on = cfg.addons.filter((x) => x.enabled)
+        const urls = (x: AddOnCfg) => parseUrlList(x.macros?.find((m) => m.macro === '{$HTTP.URLS}')?.value || '')
+        const said = (x: AddOnCfg) => {
+          if (x.id === 'http') { const n = urls(x).length; return `${x.label}: ${n === 0 ? 'the host itself' : n === 1 ? '1 URL' : n + ' URLs'}` }
+          const v = (x.macros?.[0]?.value || '').trim()
+          return v ? `${x.label}: ${hsShort(v)}` : x.label
+        }
+        const bad = on.some((x) => x.id === 'http' && urls(x).some((r) => urlRowProblem(r.url)))
+        return (
+        <HsSection title="Add-ons" {...sec('addons')} warn={bad}
+          summary={(on.length === 0 ? 'none on' : on.map(said).join(', ')) + (bad ? '; a URL has a problem' : '')}>
           <div className="hs-note" style={{ margin: '0 0 10px' }}>Optional Argus checks you can layer on this host. Turn one on and set its options; turning it off removes its sensors.</div>
           {cfg.addons.map((a) => (
             <div key={a.id} style={{ marginBottom: 10 }}>
@@ -6525,14 +6564,17 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
               )}
             </div>
           ))}
-        </>
-      )}
+        </HsSection>
+        )
+      })()}
 
-      {cfg.class_id !== 'probe' && <PushSensorsSection hostId={hostId} canEdit={canEdit} />}
+      {cfg.class_id !== 'probe' && <PushSensorsSection hostId={hostId} canEdit={canEdit} {...sec('push')} />}
 
       {cfg.master && (
-        <>
-          <div className="hs-title">Master sensor</div>
+        <HsSection title="Master sensor" {...sec('master')}
+          summary={masterChoice === 'default'
+            ? `Default: ${cfg.master.default_item_id ? cfg.master.options.find((o) => o.id === cfg.master!.default_item_id)?.label || 'ping' : 'none'}`
+            : masterChoice === 'none' ? 'None' : cfg.master.options.find((o) => o.id === masterChoice)?.label || 'a sensor'}>
           <div className="hs-note" style={{ margin: '0 0 10px' }}>While this sensor is down, the host's other sensors don't send notifications, so an unreachable device alerts once instead of once per sensor. The held alerts go out if they're still open once it's back.{cfg.class_id === 'probe' ? " This probe's reporting sensor also holds the alerts of every device at its site while the probe is unreachable." : ''}</div>
           <label className="field" style={{ maxWidth: 420 }}>
             <span>Master</span>
@@ -6544,40 +6586,29 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
               {cfg.master.options.filter((o) => o.id !== cfg.master!.default_item_id).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
             </Select>
           </label>
-        </>
+        </HsSection>
       )}
 
       {cfg.thresholds && cfg.thresholds.length > 0 && (() => {
-        // Folded, the title says which thresholds this host sets (or that it keeps the defaults).
         const own = cfg.thresholds.filter((t) => (t.value || '').trim())
         return (
-          <>
-            <button type="button" className="hs-title hs-toggle" aria-expanded={thrOpen} onClick={() => setThrOpen((o) => !o)}>
-              <svg className={'chev' + (thrOpen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
-              <span>Thresholds</span>
-              <span className="hs-toggle-sum">{own.length === 0 ? 'all at the defaults'
-                : `${own.length} set for this host: ` + own.map((t) => `${t.label} ${t.value!.trim()}${t.unit || ''}`).join(', ')}</span>
-            </button>
-            {thrOpen && (
-              <>
-                <div className="hs-note" style={{ margin: '0 0 10px' }}>Per-host overrides. Leave a field blank to use the current default (shown in the field). Set a number to override it for this host only; fleet-wide defaults live in the Thresholds screen.</div>
-                <div className="hs-grid">
-                  {cfg.thresholds.map((t) => (
-                    <label className="field" key={t.macro}>
-                      <span>{t.label}{t.unit ? ` (${t.unit})` : ''}</span>
-                      <input className="input" type="text" inputMode="decimal" placeholder={t.default ? `default ${t.default}${t.unit || ''}` : 'default'} value={t.value || ''} disabled={!canEdit} onChange={(e) => setThreshold(t.macro, e.target.value)} />
-                    </label>
-                  ))}
-                </div>
-              </>
-            )}
-          </>
+          <HsSection title="Thresholds" {...sec('thr')} summary={own.length === 0 ? 'all at the defaults'
+            : `${own.length} set for this host: ` + own.map((t) => `${t.label} ${t.value!.trim()}${t.unit || ''}`).join(', ')}>
+            <div className="hs-note" style={{ margin: '0 0 10px' }}>Per-host overrides. Leave a field blank to use the current default (shown in the field). Set a number to override it for this host only; fleet-wide defaults live in the Thresholds screen.</div>
+            <div className="hs-grid">
+              {cfg.thresholds.map((t) => (
+                <label className="field" key={t.macro}>
+                  <span>{t.label}{t.unit ? ` (${t.unit})` : ''}</span>
+                  <input className="input" type="text" inputMode="decimal" placeholder={t.default ? `default ${t.default}${t.unit || ''}` : 'default'} value={t.value || ''} disabled={!canEdit} onChange={(e) => setThreshold(t.macro, e.target.value)} />
+                </label>
+              ))}
+            </div>
+          </HsSection>
         )
       })()}
 
       {cfg.categories && cfg.categories.length > 1 && (
-        <>
-          <div className="hs-title">Sensor order</div>
+        <HsSection title="Sensor order" {...sec('order')} summary={customOrder ? 'custom: ' + cfg.categories.join(', ') : 'the default order'}>
           <div className="hs-note" style={{ margin: '0 0 10px' }}>The order sensor categories read on this host. Off follows the class or built-in default order.</div>
           <label className="hs-note" style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 10px', cursor: canEdit ? 'pointer' : 'default' }}>
             <input type="checkbox" checked={customOrder} disabled={!canEdit} onChange={(e) => setCustomOrder(e.target.checked)} />
@@ -6596,7 +6627,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
               ))}
             </ol>
           )}
-        </>
+        </HsSection>
       )}
 
       {err && <div style={{ color: 'var(--err)', fontSize: 13, marginTop: 8 }}>{err}</div>}

@@ -79,9 +79,12 @@ GitHub Release from the matching section below.
   webhook, Gotify or an ntfy server on the LAN is a shared channel an admin sets up.
 
 **Host settings:**
-- **Thresholds** is folded, since most hosts keep the defaults: its title says which values the host
-  sets ("1 set for this host: CPU utilization - warning 90%") or that all are at the defaults, and
-  opens the fields.
+- The sections (Interfaces, the class options, Add-ons, Push sensors, Master sensor, Thresholds,
+  Sensor order) are folded, since most hosts keep their defaults, and their titles are larger and
+  brighter. Folded, a title says in a line what its section holds: the interfaces' addresses, the
+  values this host sets ("1 set for this host: CPU utilization - warning 90%") or that all are at
+  the defaults, the add-ons that are on, the push sensors (in the warning colour when one failed).
+  The title opens the section.
 
 ## [0.6.1] - 2026-10-01
 
