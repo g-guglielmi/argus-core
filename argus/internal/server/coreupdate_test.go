@@ -137,7 +137,7 @@ func TestCoreUpdateDisabledWhenNoDir(t *testing.T) {
 }
 
 // A sidecar update shows where it has got to: queued, the sidecar's own steps, or (for a sidecar
-// that reports none) its new version; a finished one goes after half an hour, a failed one stays.
+// that reports none) its new version; a finished one goes after 5 minutes, a failed one stays.
 func TestSidecarJobFrom(t *testing.T) {
 	now := time.Date(2026, 10, 2, 10, 0, 0, 0, time.UTC)
 	at := func(d time.Duration) string { return now.Add(-d).Format(time.RFC3339) }
@@ -162,9 +162,12 @@ func TestSidecarJobFrom(t *testing.T) {
 	if got := sidecarJobFrom(late, false, nil, "v0.2.11", now); got.State != "unknown" || !strings.Contains(got.Message, "v0.2.11") {
 		t.Fatalf("no word after 3 minutes: %+v", got)
 	}
-	done := &sidecarStatus{ID: "j1", State: "success", FinishedAt: at(40 * time.Minute)}
+	if got := sidecarJobFrom(job, false, &sidecarStatus{ID: "j1", State: "success", FinishedAt: at(2 * time.Minute)}, "v0.2.12", now); got == nil {
+		t.Fatal("a success from 2 minutes ago is already gone")
+	}
+	done := &sidecarStatus{ID: "j1", State: "success", FinishedAt: at(6 * time.Minute)}
 	if got := sidecarJobFrom(job, false, done, "v0.2.12", now); got != nil {
-		t.Fatalf("a success from 40 minutes ago is still shown: %+v", got)
+		t.Fatalf("a success from 6 minutes ago is still shown: %+v", got)
 	}
 	failed := &sidecarStatus{ID: "j1", State: "failed", Message: "rolled back", FinishedAt: at(2 * time.Hour)}
 	if got := sidecarJobFrom(job, false, failed, "v0.2.11", now); got == nil || got.State != "failed" {

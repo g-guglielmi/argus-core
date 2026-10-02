@@ -33,6 +33,9 @@ type probeLatestCache struct {
 }
 
 func (c *probeLatestCache) get() string {
+	if c == nil { // not set up (a test server): nothing looked up yet
+		return ""
+	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.version
@@ -242,19 +245,7 @@ const updaterImageRepo = "ghcr.io/g-guglielmi/argus-updater"
 // cadence + best-effort semantics as the probe poll.
 func (s *Server) startUpdaterLatestRefresh(ctx context.Context) {
 	go func() {
-		refresh := func() {
-			c, cancel := context.WithTimeout(ctx, 20*time.Second)
-			defer cancel()
-			v, err := resolveLatestUpdaterVersion(c)
-			if err != nil {
-				s.logger.Warn("updater latest: GHCR resolve failed", "err", err)
-				return
-			}
-			if v != "" {
-				s.updaterLatest.set(v)
-				s.logger.Info("updater latest resolved from GHCR", "version", v)
-			}
-		}
+		refresh := func() { _ = s.refreshUpdaterLatest(ctx) }
 		refresh()
 		t := time.NewTicker(probeLatestRefresh)
 		defer t.Stop()
@@ -267,6 +258,23 @@ func (s *Server) startUpdaterLatestRefresh(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// refreshUpdaterLatest looks up the newest published argus-updater version now (the poll, and an
+// admin's "Check for updates" on the core's sidecar).
+func (s *Server) refreshUpdaterLatest(ctx context.Context) error {
+	c, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	v, err := resolveLatestUpdaterVersion(c)
+	if err != nil {
+		s.logger.Warn("updater latest: GHCR resolve failed", "err", err)
+		return err
+	}
+	if v != "" {
+		s.updaterLatest.set(v)
+		s.logger.Info("updater latest resolved from GHCR", "version", v)
+	}
+	return nil
 }
 
 var updaterVerTag = regexp.MustCompile(`^([0-9]+)\.([0-9]+)\.([0-9]+)$`)

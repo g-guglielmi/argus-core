@@ -817,6 +817,8 @@ type UpdateState = {
   message?: string
   requested_by?: string
   updater_version?: string // the core's argus-updater sidecar version
+  updater_latest?: string // the newest published argus-updater ("" until looked up)
+  updater_status?: string // current | outdated | unknown, like the core's own verdict
   updater_pending?: boolean // a sidecar self-update is queued
   collectors?: CollectorsReport // the sidecar's word on this server's collectors
   requested_at?: string
@@ -1387,9 +1389,23 @@ function VersionAbout() {
     fetch('/api/version/notes').then((r) => (r.ok ? r.json() : null)).then((d) => setNotes((d && d.notes) || '')).catch(() => setNotes(''))
   }
   const active = upd != null && (upd.state === 'requested' || upd.state === 'running')
+  // The sidecar row works like the core's: check for a newer sidecar, then update to it.
+  const [sideChecking, setSideChecking] = useState(false)
+  const [sideMsg, setSideMsg] = useState('')
+  const checkSidecar = () => {
+    setSideChecking(true); setSideMsg(''); setErr('')
+    fetch('/api/update/updater/check', { method: 'POST' })
+      .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'the check failed'); return r.json() })
+      .then((d: UpdateState) => { setUpd(d); if (d.updater_status === 'current') setSideMsg('The sidecar is on the newest version.') })
+      .catch((e) => setSideMsg(String(e.message || e)))
+      .finally(() => setSideChecking(false))
+  }
+  // The newest sidecar as the core's versions read: with its "v".
+  const sideLatest = upd?.updater_latest ? 'v' + upd.updater_latest.replace(/^v/, '') : ''
   const updateSidecar = async () => {
-    if (!(await confirm({ title: 'Update the updater sidecar', message: 'Recreate the argus-updater sidecar onto the latest version? It rolls back if the new one fails. The core is not affected.', confirmLabel: 'Update sidecar' }))) return
-    setErr('')
+    const to = sideLatest || 'the newest version'
+    if (!(await confirm({ title: 'Update the updater sidecar', message: `Update the argus-updater sidecar to ${to}? It recreates itself and rolls back if the new one fails. The core is not affected.`, confirmLabel: `Update to ${to}` }))) return
+    setErr(''); setSideMsg('')
     fetch('/api/update/updater', { method: 'POST' })
       .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'could not queue the sidecar update') })
       .then(refreshUpd)
@@ -1552,12 +1568,20 @@ function VersionAbout() {
         <div className="set-row" style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)', marginBottom: 0 }}>
           <div className="set-head">
             <span className="complabel">Updater sidecar</span>
-            <Button variant="default" style={{ marginLeft: 'auto' }} onClick={updateSidecar} disabled={sideBusy}>{sideBusy ? 'Updating\u2026' : 'Update sidecar'}</Button>
+            <Button variant="default" style={{ marginLeft: 'auto' }} onClick={checkSidecar} disabled={sideChecking}>{sideChecking ? 'Checking\u2026' : 'Check for updates'}</Button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span className="mono" title="Version of the argus-updater container that performs the updates above">{upd.updater_version || '-'}</span>
+            {upd.updater_status === 'outdated' && sideLatest && <span className="vtag upd">↑ {sideLatest} available</span>}
+            {upd.updater_status === 'current' && <span className="vtag ok">latest</span>}
           </div>
-          <p className="set-hint" style={{ marginTop: 6 }}>Holds the Docker socket and performs the core updates above. <strong>Update sidecar</strong> recreates it onto the latest image (rolling back on failure); the core keeps running throughout.</p>
+          {sideMsg && <p className="set-hint" style={{ margin: '6px 0 0' }}>{sideMsg}</p>}
+          <p className="set-hint" style={{ marginTop: 6 }}>Holds the Docker socket and performs the core updates above. Updating it recreates it onto the newer image (rolling back on failure); the core keeps running throughout.</p>
+          {(sideBusy || (upd.updater_status === 'outdated' && sideLatest)) && (
+            <div className="set-row" style={{ marginBottom: 0 }}>
+              <Button variant="primary" onClick={updateSidecar} disabled={sideBusy}>{sideBusy ? 'Updating\u2026' : `Update to ${sideLatest}`}</Button>
+            </div>
+          )}
           {side && (
             <UpdateLog
               title={side.state === 'success' ? `Sidecar updated${side.to ? ` to ${side.to}` : ''}` : side.state === 'failed' ? 'Sidecar update failed' : side.state === 'unknown' ? 'Sidecar update: no word back' : `Updating the sidecar${side.tag && side.tag !== 'latest' ? ` to ${side.tag}` : ''}`}

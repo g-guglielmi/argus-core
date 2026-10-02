@@ -1326,7 +1326,10 @@ plane; the probe checks in and converges.
   (`lib/job.sh`: picked up, pulling, the swap, verify, done or why not; a sidecar already on the
   newest image says so instead of swapping). A sidecar older than 0.2.12 reports nothing: its new
   version is the outcome, and three minutes without one read "no word back". A finished update stays
-  shown for half an hour, a failed one until it is closed (`POST /api/update/updater/dismiss`).
+  shown for 5 minutes, a failed one until it is closed (`POST /api/update/updater/dismiss`). The
+  sidecar row checks for updates like the core's: the newest published argus-updater (the Probes
+  page's 3-hourly lookup, or now with `POST /api/update/updater/check`) against its version, and
+  **Update to vX** only when a newer one is out.
 - **The core host's collectors ride the image.** The core's Zabbix server is a host package, so the
   collectors (external checks) it runs for the hosts it monitors live in the host's
   `/usr/lib/zabbix/externalscripts`, out of reach of a container update. The Argus image carries them

@@ -78,10 +78,13 @@ type sidecarJob struct {
 	Steps       []jobStep `json:"steps"`
 }
 
+// sidecarDoneShown is how long a finished sidecar update stays on screen (a failed one waits to be closed).
+const sidecarDoneShown = 5 * time.Minute
+
 // sidecarJobFrom is where a sidecar update has got to: queued while its request waits, then the
 // sidecar's own steps. A sidecar from before argus-updater 0.2.12 reports none, so its new version is
 // the outcome (and after 3 minutes without one, Argus says it heard nothing). A finished update stays
-// shown for half an hour, a failed one until it is closed; nil once there is nothing to show.
+// shown for sidecarDoneShown, a failed one until it is closed; nil once there is nothing to show.
 func sidecarJobFrom(job sidecarJobFile, queued bool, st *sidecarStatus, version string, now time.Time) *sidecarJob {
 	out := &sidecarJob{ID: job.ID, Tag: job.Tag, From: job.From, RequestedBy: job.RequestedBy, RequestedAt: job.RequestedAt}
 	who := job.RequestedBy
@@ -114,7 +117,7 @@ func sidecarJobFrom(job sidecarJobFile, queued bool, st *sidecarStatus, version 
 		if t, err := time.Parse(time.RFC3339, out.FinishedAt); err == nil {
 			end = t
 		}
-		if now.Sub(end) > 30*time.Minute {
+		if now.Sub(end) > sidecarDoneShown {
 			return nil
 		}
 	}
@@ -202,6 +205,8 @@ type updateStateResponse struct {
 	Sidecar *sidecarJob `json:"sidecar,omitempty"`
 	// The argus-updater sidecar itself (independent of the core-update job above).
 	UpdaterVersion string `json:"updater_version,omitempty"` // version the sidecar reports for itself
+	UpdaterLatest  string `json:"updater_latest,omitempty"`  // the newest published argus-updater ("" until looked up)
+	UpdaterStatus  string `json:"updater_status,omitempty"`  // current | outdated | unknown, like the core's own
 	UpdaterPending bool   `json:"updater_pending,omitempty"` // a sidecar self-update is queued, not yet consumed
 	// The core host's collectors, as the sidecar last installed them (nil: no report yet).
 	Collectors *collectorsReport `json:"collectors,omitempty"`
@@ -251,6 +256,8 @@ func (s *Server) currentUpdateState() (updateStateResponse, error) {
 	// The sidecar's own version + whether a sidecar self-update is queued - independent of the
 	// core-update job state below.
 	resp.UpdaterVersion = s.updaterVersion()
+	resp.UpdaterLatest = s.updaterLatest.get()
+	resp.UpdaterStatus = updaterStatus(resp.UpdaterVersion, resp.UpdaterLatest)
 	resp.Sidecar = s.currentSidecarJob(resp.UpdaterVersion)
 	if _, err := os.Stat(s.updatePath(updaterRequestFile)); err == nil {
 		resp.UpdaterPending = true
@@ -431,6 +438,16 @@ func (s *Server) handleUpdaterSelfUpdate(w http.ResponseWriter, r *http.Request)
 	}
 	s.logger.Info("updater self-update queued", "tag", tag, "by", by)
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued", "tag": tag})
+}
+
+// handleUpdaterCheck looks up the newest published sidecar now, like the core's "Check for updates",
+// and returns the update state with the verdict (admin).
+func (s *Server) handleUpdaterCheck(w http.ResponseWriter, r *http.Request) {
+	if err := s.refreshUpdaterLatest(r.Context()); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not reach the registry to check for a newer sidecar"})
+		return
+	}
+	s.handleUpdateState(w, r)
 }
 
 // handleUpdaterDismiss closes a finished sidecar update in Settings (admin).

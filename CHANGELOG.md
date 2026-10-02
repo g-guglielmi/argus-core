@@ -92,9 +92,13 @@ GitHub Release from the matching section below.
   moment it is asked for until it ends: queued, picked up, pulling, swapping, verifying, done (or why
   it failed). It appears only while an update is under way or just finished, for the core and for the
   updater sidecar, and a page reload no longer hides it: before, **Update sidecar** showed "update
-  queued" and then nothing at all, even though the update went on and finished. **Update sidecar**
-  reads **Updating...** meanwhile. The sidecar reports its steps from argus-updater 0.2.12; an older
-  one reports none, so Argus shows its new version as the outcome.
+  queued" and then nothing at all, even though the update went on and finished. A finished update's
+  box closes by itself after 5 minutes; a failed one stays until it is closed. The sidecar reports its
+  steps from argus-updater 0.2.12; an older one reports none, so Argus shows its new version as the
+  outcome.
+- The updater sidecar's row works like the core's: **Check for updates** looks up the newest
+  published sidecar, the version reads **latest** or **vX available**, and **Update to vX** shows only
+  when there is a newer one (it read **Update sidecar** at all times before).
 - The Probes page keeps showing a probe or sidecar update after a reload too: **update queued**
   until the sidecar's next check-in takes it, then **updating** (with how long ago it was handed
   over) until the probe reports the new version, and **update didn't take** when it still runs the

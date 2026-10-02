@@ -318,6 +318,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// update the core's argus-updater sidecar itself (admin)
 	mux.HandleFunc("POST /api/update/updater", auth.RequireRole("admin", s.handleUpdaterSelfUpdate))
 	mux.HandleFunc("POST /api/update/updater/dismiss", auth.RequireRole("admin", s.handleUpdaterDismiss))
+	mux.HandleFunc("POST /api/update/updater/check", auth.RequireRole("admin", s.handleUpdaterCheck))
 
 	// OS patching & lifecycle (DESIGN §14c): the core's own patch status + the fleet reboot rollup, plus
 	// the operator-scheduled core reboot window (admin sets it; a host timer honours it locally).
