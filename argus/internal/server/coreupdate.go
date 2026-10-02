@@ -35,7 +35,117 @@ const (
 	updaterInfoFile    = "updater.json"         // the sidecar reports its OWN version here
 	updaterRequestFile = "updater-request.json" // the core drops this to update the sidecar itself
 	collectorsFile     = "collectors.json"      // the sidecar reports installing the core's collectors here
+	updaterJobFile     = "updater-job.json"     // the core remembers the sidecar update it asked for (the request is consumed)
+	updaterStatusFile  = "updater-status.json"  // the sidecar reports that update's steps here (from argus-updater 0.2.12)
 )
+
+// jobStep is one line of an update's progress: when, and what happened.
+type jobStep struct {
+	At  string `json:"at,omitempty"` // RFC3339; empty when Argus inferred it
+	Msg string `json:"msg"`
+}
+
+// sidecarJobFile is what the core writes when an admin asks for a sidecar update.
+type sidecarJobFile struct {
+	ID          string `json:"id"`
+	Tag         string `json:"tag"`
+	From        string `json:"from,omitempty"` // the sidecar's version then
+	RequestedBy string `json:"requested_by,omitempty"`
+	RequestedAt string `json:"requested_at"`
+}
+
+// sidecarStatus is the sidecar's report on that update (lib/job.sh in argus-updater).
+type sidecarStatus struct {
+	ID         string    `json:"id"`
+	State      string    `json:"state"` // running | success | failed
+	Message    string    `json:"message"`
+	To         string    `json:"to"`
+	FinishedAt string    `json:"finished_at"`
+	Steps      []jobStep `json:"steps"`
+}
+
+// sidecarJob is a sidecar self-update as Settings shows it, step by step.
+type sidecarJob struct {
+	ID          string    `json:"id"`
+	State       string    `json:"state"` // queued | running | success | failed | unknown
+	Tag         string    `json:"tag"`
+	From        string    `json:"from,omitempty"`
+	To          string    `json:"to,omitempty"`
+	Message     string    `json:"message,omitempty"`
+	RequestedBy string    `json:"requested_by,omitempty"`
+	RequestedAt string    `json:"requested_at"`
+	FinishedAt  string    `json:"finished_at,omitempty"`
+	Steps       []jobStep `json:"steps"`
+}
+
+// sidecarJobFrom is where a sidecar update has got to: queued while its request waits, then the
+// sidecar's own steps. A sidecar from before argus-updater 0.2.12 reports none, so its new version is
+// the outcome (and after 3 minutes without one, Argus says it heard nothing). A finished update stays
+// shown for half an hour, a failed one until it is closed; nil once there is nothing to show.
+func sidecarJobFrom(job sidecarJobFile, queued bool, st *sidecarStatus, version string, now time.Time) *sidecarJob {
+	out := &sidecarJob{ID: job.ID, Tag: job.Tag, From: job.From, RequestedBy: job.RequestedBy, RequestedAt: job.RequestedAt}
+	who := job.RequestedBy
+	if who == "" {
+		who = "an admin"
+	}
+	out.Steps = []jobStep{{At: job.RequestedAt, Msg: "queued by " + who + " (the sidecar looks for it every 10 seconds)"}}
+	asked, _ := time.Parse(time.RFC3339, job.RequestedAt)
+	switch {
+	case queued:
+		out.State = "queued"
+	case st != nil && st.ID == job.ID:
+		out.State, out.Message, out.To, out.FinishedAt = st.State, st.Message, st.To, st.FinishedAt
+		out.Steps = append(out.Steps, st.Steps...)
+	case version != "" && job.From != "" && version != job.From:
+		out.State, out.To = "success", version
+		out.Steps = append(out.Steps, jobStep{Msg: "done: the sidecar now runs " + version})
+	case now.Sub(asked) < 3*time.Minute:
+		out.State = "running"
+		out.Steps = append(out.Steps, jobStep{Msg: "the sidecar picked it up and is swapping itself (this version of it doesn't report its steps)"})
+	default:
+		out.State = "unknown"
+		out.Message = "the sidecar picked it up but hasn't reported back"
+		if version != "" {
+			out.Message += "; it still runs " + version + " (one older than 0.2.12 reports nothing, so it may have been on the newest already)"
+		}
+	}
+	if out.State == "success" {
+		end := asked
+		if t, err := time.Parse(time.RFC3339, out.FinishedAt); err == nil {
+			end = t
+		}
+		if now.Sub(end) > 30*time.Minute {
+			return nil
+		}
+	}
+	return out
+}
+
+// currentSidecarJob reads the channel files for the sidecar update in hand (nil: none).
+func (s *Server) currentSidecarJob(version string) *sidecarJob {
+	var job sidecarJobFile
+	if ok, _ := readUpdateJSON(s.updatePath(updaterJobFile), &job); !ok || job.ID == "" {
+		return nil
+	}
+	_, qerr := os.Stat(s.updatePath(updaterRequestFile))
+	var st sidecarStatus
+	var stp *sidecarStatus
+	if ok, _ := readUpdateJSON(s.updatePath(updaterStatusFile), &st); ok {
+		stp = &st
+	}
+	return sidecarJobFrom(job, qerr == nil, stp, version, time.Now())
+}
+
+// updaterVersion is the version the sidecar last reported for itself ("" when unknown).
+func (s *Server) updaterVersion() string {
+	var ui struct {
+		Version string `json:"version"`
+	}
+	if ok, _ := readUpdateJSON(s.updatePath(updaterInfoFile), &ui); ok {
+		return ui.Version
+	}
+	return ""
+}
 
 // collectorsReport is the sidecar's word on the core host's collectors: after each core update it
 // copies the running image's collectors into the host's Zabbix ExternalScripts folder.
@@ -65,13 +175,14 @@ type updateRequest struct {
 
 // coreUpdateStatus is the sidecar's report, overwritten in place through the job's lifecycle.
 type coreUpdateStatus struct {
-	ID         string `json:"id"`
-	State      string `json:"state"` // running | success | failed
-	From       string `json:"from"`
-	To         string `json:"to"`
-	Message    string `json:"message"`
-	StartedAt  string `json:"started_at"`
-	FinishedAt string `json:"finished_at,omitempty"`
+	ID         string    `json:"id"`
+	State      string    `json:"state"` // running | success | failed
+	From       string    `json:"from"`
+	To         string    `json:"to"`
+	Message    string    `json:"message"`
+	StartedAt  string    `json:"started_at"`
+	Steps      []jobStep `json:"steps,omitempty"` // every message, from argus-updater 0.2.12
+	FinishedAt string    `json:"finished_at,omitempty"`
 }
 
 // updateStateResponse drives the Settings UI: the button, the poll, and the banner.
@@ -82,8 +193,13 @@ type updateStateResponse struct {
 	From              string `json:"from,omitempty"`
 	Message           string `json:"message,omitempty"`
 	RequestedBy       string `json:"requested_by,omitempty"`
+	RequestedAt       string `json:"requested_at,omitempty"`
 	StartedAt         string `json:"started_at,omitempty"`
 	FinishedAt        string `json:"finished_at,omitempty"`
+	// Every step of the core update so far (a sidecar from before 0.2.12 reports only the last one).
+	Steps []jobStep `json:"steps,omitempty"`
+	// The sidecar's own update, when one was asked for (nil: none to show).
+	Sidecar *sidecarJob `json:"sidecar,omitempty"`
 	// The argus-updater sidecar itself (independent of the core-update job above).
 	UpdaterVersion string `json:"updater_version,omitempty"` // version the sidecar reports for itself
 	UpdaterPending bool   `json:"updater_pending,omitempty"` // a sidecar self-update is queued, not yet consumed
@@ -134,12 +250,8 @@ func (s *Server) currentUpdateState() (updateStateResponse, error) {
 	}
 	// The sidecar's own version + whether a sidecar self-update is queued - independent of the
 	// core-update job state below.
-	var ui struct {
-		Version string `json:"version"`
-	}
-	if ok, _ := readUpdateJSON(s.updatePath(updaterInfoFile), &ui); ok {
-		resp.UpdaterVersion = ui.Version
-	}
+	resp.UpdaterVersion = s.updaterVersion()
+	resp.Sidecar = s.currentSidecarJob(resp.UpdaterVersion)
 	if _, err := os.Stat(s.updatePath(updaterRequestFile)); err == nil {
 		resp.UpdaterPending = true
 	}
@@ -155,7 +267,7 @@ func (s *Server) currentUpdateState() (updateStateResponse, error) {
 	if !hasReq {
 		return resp, nil
 	}
-	resp.Target, resp.From, resp.RequestedBy = req.Tag, req.From, req.RequestedBy
+	resp.Target, resp.From, resp.RequestedBy, resp.RequestedAt = req.Tag, req.From, req.RequestedBy, req.RequestedAt
 
 	var st coreUpdateStatus
 	hasStatus, err := readUpdateJSON(s.updatePath(updateStatusFile), &st)
@@ -163,7 +275,7 @@ func (s *Server) currentUpdateState() (updateStateResponse, error) {
 		return resp, err
 	}
 	if hasStatus && st.ID == req.ID {
-		resp.State, resp.Message, resp.StartedAt, resp.FinishedAt = st.State, st.Message, st.StartedAt, st.FinishedAt
+		resp.State, resp.Message, resp.StartedAt, resp.FinishedAt, resp.Steps = st.State, st.Message, st.StartedAt, st.FinishedAt, st.Steps
 		if st.To != "" {
 			resp.Target = st.To
 		}
@@ -301,6 +413,17 @@ func (s *Server) handleUpdaterSelfUpdate(w http.ResponseWriter, r *http.Request)
 		RequestedBy string `json:"requested_by"`
 		RequestedAt string `json:"requested_at"`
 	}{newUpdateID(), tag, s.imageDigest(r.Context(), updaterImageRepo, tag), by, time.Now().UTC().Format(time.RFC3339)}
+	if job := s.currentSidecarJob(s.updaterVersion()); job != nil && (job.State == "queued" || job.State == "running") {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "a sidecar update is already under way"})
+		return
+	}
+	// Remember the job first: the sidecar consumes the request, and Settings follows the job by its id.
+	job := sidecarJobFile{ID: req.ID, Tag: tag, From: s.updaterVersion(), RequestedBy: by, RequestedAt: req.RequestedAt}
+	if err := s.writeUpdateJSONAtomic(updaterJobFile, job); err != nil {
+		s.logger.Error("updater self-update: could not record the job", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the updater update"})
+		return
+	}
 	if err := s.writeUpdateJSONAtomic(updaterRequestFile, req); err != nil {
 		s.logger.Error("updater self-update: could not write request", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the updater update"})
@@ -308,6 +431,21 @@ func (s *Server) handleUpdaterSelfUpdate(w http.ResponseWriter, r *http.Request)
 	}
 	s.logger.Info("updater self-update queued", "tag", tag, "by", by)
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued", "tag": tag})
+}
+
+// handleUpdaterDismiss closes a finished sidecar update in Settings (admin).
+func (s *Server) handleUpdaterDismiss(w http.ResponseWriter, _ *http.Request) {
+	if !s.cfg.SelfUpdateEnabled() {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+	if job := s.currentSidecarJob(s.updaterVersion()); job != nil && (job.State == "queued" || job.State == "running") {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "the sidecar update is still under way"})
+		return
+	}
+	_ = os.Remove(s.updatePath(updaterJobFile))
+	_ = os.Remove(s.updatePath(updaterStatusFile))
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // handleUpdateState returns the current self-update state so the UI can drive the button and banner.

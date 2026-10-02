@@ -10,7 +10,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"argus/internal/buildinfo"
 	"argus/internal/config"
@@ -131,5 +133,41 @@ func TestCoreUpdateDisabledWhenNoDir(t *testing.T) {
 	s.handleUpdateStart(rec, httptest.NewRequest(http.MethodPost, "/api/update/start", nil))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("start when disabled: HTTP %d, want 400", rec.Code)
+	}
+}
+
+// A sidecar update shows where it has got to: queued, the sidecar's own steps, or (for a sidecar
+// that reports none) its new version; a finished one goes after half an hour, a failed one stays.
+func TestSidecarJobFrom(t *testing.T) {
+	now := time.Date(2026, 10, 2, 10, 0, 0, 0, time.UTC)
+	at := func(d time.Duration) string { return now.Add(-d).Format(time.RFC3339) }
+	job := sidecarJobFile{ID: "j1", Tag: "latest", From: "v0.2.11", RequestedBy: "admin@example.com", RequestedAt: at(time.Minute)}
+
+	if got := sidecarJobFrom(job, true, nil, "v0.2.11", now); got.State != "queued" || len(got.Steps) != 1 {
+		t.Fatalf("queued: %+v", got)
+	}
+	st := &sidecarStatus{ID: "j1", State: "running", Steps: []jobStep{{Msg: "picked up"}, {Msg: "pulling"}}}
+	if got := sidecarJobFrom(job, false, st, "v0.2.11", now); got.State != "running" || len(got.Steps) != 3 || got.Steps[2].Msg != "pulling" {
+		t.Fatalf("the sidecar's steps: %+v", got)
+	}
+	other := &sidecarStatus{ID: "old", State: "failed"}
+	if got := sidecarJobFrom(job, false, other, "v0.2.12", now); got.State != "success" || got.To != "v0.2.12" {
+		t.Fatalf("a sidecar that reports nothing, on a new version: %+v", got)
+	}
+	if got := sidecarJobFrom(job, false, nil, "v0.2.11", now); got.State != "running" {
+		t.Fatalf("no word yet, within 3 minutes: %+v", got)
+	}
+	late := job
+	late.RequestedAt = at(5 * time.Minute)
+	if got := sidecarJobFrom(late, false, nil, "v0.2.11", now); got.State != "unknown" || !strings.Contains(got.Message, "v0.2.11") {
+		t.Fatalf("no word after 3 minutes: %+v", got)
+	}
+	done := &sidecarStatus{ID: "j1", State: "success", FinishedAt: at(40 * time.Minute)}
+	if got := sidecarJobFrom(job, false, done, "v0.2.12", now); got != nil {
+		t.Fatalf("a success from 40 minutes ago is still shown: %+v", got)
+	}
+	failed := &sidecarStatus{ID: "j1", State: "failed", Message: "rolled back", FinishedAt: at(2 * time.Hour)}
+	if got := sidecarJobFrom(job, false, failed, "v0.2.11", now); got == nil || got.State != "failed" {
+		t.Fatalf("a failure waits to be closed: %+v", got)
 	}
 }

@@ -87,6 +87,15 @@ GitHub Release from the matching section below.
   only send to addresses on the internet, so a personal channel can't point inside the network; a
   webhook, Gotify or an ntfy server on the LAN is a shared channel an admin sets up.
 
+**Updates:**
+- Settings shows what an update is doing in the background, one timestamped line per step, from the
+  moment it is asked for until it ends: queued, picked up, pulling, swapping, verifying, done (or why
+  it failed). It appears only while an update is under way or just finished, for the core and for the
+  updater sidecar, and a page reload no longer hides it: before, **Update sidecar** showed "update
+  queued" and then nothing at all, even though the update went on and finished. **Update sidecar**
+  reads **Updating...** meanwhile. The sidecar reports its steps from argus-updater 0.2.12; an older
+  one reports none, so Argus shows its new version as the outcome.
+
 **The core's collectors:**
 - The scripts the core's own Zabbix runs for the hosts it monitors itself (HTTP, TCP ports, SSH, UPS,
   XCP-ng and the rest) now update with Argus. Before, they stayed as setup installed them, so a fix to

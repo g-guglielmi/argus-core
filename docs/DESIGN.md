@@ -1317,6 +1317,14 @@ plane; the probe checks in and converges.
   reports no proxy version - the check-in fields are sticky (an omitted field keeps the stored value),
   and one-shots are handed only to a capability-advertising caller, so the two never clobber each
   other or race. See the [argus-updater](https://github.com/g-guglielmi/argus-updater) repo.
+- **Updates show their steps.** Settings follows a core update and a sidecar self-update step by
+  step until it ends. The core update's `status.json` keeps every message in `steps`; a sidecar
+  self-update is remembered by the core in `updater-job.json` (the request file is consumed when the
+  sidecar picks it up) and reported by the sidecar and its swap helper in `updater-status.json`
+  (`lib/job.sh`: picked up, pulling, the swap, verify, done or why not; a sidecar already on the
+  newest image says so instead of swapping). A sidecar older than 0.2.12 reports nothing: its new
+  version is the outcome, and three minutes without one read "no word back". A finished update stays
+  shown for half an hour, a failed one until it is closed (`POST /api/update/updater/dismiss`).
 - **The core host's collectors ride the image.** The core's Zabbix server is a host package, so the
   collectors (external checks) it runs for the hosts it monitors live in the host's
   `/usr/lib/zabbix/externalscripts`, out of reach of a container update. The Argus image carries them

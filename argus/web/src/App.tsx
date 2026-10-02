@@ -816,6 +816,42 @@ type UpdateState = {
   updater_version?: string // the core's argus-updater sidecar version
   updater_pending?: boolean // a sidecar self-update is queued
   collectors?: CollectorsReport // the sidecar's word on this server's collectors
+  requested_at?: string
+  steps?: JobStep[] // every step of the core update so far
+  sidecar?: SidecarJob // the sidecar's own update, while there is one to show
+}
+type JobStep = { at?: string; msg: string }
+type SidecarJob = { id: string; state: 'queued' | 'running' | 'success' | 'failed' | 'unknown'; tag: string; from?: string; to?: string; message?: string; requested_by?: string; requested_at: string; finished_at?: string; steps: JobStep[] }
+
+// fmtStepTime is a step's time of day, to the second, in the configured clock.
+function fmtStepTime(at?: string): string {
+  const t = at ? Date.parse(at) : NaN
+  if (Number.isNaN(t)) return ''
+  try { return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: !CLOCK.h24, timeZone: CLOCK.tz }).format(new Date(t)) }
+  catch { return new Date(t).toLocaleTimeString() }
+}
+
+// UpdateLog shows what an update is doing in the background, one line per step, from the moment it
+// is asked for until it ends: it lives in the channel files, so a page reload doesn't hide it.
+function UpdateLog({ title, state, steps, message, note, children }: { title: string; state: string; steps: JobStep[]; message?: string; note?: string; children?: ReactNode }) {
+  const busy = state === 'queued' || state === 'running' || state === 'requested'
+  const bad = state === 'failed' || state === 'unknown'
+  const label: Record<string, string> = { queued: 'queued', requested: 'queued', running: 'in progress', success: 'done', failed: 'failed', unknown: 'no word back' }
+  return (
+    <div className={'upd-log ' + (bad ? 'bad' : busy ? 'busy' : 'done')} role="status" aria-live="polite">
+      <div className="upd-log-head">
+        {busy ? <span className="spinner" aria-hidden="true" /> : <span className="upd-log-mark" aria-hidden="true">{bad ? '!' : '\u2713'}</span>}
+        <b>{title}</b>
+        <span className="upd-log-state">{label[state] || state}</span>
+      </div>
+      <ol className="upd-log-steps">
+        {steps.map((s, i) => <li key={i}><span className="mono when">{fmtStepTime(s.at)}</span><span>{s.msg}</span></li>)}
+      </ol>
+      {bad && message && <p className="upd-log-why">{message}</p>}
+      {note && <p className="upd-log-note">{note}</p>}
+      {children && <div className="upd-log-act">{children}</div>}
+    </div>
+  )
 }
 // The argus-updater copies the running image's collectors into this server's Zabbix after each core
 // update (the core's Zabbix is a host package, so they can't ride the image by themselves).
@@ -1338,7 +1374,7 @@ function VersionAbout() {
   useEffect(() => {
     const refresh = () => fetch('/api/update/state').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setUpd(d) }).catch(() => {})
     refresh()
-    const t = setInterval(refresh, 5000)
+    const t = setInterval(refresh, 3000)
     return () => clearInterval(t)
   }, [])
   const refreshUpd = () => fetch('/api/update/state').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setUpd(d) }).catch(() => {})
@@ -1365,6 +1401,15 @@ function VersionAbout() {
       .finally(() => setBusy(false))
   }
   const dismiss = () => fetch('/api/update/dismiss', { method: 'POST' }).then(refreshUpd).catch(() => {})
+  const dismissSidecar = () => fetch('/api/update/updater/dismiss', { method: 'POST' }).then(refreshUpd).catch(() => {})
+  const side = upd?.sidecar
+  const sideBusy = !!side && (side.state === 'queued' || side.state === 'running')
+  // The core update, step by step: who asked, then what the sidecar reported (a sidecar from before
+  // 0.2.12 reports only its latest step).
+  const coreSteps: JobStep[] = upd && upd.state !== 'idle' ? [
+    { at: upd.requested_at, msg: `queued by ${upd.requested_by || 'an admin'}: update to ${upd.target} (the sidecar looks for it every 10 seconds)` },
+    ...(upd.steps && upd.steps.length ? upd.steps : upd.message && upd.state !== 'requested' ? [{ msg: upd.message }] : []),
+  ] : []
   // Deliberately switch the core to a chosen channel/version (bypassing the in-place channel-preserve).
   const doSwitch = async () => {
     if (!switchTo) return
@@ -1416,14 +1461,15 @@ function VersionAbout() {
       {v?.check_error && <p className="set-hint" style={{ margin: '0 0 8px', color: 'var(--warn)' }}>{v.check_error} to check for updates - {v.checked_at ? `showing the result from ${relTime(v.checked_at)}` : 'no successful check yet'}. Retry in a moment.</p>}
       {checkedMsg && <p className="set-hint" style={{ margin: '0 0 8px' }}>{checkedMsg}</p>}
 
-      {/* Update progress / outcome banner (driven by the argus-updater sidecar). */}
-      {upd && upd.state === 'requested' && <Banner variant="info">Update to {upd.target} queued - waiting for the updater to pick it up…</Banner>}
-      {upd && upd.state === 'running' && <Banner variant="info">Updating to {upd.target}… {upd.message ? `(${upd.message})` : ''} Argus will restart briefly.</Banner>}
-      {upd && upd.state === 'success' && (
-        <Banner variant="success">Updated to {upd.target}. Reload to finish loading the new version.</Banner>
-      )}
-      {upd && upd.state === 'failed' && (
-        <Banner variant="error">Update to {upd.target} failed: {upd.message || 'unknown error'}. The previous version was kept. <button type="button" className="linkbtn" onClick={dismiss}>Dismiss</button></Banner>
+      {/* The core update, step by step, while it runs and once it ends (driven by the argus-updater). */}
+      {upd && upd.state !== 'idle' && (
+        <UpdateLog
+          title={upd.state === 'success' ? `Core updated to ${upd.target}` : upd.state === 'failed' ? `Core update to ${upd.target} failed` : `Updating the core to ${upd.target}`}
+          state={upd.state} steps={coreSteps}
+          message={upd.state === 'failed' ? `${upd.message || 'no reason given'}. The previous version was kept.` : undefined}
+          note={upd.state === 'running' ? 'Argus restarts briefly near the end; this page reconnects by itself.' : upd.state === 'success' ? 'Reload to load the new version.' : undefined}>
+          {upd.state === 'failed' && <Button variant="ghost" onClick={dismiss}>Close</Button>}
+        </UpdateLog>
       )}
       {err && <Banner variant="error">{err}</Banner>}
 
@@ -1503,14 +1549,19 @@ function VersionAbout() {
         <div className="set-row" style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)', marginBottom: 0 }}>
           <div className="set-head">
             <span className="complabel">Updater sidecar</span>
-            {upd.updater_pending
-              ? <span className="vtag upd" style={{ marginLeft: 'auto' }} title="A sidecar self-update is queued; it applies on the sidecar's next poll">update queued</span>
-              : <Button variant="default" style={{ marginLeft: 'auto' }} onClick={updateSidecar}>Update sidecar</Button>}
+            <Button variant="default" style={{ marginLeft: 'auto' }} onClick={updateSidecar} disabled={sideBusy}>{sideBusy ? 'Updating\u2026' : 'Update sidecar'}</Button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span className="mono" title="Version of the argus-updater container that performs the updates above">{upd.updater_version || '-'}</span>
           </div>
           <p className="set-hint" style={{ marginTop: 6 }}>Holds the Docker socket and performs the core updates above. <strong>Update sidecar</strong> recreates it onto the latest image (rolling back on failure); the core keeps running throughout.</p>
+          {side && (
+            <UpdateLog
+              title={side.state === 'success' ? `Sidecar updated${side.to ? ` to ${side.to}` : ''}` : side.state === 'failed' ? 'Sidecar update failed' : side.state === 'unknown' ? 'Sidecar update: no word back' : `Updating the sidecar${side.tag && side.tag !== 'latest' ? ` to ${side.tag}` : ''}`}
+              state={side.state} steps={side.steps} message={side.message}>
+              {!sideBusy && <Button variant="ghost" onClick={dismissSidecar}>Close</Button>}
+            </UpdateLog>
+          )}
           <CollectorsLine c={upd.collectors} running={v?.version} />
         </div>
       )}
