@@ -18,23 +18,26 @@ import (
 type proxyView struct {
 	ID             string `json:"id"` // Zabbix proxyid, for "Monitored by" assignment
 	Name           string `json:"name"`
-	LastAccess     int64  `json:"last_access"`      // unix seconds Zabbix last heard data, 0 if never seen
-	Online         bool   `json:"online"`           // heard from within the last 2 minutes (before the 3-minute "not reporting" warning)
-	Mode           string `json:"mode"`             // active | passive
-	EnrolledAt     int64  `json:"enrolled_at"`      // unix seconds a probe self-enrolled via Argus; 0 if manual
-	Version        string `json:"version"`          // running probe image version reported at check-in ("" = unknown)
-	Target         string `json:"target"`           // fleet target version this probe should converge on
-	Latest         string `json:"latest"`           // newest version resolved from GHCR ("" if unknown)
-	SelfUpdate     bool   `json:"selfupdate"`       // an argus-updater sidecar is managing this probe
-	Scans          bool   `json:"scans"`            // the probe advertises the network-scan capability (§B discovery)
-	Sweeps         bool   `json:"sweeps"`           // ... and the UniFi-sweep capability
-	UpdateStatus   string `json:"update_status"`    // unknown | tracking | current | outdated | external
-	LastCheckin    int64  `json:"last_checkin"`     // unix seconds of the last Argus check-in (0 = never)
-	UpdaterVersion string `json:"updater_version"`  // version of the managing argus-updater sidecar ("" = none)
-	UpdaterLatest  string `json:"updater_latest"`   // newest argus-updater version resolved from GHCR ("" if unknown)
-	UpdaterStatus  string `json:"updater_status"`   // unknown | current | outdated (updater drift; "" when no sidecar)
-	BreakGlass     bool   `json:"break_glass"`      // a break-glass console credential exists (VM probes); reveal it via its own endpoint
-	BreakGlassUser string `json:"break_glass_user"` // the break-glass username ("" if none)
+	LastAccess     int64  `json:"last_access"`     // unix seconds Zabbix last heard data, 0 if never seen
+	Online         bool   `json:"online"`          // heard from within the last 2 minutes (before the 3-minute "not reporting" warning)
+	Mode           string `json:"mode"`            // active | passive
+	EnrolledAt     int64  `json:"enrolled_at"`     // unix seconds a probe self-enrolled via Argus; 0 if manual
+	Version        string `json:"version"`         // running probe image version reported at check-in ("" = unknown)
+	Target         string `json:"target"`          // fleet target version this probe should converge on
+	Latest         string `json:"latest"`          // newest version resolved from GHCR ("" if unknown)
+	SelfUpdate     bool   `json:"selfupdate"`      // an argus-updater sidecar is managing this probe
+	Scans          bool   `json:"scans"`           // the probe advertises the network-scan capability (§B discovery)
+	Sweeps         bool   `json:"sweeps"`          // ... and the UniFi-sweep capability
+	UpdateStatus   string `json:"update_status"`   // unknown | tracking | current | outdated | external
+	LastCheckin    int64  `json:"last_checkin"`    // unix seconds of the last Argus check-in (0 = never)
+	UpdaterVersion string `json:"updater_version"` // version of the managing argus-updater sidecar ("" = none)
+	UpdaterLatest  string `json:"updater_latest"`  // newest argus-updater version resolved from GHCR ("" if unknown)
+	UpdaterStatus  string `json:"updater_status"`  // unknown | current | outdated (updater drift; "" when no sidecar)
+	// An update Argus asked for, while it is in hand (nil: none): the proxy's, and its sidecar's own.
+	UpdateJob      *probeJob `json:"update_job,omitempty"`
+	UpdaterJob     *probeJob `json:"updater_job,omitempty"`
+	BreakGlass     bool      `json:"break_glass"`      // a break-glass console credential exists (VM probes); reveal it via its own endpoint
+	BreakGlassUser string    `json:"break_glass_user"` // the break-glass username ("" if none)
 	// OS patch status a VM probe's host-side reporter posts (DESIGN §14c). SecUpdates is -1 until first
 	// reported; OSReportedAt is 0 when the probe has never reported (non-VM probes never will).
 	SecUpdates     int    `json:"sec_updates"`
@@ -142,6 +145,8 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			UpdaterVersion: ag.UpdaterVersion,
 			UpdaterLatest:  updaterLatest,
 			UpdaterStatus:  updaterViewStatus(ag, updaterLatest),
+			UpdateJob:      s.probeJob(ctx, p.Name, ag.PendingUpdate, noticeProbePending, noticeProbeFailed, ag.Version, latest, now),
+			UpdaterJob:     s.probeJob(ctx, p.Name, ag.PendingUpdaterUpdate, noticeUpdPending, noticeUpdFailed, ag.UpdaterVersion, updaterLatest, now),
 			BreakGlass:     ag.BreakGlassSet,
 			BreakGlassUser: ag.BreakGlassUser,
 			SecUpdates:     osSecUpdates(ag),

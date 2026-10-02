@@ -31,9 +31,12 @@ type AddOnCfg = { id: string; label: string; description: string; enabled: boole
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg }
 // A host's master sensor: while it's down, the host's other alerts are held (item_id "" = none).
 type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; options: { id: string; label: string }[] }
-type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean }
+type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean }
 // One Zabbix process kind on a probe: what it runs, Argus's target, the busiest hour at the last
 // evaluation, and a hold (put back after a raise that didn't lower its load).
+// An update Argus asked a probe's sidecar for, while it is in hand: queued for the sidecar's next
+// check-in, updating until the probe reports the new version, or one that didn't take.
+type ProbeJob = { state: 'queued' | 'updating' | 'failed'; tag: string; at?: number }
 type ProcRow = { name: string; label: string; running: number; target?: number; pinned?: boolean; peak?: number; held?: { from: number; to: number; before: number; after: number; at: number; cpus: number } }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
@@ -2920,7 +2923,6 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
   const [wizardOpen, setWizardOpen] = useState(false)
   const [target, setTarget] = useState<string | null>(null)
   const [openCmd, setOpenCmd] = useState<string | null>(null) // proxy name whose update command is expanded
-  const [queued, setQueued] = useState<Record<string, string>>({}) // proxy name -> queued self-update tag
   const [report, setReport] = useState<{ name: string; token: string } | null>(null) // minted check-in token to show
   const [openSnmp, setOpenSnmp] = useState<string | null>(null) // proxy name whose SNMP-defaults band is open
   const [openProcs, setOpenProcs] = useState<string | null>(null) // proxy name whose Zabbix-processes band is open
@@ -2931,8 +2933,7 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
     try {
       const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/update`, { method: 'POST' })
       if (!res.ok) { alert({ title: 'Update', message: await errText(res, 'Could not queue the update'), danger: true }); return }
-      const d = await res.json()
-      setQueued((q) => ({ ...q, [p.name]: d.tag || 'target' }))
+      loadProxies() // the row shows the update from here on, queued then updating, until it ends
     } catch { alert({ title: 'Update', message: 'Could not queue the update', danger: true }) }
   }
 
@@ -2943,7 +2944,7 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
     try {
       const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/updater-update`, { method: 'POST' })
       if (!res.ok) { alert({ title: 'Update updater', message: await errText(res, 'Could not queue the updater update'), danger: true }); return }
-      alert({ title: 'Update updater', message: 'Queued - the sidecar recreates itself on its next check-in (within ~5 min).' })
+      loadProxies()
     } catch { alert({ title: 'Update updater', message: 'Could not queue the updater update', danger: true }) }
   }
 
@@ -2985,6 +2986,9 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
     .then((p: Proxy[]) => { setProxies(p || []); setError(null); if (p && p.length) setTarget(p[0].target ?? 'latest') })
     .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load probes'))
   useEffect(() => { loadProxies(); const t = setInterval(loadProxies, 30000); return () => clearInterval(t) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // While an update is queued or under way, look every 5 s, so its row moves on as it happens.
+  const jobBusy = (proxies || []).some((p) => [p.update_job, p.updater_job].some((j) => j && j.state !== 'failed'))
+  useEffect(() => { if (!jobBusy) return; const t = setInterval(loadProxies, 5000); return () => clearInterval(t) }, [jobBusy]) // eslint-disable-line react-hooks/exhaustive-deps
   // The fleet target lives in app_meta, not on a proxy row, so read it directly - otherwise a core
   // with no probes yet (or all removed) shows it blank instead of the real value ('latest' by default,
   // but an admin may have pinned one while no probes exist, so fetch rather than assume).
@@ -3118,7 +3122,7 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
                 <td data-label="Proxy Version">
                   <span className="vcell">
                     <span className="mono" style={{ fontWeight: 600, color: p.version ? undefined : 'var(--faint)' }} title="Zabbix proxy version running on this probe">{p.version || '-'}</span>
-                    <UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} queuedTag={queued[p.name]} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} hideAuto />
+                    <UpdateBadge p={p} open={openCmd === p.name} onToggle={() => setOpenCmd((n) => (n === p.name ? null : p.name))} onSelfUpdate={triggerUpdate} canReport={isAdmin && !p.last_checkin} onEnableReporting={enableReporting} hideAuto />
                   </span>
                 </td>
                 <td data-label="Updater Version"><UpdaterVersionCell p={p} onUpdate={isAdmin ? triggerUpdaterUpdate : undefined} /></td>
@@ -3153,7 +3157,16 @@ function probeUpdateTag(target?: string): string {
 
 // UpdateBadge shows a probe's state versus the fleet target, and (for drift) a toggle that reveals
 // the one-click manual update command.
-function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, onEnableReporting, hideAuto }: { p: Proxy; open: boolean; onToggle: () => void; queuedTag?: string; onSelfUpdate: (p: Proxy) => void; canReport?: boolean; onEnableReporting: (p: Proxy) => void; hideAuto?: boolean }) {
+// ProbeJobTag is an update in hand: queued for the sidecar's next check-in, updating until the probe
+// reports the new version, or one that didn't take (a new try clears it).
+function ProbeJobTag({ job, what }: { job: ProbeJob; what: string }) {
+  const to = job.tag === 'latest' ? 'the latest version' : job.tag
+  if (job.state === 'queued') return <span className="tag pending jobtag" title={`The update of the ${what} to ${to} is queued: its sidecar picks it up at its next check-in, within a minute.`}><span className="spinner sm" aria-hidden="true" />update queued</span>
+  if (job.state === 'updating') return <span className="tag pending jobtag" title={`Handed to the sidecar ${job.at ? relTime(job.at) : ''}: it pulls ${to} and recreates the ${what}, rolling back if the new one doesn't start healthy. This reads as up to date once the new version reports in.`}><span className="spinner sm" aria-hidden="true" />updating{job.at ? ` \u00b7 ${relTime(job.at)}` : ''}</span>
+  return <span className="tag avail" title={`The update to ${to} didn't take: 20 minutes after it was handed out, the ${what} still ran the old version (the updater rolls back one that doesn't start healthy; its log says why). Update again to retry.`}>update didn't take</span>
+}
+
+function UpdateBadge({ p, open, onToggle, onSelfUpdate, canReport, onEnableReporting, hideAuto }: { p: Proxy; open: boolean; onToggle: () => void; onSelfUpdate: (p: Proxy) => void; canReport?: boolean; onEnableReporting: (p: Proxy) => void; hideAuto?: boolean }) {
   // One shared row: the button, the "→ version" chip and the auto tag stay on a single line so the
   // Update column reports an honest one-line width to the auto-sized table (a wrapping cell would
   // collapse to its widest item and let the column starve). The table's scroll wrapper handles the
@@ -3162,7 +3175,9 @@ function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, on
   // "auto" = an argus-updater sidecar manages this probe (Argus can drive updates). The sidecar's own
   // version + its self-update control live in the separate "Updater" column.
   const auto = p.selfupdate && !hideAuto ? <span className="tag" title="Managed by an argus-updater sidecar; Argus can trigger updates from here">auto</span> : null
-  if (queuedTag) return <span className="tag" title={`Update to ${queuedTag} queued - the probe applies it on its next check-in (within ~5 min)`}>update queued</span>
+  const job = p.update_job
+  if (job && job.state !== 'failed') return <span style={wrap}><ProbeJobTag job={job} what="probe" /></span>
+  const failed = job ? <ProbeJobTag job={job} what="probe" /> : null
   // A socket-enabled probe updates itself when triggered; otherwise we expand the manual command.
   const selfBtn = <button className="btn" onClick={() => onSelfUpdate(p)} title="Tell the probe to update itself to the fleet target on its next check-in">Update now</button>
   // Probes that don't check in (external/unknown) can be turned on with a minted token.
@@ -3171,12 +3186,14 @@ function UpdateBadge({ p, open, onToggle, queuedTag, onSelfUpdate, canReport, on
     : <span className="mono" style={{ color: 'var(--faint)' }} title="This probe isn't reporting its exact version to Argus (updates handled outside Argus, e.g. unRAID).">-</span>
   switch (p.update_status) {
     case 'current':
+      // An update that didn't take wins over "up to date": the newest version is looked up every few hours.
+      if (failed) return <span style={wrap}>{p.selfupdate ? selfBtn : null}{failed}{auto}</span>
       return <span style={wrap}><span className="okquiet" title="Running the fleet target version">up to date</span>{auto}</span>
     case 'tracking':
-      return <span style={wrap}><span className="tag" title="Fleet target is 'latest'; the probe converges on the newest image">tracking latest</span>{p.selfupdate ? selfBtn : null}{auto}</span>
+      return <span style={wrap}><span className="tag" title="Fleet target is 'latest'; the probe converges on the newest image">tracking latest</span>{p.selfupdate ? selfBtn : null}{failed}{auto}</span>
     case 'outdated': {
       const avail = p.target === 'latest' ? p.latest : p.target
-      return <span style={wrap}>{p.selfupdate ? selfBtn : <button className="btn avail" onClick={onToggle}>{open ? 'Hide' : 'Update…'}</button>}{avail ? <span className="tag avail" title="Update available">→ {avail}</span> : null}{auto}</span>
+      return <span style={wrap}>{p.selfupdate ? selfBtn : <button className="btn avail" onClick={onToggle}>{open ? 'Hide' : 'Update…'}</button>}{failed || (avail ? <span className="tag avail" title="Update available">→ {avail}</span> : null)}{auto}</span>
     }
     case 'external':
     default:
@@ -3214,13 +3231,17 @@ function UpdaterVersionCell({ p, onUpdate }: { p: Proxy; onUpdate?: (p: Proxy) =
   if (!p.selfupdate) return <span className="mono" style={{ color: 'var(--faint)' }} title="No argus-updater sidecar manages this probe">-</span>
   const ver = <span className="mono" style={{ fontWeight: 600 }} title="Version of the argus-updater sidecar managing this probe">{p.updater_version || '?'}</span>
   const updateBtn = onUpdate ? <button className="btn" onClick={() => onUpdate(p)} title="Update the argus-updater sidecar to the newest version (it recreates itself)">Update</button> : null
+  const job = p.updater_job
+  if (job && job.state !== 'failed') return <span className="vcell">{ver}<ProbeJobTag job={job} what="sidecar" /></span>
+  const failed = job ? <ProbeJobTag job={job} what="sidecar" /> : null
   switch (p.updater_status) {
     case 'current':
+      if (failed) return <span className="vcell">{ver}{failed}{updateBtn}</span>
       return <span className="vcell">{ver}<span className="okquiet" title="Running the newest published argus-updater">up to date</span></span>
     case 'outdated':
-      return <span className="vcell">{ver}{p.updater_latest ? <span className="tag avail" title="A newer argus-updater has been published">→ {p.updater_latest}</span> : null}{updateBtn}</span>
+      return <span className="vcell">{ver}{failed || (p.updater_latest ? <span className="tag avail" title="A newer argus-updater has been published">→ {p.updater_latest}</span> : null)}{updateBtn}</span>
     default: // unknown: version reported but GHCR not resolved yet, or version not reported
-      return <span className="vcell">{ver}{updateBtn}</span>
+      return <span className="vcell">{ver}{failed}{updateBtn}</span>
   }
 }
 

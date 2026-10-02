@@ -38,6 +38,8 @@ const (
 	noticeUpdVerPrefix   = "notice_ver_updater:"   // app_meta: last seen updater version, per proxy
 	noticeProbePending   = "notice_pending_probe:" // app_meta: update handed out to a probe, "tag|unix"
 	noticeUpdPending     = "notice_pending_updater:"
+	noticeProbeFailed    = "notice_failed_probe:" // app_meta: a hand-out that didn't take, "tag|unix" (the Probes page says so)
+	noticeUpdFailed      = "notice_failed_updater:"
 )
 
 // notice is one system notice: a stable key (the ledger dedupes on it), what to say, and where it
@@ -303,6 +305,10 @@ func (s *Server) probeNotices(ctx context.Context) (conds, events []notice) {
 // is an update that went through; an update Argus handed out that isn't running after the grace time
 // failed (the updater rolled it back).
 func (s *Server) selfUpdateEvents(ctx context.Context, proxy, what, version, verPrefix, pendPrefix, host, site string) []notice {
+	failPrefix := noticeProbeFailed
+	if what == "updater" {
+		failPrefix = noticeUpdFailed
+	}
 	var out []notice
 	subject := "Probe " + site
 	if what == "updater" {
@@ -315,6 +321,7 @@ func (s *Server) selfUpdateEvents(ctx context.Context, proxy, what, version, ver
 			changed = true
 			out = append(out, notice{key: what + "-updated:" + proxy + ":" + version, title: subject + " updated to " + version,
 				detail: "It was on " + prev + ".", host: host, site: site, view: "probes"})
+			_ = s.st.MetaDelete(ctx, failPrefix+proxy) // an earlier update that didn't take is moot now
 		}
 		if !seen || prev != version {
 			_ = s.st.MetaSet(ctx, verPrefix+proxy, version)
@@ -338,6 +345,7 @@ func (s *Server) selfUpdateEvents(ctx context.Context, proxy, what, version, ver
 				detail: "It's still on " + version + " " + fmt.Sprint(int(selfUpdateGrace.Minutes())) + " minutes after the update was handed out; the updater rolls back a version that doesn't start healthy.",
 				host:   host, site: site, view: "probes"})
 			_ = s.st.MetaDelete(ctx, pendPrefix+proxy)
+			_ = s.st.MetaSet(ctx, failPrefix+proxy, tag+"|"+itoa64(time.Now().Unix()))
 		}
 	}
 	return out

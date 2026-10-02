@@ -219,6 +219,7 @@ func (s *Server) handleTriggerProbeUpdate(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the update"})
 		return
 	}
+	_ = s.st.MetaDelete(ctx, noticeProbeFailed+name) // a new try: the old failure no longer shows
 	s.logger.Info("probe self-update queued", "proxy", name, "tag", tag)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "queued", "tag": tag})
 }
@@ -257,6 +258,7 @@ func (s *Server) handleTriggerUpdaterUpdate(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not queue the updater update"})
 		return
 	}
+	_ = s.st.MetaDelete(ctx, noticeUpdFailed+name)
 	s.logger.Info("updater self-update queued", "proxy", name, "tag", tag)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "queued", "tag": tag})
 }

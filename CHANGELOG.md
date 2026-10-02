@@ -95,6 +95,12 @@ GitHub Release from the matching section below.
   queued" and then nothing at all, even though the update went on and finished. **Update sidecar**
   reads **Updating...** meanwhile. The sidecar reports its steps from argus-updater 0.2.12; an older
   one reports none, so Argus shows its new version as the outcome.
+- The Probes page keeps showing a probe or sidecar update after a reload too: **update queued**
+  until the sidecar's next check-in takes it, then **updating** (with how long ago it was handed
+  over) until the probe reports the new version, and **update didn't take** when it still runs the
+  old one 20 minutes later (the updater rolled it back), until it is retried. Before, the queued tag
+  lived only in the open page, and the **Update** of a sidecar only popped up a message. The page
+  looks every 5 seconds while an update is in hand.
 
 **The core's collectors:**
 - The scripts the core's own Zabbix runs for the hosts it monitors itself (HTTP, TCP ports, SSH, UPS,
