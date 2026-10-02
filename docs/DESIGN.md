@@ -642,7 +642,9 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   success, and an update handed out at check-in that isn't running 20 minutes later failed (the
   updater rolled it back). The Probes page shows the same records per row (`update_job` /
   `updater_job`: queued while `update_to` waits, updating while the hand-out record stands, failed for
-  a day or until retried), so a reload never hides an update in hand. Probe notices route by the probe's site; a failing shared channel isn't
+  a day or until retried), so a reload never hides an update in hand. **Check for updates** on the
+  page (`POST /api/probes/check-updates`, admin) runs the three 3-hourly lookups (probe image,
+  argus-updater, probe-vm) at once. Probe notices route by the probe's site; a failing shared channel isn't
   told about itself, and a failing personal channel only reaches its owner's other channels.
 - **Deliveries decide the follow-ups:** `notify_deliveries` records which channels an alert reached.
   Reminders, the **acknowledged notice** (`[ACKNOWLEDGED]` with who took it and their note, sent once

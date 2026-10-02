@@ -2954,6 +2954,34 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
   const canEdit = role === 'admin' || role === 'helpdesk'
   const isAdmin = role === 'admin'
 
+  // "Check for updates": look up the newest probe, updater and probe VM now, reload the rows and say
+  // what that means for the fleet (in green when nothing needs updating).
+  const [checking, setChecking] = useState(false)
+  const [checkMsg, setCheckMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  async function checkUpdates() {
+    setChecking(true); setCheckMsg(null)
+    try {
+      const res = await fetch('/api/probes/check-updates', { method: 'POST' })
+      if (!res.ok) { setCheckMsg({ text: await errText(res, 'The check failed'), ok: false }); return }
+      const d: { probe_latest?: string; updater_latest?: string; failed?: string[] } = await res.json()
+      const lr = await fetch('/api/proxies')
+      const list: Proxy[] = lr.ok ? (await lr.json()) || [] : []
+      if (lr.ok) { setProxies(list); setError(null) }
+      // An update already in hand is "updating", not one still to do.
+      const inHand = (j?: ProbeJob) => !!j && j.state !== 'failed'
+      const probes = list.filter((p) => p.update_status === 'outdated' && !inHand(p.update_job)).length
+      const updaters = list.filter((p) => p.updater_status === 'outdated' && !inHand(p.updater_job)).length
+      const going = list.filter((p) => inHand(p.update_job) || inHand(p.updater_job)).length
+      const newest = [d.probe_latest && `probe ${d.probe_latest}`, d.updater_latest && `updater v${d.updater_latest.replace(/^v/, '')}`].filter(Boolean).join(', ')
+      const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+      const nw = newest ? ` (newest: ${newest})` : ''
+      if (d.failed && d.failed.length) setCheckMsg({ text: `Couldn't reach the registry to check ${d.failed.join(', ')}; try again in a moment.`, ok: false })
+      else if (probes + updaters > 0) setCheckMsg({ text: `${[probes && plural(probes, 'probe'), updaters && plural(updaters, 'updater')].filter(Boolean).join(' and ')} can update${nw}: use Update on their rows.${going ? ` ${going} already updating.` : ''}`, ok: false })
+      else if (going > 0) setCheckMsg({ text: `${going === 1 ? '1 probe is' : `${going} probes are`} updating now${nw}; nothing else to update.`, ok: false })
+      else setCheckMsg({ text: `Every probe is on the newest version${newest ? ` (${newest})` : ''}.`, ok: true })
+    } catch { setCheckMsg({ text: 'The check failed', ok: false }) } finally { setChecking(false) }
+  }
+
   async function triggerUpdate(p: Proxy) {
     try {
       const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/update`, { method: 'POST' })
@@ -3064,10 +3092,13 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
         })()}
         {canEdit && <div className="tools">
           <button className="btn" onClick={() => setOpenSnmp((n) => (n === CORE_SNMP ? null : CORE_SNMP))} title="The core server's own SNMP default - inherited by hosts monitored by the core, and used by core-run discovery scans">Core SNMP</button>
+          {isAdmin && <button className="btn" onClick={checkUpdates} disabled={checking} title="Look up the newest probe, updater and probe VM versions now (Argus otherwise looks every 3 hours)">{checking ? 'Checking\u2026' : 'Check for updates'}</button>}
           {isAdmin && <button className="btn" onClick={reconcile} title="Prune Argus records left behind by probes deleted directly in Zabbix">Clean up</button>}
           {isAdmin && enroll && <button className="btn primary" onClick={() => setWizardOpen(true)}>+ Add probe</button>}
         </div>}
       </div>
+
+      {checkMsg && <p style={{ color: checkMsg.ok ? 'var(--ok)' : 'var(--warn)', fontSize: 12.5, padding: '2px 16px 6px', margin: 0 }}>{checkMsg.text}</p>}
 
       {isAdmin && !enroll && (
         <p style={{ color: 'var(--muted)', fontSize: 12.5, padding: '2px 16px 0', margin: 0 }}>

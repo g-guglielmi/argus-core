@@ -100,6 +100,10 @@ GitHub Release from the matching section below.
   published sidecar, the version reads **latest** or **vX available**, and **Update to vX** shows only
   when there is a newer one (it read **Update sidecar** at all times before). A check that finds
   nothing newer says so in green, for the core and the sidecar alike.
+- The Probes page has a **Check for updates** too: it looks up the newest probe image, updater and
+  probe VM now (Argus otherwise looks every 3 hours) and says what that means for the fleet: every
+  probe on the newest version (in green), which probes and updaters can update, or which are
+  updating already.
 - The Probes page keeps showing a probe or sidecar update after a reload too: **update queued**
   until the sidecar's next check-in takes it, then **updating** (with how long ago it was handed
   over) until the probe reports the new version, and **update didn't take** when it still runs the

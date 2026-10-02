@@ -52,19 +52,7 @@ func (c *probeLatestCache) set(v string) {
 // view falls back to "tracking latest".
 func (s *Server) startProbeLatestRefresh(ctx context.Context) {
 	go func() {
-		refresh := func() {
-			c, cancel := context.WithTimeout(ctx, 20*time.Second)
-			defer cancel()
-			v, err := resolveLatestProbeVersion(c)
-			if err != nil {
-				s.logger.Warn("probe latest: GHCR resolve failed", "err", err)
-				return
-			}
-			if v != "" {
-				s.probeLatest.set(v)
-				s.logger.Info("probe latest resolved from GHCR", "version", v)
-			}
-		}
+		refresh := func() { _ = s.refreshProbeLatest(ctx) }
 		refresh()
 		t := time.NewTicker(probeLatestRefresh)
 		defer t.Stop()
@@ -77,6 +65,23 @@ func (s *Server) startProbeLatestRefresh(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// refreshProbeLatest looks up the newest published probe image now (the poll, and the Probes page's
+// "Check for updates").
+func (s *Server) refreshProbeLatest(ctx context.Context) error {
+	c, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	v, err := resolveLatestProbeVersion(c)
+	if err != nil {
+		s.logger.Warn("probe latest: GHCR resolve failed", "err", err)
+		return err
+	}
+	if v != "" {
+		s.probeLatest.set(v)
+		s.logger.Info("probe latest resolved from GHCR", "version", v)
+	}
+	return nil
 }
 
 // --- probe appliance (VM) images, resolved from the argus-probe GitHub Releases -------------------
@@ -112,19 +117,7 @@ func (c *probeVMCache) set(v probeVMInfo) { c.mu.Lock(); c.info = v; c.mu.Unlock
 // the wizard falls back to a "releases page" link).
 func (s *Server) startProbeVMRefresh(ctx context.Context) {
 	go func() {
-		refresh := func() {
-			c, cancel := context.WithTimeout(ctx, 20*time.Second)
-			defer cancel()
-			info, err := resolveLatestProbeVM(c)
-			if err != nil {
-				s.logger.Warn("probe-vm images: GitHub resolve failed", "err", err)
-				return
-			}
-			if info.Version != "" {
-				s.probeVM.set(info)
-				s.logger.Info("probe-vm images resolved from GitHub", "version", info.Version, "images", len(info.Images))
-			}
-		}
+		refresh := func() { _ = s.refreshProbeVM(ctx) }
 		refresh()
 		t := time.NewTicker(probeLatestRefresh)
 		defer t.Stop()
@@ -142,6 +135,56 @@ func (s *Server) startProbeVMRefresh(ctx context.Context) {
 var probeVMRelTag = regexp.MustCompile(`^probe-vm/v([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
 // vmImageLabel maps an appliance filename to a friendly "format - hypervisor" label.
+// refreshProbeVM looks up the newest probe-vm appliance release now.
+func (s *Server) refreshProbeVM(ctx context.Context) error {
+	c, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	info, err := resolveLatestProbeVM(c)
+	if err != nil {
+		s.logger.Warn("probe-vm images: GitHub resolve failed", "err", err)
+		return err
+	}
+	if info.Version != "" {
+		s.probeVM.set(info)
+		s.logger.Info("probe-vm images resolved from GitHub", "version", info.Version, "images", len(info.Images))
+	}
+	return nil
+}
+
+// handleProbesCheckUpdates looks up the newest probe image, argus-updater and probe-vm appliance now,
+// instead of waiting for the 3-hourly poll, for the Probes page's "Check for updates" (admin). It
+// answers what it found; the page reloads its rows for the verdicts.
+func (s *Server) handleProbesCheckUpdates(w http.ResponseWriter, r *http.Request) {
+	checks := []struct {
+		what string
+		run  func(context.Context) error
+	}{{"the probe image", s.refreshProbeLatest}, {"the updater", s.refreshUpdaterLatest}, {"the probe VM", s.refreshProbeVM}}
+	failed := make([]string, len(checks))
+	var wg sync.WaitGroup
+	for i, c := range checks {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := c.run(r.Context()); err != nil {
+				failed[i] = c.what
+			}
+		}()
+	}
+	wg.Wait()
+	out := struct {
+		Probe   string   `json:"probe_latest"`
+		Updater string   `json:"updater_latest"`
+		VM      string   `json:"vm_latest"`
+		Failed  []string `json:"failed,omitempty"` // which lookups couldn't reach the registry
+	}{Probe: s.probeLatest.get(), Updater: s.updaterLatest.get(), VM: s.probeVM.get().Version}
+	for _, f := range failed {
+		if f != "" {
+			out.Failed = append(out.Failed, f)
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func vmImageLabel(name string) string {
 	switch {
 	case strings.HasSuffix(name, ".ova"):
