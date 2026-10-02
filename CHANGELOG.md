@@ -13,6 +13,12 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-03
+
+A patch release: one **Updates** page for every update (the core, its sidecar, the probes and the
+VMs' operating systems), laid out the same way in every section, and a fix so a sidecar never takes
+a proxy update and its own update at once. Nothing to update besides the core.
+
 **Updates page:**
 - A new admin page, **Updates**, puts every update in one place, with one **Check for updates** that
   looks up the core, its sidecar, the probe image, the probe sidecar and the probe VM image at once
@@ -30,8 +36,9 @@ GitHub Release from the matching section below.
 - The Probes page keeps the versions as read-only status in the same words; a probe or sidecar that
   is behind links to Updates. Its Check for updates, update buttons and fleet target moved there.
 - Settings keeps a short **About** (version and licence); the old About and OS updates cards moved to
-  Updates. **Core SNMP default** moved up, right under About. The version pill in the sidebar and the update notices (a new release, a core or probe
-  update, a probe behind, OS updates and reboots) open Updates.
+  Updates. **Core SNMP default** moved up, right under About. The version pill in the sidebar and
+  the update notices (a new release, a core or probe update, a probe behind, OS updates and reboots)
+  open Updates.
 - A sidecar asked for both a proxy update and its own gets them one check-in apart, the proxy first:
   its own update replaces it, and could do so while it was still recreating the proxy.
 
