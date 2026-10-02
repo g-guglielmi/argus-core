@@ -1341,7 +1341,7 @@ plane; the probe checks in and converges.
   once - as root, `--network none`, read-only, only that folder bound in - whenever the core's image
   changes, a day after a success (puts back a deleted or edited collector) and ten minutes after a
   failure, and reports in `collectors.json` (`ok` | `failed` | `skipped`, with the version and what
-  it wrote); Settings, Updates shows it. The long-running core never gets write access to a folder
+  it wrote); Settings, About shows it. The long-running core never gets write access to a folder
   the Zabbix server executes from. `setup-core.sh` still installs them on a fresh core.
 
 **Tradeoff acknowledged.** Any automatic in-place container update needs Docker socket access at

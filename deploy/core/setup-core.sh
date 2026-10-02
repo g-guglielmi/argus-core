@@ -113,7 +113,7 @@ fi
 # above) back the SSH collector's key / password auth. The argus-probe image bakes the same scripts
 # (kept byte-identical) for proxy-monitored devices. Installed in BOTH modes (manual install + appliance);
 # after that the argus-updater keeps them current: the Argus image carries them and it copies the
-# running version's in after every core update (Settings, Updates shows it).
+# running version's in after every core update (Settings, About shows it).
 EXT_DST=/usr/lib/zabbix/externalscripts
 if [[ -d "${SCRIPT_DIR}/externalscripts" ]]; then
   install -d -m 0755 "$EXT_DST"

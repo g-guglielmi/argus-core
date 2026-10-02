@@ -13,6 +13,15 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-02
+
+A minor release: real HTTP checks (any URL, subdomain or path, each with its own certificate check
+and page text), push sensors for jobs that report their runs, notes and maintenance on status pages,
+six new alert channels (Teams, Slack, ntfy, Gotify, Pushover, a webhook), and updates you can follow
+to the end: every step of a core, sidecar or probe update stays shown until it is done, and the
+core's own collectors now come with each update. Update the sidecar to argus-updater 0.2.12 and the
+probes to `probe/v7.0.31-r22` for all of it.
+
 **HTTP checks:**
 - The HTTP/HTTPS add-on now makes a real request instead of only checking that the port answers, so a
   page serving an error or an expired certificate no longer counts as up. List any number of pages
@@ -118,8 +127,8 @@ GitHub Release from the matching section below.
   XCP-ng and the rest) now update with Argus. Before, they stayed as setup installed them, so a fix to
   a collector needed copying by hand on the core. The Argus image carries them and the argus-updater
   sidecar copies the ones that changed into the core host's Zabbix after every update (and puts back
-  a deleted one within a day). **Settings, Updates** shows whether they're current, and what to do
-  if they aren't: an updater from before this needs **Update sidecar** once (argus-updater 0.2.11).
+  a deleted one within a day). **Settings, About** shows whether they're current, and what to do
+  if they aren't: an updater from before this needs updating once (to argus-updater 0.2.11 or later).
 
 **Acknowledged problems:**
 - Everything about an acknowledged problem now takes the acknowledged colour: the host's dot, problem
