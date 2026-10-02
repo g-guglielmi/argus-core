@@ -104,6 +104,8 @@ GitHub Release from the matching section below.
   probe VM now (Argus otherwise looks every 3 hours) and says what that means for the fleet: every
   probe on the newest version (in green), which probes and updaters can update, or which are
   updating already.
+- The core server's SNMP default moved from the Probes page (**Core SNMP**) to **Settings, Core SNMP
+  default**: it is the core's own setting, not a probe's. Host settings and Add device point there.
 - The Probes page keeps showing a probe or sidecar update after a reload too: **update queued**
   until the sidecar's next check-in takes it, then **updating** (with how long ago it was handed
   over) until the probe reports the new version, and **update didn't take** when it still runs the

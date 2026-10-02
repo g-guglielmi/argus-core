@@ -19,11 +19,11 @@ review-and-adopt screen. Discovery is **admin-only** and lives in the sidebar un
   "Monitored by: Core server"). Two container-imposed differences: devices that answer **only ICMP
   ping** (phones, IoT with no open ports) are found only where the container runtime allows
   unprivileged ping (Docker does by default) and are otherwise skipped, and **MAC addresses** are
-  never reported. The core's SNMP default is set under Probes → **Core SNMP** - it also enables
+  never reported. The core's SNMP default is set under Settings → **Core SNMP default** - it also enables
   SNMP-credential inheritance for every device monitored by the core, exactly like a probe's
   default does for its site.
 - For SNMP fingerprinting, the scan **inherits the collector's SNMP default** - the probe's
-  (Probes → the probe's Defaults) or the core server's (Probes → **Core SNMP**) - unless you type a
+  (Probes → the probe's Defaults) or the core server's (Settings → **Core SNMP default**) - unless you type a
   community into the form for this one scan. Only SNMP **v1/v2c** are used for scanning; a v3-only
   site simply scans without SNMP facts.
 

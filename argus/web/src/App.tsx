@@ -2109,6 +2109,12 @@ function SettingsView({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
             </form>
           )
         })}
+        {/* The core server's own SNMP default (stored under proxy id "0"): a server setting, not a probe's. */}
+        <section className="set-card">
+          <h3>Core SNMP default</h3>
+          <p className="set-note">The SNMP credentials of the core server itself: hosts it monitors (Monitored by: Server) that inherit them, and its own discovery scans, use these. Each probe has its own default, under Probes.</p>
+          <ProxySNMP proxyId="0" proxyName="the core server" embedded />
+        </section>
         {/* Zabbix housekeeping (history / trends / compression), saved through its own endpoint. */}
         <DataRetention />
         {/* The core host's own backups (backup.go, deploy/core/host/argus-backup). */}
@@ -2937,7 +2943,6 @@ function probeComposeCmd(c: CreatedToken): string {
 // Sentinel for the Core-server SNMP-defaults band in openSnmp (otherwise keyed by probe name).
 // The core's default is stored under proxy id "0" and is what core-monitored hosts inherit and
 // core-run discovery scans fingerprint with.
-const CORE_SNMP = '::core::'
 
 function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; goHost: (hostId: string) => void }) {
   const confirm = useConfirm()
@@ -3091,7 +3096,6 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
           return needReboot > 0 ? <span className="tag avail" title="These probe VMs need a reboot to finish applying OS updates; each reboots in its weekly ~03:00 window">{needReboot} need a reboot</span> : null
         })()}
         {canEdit && <div className="tools">
-          <button className="btn" onClick={() => setOpenSnmp((n) => (n === CORE_SNMP ? null : CORE_SNMP))} title="The core server's own SNMP default - inherited by hosts monitored by the core, and used by core-run discovery scans">Core SNMP</button>
           {isAdmin && <button className="btn" onClick={checkUpdates} disabled={checking} title="Look up the newest probe, updater and probe VM versions now (Argus otherwise looks every 3 hours)">{checking ? 'Checking\u2026' : 'Check for updates'}</button>}
           {isAdmin && <button className="btn" onClick={reconcile} title="Prune Argus records left behind by probes deleted directly in Zabbix">Clean up</button>}
           {isAdmin && enroll && <button className="btn primary" onClick={() => setWizardOpen(true)}>+ Add probe</button>}
@@ -3126,7 +3130,6 @@ function ProbesView({ role, enroll, goHost }: { role: string; enroll: boolean; g
 
       {isAdmin && <FleetTarget target={target} latest={(proxies || []).find((p) => p.latest)?.latest} onSaved={setTarget} />}
 
-      {openSnmp === CORE_SNMP && <ProxySNMP proxyId="0" proxyName="Core server" onClose={() => setOpenSnmp(null)} />}
 
       <div className="enroll-scroll">
       <table className="enroll enroll-probes">
@@ -4575,7 +4578,7 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
 
   // For an SNMP class, check whether the chosen collector has an SNMP default to inherit, so the form
   // can hide the credential fields (the common case) and only ask when overriding or when none is set.
-  // The core server's own default lives under proxy id "0" (Probes -> Core SNMP).
+  // The core server's own default lives under proxy id "0" (Settings, Core SNMP default).
   useEffect(() => {
     if (!needsSnmp) { setProxySnmp({ set: false }); return }
     setProxySnmp(null)
@@ -4682,7 +4685,7 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
               </div>
             )}
             {proxySnmp !== null && !proxySnmp.set && (
-              <span style={{ fontSize: 13, color: 'var(--muted)' }}>{proxyName} has no SNMP default - enter settings below, or set one in Probes{proxyId === '' ? ' (Core SNMP)' : ''} to reuse it.</span>
+              <span style={{ fontSize: 13, color: 'var(--muted)' }}>{proxyName} has no SNMP default - enter settings below, or set one {proxyId === '' ? 'in Settings (Core SNMP default)' : 'in Probes'} to reuse it.</span>
             )}
             {showSnmpFields && (
               <div style={grid}>
@@ -6598,9 +6601,9 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
                   </div>
                 </label>
               )}
-              {(cfg.monitored_by === 0 || cfg.monitored_by === 1) && !cfg.proxy_default && <div className="if-inherit-note">No SNMP default is set for {cfg.proxy_name || (cfg.monitored_by === 0 ? 'the core server' : 'this proxy')} yet - set one in the Probes tab ({cfg.monitored_by === 0 ? 'Core SNMP' : 'its “Defaults” button'}) to enable inheritance.</div>}
+              {(cfg.monitored_by === 0 || cfg.monitored_by === 1) && !cfg.proxy_default && <div className="if-inherit-note">No SNMP default is set for {cfg.proxy_name || (cfg.monitored_by === 0 ? 'the core server' : 'this proxy')} yet - set one {cfg.monitored_by === 0 ? 'in Settings (Core SNMP default)' : 'in the Probes tab (its “SNMP defaults”)'} to enable inheritance.</div>}
               {i.inherit
-                ? <div className="if-inherit-note">Using {cfg.proxy_name || (cfg.monitored_by === 0 ? 'the core server' : 'the proxy')}’s SNMP default{cfg.proxy_default ? ` (v${cfg.proxy_default.version === 2 ? '2c' : cfg.proxy_default.version}${cfg.proxy_default.version !== 3 ? `, community “${cfg.proxy_default.community}”` : ''})` : ''} - change it in the Probes tab.</div>
+                ? <div className="if-inherit-note">Using {cfg.proxy_name || (cfg.monitored_by === 0 ? 'the core server' : 'the proxy')}’s SNMP default{cfg.proxy_default ? ` (v${cfg.proxy_default.version === 2 ? '2c' : cfg.proxy_default.version}${cfg.proxy_default.version !== 3 ? `, community “${cfg.proxy_default.community}”` : ''})` : ''} - change it {cfg.monitored_by === 0 ? 'in Settings (Core SNMP default)' : 'in the Probes tab'}.</div>
                 : <>
               <label className="field"><span>SNMP version</span>
                 <select className="input" value={i.snmp?.version ?? 2} disabled={!canEdit} onChange={(e) => setSnmp(idx, { version: Number(e.target.value) })}>
@@ -6818,7 +6821,9 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
 
 // ProxySNMP is the per-proxy SNMP-defaults band in the Probes tab. Saving stores the default and
 // propagates it to every host on the proxy whose SNMP interface is set to inherit.
-function ProxySNMP({ proxyId, proxyName, onClose }: { proxyId: string; proxyName: string; onClose: () => void }) {
+// embedded: a section of its own page (Settings, for the core) rather than a band under a probe row:
+// no title or Close of its own.
+function ProxySNMP({ proxyId, proxyName, onClose, embedded }: { proxyId: string; proxyName: string; onClose?: () => void; embedded?: boolean }) {
   const confirm = useConfirm()
   const toast = useToast()
   const [snmp, setSnmp] = useState<SnmpCfg | null>(null)
@@ -6850,12 +6855,13 @@ function ProxySNMP({ proxyId, proxyName, onClose }: { proxyId: string; proxyName
       }
     }
   }
-  if (err && !snmp) return <div className="host-settings"><div style={{ color: 'var(--err)', fontSize: 13 }}>{err}</div></div>
-  if (!snmp) return <div className="host-settings"><span style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</span></div>
+  const root = 'host-settings ' + (embedded ? 'snmp-embedded' : 'snmp-band')
+  if (err && !snmp) return <div className={root}><div style={{ color: 'var(--err)', fontSize: 13 }}>{err}</div></div>
+  if (!snmp) return <div className={root}><span style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</span></div>
   return (
-    <div className="host-settings snmp-band">
-      <div className="hs-title">SNMP default · {proxyName}</div>
-      <div className="hs-note">Hosts on this proxy set to “inherit” use these credentials. Saving applies them to every inheriting host.{isSet ? '' : ' No default is set yet.'}</div>
+    <div className={root}>
+      {!embedded && <div className="hs-title">SNMP default · {proxyName}</div>}
+      <div className="hs-note">{embedded ? 'Hosts set to “inherit” use these credentials.' : 'Hosts on this proxy set to “inherit” use these credentials.'} Saving applies them to every inheriting host.{isSet ? '' : ' No default is set yet.'}</div>
       <div className="if-snmp" style={{ borderTop: 'none', marginTop: 4, paddingTop: 0 }}>
         <label className="field"><span>SNMP version</span>
           <select className="input" value={snmp.version} onChange={(e) => set({ version: Number(e.target.value) })}>
@@ -6887,7 +6893,7 @@ function ProxySNMP({ proxyId, proxyName, onClose }: { proxyId: string; proxyName
       </div>
       {err && <div style={{ color: 'var(--err)', fontSize: 13, marginTop: 8 }}>{err}</div>}
       <div className="hs-foot">
-        <Button variant="ghost" onClick={onClose} disabled={busy}>Close</Button>
+        {onClose && <Button variant="ghost" onClick={onClose} disabled={busy}>Close</Button>}
         <Button variant="primary" onClick={save} disabled={busy}>Save</Button>
       </div>
     </div>
