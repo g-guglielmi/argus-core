@@ -210,7 +210,9 @@ CA's, `self-signed` also one no CA vouches for - the collector reads the certifi
 subject alternative names, else the common name) instead of asking the TLS library, which refuses a
 device chain whose own "CA" isn't marked as one, so its dates still count, and its name for a URL by
 name (not by IP: device certificates rarely list their address) - `ignore` any, and doesn't read it);
-the response time; for https the certificate's days left, read even when untrusted, in a second LLD
+the response time (a URL whose certificate is refused is down for it, but its page is still asked
+for over the unchecked connection, so its response time and status keep coming); for https the
+certificate's days left, read even when untrusted, in a second LLD
 rule so plain http URLs and `ignore` ones have none (alerts: expires soon, very soon, has expired); why it isn't up as the reason, and a list the collector refuses
 makes the URL sensors unsupported with why - attachable to any host, not a class), the **DNS
 resolution** add-on and the **TCP ports** add-on

@@ -264,6 +264,8 @@ class HTTPSTest(unittest.TestCase):
         self.assertEqual(r["up"], 0)
         self.assertTrue(r["error"].startswith("the certificate is not trusted"), r["error"])
         self.assertAlmostEqual(r["cert_days"], 30, delta=1, msg="its expiry is read anyway")
+        self.assertEqual(r["status"], 200, "the page is still asked for")
+        self.assertIsNotNone(r["time"], "so its response time keeps coming")
 
     def test_self_signed_mode(self):
         r = self.run_mode(self.port, "self-signed", "localhost")
@@ -271,6 +273,7 @@ class HTTPSTest(unittest.TestCase):
         self.assertAlmostEqual(r["cert_days"], 30, delta=1)
         r = self.run_mode(self.other_port, "self-signed", "localhost")
         self.assertEqual((r["up"], r["error"]), (0, "the certificate is for another name (other.example.lan)"), "a URL by name still checks the name")
+        self.assertEqual(r["status"], 200, "a refused certificate still times the page")
         r = self.run_mode(self.other_port, "self-signed")
         self.assertEqual((r["up"], r["error"]), (1, ""), "a URL by IP address isn't name-checked")
         r = self.run_mode(self.cnonly_port, "self-signed", "localhost")

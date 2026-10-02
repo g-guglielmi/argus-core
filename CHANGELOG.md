@@ -34,6 +34,10 @@ GitHub Release from the matching section below.
   save that fails also shows its error as a toast, not only at the bottom of the dialog.
 - Taking a URL out of the list (or a port out of the TCP ports add-on) deletes its sensors and their
   open problems at the next check, instead of an hour later.
+- A URL whose certificate is refused is still down for it, but its page is now asked for anyway
+  (without checking the certificate), so its response time and status code keep coming instead of
+  stopping with the certificate (from `probe/v7.0.31-r22`; on the core, with the argus-updater's
+  next collectors install).
 - A URL that stays down after a check failed once no longer adds "response time stopped collecting"
   and "status code stopped collecting" to its "is down": Zabbix kept those two "not supported" from
   that one failure for as long as the URL didn't answer.

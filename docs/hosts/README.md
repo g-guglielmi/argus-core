@@ -151,7 +151,8 @@ is down, and for https the days its certificate has left. A URL is up when it an
 **Accepted status codes** (`200-299` by default, after following up to 5 redirects), has its text, and
 presents a trusted certificate for its name. When it isn't, it says why (`returned 502 Bad Gateway`,
 `the page does not contain "Welcome"`, `the certificate is not trusted: self-signed certificate`, `the
-certificate is for another name`, `no answer within 10 s`). A URL's **Certificate** sets how the
+certificate is for another name`, `no answer within 10 s`). A refused certificate makes the URL down,
+but its page is still asked for, so its response time keeps coming. A URL's **Certificate** sets how the
 certificate is checked: `verify` wants one a known CA issued, for the URL's name and not expired; `self-signed`
 also takes one no CA vouches for (the device's own, or one from a private CA), still not expired and,
 when the URL uses a name, for that name. A URL by IP address (a blank list on a host added by IP) isn't
