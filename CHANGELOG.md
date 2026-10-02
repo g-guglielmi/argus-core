@@ -34,6 +34,9 @@ GitHub Release from the matching section below.
   save that fails also shows its error as a toast, not only at the bottom of the dialog.
 - Taking a URL out of the list (or a port out of the TCP ports add-on) deletes its sensors and their
   open problems at the next check, instead of an hour later.
+- A URL that stays down after a check failed once no longer adds "response time stopped collecting"
+  and "status code stopped collecting" to its "is down": Zabbix kept those two "not supported" from
+  that one failure for as long as the URL didn't answer.
 - The check runs in the probe (`argus_http.py`, `probe/v7.0.31-r15`; hosts without a scheme and
   per-URL options from `probe/v7.0.31-r18`; the `self-signed` mode as described from
   `probe/v7.0.31-r19`, which also takes a device whose own certificate chain a strict check calls

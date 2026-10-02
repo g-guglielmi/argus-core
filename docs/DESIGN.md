@@ -615,7 +615,10 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   to the device, or has been dead for over a day: silent, and an alert already sent for it is
   dropped without a recovery), i.e. 2 of its own update intervals after Argus first saw it fail
   (a dependent sensor uses its master's interval; an unreadable one counts as 1 min;
-  `item_unsupported` records since when, as Zabbix doesn't say), and an **agent / SNMP / IPMI / JMX
+  `item_unsupported` records since when, as Zabbix doesn't say). A dependent sensor whose own steps
+  can't fail (each discards, or sets, its value on error) is left out while its master collects:
+  only its master's failure made it unsupported, and Zabbix keeps that state until it stores a value,
+  which a URL that doesn't answer never gives its response time (`leftOverUnsupported`). And an **agent / SNMP / IPMI / JMX
   interface** Zabbix marks unavailable (timed from its `errors_from`). Both are High and skip the
   alert delay, since failed checks or Zabbix's retries already are the wait. The reading is Zabbix's
   error. Acks stay in Argus (no Zabbix event to mirror). Those present when the

@@ -695,35 +695,53 @@ type UnsupportedItem struct {
 	Delay        string       `json:"delay"`         // update interval ("1m", "30s"; "0" for a dependent item)
 	MasterItemID string       `json:"master_itemid"` // a dependent item's master ("0" otherwise)
 	Hosts        []TargetHost `json:"hosts"`
+	// The item's own preprocessing: whether a step can make it unsupported by itself.
+	Preprocessing []PreprocStep `json:"preprocessing"`
+}
+
+// PreprocStep is one preprocessing step: its type and what it does on error ("0" fail the item,
+// "1" discard the value, "2" set a value, "3" set an error).
+type PreprocStep struct {
+	Type         string `json:"type"`
+	ErrorHandler string `json:"error_handler"`
+}
+
+// MasterItem is what a dependent item needs to know about its master: how often it runs and whether
+// it is collecting ("0") or not supported ("1").
+type MasterItem struct {
+	Delay string
+	State string
 }
 
 // UnsupportedItems returns every enabled, "not supported" sensor on a monitored host.
 func (c *Client) UnsupportedItems(ctx context.Context) ([]UnsupportedItem, error) {
 	params := map[string]any{
-		"output":      []string{"itemid", "hostid", "name", "key_", "error", "lastclock", "delay", "master_itemid"},
-		"selectHosts": []string{"hostid", "name", "status"},
-		"filter":      map[string]any{"state": 1, "status": 0},
-		"monitored":   true,
+		"output":              []string{"itemid", "hostid", "name", "key_", "error", "lastclock", "delay", "master_itemid"},
+		"selectHosts":         []string{"hostid", "name", "status"},
+		"selectPreprocessing": []string{"type", "error_handler"},
+		"filter":              map[string]any{"state": 1, "status": 0},
+		"monitored":           true,
 	}
 	var items []UnsupportedItem
 	return items, c.call(ctx, "item.get", params, true, &items)
 }
 
-// ItemDelays returns the update interval of each requested item (e.g. the masters of dependent items).
-func (c *Client) ItemDelays(ctx context.Context, ids []string) (map[string]string, error) {
-	out := map[string]string{}
+// MasterItems returns the interval and state of each requested item (the masters of dependent items).
+func (c *Client) MasterItems(ctx context.Context, ids []string) (map[string]MasterItem, error) {
+	out := map[string]MasterItem{}
 	if len(ids) == 0 {
 		return out, nil
 	}
 	var items []struct {
 		ItemID string `json:"itemid"`
 		Delay  string `json:"delay"`
+		State  string `json:"state"`
 	}
-	if err := c.call(ctx, "item.get", map[string]any{"output": []string{"itemid", "delay"}, "itemids": ids}, true, &items); err != nil {
+	if err := c.call(ctx, "item.get", map[string]any{"output": []string{"itemid", "delay", "state"}, "itemids": ids}, true, &items); err != nil {
 		return nil, err
 	}
 	for _, it := range items {
-		out[it.ItemID] = it.Delay
+		out[it.ItemID] = MasterItem{Delay: it.Delay, State: it.State}
 	}
 	return out, nil
 }

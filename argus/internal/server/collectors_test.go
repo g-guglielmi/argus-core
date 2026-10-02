@@ -6,6 +6,8 @@ package server
 import (
 	"strings"
 	"testing"
+
+	"argus/internal/zabbix"
 )
 
 // A collector that isn't there yet says which probe release brings it and where the core's comes
@@ -31,5 +33,31 @@ func TestCollectorWhy(t *testing.T) {
 	}
 	if got := sensorWhy(reasonIndex{}, "10", key, "", "/usr/lib/zabbix/externalscripts/argus_http.py: No such file or directory", false); !strings.Contains(got, "isn't where this host is monitored yet") {
 		t.Errorf("census reason: %q", got)
+	}
+}
+
+// A response time or status code stays "not supported" after one failed check while its URL doesn't
+// answer (its steps only discard): with the master collecting, that's left over, not a stopped sensor.
+func TestLeftOverUnsupported(t *testing.T) {
+	discard := []zabbix.PreprocStep{{Type: "21", ErrorHandler: "1"}}
+	withHeartbeat := []zabbix.PreprocStep{{Type: "21", ErrorHandler: "1"}, {Type: "20", ErrorHandler: "0"}}
+	canFail := []zabbix.PreprocStep{{Type: "21", ErrorHandler: "0"}}
+	ok, failing := zabbix.MasterItem{State: "0"}, zabbix.MasterItem{State: "1"}
+	cases := []struct {
+		name  string
+		steps []zabbix.PreprocStep
+		m     zabbix.MasterItem
+		want  bool
+	}{
+		{"discarding steps, master collecting", discard, ok, true},
+		{"discard + heartbeat, master collecting", withHeartbeat, ok, true},
+		{"a step that fails the item (the up flag on a bad URL list)", canFail, ok, false},
+		{"master not collecting: still stopped", discard, failing, false},
+		{"no steps: unsupported on its own", nil, ok, false},
+	}
+	for _, c := range cases {
+		if got := leftOverUnsupported(zabbix.UnsupportedItem{Preprocessing: c.steps}, c.m); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
 	}
 }

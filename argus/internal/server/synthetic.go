@@ -85,6 +85,27 @@ var synthCache struct {
 	set synthSet
 }
 
+// leftOverUnsupported reports a dependent sensor whose "not supported" is left over from its master:
+// its own steps can't fail (each discards its value, or sets one, on error), so only a failure of its
+// master made it unsupported, and Zabbix keeps that state until the sensor stores a value again. A
+// URL that doesn't answer never gives its response time or status code one, so after a single failed
+// check they'd read "stopped collecting" for as long as the URL stays down. With the master collecting
+// again, that is no sensor that stopped: the master's own sensors say what is wrong.
+func leftOverUnsupported(it zabbix.UnsupportedItem, master zabbix.MasterItem) bool {
+	if master.State != "0" || len(it.Preprocessing) == 0 {
+		return false
+	}
+	for _, p := range it.Preprocessing {
+		switch {
+		case p.Type == "19" || p.Type == "20": // discard unchanged (with heartbeat): never fails
+		case p.ErrorHandler == "1" || p.ErrorHandler == "2": // discard, or set a value, on error
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, record bool) synthSet {
 	out := synthSet{targets: map[string]zabbix.TriggerTarget{}, readings: map[string]string{}, silent: map[string]bool{}}
 	now := time.Now().Unix()
@@ -108,14 +129,19 @@ func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, 
 				masters = append(masters, it.MasterItemID)
 			}
 		}
-		masterDelay, _ := zbx.ItemDelays(ctx, masters)
+		masterOf, _ := zbx.MasterItems(ctx, masters)
 		for _, it := range items {
 			start, ok := since[it.ItemID]
 			delay := it.Delay
-			if d, dep := masterDelay[it.MasterItemID]; dep {
-				delay = d
+			m, dep := masterOf[it.MasterItemID]
+			if dep {
+				delay = m.Delay
 			}
 			id := synthUnsupported + it.ItemID
+			if dep && leftOverUnsupported(it, m) {
+				out.silent[id] = true
+				continue
+			}
 			// A collector alerts even when it never collected: its sensors only exist once it runs.
 			_, isColl := collectorOf(it.Key)
 			if !ok || (atoi64(it.LastClock) == 0 && !isColl) || now-start < int64(unsupportedChecks)*intervalSecs(delay) || len(it.Hosts) == 0 {
