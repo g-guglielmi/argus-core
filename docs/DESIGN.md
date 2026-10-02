@@ -390,6 +390,11 @@ Dashboards (list views, same event stream):
 - **Errors-only** → shows Error; **hides Acknowledged and Paused**.
 - **Errors + Warnings** → shows Error + Warning, **including acknowledged (dimmed/tagged)**.
 
+Acknowledged has its own colour (`--acked`), and everything about an acknowledged problem takes it:
+the sensor row and its graph, the "acked" tag, the host's problems box (titled **Acknowledged
+problems** once all are), and, once every problem on a host is acknowledged (the host's `acked` flag),
+its dot, problem count and ping graph, and a group's dot when that's all the group has left.
+
 ## 7b. Uptime and incident history
 
 **Uptime** (`internal/server/uptime.go`). An up/down sensor reads 1 while up and 0 while down (ping,

@@ -157,6 +157,18 @@ func TestUnackedHosts(t *testing.T) {
 	}
 }
 
+// A host reads as acknowledged only when everything wrong on it is: an acked sensor and no open one.
+func TestAckedHosts(t *testing.T) {
+	got := ackedHosts([]sensorRow{
+		{HostID: "1", State: "acked"}, {HostID: "1", State: "ok"},
+		{HostID: "2", State: "acked"}, {HostID: "2", State: "warning"},
+		{HostID: "3", State: "error"}, {HostID: "4", State: "ok"}, {HostID: "5", State: "held"},
+	})
+	if !got["1"] || got["2"] || got["3"] || got["4"] || got["5"] {
+		t.Fatalf("acked hosts = %v, want only 1", got)
+	}
+}
+
 // The failed-units count shows the failed names while it is above 0, has no uptime, and is a Services
 // row; the CPU iowait and steal sensors are CPU rows.
 func TestFailedUnitsSensor(t *testing.T) {

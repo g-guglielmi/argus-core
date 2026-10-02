@@ -14,7 +14,7 @@ type Me = { email: string; name: string; surname: string; role: string; mfa_enab
 type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean; sites?: string[] }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type MaintHit = { id: number; name: string; until: number }
-type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number; unacked?: boolean; maintenance?: MaintHit }
+type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number; unacked?: boolean; acked?: boolean; maintenance?: MaintHit }
 type Group = { id: string; name: string; hosts: number }
 type MacroSpec = { macro: string; label: string; hint?: string; required?: boolean; secret?: boolean; derive?: string; options?: string[]; settings_only?: boolean }
 type ClassSetup = { title: string; intro?: string; steps?: string[]; command?: string; note?: string }
@@ -126,8 +126,12 @@ function needsEye(h: { paused: boolean; hidden: boolean; state: string; unacked?
 function dotColor(paused: boolean, hidden: boolean, state: string): string {
   if (paused) return PAUSED_BLUE
   if (hidden) return HIDDEN_GREY
-  return stateColor[state] || '#777'
+  return STATE_VAR[state] || '#777'
 }
+
+// hostShade is the state a host's dot, problem count and graph are coloured by: "acked" once every
+// warning and error on it is acknowledged, so nothing about it still reads as an open alert.
+function hostShade(h: Host): string { return h.acked ? 'acked' : h.state }
 
 const DURATIONS: { label: string; seconds: number | null | 'custom' }[] = [
   { label: '1 hour', seconds: 3600 },
@@ -4123,6 +4127,13 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     walk(n); return out
   }
   function nodeWorst(hs: Host[]): string { let s = 'ok'; for (const h of hs) if (!h.paused && !h.hidden && stateRank[h.state] > stateRank[s]) s = h.state; return s }
+  // nodeShade colours a group's dot: the worst of what nobody has acknowledged, else "acked" while an
+  // acknowledged problem is all that's left.
+  function nodeShade(hs: Host[]): string {
+    const live = hs.filter((h) => !h.paused && !h.hidden)
+    const worst = nodeWorst(live.filter((h) => !h.acked))
+    return worst === 'ok' && live.some((h) => h.acked) ? 'acked' : worst
+  }
   function toggleNode(path: string) { setCollapsed((c) => { const n = new Set(c); n.has(path) ? n.delete(path) : n.add(path); return n }) }
 
   const focusHostId = focus.level === 'host' || focus.level === 'sensor' ? focus.hostId : null
@@ -4155,22 +4166,23 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   function renderHost(h: Host, path: string, depth: number, sibIds: string[] = [h.id], index = 0) {
     const key = path + '::' + h.id
     const hopen = openHost === key || focusHostId === h.id
+    const shade = hostShade(h)
     return (
       <div className="host" key={key}>
         <div className="host-head" style={{ paddingLeft: indent(depth) }} onClick={() => { const next = hopen ? null : key; setOpenHost(next); onNavigate(next ? h.id : null, null) }}>
           {guides(depth)}
           <div className="c-name">
             <svg className={'chev' + (hopen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
-            <span className="dev-ico" title={h.class_id || undefined}>{hostGlyph(h.icon)}<span className={'dev-badge' + (needsEye(h) ? ' pulse' : '')} style={{ '--dot': dotColor(h.paused, h.hidden, h.state) } as CSSProperties} /></span>
+            <span className="dev-ico" title={h.class_id || undefined}>{hostGlyph(h.icon)}<span className={'dev-badge' + (needsEye(h) ? ' pulse' : '')} style={{ '--dot': dotColor(h.paused, h.hidden, shade) } as CSSProperties} /></span>
             <span className="hn lnk-host" onClick={(e) => { e.stopPropagation(); drillHost(path, h.id) }}>{h.name}</span>
             {h.paused && <span className="kind" style={{ color: PAUSED_BLUE }}>· paused {untilLabel(h.paused_until)}</span>}
             {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
             {h.maintenance && <span className="kind maint" title={`${h.maintenance.name}: alerts wait until ${fmtWhen(h.maintenance.until)}`}>· maintenance</span>}
-            {!h.paused && !h.hidden && h.problems > 0 && <span className={'probpill' + (h.state === 'warning' ? ' warn' : '')} title={`${h.problems} problem${h.problems === 1 ? '' : 's'}`}>{h.problems}</span>}
+            {!h.paused && !h.hidden && h.problems > 0 && <span className={'probpill' + (shade === 'acked' ? ' acked' : h.state === 'warning' ? ' warn' : '')} title={`${h.problems} problem${h.problems === 1 ? '' : 's'}${shade === 'acked' ? ', acknowledged' : ''}`}>{h.problems}</span>}
           </div>
           <div className="c-graph">
             {h.icmp_item && icmpSparks[h.icmp_item] && icmpSparks[h.icmp_item].length > 1 && (
-              <span className="hspark"><Spark values={icmpSparks[h.icmp_item]} color={h.state === 'ok' ? 'var(--accent)' : (STATE_VAR[h.state] || 'var(--accent)')} width={168} /></span>
+              <span className="hspark"><Spark values={icmpSparks[h.icmp_item]} color={shade === 'ok' ? 'var(--accent)' : (STATE_VAR[shade] || 'var(--accent)')} width={168} /></span>
             )}
           </div>
           <div className="c-val" title="ICMP response time">
@@ -4216,7 +4228,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
           </div>
           <div className="c-graph" />
           <div className="c-val">
-            {reorder ? orderArrows(sibIds, index, scope, 'sibling') : <span className={'grpdot' + (sub.some(needsEye) ? ' pulse' : '')} style={{ '--dot': stateColor[nodeWorst(sub)] || 'var(--muted)' } as CSSProperties} />}
+            {reorder ? orderArrows(sibIds, index, scope, 'sibling') : <span className={'grpdot' + (sub.some(needsEye) ? ' pulse' : '')} style={{ '--dot': STATE_VAR[nodeShade(sub)] || 'var(--muted)' } as CSSProperties} />}
           </div>
           <div className="c-act">
             {canPause && g && !reorder && (
@@ -7128,9 +7140,11 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
     return { node: reading(gi[0]), primary: gi[0] }
   }
 
-  // The problems banner takes the worst severity present: red for errors, amber when it's warnings only.
-  const probErr = problems.some((p) => p.state === 'error')
-  const probColor = probErr ? 'var(--err)' : 'var(--warn)'
+  // The problems banner takes the worst severity nobody has acknowledged: red for errors, amber when
+  // it's warnings only, the acknowledged colour once every problem is.
+  const open = problems.filter((p) => !p.acknowledged)
+  const probErr = open.some((p) => p.state === 'error')
+  const probColor = open.length === 0 ? 'var(--acked)' : probErr ? 'var(--err)' : 'var(--warn)'
   return (
     <div>
       {!onlyItem && <HostUptime hostId={hostId} />}
@@ -7142,7 +7156,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
       )}
       {problems.length > 0 && (
         <div style={{ border: `1px solid color-mix(in srgb, ${probColor} 30%, var(--border))`, background: `color-mix(in srgb, ${probColor} 7%, var(--panel))`, borderRadius: 8, padding: '0.5rem 0.75rem', marginBottom: '0.5rem' }}>
-          <div style={{ color: probColor, fontSize: 12, marginBottom: 4, fontWeight: 600 }}>{probErr ? 'Active problems' : 'Active warnings'}</div>
+          <div style={{ color: probColor, fontSize: 12, marginBottom: 4, fontWeight: 600 }}>{open.length === 0 ? 'Acknowledged problems' : probErr ? 'Active problems' : 'Active warnings'}</div>
           {problems.map((p, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.2rem 0' }}>
               <span className={'sdot' + (p.acknowledged ? '' : ' pulse')} style={{ '--dot': healthColor(p.state, p.acknowledged) } as CSSProperties} />

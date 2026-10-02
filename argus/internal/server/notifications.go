@@ -117,7 +117,7 @@ type channelRequest struct {
 	DelayMin    int               `json:"delay_min"`
 	RepeatMin   int               `json:"repeat_min"`
 	RepeatSev   int               `json:"repeat_min_severity"`
-	Alerts      *bool             `json:"alerts"`         // nil = true (a client from before system notices)
+	Alerts      *bool             `json:"alerts"` // nil = true (a client from before system notices)
 	Notices     bool              `json:"system_notices"`
 	Config      map[string]string `json:"config"`
 }

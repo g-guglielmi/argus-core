@@ -80,6 +80,12 @@ GitHub Release from the matching section below.
   only send to addresses on the internet, so a personal channel can't point inside the network; a
   webhook, Gotify or an ntfy server on the LAN is a shared channel an admin sets up.
 
+**Acknowledged problems:**
+- Everything about an acknowledged problem now takes the acknowledged colour: the host's dot, problem
+  count and ping graph once all its problems are acknowledged, the problems box (titled
+  **Acknowledged problems**) and its "acked" tags, and a group's dot when that's all it has left.
+  Before, the sensor row changed but the host still read red and the tag green.
+
 **Host settings:**
 - The sections (Interfaces, the class options, Add-ons, Push sensors, Master sensor, Thresholds,
   Sensor order) are folded, since most hosts keep their defaults, and their titles are larger and

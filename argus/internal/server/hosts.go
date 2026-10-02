@@ -53,6 +53,7 @@ type hostView struct {
 	IcmpItem    string    `json:"icmp_item,omitempty"`   // icmppingsec item id (for the row's sparkline), "" if none
 	IcmpMs      *float64  `json:"icmp_ms,omitempty"`     // last ICMP response time in ms, nil when unknown
 	Unacked     bool      `json:"unacked,omitempty"`     // has a warning or error nobody has acknowledged (its tree dot pulses)
+	Acked       bool      `json:"acked,omitempty"`       // has problems, all acknowledged (its dot, count and graph read as acknowledged)
 }
 
 type itemView struct {
@@ -200,9 +201,9 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 
 	hideMap, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 	pauseMap, _ := s.st.ActiveSuppressionMap(ctx, "pause", "host")
-	var unacked map[string]bool
+	var unacked, acked map[string]bool
 	if rows, err := s.sensorCensus(ctx); err == nil { // the cached census: no extra Zabbix call
-		unacked = unackedHosts(rows)
+		unacked, acked = unackedHosts(rows), ackedHosts(rows)
 	}
 	classMap, _ := s.st.DeviceClasses(ctx)      // host id -> device-class id (drives the tree icon)
 	pingItems, _ := s.zbx.PingLatencyItems(ctx) // host id -> icmppingsec item (drives the row latency + sparkline)
@@ -227,6 +228,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 			hv.Severity = worst[h.HostID]
 			hv.State = severityState(worst[h.HostID])
 			hv.Unacked = unacked[h.HostID]
+			hv.Acked = acked[h.HostID]
 		}
 		if h.Status == "1" { // disabled in Zabbix
 			hv.Paused = true
@@ -267,6 +269,25 @@ func unackedHosts(rows []sensorRow) map[string]bool {
 		}
 	}
 	return out
+}
+
+// ackedHosts marks the hosts whose sensors in trouble are all acknowledged: one "acked" at least and
+// none in warning or error. A census that couldn't be read marks none, so no host reads as handled
+// by mistake.
+func ackedHosts(rows []sensorRow) map[string]bool {
+	acked, open := map[string]bool{}, map[string]bool{}
+	for _, r := range rows {
+		switch r.State {
+		case "acked":
+			acked[r.HostID] = true
+		case "error", "warning":
+			open[r.HostID] = true
+		}
+	}
+	for id := range open {
+		delete(acked, id)
+	}
+	return acked
 }
 
 type problemView struct {

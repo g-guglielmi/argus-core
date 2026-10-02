@@ -373,5 +373,3 @@ func TestEnsurePushHost(t *testing.T) {
 		t.Error("the key is forgotten")
 	}
 }
-
-
