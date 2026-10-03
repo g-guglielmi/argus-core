@@ -22,6 +22,11 @@ GitHub Release from the matching section below.
   delay) and the incident history keeps it. **Edit note** and **Remove note** change it before then.
   Admins and helpdesk can write notes.
 
+**Fixed:**
+- A sensor's ⋯ menu near the bottom of a host card was cut off by the card (on the host page the last
+  items, like Disable alerts, were hidden). The menu now draws above the page: it opens upward when
+  there's more room there, always stays on screen, and follows its button when the page scrolls.
+
 ## [0.7.1] - 2026-10-03
 
 A patch release: one **Updates** page for every update (the core, its sidecar, the probes and the

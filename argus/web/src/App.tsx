@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 g-guglielmi
 
-import { useEffect, useMemo, useRef, useState, Fragment, type FormEvent, type ReactNode, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type FormEvent, type ReactNode, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
@@ -4021,22 +4021,45 @@ function Kebab({ actions, disabled, up }: { actions: KAction[]; disabled?: boole
   const [custom, setCustom] = useState(false)
   const [val, setVal] = useState('')
   const btnRef = useRef<HTMLButtonElement>(null)
-  const [autoUp, setAutoUp] = useState(false)
-  function close() { setOpen(false); setDur(null); setCustom(false) }
-  // Open the menu upward when there isn't room below the button (the last row of a mobile card would
-  // otherwise render off the bottom of the screen). Caller's `up` still forces it.
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
+  const [moved, setMoved] = useState(0) // bumped by a scroll or resize, to place the menu again
+  function close() { setOpen(false); setDur(null); setCustom(false); setPos(null) }
   function toggleOpen() {
-    if (!open) {
-      setDur(null); setCustom(false)
-      const r = btnRef.current?.getBoundingClientRect()
-      if (r) {
-        const estH = actions.length * 36 + 24
-        const spaceBelow = window.innerHeight - r.bottom
-        setAutoUp(spaceBelow < estH && r.top > spaceBelow)
-      }
-    }
-    setOpen((o) => !o)
+    if (open) { close(); return }
+    setDur(null); setCustom(false); setPos(null); setOpen(true)
   }
+  // The menu is portaled to <body> with fixed positioning, so a parent that clips its overflow (a host
+  // card, a table's scroll wrapper) can't cut it off. Measured once it renders, and again when its
+  // content changes (the duration list is taller than the actions): it opens below the button, above
+  // when there's more room there (or the caller asks), and stays on screen.
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current || !menuRef.current) return
+    const r = btnRef.current.getBoundingClientRect()
+    const h = menuRef.current.offsetHeight
+    const gap = 5, margin = 8
+    const below = window.innerHeight - r.bottom - gap - margin
+    const above = r.top - gap - margin
+    const goUp = up ? above >= h || above > below : h > below && above > below
+    const top = Math.max(margin, Math.min(goUp ? r.top - gap - h : r.bottom + gap, window.innerHeight - margin - h))
+    const right = Math.max(margin, window.innerWidth - r.right)
+    setPos((p) => (p && p.top === top && p.right === right ? p : { top, right }))
+  }, [open, dur, custom, actions.length, up, moved])
+  // A fixed menu doesn't move with the page: a scroll or resize places it again by its button, and a
+  // scroll that takes the button off screen closes it.
+  useEffect(() => {
+    if (!open) return
+    const onScroll = (e: Event) => {
+      if (e.target instanceof Node && menuRef.current?.contains(e.target)) return // the menu's own list
+      const r = btnRef.current?.getBoundingClientRect()
+      if (!r || r.bottom < 0 || r.top > window.innerHeight) close()
+      else setMoved((n) => n + 1)
+    }
+    const onResize = () => setMoved((n) => n + 1)
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onResize)
+    return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', onResize) }
+  }, [open])
   function choose(a: KAction) { if (a.onPick) { setDur(a) } else { const fn = a.onClick; close(); fn?.() } }
   function pickPreset(s: number | null | 'custom') {
     if (s === 'custom') { setVal(toLocalInput(Date.now() + 3600_000)); setCustom(true); return }
@@ -4049,10 +4072,12 @@ function Kebab({ actions, disabled, up }: { actions: KAction[]; disabled?: boole
   return (
     <span className="kebab-wrap" onClick={(e) => e.stopPropagation()}>
       <button ref={btnRef} className={'kebab' + (open ? ' open' : '')} title="Actions" disabled={disabled} onClick={toggleOpen}>⋮</button>
-      {open && (
+      {open && createPortal(
         <>
-          <div onClick={close} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
-          <div className={'menu' + ((up || autoUp) ? ' up' : '')} style={{ zIndex: 31, minWidth: dur && custom ? 240 : 180 }} onClick={(e) => e.stopPropagation()}>
+          <div onClick={close} style={{ position: 'fixed', inset: 0, zIndex: 59 }} />
+          <div ref={menuRef} className="menu" onClick={(e) => e.stopPropagation()}
+            style={{ position: 'fixed', top: pos ? pos.top : 0, right: pos ? pos.right : 0, bottom: 'auto', visibility: pos ? 'visible' : 'hidden', zIndex: 60,
+              minWidth: dur && custom ? 240 : 180, maxHeight: 'calc(100vh - 16px)', overflowY: 'auto' }}>
             {!dur && actions.map((a, i) => a.sep
               ? <div key={i} className="sep" />
               : <button key={i} className={a.danger ? 'danger' : ''} onClick={() => choose(a)}>{a.icon}{a.label}</button>)}
@@ -4068,8 +4093,7 @@ function Kebab({ actions, disabled, up }: { actions: KAction[]; disabled?: boole
               </div>
             )}
           </div>
-        </>
-      )}
+        </>, document.body)}
     </span>
   )
 }
