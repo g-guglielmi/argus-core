@@ -13,6 +13,12 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-10-03
+
+A patch release: notes on sensors in trouble that go out with their alerts and clear themselves once
+the sensor is OK, a history that leaves hidden sensors out, and a fix for the ⋯ menu being cut off
+near the bottom of a host card. Nothing to update besides the core.
+
 **Sensor notes:**
 - Leave a note on a sensor in trouble from its ⋯ menu (**Add note**), like "ISP ticket 4471 open,
   technician on site at 14:00". It shows with the sensor in Overview, the lists and on the host page,
