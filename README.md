@@ -83,7 +83,7 @@ API key, and MAC):
   when the job is late or didn't run ([docs/push-sensors.md](docs/push-sensors.md)).
 - **Incident history** - what went wrong and when, per host and across the fleet: start, duration,
   who acknowledged it, the note left on the sensor and the reason the device's collector gave, over
-  24 h to 90 days.
+  24 h to 90 days. Hidden sensors' incidents are left out unless you ask for them.
 - **Status pages** - read-only wall-screen dashboards opened with a secret link (no login),
   limited to chosen sites, optionally to your networks and an expiry; the link can be rotated. Pin a
   note on a page ("the ISP has a ticket open") for whoever is looking, and it shows the maintenance

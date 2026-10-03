@@ -47,6 +47,7 @@ type incidentView struct {
 	Argus    bool   `json:"argus,omitempty"` // raised by Argus, not a Zabbix trigger
 	Note     string `json:"note,omitempty"`  // the note on the sensor during it (sensornotes.go)
 	NoteBy   string `json:"note_by,omitempty"`
+	Hidden   bool   `json:"hidden,omitempty"` // its sensor (or host) is hidden: listed only on request
 }
 
 // collectIncidents gathers the incidents that started since from (or are still open), newest
@@ -293,6 +294,7 @@ func (s *Server) serveIncidents(w http.ResponseWriter, r *http.Request, hostIDs 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	from := incidentWindow(r, defDays)
+	fleet := hostIDs == nil
 	// Per-site visibility (scope.go): the fleet feed of a scoped user asks Zabbix for their hosts
 	// only, so other sites' incidents can't crowd theirs out of the row limit either.
 	if sc := scopeFrom(r); hostIDs == nil && !sc.all {
@@ -307,15 +309,50 @@ func (s *Server) serveIncidents(w http.ResponseWriter, r *http.Request, hostIDs 
 		}
 		hostIDs = visibleHostIDs(vis)
 	}
-	out, err := s.collectIncidents(ctx, hostIDs, incidentItems(r), from, incidentsMaxRows)
+	// Hiding a sensor says its incidents aren't news: they're left out (and, on the fleet feed, a
+	// hidden host's), counted, unless ?hidden=1 asks for them. A sensor asked for by id (a drilled-down
+	// sensor) always shows its own; a host's page shows its incidents even when the host is hidden.
+	items := incidentItems(r)
+	withHidden := r.URL.Query().Get("hidden") == "1" || len(items) > 0
+	hideItem, _ := s.st.ActiveSuppressionMap(ctx, "hide", "item")
+	var hideHost map[string]*int64
+	if fleet {
+		hideHost, _ = s.st.ActiveSuppressionMap(ctx, "hide", "host")
+	}
+	limit := incidentsMaxRows
+	if !withHidden && (len(hideItem) > 0 || len(hideHost) > 0) {
+		limit *= 2 // so a noisy hidden sensor can't crowd the rest out of the row limit
+	}
+	out, err := s.collectIncidents(ctx, hostIDs, items, from, limit)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
-	if out == nil {
-		out = []incidentView{}
+	out, hidden := filterHiddenIncidents(out, hideItem, hideHost, withHidden)
+	if len(out) > incidentsMaxRows {
+		out = out[:incidentsMaxRows]
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"from": from, "incidents": out})
+	writeJSON(w, http.StatusOK, map[string]any{"from": from, "incidents": out, "hidden": hidden})
+}
+
+// filterHiddenIncidents leaves out (or, with keep, flags) the incidents of hidden sensors and hosts,
+// and counts them.
+func filterHiddenIncidents(in []incidentView, hideItem, hideHost map[string]*int64, keep bool) ([]incidentView, int) {
+	out := make([]incidentView, 0, len(in))
+	n := 0
+	for _, v := range in {
+		_, hostHidden := hideHost[v.HostID]
+		_, itemHidden := hideItem[v.ItemID]
+		if hostHidden || (v.ItemID != "" && itemHidden) {
+			n++
+			if !keep {
+				continue
+			}
+			v.Hidden = true
+		}
+		out = append(out, v)
+	}
+	return out, n
 }
 
 var argusIncidentPrune struct {

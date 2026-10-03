@@ -22,6 +22,11 @@ GitHub Release from the matching section below.
   delay) and the incident history keeps it. **Edit note** and **Remove note** change it before then.
   Admins and helpdesk can write notes.
 
+**History:**
+- The incidents of a hidden sensor are left out of the History page and of a host's history, and on
+  the History page a hidden host's too: hiding one says it isn't news. **Show N from hidden sensors**
+  brings them back, dimmed and tagged hidden. A sensor you open still shows its own history.
+
 **Fixed:**
 - A sensor's ⋯ menu near the bottom of a host card was cut off by the card (on the host page the last
   items, like Disable alerts, were hidden). The menu now draws above the page: it opens upward when

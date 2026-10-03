@@ -7169,7 +7169,7 @@ function AvailabilityPanel({ itemId }: { itemId: string }) {
   )
 }
 
-type Incident = { event_id: string; host_id: string; host_name: string; site?: string; item_id?: string; sensor?: string; name: string; severity: number; start: number; end?: number; ack_by?: string; ack_note?: string; reason?: string; argus?: boolean; note?: string; note_by?: string }
+type Incident = { event_id: string; host_id: string; host_name: string; site?: string; item_id?: string; sensor?: string; name: string; severity: number; start: number; end?: number; ack_by?: string; ack_note?: string; reason?: string; argus?: boolean; note?: string; note_by?: string; hidden?: boolean }
 
 // IncidentRows lists incidents newest first; the host column only in the fleet-wide list.
 function IncidentRows({ rows, goHost }: { rows: Incident[]; goHost: ((h: string) => void) | null }) {
@@ -7180,9 +7180,9 @@ function IncidentRows({ rows, goHost }: { rows: Incident[]; goHost: ((h: string)
         <thead><tr><th className="slgrow">What happened</th>{goHost && <th>Host</th>}<th>Started</th><th>Duration</th><th>Acknowledged</th></tr></thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.event_id + ':' + r.start}>
+            <tr key={r.event_id + ':' + r.start} className={r.hidden ? 'inc-hidden' : undefined}>
               <td className="slgrow" style={{ borderLeft: `3px solid ${sevInfo(r.severity).color}`, paddingLeft: 13 }}>
-                <div className="inc-name">{r.name}</div>
+                <div className="inc-name">{r.name}{r.hidden && <span className="tag-hidden" title="Its sensor (or host) is hidden">hidden</span>}</div>
                 <div className="sreason"><SevText sev={r.severity} />{r.sensor && r.sensor !== r.name ? <> · {r.sensor}</> : null}</div>
                 {r.reason && <div className="sreason inc-why">{r.reason}</div>}
                 {r.note && <div className="sreason inc-note" title="The note on the sensor during this incident">Note: {r.note}{r.note_by ? ` (${r.note_by})` : ''}</div>}
@@ -7199,20 +7199,29 @@ function IncidentRows({ rows, goHost }: { rows: Incident[]; goHost: ((h: string)
   )
 }
 
-function useIncidents(url: string): [Incident[] | null, string] {
+// useIncidents loads an incident list and how many incidents of hidden sensors it left out (or, with
+// hidden=1 in the URL, flagged).
+function useIncidents(url: string): [Incident[] | null, string, number] {
   const [rows, setRows] = useState<Incident[] | null>(null)
   const [err, setErr] = useState('')
+  const [hidden, setHidden] = useState(0)
   useEffect(() => {
     let live = true
     setRows(null); setErr('')
     const load = () => fetch(url).then(async (r) => { if (!r.ok) throw new Error('incidents'); return r.json() })
-      .then((d) => { if (live) { setRows(d.incidents || []); setErr('') } })
+      .then((d) => { if (live) { setRows(d.incidents || []); setHidden(d.hidden || 0); setErr('') } })
       .catch(() => { if (live) setErr('Could not load the incident history') })
     load()
     const t = window.setInterval(load, 60000)
     return () => { live = false; clearInterval(t) }
   }, [url])
-  return [rows, err]
+  return [rows, err, hidden]
+}
+
+// HiddenToggle offers the incidents of hidden sensors that a list left out, and hides them again.
+function HiddenToggle({ n, shown, onToggle, lead = true }: { n: number; shown: boolean; onToggle: () => void; lead?: boolean }) {
+  if (n === 0) return null
+  return <>{lead ? ' · ' : null}<button type="button" className="linkbtn hidden-toggle" onClick={(e) => { e.stopPropagation(); onToggle() }}>{shown ? 'leave out' : 'show'} {n} from hidden sensors</button></>
 }
 
 // PanelTitle is a panel's title with a small label above it: the sidebar section it belongs to and,
@@ -7225,7 +7234,8 @@ function PanelTitle({ eyebrow, children }: { eyebrow: string; children: ReactNod
 // drilled-down sensor, or every channel of its group) it is that sensor's history, open from the start.
 function HostIncidents({ hostId, goHost, itemIds }: { hostId: string; goHost: ((h: string) => void) | null; itemIds?: string[] }) {
   const items = itemIds && itemIds.length ? itemIds.join(',') : ''
-  const [rows, err] = useIncidents(`/api/hosts/${hostId}/incidents?days=30${items ? `&items=${items}` : ''}`)
+  const [withHidden, setWithHidden] = useState(false)
+  const [rows, err, hidden] = useIncidents(`/api/hosts/${hostId}/incidents?days=30${items ? `&items=${items}` : ''}${withHidden ? '&hidden=1' : ''}`)
   const [open, setOpen] = useState(!!items)
   if (err || !rows) return null
   const live = rows.filter((r) => !r.end).length
@@ -7236,6 +7246,8 @@ function HostIncidents({ hostId, goHost, itemIds }: { hostId: string; goHost: ((
         <span className="hinc-t">{items ? 'Sensor history' : 'History'}</span>
         <span className="hinc-s">{rows.length === 0 ? 'no incidents in the last 30 days' : `${rows.length} incident${rows.length === 1 ? '' : 's'} in the last 30 days${live ? ` · ${live} open` : ''}`}</span>
       </button>
+      {/* A drilled-down sensor always shows its own incidents; the host's list leaves hidden sensors out. */}
+      {!items && hidden > 0 && <span className="hinc-s hinc-hidden"><HiddenToggle n={hidden} shown={withHidden} lead={false} onToggle={() => { setWithHidden((w) => !w); setOpen(true) }} /></span>}
       {open && rows.length > 0 && <IncidentRows rows={rows} goHost={goHost} />}
     </div>
   )
@@ -7890,7 +7902,8 @@ function HistoryView({ goHost }: { goHost: (h: string) => void }) {
   const [days, setDays] = useState(7)
   const [level, setLevel] = useState<'all' | 'errors'>('all')
   const [q, setQ] = useState('')
-  const [rows, err] = useIncidents(`/api/incidents?days=${days}`)
+  const [withHidden, setWithHidden] = useState(false)
+  const [rows, err, hidden] = useIncidents(`/api/incidents?days=${days}${withHidden ? '&hidden=1' : ''}`)
   const needle = q.trim().toLowerCase()
   const shown = (rows || []).filter((r) => (level === 'all' || r.severity >= 3) &&
     (!needle || [r.host_name, r.site, r.sensor, r.name, r.reason].some((v) => (v || '').toLowerCase().includes(needle))))
@@ -7900,7 +7913,7 @@ function HistoryView({ goHost }: { goHost: (h: string) => void }) {
     <div className="panel">
       <div className="phead">
         <PanelTitle eyebrow={watchEyebrow()}>Incidents</PanelTitle>
-        <span className="hint">{rows ? `${shown.length} in ${period}${live ? ` · ${live} still open` : ''}` : ''}</span>
+        <span className="hint">{rows ? <>{`${shown.length} in ${period}${live ? ` · ${live} still open` : ''}`}<HiddenToggle n={hidden} shown={withHidden} onToggle={() => setWithHidden((w) => !w)} /></> : ''}</span>
         <div className="tools hist-tools">
           <input className="input hist-q" placeholder="Host, sensor or reason" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter incidents" />
           <div className="seg">

@@ -445,6 +445,11 @@ ones kept 120 days). A host card ends with its last 30 days, folded (`GET
 so a busy host's other incidents can't crowd them out); the **History** page lists the fleet's, 24 h / 7 / 30 / 90 days,
 Errors + Warnings or Errors only, filterable by host, sensor or reason (`GET
 /api/incidents?days=N`). Zabbix's events follow its housekeeping retention (Settings, Data retention).
+Hiding a sensor says its incidents aren't news, so the history leaves out a hidden sensor's incidents,
+and on the History page a hidden host's too, and says how many (`hidden` in the response; at most
+twice the row limit is read, so a noisy hidden sensor can't crowd the rest out). **Show N from hidden
+sensors** asks again with `&hidden=1`, and they come back dimmed and tagged. A drilled-down sensor
+always shows its own incidents, and a hidden host's own page shows its incidents.
 
 ---
 

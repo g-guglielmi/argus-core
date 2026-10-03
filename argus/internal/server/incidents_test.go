@@ -130,3 +130,27 @@ func TestCollectIncidents(t *testing.T) {
 		t.Fatalf("sensor 80 (no trigger): want just its Argus incident, got %+v", argusOnly)
 	}
 }
+
+// A hidden sensor's incidents, and a hidden host's, are left out and counted, or flagged when asked for.
+func TestFilterHiddenIncidents(t *testing.T) {
+	until := int64(0)
+	in := []incidentView{
+		{EventID: "1", HostID: "10", ItemID: "100"},
+		{EventID: "2", HostID: "10", ItemID: "101"}, // hidden sensor
+		{EventID: "3", HostID: "11", ItemID: "110"}, // on a hidden host
+		{EventID: "argus-interface-5", HostID: "12"},
+	}
+	hideItem := map[string]*int64{"101": &until}
+	hideHost := map[string]*int64{"11": nil}
+	out, n := filterHiddenIncidents(in, hideItem, hideHost, false)
+	if n != 2 || len(out) != 2 || out[0].EventID != "1" || out[1].EventID != "argus-interface-5" {
+		t.Fatalf("left out: %d %+v", n, out)
+	}
+	out, n = filterHiddenIncidents(in, hideItem, hideHost, true)
+	if n != 2 || len(out) != 4 || out[0].Hidden || !out[1].Hidden || !out[2].Hidden || out[3].Hidden {
+		t.Fatalf("flagged: %d %+v", n, out)
+	}
+	if out, n := filterHiddenIncidents(in, hideItem, nil, false); n != 1 || len(out) != 3 {
+		t.Fatalf("host page (hidden hosts not applied): %d %+v", n, out)
+	}
+}
