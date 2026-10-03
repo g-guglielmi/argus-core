@@ -7,7 +7,8 @@ Network controller and a cloud/UniFi OS gateway that hosts the controller.
 
 All four classes read a **common base** from the controller: online/offline state (with an offline
 alert), CPU utilization, memory utilization, uptime, temperature (on models that report it), and
-firmware version, plus high-CPU and high-memory alerts. The controller's record also gives the
+firmware version and the firmware update the controller offers (empty when the device is on the
+newest for its model), plus high-CPU and high-memory alerts. The controller's record also gives the
 host's **Device** tab and the **Inventory** its model, serial number and MAC, and, for a switch or an
 access point, the UniFi device it is plugged into (its upstream). A switch and a gateway also list
 the wired clients on their ports every 10 minutes, so servers, NAS and cameras plugged into them get

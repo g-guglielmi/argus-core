@@ -41,7 +41,11 @@ GitHub Release from the matching section below.
 **Upstream devices:**
 - Argus knows what each host is plugged into: from the UniFi controller (a switch's or access
   point's uplink, and the switch port of every wired client it sees), or chosen by hand in the host's
-  settings (or none).
+  settings (or none). Hosts at the same address (a NAS and the services on it) share its switch port.
+  A host without one says why (the client lists not read yet, a read that failed and its reason, or its
+  address not listed).
+- If Zabbix refuses an update of the device-class templates, the Updates page says so with the reason
+  and Argus tries again every 15 minutes.
 - While a switch is down, the hosts behind it wait: one alert for the switch, naming the hosts behind
   it, instead of one per access point, camera and server. The lists say "Held: behind sw-core, which is
   down" and fold them under it; its RESOLVED says their own alerts go out now if they're still in
@@ -81,8 +85,10 @@ GitHub Release from the matching section below.
   and the site's first contact. The webhook sends them as `call`.
 
 **Inventory:** a new page under Watch lists every device with its model, firmware or OS, serial, IP
-and MAC, grouped by class, with the probe and group filters and Export CSV. A device on older firmware
-than the newest seen on the same model is flagged.
+and MAC, grouped by class, with the probe and group filters and Export CSV. A UniFi device shows
+"update available" when its controller offers newer firmware for it (so the 2.5G switches on the 2.x
+line are never measured against the 7.x line); any other device on older firmware than the newest
+seen on exactly the same model is flagged.
 
 **Templates:** the UniFi classes keep the model, serial, MAC and (switches and APs) the upstream
 device from the controller record they already read, and UniFi switches and gateways list their wired

@@ -12,8 +12,8 @@ import (
 )
 
 // The controller's answer: an AP names the switch it hangs off (its uplink MAC and port), a switch
-// lists the wired clients on its ports (matched by IP, else by the MAC discovery saw), and an address
-// two hosts share says nothing.
+// lists the wired clients on its ports (matched by IP, else by the MAC discovery saw), and hosts that
+// share an address (a NAS and the services on it) are all behind the port it is listed on.
 func TestControllerUpstreams(t *testing.T) {
 	items := []zabbix.Item{
 		{HostID: "1", Key: "unifi.mac", LastValue: "00:00:5e:00:53:01"},   // gateway
@@ -36,6 +36,8 @@ func TestControllerUpstreams(t *testing.T) {
 		"4":  {Host: "3", Port: "3", Source: "controller"},
 		"10": {Host: "2", Port: "5", Source: "controller"}, // by its IP
 		"11": {Host: "2", Port: "6", Source: "controller"}, // by the MAC discovery saw
+		"12": {Host: "2", Port: "7", Source: "controller"}, // a NAS and
+		"13": {Host: "2", Port: "7", Source: "controller"}, // a service on it, at the same address
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %+v", got)
@@ -57,7 +59,7 @@ func TestControllerUpstreams(t *testing.T) {
 	if c := upstreamChain(eff, "4"); strings.Join(c, ",") != "3,2,1" {
 		t.Fatalf("chain of 4: %v", c)
 	}
-	if b := behindHosts(eff, "2"); strings.Join(b, ",") != "10,3,4" {
+	if b := behindHosts(eff, "2"); strings.Join(b, ",") != "10,12,13,3,4" {
 		t.Fatalf("behind 2: %v", b)
 	}
 	// Two devices that report each other are no chain at all.
@@ -115,5 +117,25 @@ func TestUpstreamHold(t *testing.T) {
 	}
 	if b := behindText([]string{"e", "d", "c", "b", "a"}); b != "a, b, c and 2 more" {
 		t.Fatalf("behindText: %q", b)
+	}
+}
+
+// No upstream says why: no client lists yet, a read that failed (with its reason), lists not read yet,
+// or the address isn't among them.
+func TestUpstreamWhy(t *testing.T) {
+	names := map[string]string{"2": "sw-core", "3": "sw-floor2"}
+	cases := []struct {
+		items []zabbix.Item
+		want  string
+	}{
+		{nil, "No UniFi switch or gateway lists its wired clients yet"},
+		{[]zabbix.Item{{HostID: "2", Key: "unifi.clients", State: "1", Error: "UniFi API HTTP 401 reading the client list"}, {HostID: "3", Key: "unifi.clients", LastClock: "100"}}, "Reading the wired clients failed on sw-core: UniFi API HTTP 401"},
+		{[]zabbix.Item{{HostID: "2", Key: "unifi.clients", LastClock: "0"}, {HostID: "3", Key: "unifi.clients", LastClock: "100"}}, "1 of 2 UniFi switches and gateways haven't read"},
+		{[]zabbix.Item{{HostID: "2", Key: "unifi.clients", LastClock: "100"}}, "None of the 1 UniFi switches and gateways lists 10.0.0.30"},
+	}
+	for i, c := range cases {
+		if got := upstreamWhy(c.items, names, "10.0.0.30"); !strings.Contains(got, c.want) {
+			t.Errorf("case %d: %q", i, got)
+		}
 	}
 }

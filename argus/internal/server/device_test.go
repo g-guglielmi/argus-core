@@ -30,24 +30,32 @@ func TestDisplayMAC(t *testing.T) {
 	}
 }
 
-// Firmware drift: older than the newest on the same model is flagged; another model, a device with no
-// version or several (a pool on mixed versions) isn't compared.
+// Firmware drift: a device whose controller answers has its word for it (the 2.5G switches run 2.x,
+// the others 7.x: never compared across); otherwise older than the newest on exactly the same model is
+// flagged; a device with no model, no version or several (a pool on mixed versions) isn't compared.
 func TestMarkOlderFirmware(t *testing.T) {
 	rows := []inventoryRow{
-		{HostID: "1", ClassID: "unifi-switch", deviceFacts: deviceFacts{Model: "USW-Lite-8-PoE", Firmware: "7.1.26"}},
-		{HostID: "2", ClassID: "unifi-switch", deviceFacts: deviceFacts{Model: "USW-Lite-8-PoE", Firmware: "7.0.50"}},
-		{HostID: "3", ClassID: "unifi-switch", deviceFacts: deviceFacts{Model: "USW-Pro-24-PoE", Firmware: "6.6.1"}},
+		{HostID: "1", ClassID: "nas", deviceFacts: deviceFacts{Model: "DXP4800", Firmware: "1.2.0"}},
+		{HostID: "2", ClassID: "nas", deviceFacts: deviceFacts{Model: "DXP4800", Firmware: "1.1.0"}},
+		{HostID: "3", ClassID: "nas", deviceFacts: deviceFacts{Model: "DXP2800", Firmware: "0.9.0"}},
 		{HostID: "4", ClassID: "linux-snmp", deviceFacts: deviceFacts{OS: "Linux 6.1.0-21-amd64 (Debian)"}},
 		{HostID: "5", ClassID: "linux-snmp", deviceFacts: deviceFacts{OS: "Linux 6.12.4-1-amd64 (Debian)"}},
-		{HostID: "6", ClassID: "xcpng", deviceFacts: deviceFacts{Firmware: "8.2.1, 8.3.0"}},
-		{HostID: "7", ClassID: "xcpng", deviceFacts: deviceFacts{Firmware: "8.3.0"}},
+		{HostID: "6", ClassID: "xcpng", deviceFacts: deviceFacts{Model: "XCP-ng", Firmware: "8.2.1, 8.3.0"}},
+		{HostID: "7", ClassID: "xcpng", deviceFacts: deviceFacts{Model: "XCP-ng", Firmware: "8.3.0"}},
+		// UniFi: the controller says; a 2.5G switch on 2.1.8 is current, a Lite on 7.0.50 isn't.
+		{HostID: "8", ClassID: "unifi-switch", deviceFacts: deviceFacts{Firmware: "2.1.8.971", upgradeKnown: true}},
+		{HostID: "9", ClassID: "unifi-switch", deviceFacts: deviceFacts{Firmware: "7.5.15.17146", upgradeKnown: true}},
+		{HostID: "10", ClassID: "unifi-switch", deviceFacts: deviceFacts{Model: "USL8LP", Firmware: "7.0.50", upgradeKnown: true, Upgrade: "7.5.15.17146"}},
 	}
 	markOlderFirmware(rows)
-	want := map[string]string{"2": "7.1.26", "4": "Linux 6.12.4-1-amd64 (Debian)"}
+	want := map[string]string{"2": "1.2.0", "10": "7.5.15.17146"}
 	for _, r := range rows {
 		if r.Newest != want[r.HostID] {
 			t.Errorf("host %s: newest %q, want %q", r.HostID, r.Newest, want[r.HostID])
 		}
+	}
+	if rows[1].NewestFrom != "fleet" || rows[9].NewestFrom != "controller" {
+		t.Errorf("where newest comes from: %q %q", rows[1].NewestFrom, rows[9].NewestFrom)
 	}
 	if less, ok := fwOlder("Debian 12 (bookworm)", "Debian 13 (trixie)"); !ok || !less {
 		t.Fatal("Debian 12 is older than 13")

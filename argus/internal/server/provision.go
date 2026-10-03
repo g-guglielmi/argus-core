@@ -21,22 +21,62 @@ import (
 
 // startTemplateReconcile imports the device-class templates into Zabbix in the background at startup.
 // Idempotent (imports only when a template file changed) and soft-skips when no Zabbix token is set
-// yet; the create path re-checks before it needs them, so a token configured later still works.
+// yet; the create path re-checks before it needs them, so a token configured later still works. An
+// import that fails is kept (Updates shows it, with Zabbix's reason) and tried again every 15
+// minutes until it goes through, so new sensors never wait silently for a restart.
 func (s *Server) startTemplateReconcile(ctx context.Context) {
 	go func() {
-		c, cancel := context.WithTimeout(ctx, 60*time.Second)
-		defer cancel()
-		if err := provision.Reconcile(c, s.zbx, s.st, s.logger); err != nil {
-			s.logger.Error("provision: template reconcile failed (will retry on next host create/restart)", "err", err)
+		s.reconcileTemplates(ctx)
+		t := time.NewTicker(15 * time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if failed, _, _ := s.templatesFailure(ctx); failed != "" {
+					s.reconcileTemplates(ctx)
+				}
+			}
 		}
-		// Overlay the admin's stored fleet-wide threshold defaults onto the (possibly re-imported)
-		// templates, so a template re-import can't silently reset them to factory values (§D).
-		if err := provision.ApplyGlobalThresholds(c, s.zbx, s.st, s.logger); err != nil {
-			s.logger.Error("thresholds: applying global defaults failed (will retry on next restart/save)", "err", err)
-		}
-		// Every probe gets its Argus-managed Probe health host (needs the template imported above).
-		s.EnsureProbeHosts(c)
 	}()
+}
+
+const (
+	metaTemplatesError   = "templates_import_error"
+	metaTemplatesErrorAt = "templates_import_error_at"
+)
+
+// reconcileTemplates imports the templates, records how it went, then re-applies the fleet-wide
+// threshold defaults and makes sure every probe has its Probe host.
+func (s *Server) reconcileTemplates(ctx context.Context) {
+	c, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	if err := provision.Reconcile(c, s.zbx, s.st, s.logger); err != nil {
+		s.logger.Error("provision: template reconcile failed (retried every 15 minutes)", "err", err)
+		_ = s.st.MetaSet(c, metaTemplatesError, err.Error())
+		_ = s.st.MetaSet(c, metaTemplatesErrorAt, fmt.Sprint(time.Now().Unix()))
+	} else {
+		_ = s.st.MetaDelete(c, metaTemplatesError)
+		_ = s.st.MetaDelete(c, metaTemplatesErrorAt)
+	}
+	// Overlay the admin's stored fleet-wide threshold defaults onto the (possibly re-imported)
+	// templates, so a template re-import can't silently reset them to factory values (§D).
+	if err := provision.ApplyGlobalThresholds(c, s.zbx, s.st, s.logger); err != nil {
+		s.logger.Error("thresholds: applying global defaults failed (will retry on next restart/save)", "err", err)
+	}
+	// Every probe gets its Argus-managed Probe health host (needs the template imported above).
+	s.EnsureProbeHosts(c)
+}
+
+// templatesFailure is the last template import's failure ("" when it went through), and when.
+func (s *Server) templatesFailure(ctx context.Context) (string, int64, error) {
+	msg, ok, err := s.st.MetaGet(ctx, metaTemplatesError)
+	if err != nil || !ok {
+		return "", 0, err
+	}
+	at, _, _ := s.st.MetaGet(ctx, metaTemplatesErrorAt)
+	return msg, atoi64(at), nil
 }
 
 type classView struct {

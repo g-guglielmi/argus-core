@@ -231,7 +231,8 @@ every push sensor shows why. On top, one or more **class templates** attach - ma
 in the first cut (§C), automatically by fingerprint once discovery lands (§8, §B). Templates are
 hand-authored Zabbix YAML, version-controlled under `argus/internal/provision/templates/` (in-module
 so they can be embedded) and imported into zabbix-server via `configuration.import` (Argus reconciles
-the set on startup, so templates track the app version). Thresholds are Zabbix **user-macros** carrying the §6 defaults, overridable
+the set on startup, so templates track the app version; an import Zabbix refuses is shown on the
+Updates page with its reason and tried again every 15 minutes until it goes through). Thresholds are Zabbix **user-macros** carrying the §6 defaults, overridable
 per-host/sensor (§D).
 
 **Fleet reality:** 400+ servers with **SNMP already configured**; deploying an agent that widely
@@ -542,9 +543,13 @@ everyone who sees the host reads it. Unlike a sensor note it doesn't clear itsel
 
 The **Inventory** (Watch; `GET /api/inventory?probe=&group=`) lists every device the user sees (not
 Argus's own probe hosts), grouped by class, with its facts and own fields; search, probe and group
-filters, **Older firmware**, Export CSV. A device whose firmware (or, without one, OS) is older than the
-newest seen on the same model (or, without a model, the same class) is flagged with that newest
-version; a pool on mixed versions isn't compared.
+filters, **Older firmware**, Export CSV. A UniFi device has its controller's word for it: the version
+the controller offers as an upgrade (`unifi.firmware.upgrade`, from `upgradable` and
+`upgrade_to_firmware` in its record) flags it "update available", and one with nothing offered is
+current, since models run different firmware lines (the 2.5G switches 2.x, the others 7.x). Any other
+device whose firmware (or, without one, OS) is older than the newest seen on exactly the same model is
+flagged with that version; a device whose model isn't known, and a pool on mixed versions, aren't
+compared.
 
 ## 7f. Upstream devices
 
@@ -553,11 +558,14 @@ answer**: a UniFi switch or access point reports the device it hangs off (`unifi
 `unifi.uplink.port`, kept from the controller record its template already reads, matched to the host
 whose `unifi.mac` it is), and a UniFi switch or gateway lists the wired clients on its ports
 (`unifi.clients`: `stat/sta` filtered to `sw_mac` = its MAC, every 10 minutes, as `[{mac, ip,
-port}]`), which Argus matches to hosts by IP (an address two hosts share says nothing), else by the MAC
-discovery saw. A UniFi device's own uplink wins over a client entry. A host can be set (host settings,
+port}]`), which Argus matches to hosts by IP (hosts that share an address are one machine, a NAS and
+the services on it, so all of them are behind that port), else by the MAC discovery saw. A UniFi device's own uplink wins over a client entry. A host can be set (host settings,
 Upstream device; `upstream` in `PATCH /api/hosts/{id}/config`) to a host **chosen by hand** (refused
 when that host is behind this one) or to **None** (`host_upstream`). `unifi.clients` is plumbing: it
-is never a sensor, and one that fails never raises "stopped collecting".
+is never a sensor, and one that fails never raises "stopped collecting". A host the controller gives
+no upstream says why on its Device tab and in its settings: no client lists yet (the templates not
+updated), a read that failed (the controller's reason), lists not read yet, or this address not among
+them.
 
 **Holds.** The notifier's master set walks a host's chain of upstream devices, nearest first, and
 judges each one's main master (its ping) like the host's own (section 9): while one is down, or yet to

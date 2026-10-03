@@ -83,14 +83,11 @@ func controllerUpstreams(items []zabbix.Item, ips map[string]string, discMACs ma
 			}
 		}
 	}
-	// An address two hosts share can't say which one a client is.
-	ipHost := map[string]string{}
-	dup := map[string]bool{}
+	// Hosts that share an address are one machine (a NAS and the services on it): a client at that
+	// address is all of them.
+	ipHosts := map[string][]string{}
 	for id, ip := range ips {
-		if _, seen := ipHost[ip]; seen {
-			dup[ip] = true
-		}
-		ipHost[ip] = id
+		ipHosts[ip] = append(ipHosts[ip], id)
 	}
 	out := map[string]upstreamLink{}
 	for h, m := range uplinkMAC {
@@ -106,20 +103,24 @@ func controllerUpstreams(items []zabbix.Item, ips map[string]string, discMACs ma
 	sort.Strings(sws)
 	for _, sw := range sws {
 		for _, c := range clients[sw] {
-			h := ""
-			if c.IP != "" && !dup[c.IP] {
-				h = ipHost[c.IP]
+			var hs []string
+			if c.IP != "" {
+				hs = ipHosts[c.IP]
 			}
-			if h == "" {
-				h = macHost[normMAC(c.MAC)]
+			if len(hs) == 0 {
+				if h := macHost[normMAC(c.MAC)]; h != "" {
+					hs = []string{h}
+				}
 			}
-			if h == "" || h == sw {
-				continue
+			for _, h := range hs {
+				if h == sw {
+					continue
+				}
+				if _, has := out[h]; has {
+					continue // a UniFi device's own uplink says it better
+				}
+				out[h] = upstreamLink{Host: sw, Port: portText(c.Port), Source: "controller"}
 			}
-			if _, has := out[h]; has {
-				continue // a UniFi device's own uplink says it better
-			}
-			out[h] = upstreamLink{Host: sw, Port: portText(c.Port), Source: "controller"}
 		}
 	}
 	return out
@@ -316,6 +317,7 @@ type upstreamView struct {
 	Behind     []hostRefView `json:"behind"`           // the hosts plugged straight into this one
 	BehindAll  int           `json:"behind_all"`       // every host whose chain goes through this one
 	Source     string        `json:"source,omitempty"` // controller | manual
+	Why        string        `json:"why,omitempty"`    // why the controller gives none, when it doesn't
 }
 
 type hostRefView struct {
@@ -339,6 +341,16 @@ func (s *Server) hostUpstreamView(ctx context.Context, hostID string) upstreamVi
 	if l, ok := eff[hostID]; ok {
 		v.Source = l.Source
 	}
+	if v.Auto == nil && v.Mode == "auto" {
+		if items, err := s.zbx.ItemsByKeys(ctx, []string{"unifi.clients"}); err == nil {
+			ips, _ := s.zbx.HostIPs(ctx)
+			names := map[string]string{}
+			for id, h := range idx {
+				names[id] = h.Name
+			}
+			v.Why = upstreamWhy(items, names, ips[hostID])
+		}
+	}
 	chain := upstreamChain(eff, hostID)
 	// top first: each hop shows the port the next one down is plugged into
 	below := hostID
@@ -361,6 +373,50 @@ func (s *Server) hostUpstreamView(ctx context.Context, hostID string) upstreamVi
 	sort.Slice(v.Behind, func(i, j int) bool { return strings.ToLower(v.Behind[i].Name) < strings.ToLower(v.Behind[j].Name) })
 	v.BehindAll = len(behindHosts(eff, hostID))
 	return v
+}
+
+// upstreamWhy says why the controller gives a host no upstream device, from the UniFi switches' and
+// gateways' client lists: none yet (their templates not updated), a read that failed (with the
+// controller's reason), ones not read yet, or all read and this address not among them.
+func upstreamWhy(lists []zabbix.Item, names map[string]string, ip string) string {
+	var failed, pending []string
+	why := ""
+	for _, it := range lists {
+		if it.Key != "unifi.clients" {
+			continue
+		}
+		switch {
+		case it.State == "1":
+			failed = append(failed, names[it.HostID])
+			if why == "" {
+				why = strings.TrimSpace(it.Error)
+			}
+		case atoi64(it.LastClock) == 0:
+			pending = append(pending, names[it.HostID])
+		}
+	}
+	n := 0
+	for _, it := range lists {
+		if it.Key == "unifi.clients" {
+			n++
+		}
+	}
+	sort.Strings(failed)
+	switch {
+	case n == 0:
+		return "No UniFi switch or gateway lists its wired clients yet: they start once their templates are updated (Updates says if the last template update failed). Or pick one in its settings."
+	case len(failed) > 0:
+		msg := "Reading the wired clients failed on " + behindText(failed)
+		if why != "" {
+			msg += ": " + why
+		}
+		return msg + ". Or pick one in its settings."
+	case len(pending) > 0:
+		return fmt.Sprintf("%d of %d UniFi switches and gateways haven't read their wired clients yet (they do every 10 minutes). Or pick one in its settings.", len(pending), n)
+	case ip == "":
+		return "This host has no IP address to find among the wired clients. Pick its upstream device in its settings."
+	}
+	return fmt.Sprintf("None of the %d UniFi switches and gateways lists %s among its wired clients: a device on another brand of switch, or on Wi-Fi, isn't listed. Pick one in its settings.", n, ip)
 }
 
 // downHosts is the hosts whose ping (their main way of being reached) is in error now.

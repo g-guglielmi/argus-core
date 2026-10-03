@@ -817,7 +817,7 @@ function buildNav(s: NavState): string {
   return window.location.pathname + (qs ? '?' + qs : '')
 }
 
-type VersionInfo = { version: string; latest?: string; update_available: boolean; dev_update?: boolean; dev_target?: string; status: string; checked_at?: number; check_error?: string; channel?: string }
+type VersionInfo = { version: string; latest?: string; update_available: boolean; dev_update?: boolean; dev_target?: string; status: string; checked_at?: number; check_error?: string; channel?: string; templates_error?: string; templates_error_at?: number }
 type UpdateState = {
   self_update_enabled: boolean
   state: string // idle | requested | running | success | failed
@@ -1601,6 +1601,7 @@ function CoreRows({ v, upd, onChanged }: { v: VersionInfo; upd: UpdateState; onC
       <UpdGroup label="Argus" sub="this server">
         <UpdPart label="Argus"><UpdVer v={running} title="The Argus version this server runs" />{corePill}{coreAction}</UpdPart>
         {v.check_error && <UpdBelow><p className="set-hint" style={{ color: 'var(--warn)' }}>{v.check_error} to check for updates: {v.checked_at ? `showing the result from ${relTime(v.checked_at)}` : 'no check has worked yet'}. Try again in a moment.</p></UpdBelow>}
+        {v.templates_error && <UpdBelow><p className="set-hint" style={{ color: 'var(--warn)' }}>Updating the device-class templates in Zabbix failed{v.templates_error_at ? ` ${relTime(v.templates_error_at)}` : ''}: {v.templates_error}. Until it goes through, the sensors this version adds don't exist yet; Argus tries again every 15 minutes.</p></UpdBelow>}
         {upd.state !== 'idle' && (
           <UpdBelow>
             <UpdateLog title={logTitle(upd.state, upd.target)} state={upd.state} steps={coreSteps}
@@ -7616,7 +7617,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
         </div>
         {upMode === 'auto' && cfg.upstream && (cfg.upstream.path.length > 0 && cfg.upstream.source !== 'manual'
           ? <div className="info-line" style={{ padding: '2px 0 6px' }}><PathView hops={cfg.upstream.path} /></div>
-          : <div className="hs-note">The UniFi controller doesn't list this host (it knows its own devices, and the switch port of each wired client it sees). Choose a host if you know where it is plugged in.</div>)}
+          : <div className="hs-note">{cfg.upstream.why ? `No answer from the UniFi controller. ${cfg.upstream.why}` : "The UniFi controller doesn't list this host (it knows its own devices, and the switch port of each wired client it sees). Choose a host if you know where it is plugged in."}</div>)}
         <div className="hs-note">The default is the UniFi controller's answer when it knows this host, otherwise none. While the upstream device is down, this host's alerts wait: Argus can't reach it through that device anyway, and the device's own alert says so. Whatever is still wrong after it's back is alerted.</div>
       </HsSection>
 
@@ -7915,9 +7916,9 @@ function HiddenToggle({ n, shown, onToggle, lead = true }: { n: number; shown: b
 
 type HostTab = 'sensors' | 'device' | 'history' | 'journal' | 'changes'
 type LinkRow = { id?: number; label: string; url: string; from?: string }
-type DeviceFacts = { model?: string; serial?: string; firmware?: string; os?: string; ip?: string; mac?: string; read_at?: number; from?: string }
+type DeviceFacts = { model?: string; serial?: string; firmware?: string; os?: string; ip?: string; mac?: string; read_at?: number; from?: string; upgrade?: string }
 type Hop = { host_id: string; name: string; port?: string; down?: boolean }
-type UpstreamInfo = { mode: 'auto' | 'manual' | 'none'; manual_host?: string; auto?: Hop; path: Hop[]; behind: { id: string; name: string }[]; behind_all: number; source?: string }
+type UpstreamInfo = { mode: 'auto' | 'manual' | 'none'; manual_host?: string; auto?: Hop; path: Hop[]; behind: { id: string; name: string }[]; behind_all: number; source?: string; why?: string }
 type DeviceInfo = { facts: DeviceFacts; own: { asset_tag: string; location: string }; class?: string; links: LinkRow[]; tags: HostTag[]; used_by: { groups: string[]; probe: string; status_pages: string[]; maintenance: string[]; channels: string[] }; upstream: UpstreamInfo; site?: SiteInfo }
 type SiteContact = { role: string; name: string; phone: string; email: string }
 type SiteLine = { name: string; host_id: string; key: string; provider: string; circuit: string; phone: string; note: string; host_name?: string; sensor?: string; state?: string }
@@ -8175,7 +8176,7 @@ function DeviceTab({ hostId, onOpenSettings }: { hostId: string; onOpenSettings?
       <InfoRow label="Device">
         {d.class && <InfoLine k="Class"><span className="v">{d.class}</span></InfoLine>}
         {f.model && <InfoLine k="Model"><span className="v">{f.model}</span></InfoLine>}
-        {f.firmware && <InfoLine k="Firmware"><span className="v mono">{f.firmware}</span></InfoLine>}
+        {f.firmware && <InfoLine k="Firmware"><span className="v mono">{f.firmware}</span>{f.upgrade && <span className="tag avail" title="The UniFi controller offers this firmware for the device">update available · {f.upgrade}</span>}</InfoLine>}
         {f.os && <InfoLine k="OS"><span className="v">{f.os}</span></InfoLine>}
         {f.serial && <InfoLine k="Serial"><CopyValue value={f.serial} /></InfoLine>}
         {f.ip && <InfoLine k="IP"><CopyValue value={f.ip} /></InfoLine>}
@@ -8191,7 +8192,7 @@ function DeviceTab({ hostId, onOpenSettings }: { hostId: string; onOpenSettings?
       <InfoRow label="Path">
         {d.upstream.path.length > 0
           ? <InfoLine><PathView hops={d.upstream.path} /><span className="sub-line">{d.upstream.source === 'manual' ? 'set by hand' : 'from the UniFi controller'}</span></InfoLine>
-          : <InfoLine><span className="muted">{d.upstream.mode === 'none' ? 'No upstream device: set to none in its settings.' : "No upstream device known: the UniFi controller doesn't list this host. Pick one in its settings."}</span></InfoLine>}
+          : <InfoLine><span className="muted">{d.upstream.mode === 'none' ? 'No upstream device: set to none in its settings.' : `No upstream device known. ${d.upstream.why || "The UniFi controller doesn't list this host. Pick one in its settings."}`}</span></InfoLine>}
         {d.upstream.behind.length > 0 && <InfoLine k="Behind it"><span className="v">{d.upstream.behind.map((b) => b.name).join(', ')}{d.upstream.behind_all > d.upstream.behind.length ? ` (${d.upstream.behind_all} hosts in all, further down)` : ''}</span></InfoLine>}
       </InfoRow>
       {d.site && <InfoRow label={`Site · ${d.site.site}`}><SiteLines info={d.site} /></InfoRow>}
@@ -8260,7 +8261,7 @@ function JournalTab({ hostId, canEdit, onChanged }: { hostId: string; canEdit: b
   )
 }
 
-type InvRow = { host_id: string; name: string; groups: string[]; probe: string; class_id?: string; class?: string; asset_tag?: string; location?: string; newest?: string } & DeviceFacts
+type InvRow = { host_id: string; name: string; groups: string[]; probe: string; class_id?: string; class?: string; asset_tag?: string; location?: string; newest?: string; newest_from?: string } & DeviceFacts
 
 // InventoryView lists every device with its model, firmware or OS, serial, IP and MAC, grouped by
 // class, and marks one on older firmware than the newest seen on the same model.
@@ -8312,12 +8313,14 @@ function InventoryView({ goHost }: { goHost: (h: string) => void }) {
               <tbody>
                 {groups.map(([g, rs]) => (
                   <Fragment key={g}>
-                    <tr className="cat"><td colSpan={6}>{g}<span className="cat-sub">{rs.length}{rs.some((r) => r.newest) ? ` · ${rs.filter((r) => r.newest).length} on older firmware` : ''}</span></td></tr>
+                    <tr className="cat"><td colSpan={6}>{g}<span className="cat-sub">{rs.length}{rs.some((r) => r.newest) ? ` · ${rs.filter((r) => r.newest).length} with newer firmware available` : ''}</span></td></tr>
                     {rs.map((r) => (
                       <tr key={r.host_id}>
                         <td><span className="lnk-host" onClick={() => goHost(r.host_id)}>{r.name}</span><span className="inc-site"> · {r.groups[0] || 'no group'} · {r.probe}</span></td>
                         <td data-label="Model">{r.model || <span className="muted">-</span>}</td>
-                        <td data-label="Firmware / OS"><span className="inv-fw"><span className="mono">{r.firmware || r.os || '-'}</span>{r.newest && <span className="tag avail" title="Newer firmware runs on other devices of this model">older · newest {r.newest}</span>}</span></td>
+                        <td data-label="Firmware / OS"><span className="inv-fw"><span className="mono">{r.firmware || r.os || '-'}</span>{r.newest && (r.newest_from === 'controller'
+                          ? <span className="tag avail" title="The UniFi controller offers this firmware for the device">update available · {r.newest}</span>
+                          : <span className="tag avail" title="Newer firmware runs on other devices of this model">older · newest {r.newest}</span>)}</span></td>
                         <td data-label="Serial">{r.serial ? <CopyValue value={r.serial} /> : <span className="muted">-</span>}</td>
                         <td data-label="IP">{r.ip ? <CopyValue value={r.ip} /> : <span className="muted">-</span>}</td>
                         <td data-label="MAC">{r.mac ? <CopyValue value={r.mac} /> : <span className="muted">-</span>}</td>

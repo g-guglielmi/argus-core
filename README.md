@@ -105,8 +105,8 @@ API key, and MAC):
   WAN that went down says who to call and with which circuit ID; a site whose probe went silent lists
   every line. Shown on the site, on its hosts' Device tab and, per channel, in the alerts.
 - **Inventory** - every device with its model, firmware or OS, serial, IP and MAC, grouped by class,
-  filterable by probe and group, exportable as CSV; a device on older firmware than the newest on the
-  same model is flagged.
+  filterable by probe and group, exportable as CSV; a UniFi device with newer firmware on offer from its
+  controller, or any device behind the newest on exactly its model, is flagged.
 - **Tags** - coloured labels across sites ("critical", "customer-a", "poe"), on a host or on a probe
   (then on every host it monitors). Filter the tree by them and limit an alert channel to the hosts
   with a tag, so "critical" can go to a phone while the rest goes to the team channel.

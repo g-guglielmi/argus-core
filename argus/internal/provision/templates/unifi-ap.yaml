@@ -69,6 +69,7 @@ zabbix_export:
               state: d.state,
               model: d.model || '',
               version: d.version || d.displayable_version || '',
+              upgrade_to: d.upgradable ? String(d.upgrade_to_firmware || 'a newer version') : '',
               serial: d.serial || '',
               mac: d.mac || '',
               uplink_mac: (d.uplink && d.uplink.uplink_mac) || (d.last_uplink && d.last_uplink.uplink_mac) || '',
@@ -260,6 +261,24 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.version'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: 3e74580625cd4329b952df2039ee24d2
+          name: 'Firmware update available'
+          type: DEPENDENT
+          key: unifi.firmware.upgrade
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'The firmware version the controller offers as an upgrade, empty when the device is on the newest for its model (Device facts, Inventory).'
+          master_item:
+            key: unifi.ap.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.upgrade_to'
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d

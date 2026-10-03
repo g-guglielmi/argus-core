@@ -36,6 +36,23 @@ type deviceFacts struct {
 	MAC      string `json:"mac,omitempty"`
 	ReadAt   int64  `json:"read_at,omitempty"`
 	From     string `json:"from,omitempty"` // where the facts come from: "the UniFi controller", "SNMP", ...
+	// Upgrade is the firmware the device's own controller offers ("" = current); upgradeKnown says
+	// the controller answered, so the device is never compared with others of its model.
+	Upgrade      string `json:"upgrade,omitempty"`
+	upgradeKnown bool
+}
+
+// upgradeKey is the UniFi controller's answer to "is newer firmware available for this device?".
+const upgradeKey = "unifi.firmware.upgrade"
+
+// applyUpgrade records the controller's firmware answer: its item has reported, even with nothing to
+// offer.
+func applyUpgrade(f *deviceFacts, it zabbix.Item) {
+	if it.Key != upgradeKey || atoi64(it.LastClock) == 0 {
+		return
+	}
+	f.upgradeKnown = true
+	f.Upgrade = strings.TrimSpace(it.LastValue)
 }
 
 // factKeys maps the items that carry a fact to it, with where it comes from.
@@ -62,7 +79,8 @@ var (
 )
 
 func factKeyList() []string {
-	out := make([]string, 0, len(factKeys))
+	out := make([]string, 0, len(factKeys)+1)
+	out = append(out, upgradeKey)
 	for k := range factKeys {
 		out = append(out, k)
 	}
@@ -178,6 +196,9 @@ func (s *Server) collectFacts(ctx context.Context) (map[string]*deviceFacts, err
 		if ok {
 			applyFact(get(it.HostID), fk[0], fk[1], it.LastValue, atoi64(it.LastClock))
 		}
+		if it.Key == upgradeKey {
+			applyUpgrade(get(it.HostID), it)
+		}
 	}
 	if ips, err := s.zbx.HostIPs(ctx); err == nil {
 		for id, ip := range ips {
@@ -209,6 +230,7 @@ func (s *Server) hostFacts(ctx context.Context, hostID string, items []zabbix.It
 		if ok {
 			applyFact(&f, fk[0], fk[1], it.LastValue, atoi64(it.LastClock))
 		}
+		applyUpgrade(&f, it)
 	}
 	if ips, err := s.zbx.HostIPs(ctx); err == nil {
 		f.IP = ips[hostID]
@@ -483,6 +505,9 @@ type inventoryRow struct {
 	AssetTag string   `json:"asset_tag,omitempty"`
 	Location string   `json:"location,omitempty"`
 	Newest   string   `json:"newest,omitempty"` // set when its firmware is older than the newest on the same model
+	// NewestFrom says where Newest comes from: "controller" (the device's controller offers it) or
+	// "fleet" (another device of the same model runs it).
+	NewestFrom string `json:"newest_from,omitempty"`
 	deviceFacts
 }
 
@@ -545,8 +570,10 @@ func (s *Server) handleInventory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rows)
 }
 
-// markOlderFirmware sets Newest on each device whose firmware (or, without one, OS) is behind the
-// newest seen on the same model (or, without a model, the same class).
+// markOlderFirmware sets Newest on each device behind on firmware. A device whose controller says
+// (UniFi) has its word for it: models run different firmware lines (the 2.5G switches 2.x, the others
+// 7.x), which only the controller knows. Otherwise a device is compared with the others of exactly its
+// model, on firmware or, without one, its OS; a device whose model isn't known isn't compared at all.
 func markOlderFirmware(rows []inventoryRow) {
 	ver := func(r inventoryRow) string {
 		if r.Firmware != "" && !strings.Contains(r.Firmware, ",") {
@@ -554,30 +581,30 @@ func markOlderFirmware(rows []inventoryRow) {
 		}
 		return r.OS
 	}
-	key := func(r inventoryRow) string {
-		if r.Model != "" {
-			return "m:" + r.Model
-		}
-		return "c:" + r.ClassID
-	}
 	newest := map[string]string{}
 	for _, r := range rows {
 		v := ver(r)
-		if v == "" || r.ClassID == "" {
+		if v == "" || r.Model == "" || r.upgradeKnown {
 			continue
 		}
-		k := key(r)
-		if cur, ok := newest[k]; !ok {
-			newest[k] = v
+		if cur, ok := newest[r.Model]; !ok {
+			newest[r.Model] = v
 		} else if less, ok := fwOlder(cur, v); ok && less {
-			newest[k] = v
+			newest[r.Model] = v
 		}
 	}
 	for i := range rows {
-		v := ver(rows[i])
-		if n := newest[key(rows[i])]; v != "" && n != "" && n != v {
+		r := &rows[i]
+		if r.upgradeKnown {
+			if r.Upgrade != "" {
+				r.Newest, r.NewestFrom = r.Upgrade, "controller"
+			}
+			continue
+		}
+		v := ver(*r)
+		if n := newest[r.Model]; r.Model != "" && v != "" && n != "" && n != v {
 			if less, ok := fwOlder(v, n); ok && less {
-				rows[i].Newest = n
+				r.Newest, r.NewestFrom = n, "fleet"
 			}
 		}
 	}

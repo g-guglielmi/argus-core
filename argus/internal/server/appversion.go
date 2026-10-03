@@ -427,6 +427,10 @@ type versionResponse struct {
 	// Channel is the tag the core runs under: latest, testing or a pinned version. The sidecar reports
 	// it; without a report it is the channel the version implies (resolveChannel).
 	Channel string `json:"channel,omitempty"`
+	// TemplatesError is why the last update of the device-class templates in Zabbix failed (retried
+	// every 15 minutes): until it goes through, the sensors this version adds don't exist yet.
+	TemplatesError   string `json:"templates_error,omitempty"`
+	TemplatesErrorAt int64  `json:"templates_error_at,omitempty"`
 }
 
 // appUpdateStatus compares the running version against the newest published release and returns a
@@ -483,7 +487,7 @@ func devUpdateOffered(status string, devUpd bool) bool {
 
 // handleVersion reports the running version and whether a newer release has been published, so the
 // UI can show at a glance whether this instance is up to date. Authenticated (shown in the shell).
-func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	cur := buildinfo.Version
 	latest := s.appLatest.get()
 	resp := versionResponse{Version: cur, Latest: latest}
@@ -509,6 +513,9 @@ func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 		resp.Channel = tag
 	} else {
 		resp.Channel = s.resolveChannel()
+	}
+	if s.st != nil {
+		resp.TemplatesError, resp.TemplatesErrorAt, _ = s.templatesFailure(r.Context())
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
