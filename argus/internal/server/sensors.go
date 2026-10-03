@@ -41,6 +41,8 @@ type sensorRow struct {
 	// that master. Holds is, on a master's row, how many sensors it holds.
 	HeldBy *heldRef `json:"held_by,omitempty"`
 	Holds  int      `json:"holds,omitempty"`
+	// Note is the note left on the sensor while it is in trouble (sensornotes.go).
+	Note *sensorNoteView `json:"note,omitempty"`
 }
 
 // interfaceRowLabel names the census row of an unreachable interface after what stopped answering.
@@ -268,6 +270,13 @@ func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 		})
 	}
 	s.markHeld(ctx, out, problems, targets)
+	if notes, err := s.st.LiveSensorNotes(ctx); err == nil && len(notes) > 0 {
+		for i := range out {
+			if n, ok := notes[out[i].ItemID]; ok {
+				out[i].Note = noteViewOf(n)
+			}
+		}
+	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].HostName != out[j].HostName {
 			return out[i].HostName < out[j].HostName

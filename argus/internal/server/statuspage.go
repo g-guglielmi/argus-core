@@ -532,6 +532,8 @@ type statusIssue struct {
 	Holds    int       `json:"holds,omitempty"` // on a master's row: how many other sensors it holds (foldHeld)
 	// Maintenance is the window the sensor's host is in right now, if any: its alerts wait meanwhile.
 	Maintenance string `json:"maintenance,omitempty"`
+	// Note is the note left on the sensor (sensornotes.go); who wrote it stays in the app.
+	Note string `json:"note,omitempty"`
 }
 
 var issueRank = map[string]int{"error": 0, "warning": 1, "acked": 2}
@@ -629,6 +631,9 @@ func (s *Server) buildStatus(ctx context.Context, p store.StatusPage) (statusVie
 		is := statusIssue{Kind: sr.State, Host: sr.HostName, Site: siteOf[sr.HostID], Sensor: label, Reason: sr.Reason,
 			Severity: sr.Severity, Priority: sr.Priority, Since: sr.Since, Spark: sparks[sr.ItemID], Holds: holds[sr.ItemID],
 			Maintenance: inMaint[sr.HostID].Name}
+		if sr.Note != nil {
+			is.Note = sr.Note.Text
+		}
 		switch r, ok := reachabilityReading(sr.key, sr.Value); {
 		case ok:
 			is.Value = r

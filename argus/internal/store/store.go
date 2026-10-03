@@ -544,6 +544,24 @@ CREATE TABLE IF NOT EXISTS push_hosts (
   host_id  TEXT PRIMARY KEY,
   key_hash TEXT NOT NULL
 );
+
+-- Sensor notes: what someone wants others to know about a sensor in trouble ("ISP ticket open"). A
+-- note shows with its sensor, and goes out with its alerts, until the sensor is OK again; the notifier
+-- clears it then (ok_since: first seen with no open problem). Cleared notes stay for the incident
+-- history. sensor_key is the item id, or an Argus-raised row's problem id (an unreachable interface).
+CREATE TABLE IF NOT EXISTS sensor_notes (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  sensor_key TEXT NOT NULL,
+  host_id    TEXT NOT NULL,
+  text       TEXT NOT NULL,
+  by_user    INTEGER NOT NULL DEFAULT 0,
+  by_name    TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  ok_since   INTEGER NOT NULL DEFAULT 0,
+  cleared_at INTEGER NOT NULL DEFAULT 0 -- 0 = shown
+);
+CREATE INDEX IF NOT EXISTS idx_sensor_notes_live ON sensor_notes(cleared_at, sensor_key);
 `); err != nil {
 		return err
 	}

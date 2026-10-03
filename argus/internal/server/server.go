@@ -200,6 +200,9 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("DELETE /api/hosts/{id}/hide", auth.RequireRoles(s.scopedHost(s.unhideHandler("host")), "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/items/{id}/hide", auth.RequireRoles(s.scopedItem(s.hideHandler("item")), "admin", "helpdesk"))
 	mux.HandleFunc("DELETE /api/items/{id}/hide", auth.RequireRoles(s.scopedItem(s.unhideHandler("item")), "admin", "helpdesk"))
+	// A note on a sensor in trouble, shown and sent with it until it is OK again (sensornotes.go).
+	mux.HandleFunc("PUT /api/sensors/{key}/note", auth.RequireRoles(s.handleSetSensorNote, "admin", "helpdesk"))
+	mux.HandleFunc("DELETE /api/sensors/{key}/note", auth.RequireRoles(s.handleClearSensorNote, "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/items/{id}/priority", auth.RequireRoles(s.scopedItem(s.handleItemPriority), "admin", "helpdesk"))
 
 	// tree groups (Zabbix host groups): list is read-only; create/rename/delete + host membership

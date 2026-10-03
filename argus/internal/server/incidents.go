@@ -45,6 +45,8 @@ type incidentView struct {
 	AckNote  string `json:"ack_note,omitempty"`
 	Reason   string `json:"reason,omitempty"`
 	Argus    bool   `json:"argus,omitempty"` // raised by Argus, not a Zabbix trigger
+	Note     string `json:"note,omitempty"`  // the note on the sensor during it (sensornotes.go)
+	NoteBy   string `json:"note_by,omitempty"`
 }
 
 // collectIncidents gathers the incidents that started since from (or are still open), newest
@@ -189,7 +191,38 @@ func (s *Server) collectIncidents(ctx context.Context, hostIDs, itemIDs []string
 			}
 		}
 	}
+	attachIncidentNotes(ctx, s.st, out, from)
 	return out, nil
+}
+
+// attachIncidentNotes gives each incident the note its sensor had while it was open (the newest, when
+// it had more than one).
+func attachIncidentNotes(ctx context.Context, st *store.Store, out []incidentView, from int64) {
+	keys := make([]string, 0, len(out))
+	seen := map[string]bool{}
+	for _, v := range out {
+		if k := sensorNoteKey(v.ItemID, v.EventID); !seen[k] {
+			seen[k] = true
+			keys = append(keys, k)
+		}
+	}
+	notes, err := st.SensorNotesSince(ctx, keys, from)
+	if err != nil || len(notes) == 0 {
+		return
+	}
+	now := time.Now().Unix()
+	for i := range out {
+		end := out[i].End
+		if end == 0 {
+			end = now
+		}
+		key := sensorNoteKey(out[i].ItemID, out[i].EventID)
+		for _, n := range notes { // oldest first: the last match is the newest
+			if n.Key == key && n.CreatedAt <= end && (n.ClearedAt == 0 || n.ClearedAt >= out[i].Start) {
+				out[i].Note, out[i].NoteBy = n.Text, n.ByName
+			}
+		}
+	}
 }
 
 // reasonAt reads what a collector's reason item said when an incident started: its first non-empty
@@ -320,5 +353,6 @@ func recordArgusIncidents(ctx context.Context, st *store.Store, synth synthSet) 
 	argusIncidentPrune.mu.Unlock()
 	if due {
 		_ = st.PruneArgusIncidents(ctx, now.Add(-argusIncidentKeep).Unix())
+		_ = st.PruneSensorNotes(ctx, now.Add(-argusIncidentKeep).Unix())
 	}
 }

@@ -13,6 +13,15 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Sensor notes:**
+- Leave a note on a sensor in trouble from its ⋯ menu (**Add note**), like "ISP ticket 4471 open,
+  technician on site at 14:00". It shows with the sensor in Overview, the lists and on the host page,
+  and on the status pages, and goes out with the sensor's alerts, reminders and RESOLVED in every
+  channel. It doesn't acknowledge anything: the alert keeps its colour and its reminders.
+- The note clears itself once the sensor is OK again (it stays through a blip shorter than the alert
+  delay) and the incident history keeps it. **Edit note** and **Remove note** change it before then.
+  Admins and helpdesk can write notes.
+
 ## [0.7.1] - 2026-10-03
 
 A patch release: one **Updates** page for every update (the core, its sidecar, the probes and the

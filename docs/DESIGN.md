@@ -397,6 +397,19 @@ the sensor row and its graph, the "acked" tag, the host's problems box (titled *
 problems** once all are), and, once every problem on a host is acknowledged (the host's `acked` flag),
 its dot, problem count and ping graph, and a group's dot when that's all the group has left.
 
+**Sensor notes.** Admins and helpdesk can leave a note on a sensor with an open problem (the ⋯ menu:
+**Add note**, **Edit note**, **Remove note**; `PUT` / `DELETE /api/sensors/{key}/note`, up to 500
+characters). It belongs to the sensor, not to a Zabbix event: `sensor_notes` is keyed by the item id
+(or, for an Argus-raised row with no sensor, an unreachable interface, by its problem id), so it
+survives the warning-to-error handover. It doesn't acknowledge anything: the colour and the reminders
+stay. It shows under the sensor's reasons in the lists, on its own line on the host page (once for a
+group whose channels share it) and on the status pages (without the author), and goes out with the
+sensor's alerts, reminders and RESOLVED in every channel (`note` / `note_by` in the webhook). The
+notifier clears it once the sensor has had no open problem for the alert delay (at least the hold
+grace), so a blip keeps it, and only when it could read every open problem's trigger. Cleared notes
+stay for the incident history, which shows the note an incident's sensor had while it was open;
+they're pruned with the Argus incidents (120 days).
+
 ## 7b. Uptime and incident history
 
 **Uptime** (`internal/server/uptime.go`). An up/down sensor reads 1 while up and 0 while down (ping,

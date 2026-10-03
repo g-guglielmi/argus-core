@@ -223,7 +223,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	for _, p := range problems {
 		tids = append(tids, p.ObjectID)
 	}
-	targets, _ := zbx.TriggerTargets(ctx, tids)
+	targets, terr := zbx.TriggerTargets(ctx, tids)
 	// Argus-raised problems (a sensor that stopped collecting, an unreachable agent) join Zabbix's. The
 	// first time this runs, the ones already present are baselined like a fresh install's problems.
 	synth := syntheticProblems(ctx, st, zbx, true)
@@ -288,6 +288,9 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		grace = minHoldGraceSecs
 	}
 
+	// The notes on sensors in trouble go out with their alerts; once a sensor is OK they clear (below).
+	notes, _ := st.LiveSensorNotes(ctx)
+
 	activeIDs := make(map[string]zabbix.Problem, len(problems))
 	for _, p := range problems {
 		activeIDs[p.EventID] = p
@@ -338,6 +341,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 				SinceSecs: time.Now().Unix() - incidentStart(stt), OpenURL: OpenLink(publicURL, stt.HostID, stt.ItemID),
 				ChartPNG: alertChart(ctx, zbx, stt.ItemID, "ok"),
 			}
+			ev.Note, ev.NoteBy = noteFor(notes, stt.ItemID, eid)
 			for _, d := range dests {
 				if _, got := deliveries[eid][d.key]; got && !d.quietFor(stt.Severity) {
 					d.send(ctx, ev)
@@ -487,6 +491,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			OpenURL: OpenLink(publicURL, hostID, itemID), AckURL: AckLink(publicURL, secret, p.EventID),
 			ChartPNG: alertChart(ctx, zbx, itemID, severityState(sev)),
 		}
+		base.Note, base.NoteBy = noteFor(notes, itemID, p.EventID)
 		for _, pd := range plan {
 			ev := base
 			row := pd.row
@@ -503,6 +508,12 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			row.LastSent = now.Unix()
 			_ = st.UpsertNotifyDelivery(ctx, row)
 		}
+	}
+
+	// Notes on sensors that are OK again clear once they've stayed OK for the grace (after their
+	// RESOLVED above went out with them). Skipped when the triggers couldn't be read.
+	if terr == nil {
+		sweepSensorNotes(ctx, st, notes, problems, targets, grace, now.Unix())
 	}
 }
 

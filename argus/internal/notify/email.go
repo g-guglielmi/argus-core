@@ -299,6 +299,9 @@ func htmlBody(e Event) string {
 			lead += `<div class="mut" style="font-size:13px;color:#6b7280;margin:-6px 0 12px;font-style:italic">` + htmlEscape(e.AckNote) + `</div>`
 		}
 	}
+	if nl := e.noteLine(); nl != "" {
+		lead += `<div class="txt" style="font-size:13px;color:#111827;margin-bottom:12px;padding:8px 10px;border-left:3px solid #2ea8c9;background:rgba(46,168,201,0.08);border-radius:4px">` + htmlEscape(nl) + `</div>`
+	}
 
 	var buttons strings.Builder
 	btn := func(label, href, bg string) {

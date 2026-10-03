@@ -1200,6 +1200,15 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .maint-ico { color: var(--maint); display: inline-flex; flex: none; }
 .maint-ico svg { width: 18px; height: 18px; }
 .sreason.maint-tag { color: var(--maint); }
+/* A note on a sensor in trouble: under its reasons in the lists, on its own row on the host page. */
+.snote { display: block; width: fit-content; max-width: 100%; box-sizing: border-box; margin-top: 4px; padding: 3px 9px 3px 7px;
+  border-left: 2px solid var(--accent); border-radius: 0 5px 5px 0; background: color-mix(in srgb, var(--accent) 9%, transparent); font-size: 12px; font-weight: 400; line-height: 1.45; color: var(--text); white-space: normal; overflow-wrap: break-word; }
+.snote svg { display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: -1px; color: var(--accent); }
+.snote-by { margin-left: 6px; color: var(--faint); font-size: 11px; white-space: nowrap; }
+.noterow td { padding-top: 0 !important; border-top: 0 !important; }
+.noterow .snote { margin: 0 0 6px 18px; }
+.noterow .snote + .snote { margin-top: 4px; }
+.sreason.inc-note { color: var(--accent); }
 /* Settings, Backups: the host's recent runs. */
 .bactivity { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 .bactivity summary { cursor: pointer; color: var(--accent); width: max-content; }

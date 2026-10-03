@@ -47,13 +47,15 @@ const SEVERITIES: { v: number; label: string }[] = [
   { v: 2, label: 'Warnings and errors' },
   { v: 3, label: 'Errors only' },
 ]
-type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string; updown?: boolean }
+type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string; updown?: boolean; note?: SensorNote }
+// SensorNote is a note left on a sensor in trouble: shown and sent with it until it is OK again.
+type SensorNote = { text: string; by?: string; at: number }
 // A sensor's effective warning/high values, read from its own triggers (below = lower is worse).
 type Thr = { warn?: number; high?: number; below?: boolean }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
 type TriggerHost = { id: string; name: string }
 type Trigger = { id: string; description: string; severity: number; enabled: boolean; problem: boolean; since: number; hosts: TriggerHost[]; sensors: string[] }
-type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean; maintenance?: MaintHit; held_by?: HeldBy; holds?: number }
+type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean; maintenance?: MaintHit; held_by?: HeldBy; holds?: number; note?: SensorNote }
 // The master whose outage holds a sensor's alerts: the lists fold the sensor under it.
 type HeldBy = { host_id: string; host_name: string; item_id: string; name: string }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
@@ -3907,6 +3909,52 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
 }
 
 
+// NoteLine shows a sensor's note under it: the text, then who left it and when.
+function NoteLine({ note, label }: { note: SensorNote; label?: string }) {
+  return (
+    <div className="snote" title="A note on this sensor: it goes out with its alerts and clears itself once the sensor is OK again">
+      {kbIcon.edit}
+      <span className="snote-t">{label ? <b>{label}: </b> : null}{note.text}</span>
+      <span className="snote-by">{note.by ? `${note.by} \u00b7 ` : ''}{relTime(note.at)}</span>
+    </div>
+  )
+}
+
+// useNoteEditor writes the note on one or more sensors (a group's channels in trouble), asking for it
+// in an in-app dialog: an empty one takes it off. removeNotes takes it off without asking.
+function useNoteEditor() {
+  const prompt = usePrompt()
+  const toast = useToast()
+  const save = async (keys: string[], text: string) => {
+    for (const k of keys) {
+      const res = await fetch(`/api/sensors/${encodeURIComponent(k)}/note`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) }).catch(() => null)
+      if (!res || !res.ok) { toast.error(res ? await errText(res, 'Could not save the note') : 'Could not save the note'); return false }
+    }
+    return true
+  }
+  const edit = async (keys: string[], sensor: string, current?: SensorNote) => {
+    const text = await prompt({
+      title: current ? 'Edit note' : 'Add note',
+      message: `On ${sensor}. It shows with the sensor here and on the status pages, goes out with its alerts, reminders and RESOLVED, and clears itself once the sensor is OK again.`,
+      label: 'Note', initial: current?.text || '', placeholder: 'ISP ticket 4471 open, technician on site at 14:00', confirmLabel: 'Save',
+    })
+    if (text === null) return
+    if (await save(keys, text)) { toast.success(text.trim() ? 'Note saved.' : 'Note removed.'); fireDataRefresh() }
+  }
+  const remove = async (keys: string[]) => {
+    if (await save(keys, '')) { toast.success('Note removed.'); fireDataRefresh() }
+  }
+  return { edit, remove }
+}
+
+// noteActions are the ⋯ menu items for a sensor's note: add one, or edit and remove the one there.
+function noteActions(notes: { edit: (k: string[], s: string, c?: SensorNote) => void; remove: (k: string[]) => void }, keys: string[], sensor: string, current?: SensorNote): KAction[] {
+  if (keys.length === 0) return []
+  const out: KAction[] = [{ label: current ? 'Edit note' : 'Add note', icon: kbIcon.edit, onClick: () => notes.edit(keys, sensor, current) }]
+  if (current) out.push({ label: 'Remove note', icon: kbIcon.trash, onClick: () => notes.remove(keys) })
+  return out
+}
+
 const kbIcon = {
   pause: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>,
   hide: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7" /><path d="M3 3l18 18" /><path d="M9.5 9.5a3 3 0 0 0 4.2 4.2" /></svg>,
@@ -7097,7 +7145,7 @@ function AvailabilityPanel({ itemId }: { itemId: string }) {
   )
 }
 
-type Incident = { event_id: string; host_id: string; host_name: string; site?: string; item_id?: string; sensor?: string; name: string; severity: number; start: number; end?: number; ack_by?: string; ack_note?: string; reason?: string; argus?: boolean }
+type Incident = { event_id: string; host_id: string; host_name: string; site?: string; item_id?: string; sensor?: string; name: string; severity: number; start: number; end?: number; ack_by?: string; ack_note?: string; reason?: string; argus?: boolean; note?: string; note_by?: string }
 
 // IncidentRows lists incidents newest first; the host column only in the fleet-wide list.
 function IncidentRows({ rows, goHost }: { rows: Incident[]; goHost: ((h: string) => void) | null }) {
@@ -7113,6 +7161,7 @@ function IncidentRows({ rows, goHost }: { rows: Incident[]; goHost: ((h: string)
                 <div className="inc-name">{r.name}</div>
                 <div className="sreason"><SevText sev={r.severity} />{r.sensor && r.sensor !== r.name ? <> · {r.sensor}</> : null}</div>
                 {r.reason && <div className="sreason inc-why">{r.reason}</div>}
+                {r.note && <div className="sreason inc-note" title="The note on the sensor during this incident">Note: {r.note}{r.note_by ? ` (${r.note_by})` : ''}</div>}
               </td>
               {goHost && <td data-label="Host"><span><span className="lnk-host" onClick={() => goHost(r.host_id)}>{r.host_name}</span>{r.site ? <span className="inc-site"> · {r.site}</span> : null}</span></td>}
               <td className="mono" data-label="Started">{fmtWhen(r.start)}</td>
@@ -7169,6 +7218,7 @@ function HostIncidents({ hostId, goHost, itemIds }: { hostId: string; goHost: ((
 }
 
 function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, showAll, autoOpenItem, onlyItem, onDrillSensor, onItemName, onNavigate }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; maintenance?: MaintHit; showAll: boolean; autoOpenItem?: string; onlyItem?: string; onDrillSensor?: (itemId: string, itemName: string) => void; onItemName?: (itemId: string, itemName: string) => void; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
+  const notes = useNoteEditor()
   const [items, setItems] = useState<SensorItem[] | null>(null)
   const [problems, setProblems] = useState<Problem[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -7493,8 +7543,14 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                     ? { label: 'Enable alerts', icon: kbIcon.unmute, onClick: () => muteItems(gAlertable.map((i) => i.id), false) }
                     : { label: 'Disable alerts', icon: kbIcon.mute, onClick: () => muteItems(gAlertable.filter((i) => !i.alerts_off).map((i) => i.id), true) })
                   const gUnacked = problems.filter((p) => !p.acknowledged && p.item_ids.some((id) => row.items.some((i) => i.id === id)))
+                  // A note on a group goes on each of its channels in trouble (and comes off them all).
+                  const gTrouble = row.items.filter((i) => problems.some((p) => p.item_ids.includes(i.id)))
+                  const gNoted = row.items.filter((i) => i.note)
+                  const gNoteKeys = [...new Set([...gTrouble, ...gNoted].map((i) => i.id))]
                   const actions: KAction[] = []
-                  if (gUnacked.length) { actions.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => gUnacked.forEach((p) => ack(p, s)) }); if (acts.length) actions.push({ sep: true, label: '' }) }
+                  if (gUnacked.length) actions.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => gUnacked.forEach((p) => ack(p, s)) })
+                  if (gTrouble.length || gNoted.length) actions.push(...noteActions(notes, gNoteKeys, row.instance, gNoted[0]?.note))
+                  if (actions.length && acts.length) actions.push({ sep: true, label: '' })
                   actions.push(...acts)
                   return (
                     <Fragment key={gkey}>
@@ -7531,6 +7587,14 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                         <td><div className="lccell"><span className="when">{relTime(Math.max(...row.items.map((x) => x.last_clock || 0)))}</span>{canPause && actions.length > 0 && <Kebab actions={actions} />}</div></td>
                       </tr>
                       {gWhy && gWhyId && whyOpen[gWhyId] && <tr className="whyrow"><td colSpan={5}><div className="why-line">{gWhy}</div></td></tr>}
+                      {gNoted.length > 0 && (
+                        <tr className="noterow"><td colSpan={5}>
+                          {/* The same note on several channels reads once. */}
+                          {gNoted.filter((i, k) => gNoted.findIndex((j) => j.note!.text === i.note!.text) === k).map((i) => (
+                            <NoteLine key={i.id} note={i.note!} label={gNoted.every((j) => j.note!.text === i.note!.text) ? undefined : (i.channel || i.label || i.name)} />
+                          ))}
+                        </td></tr>
+                      )}
                       {open && clickable && (
                         <tr className="chartrow"><td colSpan={5}><div className="chart-reveal">
                           {(() => {
@@ -7583,7 +7647,9 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                   ? { label: 'Enable alerts', icon: kbIcon.unmute, onClick: () => muteItems([it.id], false) }
                   : { label: 'Disable alerts', icon: kbIcon.mute, onClick: () => muteItems([it.id], true) })
                 const actions: KAction[] = []
-                if (unacked.length) { actions.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => unacked.forEach((p) => ack(p, s)) }); if (acts.length) actions.push({ sep: true, label: '' }) }
+                if (unacked.length) actions.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => unacked.forEach((p) => ack(p, s)) })
+                if (it.note || problems.some((p) => p.item_ids.includes(it.id))) actions.push(...noteActions(notes, [it.id], label, it.note))
+                if (actions.length && acts.length) actions.push({ sep: true, label: '' })
                 actions.push(...acts)
                 const trendColor = st ? healthColor(st, itemAcked[it.id]) : 'var(--accent)'
                 // A daily-ratio sensor (block rate) charts as daily bars and minis like the
@@ -7623,6 +7689,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                       </td>
                     </tr>
                     {it.why && whyOpen[it.id] && <tr className="whyrow"><td colSpan={5}><div className="why-line">{it.why}</div></td></tr>}
+                    {it.note && <tr className="noterow"><td colSpan={5}><NoteLine note={it.note} /></td></tr>}
                     {open && clickable && (
                       <tr className="chartrow"><td colSpan={5}><div className="chart-reveal">{it.updown ? <AvailabilityPanel itemId={it.id} /> : <SensorChart itemId={it.id} units={it.units} color={trendColor} bars={barRate} label={label} thr={it.thr} />}</div></td></tr>
                     )}
@@ -7643,6 +7710,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
 // the chosen state, with deep-links to its host/chart and a per-row kebab.
 function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, onBack }: { filter: string; sensors: SensorRow[]; loading?: boolean; canPause: boolean; goHost: (h: string) => void; goSensor: (h: string, i: string, name?: string) => void; onBack: () => void }) {
   const [busy, setBusy] = useState<string | null>(null)
+  const notes = useNoteEditor()
   const [whyOpen, toggleWhy] = useWhyOpen()
   // The "attention" filter is the home Overview: every sensor that isn't OK (a PRTG-style unified list),
   // with a mode toggle. A concrete state (error/warning/…) is a top-bar status-chip drill-down.
@@ -7699,8 +7767,10 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
     if (s.state === 'paused') return [{ label: 'Resume', icon: kbIcon.resume, onClick: () => clearItem(s, 'pause') }, { label: 'Hide', icon: kbIcon.hide, onPick: (sec) => itemAction(s, 'hide', sec) }]
     if (s.state === 'hidden') return [{ label: 'Show', icon: kbIcon.show, onClick: () => clearItem(s, 'hide') }, { label: 'Pause', icon: kbIcon.pause, onPick: (sec) => itemAction(s, 'pause', sec) }]
     const acts: KAction[] = []
-    if (s.state === 'acked' && s.event_ids.length) acts.push({ label: 'Unacknowledge', icon: kbIcon.ack, onClick: () => unackEvents(s) }, { sep: true, label: '' })
-    else if ((s.state === 'error' || s.state === 'warning') && s.event_ids.length) acts.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (sec) => ackEvents(s, sec) }, { sep: true, label: '' })
+    if (s.state === 'acked' && s.event_ids.length) acts.push({ label: 'Unacknowledge', icon: kbIcon.ack, onClick: () => unackEvents(s) })
+    else if ((s.state === 'error' || s.state === 'warning') && s.event_ids.length) acts.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (sec) => ackEvents(s, sec) })
+    if (s.event_ids.length) acts.push(...noteActions(notes, [s.item_id], `${s.label || s.name} on ${s.host_name}`, s.note))
+    if (acts.length) acts.push({ sep: true, label: '' })
     // An Argus-raised row (an unreachable agent) isn't a Zabbix sensor: it can be acknowledged, not paused or hidden.
     if (s.synthetic) return acts.filter((a) => !a.sep)
     acts.push({ label: 'Pause', icon: kbIcon.pause, onPick: (sec) => itemAction(s, 'pause', sec) }, { label: 'Hide', icon: kbIcon.hide, onPick: (sec) => itemAction(s, 'hide', sec) })
@@ -7747,6 +7817,7 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
                       {s.maintenance && <div className="sreason maint-tag" title="Alerts wait until the window ends">In maintenance ({s.maintenance.name}) until {fmtWhen(s.maintenance.until)}</div>}
                       {holds > 0 && <div className="sreason held-note">Holding {holds} other sensor{holds === 1 ? '' : 's'} while it is down · <button className="linkbtn" onClick={() => setShowHeld(!showHeld)}>{showHeld ? 'hide' : 'show'}</button></div>}
                       {h && <div className="sreason held-tag" title="Its alerts wait until the master sensor is back">Held: {h.name}{h.host_id !== s.host_id ? ` on ${h.host_name}` : ''} is down</div>}
+                      {s.note && <NoteLine note={s.note} />}
                     </td>
                     <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <WhyText why={s.why} onToggle={() => toggleWhy(s.host_id + ':' + s.item_id)}>{dv}{du ? <span className="unit"> {du}</span> : null}</WhyText> })() : <WhyText why={s.why} color="var(--err)" onToggle={() => toggleWhy(s.host_id + ':' + s.item_id)}>not supported</WhyText>}</td>
                     <td className="trend">{clickable ? <Spark values={sparks[s.item_id]} color={s.state === 'ok' ? 'var(--accent)' : (STATE_VAR[s.state] || 'var(--accent)')} width={168} fill units={s.units} /> : null}</td>

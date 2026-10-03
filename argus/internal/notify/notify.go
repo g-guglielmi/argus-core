@@ -42,6 +42,8 @@ type Event struct {
 	Reminder  int       // which reminder this is, 1-based (reminders only)
 	AckBy     string    // who acknowledged it (ack notices only)
 	AckNote   string    // their note, if any (ack notices only)
+	Note      string    // the note left on the sensor (alerts, reminders and RESOLVED), if any
+	NoteBy    string    // who left it
 	Detail    string    // a system notice's explanation, one or more lines (info only)
 	OpenURL   string    // deep link to the sensor in Argus (optional)
 	AckURL    string    // signed one-click acknowledge link (problem alerts only, optional)
@@ -154,6 +156,18 @@ func (e Event) ackLine() string {
 	return "Acknowledged by " + e.AckBy + "."
 }
 
+// noteLine is the sensor's note as alerts show it: "Note: ticket open (alice)". "" without one, and
+// never on an acknowledged notice (that carries the acknowledger's own note) or a system notice.
+func (e Event) noteLine() string {
+	if e.Note == "" || e.Kind == "ack" || e.Kind == "info" {
+		return ""
+	}
+	if e.NoteBy != "" {
+		return "Note: " + e.Note + " (" + e.NoteBy + ")"
+	}
+	return "Note: " + e.Note
+}
+
 // subject is the one-line summary (no emoji) used as the email subject and message title.
 func (e Event) subject() string {
 	if e.Host == "" { // a notice about Argus itself has no host
@@ -227,6 +241,9 @@ func (e Event) bodyLines() []string {
 		lines = append(lines, e.Name)
 		lines = append(lines, "Severity: "+severityLabel(e.Severity))
 	}
+	if nl := e.noteLine(); nl != "" {
+		lines = append(lines, nl)
+	}
 	lines = append(lines, "Host: "+e.Host)
 	if e.Site != "" {
 		lines = append(lines, "Site: "+e.Site)
@@ -275,6 +292,9 @@ func (e Event) cardLines() []string {
 			out = append(out, v)
 		}
 		at = "Since "
+	}
+	if nl := e.noteLine(); nl != "" {
+		out = append(out, nl)
 	}
 	return append(out, at+e.When.Format("2006-01-02 15:04 MST"))
 }

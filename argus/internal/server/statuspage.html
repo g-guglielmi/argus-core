@@ -76,6 +76,8 @@
   td.sensor .why { font-size: 0.8em; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
   td.sensor .sev { font-weight: 700; }
   td.sensor .held { font-style: italic; }
+  /* A note left on the sensor in the app (cleared once the sensor is OK again). */
+  td.sensor .snote { font-size: 0.8em; color: var(--text); overflow: hidden; text-overflow: ellipsis; margin-top: 0.15em; padding-left: 0.45em; border-left: 0.2em solid var(--accent); }
   td.trend svg { display: block; width: 100%; height: 1.5em; }
   td.trend .none { color: var(--faint); }
   .stars { letter-spacing: 0.05em; color: var(--faint); white-space: nowrap; }
@@ -222,6 +224,7 @@
         if (i.holds) why.appendChild(el('span', 'held', sep + 'holding ' + i.holds + (i.holds === 1 ? ' other sensor' : ' other sensors')));
         sc.appendChild(why);
       }
+      if (i.note) sc.appendChild(el('div', 'snote', i.note));
       tr.appendChild(sc);
       tr.appendChild(valueCell(i.value || ''));
       var tc = el('td', 'trend');

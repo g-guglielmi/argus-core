@@ -82,6 +82,8 @@ type itemView struct {
 	// Effective warning/high values from its own triggers, so the chart can colour just the stretch
 	// of line past a threshold (nil when the sensor has no numeric threshold). See chartthr.go.
 	Thresholds *itemThresholds `json:"thr,omitempty"`
+	// Note is the note left on the sensor while it is in trouble (sensornotes.go).
+	Note *sensorNoteView `json:"note,omitempty"`
 }
 
 // numericValueType reports whether a Zabbix value_type is graphable (0 float, 3 unsigned).
@@ -646,6 +648,13 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				out[i].AlertsOff = allOff
+			}
+		}
+	}
+	if notes, err := s.st.LiveSensorNotes(ctx); err == nil && len(notes) > 0 {
+		for i := range out {
+			if n, ok := notes[out[i].ID]; ok {
+				out[i].Note = noteViewOf(n)
 			}
 		}
 	}

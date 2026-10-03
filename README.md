@@ -48,6 +48,10 @@ API key, and MAC):
 - **States** - acknowledge (with expiry + undo), pause (stops Zabbix collection), hide
   (Argus-side suppression), each with duration picker and auto-expiry. Host-level states
   inherit to sensors.
+- **Sensor notes** - leave a note on a sensor in trouble ("ISP ticket 4471 open, technician on site
+  at 14:00"): it shows with the sensor in the lists, on the host page and on the status pages, goes
+  out with its alerts, reminders and RESOLVED, and clears itself once the sensor is OK again. The
+  incident history keeps it.
 - **Overview** - cross-site active-problem list, deep-linked to the tree, with a six-chip
   status summary (OK / Warning / Error / Acknowledged / Paused / Hidden).
 - **Notifications** - Argus-native alerting engine (Microsoft Teams, Slack, Discord, Telegram, email,
@@ -78,7 +82,8 @@ API key, and MAC):
   with ok or fail and a message; Argus raises an error for a failed run and a warning, then an error,
   when the job is late or didn't run ([docs/push-sensors.md](docs/push-sensors.md)).
 - **Incident history** - what went wrong and when, per host and across the fleet: start, duration,
-  who acknowledged it and the reason the device's collector gave, over 24 h to 90 days.
+  who acknowledged it, the note left on the sensor and the reason the device's collector gave, over
+  24 h to 90 days.
 - **Status pages** - read-only wall-screen dashboards opened with a secret link (no login),
   limited to chosen sites, optionally to your networks and an expiry; the link can be rotated. Pin a
   note on a page ("the ISP has a ticket open") for whoever is looking, and it shows the maintenance

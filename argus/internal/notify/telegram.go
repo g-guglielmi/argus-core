@@ -81,6 +81,9 @@ func telegramMessage(e Event) (string, [][]map[string]string) {
 		if e.SinceSecs > 0 {
 			b.WriteString("Recovered after " + fmtDur(e.SinceSecs) + "\n")
 		}
+		if nl := e.noteLine(); nl != "" {
+			b.WriteString("<i>" + htmlEscape(nl) + "</i>\n")
+		}
 		b.WriteString("At " + e.When.Format("2006-01-02 15:04 MST") + "\n")
 	case "ack":
 		b.WriteString(htmlEscape(e.ackLine()) + "\n")
@@ -94,6 +97,9 @@ func telegramMessage(e Event) (string, [][]map[string]string) {
 		}
 		if v := e.valueLine(); v != "" {
 			b.WriteString(htmlEscape(v) + "\n")
+		}
+		if nl := e.noteLine(); nl != "" {
+			b.WriteString("<i>" + htmlEscape(nl) + "</i>\n")
 		}
 		b.WriteString("Since " + e.When.Format("2006-01-02 15:04 MST") + "\n")
 	}
