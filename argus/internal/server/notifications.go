@@ -256,6 +256,7 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database error"})
 		return
 	}
+	channelDiff(r, *cur, ch)
 	writeJSON(w, http.StatusOK, toChannelView(ch))
 }
 

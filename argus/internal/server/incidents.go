@@ -309,6 +309,30 @@ func (s *Server) serveIncidents(w http.ResponseWriter, r *http.Request, hostIDs 
 		}
 		hostIDs = visibleHostIDs(vis)
 	}
+	// The fleet feed's probe and group filters narrow it to their hosts (within the scope above).
+	if f := parseHostFilter(r); fleet && f.active() {
+		set, err := s.filterHostIDs(ctx, f)
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
+			return
+		}
+		if hostIDs != nil {
+			in := make(map[string]bool, len(hostIDs))
+			for _, id := range hostIDs {
+				in[id] = true
+			}
+			for id := range set {
+				if !in[id] {
+					delete(set, id)
+				}
+			}
+		}
+		if len(set) == 0 {
+			writeJSON(w, http.StatusOK, map[string]any{"from": from, "incidents": []incidentView{}})
+			return
+		}
+		hostIDs = setKeys(set)
+	}
 	// Hiding a sensor says its incidents aren't news: they're left out (and, on the fleet feed, a
 	// hidden host's), counted, unless ?hidden=1 asks for them. A sensor asked for by id (a drilled-down
 	// sensor) always shows its own; a host's page shows its incidents even when the host is hidden.

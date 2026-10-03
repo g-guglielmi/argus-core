@@ -82,6 +82,7 @@ const STATE_VAR: Record<string, string> = { ok: 'var(--ok)', warning: 'var(--war
 const OPTION_LABEL: Record<string, string> = {
   '24h': '24-hour (16:43)', '12h': '12-hour (4:43 PM)',
   restart: 'On: restart the probe to apply', 'next-restart': "On: apply at the probe's next start", off: 'Off',
+  '90': '90 days', '365': '1 year', '730': '2 years',
 }
 const STATE_LABEL: Record<string, string> = { ok: 'OK', warning: 'Warning', error: 'Error', acked: 'Acknowledged', paused: 'Paused', hidden: 'Hidden' }
 const PAUSED_BLUE = 'var(--paused)'
@@ -715,7 +716,7 @@ function ResetPassword({ token, onDone }: { token: string; onDone: () => void })
   )
 }
 
-type View = 'overview' | 'triggers' | 'history' | 'monitoring' | 'maintenance' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'users' | 'updates' | 'settings' | 'account' | 'list'
+type View = 'overview' | 'triggers' | 'history' | 'monitoring' | 'maintenance' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'changes' | 'users' | 'updates' | 'settings' | 'account' | 'list'
 const VIEW_TITLES: Record<View, [string, string]> = {
   overview: ['Overview', 'What needs attention right now'],
   triggers: ['Triggers', 'Alert rules - firing, or all by host'],
@@ -727,6 +728,7 @@ const VIEW_TITLES: Record<View, [string, string]> = {
   discovery: ['Discovery', 'Scan a subnet, review what answers, adopt devices'],
   thresholds: ['Thresholds', 'Fleet-wide alert defaults per template'],
   statuspages: ['Status pages', 'Read-only dashboards for a wall screen'],
+  changes: ['Changes', 'Who changed what, and when'],
   users: ['Users', 'Accounts and access'],
   updates: ['Updates', "Argus, the probes and the VMs' operating systems"],
   settings: ['Settings', 'System configuration'],
@@ -747,6 +749,7 @@ const ic = {
   statuspages: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /><path d="M7 12l2.5-3 2.5 2 3-4 2 2" /></svg>,
   users: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><path d="M16 5.2a3.2 3.2 0 0 1 0 6M17 14.5a5.5 5.5 0 0 1 3.5 5.5" /></svg>,
   updates: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6" /><path d="M20.5 3.5v4.5H16" /><path d="M12 8v7.5M9 12.5l3 3 3-3" /></svg>,
+  changes: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 7h10M5 12h14M5 17h7" /><path d="M16 17.5l2 2 3.5-4" /></svg>,
   settings: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
   account: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="3.4" /><path d="M5 20a7 7 0 0 1 14 0" /></svg>,
   logout: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M15 12H3M9 6l-6 6 6 6M15 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" /></svg>,
@@ -782,7 +785,7 @@ function useTheme(): ['dark' | 'light', () => void] {
 // bookmark, shared link, or Back/Forward restores the exact screen - instead of always
 // resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
 // (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
-const NAV_VIEWS: View[] = ['overview', 'triggers', 'history', 'monitoring', 'maintenance', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'users', 'updates', 'settings', 'account', 'list']
+const NAV_VIEWS: View[] = ['overview', 'triggers', 'history', 'monitoring', 'maintenance', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'changes', 'users', 'updates', 'settings', 'account', 'list']
 type NavState = { view: View; filter: string; host?: string; item?: string; group?: string; scan?: string; edit?: string }
 
 function parseNav(): NavState {
@@ -1852,7 +1855,7 @@ function AboutCard({ onOpenUpdates }: { onOpenUpdates: () => void }) {
 function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }: { me: Me; onMe: (m: Me) => void; onLogout: () => void; passkeysAvailable: boolean; probeEnroll: boolean; enter?: boolean }) {
   SCOPE.sites = me.sites || []
   // Admin-only views can't be restored from a shared/stale URL by a non-admin.
-  const clampView = (v: View): View => ((v === 'users' || v === 'updates' || v === 'settings' || v === 'discovery' || v === 'thresholds' || v === 'statuspages') && me.role !== 'admin' ? 'overview' : v)
+  const clampView = (v: View): View => ((v === 'users' || v === 'updates' || v === 'settings' || v === 'discovery' || v === 'thresholds' || v === 'statuspages' || v === 'changes') && me.role !== 'admin' ? 'overview' : v)
   // A fresh visit to the bare "/" (no query) honours the user's landing preference; any deep
   // link (?view=…, ?host=…, ?reset=… already handled) is respected as-is.
   const initialNav = (): NavState => {
@@ -2057,14 +2060,14 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         <div className="navlabel">Watch</div>
         {nav('overview', 'Overview', { count: errN })}
         {nav('triggers', 'Triggers')}
-        {nav('history', 'History')}
         {nav('monitoring', 'Monitoring')}
+        {nav('history', 'History')}
         <div className="navlabel">Configure</div>
+        {nav('probes', 'Probes')}
         {me.role === 'admin' && nav('discovery', 'Discovery')}
         {nav('maintenance', 'Maintenance')}
-        {nav('probes', 'Probes')}
         {nav('notifications', 'Notifications')}
-        {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('thresholds', 'Thresholds')}{nav('statuspages', 'Status pages')}{nav('users', 'Users')}{nav('updates', 'Updates')}{nav('settings', 'Settings')}</>}
+        {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('statuspages', 'Status pages')}{nav('thresholds', 'Thresholds')}{nav('changes', 'Changes')}{nav('users', 'Users')}{nav('updates', 'Updates')}{nav('settings', 'Settings')}</>}
         <div className="side-foot">
           {ver && (
             <button type="button" className={'side-ver' + (ver.update_available ? ' upd' : '')} disabled={me.role !== 'admin'}
@@ -2133,6 +2136,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           {view === 'discovery' && me.role === 'admin' && <DiscoveryView scanId={discScan} onOpenScan={openDiscoveryScan} />}
           {view === 'thresholds' && me.role === 'admin' && <ThresholdsView />}
           {view === 'statuspages' && me.role === 'admin' && <StatusPagesView />}
+          {view === 'changes' && me.role === 'admin' && <ChangesView goHost={goHost} />}
           {view === 'users' && me.role === 'admin' && <UsersView />}
           {view === 'updates' && me.role === 'admin' && <UpdatesView />}
           {view === 'settings' && me.role === 'admin' && <SettingsView me={me} onMe={onMe} onOpenUpdates={() => goto('updates')} />}
@@ -2600,7 +2604,7 @@ function chanFieldProps(f: ChField, config: Record<string, string>) {
 // selection and opens a scrollable, filterable, indented checklist of host-groups. Groups are
 // '/'-hierarchical, so selecting a root (site1) covers its subgroups (which then show as inherited).
 // Empty selection ("All sites") means every site. Used by the admin and personal channel editors.
-function SitePicker({ options, value, onChange, allLabel = 'All sites', labelOf, noAll, placeholder }: { options: string[]; value: string[]; onChange: (v: string[]) => void; allLabel?: string; labelOf?: (v: string) => string; noAll?: boolean; placeholder?: string }) {
+function SitePicker({ options, value, onChange, allLabel = 'All sites', labelOf, noAll, placeholder, noun = 'sites' }: { options: string[]; value: string[]; onChange: (v: string[]) => void; allLabel?: string; labelOf?: (v: string) => string; noAll?: boolean; placeholder?: string; noun?: string }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const ref = useRef<HTMLDivElement>(null)
@@ -2635,7 +2639,7 @@ function SitePicker({ options, value, onChange, allLabel = 'All sites', labelOf,
       {open && (
         <div className="msel-pop" role="listbox" aria-multiselectable="true">
           {options.length > 8 && (
-            <input className="input msel-search" placeholder="Filter sites…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+            <input className="input msel-search" placeholder={`Filter ${noun}…`} value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
           )}
           <div className="msel-list">
             {!noAll && (
@@ -2658,7 +2662,7 @@ function SitePicker({ options, value, onChange, allLabel = 'All sites', labelOf,
                 </button>
               )
             })}
-            {shown.length === 0 && <div className="msel-empty">No matching sites</div>}
+            {shown.length === 0 && <div className="msel-empty">No matching {noun}</div>}
           </div>
         </div>
       )}
@@ -5799,7 +5803,7 @@ function ClassChanger({ hostId, currentClassId, currentClassLabel, onChanged }: 
 // the open dialog is URL-backed via &edit=).
 // ThrRow is one global threshold-default field: edit the fleet-wide value (blank/placeholder = the
 // factory default), save on blur, and Reset back to the factory value. Saves via PUT /api/thresholds/default.
-function ThrRow({ template, row, onSaved }: { template: string; row: ThrRowData; onSaved: (template: string, macro: string, value: string) => void }) {
+function ThrRow({ template, row, onSaved, reason = '' }: { template: string; row: ThrRowData; onSaved: (template: string, macro: string, value: string) => void; reason?: string }) {
   const [val, setVal] = useState(row.value || '')
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'err'>('idle')
   const [err, setErr] = useState('')
@@ -5808,7 +5812,7 @@ function ThrRow({ template, row, onSaved }: { template: string; row: ThrRowData;
     next = next.trim()
     if (next === (row.value || '')) { setStatus('idle'); return }
     setStatus('saving'); setErr('')
-    const res = await fetch('/api/thresholds/default', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ template, macro: row.macro, value: next }) }).catch(() => null)
+    const res = await fetch('/api/thresholds/default', { method: 'PUT', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) }, body: JSON.stringify({ template, macro: row.macro, value: next }) }).catch(() => null)
     if (!res || !res.ok) { setStatus('err'); setErr(await errText(res, 'Save failed')); return }
     setStatus('saved'); onSaved(template, row.macro, next); setTimeout(() => setStatus('idle'), 1500)
   }
@@ -5841,6 +5845,7 @@ function thrScopeText(t: ThrTemplate): string {
 // ThresholdDialog edits one template's fleet-wide threshold defaults. Each field saves on blur (ThrRow);
 // closing refreshes the list so the "N customized" counts update.
 function ThresholdDialog({ tpl, onClose, onSaved }: { tpl: ThrTemplate; onClose: () => void; onSaved: (template: string, macro: string, value: string) => void }) {
+  const [reason, setReason] = useState('')
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
@@ -5852,8 +5857,9 @@ function ThresholdDialog({ tpl, onClose, onSaved }: { tpl: ThrTemplate; onClose:
         <div className="dlg-title">{tpl.label} · thresholds</div>
         <div className="dlg-scroll">
           <p className="set-note" style={{ marginTop: 0 }}>{thrScopeText(tpl)}. These are the fleet-wide defaults - every host using this template inherits them unless overridden in its own settings. Blank a field (or Reset) to use the factory default.</p>
+          <div className="thr-reason"><ReasonInput value={reason} onChange={setReason} /></div>
           <div className="thr-rows">
-            {tpl.thresholds.map((r) => <ThrRow key={r.macro} template={tpl.template} row={r} onSaved={onSaved} />)}
+            {tpl.thresholds.map((r) => <ThrRow key={r.macro} template={tpl.template} row={r} onSaved={onSaved} reason={reason} />)}
           </div>
         </div>
         <div className="hs-foot"><Button variant="ghost" onClick={onClose}>Done</Button></div>
@@ -6639,6 +6645,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
   const [openSecs, setOpenSecs] = useState<Set<string>>(() => new Set())
   const sec = (id: string) => ({ open: openSecs.has(id), onToggle: () => setOpenSecs((s) => { const n = new Set(s); if (!n.delete(id)) n.add(id); return n }) })
   const [masterChoice, setMasterChoice] = useState('default') // 'default' | 'none' | a sensor id
+  const [reason, setReason] = useState('') // why, for the change log (optional)
   function loadCfg() {
     fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : Promise.reject())).then((d: HostCfg) => {
       setCfg(d); setCustomOrder(!!(d.category_order && d.category_order.length))
@@ -6684,7 +6691,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
     // Per-host sensor order: send the current list when "custom" is on, else [] to clear the override.
     const category_order = cfg.categories && cfg.categories.length > 0 ? (customOrder ? cfg.categories : []) : undefined
     const addons = cfg.addons ? Object.fromEntries(cfg.addons.map((a) => [a.id, { enabled: a.enabled, macros: Object.fromEntries((a.macros || []).map((m) => [m.macro, m.value])) }])) : undefined
-    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order, addons, master: cfg.master ? masterChoice : undefined }) }).catch(() => null)
+    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order, addons, master: cfg.master ? masterChoice : undefined }) }).catch(() => null)
     setBusy(false)
     // The error also pops up: the dialog is long, and its line by the Save button may be scrolled away.
     if (!res || !res.ok) { const m = await errText(res, 'Could not save host settings'); setErr(m); toast.error(m); return }
@@ -6959,6 +6966,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
 
       {err && <div style={{ color: 'var(--err)', fontSize: 13, marginTop: 8 }}>{err}</div>}
       <div className="hs-foot">
+        {canEdit && <ReasonInput value={reason} onChange={setReason} />}
         <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
         {canEdit && <Button variant="primary" onClick={save} disabled={busy || !cfg.host.trim()}>Save</Button>}
       </div>
@@ -7222,6 +7230,224 @@ function useIncidents(url: string): [Incident[] | null, string, number] {
 function HiddenToggle({ n, shown, onToggle, lead = true }: { n: number; shown: boolean; onToggle: () => void; lead?: boolean }) {
   if (n === 0) return null
   return <>{lead ? ' · ' : null}<button type="button" className="linkbtn hidden-toggle" onClick={(e) => { e.stopPropagation(); onToggle() }}>{shown ? 'leave out' : 'show'} {n} from hidden sensors</button></>
+}
+
+// --- Probe and group filters, CSV export (shared by the long lists) ---
+
+type HostFilterVal = { probes: string[]; groups: string[] }
+const NO_HOST_FILTER: HostFilterVal = { probes: [], groups: [] }
+
+// hostFilterQS is the filter as query parameters: one value each, so a group name may hold a comma.
+function hostFilterQS(f: HostFilterVal): string {
+  return f.probes.map((p) => `&probe=${encodeURIComponent(p)}`).join('') + f.groups.map((g) => `&group=${encodeURIComponent(g)}`).join('')
+}
+
+// useFilterOptions loads what the probe and group filters offer: the probes (the core server first,
+// as "Server") and every group, read once per list.
+function useFilterOptions(): { probes: { id: string; name: string }[]; groups: string[] } {
+  const [probes, setProbes] = useState<{ id: string; name: string }[]>([])
+  const [groups, setGroups] = useState<string[]>([])
+  useEffect(() => {
+    fetch('/api/proxies').then((r) => (r.ok ? r.json() : [])).then((px: Proxy[]) => setProbes([{ id: '0', name: 'Server' }, ...(px || []).map((p) => ({ id: p.id, name: p.name })).sort((a, b) => a.name.localeCompare(b.name))])).catch(() => {})
+    fetch('/api/groups').then((r) => (r.ok ? r.json() : [])).then((gs: Group[]) => setGroups((gs || []).map((g) => g.name).sort((a, b) => a.localeCompare(b)))).catch(() => {})
+  }, [])
+  return { probes, groups }
+}
+
+// ProbeGroupFilter narrows a list to the hosts of some probes and some groups (a group covers its
+// subgroups): the same two dropdowns on History, Changes and Inventory.
+function ProbeGroupFilter({ value, onChange }: { value: HostFilterVal; onChange: (v: HostFilterVal) => void }) {
+  const { probes, groups } = useFilterOptions()
+  const probeName = (id: string) => probes.find((p) => p.id === id)?.name || id
+  return (
+    <>
+      <SitePicker options={probes.map((p) => p.id)} labelOf={probeName} value={value.probes} onChange={(v) => onChange({ ...value, probes: v })} allLabel="All probes" noun="probes" />
+      <SitePicker options={groups} value={value.groups} onChange={(v) => onChange({ ...value, groups: v })} allLabel="All groups" noun="groups" />
+    </>
+  )
+}
+
+// downloadCSV saves rows as a CSV file the way spreadsheets open it (UTF-8 with a BOM, CRLF lines,
+// every cell quoted).
+function downloadCSV(name: string, header: string[], rows: (string | number | undefined | null)[][]) {
+  const cell = (v: string | number | undefined | null) => `"${String(v ?? '').replace(/"/g, '""')}"`
+  const text = '\ufeff' + [header, ...rows].map((r) => r.map(cell).join(',')).join('\r\n') + '\r\n'
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+// csvTime is a time as a spreadsheet sorts it: 2026-10-03 14:05.
+function csvTime(unix: number): string {
+  const d = new Date(unix * 1000)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+function csvStamp(): string {
+  return csvTime(Math.floor(Date.now() / 1000)).replace(/[: ]/g, '-').slice(0, 16)
+}
+
+function exportIncidents(rows: Incident[]) {
+  downloadCSV(`argus-incidents-${csvStamp()}.csv`, ['What happened', 'Severity', 'Sensor', 'Host', 'Site', 'Started', 'Ended', 'Duration (min)', 'Acknowledged by', 'Reason', 'Note'],
+    rows.map((r) => [r.name, sevInfo(r.severity).label, r.sensor, r.host_name, r.site, csvTime(r.start), r.end ? csvTime(r.end) : 'ongoing', r.end ? Math.round((r.end - r.start) / 60) : '', r.ack_by, r.reason, r.note]))
+}
+
+// --- The change log ---
+
+// reasonHeader sends the reason someone gave for a change along with it, for the change log.
+function reasonHeader(reason: string): Record<string, string> {
+  const r = reason.trim()
+  return r ? { 'X-Argus-Reason': encodeURIComponent(r.slice(0, 200)) } : {}
+}
+
+// ReasonInput is the optional "why" beside a dialog's Save; it shows in the change log.
+function ReasonInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return <input className="input reason-input" placeholder="Reason for the change log (optional)" maxLength={200} value={value} onChange={(e) => onChange(e.target.value)} aria-label="Reason for this change" />
+}
+
+type ChangeDiff = { f: string; o: string; n: string }
+type ChangeRow = { id: number; at: number; actor: string; by_argus?: boolean; category: string; action: string; object?: string; detail?: string; diff?: ChangeDiff[]; reason?: string; hosts?: { id: string; name: string }[] }
+
+const CHANGE_CATEGORIES: [string, string][] = [
+  ['', 'Everything'], ['hosts', 'Hosts and sensors'], ['states', 'Alert states'], ['thresholds', 'Thresholds'], ['groups', 'Groups'],
+  ['maintenance', 'Maintenance'], ['discovery', 'Discovery and imports'], ['probes', 'Probes'], ['channels', 'Alert channels'],
+  ['users', 'Users and sign-in'], ['statuspages', 'Status pages'], ['updates', 'Updates'], ['settings', 'Settings'],
+]
+
+// ChangeRows lists change log entries newest first: what changed (with each value before and after,
+// the detail and the reason), who and when.
+function ChangeRows({ rows, goHost }: { rows: ChangeRow[]; goHost?: (h: string) => void }) {
+  return (
+    <div className="enroll-scroll">
+      <table className="slist slist-inc slist-chg">
+        <thead><tr><th className="slgrow">What changed</th><th>Who</th><th>When</th></tr></thead>
+        <tbody>
+          {rows.map((c) => (
+            <tr key={c.id}>
+              <td className="slgrow chg-cell">
+                <div className="inc-name">{c.action}{c.object ? <> · <span className="chg-obj">{c.object}</span></> : null}</div>
+                {goHost && c.hosts && c.hosts.length > 1 && (
+                  <div className="sreason">{c.hosts.map((h, i) => <span key={h.id}>{i ? ', ' : ''}<span className="lnk-host" onClick={() => goHost(h.id)}>{h.name || h.id}</span></span>)}</div>
+                )}
+                {(c.diff || []).map((d, i) => (
+                  <div key={i} className="chg-diff"><span className="chg-f">{d.f}</span> {d.o ? <span className="chg-old">{d.o}</span> : null}{d.o ? <span className="chg-arr" aria-label="to">→</span> : null}<span className="chg-new">{d.n || 'none'}</span></div>
+                ))}
+                {c.detail && <div className="sreason">{c.detail}</div>}
+                {c.reason && <div className="sreason chg-why">Reason: {c.reason}</div>}
+              </td>
+              <td data-label="Who">{c.by_argus ? <span className="chg-argus" title="Argus did this by itself">Argus</span> : (c.actor || <span className="muted">-</span>)}</td>
+              <td className="mono" data-label="When" title={new Date(c.at * 1000).toLocaleString()}>{fmtWhen(c.at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function exportChanges(rows: ChangeRow[]) {
+  downloadCSV(`argus-changes-${csvStamp()}.csv`, ['When', 'Who', 'What', 'Object', 'Hosts', 'Changed', 'Detail', 'Reason'],
+    rows.map((c) => [csvTime(c.at), c.by_argus ? 'Argus' : c.actor, c.action, c.object, (c.hosts || []).map((h) => h.name || h.id).join(', '),
+      (c.diff || []).map((d) => `${d.f}: ${d.o ? d.o + ' -> ' : ''}${d.n || 'none'}`).join('; '), c.detail, c.reason]))
+}
+
+// useChanges loads a change log page and pages back on demand.
+function useChanges(url: string | null): { rows: ChangeRow[] | null; err: string; more: boolean; keep: number; loadMore: () => void; loading: boolean } {
+  const [rows, setRows] = useState<ChangeRow[] | null>(null)
+  const [err, setErr] = useState('')
+  const [more, setMore] = useState(false)
+  const [keep, setKeep] = useState(365)
+  const [loading, setLoading] = useState(false)
+  useEffect(() => {
+    if (!url) return
+    let live = true
+    setRows(null); setErr('')
+    fetch(url).then(async (r) => { if (!r.ok) throw new Error('changes'); return r.json() })
+      .then((d) => { if (live) { setRows(d.changes || []); setMore(!!d.more); setKeep(d.keep_days || 365) } })
+      .catch(() => { if (live) setErr('Could not load the changes') })
+    return () => { live = false }
+  }, [url])
+  const loadMore = () => {
+    if (!url || !rows || !rows.length || loading) return
+    setLoading(true)
+    fetch(`${url}${url.includes('?') ? '&' : '?'}before=${rows[rows.length - 1].id}`).then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) { setRows((cur) => [...(cur || []), ...(d.changes || [])]); setMore(!!d.more) } })
+      .catch(() => {}).finally(() => setLoading(false))
+  }
+  return { rows, err, more, keep, loadMore, loading }
+}
+
+function keepText(days: number): string {
+  return days % 365 === 0 ? (days === 365 ? '1 year' : `${days / 365} years`) : `${days} days`
+}
+
+// ChangesView is the admin change log: every change, who made it and when, with the values before
+// and after, filtered by text, kind, probe, group and period.
+function ChangesView({ goHost }: { goHost: (h: string) => void }) {
+  const [q, setQ] = useState('')
+  const [needle, setNeedle] = useState('')
+  const [cat, setCat] = useState('')
+  const [days, setDays] = useState(7)
+  const [hf, setHf] = useState<HostFilterVal>(NO_HOST_FILTER)
+  useEffect(() => { const t = window.setTimeout(() => setNeedle(q.trim()), 300); return () => clearTimeout(t) }, [q])
+  const from = Math.floor(Date.now() / 1000 / 60) * 60 - days * 86400
+  const url = `/api/changes?from=${from}${cat ? `&cat=${cat}` : ''}${needle ? `&q=${encodeURIComponent(needle)}` : ''}${hostFilterQS(hf)}`
+  const { rows, err, more, keep, loadMore, loading } = useChanges(url)
+  const period = days === 1 ? 'the last 24 hours' : days === 365 ? 'the last year' : `the last ${days} days`
+  return (
+    <div className="panel">
+      <div className="phead">
+        <PanelTitle eyebrow="Admin">Changes</PanelTitle>
+        <span className="hint">{rows ? `${rows.length}${more ? '+' : ''} in ${period} · kept for ${keepText(keep)}` : 'who changed what'}</span>
+        <div className="tools hist-tools">
+          <input className="input hist-q" placeholder="Who, what, host or setting" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search the changes" />
+          <Select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Kind of change" style={{ width: 'auto' }}>
+            {CHANGE_CATEGORIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </Select>
+          <ProbeGroupFilter value={hf} onChange={setHf} />
+          <div className="seg">
+            {[1, 7, 30, 365].map((d) => <button key={d} className={days === d ? 'on' : ''} onClick={() => setDays(d)}>{d === 1 ? '24h' : d === 365 ? '1y' : `${d}d`}</button>)}
+          </div>
+          <button className="btn" disabled={!rows || !rows.length} onClick={() => rows && exportChanges(rows)}>Export CSV</button>
+        </div>
+      </div>
+      {err && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{err}</div>}
+      {rows === null && !err && <Skeleton rows={5} cols={3} />}
+      {rows !== null && !err && (rows.length === 0
+        ? <EmptyState icon={ic.changes} title="No changes" text={needle || cat || hf.probes.length || hf.groups.length ? 'Nothing in this period matches the filters.' : `Nobody changed anything in ${period}.`} />
+        : <>
+          <ChangeRows rows={rows} goHost={goHost} />
+          {more && <div className="chg-more"><button className="btn" disabled={loading} onClick={loadMore}>{loading ? 'Loading…' : 'Show older changes'}</button></div>}
+        </>)}
+    </div>
+  )
+}
+
+// HostChanges is a host's own change log, folded under its history until opened.
+function HostChanges({ hostId }: { hostId: string }) {
+  const [open, setOpen] = useState(false)
+  const { rows, err, more, loadMore, loading } = useChanges(`/api/hosts/${hostId}/changes`)
+  if (err || !rows) return null
+  const last = rows[0]
+  return (
+    <div className="hinc">
+      <button type="button" className="hinc-head" onClick={() => setOpen((o) => !o)} aria-expanded={open} disabled={rows.length === 0}>
+        {rows.length > 0 && <svg className={'chev' + (open ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>}
+        <span className="hinc-t">Changes</span>
+        <span className="hinc-s">{rows.length === 0 ? 'nothing changed yet' : `${rows.length}${more ? '+' : ''} · last ${relTime(last.at)}: ${last.action.toLowerCase()}${last.by_argus ? ' by Argus' : last.actor ? ` by ${last.actor}` : ''}`}</span>
+      </button>
+      {open && rows.length > 0 && <>
+        <ChangeRows rows={rows} />
+        {more && <div className="chg-more"><button className="btn" disabled={loading} onClick={loadMore}>{loading ? 'Loading…' : 'Show older changes'}</button></div>}
+      </>}
+    </div>
+  )
 }
 
 // PanelTitle is a panel's title with a small label above it: the sidebar section it belongs to and,
@@ -7737,7 +7963,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
         )}
       {onlyItem
         ? <HostIncidents hostId={hostId} goHost={null} itemIds={shownItems.map((i) => i.id)} />
-        : <HostIncidents hostId={hostId} goHost={null} />}
+        : <><HostIncidents hostId={hostId} goHost={null} /><HostChanges hostId={hostId} /></>}
     </div>
   )
 }
@@ -7903,7 +8129,8 @@ function HistoryView({ goHost }: { goHost: (h: string) => void }) {
   const [level, setLevel] = useState<'all' | 'errors'>('all')
   const [q, setQ] = useState('')
   const [withHidden, setWithHidden] = useState(false)
-  const [rows, err, hidden] = useIncidents(`/api/incidents?days=${days}${withHidden ? '&hidden=1' : ''}`)
+  const [hf, setHf] = useState<HostFilterVal>(NO_HOST_FILTER)
+  const [rows, err, hidden] = useIncidents(`/api/incidents?days=${days}${withHidden ? '&hidden=1' : ''}${hostFilterQS(hf)}`)
   const needle = q.trim().toLowerCase()
   const shown = (rows || []).filter((r) => (level === 'all' || r.severity >= 3) &&
     (!needle || [r.host_name, r.site, r.sensor, r.name, r.reason].some((v) => (v || '').toLowerCase().includes(needle))))
@@ -7916,6 +8143,7 @@ function HistoryView({ goHost }: { goHost: (h: string) => void }) {
         <span className="hint">{rows ? <>{`${shown.length} in ${period}${live ? ` · ${live} still open` : ''}`}<HiddenToggle n={hidden} shown={withHidden} onToggle={() => setWithHidden((w) => !w)} /></> : ''}</span>
         <div className="tools hist-tools">
           <input className="input hist-q" placeholder="Host, sensor or reason" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter incidents" />
+          <ProbeGroupFilter value={hf} onChange={setHf} />
           <div className="seg">
             {[1, 7, 30, 90].map((d) => <button key={d} className={days === d ? 'on' : ''} onClick={() => setDays(d)}>{d === 1 ? '24h' : `${d}d`}</button>)}
           </div>
@@ -7923,6 +8151,7 @@ function HistoryView({ goHost }: { goHost: (h: string) => void }) {
             <button className={level === 'all' ? 'on' : ''} onClick={() => setLevel('all')}>Errors + Warnings</button>
             <button className={level === 'errors' ? 'on' : ''} onClick={() => setLevel('errors')}>Errors</button>
           </div>
+          <button className="btn" disabled={!shown.length} onClick={() => exportIncidents(shown)}>Export CSV</button>
         </div>
       </div>
       {err && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{err}</div>}

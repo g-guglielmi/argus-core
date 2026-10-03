@@ -114,6 +114,7 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return
 	}
+	changeObject(r, name)
 	writeJSON(w, http.StatusOK, groupView{ID: id, Name: name})
 }
 
@@ -148,6 +149,8 @@ func (s *Server) handleRenameGroup(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return
 	}
+	changeDetail(r, "now "+name)
+	s.forgetHostIndex()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -209,9 +212,25 @@ func (s *Server) handleSetHostGroups(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	var was []string
+	if idx, err := s.hostIndex(ctx); err == nil {
+		was = idx[r.PathValue("id")].Groups
+	}
 	if err := s.zbx.SetHostGroups(ctx, r.PathValue("id"), req.GroupIDs); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return
 	}
+	if gs, err := s.zbx.HostGroups(ctx); err == nil {
+		byID := map[string]string{}
+		for _, g := range gs {
+			byID[g.GroupID] = g.Name
+		}
+		var now []string
+		for _, id := range req.GroupIDs {
+			now = append(now, byID[id])
+		}
+		changeDiff(r, "Groups", strings.Join(was, ", "), strings.Join(now, ", "))
+	}
+	s.forgetHostIndex()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

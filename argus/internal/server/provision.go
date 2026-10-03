@@ -254,6 +254,17 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 	// Kick the class's discovery rules shortly after creation (delayed until the proxy has synced the
 	// new config), so per-instance sensors appear in seconds instead of after the rules' interval.
 	s.scheduleDiscovery(hostID)
+	shown := req.Name
+	if strings.TrimSpace(req.Visible) != "" {
+		shown = req.Visible
+	}
+	changeObject(r, shown, hostID)
+	how := "by hand"
+	if req.DiscoveryResultID > 0 {
+		how = "adopted from discovery"
+	}
+	changeDetail(r, class.Label+" in "+req.Site+", "+how)
+	s.forgetHostIndex()
 	writeJSON(w, http.StatusOK, map[string]string{"id": hostID, "class": class.ID})
 }
 
@@ -304,6 +315,11 @@ func (s *Server) handleChangeHostClass(w http.ResponseWriter, r *http.Request) {
 	}
 	oldClassID, _, _ := s.st.GetDeviceClass(ctx, hostID)
 	oldClass, _ := provision.ClassByID(oldClassID) // zero value (no templates) if unknown/unset
+	oldLabel := oldClass.Label
+	if oldLabel == "" {
+		oldLabel = "none"
+	}
+	changeDiff(r, "Class", oldLabel, newClass.Label)
 	if oldClass.Internal {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "this host is managed by Argus; its class can't be changed"})
 		return

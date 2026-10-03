@@ -118,7 +118,8 @@ func (s *Server) handleSetThresholdDefault(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	req.Value = strings.TrimSpace(req.Value)
-	if _, ok := thresholdSpecFor(req.Template, req.Macro); !ok {
+	spec, ok := thresholdSpecFor(req.Template, req.Macro)
+	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown threshold macro for this template"})
 		return
 	}
@@ -130,6 +131,13 @@ func (s *Server) handleSetThresholdDefault(w http.ResponseWriter, r *http.Reques
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
+	// The default as it was, for the change log.
+	factory, _ := provision.TemplateFactoryDefaults()
+	was := factory[req.Template][req.Macro]
+	if gdef, err := s.st.ThresholdDefaults(ctx); err == nil && gdef[req.Template][req.Macro] != "" {
+		was = gdef[req.Template][req.Macro]
+	}
+
 	// Resolve the target value to write onto the template: the override, or the factory default on a
 	// reset. Argus is the source of truth, so the store is updated first; the live-template write
 	// follows (a failure there is reported, but the stored value still applies on the next reconcile).
@@ -139,13 +147,21 @@ func (s *Server) handleSetThresholdDefault(w http.ResponseWriter, r *http.Reques
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": s.errText(r, err)})
 			return
 		}
-		factory, _ := provision.TemplateFactoryDefaults()
 		target = factory[req.Template][req.Macro]
 	} else {
 		if err := s.st.SetThresholdDefault(ctx, req.Template, req.Macro, req.Value); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": s.errText(r, err)})
 			return
 		}
+	}
+	unit := ""
+	if spec.Unit != "" {
+		unit = " " + spec.Unit
+	}
+	changeObject(r, req.Template)
+	changeDiff(r, spec.Label, was+unit, target+unit)
+	if req.Value == "" {
+		changeDetail(r, "back to the built-in default")
 	}
 	if target != "" {
 		if err := s.setTemplateMacro(ctx, req.Template, req.Macro, target); err != nil {

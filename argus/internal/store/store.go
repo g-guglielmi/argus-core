@@ -562,6 +562,29 @@ CREATE TABLE IF NOT EXISTS sensor_notes (
   cleared_at INTEGER NOT NULL DEFAULT 0 -- 0 = shown
 );
 CREATE INDEX IF NOT EXISTS idx_sensor_notes_live ON sensor_notes(cleared_at, sensor_key);
+-- The change log: who changed what and when (changes.go). One action is one row; change_hosts lists
+-- the hosts it touched, for a host's own list and the probe / group filters.
+CREATE TABLE IF NOT EXISTS changes (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  at         INTEGER NOT NULL,
+  actor_kind TEXT NOT NULL DEFAULT 'user',
+  actor_id   INTEGER NOT NULL DEFAULT 0,
+  actor      TEXT NOT NULL DEFAULT '',
+  category   TEXT NOT NULL DEFAULT '',
+  action     TEXT NOT NULL,
+  object     TEXT NOT NULL DEFAULT '',
+  detail     TEXT NOT NULL DEFAULT '',
+  diff       TEXT NOT NULL DEFAULT '',
+  reason     TEXT NOT NULL DEFAULT '',
+  request_id TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_changes_at ON changes(at);
+CREATE TABLE IF NOT EXISTS change_hosts (
+  change_id INTEGER NOT NULL REFERENCES changes(id) ON DELETE CASCADE,
+  host_id   TEXT NOT NULL,
+  PRIMARY KEY (change_id, host_id)
+);
+CREATE INDEX IF NOT EXISTS idx_change_hosts_host ON change_hosts(host_id, change_id);
 `); err != nil {
 		return err
 	}

@@ -13,6 +13,23 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Change log:**
+- A new admin page, **Changes**, says who changed what and when: host settings, alert states
+  (acknowledge, pause, hide, notes), thresholds, groups, maintenance windows, discovery, probes,
+  alert channels, users and sign-in security, updates and settings. Each change shows its values
+  before and after ("Temperature warning 70 °C -> 65 °C"); secrets only say they changed.
+- Search it, filter by kind, probe, group and period, and export it as CSV. Each host lists its own
+  changes under its history.
+- Say why: host settings and the thresholds dialog have an optional reason box, and an
+  acknowledgement's note counts as its reason.
+- Kept for a year by default (Settings, **Keep changes for**: 90 days, 1 year or 2 years;
+  `ARGUS_CHANGES_KEEP_DAYS`).
+
+**History:** filter by probe and group, and export the list as CSV.
+
+**Sidebar:** reordered. Watch: Overview, Triggers, Monitoring, History. Configure: Probes, Discovery,
+Maintenance, Notifications. Admin: Status pages, Thresholds, Changes, Users, Updates, Settings.
+
 ## [0.7.2] - 2026-10-03
 
 A patch release: notes on sensors in trouble that go out with their alerts and clear themselves once

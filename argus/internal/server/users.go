@@ -184,6 +184,16 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if !sameSites(target.Sites, sites) {
 		s.logger.Info("user sites changed", "user", id, "sites", sites)
 	}
+	siteText := func(ss []string) string {
+		if len(ss) == 0 {
+			return "all sites"
+		}
+		return strings.Join(ss, ", ")
+	}
+	changeDiff(r, "Email", target.Email, req.Email)
+	changeDiff(r, "Name", strings.TrimSpace(target.Name+" "+target.Surname), strings.TrimSpace(req.Name+" "+req.Surname))
+	changeDiff(r, "Role", target.Role, req.Role)
+	changeDiff(r, "Sites", siteText(target.Sites), siteText(sites))
 	writeJSON(w, http.StatusOK, adminUser{ID: id, Email: req.Email, Name: req.Name, Surname: req.Surname, Role: req.Role, Disabled: target.Disabled, Sites: nonNilSites(sites)})
 }
 

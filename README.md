@@ -83,7 +83,12 @@ API key, and MAC):
   when the job is late or didn't run ([docs/push-sensors.md](docs/push-sensors.md)).
 - **Incident history** - what went wrong and when, per host and across the fleet: start, duration,
   who acknowledged it, the note left on the sensor and the reason the device's collector gave, over
-  24 h to 90 days. Hidden sensors' incidents are left out unless you ask for them.
+  24 h to 90 days, by probe and group too. Hidden sensors' incidents are left out unless you ask for
+  them. Export the list as CSV.
+- **Change log** - who changed what and when: host settings, alert states, thresholds, groups,
+  maintenance, channels, users and sign-in security, updates, settings, with each value before and
+  after and an optional reason. An admin **Changes** page (searchable, by kind, probe, group and
+  period, exportable as CSV) and each host's own changes; kept for a year by default.
 - **Status pages** - read-only wall-screen dashboards opened with a secret link (no login),
   limited to chosen sites, optionally to your networks and an expiry; the link can be rotated. Pin a
   note on a page ("the ISP has a ticket open") for whoever is looking, and it shows the maintenance
@@ -348,6 +353,7 @@ admin **Settings** page - a set env var takes precedence and locks the field.
 | **First-run admin** | `ARGUS_ADMIN_EMAIL`, `ARGUS_ADMIN_PASSWORD` |
 | **Security** | `ARGUS_COOKIE_SECURE`, `ARGUS_SECRET_KEY`, `ARGUS_TRUST_PROXY`, `ARGUS_LOGIN_MAX_ATTEMPTS`, `ARGUS_LOGIN_WINDOW_MINUTES` |
 | **Notifications** | `ARGUS_PUBLIC_URL`, `ARGUS_TZ`, `ARGUS_ALERT_DELAY_SECONDS`, `ARGUS_HEARTBEAT_URL` |
+| **Change log** | `ARGUS_CHANGES_KEEP_DAYS` |
 | **Probes** | `ARGUS_CA_CERT_FILE`, `ARGUS_CA_KEY_FILE`, `ARGUS_PROBE_CORE_HOST`, `ARGUS_PROBE_AUTOSCALE` |
 | **Passkeys** | `ARGUS_RP_ID`, `ARGUS_RP_DISPLAY_NAME`, `ARGUS_RP_ORIGINS` |
 

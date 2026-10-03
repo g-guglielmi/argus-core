@@ -443,13 +443,41 @@ ones kept 120 days). A host card ends with its last 30 days, folded (`GET
 /api/hosts/{id}/incidents?days=30`), and a drilled-down sensor with its own history, open
 (`&items=<its id, or every channel of its group>`: Zabbix is asked for those sensors' triggers only,
 so a busy host's other incidents can't crowd them out); the **History** page lists the fleet's, 24 h / 7 / 30 / 90 days,
-Errors + Warnings or Errors only, filterable by host, sensor or reason (`GET
-/api/incidents?days=N`). Zabbix's events follow its housekeeping retention (Settings, Data retention).
+Errors + Warnings or Errors only, filterable by host, sensor or reason, and by probe and group
+(`GET /api/incidents?days=N&probe=<proxy id, 0 = the server>&group=<name>`, each repeatable; a group
+covers its subgroups, and the filter narrows within the user's sites). **Export CSV** saves the list
+as shown. Zabbix's events follow its housekeeping retention (Settings, Data retention).
 Hiding a sensor says its incidents aren't news, so the history leaves out a hidden sensor's incidents,
 and on the History page a hidden host's too, and says how many (`hidden` in the response; at most
 twice the row limit is read, so a noisy hidden sensor can't crowd the rest out). **Show N from hidden
 sensors** asks again with `&hidden=1`, and they come back dimmed and tagged. A drilled-down sensor
 always shows its own incidents, and a hidden host's own page shows its incidents.
+
+## 7c. Change log
+
+Who changed what and when (NetBox's change log, `changes.go`). Every signed-in write passes the
+`changeLog` middleware, which logs it once it succeeded: in its route's words from `changeRoutes`
+("Paused a host", "Changed a channel"), naming the object the path points at (a host, a sensor as
+"host · sensor", a user, a channel, a window; read before the handler runs when it deletes or renames
+it), or in the handler's own words (`noteChange`). Handlers add the values before and after
+(`changeDiff`): host settings (names, probe, interfaces, class options, per-host thresholds, add-ons,
+master sensor, sensor order), default thresholds, class, probe and groups of a host, settings, shared
+channels and users. A secret only reads "changed". A route the table doesn't list isn't logged:
+sign-ins, test sends, checks, reads; revealing a probe VM's console password is the one read that is.
+Nothing of a request body is kept but the fields a route chose to show. One action is one entry,
+however many hosts it touched (`change_hosts` lists them, for a host's own list and the filters).
+
+A **reason** typed beside a dialog's Save (host settings, the thresholds dialog; the bulk actions)
+rides along as the `X-Argus-Reason` header (URL-encoded, up to 200 characters); an acknowledgement's
+or a hide's own note stands in for one. Argus logs what it changes by itself as "Argus" (an upstream
+device read from the UniFi controller, an import).
+
+**Changes** (Admin) lists the log newest first, 300 at a time with **Show older changes**: search
+(action, object, who, detail, reason, values), kind, probe and group (the hosts it touched), period
+(24 h / 7 / 30 days / a year), **Export CSV** (`GET /api/changes?from=&q=&cat=&probe=&group=&before=`).
+A host's own list folds under its history (`GET /api/hosts/{id}/changes`, anyone who sees the host).
+Entries are kept for **Keep changes for** (Settings, `ARGUS_CHANGES_KEEP_DAYS`: 90, 365 (default) or
+730 days) and pruned once a day.
 
 ---
 
@@ -778,7 +806,7 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
 (fleet-wide defaults per template + per-class sensor-category order) · 10) Notifications
 (instances, credentials, targets, test-send) · 11) Users & security ·
 12) Updates (the core, its sidecar, the probes and the VMs' operating systems) ·
-13) Settings (FQDN/allowed-hosts, retention, proxy status).
+13) Settings (FQDN/allowed-hosts, retention, proxy status) · 14) Changes (the change log, section 7c).
 
 ---
 

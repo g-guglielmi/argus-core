@@ -1214,6 +1214,29 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .inc-name .tag-hidden { margin-left: 8px; vertical-align: 1px; }
 .linkbtn.hidden-toggle { color: var(--accent); text-decoration: none; }
 .linkbtn.hidden-toggle:hover { text-decoration: underline; }
+
+/* The change log (Changes page, a host's Changes): what changed, each value struck through and the
+   new one after it, the detail and the reason; who and when in their own columns. */
+.slist-inc.slist-chg th:nth-child(1) { width: 62%; } .slist-inc.slist-chg th:nth-child(2) { width: 20%; } .slist-inc.slist-chg th:nth-child(3) { width: 18%; }
+.slist-chg td.chg-cell { border-left: 3px solid var(--border-strong); padding-left: 13px; }
+.slist-chg .chg-diff, .slist-chg .chg-obj { overflow-wrap: anywhere; }
+.chg-obj { font-weight: 400; }
+.chg-diff { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.chg-diff .chg-f { color: var(--text); margin-right: 4px; }
+.chg-diff .chg-old { text-decoration: line-through; color: var(--faint); }
+.chg-diff .chg-arr { color: var(--faint); margin: 0 6px; }
+.chg-diff .chg-new { color: var(--text); }
+.sreason.chg-why { color: var(--muted); }
+.chg-argus { color: var(--accent); }
+.chg-more { padding: 10px 16px 14px; }
+/* The optional reason beside a dialog's Save (host settings) or above its fields (thresholds). */
+.hs-foot .reason-input { flex: 1 1 220px; max-width: 360px; margin-right: auto; }
+.thr-reason { margin: 0 0 10px; }
+.thr-reason .reason-input { width: 100%; max-width: 420px; }
+@media (max-width: 768px) { .hs-foot { flex-wrap: wrap; } .hs-foot .reason-input { flex-basis: 100%; max-width: none; } }
+/* The probe and group filters in a list's toolbar: compact, and the dropdown never wider than the screen. */
+.hist-tools .msel { min-width: 130px; }
+.hist-tools .msel-pop { max-width: min(360px, calc(100vw - 32px)); }
 .hinc-hidden { display: block; padding: 0 0 6px 24px; }
 /* Settings, Backups: the host's recent runs. */
 .bactivity { font-size: 12.5px; color: var(--muted); margin-top: 2px; }

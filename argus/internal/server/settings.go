@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -35,9 +36,27 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
+	before := s.mgr.List()
 	if err := s.mgr.Set(ctx, req.Values); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": s.errText(r, err)})
 		return
+	}
+	// The change log shows each setting's value before and after; a secret only that it changed.
+	after := map[string]string{}
+	for _, v := range s.mgr.List() {
+		after[v.Key] = v.Value
+	}
+	for _, v := range before {
+		if _, sent := req.Values[v.Key]; !sent {
+			continue
+		}
+		if v.Secret {
+			if strings.TrimSpace(req.Values[v.Key]) != "" {
+				changeDiff(r, v.Label, "", "changed")
+			}
+			continue
+		}
+		changeDiff(r, v.Label, v.Value, after[v.Key])
 	}
 	// The timezone setting also drives the core VM's clock: re-mirror it for the host timer
 	// (cheap no-op when unchanged or still on the built-in default).

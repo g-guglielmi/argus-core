@@ -54,6 +54,7 @@ type Server struct {
 	hb            heartbeat         // the outside monitor's ping (heartbeat.go)
 	hostGroups    hostGroupsCache   // host -> group names, for per-site visibility (scope.go)
 	maint         maintCache        // the hosts in a maintenance window right now (maintenance.go)
+	mux           *http.ServeMux    // the routes, so the change log can match a request before it runs (changes.go)
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {
@@ -186,6 +187,9 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/hosts/{id}/availability", auth.RequireAuth(s.scopedHost(s.handleHostAvailability)))
 	mux.HandleFunc("GET /api/hosts/{id}/incidents", auth.RequireAuth(s.scopedHost(s.handleHostIncidents)))
 	mux.HandleFunc("GET /api/incidents", auth.RequireAuth(s.handleIncidents))
+	// the change log: who changed what (admin), and one host's changes (any user who sees the host)
+	mux.HandleFunc("GET /api/changes", auth.RequireRole("admin", s.handleChanges))
+	mux.HandleFunc("GET /api/hosts/{id}/changes", auth.RequireAuth(s.scopedHost(s.handleHostChanges)))
 	// states: acknowledge (any user); pause = Zabbix enable/disable, hide = Argus suppression
 	// (both helpdesk/admin)
 	mux.HandleFunc("POST /api/events/{id}/ack", auth.RequireAuth(s.scopedEvent(s.handleAckEvent)))
@@ -355,6 +359,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("DELETE /api/status-pages/{id}", auth.RequireRole("admin", s.handleDeleteStatusPage))
 
 	mux.Handle("/", spaHandler())
+	s.mux = mux
 
 	if !cfg.CookieSecureSet && !s.cookieSecure() {
 		logger.Info("session cookies are not marked Secure (no https Public URL and ARGUS_COOKIE_SECURE unset); fine for plain-HTTP LAN use, set ARGUS_COOKIE_SECURE=true behind TLS")
@@ -364,7 +369,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 
 	// Every request gets the security headers and passes the cross-site check (plus the
 	// allowed-hosts check once configured), then session resolution (idle timeout read live).
-	return securityHeaders(s.hostGuard(auth.Middleware(s.st, s.mgr.SessionIdleTimeout, s.mgr.SessionMaxLifetime)(s.censusInvalidator(mux))))
+	return securityHeaders(s.hostGuard(auth.Middleware(s.st, s.mgr.SessionIdleTimeout, s.mgr.SessionMaxLifetime)(s.censusInvalidator(s.changeLog(mux)))))
 }
 
 // cookieSecure says whether session cookies carry the Secure flag: ARGUS_COOKIE_SECURE when given,

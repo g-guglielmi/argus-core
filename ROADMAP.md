@@ -180,6 +180,9 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Maintenance windows + quiet hours** - planned-work windows (once, daily, weekly, monthly;
   sites or hosts) that hold alerts and alert what is still open afterwards, and per-user quiet hours
   for personal channels. DESIGN section 9. - _(BE+FE)_ M
+- [x] **Change log** - who changed what and when, with the values before and after and an optional
+  reason: an admin Changes page (search, kind, probe, group, period, CSV) and each host's own list.
+  DESIGN section 7c. - _(BE+FE)_ M
 
 ### G. Scale & production readiness
 - [x] **Security review, wave 1 (core)** - a static review of the three repositories; the core-side

@@ -118,34 +118,74 @@ func (sc siteScope) narrow(sites []string) []string {
 // hostGroupsCache keeps every host's group names for a short while: the scope checks run on most
 // requests of a scoped user, and one host.get per request would be wasteful.
 type hostGroupsCache struct {
-	mu sync.Mutex
-	at time.Time
-	m  map[string][]string
+	mu    sync.Mutex
+	at    time.Time
+	m     map[string][]string
+	hosts map[string]hostInfo
+}
+
+// hostInfo is what the lists' filters and the change log need to know of a host.
+type hostInfo struct {
+	Name    string
+	ProxyID string // "0" = the server
+	Groups  []string
 }
 
 const hostGroupsTTL = 30 * time.Second
 
 // hostGroupMap returns host id -> its group names.
 func (s *Server) hostGroupMap(ctx context.Context) (map[string][]string, error) {
+	if err := s.loadHostIndex(ctx); err != nil {
+		return nil, err
+	}
+	s.hostGroups.mu.Lock()
+	defer s.hostGroups.mu.Unlock()
+	return s.hostGroups.m, nil
+}
+
+// hostIndex returns host id -> its name, probe and groups (the same short-lived cache).
+func (s *Server) hostIndex(ctx context.Context) (map[string]hostInfo, error) {
+	if err := s.loadHostIndex(ctx); err != nil {
+		return nil, err
+	}
+	s.hostGroups.mu.Lock()
+	defer s.hostGroups.mu.Unlock()
+	return s.hostGroups.hosts, nil
+}
+
+func (s *Server) loadHostIndex(ctx context.Context) error {
 	s.hostGroups.mu.Lock()
 	defer s.hostGroups.mu.Unlock()
 	if s.hostGroups.m != nil && time.Since(s.hostGroups.at) < hostGroupsTTL {
-		return s.hostGroups.m, nil
+		return nil
 	}
 	hosts, err := s.zbx.Hosts(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	m := make(map[string][]string, len(hosts))
+	idx := make(map[string]hostInfo, len(hosts))
 	for _, h := range hosts {
 		gs := make([]string, 0, len(h.Groups))
 		for _, g := range h.Groups {
 			gs = append(gs, g.Name)
 		}
 		m[h.HostID] = gs
+		proxy := h.ProxyID
+		if proxy == "" {
+			proxy = "0"
+		}
+		idx[h.HostID] = hostInfo{Name: h.Name, ProxyID: proxy, Groups: gs}
 	}
-	s.hostGroups.m, s.hostGroups.at = m, time.Now()
-	return m, nil
+	s.hostGroups.m, s.hostGroups.hosts, s.hostGroups.at = m, idx, time.Now()
+	return nil
+}
+
+// forgetHostIndex drops the cached host index, so a write that changed hosts is seen at once.
+func (s *Server) forgetHostIndex() {
+	s.hostGroups.mu.Lock()
+	s.hostGroups.at = time.Time{}
+	s.hostGroups.mu.Unlock()
 }
 
 // visibleHosts is the set of host ids the scope sees; nil when it sees every host.

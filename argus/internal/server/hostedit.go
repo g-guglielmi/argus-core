@@ -153,10 +153,20 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	hd, err := s.zbx.HostDetail(ctx, r.PathValue("id"))
+	out, err := s.hostConfigFor(ctx, r.PathValue("id"), canEditHosts(r))
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// hostConfigFor builds a host's settings as the editor shows them; canEdit says whether the reader
+// may see its SNMP credentials.
+func (s *Server) hostConfigFor(ctx context.Context, hostID string, canEdit bool) (hostConfigView, error) {
+	hd, err := s.zbx.HostDetail(ctx, hostID)
+	if err != nil {
+		return hostConfigView{}, err
 	}
 	out := hostConfigView{HostID: hd.HostID, Host: hd.Host, Name: hd.Name, MonitoredBy: hd.MonitoredBy, ProxyID: hd.ProxyID, Interfaces: make([]ifaceView, 0, len(hd.Interfaces))}
 	// Zabbix reports proxyid "0" for a server-monitored host. Never hand that sentinel to the
@@ -186,7 +196,7 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 		out.Interfaces = append(out.Interfaces, ifaceView{InterfaceID: i.InterfaceID, Type: i.Type, UseIP: i.UseIP, IP: i.IP, DNS: i.DNS, Port: i.Port, SNMP: snmpToView(i.SNMP), Inherit: i.Type == 2 && inherit[i.InterfaceID]})
 	}
 	// A viewer reads the configuration but not its credentials (see canEditHosts).
-	if !canEditHosts(r) {
+	if !canEdit {
 		if out.ProxyDefault != nil {
 			out.ProxyDefault.Community = ""
 		}
@@ -298,7 +308,20 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 		out.Categories = s.hostCategoriesInOrder(ctx, hd.HostID, items)
 		out.Master = s.masterConfig(ctx, hd.HostID, items)
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out, nil
+}
+
+// hostConfigUpdate is the host settings editor's save: the whole desired state.
+type hostConfigUpdate struct {
+	Host          string                  `json:"host"`
+	Name          string                  `json:"name"`
+	MonitoredBy   int                     `json:"monitored_by"`
+	ProxyID       string                  `json:"proxy_id"`
+	Interfaces    []ifaceView             `json:"interfaces"`
+	Macros        map[string]string       `json:"macros"`         // class macro / threshold name -> desired value (only known macros are applied)
+	CategoryOrder *[]string               `json:"category_order"` // §D per-host order; nil = leave as-is, [] = clear override
+	AddOns        map[string]addOnDesired `json:"addons"`         // add-on id -> desired {enabled, macros}; nil = leave as-is
+	Master        *string                 `json:"master"`         // "default", "none" or a sensor id; nil = leave as-is
 }
 
 // handleUpdateHostConfig reconciles a host's whole desired identity + interface set (admin/helpdesk).
@@ -307,17 +330,7 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured (set ARGUS_ZABBIX_API_TOKEN)"})
 		return
 	}
-	var req struct {
-		Host          string                  `json:"host"`
-		Name          string                  `json:"name"`
-		MonitoredBy   int                     `json:"monitored_by"`
-		ProxyID       string                  `json:"proxy_id"`
-		Interfaces    []ifaceView             `json:"interfaces"`
-		Macros        map[string]string       `json:"macros"`         // class macro / threshold name -> desired value (only known macros are applied)
-		CategoryOrder *[]string               `json:"category_order"` // §D per-host order; nil = leave as-is, [] = clear override
-		AddOns        map[string]addOnDesired `json:"addons"`         // add-on id -> desired {enabled, macros}; nil = leave as-is
-		Master        *string                 `json:"master"`         // "default", "none" or a sensor id; nil = leave as-is
-	}
+	var req hostConfigUpdate
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
@@ -373,6 +386,8 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 	for _, i := range cur.Interfaces {
 		curByID[i.InterfaceID] = i
 	}
+	// The settings as they were, for the change log's before and after.
+	before, beforeErr := s.hostConfigFor(ctx, cur.HostID, true)
 
 	if err := s.zbx.UpdateHost(ctx, cur.HostID, req.Host, req.Name); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
@@ -514,6 +529,16 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+	if beforeErr == nil {
+		diff := hostConfigDiff(before, req, s.proxyNames(ctx))
+		if len(diff) == 0 {
+			skipChange(r)
+		}
+		for _, d := range diff {
+			changeDiff(r, d.Field, d.Old, d.New)
+		}
+	}
+	s.forgetHostIndex()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -757,10 +782,21 @@ func (s *Server) handleSetHostProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 	defer cancel()
+	was := ""
+	if idx, err := s.hostIndex(ctx); err == nil {
+		was = idx[r.PathValue("id")].ProxyID
+	}
 	if err := s.zbx.SetHostProxy(ctx, r.PathValue("id"), req.MonitoredBy, strings.TrimSpace(req.ProxyID)); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return
 	}
+	now := "0"
+	if req.MonitoredBy == 1 {
+		now = strings.TrimSpace(req.ProxyID)
+	}
+	names := s.proxyNames(ctx)
+	changeDiff(r, "Probe", names[was], names[now])
+	s.forgetHostIndex()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
