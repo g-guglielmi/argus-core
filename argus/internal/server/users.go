@@ -33,6 +33,7 @@ type adminUser struct {
 	Passkeys   int      `json:"passkeys"`
 	Disabled   bool     `json:"disabled"`
 	Sites      []string `json:"sites"` // the sites a helpdesk or viewer account sees; empty = all (scope.go)
+	Tokens     int      `json:"tokens"` // personal API tokens (apitokens.go)
 }
 
 func toAdminUser(u store.User) adminUser {
@@ -79,9 +80,11 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := make([]adminUser, 0, len(users))
+	tokens, _ := s.st.APITokenCounts(r.Context())
 	for _, u := range users {
 		au := toAdminUser(u)
 		au.Passkeys, _ = s.st.CountPasskeys(r.Context(), u.ID)
+		au.Tokens = tokens[u.ID]
 		out = append(out, au)
 	}
 	writeJSON(w, http.StatusOK, out)

@@ -11,7 +11,7 @@ import { useConfirm, usePrompt, useAlert } from './dialog'
 import { useToast } from './toast'
 
 type Me = { email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; landing?: 'overview' | 'errors'; advanced?: boolean; sites?: string[]; quiet?: { start: number; end: number; floor: number } }
-type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean; sites?: string[] }
+type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean; sites?: string[]; tokens?: number }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type MaintHit = { id: number; name: string; until: number }
 type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number; unacked?: boolean; acked?: boolean; maintenance?: MaintHit; tags?: HostTag[]; held_behind?: string }
@@ -10575,6 +10575,12 @@ function UsersView() {
     if (!res.ok) return fail(res)
     toast.success(`Passkeys removed for ${u.email}`); load()
   }
+  async function revokeTokens(u: User) {
+    if (!(await confirm({ title: 'Revoke API tokens', message: `Revoke all ${u.tokens} API token${u.tokens === 1 ? '' : 's'} of ${u.email}? Scripts using them stop working at once.`, confirmLabel: 'Revoke', danger: true }))) return
+    const res = await fetch(`/api/users/${u.id}/tokens`, { method: 'DELETE' })
+    if (!res.ok) return fail(res)
+    toast.success(`API tokens revoked for ${u.email}`); load()
+  }
   async function setDisabled(u: User, disabled: boolean) {
     if (disabled && !(await confirm({ title: 'Disable user', message: `Disable ${u.email}? They won't be able to sign in until re-enabled.`, confirmLabel: 'Disable', danger: true }))) return
     const res = await fetch(`/api/users/${u.id}/disabled`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ disabled }) })
@@ -10592,6 +10598,7 @@ function UsersView() {
     const a: KAction[] = [{ label: 'Reset password', icon: uIcon.key, onClick: () => resetPw(u) }]
     if (u.mfa_enabled) a.push({ label: 'Remove 2FA', icon: uIcon.shield, onClick: () => resetMfa(u) })
     if (u.passkeys) a.push({ label: 'Remove passkeys', icon: uIcon.fp, onClick: () => resetPasskeys(u) })
+    if (u.tokens) a.push({ label: `Revoke API tokens (${u.tokens})`, icon: uIcon.key, onClick: () => revokeTokens(u) })
     a.push({ sep: true, label: '' })
     a.push(u.disabled
       ? { label: 'Enable user', icon: uIcon.enable, onClick: () => setDisabled(u, false) }
@@ -10660,8 +10667,85 @@ function AccountView({ me, onMe, passkeysAvailable, theme, toggleTheme }: { me: 
       <PasswordCard />
       <MfaCard />
       {passkeysAvailable && <PasskeyCard />}
+      <TokensCard />
     </div>
   )
+}
+
+type APIToken = { id: number; name: string; scope: string; can: string; hint: string; created_at: number; expires_at?: number; expired?: boolean; last_used_at?: number; last_ip?: string }
+
+const TOKEN_SCOPES: [string, string][] = [['read', 'Read only'], ['ack', 'Acknowledge, add notes'], ['maint', 'Open and close maintenance windows'], ['all', 'Everything I can do']]
+const TOKEN_EXPIRY: [number, string][] = [[30, 'Expires in 30 days'], [90, 'Expires in 90 days'], [182, 'Expires in 6 months'], [365, 'Expires in 1 year'], [0, 'Never expires']]
+
+// TokensCard is the user's personal API tokens: for scripts and other tools, acting as the user and
+// narrowed to a scope; shown once when made.
+function TokensCard() {
+  const confirm = useConfirm()
+  const toast = useToast()
+  const [tokens, setTokens] = useState<APIToken[] | null>(null)
+  const [name, setName] = useState('')
+  const [scope, setScope] = useState('read')
+  const [expires, setExpires] = useState(182)
+  const [busy, setBusy] = useState(false)
+  const [fresh, setFresh] = useState<{ name: string; token: string } | null>(null)
+  const load = () => fetch('/api/me/tokens').then((r) => (r.ok ? r.json() : [])).then((t) => setTokens(t || [])).catch(() => setTokens([]))
+  useEffect(() => { load() }, [])
+  async function create() {
+    setBusy(true)
+    const res = await fetch('/api/me/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), scope, expires_days: expires }) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not create the token')); return }
+    const d: { token: string; info: APIToken } = await res.json()
+    setFresh({ name: d.info.name, token: d.token }); setName(''); load()
+  }
+  async function revoke(t: APIToken) {
+    if (!(await confirm({ title: 'Revoke token', message: `Revoke "${t.name}"? Whatever uses it stops working at once.`, confirmLabel: 'Revoke', danger: true }))) return
+    const res = await fetch(`/api/me/tokens/${t.id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not revoke the token')); return }
+    toast.success('Token revoked'); load()
+  }
+  return (
+    <Card title="API tokens" note="For scripts and other tools. A token acts as you, with your role and your sites, never more, and can be narrowed further. Send it as Authorization: Bearer <token>. Every change a token makes is in the change log under its name.">
+      {fresh && (
+        <div className="token-fresh">
+          <span className="token-fresh-txt"><b>{fresh.name}: copy it now, it won't be shown again</b><CopyValue value={fresh.token} /></span>
+          <Button variant="ghost" className="compact" onClick={() => setFresh(null)}>Done</Button>
+        </div>
+      )}
+      {tokens === null ? <Skeleton rows={2} cols={2} /> : tokens.length === 0
+        ? <p className="muted" style={{ margin: '0 0 12px' }}>No tokens yet.</p>
+        : (
+          <ul className="token-list">
+            {tokens.map((t) => (
+              <li key={t.id}>
+                <span className="token-main">
+                  <span><b>{t.name}</b> <span className="mono token-hint">…{t.hint}</span></span>
+                  <span className="sub-line token-meta">
+                    {t.can} · {t.expired ? <span className="txt-err">expired {fmtDay(t.expires_at!)}</span> : t.expires_at ? `expires ${fmtDay(t.expires_at)}` : 'never expires'} · {t.last_used_at ? `last used ${relTime(t.last_used_at)}${t.last_ip ? ` from ${t.last_ip}` : ''}` : 'never used'}
+                  </span>
+                </span>
+                <Button variant="ghost" className="compact" onClick={() => revoke(t)}>Revoke</Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      <div className="token-form">
+        <input className="input" maxLength={60} placeholder="Name, e.g. ticketing" value={name} onChange={(e) => setName(e.target.value)} aria-label="Token name" />
+        <Select value={scope} onChange={(e) => setScope(e.target.value)} aria-label="What the token can do">
+          {TOKEN_SCOPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </Select>
+        <Select value={expires} onChange={(e) => setExpires(Number(e.target.value))} aria-label="When the token expires">
+          {TOKEN_EXPIRY.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </Select>
+        <Button variant="primary" onClick={create} disabled={busy || !name.trim()}>{busy ? 'Creating…' : 'Create token'}</Button>
+      </div>
+    </Card>
+  )
+}
+
+// fmtDay is a date the way token expiries read: "Mar 29, 2027".
+function fmtDay(unix: number): string {
+  return new Date(unix * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 // QuietHoursCard sets the quiet hours of the user's personal channels: during them only the more

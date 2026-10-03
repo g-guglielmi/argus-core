@@ -645,6 +645,20 @@ CREATE TABLE IF NOT EXISTS host_upstream (
   auto_port   TEXT NOT NULL DEFAULT '',
   auto_at     INTEGER NOT NULL DEFAULT 0
 );
+-- Personal API tokens (apitokens.go): only the token's SHA-256 is kept.
+CREATE TABLE IF NOT EXISTS api_tokens (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  scope        TEXT NOT NULL,
+  hint         TEXT NOT NULL DEFAULT '',
+  hash         TEXT NOT NULL UNIQUE,
+  created_at   INTEGER NOT NULL,
+  expires_at   INTEGER NOT NULL DEFAULT 0,
+  last_used_at INTEGER NOT NULL DEFAULT 0,
+  last_ip      TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
 -- A site's info (site.go): address, contacts and internet lines, as one JSON document per site.
 CREATE TABLE IF NOT EXISTS site_info (
   site       TEXT PRIMARY KEY,

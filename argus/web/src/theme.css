@@ -1281,6 +1281,19 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .site-contact-ed { display: grid; grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1fr) minmax(120px, 0.8fr) minmax(0, 1fr) auto; gap: 8px; margin-bottom: 8px; }
 .site-line-ed { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 10px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 8px; }
 .site-line-act { grid-column: 1 / -1; display: flex; justify-content: flex-end; margin: -2px -4px -4px 0; }
+/* Account, API tokens: the list, the one-time token, the form. */
+.token-list { list-style: none; padding: 0; margin: 0 0 12px; }
+.token-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-top: 1px solid var(--border); padding: 8px 0; }
+.token-main { display: grid; gap: 2px; min-width: 0; }
+.token-hint { color: var(--faint); font-size: 12px; }
+.token-meta { overflow-wrap: anywhere; }
+.token-fresh { display: flex; gap: 10px; align-items: center; padding: 10px 12px; margin: 0 0 12px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--ok) 40%, var(--border)); background: color-mix(in srgb, var(--ok) 8%, var(--panel)); }
+.token-fresh-txt { display: grid; gap: 4px; flex: 1; min-width: 0; font-size: 12.5px; }
+.token-fresh .copyval { min-width: 0; }
+.token-fresh .copyval .mono { overflow-wrap: anywhere; }
+.token-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.token-form > input { grid-column: 1 / -1; }
+@media (max-width: 768px) { .token-form { grid-template-columns: minmax(0, 1fr); } }
 /* Import (Discovery): the file drop, the checked rows, the PRTG mapping, the progress. */
 .imp-dlg { max-width: min(1120px, 96vw); width: 100%; max-height: calc(100dvh - 32px); display: flex; flex-direction: column; }
 .imp-drop { margin-top: 10px; border: 1.5px dashed var(--border-strong); border-radius: 10px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--elevated); font-size: 13px; }

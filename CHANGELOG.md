@@ -49,6 +49,15 @@ GitHub Release from the matching section below.
 - The Device tab shows the path (gateway › switch port 24 › this host), with a down hop in red.
   When the controller's answer changes, Changes says so.
 
+**API tokens:** Account has a new **API tokens** card, for scripts and other tools.
+- A token acts as you, with your role and your sites, narrowed to read only, acknowledge and add
+  notes, open and close maintenance windows, or everything you can do. Send it as
+  `Authorization: Bearer <token>`.
+- It expires (30 days to a year, or never), shows when and from where it was last used, and is shown
+  once. Revoke it any time; an admin can revoke a user's tokens from Users.
+- Every change a token makes is in Changes under its name. No token can manage tokens, sign-in
+  settings or reveal a probe's break-glass password.
+
 **Import from a spreadsheet or PRTG:** Discovery has a new **Import**.
 - From a CSV (Excel's too: comma or semicolon): name, address, class, site, probe and, if you like,
   tags, asset tag, location, a UniFi device's MAC and a class's own inputs. A template to start

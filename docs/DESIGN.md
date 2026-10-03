@@ -641,6 +641,29 @@ PRTG probe maps to an Argus probe and a site (paired by name: "Site 1 probe" and
 Local Probe to the core), groups are kept under that site or flattened, and the device tags come
 along or not.
 
+## 7i. Personal API tokens
+
+For scripts and other tools (Account, API tokens; `/api/me/tokens`, `apitokens.go`,
+`auth/token.go`). A token is `argus_pat_` and 40 hex characters, shown once when it is made; only its
+SHA-256 is kept (`api_tokens`), with its name, the last 4 characters (to tell tokens apart), its
+scope, when it expires (30, 90, 182 or 365 days, or never) and when and from where it was last used
+(recorded at most once a minute). A user has up to 25.
+
+**Signing in.** `Authorization: Bearer argus_pat_...` makes the request its user's, as a session
+would (`TokenMiddleware`, after the session middleware: a session cookie wins). An unknown or expired
+token, or one whose user is disabled or removed, is refused at once with a 401. Other bearer tokens
+(the probes' check-ins) pass untouched. A token acts with its user's current role and sites, never
+more, and its **scope** narrows it further (`tokenScope`): **read only** (GET), **acknowledge, add
+notes** (acknowledge and un-acknowledge, sensor notes, journal entries, the bulk sensor actions ack
+and note), **open and close maintenance windows**, or **everything its user can do**. No token may
+manage tokens, change a password, two-factor or passkeys, sign out, or reveal a probe's break-glass
+password: those need a person in the app.
+
+**Logged.** Every change a token makes is in the change log as "Alice Example (token ticketing)";
+making and revoking a token are logged too (its scope, the user's role and when it expires, never the
+token). An admin can revoke all of a user's tokens from the Users page (`DELETE
+/api/users/{id}/tokens`), which also shows how many each user has.
+
 ---
 
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")

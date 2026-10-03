@@ -331,6 +331,10 @@ func (s *Server) handleBulkSensors(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown action"})
 		return
 	}
+	if t, ok := auth.TokenFrom(r.Context()); ok && t.Scope == "ack" && req.Action != "ack" && req.Action != "note" {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "this token can only read, acknowledge and add notes"})
+		return
+	}
 	if req.Action != "ack" && caller.Role != "admin" && caller.Role != "helpdesk" {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 		return

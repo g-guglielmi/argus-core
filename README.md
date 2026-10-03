@@ -128,6 +128,10 @@ API key, and MAC):
 - **Auth** - three roles (admin / helpdesk / viewer), argon2id passwords, TOTP two-factor
   with recovery codes, WebAuthn passkeys, self-service password reset, admin user management,
   login rate-limiting.
+- **API tokens** - personal tokens for scripts and other tools (`Authorization: Bearer ...`): a
+  token acts as you with your role and sites, narrowed to read only, acknowledge and notes,
+  maintenance windows, or everything; it expires, shows where it was last used, and every change it
+  makes is in the change log under its name.
 - **Admin Settings** - an in-app page to change the Zabbix connection, public URL, timezone,
   and login limits at runtime (no redeploy); env vars, when set, take precedence and lock the field.
 - **Security** - AES-256-GCM encryption at rest for stored secrets, brute-force protection

@@ -497,6 +497,9 @@ func patternValues(pattern, path string) map[string]string {
 
 func changeActor(r *http.Request) (kind string, id int64, name string) {
 	if u, ok := auth.UserFrom(r.Context()); ok && u != nil {
+		if t, ok := auth.TokenFrom(r.Context()); ok {
+			return "token", u.ID, userLabel(u) + " (token " + t.Name + ")"
+		}
 		return "user", u.ID, userLabel(u)
 	}
 	if r.URL.Path == "/api/alert/ack" {

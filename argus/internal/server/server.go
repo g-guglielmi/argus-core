@@ -301,6 +301,10 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/me/mfa/recovery-codes", auth.RequireAuth(s.handleMFARegenRecovery))
 
 	// self-service passkeys (any signed-in user)
+	// personal API tokens (apitokens.go): made and revoked in the app, never by a token
+	mux.HandleFunc("GET /api/me/tokens", auth.RequireAuth(s.handleListTokens))
+	mux.HandleFunc("POST /api/me/tokens", auth.RequireAuth(s.handleCreateToken))
+	mux.HandleFunc("DELETE /api/me/tokens/{id}", auth.RequireAuth(s.handleDeleteToken))
 	mux.HandleFunc("GET /api/me/passkeys", auth.RequireAuth(s.handleListPasskeys))
 	mux.HandleFunc("POST /api/me/passkeys/register/begin", auth.RequireAuth(s.handlePasskeyRegisterBegin))
 	mux.HandleFunc("POST /api/me/passkeys/register/finish", auth.RequireAuth(s.handlePasskeyRegisterFinish))
@@ -373,6 +377,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/users/{id}/password", auth.RequireRole("admin", s.handleResetPassword))
 	mux.HandleFunc("POST /api/users/{id}/mfa/reset", auth.RequireRole("admin", s.handleAdminResetMFA))
 	mux.HandleFunc("POST /api/users/{id}/passkeys/reset", auth.RequireRole("admin", s.handleAdminResetPasskeys))
+	mux.HandleFunc("DELETE /api/users/{id}/tokens", auth.RequireRole("admin", s.handleRevokeUserTokens))
 
 	// Status pages (a wall screen's read-only dashboard, opened with a secret link instead of a login):
 	// the public link + page + its data, and the admin API that manages them. See statuspage.go.
@@ -399,7 +404,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 
 	// Every request gets the security headers and passes the cross-site check (plus the
 	// allowed-hosts check once configured), then session resolution (idle timeout read live).
-	return securityHeaders(s.hostGuard(auth.Middleware(s.st, s.mgr.SessionIdleTimeout, s.mgr.SessionMaxLifetime)(s.censusInvalidator(s.changeLog(mux)))))
+	// A personal API token signs a script in like a session, held to its scope (apitokens.go).
+	return securityHeaders(s.hostGuard(auth.Middleware(s.st, s.mgr.SessionIdleTimeout, s.mgr.SessionMaxLifetime)(auth.TokenMiddleware(s.st, s.clientIP)(s.tokenScope(s.censusInvalidator(s.changeLog(mux)))))))
 }
 
 // cookieSecure says whether session cookies carry the Secure flag: ARGUS_COOKIE_SECURE when given,

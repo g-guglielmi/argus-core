@@ -194,6 +194,9 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Upstream devices** - what each host is plugged into, from the UniFi controller (uplinks and
   wired clients) or set by hand; hosts behind a down device are held, its alert names them; the path
   on the Device tab; controller changes logged. DESIGN section 7f. - _(BE+FE+templates)_ M
+- [x] **Personal API tokens** - act as their user, narrowed to a scope (read, acknowledge and
+  notes, maintenance, everything); expiry, last use, shown once, logged in Changes under their name.
+  DESIGN section 7i. - _(BE+FE)_ S
 - [x] **Import from a spreadsheet or PRTG** - rows checked before anything is made, fixed in place;
   PRTG read with an API key (probes mapped, groups and tags kept, class guessed from its sensors).
   DESIGN section 7h. - _(BE+FE)_ M
