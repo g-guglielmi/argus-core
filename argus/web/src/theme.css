@@ -1229,6 +1229,47 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .sreason.chg-why { color: var(--muted); }
 .chg-argus { color: var(--accent); }
 .chg-more { padding: 10px 16px 14px; }
+/* A host's tabs (Sensors, Device, History, Journal, Changes): the chart range tabs, with counts. */
+.rtabs.host-tabs { border-bottom: 1px solid var(--border); padding-bottom: 6px; margin: 2px 0 10px; }
+.rtab .n { color: var(--faint); font-weight: 600; margin-left: 5px; }
+.rtab.on .n { color: var(--muted); }
+.tab-head { font-size: 12.5px; color: var(--muted); padding: 2px 2px 8px; }
+.tab-empty { font-size: 13px; color: var(--muted); padding: 8px 2px 12px; }
+/* Label-and-lines rows (the Updates page's shape): the Device tab and a site's info. */
+.info-rows { display: grid; }
+.info-row { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 6px 14px; align-items: start; padding: 10px 0; border-top: 1px solid var(--border); }
+.info-row:first-child { border-top: 0; }
+.info-row > .complabel { padding-top: 4px; }
+.info-lines { display: grid; gap: 4px; }
+.info-line { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; min-height: 24px; font-size: 13px; }
+.info-line .k { font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); font-weight: 600; min-width: 92px; }
+.info-line .v { overflow-wrap: anywhere; }
+/* A copyable value: the value, then a small copy icon. */
+.copyval { display: inline-flex; align-items: center; gap: 4px; }
+.copy-ic { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--faint); cursor: pointer; padding: 0; }
+.copy-ic:hover { color: var(--accent); border-color: var(--border); background: var(--elevated); }
+.copy-ic svg { width: 13px; height: 13px; }
+/* A host's links. */
+.linkbtns { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.linkbtns .btn { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.linkbtns .btn svg { width: 13px; height: 13px; color: var(--faint); }
+.link-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.link-edit { display: grid; grid-template-columns: minmax(110px, 160px) minmax(0, 1fr) auto; gap: 8px; margin-bottom: 8px; }
+.link-form { display: grid; grid-template-columns: minmax(120px, 170px) minmax(0, 1fr) minmax(150px, 220px) auto; gap: 8px 10px; align-items: center; }
+/* A host's journal: one entry per line, coloured by kind (the status-note kinds). */
+.journal { display: grid; gap: 8px; padding: 2px 0 10px; }
+.journal-add { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
+.jentry { --jc: var(--accent); border-left: 3px solid var(--jc); background: color-mix(in srgb, var(--jc) 6%, transparent); border-radius: 0 6px 6px 0; padding: 6px 10px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.jentry.warning { --jc: var(--warn); }
+.jentry.problem { --jc: var(--err); }
+.jentry .jby { display: block; color: var(--faint); font-size: 11.5px; margin-top: 2px; white-space: normal; }
+/* The Inventory: devices grouped by class, the sensor table's category row. */
+.slist-inv tr.cat td { color: var(--accent); font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; padding-top: 14px; font-weight: 700; border-top: none; background: none; }
+.slist-inv tr.cat .cat-sub { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--muted); font-size: 12px; margin-left: 8px; }
+.inv-fw { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.slist-inv th:nth-child(1) { width: 25%; } .slist-inv th:nth-child(2) { width: 15%; } .slist-inv th:nth-child(3) { width: 22%; }
+.slist-inv th:nth-child(4) { width: 13%; } .slist-inv th:nth-child(5) { width: 11%; } .slist-inv th:nth-child(6) { width: 14%; }
+
 /* Tags: a pill in the tag's colour; one a host gets from its probe is dashed and names it. */
 .tagchip { --tc: #8b8d98; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; line-height: 1.5; padding: 0 8px; border-radius: 999px; white-space: nowrap; color: var(--text); border: 1px solid color-mix(in srgb, var(--tc) 50%, var(--border)); background: color-mix(in srgb, var(--tc) 14%, transparent); }
 .tagchip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--tc); flex: none; }
@@ -1277,6 +1318,10 @@ input.tsel { width: 15px; height: 15px; accent-color: var(--accent); margin: 0 8
   .tag-row { grid-template-columns: minmax(0, 1fr) auto; }
   .tag-row-desc { grid-column: 1 / -1; grid-row: 2; }
   .tag-form { grid-template-columns: minmax(0, 1fr); }
+  .info-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .info-line .k { min-width: 0; width: 100%; }
+  .link-edit, .link-form, .journal-add { grid-template-columns: minmax(0, 1fr); }
+  .slist-inv tr.cat td { display: block !important; text-align: left !important; padding-left: 0; }
 }
 /* The probe and group filters in a list's toolbar: compact, and the dropdown never wider than the screen. */
 .hist-tools .msel { min-width: 130px; }

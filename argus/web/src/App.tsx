@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { registerPasskey, loginWithPasskey } from './webauthn'
-import { Button, Card, Field, Banner, Badge, CopyButton, Switch, Select, Combobox, Skeleton, EmptyState } from './ui'
+import { Button, Card, Field, Banner, Badge, CopyButton, Switch, Select, Combobox, Skeleton, EmptyState, copyToClipboard } from './ui'
 import { useConfirm, usePrompt, useAlert } from './dialog'
 import { useToast } from './toast'
 
@@ -28,7 +28,7 @@ type ThrTemplate = { template: string; label: string; every_host?: boolean; opti
 type ThresholdsData = { templates: ThrTemplate[] }
 type AddOnMacro = { macro: string; label: string; hint?: string; options?: string[]; value: string }
 type AddOnCfg = { id: string; label: string; description: string; enabled: boolean; macros?: AddOnMacro[] }
-type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg; tags?: HostTag[] }
+type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg; tags?: HostTag[]; own?: { asset_tag: string; location: string }; links?: LinkRow[]; class_links?: LinkRow[] }
 // A host's master sensor: while it's down, the host's other alerts are held (item_id "" = none).
 type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; options: { id: string; label: string }[] }
 type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean }
@@ -716,12 +716,13 @@ function ResetPassword({ token, onDone }: { token: string; onDone: () => void })
   )
 }
 
-type View = 'overview' | 'triggers' | 'history' | 'monitoring' | 'maintenance' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'changes' | 'users' | 'updates' | 'settings' | 'account' | 'list'
+type View = 'overview' | 'triggers' | 'history' | 'monitoring' | 'inventory' | 'maintenance' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'changes' | 'users' | 'updates' | 'settings' | 'account' | 'list'
 const VIEW_TITLES: Record<View, [string, string]> = {
   overview: ['Overview', 'What needs attention right now'],
   triggers: ['Triggers', 'Alert rules - firing, or all by host'],
   history: ['History', 'What went wrong, and when'],
   monitoring: ['Monitoring', 'Sites, hosts and sensors'],
+  inventory: ['Inventory', 'Models, firmware, serials and addresses'],
   maintenance: ['Maintenance', 'When alerts wait for planned work'],
   notifications: ['Notifications', 'Alert routing and channels'],
   probes: ['Probes', 'Site probe enrollment'],
@@ -750,6 +751,7 @@ const ic = {
   users: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><path d="M16 5.2a3.2 3.2 0 0 1 0 6M17 14.5a5.5 5.5 0 0 1 3.5 5.5" /></svg>,
   updates: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6" /><path d="M20.5 3.5v4.5H16" /><path d="M12 8v7.5M9 12.5l3 3 3-3" /></svg>,
   changes: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 7h10M5 12h14M5 17h7" /><path d="M16 17.5l2 2 3.5-4" /></svg>,
+  inventory: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3.5" width="16" height="17" rx="2" /><path d="M8 8.5h8M8 12.5h8M8 16.5h5" /></svg>,
   settings: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
   account: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="3.4" /><path d="M5 20a7 7 0 0 1 14 0" /></svg>,
   logout: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M15 12H3M9 6l-6 6 6 6M15 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" /></svg>,
@@ -785,7 +787,7 @@ function useTheme(): ['dark' | 'light', () => void] {
 // bookmark, shared link, or Back/Forward restores the exact screen - instead of always
 // resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
 // (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
-const NAV_VIEWS: View[] = ['overview', 'triggers', 'history', 'monitoring', 'maintenance', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'changes', 'users', 'updates', 'settings', 'account', 'list']
+const NAV_VIEWS: View[] = ['overview', 'triggers', 'history', 'monitoring', 'inventory', 'maintenance', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'changes', 'users', 'updates', 'settings', 'account', 'list']
 type NavState = { view: View; filter: string; host?: string; item?: string; group?: string; scan?: string; edit?: string }
 
 function parseNav(): NavState {
@@ -2061,6 +2063,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         {nav('overview', 'Overview', { count: errN })}
         {nav('triggers', 'Triggers')}
         {nav('monitoring', 'Monitoring')}
+        {nav('inventory', 'Inventory')}
         {nav('history', 'History')}
         <div className="navlabel">Configure</div>
         {nav('probes', 'Probes')}
@@ -2128,6 +2131,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           {view === 'overview' && <StatusListView filter="attention" sensors={sensors} loading={!sensorsLoaded} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => {}} />}
           {view === 'triggers' && <TriggersView goHost={goHost} />}
           {view === 'history' && <HistoryView goHost={goHost} />}
+          {view === 'inventory' && <InventoryView goHost={goHost} />}
           {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} loading={!sensorsLoaded || !rowsFor.split(',').includes(listFilter)} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
           {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} advanced={!!me.advanced} />}
           {view === 'maintenance' && <MaintenanceView canEdit={me.role === 'admin' || me.role === 'helpdesk'} />}
@@ -2369,6 +2373,8 @@ function SettingsView({ me, onMe, onOpenUpdates }: { me: Me; onMe: (m: Me) => vo
         })}
         {/* Tags: labels across sites, on hosts and probes, for the tree's filter and channel routing. */}
         <TagsCard />
+        {/* Device links: buttons every host of some classes gets, filled in from the host. */}
+        <LinksCard />
         {/* Zabbix housekeeping (history / trends / compression), saved through its own endpoint. */}
         <DataRetention />
         {/* The core host's own backups (backup.go, deploy/core/host/argus-backup). */}
@@ -4603,7 +4609,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
           </div>
         </div>
         {editGroupsHost === h.id && <GroupEditor current={h.groups || []} groups={groups} onSave={(ids) => setHostGroups(h.id, ids)} onCancel={() => setEditGroupsHost(null)} />}
-        {hopen && <div className="host-body" style={{ paddingLeft: indent(depth) }}><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} maintenance={h.maintenance} showAll={showAllEff} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(path, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} /></div>}
+        {hopen && <div className="host-body" style={{ paddingLeft: indent(depth) }}><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} maintenance={h.maintenance} showAll={showAllEff} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(path, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} onOpenSettings={canPause ? () => openSettings(h.id) : undefined} /></div>}
       </div>
     )
   }
@@ -6827,10 +6833,14 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
   const [reason, setReason] = useState('') // why, for the change log (optional)
   const [allTags] = useTags()
   const [ownTags, setOwnTags] = useState<string[]>([])
+  const [own, setOwn] = useState<{ asset_tag: string; location: string }>({ asset_tag: '', location: '' })
+  const [links, setLinks] = useState<LinkRow[]>([])
   function loadCfg() {
     fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : Promise.reject())).then((d: HostCfg) => {
       setCfg(d); setCustomOrder(!!(d.category_order && d.category_order.length))
       setOwnTags((d.tags || []).filter((t) => !t.from).map((t) => t.name))
+      setOwn(d.own || { asset_tag: '', location: '' })
+      setLinks((d.links || []).map((l) => ({ label: l.label, url: l.url })))
       setMasterChoice(!d.master || !d.master.custom ? 'default' : d.master.item_id || 'none')
     }).catch(() => setErr('Could not load host settings'))
   }
@@ -6873,7 +6883,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
     // Per-host sensor order: send the current list when "custom" is on, else [] to clear the override.
     const category_order = cfg.categories && cfg.categories.length > 0 ? (customOrder ? cfg.categories : []) : undefined
     const addons = cfg.addons ? Object.fromEntries(cfg.addons.map((a) => [a.id, { enabled: a.enabled, macros: Object.fromEntries((a.macros || []).map((m) => [m.macro, m.value])) }])) : undefined
-    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order, addons, master: cfg.master ? masterChoice : undefined, tags: ownTags }) }).catch(() => null)
+    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order, addons, master: cfg.master ? masterChoice : undefined, tags: ownTags, own, links: links.filter((l) => l.label.trim() || l.url.trim()) }) }).catch(() => null)
     setBusy(false)
     // The error also pops up: the dialog is long, and its line by the Save button may be scrolled away.
     if (!res || !res.ok) { const m = await errText(res, 'Could not save host settings'); setErr(m); toast.error(m); return }
@@ -7150,6 +7160,29 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
         </HsSection>
       )}
 
+      <HsSection title="Device facts" {...sec('facts')} summary={[own.asset_tag && `asset ${own.asset_tag}`, own.location].filter(Boolean).join(' · ') || 'no asset tag or location'}>
+        <div className="hs-grid">
+          <label className="field"><span>Asset tag</span><input className="input" maxLength={64} disabled={!canEdit} value={own.asset_tag} onChange={(e) => setOwn({ ...own, asset_tag: e.target.value })} /></label>
+          <label className="field"><span>Location</span><input className="input" maxLength={120} disabled={!canEdit} placeholder="e.g. Floor 2, comms cupboard" value={own.location} onChange={(e) => setOwn({ ...own, location: e.target.value })} /></label>
+        </div>
+        <div className="hs-note">The model, serial, firmware and MAC are read from the device; these two are yours. They show on the Device tab and in the Inventory.</div>
+      </HsSection>
+
+      <HsSection title="Links" {...sec('links')} summary={[...(cfg.class_links || []).map((l) => l.label), ...links.filter((l) => l.label.trim()).map((l) => l.label)].join(', ') || 'none'}>
+        {(cfg.class_links || []).length > 0 && (
+          <div className="link-line"><span className="flabel">From the class</span><LinkButtons links={cfg.class_links || []} /></div>
+        )}
+        {links.map((l, i) => (
+          <div className="link-edit" key={i}>
+            <input className="input" placeholder="Label" maxLength={40} disabled={!canEdit} value={l.label} onChange={(e) => setLinks((ls) => ls.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} aria-label="Link label" />
+            <input className="input mono" placeholder="https://… or ssh://…, may use {ip}, {name}, {mac}" disabled={!canEdit} value={l.url} onChange={(e) => setLinks((ls) => ls.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)))} aria-label="Link address" />
+            {canEdit && <Button variant="ghost" onClick={() => setLinks((ls) => ls.filter((_, j) => j !== i))}>Remove</Button>}
+          </div>
+        ))}
+        {canEdit && <div><Button variant="ghost" className="compact" onClick={() => setLinks((ls) => [...ls, { label: '', url: '' }])}>+ Add link</Button></div>}
+        <div className="hs-note">A link is a button on this host's Device tab. Links for every host of a class are set in Settings, Device links.</div>
+      </HsSection>
+
       {err && <div style={{ color: 'var(--err)', fontSize: 13, marginTop: 8 }}>{err}</div>}
       <div className="hs-foot">
         {canEdit && <ReasonInput value={reason} onChange={setReason} />}
@@ -7416,6 +7449,318 @@ function useIncidents(url: string): [Incident[] | null, string, number] {
 function HiddenToggle({ n, shown, onToggle, lead = true }: { n: number; shown: boolean; onToggle: () => void; lead?: boolean }) {
   if (n === 0) return null
   return <>{lead ? ' · ' : null}<button type="button" className="linkbtn hidden-toggle" onClick={(e) => { e.stopPropagation(); onToggle() }}>{shown ? 'leave out' : 'show'} {n} from hidden sensors</button></>
+}
+
+// --- The host's tabs: Device, Journal, Inventory ---
+
+type HostTab = 'sensors' | 'device' | 'history' | 'journal' | 'changes'
+type LinkRow = { id?: number; label: string; url: string; from?: string }
+type DeviceFacts = { model?: string; serial?: string; firmware?: string; os?: string; ip?: string; mac?: string; read_at?: number; from?: string }
+type DeviceInfo = { facts: DeviceFacts; own: { asset_tag: string; location: string }; class?: string; links: LinkRow[]; tags: HostTag[]; used_by: { groups: string[]; probe: string; status_pages: string[]; maintenance: string[]; channels: string[] } }
+type JournalRow = { id: number; kind: 'info' | 'warning' | 'problem'; text: string; by: string; at: number; mine?: boolean; can_delete?: boolean }
+
+// CopyValue is a value with a small copy button after it.
+function CopyValue({ value, mono = true }: { value: string; mono?: boolean }) {
+  const [done, setDone] = useState(false)
+  return (
+    <span className="copyval">
+      <span className={mono ? 'mono' : undefined}>{value}</span>
+      <button type="button" className="copy-ic" title={done ? 'Copied' : 'Copy'} aria-label={`Copy ${value}`} onClick={async (e) => { e.stopPropagation(); if (await copyToClipboard(value)) { setDone(true); setTimeout(() => setDone(false), 1500) } }}>
+        {done
+          ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12.5l4.5 4.5L19 7" /></svg>
+          : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>}
+      </button>
+    </span>
+  )
+}
+
+// LinkButtons opens a host's links: web pages in a new tab, remote sessions (ssh:// rdp://) in their app.
+function LinkButtons({ links }: { links: LinkRow[] }) {
+  if (!links.length) return null
+  return (
+    <span className="linkbtns">
+      {links.map((l, i) => (
+        <a key={i} className="btn compact" href={l.url} target={/^https?:/i.test(l.url) ? '_blank' : undefined} rel="noopener noreferrer" title={l.url}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>{l.label}
+        </a>
+      ))}
+    </span>
+  )
+}
+
+// useHostCounts reads what the host's tab labels count: incidents in 30 days, journal entries, changes.
+function useHostCounts(hostId: string, tick: number): { history?: number; journal?: number; changes?: number; changesMore?: boolean } {
+  const [c, setC] = useState<{ history?: number; journal?: number; changes?: number; changesMore?: boolean }>({})
+  useEffect(() => {
+    let live = true
+    fetch(`/api/hosts/${hostId}/incidents?days=30`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (live && d) setC((x) => ({ ...x, history: (d.incidents || []).length })) }).catch(() => {})
+    fetch(`/api/hosts/${hostId}/journal`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (live && d) setC((x) => ({ ...x, journal: d.length })) }).catch(() => {})
+    fetch(`/api/hosts/${hostId}/changes`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (live && d) setC((x) => ({ ...x, changes: (d.changes || []).length, changesMore: !!d.more })) }).catch(() => {})
+    return () => { live = false }
+  }, [hostId, tick])
+  return c
+}
+
+// HostTabs is the row of a host's tabs, each with what it counts.
+function HostTabs({ hostId, tab, setTab, sensors, tick }: { hostId: string; tab: HostTab; setTab: (t: HostTab) => void; sensors: number; tick: number }) {
+  const c = useHostCounts(hostId, tick)
+  const T: [HostTab, string, number | string | undefined][] = [
+    ['sensors', 'Sensors', sensors], ['device', 'Device', undefined], ['history', 'History', c.history],
+    ['journal', 'Journal', c.journal], ['changes', 'Changes', c.changes === undefined ? undefined : `${c.changes}${c.changesMore ? '+' : ''}`],
+  ]
+  return (
+    <div className="rtabs host-tabs" role="tablist" aria-label="Host">
+      {T.map(([id, label, n]) => (
+        <button key={id} type="button" role="tab" aria-selected={tab === id} className={'rtab' + (tab === id ? ' on' : '')} onClick={(e) => { e.stopPropagation(); setTab(id) }}>
+          {label}{n !== undefined && n !== 0 && n !== '0' ? <span className="n">{n}</span> : null}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function HostTabBody({ hostId, tab, canEdit, onOpenSettings, onChanged }: { hostId: string; tab: HostTab; canEdit: boolean; onOpenSettings?: () => void; onChanged: () => void }) {
+  if (tab === 'device') return <DeviceTab hostId={hostId} onOpenSettings={onOpenSettings} />
+  if (tab === 'history') return <HostIncidents hostId={hostId} goHost={null} asTab />
+  if (tab === 'journal') return <JournalTab hostId={hostId} canEdit={canEdit} onChanged={onChanged} />
+  if (tab === 'changes') return <HostChanges hostId={hostId} asTab />
+  return null
+}
+
+// InfoRows is the label-and-lines layout the Device tab and the site info share (the Updates rows).
+function InfoRow({ label, children }: { label: string; children: ReactNode }) {
+  return <div className="info-row"><span className="complabel">{label}</span><div className="info-lines">{children}</div></div>
+}
+function InfoLine({ k, children }: { k?: string; children: ReactNode }) {
+  return <div className="info-line">{k && <span className="k">{k}</span>}{children}</div>
+}
+
+// DeviceTab shows what Argus knows about the device: facts read from it (copyable), the ones only a
+// person knows, its links, tags, and what uses it.
+function DeviceTab({ hostId, onOpenSettings }: { hostId: string; onOpenSettings?: () => void }) {
+  const [d, setD] = useState<DeviceInfo | null>(null)
+  const [err, setErr] = useState('')
+  useEffect(() => {
+    let live = true
+    fetch(`/api/hosts/${hostId}/device`).then(async (r) => { if (!r.ok) throw new Error(await errText(r, 'Could not load the device')); return r.json() })
+      .then((x) => { if (live) setD(x) }).catch((e) => { if (live) setErr(e instanceof Error ? e.message : 'Could not load the device') })
+    return () => { live = false }
+  }, [hostId])
+  if (err) return <div className="tab-empty txt-err">{err}</div>
+  if (!d) return <Skeleton rows={4} cols={2} />
+  const f = d.facts
+  const any = f.model || f.serial || f.firmware || f.os || f.ip || f.mac
+  const u = d.used_by
+  return (
+    <div className="info-rows">
+      <InfoRow label="Device">
+        {d.class && <InfoLine k="Class"><span className="v">{d.class}</span></InfoLine>}
+        {f.model && <InfoLine k="Model"><span className="v">{f.model}</span></InfoLine>}
+        {f.firmware && <InfoLine k="Firmware"><span className="v mono">{f.firmware}</span></InfoLine>}
+        {f.os && <InfoLine k="OS"><span className="v">{f.os}</span></InfoLine>}
+        {f.serial && <InfoLine k="Serial"><CopyValue value={f.serial} /></InfoLine>}
+        {f.ip && <InfoLine k="IP"><CopyValue value={f.ip} /></InfoLine>}
+        {f.mac && <InfoLine k="MAC"><CopyValue value={f.mac} /></InfoLine>}
+        {!any && <InfoLine><span className="muted">Nothing read from this device yet: its class doesn't report a model or firmware.</span></InfoLine>}
+        {f.from && <InfoLine><span className="sub-line">Read from {f.from}{f.read_at ? ` ${relTime(f.read_at)}` : ''}</span></InfoLine>}
+      </InfoRow>
+      <InfoRow label="Your fields">
+        <InfoLine k="Asset tag">{d.own.asset_tag ? <CopyValue value={d.own.asset_tag} /> : <span className="muted">-</span>}</InfoLine>
+        <InfoLine k="Location"><span className="v">{d.own.location || <span className="muted">-</span>}</span></InfoLine>
+        {onOpenSettings && <InfoLine><button type="button" className="linkbtn" onClick={onOpenSettings}>Edit in settings</button></InfoLine>}
+      </InfoRow>
+      <InfoRow label="Links">
+        {d.links.length ? <InfoLine><LinkButtons links={d.links} /></InfoLine> : <InfoLine><span className="muted">No links. Add them in this host's settings, or for its class in Settings, Device links.</span></InfoLine>}
+      </InfoRow>
+      <InfoRow label="Tags">
+        <InfoLine>{d.tags.length ? <TagList tags={d.tags} /> : <span className="muted">No tags.</span>}</InfoLine>
+      </InfoRow>
+      <InfoRow label="Used by">
+        <InfoLine k="Groups"><span className="v">{u.groups.join(', ') || '-'}</span></InfoLine>
+        <InfoLine k="Probe"><span className="v">{u.probe || '-'}</span></InfoLine>
+        {u.status_pages.length > 0 && <InfoLine k="Status pages"><span className="v">{u.status_pages.join(', ')}</span></InfoLine>}
+        {u.maintenance.length > 0 && <InfoLine k="Maintenance"><span className="v">{u.maintenance.join(', ')}</span></InfoLine>}
+        <InfoLine k="Alerts to"><span className="v">{u.channels.length ? u.channels.join(', ') : 'no shared channel'}</span></InfoLine>
+      </InfoRow>
+    </div>
+  )
+}
+
+// JournalTab is the host's journal: lasting notes, newest first, each with its kind, author and date.
+function JournalTab({ hostId, canEdit, onChanged }: { hostId: string; canEdit: boolean; onChanged: () => void }) {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [rows, setRows] = useState<JournalRow[] | null>(null)
+  const [text, setText] = useState('')
+  const [kind, setKind] = useState<JournalRow['kind']>('info')
+  const [busy, setBusy] = useState(false)
+  const load = () => fetch(`/api/hosts/${hostId}/journal`).then((r) => (r.ok ? r.json() : [])).then((x) => setRows(x || [])).catch(() => setRows([]))
+  useEffect(() => { load() }, [hostId]) // eslint-disable-line react-hooks/exhaustive-deps
+  async function add() {
+    if (!text.trim()) return
+    setBusy(true)
+    const res = await fetch(`/api/hosts/${hostId}/journal`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind, text: text.trim() }) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not add the entry')); return }
+    setText(''); setKind('info'); load(); onChanged()
+  }
+  async function del(e: JournalRow) {
+    if (!(await confirm({ title: 'Remove entry', message: 'Remove this journal entry? The change log keeps a note that it was removed.', confirmLabel: 'Remove', danger: true }))) return
+    const res = await fetch(`/api/journal/${e.id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not remove the entry')); return }
+    load(); onChanged()
+  }
+  if (!rows) return <Skeleton rows={3} cols={2} />
+  return (
+    <div className="journal">
+      {canEdit && (
+        <div className="journal-add">
+          <input className="input" maxLength={1000} placeholder="What happened, what was done, a ticket number" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add() }} aria-label="New journal entry" />
+          <div className="seg" role="radiogroup" aria-label="Kind">
+            {(['info', 'warning', 'problem'] as const).map((k) => <button key={k} type="button" className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>{k === 'info' ? 'Info' : k === 'warning' ? 'Warning' : 'Problem'}</button>)}
+          </div>
+          <Button variant="primary" onClick={add} disabled={busy || !text.trim()}>Add</Button>
+        </div>
+      )}
+      {rows.length === 0
+        ? <div className="tab-empty">No entries yet. A journal keeps what happened to this host for as long as it exists: a part replaced, a move, a ticket.</div>
+        : rows.map((e) => (
+          <div key={e.id} className={'jentry ' + e.kind}>
+            <span className="jtext">{e.text}</span>
+            <span className="jby">{e.by || 'someone'} · {fmtWhen(e.at)}{e.can_delete && <> · <button type="button" className="linkbtn" onClick={() => del(e)}>remove</button></>}</span>
+          </div>
+        ))}
+    </div>
+  )
+}
+
+type InvRow = { host_id: string; name: string; groups: string[]; probe: string; class_id?: string; class?: string; asset_tag?: string; location?: string; newest?: string } & DeviceFacts
+
+// InventoryView lists every device with its model, firmware or OS, serial, IP and MAC, grouped by
+// class, and marks one on older firmware than the newest seen on the same model.
+function InventoryView({ goHost }: { goHost: (h: string) => void }) {
+  const [rows, setRows] = useState<InvRow[] | null>(null)
+  const [err, setErr] = useState('')
+  const [hf, setHf] = useState<HostFilterVal>(NO_HOST_FILTER)
+  const [q, setQ] = useState('')
+  const [older, setOlder] = useState(false)
+  useEffect(() => {
+    let live = true
+    setRows(null); setErr('')
+    fetch(`/api/inventory?x=1${hostFilterQS(hf)}`).then(async (r) => { if (!r.ok) throw new Error(await errText(r, 'Could not load the inventory')); return r.json() })
+      .then((x) => { if (live) setRows(x || []) }).catch((e) => { if (live) setErr(e instanceof Error ? e.message : 'Could not load the inventory') })
+    return () => { live = false }
+  }, [hf])
+  const needle = q.trim().toLowerCase()
+  const shown = (rows || []).filter((r) => (!older || r.newest) && (!needle || [r.name, r.model, r.serial, r.ip, r.mac, r.firmware, r.os, r.asset_tag, r.location, r.class].some((v) => (v || '').toLowerCase().includes(needle))))
+  const behind = (rows || []).filter((r) => r.newest).length
+  const groups: [string, InvRow[]][] = []
+  for (const r of shown) { const k = r.class || 'Other'; const g = groups.find((x) => x[0] === k); if (g) g[1].push(r); else groups.push([k, [r]]) }
+  function exportInv() {
+    downloadCSV(`argus-inventory-${csvStamp()}.csv`, ['Device', 'Groups', 'Probe', 'Class', 'Model', 'Firmware', 'OS', 'Serial', 'IP', 'MAC', 'Asset tag', 'Location', 'Newer firmware seen'],
+      shown.map((r) => [r.name, r.groups.join('; '), r.probe, r.class || '', r.model || '', r.firmware || '', r.os || '', r.serial || '', r.ip || '', r.mac || '', r.asset_tag || '', r.location || '', r.newest || '']))
+  }
+  return (
+    <div className="panel">
+      <div className="phead">
+        <PanelTitle eyebrow={watchEyebrow()}>Inventory</PanelTitle>
+        <span className="hint">{rows ? `${shown.length === rows.length ? `${rows.length} devices` : `${shown.length} of ${rows.length} devices`}${behind ? ` · ${behind} on older firmware` : ''}` : ''}</span>
+        <div className="tools hist-tools">
+          <input className="input hist-q" placeholder="Host, model, serial, IP or MAC" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search the inventory" />
+          <ProbeGroupFilter value={hf} onChange={setHf} />
+          <div className="seg">
+            <button className={older ? '' : 'on'} onClick={() => setOlder(false)}>All</button>
+            <button className={older ? 'on' : ''} onClick={() => setOlder(true)}>Older firmware</button>
+          </div>
+          <button className="btn" disabled={!shown.length} onClick={exportInv}>Export CSV</button>
+        </div>
+      </div>
+      {err && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{err}</div>}
+      {rows === null && !err && <Skeleton rows={6} cols={6} />}
+      {rows !== null && !err && (shown.length === 0
+        ? <EmptyState icon={ic.inventory} title={rows.length ? 'No device matches' : 'No devices yet'} text={rows.length ? 'Nothing matches the search and filters.' : 'Devices appear here once hosts are monitored.'} />
+        : (
+          <div className="enroll-scroll">
+            <table className="slist slist-inv">
+              <thead><tr><th>Device</th><th>Model</th><th>Firmware / OS</th><th>Serial</th><th>IP</th><th>MAC</th></tr></thead>
+              <tbody>
+                {groups.map(([g, rs]) => (
+                  <Fragment key={g}>
+                    <tr className="cat"><td colSpan={6}>{g}<span className="cat-sub">{rs.length}{rs.some((r) => r.newest) ? ` · ${rs.filter((r) => r.newest).length} on older firmware` : ''}</span></td></tr>
+                    {rs.map((r) => (
+                      <tr key={r.host_id}>
+                        <td><span className="lnk-host" onClick={() => goHost(r.host_id)}>{r.name}</span><span className="inc-site"> · {r.groups[0] || 'no group'} · {r.probe}</span></td>
+                        <td data-label="Model">{r.model || <span className="muted">-</span>}</td>
+                        <td data-label="Firmware / OS"><span className="inv-fw"><span className="mono">{r.firmware || r.os || '-'}</span>{r.newest && <span className="tag avail" title="Newer firmware runs on other devices of this model">older · newest {r.newest}</span>}</span></td>
+                        <td data-label="Serial">{r.serial ? <CopyValue value={r.serial} /> : <span className="muted">-</span>}</td>
+                        <td data-label="IP">{r.ip ? <CopyValue value={r.ip} /> : <span className="muted">-</span>}</td>
+                        <td data-label="MAC">{r.mac ? <CopyValue value={r.mac} /> : <span className="muted">-</span>}</td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+    </div>
+  )
+}
+
+type LinkTpl = { id: number; label: string; url: string; classes: string[] }
+
+// LinksCard is the Settings section for device links: buttons every host of some classes gets.
+function LinksCard() {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [tpls, setTpls] = useState<LinkTpl[]>([])
+  const [classes, setClasses] = useState<DeviceClass[]>([])
+  const [editing, setEditing] = useState<number | null>(null) // a template's id, or 0 for a new one
+  const [form, setForm] = useState<{ label: string; url: string; classes: string[] }>({ label: '', url: '', classes: [] })
+  const [busy, setBusy] = useState(false)
+  const load = () => fetch('/api/links').then((r) => (r.ok ? r.json() : [])).then((x) => setTpls(x || [])).catch(() => {})
+  useEffect(() => { load(); fetch('/api/classes').then((r) => (r.ok ? r.json() : [])).then((c) => setClasses(c || [])).catch(() => {}) }, [])
+  const classLabel = (id: string) => classes.find((c) => c.id === id)?.label || id
+  function start(t: LinkTpl | null) { setEditing(t ? t.id : 0); setForm(t ? { label: t.label, url: t.url, classes: t.classes } : { label: '', url: 'https://{ip}', classes: [] }) }
+  async function save() {
+    setBusy(true)
+    const res = await fetch(editing ? `/api/links/${editing}` : '/api/links', { method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the link')); return }
+    setEditing(null); load()
+  }
+  async function del(t: LinkTpl) {
+    if (!(await confirm({ title: 'Delete link', message: `Delete “${t.label}”? Its button goes from every host it was on.`, confirmLabel: 'Delete', danger: true }))) return
+    const res = await fetch(`/api/links/${t.id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not delete the link')); return }
+    load()
+  }
+  const editor = (
+    <div className="link-form">
+      <input className="input" placeholder="Label, e.g. Web UI" maxLength={40} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} aria-label="Link label" />
+      <input className="input mono" placeholder="https://{ip}" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} aria-label="Link address" />
+      <SitePicker options={classes.filter((c) => !c.internal).map((c) => c.id)} labelOf={classLabel} value={form.classes} onChange={(v) => setForm({ ...form, classes: v })} allLabel="Every class" noun="classes" />
+      <span className="tag-form-act"><Button variant="ghost" onClick={() => setEditing(null)} disabled={busy}>Cancel</Button><Button variant="primary" onClick={save} disabled={busy || !form.label.trim() || !form.url.trim()}>{busy ? 'Saving…' : 'Save'}</Button></span>
+    </div>
+  )
+  return (
+    <section className="set-card">
+      <h3>Device links</h3>
+      <p className="set-note">Buttons on the Device tab of every host of some classes. <span className="mono">{'{ip}'}</span>, <span className="mono">{'{name}'}</span>, <span className="mono">{'{host}'}</span>, <span className="mono">{'{mac}'}</span>, <span className="mono">{'{group}'}</span> and <span className="mono">{'{macro:NAME}'}</span> (a host macro, like <span className="mono">{'{macro:UNIFI.URL}'}</span>) are filled in from the host; a host missing one doesn't get the button. A host can add its own in its settings.</p>
+      <div className="tag-rows">
+        {tpls.map((t) => editing === t.id ? <div key={t.id} className="tag-row editing">{editor}</div> : (
+          <div key={t.id} className="tag-row">
+            <span className="complabel">{t.label}</span>
+            <span className="tag-row-desc"><span className="mono">{t.url}</span><span className="sub-line"> · {t.classes.length ? t.classes.map(classLabel).join(', ') : 'every class'}</span></span>
+            <span className="tag-row-act"><Button variant="ghost" className="compact" onClick={() => start(t)}>Edit</Button><Kebab actions={[{ label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => del(t) }]} /></span>
+          </div>
+        ))}
+        {tpls.length === 0 && editing !== 0 && <p className="set-hint" style={{ margin: '4px 0 8px' }}>No device links.</p>}
+        {editing === 0 && <div className="tag-row editing">{editor}</div>}
+      </div>
+      {editing === null && <div className="set-row set-actions"><Button variant="primary" onClick={() => start(null)}>+ New link</Button></div>}
+    </section>
+  )
 }
 
 // --- Tags ---
@@ -7796,9 +8141,15 @@ function ChangesView({ goHost }: { goHost: (h: string) => void }) {
 }
 
 // HostChanges is a host's own change log, folded under its history until opened.
-function HostChanges({ hostId }: { hostId: string }) {
+function HostChanges({ hostId, asTab }: { hostId: string; asTab?: boolean }) {
   const [open, setOpen] = useState(false)
   const { rows, err, more, loadMore, loading } = useChanges(`/api/hosts/${hostId}/changes`)
+  if (asTab) {
+    if (err) return <div className="tab-empty txt-err">{err}</div>
+    if (!rows) return <Skeleton rows={3} cols={3} />
+    if (rows.length === 0) return <div className="tab-empty">Nothing changed on this host yet.</div>
+    return <><ChangeRows rows={rows} />{more && <div className="chg-more"><button className="btn" disabled={loading} onClick={loadMore}>{loading ? 'Loading…' : 'Show older changes'}</button></div>}</>
+  }
   if (err || !rows) return null
   const last = rows[0]
   return (
@@ -7824,11 +8175,21 @@ function PanelTitle({ eyebrow, children }: { eyebrow: string; children: ReactNod
 
 // HostIncidents is the host card's history: the last 30 days, folded until opened. With itemIds (a
 // drilled-down sensor, or every channel of its group) it is that sensor's history, open from the start.
-function HostIncidents({ hostId, goHost, itemIds }: { hostId: string; goHost: ((h: string) => void) | null; itemIds?: string[] }) {
+function HostIncidents({ hostId, goHost, itemIds, asTab }: { hostId: string; goHost: ((h: string) => void) | null; itemIds?: string[]; asTab?: boolean }) {
   const items = itemIds && itemIds.length ? itemIds.join(',') : ''
   const [withHidden, setWithHidden] = useState(false)
   const [rows, err, hidden] = useIncidents(`/api/hosts/${hostId}/incidents?days=30${items ? `&items=${items}` : ''}${withHidden ? '&hidden=1' : ''}`)
   const [open, setOpen] = useState(!!items)
+  if (asTab) {
+    if (err) return <div className="tab-empty txt-err">{err}</div>
+    if (!rows) return <Skeleton rows={3} cols={4} />
+    return (
+      <>
+        <div className="tab-head">{rows.length === 0 ? 'No incidents in the last 30 days.' : `${rows.length} incident${rows.length === 1 ? '' : 's'} in the last 30 days`}{hidden > 0 && <HiddenToggle n={hidden} shown={withHidden} onToggle={() => setWithHidden((w) => !w)} />}</div>
+        {rows.length > 0 && <IncidentRows rows={rows} goHost={null} />}
+      </>
+    )
+  }
   if (err || !rows) return null
   const live = rows.filter((r) => !r.end).length
   return (
@@ -7845,7 +8206,10 @@ function HostIncidents({ hostId, goHost, itemIds }: { hostId: string; goHost: ((
   )
 }
 
-function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, showAll, autoOpenItem, onlyItem, onDrillSensor, onItemName, onNavigate }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; maintenance?: MaintHit; showAll: boolean; autoOpenItem?: string; onlyItem?: string; onDrillSensor?: (itemId: string, itemName: string) => void; onItemName?: (itemId: string, itemName: string) => void; onNavigate: (hostId: string | null, itemId: string | null) => void }) {
+function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, showAll, autoOpenItem, onlyItem, onDrillSensor, onItemName, onNavigate, onOpenSettings }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; maintenance?: MaintHit; showAll: boolean; autoOpenItem?: string; onlyItem?: string; onDrillSensor?: (itemId: string, itemName: string) => void; onItemName?: (itemId: string, itemName: string) => void; onNavigate: (hostId: string | null, itemId: string | null) => void; onOpenSettings?: () => void }) {
+  // The host's tabs: its sensors (the default), its Device facts, History, Journal and Changes.
+  const [tab, setTab] = useState<HostTab>('sensors')
+  const [countTick, setCountTick] = useState(0) // bumped when a tab changes what the labels count
   const notes = useNoteEditor()
   const [items, setItems] = useState<SensorItem[] | null>(null)
   const [problems, setProblems] = useState<Problem[]>([])
@@ -8078,7 +8442,9 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
           <span>In maintenance: <b>{maintenance.name}</b>, until {fmtWhen(maintenance.until)}. Alerts for this host wait meanwhile; whatever is still wrong when it ends is alerted then.</span>
         </div>
       )}
-      {problems.length > 0 && (
+      {!onlyItem && <HostTabs hostId={hostId} tab={tab} setTab={setTab} sensors={items.length} tick={countTick} />}
+      {tab !== 'sensors' && !onlyItem && <HostTabBody hostId={hostId} tab={tab} canEdit={canPause} onOpenSettings={onOpenSettings} onChanged={() => setCountTick((t) => t + 1)} />}
+      {(tab === 'sensors' || onlyItem) && problems.length > 0 && (
         <div style={{ border: `1px solid color-mix(in srgb, ${probColor} 30%, var(--border))`, background: `color-mix(in srgb, ${probColor} 7%, var(--panel))`, borderRadius: 8, padding: '0.5rem 0.75rem', marginBottom: '0.5rem' }}>
           <div style={{ color: probColor, fontSize: 12, marginBottom: 4, fontWeight: 600 }}>{open.length === 0 ? 'Acknowledged problems' : probErr ? 'Active problems' : 'Active warnings'}</div>
           {problems.map((p, i) => (
@@ -8094,7 +8460,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
           ))}
         </div>
       )}
-      {items.length === 0
+      {(tab !== 'sensors' && !onlyItem) ? null : items.length === 0
         ? <div style={{ color: 'var(--muted)', padding: '0.2rem 0 0.4rem' }}>{showAll ? 'No sensors.' : 'No recognized sensors - try “All sensors”.'}</div>
         : (
           <table className="sensors">
@@ -8327,9 +8693,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
             </tbody>
           </table>
         )}
-      {onlyItem
-        ? <HostIncidents hostId={hostId} goHost={null} itemIds={shownItems.map((i) => i.id)} />
-        : <><HostIncidents hostId={hostId} goHost={null} /><HostChanges hostId={hostId} /></>}
+      {onlyItem && <HostIncidents hostId={hostId} goHost={null} itemIds={shownItems.map((i) => i.id)} />}
     </div>
   )
 }

@@ -71,6 +71,8 @@ zabbix_export:
               state: d.state,
               model: d.model || '',
               version: d.version || d.displayable_version || '',
+              serial: d.serial || '',
+              mac: d.mac || '',
               uptime: d.uptime || 0,
               cpu: parseFloat(ss.cpu),
               mem: parseFloat(ss.mem),
@@ -235,6 +237,60 @@ zabbix_export:
               parameters:
                 - 1d
       discovery_rules:
+        - uuid: 106a22d6d1db47389e76a6dd03198931
+          name: 'Model'
+          type: DEPENDENT
+          key: unifi.model
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'The model the controller reports (Device facts, Inventory).'
+          master_item:
+            key: unifi.console.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.model'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: 7f1b7d2298e3438f91319cc8528a20e4
+          name: 'Serial number'
+          type: DEPENDENT
+          key: unifi.serial
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'The serial number the controller reports (Device facts, Inventory).'
+          master_item:
+            key: unifi.console.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.serial'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: f96180d8b4da4fb9ad2d7baee467558d
+          name: 'MAC address'
+          type: DEPENDENT
+          key: unifi.mac
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'The device MAC the controller reports (Device facts, Inventory).'
+          master_item:
+            key: unifi.console.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.mac'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
         - uuid: 0366df05ea07482f8680c97e06c9b634
           name: 'Storage discovery'
           type: DEPENDENT

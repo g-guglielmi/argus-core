@@ -72,6 +72,8 @@ zabbix_export:
               state: d.state,
               model: d.model || '',
               version: d.version || d.displayable_version || '',
+              serial: d.serial || '',
+              mac: d.mac || '',
               uptime: d.uptime || 0,
               cpu: parseFloat(ss.cpu),
               mem: parseFloat(ss.mem),
@@ -290,6 +292,60 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.version'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: 2daf097b90a446909eae6a1167ad9c24
+          name: 'Model'
+          type: DEPENDENT
+          key: unifi.model
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'The model the controller reports (Device facts, Inventory).'
+          master_item:
+            key: unifi.gw.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.model'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: a75d69b6ca1b4f3bad57e4d40aed4e41
+          name: 'Serial number'
+          type: DEPENDENT
+          key: unifi.serial
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'The serial number the controller reports (Device facts, Inventory).'
+          master_item:
+            key: unifi.gw.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.serial'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: a3d5e94ed17e42c3a513824b6cf52bdb
+          name: 'MAC address'
+          type: DEPENDENT
+          key: unifi.mac
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'The device MAC the controller reports (Device facts, Inventory).'
+          master_item:
+            key: unifi.gw.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.mac'
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d

@@ -603,6 +603,38 @@ CREATE TABLE IF NOT EXISTS probe_tags (
   tag      TEXT NOT NULL REFERENCES tags(name) ON UPDATE CASCADE ON DELETE CASCADE,
   PRIMARY KEY (proxy_id, tag)
 );
+-- A host's Device tab (device.go): the facts only a person knows, its links, the link templates every
+-- host of some classes gets, and its journal (lasting notes, unlike a sensor's).
+CREATE TABLE IF NOT EXISTS host_facts (
+  host_id    TEXT PRIMARY KEY,
+  asset_tag  TEXT NOT NULL DEFAULT '',
+  location   TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS link_templates (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  label      TEXT NOT NULL,
+  url        TEXT NOT NULL,
+  classes    TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS host_links (
+  id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id TEXT NOT NULL,
+  label   TEXT NOT NULL,
+  url     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_host_links_host ON host_links(host_id);
+CREATE TABLE IF NOT EXISTS host_journal (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id    TEXT NOT NULL,
+  kind       TEXT NOT NULL DEFAULT 'info',
+  text       TEXT NOT NULL,
+  by_user    INTEGER NOT NULL DEFAULT 0,
+  by_name    TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_host_journal_host ON host_journal(host_id, created_at);
 `); err != nil {
 		return err
 	}
@@ -841,7 +873,7 @@ CREATE TABLE IF NOT EXISTS probe_tags (
 			return err
 		}
 	}
-	return nil
+	return s.seedLinkTemplates(context.Background())
 }
 
 // ensureColumn adds a column, treating "already exists" as success so migrate() is idempotent.

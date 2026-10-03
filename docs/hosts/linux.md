@@ -34,6 +34,9 @@ filesystems, NICs and uptime start reporting within a minute or two.
 
 ## What it monitors
 
+Besides the sensors below, Argus reads the system description (sysDescr) once an hour for the host's
+**Device** tab and the **Inventory**: the kernel and, when it says, the distribution.
+
 - **CPU** utilization (and per-core where the MIB exposes it).
 - **Memory** used / available / total.
 - **Filesystems** (discovered) with used-% alerts. Tune `{$FS.NAME.SKIP}` on the host to exclude

@@ -510,6 +510,42 @@ anything is selected, and scrolls sideways on a phone.
 **Export CSV** saves the list as shown (filters applied) from the browser: the tree's hosts, a problem
 list, History, Changes; UTF-8 with a BOM and quoted cells, so spreadsheets open it as is.
 
+## 7e. Host tabs, device facts, links, journal, Inventory
+
+A host's body (expanded in the tree or open on its own) has tabs, each with its count: **Sensors**
+(the default: problems and the sensor table as before), **Device**, **History** (the last 30 days,
+with the hidden-sensor toggle), **Journal** and **Changes** (section 7c). A drilled-down sensor keeps
+its own history open below its chart, without tabs.
+
+**Device facts** (`device.go`) come from the device's own items, read across all hosts in a few calls
+(`collectFacts`: `item.get` by the fact keys, a key-prefix search for discovered ones, the hosts'
+addresses): `unifi.model`, `unifi.serial`, `unifi.mac` and `unifi.firmware` (the UniFi templates keep
+them from the controller record they already fetch), `system.descr[snmp]` (SNMPv2-MIB sysDescr, read
+hourly by the Linux, Windows and unRAID SNMP classes, shortened to "Linux 6.1.0-21-amd64 (Debian)" or
+"Windows (build 22631)"), Home Assistant's and AdGuard's versions, an XCP-ng pool's hypervisor
+versions. The MAC falls back to the one discovery saw for a host adopted from it. The asset tag and
+location are Argus's own (`host_facts`, host settings, Device facts). `GET /api/hosts/{id}/device`
+also gives the host's links, tags and **Used by**: its groups and probe, the status pages and
+maintenance windows that cover it, and the shared channels its alerts reach (sites, tags, alerts on).
+
+**Links** are buttons on the Device tab: templates every host of some classes gets (Settings, Device
+links; `link_templates`, `/api/links`; a new install starts with "Web UI" `https://{ip}` for the
+classes with a web page) and a host's own (host settings, Links). `{ip}`, `{name}`, `{host}`,
+`{mac}`, `{group}` and `{macro:NAME}` (a non-secret host macro, like `{macro:UNIFI.URL}`) are filled in
+from the host; a host missing one doesn't get that button. Only `http(s)`, `ssh`, `rdp`, `vnc` and
+`telnet` addresses become links.
+
+The **Journal** (`host_journal`, `GET/POST /api/hosts/{id}/journal`, `DELETE /api/journal/{id}`) keeps
+lasting notes on a host, newest first, each with a kind (info, warning, problem: the status-page note
+kinds), author and date. Admins and helpdesk write; an admin removes any entry, helpdesk their own;
+everyone who sees the host reads it. Unlike a sensor note it doesn't clear itself.
+
+The **Inventory** (Watch; `GET /api/inventory?probe=&group=`) lists every device the user sees (not
+Argus's own probe hosts), grouped by class, with its facts and own fields; search, probe and group
+filters, **Older firmware**, Export CSV. A device whose firmware (or, without one, OS) is older than the
+newest seen on the same model (or, without a model, the same class) is flagged with that newest
+version; a pool on mixed versions isn't compared.
+
 ---
 
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")

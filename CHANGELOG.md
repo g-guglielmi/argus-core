@@ -25,6 +25,27 @@ GitHub Release from the matching section below.
 - Kept for a year by default (Settings, **Keep changes for**: 90 days, 1 year or 2 years;
   `ARGUS_CHANGES_KEEP_DAYS`).
 
+**Host tabs:**
+- A host's page now has tabs, each with its count: **Sensors** (as before), **Device**, **History**,
+  **Journal** and **Changes**.
+- **Device** shows what Argus reads from the device (model, serial, firmware or OS, IP, MAC, with copy
+  buttons), your **asset tag** and **location** (host settings, Device facts), its **links**, its tags,
+  and what uses it: its groups and probe, the status pages and maintenance windows that cover it, and
+  the channels its alerts reach.
+- **Links** open the device elsewhere: Settings, **Device links** gives every host of some classes a
+  button (a new install starts with "Web UI" on the classes with a web page), filled in from the host
+  (`{ip}`, `{name}`, `{mac}`, `{macro:UNIFI.URL}`...); a host adds its own in its settings.
+- The **Journal** keeps lasting notes on a host, each marked info, warning or problem: a part
+  replaced, a move, a ticket. Unlike a sensor note, it stays.
+
+**Inventory:** a new page under Watch lists every device with its model, firmware or OS, serial, IP
+and MAC, grouped by class, with the probe and group filters and Export CSV. A device on older firmware
+than the newest seen on the same model is flagged.
+
+**Templates:** the UniFi classes keep the model, serial, MAC and (switches and APs) the upstream
+device from the controller record they already read; the Linux, Windows and unRAID SNMP classes read
+the system description hourly. Nothing to install: they arrive with this update.
+
 **Tags:**
 - Coloured labels across sites, made in Settings, **Tags** ("critical", "customer-a", "poe"). Put
   them on a host in its settings, or on a probe on the Probes page: every host the probe monitors

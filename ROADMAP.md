@@ -187,6 +187,10 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   channels limited to tags; bulk acknowledge / pause / hide / maintenance / move / probe / tags /
   thresholds on the tree's selection and acknowledge / note / pause / hide on a problem list's; CSV
   export of the lists. DESIGN section 7d. - _(BE+FE)_ M
+- [x] **Host tabs, device facts, links, journal, Inventory** - Sensors / Device / History / Journal /
+  Changes tabs; model, serial, firmware, OS, MAC read from the device plus asset tag and location;
+  class and host links; a lasting journal; an Inventory page with firmware drift. DESIGN section 7e.
+  Follow-ups needing a probe release: UPS model and serial (NUT), Linux (SSH) OS. - _(BE+FE)_ M
 
 ### G. Scale & production readiness
 - [x] **Security review, wave 1 (core)** - a static review of the three repositories; the core-side

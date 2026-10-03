@@ -18,6 +18,20 @@ zabbix_export:
       groups:
         - name: Templates/Argus
       items:
+        - uuid: c1623734848c43adb057c2dd12231819
+          name: 'System description'
+          type: SNMP_AGENT
+          snmp_oid: '.1.3.6.1.2.1.1.1.0'
+          key: 'system.descr[snmp]'
+          delay: 1h
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'SNMPv2-MIB sysDescr: the operating system as the device describes itself (Device facts, Inventory).'
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
         - uuid: df116b5b8e8445c986542f74cea21a1e
           name: 'CPU core loads (raw)'
           type: SNMP_AGENT

@@ -85,6 +85,15 @@ API key, and MAC):
   who acknowledged it, the note left on the sensor and the reason the device's collector gave, over
   24 h to 90 days, by probe and group too. Hidden sensors' incidents are left out unless you ask for
   them. Export the list as CSV.
+- **Host tabs** - a host's page has **Sensors**, **Device**, **History**, **Journal** and **Changes**,
+  each with its count. **Device** shows what Argus reads from the device (model, serial, firmware or
+  OS, IP, MAC, with copy buttons), your asset tag and location, its links ("Web UI", "UniFi
+  controller", "SSH", filled in from the host), tags, and what uses it (groups, probe, status pages,
+  maintenance windows, the channels its alerts reach). The **Journal** keeps lasting notes on the host
+  (a part replaced, a move, a ticket) for as long as it exists.
+- **Inventory** - every device with its model, firmware or OS, serial, IP and MAC, grouped by class,
+  filterable by probe and group, exportable as CSV; a device on older firmware than the newest on the
+  same model is flagged.
 - **Tags** - coloured labels across sites ("critical", "customer-a", "poe"), on a host or on a probe
   (then on every host it monitors). Filter the tree by them and limit an alert channel to the hosts
   with a tag, so "critical" can go to a phone while the rest goes to the team channel.

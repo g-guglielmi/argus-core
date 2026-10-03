@@ -217,6 +217,13 @@ var changeRoutes = map[string]routeChange{
 	"POST /api/status-pages/{id}/rotate": {cat: "statuspages", action: "Made a new status page link", obj: "page"},
 	"DELETE /api/status-pages/{id}":      {cat: "statuspages", action: "Deleted a status page", obj: "page", pre: true},
 
+	// the journal and device links
+	"POST /api/hosts/{id}/journal": {cat: "hosts", action: "Added a journal entry", obj: "host", detail: fieldDetail("text")},
+	"DELETE /api/journal/{id}":     {cat: "hosts", action: "Removed a journal entry"},
+	"POST /api/links":              {cat: "settings", action: "Created a device link"},
+	"PATCH /api/links/{id}":        {cat: "settings", action: "Changed a device link"},
+	"DELETE /api/links/{id}":       {cat: "settings", action: "Deleted a device link"},
+
 	// tags
 	"POST /api/tags":             {cat: "settings", action: "Created a tag"},
 	"PATCH /api/tags/{name}":     {cat: "settings", action: "Changed a tag"},

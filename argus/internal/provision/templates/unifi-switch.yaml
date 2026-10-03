@@ -69,6 +69,10 @@ zabbix_export:
               state: d.state,
               model: d.model || '',
               version: d.version || d.displayable_version || '',
+              serial: d.serial || '',
+              mac: d.mac || '',
+              uplink_mac: (d.uplink && d.uplink.uplink_mac) || (d.last_uplink && d.last_uplink.uplink_mac) || '',
+              uplink_port: String((d.uplink && d.uplink.uplink_remote_port) || (d.last_uplink && d.last_uplink.uplink_remote_port) || ''),
               uptime: d.uptime || 0,
               cpu: parseFloat(ss.cpu),
               mem: parseFloat(ss.mem),
@@ -247,6 +251,96 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.version'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: 5d09908865a248cab059dbcfcebc9447
+          name: 'Model'
+          type: DEPENDENT
+          key: unifi.model
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'The model the controller reports (Device facts, Inventory).'
+          master_item:
+            key: unifi.switch.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.model'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: fc32fe3468e9400d8a1c27eb9ef123b4
+          name: 'Serial number'
+          type: DEPENDENT
+          key: unifi.serial
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'The serial number the controller reports (Device facts, Inventory).'
+          master_item:
+            key: unifi.switch.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.serial'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: 1490fc74df5d4d23ab04367a620ac947
+          name: 'MAC address'
+          type: DEPENDENT
+          key: unifi.mac
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'The device MAC the controller reports (Device facts, Inventory).'
+          master_item:
+            key: unifi.switch.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.mac'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: b5f43f8371fc4745929fa2bd06ebcf43
+          name: 'Uplink device MAC'
+          type: DEPENDENT
+          key: unifi.uplink.mac
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'The MAC of the UniFi device this one is plugged into: Argus reads its upstream device from it.'
+          master_item:
+            key: unifi.switch.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.uplink_mac'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: fc532d316a404842b94738e4974b77d0
+          name: 'Uplink port'
+          type: DEPENDENT
+          key: unifi.uplink.port
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'The port of the upstream device this one is plugged into.'
+          master_item:
+            key: unifi.switch.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.uplink_port'
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d

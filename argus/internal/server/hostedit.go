@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"argus/internal/provision"
 	"argus/internal/store"
@@ -107,6 +108,9 @@ type hostConfigView struct {
 	CategoryOrder []string             `json:"category_order,omitempty"` // stored per-host order override (empty = inheriting)
 	Master        *masterView          `json:"master,omitempty"`         // the host's master sensor (notifier dependency)
 	Tags          []hostTag            `json:"tags"`                     // its own tags, then its probe's (tags.go)
+	Own           ownFactsView         `json:"own"`                      // asset tag and location (device.go)
+	Links         []linkView           `json:"links"`                    // its own links, as typed
+	ClassLinks    []linkView           `json:"class_links"`              // the links its class gives it, filled in
 }
 
 // masterView is a host's master sensor for the settings editor: the one in effect ("" = none), the
@@ -309,9 +313,33 @@ func (s *Server) hostConfigFor(ctx context.Context, hostID string, canEdit bool)
 		out.Tags = ti[hd.HostID]
 	}
 	out.CategoryOrder, _ = s.st.CategoryOrder(ctx, "host:"+hd.HostID)
+	if own, err := s.st.HostFacts(ctx); err == nil {
+		out.Own = ownFactsView{AssetTag: own[hd.HostID].AssetTag, Location: own[hd.HostID].Location}
+	}
+	out.Links, out.ClassLinks = []linkView{}, []linkView{}
+	if ls, err := s.st.HostLinks(ctx, hd.HostID); err == nil {
+		for _, l := range ls {
+			out.Links = append(out.Links, linkView{ID: l.ID, Label: l.Label, URL: l.URL, From: "host"})
+		}
+	}
 	if items, err := s.zbx.Items(ctx, hd.HostID); err == nil {
 		out.Categories = s.hostCategoriesInOrder(ctx, hd.HostID, items)
 		out.Master = s.masterConfig(ctx, hd.HostID, items)
+		f := s.hostFacts(ctx, hd.HostID, items)
+		lh := linkHost{ip: f.IP, name: hd.Name, host: hd.Host, mac: f.MAC, macros: map[string]string{}}
+		for _, m := range curMacros {
+			if m.Type == 0 {
+				lh.macros[strings.TrimSuffix(strings.TrimPrefix(m.Macro, "{$"), "}")] = m.Value
+			}
+		}
+		if idx, err := s.hostIndex(ctx); err == nil && len(idx[hd.HostID].Groups) > 0 {
+			lh.group = idx[hd.HostID].Groups[0]
+		}
+		for _, l := range s.hostLinkSet(ctx, hd.HostID, out.ClassID, lh) {
+			if l.From == "class" {
+				out.ClassLinks = append(out.ClassLinks, l)
+			}
+		}
 	}
 	return out, nil
 }
@@ -328,6 +356,8 @@ type hostConfigUpdate struct {
 	AddOns        map[string]addOnDesired `json:"addons"`         // add-on id -> desired {enabled, macros}; nil = leave as-is
 	Master        *string                 `json:"master"`         // "default", "none" or a sensor id; nil = leave as-is
 	Tags          *[]string               `json:"tags"`           // the host's own tags; nil = leave as-is
+	Own           *ownFactsView           `json:"own"`            // asset tag and location; nil = leave as-is
+	Links         *[]linkView             `json:"links"`          // the host's own links; nil = leave as-is
 }
 
 // handleUpdateHostConfig reconciles a host's whole desired identity + interface set (admin/helpdesk).
@@ -532,6 +562,28 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 	if req.AddOns != nil {
 		if err := s.applyAddOns(ctx, cur.HostID, req.AddOns); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": s.errText(r, err)})
+			return
+		}
+	}
+	if req.Own != nil {
+		o := store.HostOwnFacts{AssetTag: strings.TrimSpace(req.Own.AssetTag), Location: strings.TrimSpace(req.Own.Location)}
+		if utf8.RuneCountInString(o.AssetTag) > 64 || utf8.RuneCountInString(o.Location) > 120 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "an asset tag is at most 64 characters and a location 120"})
+			return
+		}
+		if err := s.st.SetHostFacts(ctx, cur.HostID, o); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save the device facts"})
+			return
+		}
+	}
+	if req.Links != nil {
+		links, msg := hostOwnLinks(*req.Links)
+		if msg != "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+			return
+		}
+		if err := s.st.SetHostLinks(ctx, cur.HostID, links); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save the links"})
 			return
 		}
 	}

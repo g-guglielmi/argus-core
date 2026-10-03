@@ -112,6 +112,22 @@ func hostConfigDiff(before hostConfigView, req hostConfigUpdate, proxies map[str
 			add("Master sensor", label(old), label(*req.Master))
 		}
 	}
+	if req.Own != nil {
+		add("Asset tag", before.Own.AssetTag, strings.TrimSpace(req.Own.AssetTag))
+		add("Location", before.Own.Location, strings.TrimSpace(req.Own.Location))
+	}
+	if req.Links != nil {
+		text := func(ls []linkView) string {
+			var parts []string
+			for _, l := range ls {
+				if strings.TrimSpace(l.Label) != "" {
+					parts = append(parts, strings.TrimSpace(l.Label)+" "+strings.TrimSpace(l.URL))
+				}
+			}
+			return strings.Join(parts, ", ")
+		}
+		add("Links", text(before.Links), text(*req.Links))
+	}
 	if req.Tags != nil {
 		var own []string
 		for _, t := range before.Tags {
