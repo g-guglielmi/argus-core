@@ -217,6 +217,12 @@ var changeRoutes = map[string]routeChange{
 	"POST /api/status-pages/{id}/rotate": {cat: "statuspages", action: "Made a new status page link", obj: "page"},
 	"DELETE /api/status-pages/{id}":      {cat: "statuspages", action: "Deleted a status page", obj: "page", pre: true},
 
+	// tags
+	"POST /api/tags":             {cat: "settings", action: "Created a tag"},
+	"PATCH /api/tags/{name}":     {cat: "settings", action: "Changed a tag"},
+	"DELETE /api/tags/{name}":    {cat: "settings", action: "Deleted a tag"},
+	"PUT /api/proxies/{id}/tags": {cat: "probes", action: "Changed a probe's tags"},
+
 	// settings
 	"PATCH /api/settings":         {cat: "settings", action: "Changed settings"},
 	"PUT /api/settings/retention": {cat: "settings", action: "Changed data retention"},

@@ -112,6 +112,15 @@ func hostConfigDiff(before hostConfigView, req hostConfigUpdate, proxies map[str
 			add("Master sensor", label(old), label(*req.Master))
 		}
 	}
+	if req.Tags != nil {
+		var own []string
+		for _, t := range before.Tags {
+			if t.From == "" {
+				own = append(own, t.Name)
+			}
+		}
+		add("Tags", strings.Join(own, ", "), strings.Join(*req.Tags, ", "))
+	}
 	if req.CategoryOrder != nil {
 		was, now := "the default order", "the default order"
 		if len(before.CategoryOrder) > 0 {
@@ -195,6 +204,13 @@ func channelDiff(r *http.Request, was, now store.NotifyChannel) {
 	}
 	changeDiff(r, "Name", was.Name, now.Name)
 	changeDiff(r, "Sites", sites(was.Sites), sites(now.Sites))
+	tags := func(ts []string) string {
+		if len(ts) == 0 {
+			return "any"
+		}
+		return strings.Join(ts, ", ")
+	}
+	changeDiff(r, "Tags", tags(was.Tags), tags(now.Tags))
 	changeDiff(r, "Alerts", severityFloorLabel(was.MinSeverity), severityFloorLabel(now.MinSeverity))
 	changeDiff(r, "Notify after", mins(was.DelayMin), mins(now.DelayMin))
 	rep := func(m int) string {

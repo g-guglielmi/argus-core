@@ -14,7 +14,7 @@ type Me = { email: string; name: string; surname: string; role: string; mfa_enab
 type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean; sites?: string[] }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type MaintHit = { id: number; name: string; until: number }
-type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number; unacked?: boolean; acked?: boolean; maintenance?: MaintHit }
+type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number; unacked?: boolean; acked?: boolean; maintenance?: MaintHit; tags?: HostTag[] }
 type Group = { id: string; name: string; hosts: number }
 type MacroSpec = { macro: string; label: string; hint?: string; required?: boolean; secret?: boolean; derive?: string; options?: string[]; settings_only?: boolean }
 type ClassSetup = { title: string; intro?: string; steps?: string[]; command?: string; note?: string }
@@ -28,10 +28,10 @@ type ThrTemplate = { template: string; label: string; every_host?: boolean; opti
 type ThresholdsData = { templates: ThrTemplate[] }
 type AddOnMacro = { macro: string; label: string; hint?: string; options?: string[]; value: string }
 type AddOnCfg = { id: string; label: string; description: string; enabled: boolean; macros?: AddOnMacro[] }
-type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg }
+type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg; tags?: HostTag[] }
 // A host's master sensor: while it's down, the host's other alerts are held (item_id "" = none).
 type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; options: { id: string; label: string }[] }
-type Proxy = { id: string; name: string; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean }
+type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean }
 // One Zabbix process kind on a probe: what it runs, Argus's target, the busiest hour at the last
 // evaluation, and a hold (put back after a raise that didn't lower its load).
 // An update Argus asked a probe's sidecar for, while it is in hand: queued for the sidecar's next
@@ -39,7 +39,7 @@ type Proxy = { id: string; name: string; last_access: number; online: boolean; m
 type ProbeJob = { state: 'queued' | 'updating' | 'failed'; tag: string; at?: number }
 type ProcRow = { name: string; label: string; running: number; target?: number; pinned?: boolean; peak?: number; held?: { from: number; to: number; before: number; after: number; at: number; cpus: number } }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
-type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
+type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; tags?: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
 // Alert levels a notification channel can choose (Zabbix severity floors). The app shows problems as
 // warnings (Zabbix Warning) or errors (Average, High, Disaster), so these are the two choices.
@@ -157,7 +157,7 @@ function toLocalInput(ms: number): string {
 
 // DurationButton is an action button that opens a duration menu; onPick gets seconds (null =
 // indefinite). "Custom…" reveals a date/time picker to suppress until a chosen moment.
-function DurationButton({ label, onPick, disabled, borderColor }: { label: string; onPick: (seconds: number | null) => void; disabled?: boolean; borderColor?: string }) {
+function DurationButton({ label, onPick, disabled, borderColor, up }: { label: string; onPick: (seconds: number | null) => void; disabled?: boolean; borderColor?: string; up?: boolean }) {
   const [open, setOpen] = useState(false)
   const [custom, setCustom] = useState(false)
   const [val, setVal] = useState('')
@@ -178,7 +178,7 @@ function DurationButton({ label, onPick, disabled, borderColor }: { label: strin
       {open && (
         <>
           <div onClick={(e) => { e.stopPropagation(); close() }} style={{ position: 'fixed', inset: 0, zIndex: 20 }} />
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 21, background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 6, minWidth: custom ? 240 : 140, boxShadow: '0 8px 24px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', ...(up ? { bottom: '100%', marginBottom: 4 } : { top: '100%', marginTop: 4 }), right: 0, zIndex: 21, background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 6, minWidth: custom ? 240 : 140, boxShadow: '0 8px 24px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
             {!custom && DURATIONS.map((d) => (
               <div key={d.label} onClick={(e) => { e.stopPropagation(); pickPreset(d.seconds) }} style={{ padding: '0.4rem 0.7rem', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{d.label}</div>
             ))}
@@ -2296,6 +2296,7 @@ function SettingsView({ me, onMe, onOpenUpdates }: { me: Me; onMe: (m: Me) => vo
     { name: 'Access', title: 'Allowed FQDNs and IPs', note: "The addresses people type in the browser's address bar to open Argus, like monitoring.example.com or 10.0.0.10. With a list set, Argus refuses API requests for any other address and changes coming from other sites, which blocks DNS-rebinding and cross-site attacks." },
     { name: 'Proxy', title: 'Reverse proxy', note: "Which proxies in front of Argus it believes about who is connecting (X-Forwarded-For) and which address and scheme they used (X-Forwarded-Host / -Proto). That feeds the login rate limit, status pages' allowed networks and Allowed FQDNs and IPs. List your proxies' addresses when there's more than one, like NetScaler in front of HAProxy." },
     { name: 'Probes', title: 'Probes', note: 'The address probes dial for the Zabbix server (:10051), and how Argus sizes their Zabbix processes.' },
+    { name: 'Changes', title: 'Change log', note: 'How long Argus keeps who changed what (Admin, Changes).' },
   ]
 
   return (
@@ -2366,6 +2367,8 @@ function SettingsView({ me, onMe, onOpenUpdates }: { me: Me; onMe: (m: Me) => vo
             </form>
           )
         })}
+        {/* Tags: labels across sites, on hosts and probes, for the tree's filter and channel routing. */}
+        <TagsCard />
         {/* Zabbix housekeeping (history / trends / compression), saved through its own endpoint. */}
         <DataRetention />
         {/* The core host's own backups (backup.go, deploy/core/host/argus-backup). */}
@@ -2890,6 +2893,8 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   const [type, setType] = useState(initial?.type || 'discord')
   const [name, setName] = useState(initial?.name || '')
   const [selSites, setSelSites] = useState<string[]>(initial?.sites || [])
+  const [selTags, setSelTags] = useState<string[]>(initial?.tags || [])
+  const [allTags] = useTags()
   const [minSev, setMinSev] = useState(initial?.min_severity || 2)
   const [delayMin, setDelayMin] = useState(initial?.delay_min || 0)
   const [repeatMin, setRepeatMin] = useState(initial?.repeat_min || 0)
@@ -2902,7 +2907,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
 
   async function save(e: FormEvent) {
     e.preventDefault(); onError('')
-    const body = { type, name, sites: selSites, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, alerts, system_notices: notices, enabled, config }
+    const body = { type, name, sites: selSites, tags: selTags, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, alerts, system_notices: notices, enabled, config }
     const url = initial ? `/api/notify/channels/${initial.id}` : '/api/notify/channels'
     const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
@@ -2965,6 +2970,14 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
             </Select>
           </label>
         </div>
+        {(allTags.length > 0 || selTags.length > 0) && (
+          <div className="chan-row">
+            <div className="chan-field chan-wide"><span className="flabel">Tags</span>
+              <TagPicker tags={allTags} value={selTags} onChange={setSelTags} allLabel="Any tag" />
+              <span className="set-note" style={{ margin: 0 }}>Only hosts with one of these tags, their own or from their probe. Any tag = every host.</span>
+            </div>
+          </div>
+        )}
         <NoticesSwitch checked={notices} onChange={setNotices} />
         {!alerts && !notices && <p className="set-note txt-err" style={{ margin: 0 }}>Turn on alerts, system notices, or both.</p>}
       </ChanSection>
@@ -2973,7 +2986,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   )
 }
 
-type UserChannel = { id: number; type: string; enabled: boolean; sites: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
+type UserChannel = { id: number; type: string; enabled: boolean; sites: string[]; tags?: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 
 // PersonalNotifyCard lets any signed-in user manage their own alert destinations (PERSONAL_TYPES),
 // separate from the shared channels an admin configures in the Notifications tab. Self-service:
@@ -3071,6 +3084,8 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
 }) {
   const [type, setType] = useState(initial?.type || 'telegram')
   const [selSites, setSelSites] = useState<string[]>(initial?.sites || [])
+  const [selTags, setSelTags] = useState<string[]>(initial?.tags || [])
+  const [allTags] = useTags()
   const [minSev, setMinSev] = useState(initial?.min_severity || 2)
   const [delayMin, setDelayMin] = useState(initial?.delay_min || 0)
   const [repeatMin, setRepeatMin] = useState(initial?.repeat_min || 0)
@@ -3083,7 +3098,7 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
 
   async function save(e: FormEvent) {
     e.preventDefault(); onError('')
-    const body = { type, sites: selSites, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, alerts, system_notices: notices, enabled, config }
+    const body = { type, sites: selSites, tags: selTags, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, alerts, system_notices: notices, enabled, config }
     const url = initial ? `/api/me/notify/channels/${initial.id}` : '/api/me/notify/channels'
     const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
@@ -3128,6 +3143,14 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
             </Select>
           </label>
         </div>
+        {(allTags.length > 0 || selTags.length > 0) && (
+          <div className="chan-row">
+            <div className="chan-field chan-wide"><span className="flabel">Tags</span>
+              <TagPicker tags={allTags} value={selTags} onChange={setSelTags} allLabel="Any tag" />
+              <span className="set-note" style={{ margin: 0 }}>Only hosts with one of these tags, their own or from their probe. Any tag = every host.</span>
+            </div>
+          </div>
+        )}
         <NoticesSwitch checked={notices} onChange={setNotices} />
         {!alerts && !notices && <p className="set-note txt-err" style={{ margin: 0 }}>Turn on alerts, system notices, or both.</p>}
       </ChanSection>
@@ -3207,6 +3230,21 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
   const [openProcs, setOpenProcs] = useState<string | null>(null) // proxy name whose Zabbix-processes band is open
   const canEdit = role === 'admin' || role === 'helpdesk'
   const isAdmin = role === 'admin'
+  const toast = useToast()
+  const [allTags, reloadTags] = useTags()
+  const [tagsFor, setTagsFor] = useState<Proxy | null>(null) // the probe whose tags dialog is open
+  const [probeTags, setProbeTags] = useState<string[]>([])
+  const [tagsBusy, setTagsBusy] = useState(false)
+  const [tagsReason, setTagsReason] = useState('')
+  const tagColor = (n: string) => allTags.find((t) => t.name === n)?.color || '#8b8d98'
+  async function saveProbeTags() {
+    if (!tagsFor) return
+    setTagsBusy(true)
+    const res = await fetch(`/api/proxies/${tagsFor.id}/tags`, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...reasonHeader(tagsReason) }, body: JSON.stringify({ tags: probeTags }) }).catch(() => null)
+    setTagsBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the tags')); return }
+    setTagsFor(null); setTagsReason(''); loadProxies(); reloadTags(); fireDataRefresh()
+  }
 
   // The version cells say where each probe stands, in the Updates page's words. Updating is done
   // there, so a pill with something to do links to it (for an admin; helpdesk sees the same words).
@@ -3310,6 +3348,11 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
         </p>
       )}
 
+      {tagsFor && (
+        <BulkDialog title={`Tags · ${tagsFor.name}`} note="Every host this probe monitors carries these tags, including hosts added later. A host shows them beside its own and can't remove them; a host moved to another probe takes that probe's instead." busy={tagsBusy} applyLabel="Save" reason={tagsReason} setReason={setTagsReason} onClose={() => setTagsFor(null)} onApply={saveProbeTags}>
+          <div className="hs-mon hs-tags"><span className="hs-monlabel">Tags</span><TagsEditor all={allTags} value={probeTags} onChange={setProbeTags} /></div>
+        </BulkDialog>
+      )}
       {isAdmin && enroll && wizardOpen && <AddProbeWizard existingNames={(proxies || []).map((p) => p.name)} onClose={() => { setWizardOpen(false); loadTokens(); loadProxies() }} onEnrolled={() => { loadTokens(); loadProxies() }} />}
 
       {isAdmin && enroll && pendingTokens.length > 0 && (
@@ -3346,6 +3389,12 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
                     <span className="sub-line" title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>
                       {p.mode}{p.enrolled_at ? ` · enrolled ${new Date(p.enrolled_at * 1000).toLocaleDateString()}` : ' · manual'}
                     </span>
+                    {((p.tags && p.tags.length > 0) || (isAdmin && allTags.length > 0)) && (
+                      <span className="probe-tags">
+                        <TagList tags={(p.tags || []).map((n) => ({ name: n, color: tagColor(n) }))} />
+                        {isAdmin && <button type="button" className="linkbtn" onClick={() => { setTagsFor(p); setProbeTags(p.tags || []) }}>{p.tags && p.tags.length ? 'Edit tags' : '+ Tags'}</button>}
+                      </span>
+                    )}
                   </div>
                 </td>
                 <td data-label="Health">
@@ -4154,6 +4203,30 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   const showHiddenEff = advanced && showHidden
   const canPause = role === 'admin' || role === 'helpdesk'
   const toast = useToast()
+  // Tags (the toolbar's filter) and the selection for bulk actions.
+  const [tagList, reloadTags] = useTags()
+  const [tagFilter, setTagFilter] = useState<string[]>([])
+  const [selecting, setSelecting] = useState(false)
+  const [sel, setSel] = useState<Set<string>>(() => new Set())
+  const [bulk, setBulk] = useState<null | 'groups' | 'probe' | 'tags' | 'thresholds' | 'maint'>(null)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkReason, setBulkReason] = useState('')
+  const [maintSites, setMaintSites] = useState<string[]>([])
+  function toggleSel(ids: string[], on: boolean) { setSel((cur) => { const n = new Set(cur); for (const id of ids) { if (on) n.add(id); else n.delete(id) } return n }) }
+  function endSelecting() { setSelecting(false); setSel(new Set()); setBulk(null); setBulkReason('') }
+  // runBulk acts on the selected hosts; the ones that worked leave the selection, the failed stay.
+  async function runBulk(action: string, extra: object, what: string) {
+    setBulkBusy(true)
+    const ids = [...sel]
+    const r = await postBulk('/api/bulk/hosts', { action, host_ids: ids, ...extra }, bulkReason)
+    setBulkBusy(false)
+    bulkToast(toast, r, what, ['host', 'hosts'])
+    if (typeof r === 'string') return
+    const failed = new Set(r.failed.map((f) => f.id))
+    setSel(new Set(ids.filter((id) => failed.has(id))))
+    if (!failed.size) { setBulk(null); setBulkReason('') }
+    load(); reloadTags(); fireDataRefresh()
+  }
   // Per-host ICMP latency sparklines: batch the icmppingsec item ids from the host list, auto-refreshed.
   const icmpSparks = useSparks(hosts.map((h) => h.icmp_item || '').filter(Boolean))
 
@@ -4339,7 +4412,8 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     byPath.set(g.name, { path: g.name, name: parent ? g.name.slice(parent.length + 1) : g.name, group: g, parentPath: parent || undefined, children: [], hosts: [] })
   }
   for (const n of byPath.values()) { if (n.parentPath) byPath.get(n.parentPath)!.children.push(n); else roots.push(n) }
-  for (const h of hosts) {
+  const treeHosts = tagFilter.length ? hosts.filter((h) => (h.tags || []).some((t) => tagFilter.includes(t.name))) : hosts
+  for (const h of treeHosts) {
     const gs = h.groups && h.groups.length ? h.groups : ['Ungrouped']
     for (const gp of gs) {
       let n = byPath.get(gp)
@@ -4395,6 +4469,12 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     }
   }
   if (hidden.size > 0) pruneHidden(roots)
+  // With a tag filter on, a group with none of its hosts left drops out of the tree.
+  const pruneEmpty = (ns: GNode[]): boolean => {
+    for (let i = ns.length - 1; i >= 0; i--) { const keep = pruneEmpty(ns[i].children) || ns[i].hosts.length > 0; if (!keep) ns.splice(i, 1) }
+    return ns.length > 0
+  }
+  if (tagFilter.length) pruneEmpty(roots)
 
   // Persist a sibling set's new order (optimistic; revert + surface the error on failure). Admin/helpdesk
   // only - the button that calls this is gated on canPause.
@@ -4488,9 +4568,10 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
     const shade = hostShade(h)
     return (
       <div className="host" key={key}>
-        <div className="host-head" style={{ paddingLeft: indent(depth) }} onClick={() => { const next = hopen ? null : key; setOpenHost(next); onNavigate(next ? h.id : null, null) }}>
+        <div className={'host-head' + (selecting && sel.has(h.id) ? ' selected' : '')} style={{ paddingLeft: indent(depth) }} onClick={() => { const next = hopen ? null : key; setOpenHost(next); onNavigate(next ? h.id : null, null) }}>
           {guides(depth)}
           <div className="c-name">
+            {selecting && <input type="checkbox" className="tsel" checked={sel.has(h.id)} onClick={(e) => e.stopPropagation()} onChange={(e) => toggleSel([h.id], e.target.checked)} aria-label={`Select ${h.name}`} />}
             <svg className={'chev' + (hopen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
             <span className="dev-ico" title={h.class_id || undefined}>{hostGlyph(h.icon)}<span className={'dev-badge' + (needsEye(h) ? ' pulse' : '')} style={{ '--dot': dotColor(h.paused, h.hidden, shade) } as CSSProperties} /></span>
             <span className="hn lnk-host" onClick={(e) => { e.stopPropagation(); drillHost(path, h.id) }}>{h.name}</span>
@@ -4498,6 +4579,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
             {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
             {h.maintenance && <span className="kind maint" title={`${h.maintenance.name}: alerts wait until ${fmtWhen(h.maintenance.until)}`}>· maintenance</span>}
             {!h.paused && !h.hidden && h.problems > 0 && <span className={'probpill' + (shade === 'acked' ? ' acked' : h.state === 'warning' ? ' warn' : '')} title={`${h.problems} problem${h.problems === 1 ? '' : 's'}${shade === 'acked' ? ', acknowledged' : ''}`}>{h.problems}</span>}
+            <TagList tags={h.tags} />
           </div>
           <div className="c-graph">
             {h.icmp_item && icmpSparks[h.icmp_item] && icmpSparks[h.icmp_item].length > 1 && (
@@ -4539,6 +4621,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
         <div className="site-head" style={{ paddingLeft: indent(depth) }} onClick={() => toggleNode(node.path)}>
           {guides(depth)}
           <div className="c-name">
+            {selecting && sub.length > 0 && <input type="checkbox" className="tsel" checked={sub.every((x) => sel.has(x.id))} onClick={(e) => e.stopPropagation()} onChange={(e) => toggleSel(sub.map((x) => x.id), e.target.checked)} aria-label={`Select every host in ${node.path}`} />}
             <svg className={'chev' + (expanded ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
             <span className="fold-ico">{expanded ? kbIcon.folderOpen : kbIcon.folder}</span>
             <span className="name lnk-host" onClick={(e) => { e.stopPropagation(); drillGroup(node.path) }}>{node.name}</span>
@@ -4607,6 +4690,9 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
             {/* Desktop: the secondary controls inline. Phone: the same actions in a ⋯ menu (plus a visible
                 Done while reordering), so the toolbar stays one row on a narrow card. */}
             <span className="tools-desktop">
+              {focus.level !== 'host' && tagList.length > 0 && !reorder && <TagPicker tags={tagList} value={tagFilter} onChange={setTagFilter} allLabel="All tags" />}
+              {canPause && focus.level !== 'host' && !reorder && <button className={'btn' + (selecting ? ' on' : '')} onClick={() => (selecting ? endSelecting() : setSelecting(true))}>{selecting ? 'Done' : 'Select'}</button>}
+              {focus.level !== 'host' && !reorder && <button className="btn" onClick={() => exportHosts(treeHosts, proxies)}>Export CSV</button>}
               {advanced && canPause && focus.level !== 'host' && hidden.size > 0 && !reorder && <button className={'btn' + (showHidden ? ' on' : '')} onClick={() => setShowHidden((v) => !v)}>{showHidden ? 'Hide hidden' : `Show hidden (${hidden.size})`}</button>}
               {canPause && focus.level !== 'host' && <button className={'btn' + (reorder ? ' on' : '')} onClick={() => { setError(null); setCreating(false); setReorder((v) => !v) }}>{reorder ? 'Done' : 'Reorder'}</button>}
               {advanced && (
@@ -4617,9 +4703,11 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
               )}
             </span>
             {reorder && <button className="btn on tools-mobile" onClick={() => setReorder(false)}>Done</button>}
-            {(canPause || advanced) && focus.level !== 'host' && (
+            {focus.level !== 'host' && (
               <span className="tools-mobile">
                 <Kebab actions={[
+                  ...(canPause ? [{ label: selecting ? 'Done selecting' : 'Select hosts', onClick: () => (selecting ? endSelecting() : setSelecting(true)) }] : []),
+                  { label: 'Export CSV', onClick: () => exportHosts(treeHosts, proxies) },
                   ...(canPause ? [{ label: reorder ? 'Done reordering' : 'Reorder groups & hosts', onClick: () => { setError(null); setCreating(false); setReorder((v) => !v) } }] : []),
                   ...(advanced && canPause && hidden.size > 0 ? [{ label: showHidden ? 'Hide hidden groups' : `Show hidden groups (${hidden.size})`, onClick: () => setShowHidden((v) => !v) }] : []),
                   ...(advanced ? [{ label: showAll ? 'Show key sensors only' : 'Show all sensors', onClick: () => setShowAll((v) => !v) }] : []),
@@ -4662,7 +4750,98 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
         {focus.level === 'group' && (focusNode ? renderNode(focusNode, 0) : <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>This group no longer exists.</div>)}
         {(focus.level === 'host' || focus.level === 'sensor') && (focusHost ? renderHost(focusHost, focus.path, 0) : null)}
       </div>
+      {selecting && sel.size > 0 && (() => {
+        const picked = hosts.filter((h) => sel.has(h.id))
+        const oneClass = picked.length > 0 && picked.every((h) => h.class_id && h.class_id === picked[0].class_id)
+        return (
+          <BulkBar count={sel.size} noun={['host', 'hosts']} onClear={() => setSel(new Set())}>
+            <DurationButton up label="Acknowledge" disabled={bulkBusy} onPick={(sec) => runBulk('ack', { duration_seconds: sec ?? 0 }, 'Acknowledged the problems of')} />
+            {picked.some((h) => !h.paused) && <DurationButton up label="Pause" disabled={bulkBusy} onPick={(sec) => runBulk('pause', { duration_seconds: sec ?? 0 }, 'Paused')} />}
+            {picked.some((h) => h.paused) && <Button variant="ghost" className="compact" disabled={bulkBusy} onClick={() => runBulk('resume', {}, 'Resumed')}>Resume</Button>}
+            {picked.some((h) => !h.hidden) && <DurationButton up label="Hide" disabled={bulkBusy} onPick={(sec) => runBulk('hide', { duration_seconds: sec ?? 0 }, 'Hid')} />}
+            {picked.some((h) => h.hidden) && <Button variant="ghost" className="compact" disabled={bulkBusy} onClick={() => runBulk('show', {}, 'Showed again')}>Show</Button>}
+            <Button variant="ghost" className="compact" disabled={bulkBusy} onClick={() => { fetch('/api/me/notify/sites').then((r) => (r.ok ? r.json() : [])).then((x) => setMaintSites(x || [])).catch(() => {}); setBulk('maint') }}>Maintenance…</Button>
+            <Button variant="ghost" className="compact" disabled={bulkBusy} onClick={() => setBulk('groups')}>Move to group…</Button>
+            <Button variant="ghost" className="compact" disabled={bulkBusy} onClick={() => setBulk('probe')}>Probe…</Button>
+            <Button variant="ghost" className="compact" disabled={bulkBusy} onClick={() => setBulk('tags')}>Tags…</Button>
+            <Button variant="ghost" className="compact" disabled={bulkBusy || !oneClass} title={oneClass ? undefined : 'Thresholds are set on hosts of one class at a time'} onClick={() => setBulk('thresholds')}>Thresholds…</Button>
+          </BulkBar>
+        )
+      })()}
+      {bulk === 'groups' && <BulkGroupsDialog groups={groups} count={sel.size} busy={bulkBusy} reason={bulkReason} setReason={setBulkReason} onClose={() => setBulk(null)} onApply={(ids) => runBulk('groups', { group_ids: ids }, 'Moved')} />}
+      {bulk === 'probe' && <BulkProbeDialog proxies={proxies} count={sel.size} busy={bulkBusy} reason={bulkReason} setReason={setBulkReason} onClose={() => setBulk(null)} onApply={(by, pid) => runBulk('probe', { monitored_by: by, proxy_id: pid }, 'Moved')} />}
+      {bulk === 'tags' && <BulkTagsDialog tags={tagList} count={sel.size} busy={bulkBusy} reason={bulkReason} setReason={setBulkReason} onClose={() => setBulk(null)} onApply={(add, remove) => runBulk('tags', { add, remove }, 'Changed the tags of')} />}
+      {bulk === 'thresholds' && sel.size > 0 && <BulkThresholdsDialog hostId={[...sel][0]} count={sel.size} busy={bulkBusy} reason={bulkReason} setReason={setBulkReason} onClose={() => setBulk(null)} onApply={(macros) => runBulk('thresholds', { macros }, 'Changed thresholds on')} />}
+      {bulk === 'maint' && <MaintenanceDialog initial={null} sites={maintSites} hosts={hosts} presetHosts={[...sel]} onCancel={() => setBulk(null)} onSaved={() => { setBulk(null); toast.success('Maintenance window created'); load(); fireDataRefresh() }} />}
     </div>
+  )
+}
+
+// BulkGroupsDialog puts the selected hosts in the groups picked (replacing the ones they're in).
+function BulkGroupsDialog({ groups, count, busy, reason, setReason, onApply, onClose }: { groups: Group[]; count: number; busy: boolean; reason: string; setReason: (v: string) => void; onApply: (ids: string[]) => void; onClose: () => void }) {
+  const [pick, setPick] = useState<string[]>([])
+  const byName = new Map(groups.map((g) => [g.name, g.id]))
+  return (
+    <BulkDialog title={`Move ${count} host${count === 1 ? '' : 's'}`} note="They leave the groups they're in now and go into the ones picked here." busy={busy} applyLabel="Move" canApply={pick.length > 0} reason={reason} setReason={setReason} onClose={onClose} onApply={() => onApply(pick.map((n) => byName.get(n)!).filter(Boolean))}>
+      <div className="chan-field"><span className="flabel">Groups</span><SitePicker options={groups.map((g) => g.name).sort()} value={pick} onChange={setPick} noAll placeholder="Pick groups" noun="groups" /></div>
+    </BulkDialog>
+  )
+}
+
+// BulkProbeDialog moves the selected hosts to the core server or a probe.
+function BulkProbeDialog({ proxies, count, busy, reason, setReason, onApply, onClose }: { proxies: Proxy[]; count: number; busy: boolean; reason: string; setReason: (v: string) => void; onApply: (monitoredBy: number, proxyId: string) => void; onClose: () => void }) {
+  const [by, setBy] = useState(proxies.length ? 1 : 0)
+  const [pid, setPid] = useState(proxies[0]?.id || '')
+  return (
+    <BulkDialog title={`Monitor ${count} host${count === 1 ? '' : 's'} from…`} busy={busy} applyLabel="Move" canApply={by === 0 || !!pid} reason={reason} setReason={setReason} onClose={onClose} onApply={() => onApply(by, by ? pid : '')}>
+      <div className="hs-mon">
+        <span className="hs-monlabel">Monitored by</span>
+        <div className="seg"><button className={by === 0 ? 'on' : ''} onClick={() => setBy(0)}>Server</button><button className={by === 1 ? 'on' : ''} onClick={() => setBy(1)} disabled={!proxies.length}>Probe</button></div>
+        {by === 1 && <Select value={pid} onChange={(e) => setPid(e.target.value)}>{proxies.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>}
+      </div>
+    </BulkDialog>
+  )
+}
+
+// BulkTagsDialog adds tags to the selected hosts and takes others off.
+function BulkTagsDialog({ tags, count, busy, reason, setReason, onApply, onClose }: { tags: TagInfo[]; count: number; busy: boolean; reason: string; setReason: (v: string) => void; onApply: (add: string[], remove: string[]) => void; onClose: () => void }) {
+  const [add, setAdd] = useState<string[]>([])
+  const [remove, setRemove] = useState<string[]>([])
+  return (
+    <BulkDialog title={`Tags of ${count} host${count === 1 ? '' : 's'}`} note={tags.length ? 'Tags a host gets from its probe stay: change those on the Probes page.' : 'No tags yet: make them in Settings, Tags.'} busy={busy} applyLabel="Apply" canApply={add.length + remove.length > 0} reason={reason} setReason={setReason} onClose={onClose} onApply={() => onApply(add, remove)}>
+      <div className="chan-row">
+        <div className="chan-field chan-wide"><span className="flabel">Add</span><TagPicker tags={tags.filter((t) => !remove.includes(t.name))} value={add} onChange={setAdd} noAll placeholder="None" /></div>
+        <div className="chan-field chan-wide"><span className="flabel">Remove</span><TagPicker tags={tags.filter((t) => !add.includes(t.name))} value={remove} onChange={setRemove} noAll placeholder="None" /></div>
+      </div>
+    </BulkDialog>
+  )
+}
+
+// BulkThresholdsDialog sets per-host thresholds on hosts of one class: a filled field sets it on each,
+// "Use the default" takes their own value off, the rest stay as they are.
+function BulkThresholdsDialog({ hostId, count, busy, reason, setReason, onApply, onClose }: { hostId: string; count: number; busy: boolean; reason: string; setReason: (v: string) => void; onApply: (macros: Record<string, string>) => void; onClose: () => void }) {
+  const [fields, setFields] = useState<ThresholdField[] | null>(null)
+  const [vals, setVals] = useState<Record<string, string>>({})
+  useEffect(() => { fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : null)).then((c: HostCfg | null) => setFields(c?.thresholds || [])).catch(() => setFields([])) }, [hostId])
+  const set = Object.keys(vals).length
+  return (
+    <BulkDialog title={`Thresholds of ${count} host${count === 1 ? '' : 's'}`} note="Fill only what should change; empty fields stay as each host has them." busy={busy} applyLabel="Apply" canApply={set > 0} reason={reason} setReason={setReason} onClose={onClose} onApply={() => onApply(vals)}>
+      {fields === null ? <span className="muted">Loading…</span> : fields.length === 0 ? <span className="muted">This class has no thresholds to set.</span> : (
+        <div className="thr-rows">
+          {fields.map((f) => (
+            <div className="thr-row" key={f.macro}>
+              <span className="thr-row-label">{f.label}{f.unit ? ` (${f.unit})` : ''}</span>
+              <div className="thr-row-input">
+                <input className="input" inputMode="decimal" placeholder={vals[f.macro] === '' ? `default ${f.default}${f.unit || ''}` : 'unchanged'} value={vals[f.macro] ?? ''}
+                  onChange={(e) => { const v = e.target.value; setVals((cur) => { const n = { ...cur }; if (v.trim() === '') delete n[f.macro]; else n[f.macro] = v; return n }) }} />
+                <button type="button" className={'btn ghost thr-reset' + (vals[f.macro] === '' ? ' on' : '')} onClick={() => setVals((cur) => { const n = { ...cur }; if (n[f.macro] === '') delete n[f.macro]; else n[f.macro] = ''; return n })}>{vals[f.macro] === '' ? 'Back to unchanged' : 'Use the default'}</button>
+              </div>
+              <span className="thr-row-def">{vals[f.macro] === '' ? `Each host goes back to the default of ${f.default}${f.unit || ''}` : `Default ${f.default}${f.unit || ''}`}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </BulkDialog>
   )
 }
 
@@ -5991,12 +6170,12 @@ function MaintenanceView({ canEdit }: { canEdit: boolean }) {
 }
 
 // MaintenanceDialog adds or edits one window.
-function MaintenanceDialog({ initial, sites, hosts, onCancel, onSaved }: { initial: MaintWindow | null; sites: string[]; hosts: Host[]; onCancel: () => void; onSaved: () => void }) {
+function MaintenanceDialog({ initial, sites, hosts, onCancel, onSaved, presetHosts }: { initial: MaintWindow | null; sites: string[]; hosts: Host[]; onCancel: () => void; onSaved: () => void; presetHosts?: string[] }) {
   const toast = useToast()
   const [name, setName] = useState(initial?.name || '')
   const [selSites, setSelSites] = useState<string[]>(initial?.sites || [])
-  const [selHosts, setSelHosts] = useState<string[]>(initial?.host_ids || [])
-  const [kind, setKind] = useState<MaintWindow['kind']>(initial?.kind || 'weekly')
+  const [selHosts, setSelHosts] = useState<string[]>(initial?.host_ids || presetHosts || [])
+  const [kind, setKind] = useState<MaintWindow['kind']>(initial?.kind || (presetHosts ? 'once' : 'weekly'))
   const [time, setTime] = useState(fmtHM24(initial?.minute ?? 120))
   const [weekdays, setWeekdays] = useState(initial?.weekdays || (1 << 0))
   const [monthDay, setMonthDay] = useState(initial?.month_day || 1)
@@ -6646,9 +6825,12 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
   const sec = (id: string) => ({ open: openSecs.has(id), onToggle: () => setOpenSecs((s) => { const n = new Set(s); if (!n.delete(id)) n.add(id); return n }) })
   const [masterChoice, setMasterChoice] = useState('default') // 'default' | 'none' | a sensor id
   const [reason, setReason] = useState('') // why, for the change log (optional)
+  const [allTags] = useTags()
+  const [ownTags, setOwnTags] = useState<string[]>([])
   function loadCfg() {
     fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : Promise.reject())).then((d: HostCfg) => {
       setCfg(d); setCustomOrder(!!(d.category_order && d.category_order.length))
+      setOwnTags((d.tags || []).filter((t) => !t.from).map((t) => t.name))
       setMasterChoice(!d.master || !d.master.custom ? 'default' : d.master.item_id || 'none')
     }).catch(() => setErr('Could not load host settings'))
   }
@@ -6691,7 +6873,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
     // Per-host sensor order: send the current list when "custom" is on, else [] to clear the override.
     const category_order = cfg.categories && cfg.categories.length > 0 ? (customOrder ? cfg.categories : []) : undefined
     const addons = cfg.addons ? Object.fromEntries(cfg.addons.map((a) => [a.id, { enabled: a.enabled, macros: Object.fromEntries((a.macros || []).map((m) => [m.macro, m.value])) }])) : undefined
-    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order, addons, master: cfg.master ? masterChoice : undefined }) }).catch(() => null)
+    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order, addons, master: cfg.master ? masterChoice : undefined, tags: ownTags }) }).catch(() => null)
     setBusy(false)
     // The error also pops up: the dialog is long, and its line by the Save button may be scrolled away.
     if (!res || !res.ok) { const m = await errText(res, 'Could not save host settings'); setErr(m); toast.error(m); return }
@@ -6726,6 +6908,10 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
       </div>
 
       {isAdmin && cfg.class_id && <ClassChanger hostId={hostId} currentClassId={cfg.class_id} currentClassLabel={cfg.class_label} onChanged={loadCfg} />}
+      <div className="hs-mon hs-tags">
+        <span className="hs-monlabel">Tags</span>
+        <TagsEditor all={allTags} value={ownTags} onChange={setOwnTags} inherited={cfg.tags} disabled={!canEdit} />
+      </div>
 
       <HsSection title="Interfaces" {...sec('ifaces')} summary={cfg.interfaces.length === 0 ? 'none'
         : cfg.interfaces.map((i) => `${IFTYPE[i.type] || 'Type ' + i.type} ${((i.useip === 1 ? i.ip : i.dns) || '(no address)') + (i.port ? ':' + i.port : '')}`).join(', ')}>
@@ -7230,6 +7416,186 @@ function useIncidents(url: string): [Incident[] | null, string, number] {
 function HiddenToggle({ n, shown, onToggle, lead = true }: { n: number; shown: boolean; onToggle: () => void; lead?: boolean }) {
   if (n === 0) return null
   return <>{lead ? ' · ' : null}<button type="button" className="linkbtn hidden-toggle" onClick={(e) => { e.stopPropagation(); onToggle() }}>{shown ? 'leave out' : 'show'} {n} from hidden sensors</button></>
+}
+
+// --- Tags ---
+
+type HostTag = { name: string; color: string; from?: string }
+type TagInfo = { name: string; color: string; description?: string; hosts: number; probes: number }
+const TAG_COLORS = ['#e5484d', '#f5a524', '#30a46c', '#3b82f6', '#8e4ec6', '#12a594', '#d6409f', '#8b8d98']
+
+// TagChip is one tag in its colour; one that comes from the host's probe is dashed and says so.
+function TagChip({ tag, onRemove }: { tag: HostTag; onRemove?: () => void }) {
+  return (
+    <span className={'tagchip' + (tag.from ? ' inh' : '')} style={{ '--tc': tag.color || '#8b8d98' } as CSSProperties} title={tag.from ? `From its probe, ${tag.from}: change it on the Probes page` : undefined}>
+      {tag.name}
+      {tag.from && <span className="tag-from">from {tag.from}</span>}
+      {onRemove && <button type="button" className="tag-x" aria-label={`Remove ${tag.name}`} onClick={(e) => { e.stopPropagation(); onRemove() }}>×</button>}
+    </span>
+  )
+}
+
+function TagList({ tags }: { tags?: HostTag[] }) {
+  if (!tags || !tags.length) return null
+  return <span className="taglist">{tags.map((t) => <TagChip key={t.name + '|' + (t.from || '')} tag={t} />)}</span>
+}
+
+// useTags loads the tags (name, colour, how many hosts and probes carry them).
+function useTags(): [TagInfo[], () => void] {
+  const [tags, setTags] = useState<TagInfo[]>([])
+  const load = () => { fetch('/api/tags').then((r) => (r.ok ? r.json() : [])).then((t) => setTags(t || [])).catch(() => {}) }
+  useEffect(load, [])
+  return [tags, load]
+}
+
+// TagPicker is a multi-select of tags by name.
+function TagPicker({ tags, value, onChange, allLabel = 'Any tag', noAll, placeholder }: { tags: TagInfo[]; value: string[]; onChange: (v: string[]) => void; allLabel?: string; noAll?: boolean; placeholder?: string }) {
+  return <SitePicker options={tags.map((t) => t.name)} labelOf={(n) => n} value={value} onChange={onChange} allLabel={allLabel} noAll={noAll} placeholder={placeholder} noun="tags" />
+}
+
+// TagsEditor is a host's or probe's own tags: chips that come off with ×, and a picker to add more.
+function TagsEditor({ all, value, onChange, inherited, disabled }: { all: TagInfo[]; value: string[]; onChange: (v: string[]) => void; inherited?: HostTag[]; disabled?: boolean }) {
+  const color = (n: string) => all.find((t) => t.name === n)?.color || '#8b8d98'
+  const left = all.filter((t) => !value.includes(t.name))
+  return (
+    <span className="tags-edit">
+      {value.map((n) => <TagChip key={n} tag={{ name: n, color: color(n) }} onRemove={disabled ? undefined : () => onChange(value.filter((x) => x !== n))} />)}
+      {(inherited || []).filter((t) => t.from && !value.includes(t.name)).map((t) => <TagChip key={'i:' + t.name} tag={t} />)}
+      {!disabled && left.length > 0 && <SitePicker options={left.map((t) => t.name)} labelOf={(n) => n} value={[]} onChange={(v) => onChange([...value, ...v.filter((x) => !value.includes(x))])} noAll placeholder="+ Add tag" noun="tags" />}
+      {!disabled && all.length === 0 && <span className="set-hint">No tags yet: make them in Settings, Tags.</span>}
+    </span>
+  )
+}
+
+// TagsCard is the Settings section where tags are made, recoloured, renamed and deleted.
+function TagsCard() {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [tags, reload] = useTags()
+  const [editing, setEditing] = useState<string | null>(null) // a tag's name, or '' for a new one
+  const [form, setForm] = useState({ name: '', color: TAG_COLORS[0], description: '' })
+  const [busy, setBusy] = useState(false)
+  function start(t: TagInfo | null) {
+    setEditing(t ? t.name : '')
+    setForm(t ? { name: t.name, color: t.color, description: t.description || '' } : { name: '', color: TAG_COLORS[tags.length % TAG_COLORS.length], description: '' })
+  }
+  async function save() {
+    setBusy(true)
+    const isNew = editing === ''
+    const res = await fetch(isNew ? '/api/tags' : `/api/tags/${encodeURIComponent(editing!)}`, { method: isNew ? 'POST' : 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the tag')); return }
+    setEditing(null); reload(); fireDataRefresh()
+  }
+  async function del(t: TagInfo) {
+    const on = [t.hosts ? `${t.hosts} host${t.hosts === 1 ? '' : 's'}` : '', t.probes ? `${t.probes} probe${t.probes === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ')
+    if (!(await confirm({ title: 'Delete tag', message: `Delete “${t.name}”?${on ? ` It comes off ${on}, and channels limited to it stop using it.` : ''}`, confirmLabel: 'Delete', danger: true }))) return
+    const res = await fetch(`/api/tags/${encodeURIComponent(t.name)}`, { method: 'DELETE' }).catch(() => null)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not delete the tag')); return }
+    reload(); fireDataRefresh()
+  }
+  const editor = (
+    <div className="tag-form">
+      <input className="input" placeholder="Name, e.g. critical" maxLength={32} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} aria-label="Tag name" />
+      <span className="tag-swatches" role="radiogroup" aria-label="Colour">
+        {TAG_COLORS.map((c) => <button key={c} type="button" role="radio" aria-checked={form.color === c} className={'swatch' + (form.color === c ? ' on' : '')} style={{ background: c }} onClick={() => setForm({ ...form, color: c })} aria-label={c} />)}
+      </span>
+      <input className="input tag-desc" placeholder="What it means (optional)" maxLength={120} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} aria-label="Description" />
+      <span className="tag-form-act">
+        <Button variant="ghost" onClick={() => setEditing(null)} disabled={busy}>Cancel</Button>
+        <Button variant="primary" onClick={save} disabled={busy || !form.name.trim()}>{busy ? 'Saving…' : 'Save'}</Button>
+      </span>
+    </div>
+  )
+  return (
+    <section className="set-card">
+      <h3>Tags</h3>
+      <p className="set-note">Labels that cut across sites. Filter the tree by them, and limit a channel to the hosts with a tag. Put them on a host in its settings, on many from the tree's selection, or on a probe (Probes) to give them to every host it monitors.</p>
+      <div className="tag-rows">
+        {tags.map((t) => editing === t.name ? <div key={t.name} className="tag-row editing">{editor}</div> : (
+          <div key={t.name} className="tag-row">
+            <span className="tag-row-chip"><TagChip tag={{ name: t.name, color: t.color }} /></span>
+            <span className="tag-row-desc">{t.description || <span className="muted">no description</span>}<span className="sub-line"> · {t.hosts} host{t.hosts === 1 ? '' : 's'}{t.probes ? ` (${t.probes} probe${t.probes === 1 ? '' : 's'})` : ''}</span></span>
+            <span className="tag-row-act"><Button variant="ghost" className="compact" onClick={() => start(t)}>Edit</Button><Kebab actions={[{ label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => del(t) }]} /></span>
+          </div>
+        ))}
+        {tags.length === 0 && editing !== '' && <p className="set-hint" style={{ margin: '4px 0 8px' }}>No tags yet.</p>}
+        {editing === '' && <div className="tag-row editing">{editor}</div>}
+      </div>
+      {editing === null && <div className="set-row set-actions"><Button variant="primary" onClick={() => start(null)}>+ New tag</Button></div>}
+    </section>
+  )
+}
+
+// --- Bulk actions ---
+
+type BulkResult = { done: number; failed: { id: string; name?: string; error: string }[] }
+
+// BulkBar is the action bar of a list's selection, pinned to the bottom while something is picked.
+function BulkBar({ count, noun, onClear, children }: { count: number; noun: [string, string]; onClear: () => void; children: ReactNode }) {
+  return (
+    <div className="bulkbar" role="toolbar" aria-label="Actions on the selection">
+      <b>{count} {count === 1 ? noun[0] : noun[1]} selected</b>
+      {children}
+      <button type="button" className="linkbtn bulk-clear" onClick={onClear}>Clear</button>
+    </div>
+  )
+}
+
+// BulkDialog is the dialog of a bulk action that needs a choice (groups, a probe, tags, thresholds).
+function BulkDialog({ title, note, busy, applyLabel, canApply = true, reason, setReason, onApply, onClose, children }: { title: string; note?: ReactNode; busy: boolean; applyLabel: string; canApply?: boolean; reason: string; setReason: (v: string) => void; onApply: () => void; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return createPortal(
+    <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 'min(620px, 94vw)', maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
+        <div className="dlg-title">{title}</div>
+        <div className="dlg-scroll"><div className="host-settings in-dlg">
+          {note && <div className="hs-note">{note}</div>}
+          {children}
+          <div className="hs-foot">
+            <ReasonInput value={reason} onChange={setReason} />
+            <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+            <Button variant="primary" onClick={onApply} disabled={busy || !canApply}>{busy ? 'Working…' : applyLabel}</Button>
+          </div>
+        </div></div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+// postBulk runs a bulk action and reads its answer: how many it did and which it couldn't, with why.
+async function postBulk(url: string, body: object, reason: string): Promise<BulkResult | string> {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) }, body: JSON.stringify(body) }).catch(() => null)
+  if (!res || !res.ok) return errText(res, 'The action failed')
+  return res.json().catch(() => 'The action failed')
+}
+
+// bulkToast reports a bulk action: "Paused 3 hosts", and the ones that failed with their reason.
+function bulkToast(toast: ReturnType<typeof useToast>, r: BulkResult | string, what: string, noun: [string, string]) {
+  if (typeof r === 'string') { toast.error(r); return }
+  const n = (k: number) => `${k} ${k === 1 ? noun[0] : noun[1]}`
+  if (r.failed.length === 0) { toast.success(`${what} ${n(r.done)}`); return }
+  const first = r.failed[0]
+  const more = r.failed.length > 1 ? ` (and ${r.failed.length - 1} more)` : ''
+  const msg = `${r.done ? `${what} ${n(r.done)}; ` : ''}${n(r.failed.length)} failed: ${first.name || first.id}: ${first.error}${more}`
+  if (r.done) toast.success(msg); else toast.error(msg)
+}
+
+function exportHosts(hosts: Host[], proxies: Proxy[]) {
+  const probe = (id?: string) => (!id || id === '0' ? 'Server' : proxies.find((p) => p.id === id)?.name || id)
+  downloadCSV(`argus-hosts-${csvStamp()}.csv`, ['Host', 'Groups', 'Probe', 'Class', 'State', 'Problems', 'Paused', 'Hidden', 'In maintenance', 'Tags', 'Ping (ms)'],
+    hosts.map((h) => [h.name, (h.groups || []).join('; '), probe(h.proxy_id), h.class_id || '', h.state, h.problems, h.paused ? 'yes' : '', h.hidden ? 'yes' : '', h.maintenance ? h.maintenance.name : '',
+      (h.tags || []).map((t) => t.name).join('; '), typeof h.icmp_ms === 'number' ? Math.round(h.icmp_ms * 100) / 100 : '']))
+}
+
+function exportSensors(rows: SensorRow[], title: string) {
+  downloadCSV(`argus-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${csvStamp()}.csv`, ['Host', 'Sensor', 'State', 'Severity', 'Reason', 'Value', 'Units', 'Since', 'Last check', 'Note'],
+    rows.map((s) => [s.host_name, s.label || s.name, s.state, s.severity ? sevInfo(s.severity).label : '', s.reason || '', s.value, s.units, s.since ? csvTime(s.since) : '', s.last_clock ? csvTime(s.last_clock) : '', s.note ? s.note.text : '']))
 }
 
 // --- Probe and group filters, CSV export (shared by the long lists) ---
@@ -7973,6 +8339,11 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
 function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, onBack }: { filter: string; sensors: SensorRow[]; loading?: boolean; canPause: boolean; goHost: (h: string) => void; goSensor: (h: string, i: string, name?: string) => void; onBack: () => void }) {
   const [busy, setBusy] = useState<string | null>(null)
   const notes = useNoteEditor()
+  const toast = useToast()
+  const prompt = usePrompt()
+  // The selection for bulk actions (sensor keys), kept to the rows still listed.
+  const [sel, setSel] = useState<Set<string>>(() => new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
   const [whyOpen, toggleWhy] = useWhyOpen()
   // The "attention" filter is the home Overview: every sensor that isn't OK (a PRTG-style unified list),
   // with a mode toggle. A concrete state (error/warning/…) is a top-bar status-chip drill-down.
@@ -8004,6 +8375,22 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
     <button className="linkbtn held-toggle" onClick={() => setShowHeld(!showHeld)}>{showHeld ? 'Hide' : 'Show'} {held.length} held</button>
   )
   const sparks = useSparks(rows.filter((s) => s.numeric && s.supported).map((s) => s.item_id))
+  const listed = new Set(rows.map((s) => s.item_id))
+  const picked = rows.filter((s) => sel.has(s.item_id))
+  function toggleSel(keys: string[], on: boolean) { setSel((cur) => { const n = new Set(cur); for (const k of keys) { if (on) n.add(k); else n.delete(k) } return n }) }
+  async function runBulk(action: string, extra: object, what: string) {
+    setBulkBusy(true)
+    const keys = [...sel].filter((k) => listed.has(k))
+    const r = await postBulk('/api/bulk/sensors', { action, keys, ...extra }, '')
+    setBulkBusy(false)
+    bulkToast(toast, r, what, ['sensor', 'sensors'])
+    if (typeof r !== 'string') { const failed = new Set(r.failed.map((f) => f.id)); setSel(new Set(keys.filter((k) => failed.has(k)))) }
+    fireDataRefresh()
+  }
+  async function bulkNote() {
+    const text = await prompt({ title: `Note on ${picked.length} sensor${picked.length === 1 ? '' : 's'}`, message: 'Shown with each sensor and sent with its alerts until it is OK again.', placeholder: 'e.g. ISP ticket 4471 open, technician on site at 14:00', confirmLabel: 'Add note' })
+    if (text && text.trim()) runBulk('note', { note: text.trim() }, 'Left a note on')
+  }
 
   async function itemAction(s: SensorRow, action: 'pause' | 'hide', seconds: number | null) {
     setBusy(s.item_id)
@@ -8051,6 +8438,7 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
                 <button className={attMode === 'both' ? 'on' : ''} onClick={() => setAttMode('both')}>Errors + Warnings</button>
               </div>
             : <button className="btn ghost" onClick={onBack}>← Back to overview</button>}
+          <button className="btn" disabled={!rows.length} onClick={() => exportSensors(rows, attention ? 'Active problems' : `${STATE_LABEL[filter]} sensors`)}>Export CSV</button>
         </div>
       </div>
       {loading
@@ -8063,15 +8451,15 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
           : <EmptyState icon={STATE_ICON[filter]} title={`No ${STATE_LABEL[filter].toLowerCase()} sensors`} text="Nothing on any site is in this state at the moment." />)
         : (
           <table className="slist slist-sensors">
-            <thead><tr><th>Host</th><th className="slgrow">Sensor</th><th>Value</th><th>Trend</th><th className="slprio">Priority</th><th>{durCol}</th><th /></tr></thead>
+            <thead><tr><th><span className="sel-cell"><input type="checkbox" className="tsel" checked={rows.length > 0 && rows.every((s) => sel.has(s.item_id))} onChange={(e) => toggleSel(rows.map((s) => s.item_id), e.target.checked)} aria-label="Select every sensor listed" />Host</span></th><th className="slgrow">Sensor</th><th>Value</th><th>Trend</th><th className="slprio">Priority</th><th>{durCol}</th><th /></tr></thead>
             <tbody>
               {rows.map((s) => {
                 const clickable = s.numeric && s.supported
                 const holds = (heldUnder[s.item_id] || []).length
                 const h = s.held_by
                 return (
-                  <tr key={s.item_id} className={h ? 'held-row' : undefined} style={{ opacity: s.state === 'acked' ? 0.72 : 1 }}>
-                    <td className="slhost" style={{ borderLeftColor: STATE_VAR[s.state] || 'var(--border)' }}><span className="lnk-host" onClick={() => goHost(s.host_id)}>{s.host_name}</span></td>
+                  <tr key={s.item_id} className={(h ? 'held-row' : '') + (sel.has(s.item_id) ? ' selected' : '') || undefined} style={{ opacity: s.state === 'acked' ? 0.72 : 1 }}>
+                    <td className="slhost" style={{ borderLeftColor: STATE_VAR[s.state] || 'var(--border)' }}><span className="sel-cell"><input type="checkbox" className="tsel" checked={sel.has(s.item_id)} onChange={(e) => toggleSel([s.item_id], e.target.checked)} aria-label={`Select ${s.label || s.name} on ${s.host_name}`} /><span className="lnk-host" onClick={() => goHost(s.host_id)}>{s.host_name}</span></span></td>
                     <td className="slgrow">
                       <span className="sl-name">{clickable ? <span className="lnk-sensor" onClick={() => goSensor(s.host_id, s.item_id, s.label || s.name)}>{s.label || s.name}</span> : (s.label || s.name)}</span>
                       {s.reason && <div className="sreason"><span style={{ color: sevInfo(s.severity).color, fontWeight: 600 }}>{sevInfo(s.severity).label}</span> · {s.reason}{s.since ? <span title={`Firing since ${new Date(s.since * 1000).toLocaleString()}`}> · {relTime(s.since)}</span> : null}</div>}
@@ -8092,6 +8480,14 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
             </tbody>
           </table>
         )}
+      {picked.length > 0 && (
+        <BulkBar count={picked.length} noun={['sensor', 'sensors']} onClear={() => setSel(new Set())}>
+          {picked.some((s) => s.event_ids.length && (s.state === 'error' || s.state === 'warning')) && <DurationButton up label="Acknowledge" disabled={bulkBusy} onPick={(sec) => runBulk('ack', { duration_seconds: sec ?? 0 }, 'Acknowledged')} />}
+          {canPause && picked.some((s) => s.event_ids.length) && <Button variant="ghost" className="compact" disabled={bulkBusy} onClick={bulkNote}>Add note…</Button>}
+          {canPause && picked.some((s) => !s.synthetic) && <DurationButton up label="Pause" disabled={bulkBusy} onPick={(sec) => runBulk('pause', { duration_seconds: sec ?? 0 }, 'Paused')} />}
+          {canPause && picked.some((s) => !s.synthetic) && <DurationButton up label="Hide" disabled={bulkBusy} onPick={(sec) => runBulk('hide', { duration_seconds: sec ?? 0 }, 'Hid')} />}
+        </BulkBar>
+      )}
     </div>
   )
 }

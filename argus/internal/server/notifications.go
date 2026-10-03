@@ -21,6 +21,7 @@ type channelView struct {
 	Name        string            `json:"name"`
 	Enabled     bool              `json:"enabled"`
 	Sites       []string          `json:"sites"`
+	Tags        []string          `json:"tags"` // only hosts with one of these tags; empty = every host
 	MinSeverity int               `json:"min_severity"`
 	DelayMin    int               `json:"delay_min"`
 	RepeatMin   int               `json:"repeat_min"`
@@ -76,7 +77,7 @@ func keepChannelSecrets(submitted, stored map[string]string) map[string]string {
 func toChannelView(c store.NotifyChannel) channelView {
 	cfg := maskChannelConfig(c.Config)
 	return channelView{
-		ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Sites: c.Sites, MinSeverity: c.MinSeverity,
+		ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Sites: c.Sites, Tags: nonNilStrings(c.Tags), MinSeverity: c.MinSeverity,
 		DelayMin: c.DelayMin, RepeatMin: c.RepeatMin, RepeatSev: c.RepeatSev, Alerts: c.Alerts, Notices: c.Notices, Config: cfg,
 		LastSentAt: c.LastSentAt, LastError: c.LastError, LastErrorAt: c.LastErrorAt, SentCount: c.SentCount,
 	}
@@ -113,6 +114,7 @@ type channelRequest struct {
 	Name        string            `json:"name"`
 	Enabled     bool              `json:"enabled"`
 	Sites       []string          `json:"sites"`
+	Tags        []string          `json:"tags"`
 	MinSeverity int               `json:"min_severity"`
 	DelayMin    int               `json:"delay_min"`
 	RepeatMin   int               `json:"repeat_min"`
@@ -207,7 +209,7 @@ func (req channelRequest) validate() (store.NotifyChannel, string) {
 		return store.NotifyChannel{}, msg
 	}
 	return store.NotifyChannel{
-		Type: t, Name: name, Enabled: req.Enabled, Sites: cleanSites(req.Sites), MinSeverity: sev,
+		Type: t, Name: name, Enabled: req.Enabled, Sites: cleanSites(req.Sites), Tags: cleanSites(req.Tags), MinSeverity: sev,
 		DelayMin: delay, RepeatMin: repeat, RepeatSev: alertLevel(req.RepeatSev), Alerts: alerts, Notices: notices, Config: cfg,
 	}, ""
 }

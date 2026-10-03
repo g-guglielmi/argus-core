@@ -106,6 +106,7 @@ type hostConfigView struct {
 	Categories    []string             `json:"categories,omitempty"`     // the host's curated sensor categories, in effective order (§D)
 	CategoryOrder []string             `json:"category_order,omitempty"` // stored per-host order override (empty = inheriting)
 	Master        *masterView          `json:"master,omitempty"`         // the host's master sensor (notifier dependency)
+	Tags          []hostTag            `json:"tags"`                     // its own tags, then its probe's (tags.go)
 }
 
 // masterView is a host's master sensor for the settings editor: the one in effect ("" = none), the
@@ -303,6 +304,10 @@ func (s *Server) hostConfigFor(ctx context.Context, hostID string, canEdit bool)
 
 	// Per-host sensor-category order (§D): the host's curated categories in effective order, plus any
 	// stored per-host override (empty = inheriting the class/built-in order). Best-effort.
+	out.Tags = []hostTag{}
+	if ti, err := s.hostTagIndex(ctx); err == nil && ti[hd.HostID] != nil {
+		out.Tags = ti[hd.HostID]
+	}
 	out.CategoryOrder, _ = s.st.CategoryOrder(ctx, "host:"+hd.HostID)
 	if items, err := s.zbx.Items(ctx, hd.HostID); err == nil {
 		out.Categories = s.hostCategoriesInOrder(ctx, hd.HostID, items)
@@ -322,6 +327,7 @@ type hostConfigUpdate struct {
 	CategoryOrder *[]string               `json:"category_order"` // §D per-host order; nil = leave as-is, [] = clear override
 	AddOns        map[string]addOnDesired `json:"addons"`         // add-on id -> desired {enabled, macros}; nil = leave as-is
 	Master        *string                 `json:"master"`         // "default", "none" or a sensor id; nil = leave as-is
+	Tags          *[]string               `json:"tags"`           // the host's own tags; nil = leave as-is
 }
 
 // handleUpdateHostConfig reconciles a host's whole desired identity + interface set (admin/helpdesk).
@@ -528,6 +534,18 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": s.errText(r, err)})
 			return
 		}
+	}
+	if req.Tags != nil {
+		tags, msg := s.knownTags(ctx, *req.Tags)
+		if msg != "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+			return
+		}
+		if err := s.st.SetHostTags(ctx, cur.HostID, tags); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save the tags"})
+			return
+		}
+		*req.Tags = tags
 	}
 	if beforeErr == nil {
 		diff := hostConfigDiff(before, req, s.proxyNames(ctx))

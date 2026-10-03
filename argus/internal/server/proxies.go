@@ -16,23 +16,24 @@ import (
 )
 
 type proxyView struct {
-	ID             string `json:"id"` // Zabbix proxyid, for "Monitored by" assignment
-	Name           string `json:"name"`
-	LastAccess     int64  `json:"last_access"`     // unix seconds Zabbix last heard data, 0 if never seen
-	Online         bool   `json:"online"`          // heard from within the last 2 minutes (before the 3-minute "not reporting" warning)
-	Mode           string `json:"mode"`            // active | passive
-	EnrolledAt     int64  `json:"enrolled_at"`     // unix seconds a probe self-enrolled via Argus; 0 if manual
-	Version        string `json:"version"`         // running probe image version reported at check-in ("" = unknown)
-	Target         string `json:"target"`          // fleet target version this probe should converge on
-	Latest         string `json:"latest"`          // newest version resolved from GHCR ("" if unknown)
-	SelfUpdate     bool   `json:"selfupdate"`      // an argus-updater sidecar is managing this probe
-	Scans          bool   `json:"scans"`           // the probe advertises the network-scan capability (§B discovery)
-	Sweeps         bool   `json:"sweeps"`          // ... and the UniFi-sweep capability
-	UpdateStatus   string `json:"update_status"`   // unknown | tracking | current | outdated | external
-	LastCheckin    int64  `json:"last_checkin"`    // unix seconds of the last Argus check-in (0 = never)
-	UpdaterVersion string `json:"updater_version"` // version of the managing argus-updater sidecar ("" = none)
-	UpdaterLatest  string `json:"updater_latest"`  // newest argus-updater version resolved from GHCR ("" if unknown)
-	UpdaterStatus  string `json:"updater_status"`  // unknown | current | outdated (updater drift; "" when no sidecar)
+	Tags           []string `json:"tags"` // the probe's tags: every host it monitors carries them (tags.go)
+	ID             string   `json:"id"`   // Zabbix proxyid, for "Monitored by" assignment
+	Name           string   `json:"name"`
+	LastAccess     int64    `json:"last_access"`     // unix seconds Zabbix last heard data, 0 if never seen
+	Online         bool     `json:"online"`          // heard from within the last 2 minutes (before the 3-minute "not reporting" warning)
+	Mode           string   `json:"mode"`            // active | passive
+	EnrolledAt     int64    `json:"enrolled_at"`     // unix seconds a probe self-enrolled via Argus; 0 if manual
+	Version        string   `json:"version"`         // running probe image version reported at check-in ("" = unknown)
+	Target         string   `json:"target"`          // fleet target version this probe should converge on
+	Latest         string   `json:"latest"`          // newest version resolved from GHCR ("" if unknown)
+	SelfUpdate     bool     `json:"selfupdate"`      // an argus-updater sidecar is managing this probe
+	Scans          bool     `json:"scans"`           // the probe advertises the network-scan capability (§B discovery)
+	Sweeps         bool     `json:"sweeps"`          // ... and the UniFi-sweep capability
+	UpdateStatus   string   `json:"update_status"`   // unknown | tracking | current | outdated | external
+	LastCheckin    int64    `json:"last_checkin"`    // unix seconds of the last Argus check-in (0 = never)
+	UpdaterVersion string   `json:"updater_version"` // version of the managing argus-updater sidecar ("" = none)
+	UpdaterLatest  string   `json:"updater_latest"`  // newest argus-updater version resolved from GHCR ("" if unknown)
+	UpdaterStatus  string   `json:"updater_status"`  // unknown | current | outdated (updater drift; "" when no sidecar)
 	// An update Argus asked for, while it is in hand (nil: none): the proxy's, and its sidecar's own.
 	UpdateJob      *probeJob `json:"update_job,omitempty"`
 	UpdaterJob     *probeJob `json:"updater_job,omitempty"`
@@ -108,6 +109,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 	latest := s.probeLatest.get()                              // newest published probe version from GHCR ("" if unresolved)
 	updaterLatest := s.updaterLatest.get()                     // newest published argus-updater version from GHCR
 	autoscale := s.mgr.ProbeAutoscale()
+	probeTags, _ := s.st.ProbeTags(ctx)
 	now := time.Now().Unix()
 	out := make([]proxyView, 0, len(proxies))
 	for _, p := range proxies {
@@ -168,6 +170,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			CPUPeak:        cpuPeakView(ag.Procs.CPU),
 			CPUStarved:     ag.Procs.CPU.Starved,
 			IsVM:           ag.OSReportedAt > 0,
+			Tags:           nonNilStrings(probeTags[p.ProxyID]),
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

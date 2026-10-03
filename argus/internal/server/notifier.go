@@ -60,13 +60,14 @@ type notifyDest struct {
 	id      int64
 	sites   []string
 	minSev  int
-	delay   int64 // seconds
-	repeat  int64 // seconds, 0 = no reminders
-	remSev  int   // reminders only at or above this severity
-	alerts  bool  // carries problem alerts (a channel can carry only system notices)
-	notices bool  // carries Argus's system notices
-	userID  int64 // a personal channel's owner (0 for a shared channel)
-	scoped  bool  // a personal channel of a user limited to some sites (scope.go)
+	delay   int64    // seconds
+	repeat  int64    // seconds, 0 = no reminders
+	remSev  int      // reminders only at or above this severity
+	tags    []string // only hosts with one of these tags; empty = every host
+	alerts  bool     // carries problem alerts (a channel can carry only system notices)
+	notices bool     // carries Argus's system notices
+	userID  int64    // a personal channel's owner (0 for a shared channel)
+	scoped  bool     // a personal channel of a user limited to some sites (scope.go)
 	// quietFloor > 0 while its owner's quiet hours are on: only problems at or above it are sent now;
 	// a quieter one waits (and goes out once the quiet hours end, if still open).
 	quietFloor int
@@ -74,8 +75,50 @@ type notifyDest struct {
 	send       func(ctx context.Context, ev notify.Event)
 }
 
-func (d notifyDest) serves(groups []string, sev int) bool {
-	return d.alerts && channelMatches(d.sites, d.minSev, groups, sev)
+// hostRoute is what decides which channels hear of a host's problem: its groups (sites) and its tags.
+type hostRoute struct {
+	groups []string
+	tags   []string
+}
+
+func (d notifyDest) serves(h hostRoute, sev int) bool {
+	return d.alerts && channelMatches(d.sites, d.minSev, h.groups, sev) && tagsMatch(d.tags, h.tags)
+}
+
+// tagsMatch reports whether a channel limited to some tags serves a host with these (no limit = yes).
+func tagsMatch(want, have []string) bool {
+	if len(want) == 0 {
+		return true
+	}
+	for _, w := range want {
+		for _, h := range have {
+			if w == h {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// effectiveTagNames is every host's tags for routing: its own and its probe's.
+func effectiveTagNames(ctx context.Context, st *store.Store, hosts []zabbix.Host) map[string][]string {
+	own, _ := st.HostTags(ctx)
+	probe, _ := st.ProbeTags(ctx)
+	out := map[string][]string{}
+	if len(own) == 0 && len(probe) == 0 {
+		return out
+	}
+	for _, h := range hosts {
+		proxy := h.ProxyID
+		if proxy == "" {
+			proxy = "0"
+		}
+		ts := append(append([]string{}, own[h.HostID]...), probe[proxy]...)
+		if len(ts) > 0 {
+			out[h.HostID] = ts
+		}
+	}
+	return out
 }
 
 // quietFor reports whether the destination's owner is in quiet hours that hold this severity.
@@ -160,7 +203,7 @@ func notifyDests(st *store.Store, channels []store.NotifyChannel, userChannels [
 		c := c
 		out = append(out, notifyDest{
 			key: store.DeliveryKey(store.DeliveryGlobal, c.ID), kind: store.DeliveryGlobal, id: c.ID,
-			sites: c.Sites, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
+			sites: c.Sites, tags: c.Tags, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
 			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, created: c.CreatedAt.Unix(),
 			send: func(ctx context.Context, ev notify.Event) { sendGlobal(ctx, st, c, dir.recipients, ev, logger) },
 		})
@@ -174,7 +217,7 @@ func notifyDests(st *store.Store, channels []store.NotifyChannel, userChannels [
 		}
 		out = append(out, notifyDest{
 			key: store.DeliveryKey(store.DeliveryUser, c.ID), kind: store.DeliveryUser, id: c.ID,
-			sites: sites, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
+			sites: sites, tags: c.Tags, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
 			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, userID: c.UserID, scoped: !sc.all, quietFloor: dir.quiet[c.UserID], created: c.CreatedAt.Unix(),
 			send: func(ctx context.Context, ev notify.Event) { sendPersonal(ctx, st, c, ev, logger) },
 		})
@@ -258,6 +301,12 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			}
 			hostGroups[h.HostID] = names
 		}
+	}
+
+	// Host -> its tags (its own and its probe's), for channels limited to some tags.
+	hostTags := map[string][]string{}
+	if herr == nil {
+		hostTags = effectiveTagNames(ctx, st, hosts)
 	}
 
 	channels, _ := st.EnabledNotifyChannels(ctx)
@@ -368,6 +417,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			itemID = t.Items[0].ItemID
 		}
 		groups := hostGroups[hostID]
+		route := hostRoute{groups: groups, tags: hostTags[hostID]}
 		alertable := isAlertable(t, hiddenHosts, hiddenItems, acked, p.EventID)
 		if _, held := inMaint[hostID]; held {
 			alertable = false // in a maintenance window: alerted once it ends, if still open
@@ -427,7 +477,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			if now.Sub(time.Unix(stt.FirstSeen, 0)) < flapDelay && !isNoData && !isSynthetic(p.EventID) {
 				continue // still within the flap-debounce window
 			}
-			if !anyServes(dests, groups, sev) {
+			if !anyServes(dests, route, sev) {
 				continue // nobody serves this site+severity yet; stay pending so it alerts once someone does
 			}
 			// A "no data" alert's incident really began when the data stopped.
@@ -476,7 +526,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			continue // hidden, paused or held by a down master: no escalation or reminders meanwhile
 		}
 
-		plan := planDeliveries(dests, deliveries[p.EventID], groups, sev, incidentStart(stt), firedAtOf(stt), now.Unix())
+		plan := planDeliveries(dests, deliveries[p.EventID], route, sev, incidentStart(stt), firedAtOf(stt), now.Unix())
 		if len(plan) == 0 {
 			continue
 		}
@@ -534,10 +584,10 @@ type plannedDelivery struct {
 //     (the incident escalated or eased on the same sensor) gets the new one straight away.
 //   - A destination that already has the alert at this severity gets a reminder once "remind every"
 //     has passed since its last send, if the problem is at or above its "remind for" severity.
-func planDeliveries(dests []notifyDest, got map[string]store.NotifyDelivery, groups []string, sev int, start, firedAt, now int64) []plannedDelivery {
+func planDeliveries(dests []notifyDest, got map[string]store.NotifyDelivery, h hostRoute, sev int, start, firedAt, now int64) []plannedDelivery {
 	var out []plannedDelivery
 	for _, d := range dests {
-		if !d.serves(groups, sev) || d.quietFor(sev) {
+		if !d.serves(h, sev) || d.quietFor(sev) {
 			continue // a destination in quiet hours hears of it later, if it is still open then
 		}
 		row, has := got[d.key]
@@ -569,10 +619,10 @@ func firedAtOf(stt store.NotifyState) int64 {
 	return 0
 }
 
-// anyServes reports whether any destination serves a site+severity, whatever its delay.
-func anyServes(dests []notifyDest, groups []string, sev int) bool {
+// anyServes reports whether any destination serves a host's site, tags and severity, whatever its delay.
+func anyServes(dests []notifyDest, h hostRoute, sev int) bool {
 	for _, d := range dests {
-		if d.serves(groups, sev) {
+		if d.serves(h, sev) {
 			return true
 		}
 	}
@@ -592,7 +642,7 @@ func backfillDeliveries(ctx context.Context, st *store.Store, states map[string]
 			at = stt.FirstSeen
 		}
 		for _, d := range dests {
-			if d.serves(hostGroups[stt.HostID], stt.Severity) {
+			if d.serves(hostRoute{groups: hostGroups[stt.HostID]}, stt.Severity) {
 				_ = st.UpsertNotifyDelivery(ctx, store.NotifyDelivery{
 					EventID: eid, Kind: d.kind, ChannelID: d.id, Severity: stt.Severity, FirstSent: at, LastSent: at,
 				})

@@ -85,6 +85,14 @@ API key, and MAC):
   who acknowledged it, the note left on the sensor and the reason the device's collector gave, over
   24 h to 90 days, by probe and group too. Hidden sensors' incidents are left out unless you ask for
   them. Export the list as CSV.
+- **Tags** - coloured labels across sites ("critical", "customer-a", "poe"), on a host or on a probe
+  (then on every host it monitors). Filter the tree by them and limit an alert channel to the hosts
+  with a tag, so "critical" can go to a phone while the rest goes to the team channel.
+- **Bulk actions** - select hosts in the tree (a group's box selects all its hosts) to acknowledge,
+  pause, hide, put in maintenance, move to another group or probe, tag, or set thresholds on all of
+  them at once; select problems in the Overview to acknowledge, note, pause or hide them together. Each
+  host or sensor that can't be done says why, and the rest go through. **Export CSV** on the tree, the
+  problem lists, History and Changes.
 - **Change log** - who changed what and when: host settings, alert states, thresholds, groups,
   maintenance, channels, users and sign-in security, updates, settings, with each value before and
   after and an optional reason. An admin **Changes** page (searchable, by kind, probe, group and

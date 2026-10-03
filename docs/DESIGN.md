@@ -479,6 +479,37 @@ A host's own list folds under its history (`GET /api/hosts/{id}/changes`, anyone
 Entries are kept for **Keep changes for** (Settings, `ARGUS_CHANGES_KEEP_DAYS`: 90, 365 (default) or
 730 days) and pruned once a day.
 
+## 7d. Tags and bulk actions
+
+**Tags** (`tags.go`) are Argus's own labels across sites: `tags` (name, colour from an eight-colour
+palette, description), `host_tags` and `probe_tags`; a rename or delete carries through to the hosts,
+probes and channels (`ON UPDATE / DELETE CASCADE`, and the channels' JSON lists rewritten in the same
+transaction). A host carries its own tags and its probe's (`hostTagIndex`; the probe's read "from
+proxy-x", dashed, and can't be removed on the host; a host moved to another probe takes that probe's).
+Admins manage the list in Settings, Tags (`GET/POST /api/tags`, `PATCH/DELETE /api/tags/{name}`) and a
+probe's tags on the Probes page (`PUT /api/proxies/{id}/tags`); a host's own ride its settings save
+(`tags` in `PATCH /api/hosts/{id}/config`). The tree shows them on each row (not on a phone, where the
+name wins) and filters by them (a group left with no host drops out). A channel, shared or personal,
+can be limited to hosts with one of some tags (`tags` on the channel; empty = every host): the notifier
+reads every host's tags once a tick (`effectiveTagNames`) and `serves` checks them with the sites and
+the severity floor (`hostRoute`).
+
+**Bulk actions** (`bulk.go`) act on a selection in one request, each item on its own, and answer
+`{done, failed: [{id, name, error}]}`: one refusal (out of the user's sites, a host Zabbix refuses, a
+sensor of no problem) doesn't undo the rest, the failed stay selected and the toast names the first
+with its reason. `POST /api/bulk/hosts` (admin, helpdesk): `ack` (every open problem of the hosts),
+`pause`/`resume`, `hide`/`show` (with a length), `groups` (replace their groups), `probe`, `tags` (add
+and remove), `thresholds` (per-host thresholds on hosts of one class: a value sets it, "" puts the
+default back, absent leaves it). `POST /api/bulk/sensors`: `ack` (anyone, like a single ack), `note`,
+`pause`, `hide` (admin, helpdesk). Maintenance for the selected hosts opens the window editor with them
+picked (a one-off window by default). The change log gets one entry per action naming the hosts.
+The tree's **Select** turns on a checkbox per host (a group's box picks every host under it); the
+problem lists always have one per row. The action bar sticks to the bottom of the panel while
+anything is selected, and scrolls sideways on a phone.
+
+**Export CSV** saves the list as shown (filters applied) from the browser: the tree's hosts, a problem
+list, History, Changes; UTF-8 with a BOM and quoted cells, so spreadsheets open it as is.
+
 ---
 
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")

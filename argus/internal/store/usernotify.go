@@ -21,6 +21,7 @@ type UserNotifyChannel struct {
 	Type        string // "telegram" | "discord"
 	Enabled     bool
 	Sites       []string // host-group names this channel serves; empty = all sites
+	Tags        []string // only hosts with one of these tags; empty = every host
 	MinSeverity int
 	DelayMin    int  // escalation: minutes open + unacknowledged before this channel is told (0 = at once)
 	RepeatMin   int  // reminders: minutes between repeats while open + unacknowledged (0 = none)
@@ -36,15 +37,15 @@ type UserNotifyChannel struct {
 	SentCount   int64
 }
 
-const userChannelColumns = `id,user_id,type,enabled,site,min_severity,config,created_at,last_sent_at,last_error,last_error_at,sent_count,delay_min,repeat_min,repeat_min_severity,alerts,system_notices`
+const userChannelColumns = `id,user_id,type,enabled,site,min_severity,config,created_at,last_sent_at,last_error,last_error_at,sent_count,delay_min,repeat_min,repeat_min_severity,alerts,system_notices,tags`
 
 func (s *Store) scanUserChannel(row rowScanner) (*UserNotifyChannel, error) {
 	var c UserNotifyChannel
 	var enabled, alerts, notices int
 	var cfg string
-	var site string
+	var site, tags string
 	var created int64
-	if err := row.Scan(&c.ID, &c.UserID, &c.Type, &enabled, &site, &c.MinSeverity, &cfg, &created, &c.LastSentAt, &c.LastError, &c.LastErrorAt, &c.SentCount, &c.DelayMin, &c.RepeatMin, &c.RepeatSev, &alerts, &notices); err != nil {
+	if err := row.Scan(&c.ID, &c.UserID, &c.Type, &enabled, &site, &c.MinSeverity, &cfg, &created, &c.LastSentAt, &c.LastError, &c.LastErrorAt, &c.SentCount, &c.DelayMin, &c.RepeatMin, &c.RepeatSev, &alerts, &notices, &tags); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -53,6 +54,7 @@ func (s *Store) scanUserChannel(row rowScanner) (*UserNotifyChannel, error) {
 	c.Enabled = enabled != 0
 	c.Alerts, c.Notices = alerts != 0, notices != 0
 	c.Sites = decodeSites(site)
+	c.Tags = decodeSites(tags)
 	c.CreatedAt = time.Unix(created, 0)
 	c.Config = map[string]string{}
 	_ = json.Unmarshal([]byte(s.cipher.Decrypt(cfg)), &c.Config)
@@ -106,8 +108,8 @@ func (s *Store) CreateUserNotifyChannel(ctx context.Context, c UserNotifyChannel
 		enabled = 1
 	}
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO user_notify_channels(user_id,type,enabled,site,min_severity,config,created_at,delay_min,repeat_min,repeat_min_severity,alerts,system_notices) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-		c.UserID, c.Type, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), time.Now().Unix(), c.DelayMin, c.RepeatMin, c.RepeatSev, boolInt(c.Alerts), boolInt(c.Notices))
+		`INSERT INTO user_notify_channels(user_id,type,enabled,site,min_severity,config,created_at,delay_min,repeat_min,repeat_min_severity,alerts,system_notices,tags) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		c.UserID, c.Type, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), time.Now().Unix(), c.DelayMin, c.RepeatMin, c.RepeatSev, boolInt(c.Alerts), boolInt(c.Notices), encodeSites(c.Tags))
 	if err != nil {
 		return 0, err
 	}
@@ -121,8 +123,8 @@ func (s *Store) UpdateUserNotifyChannel(ctx context.Context, c UserNotifyChannel
 		enabled = 1
 	}
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE user_notify_channels SET type=?,enabled=?,site=?,min_severity=?,config=?,delay_min=?,repeat_min=?,repeat_min_severity=?,alerts=?,system_notices=? WHERE id=?`,
-		c.Type, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), c.DelayMin, c.RepeatMin, c.RepeatSev, boolInt(c.Alerts), boolInt(c.Notices), c.ID)
+		`UPDATE user_notify_channels SET type=?,enabled=?,site=?,min_severity=?,config=?,delay_min=?,repeat_min=?,repeat_min_severity=?,alerts=?,system_notices=?,tags=? WHERE id=?`,
+		c.Type, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), c.DelayMin, c.RepeatMin, c.RepeatSev, boolInt(c.Alerts), boolInt(c.Notices), encodeSites(c.Tags), c.ID)
 	return err
 }
 

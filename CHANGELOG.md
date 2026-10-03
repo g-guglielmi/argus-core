@@ -25,7 +25,27 @@ GitHub Release from the matching section below.
 - Kept for a year by default (Settings, **Keep changes for**: 90 days, 1 year or 2 years;
   `ARGUS_CHANGES_KEEP_DAYS`).
 
+**Tags:**
+- Coloured labels across sites, made in Settings, **Tags** ("critical", "customer-a", "poe"). Put
+  them on a host in its settings, or on a probe on the Probes page: every host the probe monitors
+  carries them (shown dashed, "from proxy-site1").
+- The tree shows each host's tags and filters by them.
+- Limit an alert channel (shared or personal) to the hosts with one of some tags, so "critical" can
+  go to a phone while everything else goes to the team channel.
+
+**Bulk actions:**
+- **Select** in the tree picks hosts (a group's box picks all of its hosts): acknowledge their
+  problems, pause or resume, hide or show, a maintenance window, move to another group or probe, add
+  and remove tags, or set thresholds on hosts of one class, all at once.
+- The Overview and the sensor lists pick problems: acknowledge, note, pause or hide them together.
+- A host or sensor that can't be done says why, the rest go through, and the change log gets one
+  entry naming them all.
+
+**Export CSV** on the tree, the problem lists, History and Changes.
+
 **History:** filter by probe and group, and export the list as CSV.
+
+**Settings:** the change log's **Keep changes for** now shows in its own section.
 
 **Sidebar:** reordered. Watch: Overview, Triggers, Monitoring, History. Configure: Probes, Discovery,
 Maintenance, Notifications. Admin: Status pages, Thresholds, Changes, Users, Updates, Settings.

@@ -54,6 +54,7 @@ type hostView struct {
 	IcmpMs      *float64  `json:"icmp_ms,omitempty"`     // last ICMP response time in ms, nil when unknown
 	Unacked     bool      `json:"unacked,omitempty"`     // has a warning or error nobody has acknowledged (its tree dot pulses)
 	Acked       bool      `json:"acked,omitempty"`       // has problems, all acknowledged (its dot, count and graph read as acknowledged)
+	Tags        []hostTag `json:"tags,omitempty"`        // its own tags, then its probe's (tags.go)
 }
 
 type itemView struct {
@@ -209,6 +210,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 	}
 	classMap, _ := s.st.DeviceClasses(ctx)      // host id -> device-class id (drives the tree icon)
 	pingItems, _ := s.zbx.PingLatencyItems(ctx) // host id -> icmppingsec item (drives the row latency + sparkline)
+	tagIdx, _ := s.hostTagIndex(ctx)
 
 	out := make([]hostView, 0, len(hosts))
 	for _, h := range hosts {
@@ -217,7 +219,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 			groups = append(groups, g.Name)
 		}
 		classID := classMap[h.HostID]
-		hv := hostView{ID: h.HostID, Name: h.Name, Severity: -1, State: "ok", Groups: groups, ProxyID: h.ProxyID, ClassID: classID, Icon: deviceIcon(h.Name, classID)}
+		hv := hostView{ID: h.HostID, Name: h.Name, Severity: -1, State: "ok", Groups: groups, ProxyID: h.ProxyID, ClassID: classID, Icon: deviceIcon(h.Name, classID), Tags: tagIdx[h.HostID]}
 		if it, ok := pingItems[h.HostID]; ok {
 			hv.IcmpItem = it.ItemID
 			if sec, err := strconv.ParseFloat(it.LastValue, 64); err == nil && it.LastValue != "" {

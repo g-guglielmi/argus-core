@@ -183,6 +183,10 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Change log** - who changed what and when, with the values before and after and an optional
   reason: an admin Changes page (search, kind, probe, group, period, CSV) and each host's own list.
   DESIGN section 7c. - _(BE+FE)_ M
+- [x] **Tags + bulk actions + CSV** - tags on hosts and probes (a probe's reach its hosts), tree filter,
+  channels limited to tags; bulk acknowledge / pause / hide / maintenance / move / probe / tags /
+  thresholds on the tree's selection and acknowledge / note / pause / hide on a problem list's; CSV
+  export of the lists. DESIGN section 7d. - _(BE+FE)_ M
 
 ### G. Scale & production readiness
 - [x] **Security review, wave 1 (core)** - a static review of the three repositories; the core-side

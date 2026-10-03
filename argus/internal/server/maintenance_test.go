@@ -114,11 +114,11 @@ func TestQuietHours(t *testing.T) {
 	}
 	quiet := notifyDest{key: "u:1", alerts: true, quietFloor: 4}
 	loud := notifyDest{key: "g:1", alerts: true}
-	plan := planDeliveries([]notifyDest{quiet, loud}, nil, []string{"site1"}, 2, 1000, 1000, 2000)
+	plan := planDeliveries([]notifyDest{quiet, loud}, nil, hostRoute{groups: []string{"site1"}}, 2, 1000, 1000, 2000)
 	if len(plan) != 1 || plan[0].dest.key != "g:1" {
 		t.Fatalf("a warning in quiet hours waits: %+v", plan)
 	}
-	plan = planDeliveries([]notifyDest{quiet, loud}, nil, []string{"site1"}, 4, 1000, 1000, 2000)
+	plan = planDeliveries([]notifyDest{quiet, loud}, nil, hostRoute{groups: []string{"site1"}}, 4, 1000, 1000, 2000)
 	if len(plan) != 2 {
 		t.Fatalf("a high alert gets through quiet hours: %+v", plan)
 	}

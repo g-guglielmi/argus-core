@@ -585,6 +585,24 @@ CREATE TABLE IF NOT EXISTS change_hosts (
   PRIMARY KEY (change_id, host_id)
 );
 CREATE INDEX IF NOT EXISTS idx_change_hosts_host ON change_hosts(host_id, change_id);
+-- Tags (tags.go): labels across sites, on a host or on a probe (every host it monitors gets them).
+-- A rename or delete carries through to the hosts and probes.
+CREATE TABLE IF NOT EXISTS tags (
+  name        TEXT PRIMARY KEY,
+  color       TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS host_tags (
+  host_id TEXT NOT NULL,
+  tag     TEXT NOT NULL REFERENCES tags(name) ON UPDATE CASCADE ON DELETE CASCADE,
+  PRIMARY KEY (host_id, tag)
+);
+CREATE TABLE IF NOT EXISTS probe_tags (
+  proxy_id TEXT NOT NULL,
+  tag      TEXT NOT NULL REFERENCES tags(name) ON UPDATE CASCADE ON DELETE CASCADE,
+  PRIMARY KEY (proxy_id, tag)
+);
 `); err != nil {
 		return err
 	}
@@ -803,6 +821,13 @@ CREATE INDEX IF NOT EXISTS idx_change_hosts_host ON change_hosts(host_id, change
 		if _, err := s.db.Exec(q); err != nil {
 			return err
 		}
+	}
+	// The tags a channel is limited to (tags.go); empty = every host.
+	if err := s.ensureColumn("notify_channels", "tags TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("user_notify_channels", "tags TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
 	}
 	// Per-channel delivery health (last successful send / last failure + reason / sent count), shown on
 	// the Notifications cards. Recorded by RecordNotifyDelivery after every send attempt.

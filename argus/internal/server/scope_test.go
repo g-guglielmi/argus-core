@@ -78,13 +78,13 @@ func TestNotifierHonoursScope(t *testing.T) {
 	dests := notifyDests(nil, nil, chans, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	serves := map[int64]bool{}
 	for _, d := range dests {
-		serves[d.id] = d.serves([]string{"site2/Office"}, 4)
+		serves[d.id] = d.serves(hostRoute{groups: []string{"site2/Office"}}, 4)
 	}
 	if !serves[10] || serves[11] || serves[12] || serves[13] {
 		t.Fatalf("site2 alert reached %v; want only the unscoped user's channel", serves)
 	}
 	for _, d := range dests {
-		if d.id == 11 && !d.serves([]string{"site1/Office"}, 4) {
+		if d.id == 11 && !d.serves(hostRoute{groups: []string{"site1/Office"}}, 4) {
 			t.Fatal("the scoped user's channel should serve their own site")
 		}
 	}
