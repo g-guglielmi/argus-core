@@ -1281,6 +1281,37 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .site-contact-ed { display: grid; grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1fr) minmax(120px, 0.8fr) minmax(0, 1fr) auto; gap: 8px; margin-bottom: 8px; }
 .site-line-ed { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 10px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 8px; }
 .site-line-act { grid-column: 1 / -1; display: flex; justify-content: flex-end; margin: -2px -4px -4px 0; }
+/* Import (Discovery): the file drop, the checked rows, the PRTG mapping, the progress. */
+.imp-dlg { max-width: min(1120px, 96vw); width: 100%; max-height: calc(100dvh - 32px); display: flex; flex-direction: column; }
+.imp-drop { margin-top: 10px; border: 1.5px dashed var(--border-strong); border-radius: 10px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--elevated); font-size: 13px; }
+.imp-drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--elevated)); }
+.imp-drop svg { width: 22px; height: 22px; color: var(--faint); flex: none; }
+.imp-drop-act { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.imp-strip { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 2px 6px; }
+.imp-scroll { max-height: 380px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.imp-table th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.imp-table th, .imp-table td { padding: 7px 10px; }
+.imp-table td { font-size: 12.5px; vertical-align: top; }
+.imp-table td.imp-n { color: var(--faint); white-space: nowrap; }
+.imp-table tr.bad td { background: color-mix(in srgb, var(--err) 6%, transparent); }
+.imp-table tr.skip td { color: var(--muted); }
+.imp-table .cellfix { width: 100%; min-width: 120px; padding: 4px 8px; font-size: 12.5px; }
+.imp-table input.cellfix, .imp-table .cellfix.bad { border-color: var(--err); }
+.imp-table td.imp-check { min-width: 220px; }
+.imp-table td.imp-check .okquiet, .imp-table td.imp-check .upd-none { white-space: normal; }
+.imp-fix { display: grid; gap: 4px; justify-items: start; }
+.imp-fix .tag { white-space: normal; text-align: left; }
+.imp-more { padding: 8px 12px; font-size: 12px; color: var(--muted); }
+.imp-err { margin-top: 10px; color: var(--err); font-size: 13px; }
+.imp-map { margin-top: 6px; }
+.imp-map .input, .imp-map select { width: auto; min-width: 170px; padding: 5px 8px; font-size: 12.5px; }
+.imp-map .bad { border-color: var(--err); }
+.imp-map .info-line .k { min-width: 170px; text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--muted); }
+.imp-foot-note { margin-right: auto; }
+.imp-progress { display: grid; gap: 8px; font-size: 13px; padding: 6px 0; }
+.imp-bar { height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.imp-bar span { display: block; height: 100%; background: var(--accent); transition: width 0.4s; }
+.imp-failed { margin-top: 6px; max-height: 240px; overflow: auto; }
 /* A host's journal: one entry per line, coloured by kind (the status-note kinds). */
 .journal { display: grid; gap: 8px; padding: 2px 0 10px; }
 .journal-add { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
@@ -1347,6 +1378,13 @@ input.tsel { width: 15px; height: 15px; accent-color: var(--accent); margin: 0 8
   .info-line .k { min-width: 0; width: 100%; }
   .link-edit, .link-form, .journal-add { grid-template-columns: minmax(0, 1fr); }
   .site-contact-ed, .site-line-ed { grid-template-columns: minmax(0, 1fr); }
+  .imp-scroll { max-height: none; border: 0; }
+  .imp-table tr.bad { background: color-mix(in srgb, var(--err) 6%, transparent); }
+  .imp-table tr.bad td { background: none; }
+  .imp-table td.imp-check { min-width: 0; margin-top: 4px; }
+  .imp-drop-act { margin-left: 0; }
+  .imp-map .input, .imp-map select { min-width: 0; width: 100%; }
+  .imp-foot-note { flex-basis: 100%; }
   .site-contact-ed { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
   .site-info { padding: 2px 12px 6px; }
   .slist-inv tr.cat td { display: block !important; text-align: left !important; padding-left: 0; }

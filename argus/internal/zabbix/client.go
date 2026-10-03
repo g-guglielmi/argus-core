@@ -200,6 +200,24 @@ func (c *Client) Hosts(ctx context.Context) ([]Host, error) {
 	return hosts, c.call(ctx, "host.get", params, true, &hosts)
 }
 
+// HostTechNames returns every host's technical name (Zabbix's "host"), by host id: what a new host's
+// name must not repeat.
+func (c *Client) HostTechNames(ctx context.Context) (map[string]string, error) {
+	params := map[string]any{"output": []string{"hostid", "host"}}
+	var rows []struct {
+		HostID string `json:"hostid"`
+		Host   string `json:"host"`
+	}
+	if err := c.call(ctx, "host.get", params, true, &rows); err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(rows))
+	for _, r := range rows {
+		out[r.HostID] = r.Host
+	}
+	return out, nil
+}
+
 // HostIPs returns each host's primary IP address (the main interface, else any interface), keyed
 // by host id. A connect-by-DNS interface whose "DNS name" is actually a literal IP address counts
 // too - the host lives at that address just the same (search-by-IP and the discovery

@@ -604,6 +604,43 @@ alerts' "Site" names.
 info** in the toolbar for those who may edit), and on each of its hosts' Device tab, with copy
 buttons on the numbers.
 
+## 7h. Import from a spreadsheet or PRTG
+
+Discovery's **Import** (admin) creates hosts from rows: name, address (an IP or a DNS name),
+class (its id or label), site (the group, made when new), probe (a probe's name, `server`, or
+empty for the site's own `proxy-<site>`, else the core), tags, asset tag, location, a UniFi device's
+MAC, and any class input as a column named after its macro (`NUT.UPS`). The browser reads a CSV
+(comma, semicolon or tab, UTF-8 or Excel's Windows encoding; other columns are listed as ignored);
+for PRTG, Argus reads the tree itself (`importprtg.go`).
+
+**Checked before anything is made** (`POST /api/import/check`, `importhosts.go`): each row is
+ready, skipped (already monitored: its name, or its address as the same class) or to fix (a class
+it doesn't know, with "did you mean", a probe it doesn't know, no site, a bad address or tag, a name
+an earlier row has, or a class input missing). Inputs derived from the address (an AdGuard or Home
+Assistant URL) are filled in; a UniFi device gets its controller URL, key, MAC and site from a saved
+controller that lists it (by MAC, else address) or the one serving its site, so the key never goes
+through the browser. The table lets a bad cell be fixed in place (a class or probe picked, a missing
+input typed) and re-checks after every edit.
+
+**Run** (`POST /api/import/run`) re-checks and creates the ready rows in the background, one at a
+time, through the same path as Add device (`provisionHost`, source `imported`), then their tags
+(made when new), asset tag and location; `GET /api/import/{id}` follows it (one import at a time,
+kept a day). The change log gets one entry when it ends: "Imported 12 hosts", from the file's name
+or PRTG, "12 created, 1 skipped, 2 failed", naming the hosts. Nothing sets an upstream device: the
+UniFi controller's answer comes afterwards (section 7f).
+
+**PRTG** (`POST /api/import/prtg`, the address, an API key with read access, PRTG 22.4 or later,
+and optionally "accept a self-signed certificate"): Argus reads `table.json` for devices (name,
+host, probe, parent, tags), groups and probe nodes (the group path below the probe) and sensors
+(their types). The key is used for these reads only and never kept, and it is left out of any error.
+Each device's class is guessed from its sensors (Windows from WMI, Linux from SSH or SNMP Linux, DNS,
+UniFi by name or, better, from a saved controller that lists its address; only Ping, or nothing
+Argus has a class for, is Ping only) with the reason shown; a UPS or a VMware host is left to pick.
+PRTG's sensors aren't copied: each host gets its class's sensors and thresholds. In the dialog each
+PRTG probe maps to an Argus probe and a site (paired by name: "Site 1 probe" and proxy-site1; the
+Local Probe to the core), groups are kept under that site or flattened, and the device tags come
+along or not.
+
 ---
 
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")

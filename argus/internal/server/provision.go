@@ -98,17 +98,68 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
+	// A sweep-adopted UniFi device gets its controller macros (URL/KEY/MAC/SITE) filled from the
+	// saved controller server-side, BEFORE the required-macro check - the API key never travels
+	// through the browser. See injectUniFiMacros in netdiscovery.go.
+	if class, ok := provision.ClassByID(req.ClassID); ok && req.DiscoveryResultID > 0 && strings.HasPrefix(class.ID, "unifi-") {
+		s.injectUniFiMacros(r.Context(), &req)
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	source := "manual"
+	if req.DiscoveryResultID > 0 {
+		source = "discovered"
+	}
+	hostID, perr := s.provisionHost(ctx, &req, source, false)
+	if perr != nil {
+		writeJSON(w, perr.status, map[string]string{"error": perr.msg})
+		return
+	}
+	class, _ := provision.ClassByID(req.ClassID)
+	// Adopted from a discovery scan: mark the result, so the review screen and future re-scans show
+	// it as monitored. Best-effort - the host itself is already created.
+	if req.DiscoveryResultID > 0 {
+		if err := s.st.MarkDiscoveryResultAdded(ctx, req.DiscoveryResultID, hostID); err != nil {
+			s.logger.Warn("provision: could not mark discovery result adopted", "result", req.DiscoveryResultID, "err", err)
+		}
+	}
+	shown := req.Name
+	if strings.TrimSpace(req.Visible) != "" {
+		shown = req.Visible
+	}
+	changeObject(r, shown, hostID)
+	how := "by hand"
+	if req.DiscoveryResultID > 0 {
+		how = "adopted from discovery"
+	}
+	changeDetail(r, class.Label+" in "+req.Site+", "+how)
+	writeJSON(w, http.StatusOK, map[string]string{"id": hostID, "class": class.ID})
+}
+
+// provisionError is why a host couldn't be created, with the HTTP status that says so.
+type provisionError struct {
+	status int
+	msg    string
+}
+
+func provisionFail(status int, msg string) *provisionError {
+	return &provisionError{status: status, msg: msg}
+}
+
+// provisionHost creates a monitored host from a device class: the single path a host is made by, by
+// hand, from discovery or from an import (source: manual | discovered | imported). It cleans req in
+// place (names, addresses). reconciled skips the template check when the caller already made it (an
+// import runs it once for all its hosts).
+func (s *Server) provisionHost(ctx context.Context, req *createHostRequest, source string, reconciled bool) (string, *provisionError) {
 	req.Name, req.Site = strings.TrimSpace(req.Name), strings.TrimSpace(req.Site)
 	req.IP, req.DNS = strings.TrimSpace(req.IP), strings.TrimSpace(req.DNS)
 
 	class, ok := provision.ClassByID(req.ClassID)
 	if !ok || class.Internal { // Argus-managed classes (the Probe host) are never created by hand
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown device class"})
-		return
+		return "", provisionFail(http.StatusBadRequest, "unknown device class")
 	}
 	if req.Name == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a host name is required"})
-		return
+		return "", provisionFail(http.StatusBadRequest, "a host name is required")
 	}
 	// Zabbix's technical name takes only letters, digits, spaces, dots, dashes and underscores; the
 	// visible name takes anything. A name like "U6+ Salotto" keeps that as its visible name and gets a
@@ -120,24 +171,15 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 		req.Name = tech
 	}
 	if req.Site == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a site (host group) is required"})
-		return
+		return "", provisionFail(http.StatusBadRequest, "a site (host group) is required")
 	}
 	if req.IP == "" && req.DNS == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "an IP address or DNS name is required"})
-		return
-	}
-	// A sweep-adopted UniFi device gets its controller macros (URL/KEY/MAC/SITE) filled from the
-	// saved controller server-side, BEFORE the required-macro check - the API key never travels
-	// through the browser. See injectUniFiMacros in netdiscovery.go.
-	if req.DiscoveryResultID > 0 && strings.HasPrefix(class.ID, "unifi-") {
-		s.injectUniFiMacros(r.Context(), &req)
+		return "", provisionFail(http.StatusBadRequest, "an IP address or DNS name is required")
 	}
 	// Class-declared per-host macros (API endpoint, credentials, …) - the required ones must be set.
 	for _, ms := range class.Macros {
 		if ms.Required && strings.TrimSpace(req.Macros[ms.Macro]) == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": ms.Label + " is required for this device class"})
-			return
+			return "", provisionFail(http.StatusBadRequest, ms.Label+" is required for this device class")
 		}
 	}
 	useIP := req.IP != ""
@@ -145,26 +187,22 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 		useIP = *req.UseIP
 	}
 	if useIP && req.IP == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connect-by-IP needs an IP address"})
-		return
+		return "", provisionFail(http.StatusBadRequest, "connect-by-IP needs an IP address")
 	}
 	if !useIP && req.DNS == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connect-by-DNS needs a DNS name"})
-		return
+		return "", provisionFail(http.StatusBadRequest, "connect-by-DNS needs a DNS name")
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
 
 	// Ensure the class templates are present (idempotent; imports only when changed).
-	if err := provision.Reconcile(ctx, s.zbx, s.st, s.logger); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not import class templates: " + err.Error()})
-		return
+	if !reconciled {
+		if err := provision.Reconcile(ctx, s.zbx, s.st, s.logger); err != nil {
+			return "", provisionFail(http.StatusBadGateway, "could not import class templates: "+err.Error())
+		}
 	}
 
 	// Reject a duplicate technical name up front with a clean message.
 	if existing, err := s.zbx.HostIDByName(ctx, req.Name); err == nil && existing != "" {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "a host with this name already exists"})
-		return
+		return "", provisionFail(http.StatusConflict, "a host with this name already exists")
 	}
 
 	// Resolve templates: Base Ping (always) + the class's templates + optional HTTP add-on.
@@ -174,8 +212,7 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 	}
 	ids, err := s.zbx.TemplateIDsByName(ctx, names)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
-		return
+		return "", provisionFail(http.StatusBadGateway, "Zabbix: "+err.Error())
 	}
 	tmplIDs := make([]string, 0, len(names))
 	for _, n := range names {
@@ -184,8 +221,7 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 
 	groupID, err := s.zbx.EnsureHostGroupID(ctx, req.Site)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
-		return
+		return "", provisionFail(http.StatusBadGateway, "Zabbix: "+err.Error())
 	}
 
 	monitoredBy, proxyID := 0, ""
@@ -195,20 +231,14 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 
 	// Build the interface. For SNMP classes the credentials inherit the proxy's SNMP default (like
 	// the rest of Argus) unless the request carries an explicit override.
-	ifaces, inheritSNMP, ifErr := s.resolveInterface(ctx, class, req, useIP, proxyID)
+	ifaces, inheritSNMP, ifErr := s.resolveInterface(ctx, class, *req, useIP, proxyID)
 	if ifErr != "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": ifErr})
-		return
+		return "", provisionFail(http.StatusBadRequest, ifErr)
 	}
 
-	source := "manual"
-	if req.DiscoveryResultID > 0 {
-		source = "discovered"
-	}
-	macros, err := buildMacros(req, class)
+	macros, err := buildMacros(*req, class)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": s.errText(r, err)})
-		return
+		return "", provisionFail(http.StatusBadRequest, err.Error())
 	}
 	hostID, err := s.zbx.CreateHost(ctx, zabbix.CreateHostParams{
 		Host:        req.Name,
@@ -225,20 +255,12 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
-		return
+		return "", provisionFail(http.StatusBadGateway, "Zabbix: "+err.Error())
 	}
 	// Record the Argus overlay. A failure here doesn't undo the host (it exists + is monitored); it
 	// just means the class tag on the Zabbix host is the only record until the next reconcile.
 	if err := s.st.SetDeviceClass(ctx, hostID, class.ID, source); err != nil {
 		s.logger.Error("provision: could not record device-class overlay", "host", hostID, "err", err)
-	}
-	// Adopted from a discovery scan: mark the result, so the review screen and future re-scans show
-	// it as monitored. Best-effort - the host itself is already created.
-	if req.DiscoveryResultID > 0 {
-		if err := s.st.MarkDiscoveryResultAdded(ctx, req.DiscoveryResultID, hostID); err != nil {
-			s.logger.Warn("provision: could not mark discovery result adopted", "result", req.DiscoveryResultID, "err", err)
-		}
 	}
 	// Mark the SNMP interface as inheriting its proxy default, so a later change to that default
 	// propagates here like every other inheriting interface (server/snmp.go).
@@ -254,18 +276,8 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 	// Kick the class's discovery rules shortly after creation (delayed until the proxy has synced the
 	// new config), so per-instance sensors appear in seconds instead of after the rules' interval.
 	s.scheduleDiscovery(hostID)
-	shown := req.Name
-	if strings.TrimSpace(req.Visible) != "" {
-		shown = req.Visible
-	}
-	changeObject(r, shown, hostID)
-	how := "by hand"
-	if req.DiscoveryResultID > 0 {
-		how = "adopted from discovery"
-	}
-	changeDetail(r, class.Label+" in "+req.Site+", "+how)
 	s.forgetHostIndex()
-	writeJSON(w, http.StatusOK, map[string]string{"id": hostID, "class": class.ID})
+	return hostID, nil
 }
 
 type changeClassRequest struct {

@@ -5154,7 +5154,418 @@ function DiscDialog({ title, onClose, children }: { title: string; onClose: () =
   )
 }
 
+// --- Import: hosts from a spreadsheet or from PRTG (importhosts.go, importprtg.go) ---
+
+type ImportRow = { row: number; ref?: string; name: string; address: string; class: string; site: string; probe: string; tags: string; asset_tag: string; location: string; mac: string; macros: Record<string, string>; hint?: string }
+type ImportCheck = { row: number; status: 'ready' | 'skip' | 'fix'; problems?: { field: string; msg: string }[]; note?: string; class_id?: string; class?: string; probe?: string; missing?: MacroSpec[]; from_unifi?: boolean }
+type ImportCounts = { ready: number; skip: number; fix: number }
+type ImportJob = { id: string; source: string; total: number; done: number; created: number; skipped: number; failed: { row: number; name: string; error: string }[]; running: boolean }
+type PRTGDevice = { ref: string; name: string; address: string; probe: string; groups: string[]; tags: string[]; sensors?: string[]; class: string; hint: string }
+type PRTGTree = { version?: string; probes: { name: string; devices: number }[]; groups: number; tags: string[]; devices: PRTGDevice[] }
+type ProbeMap = Record<string, { probe: string; site: string }>
+
+const EMPTY_IMPORT_ROW: Omit<ImportRow, 'row'> = { name: '', address: '', class: '', site: '', probe: '', tags: '', asset_tag: '', location: '', mac: '', macros: {} }
+
+// parseCSV reads a spreadsheet's CSV: quoted cells, and the separator Excel used (comma, semicolon
+// or tab), read from the header line.
+function parseCSV(text: string): string[][] {
+  text = text.replace(/^\uFEFF/, '')
+  const first = text.split(/\r?\n/, 1)[0] || ''
+  const delim = [';', '\t'].reduce((best, d) => (first.split(d).length > first.split(best).length ? d : best), ',')
+  const rows: string[][] = []
+  let row: string[] = []
+  let cell = ''
+  let quoted = false
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (quoted) {
+      if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++ } else quoted = false } else cell += c
+      continue
+    }
+    if (c === '"') { quoted = true; continue }
+    if (c === delim) { row.push(cell); cell = ''; continue }
+    if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++
+      row.push(cell); rows.push(row); row = []; cell = ''
+      continue
+    }
+    cell += c
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row) }
+  return rows.filter((r) => r.some((c) => c.trim() !== ''))
+}
+
+const IMPORT_COLS: Record<string, keyof ImportRow> = {
+  name: 'name', host: 'name', hostname: 'name', device: 'name', devicename: 'name',
+  address: 'address', ip: 'address', ipaddress: 'address', dns: 'address', dnsname: 'address',
+  class: 'class', deviceclass: 'class', type: 'class',
+  site: 'site', group: 'site', hostgroup: 'site',
+  probe: 'probe', proxy: 'probe', monitoredby: 'probe',
+  tags: 'tags', tag: 'tags', assettag: 'asset_tag', asset: 'asset_tag', location: 'location', mac: 'mac', macaddress: 'mac',
+}
+
+// rowsFromCSV makes import rows of a CSV: known columns by their header (in any case or spacing), a
+// class input by its macro name (NUT.UPS or {$NUT.UPS}); other columns are listed as ignored.
+function rowsFromCSV(text: string): { rows: ImportRow[]; ignored: string[] } {
+  const t = parseCSV(text)
+  if (t.length === 0) return { rows: [], ignored: [] }
+  const head = t[0].map((h) => h.trim())
+  const cols = head.map((h) => {
+    const k = h.toLowerCase().replace(/[^a-z0-9]/g, '')
+    if (IMPORT_COLS[k]) return { field: IMPORT_COLS[k] }
+    if (/^\{?\$?[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+\}?$/.test(h)) return { macro: h }
+    return null
+  })
+  const rows = t.slice(1).map((cells, i) => {
+    const r: ImportRow = { row: i + 2, ...EMPTY_IMPORT_ROW, macros: {} }
+    cols.forEach((c, j) => {
+      const v = (cells[j] || '').trim()
+      if (!c || !v) return
+      if (c.field) (r as unknown as Record<string, string>)[c.field] = v
+      else if (c.macro) r.macros[c.macro] = v
+    })
+    return r
+  })
+  return { rows, ignored: head.filter((h, j) => !cols[j] && h) }
+}
+
+// readTextFile reads a file as UTF-8, or as Excel's Windows encoding when it isn't UTF-8.
+async function readTextFile(f: File): Promise<string> {
+  const buf = await f.arrayBuffer()
+  const text = new TextDecoder('utf-8').decode(buf)
+  return text.includes('\uFFFD') ? new TextDecoder('windows-1252').decode(buf) : text
+}
+
+function importTemplate() {
+  downloadCSV('argus-import-template.csv', ['name', 'address', 'class', 'site', 'probe', 'tags', 'asset tag', 'location', 'mac', 'NUT.UPS'], [
+    ['sw-site4-core', '10.0.4.2', 'UniFi Switch', 'site4/Network', 'proxy-site4', 'critical', 'IT-0101', 'Comms room', '00:00:5e:00:53:10', ''],
+    ['nas-site4', '10.0.4.30', 'Ugreen (Zabbix agent)', 'site4', '', 'customer-a', '', 'Rack, U4', '', ''],
+    ['ups-site4', '10.0.4.50', 'UPS (NUT)', 'site4', '', '', '', '', '', 'ups'],
+  ])
+}
+
+// prtgAutoMap pairs each PRTG probe with the Argus probe whose site its name carries ("Site 1 probe"
+// and proxy-site1), and the Local Probe with the core server.
+function prtgAutoMap(tree: PRTGTree, proxies: Proxy[]): ProbeMap {
+  const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const out: ProbeMap = {}
+  for (const p of tree.probes) {
+    const n = norm(p.name)
+    const hit = proxies.find((x) => { const site = norm(x.name.replace(/^proxy-/, '')); return site.length >= 3 && n.includes(site) })
+    out[p.name] = hit ? { probe: hit.name, site: hit.name.replace(/^proxy-/, '') } : { probe: /local/i.test(p.name) ? 'server' : '', site: '' }
+  }
+  return out
+}
+
+// ImportDialog imports hosts from a spreadsheet or from PRTG: Argus checks every row first, shows
+// what it makes of it, lets bad cells be fixed in place, and creates nothing until Import.
+function ImportDialog({ proxies, classes, onClose }: { proxies: Proxy[]; classes: DeviceClass[]; onClose: () => void }) {
+  const toast = useToast()
+  const [src, setSrc] = useState<'csv' | 'prtg'>('csv')
+  const [rows, setRows] = useState<ImportRow[]>([])
+  const [file, setFile] = useState<{ name: string; ignored: string[] } | null>(null)
+  const [checks, setChecks] = useState<Record<number, ImportCheck>>({})
+  const [counts, setCounts] = useState<ImportCounts | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [show, setShow] = useState<'all' | 'fix' | 'skip'>('all')
+  const [reason, setReason] = useState('')
+  const [job, setJob] = useState<ImportJob | null>(null)
+  const [err, setErr] = useState('')
+  const [drag, setDrag] = useState(false)
+  // PRTG
+  const [prtgURL, setPrtgURL] = useState('')
+  const [prtgKey, setPrtgKey] = useState('')
+  const [prtgInsecure, setPrtgInsecure] = useState(false)
+  const [tree, setTree] = useState<PRTGTree | null>(null)
+  const [reading, setReading] = useState(false)
+  const [pmap, setPmap] = useState<ProbeMap>({})
+  const [keepGroups, setKeepGroups] = useState(true)
+  const [bringTags, setBringTags] = useState(true)
+  const edits = useRef<Record<number, Partial<ImportRow>>>({})
+  const fileInput = useRef<HTMLInputElement>(null)
+  const seq = useRef(0)
+  const pickable = classes.filter((c) => !c.internal).sort((a, b) => a.label.localeCompare(b.label))
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !job?.running) onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose, job])
+
+  // Every change re-checks the rows (after a pause in typing).
+  useEffect(() => {
+    if (rows.length === 0) { setChecks({}); setCounts(null); return }
+    const n = ++seq.current
+    setChecking(true)
+    const t = setTimeout(async () => {
+      const res = await fetch('/api/import/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rows }) }).catch(() => null)
+      if (n !== seq.current) return
+      setChecking(false)
+      if (!res || !res.ok) { setErr(await errText(res, 'Could not check the rows')); return }
+      const d: { rows: ImportCheck[]; counts: ImportCounts } = await res.json()
+      setErr('')
+      setChecks(Object.fromEntries(d.rows.map((c) => [c.row, c])))
+      setCounts(d.counts)
+    }, 450)
+    return () => clearTimeout(t)
+  }, [rows])
+
+  // PRTG: the rows follow the probe mapping, the group and tag choices, and the cells fixed by hand.
+  useEffect(() => {
+    if (!tree) return
+    setRows(tree.devices.map((d, i) => {
+      const m = pmap[d.probe] || { probe: '', site: '' }
+      const site = m.site ? m.site + (keepGroups && d.groups.length ? '/' + d.groups.join('/') : '') : ''
+      const r: ImportRow = { row: i + 1, ref: d.ref, ...EMPTY_IMPORT_ROW, macros: {}, name: d.name, address: d.address, class: d.class, site, probe: m.probe, tags: bringTags ? d.tags.join(',') : '', hint: d.hint }
+      return { ...r, ...edits.current[r.row] }
+    }))
+  }, [tree, pmap, keepGroups, bringTags])
+
+  // Follow a running import.
+  useEffect(() => {
+    if (!job?.running) return
+    const t = setInterval(async () => {
+      const res = await fetch(`/api/import/${job.id}`).catch(() => null)
+      if (res && res.ok) setJob(await res.json())
+    }, 1000)
+    return () => clearInterval(t)
+  }, [job?.id, job?.running]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function edit(row: number, patch: Partial<ImportRow>) {
+    edits.current[row] = { ...edits.current[row], ...patch }
+    setRows((rs) => rs.map((r) => (r.row === row ? { ...r, ...patch } : r)))
+  }
+  function setMacro(r: ImportRow, macro: string, v: string) { edit(r.row, { macros: { ...r.macros, [macro]: v } }) }
+
+  async function pickFile(f: File | undefined) {
+    if (!f) return
+    const { rows: rs, ignored } = rowsFromCSV(await readTextFile(f))
+    edits.current = {}
+    setFile({ name: f.name, ignored })
+    setRows(rs)
+    if (rs.length === 0) setErr('No rows in this file: the first line names the columns, one device per line after it.')
+  }
+  async function readPRTG() {
+    setReading(true); setErr('')
+    const res = await fetch('/api/import/prtg', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: prtgURL, key: prtgKey, insecure: prtgInsecure }) }).catch(() => null)
+    setReading(false)
+    if (!res || !res.ok) { setErr(await errText(res, 'Could not read PRTG')); return }
+    const t: PRTGTree = await res.json()
+    edits.current = {}
+    setPmap(prtgAutoMap(t, proxies))
+    setTree(t)
+  }
+  function switchSrc(v: 'csv' | 'prtg') {
+    if (v === src) return
+    setSrc(v); setRows([]); setTree(null); setFile(null); setErr(''); edits.current = {}
+  }
+  async function run() {
+    const res = await fetch('/api/import/run', { method: 'POST', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) }, body: JSON.stringify({ rows, source: src === 'prtg' ? 'PRTG' : file?.name || 'a spreadsheet' }) }).catch(() => null)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not start the import')); return }
+    setJob(await res.json())
+  }
+
+  const probeOptions = [{ v: 'server', l: 'Server (the core)' }, ...proxies.map((p) => ({ v: p.name, l: p.name }))]
+  const listed = rows.filter((r) => { const st = checks[r.row]?.status; return show === 'all' || (show === 'fix' ? st === 'fix' : st === 'skip') })
+  const shown = listed.slice(0, 500)
+  const needPick = tree ? rows.filter((r) => !r.class).length : 0
+
+  const cell = (r: ImportRow, field: 'name' | 'address' | 'site', ck?: ImportCheck) => {
+    const bad = ck?.problems?.some((p) => p.field === field)
+    if (!bad) return <span className={field === 'address' ? 'mono' : undefined}>{r[field] || <span className="muted">-</span>}</span>
+    return <input className="input cellfix" value={r[field]} onChange={(e) => edit(r.row, { [field]: e.target.value })} aria-label={`${field} of row ${r.row}`} />
+  }
+  const classCell = (r: ImportRow, ck?: ImportCheck) => {
+    const bad = ck?.problems?.some((p) => p.field === 'class')
+    if (!bad && src === 'csv') return <span>{ck?.class || r.class}</span>
+    const value = ck?.class_id || pickable.find((c) => c.id === r.class || c.label.toLowerCase() === r.class.toLowerCase())?.id || ''
+    return (
+      <>
+        <Select className={'cellfix' + (bad ? ' bad' : '')} value={value} onChange={(e) => edit(r.row, { class: e.target.value })} aria-label={`Class of row ${r.row}`}>
+          <option value="">{r.class && !value ? `${r.class}: pick a class` : 'Pick a class'}</option>
+          {pickable.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </Select>
+        {r.hint && <div className="sreason">{r.hint}</div>}
+      </>
+    )
+  }
+  const probeCell = (r: ImportRow, ck?: ImportCheck) => {
+    const bad = ck?.problems?.some((p) => p.field === 'probe')
+    if (!bad) return <span>{ck?.probe || r.probe || <span className="muted">-</span>}</span>
+    return (
+      <Select className="cellfix bad" value="" onChange={(e) => edit(r.row, { probe: e.target.value })} aria-label={`Probe of row ${r.row}`}>
+        <option value="">{r.probe ? `${r.probe}: pick a probe` : 'Pick a probe'}</option>
+        {probeOptions.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
+      </Select>
+    )
+  }
+  const checkCell = (r: ImportRow, ck?: ImportCheck) => {
+    if (!ck) return <span className="muted">{checking ? 'checking…' : ''}</span>
+    if (ck.status === 'skip') return <span className="upd-none">{ck.note}: skipped</span>
+    if (ck.status === 'ready') return <span className="okquiet">ready{ck.note ? ` · ${ck.note}` : ''}{ck.from_unifi ? ' · UniFi settings from the saved controller' : ''}</span>
+    return (
+      <div className="imp-fix">
+        {(ck.problems || []).filter((p) => !p.field.startsWith('macro:')).map((p, i) => <span key={i} className="tag err">{p.msg}</span>)}
+        {(ck.missing || []).map((m) => (
+          <input key={m.macro} className="input cellfix" type={m.secret ? 'password' : 'text'} placeholder={m.label} value={r.macros[m.macro] || ''} onChange={(e) => setMacro(r, m.macro, e.target.value)} aria-label={`${m.label} for row ${r.row}`} title={m.hint} />
+        ))}
+      </div>
+    )
+  }
+
+  const table = rows.length > 0 && (
+    <>
+      <div className="imp-strip">
+        {counts ? <>
+          <span className="okquiet">{counts.ready} ready</span>
+          {counts.skip > 0 && <span className="upd-none">{counts.skip} skipped</span>}
+          {counts.fix > 0 && <span className="tag err">{counts.fix} to fix</span>}
+        </> : <span className="muted">Checking {rows.length} rows…</span>}
+        {counts && (counts.fix > 0 || counts.skip > 0) && (
+          <div className="seg" style={{ marginLeft: 'auto' }}>
+            <button type="button" className={show === 'all' ? 'on' : ''} onClick={() => setShow('all')}>All</button>
+            {counts.fix > 0 && <button type="button" className={show === 'fix' ? 'on' : ''} onClick={() => setShow('fix')}>To fix</button>}
+            {counts.skip > 0 && <button type="button" className={show === 'skip' ? 'on' : ''} onClick={() => setShow('skip')}>Skipped</button>}
+          </div>
+        )}
+      </div>
+      <div className="imp-scroll">
+        <table className="slist imp-table">
+          <thead><tr><th>{src === 'prtg' ? 'PRTG id' : 'Row'}</th><th>Name</th><th>Address</th><th>Class</th><th>{src === 'prtg' ? 'Group' : 'Site'}</th><th>Probe</th><th>Check</th></tr></thead>
+          <tbody>
+            {shown.map((r) => {
+              const ck = checks[r.row]
+              return (
+                <tr key={r.row} className={ck?.status === 'fix' ? 'bad' : ck?.status === 'skip' ? 'skip' : undefined}>
+                  <td className="mono imp-n" data-label={src === 'prtg' ? 'PRTG id' : 'Row'}>{src === 'prtg' ? r.ref : r.row}</td>
+                  <td data-label="Name">{cell(r, 'name', ck)}</td>
+                  <td data-label="Address">{cell(r, 'address', ck)}</td>
+                  <td data-label="Class">{classCell(r, ck)}</td>
+                  <td data-label={src === 'prtg' ? 'Group' : 'Site'}>{cell(r, 'site', ck)}</td>
+                  <td data-label="Probe">{probeCell(r, ck)}</td>
+                  <td className="imp-check">{checkCell(r, ck)}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+        {listed.length > shown.length && <div className="imp-more">The first {shown.length} of {listed.length} rows are listed; all of them are imported.</div>}
+      </div>
+    </>
+  )
+
+  const csvSource = (
+    <>
+      <div className="hs-note">One device per row, with the columns <span className="mono">name, address, class, site, probe</span> and, if you like, <span className="mono">tags, asset tag, location, mac</span>. A class's own inputs go in a column named after them (<span className="mono">NUT.UPS</span>); UniFi devices get theirs from a saved controller. An empty probe means the site's probe. The upstream device comes from the UniFi controller afterwards. Argus checks every row first; nothing is created until you press Import.</div>
+      <div className={'imp-drop' + (drag ? ' over' : '')} onDragOver={(e) => { e.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)} onDrop={(e) => { e.preventDefault(); setDrag(false); pickFile(e.dataTransfer.files?.[0]) }}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" /><path d="M14 3v5h5M8.5 13h7M8.5 16.5h7" /></svg>
+        {file ? <span><b>{file.name}</b> <span className="sub-line">· {rows.length} row{rows.length === 1 ? '' : 's'} read{file.ignored.length ? ` · ignored columns: ${file.ignored.join(', ')}` : ''}</span></span> : <span className="muted">Drop a CSV file here, or choose one.</span>}
+        <span className="imp-drop-act">
+          <Button onClick={() => fileInput.current?.click()}>{file ? 'Choose another file' : 'Choose a file'}</Button>
+          <Button variant="ghost" onClick={importTemplate}>Download a template</Button>
+        </span>
+        <input ref={fileInput} type="file" accept=".csv,text/csv" hidden onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = '' }} />
+      </div>
+    </>
+  )
+
+  const prtgSource = (
+    <>
+      <div className="hs-note">Argus reads the device tree from PRTG with an API key (read access is enough): probes, groups, devices, their addresses and tags. Nothing changes in PRTG and the key isn't kept. PRTG's sensors aren't copied: each device gets the Argus class that fits it, with its own sensors and thresholds.</div>
+      <div className="hs-grid">
+        <label className="chan-field"><span className="flabel">PRTG address</span><input className="input" placeholder="https://prtg.example.lan" value={prtgURL} onChange={(e) => setPrtgURL(e.target.value)} /></label>
+        <label className="chan-field"><span className="flabel">API key</span><input className="input" type="password" autoComplete="off" value={prtgKey} onChange={(e) => setPrtgKey(e.target.value)} /></label>
+      </div>
+      <div className="imp-strip">
+        <Switch checked={prtgInsecure} onChange={setPrtgInsecure} label="Accept a self-signed certificate" />
+        <Button onClick={readPRTG} disabled={reading || !prtgURL.trim() || !prtgKey.trim()}>{reading ? 'Reading…' : tree ? 'Read again' : 'Read from PRTG'}</Button>
+        {tree && <span className="okquiet">read {tree.devices.length} devices in {tree.probes.length} probe{tree.probes.length === 1 ? '' : 's'} and {tree.groups} group{tree.groups === 1 ? '' : 's'}{tree.version ? ` · PRTG ${tree.version}` : ''}</span>}
+      </div>
+      {tree && (
+        <div className="info-rows imp-map">
+          <InfoRow label="Probes">
+            {tree.probes.map((p) => {
+              const m = pmap[p.name] || { probe: '', site: '' }
+              const setM = (v: Partial<{ probe: string; site: string }>) => setPmap((x) => ({ ...x, [p.name]: { ...m, ...v } }))
+              return (
+                <InfoLine key={p.name} k={`${p.name} · ${p.devices}`}>
+                  <Select value={m.probe} onChange={(e) => { const v = e.target.value; setM({ probe: v, site: m.site || (v !== 'server' ? v.replace(/^proxy-/, '') : '') }) }} aria-label={`Argus probe for ${p.name}`} className={m.probe ? undefined : 'bad'}>
+                    <option value="">Choose a probe</option>
+                    {probeOptions.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
+                  </Select>
+                  <input className={'input imp-site' + (m.site ? '' : ' bad')} placeholder="site (group)" value={m.site} onChange={(e) => setM({ site: e.target.value })} aria-label={`Site for ${p.name}`} />
+                </InfoLine>
+              )
+            })}
+          </InfoRow>
+          <InfoRow label="Groups">
+            <InfoLine>
+              <div className="seg"><button type="button" className={keepGroups ? 'on' : ''} onClick={() => setKeepGroups(true)}>Keep PRTG's groups</button><button type="button" className={!keepGroups ? 'on' : ''} onClick={() => setKeepGroups(false)}>One group per probe</button></div>
+              <span className="sub-line">{keepGroups ? `${tree.groups} groups, made under each probe's site` : "every device in its probe's site"}</span>
+            </InfoLine>
+          </InfoRow>
+          <InfoRow label="Tags">
+            <InfoLine>
+              <Switch checked={bringTags} onChange={setBringTags} label="Bring the device tags" />
+              <span className="sub-line">{tree.tags.length ? `${tree.tags.length} tags, e.g. ${tree.tags.slice(0, 3).join(', ')}` : 'no device tags in PRTG'}</span>
+            </InfoLine>
+          </InfoRow>
+          <InfoRow label="Class">
+            <InfoLine><span className="v">Guessed from each device's PRTG sensors (and from a saved UniFi controller)</span>{needPick > 0 && <span className="tag avail">{needPick} need a pick</span>}</InfoLine>
+          </InfoRow>
+        </div>
+      )}
+    </>
+  )
+
+  const done = job && !job.running
+  return createPortal(
+    <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !job?.running) onClose() }}>
+      <div className="dlg imp-dlg" role="dialog" aria-modal="true">
+        <div className="dlg-title">Import devices</div>
+        <div className="dlg-scroll"><div className="host-settings in-dlg">
+          {!job && <>
+            <div className="hs-mon">
+              <span className="hs-monlabel">From</span>
+              <div className="seg">
+                <button type="button" className={src === 'csv' ? 'on' : ''} onClick={() => switchSrc('csv')}>A spreadsheet (CSV)</button>
+                <button type="button" className={src === 'prtg' ? 'on' : ''} onClick={() => switchSrc('prtg')}>PRTG</button>
+              </div>
+            </div>
+            {src === 'csv' ? csvSource : prtgSource}
+            {err && <div className="imp-err">{err}</div>}
+            {table}
+            <div className="hs-foot">
+              <span className="sub-line imp-foot-note">{counts && counts.fix > 0 ? `Fix the ${counts.fix} row${counts.fix === 1 ? '' : 's'} here${src === 'csv' ? ' or in the file' : ''}, or import the ${counts.ready} now and the rest later.` : counts && counts.ready > 0 ? 'Each host gets its class, its probe and its tags; the upstream device comes from the UniFi controller.' : ''}</span>
+              <ReasonInput value={reason} onChange={setReason} />
+              <Button variant="ghost" onClick={onClose}>Cancel</Button>
+              <Button variant="primary" onClick={run} disabled={!counts || counts.ready === 0 || checking}>{counts && counts.ready > 0 ? `Import ${counts.ready} device${counts.ready === 1 ? '' : 's'}` : 'Import'}</Button>
+            </div>
+          </>}
+          {job && <>
+            <div className="imp-progress">
+              <div className="imp-bar"><span style={{ width: `${job.total ? Math.round((job.done / job.total) * 100) : 0}%` }} /></div>
+              <div>{job.running ? `Importing ${job.done} of ${job.total}…` : `Imported ${job.created} of ${job.total}${job.skipped ? `, ${job.skipped} left out` : ''}.`} {job.running && <span className="sub-line">You can close this: the import goes on, and Changes records it when it ends.</span>}</div>
+            </div>
+            {job.failed.length > 0 && (
+              <div className="imp-failed">
+                <div className="site-ed-h">Not imported</div>
+                {job.failed.map((f) => <div key={f.row} className="sreason"><b>{f.name}</b> (row {f.row}): {f.error}</div>)}
+              </div>
+            )}
+            <div className="hs-foot">
+              <Button variant={done ? 'primary' : 'ghost'} onClick={onClose}>{done ? 'Done' : 'Close'}</Button>
+            </div>
+          </>}
+        </div></div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenScan: (id: number | null) => void }) {
+  const [importing, setImporting] = useState(false) // the Import dialog (spreadsheet or PRTG)
   const [proxies, setProxies] = useState<Proxy[] | null>(null)
   const [groups, setGroups] = useState<Group[]>([])
   const [classes, setClasses] = useState<DeviceClass[]>([])
@@ -5560,9 +5971,11 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
         <span className="hint">find devices, review what answered, adopt into monitoring · kept for 30 days</span>
         <div className="tools">
           <Button onClick={() => { setCtlForm((ctls?.length || 0) === 0 ? emptyCtlForm() : null); setDlg('ctls') }}>Discovery settings</Button>
+          <Button onClick={() => setImporting(true)} disabled={proxies === null}>Import</Button>
           <Button variant="primary" onClick={() => setDlg('new')} disabled={proxies === null || ctls === null}>+ New scan</Button>
         </div>
       </div>
+      {importing && proxies && <ImportDialog proxies={proxies} classes={classes} onClose={() => setImporting(false)} />}
       {/* One concise nudge, only while no controller is saved - configuring them first makes
           every later discovery identify UniFi gear exactly. */}
       {ctls !== null && ctls.length === 0 && (

@@ -49,6 +49,17 @@ GitHub Release from the matching section below.
 - The Device tab shows the path (gateway › switch port 24 › this host), with a down hop in red.
   When the controller's answer changes, Changes says so.
 
+**Import from a spreadsheet or PRTG:** Discovery has a new **Import**.
+- From a CSV (Excel's too: comma or semicolon): name, address, class, site, probe and, if you like,
+  tags, asset tag, location, a UniFi device's MAC and a class's own inputs. A template to start
+  from is one click away.
+- From PRTG, with an API key (read access is enough; the key isn't kept): its probes map to Argus
+  probes and sites, its groups and device tags come along, and each device's class is guessed from
+  its PRTG sensors (or from a saved UniFi controller), with the reason shown.
+- Argus checks every row before creating anything: ready, skipped (already monitored), or to fix,
+  with the bad cell editable in place. UniFi devices get their settings from a saved controller.
+- The import runs in the background with its progress; Changes records it as one entry.
+
 **Site info and who to call:**
 - A site keeps its address, its contacts and its internet lines (provider, circuit or contract,
   support phone), at the top of its page in Monitoring (**Edit site info**) and on each of its hosts'

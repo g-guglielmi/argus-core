@@ -96,6 +96,10 @@ API key, and MAC):
   hand. While a switch is down, the hosts behind it wait: you get one alert for the switch, naming the
   hosts behind it, instead of one per access point and camera. The Device tab shows the path
   (gateway › switch port 24 › this host).
+- **Import** - hosts from a spreadsheet (CSV) or straight from PRTG (a read-only API key: probes
+  mapped to Argus probes, groups and tags kept, the class guessed from the PRTG sensors). Argus
+  checks every row first (class, site, probe, already monitored, the inputs a class needs) and lets
+  you fix a bad cell in place before anything is created.
 - **Site info and who to call** - each site keeps its address, its contacts and its internet lines
   (provider, circuit, support number), each line tied to the sensor that measures it. An alert on a
   WAN that went down says who to call and with which circuit ID; a site whose probe went silent lists
