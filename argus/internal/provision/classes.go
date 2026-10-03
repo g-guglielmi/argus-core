@@ -185,9 +185,13 @@ func checkURLOptions(entry, frag string) error {
 			if strings.TrimSpace(val) == "" {
 				return fmt.Errorf("%q: %s needs the text to look for", entry, k)
 			}
+		case "name":
+			if strings.TrimSpace(val) == "" || len([]rune(val)) > 60 {
+				return fmt.Errorf("%q: a name is 1 to 60 characters", entry)
+			}
 		case "":
 		default:
-			return fmt.Errorf("%q: %q is not an option (tls, text or notext)", entry, k)
+			return fmt.Errorf("%q: %q is not an option (tls, text, notext or name)", entry, k)
 		}
 	}
 	return nil

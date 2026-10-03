@@ -71,6 +71,8 @@ type addOnView struct {
 	Description string           `json:"description"`
 	Enabled     bool             `json:"enabled"`
 	Macros      []addOnMacroView `json:"macros,omitempty"`
+	// Services is the Common SaaS add-on's catalog, for its checklist.
+	Services []provision.SaaSService `json:"services,omitempty"`
 }
 
 // addOnDesired is the client's desired state for one add-on in the host-config PATCH.
@@ -282,24 +284,27 @@ func (s *Server) hostConfigFor(ctx context.Context, hostID string, canEdit bool)
 			linked[n] = true
 		}
 		classTemplates := map[string]bool{}
-		noAddOns := false // Argus-managed hosts (the Probe host) have no address for add-ons to check
+		internal := false // Argus-managed hosts (the Probe host) get only the add-ons made for them
 		if out.ClassID != "" {
 			if c, ok := provision.ClassByID(out.ClassID); ok {
 				for _, t := range c.Templates {
 					classTemplates[t] = true
 				}
-				noAddOns = c.Internal
+				internal = c.Internal
 			}
 		}
 		factory, _ := provision.TemplateFactoryDefaults()
 		for _, a := range provision.AddOns() {
-			if noAddOns {
-				break
+			if !a.OffersOn(out.ClassID, internal) {
+				continue
 			}
 			if classTemplates[a.Template] {
 				continue // the class already includes this template; managed in class options, not here
 			}
 			av := addOnView{ID: a.ID, Label: a.Label, Description: a.Description, Enabled: linked[a.Template]}
+			if a.Template == provision.TemplateSaaS {
+				av.Services = provision.SaaSServices()
+			}
 			for _, ms := range a.Macros {
 				av.Macros = append(av.Macros, addOnMacroView{Macro: ms.Macro, Label: ms.Label, Hint: ms.Hint, Options: ms.Options, Value: macroValueOr(curMacros, ms.Macro, factory[a.Template][ms.Macro])})
 			}
@@ -666,11 +671,14 @@ func (s *Server) applyAddOns(ctx context.Context, hostID string, desired map[str
 		linked[n] = true
 	}
 	classTemplates := map[string]bool{}
-	if classID, ok, _ := s.st.GetDeviceClass(ctx, hostID); ok {
-		if c, ok := provision.ClassByID(classID); ok {
+	classID, internal := "", false
+	if id, ok, _ := s.st.GetDeviceClass(ctx, hostID); ok {
+		classID = id
+		if c, ok := provision.ClassByID(id); ok {
 			for _, t := range c.Templates {
 				classTemplates[t] = true
 			}
+			internal = c.Internal
 		}
 	}
 	cur := map[string]zabbix.HostMacro{}
@@ -681,8 +689,8 @@ func (s *Server) applyAddOns(ctx context.Context, hostID string, desired map[str
 	}
 	for id, d := range desired {
 		a, ok := provision.AddOnByID(id)
-		if !ok || classTemplates[a.Template] {
-			continue // unknown add-on, or one the class owns - never managed here
+		if !ok || classTemplates[a.Template] || !a.OffersOn(classID, internal) {
+			continue // unknown add-on, one the class owns, or one not for this kind of host
 		}
 		if d.Enabled {
 			for _, ms := range a.Macros {
@@ -715,6 +723,9 @@ func (s *Server) applyAddOns(ctx context.Context, hostID string, desired map[str
 		if !linked[a.Template] {
 			if err := s.zbx.LinkHostTemplate(ctx, hostID, tid); err != nil {
 				return err
+			}
+			if a.CheckNow {
+				s.scheduleCheckNow(hostID, a.Template)
 			}
 		}
 		for _, ms := range a.Macros {

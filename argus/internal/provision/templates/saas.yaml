@@ -1,0 +1,149 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: 8fceb3e96d144ad9926f42b3bcc131f0
+      template: 'Argus Common SaaS'
+      name: 'Argus Common SaaS'
+      description: |
+        Whether the cloud services a site works with answer from it, and how fast (the Common SaaS
+        add-on, on a site's Probe host): the proxy runs argus_http.py, the HTTP collector baked into
+        the image, every 2 minutes for every service in {$SAAS.URLS} at once, each "address#name=...".
+        Any answer short of a server error counts ({$SAAS.EXPECT}): a login page or a 400 still
+        says the service is there. Each service is its own sensor, with why when it doesn't answer.
+        DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: 600d11a990314004be07c404ee1d0d87
+          name: 'Common SaaS raw data'
+          type: EXTERNAL
+          key: 'argus_http.py[argus,"{$SAAS.URLS}","https","443","{$SAAS.EXPECT}","verify","{$SAAS.TIMEOUT}"]'
+          delay: 2m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          timeout: 60s
+          description: 'Master item: the proxy''s argus_http.py asks every service in {$SAAS.URLS} at once and prints, per service, whether it answered, how long it took and why not, as JSON. A bad list is reported in its error field.'
+      discovery_rules:
+        - uuid: ec9c4a2339e44ec5a9367142f7b200bd
+          name: 'Service discovery'
+          type: DEPENDENT
+          key: saas.discovery
+          delay: '0'
+          lifetime_type: DELETE_IMMEDIATELY
+          description: 'One sensor set per service in {$SAAS.URLS}. A service taken out of it is deleted at the next check, with its sensors and problems. While the list is invalid the discovery keeps what it had.'
+          master_item:
+            key: 'argus_http.py[argus,"{$SAAS.URLS}","https","443","{$SAAS.EXPECT}","verify","{$SAAS.TIMEOUT}"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (d.error) { throw d.error; }
+                  return JSON.stringify(d.url_discovery || []);
+              error_handler: DISCARD_VALUE
+          item_prototypes:
+            - uuid: 799d2bd3821e402f9c5c7932753a0545
+              name: '{#URLNAME} reachable'
+              type: DEPENDENT
+              key: 'saas.up[{#URLID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: UNSIGNED
+              description: '1 = {#URLNAME} answered, 0 = it did not (its reason is in the error item).'
+              master_item:
+                key: 'argus_http.py[argus,"{$SAAS.URLS}","https","443","{$SAAS.EXPECT}","verify","{$SAAS.TIMEOUT}"]'
+              preprocessing:
+                # A list the collector refused makes this sensor unsupported with why, so it shows.
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      if (d.error) { throw d.error; }
+                      return value;
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var us = JSON.parse(value).urls || [];
+                      for (var i = 0; i < us.length; i++) { if (us[i].id === '{#URLID}') { return us[i].up; } }
+                      throw '{#URLNAME} is no longer in the list';
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: d6cc8ca82b7a4c589d53ad6b17e9aad3
+                  expression: 'max(/Argus Common SaaS/saas.up[{#URLID}],#3)=0'
+                  name: '{#URLNAME} does not answer from this site'
+                  priority: HIGH
+                  description: '{#URLNAME} has not answered on the last 3 checks. Why is in the sensor''s reason.'
+            - uuid: e918d5f84e94482082b984f21dc24135
+              name: '{#URLNAME} response time'
+              type: DEPENDENT
+              key: 'saas.time[{#URLID}]'
+              delay: '0'
+              history: 7d
+              trends: 365d
+              value_type: FLOAT
+              units: s
+              description: 'How long {#URLNAME} took to answer, redirects included (no value while it does not answer).'
+              master_item:
+                key: 'argus_http.py[argus,"{$SAAS.URLS}","https","443","{$SAAS.EXPECT}","verify","{$SAAS.TIMEOUT}"]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var us = JSON.parse(value).urls || [];
+                      for (var i = 0; i < us.length; i++) { if (us[i].id === '{#URLID}' && us[i].time !== null) { return us[i].time; } }
+                      throw 'no response time';
+                  error_handler: DISCARD_VALUE
+              trigger_prototypes:
+                - uuid: f21f39f4e89d441aaf7481620c654a83
+                  expression: 'min(/Argus Common SaaS/saas.time[{#URLID}],#3)>={$SAAS.TIME.WARN} and min(/Argus Common SaaS/saas.time[{#URLID}],#3)<{$SAAS.TIME.HIGH} and max(/Argus Common SaaS/saas.up[{#URLID}],#3)=1'
+                  name: '{#URLNAME} is slow from this site'
+                  priority: WARNING
+                  description: '{#URLNAME} took at least {$SAAS.TIME.WARN}s (below the high threshold) on the last 3 checks, while it still answers.'
+                - uuid: fad6ef4ab23745c9bedb96a343782f10
+                  expression: 'min(/Argus Common SaaS/saas.time[{#URLID}],#3)>={$SAAS.TIME.HIGH} and max(/Argus Common SaaS/saas.up[{#URLID}],#3)=1'
+                  name: '{#URLNAME} is very slow from this site'
+                  priority: HIGH
+                  description: '{#URLNAME} took at least {$SAAS.TIME.HIGH}s on the last 3 checks, while it still answers.'
+            - uuid: 4415f10a242546dabc6b6205e082d167
+              name: '{#URLNAME} error'
+              type: DEPENDENT
+              key: 'saas.error[{#URLID}]'
+              delay: '0'
+              history: 7d
+              trends: '0'
+              value_type: TEXT
+              description: 'Why {#URLNAME} did not answer on the last check, in one line (empty while it does). Not a curated sensor: Argus shows it next to the down reading and in the alert.'
+              master_item:
+                key: 'argus_http.py[argus,"{$SAAS.URLS}","https","443","{$SAAS.EXPECT}","verify","{$SAAS.TIMEOUT}"]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var us = JSON.parse(value).urls || [];
+                      for (var i = 0; i < us.length; i++) { if (us[i].id === '{#URLID}') { return us[i].error || ''; } }
+                      throw '{#URLNAME} is no longer in the list';
+                  error_handler: DISCARD_VALUE
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+      macros:
+        - macro: '{$SAAS.URLS}'
+          value: 'https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration#name=Microsoft%20365, https://teams.microsoft.com/robots.txt#name=Microsoft%20Teams, https://www.google.com/generate_204#name=Google, https://dynamodb.eu-central-1.amazonaws.com/ping#name=Amazon%20Web%20Services, https://www.cloudflare.com/cdn-cgi/trace#name=Cloudflare, https://zoom.us/robots.txt#name=Zoom, https://www.dropbox.com/robots.txt#name=Dropbox, https://www.apple.com/library/test/success.html#name=Apple%20iCloud'
+          description: 'The services to check, comma separated, each "address#name=Name" (%20 for a space), at most 16. Argus host settings edit it as a list of services.'
+        - macro: '{$SAAS.EXPECT}'
+          value: 200-499
+          description: 'The status codes that count as an answer: anything short of a server error.'
+        - macro: '{$SAAS.TIMEOUT}'
+          value: '10'
+          description: 'Seconds to wait for each service (1 to 15).'
+        - macro: '{$SAAS.TIME.WARN}'
+          value: '1'
+          description: 'Response time (seconds) that raises a warning.'
+        - macro: '{$SAAS.TIME.HIGH}'
+          value: '3'
+          description: 'Response time (seconds) that raises a high-severity alert.'

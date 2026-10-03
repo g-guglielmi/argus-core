@@ -97,14 +97,20 @@ class ParseTest(unittest.TestCase):
                          "the id is the URL's: its options can change and keep its sensors")
 
     def test_hosts_and_options(self):
-        es = ah.parse_urls("10.7.0.2, 10.7.0.4:8443/admin#tls=self-signed&text=Sign%20in, portal.example.com#notext=Error&tls=verify",
+        es = ah.parse_urls("10.0.0.20, 10.0.0.21:8443/admin#tls=self-signed&text=Sign%20in, portal.example.com#notext=Error&tls=verify",
                            "10.0.0.10", "https", 443)
-        self.assertEqual([e.url for e in es], ["https://10.7.0.2", "https://10.7.0.4:8443/admin", "https://portal.example.com"])
+        self.assertEqual([e.url for e in es], ["https://10.0.0.20", "https://10.0.0.21:8443/admin", "https://portal.example.com"])
         self.assertEqual([(e.mode, e.text, e.absent) for e in es], [("", "", False), ("self-signed", "Sign in", False), ("verify", "Error", True)])
-        self.assertEqual(ah.parse_urls("10.7.0.2", "h", "http", 80)[0].url, "http://10.7.0.2", "a host gets the scheme")
+        self.assertEqual(ah.parse_urls("10.0.0.20", "h", "http", 80)[0].url, "http://10.0.0.20", "a host gets the scheme")
         for bad in ["https://a.example.com#tls=maybe", "https://a.example.com#text=", "https://a.example.com#color=red"]:
             with self.assertRaises(ValueError, msg=bad):
                 ah.parse_urls(bad, "h", "https", 443)
+
+    def test_names(self):
+        es = ah.parse_urls("https://www.example.com/ping#name=Example%20Cloud, https://b.example.com/x#tls=verify&name=B", "h", "https", 443)
+        self.assertEqual([e.name for e in es], ["Example Cloud", "B"])
+        self.assertEqual(es[0].id, ah.parse_urls("https://www.example.com/ping", "h", "https", 443)[0].id, "a name keeps the sensor's id")
+        self.assertEqual(ah.parse_urls("https://b.example.com/x", "h", "https", 443)[0].name, "b.example.com/x", "no name: host and path")
 
     def test_blank_list_checks_the_host(self):
         es = ah.parse_urls("  ", "10.0.0.10", "https", 443)

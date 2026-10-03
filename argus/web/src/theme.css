@@ -1281,6 +1281,15 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .site-contact-ed { display: grid; grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1fr) minmax(120px, 0.8fr) minmax(0, 1fr) auto; gap: 8px; margin-bottom: 8px; }
 .site-line-ed { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 10px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 8px; }
 .site-line-act { grid-column: 1 / -1; display: flex; justify-content: flex-end; margin: -2px -4px -4px 0; }
+/* The Common SaaS add-on: the catalog as a checklist, other services as rows. */
+.saas-ed { display: grid; gap: 8px; }
+.saas-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px 12px; }
+.saas-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; padding: 3px 0; }
+.saas-item.on { color: var(--text); }
+.saas-ed .saas-item input { width: auto; flex: none; margin: 0; padding: 0; }
+.saas-custom { display: grid; grid-template-columns: minmax(120px, 0.6fr) minmax(0, 1.4fr) auto; gap: 8px; }
+.saas-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 768px) { .saas-custom { grid-template-columns: minmax(0, 1fr); } }
 /* Account, API tokens: the list, the one-time token, the form. */
 .token-list { list-style: none; padding: 0; margin: 0 0 12px; }
 .token-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-top: 1px solid var(--border); padding: 8px 0; }

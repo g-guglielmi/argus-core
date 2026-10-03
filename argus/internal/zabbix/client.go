@@ -420,6 +420,42 @@ func (c *Client) ExecuteNow(ctx context.Context, itemIDs []string) error {
 	return c.call(ctx, "task.create", tasks, true, &out)
 }
 
+// HostTemplateMasterItems is a host's items that come from the named template and read on their own
+// (not dependent on another item): what "execute now" can run.
+func (c *Client) HostTemplateMasterItems(ctx context.Context, hostID, template string) ([]string, error) {
+	ts, err := c.Templates(ctx, []string{template})
+	if err != nil || len(ts) == 0 {
+		return nil, err
+	}
+	var titems []struct {
+		ItemID string `json:"itemid"`
+		Type   string `json:"type"`
+	}
+	if err := c.call(ctx, "item.get", map[string]any{"output": []string{"itemid", "type"}, "templateids": ts[0].TemplateID}, true, &titems); err != nil {
+		return nil, err
+	}
+	want := map[string]bool{}
+	for _, it := range titems {
+		if it.Type != "18" { // 18 = dependent: it follows its master
+			want[it.ItemID] = true
+		}
+	}
+	var hitems []struct {
+		ItemID     string `json:"itemid"`
+		TemplateID string `json:"templateid"`
+	}
+	if err := c.call(ctx, "item.get", map[string]any{"output": []string{"itemid", "templateid"}, "hostids": hostID}, true, &hitems); err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, it := range hitems {
+		if want[it.TemplateID] {
+			out = append(out, it.ItemID)
+		}
+	}
+	return out, nil
+}
+
 type ItemHost struct {
 	HostID string `json:"hostid"`
 	Name   string `json:"name"`

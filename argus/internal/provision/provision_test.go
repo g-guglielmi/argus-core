@@ -353,7 +353,7 @@ func TestAddOnMacroPatterns(t *testing.T) {
 		t.Fatalf("HTTP add-on macros: %+v", web.Macros)
 	}
 	for _, v := range []string{"https://portal.example.com/app", "/login, https://a.example.com:8443/x?y=1#Welcome%20back", "http://10.0.0.20/health#!Error", "https://[fe80::1]/",
-		"10.7.0.2, 10.7.0.4:8443/admin#tls=self-signed&text=Sign%20in", "portal.example.com#notext=Error&tls=ignore"} {
+		"10.0.0.20, 10.0.0.21:8443/admin#tls=self-signed&text=Sign%20in", "portal.example.com#notext=Error&tls=ignore"} {
 		if err := ValidateMacroValue(urls, v); err != nil {
 			t.Errorf("%q refused: %v", v, err)
 		}

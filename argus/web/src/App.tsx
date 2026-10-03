@@ -27,7 +27,8 @@ type ThrRowData = { macro: string; label: string; unit?: string; default: string
 type ThrTemplate = { template: string; label: string; every_host?: boolean; optional?: boolean; classes?: string[]; thresholds: ThrRowData[] }
 type ThresholdsData = { templates: ThrTemplate[] }
 type AddOnMacro = { macro: string; label: string; hint?: string; options?: string[]; value: string }
-type AddOnCfg = { id: string; label: string; description: string; enabled: boolean; macros?: AddOnMacro[] }
+type AddOnCfg = { id: string; label: string; description: string; enabled: boolean; macros?: AddOnMacro[]; services?: SaaSService[] }
+type SaaSService = { id: string; name: string; url: string; default: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg; tags?: HostTag[]; own?: { asset_tag: string; location: string }; links?: LinkRow[]; class_links?: LinkRow[]; upstream?: UpstreamInfo }
 // A host's master sensor: while it's down, the host's other alerts are held (item_id "" = none).
 type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; options: { id: string; label: string }[] }
@@ -7043,6 +7044,68 @@ function httpFieldUsed(macro: string, urls: string): boolean {
   if (macro === '{$HTTP.PORT}') return rows.some((r) => r.url.startsWith('/'))
   return macro !== '{$HTTP.TLS.VERIFY}'
 }
+// The Common SaaS add-on's list ({$SAAS.URLS}): "address#name=Name" entries, comma separated.
+type SaaSRow = { url: string; name: string }
+const SAAS_MAX = 16
+
+function parseSaaSList(v: string): SaaSRow[] {
+  return v.split(/[,\s]+/).filter(Boolean).map((e) => {
+    const [url, frag = ''] = e.split('#', 2)
+    let name = ''
+    for (const part of frag.split('&')) {
+      const [k, val = ''] = part.split('=', 2)
+      if (k === 'name') { try { name = decodeURIComponent(val) } catch { name = val } }
+    }
+    return { url, name }
+  })
+}
+
+function serializeSaaSList(rows: SaaSRow[]): string {
+  return rows.filter((r) => r.url.trim()).map((r) => r.url.trim() + (r.name.trim() ? '#name=' + encodeURIComponent(r.name.trim()) : '')).join(', ')
+}
+
+// SaaSEditor picks the services the Common SaaS add-on checks: the catalog's as a checklist, and any
+// other address with a name of its own.
+function SaaSEditor({ value, services, onChange, disabled }: { value: string; services: SaaSService[]; onChange: (v: string) => void; disabled?: boolean }) {
+  const [rows, setRows] = useState<SaaSRow[]>(() => parseSaaSList(value))
+  const known = new Set(services.map((x) => x.url))
+  const custom = rows.map((r, i) => ({ r, i })).filter(({ r }) => !known.has(r.url))
+  const full = rows.length >= SAAS_MAX
+  function update(next: SaaSRow[]) { setRows(next); onChange(serializeSaaSList(next)) }
+  function toggle(sv: SaaSService, on: boolean) {
+    if (on) update([...rows, { url: sv.url, name: sv.name }])
+    else update(rows.filter((r) => r.url !== sv.url))
+  }
+  return (
+    <div className="saas-ed">
+      <div className="saas-list">
+        {services.map((sv) => {
+          const on = rows.some((r) => r.url === sv.url)
+          return (
+            <label key={sv.id} className={'saas-item' + (on ? ' on' : '')} title={sv.url}>
+              <input type="checkbox" checked={on} disabled={disabled || (!on && full)} onChange={(e) => toggle(sv, e.target.checked)} />
+              {sv.name}
+            </label>
+          )
+        })}
+      </div>
+      {custom.map(({ r, i }) => (
+        <div className="saas-custom" key={i}>
+          <input className="input" value={r.name} placeholder="Name, e.g. Our ERP" maxLength={60} disabled={disabled} aria-label="Service name"
+            onChange={(e) => update(rows.map((x, n) => (n === i ? { ...x, name: e.target.value } : x)))} />
+          <input className={'input' + (r.url && urlRowProblem(r.url) ? ' bad' : '')} value={r.url} placeholder="https://erp.example.com/health" disabled={disabled} aria-label="Service address"
+            onChange={(e) => update(rows.map((x, n) => (n === i ? { ...x, url: e.target.value } : x)))} />
+          <Button variant="ghost" className="compact" disabled={disabled} onClick={() => update(rows.filter((_, n) => n !== i))}>Remove</Button>
+        </div>
+      ))}
+      <div className="saas-foot">
+        <Button variant="ghost" className="compact" disabled={disabled || full} onClick={() => update([...rows, { url: '', name: '' }])}>+ Another service</Button>
+        <span className="sub-line">{rows.length} of {SAAS_MAX}. Any answer short of a server error counts: a login page still says the service is there.</span>
+      </div>
+    </div>
+  )
+}
+
 function HttpUrlsEditor({ value, tlsDefault, onChange, disabled }: { value: string; tlsDefault: string; onChange: (v: string) => void; disabled?: boolean }) {
   const def = ((URL_MODES as readonly string[]).includes(tlsDefault) ? tlsDefault : 'verify') as UrlRow['tls']
   const [rows, setRows] = useState<UrlRow[]>(() => parseUrlList(value).map((r) => ({ ...r, tls: r.tls || def })))
@@ -7497,6 +7560,8 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
         const urls = (x: AddOnCfg) => parseUrlList(x.macros?.find((m) => m.macro === '{$HTTP.URLS}')?.value || '')
         const said = (x: AddOnCfg) => {
           if (x.id === 'http') { const n = urls(x).length; return `${x.label}: ${n === 0 ? 'the host itself' : n === 1 ? '1 URL' : n + ' URLs'}` }
+          if (x.id === 'saas') { const n = parseSaaSList(x.macros?.find((m) => m.macro === '{$SAAS.URLS}')?.value || '').length; return `${x.label}: ${n === 1 ? '1 service' : n + ' services'}` }
+          if (x.id === 'speedtest') return `${x.label}: every ${x.macros?.find((m) => m.macro === '{$SPEEDTEST.INTERVAL}')?.value || '6h'}`
           const v = (x.macros?.[0]?.value || '').trim()
           return v ? `${x.label}: ${hsShort(v)}` : x.label
         }
@@ -7516,7 +7581,12 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
                   {a.macros.filter((m) => {
                     const urls = a.macros!.find((x) => x.macro === '{$HTTP.URLS}')
                     return !urls || httpFieldUsed(m.macro, urls.value)
-                  }).map((m) => m.macro === '{$HTTP.URLS}' ? (
+                  }).map((m) => m.macro === '{$SAAS.URLS}' ? (
+                    <div className="field" key={m.macro} style={{ gridColumn: '1 / -1' }}>
+                      <span>{m.label}</span>
+                      <SaaSEditor value={m.value} services={a.services || []} disabled={!canEdit} onChange={(v) => setAddonMacro(a.id, m.macro, v)} />
+                    </div>
+                  ) : m.macro === '{$HTTP.URLS}' ? (
                     <div className="field" key={m.macro} style={{ gridColumn: '1 / -1' }}>
                       <span>{m.label}</span>
                       <HttpUrlsEditor value={m.value} disabled={!canEdit} onChange={(v) => setAddonMacro(a.id, m.macro, v)}
@@ -8993,12 +9063,21 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
   function groupHeadline(cat: string, gi: SensorItem[]): { node: ReactNode; primary: SensorItem; why?: string; whyId?: string } {
     if (cat === 'Network') { const inn = gi.find((x) => x.channel === 'In'), out = gi.find((x) => x.channel === 'Out'); return { node: <span>↓ {reading(inn) ?? '-'} &nbsp;&nbsp; ↑ {reading(out) ?? '-'}</span>, primary: inn || gi[0] } }
     if (cat === 'Disk') { const pu = gi.find((x) => (x.channel || '').startsWith('Used %')) || gi[0]; return { node: reading(pu), primary: pu } }
-    if (cat === 'Ping' || cat === 'Web' || cat === 'TCP') {
+    if (cat === 'Internet') {
+      const dn = gi.find((x) => x.channel === 'Download'), upl = gi.find((x) => x.channel === 'Upload'), ran = gi.find((x) => x.channel === 'Ran')
+      if (dn || upl) {
+        if (ran && ran.last_value !== '' && Number(ran.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>could not run</span>, primary: dn || upl || gi[0], why: ran.why, whyId: ran.id }
+        return { node: <span>↓ {reading(dn) ?? '-'} &nbsp;&nbsp; ↑ {reading(upl) ?? '-'}</span>, primary: dn || upl || gi[0] }
+      }
+      const idle = gi.find((x) => x.channel === 'Idle') || gi[0]
+      return { node: reading(idle), primary: idle }
+    }
+    if (cat === 'Ping' || cat === 'Web' || cat === 'TCP' || cat === 'Cloud services') {
       const rt = gi.find((x) => x.channel === 'Response time') || gi[0]
       // A TCP port that isn't answering, or a URL that doesn't answer as expected, says so (its reason
       // is on the Reachable channel's row).
       const up = gi.find((x) => x.channel === 'Reachable')
-      if ((cat === 'TCP' || cat === 'Web') && up && up.last_value !== '' && Number(up.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>{cat === 'TCP' ? 'not answering' : 'down'}</span>, primary: rt, why: up.why, whyId: up.id }
+      if ((cat === 'TCP' || cat === 'Web' || cat === 'Cloud services') && up && up.last_value !== '' && Number(up.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>{cat === 'TCP' ? 'not answering' : 'down'}</span>, primary: rt, why: up.why, whyId: up.id }
       return { node: reading(rt), primary: rt }
     }
     // A push sensor reads how long ago its job last ran; a failed last run says so, with the job's message.
@@ -9111,9 +9190,10 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                   // "not supported" but keeps the last reading. Keep such a parked drive on the chart
                   // (its last value seeds a flat hold in buildMultiPlot) instead of filtering it out.
                   let channels: GroupChan[] = row.items.filter((i) => i.numeric && (i.supported || (row.cat === 'Temperature' && i.last_value !== ''))).map((i) => {
-                    if (((row.cat === 'Ping' || row.cat === 'Web' || row.cat === 'TCP') && i.channel === 'Reachable') || (row.cat === 'DNS' && i.channel === 'Resolves'))
+                    if (((row.cat === 'Ping' || row.cat === 'Web' || row.cat === 'TCP' || row.cat === 'Cloud services') && i.channel === 'Reachable') || (row.cat === 'DNS' && i.channel === 'Resolves'))
                       return { id: i.id, label: 'Downtime', units: '', invert: true } // show only when unreachable / not-resolving (PRTG-style)
                     if (row.cat === 'Push' && i.channel === 'Last run') return { id: i.id, label: 'Failed', units: '', invert: true } // a band while the last run failed
+                    if (row.cat === 'Internet' && i.channel === 'Ran') return { id: i.id, label: 'Failed', units: '', invert: true } // a band while the speed test couldn't run
                     // A port's Speed and Link are constants - start their lines hidden (legend keeps
                     // the value; a click reveals the line). Hiding Speed also lets the bps axis
                     // range to the In/Out traffic instead of pinning at the negotiated gigabits.

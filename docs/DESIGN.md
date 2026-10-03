@@ -219,7 +219,23 @@ resolution** add-on and the **TCP ports** add-on
 (`Argus TCP ports`: `argus_tcp.py` on the probe connects to every port in `{$TCP.PORTS}` at once,
 one sensor group per port under **TCP** with its connect time, reachability as the Downtime band and
 why it doesn't answer as the reason; add-on values are checked against a pattern before they reach
-the collector's command line). **Push sensors** (`Argus Push`, docs/push-sensors.md) are a job's
+the collector's command line). Add-ons can name the classes they belong to: the **Speedtest** and
+**Common SaaS** add-ons are offered only on a site's Probe host (the internal probe class, which gets
+no others). **Speedtest** (`Argus Speedtest`: `argus_speedtest.py` on the probe, every
+`{$SPEEDTEST.INTERVAL}`, against Cloudflare's speed test, stdlib only: download and upload over
+several streams after a 1 s warm-up, the idle round trip less Cloudflare's own time from its
+Server-Timing header, jitter, the round trip while each direction is busy, and the public address,
+AS organization and Cloudflare site from its `/meta`; speeds in Mbps so their thresholds read as
+such, round trips in seconds; a run it couldn't measure is a reading with its reason, `speedtest.ok`
+0 and `speedtest.error`). Ookla's CLI was ruled out: its licence is personal, non-commercial use only.
+**Common SaaS** (`Argus Common SaaS`: the HTTP collector `argus_http.py` with the probe's
+`{$SAAS.URLS}`, each entry named with `#name=`, any answer short of a server error counting
+(`{$SAAS.EXPECT}` 200-499), one group per service under **Cloud services** like the Web checks; the
+catalog of services is `provision/saas.go`, the template's default list is generated from it and a test
+keeps them equal). Both run their items right after they are turned on (`ExecuteNow` on the
+template's own non-dependent items after 30 and 90 s), so a speed test every 6 hours shows its first
+reading in a minute. On the Probe host the unlisted categories read Probe, Internet, Cloud services.
+**Push sensors** (`Argus Push`, docs/push-sensors.md) are a job's
 own reports: the job calls its push sensor's secret URL (`/api/push/{token}`, ok or fail and a
 message), Argus keeps the last run (`push_sensors`), and the template, which Argus links with a host's
 first push sensor and unlinks with its last, reads the host's push sensors back once a minute through

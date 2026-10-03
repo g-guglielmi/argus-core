@@ -688,6 +688,9 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			if ci, cj := order[out[i].Category], order[out[j].Category]; ci != cj {
 				return ci < cj
 			}
+			if out[i].Category != out[j].Category {
+				return unlistedCategoryLess(out[i].Category, out[j].Category)
+			}
 			// Within a category, some flat rows have a pinned reading order (e.g. Power: draw, load,
 			// input, output); everything else falls back to natural label order ("Port 2" < "Port 10").
 			if ri, rj := itemRank(out[i].Category, out[i].Label), itemRank(out[j].Category, out[j].Label); ri != rj {
@@ -697,6 +700,25 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// unlistedOrder is the order of the categories no shape profile lists (they rank 0 alike): the
+// Probe host's own, then its add-ons' (the internet speed test, the cloud services).
+var unlistedOrder = map[string]int{"Probe": 1, "Internet": 2, "Cloud services": 3}
+
+// unlistedCategoryLess orders two categories of the same rank, so their rows never interleave.
+func unlistedCategoryLess(a, b string) bool {
+	ra, rb := unlistedOrder[a], unlistedOrder[b]
+	if ra == 0 {
+		ra = len(unlistedOrder) + 1
+	}
+	if rb == 0 {
+		rb = len(unlistedOrder) + 1
+	}
+	if ra != rb {
+		return ra < rb
+	}
+	return a < b
 }
 
 // resolveCategoryOrder returns category -> rank for a host: a per-host override wins, otherwise the

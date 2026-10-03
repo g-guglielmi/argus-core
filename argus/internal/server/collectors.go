@@ -25,14 +25,19 @@ type collector struct {
 var collectors = map[string]collector{
 	"argus_http.py":      {"HTTP checks", "Web", "probe/v7.0.31-r15"},
 	"argus_tcp.py":       {"TCP port checks", "TCP", "probe/v7.0.31-r14"},
+	"argus_speedtest.py": {"Speed test", "Internet", "probe/v7.0.31-r23"},
 	"argus_linux_ssh.py": {"SSH collector", "Status", ""},
 	"argus_nut.py":       {"NUT collector", "Power", ""},
 	"argus_xcpng.py":     {"XAPI collector", "Status", ""},
 	"dns-resolver.py":    {"DNS checks", "DNS", ""},
 }
 
-// collectorOf reports whether key is an external collector's master item.
+// collectorOf reports whether key is an external collector's master item. The Common SaaS add-on
+// runs the HTTP collector with its own list (and the names it needs from probe r23 on).
 func collectorOf(key string) (collector, bool) {
+	if keyBase(key) == "argus_http.py" && strings.Contains(key, "{$SAAS.") {
+		return collector{"Common SaaS checks", "Cloud services", "probe/v7.0.31-r23"}, true
+	}
 	c, ok := collectors[keyBase(key)]
 	return c, ok
 }

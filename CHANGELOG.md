@@ -53,6 +53,17 @@ GitHub Release from the matching section below.
 - The Device tab shows the path (gateway › switch port 24 › this host), with a down hop in red.
   When the controller's answer changes, Changes says so.
 
+**Speedtest and Common SaaS (probe add-ons):** a site's Probe host has two add-ons in its settings.
+- **Speedtest**: the site's internet as its probe sees it, against Cloudflare's speed test: download
+  and upload, latency, jitter, latency while downloading and uploading (bufferbloat), the public
+  address, the provider and the test site. Every 1 to 24 hours (6 by default), the first run a minute
+  after you turn it on; alerts below or above thresholds you set per line on the Thresholds page.
+- **Common SaaS**: whether Microsoft 365, Teams, Google, AWS, Cloudflare, Zoom, Dropbox, iCloud (or
+  others you tick or add) answer from the site and how fast, every 2 minutes, each its own sensor with
+  why when it doesn't.
+- They need the probe release that ships the speed test and named URLs (probe/v7.0.31-r23); on an older
+  probe the sensors say so.
+
 **API tokens:** Account has a new **API tokens** card, for scripts and other tools.
 - A token acts as you, with your role and your sites, narrowed to read only, acknowledge and add
   notes, open and close maintenance windows, or everything you can do. Send it as
@@ -199,8 +210,8 @@ probes to `probe/v7.0.31-r22` for all of it.
   Thresholds screen, and one for a certificate that has expired.
 - The URLs are rows in host settings, each with its own **Certificate** check and text its page must
   or must not contain; the add-on's **Scheme**, **Port** and **Certificate** fields show only while
-  something uses them (a blank list, a host without a scheme, a path). A row takes a full URL, a host without a scheme (`10.7.0.2`,
-  `10.7.0.2:8443/admin`) or a path, and a mistake shows under its row as you type. A host settings
+  something uses them (a blank list, a host without a scheme, a path). A row takes a full URL, a host without a scheme (`10.0.0.20`,
+  `10.0.0.20:8443/admin`) or a path, and a mistake shows under its row as you type. A host settings
   save that fails also shows its error as a toast, not only at the bottom of the dialog.
 - Taking a URL out of the list (or a port out of the TCP ports add-on) deletes its sensors and their
   open problems at the next check, instead of an hour later.

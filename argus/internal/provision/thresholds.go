@@ -115,6 +115,22 @@ var thresholdCatalog = []TemplateThresholds{
 		{Macro: "{$DNS.RTT.WARN}", Label: "Resolve time - warning", Unit: "s"},
 		{Macro: "{$DNS.RTT.HIGH}", Label: "Resolve time - high", Unit: "s"},
 	}},
+	{Template: TemplateSpeedtest, Specs: []ThresholdSpec{
+		{Macro: "{$SPEEDTEST.DOWN.WARN}", Label: "Download speed below - warning", Unit: "Mbps"},
+		{Macro: "{$SPEEDTEST.DOWN.HIGH}", Label: "Download speed below - high", Unit: "Mbps"},
+		{Macro: "{$SPEEDTEST.UP.WARN}", Label: "Upload speed below - warning", Unit: "Mbps"},
+		{Macro: "{$SPEEDTEST.UP.HIGH}", Label: "Upload speed below - high", Unit: "Mbps"},
+		{Macro: "{$SPEEDTEST.LATENCY.WARN}", Label: "Latency - warning", Unit: "s"},
+		{Macro: "{$SPEEDTEST.LATENCY.HIGH}", Label: "Latency - high", Unit: "s"},
+		{Macro: "{$SPEEDTEST.JITTER.WARN}", Label: "Jitter - warning", Unit: "s"},
+		{Macro: "{$SPEEDTEST.JITTER.HIGH}", Label: "Jitter - high", Unit: "s"},
+		{Macro: "{$SPEEDTEST.LOADED.WARN}", Label: "Latency while busy - warning", Unit: "s"},
+		{Macro: "{$SPEEDTEST.LOADED.HIGH}", Label: "Latency while busy - high", Unit: "s"},
+	}},
+	{Template: TemplateSaaS, Specs: []ThresholdSpec{
+		{Macro: "{$SAAS.TIME.WARN}", Label: "Response time - warning", Unit: "s"},
+		{Macro: "{$SAAS.TIME.HIGH}", Label: "Response time - high", Unit: "s"},
+	}},
 	{Template: TemplateTCP, Specs: []ThresholdSpec{
 		{Macro: "{$TCP.TIME.WARN}", Label: "Connect time - warning", Unit: "s"},
 		{Macro: "{$TCP.TIME.HIGH}", Label: "Connect time - high", Unit: "s"},

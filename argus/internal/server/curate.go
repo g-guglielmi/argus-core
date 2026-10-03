@@ -651,6 +651,40 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		inst := urlInstance(name, " certificate expires in", p)
 		return "Web", inst + " certificate expires in", inst, "Certificate", true
 
+	// Common SaaS add-on (Argus Common SaaS, argus_http.py on a site's Probe host): one group per
+	// service, like the Web checks: the response time is the primary channel, reachability the
+	// Downtime band; the service's error item is the reason.
+	case "saas.up":
+		inst := urlInstance(name, " reachable", p)
+		return "Cloud services", inst + " reachable", inst, "Reachable", true
+	case "saas.time":
+		inst := urlInstance(name, " response time", p)
+		return "Cloud services", inst + " response time", inst, "Response time", true
+
+	// Speedtest add-on (Argus Speedtest, argus_speedtest.py on a site's Probe host): the speeds in one
+	// group (download the headline, a failed run a band), the round trips in another, the address,
+	// provider and test site as plain rows.
+	case "speedtest.down":
+		return "Internet", "Download speed", "Speed", "Download", true
+	case "speedtest.up":
+		return "Internet", "Upload speed", "Speed", "Upload", true
+	case "speedtest.ok":
+		return "Internet", "Speedtest ran", "Speed", "Ran", true
+	case "speedtest.latency":
+		return "Internet", "Latency", "Latency", "Idle", true
+	case "speedtest.jitter":
+		return "Internet", "Jitter", "Latency", "Jitter", true
+	case "speedtest.loaded.down":
+		return "Internet", "Latency while downloading", "Latency", "While downloading", true
+	case "speedtest.loaded.up":
+		return "Internet", "Latency while uploading", "Latency", "While uploading", true
+	case "speedtest.ip":
+		return "Internet", "Public IP address", "", "", true
+	case "speedtest.isp":
+		return "Internet", "Internet provider", "", "", true
+	case "speedtest.site":
+		return "Internet", "Test site", "", "", true
+
 	// Push sensors (Argus Push, push.go): one group per job, named after it. The time since the last
 	// run is the primary channel, the last run's result the Failed band; the message is the reason.
 	case "argus.push.ok":

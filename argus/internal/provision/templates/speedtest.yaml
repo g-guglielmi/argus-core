@@ -1,0 +1,364 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: a3d0bf469dcd47a5898532c84b4b508b
+      template: 'Argus Speedtest'
+      name: 'Argus Speedtest'
+      description: |
+        The site's internet as its probe sees it (the Speedtest add-on, on a site's Probe host): the
+        proxy runs argus_speedtest.py, an external check baked into the image, every
+        {$SPEEDTEST.INTERVAL}, against Cloudflare's speed test (speed.cloudflare.com). It measures
+        download and upload over {$SPEEDTEST.STREAMS} connections for {$SPEEDTEST.SECONDS} seconds
+        each, the idle round trip and its jitter, the round trip while downloading and uploading
+        (bufferbloat), and reports the public address, the network that owns it and the Cloudflare
+        site it reached. A run moves, on a gigabit line, about {$SPEEDTEST.SECONDS} x 125 MB each
+        way. DESIGN section 5.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: 827103b5b4ee46f6a145c515e1adb155
+          name: 'Speedtest raw data'
+          type: EXTERNAL
+          key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+          delay: '{$SPEEDTEST.INTERVAL}'
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          timeout: 60s
+          description: 'Master item: the proxy''s argus_speedtest.py measures the connection against Cloudflare''s speed test and prints the speeds, round trips, public address and provider, and why when it could not measure, as JSON.'
+        - uuid: 9804cb7e1dcd4320a30ab30c1274bf9f
+          name: 'Speedtest ran'
+          type: DEPENDENT
+          key: speedtest.ok
+          delay: '0'
+          history: 90d
+          trends: 365d
+          value_type: UNSIGNED
+          description: '1 = the last speed test measured the connection, 0 = it could not (its reason is in the error item).'
+          master_item:
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  return d.error ? 0 : 1;
+              error_handler: DISCARD_VALUE
+          triggers:
+            - uuid: 4a09fa380c714c0ea7bb258bfca08e56
+              expression: 'max(/Argus Speedtest/speedtest.ok,#2)=0'
+              name: 'Speedtest could not run'
+              priority: WARNING
+              description: 'The last two speed tests could not measure the connection. Why is in the sensor''s reason.'
+        - uuid: 125f168d78e940aba4f75ff31f735a3e
+          name: 'Speedtest error'
+          type: DEPENDENT
+          key: speedtest.error
+          delay: '0'
+          history: 90d
+          trends: '0'
+          value_type: TEXT
+          description: 'Why the last speed test could not measure the connection, in one line (empty when it did). Not a curated sensor: Argus shows it next to the reading and in the alert.'
+          master_item:
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  return JSON.parse(value).error || '';
+              error_handler: DISCARD_VALUE
+        - uuid: f1635fd5093447ce93b298bada813cf0
+          name: 'Download speed'
+          type: DEPENDENT
+          key: speedtest.down
+          delay: '0'
+          history: 90d
+          trends: 365d
+          value_type: FLOAT
+          units: Mbps
+          description: 'Download throughput over several connections, in megabits per second.'
+          master_item:
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (d.down_bps === null || d.down_bps === undefined) { throw 'no download measured'; }
+                  return Math.round(d.down_bps * 0.000001 * 1000) / 1000;
+              error_handler: DISCARD_VALUE
+          triggers:
+            - uuid: 37588e2951a047d0877dfc48653529de
+              expression: 'max(/Argus Speedtest/speedtest.down,#2)<{$SPEEDTEST.DOWN.WARN} and max(/Argus Speedtest/speedtest.down,#2)>={$SPEEDTEST.DOWN.HIGH}'
+              name: 'Download speed below {$SPEEDTEST.DOWN.WARN} Mbps'
+              priority: WARNING
+              description: 'The last two speed tests measured the download speed below the warning threshold (but above the high one).'
+            - uuid: ef8dba1ae2144d7cae033d25cc390eb0
+              expression: 'max(/Argus Speedtest/speedtest.down,#2)<{$SPEEDTEST.DOWN.HIGH}'
+              name: 'Download speed below {$SPEEDTEST.DOWN.HIGH} Mbps'
+              priority: HIGH
+              description: 'The last two speed tests measured the download speed below the high threshold.'
+        - uuid: 5b4f0a74cc1846bb9a01faef0d5b8448
+          name: 'Upload speed'
+          type: DEPENDENT
+          key: speedtest.up
+          delay: '0'
+          history: 90d
+          trends: 365d
+          value_type: FLOAT
+          units: Mbps
+          description: 'Upload throughput over several connections, in megabits per second.'
+          master_item:
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (d.up_bps === null || d.up_bps === undefined) { throw 'no upload measured'; }
+                  return Math.round(d.up_bps * 0.000001 * 1000) / 1000;
+              error_handler: DISCARD_VALUE
+          triggers:
+            - uuid: 814edbbc0c0c435c8d0d4afc8fe00582
+              expression: 'max(/Argus Speedtest/speedtest.up,#2)<{$SPEEDTEST.UP.WARN} and max(/Argus Speedtest/speedtest.up,#2)>={$SPEEDTEST.UP.HIGH}'
+              name: 'Upload speed below {$SPEEDTEST.UP.WARN} Mbps'
+              priority: WARNING
+              description: 'The last two speed tests measured the upload speed below the warning threshold (but above the high one).'
+            - uuid: c3402808328d4c499e70000850d61695
+              expression: 'max(/Argus Speedtest/speedtest.up,#2)<{$SPEEDTEST.UP.HIGH}'
+              name: 'Upload speed below {$SPEEDTEST.UP.HIGH} Mbps'
+              priority: HIGH
+              description: 'The last two speed tests measured the upload speed below the high threshold.'
+        - uuid: 8c71b721a89f48598f9f9f6bd29aaa95
+          name: 'Latency'
+          type: DEPENDENT
+          key: speedtest.latency
+          delay: '0'
+          history: 90d
+          trends: 365d
+          value_type: FLOAT
+          units: s
+          description: 'The idle round trip to Cloudflare (median of 20), less Cloudflares own time.'
+          master_item:
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (d.latency_ms === null || d.latency_ms === undefined) { throw 'no latency measured'; }
+                  return Math.round(d.latency_ms * 0.001 * 1000) / 1000;
+              error_handler: DISCARD_VALUE
+          triggers:
+            - uuid: 2214c759a19d441788b2df4f963aafca
+              expression: 'min(/Argus Speedtest/speedtest.latency,#2)>={$SPEEDTEST.LATENCY.WARN} and min(/Argus Speedtest/speedtest.latency,#2)<{$SPEEDTEST.LATENCY.HIGH}'
+              name: 'Internet latency high'
+              priority: WARNING
+              description: 'The last two speed tests measured the idle round trip at or above the warning threshold (but below the high one).'
+            - uuid: 4e1984870af84aa9998896c65504e6ef
+              expression: 'min(/Argus Speedtest/speedtest.latency,#2)>={$SPEEDTEST.LATENCY.HIGH}'
+              name: 'Internet latency very high'
+              priority: HIGH
+              description: 'The last two speed tests measured the idle round trip at or above the high threshold.'
+        - uuid: d4628d7dd8074c7eaa3a75d43de2de0f
+          name: 'Jitter'
+          type: DEPENDENT
+          key: speedtest.jitter
+          delay: '0'
+          history: 90d
+          trends: 365d
+          value_type: FLOAT
+          units: s
+          description: 'How much the idle round trip varies from one sample to the next (mean change).'
+          master_item:
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (d.jitter_ms === null || d.jitter_ms === undefined) { throw 'no jitter measured'; }
+                  return Math.round(d.jitter_ms * 0.001 * 1000) / 1000;
+              error_handler: DISCARD_VALUE
+          triggers:
+            - uuid: f5ea0b00b05e4aef88904f23feadd66f
+              expression: 'min(/Argus Speedtest/speedtest.jitter,#2)>={$SPEEDTEST.JITTER.WARN} and min(/Argus Speedtest/speedtest.jitter,#2)<{$SPEEDTEST.JITTER.HIGH}'
+              name: 'Internet jitter high'
+              priority: WARNING
+              description: 'The last two speed tests measured the jitter at or above the warning threshold (but below the high one).'
+            - uuid: 7a8702a42d744c85ad92da9342253bbe
+              expression: 'min(/Argus Speedtest/speedtest.jitter,#2)>={$SPEEDTEST.JITTER.HIGH}'
+              name: 'Internet jitter very high'
+              priority: HIGH
+              description: 'The last two speed tests measured the jitter at or above the high threshold.'
+        - uuid: 329f25e2c039411fa0b7492364ea80f9
+          name: 'Latency while downloading'
+          type: DEPENDENT
+          key: speedtest.loaded.down
+          delay: '0'
+          history: 90d
+          trends: 365d
+          value_type: FLOAT
+          units: s
+          description: 'The round trip while the download saturates the line (bufferbloat on the way in).'
+          master_item:
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (d.loaded_down_ms === null || d.loaded_down_ms === undefined) { throw 'no loaded latency measured'; }
+                  return Math.round(d.loaded_down_ms * 0.001 * 1000) / 1000;
+              error_handler: DISCARD_VALUE
+          triggers:
+            - uuid: c57332dea83343058abd20d744b62e1f
+              expression: 'min(/Argus Speedtest/speedtest.loaded.down,#2)>={$SPEEDTEST.LOADED.WARN} and min(/Argus Speedtest/speedtest.loaded.down,#2)<{$SPEEDTEST.LOADED.HIGH}'
+              name: 'Latency while downloading high'
+              priority: WARNING
+              description: 'The last two speed tests measured the round trip while downloading at or above the warning threshold (but below the high one).'
+            - uuid: 825e2c3853be4c9d83c6bb8ee3425d66
+              expression: 'min(/Argus Speedtest/speedtest.loaded.down,#2)>={$SPEEDTEST.LOADED.HIGH}'
+              name: 'Latency while downloading very high'
+              priority: HIGH
+              description: 'The last two speed tests measured the round trip while downloading at or above the high threshold.'
+        - uuid: 4062c8a26635499096f9267777e3d8e4
+          name: 'Latency while uploading'
+          type: DEPENDENT
+          key: speedtest.loaded.up
+          delay: '0'
+          history: 90d
+          trends: 365d
+          value_type: FLOAT
+          units: s
+          description: 'The round trip while the upload saturates the line (bufferbloat on the way out).'
+          master_item:
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (d.loaded_up_ms === null || d.loaded_up_ms === undefined) { throw 'no loaded latency measured'; }
+                  return Math.round(d.loaded_up_ms * 0.001 * 1000) / 1000;
+              error_handler: DISCARD_VALUE
+          triggers:
+            - uuid: db286ec8aa9e408995106373d71985fb
+              expression: 'min(/Argus Speedtest/speedtest.loaded.up,#2)>={$SPEEDTEST.LOADED.WARN} and min(/Argus Speedtest/speedtest.loaded.up,#2)<{$SPEEDTEST.LOADED.HIGH}'
+              name: 'Latency while uploading high'
+              priority: WARNING
+              description: 'The last two speed tests measured the round trip while uploading at or above the warning threshold (but below the high one).'
+            - uuid: 95af8d4b36cd4e87bc4a3a99304f9af1
+              expression: 'min(/Argus Speedtest/speedtest.loaded.up,#2)>={$SPEEDTEST.LOADED.HIGH}'
+              name: 'Latency while uploading very high'
+              priority: HIGH
+              description: 'The last two speed tests measured the round trip while uploading at or above the high threshold.'
+        - uuid: f59749b415ba4798b27bf32602b87663
+          name: 'Public IP address'
+          type: DEPENDENT
+          key: speedtest.ip
+          delay: '0'
+          history: 90d
+          trends: '0'
+          value_type: CHAR
+          description: 'The address the site reaches the internet from, as Cloudflare sees it.'
+          master_item:
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (!d.ip) { throw 'no address reported'; }
+                  return d.ip;
+              error_handler: DISCARD_VALUE
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: 68bf94c4915342d198240733e48a89d4
+          name: 'Internet provider'
+          type: DEPENDENT
+          key: speedtest.isp
+          delay: '0'
+          history: 90d
+          trends: '0'
+          value_type: CHAR
+          description: 'The network that owns the public address (its AS organization).'
+          master_item:
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (!d.isp) { throw 'no provider reported'; }
+                  return d.isp;
+              error_handler: DISCARD_VALUE
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: f1be5605fb5b4a7aab92c399963f7418
+          name: 'Test site'
+          type: DEPENDENT
+          key: speedtest.site
+          delay: '0'
+          history: 90d
+          trends: '0'
+          value_type: CHAR
+          description: 'The Cloudflare site the test reached (its airport code and city).'
+          master_item:
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (!d.colo) { throw 'no site reported'; }
+                  return d.colo + (d.city ? ' ' + d.city : '');
+              error_handler: DISCARD_VALUE
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+      macros:
+        - macro: '{$SPEEDTEST.INTERVAL}'
+          value: 6h
+          description: 'How often the speed test runs: 1h, 3h, 6h, 12h or 24h. Each run moves a lot of data on a fast line.'
+        - macro: '{$SPEEDTEST.SECONDS}'
+          value: '8'
+          description: 'Seconds each direction is measured (3 to 15).'
+        - macro: '{$SPEEDTEST.STREAMS}'
+          value: '4'
+          description: 'Parallel connections per direction (1 to 8).'
+        - macro: '{$SPEEDTEST.DOWN.WARN}'
+          value: '50'
+          description: 'Download speed (Mbps) below which a warning is raised.'
+        - macro: '{$SPEEDTEST.DOWN.HIGH}'
+          value: '10'
+          description: 'Download speed (Mbps) below which a high-severity alert is raised.'
+        - macro: '{$SPEEDTEST.UP.WARN}'
+          value: '10'
+          description: 'Upload speed (Mbps) below which a warning is raised.'
+        - macro: '{$SPEEDTEST.UP.HIGH}'
+          value: '2'
+          description: 'Upload speed (Mbps) below which a high-severity alert is raised.'
+        - macro: '{$SPEEDTEST.LATENCY.WARN}'
+          value: '0.06'
+          description: 'Idle round trip (seconds) that raises a warning.'
+        - macro: '{$SPEEDTEST.LATENCY.HIGH}'
+          value: '0.15'
+          description: 'Idle round trip (seconds) that raises a high-severity alert.'
+        - macro: '{$SPEEDTEST.JITTER.WARN}'
+          value: '0.015'
+          description: 'Jitter (seconds) that raises a warning.'
+        - macro: '{$SPEEDTEST.JITTER.HIGH}'
+          value: '0.04'
+          description: 'Jitter (seconds) that raises a high-severity alert.'
+        - macro: '{$SPEEDTEST.LOADED.WARN}'
+          value: '0.15'
+          description: 'Round trip while the line is busy (seconds) that raises a warning (bufferbloat).'
+        - macro: '{$SPEEDTEST.LOADED.HIGH}'
+          value: '0.4'
+          description: 'Round trip while the line is busy (seconds) that raises a high-severity alert.'

@@ -3,16 +3,42 @@
 
 package provision
 
-// AddOn is an optional Argus template that can be layered onto (or removed from) any host from the
+// AddOn is an optional Argus template that can be layered onto (or removed from) a host from the
 // host-settings dialog, staying inside the curated model. Each add-on is one registry entry: the
 // Zabbix template it links plus the per-host macros the form collects. An add-on is only offered on a
-// host whose device class doesn't already include its template (those are managed as class options).
+// host whose device class doesn't already include its template (those are managed as class options),
+// and, when it names classes, only on hosts of those classes.
 type AddOn struct {
 	ID          string      `json:"id"`
 	Label       string      `json:"label"`
 	Template    string      `json:"template"`
 	Description string      `json:"description"`
 	Macros      []MacroSpec `json:"macros,omitempty"`
+	// Classes limits the add-on to hosts of these classes (the probe add-ons: a speed test or the
+	// cloud services, from the site's point of view). Empty = any host but Argus's own.
+	Classes []string `json:"-"`
+	// CheckNow runs the add-on's sensors right after it is turned on, rather than at their first
+	// interval (a speed test every 6 hours would otherwise show nothing for hours).
+	CheckNow bool `json:"-"`
+}
+
+// Template names of the probe add-ons.
+const (
+	TemplateSpeedtest = "Argus Speedtest"
+	TemplateSaaS      = "Argus Common SaaS"
+)
+
+// OffersOn reports whether the add-on is offered on a host of this class (internal = Argus's own).
+func (a AddOn) OffersOn(classID string, internal bool) bool {
+	if len(a.Classes) == 0 {
+		return !internal
+	}
+	for _, c := range a.Classes {
+		if c == classID {
+			return true
+		}
+	}
+	return false
 }
 
 // addOns is the catalog. HTTP is the universal add-on (any device may expose a web UI worth watching);
@@ -44,6 +70,31 @@ var addOns = []AddOn{
 			{Macro: "{$DNS.RESOLVE.NAMES}", Label: "Names to resolve", Hint: "example.com,cloudflare.com", Required: true, Pattern: patternNames},
 			{Macro: "{$DNS.PORT}", Label: "DNS port", Hint: "53", Pattern: patternPort},
 		},
+	},
+	{
+		ID:       "speedtest",
+		Label:    "Speedtest",
+		Template: TemplateSpeedtest,
+		Description: "The site's internet as its probe sees it: download and upload speed over several connections, latency, jitter, latency while busy (bufferbloat), the public address and the provider, measured against Cloudflare's speed test. " +
+			"A run takes about 20 seconds and moves, on a gigabit line, about a gigabyte each way, so it runs every few hours, not every minute.",
+		Macros: []MacroSpec{
+			{Macro: "{$SPEEDTEST.INTERVAL}", Label: "How often", Hint: "6h", Options: []string{"1h", "3h", "6h", "12h", "24h"}},
+			{Macro: "{$SPEEDTEST.SECONDS}", Label: "Seconds per direction", Hint: "8", Options: []string{"5", "8", "12"}},
+		},
+		Classes:  []string{ClassProbe},
+		CheckNow: true,
+	},
+	{
+		ID:       "saas",
+		Label:    "Common SaaS",
+		Template: TemplateSaaS,
+		Description: "Whether the cloud services the site works with answer from here, and how fast: Microsoft 365, Google, Amazon Web Services, Zoom and the others picked below, every 2 minutes. " +
+			"Each is its own sensor, with why when it doesn't answer.",
+		Macros: []MacroSpec{
+			{Macro: "{$SAAS.URLS}", Label: "Services", Required: true, Check: checkURLList},
+		},
+		Classes:  []string{ClassProbe},
+		CheckNow: true,
 	},
 	{
 		ID:          "tcp",

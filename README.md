@@ -96,6 +96,10 @@ API key, and MAC):
   hand. While a switch is down, the hosts behind it wait: you get one alert for the switch, naming the
   hosts behind it, instead of one per access point and camera. The Device tab shows the path
   (gateway › switch port 24 › this host).
+- **Speedtest and common SaaS** - two add-ons for a site's probe: the site's internet speed, latency,
+  jitter and latency while busy (bufferbloat) every few hours, with its public address and provider,
+  against Cloudflare's speed test; and whether Microsoft 365, Google, AWS, Zoom and other cloud
+  services (or your own) answer from the site, and how fast, every 2 minutes.
 - **Import** - hosts from a spreadsheet (CSV) or straight from PRTG (a read-only API key: probes
   mapped to Argus probes, groups and tags kept, the class guessed from the PRTG sensors). Argus
   checks every row first (class, site, probe, already monitored, the inputs a class needs) and lets

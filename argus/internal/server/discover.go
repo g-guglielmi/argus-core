@@ -51,6 +51,26 @@ func (s *Server) scheduleDiscovery(hostID string) {
 	}()
 }
 
+// scheduleCheckNow runs a just-linked template's own items on a host once its config reached the
+// probe (after 30 s, again after 90 s for a slow sync), so an add-on that runs every few hours shows a
+// first reading in a minute or two. Its discovery rules are dependent: they follow the items.
+func (s *Server) scheduleCheckNow(hostID, template string) {
+	go func() {
+		for attempt, wait := range []time.Duration{30 * time.Second, 60 * time.Second} {
+			time.Sleep(wait)
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			ids, err := s.zbx.HostTemplateMasterItems(ctx, hostID, template)
+			if err == nil && len(ids) > 0 {
+				err = s.zbx.ExecuteNow(ctx, ids)
+			}
+			cancel()
+			if err != nil {
+				s.logger.Warn("add-on: check-now failed", "host", hostID, "template", template, "attempt", attempt+1, "err", err)
+			}
+		}
+	}()
+}
+
 // POST /api/hosts/{id}/discover - run the host's discovery rules now (admin/helpdesk; wired in
 // server.go). Returns how many rules were fired, and their names, so the UI can say so.
 func (s *Server) handleDiscoverNow(w http.ResponseWriter, r *http.Request) {

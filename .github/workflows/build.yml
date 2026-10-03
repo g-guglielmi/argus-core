@@ -98,6 +98,9 @@ jobs:
       # The HTTP collector (argus_http.py, mirrored in argus-probe) against real local servers.
       - name: HTTP collector
         run: python3 deploy/core/externalscripts/tests/test_argus_http.py
+      # The speed test collector (argus_speedtest.py, mirrored in argus-probe): its parsing and limits.
+      - name: Speedtest collector
+        run: python3 deploy/core/externalscripts/tests/test_argus_speedtest.py
 
   docker:
     permissions:

@@ -32,7 +32,7 @@ type adminUser struct {
 	MFAEnabled bool     `json:"mfa_enabled"`
 	Passkeys   int      `json:"passkeys"`
 	Disabled   bool     `json:"disabled"`
-	Sites      []string `json:"sites"` // the sites a helpdesk or viewer account sees; empty = all (scope.go)
+	Sites      []string `json:"sites"`  // the sites a helpdesk or viewer account sees; empty = all (scope.go)
 	Tokens     int      `json:"tokens"` // personal API tokens (apitokens.go)
 }
 

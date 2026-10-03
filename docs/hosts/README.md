@@ -115,8 +115,9 @@ dialog also has:
 - an **Add-ons** section - optional Argus checks you can layer on a host at any time (not just when
   adding it): the **HTTP/HTTPS endpoint** (a real request to each URL, see below), **DNS
   resolution** (resolve names against the host) and **TCP ports** (does each listed port accept a
-  connection, see below). Toggling one on links its template and lets you set its options; toggling
-  off removes its sensors;
+  connection, see below). A site's **Probe host** gets its own two: **Speedtest** and **Common SaaS**
+  (see below). Toggling one on links its template and lets you set its options; toggling off removes
+  its sensors;
 - a **Change class** control (admin) - switch a host to a different device class in place, without
   deleting and re-adding it. It swaps the class's templates (keeping Base Ping + add-ons), keeps
   history for any template the old and new class share, adds the new class's interface type if the
@@ -135,13 +136,37 @@ answering** (High, after 3 checks), and slow to connect (`{$TCP.TIME.WARN}` 0.5 
 1 s). **Timeout** (default 3 s) is how long a port has to answer. Taking a port out of the list deletes
 its sensor, and any open problem of it, at the next check.
 
+**Speedtest add-on (Probe host).** The site's internet as its probe sees it, against Cloudflare's
+speed test (speed.cloudflare.com): download and upload over 4 connections, the idle round trip and its
+jitter, the round trip while downloading and while uploading (bufferbloat: a line that's fine idle but
+lags when someone uploads), and the public address, the network that owns it and the Cloudflare site
+it reached. **How often** is 1, 3, 6 (default), 12 or 24 hours: a run takes about 20 seconds and
+moves, on a gigabit line, about a gigabyte each way. The first run comes a minute after you turn it
+on. Sensors under **Internet**: **Speed** (download and upload, a band when a run failed), **Latency**
+(idle, jitter, while downloading, while uploading), **Public IP address**, **Internet provider** and
+**Test site**. Alerts, each on the last two runs: download below `{$SPEEDTEST.DOWN.WARN}` 50 /
+`{$SPEEDTEST.DOWN.HIGH}` 10 Mbps, upload below 10 / 2 Mbps, latency over 60 / 150 ms, jitter over 15 /
+40 ms, latency while busy over 150 / 400 ms (set them to your lines on the Thresholds page), and
+**Speedtest could not run** (Warning) with why. Speedtest Tracker uses Ookla's CLI, whose licence is
+for personal, non-commercial use only; Cloudflare's test is the one its own MIT-licensed library runs.
+
+**Common SaaS add-on (Probe host).** Whether the cloud services a site works with answer from it, and
+how fast, every 2 minutes: tick them in a list (Microsoft 365, Microsoft Teams, Google, Amazon Web
+Services, Cloudflare, Zoom, Dropbox and Apple iCloud start ticked; Microsoft Azure, YouTube, Slack,
+Salesforce, GitHub and ChatGPT are there too) and add your own with a name (**+ Another service**), up
+to 16. Each is its own sensor under **Cloud services**: its response time, with a red band while it
+doesn't answer and why (`no answer within 10 s`, `the host name does not resolve`). Any answer short
+of a server error counts, since a login page still says the service is there. Alerts: **Zoom does not
+answer from this site** (High, after 3 checks), slow (`{$SAAS.TIME.WARN}` 1 s) and very slow
+(`{$SAAS.TIME.HIGH}` 3 s).
+
 **HTTP/HTTPS endpoint add-on.** A real request to each web page you list, from the host's probe, once
 a minute. Under **URLs**, **+ Add URL** adds a row, up to 16; with no rows, it checks the host itself on
 **Scheme**, **Port** and **Certificate**. Those fields show only while something uses them: a blank
 list all three, a host without a scheme or a path **Scheme**, a path **Port**. A row takes:
 
 - the URL: a full one (`https://portal.example.com/app`, any host, subdomain, port or path), a host
-  without a scheme (`10.7.0.2`, `10.7.0.2:8443/admin`, which gets **Scheme**), or a path on the host's
+  without a scheme (`10.0.0.20`, `10.0.0.20:8443/admin`, which gets **Scheme**), or a path on the host's
   own address (`/login`). The port goes in the URL;
 - its **Certificate** check (see below), starting from the add-on's;
 - text the page must contain, or must not (**Page doesn't contain**), case-insensitive. Optional.
