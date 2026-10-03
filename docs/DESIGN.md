@@ -546,6 +546,35 @@ filters, **Older firmware**, Export CSV. A device whose firmware (or, without on
 newest seen on the same model (or, without a model, the same class) is flagged with that newest
 version; a pool on mixed versions isn't compared.
 
+## 7f. Upstream devices
+
+The device a host is plugged into (`upstream.go`). By default it is the **UniFi controller's
+answer**: a UniFi switch or access point reports the device it hangs off (`unifi.uplink.mac` and
+`unifi.uplink.port`, kept from the controller record its template already reads, matched to the host
+whose `unifi.mac` it is), and a UniFi switch or gateway lists the wired clients on its ports
+(`unifi.clients`: `stat/sta` filtered to `sw_mac` = its MAC, every 10 minutes, as `[{mac, ip,
+port}]`), which Argus matches to hosts by IP (an address two hosts share says nothing), else by the MAC
+discovery saw. A UniFi device's own uplink wins over a client entry. A host can be set (host settings,
+Upstream device; `upstream` in `PATCH /api/hosts/{id}/config`) to a host **chosen by hand** (refused
+when that host is behind this one) or to **None** (`host_upstream`). `unifi.clients` is plumbing: it
+is never a sensor, and one that fails never raises "stopped collecting".
+
+**Holds.** The notifier's master set walks a host's chain of upstream devices, nearest first, and
+judges each one's main master (its ping) like the host's own (section 9): while one is down, or yet to
+report on a new problem, the host's alerts are held (`by: upstream`), its ping included. The top of an
+outage still alerts, since its own chain is up; a chain that loops back (two devices reporting each
+other) holds nothing, so a down device always gets its alert out. The census marks those rows
+`held_by` with `via: upstream`, the lists say "Held: behind sw-core, which is down", the tree row says
+"held: behind sw-core" and the host's body carries a band saying so. An alert on a device's ping
+names the hosts behind it ("Behind it: ap-lobby, ap-office and 2 more (their alerts wait while it is
+down)"; its RESOLVED says their own alerts go out now if they're still in trouble), in every channel
+and as `behind` in the webhook.
+
+**Shown** on the Device tab as **Path** (top first, each hop with the port the next one is plugged
+into, a down hop red, and where it comes from) with the hosts plugged straight into it, and in host
+settings. Every 5 minutes Argus stores the controller's answers (`auto_*` in `host_upstream`) and logs
+one that changes in Changes, as Argus (a host's first answer is just stored).
+
 ---
 
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")
@@ -713,7 +742,10 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   data" one), the host's other alerts are **held**: they stay pending, and firing ones get no
   escalation or reminders. A probe's reporting sensor is also the master of **every host that proxy
   monitors** and of Zabbix's own per-proxy checks (`zabbix.proxy.*[<proxy>]` on the Zabbix server
-  host), so a probe outage sends only the probe's alerts. To win the race with a slow master (ping
+  host), so a probe outage sends only the probe's alerts. The device a host is plugged into (its
+  **upstream device**, section 7f) is a master too: while it, or one above it, is down, the host's
+  alerts are held behind it, so a dead switch sends one alert, not one per access point and camera. To
+  win the race with a slow master (ping
   needs 3 failed checks), a new problem also waits up to 5 minutes while the master hasn't reported
   since the problem began, or its last ping failed. A problem held by a down master waits out the
   alert delay again (at least 90 s) after the master recovers, so readings that settle while a device

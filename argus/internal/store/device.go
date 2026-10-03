@@ -261,3 +261,49 @@ func (s *Store) DiscoveredMACs(ctx context.Context) (map[string]string, error) {
 	}
 	return out, rows.Err()
 }
+
+// HostUpstream is how a host's upstream device is set: the controller's answer (auto, the default),
+// one chosen by hand (manual), or none; and the controller's last answer, kept to log its changes.
+type HostUpstream struct {
+	Mode       string // auto | manual | none
+	ManualHost string
+	AutoHost   string
+	AutoPort   string
+	AutoAt     int64 // when the controller's answer was first stored; 0 = never
+}
+
+// HostUpstreams returns every host's upstream setting (a host without a row is auto with no answer).
+func (s *Store) HostUpstreams(ctx context.Context) (map[string]HostUpstream, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT host_id, mode, manual_host, auto_host, auto_port, auto_at FROM host_upstream`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]HostUpstream{}
+	for rows.Next() {
+		var id string
+		var u HostUpstream
+		if err := rows.Scan(&id, &u.Mode, &u.ManualHost, &u.AutoHost, &u.AutoPort, &u.AutoAt); err != nil {
+			return nil, err
+		}
+		out[id] = u
+	}
+	return out, rows.Err()
+}
+
+// SetUpstreamMode stores how a host's upstream is set (manualHost only for "manual").
+func (s *Store) SetUpstreamMode(ctx context.Context, hostID, mode, manualHost string) error {
+	if mode != "manual" {
+		manualHost = ""
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO host_upstream (host_id, mode, manual_host) VALUES (?, ?, ?)
+		ON CONFLICT(host_id) DO UPDATE SET mode = excluded.mode, manual_host = excluded.manual_host`, hostID, mode, manualHost)
+	return err
+}
+
+// SetAutoUpstream stores the controller's answer for a host.
+func (s *Store) SetAutoUpstream(ctx context.Context, hostID, host, port string, at int64) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO host_upstream (host_id, auto_host, auto_port, auto_at) VALUES (?, ?, ?, ?)
+		ON CONFLICT(host_id) DO UPDATE SET auto_host = excluded.auto_host, auto_port = excluded.auto_port, auto_at = excluded.auto_at`, hostID, host, port, at)
+	return err
+}

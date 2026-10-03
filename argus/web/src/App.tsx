@@ -14,7 +14,7 @@ type Me = { email: string; name: string; surname: string; role: string; mfa_enab
 type User = { id: number; email: string; name: string; surname: string; role: string; mfa_enabled?: boolean; passkeys?: number; disabled?: boolean; sites?: string[] }
 type Passkey = { id: string; name: string; created: string; last_used: string | null }
 type MaintHit = { id: number; name: string; until: number }
-type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number; unacked?: boolean; acked?: boolean; maintenance?: MaintHit; tags?: HostTag[] }
+type Host = { id: string; name: string; problems: number; severity: number; state: string; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; groups: string[]; proxy_id?: string; class_id?: string; icon?: string; icmp_item?: string; icmp_ms?: number; unacked?: boolean; acked?: boolean; maintenance?: MaintHit; tags?: HostTag[]; held_behind?: string }
 type Group = { id: string; name: string; hosts: number }
 type MacroSpec = { macro: string; label: string; hint?: string; required?: boolean; secret?: boolean; derive?: string; options?: string[]; settings_only?: boolean }
 type ClassSetup = { title: string; intro?: string; steps?: string[]; command?: string; note?: string }
@@ -28,7 +28,7 @@ type ThrTemplate = { template: string; label: string; every_host?: boolean; opti
 type ThresholdsData = { templates: ThrTemplate[] }
 type AddOnMacro = { macro: string; label: string; hint?: string; options?: string[]; value: string }
 type AddOnCfg = { id: string; label: string; description: string; enabled: boolean; macros?: AddOnMacro[] }
-type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg; tags?: HostTag[]; own?: { asset_tag: string; location: string }; links?: LinkRow[]; class_links?: LinkRow[] }
+type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg; tags?: HostTag[]; own?: { asset_tag: string; location: string }; links?: LinkRow[]; class_links?: LinkRow[]; upstream?: UpstreamInfo }
 // A host's master sensor: while it's down, the host's other alerts are held (item_id "" = none).
 type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; options: { id: string; label: string }[] }
 type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean }
@@ -57,7 +57,7 @@ type TriggerHost = { id: string; name: string }
 type Trigger = { id: string; description: string; severity: number; enabled: boolean; problem: boolean; since: number; hosts: TriggerHost[]; sensors: string[] }
 type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean; maintenance?: MaintHit; held_by?: HeldBy; holds?: number; note?: SensorNote }
 // The master whose outage holds a sensor's alerts: the lists fold the sensor under it.
-type HeldBy = { host_id: string; host_name: string; item_id: string; name: string }
+type HeldBy = { host_id: string; host_name: string; item_id: string; name: string; via?: string }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
 type Series = { name: string; units: string; kind: 'history' | 'trend'; points: SeriesPoint[] }
 
@@ -4584,6 +4584,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
             {h.paused && <span className="kind" style={{ color: PAUSED_BLUE }}>· paused {untilLabel(h.paused_until)}</span>}
             {h.hidden && <span className="kind" style={{ color: HIDDEN_GREY }}>· hidden {untilLabel(h.hidden_until)}</span>}
             {h.maintenance && <span className="kind maint" title={`${h.maintenance.name}: alerts wait until ${fmtWhen(h.maintenance.until)}`}>· maintenance</span>}
+            {h.held_behind && <span className="kind held" title={`${h.held_behind} is down: this host's alerts wait until it is back`}>· held: behind {h.held_behind}</span>}
             {!h.paused && !h.hidden && h.problems > 0 && <span className={'probpill' + (shade === 'acked' ? ' acked' : h.state === 'warning' ? ' warn' : '')} title={`${h.problems} problem${h.problems === 1 ? '' : 's'}${shade === 'acked' ? ', acknowledged' : ''}`}>{h.problems}</span>}
             <TagList tags={h.tags} />
           </div>
@@ -4609,7 +4610,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
           </div>
         </div>
         {editGroupsHost === h.id && <GroupEditor current={h.groups || []} groups={groups} onSave={(ids) => setHostGroups(h.id, ids)} onCancel={() => setEditGroupsHost(null)} />}
-        {hopen && <div className="host-body" style={{ paddingLeft: indent(depth) }}><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} maintenance={h.maintenance} showAll={showAllEff} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(path, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} onOpenSettings={canPause ? () => openSettings(h.id) : undefined} /></div>}
+        {hopen && <div className="host-body" style={{ paddingLeft: indent(depth) }}><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} maintenance={h.maintenance} showAll={showAllEff} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(path, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} onOpenSettings={canPause ? () => openSettings(h.id) : undefined} heldBehind={h.held_behind} /></div>}
       </div>
     )
   }
@@ -6834,12 +6835,16 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
   const [allTags] = useTags()
   const [ownTags, setOwnTags] = useState<string[]>([])
   const [own, setOwn] = useState<{ asset_tag: string; location: string }>({ asset_tag: '', location: '' })
+  const [upMode, setUpMode] = useState<'auto' | 'manual' | 'none'>('auto')
+  const [upHost, setUpHost] = useState('')
+  const [allHosts, setAllHosts] = useState<Host[]>([])
   const [links, setLinks] = useState<LinkRow[]>([])
   function loadCfg() {
     fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : Promise.reject())).then((d: HostCfg) => {
       setCfg(d); setCustomOrder(!!(d.category_order && d.category_order.length))
       setOwnTags((d.tags || []).filter((t) => !t.from).map((t) => t.name))
       setOwn(d.own || { asset_tag: '', location: '' })
+      setUpMode(d.upstream?.mode || 'auto'); setUpHost(d.upstream?.manual_host || '')
       setLinks((d.links || []).map((l) => ({ label: l.label, url: l.url })))
       setMasterChoice(!d.master || !d.master.custom ? 'default' : d.master.item_id || 'none')
     }).catch(() => setErr('Could not load host settings'))
@@ -6847,6 +6852,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
   useEffect(() => {
     loadCfg()
     fetch('/api/proxies').then((r) => (r.ok ? r.json() : [])).then((p) => setProxies(p || [])).catch(() => {})
+    fetch('/api/hosts').then((r) => (r.ok ? r.json() : [])).then((h) => setAllHosts(h || [])).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hostId])
 
@@ -6883,7 +6889,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
     // Per-host sensor order: send the current list when "custom" is on, else [] to clear the override.
     const category_order = cfg.categories && cfg.categories.length > 0 ? (customOrder ? cfg.categories : []) : undefined
     const addons = cfg.addons ? Object.fromEntries(cfg.addons.map((a) => [a.id, { enabled: a.enabled, macros: Object.fromEntries((a.macros || []).map((m) => [m.macro, m.value])) }])) : undefined
-    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order, addons, master: cfg.master ? masterChoice : undefined, tags: ownTags, own, links: links.filter((l) => l.label.trim() || l.url.trim()) }) }).catch(() => null)
+    const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order, addons, master: cfg.master ? masterChoice : undefined, tags: ownTags, own, upstream: { mode: upMode, host_id: upMode === 'manual' ? upHost : '' }, links: links.filter((l) => l.label.trim() || l.url.trim()) }) }).catch(() => null)
     setBusy(false)
     // The error also pops up: the dialog is long, and its line by the Save button may be scrolled away.
     if (!res || !res.ok) { const m = await errText(res, 'Could not save host settings'); setErr(m); toast.error(m); return }
@@ -7159,6 +7165,27 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
           )}
         </HsSection>
       )}
+
+      <HsSection title="Upstream device" {...sec('upstream')} summary={upMode === 'none' ? 'none' : upMode === 'manual' ? `chosen by hand: ${allHosts.find((x) => x.id === upHost)?.name || 'pick a host'}` : cfg.upstream?.auto ? `${cfg.upstream.auto.name}${cfg.upstream.auto.port ? ` port ${cfg.upstream.auto.port}` : ''} (from the UniFi controller)` : "from the UniFi controller: it doesn't list this host"}>
+        <div className="hs-mon">
+          <span className="hs-monlabel">Upstream</span>
+          <div className="seg">
+            <button type="button" className={upMode === 'auto' ? 'on' : ''} disabled={!canEdit} onClick={() => setUpMode('auto')}>From the controller</button>
+            <button type="button" className={upMode === 'manual' ? 'on' : ''} disabled={!canEdit} onClick={() => setUpMode('manual')}>Choose a host</button>
+            <button type="button" className={upMode === 'none' ? 'on' : ''} disabled={!canEdit} onClick={() => setUpMode('none')}>None</button>
+          </div>
+          {upMode === 'manual' && (
+            <Select value={upHost} disabled={!canEdit} onChange={(e) => setUpHost(e.target.value)} aria-label="Upstream host">
+              <option value="">Pick a host…</option>
+              {allHosts.filter((x) => x.id !== hostId).sort((a, b) => a.name.localeCompare(b.name)).map((x) => <option key={x.id} value={x.id}>{x.name}{x.groups?.[0] ? ` · ${x.groups[0]}` : ''}</option>)}
+            </Select>
+          )}
+        </div>
+        {upMode === 'auto' && cfg.upstream && (cfg.upstream.path.length > 0 && cfg.upstream.source !== 'manual'
+          ? <div className="info-line" style={{ padding: '2px 0 6px' }}><PathView hops={cfg.upstream.path} /></div>
+          : <div className="hs-note">The UniFi controller doesn't list this host (it knows its own devices, and the switch port of each wired client it sees). Choose a host if you know where it is plugged in.</div>)}
+        <div className="hs-note">The default is the UniFi controller's answer when it knows this host, otherwise none. While the upstream device is down, this host's alerts wait: Argus can't reach it through that device anyway, and the device's own alert says so. Whatever is still wrong after it's back is alerted.</div>
+      </HsSection>
 
       <HsSection title="Device facts" {...sec('facts')} summary={[own.asset_tag && `asset ${own.asset_tag}`, own.location].filter(Boolean).join(' · ') || 'no asset tag or location'}>
         <div className="hs-grid">
@@ -7456,7 +7483,9 @@ function HiddenToggle({ n, shown, onToggle, lead = true }: { n: number; shown: b
 type HostTab = 'sensors' | 'device' | 'history' | 'journal' | 'changes'
 type LinkRow = { id?: number; label: string; url: string; from?: string }
 type DeviceFacts = { model?: string; serial?: string; firmware?: string; os?: string; ip?: string; mac?: string; read_at?: number; from?: string }
-type DeviceInfo = { facts: DeviceFacts; own: { asset_tag: string; location: string }; class?: string; links: LinkRow[]; tags: HostTag[]; used_by: { groups: string[]; probe: string; status_pages: string[]; maintenance: string[]; channels: string[] } }
+type Hop = { host_id: string; name: string; port?: string; down?: boolean }
+type UpstreamInfo = { mode: 'auto' | 'manual' | 'none'; manual_host?: string; auto?: Hop; path: Hop[]; behind: { id: string; name: string }[]; behind_all: number; source?: string }
+type DeviceInfo = { facts: DeviceFacts; own: { asset_tag: string; location: string }; class?: string; links: LinkRow[]; tags: HostTag[]; used_by: { groups: string[]; probe: string; status_pages: string[]; maintenance: string[]; channels: string[] }; upstream: UpstreamInfo }
 type JournalRow = { id: number; kind: 'info' | 'warning' | 'problem'; text: string; by: string; at: number; mine?: boolean; can_delete?: boolean }
 
 // CopyValue is a value with a small copy button after it.
@@ -7527,6 +7556,24 @@ function HostTabBody({ hostId, tab, canEdit, onOpenSettings, onChanged }: { host
   return null
 }
 
+// PathView draws a host's upstream path, top first: gw-site1 › sw-core port 24 › this host. A hop that
+// is down is red.
+function PathView({ hops }: { hops: Hop[] }) {
+  return (
+    <span className="path">
+      {hops.map((h, i) => (
+        <Fragment key={h.host_id}>
+          {i > 0 && <span className="path-arrow" aria-hidden="true">›</span>}
+          <span className={'path-hop' + (h.down ? ' down' : '') + (i === hops.length - 1 ? ' here' : '')}>
+            <span className="sdot" style={{ '--dot': h.down ? 'var(--err)' : 'var(--ok)' } as CSSProperties} />
+            {h.name}{h.port ? <span className="path-port"> port {h.port}</span> : null}
+          </span>
+        </Fragment>
+      ))}
+    </span>
+  )
+}
+
 // InfoRows is the label-and-lines layout the Device tab and the site info share (the Updates rows).
 function InfoRow({ label, children }: { label: string; children: ReactNode }) {
   return <div className="info-row"><span className="complabel">{label}</span><div className="info-lines">{children}</div></div>
@@ -7568,6 +7615,12 @@ function DeviceTab({ hostId, onOpenSettings }: { hostId: string; onOpenSettings?
         <InfoLine k="Asset tag">{d.own.asset_tag ? <CopyValue value={d.own.asset_tag} /> : <span className="muted">-</span>}</InfoLine>
         <InfoLine k="Location"><span className="v">{d.own.location || <span className="muted">-</span>}</span></InfoLine>
         {onOpenSettings && <InfoLine><button type="button" className="linkbtn" onClick={onOpenSettings}>Edit in settings</button></InfoLine>}
+      </InfoRow>
+      <InfoRow label="Path">
+        {d.upstream.path.length > 0
+          ? <InfoLine><PathView hops={d.upstream.path} /><span className="sub-line">{d.upstream.source === 'manual' ? 'set by hand' : 'from the UniFi controller'}</span></InfoLine>
+          : <InfoLine><span className="muted">{d.upstream.mode === 'none' ? 'No upstream device: set to none in its settings.' : "No upstream device known: the UniFi controller doesn't list this host. Pick one in its settings."}</span></InfoLine>}
+        {d.upstream.behind.length > 0 && <InfoLine k="Behind it"><span className="v">{d.upstream.behind.map((b) => b.name).join(', ')}{d.upstream.behind_all > d.upstream.behind.length ? ` (${d.upstream.behind_all} hosts in all, further down)` : ''}</span></InfoLine>}
       </InfoRow>
       <InfoRow label="Links">
         {d.links.length ? <InfoLine><LinkButtons links={d.links} /></InfoLine> : <InfoLine><span className="muted">No links. Add them in this host's settings, or for its class in Settings, Device links.</span></InfoLine>}
@@ -8206,7 +8259,7 @@ function HostIncidents({ hostId, goHost, itemIds, asTab }: { hostId: string; goH
   )
 }
 
-function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, showAll, autoOpenItem, onlyItem, onDrillSensor, onItemName, onNavigate, onOpenSettings }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; maintenance?: MaintHit; showAll: boolean; autoOpenItem?: string; onlyItem?: string; onDrillSensor?: (itemId: string, itemName: string) => void; onItemName?: (itemId: string, itemName: string) => void; onNavigate: (hostId: string | null, itemId: string | null) => void; onOpenSettings?: () => void }) {
+function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, showAll, autoOpenItem, onlyItem, onDrillSensor, onItemName, onNavigate, onOpenSettings, heldBehind }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; maintenance?: MaintHit; showAll: boolean; autoOpenItem?: string; onlyItem?: string; onDrillSensor?: (itemId: string, itemName: string) => void; onItemName?: (itemId: string, itemName: string) => void; onNavigate: (hostId: string | null, itemId: string | null) => void; onOpenSettings?: () => void; heldBehind?: string }) {
   // The host's tabs: its sensors (the default), its Device facts, History, Journal and Changes.
   const [tab, setTab] = useState<HostTab>('sensors')
   const [countTick, setCountTick] = useState(0) // bumped when a tab changes what the labels count
@@ -8440,6 +8493,12 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
         <div className="maint-band">
           <span className="maint-ico">{ic.maintenance}</span>
           <span>In maintenance: <b>{maintenance.name}</b>, until {fmtWhen(maintenance.until)}. Alerts for this host wait meanwhile; whatever is still wrong when it ends is alerted then.</span>
+        </div>
+      )}
+      {heldBehind && (
+        <div className="held-band">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3l9 16H3z" /><path d="M12 10v4M12 17h.01" /></svg>
+          <span>Behind <b>{heldBehind}</b>, which is down: Argus can't reach this host through it, so its alerts wait until {heldBehind} is back. Whatever is still wrong then is alerted.</span>
         </div>
       )}
       {!onlyItem && <HostTabs hostId={hostId} tab={tab} setTab={setTab} sensors={items.length} tick={countTick} />}
@@ -8830,7 +8889,9 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
                       {s.why && whyOpen[s.host_id + ':' + s.item_id] && <div className="sreason why-line">{s.why}</div>}
                       {s.maintenance && <div className="sreason maint-tag" title="Alerts wait until the window ends">In maintenance ({s.maintenance.name}) until {fmtWhen(s.maintenance.until)}</div>}
                       {holds > 0 && <div className="sreason held-note">Holding {holds} other sensor{holds === 1 ? '' : 's'} while it is down · <button className="linkbtn" onClick={() => setShowHeld(!showHeld)}>{showHeld ? 'hide' : 'show'}</button></div>}
-                      {h && <div className="sreason held-tag" title="Its alerts wait until the master sensor is back">Held: {h.name}{h.host_id !== s.host_id ? ` on ${h.host_name}` : ''} is down</div>}
+                      {h && (h.via === 'upstream'
+                        ? <div className="sreason held-tag" title="Its alerts wait until the device it is plugged into is back">Held: behind {h.host_name}, which is down</div>
+                        : <div className="sreason held-tag" title="Its alerts wait until the master sensor is back">Held: {h.name}{h.host_id !== s.host_id ? ` on ${h.host_name}` : ''} is down</div>)}
                       {s.note && <NoteLine note={s.note} />}
                     </td>
                     <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <WhyText why={s.why} onToggle={() => toggleWhy(s.host_id + ':' + s.item_id)}>{dv}{du ? <span className="unit"> {du}</span> : null}</WhyText> })() : <WhyText why={s.why} color="var(--err)" onToggle={() => toggleWhy(s.host_id + ':' + s.item_id)}>not supported</WhyText>}</td>

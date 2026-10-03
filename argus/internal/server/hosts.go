@@ -55,6 +55,7 @@ type hostView struct {
 	Unacked     bool      `json:"unacked,omitempty"`     // has a warning or error nobody has acknowledged (its tree dot pulses)
 	Acked       bool      `json:"acked,omitempty"`       // has problems, all acknowledged (its dot, count and graph read as acknowledged)
 	Tags        []hostTag `json:"tags,omitempty"`        // its own tags, then its probe's (tags.go)
+	HeldBehind  string    `json:"held_behind,omitempty"` // the down device it is plugged into, holding its alerts (upstream.go)
 }
 
 type itemView struct {
@@ -205,8 +206,14 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 	hideMap, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 	pauseMap, _ := s.st.ActiveSuppressionMap(ctx, "pause", "host")
 	var unacked, acked map[string]bool
+	heldBehind := map[string]string{}                 // host -> the down device it is plugged into, holding its alerts
 	if rows, err := s.sensorCensus(ctx); err == nil { // the cached census: no extra Zabbix call
 		unacked, acked = unackedHosts(rows), ackedHosts(rows)
+		for _, r := range rows {
+			if r.HeldBy != nil && r.HeldBy.Via == "upstream" {
+				heldBehind[r.HostID] = r.HeldBy.HostName
+			}
+		}
 	}
 	classMap, _ := s.st.DeviceClasses(ctx)      // host id -> device-class id (drives the tree icon)
 	pingItems, _ := s.zbx.PingLatencyItems(ctx) // host id -> icmppingsec item (drives the row latency + sparkline)
@@ -233,6 +240,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 			hv.State = severityState(worst[h.HostID])
 			hv.Unacked = unacked[h.HostID]
 			hv.Acked = acked[h.HostID]
+			hv.HeldBehind = heldBehind[h.HostID]
 		}
 		if h.Status == "1" { // disabled in Zabbix
 			hv.Paused = true

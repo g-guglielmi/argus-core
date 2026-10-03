@@ -25,7 +25,7 @@ func (s *Server) proxyNames(ctx context.Context) map[string]string {
 
 // hostConfigDiff is what a host settings save changed, as the change log shows it. Secrets read
 // "changed", never their values.
-func hostConfigDiff(before hostConfigView, req hostConfigUpdate, proxies map[string]string) []store.ChangeDiff {
+func hostConfigDiff(before hostConfigView, req hostConfigUpdate, proxies map[string]string, hostNames ...map[string]string) []store.ChangeDiff {
 	var out []store.ChangeDiff
 	add := func(f, o, n string) {
 		if o != n {
@@ -111,6 +111,25 @@ func hostConfigDiff(before hostConfigView, req hostConfigUpdate, proxies map[str
 		if old != *req.Master {
 			add("Master sensor", label(old), label(*req.Master))
 		}
+	}
+	if req.Upstream != nil {
+		say := func(mode, host string) string {
+			switch mode {
+			case "manual":
+				if len(hostNames) > 0 && hostNames[0][host] != "" {
+					return "chosen by hand: " + hostNames[0][host]
+				}
+				return "chosen by hand: host " + host
+			case "none":
+				return "none"
+			}
+			return "from the UniFi controller"
+		}
+		was := before.Upstream.Mode
+		if was == "" {
+			was = "auto"
+		}
+		add("Upstream", say(was, before.Upstream.ManualHost), say(req.Upstream.Mode, req.Upstream.HostID))
 	}
 	if req.Own != nil {
 		add("Asset tag", before.Own.AssetTag, strings.TrimSpace(req.Own.AssetTag))

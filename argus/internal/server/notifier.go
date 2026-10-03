@@ -290,11 +290,13 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	hiddenItems, _ := st.ActiveSuppressionMap(ctx, "hide", "item")
 	acked, _ := st.ActiveSuppressionMap(ctx, "ack", "event")
 
-	// Host -> group names, for per-site channel routing.
+	// Host -> group names, for per-site channel routing (and its name, for the hosts an alert holds).
 	hostGroups := map[string][]string{}
+	hostNames := map[string]string{}
 	hosts, herr := zbx.Hosts(ctx)
 	if herr == nil {
 		for _, h := range hosts {
+			hostNames[h.HostID] = h.Name
 			names := make([]string, 0, len(h.Groups))
 			for _, g := range h.Groups {
 				names = append(names, g.Name)
@@ -391,6 +393,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 				ChartPNG: alertChart(ctx, zbx, stt.ItemID, "ok"),
 			}
 			ev.Note, ev.NoteBy = noteFor(notes, stt.ItemID, eid)
+			ev.Behind = masters.behindFor(stt.HostID, []masterRef{{id: stt.ItemID}}, hostNames)
 			for _, d := range dests {
 				if _, got := deliveries[eid][d.key]; got && !d.quietFor(stt.Severity) {
 					d.send(ctx, ev)
@@ -542,6 +545,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			ChartPNG: alertChart(ctx, zbx, itemID, severityState(sev)),
 		}
 		base.Note, base.NoteBy = noteFor(notes, itemID, p.EventID)
+		base.Behind = masters.behindFor(hostID, masterRefs(t), hostNames)
 		for _, pd := range plan {
 			ev := base
 			row := pd.row

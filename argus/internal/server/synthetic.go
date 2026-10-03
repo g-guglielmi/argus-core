@@ -91,6 +91,10 @@ var synthCache struct {
 // URL that doesn't answer never gives its response time or status code one, so after a single failed
 // check they'd read "stopped collecting" for as long as the URL stays down. With the master collecting
 // again, that is no sensor that stopped: the master's own sensors say what is wrong.
+// plumbingKeys are items that feed Argus itself rather than being read as sensors: the UniFi wired
+// client list (upstream.go). One that fails just leaves what it feeds unknown, so it never alerts.
+var plumbingKeys = map[string]bool{"unifi.clients": true}
+
 func leftOverUnsupported(it zabbix.UnsupportedItem, master zabbix.MasterItem) bool {
 	if master.State != "0" || len(it.Preprocessing) == 0 {
 		return false
@@ -138,6 +142,10 @@ func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, 
 				delay = m.Delay
 			}
 			id := synthUnsupported + it.ItemID
+			if plumbingKeys[it.Key] {
+				out.silent[id] = true // feeds Argus itself (the upstream device), not a reading anyone watches
+				continue
+			}
 			if dep && leftOverUnsupported(it, m) {
 				out.silent[id] = true
 				continue

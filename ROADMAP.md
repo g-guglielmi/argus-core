@@ -191,6 +191,9 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   Changes tabs; model, serial, firmware, OS, MAC read from the device plus asset tag and location;
   class and host links; a lasting journal; an Inventory page with firmware drift. DESIGN section 7e.
   Follow-ups needing a probe release: UPS model and serial (NUT), Linux (SSH) OS. - _(BE+FE)_ M
+- [x] **Upstream devices** - what each host is plugged into, from the UniFi controller (uplinks and
+  wired clients) or set by hand; hosts behind a down device are held, its alert names them; the path
+  on the Device tab; controller changes logged. DESIGN section 7f. - _(BE+FE+templates)_ M
 
 ### G. Scale & production readiness
 - [x] **Security review, wave 1 (core)** - a static review of the three repositories; the core-side

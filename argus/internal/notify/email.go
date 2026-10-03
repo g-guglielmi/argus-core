@@ -302,6 +302,9 @@ func htmlBody(e Event) string {
 	if nl := e.noteLine(); nl != "" {
 		lead += `<div class="txt" style="font-size:13px;color:#111827;margin-bottom:12px;padding:8px 10px;border-left:3px solid #2ea8c9;background:rgba(46,168,201,0.08);border-radius:4px">` + htmlEscape(nl) + `</div>`
 	}
+	if bl := e.behindLine(); bl != "" {
+		lead += `<div class="txt" style="font-size:13px;color:#111827;margin-bottom:12px">` + htmlEscape(bl) + `</div>`
+	}
 
 	var buttons strings.Builder
 	btn := func(label, href, bg string) {

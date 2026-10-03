@@ -365,12 +365,13 @@ type ownFactsView struct {
 }
 
 type deviceView struct {
-	Facts  deviceFacts  `json:"facts"`
-	Own    ownFactsView `json:"own"`
-	Class  string       `json:"class,omitempty"`
-	Links  []linkView   `json:"links"`
-	Tags   []hostTag    `json:"tags"`
-	UsedBy usedByView   `json:"used_by"`
+	Facts    deviceFacts  `json:"facts"`
+	Own      ownFactsView `json:"own"`
+	Class    string       `json:"class,omitempty"`
+	Links    []linkView   `json:"links"`
+	Tags     []hostTag    `json:"tags"`
+	UsedBy   usedByView   `json:"used_by"`
+	Upstream upstreamView `json:"upstream"`
 }
 
 // GET /api/hosts/{id}/device: the host's Device tab.
@@ -414,6 +415,7 @@ func (s *Server) handleHostDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	out.Links = s.hostLinkSet(ctx, id, classID, lh)
 	out.UsedBy = s.usedBy(ctx, id, hi, tagNames(out.Tags))
+	out.Upstream = s.hostUpstreamView(ctx, id)
 	writeJSON(w, http.StatusOK, out)
 }
 

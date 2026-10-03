@@ -9,7 +9,10 @@ All four classes read a **common base** from the controller: online/offline stat
 alert), CPU utilization, memory utilization, uptime, temperature (on models that report it), and
 firmware version, plus high-CPU and high-memory alerts. The controller's record also gives the
 host's **Device** tab and the **Inventory** its model, serial number and MAC, and, for a switch or an
-access point, the UniFi device it is plugged into (its upstream). On top of that, each class adds:
+access point, the UniFi device it is plugged into (its upstream). A switch and a gateway also list
+the wired clients on their ports every 10 minutes, so servers, NAS and cameras plugged into them get
+their upstream too: while a switch is down, the hosts behind it wait and only the switch alerts. On
+top of that, each class adds:
 
 | Class | Additionally monitors |
 |---|---|

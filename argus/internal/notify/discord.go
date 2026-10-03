@@ -58,6 +58,9 @@ func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 	if nl := e.noteLine(); nl != "" {
 		desc = append(desc, "> "+mdEscape(nl))
 	}
+	if bl := e.behindLine(); bl != "" {
+		desc = append(desc, mdEscape(bl))
+	}
 	var links []string
 	if e.OpenURL != "" {
 		links = append(links, "[Open in Argus]("+e.OpenURL+")")

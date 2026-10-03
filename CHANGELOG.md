@@ -38,13 +38,25 @@ GitHub Release from the matching section below.
 - The **Journal** keeps lasting notes on a host, each marked info, warning or problem: a part
   replaced, a move, a ticket. Unlike a sensor note, it stays.
 
+**Upstream devices:**
+- Argus knows what each host is plugged into: from the UniFi controller (a switch's or access
+  point's uplink, and the switch port of every wired client it sees), or chosen by hand in the host's
+  settings (or none).
+- While a switch is down, the hosts behind it wait: one alert for the switch, naming the hosts behind
+  it, instead of one per access point, camera and server. The lists say "Held: behind sw-core, which is
+  down" and fold them under it; its RESOLVED says their own alerts go out now if they're still in
+  trouble.
+- The Device tab shows the path (gateway › switch port 24 › this host), with a down hop in red.
+  When the controller's answer changes, Changes says so.
+
 **Inventory:** a new page under Watch lists every device with its model, firmware or OS, serial, IP
 and MAC, grouped by class, with the probe and group filters and Export CSV. A device on older firmware
 than the newest seen on the same model is flagged.
 
 **Templates:** the UniFi classes keep the model, serial, MAC and (switches and APs) the upstream
-device from the controller record they already read; the Linux, Windows and unRAID SNMP classes read
-the system description hourly. Nothing to install: they arrive with this update.
+device from the controller record they already read, and UniFi switches and gateways list their wired
+clients every 10 minutes; the Linux, Windows and unRAID SNMP classes read the system description
+hourly. Nothing to install: they arrive with this update.
 
 **Tags:**
 - Coloured labels across sites, made in Settings, **Tags** ("critical", "customer-a", "poe"). Put

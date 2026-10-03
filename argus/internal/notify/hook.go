@@ -59,6 +59,7 @@ type WebhookPayload struct {
 	AckNote       string `json:"ack_note,omitempty"`
 	Note          string `json:"note,omitempty"`     // the note left on the sensor (alerts, reminders, RESOLVED)
 	NoteBy        string `json:"note_by,omitempty"`  // who left it
+	Behind        string `json:"behind,omitempty"`   // the hosts behind a device whose ping went down or came back
 	Detail        string `json:"detail,omitempty"`   // a notice's explanation
 	OpenURL       string `json:"open_url,omitempty"` // the sensor in Argus
 	AckURL        string `json:"ack_url,omitempty"`  // the signed acknowledge link (open alerts)
@@ -74,6 +75,9 @@ func webhookPayload(e Event) WebhookPayload {
 	}
 	if e.noteLine() != "" {
 		p.Note, p.NoteBy = e.Note, e.NoteBy
+	}
+	if e.behindLine() != "" {
+		p.Behind = e.Behind
 	}
 	if e.isAlert() {
 		p.Severity, p.SeverityLabel, p.Value, p.Threshold, p.AckURL = e.Severity, severityLabel(e.Severity), e.Value, e.Threshold, e.AckURL

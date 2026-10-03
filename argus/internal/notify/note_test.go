@@ -50,3 +50,35 @@ func TestSensorNoteInAlerts(t *testing.T) {
 		t.Errorf("a note without an author = %q", got)
 	}
 }
+
+// A device whose ping went down names the hosts behind it in every channel; its RESOLVED says their
+// own alerts go out now; an acknowledgement doesn't repeat them.
+func TestBehindInAlerts(t *testing.T) {
+	for kind, want := range map[string]string{
+		"problem":  "Behind it: ap-lobby, sw-floor2 (their alerts wait while it is down)",
+		"recovery": "Behind it: ap-lobby, sw-floor2 (their own alerts go out now if they are still in trouble)",
+	} {
+		e := sampleProblem()
+		e.Kind, e.Behind = kind, "ap-lobby, sw-floor2"
+		if kind == "recovery" {
+			e.State, e.SinceSecs = "ok", 600
+		}
+		if !strings.Contains(strings.Join(e.bodyLines(), "\n"), want) || !strings.Contains(strings.Join(e.cardLines(), "\n"), want) {
+			t.Errorf("%s: text lacks %q", kind, want)
+		}
+		if text, _ := telegramMessage(e); !strings.Contains(text, htmlEscape(want)) {
+			t.Errorf("%s: telegram lacks it:\n%s", kind, text)
+		}
+		if !strings.Contains(htmlBody(e), htmlEscape(want)) {
+			t.Errorf("%s: email html lacks it", kind)
+		}
+		if p := webhookPayload(e); p.Behind != "ap-lobby, sw-floor2" {
+			t.Errorf("%s: webhook behind = %q", kind, p.Behind)
+		}
+	}
+	e := sampleProblem()
+	e.Kind, e.Behind = "ack", "ap-lobby"
+	if strings.Contains(strings.Join(e.bodyLines(), "\n"), "Behind it") {
+		t.Error("an acknowledgement named the hosts behind")
+	}
+}

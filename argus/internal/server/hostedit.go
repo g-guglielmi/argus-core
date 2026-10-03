@@ -111,6 +111,7 @@ type hostConfigView struct {
 	Own           ownFactsView         `json:"own"`                      // asset tag and location (device.go)
 	Links         []linkView           `json:"links"`                    // its own links, as typed
 	ClassLinks    []linkView           `json:"class_links"`              // the links its class gives it, filled in
+	Upstream      upstreamView         `json:"upstream"`                 // the device it is plugged into (upstream.go)
 }
 
 // masterView is a host's master sensor for the settings editor: the one in effect ("" = none), the
@@ -317,6 +318,7 @@ func (s *Server) hostConfigFor(ctx context.Context, hostID string, canEdit bool)
 		out.Own = ownFactsView{AssetTag: own[hd.HostID].AssetTag, Location: own[hd.HostID].Location}
 	}
 	out.Links, out.ClassLinks = []linkView{}, []linkView{}
+	out.Upstream = s.hostUpstreamView(ctx, hd.HostID)
 	if ls, err := s.st.HostLinks(ctx, hd.HostID); err == nil {
 		for _, l := range ls {
 			out.Links = append(out.Links, linkView{ID: l.ID, Label: l.Label, URL: l.URL, From: "host"})
@@ -358,6 +360,13 @@ type hostConfigUpdate struct {
 	Tags          *[]string               `json:"tags"`           // the host's own tags; nil = leave as-is
 	Own           *ownFactsView           `json:"own"`            // asset tag and location; nil = leave as-is
 	Links         *[]linkView             `json:"links"`          // the host's own links; nil = leave as-is
+	Upstream      *upstreamSet            `json:"upstream"`       // how its upstream device is set; nil = leave as-is
+}
+
+// upstreamSet is how a host's upstream is set: the controller's answer (auto), a host (manual), none.
+type upstreamSet struct {
+	Mode   string `json:"mode"`
+	HostID string `json:"host_id"`
 }
 
 // handleUpdateHostConfig reconciles a host's whole desired identity + interface set (admin/helpdesk).
@@ -576,6 +585,32 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+	if req.Upstream != nil {
+		u := *req.Upstream
+		if u.Mode != "auto" && u.Mode != "manual" && u.Mode != "none" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "upstream is auto, manual or none"})
+			return
+		}
+		if u.Mode == "manual" {
+			idx, _ := s.hostIndex(ctx)
+			if _, ok := idx[u.HostID]; !ok || u.HostID == cur.HostID {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "pick another host as its upstream device"})
+				return
+			}
+			eff, _ := s.upstreams(ctx)
+			for _, up := range upstreamChain(eff, u.HostID) {
+				if up == cur.HostID {
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "that host is behind this one: it can't be its upstream device too"})
+					return
+				}
+			}
+		}
+		if err := s.st.SetUpstreamMode(ctx, cur.HostID, u.Mode, u.HostID); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save the upstream device"})
+			return
+		}
+		s.forgetUpstreams()
+	}
 	if req.Links != nil {
 		links, msg := hostOwnLinks(*req.Links)
 		if msg != "" {
@@ -600,7 +635,13 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		*req.Tags = tags
 	}
 	if beforeErr == nil {
-		diff := hostConfigDiff(before, req, s.proxyNames(ctx))
+		names := map[string]string{}
+		if idx, err := s.hostIndex(ctx); err == nil {
+			for id, h := range idx {
+				names[id] = h.Name
+			}
+		}
+		diff := hostConfigDiff(before, req, s.proxyNames(ctx), names)
 		if len(diff) == 0 {
 			skipChange(r)
 		}

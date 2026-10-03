@@ -75,6 +75,7 @@ type masterSet struct {
 	hostProxy   map[string]string       // host id -> the proxy monitoring it ("" / "0" = the server)
 	proxyByName map[string]string       // proxy name -> proxy id
 	down        map[string]bool         // master item id -> it has an open "down" problem
+	upstream    map[string]upstreamLink // host id -> the device it is plugged into (upstream.go)
 }
 
 // loadMasters builds the master set for one notifier tick. Best effort: whatever can't be read just
@@ -84,6 +85,7 @@ func loadMasters(ctx context.Context, st *store.Store, zbx *zabbix.Client, hosts
 		byHost: map[string][]masterItem{}, siteMaster: map[string]masterItem{}, probeHost: map[string]string{},
 		hostProxy: map[string]string{}, proxyByName: map[string]string{}, down: masterDown(problems, targets),
 	}
+	m.upstream, _ = loadUpstreams(ctx, st, zbx)
 	classes, _ := st.DeviceClasses(ctx)
 	for _, h := range hosts {
 		m.hostProxy[h.HostID] = h.ProxyID
@@ -194,6 +196,20 @@ func (m masterSet) hold(hostID string, items []masterRef, start, now int64) hold
 			return v
 		}
 	}
+	// The devices it is plugged into, nearest first: while one is down Argus can't reach this host
+	// through it, so the host's alerts wait on that device's main master (its ping). The top of the
+	// outage still alerts: its own chain is up, and a chain that loops holds nothing.
+	for _, up := range upstreamChain(m.upstream, hostID) {
+		for _, um := range m.byHost[up] {
+			if um.rank != 0 {
+				continue
+			}
+			if v := m.judge(um, items, start, now); v.held {
+				v.by, v.master, v.host = "upstream", um, up
+				return v
+			}
+		}
+	}
 	// A host's masters hold only what ranks below them: the ping holds the collector's "unreachable"
 	// alert and every other sensor, a collector holds the sensors it feeds, and masters of one rank never
 	// hold each other. When the whole machine goes down its ping and its collector are both down, and
@@ -212,6 +228,36 @@ func (m masterSet) hold(hostID string, items []masterRef, start, now int64) hold
 		}
 	}
 	return holdVerdict{}
+}
+
+// behindFor names the hosts an alert's host holds while it is down: set when the problem is on the
+// host's main master (its ping) and other hosts are plugged in behind it.
+func (m masterSet) behindFor(hostID string, items []masterRef, names map[string]string) string {
+	main := false
+	for _, hm := range m.byHost[hostID] {
+		if hm.rank != 0 {
+			continue
+		}
+		for _, it := range items {
+			if it.id == hm.itemID {
+				main = true
+			}
+		}
+	}
+	if !main {
+		return ""
+	}
+	hosts := behindHosts(m.upstream, hostID)
+	if len(hosts) == 0 {
+		return ""
+	}
+	ns := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		if n := names[h]; n != "" {
+			ns = append(ns, n)
+		}
+	}
+	return behindText(ns)
 }
 
 // onPing reports whether a problem is on the ping's sensors (Base Ping: reachability, loss, response
@@ -272,6 +318,7 @@ type heldRef struct {
 	HostName string `json:"host_name"`
 	ItemID   string `json:"item_id"`
 	Name     string `json:"name"`
+	Via      string `json:"via,omitempty"` // upstream: the master is the device this host is plugged into
 }
 
 // markHeld applies the notifier's rule to the census: an unacknowledged error or warning whose alerts
@@ -308,6 +355,9 @@ func (s *Server) markHeld(ctx context.Context, rows []sensorRow, problems []zabb
 			continue
 		}
 		ref := &heldRef{HostID: v.host, HostName: hostName[v.host], ItemID: v.master.itemID, Name: sensorLabel(v.master.key, v.master.key)}
+		if v.by == "upstream" {
+			ref.Via = "upstream"
+		}
 		if j, ok := byItem[v.master.itemID]; ok {
 			if rows[j].Label != "" {
 				ref.Name = rows[j].Label

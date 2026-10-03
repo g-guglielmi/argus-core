@@ -635,6 +635,16 @@ CREATE TABLE IF NOT EXISTS host_journal (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_host_journal_host ON host_journal(host_id, created_at);
+-- A host's upstream device (upstream.go): the UniFi controller's answer by default, one chosen by hand,
+-- or none; the controller's last answer is kept to log when it changes.
+CREATE TABLE IF NOT EXISTS host_upstream (
+  host_id     TEXT PRIMARY KEY,
+  mode        TEXT NOT NULL DEFAULT 'auto',
+  manual_host TEXT NOT NULL DEFAULT '',
+  auto_host   TEXT NOT NULL DEFAULT '',
+  auto_port   TEXT NOT NULL DEFAULT '',
+  auto_at     INTEGER NOT NULL DEFAULT 0
+);
 `); err != nil {
 		return err
 	}

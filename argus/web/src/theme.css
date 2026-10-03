@@ -1244,6 +1244,20 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .info-line { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; min-height: 24px; font-size: 13px; }
 .info-line .k { font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); font-weight: 600; min-width: 92px; }
 .info-line .v { overflow-wrap: anywhere; }
+/* A host held behind a down upstream device: its tree label, and the band in its body (the
+   maintenance band's shape, in the error colour). */
+.host-head .kind.held { color: var(--err); }
+.held-band { display: flex; align-items: center; gap: 10px; border: 1px solid color-mix(in srgb, var(--err) 35%, var(--border)); background: color-mix(in srgb, var(--err) 7%, var(--panel)); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; font-size: 13px; }
+.held-band svg { width: 16px; height: 16px; color: var(--err); flex: none; }
+.held-band b { font-weight: 650; }
+/* A host's upstream path: gw-site1 > sw-core port 24 > this host. */
+.path { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
+.path-hop { display: inline-flex; align-items: center; gap: 5px; }
+.path-hop .sdot { width: 7px; height: 7px; }
+.path-hop.down { color: var(--err); }
+.path-hop.here { font-weight: 650; }
+.path-port { color: var(--muted); font-size: 12px; }
+.path-arrow { color: var(--faint); }
 /* A copyable value: the value, then a small copy icon. */
 .copyval { display: inline-flex; align-items: center; gap: 4px; }
 .copy-ic { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--faint); cursor: pointer; padding: 0; }

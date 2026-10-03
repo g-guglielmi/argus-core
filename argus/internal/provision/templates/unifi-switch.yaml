@@ -19,6 +19,64 @@ zabbix_export:
       groups:
         - name: Templates/Argus
       items:
+        - uuid: c07e90904e8d47a49710b02d92237be3
+          name: 'UniFi wired clients'
+          type: SCRIPT
+          key: unifi.clients
+          delay: 10m
+          history: 1h
+          trends: '0'
+          value_type: TEXT
+          timeout: 15s
+          description: 'The wired clients the controller sees plugged into this device (stat/sta, sw_mac = its MAC), as [{mac, ip, port}]: Argus reads the upstream device of servers, NAS and cameras from it. Plumbing, not a sensor.'
+          params: |
+            var p = JSON.parse(value);
+            // A refusal says why, like the raw item: the controller's own message, with a hint.
+            function refused(code, body, site) {
+              var why = '', text = String(body || '');
+              try {
+                var j = JSON.parse(text);
+                why = (j.meta && j.meta.msg) || (j.error && (j.error.message || j.error.code)) || j.message || '';
+              } catch (e) {
+                var t = text.match(/<title>([^<]*)<\/title>/i) || text.match(/<h1>([^<]*)<\/h1>/i);
+                why = t ? t[1] : '';
+              }
+              why = String(why).replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').substring(0, 120);
+              var hint = '';
+              if (code === 401 || code === 403) { hint = 'the controller rejected the API key'; }
+              else if (why === 'api.err.NoSiteContext') { hint = 'no site named "' + site + '": the Site name must be the internal name (the first site is "default")'; }
+              else if (/plain HTTP/i.test(text)) { hint = 'the Controller URL must start with https://'; }
+              else if (code === 404) { hint = 'the Controller URL must point at a UniFi OS console'; }
+              return 'UniFi API HTTP ' + code + ' reading the client list' + (why ? ' (' + why + ')' : '') + (hint ? ' - ' + hint : '');
+            }
+            if (!p.url || !p.key || !p.mac) { throw 'set {$UNIFI.URL}, {$UNIFI.KEY} and {$UNIFI.MAC} on the host'; }
+            var mac = String(p.mac).toLowerCase().replace(/[^0-9a-f]/g, '');
+            if (mac.length !== 12) { throw 'MAC address looks wrong: ' + p.mac; }
+            mac = mac.match(/../g).join(':');
+            var site = String(p.site || 'default').toLowerCase();
+            var req = new HttpRequest();
+            req.addHeader('X-API-KEY: ' + p.key);
+            req.addHeader('Accept: application/json');
+            var resp = req.get(String(p.url).replace(/\/+$/, '') + '/proxy/network/api/s/' + site + '/stat/sta');
+            if (req.getStatus() !== 200) { throw refused(req.getStatus(), resp, site); }
+            var list = JSON.parse(resp).data || [];
+            var out = [];
+            for (var i = 0; i < list.length; i++) {
+              var c = list[i];
+              if (c.is_wired && String(c.sw_mac || '').toLowerCase() === mac) {
+                out.push({ mac: c.mac || '', ip: c.ip || c.last_ip || '', port: c.sw_port || 0 });
+              }
+            }
+            return JSON.stringify(out);
+          parameters:
+            - name: url
+              value: '{$UNIFI.URL}'
+            - name: key
+              value: '{$UNIFI.KEY}'
+            - name: mac
+              value: '{$UNIFI.MAC}'
+            - name: site
+              value: '{$UNIFI.SITE}'
         - uuid: d0f5fcaee12f4e1d995a54293245d740
           name: 'UniFi raw device data'
           type: SCRIPT

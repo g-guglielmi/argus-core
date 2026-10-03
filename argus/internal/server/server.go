@@ -55,6 +55,7 @@ type Server struct {
 	hostGroups    hostGroupsCache   // host -> group names, for per-site visibility (scope.go)
 	maint         maintCache        // the hosts in a maintenance window right now (maintenance.go)
 	mux           *http.ServeMux    // the routes, so the change log can match a request before it runs (changes.go)
+	ups           upstreamCache     // the devices hosts are plugged into (upstream.go)
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {
@@ -88,6 +89,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	s.syncRebootWindowFile(context.Background())
 	s.syncZbxWindowFile(context.Background())
 	s.syncTimezoneFile(context.Background())
+	// Keep the UniFi controller's upstream answers on record and log their changes (upstream.go).
+	s.startUpstreamRefresh(context.Background())
 	// Import the device-class templates into Zabbix (§C). Background + idempotent; soft-skips
 	// until a Zabbix token is configured, and the create path re-checks before it needs them.
 	s.startTemplateReconcile(context.Background())
