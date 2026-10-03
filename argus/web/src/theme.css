@@ -1270,6 +1270,17 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .link-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
 .link-edit { display: grid; grid-template-columns: minmax(110px, 160px) minmax(0, 1fr) auto; gap: 8px; margin-bottom: 8px; }
 .link-form { display: grid; grid-template-columns: minmax(120px, 170px) minmax(0, 1fr) minmax(150px, 220px) auto; gap: 8px 10px; align-items: center; }
+/* A site's info: the rows on its page, the problem lists' who-to-call line, and the editor. */
+.site-info { padding: 2px 16px 6px; border-bottom: 1px solid var(--border); }
+.site-empty { padding: 10px 16px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--border); }
+.site-info .info-line a.sub-line, .info-rows .info-line a.sub-line { color: var(--muted); text-decoration: none; }
+.site-info .info-line a.sub-line:hover, .info-rows .info-line a.sub-line:hover { color: var(--accent); text-decoration: underline; }
+.sreason.call-line { color: var(--text); display: flex; align-items: center; gap: 5px; }
+.call-ic { width: 12px; height: 12px; flex: none; color: var(--accent); }
+.site-ed-h { font-size: 13px; font-weight: 600; color: var(--text); margin-top: 16px; }
+.site-contact-ed { display: grid; grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1fr) minmax(120px, 0.8fr) minmax(0, 1fr) auto; gap: 8px; margin-bottom: 8px; }
+.site-line-ed { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 10px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 8px; }
+.site-line-act { grid-column: 1 / -1; display: flex; justify-content: flex-end; margin: -2px -4px -4px 0; }
 /* A host's journal: one entry per line, coloured by kind (the status-note kinds). */
 .journal { display: grid; gap: 8px; padding: 2px 0 10px; }
 .journal-add { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
@@ -1335,6 +1346,9 @@ input.tsel { width: 15px; height: 15px; accent-color: var(--accent); margin: 0 8
   .info-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .info-line .k { min-width: 0; width: 100%; }
   .link-edit, .link-form, .journal-add { grid-template-columns: minmax(0, 1fr); }
+  .site-contact-ed, .site-line-ed { grid-template-columns: minmax(0, 1fr); }
+  .site-contact-ed { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .site-info { padding: 2px 12px 6px; }
   .slist-inv tr.cat td { display: block !important; text-align: left !important; padding-left: 0; }
 }
 /* The probe and group filters in a list's toolbar: compact, and the dropdown never wider than the screen. */

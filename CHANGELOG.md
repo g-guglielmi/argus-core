@@ -49,6 +49,17 @@ GitHub Release from the matching section below.
 - The Device tab shows the path (gateway › switch port 24 › this host), with a down hop in red.
   When the controller's answer changes, Changes says so.
 
+**Site info and who to call:**
+- A site keeps its address, its contacts and its internet lines (provider, circuit or contract,
+  support phone), at the top of its page in Monitoring (**Edit site info**) and on each of its hosts'
+  Device tab, with copy buttons on the numbers.
+- Each internet line is tied to the sensor that measures it (a UniFi gateway's WAN, or a host such
+  as the provider's modem), and shows whether it is up. A problem on it says who to call, right in
+  the problem lists.
+- A new **Who to call** switch per channel: its alerts carry "Call Example Fiber +1 555 0100, circuit
+  EXF-000123 (WAN 1)" on a line that went down (every line when the site's probe stopped reporting),
+  and the site's first contact. The webhook sends them as `call`.
+
 **Inventory:** a new page under Watch lists every device with its model, firmware or OS, serial, IP
 and MAC, grouped by class, with the probe and group filters and Export CSV. A device on older firmware
 than the newest seen on the same model is flagged.

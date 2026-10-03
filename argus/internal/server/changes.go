@@ -144,11 +144,12 @@ var changeRoutes = map[string]routeChange{
 	"DELETE /api/push-sensors/{id}":      {cat: "hosts", action: "Removed a push sensor", obj: "push", pre: true},
 
 	// groups and the tree
-	"POST /api/groups":        {cat: "groups", action: "Created a group", detail: fieldDetail("name")},
-	"PATCH /api/groups/{id}":  {cat: "groups", action: "Renamed a group", obj: "group", pre: true},
-	"DELETE /api/groups/{id}": {cat: "groups", action: "Deleted a group", obj: "group", pre: true},
-	"PUT /api/tree/order":     {cat: "groups", action: "Reordered the tree"},
-	"PUT /api/tree/hidden":    {cat: "groups", action: "Changed the hidden groups"},
+	"POST /api/groups":           {cat: "groups", action: "Created a group", detail: fieldDetail("name")},
+	"PATCH /api/groups/{id}":     {cat: "groups", action: "Renamed a group", obj: "group", pre: true},
+	"PUT /api/sites/{site}/info": {cat: "groups", action: "Changed a site's info"},
+	"DELETE /api/groups/{id}":    {cat: "groups", action: "Deleted a group", obj: "group", pre: true},
+	"PUT /api/tree/order":        {cat: "groups", action: "Reordered the tree"},
+	"PUT /api/tree/hidden":       {cat: "groups", action: "Changed the hidden groups"},
 
 	// maintenance
 	"POST /api/maintenance":        {cat: "maintenance", action: "Created a maintenance window", detail: fieldDetail("name")},

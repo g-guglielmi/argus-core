@@ -45,6 +45,7 @@ type Event struct {
 	Note      string    // the note left on the sensor (alerts, reminders and RESOLVED), if any
 	NoteBy    string    // who left it
 	Behind    string    // the hosts plugged in behind this one, when its main sensor (ping) is the one down
+	Call      []string  // who to call: the site's internet line it is about and its contact (problems and reminders, "Who to call" channels)
 	Detail    string    // a system notice's explanation, one or more lines (info only)
 	OpenURL   string    // deep link to the sensor in Argus (optional)
 	AckURL    string    // signed one-click acknowledge link (problem alerts only, optional)
@@ -181,6 +182,15 @@ func (e Event) behindLine() string {
 	return "Behind it: " + e.Behind + " (their alerts wait while it is down)"
 }
 
+// callLines are who to call about an alert ("Call Example Fiber +1 555 0100, circuit EXF-000123
+// (WAN 1)", "On-site IT: Bob Verdi +1 555 0101"): on a problem or a reminder only.
+func (e Event) callLines() []string {
+	if e.Kind != "problem" && e.Kind != "reminder" {
+		return nil
+	}
+	return e.Call
+}
+
 // subject is the one-line summary (no emoji) used as the email subject and message title.
 func (e Event) subject() string {
 	if e.Host == "" { // a notice about Argus itself has no host
@@ -260,6 +270,7 @@ func (e Event) bodyLines() []string {
 	if bl := e.behindLine(); bl != "" {
 		lines = append(lines, bl)
 	}
+	lines = append(lines, e.callLines()...)
 	lines = append(lines, "Host: "+e.Host)
 	if e.Site != "" {
 		lines = append(lines, "Site: "+e.Site)
@@ -315,6 +326,7 @@ func (e Event) cardLines() []string {
 	if bl := e.behindLine(); bl != "" {
 		out = append(out, bl)
 	}
+	out = append(out, e.callLines()...)
 	return append(out, at+e.When.Format("2006-01-02 15:04 MST"))
 }
 

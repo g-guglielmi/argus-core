@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { registerPasskey, loginWithPasskey } from './webauthn'
-import { Button, Card, Field, Banner, Badge, CopyButton, Switch, Select, Combobox, Skeleton, EmptyState, copyToClipboard } from './ui'
+import { Button, Card, Field, Banner, Badge, CopyButton, Switch, Select, Combobox, Skeleton, EmptyState, copyToClipboard, type ComboOption } from './ui'
 import { useConfirm, usePrompt, useAlert } from './dialog'
 import { useToast } from './toast'
 
@@ -39,7 +39,7 @@ type Proxy = { id: string; name: string; tags?: string[]; last_access: number; o
 type ProbeJob = { state: 'queued' | 'updating' | 'failed'; tag: string; at?: number }
 type ProcRow = { name: string; label: string; running: number; target?: number; pinned?: boolean; peak?: number; held?: { from: number; to: number; before: number; after: number; at: number; cpus: number } }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
-type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; tags?: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
+type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; tags?: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; who_to_call?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
 // Alert levels a notification channel can choose (Zabbix severity floors). The app shows problems as
 // warnings (Zabbix Warning) or errors (Average, High, Disaster), so these are the two choices.
@@ -55,7 +55,7 @@ type Thr = { warn?: number; high?: number; below?: boolean }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
 type TriggerHost = { id: string; name: string }
 type Trigger = { id: string; description: string; severity: number; enabled: boolean; problem: boolean; since: number; hosts: TriggerHost[]; sensors: string[] }
-type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean; maintenance?: MaintHit; held_by?: HeldBy; holds?: number; note?: SensorNote }
+type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean; maintenance?: MaintHit; held_by?: HeldBy; holds?: number; note?: SensorNote; call?: string }
 // The master whose outage holds a sensor's alerts: the lists fold the sensor under it.
 type HeldBy = { host_id: string; host_name: string; item_id: string; name: string; via?: string }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
@@ -2794,7 +2794,7 @@ function fmtMinutes(m: number): string {
 
 // timingLabel is the channel card's escalation summary, appended to its meta line ("" when immediate
 // with no reminders, which is how every channel behaved before escalation existed).
-function timingLabel(c: { min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number }): string {
+function timingLabel(c: { min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; who_to_call?: boolean; alerts?: boolean }): string {
   let out = ''
   if (c.delay_min) out += ` · after ${fmtMinutes(c.delay_min)}`
   if (c.repeat_min) {
@@ -2802,6 +2802,7 @@ function timingLabel(c: { min_severity: number; delay_min?: number; repeat_min?:
     const rs = c.repeat_min_severity || 2
     if (rs > c.min_severity) out += ` (${SEVERITIES.find((s) => s.v === rs)?.label || ''})`
   }
+  if (c.who_to_call && c.alerts !== false) out += ' · says who to call'
   return out
 }
 
@@ -2834,6 +2835,16 @@ function EscalationSection({ delay, repeat, remSev, onDelay, onRepeat, onRemSev,
 }
 
 // NoticesSwitch turns on Argus's own system notices for a channel (off by default).
+// CallSwitch is a channel's "Who to call": its alerts carry the site's internet line and contact.
+function CallSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="chan-field">
+      <Switch checked={checked} onChange={onChange} label="Who to call" />
+      <span className="set-note" style={{ margin: 0 }}>Adds who to call from the site's info: on an alert about an internet line, its provider, circuit and support number; on every alert, the site's first contact. Whoever reads it on the phone can call straight away.</span>
+    </div>
+  )
+}
+
 function NoticesSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <div className="chan-field">
@@ -2907,13 +2918,14 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   const [remSev, setRemSev] = useState(initial?.repeat_min_severity || 2)
   const [alerts, setAlerts] = useState(initial ? initial.alerts !== false : true)
   const [notices, setNotices] = useState(!!initial?.system_notices)
+  const [call, setCall] = useState(!!initial?.who_to_call)
   const [enabled, setEnabled] = useState(initial ? initial.enabled : true)
   const [config, setConfig] = useState<Record<string, string>>(initial?.config || {})
   const setCfg = (k: string, v: string) => setConfig((c) => ({ ...c, [k]: v }))
 
   async function save(e: FormEvent) {
     e.preventDefault(); onError('')
-    const body = { type, name, sites: selSites, tags: selTags, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, alerts, system_notices: notices, enabled, config }
+    const body = { type, name, sites: selSites, tags: selTags, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, alerts, system_notices: notices, who_to_call: alerts && call, enabled, config }
     const url = initial ? `/api/notify/channels/${initial.id}` : '/api/notify/channels'
     const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
@@ -2984,6 +2996,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
             </div>
           </div>
         )}
+        {alerts && <CallSwitch checked={call} onChange={setCall} />}
         <NoticesSwitch checked={notices} onChange={setNotices} />
         {!alerts && !notices && <p className="set-note txt-err" style={{ margin: 0 }}>Turn on alerts, system notices, or both.</p>}
       </ChanSection>
@@ -2992,7 +3005,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   )
 }
 
-type UserChannel = { id: number; type: string; enabled: boolean; sites: string[]; tags?: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
+type UserChannel = { id: number; type: string; enabled: boolean; sites: string[]; tags?: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; who_to_call?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 
 // PersonalNotifyCard lets any signed-in user manage their own alert destinations (PERSONAL_TYPES),
 // separate from the shared channels an admin configures in the Notifications tab. Self-service:
@@ -3098,13 +3111,14 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   const [remSev, setRemSev] = useState(initial?.repeat_min_severity || 2)
   const [alerts, setAlerts] = useState(initial ? initial.alerts !== false : true)
   const [notices, setNotices] = useState(!!initial?.system_notices)
+  const [call, setCall] = useState(!!initial?.who_to_call)
   const [enabled, setEnabled] = useState(initial ? initial.enabled : true)
   const [config, setConfig] = useState<Record<string, string>>(initial?.config || {})
   const setCfg = (k: string, v: string) => setConfig((c) => ({ ...c, [k]: v }))
 
   async function save(e: FormEvent) {
     e.preventDefault(); onError('')
-    const body = { type, sites: selSites, tags: selTags, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, alerts, system_notices: notices, enabled, config }
+    const body = { type, sites: selSites, tags: selTags, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, alerts, system_notices: notices, who_to_call: alerts && call, enabled, config }
     const url = initial ? `/api/me/notify/channels/${initial.id}` : '/api/me/notify/channels'
     const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
@@ -3157,6 +3171,7 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
             </div>
           </div>
         )}
+        {alerts && <CallSwitch checked={call} onChange={setCall} />}
         <NoticesSwitch checked={notices} onChange={setNotices} />
         {!alerts && !notices && <p className="set-note txt-err" style={{ margin: 0 }}>Turn on alerts, system notices, or both.</p>}
       </ChanSection>
@@ -4183,6 +4198,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   const [proxies, setProxies] = useState<Proxy[]>([])
   const [creating, setCreating] = useState(false) // "+ New group" inline band open
   const [addingDevice, setAddingDevice] = useState(false) // "+ Add device" inline band open (admin)
+  const [siteEdit, setSiteEdit] = useState(false) // the site info editor (siteinfo.go)
   const [classes, setClasses] = useState<DeviceClass[]>([]) // device-class catalog for the attach band
   const [gAction, setGAction] = useState<{ id: string; mode: 'rename' | 'delete' } | null>(null) // per-group rename/delete band
   const [newSubPath, setNewSubPath] = useState<string | null>(null) // group path under which a "New subgroup" band is open
@@ -4684,6 +4700,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   // focus -> only the focused host card (the breadcrumb carries the path).
   const focusNode = focus.level === 'group' ? byPath.get(focus.path) : undefined
   const crumbs = focus.level !== 'root' ? crumbChain(focus.path) : []
+  const focusSite = focus.level === 'group' && !focus.path.includes('/') ? focus.path : ''
 
   return (
     <div className="panel">
@@ -4699,6 +4716,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
             <span className="tools-desktop">
               {focus.level !== 'host' && tagList.length > 0 && !reorder && <TagPicker tags={tagList} value={tagFilter} onChange={setTagFilter} allLabel="All tags" />}
               {canPause && focus.level !== 'host' && !reorder && <button className={'btn' + (selecting ? ' on' : '')} onClick={() => (selecting ? endSelecting() : setSelecting(true))}>{selecting ? 'Done' : 'Select'}</button>}
+              {focusSite && canPause && !reorder && <button className="btn" onClick={() => setSiteEdit(true)}>Edit site info</button>}
               {focus.level !== 'host' && !reorder && <button className="btn" onClick={() => exportHosts(treeHosts, proxies)}>Export CSV</button>}
               {advanced && canPause && focus.level !== 'host' && hidden.size > 0 && !reorder && <button className={'btn' + (showHidden ? ' on' : '')} onClick={() => setShowHidden((v) => !v)}>{showHidden ? 'Hide hidden' : `Show hidden (${hidden.size})`}</button>}
               {canPause && focus.level !== 'host' && <button className={'btn' + (reorder ? ' on' : '')} onClick={() => { setError(null); setCreating(false); setReorder((v) => !v) }}>{reorder ? 'Done' : 'Reorder'}</button>}
@@ -4714,6 +4732,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
               <span className="tools-mobile">
                 <Kebab actions={[
                   ...(canPause ? [{ label: selecting ? 'Done selecting' : 'Select hosts', onClick: () => (selecting ? endSelecting() : setSelecting(true)) }] : []),
+                  ...(focusSite && canPause ? [{ label: 'Edit site info', onClick: () => setSiteEdit(true) }] : []),
                   { label: 'Export CSV', onClick: () => exportHosts(treeHosts, proxies) },
                   ...(canPause ? [{ label: reorder ? 'Done reordering' : 'Reorder groups & hosts', onClick: () => { setError(null); setCreating(false); setReorder((v) => !v) } }] : []),
                   ...(advanced && canPause && hidden.size > 0 ? [{ label: showHidden ? 'Hide hidden groups' : `Show hidden groups (${hidden.size})`, onClick: () => setShowHidden((v) => !v) }] : []),
@@ -4749,6 +4768,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
         confirmLabel="Create" onConfirm={(name) => createGroup(name)} onCancel={() => setCreating(false)} />}
       {addingDevice && <AddDeviceBand classes={classes} groups={groups} proxies={proxies} defaultSite={focus.level === 'group' ? focus.path : ''} onCancel={() => setAddingDevice(false)} onCreated={() => { setAddingDevice(false); setError(null); load(); fireDataRefresh() }} />}
       {settingsHost && <HostSettingsModal hostId={settingsHost} hostName={hosts.find((h) => h.id === settingsHost)?.name} canEdit={canPause} isAdmin={role === 'admin'} onClose={closeSettings} onSaved={() => { closeSettings(); load(); fireDataRefresh() }} />}
+      {focusSite && <SitePanel site={focusSite} canEdit={canPause} editing={siteEdit} onEditDone={() => setSiteEdit(false)} />}
       {loading && <Skeleton rows={5} cols={3} />}
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
       {!loading && !error && hosts.length === 0 && <EmptyState icon={ic.monitoring} title="No hosts yet" text="Hosts monitored in Zabbix appear here, grouped by site. If you expected some, check the Zabbix connection in Settings." />}
@@ -7485,7 +7505,11 @@ type LinkRow = { id?: number; label: string; url: string; from?: string }
 type DeviceFacts = { model?: string; serial?: string; firmware?: string; os?: string; ip?: string; mac?: string; read_at?: number; from?: string }
 type Hop = { host_id: string; name: string; port?: string; down?: boolean }
 type UpstreamInfo = { mode: 'auto' | 'manual' | 'none'; manual_host?: string; auto?: Hop; path: Hop[]; behind: { id: string; name: string }[]; behind_all: number; source?: string }
-type DeviceInfo = { facts: DeviceFacts; own: { asset_tag: string; location: string }; class?: string; links: LinkRow[]; tags: HostTag[]; used_by: { groups: string[]; probe: string; status_pages: string[]; maintenance: string[]; channels: string[] }; upstream: UpstreamInfo }
+type DeviceInfo = { facts: DeviceFacts; own: { asset_tag: string; location: string }; class?: string; links: LinkRow[]; tags: HostTag[]; used_by: { groups: string[]; probe: string; status_pages: string[]; maintenance: string[]; channels: string[] }; upstream: UpstreamInfo; site?: SiteInfo }
+type SiteContact = { role: string; name: string; phone: string; email: string }
+type SiteLine = { name: string; host_id: string; key: string; provider: string; circuit: string; phone: string; note: string; host_name?: string; sensor?: string; state?: string }
+type LineChoice = { host_id: string; key: string; label: string; group: string }
+type SiteInfo = { site: string; address: string; note: string; contacts: SiteContact[]; lines: SiteLine[]; updated_at?: number; choices?: LineChoice[] }
 type JournalRow = { id: number; kind: 'info' | 'warning' | 'problem'; text: string; by: string; at: number; mine?: boolean; can_delete?: boolean }
 
 // CopyValue is a value with a small copy button after it.
@@ -7574,6 +7598,141 @@ function PathView({ hops }: { hops: Hop[] }) {
   )
 }
 
+const PHONE_IC = <svg className="call-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z" /></svg>
+
+// LineState is an internet line's state, read from its sensor: a quiet tick when up, red when down.
+function LineState({ l }: { l: SiteLine }) {
+  if (l.state === 'up') return <span className="okquiet" title={l.sensor ? `${l.sensor} on ${l.host_name}` : undefined}>up</span>
+  if (l.state === 'down') return <span className="tag err" title={l.sensor ? `${l.sensor} on ${l.host_name}` : undefined}>down</span>
+  return null
+}
+
+// SiteLines are a site's info as lines: address, contacts, internet lines. The Device tab shows them in
+// one row; the site's page in a row each (part).
+function SiteLines({ info, part }: { info: SiteInfo; part?: 'address' | 'contacts' | 'lines' }) {
+  return (
+    <>
+      {(!part || part === 'address') && (info.address || info.note) && (
+        <InfoLine k={part ? undefined : 'Address'}><span className="v">{info.address}</span>{info.note && <span className="sub-line">{info.address ? '· ' : ''}{info.note}</span>}</InfoLine>
+      )}
+      {(!part || part === 'contacts') && info.contacts.map((c, i) => (
+        <InfoLine key={'c' + i} k={c.role || 'Contact'}>
+          {c.name && <span className="v">{c.name}</span>}
+          {c.phone && <CopyValue value={c.phone} />}
+          {c.email && <a className="sub-line" href={`mailto:${c.email}`}>{c.email}</a>}
+        </InfoLine>
+      ))}
+      {(!part || part === 'lines') && info.lines.map((l, i) => (
+        <InfoLine key={'l' + i} k={l.name || 'Internet'}>
+          <span className="v">{[l.provider, l.note].filter(Boolean).join(' · ') || '-'}</span>
+          {l.circuit && <><span className="sub-line">circuit</span><CopyValue value={l.circuit} /></>}
+          {l.phone && <><span className="sub-line">support</span><CopyValue value={l.phone} /></>}
+          <LineState l={l} />
+        </InfoLine>
+      ))}
+    </>
+  )
+}
+
+// SitePanel is the top of a site's page in Monitoring: its address, who to call and its internet lines.
+function SitePanel({ site, canEdit, editing, onEditDone }: { site: string; canEdit: boolean; editing: boolean; onEditDone: () => void }) {
+  const [info, setInfo] = useState<SiteInfo | null>(null)
+  const load = () => fetch(`/api/sites/${encodeURIComponent(site)}/info`).then((r) => (r.ok ? r.json() : null)).then((x) => setInfo(x)).catch(() => setInfo(null))
+  useEffect(() => { setInfo(null); load() }, [site]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (!info) return editing ? <SiteInfoDialog site={site} onClose={onEditDone} onSaved={() => { onEditDone(); load() }} /> : null
+  const empty = !info.address && !info.note && info.contacts.length === 0 && info.lines.length === 0
+  return (
+    <>
+      {empty
+        ? (canEdit ? <div className="site-empty">No site info yet: add the address, who to call and the internet lines with <b>Edit site info</b>. Alerts can then say who to call.</div> : null)
+        : (
+          <div className="info-rows site-info">
+            {(info.address || info.note) && <InfoRow label="Address"><SiteLines info={info} part="address" /></InfoRow>}
+            {info.contacts.length > 0 && <InfoRow label="Contacts"><SiteLines info={info} part="contacts" /></InfoRow>}
+            {info.lines.length > 0 && <InfoRow label="Internet"><SiteLines info={info} part="lines" /></InfoRow>}
+          </div>
+        )}
+      {editing && <SiteInfoDialog site={site} onClose={onEditDone} onSaved={() => { onEditDone(); load() }} />}
+    </>
+  )
+}
+
+const NO_CONTACT: SiteContact = { role: '', name: '', phone: '', email: '' }
+const NO_LINE: SiteLine = { name: '', host_id: '', key: '', provider: '', circuit: '', phone: '', note: '' }
+
+// SiteInfoDialog edits a site's info: the address, the contacts and the internet lines, each line tied
+// to the sensor that measures it.
+function SiteInfoDialog({ site, onClose, onSaved }: { site: string; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast()
+  const [address, setAddress] = useState('')
+  const [note, setNote] = useState('')
+  const [contacts, setContacts] = useState<SiteContact[]>([])
+  const [lines, setLines] = useState<SiteLine[]>([])
+  const [choices, setChoices] = useState<LineChoice[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [reason, setReason] = useState('')
+  useEffect(() => {
+    fetch(`/api/sites/${encodeURIComponent(site)}/info?choices=1`).then((r) => (r.ok ? r.json() : null)).then((x: SiteInfo | null) => {
+      if (x) {
+        setAddress(x.address); setNote(x.note); setContacts(x.contacts); setChoices(x.choices || [])
+        setLines(x.lines.map((l) => ({ name: l.name, host_id: l.host_id, key: l.key, provider: l.provider, circuit: l.circuit, phone: l.phone, note: l.note })))
+      }
+      setLoaded(true)
+    }).catch(() => setLoaded(true))
+  }, [site])
+  const options: ComboOption[] = [{ value: '', label: 'Not tied to a sensor' }, ...choices.map((c) => ({ value: c.host_id + '|' + c.key, label: c.label, hint: c.key ? 'WAN sensor' : 'any alert on this host' }))]
+  const setContact = (i: number, v: Partial<SiteContact>) => setContacts((cs) => cs.map((c, j) => (j === i ? { ...c, ...v } : c)))
+  const setLine = (i: number, v: Partial<SiteLine>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...v } : l)))
+  function tie(i: number, v: string) {
+    const [host_id, key] = v ? v.split('|') : ['', '']
+    const wan = /^unifi\.wan\.[a-z]+\[(.+)\]$/.exec(key || '')
+    setLines((ls) => ls.map((l, j) => (j === i ? { ...l, host_id, key: key || '', name: l.name || (wan ? `WAN ${wan[1]}` : l.name) } : l)))
+  }
+  async function save() {
+    setBusy(true)
+    const res = await fetch(`/api/sites/${encodeURIComponent(site)}/info`, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) }, body: JSON.stringify({ address, note, contacts, lines }) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the site info')); return }
+    toast.success('Site info saved')
+    onSaved()
+  }
+  return (
+    <BulkDialog title={`Site info · ${site}`} wide busy={busy || !loaded} applyLabel="Save" reason={reason} setReason={setReason} onClose={onClose} onApply={save}>
+      <div className="hs-grid">
+        <label className="chan-field"><span className="flabel">Address</span><input className="input" maxLength={200} value={address} onChange={(e) => setAddress(e.target.value)} placeholder="1 Example Street, Example City" /></label>
+        <label className="chan-field"><span className="flabel">Note</span><input className="input" maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reception opens 08:00-18:00" /></label>
+      </div>
+      <div className="site-ed-h">Contacts</div>
+      <div className="hs-note">Who to call about this site. The first one goes in the alerts of a channel with Who to call on.</div>
+      {contacts.map((c, i) => (
+        <div className="site-contact-ed" key={i}>
+          <input className="input" maxLength={200} placeholder="Role, e.g. On-site IT" value={c.role} onChange={(e) => setContact(i, { role: e.target.value })} aria-label="Role" />
+          <input className="input" maxLength={200} placeholder="Name" value={c.name} onChange={(e) => setContact(i, { name: e.target.value })} aria-label="Name" />
+          <input className="input" maxLength={200} placeholder="Phone" value={c.phone} onChange={(e) => setContact(i, { phone: e.target.value })} aria-label="Phone" />
+          <input className="input" maxLength={200} placeholder="Email" value={c.email} onChange={(e) => setContact(i, { email: e.target.value })} aria-label="Email" />
+          <Button variant="ghost" onClick={() => setContacts((cs) => cs.filter((_, j) => j !== i))}>Remove</Button>
+        </div>
+      ))}
+      {contacts.length < 20 && <div><Button variant="ghost" className="compact" onClick={() => setContacts((cs) => [...cs, { ...NO_CONTACT }])}>+ Add contact</Button></div>}
+      <div className="site-ed-h">Internet lines</div>
+      <div className="hs-note">The provider, circuit and support number of each line. Tie it to the sensor that measures it (a UniFi gateway's WAN, or a host such as the provider's modem), so an alert on it says who to call; when the site's probe stops reporting, the alert lists every line.</div>
+      {lines.map((l, i) => (
+        <div className="site-line-ed" key={i}>
+          <div className="chan-field site-line-tie"><span className="flabel">Measured by</span><Combobox value={l.host_id ? l.host_id + '|' + l.key : ''} onChange={(v) => tie(i, v)} options={options} placeholder="Search sensors and hosts…" /></div>
+          <label className="chan-field"><span className="flabel">Name</span><input className="input" maxLength={200} placeholder="WAN 1" value={l.name} onChange={(e) => setLine(i, { name: e.target.value })} /></label>
+          <label className="chan-field"><span className="flabel">Provider</span><input className="input" maxLength={200} placeholder="Example Fiber" value={l.provider} onChange={(e) => setLine(i, { provider: e.target.value })} /></label>
+          <label className="chan-field"><span className="flabel">Circuit / contract</span><input className="input" maxLength={200} placeholder="EXF-000123" value={l.circuit} onChange={(e) => setLine(i, { circuit: e.target.value })} /></label>
+          <label className="chan-field"><span className="flabel">Support phone</span><input className="input" maxLength={200} placeholder="+1 555 0100" value={l.phone} onChange={(e) => setLine(i, { phone: e.target.value })} /></label>
+          <label className="chan-field"><span className="flabel">Note</span><input className="input" maxLength={200} placeholder="1 Gbps, LTE backup" value={l.note} onChange={(e) => setLine(i, { note: e.target.value })} /></label>
+          <div className="site-line-act"><Button variant="ghost" className="compact" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>Remove</Button></div>
+        </div>
+      ))}
+      {lines.length < 10 && <div><Button variant="ghost" className="compact" onClick={() => setLines((ls) => [...ls, { ...NO_LINE }])}>+ Add line</Button></div>}
+    </BulkDialog>
+  )
+}
+
 // InfoRows is the label-and-lines layout the Device tab and the site info share (the Updates rows).
 function InfoRow({ label, children }: { label: string; children: ReactNode }) {
   return <div className="info-row"><span className="complabel">{label}</span><div className="info-lines">{children}</div></div>
@@ -7622,6 +7781,7 @@ function DeviceTab({ hostId, onOpenSettings }: { hostId: string; onOpenSettings?
           : <InfoLine><span className="muted">{d.upstream.mode === 'none' ? 'No upstream device: set to none in its settings.' : "No upstream device known: the UniFi controller doesn't list this host. Pick one in its settings."}</span></InfoLine>}
         {d.upstream.behind.length > 0 && <InfoLine k="Behind it"><span className="v">{d.upstream.behind.map((b) => b.name).join(', ')}{d.upstream.behind_all > d.upstream.behind.length ? ` (${d.upstream.behind_all} hosts in all, further down)` : ''}</span></InfoLine>}
       </InfoRow>
+      {d.site && <InfoRow label={`Site · ${d.site.site}`}><SiteLines info={d.site} /></InfoRow>}
       <InfoRow label="Links">
         {d.links.length ? <InfoLine><LinkButtons links={d.links} /></InfoLine> : <InfoLine><span className="muted">No links. Add them in this host's settings, or for its class in Settings, Device links.</span></InfoLine>}
       </InfoRow>
@@ -7941,7 +8101,7 @@ function BulkBar({ count, noun, onClear, children }: { count: number; noun: [str
 }
 
 // BulkDialog is the dialog of a bulk action that needs a choice (groups, a probe, tags, thresholds).
-function BulkDialog({ title, note, busy, applyLabel, canApply = true, reason, setReason, onApply, onClose, children }: { title: string; note?: ReactNode; busy: boolean; applyLabel: string; canApply?: boolean; reason: string; setReason: (v: string) => void; onApply: () => void; onClose: () => void; children: ReactNode }) {
+function BulkDialog({ title, note, busy, applyLabel, canApply = true, reason, setReason, onApply, onClose, wide, children }: { title: string; note?: ReactNode; busy: boolean; applyLabel: string; canApply?: boolean; reason: string; setReason: (v: string) => void; onApply: () => void; onClose: () => void; wide?: boolean; children: ReactNode }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
@@ -7949,7 +8109,7 @@ function BulkDialog({ title, note, busy, applyLabel, canApply = true, reason, se
   }, [onClose])
   return createPortal(
     <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 'min(620px, 94vw)', maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
+      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: wide ? 'min(860px, 94vw)' : 'min(620px, 94vw)', width: wide ? '100%' : undefined, maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
         <div className="dlg-title">{title}</div>
         <div className="dlg-scroll"><div className="host-settings in-dlg">
           {note && <div className="hs-note">{note}</div>}
@@ -8892,6 +9052,7 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
                       {h && (h.via === 'upstream'
                         ? <div className="sreason held-tag" title="Its alerts wait until the device it is plugged into is back">Held: behind {h.host_name}, which is down</div>
                         : <div className="sreason held-tag" title="Its alerts wait until the master sensor is back">Held: {h.name}{h.host_id !== s.host_id ? ` on ${h.host_name}` : ''} is down</div>)}
+                      {s.call && <div className="sreason call-line" title="Who to call, from the site's info">{PHONE_IC}{s.call}</div>}
                       {s.note && <NoteLine note={s.note} />}
                     </td>
                     <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <WhyText why={s.why} onToggle={() => toggleWhy(s.host_id + ':' + s.item_id)}>{dv}{du ? <span className="unit"> {du}</span> : null}</WhyText> })() : <WhyText why={s.why} color="var(--err)" onToggle={() => toggleWhy(s.host_id + ':' + s.item_id)}>not supported</WhyText>}</td>

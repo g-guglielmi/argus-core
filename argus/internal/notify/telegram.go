@@ -107,6 +107,9 @@ func telegramMessage(e Event) (string, [][]map[string]string) {
 		if bl := e.behindLine(); bl != "" {
 			b.WriteString(htmlEscape(bl) + "\n")
 		}
+		for _, cl := range e.callLines() {
+			b.WriteString("<b>" + htmlEscape(cl) + "</b>\n")
+		}
 		b.WriteString("Since " + e.When.Format("2006-01-02 15:04 MST") + "\n")
 	}
 	var row []map[string]string

@@ -27,6 +27,7 @@ type NotifyChannel struct {
 	RepeatSev   int      // reminders only for problems at or above this severity (2..5)
 	Alerts      bool     // carries problem alerts
 	Notices     bool     // carries Argus's system notices
+	WhoToCall   bool     // alerts carry the site's internet line and contact
 	Config      map[string]string
 	CreatedAt   time.Time
 	// Delivery health, recorded per send (alerts and the Send-test button alike) and shown on the
@@ -91,11 +92,11 @@ func decodeSites(v string) []string {
 
 func (s *Store) scanChannel(row rowScanner) (*NotifyChannel, error) {
 	var c NotifyChannel
-	var enabled, alerts, notices int
+	var enabled, alerts, notices, call int
 	var cfg string
 	var site, tags string
 	var created int64
-	if err := row.Scan(&c.ID, &c.Type, &c.Name, &enabled, &site, &c.MinSeverity, &cfg, &created, &c.LastSentAt, &c.LastError, &c.LastErrorAt, &c.SentCount, &c.DelayMin, &c.RepeatMin, &c.RepeatSev, &alerts, &notices, &tags); err != nil {
+	if err := row.Scan(&c.ID, &c.Type, &c.Name, &enabled, &site, &c.MinSeverity, &cfg, &created, &c.LastSentAt, &c.LastError, &c.LastErrorAt, &c.SentCount, &c.DelayMin, &c.RepeatMin, &c.RepeatSev, &alerts, &notices, &tags, &call); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -103,6 +104,7 @@ func (s *Store) scanChannel(row rowScanner) (*NotifyChannel, error) {
 	}
 	c.Enabled = enabled != 0
 	c.Alerts, c.Notices = alerts != 0, notices != 0
+	c.WhoToCall = call != 0
 	c.Sites = decodeSites(site)
 	c.Tags = decodeSites(tags)
 	c.CreatedAt = time.Unix(created, 0)
@@ -111,7 +113,7 @@ func (s *Store) scanChannel(row rowScanner) (*NotifyChannel, error) {
 	return &c, nil
 }
 
-const channelColumns = `id,type,name,enabled,site,min_severity,config,created_at,last_sent_at,last_error,last_error_at,sent_count,delay_min,repeat_min,repeat_min_severity,alerts,system_notices,tags`
+const channelColumns = `id,type,name,enabled,site,min_severity,config,created_at,last_sent_at,last_error,last_error_at,sent_count,delay_min,repeat_min,repeat_min_severity,alerts,system_notices,tags,who_to_call`
 
 func (s *Store) ListNotifyChannels(ctx context.Context) ([]NotifyChannel, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+channelColumns+` FROM notify_channels ORDER BY site, name`)
@@ -156,8 +158,8 @@ func (s *Store) CreateNotifyChannel(ctx context.Context, c NotifyChannel) (int64
 		enabled = 1
 	}
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO notify_channels(type,name,enabled,site,min_severity,config,created_at,delay_min,repeat_min,repeat_min_severity,alerts,system_notices,tags) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		c.Type, c.Name, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), time.Now().Unix(), c.DelayMin, c.RepeatMin, c.RepeatSev, boolInt(c.Alerts), boolInt(c.Notices), encodeSites(c.Tags))
+		`INSERT INTO notify_channels(type,name,enabled,site,min_severity,config,created_at,delay_min,repeat_min,repeat_min_severity,alerts,system_notices,tags,who_to_call) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		c.Type, c.Name, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), time.Now().Unix(), c.DelayMin, c.RepeatMin, c.RepeatSev, boolInt(c.Alerts), boolInt(c.Notices), encodeSites(c.Tags), boolInt(c.WhoToCall))
 	if err != nil {
 		return 0, err
 	}
@@ -171,8 +173,8 @@ func (s *Store) UpdateNotifyChannel(ctx context.Context, c NotifyChannel) error 
 		enabled = 1
 	}
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE notify_channels SET type=?,name=?,enabled=?,site=?,min_severity=?,config=?,delay_min=?,repeat_min=?,repeat_min_severity=?,alerts=?,system_notices=?,tags=? WHERE id=?`,
-		c.Type, c.Name, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), c.DelayMin, c.RepeatMin, c.RepeatSev, boolInt(c.Alerts), boolInt(c.Notices), encodeSites(c.Tags), c.ID)
+		`UPDATE notify_channels SET type=?,name=?,enabled=?,site=?,min_severity=?,config=?,delay_min=?,repeat_min=?,repeat_min_severity=?,alerts=?,system_notices=?,tags=?,who_to_call=? WHERE id=?`,
+		c.Type, c.Name, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), c.DelayMin, c.RepeatMin, c.RepeatSev, boolInt(c.Alerts), boolInt(c.Notices), encodeSites(c.Tags), boolInt(c.WhoToCall), c.ID)
 	return err
 }
 

@@ -575,6 +575,35 @@ into, a down hop red, and where it comes from) with the hosts plugged straight i
 settings. Every 5 minutes Argus stores the controller's answers (`auto_*` in `host_upstream`) and logs
 one that changes in Changes, as Argus (a host's first answer is just stored).
 
+## 7g. Site info and who to call
+
+A site (a top-level group) keeps its **address** (and a note: opening hours, access), its
+**contacts** (role, name, phone, email) and its **internet lines** (name, provider, circuit or
+contract, support phone, a note such as "1 Gbps"), as one JSON document per site in `site_info`
+(`siteinfo.go`, `store/site.go`; up to 20 contacts and 10 lines). It is keyed by the site's name and
+moves along when the group is renamed (a rename onto a site that has its own info leaves both alone).
+`GET /api/sites/{site}/info` (with `?choices=1`, what a line can be tied to), `GET /api/sites/info`,
+`PUT /api/sites/{site}/info` (admin and helpdesk, within their sites; logged in Changes with what
+moved).
+
+**A line is tied to the sensor that measures it**: a UniFi gateway's WAN (`unifi.wan.avail[N]`; any
+sensor of the same WAN counts, so its latency or traffic too) or a whole host, such as the provider's
+modem (any of its sensors). Its state on the site page and the Device tab (up / down) is that
+sensor's, from the census. The problem lists give a row on such a sensor a who-to-call line
+("Example Fiber · circuit EXF-000123 · support +1 555 0100").
+
+**Who to call** is a switch per channel (`who_to_call`, global and personal, off by default): its
+problem alerts and reminders gain "Call Example Fiber +1 555 0100, circuit EXF-000123 (WAN 1)" for
+each line the alert is about, every line when the site's probe stopped reporting (`zabbix[uptime]`
+on its Probe host: the internet is the usual reason), and the site's first contact with a name or a
+phone ("On-site IT: Bob Example +1 555 0101"). A RESOLVED and an acknowledgement never carry them.
+The webhook sends them as `call` (a list). A host's site is the top of its first group, the one its
+alerts' "Site" names.
+
+**Shown** at the top of the site's page in Monitoring (Address, Contacts, Internet; **Edit site
+info** in the toolbar for those who may edit), and on each of its hosts' Device tab, with copy
+buttons on the numbers.
+
 ---
 
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")
@@ -772,6 +801,7 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   feature arrived were baselined. Supported sensors with no new values are deliberately not alerted:
   many store only changes, so an old last value is normal; a silent device or probe is caught by its
   master instead.
+- **Who to call:** a channel can add the site's internet line and contact to its alerts (section 7g).
 - **System notices:** Argus's own news as `[INFO]` messages (neutral colour, no reminders, no
   recovery), for channels with **System notices** on (`system_notices`, off by default; a channel's
   alert level can be **None** = `alerts` off, for a notices-only channel; one with neither is

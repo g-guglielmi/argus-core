@@ -67,6 +67,7 @@ type notifyDest struct {
 	alerts  bool     // carries problem alerts (a channel can carry only system notices)
 	notices bool     // carries Argus's system notices
 	userID  int64    // a personal channel's owner (0 for a shared channel)
+	call    bool     // "Who to call": its alerts carry the site's internet line and contact (siteinfo.go)
 	scoped  bool     // a personal channel of a user limited to some sites (scope.go)
 	// quietFloor > 0 while its owner's quiet hours are on: only problems at or above it are sent now;
 	// a quieter one waits (and goes out once the quiet hours end, if still open).
@@ -204,7 +205,7 @@ func notifyDests(st *store.Store, channels []store.NotifyChannel, userChannels [
 		out = append(out, notifyDest{
 			key: store.DeliveryKey(store.DeliveryGlobal, c.ID), kind: store.DeliveryGlobal, id: c.ID,
 			sites: c.Sites, tags: c.Tags, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
-			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, created: c.CreatedAt.Unix(),
+			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, call: c.WhoToCall, created: c.CreatedAt.Unix(),
 			send: func(ctx context.Context, ev notify.Event) { sendGlobal(ctx, st, c, dir.recipients, ev, logger) },
 		})
 	}
@@ -218,7 +219,7 @@ func notifyDests(st *store.Store, channels []store.NotifyChannel, userChannels [
 		out = append(out, notifyDest{
 			key: store.DeliveryKey(store.DeliveryUser, c.ID), kind: store.DeliveryUser, id: c.ID,
 			sites: sites, tags: c.Tags, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
-			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, userID: c.UserID, scoped: !sc.all, quietFloor: dir.quiet[c.UserID], created: c.CreatedAt.Unix(),
+			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, call: c.WhoToCall, userID: c.UserID, scoped: !sc.all, quietFloor: dir.quiet[c.UserID], created: c.CreatedAt.Unix(),
 			send: func(ctx context.Context, ev notify.Event) { sendPersonal(ctx, st, c, ev, logger) },
 		})
 	}
@@ -310,6 +311,8 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	if herr == nil {
 		hostTags = effectiveTagNames(ctx, st, hosts)
 	}
+	// Site info, for the channels that say who to call (siteinfo.go).
+	sites, _ := st.SiteInfos(ctx)
 
 	channels, _ := st.EnabledNotifyChannels(ctx)
 	userChannels, _ := st.EnabledUserNotifyChannels(ctx)
@@ -546,8 +549,18 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		}
 		base.Note, base.NoteBy = noteFor(notes, itemID, p.EventID)
 		base.Behind = masters.behindFor(hostID, masterRefs(t), hostNames)
+		if info, ok := sites[siteOf(groups)]; ok {
+			key := ""
+			if len(t.Items) > 0 {
+				key = t.Items[0].Key
+			}
+			base.Call = callLines(info, hostID, key)
+		}
 		for _, pd := range plan {
 			ev := base
+			if !pd.dest.call {
+				ev.Call = nil
+			}
 			row := pd.row
 			if pd.reminder {
 				ev.Kind = "reminder"

@@ -645,6 +645,12 @@ CREATE TABLE IF NOT EXISTS host_upstream (
   auto_port   TEXT NOT NULL DEFAULT '',
   auto_at     INTEGER NOT NULL DEFAULT 0
 );
+-- A site's info (site.go): address, contacts and internet lines, as one JSON document per site.
+CREATE TABLE IF NOT EXISTS site_info (
+  site       TEXT PRIMARY KEY,
+  data       TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 `); err != nil {
 		return err
 	}
@@ -869,6 +875,13 @@ CREATE TABLE IF NOT EXISTS host_upstream (
 		return err
 	}
 	if err := s.ensureColumn("user_notify_channels", "tags TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	// "Who to call": the channel's alerts carry the site's internet line and contact (site.go).
+	if err := s.ensureColumn("notify_channels", "who_to_call INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("user_notify_channels", "who_to_call INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	// Per-channel delivery health (last successful send / last failure + reason / sent count), shown on

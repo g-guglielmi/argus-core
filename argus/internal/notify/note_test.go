@@ -82,3 +82,29 @@ func TestBehindInAlerts(t *testing.T) {
 		t.Error("an acknowledgement named the hosts behind")
 	}
 }
+
+// "Who to call" lines ride on a problem and a reminder, in every channel, never on a recovery.
+func TestCallInAlerts(t *testing.T) {
+	want := "Call Example Fiber +1 555 0100, circuit EXF-000123 (WAN 1)"
+	for _, kind := range []string{"problem", "reminder"} {
+		e := sampleProblem()
+		e.Kind, e.Call = kind, []string{want, "On-site IT: Bob Example +1 555 0101"}
+		if !strings.Contains(strings.Join(e.bodyLines(), "\n"), want) || !strings.Contains(strings.Join(e.cardLines(), "\n"), want) {
+			t.Errorf("%s: text lacks the call", kind)
+		}
+		if text, _ := telegramMessage(e); !strings.Contains(text, htmlEscape(want)) {
+			t.Errorf("%s: telegram lacks it:\n%s", kind, text)
+		}
+		if !strings.Contains(htmlBody(e), htmlEscape(want)) {
+			t.Errorf("%s: email html lacks it", kind)
+		}
+		if p := webhookPayload(e); len(p.Call) != 2 {
+			t.Errorf("%s: webhook call = %q", kind, p.Call)
+		}
+	}
+	e := sampleProblem()
+	e.Kind, e.State, e.Call = "recovery", "ok", []string{want}
+	if strings.Contains(strings.Join(e.bodyLines(), "\n"), "Call ") || webhookPayload(e).Call != nil {
+		t.Error("a recovery said who to call")
+	}
+}

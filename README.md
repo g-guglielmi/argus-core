@@ -96,6 +96,10 @@ API key, and MAC):
   hand. While a switch is down, the hosts behind it wait: you get one alert for the switch, naming the
   hosts behind it, instead of one per access point and camera. The Device tab shows the path
   (gateway › switch port 24 › this host).
+- **Site info and who to call** - each site keeps its address, its contacts and its internet lines
+  (provider, circuit, support number), each line tied to the sensor that measures it. An alert on a
+  WAN that went down says who to call and with which circuit ID; a site whose probe went silent lists
+  every line. Shown on the site, on its hosts' Device tab and, per channel, in the alerts.
 - **Inventory** - every device with its model, firmware or OS, serial, IP and MAC, grouped by class,
   filterable by probe and group, exportable as CSV; a device on older firmware than the newest on the
   same model is flagged.

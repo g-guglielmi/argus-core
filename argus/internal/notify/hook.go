@@ -40,29 +40,30 @@ func sendWebhook(ctx context.Context, cfg map[string]string, e Event) error {
 
 // WebhookPayload is the generic webhook's body. Fields that don't apply to the event are left out.
 type WebhookPayload struct {
-	Source        string `json:"source"`                   // always "argus"
-	Kind          string `json:"kind"`                     // problem, reminder, ack, recovery or info
-	State         string `json:"state"`                    // error, warning or ok
-	Severity      int    `json:"severity,omitempty"`       // the Zabbix severity, 2 (Warning) to 5 (Disaster)
-	SeverityLabel string `json:"severity_label,omitempty"` // its name, as Argus shows it
-	Title         string `json:"title"`                    // "[HIGH] host - sensor"
-	Text          string `json:"text"`                     // the title and the details, as plain text
-	Host          string `json:"host,omitempty"`
-	Site          string `json:"site,omitempty"`
-	Name          string `json:"name"`                       // the problem, or the notice
-	Value         string `json:"value,omitempty"`            // the reading, with its units
-	Threshold     string `json:"threshold,omitempty"`        // e.g. ">90"
-	Time          string `json:"time"`                       // when it started (problem, reminder) or happened (RFC 3339)
-	DurationSecs  int64  `json:"duration_seconds,omitempty"` // how long it's been open (reminder) or was (recovery)
-	Reminder      int    `json:"reminder,omitempty"`         // which reminder this is
-	AckBy         string `json:"ack_by,omitempty"`
-	AckNote       string `json:"ack_note,omitempty"`
-	Note          string `json:"note,omitempty"`     // the note left on the sensor (alerts, reminders, RESOLVED)
-	NoteBy        string `json:"note_by,omitempty"`  // who left it
-	Behind        string `json:"behind,omitempty"`   // the hosts behind a device whose ping went down or came back
-	Detail        string `json:"detail,omitempty"`   // a notice's explanation
-	OpenURL       string `json:"open_url,omitempty"` // the sensor in Argus
-	AckURL        string `json:"ack_url,omitempty"`  // the signed acknowledge link (open alerts)
+	Source        string   `json:"source"`                   // always "argus"
+	Kind          string   `json:"kind"`                     // problem, reminder, ack, recovery or info
+	State         string   `json:"state"`                    // error, warning or ok
+	Severity      int      `json:"severity,omitempty"`       // the Zabbix severity, 2 (Warning) to 5 (Disaster)
+	SeverityLabel string   `json:"severity_label,omitempty"` // its name, as Argus shows it
+	Title         string   `json:"title"`                    // "[HIGH] host - sensor"
+	Text          string   `json:"text"`                     // the title and the details, as plain text
+	Host          string   `json:"host,omitempty"`
+	Site          string   `json:"site,omitempty"`
+	Name          string   `json:"name"`                       // the problem, or the notice
+	Value         string   `json:"value,omitempty"`            // the reading, with its units
+	Threshold     string   `json:"threshold,omitempty"`        // e.g. ">90"
+	Time          string   `json:"time"`                       // when it started (problem, reminder) or happened (RFC 3339)
+	DurationSecs  int64    `json:"duration_seconds,omitempty"` // how long it's been open (reminder) or was (recovery)
+	Reminder      int      `json:"reminder,omitempty"`         // which reminder this is
+	AckBy         string   `json:"ack_by,omitempty"`
+	AckNote       string   `json:"ack_note,omitempty"`
+	Note          string   `json:"note,omitempty"`     // the note left on the sensor (alerts, reminders, RESOLVED)
+	NoteBy        string   `json:"note_by,omitempty"`  // who left it
+	Behind        string   `json:"behind,omitempty"`   // the hosts behind a device whose ping went down or came back
+	Call          []string `json:"call,omitempty"`     // who to call (a "Who to call" channel's problems and reminders)
+	Detail        string   `json:"detail,omitempty"`   // a notice's explanation
+	OpenURL       string   `json:"open_url,omitempty"` // the sensor in Argus
+	AckURL        string   `json:"ack_url,omitempty"`  // the signed acknowledge link (open alerts)
 }
 
 func webhookPayload(e Event) WebhookPayload {
@@ -79,6 +80,7 @@ func webhookPayload(e Event) WebhookPayload {
 	if e.behindLine() != "" {
 		p.Behind = e.Behind
 	}
+	p.Call = e.callLines()
 	if e.isAlert() {
 		p.Severity, p.SeverityLabel, p.Value, p.Threshold, p.AckURL = e.Severity, severityLabel(e.Severity), e.Value, e.Threshold, e.AckURL
 	}

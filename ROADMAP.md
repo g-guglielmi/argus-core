@@ -194,6 +194,9 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Upstream devices** - what each host is plugged into, from the UniFi controller (uplinks and
   wired clients) or set by hand; hosts behind a down device are held, its alert names them; the path
   on the Device tab; controller changes logged. DESIGN section 7f. - _(BE+FE+templates)_ M
+- [x] **Site info and who to call** - address, contacts and internet lines per site, each line tied
+  to its sensor; who to call in the problem lists and, per channel, in the alerts. DESIGN section
+  7g. - _(BE+FE)_ S
 
 ### G. Scale & production readiness
 - [x] **Security review, wave 1 (core)** - a static review of the three repositories; the core-side

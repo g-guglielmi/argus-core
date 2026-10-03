@@ -365,13 +365,14 @@ type ownFactsView struct {
 }
 
 type deviceView struct {
-	Facts    deviceFacts  `json:"facts"`
-	Own      ownFactsView `json:"own"`
-	Class    string       `json:"class,omitempty"`
-	Links    []linkView   `json:"links"`
-	Tags     []hostTag    `json:"tags"`
-	UsedBy   usedByView   `json:"used_by"`
-	Upstream upstreamView `json:"upstream"`
+	Facts    deviceFacts   `json:"facts"`
+	Own      ownFactsView  `json:"own"`
+	Class    string        `json:"class,omitempty"`
+	Links    []linkView    `json:"links"`
+	Tags     []hostTag     `json:"tags"`
+	UsedBy   usedByView    `json:"used_by"`
+	Upstream upstreamView  `json:"upstream"`
+	Site     *siteInfoView `json:"site,omitempty"` // its site's address, contacts and internet lines (siteinfo.go)
 }
 
 // GET /api/hosts/{id}/device: the host's Device tab.
@@ -416,6 +417,12 @@ func (s *Server) handleHostDevice(w http.ResponseWriter, r *http.Request) {
 	out.Links = s.hostLinkSet(ctx, id, classID, lh)
 	out.UsedBy = s.usedBy(ctx, id, hi, tagNames(out.Tags))
 	out.Upstream = s.hostUpstreamView(ctx, id)
+	if site := siteOf(hi.Groups); site != "" {
+		if info, err := s.st.SiteInfoFor(ctx, site); err == nil && !info.Empty() {
+			v := s.siteInfoView(ctx, info)
+			out.Site = &v
+		}
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 

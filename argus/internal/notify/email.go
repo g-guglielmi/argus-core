@@ -305,6 +305,16 @@ func htmlBody(e Event) string {
 	if bl := e.behindLine(); bl != "" {
 		lead += `<div class="txt" style="font-size:13px;color:#111827;margin-bottom:12px">` + htmlEscape(bl) + `</div>`
 	}
+	if cls := e.callLines(); len(cls) > 0 {
+		lead += `<div class="txt" style="font-size:13px;color:#111827;margin-bottom:12px;font-weight:600">`
+		for i, cl := range cls {
+			if i > 0 {
+				lead += `<br>`
+			}
+			lead += htmlEscape(cl)
+		}
+		lead += `</div>`
+	}
 
 	var buttons strings.Builder
 	btn := func(label, href, bg string) {

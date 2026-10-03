@@ -145,9 +145,14 @@ func (s *Server) handleRenameGroup(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "a group can only move within your sites"})
 		return
 	}
+	old, _ := s.groupNameByID(ctx, r.PathValue("id"))
 	if err := s.zbx.RenameHostGroup(ctx, r.PathValue("id"), name); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
 		return
+	}
+	// A site renamed keeps its info (siteinfo.go).
+	if old != "" && !strings.Contains(old, "/") && !strings.Contains(name, "/") {
+		_ = s.st.RenameSiteInfo(ctx, old, name)
 	}
 	changeDetail(r, "now "+name)
 	s.forgetHostIndex()
