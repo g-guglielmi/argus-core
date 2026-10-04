@@ -13,6 +13,10 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-05
+
+A patch release with one fix, for the sidebar on short windows. Nothing to update besides the core.
+
 **Fixed:** on a window too short for the sidebar (a laptop, or a zoomed-in browser), its menu
 couldn't be scrolled: the page scrolled instead and the last items (Users, Updates, Settings) stayed
 out of reach. The menu now scrolls on its own between the logo and your account, and keeps the page
