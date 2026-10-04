@@ -2025,6 +2025,10 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   // local dev builds (can't tell those apart), so the detector arms only once we've seen a concrete id.
   const [ver, setVer] = useState<VersionInfo | null>(null)
   const [updateReady, setUpdateReady] = useState(false)
+  // A short window scrolls the sidebar's list: keep the current page's item in sight, again when the
+  // phone drawer opens and once the version row (which shortens the list) arrives.
+  const hasVer = !!ver
+  useEffect(() => { document.querySelector('.side-nav .nav.active')?.scrollIntoView({ block: 'nearest' }) }, [view, navOpen, hasVer])
   const bootVer = useRef<string | null>(null)
   useEffect(() => {
     let stop = false
@@ -2064,6 +2068,8 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           <img className="brand-logo" src="/argus-logo.png" alt="" width={30} height={30} />
           <div><div className="word">ARGUS</div><div className="sub">Monitoring</div></div>
         </div>
+        {/* The list scrolls between the logo and the account button when the window is too short for it. */}
+        <nav className="side-nav">
         <div className="navlabel">Watch</div>
         {nav('overview', 'Overview', { count: errN })}
         {nav('triggers', 'Triggers')}
@@ -2076,6 +2082,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         {nav('maintenance', 'Maintenance')}
         {nav('notifications', 'Notifications')}
         {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('statuspages', 'Status pages')}{nav('thresholds', 'Thresholds')}{nav('changes', 'Changes')}{nav('users', 'Users')}{nav('updates', 'Updates')}{nav('settings', 'Settings')}</>}
+        </nav>
         <div className="side-foot">
           {ver && (
             <button type="button" className={'side-ver' + (ver.update_available ? ' upd' : '')} disabled={me.role !== 'admin'}

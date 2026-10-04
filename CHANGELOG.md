@@ -13,6 +13,11 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Fixed:** on a window too short for the sidebar (a laptop, or a zoomed-in browser), its menu
+couldn't be scrolled: the page scrolled instead and the last items (Users, Updates, Settings) stayed
+out of reach. The menu now scrolls on its own between the logo and your account, and keeps the page
+you're on in sight.
+
 ## [0.8.0] - 2026-10-05
 
 A minor release: a change log of who changed what, host pages with tabs (what Argus reads from the
