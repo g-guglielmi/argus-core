@@ -38,3 +38,53 @@ func TestTemplateSectionsCarryTheirOwnFields(t *testing.T) {
 		}
 	}
 }
+
+// templateItemKeys reads every template's item keys (items, not prototypes), by template name.
+func templateItemKeys(t *testing.T) map[string][]string {
+	t.Helper()
+	docs, _, err := loadTemplates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string][]string{}
+	for _, d := range docs {
+		name, section := "", ""
+		for _, line := range strings.Split(strings.ReplaceAll(d.content, "\r\n", "\n"), "\n") {
+			switch {
+			case strings.HasPrefix(line, "      template: "):
+				name = strings.Trim(strings.TrimPrefix(line, "      template: "), "'")
+			case strings.HasPrefix(line, "      ") && !strings.HasPrefix(line, "       ") && strings.HasSuffix(line, ":"):
+				section = strings.TrimSuffix(strings.TrimSpace(line), ":")
+			case section == "items" && strings.HasPrefix(line, "          key: ") && !strings.HasPrefix(line, "           "):
+				out[name] = append(out[name], strings.Trim(strings.TrimPrefix(line, "          key: "), "'"))
+			}
+		}
+	}
+	return out
+}
+
+// Zabbix refuses a template import when a host would inherit one item key from two of its templates
+// (the unRAID class stacks Linux by SNMP and unRAID by SNMP). No class's templates, with Base Ping and
+// the add-ons it is offered, may define the same key twice.
+func TestClassTemplatesShareNoItemKey(t *testing.T) {
+	keys := templateItemKeys(t)
+	for _, c := range Classes() {
+		stacks := [][]string{c.HostTemplates()}
+		for _, a := range AddOns() {
+			if a.OffersOn(c.ID, c.Internal) {
+				stacks = append(stacks, append(append([]string{}, c.HostTemplates()...), a.Template))
+			}
+		}
+		for _, stack := range stacks {
+			seen := map[string]string{}
+			for _, tpl := range stack {
+				for _, k := range keys[tpl] {
+					if other, dup := seen[k]; dup && other != tpl {
+						t.Errorf("class %s: item %s is in both %q and %q", c.ID, k, other, tpl)
+					}
+					seen[k] = tpl
+				}
+			}
+		}
+	}
+}
