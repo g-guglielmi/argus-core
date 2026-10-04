@@ -43,6 +43,7 @@ func TestLeftOverUnsupported(t *testing.T) {
 	withHeartbeat := []zabbix.PreprocStep{{Type: "21", ErrorHandler: "1"}, {Type: "20", ErrorHandler: "0"}}
 	canFail := []zabbix.PreprocStep{{Type: "21", ErrorHandler: "0"}}
 	ok, failing := zabbix.MasterItem{State: "0"}, zabbix.MasterItem{State: "1"}
+	collectorDown := zabbix.MasterItem{Key: `argus_speedtest.py["8","8"]`, State: "1"}
 	cases := []struct {
 		name  string
 		steps []zabbix.PreprocStep
@@ -53,6 +54,8 @@ func TestLeftOverUnsupported(t *testing.T) {
 		{"discard + heartbeat, master collecting", withHeartbeat, ok, true},
 		{"a step that fails the item (the up flag on a bad URL list)", canFail, ok, false},
 		{"master not collecting: still stopped", discard, failing, false},
+		{"a collector not running alerts for itself: its readings stay quiet", discard, collectorDown, true},
+		{"a collector's reading whose own step can fail still alerts", canFail, collectorDown, false},
 		{"no steps: unsupported on its own", nil, ok, false},
 	}
 	for _, c := range cases {

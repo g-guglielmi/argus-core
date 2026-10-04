@@ -8907,6 +8907,7 @@ function HostIncidents({ hostId, goHost, itemIds, asTab }: { hostId: string; goH
 
 function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, showAll, autoOpenItem, onlyItem, onDrillSensor, onItemName, onNavigate, onOpenSettings, heldBehind }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; maintenance?: MaintHit; showAll: boolean; autoOpenItem?: string; onlyItem?: string; onDrillSensor?: (itemId: string, itemName: string) => void; onItemName?: (itemId: string, itemName: string) => void; onNavigate: (hostId: string | null, itemId: string | null) => void; onOpenSettings?: () => void; heldBehind?: string }) {
   // The host's tabs: its sensors (the default), its Device facts, History, Journal and Changes.
+  const toast = useToast()
   const [tab, setTab] = useState<HostTab>('sensors')
   const [countTick, setCountTick] = useState(0) // bumped when a tab changes what the labels count
   const notes = useNoteEditor()
@@ -8970,6 +8971,13 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
   }
   // Mute / unmute a sensor's alerts = disable / enable its Zabbix triggers (the item keeps collecting).
   // Accepts several item ids so a whole group, or one channel, can be toggled at once.
+  // Run sensors now instead of at their next interval (a sensor read from another runs that one, once).
+  async function checkNow(ids: string[], what: string) {
+    const res = await fetch('/api/items/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_ids: ids }) }).catch(() => null)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not check it now')); return }
+    toast.success(`Checking ${what} now: the new reading arrives within a minute or so`)
+    setTimeout(() => { loadItems(false); fireDataRefresh() }, 40000)
+  }
   async function muteItems(ids: string[], mute: boolean) {
     if (ids.length === 0) return
     setBusyItem(ids[0])
@@ -9251,6 +9259,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                   if (gAlertable.length) acts.push(gAlertable.every((i) => i.alerts_off)
                     ? { label: 'Enable alerts', icon: kbIcon.unmute, onClick: () => muteItems(gAlertable.map((i) => i.id), false) }
                     : { label: 'Disable alerts', icon: kbIcon.mute, onClick: () => muteItems(gAlertable.filter((i) => !i.alerts_off).map((i) => i.id), true) })
+                  if (!gPaused) acts.push({ label: 'Check now', icon: kbIcon.discover, onClick: () => checkNow(row.items.map((i) => i.id), row.instance) })
                   const gUnacked = problems.filter((p) => !p.acknowledged && p.item_ids.some((id) => row.items.some((i) => i.id === id)))
                   // A note on a group goes on each of its channels in trouble (and comes off them all).
                   const gTrouble = row.items.filter((i) => problems.some((p) => p.item_ids.includes(i.id)))
@@ -9355,6 +9364,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                 if (it.alertable) acts.push(it.alerts_off
                   ? { label: 'Enable alerts', icon: kbIcon.unmute, onClick: () => muteItems([it.id], false) }
                   : { label: 'Disable alerts', icon: kbIcon.mute, onClick: () => muteItems([it.id], true) })
+                if (!effPaused) acts.push({ label: 'Check now', icon: kbIcon.discover, onClick: () => checkNow([it.id], label) })
                 const actions: KAction[] = []
                 if (unacked.length) actions.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => unacked.forEach((p) => ack(p, s)) })
                 if (it.note || problems.some((p) => p.item_ids.includes(it.id))) actions.push(...noteActions(notes, [it.id], label, it.note))

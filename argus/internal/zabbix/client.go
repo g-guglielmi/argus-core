@@ -420,6 +420,50 @@ func (c *Client) ExecuteNow(ctx context.Context, itemIDs []string) error {
 	return c.call(ctx, "task.create", tasks, true, &out)
 }
 
+// ReadingItems maps each item to the one that does its reading: itself, or, for a dependent item, its
+// master (up the chain). That is what "execute now" can run; a dependent item can't be run on its own.
+func (c *Client) ReadingItems(ctx context.Context, ids []string) (map[string]string, error) {
+	out := map[string]string{}
+	cur := map[string]string{} // item -> the item being looked at for it
+	for _, id := range ids {
+		cur[id] = id
+	}
+	for depth := 0; depth < 5 && len(cur) > 0; depth++ {
+		look := make([]string, 0, len(cur))
+		seen := map[string]bool{}
+		for _, at := range cur {
+			if !seen[at] {
+				seen[at] = true
+				look = append(look, at)
+			}
+		}
+		var items []struct {
+			ItemID   string `json:"itemid"`
+			Type     string `json:"type"`
+			MasterID string `json:"master_itemid"`
+		}
+		if err := c.call(ctx, "item.get", map[string]any{"output": []string{"itemid", "type", "master_itemid"}, "itemids": look}, true, &items); err != nil {
+			return nil, err
+		}
+		up := map[string]string{}
+		for _, it := range items {
+			if it.Type == "18" && it.MasterID != "" && it.MasterID != "0" {
+				up[it.ItemID] = it.MasterID
+			}
+		}
+		next := map[string]string{}
+		for id, at := range cur {
+			if m, dep := up[at]; dep {
+				next[id] = m
+			} else {
+				out[id] = at
+			}
+		}
+		cur = next
+	}
+	return out, nil
+}
+
 // HostTemplateMasterItems is a host's items that come from the named template and read on their own
 // (not dependent on another item): what "execute now" can run.
 func (c *Client) HostTemplateMasterItems(ctx context.Context, hostID, template string) ([]string, error) {
@@ -776,6 +820,7 @@ type PreprocStep struct {
 // MasterItem is what a dependent item needs to know about its master: how often it runs and whether
 // it is collecting ("0") or not supported ("1").
 type MasterItem struct {
+	Key   string
 	Delay string
 	State string
 }
@@ -801,14 +846,15 @@ func (c *Client) MasterItems(ctx context.Context, ids []string) (map[string]Mast
 	}
 	var items []struct {
 		ItemID string `json:"itemid"`
+		Key    string `json:"key_"`
 		Delay  string `json:"delay"`
 		State  string `json:"state"`
 	}
-	if err := c.call(ctx, "item.get", map[string]any{"output": []string{"itemid", "delay", "state"}, "itemids": ids}, true, &items); err != nil {
+	if err := c.call(ctx, "item.get", map[string]any{"output": []string{"itemid", "key_", "delay", "state"}, "itemids": ids}, true, &items); err != nil {
 		return nil, err
 	}
 	for _, it := range items {
-		out[it.ItemID] = MasterItem{Delay: it.Delay, State: it.State}
+		out[it.ItemID] = MasterItem{Key: it.Key, Delay: it.Delay, State: it.State}
 	}
 	return out, nil
 }

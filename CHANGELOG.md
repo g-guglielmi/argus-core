@@ -53,6 +53,9 @@ GitHub Release from the matching section below.
 - The Device tab shows the path (gateway › switch port 24 › this host), with a down hop in red.
   When the controller's answer changes, Changes says so.
 
+**Check now:** a sensor's menu (and a group's) has **Check now**: it runs the sensor at once instead
+of at its next interval, a speed test included (its download, upload and latency are one run).
+
 **Speedtest and Common SaaS (probe add-ons):** a site's Probe host has two add-ons in its settings.
 - **Speedtest**: the site's internet as its probe sees it, against Cloudflare's speed test: download
   and upload, latency, jitter, latency while downloading and uploading (bufferbloat), the public

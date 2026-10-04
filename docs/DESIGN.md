@@ -238,8 +238,11 @@ now" fires once. Ookla's CLI was ruled out: its licence is personal, non-commerc
 (`{$SAAS.EXPECT}` 200-499), one group per service under **Cloud services** like the Web checks; the
 catalog of services is `provision/saas.go`, the template's default list is generated from it and a test
 keeps them equal). Both run their items right after they are turned on (`ExecuteNow` on the
-template's own non-dependent items after 30 and 90 s), so a speed test every 6 hours shows its first
-reading in a minute. On the Probe host the unlisted categories read Probe, Internet, Cloud services.
+template's own non-dependent items once, after 30 s or, when they weren't there yet, after 90 s), so
+a speed test every 6 hours shows its first reading in a minute. A sensor's or group's **Check now**
+(`POST /api/items/check`, admin and helpdesk) runs the items that do the reading (a dependent item's
+master, up the chain, `ReadingItems`), each once. A collector that isn't running alerts for itself;
+its readings whose steps only discard stay quiet meanwhile (one alert, not one per reading). On the Probe host the unlisted categories read Probe, Internet, Cloud services.
 **Push sensors** (`Argus Push`, docs/push-sensors.md) are a job's
 own reports: the job calls its push sensor's secret URL (`/api/push/{token}`, ok or fail and a
 message), Argus keeps the last run (`push_sensors`), and the template, which Argus links with a host's

@@ -226,6 +226,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("DELETE /api/events/{id}/ack", auth.RequireAuth(s.scopedEvent(s.handleUnackEvent)))
 	mux.HandleFunc("POST /api/hosts/{id}/pause", auth.RequireRoles(s.scopedHost(s.zbxEnableHandler("host", false)), "admin", "helpdesk"))
 	mux.HandleFunc("DELETE /api/hosts/{id}/pause", auth.RequireRoles(s.scopedHost(s.zbxEnableHandler("host", true)), "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/items/check", auth.RequireRoles(s.handleCheckNow, "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/items/{id}/pause", auth.RequireRoles(s.scopedItem(s.zbxEnableHandler("item", false)), "admin", "helpdesk"))
 	mux.HandleFunc("DELETE /api/items/{id}/pause", auth.RequireRoles(s.scopedItem(s.zbxEnableHandler("item", true)), "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/items/{id}/mute", auth.RequireRoles(s.scopedItem(s.muteHandler(true)), "admin", "helpdesk"))

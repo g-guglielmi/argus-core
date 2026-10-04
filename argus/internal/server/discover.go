@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -94,4 +95,50 @@ func (s *Server) handleDiscoverNow(w http.ResponseWriter, r *http.Request) {
 		names = append(names, ru.Name)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"triggered": len(rules), "rules": names})
+}
+
+// POST /api/items/check {item_ids}: run sensors now instead of at their next interval. Each runs the
+// item that does its reading (a dependent sensor's master), once however many of its readings are
+// asked for: the speed test's download, upload and "ran" are one test.
+func (s *Server) handleCheckNow(w http.ResponseWriter, r *http.Request) {
+	if !s.zbx.Authenticated() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Zabbix API token not configured (set ARGUS_ZABBIX_API_TOKEN)"})
+		return
+	}
+	var req struct {
+		ItemIDs []string `json:"item_ids"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil || len(req.ItemIDs) == 0 || len(req.ItemIDs) > 200 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "list 1 to 200 sensors"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	ids, err := s.scopedItemIDs(ctx, scopeFrom(r), req.ItemIDs)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
+		return
+	}
+	if len(ids) == 0 {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "sensor not found"})
+		return
+	}
+	roots, err := s.zbx.ReadingItems(ctx, ids)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
+		return
+	}
+	seen := map[string]bool{}
+	var run []string
+	for _, id := range ids {
+		if root := roots[id]; root != "" && !seen[root] {
+			seen[root] = true
+			run = append(run, root)
+		}
+	}
+	if err := s.zbx.ExecuteNow(ctx, run); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix can't run it now: " + s.errText(r, err)})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"checks": len(run)})
 }

@@ -95,8 +95,13 @@ var synthCache struct {
 // client list (upstream.go). One that fails just leaves what it feeds unknown, so it never alerts.
 var plumbingKeys = map[string]bool{"unifi.clients": true}
 
+// A collector that isn't running alerts for itself, with why (collectors.go), so its readings, whose
+// steps only discard, say nothing more while it is down: one alert, not one per speed or latency.
 func leftOverUnsupported(it zabbix.UnsupportedItem, master zabbix.MasterItem) bool {
-	if master.State != "0" || len(it.Preprocessing) == 0 {
+	if len(it.Preprocessing) == 0 {
+		return false
+	}
+	if _, coll := collectorOf(master.Key); master.State != "0" && !coll {
 		return false
 	}
 	for _, p := range it.Preprocessing {
