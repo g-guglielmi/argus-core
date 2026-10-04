@@ -71,15 +71,50 @@ type MacroSpec struct {
 	SettingsOnly bool               `json:"settings_only,omitempty"` // shown only in host settings, not the Add-device wizard - for values that need discovered data first (XCP-NG's ignored-VMs list)
 	Pattern      string             `json:"-"`                       // optional regexp the value must match; for values that reach a command line on the probe
 	Check        func(string) error `json:"-"`                       // optional check beyond the pattern (a URL list), saying what is wrong
+	OptionLabels map[string]string  `json:"option_labels,omitempty"` // how the form names each option ("ookla" -> "Ookla Speedtest"); unlisted ones show as they are
+	ShowIf       *ShowIf            `json:"show_if,omitempty"`       // the field only applies while another field of the same form has this value
+	Terms        *Terms             `json:"terms,omitempty"`         // an option that runs under a third party's terms, accepted before it is set
+}
+
+// OptionLabel is how the form names one of the field's options.
+func (ms MacroSpec) OptionLabel(v string) string {
+	if l := ms.OptionLabels[v]; l != "" {
+		return l
+	}
+	return v
+}
+
+// ShowIf ties a field to another field's value: an engine's own options are shown only with it.
+type ShowIf struct {
+	Macro string `json:"macro"`
+	Value string `json:"value"`
+}
+
+// Terms are a third party's terms one option of a field runs under (Ookla's, for its speed test).
+// Setting a host's field to that option needs them accepted in the same save; the change log says who
+// accepted them and when. Keeping it set needs nothing more.
+type Terms struct {
+	Value string     `json:"value"` // the option they apply to
+	Title string     `json:"title"` // "Ookla's terms"
+	Text  string     `json:"text"`  // what accepting means, in plain words
+	Links []TermLink `json:"links"` // the terms themselves
+}
+
+// TermLink is one document of a third party's terms.
+type TermLink struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
 }
 
 // Value patterns for macros that end up as command-line arguments of a probe's external check.
 // Zabbix passes each parameter as its own argv entry (no shell), but an argument that starts
 // with "-" is an option to the program, and a path is opened as given.
 const (
-	patternLogin = `^[A-Za-z0-9][A-Za-z0-9._@-]{0,63}$`                  // a login name: never a leading "-", no spaces
-	patternPort  = `^([1-9][0-9]{0,4})?$`                                // 1-65535 or blank (the template default)
-	patternKey   = `^(/var/lib/zabbix/ssh/[A-Za-z0-9][A-Za-z0-9._-]*)?$` // a key inside the proxy's ssh dir, or blank
+	patternLogin    = `^[A-Za-z0-9][A-Za-z0-9._@-]{0,63}$`                  // a login name: never a leading "-", no spaces
+	patternEngine   = `^(cloudflare|ookla)?$`                               // the speed test's engine, or blank (Cloudflare)
+	patternServerID = `^([0-9]{1,9})?$`                                     // an Ookla server ID, or blank (Ookla picks)
+	patternPort     = `^([1-9][0-9]{0,4})?$`                                // 1-65535 or blank (the template default)
+	patternKey      = `^(/var/lib/zabbix/ssh/[A-Za-z0-9][A-Za-z0-9._-]*)?$` // a key inside the proxy's ssh dir, or blank
 	// systemd unit names, comma or space separated: systemd's own characters, never a leading "-"
 	patternUnits = `^([A-Za-z0-9][A-Za-z0-9@._:-]*([ ,]+[A-Za-z0-9][A-Za-z0-9@._:-]*)*[ ,]*)?$`
 	// a regular expression the collector applies itself (never a shell): one line, bounded

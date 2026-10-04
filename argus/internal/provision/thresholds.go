@@ -126,6 +126,8 @@ var thresholdCatalog = []TemplateThresholds{
 		{Macro: "{$SPEEDTEST.JITTER.HIGH}", Label: "Jitter - high", Unit: "s"},
 		{Macro: "{$SPEEDTEST.LOADED.WARN}", Label: "Latency while busy - warning", Unit: "s"},
 		{Macro: "{$SPEEDTEST.LOADED.HIGH}", Label: "Latency while busy - high", Unit: "s"},
+		{Macro: "{$SPEEDTEST.LOSS.WARN}", Label: "Packet loss - warning", Unit: "%"},
+		{Macro: "{$SPEEDTEST.LOSS.HIGH}", Label: "Packet loss - high", Unit: "%"},
 	}},
 	{Template: TemplateSaaS, Specs: []ThresholdSpec{
 		{Macro: "{$SAAS.TIME.WARN}", Label: "Response time - warning", Unit: "s"},

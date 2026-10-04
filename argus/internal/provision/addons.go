@@ -22,6 +22,21 @@ type AddOn struct {
 	CheckNow bool `json:"-"`
 }
 
+// ooklaTerms are what choosing Ookla's speed test means: Ookla's own program under Ookla's terms,
+// which Argus doesn't ship; the probe downloads it from Ookla once they are accepted.
+var ooklaTerms = Terms{
+	Value: "ookla",
+	Title: "Ookla's terms",
+	Text: "Ookla's speed test runs Ookla's own program, the Speedtest CLI, under Ookla's terms: its licence is for personal, non-commercial use, and Ookla keeps the results under its privacy policy. " +
+		"Argus doesn't ship it: once you accept, this site's probe downloads it from Ookla (version 1.2.0, checked against its checksum) and runs it with Ookla's terms accepted. " +
+		"Whether your use fits Ookla's terms is yours to judge.",
+	Links: []TermLink{
+		{Label: "Licence (EULA)", URL: "https://www.speedtest.net/about/eula"},
+		{Label: "Terms of use", URL: "https://www.speedtest.net/about/terms"},
+		{Label: "Privacy policy", URL: "https://www.speedtest.net/about/privacy"},
+	},
+}
+
 // Template names of the probe add-ons.
 const (
 	TemplateSpeedtest = "Argus Speedtest"
@@ -75,13 +90,16 @@ var addOns = []AddOn{
 		ID:       "speedtest",
 		Label:    "Speedtest",
 		Template: TemplateSpeedtest,
-		Description: "The site's internet as its probe sees it: download and upload speed over several connections, latency, jitter, latency while busy (bufferbloat), the public address and the provider, measured against Cloudflare's speed test. " +
-			"A run takes up to about 20 seconds and moves at most about 720 MB down and 300 MB up, no more than one test on Cloudflare's own page; it runs every few hours since Cloudflare limits how much one address tests in an hour. " +
-			"A line over a gigabit may want more connections.",
+		Description: "The site's internet as its probe sees it: download and upload speed, latency, jitter, latency while busy (bufferbloat), the public address and the provider. " +
+			"Cloudflare's speed test moves at most about 720 MB down and 300 MB up a run, no more than one test on Cloudflare's own page, and Cloudflare limits how much one address tests in an hour; a line over a gigabit may want more connections. " +
+			"Ookla's (Speedtest by Ookla) picks a nearby server and fills a fast line, adds packet loss, and runs under Ookla's terms, which you accept to use it.",
 		Macros: []MacroSpec{
 			{Macro: "{$SPEEDTEST.INTERVAL}", Label: "How often", Hint: "6h", Options: []string{"1h", "3h", "6h", "12h", "24h"}},
-			{Macro: "{$SPEEDTEST.SECONDS}", Label: "Seconds per direction, at most", Hint: "8", Options: []string{"5", "8", "12"}},
-			{Macro: "{$SPEEDTEST.STREAMS}", Label: "Connections", Hint: "8", Options: []string{"4", "8", "12", "16"}},
+			{Macro: "{$SPEEDTEST.ENGINE}", Label: "Engine", Hint: "cloudflare", Options: []string{"cloudflare", "ookla"}, Pattern: patternEngine,
+				OptionLabels: map[string]string{"cloudflare": "Cloudflare", "ookla": "Ookla Speedtest"}, Terms: &ooklaTerms},
+			{Macro: "{$SPEEDTEST.SECONDS}", Label: "Seconds per direction, at most", Hint: "8", Options: []string{"5", "8", "12"}, ShowIf: &ShowIf{Macro: "{$SPEEDTEST.ENGINE}", Value: "cloudflare"}},
+			{Macro: "{$SPEEDTEST.STREAMS}", Label: "Connections", Hint: "8", Options: []string{"4", "8", "12", "16"}, ShowIf: &ShowIf{Macro: "{$SPEEDTEST.ENGINE}", Value: "cloudflare"}},
+			{Macro: "{$SPEEDTEST.SERVER}", Label: "Ookla server ID (blank = nearest)", Hint: "nearest", Pattern: patternServerID, ShowIf: &ShowIf{Macro: "{$SPEEDTEST.ENGINE}", Value: "ookla"}},
 		},
 		Classes:  []string{ClassProbe},
 		CheckNow: true,

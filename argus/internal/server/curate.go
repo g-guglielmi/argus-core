@@ -205,6 +205,10 @@ var hideWhenZero = map[string]bool{
 	"xcp.host.temp":        true, // only hosts with the argus-temp dom0 plugin deliver a value
 }
 
+// hideUntilRead marks sensors only some setups ever read, hidden until they deliver a value: packet
+// loss, which only the speed test's Ookla engine measures (and only against a server that does).
+var hideUntilRead = map[string]bool{"speedtest.loss": true}
+
 // hideZero reports whether this item key is a capability placeholder when it reads 0.
 func hideZero(key string) bool {
 	base, _ := splitKey(key)
@@ -684,6 +688,8 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		return "Internet", "Internet provider", "", "", true
 	case "speedtest.site":
 		return "Internet", "Test site", "", "", true
+	case "speedtest.loss":
+		return "Internet", "Packet loss", "", "", true
 
 	// Push sensors (Argus Push, push.go): one group per job, named after it. The time since the last
 	// run is the primary channel, the last run's result the Failed band; the message is the reason.

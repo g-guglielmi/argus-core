@@ -171,7 +171,8 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **TCP ports add-on** - plain port checks from the probe, one sensor per port with its connect
   time and why it doesn't answer. - _(BE+FE+probe)_ S
 - [x] **Speedtest and Common SaaS probe add-ons** - the site's internet speed, latency, jitter and
-  bufferbloat against Cloudflare's speed test; common cloud services' reachability and response time
+  bufferbloat against Cloudflare's speed test or Ookla's (its terms accepted per site, packet loss
+  too); common cloud services' reachability and response time
   from each site (PRTG's Common SaaS). - _(BE+FE+probe)_ M
 - [x] **Traffic totals** - interface charts show the total moved over their range. - _(FE)_ S
 - [x] **Per-site visibility** - helpdesk and viewer accounts limited to some sites see, act on and

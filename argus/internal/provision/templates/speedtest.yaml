@@ -10,27 +10,29 @@ zabbix_export:
       description: |
         The site's internet as its probe sees it (the Speedtest add-on, on a site's Probe host): the
         proxy runs argus_speedtest.py, an external check baked into the image, every
-        {$SPEEDTEST.INTERVAL}, against Cloudflare's speed test (speed.cloudflare.com, asking only for
-        what it serves any client). It measures download and upload over {$SPEEDTEST.STREAMS}
-        connections, the idle round trip and its jitter, the round trip while downloading and
-        uploading (bufferbloat), and reports the public address, the Cloudflare site it reached and
-        the network that announces the address (RIPEstat). A run moves at most about 720 MB down and
-        300 MB up, no more than one test on Cloudflare's own page, or stops after
-        {$SPEEDTEST.SECONDS} seconds a direction on a slower line; Cloudflare limits how much one
-        address tests in an hour (HTTP 429, said in the reason). DESIGN section 5.
+        {$SPEEDTEST.INTERVAL}. It measures download and upload, the idle round trip and its jitter,
+        the round trip while downloading and uploading (bufferbloat), and reports the public address,
+        the provider and the site it tested against. {$SPEEDTEST.ENGINE} picks the test:
+        cloudflare (Cloudflare's speed test, speed.cloudflare.com, asking only for what it serves any
+        client: {$SPEEDTEST.STREAMS} connections, at most about 720 MB down and 300 MB up a run, no
+        more than one test on Cloudflare's own page, or {$SPEEDTEST.SECONDS} seconds a direction on a
+        slower line; Cloudflare limits how much one address tests in an hour, HTTP 429 in the reason)
+        or ookla (Ookla's Speedtest CLI, which the probe downloads from Ookla once its admin accepted
+        Ookla's terms in Argus; it picks a nearby server, or {$SPEEDTEST.SERVER}, and adds packet
+        loss). A probe too old for Ookla says so. DESIGN section 5.
       groups:
         - name: Templates/Argus
       items:
         - uuid: 827103b5b4ee46f6a145c515e1adb155
           name: 'Speedtest raw data'
           type: EXTERNAL
-          key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+          key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}","{$SPEEDTEST.ENGINE}","{$SPEEDTEST.SERVER}"]'
           delay: '{$SPEEDTEST.INTERVAL}'
           history: '0'
           trends: '0'
           value_type: TEXT
           timeout: 60s
-          description: 'Master item: the proxy''s argus_speedtest.py measures the connection against Cloudflare''s speed test and prints the speeds, round trips, public address and provider, and why when it could not measure, as JSON.'
+          description: 'Master item: the proxy''s argus_speedtest.py measures the connection against Cloudflare''s speed test or Ookla''s ({$SPEEDTEST.ENGINE}) and prints the speeds, round trips, public address and provider, and why when it could not measure, as JSON.'
         - uuid: 9804cb7e1dcd4320a30ab30c1274bf9f
           name: 'Speedtest ran'
           type: DEPENDENT
@@ -41,12 +43,13 @@ zabbix_export:
           value_type: UNSIGNED
           description: '1 = the last speed test measured the connection, 0 = it could not (its reason is in the error item).'
           master_item:
-            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}","{$SPEEDTEST.ENGINE}","{$SPEEDTEST.SERVER}"]'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
                 - |
                   var d = JSON.parse(value);
+                  if ('{$SPEEDTEST.ENGINE}' === 'ookla' && d.engine !== 'ookla') { return 0; }
                   return d.error ? 0 : 1;
               error_handler: DISCARD_VALUE
           triggers:
@@ -65,12 +68,16 @@ zabbix_export:
           value_type: TEXT
           description: 'Why the last speed test could not measure the connection, in one line (empty when it did). Not a curated sensor: Argus shows it next to the reading and in the alert.'
           master_item:
-            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}","{$SPEEDTEST.ENGINE}","{$SPEEDTEST.SERVER}"]'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
                 - |
-                  return JSON.parse(value).error || '';
+                  var d = JSON.parse(value);
+                  if ('{$SPEEDTEST.ENGINE}' === 'ookla' && d.engine !== 'ookla') {
+                    return 'this probe\'s speed test predates Ookla\'s, so it measured with Cloudflare\'s: the probe updates itself to probe/v7.0.31-r26 or later';
+                  }
+                  return d.error || '';
               error_handler: DISCARD_VALUE
         - uuid: f1635fd5093447ce93b298bada813cf0
           name: 'Download speed'
@@ -83,7 +90,7 @@ zabbix_export:
           units: Mbps
           description: 'Download throughput over several connections, in megabits per second.'
           master_item:
-            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}","{$SPEEDTEST.ENGINE}","{$SPEEDTEST.SERVER}"]'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -114,7 +121,7 @@ zabbix_export:
           units: Mbps
           description: 'Upload throughput over several connections, in megabits per second.'
           master_item:
-            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}","{$SPEEDTEST.ENGINE}","{$SPEEDTEST.SERVER}"]'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -145,7 +152,7 @@ zabbix_export:
           units: s
           description: 'The idle round trip to Cloudflare (median of 20), less Cloudflares own time.'
           master_item:
-            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}","{$SPEEDTEST.ENGINE}","{$SPEEDTEST.SERVER}"]'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -176,7 +183,7 @@ zabbix_export:
           units: s
           description: 'How much the idle round trip varies from one sample to the next (mean change).'
           master_item:
-            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}","{$SPEEDTEST.ENGINE}","{$SPEEDTEST.SERVER}"]'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -207,7 +214,7 @@ zabbix_export:
           units: s
           description: 'The round trip while the download saturates the line (bufferbloat on the way in).'
           master_item:
-            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}","{$SPEEDTEST.ENGINE}","{$SPEEDTEST.SERVER}"]'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -238,7 +245,7 @@ zabbix_export:
           units: s
           description: 'The round trip while the upload saturates the line (bufferbloat on the way out).'
           master_item:
-            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}","{$SPEEDTEST.ENGINE}","{$SPEEDTEST.SERVER}"]'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -258,6 +265,37 @@ zabbix_export:
               name: 'Latency while uploading very high'
               priority: HIGH
               description: 'The last two speed tests measured the round trip while uploading at or above the high threshold.'
+        - uuid: af566a255c644ca3b63eb776ee340eab
+          name: 'Packet loss'
+          type: DEPENDENT
+          key: speedtest.loss
+          delay: '0'
+          history: 90d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Packets lost during the test, in percent. Only Ookla''s test measures it, and only against a server that does; Argus shows the sensor once it has a reading.'
+          master_item:
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}","{$SPEEDTEST.ENGINE}","{$SPEEDTEST.SERVER}"]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (d.loss_pct === null || d.loss_pct === undefined) { throw 'no packet loss measured'; }
+                  return d.loss_pct;
+              error_handler: DISCARD_VALUE
+          triggers:
+            - uuid: f9c94c18cc17440db2e29b6313d82f64
+              expression: 'min(/Argus Speedtest/speedtest.loss,#2)>={$SPEEDTEST.LOSS.WARN} and min(/Argus Speedtest/speedtest.loss,#2)<{$SPEEDTEST.LOSS.HIGH}'
+              name: 'Packet loss high'
+              priority: WARNING
+              description: 'The last two speed tests lost packets at or above the warning threshold (but below the high one).'
+            - uuid: 113ada97baab49eba1f8032beaa971d3
+              expression: 'min(/Argus Speedtest/speedtest.loss,#2)>={$SPEEDTEST.LOSS.HIGH}'
+              name: 'Packet loss very high'
+              priority: HIGH
+              description: 'The last two speed tests lost packets at or above the high threshold.'
         - uuid: f59749b415ba4798b27bf32602b87663
           name: 'Public IP address'
           type: DEPENDENT
@@ -266,9 +304,9 @@ zabbix_export:
           history: 90d
           trends: '0'
           value_type: CHAR
-          description: 'The address the site reaches the internet from, as Cloudflare sees it.'
+          description: 'The address the site reaches the internet from, as the test''s server sees it.'
           master_item:
-            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}","{$SPEEDTEST.ENGINE}","{$SPEEDTEST.SERVER}"]'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -288,9 +326,9 @@ zabbix_export:
           history: 90d
           trends: '0'
           value_type: CHAR
-          description: 'The network that announces the public address (its AS holder, from RIPEstat).'
+          description: 'The provider of the public address: with Cloudflare the network that announces it (its AS holder, from RIPEstat), with Ookla the provider Ookla names.'
           master_item:
-            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}","{$SPEEDTEST.ENGINE}","{$SPEEDTEST.SERVER}"]'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -310,9 +348,9 @@ zabbix_export:
           history: 90d
           trends: '0'
           value_type: CHAR
-          description: 'The Cloudflare site the test reached (its airport code).'
+          description: 'Where the test ran against: the Cloudflare site (its airport code), or the Ookla server (its sponsor, city and ID).'
           master_item:
-            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
+            key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}","{$SPEEDTEST.ENGINE}","{$SPEEDTEST.SERVER}"]'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -328,12 +366,18 @@ zabbix_export:
         - macro: '{$SPEEDTEST.INTERVAL}'
           value: 6h
           description: 'How often the speed test runs: 1h, 3h, 6h, 12h or 24h. Each run moves a lot of data on a fast line.'
+        - macro: '{$SPEEDTEST.ENGINE}'
+          value: cloudflare
+          description: 'Which test runs: cloudflare (Cloudflare''s speed test) or ookla (Ookla''s Speedtest CLI, only once its terms are accepted in Argus).'
+        - macro: '{$SPEEDTEST.SERVER}'
+          value: ''
+          description: 'With Ookla, the ID of the server to test against (blank = the one Ookla picks).'
         - macro: '{$SPEEDTEST.SECONDS}'
           value: '8'
-          description: 'The longest each direction is measured, in seconds (3 to 15): a fast line moves its share of a run sooner.'
+          description: 'With Cloudflare, the longest each direction is measured, in seconds (3 to 15): a fast line moves its share of a run sooner.'
         - macro: '{$SPEEDTEST.STREAMS}'
           value: '8'
-          description: 'Parallel connections per direction (1 to 16): more for a line over a gigabit.'
+          description: 'With Cloudflare, parallel connections per direction (1 to 16): more for a line over a gigabit.'
         - macro: '{$SPEEDTEST.DOWN.WARN}'
           value: '50'
           description: 'Download speed (Mbps) below which a warning is raised.'
@@ -364,3 +408,9 @@ zabbix_export:
         - macro: '{$SPEEDTEST.LOADED.HIGH}'
           value: '0.4'
           description: 'Round trip while the line is busy (seconds) that raises a high-severity alert.'
+        - macro: '{$SPEEDTEST.LOSS.WARN}'
+          value: '1'
+          description: 'Packet loss (percent) that raises a warning (Ookla''s test only).'
+        - macro: '{$SPEEDTEST.LOSS.HIGH}'
+          value: '5'
+          description: 'Packet loss (percent) that raises a high-severity alert (Ookla''s test only).'

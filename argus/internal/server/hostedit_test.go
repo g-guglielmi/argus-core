@@ -6,6 +6,7 @@ package server
 import (
 	"testing"
 
+	"argus/internal/provision"
 	"argus/internal/zabbix"
 )
 
@@ -39,5 +40,25 @@ func TestDefaultPort(t *testing.T) {
 		if got := defaultPort(c.typ); got != c.want {
 			t.Errorf("defaultPort(%d) = %q, want %q", c.typ, got, c.want)
 		}
+	}
+}
+
+// An option under a third party's terms is set only with them accepted; one already set stays.
+func TestTermsRefusal(t *testing.T) {
+	ms := provision.MacroSpec{Macro: "{$SPEEDTEST.ENGINE}", OptionLabels: map[string]string{"ookla": "Ookla Speedtest"},
+		Terms: &provision.Terms{Value: "ookla", Title: "Ookla's terms"}}
+	none := map[string]zabbix.HostMacro{}
+	if err := termsRefusal("Speedtest", ms, "ookla", addOnDesired{}, none); err == nil || err.Error() != "Speedtest: accept Ookla's terms to choose Ookla Speedtest" {
+		t.Fatalf("not accepted: %v", err)
+	}
+	if err := termsRefusal("Speedtest", ms, "ookla", addOnDesired{Accepted: []string{"{$SPEEDTEST.ENGINE}"}}, none); err != nil {
+		t.Fatalf("accepted: %v", err)
+	}
+	set := map[string]zabbix.HostMacro{"{$SPEEDTEST.ENGINE}": {Macro: "{$SPEEDTEST.ENGINE}", Value: "ookla"}}
+	if err := termsRefusal("Speedtest", ms, "ookla", addOnDesired{}, set); err != nil {
+		t.Fatalf("already set: %v", err)
+	}
+	if err := termsRefusal("Speedtest", ms, "cloudflare", addOnDesired{}, none); err != nil {
+		t.Fatalf("an option without terms: %v", err)
 	}
 }

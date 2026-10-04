@@ -136,23 +136,32 @@ answering** (High, after 3 checks), and slow to connect (`{$TCP.TIME.WARN}` 0.5 
 1 s). **Timeout** (default 3 s) is how long a port has to answer. Taking a port out of the list deletes
 its sensor, and any open problem of it, at the next check.
 
-**Speedtest add-on (Probe host).** The site's internet as its probe sees it, against Cloudflare's
-speed test (speed.cloudflare.com): download and upload over 8 connections (**Connections**: 4 to 16,
-more for a line over a gigabit), the idle round trip and its jitter, the round trip while downloading
-and while uploading (bufferbloat: a line that's fine idle but lags when someone uploads), and the
-public address, the network that announces it and the Cloudflare site it reached. **How often** is 1,
-3, 6 (default), 12 or 24 hours. Cloudflare limits how much one address tests in an hour (more is
-refused with HTTP 429 for about an hour, and the sensor says so; speed tests from a browser at the site
-count too), so a run moves at most about 720 MB down and 300 MB up, no more than one test on
-Cloudflare's own page: a fast line moves it in a few seconds, a slower one stops after **Seconds per
-direction, at most** (8 by default). A run takes up to about 20 seconds.
+**Speedtest add-on (Probe host).** The site's internet as its probe sees it: download and upload, the
+idle round trip and its jitter, the round trip while downloading and while uploading (bufferbloat: a
+line that's fine idle but lags when someone uploads), and the public address, the provider and where
+the test ran. **How often** is 1, 3, 6 (default), 12 or 24 hours. **Engine** picks the test:
+- **Cloudflare** (the default): Cloudflare's speed test (speed.cloudflare.com) over 8 connections
+  (**Connections**: 4 to 16, more for a line over a gigabit). Cloudflare limits how much one address
+  tests in an hour (more is refused with HTTP 429 for about an hour, and the sensor says so; speed
+  tests from a browser at the site count too), so a run moves at most about 720 MB down and 300 MB
+  up, no more than one test on Cloudflare's own page: a fast line moves it in a few seconds, a slower
+  one stops after **Seconds per direction, at most** (8 by default).
+- **Ookla Speedtest**: Ookla's Speedtest CLI, the engine Speedtest Tracker uses. It picks a nearby
+  server (or the **Ookla server ID** you give), fills a fast line and adds **Packet loss**. It is
+  Ookla's own program under Ookla's terms, whose licence is for personal, non-commercial use: choosing
+  it asks you to accept them (the Changes page records who did), and Argus doesn't ship it. The probe
+  downloads it from Ookla on its first run, checks it against its pinned checksum and keeps it on its
+  data volume. It needs probe/v7.0.31-r26 or later; an older probe says so in the sensor's reason
+  until it updates itself.
+
+A run takes up to about 20 seconds (Ookla's up to about 50).
 The first run comes a minute after you turn it on. Sensors under **Internet**: **Speed** (download and upload, a band when a run failed), **Latency**
-(idle, jitter, while downloading, while uploading), **Public IP address**, **Internet provider** and
-**Test site**. Alerts, each on the last two runs: download below `{$SPEEDTEST.DOWN.WARN}` 50 /
-`{$SPEEDTEST.DOWN.HIGH}` 10 Mbps, upload below 10 / 2 Mbps, latency over 60 / 150 ms, jitter over 15 /
-40 ms, latency while busy over 150 / 400 ms (set them to your lines on the Thresholds page), and
-**Speedtest could not run** (Warning) with why. Speedtest Tracker uses Ookla's CLI, whose licence is
-for personal, non-commercial use only; Cloudflare's test is the one its own MIT-licensed library runs.
+(idle, jitter, while downloading, while uploading), **Packet loss** (Ookla, once it has a reading),
+**Public IP address**, **Internet provider** and **Test site**. Alerts, each on the last two runs:
+download below `{$SPEEDTEST.DOWN.WARN}` 50 / `{$SPEEDTEST.DOWN.HIGH}` 10 Mbps, upload below 10 / 2 Mbps,
+latency over 60 / 150 ms, jitter over 15 / 40 ms, latency while busy over 150 / 400 ms, packet loss at
+1 / 5 % (set them to your lines on the Thresholds page), and **Speedtest could not run** (Warning) with
+why.
 
 **Common SaaS add-on (Probe host).** Whether the cloud services a site works with answer from it, and
 how fast, every 2 minutes: tick them in a list (Microsoft 365, Microsoft Teams, Google, Amazon Web

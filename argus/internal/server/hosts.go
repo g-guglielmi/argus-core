@@ -612,6 +612,9 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 			}
+			if hideUntilRead[keyBase(it.Key)] && iv.LastClock == 0 {
+				continue
+			}
 			if b, p := splitKey(it.Key); b == "unraid.disktemp" && tempOverride[param(p, 0)] {
 				continue // this drive reports via the atomic arraytemps extend
 			}

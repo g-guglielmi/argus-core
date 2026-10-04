@@ -84,7 +84,11 @@ func hostConfigDiff(before hostConfigView, req hostConfigUpdate, proxies map[str
 			}
 			for _, m := range a.Macros {
 				if nv, ok := d.Macros[m.Macro]; ok {
-					add(a.Label+" · "+m.Label, m.Value, strings.TrimSpace(nv))
+					nv = strings.TrimSpace(nv)
+					add(a.Label+" · "+m.Label, m.optionText(m.Value), m.optionText(nv))
+					if m.Terms != nil && nv == m.Terms.Value && m.Value != nv && d.accepted(m.Macro) {
+						add(a.Label+" · "+m.Terms.Title, "", "accepted")
+					}
 				}
 			}
 		}

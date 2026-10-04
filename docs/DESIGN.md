@@ -237,7 +237,22 @@ streams, downloads of at most 90 MB a request (it refuses 100 MB), one upload a 
 warm-up (1 s, or a quarter of the data moved, whichever comes first) to the first stream done, while
 all of them fill the line; the round trips under load are timed every 0.25 s meanwhile. A direction
 any of whose streams was refused reports no speed, since the others would read low, and the 429 is
-said in the reason; "run now" fires once. Ookla's CLI was ruled out: its licence is personal, non-commercial use only.
+said in the reason; "run now" fires once. `{$SPEEDTEST.ENGINE}` = `ookla` runs Ookla's Speedtest
+CLI instead (Speedtest Tracker's engine): Ookla's own program under Ookla's terms (personal,
+non-commercial use), so Argus doesn't ship it. A field option can carry a third party's terms
+(`MacroSpec.Terms`): the form asks to accept them when the option is chosen, the save carries
+`accepted`, the server refuses the option without it unless the host already has it (`termsRefusal`)
+and the change log records "Ookla's terms: accepted" with who. Once set, the probe's first run
+downloads the CLI from install.speedtest.net (version 1.2.0, its SHA-256 pinned per processor as
+nixpkgs pins it; the probe image build checks the pins against Ookla's download before a release)
+into `/var/lib/zabbix/ookla` on the probe's data volume, and runs it with `--accept-license
+--accept-gdpr --format=json` (`{$SPEEDTEST.SERVER}` an optional server ID). Its result maps onto the
+same sensors (bandwidth bytes/s x 8, `ping.latency`/`jitter`, each direction's `latency.iqm`, the
+server's sponsor, city and ID as the test site) plus **Packet loss** (`speedtest.loss`, hidden until it
+has a reading: only Ookla measures it, and only against servers that do; `hideUntilRead`). Fields can
+show only for one engine (`MacroSpec.ShowIf`): seconds and connections for Cloudflare, the server ID for
+Ookla. A probe whose collector predates the engine (it prints no `engine`) is caught by the template:
+`speedtest.ok` reads 0 and the reason says the probe updates itself.
 **Common SaaS** (`Argus Common SaaS`: the HTTP collector `argus_http.py` with the probe's
 `{$SAAS.URLS}`, each entry named with `#name=`, any answer short of a server error counting
 (`{$SAAS.EXPECT}` 200-499), one group per service under **Cloud services** like the Web checks; the

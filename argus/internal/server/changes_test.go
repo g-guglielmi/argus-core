@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"argus/internal/auth"
+	"argus/internal/provision"
 	"argus/internal/store"
 )
 
@@ -205,5 +206,22 @@ func TestHostFilter(t *testing.T) {
 	}
 	if (hostFilter{}).active() {
 		t.Fatal("an empty filter filters")
+	}
+}
+
+// Choosing an option under a third party's terms reads as the option's name and the terms accepted.
+func TestHostConfigDiffTermsAccepted(t *testing.T) {
+	terms := &provision.Terms{Value: "ookla", Title: "Ookla's terms"}
+	labels := map[string]string{"cloudflare": "Cloudflare", "ookla": "Ookla Speedtest"}
+	before := hostConfigView{Host: "probe-site1", AddOns: []addOnView{{ID: "speedtest", Label: "Speedtest", Enabled: true,
+		Macros: []addOnMacroView{{Macro: "{$SPEEDTEST.ENGINE}", Label: "Engine", OptionLabels: labels, Terms: terms, Value: "cloudflare"}}}}}
+	req := hostConfigUpdate{Host: "probe-site1", AddOns: map[string]addOnDesired{"speedtest": {Enabled: true,
+		Macros: map[string]string{"{$SPEEDTEST.ENGINE}": "ookla"}, Accepted: []string{"{$SPEEDTEST.ENGINE}"}}}}
+	got := map[string][2]string{}
+	for _, d := range hostConfigDiff(before, req, nil) {
+		got[d.Field] = [2]string{d.Old, d.New}
+	}
+	if got["Speedtest · Engine"] != [2]string{"Cloudflare", "Ookla Speedtest"} || got["Speedtest · Ookla's terms"] != [2]string{"", "accepted"} {
+		t.Fatalf("diff: %v", got)
 	}
 }

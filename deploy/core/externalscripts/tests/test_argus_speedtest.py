@@ -3,13 +3,17 @@
 # Copyright (C) 2026 g-guglielmi
 
 # Tests for argus_speedtest.py: Cloudflare's server time read off its Server-Timing header, the
-# arguments' bounds, the rate from the warm-up to the first stream done, and the reason printed when it
-# can't reach the test. Stdlib only, no network.
+# arguments' bounds, the rate from the warm-up to the first stream done, the reason printed when it
+# can't reach the test, and the Ookla engine: its result read in this collector's terms, its errors,
+# and its CLI installed only when the download matches the pinned checksum. Stdlib only, no network.
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
 import os
+import tarfile
+import tempfile
 import time
 import unittest
 
@@ -95,7 +99,156 @@ class ParseTest(unittest.TestCase):
         self.assertLessEqual(st.UP_BUDGET, 300_000_000, "no more than one test on Cloudflare's page")
 
 
+# One result as Ookla's CLI prints it (--format=json), with documentation addresses.
+OOKLA_RESULT = {
+    "type": "result", "timestamp": "2026-10-04T15:00:00Z",
+    "ping": {"jitter": 0.4, "latency": 3.2, "low": 2.9, "high": 3.6},
+    "download": {"bandwidth": 293_750_000, "bytes": 3_000_000_000, "elapsed": 10_000,
+                 "latency": {"iqm": 12.5, "low": 3.1, "high": 40.2, "jitter": 2.0}},
+    "upload": {"bandwidth": 117_500_000, "bytes": 1_200_000_000, "elapsed": 10_000,
+               "latency": {"iqm": 30.25, "low": 3.0, "high": 90.1, "jitter": 5.0}},
+    "packetLoss": 0.5, "isp": "Example Telecom",
+    "interface": {"internalIp": "10.0.0.20", "name": "eth0", "macAddr": "00:00:5E:00:53:01", "isVpn": False,
+                  "externalIp": "192.0.2.10"},
+    "server": {"id": 12345, "host": "speedtest.example.net", "port": 8080, "name": "Example ISP",
+               "location": "Milan", "country": "Italy", "ip": "198.51.100.5"},
+    "result": {"id": "x", "url": "https://www.speedtest.net/result/c/x", "persisted": True},
+}
+
+
+class FakeDownload:
+    def __init__(self, data):
+        self.data = data
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self, n=-1):
+        return self.data
+
+
+@contextlib.contextmanager
+def patched(obj, name, value):
+    old = getattr(obj, name)
+    setattr(obj, name, value)
+    try:
+        yield
+    finally:
+        setattr(obj, name, old)
+
+
+class OoklaTest(unittest.TestCase):
+    def test_result_in_collector_terms(self):
+        out = {"error": ""}
+        st.ookla_fill(out, OOKLA_RESULT)
+        self.assertEqual(out["down_bps"], 2_350_000_000)  # bytes a second x 8
+        self.assertEqual(out["up_bps"], 940_000_000)
+        self.assertEqual((out["latency_ms"], out["jitter_ms"]), (3.2, 0.4))
+        self.assertEqual((out["loaded_down_ms"], out["loaded_up_ms"]), (12.5, 30.25))
+        self.assertEqual(out["loss_pct"], 0.5)
+        self.assertEqual((out["ip"], out["isp"]), ("192.0.2.10", "Example Telecom"))
+        self.assertEqual(out["colo"], "Example ISP, Milan (server 12345)")
+        self.assertEqual(out["error"], "")
+
+    def test_missing_direction_says_so(self):
+        r = dict(OOKLA_RESULT)
+        del r["upload"]
+        r.pop("packetLoss")
+        out = {"error": ""}
+        st.ookla_fill(out, r)
+        self.assertIsNone(out["up_bps"])
+        self.assertIsNone(out["loss_pct"], "no packet loss from a server that doesn't measure it")
+        self.assertEqual(out["error"], "Ookla's test reported no upload speed")
+
+    def test_errors_say_why(self):
+        line = json.dumps({"type": "log", "timestamp": "2026-10-04T15:00:00Z", "level": "error",
+                           "message": "No servers defined (NoServersException)"})
+        with self.assertRaisesRegex(st.OoklaError, "No servers defined"):
+            st.ookla_parse("", line + "\n", 2)
+        with self.assertRaisesRegex(st.OoklaError, "Cannot read"):
+            st.ookla_parse("", "[error] Cannot read: Resource temporarily unavailable\n", 1)
+        with self.assertRaisesRegex(st.OoklaError, r"ended \(code 1\) with no result"):
+            st.ookla_parse("", "", 1)
+        self.assertEqual(st.ookla_parse(json.dumps(OOKLA_RESULT) + "\n", "", 0)["isp"], "Example Telecom")
+
+    def test_no_build_for_processor(self):
+        with patched(st.platform, "machine", lambda: "sparc64"):
+            with self.assertRaisesRegex(st.OoklaError, r"no build for this probe's processor \(sparc64\)"):
+                st.ookla_binary(tempfile.mkdtemp())
+
+    def test_download_must_match_checksum(self):
+        d = tempfile.mkdtemp()
+        with patched(st.platform, "machine", lambda: "x86_64"), \
+                patched(st.urllib.request, "urlopen", lambda *a, **k: FakeDownload(b"not ookla")):
+            with self.assertRaisesRegex(st.OoklaError, "didn't match its checksum"):
+                st.ookla_binary(d)
+        self.assertEqual(os.listdir(d), [], "nothing installed")
+
+    def test_installs_the_program_once(self):
+        prog = b"#!/bin/sh\necho ookla\n"
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+            for name, data in (("speedtest.md", b"readme"), ("speedtest", prog)):
+                ti = tarfile.TarInfo(name)
+                ti.size = len(data)
+                tf.addfile(ti, io.BytesIO(data))
+        archive = buf.getvalue()
+        d = tempfile.mkdtemp()
+        sums = dict(st.OOKLA_SHA256, x86_64=hashlib.sha256(archive).hexdigest())
+        calls = []
+
+        def fetch(*a, **k):
+            calls.append(a)
+            return FakeDownload(archive)
+
+        with patched(st.platform, "machine", lambda: "x86_64"), patched(st, "OOKLA_SHA256", sums), \
+                patched(st.urllib.request, "urlopen", fetch):
+            path = st.ookla_binary(d)
+            self.assertEqual(path, os.path.join(d, "speedtest-%s-x86_64" % st.OOKLA_VERSION))
+            with open(path, "rb") as f:
+                self.assertEqual(f.read(), prog)
+            self.assertEqual(st.ookla_binary(d), path)
+        self.assertEqual(len(calls), 1, "downloaded once, then kept")
+
+    def test_pins_every_build(self):
+        self.assertEqual(set(st.OOKLA_ARCH.values()), set(st.OOKLA_SHA256))
+        for v in st.OOKLA_SHA256.values():
+            self.assertRegex(v, "^[0-9a-f]{64}$")
+
+
 class MainTest(unittest.TestCase):
+    def test_ookla_engine(self):
+        def refuse(server):
+            self.assertEqual(server, "12345")
+            raise st.OoklaError("Ookla's test failed: No servers defined (NoServersException)")
+
+        old = st.sys.argv
+        out = io.StringIO()
+        try:
+            st.sys.argv = ["argus_speedtest.py", "8", "8", "ookla", "12345"]
+            with patched(st, "ookla_run", refuse), contextlib.redirect_stdout(out):
+                st.main()
+        finally:
+            st.sys.argv = old
+        d = json.loads(out.getvalue())
+        self.assertEqual(d["engine"], "ookla")
+        self.assertIn("No servers defined", d["error"])
+
+    def test_server_must_be_a_number(self):
+        seen = []
+        old = st.sys.argv
+        try:
+            st.sys.argv = ["argus_speedtest.py", "8", "8", "OOKLA", "--help"]
+            with patched(st, "ookla_run", lambda server: seen.append(server) or OOKLA_RESULT), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                st.main()
+        finally:
+            st.sys.argv = old
+        self.assertEqual(seen, [""], "an option-looking server is dropped, never passed on")
+
     def test_unreachable(self):
         old = st.HOST
         st.HOST = "speed.invalid"
@@ -108,7 +261,8 @@ class MainTest(unittest.TestCase):
         d = json.loads(out.getvalue())
         self.assertIn("could not reach speed.invalid", d["error"])
         self.assertIsNone(d["down_bps"])
-        self.assertEqual(set(d), {"down_bps", "up_bps", "latency_ms", "jitter_ms", "loaded_down_ms", "loaded_up_ms", "ip", "isp", "colo", "city", "error"})
+        self.assertEqual(set(d), {"down_bps", "up_bps", "latency_ms", "jitter_ms", "loaded_down_ms", "loaded_up_ms", "ip", "isp", "colo", "city", "loss_pct", "engine", "error"})
+        self.assertEqual(d["engine"], "cloudflare")
 
 
 if __name__ == "__main__":

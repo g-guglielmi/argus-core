@@ -83,7 +83,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={api}>
       {children}
       {state && (
-        <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) cancel() }}>
+        <div className="dlg-backdrop dlg-ask" onMouseDown={(e) => { if (e.target === e.currentTarget) cancel() }}>
           <div className="dlg" role="dialog" aria-modal="true">
             {opts?.title && <div className="dlg-title">{opts.title}</div>}
             {opts?.message && <div className="dlg-msg">{opts.message}</div>}

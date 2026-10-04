@@ -59,12 +59,24 @@ type macroFieldView struct {
 // addOnMacroView is one config field of an add-on (e.g. HTTP port), with the host's current value or
 // the template default. addOnView is an optional add-on template with its enabled state + fields.
 type addOnMacroView struct {
-	Macro   string   `json:"macro"`
-	Label   string   `json:"label"`
-	Hint    string   `json:"hint,omitempty"`
-	Options []string `json:"options,omitempty"`
-	Value   string   `json:"value"`
+	Macro        string            `json:"macro"`
+	Label        string            `json:"label"`
+	Hint         string            `json:"hint,omitempty"`
+	Options      []string          `json:"options,omitempty"`
+	OptionLabels map[string]string `json:"option_labels,omitempty"`
+	ShowIf       *provision.ShowIf `json:"show_if,omitempty"`
+	Terms        *provision.Terms  `json:"terms,omitempty"`
+	Value        string            `json:"value"`
 }
+
+// optionText is a field's value as the form names it ("ookla" -> "Ookla Speedtest").
+func (m addOnMacroView) optionText(v string) string {
+	if l := m.OptionLabels[v]; l != "" {
+		return l
+	}
+	return v
+}
+
 type addOnView struct {
 	ID          string           `json:"id"`
 	Label       string           `json:"label"`
@@ -79,6 +91,18 @@ type addOnView struct {
 type addOnDesired struct {
 	Enabled bool              `json:"enabled"`
 	Macros  map[string]string `json:"macros"`
+	// Accepted lists the fields whose option's terms (provision.Terms) the user accepted in this save.
+	Accepted []string `json:"accepted,omitempty"`
+}
+
+// accepted reports whether this save accepted the terms of the field's option.
+func (d addOnDesired) accepted(macro string) bool {
+	for _, m := range d.Accepted {
+		if m == macro {
+			return true
+		}
+	}
+	return false
 }
 
 // thresholdFieldView is one per-host threshold override in the settings editor: the effective global
@@ -306,7 +330,8 @@ func (s *Server) hostConfigFor(ctx context.Context, hostID string, canEdit bool)
 				av.Services = provision.SaaSServices()
 			}
 			for _, ms := range a.Macros {
-				av.Macros = append(av.Macros, addOnMacroView{Macro: ms.Macro, Label: ms.Label, Hint: ms.Hint, Options: ms.Options, Value: macroValueOr(curMacros, ms.Macro, factory[a.Template][ms.Macro])})
+				av.Macros = append(av.Macros, addOnMacroView{Macro: ms.Macro, Label: ms.Label, Hint: ms.Hint, Options: ms.Options,
+					OptionLabels: ms.OptionLabels, ShowIf: ms.ShowIf, Terms: ms.Terms, Value: macroValueOr(curMacros, ms.Macro, factory[a.Template][ms.Macro])})
 			}
 			out.AddOns = append(out.AddOns, av)
 		}
@@ -702,6 +727,9 @@ func (s *Server) applyAddOns(ctx context.Context, hostID string, desired map[str
 				if err := provision.ValidateMacroValue(ms, v); err != nil {
 					return err
 				}
+				if err := termsRefusal(a.Label, ms, v, d, cur); err != nil {
+					return err
+				}
 			}
 		}
 		tmpls, err := s.zbx.Templates(ctx, []string{a.Template})
@@ -752,6 +780,18 @@ func (s *Server) applyAddOns(ctx context.Context, hostID string, desired map[str
 		}
 	}
 	return nil
+}
+
+// termsRefusal says why a field can't be set to v: an option under a third party's terms is chosen
+// only with them accepted in the same save. One the host already has stays as it is.
+func termsRefusal(addOn string, ms provision.MacroSpec, v string, d addOnDesired, cur map[string]zabbix.HostMacro) error {
+	if ms.Terms == nil || v != ms.Terms.Value || d.accepted(ms.Macro) {
+		return nil
+	}
+	if c, has := cur[ms.Macro]; has && c.Value == v {
+		return nil
+	}
+	return fmt.Errorf("%s: accept %s to choose %s", addOn, ms.Terms.Title, ms.OptionLabel(v))
 }
 
 // applyClassMacros surgically sets/clears the host macros a device class declares, from the desired

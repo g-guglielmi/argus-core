@@ -53,6 +53,9 @@ GitHub Release from the matching section below.
 - The Device tab shows the path (gateway › switch port 24 › this host), with a down hop in red.
   When the controller's answer changes, Changes says so.
 
+**Fixed:** a question asked from host settings (removing an interface, accepting terms) opened
+behind the settings dialog, so it couldn't be seen or answered.
+
 **Check now:** a sensor's menu (and a group's) has **Check now**: it runs the sensor at once instead
 of at its next interval, a speed test included (its download, upload and latency are one run).
 
@@ -63,6 +66,11 @@ of at its next interval, a speed test included (its download, upload and latency
   after you turn it on; alerts below or above thresholds you set per line on the Thresholds page.
   A run moves at most about 720 MB down and 300 MB up, no more than one test on Cloudflare's own page,
   so a fast line isn't refused by Cloudflare's hourly limit (probe/v7.0.31-r25).
+- **Speedtest engine:** Cloudflare's test, or **Ookla Speedtest** (the engine Speedtest Tracker
+  uses): it picks a nearby server or the one you give, fills a fast line and adds **Packet loss**.
+  It is Ookla's own program under Ookla's terms (personal, non-commercial use): choosing it asks you
+  to accept them, the Changes page records who did, and Argus doesn't ship it: the probe downloads it
+  from Ookla on its first run and checks it against its pinned checksum (probe/v7.0.31-r26).
 - **Common SaaS**: whether Microsoft 365, Teams, Google, AWS, Cloudflare, Zoom, Dropbox, iCloud (or
   others you tick or add) answer from the site and how fast, every 2 minutes, each its own sensor with
   why when it doesn't.

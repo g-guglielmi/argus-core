@@ -26,8 +26,11 @@ type ThresholdField = { macro: string; label: string; unit?: string; default: st
 type ThrRowData = { macro: string; label: string; unit?: string; default: string; value?: string }
 type ThrTemplate = { template: string; label: string; every_host?: boolean; optional?: boolean; classes?: string[]; thresholds: ThrRowData[] }
 type ThresholdsData = { templates: ThrTemplate[] }
-type AddOnMacro = { macro: string; label: string; hint?: string; options?: string[]; value: string }
-type AddOnCfg = { id: string; label: string; description: string; enabled: boolean; macros?: AddOnMacro[]; services?: SaaSService[] }
+// A field of an add-on. terms: an option that runs under a third party's terms (Ookla's speed test),
+// chosen only once they're accepted; loaded is the value the dialog opened with (client side).
+type AddOnTerms = { value: string; title: string; text: string; links: { label: string; url: string }[] }
+type AddOnMacro = { macro: string; label: string; hint?: string; options?: string[]; option_labels?: Record<string, string>; show_if?: { macro: string; value: string }; terms?: AddOnTerms; value: string; loaded?: string }
+type AddOnCfg = { id: string; label: string; description: string; enabled: boolean; macros?: AddOnMacro[]; services?: SaaSService[]; accepted?: string[] }
 type SaaSService = { id: string; name: string; url: string; default: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg; tags?: HostTag[]; own?: { asset_tag: string; location: string }; links?: LinkRow[]; class_links?: LinkRow[]; upstream?: UpstreamInfo }
 // A host's master sensor: while it's down, the host's other alerts are held (item_id "" = none).
@@ -7338,7 +7341,8 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
   const [links, setLinks] = useState<LinkRow[]>([])
   function loadCfg() {
     fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : Promise.reject())).then((d: HostCfg) => {
-      setCfg(d); setCustomOrder(!!(d.category_order && d.category_order.length))
+      setCfg({ ...d, addons: d.addons?.map((a) => ({ ...a, macros: a.macros?.map((m) => ({ ...m, loaded: m.value })) })) })
+      setCustomOrder(!!(d.category_order && d.category_order.length))
       setOwnTags((d.tags || []).filter((t) => !t.from).map((t) => t.name))
       setOwn(d.own || { asset_tag: '', location: '' })
       setUpMode(d.upstream?.mode || 'auto'); setUpHost(d.upstream?.manual_host || '')
@@ -7360,6 +7364,25 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
   function setThreshold(macro: string, value: string) { setCfg((c) => (c ? { ...c, thresholds: (c.thresholds || []).map((t) => (t.macro === macro ? { ...t, value } : t)) } : c)) }
   function setAddon(id: string, p: Partial<AddOnCfg>) { setCfg((c) => (c ? { ...c, addons: (c.addons || []).map((a) => (a.id === id ? { ...a, ...p } : a)) } : c)) }
   function setAddonMacro(id: string, macro: string, value: string) { setCfg((c) => (c ? { ...c, addons: (c.addons || []).map((a) => (a.id === id ? { ...a, macros: (a.macros || []).map((m) => (m.macro === macro ? { ...m, value } : m)) } : a)) } : c)) }
+  // An option under a third party's terms (Ookla's speed test) is chosen only once they're accepted
+  // here; the save carries the acceptance and the change log records who accepted them.
+  async function chooseAddonOption(a: AddOnCfg, m: AddOnMacro, value: string) {
+    const t = m.terms
+    if (t && value === t.value && m.loaded !== t.value && !(a.accepted || []).includes(m.macro)) {
+      const ok = await confirm({
+        title: t.title, confirmLabel: 'Accept and use it',
+        message: (
+          <div className="terms-msg">
+            <p>{t.text}</p>
+            <p>{t.links.map((l, i) => <span key={l.url}>{i > 0 && ' · '}<a href={l.url} target="_blank" rel="noreferrer">{l.label}</a></span>)}</p>
+          </div>
+        ),
+      })
+      if (!ok) return
+      setAddon(a.id, { accepted: [...(a.accepted || []), m.macro] })
+    }
+    setAddonMacro(a.id, m.macro, value)
+  }
   function moveCategory(idx: number, dir: -1 | 1) {
     setCfg((c) => {
       if (!c || !c.categories) return c
@@ -7385,7 +7408,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
     const macros = pairs.length > 0 ? Object.fromEntries(pairs) : undefined
     // Per-host sensor order: send the current list when "custom" is on, else [] to clear the override.
     const category_order = cfg.categories && cfg.categories.length > 0 ? (customOrder ? cfg.categories : []) : undefined
-    const addons = cfg.addons ? Object.fromEntries(cfg.addons.map((a) => [a.id, { enabled: a.enabled, macros: Object.fromEntries((a.macros || []).map((m) => [m.macro, m.value])) }])) : undefined
+    const addons = cfg.addons ? Object.fromEntries(cfg.addons.map((a) => [a.id, { enabled: a.enabled, macros: Object.fromEntries((a.macros || []).map((m) => [m.macro, m.value])), accepted: a.accepted }])) : undefined
     const res = await fetch(`/api/hosts/${hostId}/config`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) }, body: JSON.stringify({ host: cfg.host, name: cfg.name, monitored_by: cfg.monitored_by, proxy_id: cfg.proxy_id, interfaces: cfg.interfaces, macros, category_order, addons, master: cfg.master ? masterChoice : undefined, tags: ownTags, own, upstream: { mode: upMode, host_id: upMode === 'manual' ? upHost : '' }, links: links.filter((l) => l.label.trim() || l.url.trim()) }) }).catch(() => null)
     setBusy(false)
     // The error also pops up: the dialog is long, and its line by the Save button may be scrolled away.
@@ -7561,7 +7584,10 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
         const said = (x: AddOnCfg) => {
           if (x.id === 'http') { const n = urls(x).length; return `${x.label}: ${n === 0 ? 'the host itself' : n === 1 ? '1 URL' : n + ' URLs'}` }
           if (x.id === 'saas') { const n = parseSaaSList(x.macros?.find((m) => m.macro === '{$SAAS.URLS}')?.value || '').length; return `${x.label}: ${n === 1 ? '1 service' : n + ' services'}` }
-          if (x.id === 'speedtest') return `${x.label}: every ${x.macros?.find((m) => m.macro === '{$SPEEDTEST.INTERVAL}')?.value || '6h'}`
+          if (x.id === 'speedtest') {
+            const eng = x.macros?.find((m) => m.macro === '{$SPEEDTEST.ENGINE}')
+            return `${x.label}: ${eng ? eng.option_labels?.[eng.value] || eng.value : 'Cloudflare'}, every ${x.macros?.find((m) => m.macro === '{$SPEEDTEST.INTERVAL}')?.value || '6h'}`
+          }
           const v = (x.macros?.[0]?.value || '').trim()
           return v ? `${x.label}: ${hsShort(v)}` : x.label
         }
@@ -7579,6 +7605,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
               {a.enabled && a.macros && a.macros.length > 0 && (
                 <div className="hs-grid">
                   {a.macros.filter((m) => {
+                    if (m.show_if && (a.macros!.find((x) => x.macro === m.show_if!.macro)?.value || '') !== m.show_if.value) return false // another engine's option
                     const urls = a.macros!.find((x) => x.macro === '{$HTTP.URLS}')
                     return !urls || httpFieldUsed(m.macro, urls.value)
                   }).map((m) => m.macro === '{$SAAS.URLS}' ? (
@@ -7596,7 +7623,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
                     <label className="field" key={m.macro}>
                       <span>{m.label}</span>
                       {m.options && m.options.length > 0
-                        ? <Select value={m.value} disabled={!canEdit} onChange={(e) => setAddonMacro(a.id, m.macro, e.target.value)}>{m.options.map((o) => <option key={o} value={o}>{o}</option>)}</Select>
+                        ? <Select value={m.value} disabled={!canEdit} onChange={(e) => chooseAddonOption(a, m, e.target.value)}>{m.options.map((o) => <option key={o} value={o}>{m.option_labels?.[o] || o}</option>)}</Select>
                         : <input className="input" value={m.value} placeholder={m.hint || ''} disabled={!canEdit} onChange={(e) => setAddonMacro(a.id, m.macro, e.target.value)} />}
                     </label>
                   ))}
