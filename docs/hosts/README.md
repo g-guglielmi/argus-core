@@ -141,9 +141,11 @@ speed test (speed.cloudflare.com): download and upload over 8 connections (**Con
 more for a line over a gigabit), the idle round trip and its jitter, the round trip while downloading
 and while uploading (bufferbloat: a line that's fine idle but lags when someone uploads), and the
 public address, the network that announces it and the Cloudflare site it reached. **How often** is 1,
-3, 6 (default), 12 or 24 hours: a run takes about 20 seconds and moves, on a gigabit line, about a
-gigabyte each way, and Cloudflare limits how much one address tests in an hour (more is refused with
-HTTP 429 for about an hour, and the sensor says so; speed tests from a browser at the site count too).
+3, 6 (default), 12 or 24 hours. Cloudflare limits how much one address tests in an hour (more is
+refused with HTTP 429 for about an hour, and the sensor says so; speed tests from a browser at the site
+count too), so a run moves at most about 720 MB down and 300 MB up, no more than one test on
+Cloudflare's own page: a fast line moves it in a few seconds, a slower one stops after **Seconds per
+direction, at most** (8 by default). A run takes up to about 20 seconds.
 The first run comes a minute after you turn it on. Sensors under **Internet**: **Speed** (download and upload, a band when a run failed), **Latency**
 (idle, jitter, while downloading, while uploading), **Public IP address**, **Internet provider** and
 **Test site**. Alerts, each on the last two runs: download below `{$SPEEDTEST.DOWN.WARN}` 50 /

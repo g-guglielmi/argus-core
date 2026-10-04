@@ -12,11 +12,12 @@ zabbix_export:
         proxy runs argus_speedtest.py, an external check baked into the image, every
         {$SPEEDTEST.INTERVAL}, against Cloudflare's speed test (speed.cloudflare.com, asking only for
         what it serves any client). It measures download and upload over {$SPEEDTEST.STREAMS}
-        connections for {$SPEEDTEST.SECONDS} seconds each, the idle round trip and its jitter, the
-        round trip while downloading and uploading (bufferbloat), and reports the public address, the
-        Cloudflare site it reached and the network that announces the address (RIPEstat). A run
-        moves, on a gigabit line, about {$SPEEDTEST.SECONDS} x 125 MB each way; Cloudflare limits how
-        much one address tests in an hour (HTTP 429, said in the reason). DESIGN section 5.
+        connections, the idle round trip and its jitter, the round trip while downloading and
+        uploading (bufferbloat), and reports the public address, the Cloudflare site it reached and
+        the network that announces the address (RIPEstat). A run moves at most about 720 MB down and
+        300 MB up, no more than one test on Cloudflare's own page, or stops after
+        {$SPEEDTEST.SECONDS} seconds a direction on a slower line; Cloudflare limits how much one
+        address tests in an hour (HTTP 429, said in the reason). DESIGN section 5.
       groups:
         - name: Templates/Argus
       items:
@@ -329,7 +330,7 @@ zabbix_export:
           description: 'How often the speed test runs: 1h, 3h, 6h, 12h or 24h. Each run moves a lot of data on a fast line.'
         - macro: '{$SPEEDTEST.SECONDS}'
           value: '8'
-          description: 'Seconds each direction is measured (3 to 15).'
+          description: 'The longest each direction is measured, in seconds (3 to 15): a fast line moves its share of a run sooner.'
         - macro: '{$SPEEDTEST.STREAMS}'
           value: '8'
           description: 'Parallel connections per direction (1 to 16): more for a line over a gigabit.'

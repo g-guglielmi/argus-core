@@ -228,11 +228,16 @@ Server-Timing header, jitter, the round trip while each direction is busy, the p
 Cloudflare site from its `/cdn-cgi/trace` and the network announcing the address from RIPEstat;
 speeds in Mbps so their thresholds read as such, round trips in seconds; a run it couldn't measure is
 a reading with its reason, `speedtest.ok` 0 and `speedtest.error`). It asks only for what Cloudflare
-serves any client, with no headers posing as its page: downloads of 50 MB a request (it refuses 100
-MB), one 500 MB upload a stream (it refuses 1 GB), cut at the deadline; a direction any of whose
-streams was refused reports no speed, since the others would read low. Cloudflare limits how much one
-address tests in an hour (HTTP 429 with a Retry-After of about an hour), said in the reason; "run
-now" fires once. Ookla's CLI was ruled out: its licence is personal, non-commercial use only.
+serves any client, with no headers posing as its page. Cloudflare limits how much one address
+downloads from it in an hour (HTTP 429 with a Retry-After of about an hour; its zero-byte round trips
+still answer), so a run moves at most what one test on its own page moves on a fast line (its
+library's steps add up to about 970 MB down and 300 MB up): 720 MB down and 300 MB up shared among the
+streams, downloads of at most 90 MB a request (it refuses 100 MB), one upload a stream (it refuses
+1 GB), or less when `{$SPEEDTEST.SECONDS}` runs out first on a slower line. The rate is read from the
+warm-up (1 s, or a quarter of the data moved, whichever comes first) to the first stream done, while
+all of them fill the line; the round trips under load are timed every 0.25 s meanwhile. A direction
+any of whose streams was refused reports no speed, since the others would read low, and the 429 is
+said in the reason; "run now" fires once. Ookla's CLI was ruled out: its licence is personal, non-commercial use only.
 **Common SaaS** (`Argus Common SaaS`: the HTTP collector `argus_http.py` with the probe's
 `{$SAAS.URLS}`, each entry named with `#name=`, any answer short of a server error counting
 (`{$SAAS.EXPECT}` 200-499), one group per service under **Cloud services** like the Web checks; the
