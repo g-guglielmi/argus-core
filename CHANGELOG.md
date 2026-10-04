@@ -44,8 +44,8 @@ GitHub Release from the matching section below.
   settings (or none). Hosts at the same address (a NAS and the services on it) share its switch port.
   A host without one says why (the client lists not read yet, a read that failed and its reason, or its
   address not listed).
-- If Zabbix refuses an update of the device-class templates, the Updates page says so with the reason
-  and Argus tries again every 15 minutes.
+- If Zabbix refuses an update of a device-class template, the others still update, adding a device
+  still works, the Updates page says which one failed and why, and Argus tries again every 15 minutes.
 - While a switch is down, the hosts behind it wait: one alert for the switch, naming the hosts behind
   it, instead of one per access point, camera and server. The lists say "Held: behind sw-core, which is
   down" and fold them under it; its RESOLVED says their own alerts go out now if they're still in

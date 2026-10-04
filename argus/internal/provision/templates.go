@@ -6,12 +6,13 @@ package provision
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"sort"
+	"strings"
 
 	"argus/internal/store"
 	"argus/internal/zabbix"
@@ -81,10 +82,17 @@ func Reconcile(ctx context.Context, zbx *zabbix.Client, st *store.Store, logger 
 	if have, ok, _ := st.MetaGet(ctx, metaTemplateVersion); ok && have == want {
 		return nil // already up to date
 	}
+	// Each file on its own: one Zabbix refuses doesn't keep the others at their old version. The set
+	// is recorded as imported only when every file went through, so a failure is tried again.
+	var failed []string
 	for _, d := range docs {
 		if err := zbx.ImportConfiguration(ctx, "yaml", d.content); err != nil {
-			return fmt.Errorf("provision: import %s: %w", d.name, err)
+			logger.Error("provision: template import failed", "file", d.name, "err", err)
+			failed = append(failed, fmt.Sprintf("%s: %v", d.name, err))
 		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("provision: import %s", strings.Join(failed, "; "))
 	}
 	if err := st.MetaSet(ctx, metaTemplateVersion, want); err != nil {
 		return fmt.Errorf("provision: record template version: %w", err)

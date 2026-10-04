@@ -247,8 +247,10 @@ every push sensor shows why. On top, one or more **class templates** attach - ma
 in the first cut (§C), automatically by fingerprint once discovery lands (§8, §B). Templates are
 hand-authored Zabbix YAML, version-controlled under `argus/internal/provision/templates/` (in-module
 so they can be embedded) and imported into zabbix-server via `configuration.import` (Argus reconciles
-the set on startup, so templates track the app version; an import Zabbix refuses is shown on the
-Updates page with its reason and tried again every 15 minutes until it goes through). Thresholds are Zabbix **user-macros** carrying the §6 defaults, overridable
+the set on startup, so templates track the app version; each file is imported on its own, so one
+Zabbix refuses doesn't hold the others back or stop a host being added; the failure is shown on the
+Updates page with its reason and tried again every 15 minutes until it goes through, and a test
+checks that no template puts an item's fields in a discovery rule or the reverse). Thresholds are Zabbix **user-macros** carrying the §6 defaults, overridable
 per-host/sensor (§D).
 
 **Fleet reality:** 400+ servers with **SNMP already configured**; deploying an agent that widely

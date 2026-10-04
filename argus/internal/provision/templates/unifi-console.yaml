@@ -255,7 +255,6 @@ zabbix_export:
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d
-      discovery_rules:
         - uuid: 106a22d6d1db47389e76a6dd03198931
           name: 'Model'
           type: DEPENDENT
@@ -310,6 +309,7 @@ zabbix_export:
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d
+      discovery_rules:
         - uuid: 0366df05ea07482f8680c97e06c9b634
           name: 'Storage discovery'
           type: DEPENDENT

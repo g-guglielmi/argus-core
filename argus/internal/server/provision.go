@@ -233,10 +233,12 @@ func (s *Server) provisionHost(ctx context.Context, req *createHostRequest, sour
 		return "", provisionFail(http.StatusBadRequest, "connect-by-DNS needs a DNS name")
 	}
 
-	// Ensure the class templates are present (idempotent; imports only when changed).
+	// Ensure the class templates are present (idempotent; imports only when changed). A template Zabbix
+	// refuses doesn't stop the host: it gets the templates Zabbix has (a class whose own template was
+	// never imported fails below, by name), and Updates shows the failure.
 	if !reconciled {
 		if err := provision.Reconcile(ctx, s.zbx, s.st, s.logger); err != nil {
-			return "", provisionFail(http.StatusBadGateway, "could not import class templates: "+err.Error())
+			s.logger.Warn("provision: creating the host with the templates Zabbix has", "err", err)
 		}
 	}
 
