@@ -13,6 +13,15 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-05
+
+A minor release: a change log of who changed what, host pages with tabs (what Argus reads from the
+device, links, a journal), upstream devices so a switch that goes down sends one alert instead of one
+per host behind it, an inventory with firmware updates, site info with who to call, tags and bulk
+actions, import from a spreadsheet or PRTG, API tokens, and two add-ons for each site's probe: a speed
+test (Cloudflare's, or Ookla's once you accept its terms) and Common SaaS checks. Update the probes to
+`probe/v7.0.31-r26` for all of it; the sidecar stays on argus-updater 0.2.12.
+
 **Change log:**
 - A new admin page, **Changes**, says who changed what and when: host settings, alert states
   (acknowledge, pause, hide, notes), thresholds, groups, maintenance windows, discovery, probes,
@@ -53,29 +62,26 @@ GitHub Release from the matching section below.
 - The Device tab shows the path (gateway › switch port 24 › this host), with a down hop in red.
   When the controller's answer changes, Changes says so.
 
-**Fixed:** a question asked from host settings (removing an interface, accepting terms) opened
-behind the settings dialog, so it couldn't be seen or answered.
-
 **Check now:** a sensor's menu (and a group's) has **Check now**: it runs the sensor at once instead
 of at its next interval, a speed test included (its download, upload and latency are one run).
 
 **Speedtest and Common SaaS (probe add-ons):** a site's Probe host has two add-ons in its settings.
-- **Speedtest**: the site's internet as its probe sees it, against Cloudflare's speed test: download
-  and upload, latency, jitter, latency while downloading and uploading (bufferbloat), the public
-  address, the provider and the test site. Every 1 to 24 hours (6 by default), the first run a minute
-  after you turn it on; alerts below or above thresholds you set per line on the Thresholds page.
-  A run moves at most about 720 MB down and 300 MB up, no more than one test on Cloudflare's own page,
-  so a fast line isn't refused by Cloudflare's hourly limit (probe/v7.0.31-r25).
-- **Speedtest engine:** Cloudflare's test, or **Ookla Speedtest** (the engine Speedtest Tracker
-  uses): it picks a nearby server or the one you give, fills a fast line and adds **Packet loss**.
-  It is Ookla's own program under Ookla's terms (personal, non-commercial use): choosing it asks you
-  to accept them, the Changes page records who did, and Argus doesn't ship it: the probe downloads it
-  from Ookla on its first run and checks it against its pinned checksum (probe/v7.0.31-r26).
+- **Speedtest**: the site's internet as its probe sees it: download and upload, latency, jitter,
+  latency while downloading and uploading (bufferbloat), the public address, the provider and the
+  test site. Every 1 to 24 hours (6 by default), the first run a minute after you turn it on; alerts
+  below or above thresholds you set per line on the Thresholds page.
+- Two engines. **Cloudflare** (the default) moves at most about 720 MB down and 300 MB up a run, no
+  more than one test on Cloudflare's own page, so a fast line isn't refused by Cloudflare's hourly
+  limit. **Ookla Speedtest** (the engine Speedtest Tracker uses) picks a nearby server or the one you
+  give, fills a fast line and adds **Packet loss**. It is Ookla's own program under Ookla's terms
+  (personal, non-commercial use): choosing it asks you to accept them, the Changes page records who
+  did, and Argus doesn't ship it: the probe downloads it from Ookla on its first run and checks it
+  against its pinned checksum.
 - **Common SaaS**: whether Microsoft 365, Teams, Google, AWS, Cloudflare, Zoom, Dropbox, iCloud (or
   others you tick or add) answer from the site and how fast, every 2 minutes, each its own sensor with
   why when it doesn't.
-- They need the probe release that ships the speed test and named URLs (probe/v7.0.31-r23); on an older
-  probe the sensors say so.
+- They need a recent probe: `probe/v7.0.31-r23` for the add-ons, r25 for the speed test's limit, r26
+  for Ookla. A probe without them says so in the sensor's reason.
 
 **API tokens:** Account has a new **API tokens** card, for scripts and other tools.
 - A token acts as you, with your role and your sites, narrowed to read only, acknowledge and add
@@ -141,8 +147,11 @@ hourly. Nothing to install: they arrive with this update.
 
 **Settings:** the change log's **Keep changes for** now shows in its own section.
 
-**Sidebar:** reordered. Watch: Overview, Triggers, Monitoring, History. Configure: Probes, Discovery,
+**Sidebar:** reordered. Watch: Overview, Triggers, Monitoring, Inventory, History. Configure: Probes, Discovery,
 Maintenance, Notifications. Admin: Status pages, Thresholds, Changes, Users, Updates, Settings.
+
+**Fixed:** a question asked from host settings (removing an interface, accepting terms) opened
+behind the settings dialog, so it couldn't be seen or answered.
 
 ## [0.7.2] - 2026-10-03
 
