@@ -348,7 +348,15 @@ func (s *Server) hostUpstreamView(ctx context.Context, hostID string) upstreamVi
 			for id, h := range idx {
 				names[id] = h.Name
 			}
-			v.Why = upstreamWhy(items, names, ips[hostID])
+			var unifiHosts []string
+			if classes, err := s.st.DeviceClasses(ctx); err == nil {
+				for id, c := range classes {
+					if _, ok := idx[id]; ok && (c == "unifi-switch" || c == "unifi-gateway") {
+						unifiHosts = append(unifiHosts, id)
+					}
+				}
+			}
+			v.Why = upstreamWhy(items, names, ips[hostID], unifiHosts)
 		}
 	}
 	chain := upstreamChain(eff, hostID)
@@ -376,15 +384,18 @@ func (s *Server) hostUpstreamView(ctx context.Context, hostID string) upstreamVi
 }
 
 // upstreamWhy says why the controller gives a host no upstream device, from the UniFi switches' and
-// gateways' client lists: none yet (their templates not updated), a read that failed (with the
-// controller's reason), ones not read yet, or all read and this address not among them.
-func upstreamWhy(lists []zabbix.Item, names map[string]string, ip string) string {
-	var failed, pending []string
+// gateways' client lists, naming them: a UniFi switch or gateway with no list (its template not
+// updated), a read that failed (with the controller's reason), lists not read yet, or all read and this
+// address not in any. unifiHosts is every UniFi switch and gateway.
+func upstreamWhy(lists []zabbix.Item, names map[string]string, ip string, unifiHosts []string) string {
+	var failed, pending, read []string
 	why := ""
+	have := map[string]bool{}
 	for _, it := range lists {
 		if it.Key != "unifi.clients" {
 			continue
 		}
+		have[it.HostID] = true
 		switch {
 		case it.State == "1":
 			failed = append(failed, names[it.HostID])
@@ -393,30 +404,48 @@ func upstreamWhy(lists []zabbix.Item, names map[string]string, ip string) string
 			}
 		case atoi64(it.LastClock) == 0:
 			pending = append(pending, names[it.HostID])
+		default:
+			read = append(read, names[it.HostID])
 		}
 	}
-	n := 0
-	for _, it := range lists {
-		if it.Key == "unifi.clients" {
-			n++
+	var missing []string
+	for _, h := range unifiHosts {
+		if !have[h] {
+			missing = append(missing, names[h])
 		}
 	}
-	sort.Strings(failed)
-	switch {
-	case n == 0:
-		return "No UniFi switch or gateway lists its wired clients yet: they start once their templates are updated (Updates says if the last template update failed). Or pick one in its settings."
-	case len(failed) > 0:
+	var parts []string
+	if len(missing) > 0 {
+		parts = append(parts, fmt.Sprintf("%s %s no wired-client list: %s template hasn't been updated (Updates says why, if Zabbix refused it).",
+			behindText(missing), plural2(len(missing), "has", "have"), plural2(len(missing), "its", "their")))
+	}
+	if len(failed) > 0 {
 		msg := "Reading the wired clients failed on " + behindText(failed)
 		if why != "" {
 			msg += ": " + why
 		}
-		return msg + ". Or pick one in its settings."
-	case len(pending) > 0:
-		return fmt.Sprintf("%d of %d UniFi switches and gateways haven't read their wired clients yet (they do every 10 minutes). Or pick one in its settings.", len(pending), n)
-	case ip == "":
-		return "This host has no IP address to find among the wired clients. Pick its upstream device in its settings."
+		parts = append(parts, msg+".")
 	}
-	return fmt.Sprintf("None of the %d UniFi switches and gateways lists %s among its wired clients: a device on another brand of switch, or on Wi-Fi, isn't listed. Pick one in its settings.", n, ip)
+	if len(pending) > 0 {
+		parts = append(parts, behindText(pending)+" "+plural2(len(pending), "hasn't", "haven't")+" read "+plural2(len(pending), "its", "their")+" wired clients yet (every 10 minutes).")
+	}
+	switch {
+	case len(have) == 0 && len(missing) == 0:
+		parts = append(parts, "No UniFi switch or gateway lists its wired clients.")
+	case ip == "":
+		parts = append(parts, "This host has no IP address to look for among the wired clients.")
+	case len(read) > 0:
+		parts = append(parts, fmt.Sprintf("The wired clients of %s don't include %s: a device on another brand of switch, or on Wi-Fi, isn't listed.", behindText(read), ip))
+	}
+	return strings.Join(parts, " ") + " Or pick one in its settings."
+}
+
+// plural2 picks a word by count: "has" for one, "have" for more.
+func plural2(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // downHosts is the hosts whose ping (their main way of being reached) is in error now.

@@ -120,22 +120,30 @@ func TestUpstreamHold(t *testing.T) {
 	}
 }
 
-// No upstream says why: no client lists yet, a read that failed (with its reason), lists not read yet,
-// or the address isn't among them.
+// No upstream says why, naming names: a UniFi switch without a list (its template not updated), a read
+// that failed (with its reason), lists not read yet, or the address in none of them.
 func TestUpstreamWhy(t *testing.T) {
-	names := map[string]string{"2": "sw-core", "3": "sw-floor2"}
+	names := map[string]string{"2": "sw-core", "3": "sw-floor2", "4": "gw-site1"}
+	all := []string{"2", "3", "4"}
 	cases := []struct {
 		items []zabbix.Item
-		want  string
+		hosts []string
+		want  []string
 	}{
-		{nil, "No UniFi switch or gateway lists its wired clients yet"},
-		{[]zabbix.Item{{HostID: "2", Key: "unifi.clients", State: "1", Error: "UniFi API HTTP 401 reading the client list"}, {HostID: "3", Key: "unifi.clients", LastClock: "100"}}, "Reading the wired clients failed on sw-core: UniFi API HTTP 401"},
-		{[]zabbix.Item{{HostID: "2", Key: "unifi.clients", LastClock: "0"}, {HostID: "3", Key: "unifi.clients", LastClock: "100"}}, "1 of 2 UniFi switches and gateways haven't read"},
-		{[]zabbix.Item{{HostID: "2", Key: "unifi.clients", LastClock: "100"}}, "None of the 1 UniFi switches and gateways lists 10.0.0.30"},
+		{nil, nil, []string{"No UniFi switch or gateway lists its wired clients"}},
+		{[]zabbix.Item{{HostID: "4", Key: "unifi.clients", LastClock: "100"}}, all,
+			[]string{"sw-core, sw-floor2 have no wired-client list: their template hasn't been updated", "The wired clients of gw-site1 don't include 10.0.0.30"}},
+		{[]zabbix.Item{{HostID: "2", Key: "unifi.clients", State: "1", Error: "UniFi API HTTP 401 reading the client list"}, {HostID: "3", Key: "unifi.clients", LastClock: "100"}}, []string{"2", "3"},
+			[]string{"Reading the wired clients failed on sw-core: UniFi API HTTP 401", "The wired clients of sw-floor2 don't include"}},
+		{[]zabbix.Item{{HostID: "2", Key: "unifi.clients", LastClock: "0"}, {HostID: "3", Key: "unifi.clients", LastClock: "100"}}, []string{"2", "3"},
+			[]string{"sw-core hasn't read its wired clients yet"}},
 	}
 	for i, c := range cases {
-		if got := upstreamWhy(c.items, names, "10.0.0.30"); !strings.Contains(got, c.want) {
-			t.Errorf("case %d: %q", i, got)
+		got := upstreamWhy(c.items, names, "10.0.0.30", c.hosts)
+		for _, w := range c.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("case %d: %q lacks %q", i, got, w)
+			}
 		}
 	}
 }
