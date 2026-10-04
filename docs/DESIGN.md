@@ -223,11 +223,16 @@ the collector's command line). Add-ons can name the classes they belong to: the 
 **Common SaaS** add-ons are offered only on a site's Probe host (the internal probe class, which gets
 no others). **Speedtest** (`Argus Speedtest`: `argus_speedtest.py` on the probe, every
 `{$SPEEDTEST.INTERVAL}`, against Cloudflare's speed test, stdlib only: download and upload over
-several streams after a 1 s warm-up, the idle round trip less Cloudflare's own time from its
-Server-Timing header, jitter, the round trip while each direction is busy, and the public address,
-AS organization and Cloudflare site from its `/meta`; speeds in Mbps so their thresholds read as
-such, round trips in seconds; a run it couldn't measure is a reading with its reason, `speedtest.ok`
-0 and `speedtest.error`). Ookla's CLI was ruled out: its licence is personal, non-commercial use only.
+8 streams after a 1 s warm-up, the idle round trip less Cloudflare's own time from its
+Server-Timing header, jitter, the round trip while each direction is busy, the public address and
+Cloudflare site from its `/cdn-cgi/trace` and the network announcing the address from RIPEstat;
+speeds in Mbps so their thresholds read as such, round trips in seconds; a run it couldn't measure is
+a reading with its reason, `speedtest.ok` 0 and `speedtest.error`). It asks only for what Cloudflare
+serves any client, with no headers posing as its page: downloads of 50 MB a request (it refuses 100
+MB), one 500 MB upload a stream (it refuses 1 GB), cut at the deadline; a direction any of whose
+streams was refused reports no speed, since the others would read low. Cloudflare limits how much one
+address tests in an hour (HTTP 429 with a Retry-After of about an hour), said in the reason; "run
+now" fires once. Ookla's CLI was ruled out: its licence is personal, non-commercial use only.
 **Common SaaS** (`Argus Common SaaS`: the HTTP collector `argus_http.py` with the probe's
 `{$SAAS.URLS}`, each entry named with `#name=`, any answer short of a server error counting
 (`{$SAAS.EXPECT}` 200-499), one group per service under **Cloud services** like the Web checks; the

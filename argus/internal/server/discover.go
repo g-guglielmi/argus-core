@@ -51,9 +51,10 @@ func (s *Server) scheduleDiscovery(hostID string) {
 	}()
 }
 
-// scheduleCheckNow runs a just-linked template's own items on a host once its config reached the
-// probe (after 30 s, again after 90 s for a slow sync), so an add-on that runs every few hours shows a
-// first reading in a minute or two. Its discovery rules are dependent: they follow the items.
+// scheduleCheckNow runs a just-linked template's own items on a host once, when its config reached the
+// probe (after 30 s, or after 90 s when the items weren't there yet), so an add-on that runs every few
+// hours shows a first reading in a minute or two. Its discovery rules are dependent: they follow the
+// items.
 func (s *Server) scheduleCheckNow(hostID, template string) {
 	go func() {
 		for attempt, wait := range []time.Duration{30 * time.Second, 60 * time.Second} {
@@ -64,6 +65,9 @@ func (s *Server) scheduleCheckNow(hostID, template string) {
 				err = s.zbx.ExecuteNow(ctx, ids)
 			}
 			cancel()
+			if err == nil && len(ids) > 0 {
+				return // once: a second run right after would be a second speed test
+			}
 			if err != nil {
 				s.logger.Warn("add-on: check-now failed", "host", hostID, "template", template, "attempt", attempt+1, "err", err)
 			}

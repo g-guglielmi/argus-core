@@ -33,8 +33,15 @@ const (
 	uptimeKeepDays   = 120             // stored days kept
 )
 
+// noUptimeKeys read 1/0 with a reason but aren't something that is up or down over time: whether the
+// speed test, run every few hours, managed to measure.
+var noUptimeKeys = map[string]bool{"speedtest.ok": true}
+
 // isUpDownKey reports whether a sensor reads 1 up / 0 down, so its average over time is its uptime.
 func isUpDownKey(key string) bool {
+	if noUptimeKeys[keyBase(key)] {
+		return false
+	}
 	return isReachabilityKey(key) || (reasonKeyFor(key) != "" && !isCountKey(key))
 }
 

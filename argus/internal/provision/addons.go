@@ -76,10 +76,12 @@ var addOns = []AddOn{
 		Label:    "Speedtest",
 		Template: TemplateSpeedtest,
 		Description: "The site's internet as its probe sees it: download and upload speed over several connections, latency, jitter, latency while busy (bufferbloat), the public address and the provider, measured against Cloudflare's speed test. " +
-			"A run takes about 20 seconds and moves, on a gigabit line, about a gigabyte each way, so it runs every few hours, not every minute.",
+			"A run takes about 20 seconds and moves, on a gigabit line, about a gigabyte each way, so it runs every few hours: Cloudflare limits how much one address tests in an hour. " +
+			"A line over a gigabit may want more connections.",
 		Macros: []MacroSpec{
 			{Macro: "{$SPEEDTEST.INTERVAL}", Label: "How often", Hint: "6h", Options: []string{"1h", "3h", "6h", "12h", "24h"}},
 			{Macro: "{$SPEEDTEST.SECONDS}", Label: "Seconds per direction", Hint: "8", Options: []string{"5", "8", "12"}},
+			{Macro: "{$SPEEDTEST.STREAMS}", Label: "Connections", Hint: "8", Options: []string{"4", "8", "12", "16"}},
 		},
 		Classes:  []string{ClassProbe},
 		CheckNow: true,

@@ -35,13 +35,24 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(st.server_ms(FakeResp(None)), 0.0)
         self.assertEqual(st.server_ms(FakeResp("cfSpeedEdge;dur=x")), 0.0)
 
+    def test_refusals_say_why(self):
+        self.assertIn("for about 60 minutes (HTTP 429)", str(st.Refused(429, "Too Many Requests", "3580")))
+        self.assertIn("(HTTP 429)", str(st.Refused(429, "Too Many Requests", "")))
+        self.assertEqual(str(st.Refused(403, "Forbidden")), "speed.cloudflare.com answered HTTP 403 Forbidden")
+
+    def test_provider_names(self):
+        self.assertEqual(st.holder_name("ASN-EXAMPLENET Example Telecom S.p.A."), "Example Telecom S.p.A.")
+        self.assertEqual(st.holder_name("CLOUDFLARENET - Cloudflare, Inc."), "Cloudflare, Inc.")
+        self.assertEqual(st.holder_name("Example Telecom"), "Example Telecom")
+        self.assertEqual(st.holder_name(None), "")
+
     def test_args(self):
         old = st.sys.argv
         try:
             st.sys.argv = ["argus_speedtest.py", "99", "abc"]
-            self.assertEqual((st.arg_int(1, 8, 3, 15), st.arg_int(2, 4, 1, 8)), (15, 4))
+            self.assertEqual((st.arg_int(1, 8, 3, 15), st.arg_int(2, 8, 1, 16)), (15, 8))
             st.sys.argv = ["argus_speedtest.py", "", "0"]
-            self.assertEqual((st.arg_int(1, 8, 3, 15), st.arg_int(2, 4, 1, 8)), (8, 1))
+            self.assertEqual((st.arg_int(1, 8, 3, 15), st.arg_int(2, 8, 1, 16)), (8, 1))
         finally:
             st.sys.argv = old
 

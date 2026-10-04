@@ -137,12 +137,14 @@ answering** (High, after 3 checks), and slow to connect (`{$TCP.TIME.WARN}` 0.5 
 its sensor, and any open problem of it, at the next check.
 
 **Speedtest add-on (Probe host).** The site's internet as its probe sees it, against Cloudflare's
-speed test (speed.cloudflare.com): download and upload over 4 connections, the idle round trip and its
-jitter, the round trip while downloading and while uploading (bufferbloat: a line that's fine idle but
-lags when someone uploads), and the public address, the network that owns it and the Cloudflare site
-it reached. **How often** is 1, 3, 6 (default), 12 or 24 hours: a run takes about 20 seconds and
-moves, on a gigabit line, about a gigabyte each way. The first run comes a minute after you turn it
-on. Sensors under **Internet**: **Speed** (download and upload, a band when a run failed), **Latency**
+speed test (speed.cloudflare.com): download and upload over 8 connections (**Connections**: 4 to 16,
+more for a line over a gigabit), the idle round trip and its jitter, the round trip while downloading
+and while uploading (bufferbloat: a line that's fine idle but lags when someone uploads), and the
+public address, the network that announces it and the Cloudflare site it reached. **How often** is 1,
+3, 6 (default), 12 or 24 hours: a run takes about 20 seconds and moves, on a gigabit line, about a
+gigabyte each way, and Cloudflare limits how much one address tests in an hour (more is refused with
+HTTP 429 for about an hour, and the sensor says so; speed tests from a browser at the site count too).
+The first run comes a minute after you turn it on. Sensors under **Internet**: **Speed** (download and upload, a band when a run failed), **Latency**
 (idle, jitter, while downloading, while uploading), **Public IP address**, **Internet provider** and
 **Test site**. Alerts, each on the last two runs: download below `{$SPEEDTEST.DOWN.WARN}` 50 /
 `{$SPEEDTEST.DOWN.HIGH}` 10 Mbps, upload below 10 / 2 Mbps, latency over 60 / 150 ms, jitter over 15 /

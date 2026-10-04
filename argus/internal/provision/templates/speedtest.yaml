@@ -10,12 +10,13 @@ zabbix_export:
       description: |
         The site's internet as its probe sees it (the Speedtest add-on, on a site's Probe host): the
         proxy runs argus_speedtest.py, an external check baked into the image, every
-        {$SPEEDTEST.INTERVAL}, against Cloudflare's speed test (speed.cloudflare.com). It measures
-        download and upload over {$SPEEDTEST.STREAMS} connections for {$SPEEDTEST.SECONDS} seconds
-        each, the idle round trip and its jitter, the round trip while downloading and uploading
-        (bufferbloat), and reports the public address, the network that owns it and the Cloudflare
-        site it reached. A run moves, on a gigabit line, about {$SPEEDTEST.SECONDS} x 125 MB each
-        way. DESIGN section 5.
+        {$SPEEDTEST.INTERVAL}, against Cloudflare's speed test (speed.cloudflare.com, asking only for
+        what it serves any client). It measures download and upload over {$SPEEDTEST.STREAMS}
+        connections for {$SPEEDTEST.SECONDS} seconds each, the idle round trip and its jitter, the
+        round trip while downloading and uploading (bufferbloat), and reports the public address, the
+        Cloudflare site it reached and the network that announces the address (RIPEstat). A run
+        moves, on a gigabit line, about {$SPEEDTEST.SECONDS} x 125 MB each way; Cloudflare limits how
+        much one address tests in an hour (HTTP 429, said in the reason). DESIGN section 5.
       groups:
         - name: Templates/Argus
       items:
@@ -286,7 +287,7 @@ zabbix_export:
           history: 90d
           trends: '0'
           value_type: CHAR
-          description: 'The network that owns the public address (its AS organization).'
+          description: 'The network that announces the public address (its AS holder, from RIPEstat).'
           master_item:
             key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
           preprocessing:
@@ -308,7 +309,7 @@ zabbix_export:
           history: 90d
           trends: '0'
           value_type: CHAR
-          description: 'The Cloudflare site the test reached (its airport code and city).'
+          description: 'The Cloudflare site the test reached (its airport code).'
           master_item:
             key: 'argus_speedtest.py["{$SPEEDTEST.SECONDS}","{$SPEEDTEST.STREAMS}"]'
           preprocessing:
@@ -330,8 +331,8 @@ zabbix_export:
           value: '8'
           description: 'Seconds each direction is measured (3 to 15).'
         - macro: '{$SPEEDTEST.STREAMS}'
-          value: '4'
-          description: 'Parallel connections per direction (1 to 8).'
+          value: '8'
+          description: 'Parallel connections per direction (1 to 16): more for a line over a gigabit.'
         - macro: '{$SPEEDTEST.DOWN.WARN}'
           value: '50'
           description: 'Download speed (Mbps) below which a warning is raised.'
