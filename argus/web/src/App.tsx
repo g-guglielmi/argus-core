@@ -387,6 +387,68 @@ function Spark({ values, color, width = 84, fill = false, units }: { values?: nu
   )
 }
 
+// PairSpark draws two readings of one thing on one scale, the speed test's download and upload, one
+// step per run: a run that didn't measure one of them leaves a gap in its line. Two lines, so no fill.
+function PairSpark({ a, b, colorA, colorB, width = 168 }: { a: (number | null)[]; b: (number | null)[]; colorA: string; colorB: string; width?: number }) {
+  const n = Math.max(a.length, b.length)
+  const all = [...a, ...b].filter((v): v is number => v != null)
+  if (n < 2 || all.length < 2) return <span style={{ color: 'var(--faint)', fontSize: 12 }}>-</span>
+  const w = width, h = 20
+  const min = Math.min(...all), max = Math.max(...all)
+  // The same floor and half-pixel geometry as Spark, so a steady line reads flat and crisp.
+  const mid = (min + max) / 2
+  const rng = Math.max(max - min, Math.max(Math.abs(min), Math.abs(max), 1e-9) * 0.1)
+  const px = (i: number) => (i / (n - 1)) * (w - 2) + 1
+  const py = (v: number) => h - 2.5 - (((v - mid) / rng) + 0.5) * (h - 4)
+  const line = (vals: (number | null)[], color: string, sw: number) => {
+    let d = ''
+    let on = false
+    let last: [number, number] | null = null
+    for (let i = 0; i < vals.length; i++) {
+      const v = vals[i]
+      if (v == null) { on = false; continue }
+      d += (on ? 'L' : 'M') + px(i).toFixed(1) + ' ' + py(v).toFixed(1) + ' '
+      on = true
+      last = [px(i), py(v)]
+    }
+    return (
+      <>
+        {d && <path d={d.trim()} fill="none" stroke={color} strokeWidth={sw} />}
+        {last && <circle cx={last[0]} cy={last[1]} r={1.8} fill={color} />}
+      </>
+    )
+  }
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+      {line(b, colorB, 1.2)}
+      {line(a, colorA, 1.5)}
+    </svg>
+  )
+}
+
+// useSpeedPair is the speed test's download and upload over the last week, one entry per run (null
+// where a run didn't measure it), at most 24 runs: the Speed row's two-line sparkline. lastRun (the
+// newest reading's time) refetches it when a run lands.
+function useSpeedPair(hostId: string, on: boolean, lastRun: number): { down: (number | null)[]; up: (number | null)[] } | null {
+  const [pair, setPair] = useState<{ down: (number | null)[]; up: (number | null)[] } | null>(null)
+  useEffect(() => {
+    if (!on) { setPair(null); return }
+    let cancelled = false
+    fetch(`/api/hosts/${hostId}/speedtest/runs?range=7d`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: SpeedRuns | null) => {
+        if (cancelled || !d) return
+        const runs = [...d.runs].reverse() // oldest first
+        const n = runs.length
+        const pick = n > 24 ? Array.from({ length: 24 }, (_, i) => runs[Math.round((i * (n - 1)) / 23)]) : runs
+        setPair({ down: pick.map((r) => r.down ?? null), up: pick.map((r) => r.up ?? null) })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [hostId, on, lastRun])
+  return pair
+}
+
 // BarSpark draws the counter-total mini-graph: one tiny bar per day (from /api/daily), a miniature
 // of the big daily bar chart - full bar = the day's total, red share = blocked, last bar = today so
 // far. A rolling total's raw sparkline is a meaningless drifting line; this shows the daily rhythm.
@@ -9049,6 +9111,8 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
   }
 
   const sparks = useSparks((items || []).filter((i) => i.numeric && i.supported).map((i) => i.id))
+  const speedItems = (items || []).filter((i) => i.key.startsWith('speedtest.'))
+  const speedPair = useSpeedPair(hostId, speedItems.some((i) => i.key === 'speedtest.down'), Math.max(0, ...speedItems.map((i) => i.last_clock || 0)))
   // Daily-resetting items (AdGuard's today counters + block rate) additionally get per-day
   // buckets, for the daily mini bars in their rows.
   const dailies = useDailies((items || []).filter((i) => { const b = i.key.replace(/\[.*$/, ''); return i.numeric && (BAR_COUNTER_KEYS.has(b) || BAR_RATE_KEYS.has(b)) }).map((i) => i.id))
@@ -9335,6 +9399,8 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                             const tot = row.items.find((x) => x.channel === 'Total'), blk = row.items.find((x) => x.channel === 'Blocked')
                             return <BarSpark total={tot ? dailies[tot.id] : undefined} blocked={blk ? dailies[blk.id] : undefined} width={168} />
                           }
+                          // The speed test's Speed row: download and upload, one step per run, on one scale.
+                          if (row.cat === 'Internet' && row.instance === 'Speed' && speedPair) return <PairSpark a={speedPair.down} b={speedPair.up} colorA={trendColor} colorB={SERIES_COLORS[2]} width={168} />
                           // Traffic-style groups (anything with In + Out channels: NICs, uplinks,
                           // switch ports) spark the SUM of both directions - total throughput.
                           const gin = row.items.find((x) => x.channel === 'In'), gout = row.items.find((x) => x.channel === 'Out')

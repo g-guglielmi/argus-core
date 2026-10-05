@@ -273,7 +273,10 @@ reads raw history up to 90 days (`runsRawMax`, the template's history) instead o
 runs, newest first, with the reason of a failed one and the test site in effect (stored only when it
 changes), for the Runs list under the Speed chart and the reasons on hover; past 90 days it reads
 trends (hourly averages, no reason or site). A downtime or failed band never gets an axis of its own,
-and a push job's Failed band is stepped (failed until the next run).
+and a push job's Failed band is stepped (failed until the next run). Sparklines of a sensor measured
+by runs read a week (`measuredByRuns`, `runsSpark`) instead of two hours; the Speed row's is a
+two-line `PairSpark` (download and upload on one scale, one step per run from the runs endpoint, a gap
+where a run didn't measure one of them, no fill).
 **Push sensors** (`Argus Push`, docs/push-sensors.md) are a job's
 own reports: the job calls its push sensor's secret URL (`/api/push/{token}`, ok or fail and a
 message), Argus keeps the last run (`push_sensors`), and the template, which Argus links with a host's
