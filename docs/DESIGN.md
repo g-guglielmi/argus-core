@@ -237,7 +237,7 @@ streams, downloads of at most 90 MB a request (it refuses 100 MB), one upload a 
 warm-up (1 s, or a quarter of the data moved, whichever comes first) to the first stream done, while
 all of them fill the line; the round trips under load are timed every 0.25 s meanwhile. A direction
 any of whose streams was refused reports no speed, since the others would read low, and the 429 is
-said in the reason; "run now" fires once. `{$SPEEDTEST.ENGINE}` = `ookla` runs Ookla's Speedtest
+said in the reason. `{$SPEEDTEST.ENGINE}` = `ookla` runs Ookla's Speedtest
 CLI instead (Speedtest Tracker's engine): Ookla's own program under Ookla's terms (personal,
 non-commercial use), so Argus doesn't ship it. A field option can carry a third party's terms
 (`MacroSpec.Terms`): the form asks to accept them when the option is chosen, the save carries
@@ -257,9 +257,9 @@ Ookla. A probe whose collector predates the engine (it prints no `engine`) is ca
 `{$SAAS.URLS}`, each entry named with `#name=`, any answer short of a server error counting
 (`{$SAAS.EXPECT}` 200-499), one group per service under **Cloud services** like the Web checks; the
 catalog of services is `provision/saas.go`, the template's default list is generated from it and a test
-keeps them equal). Both run their items right after they are turned on (`ExecuteNow` on the
-template's own non-dependent items once, after 30 s or, when they weren't there yet, after 90 s), so
-a speed test every 6 hours shows its first reading in a minute. A sensor's or group's **Check now**
+keeps them equal). Zabbix runs a new item within 60 seconds of its creation (since 6.0.2), so a
+speed test every 6 hours shows its first reading a minute after it is turned on; Argus doesn't run it
+as well (it once did, and that made two tests in a row). A sensor's or group's **Check now**
 (`POST /api/items/check`, admin and helpdesk) runs the items that do the reading (a dependent item's
 master, up the chain, `ReadingItems`), each once. A collector that isn't running alerts for itself;
 its readings whose steps only discard stay quiet meanwhile (one alert, not one per reading). On the Probe host the unlisted categories read Probe, Internet, Cloud services.
@@ -1103,7 +1103,9 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   axis numbers (tick length + gap out from the plot, same alignment and font), so it lines up with
   them. Tick labels within a tag's height are dropped - a tagged axis gets denser ticks (min spacing
   18px instead of 30) so a readable scale survives - the gutter grows if a tag is wider than the
-  widest tick, and tags on one side stack instead of overlapping. A line whose scale has no axis (a third unit on a two-axis chart) falls back to a
+  widest tick, and a tag always sits exactly at its line's value: where two would overlap, only one is
+  drawn (the first channel's before the others', an error before a warning) and the other line stays,
+  untagged; a tag is never moved off its value (`thrTagged`). A line whose scale has no axis (a third unit on a two-axis chart) falls back to a
   small in-plot label with the channel name.
   Sensors without a numeric threshold (up/down, state checks) are unchanged. A reference line outside
   the data's range is not drawn - the y-scale is never stretched to fit it. The **alert-notification

@@ -752,9 +752,6 @@ func (s *Server) applyAddOns(ctx context.Context, hostID string, desired map[str
 			if err := s.zbx.LinkHostTemplate(ctx, hostID, tid); err != nil {
 				return err
 			}
-			if a.CheckNow {
-				s.scheduleCheckNow(hostID, a.Template)
-			}
 		}
 		for _, ms := range a.Macros {
 			val := strings.TrimSpace(d.Macros[ms.Macro])

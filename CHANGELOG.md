@@ -24,12 +24,19 @@ GitHub Release from the matching section below.
 - The chart's readings come at each run's own time for up to 90 days (they were hourly averages
   past 2 days).
 
+**Speed test alerts:** the defaults are now set for today's lines: download below 750 Mbps warns and
+below 500 Mbps is an error, upload below 250 / 200 Mbps. A slower line wants its own on the Thresholds
+page (or in the host's settings).
+
 **Fixed:**
+- Turning the speed test on ran it twice in a minute: Zabbix runs a new sensor within a minute by
+  itself, and Argus ran it once more. Now it runs once.
+- Threshold tags on a chart's axis sit exactly at their value. Where two would overlap, the error's tag
+  is drawn and the other line stays without one, instead of the tags stacking away from their lines.
 - A failed run no longer draws a red triangle across the hours around it. On the speed test it is a
   ✕ at the run; on a push job a band from the failed run until the next one.
 - A chart whose only other channel is a downtime or failed band no longer shows a meaningless 0 to 1
   axis on the right (the speed test, HTTP checks, Cloud services, push jobs).
-- Threshold tags near the bottom of a chart stack upward instead of covering the time axis.
 - A pair of readings (↓ download / ↑ upload, traffic in / out) stacks on a narrow screen instead of
   widening the sensor table.
 

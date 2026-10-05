@@ -9837,7 +9837,8 @@ function thrPaint(scaleKey: string, thr: Thr, c: ChartColors, alpha: number) {
 // is the value ("85 °C") shown on the line's axis tag; ink is the tag's text colour. owner names the
 // channel - used only by the in-plot fallback label, since a tag's axis side already says which
 // channel's scale it is on.
-type ThrLine = { scale: string; value: number; color: string; ink: string; series: number[]; text: string; owner?: string }
+// sev: 2 an error (high) threshold, 1 a warning - the error's tag wins where two would overlap.
+type ThrLine = { scale: string; value: number; color: string; ink: string; series: number[]; text: string; owner?: string; sev: number }
 
 const thrVisible = (u: uPlot, lines: ThrLine[]) => lines.filter((l) => l.series.some((i) => u.series[i]?.show))
 
@@ -9889,72 +9890,72 @@ function thrLinesHook(lines: ThrLine[]) {
   }
 }
 
+// thrTagged is the threshold tags drawn on one scale. Each sits exactly at its line's value; one that
+// would overlap a tag already placed isn't moved off its value but left out (its dashed line still
+// shows): the first channel's tags go before the others', an error before a warning.
+function thrTagged(u: uPlot, lines: ThrLine[], scale: string): { l: ThrLine; y: number }[] {
+  const dpr = window.devicePixelRatio || 1
+  const room = 18 * dpr // a tag's height and a little gap
+  const { top, height } = u.bbox
+  const cand = thrVisible(u, lines).filter((l) => l.scale === scale)
+    .map((l) => ({ l, y: u.valToPos(l.value, scale, true) }))
+    .filter((c) => Number.isFinite(c.y) && c.y >= top && c.y <= top + height)
+    .sort((a, b) => (Math.min(...a.l.series) - Math.min(...b.l.series)) || (b.l.sev - a.l.sev))
+  const placed: { l: ThrLine; y: number }[] = []
+  for (const c of cand) if (placed.every((p) => Math.abs(p.y - c.y) >= room)) placed.push(c)
+  return placed
+}
+
 // thrTagsHook labels each line with a filled tag in its colour ON ITS AXIS, at the line's height (the
 // trading-chart pattern): outside the plot, so it never covers the data, and on the side of the scale
-// it belongs to, so a two-axis chart reads unambiguously. Tags on one side that would collide stack
-// downward. A line whose scale has no axis falls back to a small label inside the plot's right edge.
+// it belongs to, so a two-axis chart reads unambiguously. A line whose scale has no axis falls back to a
+// small label inside the plot's right edge. Which tags are drawn: thrTagged.
 // Runs in the draw hook (after the axes and series) so the tag sits on top of the tick marks.
 function thrTagsHook(lines: ThrLine[]) {
   return (u: uPlot) => {
     const { ctx, bbox } = u
     const dpr = window.devicePixelRatio || 1
-    const cw = ctx.canvas.width
-    const h = 16 * dpr, padX = 5 * dpr, gap = 2 * dpr
+    const cw = ctx.canvas.width, ch = ctx.canvas.height
+    const h = 16 * dpr, padX = 5 * dpr
     ctx.save()
-    ctx.font = thrFont(u)
-    const bySide: Record<string, { l: ThrLine; y: number; ax: { side: number; anchor: number; font: string } }[]> = {}
-    const inline: { l: ThrLine; y: number }[] = []
-    for (const l of thrVisible(u, lines)) {
-      const y = u.valToPos(l.value, l.scale, true)
-      if (!Number.isFinite(y) || y < bbox.top || y > bbox.top + bbox.height) continue
-      const ax = thrAxisOf(u, l.scale)
-      if (ax) (bySide[ax.side] = bySide[ax.side] || []).push({ l, y, ax })
-      else inline.push({ l, y })
+    for (const sc of [...new Set(lines.map((l) => l.scale))]) {
+      const ax = thrAxisOf(u, sc)
+      const tags = thrTagged(u, lines, sc)
+      if (ax) {
+        ctx.textBaseline = 'middle'
+        for (const { l, y } of tags) {
+          const cy = Math.min(Math.max(y, h / 2), ch - h / 2) // only kept inside the canvas
+          // The tag's TEXT sits exactly where the axis numbers do (same anchor, alignment and font); the
+          // coloured box pads around it, reaching over the tick marks on the plot side.
+          ctx.font = ax.font
+          const tw = ctx.measureText(l.text).width
+          const right = ax.side === 1
+          let x = right ? ax.anchor - padX : ax.anchor - tw - padX
+          const w = tw + 2 * padX
+          x = Math.max(0, Math.min(x, cw - w))
+          ctx.fillStyle = l.color
+          ctx.beginPath()
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const c2 = ctx as any
+          if (typeof c2.roundRect === 'function') c2.roundRect(x, cy - h / 2, w, h, 3 * dpr)
+          else ctx.rect(x, cy - h / 2, w, h)
+          ctx.fill()
+          ctx.fillStyle = l.ink
+          ctx.textAlign = 'left'
+          ctx.fillText(l.text, x + padX, cy + 0.5 * dpr)
+        }
+      } else {
+        // No axis for this scale: a label just above the line inside the plot.
+        ctx.font = thrFont(u)
+        ctx.textAlign = 'right'
+        ctx.textBaseline = 'bottom'
+        const lh = 13 * dpr
+        for (const { l, y } of tags) {
+          ctx.fillStyle = withAlpha(l.color, 0.95)
+          ctx.fillText(l.owner ? `${l.owner} ${l.text}` : l.text, bbox.left + bbox.width - 6 * dpr, Math.max(y - 3 * dpr, bbox.top + lh))
+        }
+      }
     }
-    ctx.textBaseline = 'middle'
-    Object.values(bySide).forEach((tags) => {
-      tags.sort((a, b) => a.y - b.y)
-      const cys: number[] = []
-      let prevCy = -Infinity
-      tags.forEach(({ y }) => { prevCy = Math.max(y, h / 2, prevCy + h + gap); cys.push(prevCy) })
-      // A stack that ran past the plot's bottom (thresholds near 0 on an axis from 0) moves up
-      // instead, so no tag covers the time axis.
-      let next = bbox.top + bbox.height - h / 2 + h + gap
-      for (let k = cys.length - 1; k >= 0; k--) { cys[k] = Math.min(cys[k], next - h - gap); next = cys[k] }
-      tags.forEach(({ l, ax }, k) => {
-        const cy = cys[k]
-        // The tag's TEXT sits exactly where the axis numbers do (same anchor, alignment and font); the
-        // coloured box pads around it, reaching over the tick marks on the plot side.
-        ctx.font = ax.font
-        const tw = ctx.measureText(l.text).width
-        const right = ax.side === 1
-        let x = right ? ax.anchor - padX : ax.anchor - tw - padX
-        const w = tw + 2 * padX
-        x = Math.max(0, Math.min(x, cw - w))
-        ctx.fillStyle = l.color
-        ctx.beginPath()
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const c2 = ctx as any
-        if (typeof c2.roundRect === 'function') c2.roundRect(x, cy - h / 2, w, h, 3 * dpr)
-        else ctx.rect(x, cy - h / 2, w, h)
-        ctx.fill()
-        ctx.fillStyle = l.ink
-        ctx.textAlign = 'left'
-        ctx.fillText(l.text, x + padX, cy + 0.5 * dpr)
-      })
-    })
-    ctx.font = thrFont(u)
-    // Fallback: no axis for this scale - label just above the line inside the plot, stacked.
-    ctx.textAlign = 'right'
-    ctx.textBaseline = 'bottom'
-    const lh = 13 * dpr
-    let prev = -Infinity
-    inline.sort((a, b) => a.y - b.y).forEach(({ l, y }) => {
-      const ty = Math.max(y - 3 * dpr, bbox.top + lh, prev + lh)
-      prev = ty
-      ctx.fillStyle = withAlpha(l.color, 0.95)
-      ctx.fillText(l.owner ? `${l.owner} ${l.text}` : l.text, bbox.left + bbox.width - 6 * dpr, ty)
-    })
     ctx.restore()
   }
 }
@@ -9987,10 +9988,11 @@ function addThrLines(opts: uPlot.Options, lines: ThrLine[]) {
       a.values = (u: uPlot, splits: number[], ai: number, space: number, incr: number): any => {
         const out = ov(u, splits, ai, space, incr)
         const sc = u.axes[ai].scale as string
-        const tagYs = thrVisible(u, lines).filter((l) => l.scale === sc).map((l) => u.valToPos(l.value, sc))
+        const dpr = window.devicePixelRatio || 1
+        const tagYs = thrTagged(u, lines, sc).map((t) => t.y / dpr)
         if (!tagYs.length || !Array.isArray(out)) return out
-        // A tick within a tag's height (16px) of it would peek out from under the tag - drop its label.
-        return out.map((v: unknown, k: number) => (tagYs.some((ty) => Math.abs(u.valToPos(splits[k], sc) - ty) < 16) ? '' : v))
+        // A tick within a tag's height (16px) of a drawn tag would peek out from under it - drop its label.
+        return out.map((v: unknown, k: number) => (tagYs.some((ty) => Math.abs(u.valToPos(splits[k], sc) + u.bbox.top / dpr - ty) < 16) ? '' : v))
       }
     }
     // A tagged axis gets denser ticks (uPlot's default min spacing is 30px): the numbers a tag covers
@@ -10019,8 +10021,8 @@ function addThrLines(opts: uPlot.Options, lines: ThrLine[]) {
 function thrLines(thr: Thr, scale: string, series: number[], c: ChartColors, units: string, owner?: string): ThrLine[] {
   const out: ThrLine[] = []
   // Tag ink: dark on the amber warning tag, white on the red error tag (legible in both themes).
-  if (thr.warn != null) out.push({ scale, value: thr.warn, color: c.warn, ink: '#1b1405', series, text: fmtNum(thr.warn, units), owner })
-  if (thr.high != null) out.push({ scale, value: thr.high, color: c.err, ink: '#ffffff', series, text: fmtNum(thr.high, units), owner })
+  if (thr.warn != null) out.push({ scale, value: thr.warn, color: c.warn, ink: '#1b1405', series, text: fmtNum(thr.warn, units), owner, sev: 1 })
+  if (thr.high != null) out.push({ scale, value: thr.high, color: c.err, ink: '#ffffff', series, text: fmtNum(thr.high, units), owner, sev: 2 })
   return out
 }
 

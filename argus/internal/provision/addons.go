@@ -17,9 +17,8 @@ type AddOn struct {
 	// Classes limits the add-on to hosts of these classes (the probe add-ons: a speed test or the
 	// cloud services, from the site's point of view). Empty = any host but Argus's own.
 	Classes []string `json:"-"`
-	// CheckNow runs the add-on's sensors right after it is turned on, rather than at their first
-	// interval (a speed test every 6 hours would otherwise show nothing for hours).
-	CheckNow bool `json:"-"`
+	// Zabbix runs a new item within 60 seconds of its creation, so an add-on that runs every few hours
+	// (the speed test) still shows its first reading in a minute: Argus doesn't run it again.
 }
 
 // ooklaTerms are what choosing Ookla's speed test means: Ookla's own program under Ookla's terms,
@@ -101,8 +100,7 @@ var addOns = []AddOn{
 			{Macro: "{$SPEEDTEST.STREAMS}", Label: "Connections", Hint: "8", Options: []string{"4", "8", "12", "16"}, ShowIf: &ShowIf{Macro: "{$SPEEDTEST.ENGINE}", Value: "cloudflare"}},
 			{Macro: "{$SPEEDTEST.SERVER}", Label: "Ookla server ID (blank = nearest)", Hint: "nearest", Pattern: patternServerID, ShowIf: &ShowIf{Macro: "{$SPEEDTEST.ENGINE}", Value: "ookla"}},
 		},
-		Classes:  []string{ClassProbe},
-		CheckNow: true,
+		Classes: []string{ClassProbe},
 	},
 	{
 		ID:       "saas",
@@ -113,8 +111,7 @@ var addOns = []AddOn{
 		Macros: []MacroSpec{
 			{Macro: "{$SAAS.URLS}", Label: "Services", Required: true, Check: checkURLList},
 		},
-		Classes:  []string{ClassProbe},
-		CheckNow: true,
+		Classes: []string{ClassProbe},
 	},
 	{
 		ID:          "tcp",

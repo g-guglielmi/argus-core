@@ -161,7 +161,7 @@ default), and the Speed chart lists the runs underneath (newest first, **Show al
 Sensors under **Internet**: **Speed** (download and upload, and whether each run measured), **Latency**
 (idle, jitter, while downloading, while uploading), **Packet loss** (Ookla, once it has a reading),
 **Public IP address**, **Internet provider** and **Test site**. Alerts, each on the last two runs:
-download below `{$SPEEDTEST.DOWN.WARN}` 50 / `{$SPEEDTEST.DOWN.HIGH}` 10 Mbps, upload below 10 / 2 Mbps,
+download below `{$SPEEDTEST.DOWN.WARN}` 750 / `{$SPEEDTEST.DOWN.HIGH}` 500 Mbps, upload below 250 / 200 Mbps,
 latency over 60 / 150 ms, jitter over 15 / 40 ms, latency while busy over 150 / 400 ms, packet loss at
 1 / 5 % (set them to your lines on the Thresholds page), and **Speedtest could not run** (Warning) with
 why.
