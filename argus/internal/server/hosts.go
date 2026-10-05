@@ -881,8 +881,11 @@ func (s *Server) handleItemHistory(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().Unix()
 	from := now - int64(rng.dur.Seconds())
 	resp := seriesResp{Name: item.Name, Units: item.Units, Points: []seriesPoint{}}
+	// A sensor measured by runs (the speed test, every few hours) asks for each run at its own time:
+	// raw history as far back as it is kept, rather than hourly trends.
+	trend := rng.trend && !(r.URL.Query().Get("runs") == "1" && rng.dur <= runsRawMax)
 
-	if rng.trend {
+	if trend {
 		resp.Kind = "trend"
 		pts, err := s.zbx.Trends(ctx, itemID, from, now)
 		if err != nil {

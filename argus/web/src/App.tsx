@@ -72,6 +72,9 @@ const RANGES = ['2h', '2d', '1M', '3M', '6M', '1Y']
 // dedicated 7d as the default. An item whose key base is listed here opts its whole channel group
 // into bar mode; the convention is a ".today" key suffix (the /api/daily endpoint keys on it too).
 const RANGES_BARS = ['7d', '1M', '3M', '6M', '1Y']
+// A sensor measured by runs (the speed test, every 1 to 24 hours) opens on a week: two hours would
+// usually hold no run at all.
+const RUN_RANGES = ['2d', '7d', '1M', '3M', '6M', '1Y']
 const DAYS_BY_RANGE: Record<string, number> = { '7d': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365 }
 const BAR_COUNTER_KEYS = new Set(['adguard.queries.today', 'adguard.blocked.today'])
 // Daily-ratio sensors (block rate: resets at midnight, converges through the day) bar-chart too,
@@ -9103,13 +9106,13 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
   const reading = (it?: SensorItem): ReactNode => { if (!it || !it.supported) return null; const [dv, du] = readingParts(it.last_value, it.units); return <>{dv}{du ? <span className="unit"> {du}</span> : null}</> }
   // A group whose up/down channel reads down headlines that, with the channel's reason (why/whyId).
   function groupHeadline(cat: string, gi: SensorItem[]): { node: ReactNode; primary: SensorItem; why?: string; whyId?: string } {
-    if (cat === 'Network') { const inn = gi.find((x) => x.channel === 'In'), out = gi.find((x) => x.channel === 'Out'); return { node: <span>↓ {reading(inn) ?? '-'} &nbsp;&nbsp; ↑ {reading(out) ?? '-'}</span>, primary: inn || gi[0] } }
+    if (cat === 'Network') { const inn = gi.find((x) => x.channel === 'In'), out = gi.find((x) => x.channel === 'Out'); return { node: <span className="vpair"><span>↓ {reading(inn) ?? '-'}</span><span>↑ {reading(out) ?? '-'}</span></span>, primary: inn || gi[0] } }
     if (cat === 'Disk') { const pu = gi.find((x) => (x.channel || '').startsWith('Used %')) || gi[0]; return { node: reading(pu), primary: pu } }
     if (cat === 'Internet') {
       const dn = gi.find((x) => x.channel === 'Download'), upl = gi.find((x) => x.channel === 'Upload'), ran = gi.find((x) => x.channel === 'Ran')
       if (dn || upl) {
         if (ran && ran.last_value !== '' && Number(ran.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>could not run</span>, primary: dn || upl || gi[0], why: ran.why, whyId: ran.id }
-        return { node: <span>↓ {reading(dn) ?? '-'} &nbsp;&nbsp; ↑ {reading(upl) ?? '-'}</span>, primary: dn || upl || gi[0] }
+        return { node: <span className="vpair"><span>↓ {reading(dn) ?? '-'}</span><span>↑ {reading(upl) ?? '-'}</span></span>, primary: dn || upl || gi[0] }
       }
       const idle = gi.find((x) => x.channel === 'Idle') || gi[0]
       return { node: reading(idle), primary: idle }
@@ -9149,7 +9152,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
       const primary = inn || gi[0]
       const ln = gi.find((x) => x.channel === 'Link')
       if (ln && ln.last_value !== '' && Number(ln.last_value) === 0) return { node: <span style={{ color: 'var(--muted)' }}>down</span>, primary }
-      return { node: <span>↓ {reading(inn) ?? '-'} &nbsp;&nbsp; ↑ {reading(out) ?? '-'}</span>, primary }
+      return { node: <span className="vpair"><span>↓ {reading(inn) ?? '-'}</span><span>↑ {reading(out) ?? '-'}</span></span>, primary }
     }
     // A DNS name reads by what it resolves to (the IP), collapsing the pass/fail + timing channels;
     // response time drives the sparkline. A name that isn't resolving says so instead.
@@ -9234,8 +9237,8 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                   let channels: GroupChan[] = row.items.filter((i) => i.numeric && (i.supported || (row.cat === 'Temperature' && i.last_value !== ''))).map((i) => {
                     if (((row.cat === 'Ping' || row.cat === 'Web' || row.cat === 'TCP' || row.cat === 'Cloud services') && i.channel === 'Reachable') || (row.cat === 'DNS' && i.channel === 'Resolves'))
                       return { id: i.id, label: 'Downtime', units: '', invert: true } // show only when unreachable / not-resolving (PRTG-style)
-                    if (row.cat === 'Push' && i.channel === 'Last run') return { id: i.id, label: 'Failed', units: '', invert: true } // a band while the last run failed
-                    if (row.cat === 'Internet' && i.channel === 'Ran') return { id: i.id, label: 'Failed', units: '', invert: true } // a band while the speed test couldn't run
+                    if (row.cat === 'Push' && i.channel === 'Last run') return { id: i.id, label: 'Failed', units: '', invert: true, stepped: true } // a band from a failed run to the next one
+                    if (row.cat === 'Internet' && i.channel === 'Ran') return { id: i.id, label: 'Result', units: '', invert: true } // a ✕ at each run that couldn't measure
                     // A port's Speed and Link are constants - start their lines hidden (legend keeps
                     // the value; a click reveals the line). Hiding Speed also lets the bps axis
                     // range to the In/Out traffic instead of pinning at the negotiated gigabits.
@@ -9243,6 +9246,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                     // Temperature channels hold their last reading flat while the drive is parked - seed
                     // the hold from the current last value/time (see buildMultiPlot's LOCF pass).
                     if (row.cat === 'Temperature') { const sv = Number(i.last_value); c.hold = true; if (Number.isFinite(sv)) c.seedValue = sv; c.seedClock = i.last_clock }
+                    if (row.cat === 'Internet' && i.channel === 'Upload') c.color = SERIES_COLORS[2] // green, as before the order was fixed
                     return c
                   })
                   // Put the primary/headline channel first so it owns the left axis + the accent colour -
@@ -9256,6 +9260,8 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                   }
                   // Disk reads Used % -> Used -> Total (user pref: live values first, static Total last).
                   if (row.cat === 'Disk') { const rank: Record<string, number> = { 'Used %': 0, Used: 1, Total: 2 }; channels = [channels[0], ...channels.slice(1).sort((a, b) => (rank[a.label] ?? 9) - (rank[b.label] ?? 9))] }
+                  // The speed test reads Download, Upload, Result; its round trips Idle, Jitter, then while busy.
+                  if (row.cat === 'Internet') { const rank: Record<string, number> = { Download: 0, Upload: 1, Result: 2, Idle: 0, Jitter: 1, 'While downloading': 2, 'While uploading': 3 }; channels = [...channels].sort((a, b) => (rank[a.label] ?? 9) - (rank[b.label] ?? 9)) }
                   // Ports read In -> Out -> PoE, so In/Out carry the same colours as the network
                   // groups; the constant Speed/Link (hidden lines) trail behind.
                   if (row.cat === 'Ports') { const rank: Record<string, number> = { In: 0, Out: 1, PoE: 2, Speed: 3, Link: 4 }; channels = [channels[0], ...channels.slice(1).sort((a, b) => (rank[a.label] ?? 9) - (rank[b.label] ?? 9))] }
@@ -9369,7 +9375,8 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                             )
                           })()}
                           {(() => { const ud = row.items.find((i) => i.updown); return ud ? <AvailabilityPanel itemId={ud.id} /> : null })()}
-                          <SensorGroupChart channels={channels} bars={barGroup} />
+                          <SensorGroupChart channels={channels} bars={barGroup}
+                            runs={row.cat === 'Internet' ? { hostId, list: row.instance === 'Speed', lastRun: Math.max(0, ...row.items.map((i) => i.last_clock || 0)) } : undefined} />
                         </div></td></tr>
                       )}
                     </Fragment>
@@ -9444,7 +9451,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                     {it.why && whyOpen[it.id] && <tr className="whyrow"><td colSpan={5}><div className="why-line">{it.why}</div></td></tr>}
                     {it.note && <tr className="noterow"><td colSpan={5}><NoteLine note={it.note} /></td></tr>}
                     {open && clickable && (
-                      <tr className="chartrow"><td colSpan={5}><div className="chart-reveal">{it.updown ? <AvailabilityPanel itemId={it.id} /> : <SensorChart itemId={it.id} units={it.units} color={trendColor} bars={barRate} label={label} thr={it.thr} />}</div></td></tr>
+                      <tr className="chartrow"><td colSpan={5}><div className="chart-reveal">{it.updown ? <AvailabilityPanel itemId={it.id} /> : <SensorChart itemId={it.id} units={it.units} color={trendColor} bars={barRate} label={label} thr={it.thr} runs={it.key.startsWith('speedtest.')} />}</div></td></tr>
                     )}
                   </Fragment>
                 )
@@ -9906,10 +9913,16 @@ function thrTagsHook(lines: ThrLine[]) {
     }
     ctx.textBaseline = 'middle'
     Object.values(bySide).forEach((tags) => {
+      tags.sort((a, b) => a.y - b.y)
+      const cys: number[] = []
       let prevCy = -Infinity
-      tags.sort((a, b) => a.y - b.y).forEach(({ l, y, ax }) => {
-        const cy = Math.max(y, h / 2, prevCy + h + gap)
-        prevCy = cy
+      tags.forEach(({ y }) => { prevCy = Math.max(y, h / 2, prevCy + h + gap); cys.push(prevCy) })
+      // A stack that ran past the plot's bottom (thresholds near 0 on an axis from 0) moves up
+      // instead, so no tag covers the time axis.
+      let next = bbox.top + bbox.height - h / 2 + h + gap
+      for (let k = cys.length - 1; k >= 0; k--) { cys[k] = Math.min(cys[k], next - h - gap); next = cys[k] }
+      tags.forEach(({ l, ax }, k) => {
+        const cy = cys[k]
         // The tag's TEXT sits exactly where the axis numbers do (same anchor, alignment and font); the
         // coloured box pads around it, reaching over the tick marks on the plot side.
         ctx.font = ax.font
@@ -10097,7 +10110,9 @@ function daysRange(_u: any, dataMin: number | null, dataMax: number | null): [nu
 }
 
 // thr (optional) bands the line by value - see thrPaint - and adds dashed warning/high reference lines.
-function buildPlot(data: Series, units: string, width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void, thr?: Thr): [uPlot.Options, uPlot.AlignedData] {
+// runs: a sensor measured by runs (the speed test's packet loss): a dot at each run, lines only between
+// runs next to each other, the axis from 0.
+function buildPlot(data: Series, units: string, width: number, c: ChartColors, onZoom?: (zoomed: boolean) => void, thr?: Thr, runs?: boolean): [uPlot.Options, uPlot.AlignedData] {
   const banded = thrOn(thr)
   const lineStroke = banded ? thrPaint('y', thr, c, 1) : c.line
   const softStroke = banded ? thrPaint('y', thr, c, 0.4) : c.soft
@@ -10127,11 +10142,12 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
   const scales: uPlot.Scales = { x: { time: true } }
   if (units === '%') scales.y = { range: pctRange as unknown as uPlot.Scale['range'] }
   if (units === 'days') scales.y = { range: daysRange as unknown as uPlot.Scale['range'] }
+  if (runs) scales.y = { range: zeroRange }
   const base: Partial<uPlot.Options> = { width, height: 320, scales, axes: [xAxis, yAxis], legend: { show: true }, cursor: { points: { show: false } }, ...zoomHook(onZoom, xs.length ? [xs[0], xs[xs.length - 1]] : undefined) }
 
   // Uptime is a monotonic counter - min ≈ avg ≈ max, so its band is meaningless; fall through to a
   // single line (drawn from avg on trend ranges).
-  if (data.kind === 'trend' && units !== 'uptime') {
+  if (data.kind === 'trend' && units !== 'uptime' && !runs) {
     const avg = data.points.map((p) => (p.avg ?? null))
     const min = data.points.map((p) => (p.min ?? null))
     const max = data.points.map((p) => (p.max ?? null))
@@ -10154,9 +10170,10 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
   const vs = data.points.map((p) => (p.v ?? p.avg ?? null))
   const opts: uPlot.Options = {
     ...base,
-    series: [{ value: xVal }, { label: `value${unitLabel}`, stroke: lineStroke, width: 1.5, fill: areaFill, points: { show: false, size: 0 }, value: yVal(1) }],
+    series: [{ value: xVal }, { label: `value${unitLabel}`, stroke: lineStroke, width: 1.5, fill: areaFill, points: runs ? { show: true, size: 6, width: 1, fill: c.line, stroke: c.line } : { show: false, size: 0 }, value: yVal(1) }],
   } as uPlot.Options
   if (banded) addThrLines(opts, thrLines(thr, 'y', [1], c, units))
+  if (runs) return [opts, [xs, vs] as uPlot.AlignedData] // every run is a dot, a lone one too
   const [gx, gy] = insertGaps(xs, [vs])
   const [gv] = dropIsolated(gy)
   return [opts, [gx, gv] as uPlot.AlignedData]
@@ -10166,12 +10183,12 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
 // day from /api/daily, with the day-scale range tabs; label names the legend there.
 // thr bands the line by value (only the stretch past a threshold takes the warning/error colour), so a
 // banded chart keeps the accent base colour instead of painting the whole line in the sensor's state.
-function SensorChart({ itemId, units, color = 'var(--accent)', bars, label, thr }: { itemId: string; units: string; color?: string; bars?: boolean; label?: string; thr?: Thr }) {
+function SensorChart({ itemId, units, color = 'var(--accent)', bars, label, thr, runs }: { itemId: string; units: string; color?: string; bars?: boolean; label?: string; thr?: Thr; runs?: boolean }) {
   const banded = !bars && thrOn(thr)
   // The items list is re-fetched on every poll (a new thr object each time) - key the rebuild on the
   // values, not the object, so the chart doesn't redraw for nothing.
   const thrKey = banded ? `${thr.warn}|${thr.high}|${thr.below ? 1 : 0}` : ''
-  const [range, setRange] = useState(bars ? '7d' : '2h')
+  const [range, setRange] = useState(bars || runs ? '7d' : '2h')
   const [data, setData] = useState<Series | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -10204,7 +10221,7 @@ function SensorChart({ itemId, units, color = 'var(--accent)', bars, label, thr 
     let slowTimer: ReturnType<typeof setTimeout> | undefined
     if (fresh) slowTimer = setTimeout(() => { if (!cancelled) setShowLoading(true) }, 300)
     setError(null)
-    const get = (rk: string) => fetch(`/api/items/${itemId}/history?range=${rk}`)
+    const get = (rk: string) => fetch(`/api/items/${itemId}/history?range=${rk}${runs ? '&runs=1' : ''}`)
       .then(async (r) => { if (!r.ok) throw new Error(await errText(r, 'Failed to load history')); return r.json() as Promise<Series> })
     // Bar mode: the day-scale ranges are trend-backed and trends lag the still-open hour - merge a
     // Bar mode consumes /api/daily - the SAME buckets the row's value and mini bars read - shaped
@@ -10221,7 +10238,7 @@ function SensorChart({ itemId, units, color = 'var(--accent)', bars, label, thr 
       .catch((e) => { if (!cancelled) { setError(e.message || 'Failed to load history'); setData(null) } })
       .finally(() => { if (slowTimer) clearTimeout(slowTimer); if (!cancelled) { setLoading(false); setShowLoading(false) } })
     return () => { cancelled = true; if (slowTimer) clearTimeout(slowTimer) }
-  }, [itemId, range, tick, bars])
+  }, [itemId, range, tick, bars, runs])
 
   useEffect(() => {
     if (plot.current) { plot.current.destroy(); plot.current = null }
@@ -10229,12 +10246,12 @@ function SensorChart({ itemId, units, color = 'var(--accent)', bars, label, thr 
     const width = host.current.clientWidth || 600
     const [opts, aligned] = bars
       ? buildBarPlot([{ label: data.name || 'value', units, values: data.points.map((p) => p.v ?? 0) }], width, chartColors(color), (z) => { zoomedRef.current = z })
-      : buildPlot(data, units, width, chartColors(banded ? 'var(--accent)' : color), (z) => { zoomedRef.current = z }, banded ? thr : undefined)
+      : buildPlot(data, units, width, chartColors(banded ? 'var(--accent)' : color), (z) => { zoomedRef.current = z }, banded ? thr : undefined, runs)
     plot.current = new uPlot(opts, aligned, host.current)
     colorLegendChecks(plot.current)
     return () => { if (plot.current) { plot.current.destroy(); plot.current = null } }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, units, color, themeTick, bars, thrKey])
+  }, [data, units, color, themeTick, bars, thrKey, runs])
 
   useEffect(() => {
     function onResize() { if (plot.current && host.current) plot.current.setSize({ width: host.current.clientWidth, height: 320 }) }
@@ -10245,14 +10262,14 @@ function SensorChart({ itemId, units, color = 'var(--accent)', bars, label, thr 
   return (
     <div>
       <div className="rtabs">
-        {(bars ? RANGES_BARS : RANGES).map((rk) => (
+        {(bars ? RANGES_BARS : runs ? RUN_RANGES : RANGES).map((rk) => (
           <button key={rk} className={'rtab' + (range === rk ? ' on' : '')} onClick={() => setRange(rk)}>{rk}</button>
         ))}
         {!bars && !loading && (() => { const b = rateTotal(data, units); return b != null ? <RateTotals totals={[{ label: label || '', bytes: b }]} range={range} /> : null })()}
       </div>
       {showLoading && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>Loading…</p>}
       {error && <p style={{ color: 'var(--err)', margin: '0.3rem 0' }}>{error}</p>}
-      {!loading && !error && data && data.points.length === 0 && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>No data in this range.</p>}
+      {!loading && !error && data && data.points.length === 0 && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>{runs ? 'No run in this range.' : 'No data in this range.'}</p>}
       <div ref={host} style={{ width: '100%' }} />
     </div>
   )
@@ -10308,7 +10325,14 @@ const DOWNTIME_FILL = 'rgba(214, 69, 80, 0.30)'
 
 // invert turns a reachable (1=up) channel into downtime (spikes to 1 when down), drawn as a red band.
 // thr draws the channel's warning/high as dashed reference lines (group lines keep their own colours).
-type GroupChan = { id: string; label: string; units: string; invert?: boolean; defaultOff?: boolean; hold?: boolean; seedValue?: number; seedClock?: number; thr?: Thr }
+// stepped draws the band from a failed run to the next one (a push job stays failed until it next
+// succeeds); color pins a channel's colour regardless of its place in the legend.
+type GroupChan = { id: string; label: string; units: string; invert?: boolean; defaultOff?: boolean; hold?: boolean; seedValue?: number; seedClock?: number; thr?: Thr; stepped?: boolean; color?: string }
+
+// zeroRange starts an axis at 0 with a little headroom: a run's speed against nothing, so a drop reads
+// as one.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const zeroRange = ((_u: any, _min: number | null, max: number | null) => [0, max != null && max > 0 ? max * 1.1 : 1]) as unknown as uPlot.Scale['range']
 
 // colorLegendChecks tints each legend row's check (the ::after from theme.css) with that series'
 // colour, by copying the marker's border colour into a --mk custom property uPlot doesn't expose.
@@ -10321,13 +10345,17 @@ function colorLegendChecks(u: uPlot) {
 // buildMultiPlot overlays several channels on one uPlot: timestamps are unioned, each distinct unit
 // gets its own scale (axes drawn for the first two, left/right), and the legend lists every channel
 // with its live value and toggles it on click. xrange pins the x-axis to the requested window.
-function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean; off?: boolean; hold?: boolean; seedValue?: number; seedClock?: number; thr?: Thr }[], width: number, c: ChartColors, xrange?: [number, number], onZoom?: (zoomed: boolean) => void, onToggle?: (label: string, show: boolean) => void): [uPlot.Options, uPlot.AlignedData] {
+// mode.runs is a sensor measured by runs (the speed test): its channels share each run's timestamp, so
+// nothing is bucketed; every run is a dot, lines join only runs next to each other, a failed run is a
+// red ✕ at its time (mode.reasons says why on hover) and the axes start at 0.
+function buildMultiPlot(series: { label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; downtime?: boolean; off?: boolean; hold?: boolean; seedValue?: number; seedClock?: number; thr?: Thr; stepped?: boolean; color?: string }[], width: number, c: ChartColors, xrange?: [number, number], onZoom?: (zoomed: boolean) => void, onToggle?: (label: string, show: boolean) => void, mode?: { runs?: boolean; reasons?: Map<number, string> }): [uPlot.Options, uPlot.AlignedData] {
+  const runs = !!mode?.runs
   // Bucket timestamps to the typical sampling interval so channels sampled at slightly offset clocks
   // land on the same x (else the line renders as dots) while a genuine gap still breaks the line.
   const deltas: number[] = []
   series.forEach((s) => { const ts = s.points.map((p) => p.t).sort((a, b) => a - b); for (let k = 1; k < ts.length; k++) deltas.push(ts[k] - ts[k - 1]) })
   deltas.sort((a, b) => a - b)
-  const bucket = deltas.length ? Math.max(1, deltas[Math.floor(deltas.length / 2)]) : 60
+  const bucket = runs ? 1 : deltas.length ? Math.max(1, deltas[Math.floor(deltas.length / 2)]) : 60
   const round = (t: number) => Math.round(t / bucket) * bucket
   const tset = new Set<number>()
   series.forEach((s) => s.points.forEach((p) => tset.add(round(p.t))))
@@ -10393,7 +10421,8 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
       const dp = smax - smin >= 20 ? 1 : smax - smin >= 2 ? 10 : 100
       return ls.map((v: number) => Math.round((smin + ((v - l.min) / (l.max - l.min)) * (smax - smin)) * dp) / dp)
     }) as unknown as uPlot.Axis['splits']
-    if (units.length > 1) axes.push({ scale: scaleKey(units[1]), side: 1, stroke: c.axis, grid: { show: false }, ticks, size: axisSize, values: yv(units[1]), splits: rightSplits })
+    // The downtime / failed band's 0-1 scale never gets an axis of its own: its numbers mean nothing.
+    if (units.length > 1 && series.some((s) => !s.downtime && s.units === units[1])) axes.push({ scale: scaleKey(units[1]), side: 1, stroke: c.axis, grid: { show: false }, ticks, size: axisSize, values: yv(units[1]), splits: rightSplits })
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const xVal = (u: any, v: number | null) => { const t = v ?? lastVal(u, 0); return t == null ? '--' : new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
@@ -10402,16 +10431,29 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   const uplotSeries: uPlot.Series[] = [{ value: xVal }]
   series.forEach((s, i) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const val = (u: any, v: number | null) => { const n = v ?? lastVal(u, i + 1); return n == null ? '--' : s.downtime ? (n > 0 ? 'down' : 'up') : fmtNum(n, s.units) }
+    const val = (u: any, v: number | null, _si: number, idx: number | null) => {
+      // Idle, the legend shows the latest reading; on a run that didn't measure this, it says so.
+      const n = v ?? (runs && idx != null ? null : lastVal(u, i + 1))
+      if (n == null) return '--'
+      if (!s.downtime) return fmtNum(n, s.units)
+      if (!runs) return n > 0 ? 'down' : 'up'
+      if (!(n > 0)) return 'ok'
+      const why = idx != null ? mode?.reasons?.get(u.data[0][idx]) : undefined
+      return why ? `failed: ${why.length > 140 ? why.slice(0, 139) + '…' : why}` : 'failed'
+    }
     if (s.downtime) scaleCfg[scaleKey(s.units)] = { range: [0, 1] } // pin the status band to the bottom
+    const color = s.downtime ? DOWNTIME_STROKE : s.color || SERIES_COLORS[i % SERIES_COLORS.length]
     // The first (primary) channel is drawn a touch heavier so it reads as the main field.
     uplotSeries.push({
       label: s.label,
       show: !s.off, // constants (a port's Speed/Link) start hidden - the legend keeps the value, a click reveals the line
-      stroke: s.downtime ? DOWNTIME_STROKE : SERIES_COLORS[i % SERIES_COLORS.length],
-      fill: s.downtime ? DOWNTIME_FILL : undefined,
+      stroke: color,
+      fill: s.downtime && !runs ? DOWNTIME_FILL : undefined,
       width: s.downtime ? 1 : i === 0 ? 2 : 1.5,
-      points: { show: false, size: 0 }, // lines-only, consistent across ranges/zoom (uPlot else shows dots on sparse data)
+      // Lines-only, consistent across ranges/zoom (uPlot else shows dots on sparse data); runs are dots.
+      points: runs && !s.downtime ? { show: true, size: 6, width: 1, fill: color, stroke: color } : { show: false, size: 0 },
+      // A run's result is drawn by the ✕ markers below, not as a band; a push job's failure holds until its next run.
+      ...(s.downtime && runs ? { paths: () => null } : s.downtime && s.stepped ? { paths: uPlot.paths.stepped!({ align: 1 }) } : {}),
       scale: scaleKey(s.units),
       value: val,
     } as uPlot.Series)
@@ -10425,6 +10467,8 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   else if (units.includes('%')) scaleCfg[scaleKey('%')] = { range: pctRange }
   // A certificate's days left: a minimum span, so the slow countdown doesn't read as steps.
   if (units.includes('days')) scaleCfg[scaleKey('days')] = { range: daysRange }
+  // Runs: a speed or a round trip against 0, not zoomed to the spread between runs.
+  if (runs) units.forEach((u) => { if (!scaleCfg[scaleKey(u)]) scaleCfg[scaleKey(u)] = { range: zeroRange } })
   // Primary channel min/max envelope (a shaded band), when it carries trend min/max - long ranges
   // only; short ranges are raw history (no min/max), so the band simply doesn't appear there.
   const p0 = series[0]
@@ -10437,7 +10481,7 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   if (mainThr) (uplotSeries[1] as uPlot.Series).stroke = paint(1, c.line)
   const extraYs: (number | null)[][] = []
   const bands: uPlot.Band[] = []
-  if (p0 && !p0.downtime && !p0.off && p0.points.some((p) => p.lo != null && p.hi != null)) {
+  if (p0 && !runs && !p0.downtime && !p0.off && p0.points.some((p) => p.lo != null && p.hi != null)) {
     const lo: (number | null)[] = new Array(xs.length).fill(null)
     const hi: (number | null)[] = new Array(xs.length).fill(null)
     p0.points.forEach((p) => { const i = xi.get(round(p.t)); if (i !== undefined) { lo[i] = p.lo ?? null; hi[i] = p.hi ?? null } })
@@ -10452,7 +10496,7 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
   // Match the single-sensor look: shade under the primary channel - except on trend ranges (the
   // min/max band already shades around the line), for downtime, and when siblings share the primary's
   // unit (network In/Out are peers on one scale - shading just one of them reads as favouritism).
-  if (p0 && !p0.downtime && !bands.length && series.filter((s) => s.units === p0.units).length === 1) (uplotSeries[1] as uPlot.Series).fill = paint(0.12, c.fill)
+  if (p0 && !runs && !p0.downtime && !bands.length && series.filter((s) => s.units === p0.units).length === 1) (uplotSeries[1] as uPlot.Series).fill = paint(0.12, c.fill)
   // cursor.points.show:false removes uPlot's hover marker dot (see buildPlot) - the real "stray dot".
   const opts = { width, height: 320, scales: scaleCfg, axes, series: uplotSeries, legend: { show: true }, cursor: { points: { show: false } }, bands, ...zoomHook(onZoom, xrange, onToggle) } as uPlot.Options
   // Threshold reference lines per channel, merged where channels share one (all array drives at
@@ -10470,6 +10514,39 @@ function buildMultiPlot(series: { label: string; units: string; points: { t: num
     })
   })
   addThrLines(opts, [...merged.values()])
+  if (runs) {
+    // A failed run: a dashed red line and a ✕ at its time, while its Result channel is shown.
+    const fi = series.findIndex((s) => s.downtime) + 1
+    if (fi > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const hooks: any = (opts.hooks = opts.hooks || {})
+      hooks.draw = [...(hooks.draw || []), (u: uPlot) => {
+        if (!u.series[fi].show) return
+        const fy = u.data[fi] as (number | null)[]
+        const { left, top, width: bw, height } = u.bbox
+        const pr = uPlot.pxRatio
+        const ctx = u.ctx
+        ctx.save()
+        ctx.strokeStyle = DOWNTIME_STROKE
+        ctx.fillStyle = DOWNTIME_STROKE
+        ctx.lineWidth = 2 * pr
+        ctx.globalAlpha = 0.85
+        ctx.setLineDash([3 * pr, 3 * pr])
+        ctx.font = `700 ${13 * pr}px sans-serif`
+        ctx.textAlign = 'center'
+        for (let j = 0; j < fy.length; j++) {
+          const v = fy[j]
+          if (v == null || !(v > 0)) continue
+          const x = u.valToPos(u.data[0][j], 'x', true)
+          if (x < left || x > left + bw) continue
+          ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, top + height); ctx.stroke()
+          ctx.fillText('✕', x, top + height - 4 * pr)
+        }
+        ctx.restore()
+      }]
+    }
+    return [opts, [xs, ...ys] as uPlot.AlignedData] // every run is a dot; a failed run is the only break
+  }
   // insertGaps breaks the line where sampling actually stopped (a real outage) instead of drawing a
   // straight segment across it; bucketing above keeps offset-but-regular channels connected.
   const [gx, gy] = insertGaps(xs, [...ys, ...extraYs])
@@ -10558,9 +10635,13 @@ function zoomHook(onZoom: ((z: boolean) => void) | undefined, xrange: [number, n
 // SensorGroupChart overlays the channels of one instance (a disk mount, a NIC) in a single graph with
 // a click-to-toggle legend - the PRTG "sensor with channels" view. Long ranges use each channel's avg.
 // bars switches to the daily stacked-bar mode (counter totals) with its own day-scale range tabs.
-function SensorGroupChart({ channels, bars }: { channels: GroupChan[]; bars?: boolean }) {
-  const [range, setRange] = useState(bars ? '7d' : '2h')
-  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; values?: number[]; downtime?: boolean; off?: boolean; hold?: boolean; seedValue?: number; seedClock?: number; thr?: Thr; total?: number | null }[] | null>(null)
+// runs: a sensor measured by runs (the speed test): its own ranges and chart (buildMultiPlot's runs
+// mode), and with list the runs under the chart, whose reasons the failed runs show on hover.
+function SensorGroupChart({ channels, bars, runs }: { channels: GroupChan[]; bars?: boolean; runs?: { hostId: string; list?: boolean; lastRun?: number } }) {
+  const runsOn = !!runs, runsHost = runs?.hostId || '', runsList = !!runs?.list
+  const [range, setRange] = useState(bars || runsOn ? '7d' : '2h')
+  const [runList, setRunList] = useState<SpeedRuns | null>(null)
+  const [series, setSeries] = useState<{ label: string; units: string; points: { t: number; v: number | null; lo?: number | null; hi?: number | null }[]; values?: number[]; downtime?: boolean; off?: boolean; hold?: boolean; seedValue?: number; seedClock?: number; thr?: Thr; total?: number | null; stepped?: boolean; color?: string }[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
   const [themeTick, setThemeTick] = useState(0)
@@ -10596,18 +10677,22 @@ function SensorGroupChart({ channels, bars }: { channels: GroupChan[]; bars?: bo
         .catch(() => { if (!cancelled) setError('Failed to load history') })
       return () => { cancelled = true }
     }
+    const list: Promise<SpeedRuns | null> = runsList
+      ? fetch(`/api/hosts/${runsHost}/speedtest/runs?range=${range}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+      : Promise.resolve(null)
+    list.then((l) => { if (!cancelled) setRunList(l) })
     Promise.all(channels.map((ch) =>
-      fetch(`/api/items/${ch.id}/history?range=${range}`).then((r) => (r.ok ? r.json() : null)).then((d: Series | null) => ({
-        label: ch.label, units: ch.units, downtime: !!ch.invert, off: !!ch.defaultOff, hold: !!ch.hold, seedValue: ch.seedValue, seedClock: ch.seedClock, thr: ch.thr,
+      fetch(`/api/items/${ch.id}/history?range=${range}${runsOn ? '&runs=1' : ''}`).then((r) => (r.ok ? r.json() : null)).then((d: Series | null) => ({
+        label: ch.label, units: ch.units, downtime: !!ch.invert, off: !!ch.defaultOff, hold: !!ch.hold, seedValue: ch.seedValue, seedClock: ch.seedClock, thr: ch.thr, stepped: !!ch.stepped, color: ch.color,
         total: ch.invert ? null : rateTotal(d, ch.units),
         // invert reachability into downtime: up (>0) -> 0, down -> 1. lo/hi carry the trend min/max
         // (present only on long ranges) so the primary channel can draw a shaded envelope.
         points: d ? d.points.map((p) => { let v = p.v ?? p.avg ?? null; if (ch.invert && v != null) v = v > 0 ? 0 : 1; return { t: p.t, v, lo: ch.invert ? null : (p.min ?? null), hi: ch.invert ? null : (p.max ?? null) } }) : [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[],
-      })).catch(() => ({ label: ch.label, units: ch.units, downtime: !!ch.invert, hold: !!ch.hold, seedValue: ch.seedValue, seedClock: ch.seedClock, thr: ch.thr, points: [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[] }))
+      })).catch(() => ({ label: ch.label, units: ch.units, downtime: !!ch.invert, hold: !!ch.hold, seedValue: ch.seedValue, seedClock: ch.seedClock, thr: ch.thr, stepped: !!ch.stepped, color: ch.color, points: [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[] }))
     )).then((res) => { if (!cancelled) setSeries(res) }).catch(() => { if (!cancelled) setError('Failed to load history') })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, range, tick, bars])
+  }, [key, range, tick, bars, runsOn, runsHost, runsList])
 
   useEffect(() => {
     if (plot.current) { plot.current.destroy(); plot.current = null }
@@ -10618,14 +10703,15 @@ function SensorGroupChart({ channels, bars }: { channels: GroupChan[]; bars?: bo
     const onToggle = (label: string, show: boolean) => { showRef.current[label] = show }
     const [opts, aligned] = bars
       ? buildBarPlot(series.map((s) => ({ label: s.label, units: s.units, values: s.values || [] })), width, chartColors('var(--accent)'), (z) => { zoomedRef.current = z }, onToggle)
-      : buildMultiPlot(series, width, chartColors('var(--accent)'), [from, to], (z) => { zoomedRef.current = z }, onToggle)
+      : buildMultiPlot(series, width, chartColors('var(--accent)'), [from, to], (z) => { zoomedRef.current = z }, onToggle,
+        runsOn ? { runs: true, reasons: new Map((runList?.runs || []).filter((r) => !r.ok && r.error).map((r) => [r.t, r.error as string])) } : undefined)
     plot.current = new uPlot(opts, aligned, host.current)
     // Re-apply the user's remembered show/hide choices (they survive refresh + range change).
     const sv = showRef.current
     plot.current.series.forEach((s, i) => { if (i === 0) return; const l = s.label; if (typeof l === 'string' && sv[l] !== undefined && sv[l] !== s.show) plot.current!.setSeries(i, { show: sv[l] }) })
     colorLegendChecks(plot.current)
     return () => { if (plot.current) { plot.current.destroy(); plot.current = null } }
-  }, [series, themeTick, range, bars])
+  }, [series, themeTick, range, bars, runsOn, runList])
 
   useEffect(() => {
     function onResize() { if (plot.current && host.current) plot.current.setSize({ width: host.current.clientWidth, height: 320 }) }
@@ -10638,12 +10724,67 @@ function SensorGroupChart({ channels, bars }: { channels: GroupChan[]; bars?: bo
   return (
     <div>
       <div className="rtabs">
-        {(bars ? RANGES_BARS : RANGES).map((rk) => <button key={rk} className={'rtab' + (range === rk ? ' on' : '')} onClick={() => setRange(rk)}>{rk}</button>)}
+        {(bars ? RANGES_BARS : runsOn ? RUN_RANGES : RANGES).map((rk) => <button key={rk} className={'rtab' + (range === rk ? ' on' : '')} onClick={() => setRange(rk)}>{rk}</button>)}
         <RateTotals totals={totals} range={range} />
       </div>
       {error && <p style={{ color: 'var(--err)', margin: '0.3rem 0' }}>{error}</p>}
-      {empty && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>No data in this range.</p>}
+      {empty && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>{runsOn ? `No run in this range${runs?.lastRun ? `: the last one was ${relTime(runs.lastRun)}` : ''}.` : 'No data in this range.'}</p>}
       <div ref={host} style={{ width: '100%' }} />
+      {runsList && <SpeedRunsList data={runList} />}
+    </div>
+  )
+}
+
+// SpeedRun is one speed test run (speeds Mbps, round trips seconds, as the template stores them).
+type SpeedRun = { t: number; ok: boolean; error?: string; down?: number; up?: number; latency?: number; jitter?: number; loaded_down?: number; loaded_up?: number; loss?: number; site?: string }
+type SpeedRuns = { interval: string; kind: string; runs: SpeedRun[] }
+
+// SpeedRunsList is the speed test's runs under its Speed chart, newest first, over the chart's range:
+// what each run measured and, for one that couldn't, why. Export CSV saves every run in the range.
+function SpeedRunsList({ data }: { data: SpeedRuns | null }) {
+  const [all, setAll] = useState(false)
+  if (!data || data.runs.length === 0) return null
+  const SHOW = 7
+  const runs = data.runs
+  const shown = all ? runs : runs.slice(0, SHOW)
+  const hasLoss = runs.some((r) => r.loss != null)
+  const val = (n: number | undefined, u: string) => (n == null ? '--' : fmtNum(n, u))
+  const ms = (n: number | undefined) => (n == null ? '' : Math.round(n * 100000) / 100)
+  const when = (t: number) => new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const every = data.interval ? data.interval.replace(/^(\d+)([smhdw])$/, '$1 $2') : ''
+  const exportRuns = () => downloadCSV(`argus-speedtest-runs-${csvStamp()}.csv`,
+    ['Ran', 'Download (Mbps)', 'Upload (Mbps)', 'Latency (ms)', 'Jitter (ms)', 'While downloading (ms)', 'While uploading (ms)', 'Packet loss (%)', 'Test site', 'Result', 'Reason'],
+    runs.map((r) => [csvTime(r.t), r.down, r.up, ms(r.latency), ms(r.jitter), ms(r.loaded_down), ms(r.loaded_up), r.loss, r.site, r.ok ? 'ok' : 'failed', r.error]))
+  return (
+    <div className="runs-list">
+      <div className="runs-head">
+        <span className="runs-title">Runs</span>
+        <span className="runs-sub">{every ? `every ${every}, ` : ''}newest first{data.kind === 'trend' ? '; hourly averages, without the reason and test site (kept 90 days)' : ''}</span>
+        <span className="runs-acts">
+          {runs.length > SHOW && <button className="btn" onClick={() => setAll((a) => !a)}>{all ? 'Show fewer' : `Show all ${runs.length}`}</button>}
+          <button className="btn" onClick={exportRuns}>Export CSV</button>
+        </span>
+      </div>
+      <div className="runs-scroll">
+        <table className="runs-table">
+          <thead><tr><th>Ran</th><th>Download</th><th>Upload</th><th>Latency</th><th>Jitter</th><th>While busy ↓ / ↑</th>{hasLoss && <th>Packet loss</th>}<th>Test site</th><th>Result</th></tr></thead>
+          <tbody>
+            {shown.map((r) => (
+              <tr key={r.t}>
+                <td>{when(r.t)}</td>
+                <td className="num">{val(r.down, 'Mbps')}</td>
+                <td className="num">{val(r.up, 'Mbps')}</td>
+                <td>{val(r.latency, 's')}</td>
+                <td>{val(r.jitter, 's')}</td>
+                <td>{val(r.loaded_down, 's')} / {val(r.loaded_up, 's')}</td>
+                {hasLoss && <td>{val(r.loss, '%')}</td>}
+                <td>{r.site || '--'}</td>
+                <td className="runs-result">{r.ok ? <span className="runs-ok">ok</span> : <><span className="runs-fail">failed</span>{r.error && <span className="runs-why"> {r.error}</span>}</>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

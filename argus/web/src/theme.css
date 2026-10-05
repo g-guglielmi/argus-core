@@ -623,6 +623,29 @@ a { color: var(--accent); }
 .dlg { width: 100%; max-width: 440px; margin: auto; background: var(--panel); border: 1px solid var(--border-strong); border-radius: 12px; padding: 18px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4); }
 .dlg-title { font-size: 15px; font-weight: 650; margin-bottom: 8px; }
 .dlg-msg { font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+/* The speed test's runs under its Speed chart: newest first, what each run measured and why one failed. */
+.runs-list { margin: 12px 0 2px; }
+.runs-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 0 0 6px; }
+.runs-title { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+.runs-sub { font-size: 12px; color: var(--muted); }
+.runs-acts { margin-left: auto; display: flex; gap: 8px; }
+.runs-acts .btn { font-size: 12px; padding: 4px 10px; }
+/* Scrolls sideways on a phone: width 0 + min-width 100% keeps the table cell it sits in from growing
+   to the list's width (which would leave nothing to scroll). */
+.runs-scroll { overflow-x: auto; width: 0; min-width: 100%; }
+.runs-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.runs-table th { text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.runs-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+.runs-table td.num { font-weight: 700; }
+/* The measured columns shrink to their values; the result and its reason take the rest of the width
+   (set on the cells: a 100 % header cell squeezes the column instead). */
+.runs-table td.runs-result { width: 100%; white-space: normal; min-width: 220px; }
+/* The list sits inside the host's sensor table, whose header rules (fixed column widths; on a phone,
+   the Trend column hidden and tighter padding) would reach its headers. */
+.chart-reveal .runs-list table.runs-table thead th { width: auto; display: table-cell; padding: 6px 10px; }
+.runs-ok { color: var(--ok); }
+.runs-fail { color: var(--err); }
+.runs-why { color: var(--muted); }
 /* A third party's terms in a confirm dialog (Ookla's, for the speed test): what accepting means, then the links. */
 .terms-msg p { margin: 0 0 10px; }
 .terms-msg p:last-child { margin: 0; }
@@ -661,6 +684,9 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .sensors .cat td { color: var(--accent); font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; padding-top: 11px; font-weight: 700; border-top: none; }
 .sensors .val { font-weight: 650; } .sensors .unit { color: var(--muted); font-weight: 400; }
 .sensors td.strend { width: 100px; }
+/* A pair of readings (↓ download / ↑ upload, traffic in / out): side by side, stacked when the row is
+   too narrow for both (a phone), so a long speed doesn't widen the whole sensor table. */
+.vpair { display: inline-flex; flex-wrap: wrap; column-gap: 1.1em; }
 .sensors td.strend svg { max-width: 100%; } /* squish, don't overflow, when the Trend column is narrower than the spark */
 .sensors td.strend .spark, .row .mini svg, .slist .trend svg { display: block; }
 .sensors td.namecell { border-left: 3px solid transparent; }

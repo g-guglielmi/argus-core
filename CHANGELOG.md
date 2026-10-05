@@ -13,6 +13,26 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Speed test chart:** a test that runs every few hours gets a chart of its own.
+- Each run is a dot, with lines only between runs next to each other. A run that couldn't measure is
+  a red ✕ at its time, and hovering it says why. The speed axis starts at 0.
+- It opens on 7 days (2 days to a year): two hours usually held no run, so the chart read "No data".
+  An empty range says when the last run was.
+- Under the Speed chart, the **Runs**: newest first, each with its download, upload, latency, jitter,
+  latency while busy, packet loss (Ookla), test site and result with the reason. **Show all** for the
+  range, and **Export CSV**.
+- The chart's readings come at each run's own time for up to 90 days (they were hourly averages
+  past 2 days).
+
+**Fixed:**
+- A failed run no longer draws a red triangle across the hours around it. On the speed test it is a
+  ✕ at the run; on a push job a band from the failed run until the next one.
+- A chart whose only other channel is a downtime or failed band no longer shows a meaningless 0 to 1
+  axis on the right (the speed test, HTTP checks, Cloud services, push jobs).
+- Threshold tags near the bottom of a chart stack upward instead of covering the time axis.
+- A pair of readings (↓ download / ↑ upload, traffic in / out) stacks on a narrow screen instead of
+  widening the sensor table.
+
 ## [0.8.1] - 2026-10-05
 
 A patch release with one fix, for the sidebar on short windows. Nothing to update besides the core.

@@ -155,7 +155,10 @@ the test ran. **How often** is 1, 3, 6 (default), 12 or 24 hours. **Engine** pic
   until it updates itself.
 
 A run takes up to about 20 seconds (Ookla's up to about 50).
-The first run comes a minute after you turn it on. Sensors under **Internet**: **Speed** (download and upload, a band when a run failed), **Latency**
+The first run comes a minute after you turn it on. Its charts show runs, not a continuous line: each
+run is a dot, a run that couldn't measure a red ✕ with why on hover, over 2 days to a year (7 days by
+default), and the Speed chart lists the runs underneath (newest first, **Show all**, **Export CSV**).
+Sensors under **Internet**: **Speed** (download and upload, and whether each run measured), **Latency**
 (idle, jitter, while downloading, while uploading), **Packet loss** (Ookla, once it has a reading),
 **Public IP address**, **Internet provider** and **Test site**. Alerts, each on the last two runs:
 download below `{$SPEEDTEST.DOWN.WARN}` 50 / `{$SPEEDTEST.DOWN.HIGH}` 10 Mbps, upload below 10 / 2 Mbps,

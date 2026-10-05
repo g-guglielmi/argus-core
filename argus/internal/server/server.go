@@ -193,6 +193,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/items/{id}/history", auth.RequireAuth(s.scopedItem(s.handleItemHistory)))
 	mux.HandleFunc("GET /api/items/{id}/availability", auth.RequireAuth(s.scopedItem(s.handleItemAvailability)))
 	mux.HandleFunc("GET /api/hosts/{id}/availability", auth.RequireAuth(s.scopedHost(s.handleHostAvailability)))
+	mux.HandleFunc("GET /api/hosts/{id}/speedtest/runs", auth.RequireAuth(s.scopedHost(s.handleSpeedtestRuns)))
 	mux.HandleFunc("GET /api/hosts/{id}/incidents", auth.RequireAuth(s.scopedHost(s.handleHostIncidents)))
 	mux.HandleFunc("GET /api/incidents", auth.RequireAuth(s.handleIncidents))
 	// the change log: who changed what (admin), and one host's changes (any user who sees the host)

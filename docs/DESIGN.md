@@ -263,6 +263,17 @@ a speed test every 6 hours shows its first reading in a minute. A sensor's or gr
 (`POST /api/items/check`, admin and helpdesk) runs the items that do the reading (a dependent item's
 master, up the chain, `ReadingItems`), each once. A collector that isn't running alerts for itself;
 its readings whose steps only discard stay quiet meanwhile (one alert, not one per reading). On the Probe host the unlisted categories read Probe, Internet, Cloud services.
+The speed test's charts are run charts (`buildMultiPlot`'s and `buildPlot`'s runs mode, for the
+Internet category): its readings are dependent items of one master, so a run stores them all at the
+master value's timestamp and nothing is bucketed; each run is a dot, lines join only runs next to each
+other, a failed run (`speedtest.ok` 0) is a red ✕ drawn by a draw hook rather than an interpolated band,
+and the axes start at 0. Ranges are 2d to 1Y, 7d by default; `GET /api/items/{id}/history?runs=1`
+reads raw history up to 90 days (`runsRawMax`, the template's history) instead of hourly trends.
+`GET /api/hosts/{id}/speedtest/runs?range=` joins a host's speed test readings on that timestamp into
+runs, newest first, with the reason of a failed one and the test site in effect (stored only when it
+changes), for the Runs list under the Speed chart and the reasons on hover; past 90 days it reads
+trends (hourly averages, no reason or site). A downtime or failed band never gets an axis of its own,
+and a push job's Failed band is stepped (failed until the next run).
 **Push sensors** (`Argus Push`, docs/push-sensors.md) are a job's
 own reports: the job calls its push sensor's secret URL (`/api/push/{token}`, ok or fail and a
 message), Argus keeps the last run (`push_sensors`), and the template, which Argus links with a host's
