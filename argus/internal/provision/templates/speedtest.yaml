@@ -365,7 +365,7 @@ zabbix_export:
       macros:
         - macro: '{$SPEEDTEST.INTERVAL}'
           value: 6h
-          description: 'How often the speed test runs: 1h, 3h, 6h, 12h or 24h. Each run moves a lot of data on a fast line.'
+          description: 'How often the speed test runs: 1h, 3h, 4h, 6h, 8h, 12h or 24h. Each run moves a lot of data on a fast line.'
         - macro: '{$SPEEDTEST.ENGINE}'
           value: cloudflare
           description: 'Which test runs: cloudflare (Cloudflare''s speed test) or ookla (Ookla''s Speedtest CLI, only once its terms are accepted in Argus).'

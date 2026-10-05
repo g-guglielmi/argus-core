@@ -139,7 +139,7 @@ its sensor, and any open problem of it, at the next check.
 **Speedtest add-on (Probe host).** The site's internet as its probe sees it: download and upload, the
 idle round trip and its jitter, the round trip while downloading and while uploading (bufferbloat: a
 line that's fine idle but lags when someone uploads), and the public address, the provider and where
-the test ran. **How often** is 1, 3, 6 (default), 12 or 24 hours. **Engine** picks the test:
+the test ran. **How often** is 1, 3, 4, 6 (default), 8, 12 or 24 hours. **Engine** picks the test:
 - **Cloudflare** (the default): Cloudflare's speed test (speed.cloudflare.com) over 8 connections
   (**Connections**: 4 to 16, more for a line over a gigabit). Cloudflare limits how much one address
   tests in an hour (more is refused with HTTP 429 for about an hour, and the sensor says so; speed

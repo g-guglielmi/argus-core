@@ -27,6 +27,8 @@ GitHub Release from the matching section below.
   one run at most, so the Trend column stayed empty. The Speed row's shows download and upload on one
   scale, one step per run, with a gap where a run's download failed.
 
+**Speed test interval:** every 4 or 8 hours, beside 1, 3, 6, 12 and 24.
+
 **Speed test alerts:** the defaults are now set for today's lines: download below 750 Mbps warns and
 below 500 Mbps is an error, upload below 250 / 200 Mbps. A slower line wants its own on the Thresholds
 page (or in the host's settings).

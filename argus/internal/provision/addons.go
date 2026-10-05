@@ -93,7 +93,7 @@ var addOns = []AddOn{
 			"Cloudflare's speed test moves at most about 720 MB down and 300 MB up a run, no more than one test on Cloudflare's own page, and Cloudflare limits how much one address tests in an hour; a line over a gigabit may want more connections. " +
 			"Ookla's (Speedtest by Ookla) picks a nearby server and fills a fast line, adds packet loss, and runs under Ookla's terms, which you accept to use it.",
 		Macros: []MacroSpec{
-			{Macro: "{$SPEEDTEST.INTERVAL}", Label: "How often", Hint: "6h", Options: []string{"1h", "3h", "6h", "12h", "24h"}},
+			{Macro: "{$SPEEDTEST.INTERVAL}", Label: "How often", Hint: "6h", Options: []string{"1h", "3h", "4h", "6h", "8h", "12h", "24h"}},
 			{Macro: "{$SPEEDTEST.ENGINE}", Label: "Engine", Hint: "cloudflare", Options: []string{"cloudflare", "ookla"}, Pattern: patternEngine,
 				OptionLabels: map[string]string{"cloudflare": "Cloudflare", "ookla": "Ookla Speedtest"}, Terms: &ooklaTerms},
 			{Macro: "{$SPEEDTEST.SECONDS}", Label: "Seconds per direction, at most", Hint: "8", Options: []string{"5", "8", "12"}, ShowIf: &ShowIf{Macro: "{$SPEEDTEST.ENGINE}", Value: "cloudflare"}},
