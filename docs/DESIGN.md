@@ -262,7 +262,14 @@ speed test every 6 hours shows its first reading a minute after it is turned on;
 as well (it once did, and that made two tests in a row). A sensor's or group's **Check now**
 (`POST /api/items/check`, admin and helpdesk) runs the items that do the reading (a dependent item's
 master, up the chain, `ReadingItems`), each once. A collector that isn't running alerts for itself;
-its readings whose steps only discard stay quiet meanwhile (one alert, not one per reading). On the Probe host the unlisted categories read Probe, Internet, Cloud services.
+its readings whose steps only discard stay quiet meanwhile (one alert, not one per reading). A
+discovered SNMP sensor whose index stops answering ("No Such Instance"/"No Such Object":
+`renumberedInstance`) was renumbered or removed: a VPN tunnel (NetBird, WireGuard) recreated by a
+plugin update comes back as the same interface at a new ifIndex. The sensors are keyed by interface
+name, so the notifier runs the host's discovery rules at once (`rediscoverRenumbered`, at most every
+5 minutes a host) instead of waiting for the hourly run; discovery repoints the same sensors (history
+kept) or, for an interface really gone, disables them (Zabbix's default for lost resources). The
+alert waits `rediscoverGrace` (10 minutes) meanwhile; one still failing past it alerts as usual. On the Probe host the unlisted categories read Probe, Internet, Cloud services.
 The speed test's charts are run charts (`buildMultiPlot`'s and `buildPlot`'s runs mode, for the
 Internet category): its readings are dependent items of one master, so a run stores them all at the
 master value's timestamp and nothing is bucketed; each run is a dot, lines join only runs next to each

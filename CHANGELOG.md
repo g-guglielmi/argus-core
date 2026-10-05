@@ -40,6 +40,11 @@ below 500 Mbps is an error, upload below 250 / 200 Mbps. A slower line wants its
 page (or in the host's settings).
 
 **Fixed:**
+- A NetBird or WireGuard update (or anything that recreates a network interface) no longer leaves its
+  traffic sensors failing for up to an hour with "No Such Instance": the interface comes back under a
+  new number, and Argus now runs the host's discovery at once, which picks up the new number for the
+  same sensors (history kept). The alert waits 10 minutes for that; an interface really gone is
+  disabled by discovery, and one still failing after 10 minutes alerts as before.
 - Turning the speed test on ran it twice in a minute: Zabbix runs a new sensor within a minute by
   itself, and Argus ran it once more. Now it runs once.
 - Threshold tags on a chart's axis sit exactly at their value. Where two would overlap, the error's tag

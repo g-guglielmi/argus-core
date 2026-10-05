@@ -755,6 +755,8 @@ type UnsupportedItem struct {
 	LastClock    string       `json:"lastclock"`     // last value's time ("0" = none in recent history)
 	Delay        string       `json:"delay"`         // update interval ("1m", "30s"; "0" for a dependent item)
 	MasterItemID string       `json:"master_itemid"` // a dependent item's master ("0" otherwise)
+	Type         string       `json:"type"`          // "20" SNMP agent
+	Flags        string       `json:"flags"`         // "4" created by a discovery rule
 	Hosts        []TargetHost `json:"hosts"`
 	// The item's own preprocessing: whether a step can make it unsupported by itself.
 	Preprocessing []PreprocStep `json:"preprocessing"`
@@ -778,7 +780,7 @@ type MasterItem struct {
 // UnsupportedItems returns every enabled, "not supported" sensor on a monitored host.
 func (c *Client) UnsupportedItems(ctx context.Context) ([]UnsupportedItem, error) {
 	params := map[string]any{
-		"output":              []string{"itemid", "hostid", "name", "key_", "error", "lastclock", "delay", "master_itemid"},
+		"output":              []string{"itemid", "hostid", "name", "key_", "error", "lastclock", "delay", "master_itemid", "type", "flags"},
 		"selectHosts":         []string{"hostid", "name", "status"},
 		"selectPreprocessing": []string{"type", "error_handler"},
 		"filter":              map[string]any{"state": 1, "status": 0},

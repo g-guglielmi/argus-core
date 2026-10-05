@@ -57,6 +57,26 @@ type synthSet struct {
 	// complete: both lookups answered, so the set is the whole truth (the incident log closes what's
 	// missing from it only then).
 	complete bool
+	// rediscover: hosts with a discovered SNMP sensor whose instance moved (renumberedInstance), for
+	// the notifier to run their discovery rules now.
+	rediscover map[string]bool
+}
+
+// rediscoverGrace is how long a renumbered SNMP instance's sensor stays quiet while discovery maps it
+// to its new index: a NetBird or WireGuard tunnel recreated by a plugin update comes back as the same
+// interface name at a new ifIndex, and the old index answers "No Such Instance". The sensors are
+// named by interface, so discovery repoints the same ones, history kept. Past the grace the instance
+// is really gone (discovery disables a lost one at once, so one still failing is news) and it alerts.
+const rediscoverGrace = 10 * time.Minute
+
+// renumberedInstance reports a discovered SNMP sensor whose index no longer answers: the instance it
+// read was renumbered or removed, which discovery sorts out.
+func renumberedInstance(it zabbix.UnsupportedItem) bool {
+	if it.Type != "20" || it.Flags != "4" {
+		return false
+	}
+	e := strings.ToLower(it.Error)
+	return strings.Contains(e, "no such instance") || strings.Contains(e, "no such object")
 }
 
 // syntheticProblems gathers the Argus-raised problems. record = true (the notifier) keeps the
@@ -116,7 +136,7 @@ func leftOverUnsupported(it zabbix.UnsupportedItem, master zabbix.MasterItem) bo
 }
 
 func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, record bool) synthSet {
-	out := synthSet{targets: map[string]zabbix.TriggerTarget{}, readings: map[string]string{}, silent: map[string]bool{}}
+	out := synthSet{targets: map[string]zabbix.TriggerTarget{}, readings: map[string]string{}, silent: map[string]bool{}, rediscover: map[string]bool{}}
 	now := time.Now().Unix()
 
 	items, uerr := zbx.UnsupportedItems(ctx)
@@ -154,6 +174,15 @@ func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, 
 			if dep && leftOverUnsupported(it, m) {
 				out.silent[id] = true
 				continue
+			}
+			if renumberedInstance(it) {
+				for _, h := range it.Hosts {
+					out.rediscover[h.HostID] = true
+				}
+				if !ok || now-start < int64(rediscoverGrace.Seconds()) {
+					out.silent[id] = true // discovery is repointing it
+					continue
+				}
 			}
 			// A collector alerts even when it never collected: its sensors only exist once it runs.
 			_, isColl := collectorOf(it.Key)
