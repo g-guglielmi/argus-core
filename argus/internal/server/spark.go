@@ -50,26 +50,43 @@ func (s *Server) handleSpark(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// sparkSeries is each numeric item's recent series over dur, downsampled to ~24 values: the data
-// behind every sparkline (the app's lists and the status pages).
+// runsSpark is the sparkline window of a sensor measured by runs (the speed test, every 1 to 24
+// hours): two hours would hold one reading at most, so it covers a week, as its chart does.
+const runsSpark = 7 * 24 * time.Hour
+
+// measuredByRuns reports whether a sensor reads once per run of a test that runs every few hours.
+func measuredByRuns(key string) bool { return strings.HasPrefix(keyBase(key), "speedtest.") }
+
+// sparkSeries is each numeric item's recent series over dur (a week for a sensor measured by runs),
+// downsampled to ~24 values: the data behind every sparkline (the app's lists and the status pages).
 func (s *Server) sparkSeries(ctx context.Context, ids []string, dur time.Duration) (map[string][]float64, error) {
 	if len(ids) == 0 {
 		return map[string][]float64{}, nil
 	}
-	types, err := s.zbx.ItemValueTypes(ctx, ids)
+	items, err := s.zbx.ItemsByIDs(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
-	byType := map[int][]string{}
-	for id, vt := range types {
-		if vt == "0" || vt == "3" { // only numeric items have a sparkline
-			byType[atoi(vt)] = append(byType[atoi(vt)], id)
+	// One history.get per value type and window.
+	type batch struct {
+		vt   int
+		runs bool
+	}
+	batches := map[batch][]string{}
+	for id, it := range items {
+		if it.ValueType == "0" || it.ValueType == "3" { // only numeric items have a sparkline
+			k := batch{atoi(it.ValueType), measuredByRuns(it.Key)}
+			batches[k] = append(batches[k], id)
 		}
 	}
-	from := time.Now().Unix() - int64(dur.Seconds())
+	now := time.Now().Unix()
 	series := map[string][]float64{}
-	for vt, group := range byType {
-		pts, err := s.zbx.HistoryMulti(ctx, group, vt, from)
+	for b, group := range batches {
+		d := dur
+		if b.runs && d < runsSpark {
+			d = runsSpark
+		}
+		pts, err := s.zbx.HistoryMulti(ctx, group, b.vt, now-int64(d.Seconds()))
 		if err != nil {
 			continue
 		}

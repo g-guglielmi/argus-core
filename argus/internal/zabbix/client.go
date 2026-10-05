@@ -671,20 +671,6 @@ func (c *Client) Trends(ctx context.Context, itemID string, from, to int64) ([]T
 	return pts, c.call(ctx, "trend.get", params, true, &pts)
 }
 
-// ItemValueTypes returns the value_type of each requested item (to route history.get correctly).
-func (c *Client) ItemValueTypes(ctx context.Context, ids []string) (map[string]string, error) {
-	params := map[string]any{"output": []string{"itemid", "value_type"}, "itemids": ids}
-	var items []Item
-	if err := c.call(ctx, "item.get", params, true, &items); err != nil {
-		return nil, err
-	}
-	m := make(map[string]string, len(items))
-	for _, it := range items {
-		m[it.ItemID] = it.ValueType
-	}
-	return m, nil
-}
-
 type HistoryPointM struct {
 	ItemID string `json:"itemid"`
 	Clock  string `json:"clock"`

@@ -23,6 +23,8 @@ GitHub Release from the matching section below.
   range, and **Export CSV**.
 - The chart's readings come at each run's own time for up to 90 days (they were hourly averages
   past 2 days).
+- The Speed and Latency rows' sparklines cover the last week, on the status pages too: two hours held
+  one run at most, so the Trend column stayed empty.
 
 **Speed test alerts:** the defaults are now set for today's lines: download below 750 Mbps warns and
 below 500 Mbps is an error, upload below 250 / 200 Mbps. A slower line wants its own on the Thresholds

@@ -33,3 +33,17 @@ func TestJoinRuns(t *testing.T) {
 		t.Fatal("no runs from no readings")
 	}
 }
+
+// The speed test's sensors read once per run, so their sparkline covers a week; others keep theirs.
+func TestMeasuredByRuns(t *testing.T) {
+	for _, k := range []string{"speedtest.down", "speedtest.loaded.up", "speedtest.ok"} {
+		if !measuredByRuns(k) {
+			t.Errorf("%s: want measured by runs", k)
+		}
+	}
+	for _, k := range []string{"icmppingsec", "unifi.speedtest.down", "net.if.in[eth0]"} {
+		if measuredByRuns(k) {
+			t.Errorf("%s: not measured by runs", k)
+		}
+	}
+}
