@@ -27,6 +27,12 @@ GitHub Release from the matching section below.
   one run at most, so the Trend column stayed empty. The Speed row's shows download and upload on one
   scale, one step per run, with a gap where a run's download failed.
 
+**Sparklines in warning and error colours:** a sensor's mini graph on its host page is coloured by
+value like its chart: the normal colour in range, amber past the warning, red past the error. A spike
+that has passed still shows, where the whole line used to take the sensor's current state colour. A
+group's (ICMP, a web check) follows its main reading; groups of peers (disk temperatures, CPU cores)
+keep one colour, as their charts do.
+
 **Speed test interval:** every 4 or 8 hours, beside 1, 3, 6, 12 and 24.
 
 **Speed test alerts:** the defaults are now set for today's lines: download below 750 Mbps warns and

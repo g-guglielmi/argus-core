@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 g-guglielmi
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type FormEvent, type ReactNode, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, Fragment, type FormEvent, type ReactNode, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
@@ -351,7 +351,11 @@ function fireDataRefresh(): void { refreshBus.forEach((f) => f()) }
 // the drawing resolution (the dense monitoring tree keeps the compact 84px); fill makes the SVG scale
 // to its cell's width, so the roomy fixed-width Trend column in the overview/status lists gets a big,
 // column-filling trace at any screen size.
-function Spark({ values, color, width = 84, fill = false, units }: { values?: number[]; color: string; width?: number; fill?: boolean; units?: string }) {
+// thr colours the line by value, as the sensor's big chart does: the accent colour in the normal range,
+// the warning colour past the warning value and the error colour past high (mirrored for below-is-worse
+// sensors), so a spike that has passed still shows; without it the line takes the sensor's state colour.
+function Spark({ values, color, width = 84, fill = false, units, thr }: { values?: number[]; color: string; width?: number; fill?: boolean; units?: string; thr?: Thr }) {
+  const gid = 'spk' + useId().replace(/[^A-Za-z0-9_-]/g, '') // a plain id: url(#...) needs no escaping
   if (!values || values.length < 2) return <span style={{ color: 'var(--faint)', fontSize: 12 }}>-</span>
   const w = width, h = 20
   let min = values[0], max = values[0]
@@ -378,11 +382,39 @@ function Spark({ values, color, width = 84, fill = false, units }: { values?: nu
   let d = ''
   values.forEach((v, i) => { d += (i ? 'L' : 'M') + px(i).toFixed(1) + ' ' + py(v).toFixed(1) + ' ' })
   const area = `M1 ${h - 1} ${d.replace('M', 'L').trim()} L${w - 1} ${h - 1} Z`
+  const last = values[values.length - 1]
+  // Banded by value: a vertical gradient with hard stops at each threshold's height (thrPaint's twin).
+  let paint = color, dot = color, bands: { from: number; to: number; color: string }[] = []
+  if (thrOn(thr)) {
+    const past = (v: number, t?: number) => t != null && (thr.below ? v <= t : v >= t)
+    const colorAt = (v: number) => (past(v, thr.high) ? 'var(--err)' : past(v, thr.warn) ? 'var(--warn)' : 'var(--accent)')
+    const ts = [...new Set([thr.warn, thr.high].filter((x): x is number => x != null))].sort((a, b) => b - a)
+    const reps = [ts[0] + 1, ...ts.slice(1).map((t, i) => (ts[i] + t) / 2), ts[ts.length - 1] - 1]
+    let prev = 0
+    bands = reps.map((rv, k) => {
+      const end = k < ts.length ? Math.min(1, Math.max(prev, py(ts[k]) / h)) : 1
+      const b = { from: prev, to: end, color: colorAt(rv) }
+      prev = end
+      return b
+    })
+    paint = `url(#${gid})`
+    dot = colorAt(last)
+  }
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block', width: fill ? '100%' : undefined }}>
-      <path d={area} fill={color} opacity={0.13} />
-      <path d={d.trim()} fill="none" stroke={color} strokeWidth={1.5} />
-      <circle cx={w - 1} cy={py(values[values.length - 1])} r={1.8} fill={color} />
+      {bands.length > 0 && (
+        <defs>
+          <linearGradient id={gid} gradientUnits="userSpaceOnUse" x1={0} y1={0} x2={0} y2={h}>
+            {bands.flatMap((b, k) => [
+              <stop key={k + 'a'} offset={b.from} style={{ stopColor: b.color }} />,
+              <stop key={k + 'b'} offset={b.to} style={{ stopColor: b.color }} />,
+            ])}
+          </linearGradient>
+        </defs>
+      )}
+      <path d={area} fill={paint} opacity={0.13} />
+      <path d={d.trim()} fill="none" stroke={paint} strokeWidth={1.5} />
+      <circle cx={w - 1} cy={py(last)} r={1.8} fill={dot} />
     </svg>
   )
 }
@@ -9405,7 +9437,10 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                           // switch ports) spark the SUM of both directions - total throughput.
                           const gin = row.items.find((x) => x.channel === 'In'), gout = row.items.find((x) => x.channel === 'Out')
                           const vals = gin && gout ? sumSparks(sparks[gin.id], sparks[gout.id]) : sparks[primary.id]
-                          return <Spark values={vals} color={trendColor} width={168} units={gin && gout ? undefined : primary.units} />
+                          // Banded by value when the main reading is the only one on its unit (ICMP's round
+                          // trip, a URL's response time), as the group chart does; peers keep one colour.
+                          const solo = !(gin && gout) && row.items.filter((x) => x.numeric && x.units === primary.units).length === 1
+                          return <Spark values={vals} color={trendColor} width={168} units={gin && gout ? undefined : primary.units} thr={solo ? primary.thr : undefined} />
                         })() : null}</td>
                         <td className="prio-cell" data-label="Priority"><PriorityStars value={gPrio} canEdit={canPause} onSet={(p) => row.items.forEach((i) => setItemPriority(i, p))} /></td>
                         <td><div className="lccell"><span className="when">{relTime(Math.max(...row.items.map((x) => x.last_clock || 0)))}</span>{canPause && actions.length > 0 && <Kebab actions={actions} />}</div></td>
@@ -9505,7 +9540,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                           })()
                           : <WhyText why={it.why} color="var(--err)" onToggle={() => toggleWhy(it.id)}>not supported</WhyText>}
                       </td>
-                      <td className="strend">{it.numeric && it.supported ? (barRate ? <BarSpark total={dailies[it.id]} width={168} /> : <Spark values={sparks[it.id]} color={trendColor} width={168} units={it.units} />) : null}</td>
+                      <td className="strend">{it.numeric && it.supported ? (barRate ? <BarSpark total={dailies[it.id]} width={168} /> : <Spark values={sparks[it.id]} color={trendColor} width={168} units={it.units} thr={it.thr} />) : null}</td>
                       <td className="prio-cell" data-label="Priority"><PriorityStars value={it.priority} canEdit={canPause} onSet={(p) => setItemPriority(it, p)} /></td>
                       <td>
                         <div className="lccell">
