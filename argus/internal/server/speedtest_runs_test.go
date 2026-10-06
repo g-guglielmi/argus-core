@@ -47,3 +47,31 @@ func TestMeasuredByRuns(t *testing.T) {
 		}
 	}
 }
+
+// Thinning a series keeps its peaks and dips, in order, within the limit.
+func TestDownsampleKeepsExtremes(t *testing.T) {
+	vals := make([]float64, 60)
+	for i := range vals {
+		vals[i] = 300
+	}
+	vals[17], vals[54], vals[40] = 2700, 1200, 40 // two spikes and a dip, between any every-k-th pick
+	out := downsample(vals, 24)
+	if len(out) > 24 {
+		t.Fatalf("len %d > 24", len(out))
+	}
+	has := func(v float64) int {
+		for i, x := range out {
+			if x == v {
+				return i
+			}
+		}
+		return -1
+	}
+	a, d, b := has(2700), has(40), has(1200)
+	if a < 0 || b < 0 || d < 0 || !(a < d && d < b) {
+		t.Fatalf("extremes lost or out of order: %v", out)
+	}
+	if got := downsample([]float64{1, 2, 3}, 24); len(got) != 3 {
+		t.Fatalf("a short series stays whole: %v", got)
+	}
+}

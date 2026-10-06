@@ -14,7 +14,7 @@ import (
 	"argus/internal/zabbix"
 )
 
-// handleSpark returns a compact recent series (down to ~24 values) per requested item, for the
+// handleSpark returns a compact recent series (at most sparkPoints values) per requested item, for the
 // inline sparklines. One item.get (value types) + up to two history.get (float + unsigned).
 // GET /api/spark?items=id1,id2,...&range=2h
 func (s *Server) handleSpark(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +50,10 @@ func (s *Server) handleSpark(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// sparkPoints is the most readings a sparkline gets (it is 168 px wide): two hours of a sensor read
+// every minute fit whole; a denser one keeps each stretch's lowest and highest (downsample).
+const sparkPoints = 120
+
 // runsSpark is the sparkline window of a sensor measured by runs (the speed test, every 1 to 24
 // hours): two hours would hold one reading at most, so it covers a week, as its chart does.
 const runsSpark = 7 * 24 * time.Hour
@@ -58,7 +62,7 @@ const runsSpark = 7 * 24 * time.Hour
 func measuredByRuns(key string) bool { return strings.HasPrefix(keyBase(key), "speedtest.") }
 
 // sparkSeries is each numeric item's recent series over dur (a week for a sensor measured by runs),
-// downsampled to ~24 values: the data behind every sparkline (the app's lists and the status pages).
+// at most sparkPoints values: the data behind every sparkline (the app's lists and the status pages).
 func (s *Server) sparkSeries(ctx context.Context, ids []string, dur time.Duration) (map[string][]float64, error) {
 	if len(ids) == 0 {
 		return map[string][]float64{}, nil
@@ -98,7 +102,7 @@ func (s *Server) sparkSeries(ctx context.Context, ids []string, dur time.Duratio
 	}
 	out := make(map[string][]float64, len(series))
 	for id, vals := range series {
-		out[id] = downsample(vals, 24)
+		out[id] = downsample(vals, sparkPoints)
 	}
 	return out, nil
 }
@@ -420,14 +424,35 @@ func rateBuckets(total, blocked []float64) []float64 {
 	return out
 }
 
-// downsample reduces a series to at most n points, keeping the first and last.
+// downsample reduces a series to at most n points while keeping its shape: it splits the series into
+// n/2 stretches and keeps each one's lowest and highest reading, in the order they came. Picking every
+// k-th reading instead dropped whatever spike fell between two picks, so a sparkline (or an alert's
+// chart) could miss the very peak its big chart showed.
 func downsample(vals []float64, n int) []float64 {
-	if len(vals) <= n {
+	if len(vals) <= n || n < 2 {
 		return vals
 	}
-	out := make([]float64, n)
-	for i := 0; i < n; i++ {
-		out[i] = vals[i*(len(vals)-1)/(n-1)]
+	buckets := n / 2
+	out := make([]float64, 0, n)
+	for b := 0; b < buckets; b++ {
+		lo, hi := b*len(vals)/buckets, (b+1)*len(vals)/buckets
+		mi, ma := lo, lo
+		for i := lo; i < hi; i++ {
+			if vals[i] < vals[mi] {
+				mi = i
+			}
+			if vals[i] > vals[ma] {
+				ma = i
+			}
+		}
+		switch {
+		case mi == ma:
+			out = append(out, vals[mi])
+		case mi < ma:
+			out = append(out, vals[mi], vals[ma])
+		default:
+			out = append(out, vals[ma], vals[mi])
+		}
 	}
 	return out
 }

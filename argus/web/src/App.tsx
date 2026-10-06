@@ -459,7 +459,8 @@ function PairSpark({ a, b, colorA, colorB, width = 168 }: { a: (number | null)[]
 }
 
 // useSpeedPair is the speed test's download and upload over the last week, one entry per run (null
-// where a run didn't measure it), at most 24 runs: the Speed row's two-line sparkline. lastRun (the
+// where a run didn't measure it), every run of the week up to 168 (hourly): the Speed row's two-line
+// sparkline, one step per run, so no run's dip is skipped. lastRun (the
 // newest reading's time) refetches it when a run lands.
 function useSpeedPair(hostId: string, on: boolean, lastRun: number): { down: (number | null)[]; up: (number | null)[] } | null {
   const [pair, setPair] = useState<{ down: (number | null)[]; up: (number | null)[] } | null>(null)
@@ -472,7 +473,7 @@ function useSpeedPair(hostId: string, on: boolean, lastRun: number): { down: (nu
         if (cancelled || !d) return
         const runs = [...d.runs].reverse() // oldest first
         const n = runs.length
-        const pick = n > 24 ? Array.from({ length: 24 }, (_, i) => runs[Math.round((i * (n - 1)) / 23)]) : runs
+        const pick = n > 168 ? Array.from({ length: 168 }, (_, i) => runs[Math.round((i * (n - 1)) / 167)]) : runs
         setPair({ down: pick.map((r) => r.down ?? null), up: pick.map((r) => r.up ?? null) })
       })
       .catch(() => {})

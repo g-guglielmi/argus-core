@@ -40,6 +40,10 @@ below 500 Mbps is an error, upload below 250 / 200 Mbps. A slower line wants its
 page (or in the host's settings).
 
 **Fixed:**
+- A sparkline could miss a spike its chart showed: it kept every n-th reading of the last two hours,
+  so a peak between two picks vanished (and the chart in an alert could miss the very peak that raised
+  it). Sparklines now hold up to 120 readings, all of two hours read every minute, and a denser
+  series keeps each stretch's lowest and highest; the Speed row shows every run of the week.
 - A speed test run that didn't measure one reading (latency while busy, or download when Cloudflare
   refused it) left that sensor "not supported" and alerting "stopped collecting" until a later run
   measured it. Such a reading is now simply skipped, and the speed test's readings never alert on
