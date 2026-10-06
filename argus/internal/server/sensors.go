@@ -240,12 +240,17 @@ func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 		if r, ok := reachabilityReading(it.Key, it.LastValue); ok {
 			value, units = r, ""
 		}
+		// An empty list, never null: the lists read its length on every row, OK ones included.
+		events := itemEvents[it.ItemID]
+		if events == nil {
+			events = []string{}
+		}
 		out = append(out, sensorRow{
 			key: it.Key, HostID: host.HostID, HostName: host.Name, ItemID: it.ItemID, Name: it.Name,
 			Label: label, Category: cat, Value: value, Units: units, LastClock: atoi64(it.LastClock),
 			State: state, Numeric: numericValueType(it.ValueType), Supported: supported,
 			Priority: priorityOf(prioMap, it.ItemID), Severity: itemSev[it.ItemID], Reason: itemReason[it.ItemID],
-			Since: itemSince[it.ItemID], EventIDs: itemEvents[it.ItemID],
+			Since: itemSince[it.ItemID], EventIDs: events,
 			Why: sensorWhy(reasons, host.HostID, it.Key, it.LastValue, it.Error, supported),
 		})
 	}

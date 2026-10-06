@@ -40,6 +40,9 @@ below 500 Mbps is an error, upload below 250 / 200 Mbps. A slower line wants its
 page (or in the host's settings).
 
 **Fixed:**
+- Opening the OK list (the OK status chip) blanked the page for an admin or helpdesk user since
+  v0.7.2: an OK sensor, with no alert to its name, came without an empty alert list, and the row's
+  menu tripped on it. It now always has one.
 - A sparkline could miss a spike its chart showed: it kept every n-th reading of the last two hours,
   so a peak between two picks vanished (and the chart in an alert could miss the very peak that raised
   it). Sparklines now hold up to 120 readings, all of two hours read every minute, and a denser

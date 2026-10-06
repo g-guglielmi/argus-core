@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"argus/internal/store"
@@ -198,5 +199,14 @@ func TestCensusHeld(t *testing.T) {
 		if r.HeldBy != nil || r.Holds != 0 {
 			t.Fatalf("nothing is down, yet %s is marked: %+v", r.ItemID, r)
 		}
+	}
+
+	// An OK row carries an empty event list, not null: the OK list reads its length (a null blanked the page).
+	req = httptest.NewRequest(http.MethodGet, "/api/census?rows=ok", nil)
+	rec = httptest.NewRecorder()
+	s.handleCensus(rec, req)
+	body := rec.Body.String()
+	if strings.Contains(body, `"event_ids":null`) || !strings.Contains(body, `"state":"ok"`) || !strings.Contains(body, `"event_ids":[]`) {
+		t.Fatalf("OK rows should carry \"event_ids\":[], got %s", body)
 	}
 }
