@@ -45,6 +45,8 @@ page (or in the host's settings).
   measured it. Such a reading is now simply skipped, and the speed test's readings never alert on
   their own: a run that failed alerts once, as "Speedtest could not run", with why.
 - Jitter and the other round trips keep their microseconds: a jitter of 0.49 ms read "0 s".
+- The probe's speed test keeps measuring latency while busy when one of its round trips fails, where
+  it used to give up for that run (probe/v7.0.31-r27).
 - A NetBird or WireGuard update (or anything that recreates a network interface) no longer leaves its
   traffic sensors failing for up to an hour with "No Such Instance": the interface comes back under a
   new number, and Argus now runs the host's discovery at once, which picks up the new number for the

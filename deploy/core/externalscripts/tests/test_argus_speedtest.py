@@ -14,6 +14,7 @@ import json
 import os
 import tarfile
 import tempfile
+import threading
 import time
 import unittest
 
@@ -92,6 +93,33 @@ class ParseTest(unittest.TestCase):
         ph.done()
         self.assertIsNone(ph.at_warm)
         self.assertIsNotNone(ph.bps())
+
+    def test_pinger_survives_a_failed_round_trip(self):
+        class Conn:
+            closed = 0
+
+            def close(self):
+                Conn.closed += 1
+
+        n = {"pings": 0}
+
+        def ping(conn):
+            n["pings"] += 1
+            if n["pings"] == 3:  # the second sample: refused under the load
+                raise st.Refused(429, "Too Many Requests", "60")
+            return 20.0
+
+        ph = st.Phase(5, 1_000_000)
+        ph.at_warm = (0, ph.start)
+        with patched(st, "connect", Conn), patched(st, "ping", ping), patched(st, "LOADED_EVERY", 0.01):
+            t = threading.Thread(target=ph.pinger)
+            t.start()
+            time.sleep(0.3)
+            ph.over.set()
+            t.join(2)
+        self.assertFalse(t.is_alive())
+        self.assertGreater(len(ph.loaded), 3, "sampling went on past the failed round trip")
+        self.assertGreaterEqual(Conn.closed, 2, "the failed connection was replaced, and the last one closed")
 
     def test_budget_bounds_a_run(self):
         self.assertLess(st.DOWN_REQUEST, 100_000_000, "Cloudflare refuses 100 MB a request")
