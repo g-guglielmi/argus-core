@@ -9437,10 +9437,9 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                           // switch ports) spark the SUM of both directions - total throughput.
                           const gin = row.items.find((x) => x.channel === 'In'), gout = row.items.find((x) => x.channel === 'Out')
                           const vals = gin && gout ? sumSparks(sparks[gin.id], sparks[gout.id]) : sparks[primary.id]
-                          // Banded by value when the main reading is the only one on its unit (ICMP's round
-                          // trip, a URL's response time), as the group chart does; peers keep one colour.
-                          const solo = !(gin && gout) && row.items.filter((x) => x.numeric && x.units === primary.units).length === 1
-                          return <Spark values={vals} color={trendColor} width={168} units={gin && gout ? undefined : primary.units} thr={solo ? primary.thr : undefined} />
+                          // One line, the main reading's: banded by that reading's own thresholds (only a
+                          // summed In + Out has none), whatever its siblings or the row's state.
+                          return <Spark values={vals} color={trendColor} width={168} units={gin && gout ? undefined : primary.units} thr={gin && gout ? undefined : primary.thr} />
                         })() : null}</td>
                         <td className="prio-cell" data-label="Priority"><PriorityStars value={gPrio} canEdit={canPause} onSet={(p) => row.items.forEach((i) => setItemPriority(i, p))} /></td>
                         <td><div className="lccell"><span className="when">{relTime(Math.max(...row.items.map((x) => x.last_clock || 0)))}</span>{canPause && actions.length > 0 && <Kebab actions={actions} />}</div></td>

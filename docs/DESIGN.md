@@ -290,8 +290,9 @@ by runs read a week (`measuredByRuns`, `runsSpark`) instead of two hours; the Sp
 two-line `PairSpark` (download and upload on one scale, one step per run from the runs endpoint, a gap
 where a run didn't measure one of them, no fill). A host page sparkline with thresholds is banded by
 value like its chart (`Spark`'s thr: an SVG gradient with hard stops at the threshold heights, the
-accent colour in range), on single rows and on groups whose main reading is alone on its unit; the
-Overview lists keep the state colour (their rows carry no thresholds).
+accent colour in range), on single rows and on groups by the thresholds of the one reading their
+sparkline draws (a summed In + Out has none); the Overview lists keep the state colour (their rows
+carry no thresholds).
 **Push sensors** (`Argus Push`, docs/push-sensors.md) are a job's
 own reports: the job calls its push sensor's secret URL (`/api/push/{token}`, ok or fail and a
 message), Argus keeps the last run (`push_sensors`), and the template, which Argus links with a host's

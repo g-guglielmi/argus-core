@@ -30,8 +30,8 @@ GitHub Release from the matching section below.
 **Sparklines in warning and error colours:** a sensor's mini graph on its host page is coloured by
 value like its chart: the normal colour in range, amber past the warning, red past the error. A spike
 that has passed still shows, where the whole line used to take the sensor's current state colour. A
-group's (ICMP, a web check) follows its main reading; groups of peers (disk temperatures, CPU cores)
-keep one colour, as their charts do.
+group's follows the reading it draws (ICMP's round trip, a web check's response time, the speed
+test's idle latency, the hottest disk), by that reading's own thresholds.
 
 **Speed test interval:** every 4 or 8 hours, beside 1, 3, 6, 12 and 24.
 
