@@ -40,6 +40,11 @@ below 500 Mbps is an error, upload below 250 / 200 Mbps. A slower line wants its
 page (or in the host's settings).
 
 **Fixed:**
+- A speed test run that didn't measure one reading (latency while busy, or download when Cloudflare
+  refused it) left that sensor "not supported" and alerting "stopped collecting" until a later run
+  measured it. Such a reading is now simply skipped, and the speed test's readings never alert on
+  their own: a run that failed alerts once, as "Speedtest could not run", with why.
+- Jitter and the other round trips keep their microseconds: a jitter of 0.49 ms read "0 s".
 - A NetBird or WireGuard update (or anything that recreates a network interface) no longer leaves its
   traffic sensors failing for up to an hour with "No Such Instance": the interface comes back under a
   new number, and Argus now runs the host's discovery at once, which picks up the new number for the

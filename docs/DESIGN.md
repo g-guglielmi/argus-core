@@ -269,7 +269,12 @@ plugin update comes back as the same interface at a new ifIndex. The sensors are
 name, so the notifier runs the host's discovery rules at once (`rediscoverRenumbered`, at most every
 5 minutes a host) instead of waiting for the hourly run; discovery repoints the same sensors (history
 kept) or, for an interface really gone, disables them (Zabbix's default for lost resources). The
-alert waits `rediscoverGrace` (10 minutes) meanwhile; one still failing past it alerts as usual. On the Probe host the unlisted categories read Probe, Internet, Cloud services.
+alert waits `rediscoverGrace` (10 minutes) meanwhile; one still failing past it alerts as usual.
+A speed test reading a run didn't produce is discarded by its script returning `null` (Zabbix 7.0
+discards that without an error; a throw left the sensor "not supported" in practice despite its
+"discard value" handler), and the speed test's readings (`measuredByRuns`, dependents by their own
+fields) never alert as stopped collecting: a failed run is "Speedtest could not run" with why, and a
+collector that can't run alerts for itself. Round trips are stored in seconds to the microsecond. On the Probe host the unlisted categories read Probe, Internet, Cloud services.
 The speed test's charts are run charts (`buildMultiPlot`'s and `buildPlot`'s runs mode, for the
 Internet category): its readings are dependent items of one master, so a run stores them all at the
 master value's timestamp and nothing is bucketed; each run is a dot, lines join only runs next to each

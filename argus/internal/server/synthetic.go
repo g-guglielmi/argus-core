@@ -175,6 +175,13 @@ func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, 
 				out.silent[id] = true
 				continue
 			}
+			// A speed test reading a run didn't produce (no latency while busy, no download when
+			// Cloudflare refused it) is no sensor that stopped: a failed run alerts once as "Speedtest
+			// could not run" with why, and a collector that can't run alerts for itself.
+			if measuredByRuns(it.Key) && it.MasterItemID != "" && it.MasterItemID != "0" { // by its own fields, no lookup
+				out.silent[id] = true
+				continue
+			}
 			if renumberedInstance(it) {
 				for _, h := range it.Hosts {
 					out.rediscover[h.HostID] = true

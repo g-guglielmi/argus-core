@@ -96,7 +96,7 @@ zabbix_export:
               parameters:
                 - |
                   var d = JSON.parse(value);
-                  if (d.down_bps === null || d.down_bps === undefined) { throw 'no download measured'; }
+                  if (d.down_bps === null || d.down_bps === undefined) { return null; }
                   return Math.round(d.down_bps * 0.000001 * 1000) / 1000;
               error_handler: DISCARD_VALUE
           triggers:
@@ -127,7 +127,7 @@ zabbix_export:
               parameters:
                 - |
                   var d = JSON.parse(value);
-                  if (d.up_bps === null || d.up_bps === undefined) { throw 'no upload measured'; }
+                  if (d.up_bps === null || d.up_bps === undefined) { return null; }
                   return Math.round(d.up_bps * 0.000001 * 1000) / 1000;
               error_handler: DISCARD_VALUE
           triggers:
@@ -158,8 +158,8 @@ zabbix_export:
               parameters:
                 - |
                   var d = JSON.parse(value);
-                  if (d.latency_ms === null || d.latency_ms === undefined) { throw 'no latency measured'; }
-                  return Math.round(d.latency_ms * 0.001 * 1000) / 1000;
+                  if (d.latency_ms === null || d.latency_ms === undefined) { return null; }
+                  return Math.round(d.latency_ms * 1000) / 1000000;
               error_handler: DISCARD_VALUE
           triggers:
             - uuid: 2214c759a19d441788b2df4f963aafca
@@ -189,8 +189,8 @@ zabbix_export:
               parameters:
                 - |
                   var d = JSON.parse(value);
-                  if (d.jitter_ms === null || d.jitter_ms === undefined) { throw 'no jitter measured'; }
-                  return Math.round(d.jitter_ms * 0.001 * 1000) / 1000;
+                  if (d.jitter_ms === null || d.jitter_ms === undefined) { return null; }
+                  return Math.round(d.jitter_ms * 1000) / 1000000;
               error_handler: DISCARD_VALUE
           triggers:
             - uuid: f5ea0b00b05e4aef88904f23feadd66f
@@ -220,8 +220,8 @@ zabbix_export:
               parameters:
                 - |
                   var d = JSON.parse(value);
-                  if (d.loaded_down_ms === null || d.loaded_down_ms === undefined) { throw 'no loaded latency measured'; }
-                  return Math.round(d.loaded_down_ms * 0.001 * 1000) / 1000;
+                  if (d.loaded_down_ms === null || d.loaded_down_ms === undefined) { return null; }
+                  return Math.round(d.loaded_down_ms * 1000) / 1000000;
               error_handler: DISCARD_VALUE
           triggers:
             - uuid: c57332dea83343058abd20d744b62e1f
@@ -251,8 +251,8 @@ zabbix_export:
               parameters:
                 - |
                   var d = JSON.parse(value);
-                  if (d.loaded_up_ms === null || d.loaded_up_ms === undefined) { throw 'no loaded latency measured'; }
-                  return Math.round(d.loaded_up_ms * 0.001 * 1000) / 1000;
+                  if (d.loaded_up_ms === null || d.loaded_up_ms === undefined) { return null; }
+                  return Math.round(d.loaded_up_ms * 1000) / 1000000;
               error_handler: DISCARD_VALUE
           triggers:
             - uuid: db286ec8aa9e408995106373d71985fb
@@ -282,7 +282,7 @@ zabbix_export:
               parameters:
                 - |
                   var d = JSON.parse(value);
-                  if (d.loss_pct === null || d.loss_pct === undefined) { throw 'no packet loss measured'; }
+                  if (d.loss_pct === null || d.loss_pct === undefined) { return null; }
                   return d.loss_pct;
               error_handler: DISCARD_VALUE
           triggers:
@@ -312,7 +312,7 @@ zabbix_export:
               parameters:
                 - |
                   var d = JSON.parse(value);
-                  if (!d.ip) { throw 'no address reported'; }
+                  if (!d.ip) { return null; }
                   return d.ip;
               error_handler: DISCARD_VALUE
             - type: DISCARD_UNCHANGED_HEARTBEAT
@@ -334,7 +334,7 @@ zabbix_export:
               parameters:
                 - |
                   var d = JSON.parse(value);
-                  if (!d.isp) { throw 'no provider reported'; }
+                  if (!d.isp) { return null; }
                   return d.isp;
               error_handler: DISCARD_VALUE
             - type: DISCARD_UNCHANGED_HEARTBEAT
@@ -356,7 +356,7 @@ zabbix_export:
               parameters:
                 - |
                   var d = JSON.parse(value);
-                  if (!d.colo) { throw 'no site reported'; }
+                  if (!d.colo) { return null; }
                   return d.colo + (d.city ? ' ' + d.city : '');
               error_handler: DISCARD_VALUE
             - type: DISCARD_UNCHANGED_HEARTBEAT
