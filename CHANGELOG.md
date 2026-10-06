@@ -39,6 +39,12 @@ test's idle latency, the hottest disk), by that reading's own thresholds.
 below 500 Mbps is an error, upload below 250 / 200 Mbps. A slower line wants its own on the Thresholds
 page (or in the host's settings).
 
+**A page that breaks no longer blanks Argus:** an error while drawing a page now shows in that page's
+place, with the sidebar and top bar still working: **Try again**, **Reload** (which also loads the
+latest version), and **Copy details** for a bug report (the error, the version, the page and where it
+broke, without the install's address). Opening another page or host clears it. If the frame around the
+pages breaks, a whole-page notice offers Reload and Copy details.
+
 **Fixed:**
 - Opening the OK list (the OK status chip) blanked the page for an admin or helpdesk user since
   v0.7.2: an OK sensor, with no alert to its name, came without an empty alert list, and the row's

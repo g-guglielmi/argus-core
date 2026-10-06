@@ -761,6 +761,12 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .empty-state.muted .ico { color: var(--faint); }
 .empty-state.ok .ico, .empty-state.ok h2 { color: var(--ok); }
 .empty-state .empty-action { margin-top: 14px; }
+/* An error caught while drawing (ErrorBoundary): the page's own fallback, or the whole app's. */
+.empty-state.err .ico { color: var(--err); }
+.empty-state.err .empty-action { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.empty-state .err-detail { display: block; margin-top: 10px; font-size: 12px; color: var(--faint); overflow-wrap: anywhere; }
+.err-full { min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg); }
+.err-full .panel { width: 100%; max-width: 560px; }
 
 /* ---------- loading skeleton (backs <Skeleton>) ---------- */
 @keyframes skel-shimmer { to { transform: translateX(100%); } }

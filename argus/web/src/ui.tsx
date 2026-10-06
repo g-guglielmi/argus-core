@@ -5,7 +5,7 @@
 // token-based classes in theme.css (.btn, .card, .field, .banner, .badge) so the same
 // widgets look and behave the same across every view, instead of being rebuilt ad-hoc
 // with inline styles and hardcoded colors.
-import { useEffect, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type InputHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type SelectHTMLAttributes } from 'react'
+import { Component, useEffect, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type ErrorInfo, type InputHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type SelectHTMLAttributes } from 'react'
 import { createPortal } from 'react-dom'
 
 // copyToClipboard works over HTTPS (navigator.clipboard) and falls back to execCommand so Copy
@@ -190,7 +190,7 @@ export function Skeleton({ rows = 3, cols = 4 }: { rows?: number; cols?: number 
 
 // EmptyState is the designed "nothing here" (or "all clear") block for a panel: icon, title, a line of
 // text and an optional action - replacing the bare grey "No hosts found." strings.
-export function EmptyState({ icon, title, text, action, tone = 'muted' }: { icon?: ReactNode; title: ReactNode; text?: ReactNode; action?: ReactNode; tone?: 'muted' | 'ok' }) {
+export function EmptyState({ icon, title, text, action, tone = 'muted' }: { icon?: ReactNode; title: ReactNode; text?: ReactNode; action?: ReactNode; tone?: 'muted' | 'ok' | 'err' }) {
   return (
     <div className={`ph-hero empty-state ${tone}`}>
       {icon && <div className="ico">{icon}</div>}
@@ -209,4 +209,60 @@ export function CopyButton({ text, label = 'Copy', copiedLabel = 'Copied!', vari
       {copied ? copiedLabel : label}
     </Button>
   )
+}
+
+const ERR_ICON = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
+
+// ErrorBoundary keeps an error while drawing from blanking the whole app: React unmounts everything up to
+// the nearest boundary, so the shell wraps its page area in one (the sidebar and top bar stay usable, and
+// moving to another page clears it: resetKey) and main.tsx wraps the whole app in another (full). The
+// fallback says what broke, with the details to copy into a bug report; context (the Argus version)
+// goes with them.
+type BoundaryProps = { children: ReactNode; resetKey?: string; full?: boolean; context?: string }
+type BoundaryState = { error: Error | null; where: string }
+export class ErrorBoundary extends Component<BoundaryProps, BoundaryState> {
+  state: BoundaryState = { error: null, where: '' }
+  static getDerivedStateFromError(error: unknown): Partial<BoundaryState> {
+    return { error: error instanceof Error ? error : new Error(String(error)) }
+  }
+  componentDidCatch(_error: unknown, info: ErrorInfo) { this.setState({ where: info.componentStack || '' }) }
+  componentDidUpdate(prev: BoundaryProps) {
+    if (this.state.error && prev.resetKey !== this.props.resetKey) this.setState({ error: null, where: '' })
+  }
+  render() {
+    const { error, where } = this.state
+    if (!error) return this.props.children
+    const { full, context } = this.props
+    // The bundle's address is left out of the trace, so a report pasted anywhere doesn't carry the install's name.
+    const lines = (s: string | undefined, n: number) => (s || '').split(window.location.origin).join('').split('\n').map((l) => l.trim()).filter(Boolean).slice(0, n).join('\n')
+    const details = [
+      `Error: ${error.message}`,
+      context,
+      `Page: ${window.location.pathname}${window.location.search}`,
+      `At: ${new Date().toISOString()}`,
+      lines(error.stack, 12),
+      where && `Drawn in:\n${lines(where, 12)}`,
+    ].filter(Boolean).join('\n')
+    const body = (
+      <div className="panel">
+        <EmptyState
+          tone="err"
+          icon={ERR_ICON}
+          title={full ? 'Argus hit an error' : 'This page hit an error'}
+          text={<>
+            {full
+              ? 'Something broke while drawing Argus. Reloading loads the latest version.'
+              : 'Something broke while drawing this page. The rest of Argus still works: pick another page, try again, or reload to load the latest version.'}
+            <span className="err-detail mono">{error.message}</span>
+          </>}
+          action={<>
+            {!full && <Button variant="primary" onClick={() => this.setState({ error: null, where: '' })}>Try again</Button>}
+            <Button variant={full ? 'primary' : 'default'} onClick={() => window.location.reload()}>Reload</Button>
+            <CopyButton text={details} label="Copy details" />
+          </>}
+        />
+      </div>
+    )
+    return full ? <div className="err-full">{body}</div> : body
+  }
 }

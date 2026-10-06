@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { registerPasskey, loginWithPasskey } from './webauthn'
-import { Button, Card, Field, Banner, Badge, CopyButton, Switch, Select, Combobox, Skeleton, EmptyState, copyToClipboard, type ComboOption } from './ui'
+import { Button, Card, Field, Banner, Badge, CopyButton, Switch, Select, Combobox, Skeleton, EmptyState, ErrorBoundary, copyToClipboard, type ComboOption } from './ui'
 import { useConfirm, usePrompt, useAlert } from './dialog'
 import { useToast } from './toast'
 
@@ -2238,23 +2238,26 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           <HeaderClock updatedAt={sensorsAt} nextAt={sensorsNext} />
         </div>
         <div className="content view-enter" key={`${view}:${listFilter}`}>
-          {view === 'overview' && <StatusListView filter="attention" sensors={sensors} loading={!sensorsLoaded} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => {}} />}
-          {view === 'triggers' && <TriggersView goHost={goHost} />}
-          {view === 'history' && <HistoryView goHost={goHost} />}
-          {view === 'inventory' && <InventoryView goHost={goHost} />}
-          {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} loading={!sensorsLoaded || !rowsFor.split(',').includes(listFilter)} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
-          {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} advanced={!!me.advanced} />}
-          {view === 'maintenance' && <MaintenanceView canEdit={me.role === 'admin' || me.role === 'helpdesk'} />}
-          {view === 'notifications' && <NotificationsView />}
-          {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} goHost={goHost} goUpdates={me.role === 'admin' ? () => goto('updates') : undefined} />}
-          {view === 'discovery' && me.role === 'admin' && <DiscoveryView scanId={discScan} onOpenScan={openDiscoveryScan} />}
-          {view === 'thresholds' && me.role === 'admin' && <ThresholdsView />}
-          {view === 'statuspages' && me.role === 'admin' && <StatusPagesView />}
-          {view === 'changes' && me.role === 'admin' && <ChangesView goHost={goHost} />}
-          {view === 'users' && me.role === 'admin' && <UsersView />}
-          {view === 'updates' && me.role === 'admin' && <UpdatesView />}
-          {view === 'settings' && me.role === 'admin' && <SettingsView me={me} onMe={onMe} onOpenUpdates={() => goto('updates')} />}
-          {view === 'account' && <AccountView me={me} onMe={onMe} passkeysAvailable={passkeysAvailable} theme={theme} toggleTheme={toggleTheme} />}
+          {/* A page that fails to draw shows why in its place; opening a host or another page clears it. */}
+          <ErrorBoundary resetKey={`${treeTarget?.n ?? 0}:${monHome}`} context={`Argus ${ver?.version || 'development build'}`}>
+            {view === 'overview' && <StatusListView filter="attention" sensors={sensors} loading={!sensorsLoaded} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => {}} />}
+            {view === 'triggers' && <TriggersView goHost={goHost} />}
+            {view === 'history' && <HistoryView goHost={goHost} />}
+            {view === 'inventory' && <InventoryView goHost={goHost} />}
+            {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} loading={!sensorsLoaded || !rowsFor.split(',').includes(listFilter)} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
+            {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} advanced={!!me.advanced} />}
+            {view === 'maintenance' && <MaintenanceView canEdit={me.role === 'admin' || me.role === 'helpdesk'} />}
+            {view === 'notifications' && <NotificationsView />}
+            {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} goHost={goHost} goUpdates={me.role === 'admin' ? () => goto('updates') : undefined} />}
+            {view === 'discovery' && me.role === 'admin' && <DiscoveryView scanId={discScan} onOpenScan={openDiscoveryScan} />}
+            {view === 'thresholds' && me.role === 'admin' && <ThresholdsView />}
+            {view === 'statuspages' && me.role === 'admin' && <StatusPagesView />}
+            {view === 'changes' && me.role === 'admin' && <ChangesView goHost={goHost} />}
+            {view === 'users' && me.role === 'admin' && <UsersView />}
+            {view === 'updates' && me.role === 'admin' && <UpdatesView />}
+            {view === 'settings' && me.role === 'admin' && <SettingsView me={me} onMe={onMe} onOpenUpdates={() => goto('updates')} />}
+            {view === 'account' && <AccountView me={me} onMe={onMe} passkeysAvailable={passkeysAvailable} theme={theme} toggleTheme={toggleTheme} />}
+          </ErrorBoundary>
         </div>
       </div>
     </div>
