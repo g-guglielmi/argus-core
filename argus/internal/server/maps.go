@@ -59,7 +59,8 @@ type mapLink struct {
 	PortName string   `json:"port_name,omitempty"` // the port's name on the controller
 	Down     *float64 `json:"down,omitempty"`      // bits per second toward To
 	Up       *float64 `json:"up,omitempty"`        // bits per second from To
-	Speed    float64  `json:"speed,omitempty"`     // the port's link speed, bits per second (0 = unknown)
+	Speed    float64  `json:"speed,omitempty"`     // the port's link speed, bits per second (0 = unknown); the internet: the download
+	SpeedUp  float64  `json:"speed_up,omitempty"`  // the internet: the upload speed, when the line gives one apart
 	Use      *int     `json:"use,omitempty"`       // percent of Speed, the busier way
 	NoLink   bool     `json:"no_link,omitempty"`   // the port (or the WAN) reports no link
 	Latency  *float64 `json:"latency,omitempty"`   // the internet: the WAN's latency, ms
@@ -120,19 +121,24 @@ func ptrF(v float64, ok bool) *float64 {
 	return &v
 }
 
-// linkUse is how full a link is, the busier way, in percent of its speed.
+// linkUse is how full a link is, the busier way, in percent of its speed (each way of the internet's
+// against its own: a line's upload is often slower).
 func linkUse(l *mapLink) {
 	if l.Speed <= 0 || (l.Down == nil && l.Up == nil) {
 		return
 	}
+	upSpeed := l.Speed
+	if l.SpeedUp > 0 {
+		upSpeed = l.SpeedUp
+	}
 	busiest := 0.0
 	if l.Down != nil {
-		busiest = *l.Down
+		busiest = *l.Down / l.Speed
 	}
-	if l.Up != nil && *l.Up > busiest {
-		busiest = *l.Up
+	if l.Up != nil && *l.Up/upSpeed > busiest {
+		busiest = *l.Up / upSpeed
 	}
-	u := int(math.Round(busiest / l.Speed * 100))
+	u := int(math.Round(busiest * 100))
 	l.Use = &u
 }
 
@@ -293,13 +299,16 @@ func (in mapInput) internet(v *mapView, gw string, rd mapReadings) {
 	for _, w := range ws {
 		id := "wan:" + gw + ":" + w
 		n := mapNode{ID: id, Name: "Internet", Kind: "internet", State: "ok"}
-		for _, line := range in.lines {
-			if lineMatches(line, gw, "unifi.wan.in["+w+"]") {
-				n.Provider = strings.TrimSpace(line.Provider)
-				break
+		l := mapLink{From: id, To: gw, Port: w, Source: "controller"}
+		if line, ok := wanLine(in.lines, gw, w, len(ws)); ok {
+			n.Provider = strings.TrimSpace(line.Provider)
+			if line.DownMbps > 0 {
+				l.Speed = line.DownMbps * 1e6
+				if line.UpMbps > 0 && line.UpMbps != line.DownMbps {
+					l.SpeedUp = line.UpMbps * 1e6
+				}
 			}
 		}
-		l := mapLink{From: id, To: gw, Port: w, Source: "controller"}
 		l.Down = ptrF(rd.num(gw, "unifi.wan.in["+w+"]", in.now))
 		l.Up = ptrF(rd.num(gw, "unifi.wan.out["+w+"]", in.now))
 		l.Latency = ptrF(rd.num(gw, "unifi.wan.latency["+w+"]", in.now))
@@ -317,17 +326,37 @@ func (in mapInput) internet(v *mapView, gw string, rd mapReadings) {
 		if r, ok := rd.row(gw, "unifi.wan.in["+w+"]"); ok {
 			l.ChartHost, l.ChartItem = gw, r.ItemID
 		}
+		if !l.NoLink {
+			linkUse(&l)
+		}
 		v.Nodes = append(v.Nodes, n)
 		v.Links = append(v.Links, l)
 	}
+}
+
+// wanLine is the site's internet line on a gateway's WAN: the one tied to that WAN, else one tied to
+// the whole gateway when it has just this WAN (with two, such a line can't say which).
+func wanLine(lines []store.SiteLine, gw, wan string, wans int) (store.SiteLine, bool) {
+	for _, l := range lines {
+		if l.HostID == gw && l.Key != "" && wanOf(l.Key) == wan {
+			return l, true
+		}
+	}
+	for _, l := range lines {
+		if l.HostID == gw && l.Key == "" && wans == 1 {
+			return l, true
+		}
+	}
+	return store.SiteLine{}, false
 }
 
 // --- the Maps page ---
 
 type mapBusiest struct {
 	From string `json:"from"`
-	To   string `json:"to"`
+	To   string `json:"to,omitempty"`
 	Port string `json:"port,omitempty"`
+	Wan  string `json:"wan,omitempty"` // the internet line: From is the gateway, this its WAN
 	Use  int    `json:"use"`
 }
 
@@ -347,9 +376,9 @@ type mapSiteView struct {
 
 // summarize is a map's line on the Maps page.
 func (sv *mapSiteView) summarize(v mapView) {
-	names := map[string]string{}
+	names, kinds := map[string]string{}, map[string]string{}
 	for _, n := range v.Nodes {
-		names[n.ID] = n.Name
+		names[n.ID], kinds[n.ID] = n.Name, n.Kind
 		switch n.Kind {
 		case "gateway", "switch", "ap":
 			sv.Devices++
@@ -372,6 +401,9 @@ func (sv *mapSiteView) summarize(v mapView) {
 		}
 		if sv.Busiest == nil || *l.Use > sv.Busiest.Use {
 			sv.Busiest = &mapBusiest{From: names[l.From], To: names[l.To], Port: l.Port, Use: *l.Use}
+			if kinds[l.From] == "internet" {
+				sv.Busiest = &mapBusiest{From: names[l.To], Wan: l.Port, Use: *l.Use}
+			}
 		}
 	}
 }

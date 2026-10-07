@@ -6,8 +6,10 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -363,8 +365,14 @@ func (s *Server) handleSetSiteInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	idx, _ := s.hostIndex(ctx)
 	for _, l := range req.Lines {
-		l = store.SiteLine{Name: siteField(l.Name), HostID: strings.TrimSpace(l.HostID), Key: siteField(l.Key), Provider: siteField(l.Provider), Circuit: siteField(l.Circuit), Phone: siteField(l.Phone), Note: siteField(l.Note)}
-		if l.Name == "" && l.Provider == "" && l.Circuit == "" && l.Phone == "" {
+		down, okD := lineMbps(l.DownMbps)
+		up, okU := lineMbps(l.UpMbps)
+		if !okD || !okU {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a line's speed is in Mbps, from 0 to 1000000"})
+			return
+		}
+		l = store.SiteLine{Name: siteField(l.Name), HostID: strings.TrimSpace(l.HostID), Key: siteField(l.Key), Provider: siteField(l.Provider), Circuit: siteField(l.Circuit), Phone: siteField(l.Phone), Note: siteField(l.Note), DownMbps: down, UpMbps: up}
+		if l.Name == "" && l.Provider == "" && l.Circuit == "" && l.Phone == "" && l.DownMbps == 0 {
 			continue
 		}
 		if l.HostID == "" {
@@ -383,6 +391,27 @@ func (s *Server) handleSetSiteInfo(w http.ResponseWriter, r *http.Request) {
 	changeObject(r, site)
 	siteInfoDiff(r, was, info, idx)
 	writeJSON(w, http.StatusOK, s.siteInfoView(ctx, info))
+}
+
+// lineMbps checks a line's speed: Mbps, 0 (not given) to 1 Tbps, to the hundredth.
+func lineMbps(v float64) (float64, bool) {
+	if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 1_000_000 {
+		return 0, false
+	}
+	return math.Round(v*100) / 100, true
+}
+
+// lineSpeed is a line's speed as people read it: "1000 Mbps", or "1000/300 Mbps" when the upload
+// differs ("" when not given).
+func lineSpeed(l store.SiteLine) string {
+	if l.DownMbps <= 0 {
+		return ""
+	}
+	f := func(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+	if l.UpMbps > 0 && l.UpMbps != l.DownMbps {
+		return f(l.DownMbps) + "/" + f(l.UpMbps) + " Mbps"
+	}
+	return f(l.DownMbps) + " Mbps"
 }
 
 // inSite reports whether any of these groups is in the site.
@@ -413,6 +442,9 @@ func siteInfoDiff(r *http.Request, was, now store.SiteInfo, idx map[string]hostI
 			t := lineCall(l)
 			if l.HostID != "" {
 				t += " on " + idx[l.HostID].Name
+			}
+			if sp := lineSpeed(l); sp != "" {
+				t += ", " + sp
 			}
 			out = append(out, t)
 		}

@@ -70,7 +70,7 @@ func TestBuildSiteMap(t *testing.T) {
 			"probe": {Host: "sw", Port: "5", Source: "controller"},
 		},
 		facts: map[string]*deviceFacts{"sw": {Model: "USW Pro 24"}, "nas": {IP: "10.0.0.20"}},
-		lines: []store.SiteLine{{Name: "WAN 1", HostID: "gw", Key: "unifi.wan.avail[1]", Provider: "Example Fiber"}},
+		lines: []store.SiteLine{{Name: "WAN 1", HostID: "gw", Key: "unifi.wan.avail[1]", Provider: "Example Fiber", DownMbps: 1000, UpMbps: 50}},
 	}
 	v := buildSiteMap(in)
 
@@ -119,7 +119,9 @@ func TestBuildSiteMap(t *testing.T) {
 	if l := links["ap2"]; l.Source != "manual" || l.Down == nil || *l.Down != 64e6 || l.ChartHost != "ap2" || l.ChartItem != "i-ap2-up" || l.Use != nil {
 		t.Errorf("uplink fallback: %+v", l)
 	}
-	if l := links["gw"]; l.From != "wan:gw:1" || *l.Down != 412e6 || *l.Latency != 9 || l.State != "warning" || l.ChartItem != "i-wan-in" {
+	// The line's upload is slower: 38 of 50 Mbps up is fuller than 412 of 1000 down.
+	if l := links["gw"]; l.From != "wan:gw:1" || *l.Down != 412e6 || *l.Latency != 9 || l.State != "warning" || l.ChartItem != "i-wan-in" ||
+		l.Speed != 1e9 || l.SpeedUp != 50e6 || l.Use == nil || *l.Use != 76 {
 		t.Errorf("internet: %+v", l)
 	}
 	if n := nodes["wan:gw:1"]; n.Kind != "internet" || n.Provider != "Example Fiber" {
@@ -128,8 +130,56 @@ func TestBuildSiteMap(t *testing.T) {
 
 	var sv mapSiteView
 	sv.summarize(v)
-	if sv.Devices != 5 || sv.Hosts != 2 || sv.Down != 1 || sv.Busy != 1 || sv.NoLink != 1 || sv.Busiest == nil || sv.Busiest.To != "nas1" || sv.Busiest.Use != 95 {
+	if sv.Devices != 5 || sv.Hosts != 2 || sv.Down != 1 || sv.Busy != 2 || sv.NoLink != 1 || sv.Busiest == nil || sv.Busiest.To != "nas1" || sv.Busiest.Use != 95 {
 		t.Errorf("summary: %+v %+v", sv, sv.Busiest)
+	}
+}
+
+// A gateway's WAN takes the line tied to that WAN; a line tied to the whole gateway only when it has
+// one WAN. The busiest link, when it is the internet, is named by the gateway's WAN.
+func TestWanLine(t *testing.T) {
+	lines := []store.SiteLine{
+		{Name: "WAN 2", HostID: "gw", Key: "unifi.wan.latency[2]", DownMbps: 300},
+		{Name: "Modem", HostID: "gw", DownMbps: 1000},
+	}
+	if l, ok := wanLine(lines, "gw", "2", 2); !ok || l.DownMbps != 300 {
+		t.Fatalf("WAN 2: %+v %v", l, ok)
+	}
+	if _, ok := wanLine(lines, "gw", "1", 2); ok {
+		t.Fatal("a whole-gateway line can't say which of two WANs it is")
+	}
+	if l, ok := wanLine(lines, "gw", "1", 1); !ok || l.Name != "Modem" {
+		t.Fatalf("the only WAN: %+v %v", l, ok)
+	}
+	use := 88
+	var sv mapSiteView
+	sv.summarize(mapView{
+		Nodes: []mapNode{{ID: "wan:gw:1", Name: "Internet", Kind: "internet"}, {ID: "gw", Name: "gw-site1", Kind: "gateway"}},
+		Links: []mapLink{{From: "wan:gw:1", To: "gw", Port: "1", Use: &use}},
+	})
+	if b := sv.Busiest; b == nil || b.From != "gw-site1" || b.Wan != "1" || b.To != "" || sv.Busy != 1 {
+		t.Fatalf("busiest internet line: %+v", b)
+	}
+}
+
+func TestLineSpeed(t *testing.T) {
+	for _, c := range []struct {
+		in   float64
+		want float64
+		ok   bool
+	}{{0, 0, true}, {1000, 1000, true}, {12.345, 12.35, true}, {-1, 0, false}, {2e6, 0, false}} {
+		if got, ok := lineMbps(c.in); ok != c.ok || got != c.want {
+			t.Errorf("lineMbps(%v) = %v %v", c.in, got, ok)
+		}
+	}
+	if s := lineSpeed(store.SiteLine{DownMbps: 1000, UpMbps: 300}); s != "1000/300 Mbps" {
+		t.Errorf("asymmetric: %q", s)
+	}
+	if s := lineSpeed(store.SiteLine{DownMbps: 1000, UpMbps: 1000}); s != "1000 Mbps" {
+		t.Errorf("symmetric: %q", s)
+	}
+	if s := lineSpeed(store.SiteLine{UpMbps: 100}); s != "" {
+		t.Errorf("no download, no speed: %q", s)
 	}
 }
 

@@ -29,6 +29,10 @@ type SiteLine struct {
 	Circuit  string `json:"circuit"`  // circuit ID, contract or SIM number
 	Phone    string `json:"phone"`    // the provider's support number
 	Note     string `json:"note"`     // "1 Gbps", "LTE backup"
+	// The line's speed as contracted, in Mbps (0 = not given; an upload of 0 is the download's): the
+	// network map shows how full the line is from it.
+	DownMbps float64 `json:"down_mbps,omitempty"`
+	UpMbps   float64 `json:"up_mbps,omitempty"`
 }
 
 // SiteInfo is what Argus knows about a site (a top-level group) beyond its hosts: where it is, who to

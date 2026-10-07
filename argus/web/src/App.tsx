@@ -8169,7 +8169,7 @@ type Hop = { host_id: string; name: string; port?: string; down?: boolean }
 type UpstreamInfo = { mode: 'auto' | 'manual' | 'none'; manual_host?: string; auto?: Hop; path: Hop[]; behind: { id: string; name: string }[]; behind_all: number; source?: string; why?: string; ignored?: string }
 type DeviceInfo = { facts: DeviceFacts; own: { asset_tag: string; location: string }; class?: string; links: LinkRow[]; tags: HostTag[]; used_by: { groups: string[]; probe: string; status_pages: string[]; maintenance: string[]; channels: string[] }; upstream: UpstreamInfo; site?: SiteInfo }
 type SiteContact = { role: string; name: string; phone: string; email: string }
-type SiteLine = { name: string; host_id: string; key: string; provider: string; circuit: string; phone: string; note: string; host_name?: string; sensor?: string; state?: string }
+type SiteLine = { name: string; host_id: string; key: string; provider: string; circuit: string; phone: string; note: string; down_mbps?: number; up_mbps?: number; host_name?: string; sensor?: string; state?: string }
 type LineChoice = { host_id: string; key: string; label: string; group: string }
 type SiteInfo = { site: string; address: string; note: string; contacts: SiteContact[]; lines: SiteLine[]; updated_at?: number; choices?: LineChoice[] }
 type JournalRow = { id: number; kind: 'info' | 'warning' | 'problem'; text: string; by: string; at: number; mine?: boolean; can_delete?: boolean }
@@ -8262,6 +8262,12 @@ function PathView({ hops }: { hops: Hop[] }) {
 
 const PHONE_IC = <svg className="call-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z" /></svg>
 
+// lineSpeed is a line's contracted speed: "1000 Mbps", or "1000/300 Mbps" when the upload differs.
+function lineSpeed(down?: number, up?: number): string {
+  if (!down) return ''
+  return up && up !== down ? `${down}/${up} Mbps` : `${down} Mbps`
+}
+
 // LineState is an internet line's state, read from its sensor: a quiet tick when up, red when down.
 function LineState({ l }: { l: SiteLine }) {
   if (l.state === 'up') return <span className="okquiet" title={l.sensor ? `${l.sensor} on ${l.host_name}` : undefined}>up</span>
@@ -8286,7 +8292,7 @@ function SiteLines({ info, part }: { info: SiteInfo; part?: 'address' | 'contact
       ))}
       {(!part || part === 'lines') && info.lines.map((l, i) => (
         <InfoLine key={'l' + i} k={l.name || 'Internet'}>
-          <span className="v">{[l.provider, l.note].filter(Boolean).join(' · ') || '-'}</span>
+          <span className="v">{[l.provider, lineSpeed(l.down_mbps, l.up_mbps), l.note].filter(Boolean).join(' · ') || '-'}</span>
           {l.circuit && <><span className="sub-line">circuit</span><CopyValue value={l.circuit} /></>}
           {l.phone && <><span className="sub-line">support</span><CopyValue value={l.phone} /></>}
           <LineState l={l} />
@@ -8320,7 +8326,10 @@ function SitePanel({ site, canEdit, editing, onEditDone }: { site: string; canEd
 }
 
 const NO_CONTACT: SiteContact = { role: '', name: '', phone: '', email: '' }
-const NO_LINE: SiteLine = { name: '', host_id: '', key: '', provider: '', circuit: '', phone: '', note: '' }
+type SiteLineEd = SiteLine & { down: string; up: string }
+const NO_LINE: SiteLineEd = { name: '', host_id: '', key: '', provider: '', circuit: '', phone: '', note: '', down: '', up: '' }
+// mbpsIn reads a typed speed: a number of Mbps, 0 when blank (the server refuses one out of range).
+const mbpsIn = (v: string) => { const n = parseFloat(v.replace(',', '.')); return Number.isFinite(n) ? n : 0 }
 
 // SiteInfoDialog edits a site's info: the address, the contacts and the internet lines, each line tied
 // to the sensor that measures it.
@@ -8329,7 +8338,7 @@ function SiteInfoDialog({ site, onClose, onSaved }: { site: string; onClose: () 
   const [address, setAddress] = useState('')
   const [note, setNote] = useState('')
   const [contacts, setContacts] = useState<SiteContact[]>([])
-  const [lines, setLines] = useState<SiteLine[]>([])
+  const [lines, setLines] = useState<SiteLineEd[]>([])
   const [choices, setChoices] = useState<LineChoice[]>([])
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -8338,14 +8347,14 @@ function SiteInfoDialog({ site, onClose, onSaved }: { site: string; onClose: () 
     fetch(`/api/sites/${encodeURIComponent(site)}/info?choices=1`).then((r) => (r.ok ? r.json() : null)).then((x: SiteInfo | null) => {
       if (x) {
         setAddress(x.address); setNote(x.note); setContacts(x.contacts); setChoices(x.choices || [])
-        setLines(x.lines.map((l) => ({ name: l.name, host_id: l.host_id, key: l.key, provider: l.provider, circuit: l.circuit, phone: l.phone, note: l.note })))
+        setLines(x.lines.map((l) => ({ name: l.name, host_id: l.host_id, key: l.key, provider: l.provider, circuit: l.circuit, phone: l.phone, note: l.note, down: l.down_mbps ? String(l.down_mbps) : '', up: l.up_mbps ? String(l.up_mbps) : '' })))
       }
       setLoaded(true)
     }).catch(() => setLoaded(true))
   }, [site])
   const options: ComboOption[] = [{ value: '', label: 'Not tied to a sensor' }, ...choices.map((c) => ({ value: c.host_id + '|' + c.key, label: c.label, hint: c.key ? 'WAN sensor' : 'any alert on this host' }))]
   const setContact = (i: number, v: Partial<SiteContact>) => setContacts((cs) => cs.map((c, j) => (j === i ? { ...c, ...v } : c)))
-  const setLine = (i: number, v: Partial<SiteLine>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...v } : l)))
+  const setLine = (i: number, v: Partial<SiteLineEd>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...v } : l)))
   function tie(i: number, v: string) {
     const [host_id, key] = v ? v.split('|') : ['', '']
     const wan = /^unifi\.wan\.[a-z]+\[(.+)\]$/.exec(key || '')
@@ -8353,7 +8362,7 @@ function SiteInfoDialog({ site, onClose, onSaved }: { site: string; onClose: () 
   }
   async function save() {
     setBusy(true)
-    const res = await fetch(`/api/sites/${encodeURIComponent(site)}/info`, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) }, body: JSON.stringify({ address, note, contacts, lines }) }).catch(() => null)
+    const res = await fetch(`/api/sites/${encodeURIComponent(site)}/info`, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) }, body: JSON.stringify({ address, note, contacts, lines: lines.map(({ down, up, ...l }) => ({ ...l, down_mbps: mbpsIn(down), up_mbps: mbpsIn(up) })) }) }).catch(() => null)
     setBusy(false)
     if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the site info')); return }
     toast.success('Site info saved')
@@ -8378,7 +8387,7 @@ function SiteInfoDialog({ site, onClose, onSaved }: { site: string; onClose: () 
       ))}
       {contacts.length < 20 && <div><Button variant="ghost" className="compact" onClick={() => setContacts((cs) => [...cs, { ...NO_CONTACT }])}>+ Add contact</Button></div>}
       <div className="site-ed-h">Internet lines</div>
-      <div className="hs-note">The provider, circuit and support number of each line. Tie it to the sensor that measures it (a UniFi gateway's WAN, or a host such as the provider's modem), so an alert on it says who to call; when the site's probe stops reporting, the alert lists every line.</div>
+      <div className="hs-note">The provider, circuit and support number of each line. Tie it to the sensor that measures it (a UniFi gateway's WAN, or a host such as the provider's modem), so an alert on it says who to call; when the site's probe stops reporting, the alert lists every line. With its speed, the site's map shows how full a gateway's WAN is.</div>
       {lines.map((l, i) => (
         <div className="site-line-ed" key={i}>
           <div className="chan-field site-line-tie"><span className="flabel">Measured by</span><Combobox value={l.host_id ? l.host_id + '|' + l.key : ''} onChange={(v) => tie(i, v)} options={options} placeholder="Search sensors and hosts…" /></div>
@@ -8386,7 +8395,9 @@ function SiteInfoDialog({ site, onClose, onSaved }: { site: string; onClose: () 
           <label className="chan-field"><span className="flabel">Provider</span><input className="input" maxLength={200} placeholder="Example Fiber" value={l.provider} onChange={(e) => setLine(i, { provider: e.target.value })} /></label>
           <label className="chan-field"><span className="flabel">Circuit / contract</span><input className="input" maxLength={200} placeholder="EXF-000123" value={l.circuit} onChange={(e) => setLine(i, { circuit: e.target.value })} /></label>
           <label className="chan-field"><span className="flabel">Support phone</span><input className="input" maxLength={200} placeholder="+1 555 0100" value={l.phone} onChange={(e) => setLine(i, { phone: e.target.value })} /></label>
-          <label className="chan-field"><span className="flabel">Note</span><input className="input" maxLength={200} placeholder="1 Gbps, LTE backup" value={l.note} onChange={(e) => setLine(i, { note: e.target.value })} /></label>
+          <label className="chan-field"><span className="flabel">Note</span><input className="input" maxLength={200} placeholder="LTE backup" value={l.note} onChange={(e) => setLine(i, { note: e.target.value })} /></label>
+          <label className="chan-field"><span className="flabel">Download speed, Mbps</span><input className="input" inputMode="decimal" maxLength={12} placeholder="1000" value={l.down} onChange={(e) => setLine(i, { down: e.target.value })} /></label>
+          <label className="chan-field"><span className="flabel">Upload speed, Mbps</span><input className="input" inputMode="decimal" maxLength={12} placeholder={l.down ? `${l.down} (as download)` : 'as download'} value={l.up} onChange={(e) => setLine(i, { up: e.target.value })} /></label>
           <div className="site-line-act"><Button variant="ghost" className="compact" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>Remove</Button></div>
         </div>
       ))}
@@ -8519,9 +8530,9 @@ type InvRow = { host_id: string; name: string; groups: string[]; probe: string; 
 // what hangs off each, every link labelled with its port and traffic, thicker the more it carries. A
 // map is off until an admin turns it on. On a phone (or by choice) the same tree reads as a list.
 
-type MapSite = { probe: string; site: string; on: boolean; on_by?: string; on_at?: number; devices: number; hosts: number; down: number; busy: number; no_link: number; busiest?: { from: string; to: string; port?: string; use: number } }
+type MapSite = { probe: string; site: string; on: boolean; on_by?: string; on_at?: number; devices: number; hosts: number; down: number; busy: number; no_link: number; busiest?: { from: string; to?: string; port?: string; wan?: string; use: number } }
 type MapNodeT = { id: string; name: string; kind: 'internet' | 'gateway' | 'switch' | 'ap' | 'host'; model?: string; ip?: string; state: string; errors?: number; warnings?: number; down_since?: number; clients?: number; provider?: string }
-type MapLinkT = { from: string; to: string; port?: string; port_name?: string; down?: number; up?: number; speed?: number; use?: number; no_link?: boolean; latency?: number; state?: string; source?: string; chart_host?: string; chart_item?: string }
+type MapLinkT = { from: string; to: string; port?: string; port_name?: string; down?: number; up?: number; speed?: number; use?: number; no_link?: boolean; latency?: number; state?: string; source?: string; chart_host?: string; chart_item?: string; speed_up?: number }
 type MapPin = { dx: number; dy: number }
 type SiteMapT = { probe: string; site: string; nodes: MapNodeT[]; links: MapLinkT[]; unplaced: { id: string; name: string }[]; pins: Record<string, MapPin>; at: number }
 
@@ -8589,8 +8600,8 @@ function mapUse(l: MapLinkT): string {
 
 function mapTrunc(s: string, n: number): string { return s.length > n ? s.slice(0, n - 1) + '…' : s }
 
-function mapNodeSub(n: MapNodeT, nowSec: number): string {
-  if (n.kind === 'internet') return n.provider || 'Internet line'
+function mapNodeSub(n: MapNodeT, nowSec: number, out?: MapLinkT): string {
+  if (n.kind === 'internet') return [n.provider, out?.speed ? lineSpeed(out.speed / 1e6, out.speed_up ? out.speed_up / 1e6 : undefined) : ''].filter(Boolean).join(' · ') || 'Internet line'
   if (n.state === 'down') return n.down_since ? `down for ${relSpan(Math.max(0, nowSec - n.down_since))}` : 'down'
   const bits = [n.model || n.ip || '']
   if (n.clients != null) bits.push(`${n.clients} ${n.clients === 1 ? 'client' : 'clients'}`)
@@ -8745,7 +8756,7 @@ function MapsList({ onOpen, role }: { onOpen: (p: string) => void; role: string 
                     </span>
                   )}</td>
                   <td data-label="Busiest link">{m.on && m.busiest
-                    ? <span>{m.busiest.from}{m.busiest.port ? ` port ${m.busiest.port}` : ''} → {m.busiest.to} · <span className={m.busiest.use >= 90 ? 'txt-err' : m.busiest.use >= 70 ? 'txt-warn' : ''}>{m.busiest.use}%</span></span>
+                    ? <span>{m.busiest.wan ? `${m.busiest.from} WAN ${m.busiest.wan} → the internet` : `${m.busiest.from}${m.busiest.port ? ` port ${m.busiest.port}` : ''} → ${m.busiest.to}`} · <span className={m.busiest.use >= 90 ? 'txt-err' : m.busiest.use >= 70 ? 'txt-warn' : ''}>{m.busiest.use}%</span></span>
                     : <span className="muted">-</span>}</td>
                   <td className="act" onClick={(e) => e.stopPropagation()}>
                     {isAdmin
@@ -8916,6 +8927,7 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
     return (
       <div className="panel">{head}
         {err && <div style={{ padding: '0.6rem 16px', color: 'var(--err)' }}>{err}</div>}
+        <div className="enroll-scroll">
         <table className="slist slist-maptree">
           <thead><tr><th>Device</th><th>Port</th><th>Down</th><th>Up</th><th>Link use</th></tr></thead>
           <tbody>
@@ -8932,22 +8944,21 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
                       {depth > 0 && <span className="map-elbow" />}
                       <span className={'map-dot ' + mapStateTone(n.state)} />
                       {n.kind === 'internet' ? <b>{n.name}</b> : <span className="lnk-host" onClick={() => goHost(id)}>{n.name}</span>}
-                      <span className="inc-site"> {mapNodeSub(n, nowSec)}</span>
+                      <span className="inc-site"> {mapNodeSub(n, nowSec, n.kind === 'internet' ? m.links.find((x) => x.from === id) : undefined)}</span>
                     </span>
                   </td>
-                  <td data-label="Port" className="mono">{l ? (mapWhere(l, wan) || '-') + (l.port_name ? ` · ${l.port_name}` : '') : <span className="muted">-</span>}</td>
+                  <td data-label="Port" className="mono">{l ? (mapWhere(l, wan) || '-') + (l.port_name ? ` · ${l.port_name}` : '') + (l.latency != null ? ` · ${roundNum(Math.round(l.latency * 10) / 10)} ms` : '') : <span className="muted">-</span>}</td>
                   <td data-label="Down">{l ? rate(l.down) : <span className="muted">-</span>}</td>
                   <td data-label="Up">{l ? rate(l.up) : <span className="muted">-</span>}</td>
                   <td data-label="Link use">{!l ? <span className="muted">-</span>
                     : l.no_link ? <span className="txt-err">no link</span>
                     : l.use != null ? <span className="map-use"><span className="map-bar"><span className={tone} style={{ width: `${Math.max(3, Math.min(100, l.use))}%` }} /></span><span className={'mono ' + (tone === 'err' ? 'txt-err' : tone === 'warn' ? 'txt-warn' : '')}>{mapUse(l)}</span></span>
-                    : l.latency != null ? <span className="mono">{roundNum(Math.round(l.latency * 10) / 10)} ms</span>
                     : <span className="muted">-</span>}</td>
                   {/* A phone reads the link on one line under the device instead of four labelled ones. */}
                   <td className="map-compact" style={{ paddingLeft: depth * 18 + (depth ? 17 : 0) + 15 }}>{l && <>
                     <span className="mono">{[mapWhere(l, wan), !l.no_link && (l.down != null || l.up != null) ? mapRates(l.down, l.up) : ''].filter(Boolean).join(' · ')}</span>
                     {l.no_link ? <span className="txt-err">· no link</span>
-                      : l.use != null ? <span className="map-use"><span className="map-bar"><span className={tone} style={{ width: `${Math.max(3, Math.min(100, l.use))}%` }} /></span><span className={'mono ' + (tone === 'err' ? 'txt-err' : tone === 'warn' ? 'txt-warn' : '')}>{mapUse(l)}</span></span>
+                      : l.use != null ? <span className="map-use"><span className="map-bar"><span className={tone} style={{ width: `${Math.max(3, Math.min(100, l.use))}%` }} /></span><span className={'mono ' + (tone === 'err' ? 'txt-err' : tone === 'warn' ? 'txt-warn' : '')}>{mapUse(l)}</span>{l.latency != null && <span className="mono">· {roundNum(Math.round(l.latency * 10) / 10)} ms</span>}</span>
                       : l.latency != null ? <span className="mono">· {roundNum(Math.round(l.latency * 10) / 10)} ms</span> : null}
                   </>}</td>
                 </tr>
@@ -8955,6 +8966,7 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
             })}
           </tbody>
         </table>
+        </div>
         {unplacedNote}
       </div>
     )
@@ -9005,7 +9017,8 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
     const bits = [`${where} → ${wan ? 'the internet' : to?.name}`]
     if (l.no_link) bits.push('no link')
     else {
-      if (l.down != null || l.up != null) bits.push(`${mapRates(l.down, l.up)}${l.use != null ? `, ${l.use}% of ${fmtNum(l.speed || 0, 'bps')}` : ''}`)
+      const speed = l.speed_up ? `${fmtNum(l.speed || 0, 'bps')} down, ${fmtNum(l.speed_up, 'bps')} up` : fmtNum(l.speed || 0, 'bps')
+      if (l.down != null || l.up != null) bits.push(`${mapRates(l.down, l.up)}${l.use != null ? `, ${mapUse(l)} of ${speed}` : ''}`)
       if (l.latency != null) bits.push(`latency ${roundNum(Math.round(l.latency * 10) / 10)} ms`)
       if (l.source === 'manual') bits.push('upstream set by hand')
     }
@@ -9031,7 +9044,7 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
           {placed.map((id) => {
             const n = byId[id], p = at[id]
             const tone = mapStateTone(n.state)
-            const sub = mapNodeSub(n, nowSec)
+            const sub = mapNodeSub(n, nowSec, n.kind === 'internet' ? m.links.find((x) => x.from === id) : undefined)
             const open = () => { if (!arrange && n.kind !== 'internet') goHost(id) }
             return (
               <g key={id} className={'mn' + (arrange ? ' drag' : n.kind !== 'internet' ? ' click' : '') + (drag?.id === id ? ' dragging' : '')} transform={`translate(${p.x - MAP_W / 2} ${p.y - MAP_H / 2})`}
@@ -9042,7 +9055,8 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
                 <g className="mn-ic" transform="translate(12 15)">{MAP_ICON[n.kind] || MAP_ICON.host}</g>
                 <circle className={'mn-dot ' + tone} cx={MAP_W - 12} cy={12} r={4} />
                 <text className="mn-name" x={38} y={21}>{mapTrunc(n.name, 18)}</text>
-                <text className="mn-sub" x={38} y={36}>{mapTrunc(sub, 24)}</text>
+                {/* The internet's provider and speed, when both don't fit, leave the speed to the hover text. */}
+                <text className="mn-sub" x={38} y={36}>{mapTrunc(n.kind === 'internet' && sub.length > 24 && n.provider ? n.provider : sub, 24)}</text>
               </g>
             )
           })}

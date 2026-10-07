@@ -25,6 +25,14 @@ GitHub Release from the matching section below.
   opens. Hosts with no known upstream device are listed under the map. A site's map is **off until
   an admin turns it on** on the Maps page: an off map is never built, and one that is on reads only
   what Argus already holds, while someone has it open.
+- **An internet line's speed.** A site's internet lines (Edit site info) take the download and upload
+  speed as contracted, in Mbps (a blank upload is the download's). The site page and the Device tab
+  show it beside the provider, and the map shows how full the gateway's WAN is from it, each way
+  against its own speed, coloured like a port.
+
+**Fixed:**
+- Secondary text such as the "-" of an empty cell or "Loading…" was meant to be dimmed but showed in
+  the full text colour.
 
 ## [0.8.6] - 2026-10-07
 

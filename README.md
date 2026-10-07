@@ -106,7 +106,7 @@ API key, and MAC):
   checks every row first (class, site, probe, already monitored, the inputs a class needs) and lets
   you fix a bad cell in place before anything is created.
 - **Site info and who to call** - each site keeps its address, its contacts and its internet lines
-  (provider, circuit, support number), each line tied to the sensor that measures it. An alert on a
+  (provider, circuit, support number, speed), each line tied to the sensor that measures it. An alert on a
   WAN that went down says who to call and with which circuit ID; a site whose probe went silent lists
   every line. Shown on the site, on its hosts' Device tab and, per channel, in the alerts.
 - **Network maps** - each site drawn as a tree from what Argus already knows: the internet at the top,

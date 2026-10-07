@@ -675,7 +675,9 @@ pointer to setting it by hand.
 
 A site (a top-level group) keeps its **address** (and a note: opening hours, access), its
 **contacts** (role, name, phone, email) and its **internet lines** (name, provider, circuit or
-contract, support phone, a note such as "1 Gbps"), as one JSON document per site in `site_info`
+contract, support phone, a note such as "LTE backup", and the speed as contracted: download and
+upload in Mbps, 0 to 1000000, a blank upload being the download's; the network map shows how full a
+gateway's WAN is from it, section 7j), as one JSON document per site in `site_info`
 (`siteinfo.go`, `store/site.go`; up to 20 contacts and 10 lines). It is keyed by the site's name and
 moves along when the group is renamed (a rename onto a site that has its own info leaves both alone).
 `GET /api/sites/{site}/info` (with `?choices=1`, what a line can be tied to), `GET /api/sites/info`,
@@ -773,7 +775,9 @@ sensors (`unifi.uplink.in` / `out`, no speed). How full a link is, is the busier
 reading older than 10 minutes is unknown. A UniFi gateway's WANs lead up to the internet: one node per
 WAN, named after the site's line on it (section 7g), its link carrying `unifi.wan.in[N]` (the download),
 `unifi.wan.out[N]` and the latency, coloured by the WAN sensors' own state, no link when its
-availability reads 0. **The devices**: UniFi gateways, switches and access points are always on the
+availability reads 0. With the line's speed, the WAN also shows how full it is, each way against its
+own speed (an upload is often slower). The line is the one tied to that WAN, else one tied to the
+whole gateway when it has only that WAN. **The devices**: UniFi gateways, switches and access points are always on the
 map; any other host only when it is linked. A device's state is its sensors': down while its ping is in
 error (and for how long), else its worst sensor, paused with its ping. A host with no known upstream is
 listed under the map as not on it.
@@ -793,7 +797,7 @@ changed site still lays out; **Reset layout** puts them all back. One layout per
 **Off until turned on**, per probe (`site_maps`: on, by whom, when, and the offsets, which turning a
 map off keeps). An off map is never built: `GET /api/maps` lists the probes the user sees, with a
 summary only for the maps that are on (devices and hosts on it, devices down, busy links (70% or more),
-links with no link, the busiest one), and `GET /api/maps/{probe}` answers 409 for an off one. `PUT
+links with no link, the busiest one: a port, or a gateway's WAN), and `GET /api/maps/{probe}` answers 409 for an off one. `PUT
 /api/maps/{probe}` (`{"enabled": true}`, admins; logged in Changes as "Switched a site's map") turns one
 on or off; `PUT /api/maps/{probe}/layout` (`{"pins": {"<id>": {"dx", "dy"}}}`, admins and helpdesk, up
 to 1000) keeps the moved devices. A removed probe takes its map along. Per-site visibility applies: a
