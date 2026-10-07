@@ -249,6 +249,25 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   macros, so a file-based redesign was dropped as not worth it; the collectors wipe their own command
   line at start instead (`probe/v7.0.31-r7`). Still deferred: intermediate enrollment CA.
 - [ ] **Sizing pass** before the ~6000-sensor deployment (proxies, DB, caches, NVPS) - analysis
+- [ ] **Upstream devices beyond UniFi** (for the production rollout) - today the controller's answer
+  comes only from the UniFi templates. What is already source-independent stays as is: the path and
+  the holds behind a down device, set by hand / none, the 15-minute settle and "keeps changing"
+  entry, the port checks (also on the recorded answer) and the Device tab note (DESIGN 7f). To build:
+  1. Several **answer sources** feeding that one pipeline (a small refactor of `upstream.go`).
+  2. **LLDP** in the HPE Aruba CX class (and InstantOn 1960 if its SNMP exposes it): LLDP-MIB
+     neighbours per port, matched to hosts by management IP, chassis MAC or name. A neighbour is what
+     is really on the other end of the cable, but LLDP has no direction: each device's upstream is
+     its neighbour one step closer to the site's root (its firewall or core switch). The port checks
+     map to the interface status (IF-MIB) and to "the port facing the root".
+  3. **Sophos XGS** as each site's root and the source of the ARP table (IP to MAC) over SNMP. Its
+     own LLDP depends on the SFOS version (to verify); without it the core switch places it, or it
+     is set by hand once.
+  4. Hosts with **no LLDP** (Windows, most servers): the switches' MAC tables (Q-BRIDGE / BRIDGE-MIB)
+     plus the ARP table, edge ports only (a port with a switch on the other end is a trunk). This is
+     a guess like the UniFi controller's, so the settle and port checks apply.
+  5. **VMs**: their upstream is the hypervisor they run on (Nutanix, XCP-NG, Hyper-V).
+  Needs the Aruba CX and Sophos XGS classes (C2) first; to test: one Aruba switch's model and
+  firmware for an SNMP LLDP walk, the SFOS version, SNMP access to both. - _(BE)_ **L**
 - [x] **Server-side census/counts** - the census is built in the background on the core and served
   from memory (every 20 s while in use, every minute otherwise, rebuilt at once after a change made
   through Argus); the app fetches counts plus only the rows of the states on screen
