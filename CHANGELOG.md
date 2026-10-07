@@ -13,6 +13,11 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.8.5] - 2026-10-07
+
+A small release: the sidebar's fold button moves into the sidebar. Nothing to update besides the core;
+probes stay on r27 and the updater on 0.2.12.
+
 **The sidebar folds from the sidebar:** its button moved from the top bar to the end of the logo row,
 with an icon that shows which way it will move the sidebar. Folded, the logo is the button that
 unfolds it: pointing at it (or tabbing to it) swaps it for the unfold icon, and on a touch screen a
