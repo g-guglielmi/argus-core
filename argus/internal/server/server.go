@@ -57,6 +57,7 @@ type Server struct {
 	mux           *http.ServeMux    // the routes, so the change log can match a request before it runs (changes.go)
 	ups           upstreamCache     // the devices hosts are plugged into (upstream.go)
 	upsTrack      upstreamTrack     // the controller's answers on their way to being taken (upstream.go)
+	mapFactCache  mapFactCache      // the devices' models and addresses for the maps (maps.go)
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {
@@ -209,6 +210,11 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// a host's Device tab, the Inventory, the journal and the device links (device.go)
 	mux.HandleFunc("GET /api/hosts/{id}/device", auth.RequireAuth(s.scopedHost(s.handleHostDevice)))
 	mux.HandleFunc("GET /api/inventory", auth.RequireAuth(s.handleInventory))
+	// Network maps (maps.go): off per probe until an admin turns one on.
+	mux.HandleFunc("GET /api/maps", auth.RequireAuth(s.handleMaps))
+	mux.HandleFunc("GET /api/maps/{name}", auth.RequireAuth(s.handleMap))
+	mux.HandleFunc("PUT /api/maps/{name}", auth.RequireRole("admin", s.handleSetMapOn))
+	mux.HandleFunc("PUT /api/maps/{name}/layout", auth.RequireRoles(s.handleSetMapLayout, "admin", "helpdesk"))
 	mux.HandleFunc("GET /api/sites/info", auth.RequireAuth(s.handleSiteInfos))
 	mux.HandleFunc("GET /api/sites/{site}/info", auth.RequireAuth(s.handleSiteInfo))
 	mux.HandleFunc("PUT /api/sites/{site}/info", auth.RequireRoles(s.handleSetSiteInfo, "admin", "helpdesk"))

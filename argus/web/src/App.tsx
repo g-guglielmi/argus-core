@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 g-guglielmi
 
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, Fragment, type FormEvent, type ReactNode, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, Fragment, type FormEvent, type ReactNode, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
@@ -818,12 +818,13 @@ function ResetPassword({ token, onDone }: { token: string; onDone: () => void })
   )
 }
 
-type View = 'overview' | 'triggers' | 'history' | 'monitoring' | 'inventory' | 'maintenance' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'changes' | 'users' | 'updates' | 'settings' | 'account' | 'list'
+type View = 'overview' | 'triggers' | 'history' | 'monitoring' | 'maps' | 'inventory' | 'maintenance' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'changes' | 'users' | 'updates' | 'settings' | 'account' | 'list'
 const VIEW_TITLES: Record<View, [string, string]> = {
   overview: ['Overview', 'What needs attention right now'],
   triggers: ['Triggers', 'Alert rules - firing, or all by host'],
   history: ['History', 'What went wrong, and when'],
   monitoring: ['Monitoring', 'Sites, hosts and sensors'],
+  maps: ['Maps', "Each site's network and the traffic on its links"],
   inventory: ['Inventory', 'Models, firmware, serials and addresses'],
   maintenance: ['Maintenance', 'When alerts wait for planned work'],
   notifications: ['Notifications', 'Alert routing and channels'],
@@ -853,6 +854,7 @@ const ic = {
   users: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><path d="M16 5.2a3.2 3.2 0 0 1 0 6M17 14.5a5.5 5.5 0 0 1 3.5 5.5" /></svg>,
   updates: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6" /><path d="M20.5 3.5v4.5H16" /><path d="M12 8v7.5M9 12.5l3 3 3-3" /></svg>,
   changes: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 7h10M5 12h14M5 17h7" /><path d="M16 17.5l2 2 3.5-4" /></svg>,
+  maps: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 4.5 3.5 6.8v12.7L9 17.2l6 2.3 5.5-2.3V4.5L15 6.8z" /><path d="M9 4.5v12.7M15 6.8v12.7" /></svg>,
   inventory: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3.5" width="16" height="17" rx="2" /><path d="M8 8.5h8M8 12.5h8M8 16.5h5" /></svg>,
   settings: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
   account: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="3.4" /><path d="M5 20a7 7 0 0 1 14 0" /></svg>,
@@ -891,8 +893,8 @@ function useTheme(): ['dark' | 'light', () => void] {
 // bookmark, shared link, or Back/Forward restores the exact screen - instead of always
 // resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
 // (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
-const NAV_VIEWS: View[] = ['overview', 'triggers', 'history', 'monitoring', 'inventory', 'maintenance', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'changes', 'users', 'updates', 'settings', 'account', 'list']
-type NavState = { view: View; filter: string; host?: string; item?: string; group?: string; scan?: string; edit?: string }
+const NAV_VIEWS: View[] = ['overview', 'triggers', 'history', 'monitoring', 'maps', 'inventory', 'maintenance', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'changes', 'users', 'updates', 'settings', 'account', 'list']
+type NavState = { view: View; filter: string; host?: string; item?: string; group?: string; scan?: string; edit?: string; map?: string }
 
 function parseNav(): NavState {
   const p = new URLSearchParams(window.location.search)
@@ -902,7 +904,7 @@ function parseNav(): NavState {
   const raw = p.get('view')
   // Fall back to monitoring for a legacy ?host=&item= (or ?group=) link that predates ?view=.
   const view: View = raw && (NAV_VIEWS as string[]).includes(raw) ? (raw as View) : (host || group) ? 'monitoring' : 'overview'
-  return { view, filter: p.get('filter') || 'error', host, item, group, scan: p.get('scan') || undefined, edit: p.get('edit') || undefined }
+  return { view, filter: p.get('filter') || 'error', host, item, group, scan: p.get('scan') || undefined, edit: p.get('edit') || undefined, map: p.get('map') || undefined }
 }
 
 function buildNav(s: NavState): string {
@@ -917,6 +919,8 @@ function buildNav(s: NavState): string {
   }
   // An opened discovery scan is its own screen: deep-linkable, and Back returns to the scan list.
   if (s.view === 'discovery' && s.scan) p.set('scan', s.scan)
+  // An opened map is its own screen too: the probe whose site it draws.
+  if (s.view === 'maps' && s.map) p.set('map', s.map)
   const qs = p.toString()
   return window.location.pathname + (qs ? '?' + qs : '')
 }
@@ -1973,6 +1977,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   // The discovery scan being reviewed ("" = the scan list). Mirrored in the URL (?scan=) so a
   // reload restores it and Back steps out of the results to the list.
   const [discScan, setDiscScan] = useState<string | null>(() => { const s = initialNav(); return s.view === 'discovery' ? s.scan || null : null })
+  const [mapProbe, setMapProbe] = useState<string | null>(() => { const s = initialNav(); return s.view === 'maps' ? s.map || null : null })
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('argus-collapsed') === '1' } catch { return false } })
   const [navOpen, setNavOpen] = useState(false) // mobile drawer
   const [menuOpen, setMenuOpen] = useState(false)
@@ -2088,6 +2093,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
       const n = parseNav()
       setView(clampView(n.view)); setListFilter(n.filter); setMenuOpen(false); setNavOpen(false)
       setDiscScan(n.view === 'discovery' ? n.scan || null : null)
+      setMapProbe(n.view === 'maps' ? n.map || null : null)
       if (n.view === 'monitoring' && n.host) { navN.current += 1; setTreeTarget({ hostId: n.host, itemId: n.item, editHost: n.edit, n: navN.current }) }
       else if (n.view === 'monitoring' && n.group) { navN.current += 1; setTreeTarget({ groupPath: n.group, editHost: n.edit, n: navN.current }) }
       else if (n.view === 'monitoring' && n.edit) { navN.current += 1; setTreeTarget({ editHost: n.edit, n: navN.current }) }
@@ -2117,8 +2123,13 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   }, [])
 
   async function logout() { await fetch('/api/logout', { method: 'POST' }).catch(() => {}); onLogout() }
-  function goto(v: View) { setTreeTarget(null); setDiscScan(null); if (v === 'monitoring') setMonHome((n) => n + 1); setView(v); pushNav(v); setMenuOpen(false); setNavOpen(false) }
+  function goto(v: View) { setTreeTarget(null); setDiscScan(null); setMapProbe(null); if (v === 'monitoring') setMonHome((n) => n + 1); setView(v); pushNav(v); setMenuOpen(false); setNavOpen(false) }
   // Open (or leave, with null) a discovery scan's results - its own history entry, so Back works.
+  // Open (or leave, with null) a site's map: its own history entry too.
+  function openMap(probe: string | null) {
+    setMapProbe(probe)
+    window.history.pushState({}, '', buildNav({ view: 'maps', filter: listFilter, map: probe || undefined }))
+  }
   function openDiscoveryScan(id: number | null) {
     setDiscScan(id ? String(id) : null)
     window.history.pushState({}, '', buildNav({ view: 'discovery', filter: listFilter, scan: id ? String(id) : undefined }))
@@ -2194,6 +2205,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         {nav('overview', 'Overview', { count: errN })}
         {nav('triggers', 'Triggers')}
         {nav('monitoring', 'Monitoring')}
+        {nav('maps', 'Maps')}
         {nav('inventory', 'Inventory')}
         {nav('history', 'History')}
         <div className="navlabel">Configure</div>
@@ -2260,10 +2272,11 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         </div>
         <div className="content view-enter" key={`${view}:${listFilter}`}>
           {/* A page that fails to draw shows why in its place; opening a host or another page clears it. */}
-          <ErrorBoundary resetKey={`${treeTarget?.n ?? 0}:${monHome}`} context={`Argus ${ver?.version || 'development build'}`}>
+          <ErrorBoundary resetKey={`${treeTarget?.n ?? 0}:${monHome}:${mapProbe ?? ''}`} context={`Argus ${ver?.version || 'development build'}`}>
             {view === 'overview' && <StatusListView filter="attention" sensors={sensors} loading={!sensorsLoaded} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => {}} />}
             {view === 'triggers' && <TriggersView goHost={goHost} />}
             {view === 'history' && <HistoryView goHost={goHost} />}
+            {view === 'maps' && <MapsView probe={mapProbe} onOpen={openMap} role={me.role} goHost={goHost} goSensor={goSensor} />}
             {view === 'inventory' && <InventoryView goHost={goHost} />}
             {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} loading={!sensorsLoaded || !rowsFor.split(',').includes(listFilter)} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
             {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} advanced={!!me.advanced} />}
@@ -8501,6 +8514,564 @@ type InvRow = { host_id: string; name: string; groups: string[]; probe: string; 
 
 // InventoryView lists every device with its model, firmware or OS, serial, IP and MAC, grouped by
 // class, and marks one on older firmware than the newest seen on the same model.
+// --- Maps ---
+// A probe's site drawn as a tree (maps.go): the internet at the top, then the gateway, the switches and
+// what hangs off each, every link labelled with its port and traffic, thicker the more it carries. A
+// map is off until an admin turns it on. On a phone (or by choice) the same tree reads as a list.
+
+type MapSite = { probe: string; site: string; on: boolean; on_by?: string; on_at?: number; devices: number; hosts: number; down: number; busy: number; no_link: number; busiest?: { from: string; to: string; port?: string; use: number } }
+type MapNodeT = { id: string; name: string; kind: 'internet' | 'gateway' | 'switch' | 'ap' | 'host'; model?: string; ip?: string; state: string; errors?: number; warnings?: number; down_since?: number; clients?: number; provider?: string }
+type MapLinkT = { from: string; to: string; port?: string; port_name?: string; down?: number; up?: number; speed?: number; use?: number; no_link?: boolean; latency?: number; state?: string; source?: string; chart_host?: string; chart_item?: string }
+type MapPin = { dx: number; dy: number }
+type SiteMapT = { probe: string; site: string; nodes: MapNodeT[]; links: MapLinkT[]; unplaced: { id: string; name: string }[]; pins: Record<string, MapPin>; at: number }
+
+// The drawing's measures: a device box, the gap between boxes, one level down, and the column a long
+// row of devices folds into (more than MAP_COMB_MIN under one device stack up, MAP_COMB_ROWS a column).
+const MAP_W = 176, MAP_H = 48, MAP_GAP = 28, MAP_LEVEL = 118, MAP_PAD = 24
+const MAP_COMB_MIN = 5, MAP_COMB_ROWS = 6, MAP_COMB_IN = 30, MAP_COMB_PITCH = MAP_H + 36
+const MAP_KIND_RANK: Record<string, number> = { internet: 0, gateway: 1, switch: 2, ap: 3, host: 4 }
+
+const MAP_ICON: Record<string, ReactNode> = {
+  internet: <><circle cx="9" cy="9" r="7.5" /><path d="M1.5 9h15M9 1.5c2.2 2.2 2.2 12.8 0 15M9 1.5c-2.2 2.2-2.2 12.8 0 15" /></>,
+  gateway: <><rect x="1.5" y="4" width="15" height="10" rx="2" /><path d="M5 9h8M9 6v6" /></>,
+  switch: <><rect x="1" y="5" width="16" height="8" rx="2" /><path d="M4 9h.01M7 9h.01M10 9h.01M13 9h.01" /></>,
+  ap: <><circle cx="9" cy="9" r="7" /><circle cx="9" cy="9" r="2" /></>,
+  host: <><rect x="3" y="2" width="12" height="6" rx="1.5" /><rect x="3" y="10" width="12" height="6" rx="1.5" /><path d="M6 5h.01M6 13h.01" /></>,
+}
+
+// mapRates is a link's traffic both ways in one unit, the busier way's: "↓950 ↑12 Mbps".
+function mapRates(down?: number, up?: number): string {
+  const top = Math.max(down ?? 0, up ?? 0)
+  let i = 0, base = 1
+  while (top / base >= 1000 && i < BIT_UNITS.length - 1) { base *= 1000; i++ }
+  const f = (v?: number) => (v == null ? '?' : i > 0 && v / base < 10 ? (v / base).toFixed(1) : String(Math.round(v / base)))
+  return `↓${f(down)} ↑${f(up)} ${BIT_UNITS[i]}`
+}
+
+// mapTone is how a link reads: no link, how full it is (past 70% busy, past 90% full), the internet's
+// own sensors' state, or no reading at all.
+function mapTone(l: MapLinkT): 'down' | 'err' | 'warn' | 'ok' | 'none' {
+  if (l.no_link) return 'down'
+  if (l.state === 'error' || (l.use ?? 0) >= 90) return 'err'
+  if (l.state === 'warning' || (l.use ?? 0) >= 70) return 'warn'
+  return l.down == null && l.up == null ? 'none' : 'ok'
+}
+
+// mapWidth is a link's thickness: more traffic, thicker (a square root, so a quiet link still shows
+// some, and 1 Gbps or more is the thickest).
+function mapWidth(l: MapLinkT): number {
+  if (l.no_link) return 2
+  if (l.down == null && l.up == null) return 1.5
+  return 1.5 + 6.5 * Math.min(1, Math.sqrt(Math.max(l.down ?? 0, l.up ?? 0) / 1e9))
+}
+
+// mapWhere names a link's end at the upstream: its port, the gateway's WAN, or "set by hand".
+function mapWhere(l: MapLinkT, wan: boolean): string {
+  if (wan) return `WAN ${l.port}`
+  if (l.port) return `Port ${l.port}`
+  return l.source === 'manual' ? 'set by hand' : ''
+}
+
+// mapLabelParts is a link's label: where, its traffic, how full (coloured) and the internet's latency.
+function mapLabelParts(l: MapLinkT, wan: boolean): { text: string; use?: string; tail?: string } {
+  const where = mapWhere(l, wan)
+  if (l.no_link) return { text: where ? `${where} · ` : '', use: 'no link' }
+  const text = [where, l.down != null || l.up != null ? mapRates(l.down, l.up) : ''].filter(Boolean).join(' ')
+  const use = l.use != null ? mapUse(l) : undefined
+  const tail = l.latency != null ? `${roundNum(Math.round(l.latency * 10) / 10)} ms` : undefined
+  return { text, use, tail }
+}
+
+// mapUse is how full a link is: "<1%" for a link that carries something but rounds to nothing.
+function mapUse(l: MapLinkT): string {
+  return l.use === 0 && Math.max(l.down ?? 0, l.up ?? 0) > 0 ? '<1%' : `${l.use}%`
+}
+
+function mapTrunc(s: string, n: number): string { return s.length > n ? s.slice(0, n - 1) + '…' : s }
+
+function mapNodeSub(n: MapNodeT, nowSec: number): string {
+  if (n.kind === 'internet') return n.provider || 'Internet line'
+  if (n.state === 'down') return n.down_since ? `down for ${relSpan(Math.max(0, nowSec - n.down_since))}` : 'down'
+  const bits = [n.model || n.ip || '']
+  if (n.clients != null) bits.push(`${n.clients} ${n.clients === 1 ? 'client' : 'clients'}`)
+  if (n.errors) bits.push(`${n.errors} ${n.errors === 1 ? 'error' : 'errors'}`)
+  else if (n.warnings) bits.push(`${n.warnings} ${n.warnings === 1 ? 'warning' : 'warnings'}`)
+  return bits.filter(Boolean).join(' · ')
+}
+
+const mapStateTone = (s: string) => (s === 'down' || s === 'error' ? 'err' : s === 'warning' ? 'warn' : s === 'paused' ? 'paused' : 'ok')
+
+type MapTree = {
+  kids: Record<string, string[]> // the devices shown under each one, in port order
+  link: Record<string, MapLinkT> // the link into each device
+  roots: string[]
+  shown: Set<string>
+}
+
+// mapTree is the map as a tree: who hangs off whom, in port order, without the hosts (when they are
+// left out) unless something hangs off them.
+function mapTree(m: SiteMapT, showHosts: boolean): MapTree {
+  const byId: Record<string, MapNodeT> = {}
+  for (const n of m.nodes) byId[n.id] = n
+  const link: Record<string, MapLinkT> = {}
+  const all: Record<string, string[]> = {}
+  for (const l of m.links) {
+    if (!byId[l.from] || !byId[l.to]) continue
+    link[l.to] = l
+    ;(all[l.from] ||= []).push(l.to)
+  }
+  const memo: Record<string, boolean> = {}
+  const shows = (id: string, path: Set<string> = new Set()): boolean => {
+    if (memo[id] !== undefined) return memo[id]
+    if (path.has(id)) return false
+    path.add(id)
+    const n = byId[id]
+    const r = !!n && (showHosts || n.kind !== 'host' || (all[id] || []).some((k) => shows(k, path)))
+    path.delete(id)
+    return (memo[id] = r)
+  }
+  const portNum = (l?: MapLinkT) => { const p = parseInt(l?.port || '', 10); return Number.isNaN(p) ? 1e6 : p }
+  const shown = new Set(m.nodes.filter((n) => shows(n.id)).map((n) => n.id))
+  const kids: Record<string, string[]> = {}
+  for (const p of Object.keys(all)) {
+    if (!shown.has(p)) continue
+    kids[p] = all[p].filter((k) => shown.has(k)).sort((a, b) => portNum(link[a]) - portNum(link[b]) || byId[a].name.localeCompare(byId[b].name))
+  }
+  const roots = m.nodes.filter((n) => shown.has(n.id) && !(link[n.id] && shown.has(link[n.id].from)))
+    .sort((a, b) => MAP_KIND_RANK[a.kind] - MAP_KIND_RANK[b.kind] || a.name.localeCompare(b.name)).map((n) => n.id)
+  return { kids, link, roots, shown }
+}
+
+type MapLayout = { pos: Record<string, { x: number; y: number }>; parent: Record<string, string>; comb: Record<string, boolean>; outline: { id: string; depth: number }[] }
+
+// mapLayout places the tree top-down: each device centred over the ones below it, a long row of
+// devices with nothing below them folded into columns. Devices in a loop (two that report each other)
+// still get a place, as roots of their own.
+function mapLayout(t: MapTree, ids: string[]): MapLayout {
+  type Slot = { id?: string; ids?: string[]; w: number }
+  const info: Record<string, { w: number; slots: Slot[] }> = {}
+  const seen = new Set<string>()
+  const pos: MapLayout['pos'] = {}, parent: MapLayout['parent'] = {}, comb: MapLayout['comb'] = {}
+  const outline: MapLayout['outline'] = []
+  const kidsOf = (id: string) => t.kids[id] || []
+  const measure = (id: string): number => {
+    seen.add(id)
+    const ks = kidsOf(id).filter((k) => !seen.has(k))
+    ks.forEach((k) => { seen.add(k); parent[k] = id })
+    const leaves = ks.filter((k) => kidsOf(k).every((g) => seen.has(g)))
+    const slots: Slot[] = []
+    if (leaves.length >= MAP_COMB_MIN) {
+      for (const k of ks) if (!leaves.includes(k)) slots.push({ id: k, w: measure(k) })
+      for (let i = 0; i < leaves.length; i += MAP_COMB_ROWS) slots.push({ ids: leaves.slice(i, i + MAP_COMB_ROWS), w: MAP_W + MAP_COMB_IN })
+    } else {
+      for (const k of ks) slots.push({ id: k, w: measure(k) })
+    }
+    const span = slots.reduce((a, s) => a + s.w, 0) + MAP_GAP * Math.max(0, slots.length - 1)
+    info[id] = { w: Math.max(MAP_W, span), slots }
+    return info[id].w
+  }
+  const place = (id: string, left: number, top: number) => {
+    const inf = info[id]
+    pos[id] = { x: left + inf.w / 2, y: top + MAP_H / 2 }
+    const span = inf.slots.reduce((a, s) => a + s.w, 0) + MAP_GAP * Math.max(0, inf.slots.length - 1)
+    let cur = left + (inf.w - span) / 2
+    for (const s of inf.slots) {
+      if (s.id) place(s.id, cur, top + MAP_LEVEL)
+      else s.ids!.forEach((c, i) => { pos[c] = { x: cur + MAP_COMB_IN + MAP_W / 2, y: top + MAP_LEVEL + MAP_H / 2 + i * MAP_COMB_PITCH }; comb[c] = true })
+      cur += s.w + MAP_GAP
+    }
+  }
+  let x = 0
+  const placeRoot = (r: string) => { measure(r); place(r, x, 0); x += info[r].w + MAP_GAP * 2 }
+  for (const r of t.roots) if (!seen.has(r)) placeRoot(r)
+  for (const id of ids) if (t.shown.has(id) && !seen.has(id)) placeRoot(id)
+  // The outline: the same tree, in port order.
+  const walk = (id: string, depth: number) => { outline.push({ id, depth }); for (const k of kidsOf(id)) if (parent[k] === id) walk(k, depth + 1) }
+  for (const id of Object.keys(pos)) if (!parent[id]) walk(id, 0)
+  return { pos, parent, comb, outline }
+}
+
+// MapsView is the Maps page: the probes and their maps, or one site's map.
+function MapsView({ probe, onOpen, role, goHost, goSensor }: { probe: string | null; onOpen: (p: string | null) => void; role: string; goHost: (h: string) => void; goSensor: (h: string, i: string) => void }) {
+  return probe
+    ? <SiteMapView key={probe} probe={probe} onBack={() => onOpen(null)} role={role} goHost={goHost} goSensor={goSensor} />
+    : <MapsList onOpen={onOpen} role={role} />
+}
+
+function MapsList({ onOpen, role }: { onOpen: (p: string) => void; role: string }) {
+  const toast = useToast()
+  const [rows, setRows] = useState<MapSite[] | null>(null)
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState('')
+  const load = () => fetch('/api/maps').then(async (r) => { if (!r.ok) throw new Error(await errText(r, 'Could not load the maps')); return r.json() })
+    .then((x) => { setRows(x || []); setErr('') }).catch((e) => setErr(e instanceof Error ? e.message : 'Could not load the maps'))
+  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t) }, [])
+  async function turn(m: MapSite, on: boolean) {
+    setBusy(m.probe)
+    const res = await fetch(`/api/maps/${encodeURIComponent(m.probe)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: on }) }).catch(() => null)
+    setBusy('')
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not switch the map')); return }
+    toast.success(on ? `The map of ${m.site} is on` : `The map of ${m.site} is off`)
+    load()
+  }
+  const isAdmin = role === 'admin'
+  const onCount = (rows || []).filter((r) => r.on).length
+  return (
+    <div className="panel">
+      <div className="phead">
+        <PanelTitle eyebrow={watchEyebrow()}>Maps</PanelTitle>
+        <span className="hint">{rows ? `${rows.length} ${rows.length === 1 ? 'probe' : 'probes'} · ${onCount} ${onCount === 1 ? 'map' : 'maps'} on` : ''}</span>
+      </div>
+      <p className="map-note">Each probe's site, drawn from what Argus knows: its UniFi devices, the hosts plugged into them and the traffic on every link. A map is off until an admin turns it on{isAdmin ? ' here' : ''}: an off map costs Argus nothing.</p>
+      {err && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{err}</div>}
+      {rows === null && !err && <Skeleton rows={4} cols={5} />}
+      {rows !== null && !err && (rows.length === 0
+        ? <EmptyState icon={ic.maps} title="No probes yet" text="A site gets a map once its probe is enrolled." />
+        : (
+          <table className="slist slist-maps">
+            <thead><tr><th>Probe</th><th>Site</th><th>On the map</th><th>Status</th><th>Busiest link</th><th aria-label="Map" /></tr></thead>
+            <tbody>
+              {rows.map((m) => (
+                <tr key={m.probe} className={m.on ? 'map-row' : 'map-row off'} onClick={() => { if (m.on) onOpen(m.probe) }} title={m.on ? `Open the map of ${m.site}` : undefined}>
+                  <td className="slhost"><span className={m.on ? 'lnk-host' : ''}>{m.probe}</span></td>
+                  <td data-label="Site">{m.site}</td>
+                  <td data-label="On the map">{m.on ? <>{m.devices} network · {m.hosts} {m.hosts === 1 ? 'host' : 'hosts'}</> : <span className="muted">-</span>}</td>
+                  <td data-label="Status">{!m.on ? <span className="tag">Map off</span> : (
+                    <span className="map-chips">
+                      {m.down > 0 && <span className="map-chip"><i className="err" />{m.down} down</span>}
+                      {m.no_link > 0 && <span className="map-chip"><i className="err" />{m.no_link} no link</span>}
+                      {m.busy > 0 && <span className="map-chip"><i className="warn" />{m.busy} busy {m.busy === 1 ? 'link' : 'links'}</span>}
+                      {!m.down && !m.no_link && !m.busy && (m.devices + m.hosts > 0 ? <span className="okquiet">all up</span> : <span className="muted">nothing on it yet</span>)}
+                    </span>
+                  )}</td>
+                  <td data-label="Busiest link">{m.on && m.busiest
+                    ? <span>{m.busiest.from}{m.busiest.port ? ` port ${m.busiest.port}` : ''} → {m.busiest.to} · <span className={m.busiest.use >= 90 ? 'txt-err' : m.busiest.use >= 70 ? 'txt-warn' : ''}>{m.busiest.use}%</span></span>
+                    : <span className="muted">-</span>}</td>
+                  <td className="act" onClick={(e) => e.stopPropagation()}>
+                    {isAdmin
+                      ? <Switch checked={m.on} disabled={busy === m.probe} onChange={(v) => turn(m, v)} label={m.on ? 'On' : 'Off'} title={m.on ? `Turn the map of ${m.site} off` : `Turn the map of ${m.site} on`} />
+                      : m.on ? <Button variant="ghost" className="compact" onClick={() => onOpen(m.probe)}>Open</Button> : <span className="muted" title="An admin can turn it on">Off</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ))}
+    </div>
+  )
+}
+
+function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string; onBack: () => void; role: string; goHost: (h: string) => void; goSensor: (h: string, i: string) => void }) {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [m, setM] = useState<SiteMapT | null>(null)
+  const [err, setErr] = useState('')
+  const [off, setOff] = useState(false)
+  const [showHosts, setShowHosts] = useState(true)
+  const [asList, setAsList] = useState(() => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(max-width: 768px)').matches)
+  const [fit, setFit] = useState(true)
+  const [arrange, setArrange] = useState(false)
+  const [pins, setPins] = useState<Record<string, MapPin>>({})
+  const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null)
+  const dragFrom = useRef<{ id: string; x: number; y: number; pointer: number } | null>(null)
+  // The drawing's frame while a device is dragged: kept still, so the map doesn't rescale under the pointer.
+  const frozenBox = useRef<string | null>(null)
+  const arrangeRef = useRef(false)
+  arrangeRef.current = arrange || !!drag
+  const svgRef = useRef<SVGSVGElement | null>(null)
+  const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000))
+  const canArrange = role === 'admin' || role === 'helpdesk'
+
+  useEffect(() => {
+    let live = true
+    const load = () => fetch(`/api/maps/${encodeURIComponent(probe)}`).then(async (r) => {
+      if (r.status === 409) { if (live) { setOff(true); setM(null) } return null }
+      if (!r.ok) throw new Error(await errText(r, 'Could not load the map'))
+      return r.json()
+    }).then((x: SiteMapT | null) => {
+      if (!live || !x) return
+      setOff(false); setErr(''); setM(x); setNowSec(Math.floor(Date.now() / 1000))
+      if (!arrangeRef.current) setPins(x.pins || {})
+    }).catch((e) => { if (live) setErr(e instanceof Error ? e.message : 'Could not load the map') })
+    load()
+    const t = setInterval(load, 30000)
+    return () => { live = false; clearInterval(t) }
+  }, [probe])
+
+  const tree = useMemo(() => (m ? mapTree(m, showHosts) : null), [m, showHosts])
+  const lay = useMemo(() => (m && tree ? mapLayout(tree, m.nodes.map((n) => n.id)) : null), [m, tree])
+  const byId = useMemo(() => { const o: Record<string, MapNodeT> = {}; for (const n of m?.nodes || []) o[n.id] = n; return o }, [m])
+
+  // Where each device is drawn: its place in the layout, moved by its own pin and its upstreams' (so a
+  // moved switch takes the devices below it along), and by the drag in progress.
+  const at = useMemo(() => {
+    const out: Record<string, { x: number; y: number }> = {}
+    if (!lay) return out
+    const off = (id: string, depth = 0): { dx: number; dy: number } => {
+      const p = pins[id] || { dx: 0, dy: 0 }
+      const d = drag && drag.id === id ? drag : { dx: 0, dy: 0 }
+      const up = lay.parent[id] && depth < 64 ? off(lay.parent[id], depth + 1) : { dx: 0, dy: 0 }
+      return { dx: p.dx + d.dx + up.dx, dy: p.dy + d.dy + up.dy }
+    }
+    for (const id of Object.keys(lay.pos)) { const o = off(id); out[id] = { x: lay.pos[id].x + o.dx, y: lay.pos[id].y + o.dy } }
+    return out
+  }, [lay, pins, drag])
+
+  const svgPoint = (e: { clientX: number; clientY: number }) => {
+    const svg = svgRef.current
+    const ctm = svg?.getScreenCTM()
+    if (!svg || !ctm) return { x: e.clientX, y: e.clientY }
+    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse())
+    return { x: p.x, y: p.y }
+  }
+  async function savePins(next: Record<string, MapPin>, prev: Record<string, MapPin>) {
+    const res = await fetch(`/api/maps/${encodeURIComponent(probe)}/layout`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pins: next }) }).catch(() => null)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the layout')); setPins(prev); return }
+    const j = await res.json().catch(() => null)
+    if (j && j.pins) setPins(j.pins)
+  }
+  function onDown(id: string, e: ReactPointerEvent) {
+    if (!arrange) return
+    e.preventDefault()
+    ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+    const p = svgPoint(e)
+    dragFrom.current = { id, x: p.x, y: p.y, pointer: e.pointerId }
+    frozenBox.current = svgRef.current?.getAttribute('viewBox') || null
+    setDrag({ id, dx: 0, dy: 0 })
+  }
+  function onMove(e: ReactPointerEvent) {
+    const f = dragFrom.current
+    if (!f || f.pointer !== e.pointerId) return
+    const p = svgPoint(e)
+    setDrag({ id: f.id, dx: p.x - f.x, dy: p.y - f.y })
+  }
+  function onUp(e: ReactPointerEvent) {
+    const f = dragFrom.current
+    if (!f || f.pointer !== e.pointerId) return
+    dragFrom.current = null
+    setDrag(null)
+    // The move is read from where the pointer let go: a quick drag ends before its last move is drawn.
+    const p = svgPoint(e)
+    const d = { id: f.id, dx: p.x - f.x, dy: p.y - f.y }
+    if (Math.abs(d.dx) < 2 && Math.abs(d.dy) < 2) return
+    const prev = pins
+    const own = pins[d.id] || { dx: 0, dy: 0 }
+    const next = { ...pins, [d.id]: { dx: Math.round(own.dx + d.dx), dy: Math.round(own.dy + d.dy) } }
+    setPins(next)
+    savePins(next, prev)
+  }
+  async function resetLayout() {
+    if (!(await confirm({ title: 'Reset the layout', message: `Put every device on the map of ${m?.site || probe} back where Argus places it? Everyone sees the same map.`, confirmLabel: 'Reset' }))) return
+    const prev = pins
+    setPins({})
+    savePins({}, prev)
+  }
+
+  const head = (
+    <div className="phead">
+      <PanelTitle eyebrow={`Maps · ${probe}`}>{m?.site || probe.replace(/^proxy-/, '')}</PanelTitle>
+      {m && <span className="hint">{(() => {
+        const net = m.nodes.filter((n) => n.kind !== 'host' && n.kind !== 'internet').length
+        const hosts = m.nodes.filter((n) => n.kind === 'host').length
+        return `${net} network ${net === 1 ? 'device' : 'devices'} · ${hosts} ${hosts === 1 ? 'host' : 'hosts'}`
+      })()}</span>}
+      <div className="tools map-tools">
+        {m && <Switch checked={showHosts} onChange={setShowHosts} label="Hosts" title="Show the hosts, or only the network devices" />}
+        {m && <div className="seg">
+          <button className={asList ? '' : 'on'} onClick={() => setAsList(false)}>Map</button>
+          <button className={asList ? 'on' : ''} onClick={() => { setAsList(true); setArrange(false) }}>List</button>
+        </div>}
+        {m && !asList && !arrange && <Button onClick={() => setFit((f) => !f)} title={fit ? 'Draw the map at full size (scroll to see it all)' : 'Fit the map to the page'}>{fit ? 'Actual size' : 'Fit'}</Button>}
+        {m && !asList && canArrange && (arrange
+          ? <><Button variant="ghost" onClick={resetLayout} disabled={!Object.keys(pins).length}>Reset layout</Button><Button variant="primary" onClick={() => setArrange(false)}>Done</Button></>
+          : <Button onClick={() => setArrange(true)} title="Move devices by hand">Arrange</Button>)}
+        <Button variant="ghost" onClick={onBack}>← All maps</Button>
+      </div>
+    </div>
+  )
+
+  if (off) return (
+    <div className="panel">{head}
+      <EmptyState icon={ic.maps} title="This map is off" text={role === 'admin' ? 'Turn it on from the list of maps.' : 'An admin can turn it on from the list of maps.'} action={<Button onClick={onBack}>All maps</Button>} />
+    </div>
+  )
+  if (err && !m) return <div className="panel">{head}<div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{err}</div></div>
+  if (!m || !tree || !lay) return <div className="panel">{head}<Skeleton rows={5} cols={4} /></div>
+
+  const placed = Object.keys(at)
+  const unplacedNote = m.unplaced.length > 0 && (
+    <p className="map-unplaced">
+      Not on the map: {m.unplaced.map((u, i) => <Fragment key={u.id}>{i > 0 && ', '}<span className="lnk-host" onClick={() => goHost(u.id)}>{u.name}</span></Fragment>)}.
+      {' '}Argus doesn't know what {m.unplaced.length === 1 ? 'it is' : 'they are'} plugged into: pick the upstream device in a host's settings.
+    </p>
+  )
+  if (placed.length === 0) return (
+    <div className="panel">{head}
+      <EmptyState icon={ic.maps} title="Nothing to draw yet" text="No UniFi device on this site reports where it is plugged in, and no host has an upstream device set by hand." />
+      {unplacedNote}
+    </div>
+  )
+
+  if (asList) {
+    return (
+      <div className="panel">{head}
+        {err && <div style={{ padding: '0.6rem 16px', color: 'var(--err)' }}>{err}</div>}
+        <table className="slist slist-maptree">
+          <thead><tr><th>Device</th><th>Port</th><th>Down</th><th>Up</th><th>Link use</th></tr></thead>
+          <tbody>
+            {lay.outline.map(({ id, depth }) => {
+              const n = byId[id]
+              const l = tree.link[id] && lay.parent[id] === tree.link[id].from ? tree.link[id] : undefined
+              const wan = !!l && byId[l.from]?.kind === 'internet'
+              const tone = l ? mapTone(l) : 'none'
+              const rate = (v?: number) => (v == null ? <span className="muted">-</span> : <span className="mono">{fmtNum(v, 'bps')}</span>)
+              return (
+                <tr key={id}>
+                  <td className="slhost">
+                    <span className="map-indent" style={{ paddingLeft: depth * 18 }}>
+                      {depth > 0 && <span className="map-elbow" />}
+                      <span className={'map-dot ' + mapStateTone(n.state)} />
+                      {n.kind === 'internet' ? <b>{n.name}</b> : <span className="lnk-host" onClick={() => goHost(id)}>{n.name}</span>}
+                      <span className="inc-site"> {mapNodeSub(n, nowSec)}</span>
+                    </span>
+                  </td>
+                  <td data-label="Port" className="mono">{l ? (mapWhere(l, wan) || '-') + (l.port_name ? ` · ${l.port_name}` : '') : <span className="muted">-</span>}</td>
+                  <td data-label="Down">{l ? rate(l.down) : <span className="muted">-</span>}</td>
+                  <td data-label="Up">{l ? rate(l.up) : <span className="muted">-</span>}</td>
+                  <td data-label="Link use">{!l ? <span className="muted">-</span>
+                    : l.no_link ? <span className="txt-err">no link</span>
+                    : l.use != null ? <span className="map-use"><span className="map-bar"><span className={tone} style={{ width: `${Math.max(3, Math.min(100, l.use))}%` }} /></span><span className={'mono ' + (tone === 'err' ? 'txt-err' : tone === 'warn' ? 'txt-warn' : '')}>{mapUse(l)}</span></span>
+                    : l.latency != null ? <span className="mono">{roundNum(Math.round(l.latency * 10) / 10)} ms</span>
+                    : <span className="muted">-</span>}</td>
+                  {/* A phone reads the link on one line under the device instead of four labelled ones. */}
+                  <td className="map-compact" style={{ paddingLeft: depth * 18 + (depth ? 17 : 0) + 15 }}>{l && <>
+                    <span className="mono">{[mapWhere(l, wan), !l.no_link && (l.down != null || l.up != null) ? mapRates(l.down, l.up) : ''].filter(Boolean).join(' · ')}</span>
+                    {l.no_link ? <span className="txt-err">· no link</span>
+                      : l.use != null ? <span className="map-use"><span className="map-bar"><span className={tone} style={{ width: `${Math.max(3, Math.min(100, l.use))}%` }} /></span><span className={'mono ' + (tone === 'err' ? 'txt-err' : tone === 'warn' ? 'txt-warn' : '')}>{mapUse(l)}</span></span>
+                      : l.latency != null ? <span className="mono">· {roundNum(Math.round(l.latency * 10) / 10)} ms</span> : null}
+                  </>}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+        {unplacedNote}
+      </div>
+    )
+  }
+
+  // The drawing's extent: every device, and every label (a label can be wider than its device).
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  const grow = (x0: number, y0: number, x1: number, y1: number) => { minX = Math.min(minX, x0); minY = Math.min(minY, y0); maxX = Math.max(maxX, x1); maxY = Math.max(maxY, y1) }
+  type Drawn = { l: MapLinkT; d: string; tone: string; w: number; label?: { x: number; y: number; w: number; anchor: 'middle' | 'start'; parts: ReturnType<typeof mapLabelParts> } }
+  const drawn: Drawn[] = []
+  for (const id of placed) {
+    const p = at[id]
+    grow(p.x - MAP_W / 2, p.y - MAP_H / 2, p.x + MAP_W / 2, p.y + MAP_H / 2)
+    const up = lay.parent[id]
+    const l = tree.link[id]
+    if (!up || !l || l.from !== up || !at[up]) continue
+    const a = at[up]
+    const pb = a.y + MAP_H / 2, mid = pb + 18
+    let d: string
+    let label: Drawn['label']
+    const parts = mapLabelParts(l, byId[up]?.kind === 'internet')
+    const chars = parts.text.length + (parts.use ? parts.use.length + (parts.text ? 3 : 0) : 0) + (parts.tail ? parts.tail.length + 3 : 0)
+    const lw = chars * 6.3 + 18
+    if (lay.comb[id]) {
+      const bus = p.x - MAP_W / 2 - MAP_COMB_IN / 2
+      d = `M${a.x} ${pb} V${mid} H${bus} V${p.y} H${p.x - MAP_W / 2}`
+      if (chars) label = { x: p.x - MAP_W / 2, y: p.y - MAP_H / 2 - 14, w: lw, anchor: 'start', parts }
+    } else {
+      d = Math.abs(a.x - p.x) < 1 ? `M${a.x} ${pb} V${p.y - MAP_H / 2}` : `M${a.x} ${pb} V${mid} H${p.x} V${p.y - MAP_H / 2}`
+      if (chars) label = { x: p.x, y: p.y - MAP_H / 2 - 16, w: lw, anchor: 'middle', parts }
+    }
+    if (label) grow(label.anchor === 'middle' ? label.x - lw / 2 : label.x, label.y - 9, label.anchor === 'middle' ? label.x + lw / 2 : label.x + lw, label.y + 9)
+    drawn.push({ l, d, tone: mapTone(l), w: mapWidth(l), label })
+  }
+  minX -= MAP_PAD; minY -= MAP_PAD; maxX += MAP_PAD; maxY += MAP_PAD
+  let vbW = Math.round(maxX - minX), vbH = Math.round(maxY - minY)
+  let box = `${minX} ${minY} ${vbW} ${vbH}`
+  if (drag && frozenBox.current) { box = frozenBox.current; const [, , w, h] = box.split(' ').map(Number); vbW = w; vbH = h }
+  // Links share their upstream's trunk: the worst-off ones go on top (a busy link stays red all the way
+  // up), and among alike the thick ones first, so a thin one still shows. No link goes under the rest.
+  const toneRank: Record<string, number> = { down: 0, none: 1, ok: 2, warn: 3, err: 4 }
+  drawn.sort((a, b) => toneRank[a.tone] - toneRank[b.tone] || b.w - a.w)
+
+  const linkTitle = (l: MapLinkT) => {
+    const from = byId[l.from], to = byId[l.to]
+    const wan = from?.kind === 'internet'
+    const where = wan ? `${to?.name} WAN ${l.port}` : `${from?.name}${l.port ? ` port ${l.port}` : ''}${l.port_name ? ` (${l.port_name})` : ''}`
+    const bits = [`${where} → ${wan ? 'the internet' : to?.name}`]
+    if (l.no_link) bits.push('no link')
+    else {
+      if (l.down != null || l.up != null) bits.push(`${mapRates(l.down, l.up)}${l.use != null ? `, ${l.use}% of ${fmtNum(l.speed || 0, 'bps')}` : ''}`)
+      if (l.latency != null) bits.push(`latency ${roundNum(Math.round(l.latency * 10) / 10)} ms`)
+      if (l.source === 'manual') bits.push('upstream set by hand')
+    }
+    if (l.chart_item && !arrange) bits.push('click for its chart')
+    return bits.join(' · ')
+  }
+
+  return (
+    <div className="panel">{head}
+      {err && <div style={{ padding: '0.6rem 16px', color: 'var(--err)' }}>{err}</div>}
+      {arrange && <div className="map-arrange">Drag a device to move it: the devices below it move along. Everyone sees the same map.</div>}
+      <div className={'map-wrap' + (fit ? ' fit' : '')}>
+        <svg ref={svgRef} className={'map-svg' + (arrange ? ' arranging' : '')} viewBox={box}
+          style={{ ...(fit ? { width: '100%', maxWidth: vbW } : { width: vbW, height: vbH }), overflow: drag ? 'visible' : undefined }} role="img" aria-label={`Network map of ${m.site}`}
+          onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => { dragFrom.current = null; setDrag(null) }}>
+          {drawn.map(({ l, d, tone, w }) => (
+            <g key={'l' + l.from + '>' + l.to} className={'ml' + (l.chart_item && !arrange ? ' click' : '')} onClick={() => { if (!arrange && l.chart_host && l.chart_item) goSensor(l.chart_host, l.chart_item) }}>
+              <title>{linkTitle(l)}</title>
+              <path className="ml-hit" d={d} />
+              <path className={'ml-line ' + tone} d={d} strokeWidth={w} />
+            </g>
+          ))}
+          {placed.map((id) => {
+            const n = byId[id], p = at[id]
+            const tone = mapStateTone(n.state)
+            const sub = mapNodeSub(n, nowSec)
+            const open = () => { if (!arrange && n.kind !== 'internet') goHost(id) }
+            return (
+              <g key={id} className={'mn' + (arrange ? ' drag' : n.kind !== 'internet' ? ' click' : '') + (drag?.id === id ? ' dragging' : '')} transform={`translate(${p.x - MAP_W / 2} ${p.y - MAP_H / 2})`}
+                tabIndex={n.kind !== 'internet' && !arrange ? 0 : undefined} role={n.kind !== 'internet' && !arrange ? 'link' : undefined}
+                onClick={open} onKeyDown={(e) => { if (e.key === 'Enter') open() }} onPointerDown={(e) => onDown(id, e)}>
+                <title>{[n.name, sub].filter(Boolean).join(' · ')}</title>
+                <rect className={'mn-box ' + (tone === 'ok' ? '' : tone)} width={MAP_W} height={MAP_H} rx={10} />
+                <g className="mn-ic" transform="translate(12 15)">{MAP_ICON[n.kind] || MAP_ICON.host}</g>
+                <circle className={'mn-dot ' + tone} cx={MAP_W - 12} cy={12} r={4} />
+                <text className="mn-name" x={38} y={21}>{mapTrunc(n.name, 18)}</text>
+                <text className="mn-sub" x={38} y={36}>{mapTrunc(sub, 24)}</text>
+              </g>
+            )
+          })}
+          {drawn.map(({ l, label, tone }) => label && (
+            <g key={'t' + l.from + '>' + l.to} className="ml-label" pointerEvents="none">
+              <rect x={label.anchor === 'middle' ? label.x - label.w / 2 : label.x} y={label.y - 9} width={label.w} height={18} rx={9} />
+              <text x={label.anchor === 'middle' ? label.x : label.x + 9} y={label.y + 3.5} textAnchor={label.anchor}>
+                <tspan>{label.parts.text}</tspan>
+                {label.parts.use && <tspan className={'u ' + (tone === 'down' ? 'err' : tone)}>{(label.parts.text && !l.no_link ? ' · ' : '') + label.parts.use}</tspan>}
+                {label.parts.tail && <tspan>{' · ' + label.parts.tail}</tspan>}
+              </text>
+            </g>
+          ))}
+        </svg>
+      </div>
+      <div className="map-legend">
+        <span><i className="ok" />link in use</span>
+        <span><i className="warn" />past 70% of its speed</span>
+        <span><i className="err" />past 90%</span>
+        <span><i className="down" />no link</span>
+        <span><i className="none" />no traffic reading</span>
+        <span>thicker = more traffic</span>
+        <span>{arrange ? 'drag a device to move it' : 'click a device for its page, a link for its traffic chart'}</span>
+      </div>
+      {unplacedNote}
+    </div>
+  )
+}
+
 function InventoryView({ goHost }: { goHost: (h: string) => void }) {
   const [rows, setRows] = useState<InvRow[] | null>(null)
   const [err, setErr] = useState('')

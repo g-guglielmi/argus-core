@@ -24,6 +24,7 @@ func (s *Store) DeleteProxyRecords(ctx context.Context, proxyID, proxyName strin
 		{`DELETE FROM enroll_tokens WHERE proxy_name=?`, proxyName},
 		{`DELETE FROM probe_agents WHERE proxy_name=?`, proxyName},
 		{`DELETE FROM snmp_defaults WHERE proxy_id=?`, proxyID},
+		{`DELETE FROM site_maps WHERE probe=?`, proxyName},
 	} {
 		if _, err := tx.ExecContext(ctx, stmt.q, stmt.arg); err != nil {
 			return err
@@ -84,6 +85,19 @@ func (s *Store) ReconcileProxies(ctx context.Context, liveNames, liveIDs map[str
 	for _, id := range ids {
 		if !liveIDs[id] {
 			if err := del(`DELETE FROM snmp_defaults WHERE proxy_id=?`, id); err != nil {
+				return pruned, err
+			}
+		}
+	}
+
+	// site_maps (keyed by proxy name).
+	maps, err := s.oneColumn(ctx, `SELECT probe FROM site_maps`)
+	if err != nil {
+		return pruned, err
+	}
+	for _, n := range maps {
+		if !liveNames[n] {
+			if err := del(`DELETE FROM site_maps WHERE probe=?`, n); err != nil {
 				return pruned, err
 			}
 		}

@@ -665,6 +665,15 @@ CREATE TABLE IF NOT EXISTS site_info (
   data       TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
+-- A probe's network map (sitemaps.go): off until someone turns it on, and the devices moved by hand
+-- (offsets from the automatic layout, as JSON).
+CREATE TABLE IF NOT EXISTS site_maps (
+  probe      TEXT PRIMARY KEY,
+  enabled    INTEGER NOT NULL DEFAULT 0,
+  enabled_by TEXT NOT NULL DEFAULT '',
+  enabled_at INTEGER NOT NULL DEFAULT 0,
+  pins       TEXT NOT NULL DEFAULT '{}'
+);
 `); err != nil {
 		return err
 	}

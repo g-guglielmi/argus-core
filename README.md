@@ -109,6 +109,12 @@ API key, and MAC):
   (provider, circuit, support number), each line tied to the sensor that measures it. An alert on a
   WAN that went down says who to call and with which circuit ID; a site whose probe went silent lists
   every line. Shown on the site, on its hosts' Device tab and, per channel, in the alerts.
+- **Network maps** - each site drawn as a tree from what Argus already knows: the internet at the top,
+  then the gateway, the switches and what hangs off each, every link labelled with its port, its
+  traffic both ways and how full it is (amber past 70% of the port speed, red past 90%, dashed red
+  with no link), and thicker the more it carries. Click a device for its page, a link for its traffic
+  chart; drag devices to arrange them (everyone sees the same map). On a phone the same tree reads as
+  a list. A site's map is off until an admin turns it on, so an unused one costs nothing.
 - **Inventory** - every device with its model, firmware or OS, serial, IP and MAC, grouped by class,
   filterable by probe and group, exportable as CSV; a UniFi device with newer firmware on offer from its
   controller, or any device behind the newest on exactly its model, is flagged.

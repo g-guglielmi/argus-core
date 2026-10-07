@@ -13,6 +13,19 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Added:**
+- **Network maps.** A new Maps page (in the sidebar, under Watch) lists the probes; a site's map draws
+  its network as a tree, from what Argus already knows: the internet at the top, then the gateway, the
+  switches and what hangs off each (the upstream devices), the hosts linked to them, and every link
+  labelled with its port, its traffic both ways and how full it is. A link is amber past 70% of its
+  port speed, red past 90%, dashed red with no link, and thicker the more it carries; a device's box
+  is red while it is down. Click a device for its page, a link for its traffic chart. Arrange
+  (admins and helpdesk) lets devices be dragged, the ones below following, and the layout is kept for
+  everyone; Reset layout puts them back. List shows the same tree as a table, and is what a phone
+  opens. Hosts with no known upstream device are listed under the map. A site's map is **off until
+  an admin turns it on** on the Maps page: an off map is never built, and one that is on reads only
+  what Argus already holds, while someone has it open.
+
 ## [0.8.6] - 2026-10-07
 
 A patch release for upstream devices the UniFi controller can't place: its answers are checked against

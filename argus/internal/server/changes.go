@@ -179,6 +179,7 @@ var changeRoutes = map[string]routeChange{
 	"POST /api/probes/{name}/updater-update": {cat: "updates", action: "Updated a probe's sidecar", obj: "probe"},
 	"POST /api/probes/{name}/checkin-token":  {cat: "probes", action: "Issued a probe check-in credential", obj: "probe"},
 	"GET /api/probes/{name}/break-glass":     {cat: "probes", action: "Revealed a probe VM's console password", obj: "probe"},
+	"PUT /api/maps/{name}":                   {cat: "probes", action: "Switched a site's map", obj: "probe", detail: onOffDetail},
 
 	// updates
 	"POST /api/update/start":    {cat: "updates", action: "Updated Argus", detail: fieldDetail("target")},

@@ -760,6 +760,46 @@ making and revoking a token are logged too (its scope, the user's role and when 
 token). An admin can revoke all of a user's tokens from the Users page (`DELETE
 /api/users/{id}/tokens`), which also shows how many each user has.
 
+## 7j. Network maps
+
+A probe's site drawn as a tree (Maps in the sidebar, under Watch; `maps.go`, `store/sitemaps.go`),
+built on request from what Argus already holds: no polling of its own. **The links** are the upstream
+devices in effect (section 7f: the controller's answer as Argus holds it, or one set by hand), between
+hosts both on the site (the hosts the probe monitors, and the server's own in the site's group; never
+Argus's Probe host). **Their traffic** comes from the census: the upstream's port sensors when the link
+names a port it reports (`unifi.port.out[N]` is the traffic down toward the device, `unifi.port.in[N]`
+up, `unifi.port.speed[N]` the speed, `unifi.port.state[N]` = 0 no link), else the device's own uplink
+sensors (`unifi.uplink.in` / `out`, no speed). How full a link is, is the busier way over its speed. A
+reading older than 10 minutes is unknown. A UniFi gateway's WANs lead up to the internet: one node per
+WAN, named after the site's line on it (section 7g), its link carrying `unifi.wan.in[N]` (the download),
+`unifi.wan.out[N]` and the latency, coloured by the WAN sensors' own state, no link when its
+availability reads 0. **The devices**: UniFi gateways, switches and access points are always on the
+map; any other host only when it is linked. A device's state is its sensors': down while its ping is in
+error (and for how long), else its worst sensor, paused with its ping. A host with no known upstream is
+listed under the map as not on it.
+
+**Drawn** top-down in the browser: each device centred over the ones below it, in port order; five or
+more devices with nothing below them, under one device, fold into columns of six. A link is labelled
+above the device it feeds ("Port 9 ↓950 ↑12 Mbps · 95%"), coloured by how full it is (past 70% amber,
+past 90% red, dashed red with no link, grey with no reading) and thicker the more it carries (the square
+root of its traffic, the thickest at 1 Gbps). Links share their upstream's trunk, the worst-off drawn on
+top. A device opens its host, a link its traffic chart. **Hosts** (a switch) leaves out the hosts with
+nothing below them; **Fit** or **Actual size**; the page refreshes every 30 seconds. **List** draws the
+same tree as a table (device, port, down, up, a fill bar), one line per link on a phone, where it is
+the default. **Arrange** (admins and helpdesk) lets devices be dragged: each move is kept as an offset
+from where the layout puts the device, so a moved switch takes the devices below it along and a
+changed site still lays out; **Reset layout** puts them all back. One layout per map, for everyone.
+
+**Off until turned on**, per probe (`site_maps`: on, by whom, when, and the offsets, which turning a
+map off keeps). An off map is never built: `GET /api/maps` lists the probes the user sees, with a
+summary only for the maps that are on (devices and hosts on it, devices down, busy links (70% or more),
+links with no link, the busiest one), and `GET /api/maps/{probe}` answers 409 for an off one. `PUT
+/api/maps/{probe}` (`{"enabled": true}`, admins; logged in Changes as "Switched a site's map") turns one
+on or off; `PUT /api/maps/{probe}/layout` (`{"pins": {"<id>": {"dx", "dy"}}}`, admins and helpdesk, up
+to 1000) keeps the moved devices. A removed probe takes its map along. Per-site visibility applies: a
+user sees only their sites' probes and, on a map, only their hosts. The models and addresses on the
+devices are read every 10 minutes at most.
+
 ---
 
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")

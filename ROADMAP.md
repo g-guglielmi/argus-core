@@ -128,6 +128,12 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   Host/Origin allow-list in Settings, off until configured; probes exempt; lockout-safe - v0.5.6), ~~proxy health~~ (a per-site "Probe" host
   carrying the probe's own health sensors and a "probe unreachable" alert, linked from the Probes
   page - v0.5.8) - _(FE+BE)_ S-M
+- [x] **Network maps** - a Maps page listing the probes; each site drawn as a tree from the upstream
+  devices (the internet, the gateway, the switches, what hangs off each), every link labelled with its
+  port, traffic and how full it is, coloured past 70% / 90% and thicker the more it carries; devices
+  dragged by hand stay put for everyone; a list of the same tree on phones. Off per site until an admin
+  turns it on (DESIGN 7j). Unreleased (next core). Beyond UniFi it grows with the upstream sources of
+  section G. - _(FE+BE)_ M
 
 ### E. Auth / account gaps
 - [x] **Self-service email password reset** (single-use emailed link; reuses the email channel) - v0.3.3
