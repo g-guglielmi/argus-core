@@ -862,6 +862,8 @@ const ic = {
   acked: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z" /><path d="M8.5 10.3l2.4 2.4 4.6-4.6" /></svg>,
   ok: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><path d="M20 6 9 17l-5-5" /></svg>,
   paused: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>,
+  sideClose: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3.5" y="4" width="17" height="16" rx="2.5" /><path d="M9.5 4v16" /><path d="M16 9.5l-2.5 2.5 2.5 2.5" /></svg>,
+  sideOpen: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3.5" y="4" width="17" height="16" rx="2.5" /><path d="M9.5 4v16" /><path d="M13.5 9.5l2.5 2.5-2.5 2.5" /></svg>,
   hidden: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M2 12s3.5-7 10-7 10 7 10 7a17 17 0 0 1-2.2 2.9M3 3l18 18M9.5 9.5a3 3 0 0 0 4.2 4.2" /></svg>,
 }
 // Sensor state -> its status-chip icon (for the empty states of the filtered lists).
@@ -2068,7 +2070,8 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
     else window.history.replaceState({}, '', url)
   }
 
-  // The header ☰ opens the drawer on mobile, and collapses the rail on desktop.
+  // The sidebar's own button (and the [ key) folds it to the icon rail on a desktop; on a phone the
+  // sidebar is an off-screen drawer, opened by the top bar's ☰ and closed from inside it.
   function toggleNav() {
     if (window.matchMedia('(max-width: 768px)').matches) { setCollapsed(false); setNavOpen((o) => !o) }
     else setCollapsed((c) => !c)
@@ -2101,6 +2104,12 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault(); setSearchOpen(true)
+      }
+      // [ folds or unfolds the sidebar, except while typing.
+      const t = e.target as HTMLElement | null
+      const typing = !!t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))
+      if (e.key === '[' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat && !typing) {
+        e.preventDefault(); toggleNav()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -2140,12 +2149,14 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   }, [])
 
   // title doubles as the tooltip for the collapsed (icon-only) rail.
-  const nav = (id: View, label: string, opts?: { count?: number; soon?: boolean }) => (
-    <button className={'nav' + (view === id ? ' active' : '')} title={label} onClick={() => goto(id)}>
+  // dot marks the item on the folded rail, where the footer's "update available" doesn't show.
+  const nav = (id: View, label: string, opts?: { count?: number; soon?: boolean; dot?: string }) => (
+    <button className={'nav' + (view === id ? ' active' : '')} title={opts?.dot ? `${label} (${opts.dot})` : label} onClick={() => goto(id)}>
       {ic[id as keyof typeof ic]}
       <span className="lbl">{label}</span>
       {opts?.count ? <span className="count txt-err">{opts.count}</span> : null}
       {opts?.soon ? <span className="soon">Soon</span> : null}
+      {opts?.dot ? <span className="nav-dot" /> : null}
     </button>
   )
   const chip = (st: string, icon: ReactNode, color: string, n: number, label: string) => (
@@ -2162,9 +2173,20 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
       {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} />}
       {searchOpen && <SearchPalette onClose={() => setSearchOpen(false)} onPick={goSearch} />}
       <aside className="sidebar">
+        {/* Folded, the logo is the button that unfolds the sidebar: pointing at it (or tabbing to it) swaps
+            it for the unfold icon; a touch screen, with nothing to point, shows a small › beside it. */}
         <div className="brand">
-          <img className="brand-logo" src="/argus-logo.png" alt="" width={30} height={30} />
-          <div><div className="word">ARGUS</div><div className="sub">Monitoring</div></div>
+          {collapsed && !navOpen
+            ? <button type="button" className="brand-swap" title="Expand sidebar ([)" aria-label="Expand sidebar" onClick={toggleNav}>
+                <img className="brand-logo" src="/argus-logo.png" alt="" width={30} height={30} />
+                {ic.sideOpen}
+                <svg className="swap-hint" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+              </button>
+            : <>
+                <img className="brand-logo" src="/argus-logo.png" alt="" width={30} height={30} />
+                <div><div className="word">ARGUS</div><div className="sub">Monitoring</div></div>
+                <button type="button" className="iconbtn side-toggle" title={navOpen ? 'Close menu' : 'Collapse sidebar ([)'} aria-label={navOpen ? 'Close menu' : 'Collapse sidebar'} onClick={toggleNav}>{ic.sideClose}</button>
+              </>}
         </div>
         {/* The list scrolls between the logo and the account button when the window is too short for it. */}
         <nav className="side-nav">
@@ -2179,7 +2201,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         {me.role === 'admin' && nav('discovery', 'Discovery')}
         {nav('maintenance', 'Maintenance')}
         {nav('notifications', 'Notifications')}
-        {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('statuspages', 'Status pages')}{nav('thresholds', 'Thresholds')}{nav('changes', 'Changes')}{nav('users', 'Users')}{nav('updates', 'Updates')}{nav('settings', 'Settings')}</>}
+        {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('statuspages', 'Status pages')}{nav('thresholds', 'Thresholds')}{nav('changes', 'Changes')}{nav('users', 'Users')}{nav('updates', 'Updates', { dot: ver?.update_available ? 'update available' : undefined })}{nav('settings', 'Settings')}</>}
         </nav>
         <div className="side-foot">
           {ver && (
@@ -2219,7 +2241,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           </div>
         )}
         <div className="topbar">
-          <button className="iconbtn" title="Toggle sidebar" aria-label="Toggle sidebar" onClick={toggleNav}>
+          <button className="iconbtn nav-burger" title="Menu" aria-label="Open menu" onClick={toggleNav}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M3.5 6h17M3.5 12h17M3.5 18h17" /></svg>
           </button>
           <button className="iconbtn" title="Search (Ctrl-K)" aria-label="Search" onClick={() => setSearchOpen(true)}>

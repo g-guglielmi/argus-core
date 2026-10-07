@@ -74,6 +74,24 @@ a { color: var(--accent); }
 .brand .brand-logo { width: 30px; height: 30px; flex-shrink: 0; object-fit: contain; }
 .brand .word { font-weight: 700; letter-spacing: 0.18em; font-size: 15px; }
 .brand .sub { color: var(--faint); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; margin-top: 1px; }
+/* The fold button at the end of the brand row; folded, the logo itself unfolds the sidebar (.brand-swap):
+   pointing at it or tabbing to it swaps it for the unfold icon, and a touch screen (no pointing) gets a
+   small › beside the logo instead, so it still reads as a button. */
+.brand .side-toggle { margin-left: auto; }
+.brand-swap { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: none; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; position: relative; }
+.brand-swap > .brand-logo, .brand-swap > svg:not(.swap-hint) { grid-area: 1 / 1; transition: opacity 0.12s ease; }
+.brand-swap > svg:not(.swap-hint) { width: 19px; height: 19px; opacity: 0; }
+.brand-swap:hover, .brand-swap:focus-visible { background: var(--elevated); color: var(--text); }
+.brand-swap:hover > .brand-logo, .brand-swap:focus-visible > .brand-logo { opacity: 0; }
+.brand-swap:hover > svg:not(.swap-hint), .brand-swap:focus-visible > svg:not(.swap-hint) { opacity: 1; }
+.brand-swap .swap-hint { display: none; }
+@media (hover: none) {
+  .brand-swap .swap-hint { display: block; position: absolute; right: -9px; top: 50%; width: 11px; height: 11px; margin-top: -5.5px; color: var(--muted); }
+}
+/* A dot on a folded rail's item where its text would say more (Updates: one is available). */
+.nav .nav-dot { display: none; }
+.app-shell.collapsed .nav { position: relative; }
+.app-shell.collapsed .nav .nav-dot { display: block; position: absolute; top: 5px; right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 2px var(--panel); }
 
 .navlabel { color: var(--faint); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; padding: 11px 10px 3px; white-space: nowrap; }
 .nav { display: flex; align-items: center; gap: 11px; padding: 7px 10px; border-radius: 8px; cursor: pointer; color: var(--muted); font-weight: 500; border: 1px solid transparent; user-select: none; white-space: nowrap; background: none; font: inherit; width: 100%; text-align: left; }
@@ -130,6 +148,8 @@ a { color: var(--accent); }
 .iconbtn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer; display: grid; place-items: center; flex-shrink: 0; }
 .iconbtn:hover { background: var(--elevated); color: var(--text); }
 .iconbtn svg { width: 19px; height: 19px; }
+/* The top bar's ☰ opens the phone drawer; a desktop folds the sidebar from the sidebar itself. */
+.topbar .nav-burger { display: none; }
 .topbar h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: -0.01em; line-height: 1.2; }
 .topbar .sub { color: var(--muted); font-size: 12px; }
 .summary { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
@@ -1015,6 +1035,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   .topbar h1 { font-size: 15px; }
   .topbar .sub { display: none; }
   .topbar .iconbtn { width: 36px; height: 36px; }
+  .topbar .nav-burger { display: grid; }
   /* Panel header: keep the tools beside the title and drop the hint to its own line underneath. */
   .phead .tools { order: 1; margin-left: auto; }
   .phead .hint { order: 2; flex-basis: 100%; }

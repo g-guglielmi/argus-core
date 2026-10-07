@@ -13,6 +13,14 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**The sidebar folds from the sidebar:** its button moved from the top bar to the end of the logo row,
+with an icon that shows which way it will move the sidebar. Folded, the logo is the button that
+unfolds it: pointing at it (or tabbing to it) swaps it for the unfold icon, and on a touch screen a
+small › beside the logo says it can be tapped. The **[** key folds and unfolds it too (not while
+typing). On the folded sidebar an amber dot on **Updates** says an update is available, where the
+unfolded one shows "update available" under the menu. On a phone the ☰ stays in the top bar to open
+the menu, and the same button inside it closes it.
+
 ## [0.8.4] - 2026-10-07
 
 A patch release with fixes for the Zabbix server's own host: its colours, labels and units. Nothing
