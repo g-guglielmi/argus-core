@@ -1558,7 +1558,8 @@ input.tsel { width: 15px; height: 15px; accent-color: var(--accent); margin: 0 8
 .map-legend i.err { border-top-color: var(--err); }
 .map-legend i.down { border-top-color: var(--err); border-top-style: dashed; }
 .map-legend i.none { border-top-color: var(--border-strong); }
-.map-unplaced { margin: 0; padding: 10px 16px 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.map-foot { margin: 0; padding: 10px 16px 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.map-foot .btn { margin-left: 4px; vertical-align: baseline; }
 .map-indent { display: inline-flex; align-items: center; gap: 7px; }
 .map-elbow { width: 10px; height: 10px; margin-top: -9px; border-left: 1.5px solid var(--border-strong); border-bottom: 1.5px solid var(--border-strong); border-bottom-left-radius: 3px; flex-shrink: 0; }
 .map-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }

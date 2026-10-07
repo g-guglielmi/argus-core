@@ -28,7 +28,10 @@ GitHub Release from the matching section below.
 - **An internet line's speed.** A site's internet lines (Edit site info) take the download and upload
   speed as contracted, in Mbps (a blank upload is the download's). The site page and the Device tab
   show it beside the provider, and the map shows how full the gateway's WAN is from it, each way
-  against its own speed, coloured like a port.
+  against its own speed, coloured like a port. A map whose WAN has no speed yet says so under the
+  map, with **Set the speed** opening the site's info right there.
+- **Edit site info** is in a site's menu (⋮) in the Monitoring tree too: no need to open the site
+  first to find the button in its toolbar.
 
 **Fixed:**
 - Secondary text such as the "-" of an empty cell or "Loading…" was meant to be dimmed but showed in

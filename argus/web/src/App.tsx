@@ -4191,6 +4191,7 @@ const kbIcon = {
   resume: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M7 5l12 7-12 7z" /></svg>,
   show: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>,
   ack: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M22 11.2V12a10 10 0 1 1-5.9-9.1" /><path d="M22 4 12 14.5l-3-3" /></svg>,
+  site: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"><path d="M12 21s-6.5-5.4-6.5-11a6.5 6.5 0 0 1 13 0c0 5.6-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.4" /></svg>,
   edit: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>,
   mute: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M13.7 21a2 2 0 0 1-3.4 0" /><path d="M18.6 13A18 18 0 0 1 18 8" /><path d="M6.3 6.3A5.9 5.9 0 0 0 6 8c0 7-3 9-3 9h14" /><path d="M18 8a6 6 0 0 0-9.3-5" /><path d="M2 2l20 20" /></svg>,
   unmute: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>,
@@ -4355,6 +4356,10 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
   const [creating, setCreating] = useState(false) // "+ New group" inline band open
   const [addingDevice, setAddingDevice] = useState(false) // "+ Add device" inline band open (admin)
   const [siteEdit, setSiteEdit] = useState(false) // the site info editor (siteinfo.go)
+  // The site info editor opened from a site's row menu, without opening the site; the tick reloads the
+  // site's panel when it is the one on screen.
+  const [siteInfoFor, setSiteInfoFor] = useState<string | null>(null)
+  const [siteInfoTick, setSiteInfoTick] = useState(0)
   const [classes, setClasses] = useState<DeviceClass[]>([]) // device-class catalog for the attach band
   const [gAction, setGAction] = useState<{ id: string; mode: 'rename' | 'delete' } | null>(null) // per-group rename/delete band
   const [newSubPath, setNewSubPath] = useState<string | null>(null) // group path under which a "New subgroup" band is open
@@ -4814,6 +4819,10 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
           <div className="c-act">
             {canPause && g && !reorder && (
               <Kebab actions={[
+                ...(!node.path.includes('/') ? [
+                  { label: 'Edit site info…', icon: kbIcon.site, onClick: () => { setError(null); setSiteInfoFor(node.path) } },
+                  { sep: true, label: '' },
+                ] : []),
                 { label: 'New subgroup…', icon: kbIcon.folder, onClick: () => { setError(null); setGAction(null); setNewSubPath(node.path); setCollapsed((c) => { const n = new Set(c); n.delete(node.path); return n }) } },
                 { label: 'Rename…', icon: kbIcon.edit, onClick: () => { setError(null); setNewSubPath(null); setGAction({ id: g.id, mode: 'rename' }) } },
                 { label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => { setError(null); setNewSubPath(null); if (node.hosts.length) { setError(`Move the ${node.hosts.length} host${node.hosts.length === 1 ? '' : 's'} out of "${node.path}" before deleting it.`); return } setGAction({ id: g.id, mode: 'delete' }) } },
@@ -4924,7 +4933,8 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
         confirmLabel="Create" onConfirm={(name) => createGroup(name)} onCancel={() => setCreating(false)} />}
       {addingDevice && <AddDeviceBand classes={classes} groups={groups} proxies={proxies} defaultSite={focus.level === 'group' ? focus.path : ''} onCancel={() => setAddingDevice(false)} onCreated={() => { setAddingDevice(false); setError(null); load(); fireDataRefresh() }} />}
       {settingsHost && <HostSettingsModal hostId={settingsHost} hostName={hosts.find((h) => h.id === settingsHost)?.name} canEdit={canPause} isAdmin={role === 'admin'} onClose={closeSettings} onSaved={() => { closeSettings(); load(); fireDataRefresh() }} />}
-      {focusSite && <SitePanel site={focusSite} canEdit={canPause} editing={siteEdit} onEditDone={() => setSiteEdit(false)} />}
+      {focusSite && <SitePanel site={focusSite} canEdit={canPause} editing={siteEdit} onEditDone={() => setSiteEdit(false)} tick={siteInfoTick} />}
+      {siteInfoFor && <SiteInfoDialog site={siteInfoFor} onClose={() => setSiteInfoFor(null)} onSaved={() => { setSiteInfoFor(null); setSiteInfoTick((t) => t + 1) }} />}
       {loading && <Skeleton rows={5} cols={3} />}
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
       {!loading && !error && hosts.length === 0 && <EmptyState icon={ic.monitoring} title="No hosts yet" text="Hosts monitored in Zabbix appear here, grouped by site. If you expected some, check the Zabbix connection in Settings." />}
@@ -8303,10 +8313,11 @@ function SiteLines({ info, part }: { info: SiteInfo; part?: 'address' | 'contact
 }
 
 // SitePanel is the top of a site's page in Monitoring: its address, who to call and its internet lines.
-function SitePanel({ site, canEdit, editing, onEditDone }: { site: string; canEdit: boolean; editing: boolean; onEditDone: () => void }) {
+function SitePanel({ site, canEdit, editing, onEditDone, tick = 0 }: { site: string; canEdit: boolean; editing: boolean; onEditDone: () => void; tick?: number }) {
   const [info, setInfo] = useState<SiteInfo | null>(null)
   const load = () => fetch(`/api/sites/${encodeURIComponent(site)}/info`).then((r) => (r.ok ? r.json() : null)).then((x) => setInfo(x)).catch(() => setInfo(null))
   useEffect(() => { setInfo(null); load() }, [site]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (tick) load() }, [tick]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!info) return editing ? <SiteInfoDialog site={site} onClose={onEditDone} onSaved={() => { onEditDone(); load() }} /> : null
   const empty = !info.address && !info.note && info.contacts.length === 0 && info.lines.length === 0
   return (
@@ -8792,6 +8803,8 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
   const svgRef = useRef<SVGSVGElement | null>(null)
   const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000))
   const canArrange = role === 'admin' || role === 'helpdesk'
+  const [editInfo, setEditInfo] = useState(false)
+  const [reload, setReload] = useState(0)
 
   useEffect(() => {
     let live = true
@@ -8807,7 +8820,7 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
     load()
     const t = setInterval(load, 30000)
     return () => { live = false; clearInterval(t) }
-  }, [probe])
+  }, [probe, reload])
 
   const tree = useMemo(() => (m ? mapTree(m, showHosts) : null), [m, showHosts])
   const lay = useMemo(() => (m && tree ? mapLayout(tree, m.nodes.map((n) => n.id)) : null), [m, tree])
@@ -8910,8 +8923,20 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
   if (!m || !tree || !lay) return <div className="panel">{head}<Skeleton rows={5} cols={4} /></div>
 
   const placed = Object.keys(at)
+  // A gateway's WAN with no speed on its line can't show how full it is: those who may edit the site's
+  // info get a pointer to it, and the editor right here.
+  const slowKnown = m.links.filter((l) => byId[l.from]?.kind === 'internet' && !l.speed && byId[l.to])
+  const speedNote = canArrange && slowKnown.length > 0 && (
+    <>
+      <p className="map-foot">
+        No speed set for {slowKnown.map((l) => `${byId[l.to].name} WAN ${l.port}`).join(' and ')}, so the map can't show how full {slowKnown.length === 1 ? 'it is' : 'they are'}.
+        {' '}<Button variant="ghost" className="compact" onClick={() => setEditInfo(true)}>Set the speed</Button>
+      </p>
+      {editInfo && <SiteInfoDialog site={m.site} onClose={() => setEditInfo(false)} onSaved={() => { setEditInfo(false); setReload((n) => n + 1) }} />}
+    </>
+  )
   const unplacedNote = m.unplaced.length > 0 && (
-    <p className="map-unplaced">
+    <p className="map-foot">
       Not on the map: {m.unplaced.map((u, i) => <Fragment key={u.id}>{i > 0 && ', '}<span className="lnk-host" onClick={() => goHost(u.id)}>{u.name}</span></Fragment>)}.
       {' '}Argus doesn't know what {m.unplaced.length === 1 ? 'it is' : 'they are'} plugged into: pick the upstream device in a host's settings.
     </p>
@@ -8967,6 +8992,7 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
           </tbody>
         </table>
         </div>
+        {speedNote}
         {unplacedNote}
       </div>
     )
@@ -9081,6 +9107,7 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
         <span>thicker = more traffic</span>
         <span>{arrange ? 'drag a device to move it' : 'click a device for its page, a link for its traffic chart'}</span>
       </div>
+      {speedNote}
       {unplacedNote}
     </div>
   )

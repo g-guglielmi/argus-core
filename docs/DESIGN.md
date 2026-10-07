@@ -699,8 +699,10 @@ The webhook sends them as `call` (a list). A host's site is the top of its first
 alerts' "Site" names.
 
 **Shown** at the top of the site's page in Monitoring (Address, Contacts, Internet; **Edit site
-info** in the toolbar for those who may edit), and on each of its hosts' Device tab, with copy
-buttons on the numbers.
+info** in the toolbar for those who may edit, and in the site's row menu in the tree, which opens the
+editor without opening the site), and on each of its hosts' Device tab, with copy buttons on the
+numbers. A site's map whose gateway WAN has no speed on its line says so under the map, with **Set
+the speed** opening the same editor (for those who may edit).
 
 ## 7h. Import from a spreadsheet or PRTG
 
