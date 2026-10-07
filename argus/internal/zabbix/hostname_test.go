@@ -37,14 +37,17 @@ func TestTechnicalName(t *testing.T) {
 	}
 }
 
-func TestInferUnits(t *testing.T) {
-	if got := inferUnits("Zabbix server: Proxy [site1]: Last seen, in seconds", ""); got != "s" {
+func TestItemUnits(t *testing.T) {
+	if got := itemUnits("Number of processed values per second", "!vps"); got != "vps" {
+		t.Errorf("Zabbix's no-prefix marker should be dropped: %q", got)
+	}
+	if got := itemUnits("Zabbix server: Proxy [site1]: Last seen, in seconds", ""); got != "s" {
 		t.Errorf("unitless seconds counter: %q", got)
 	}
-	if got := inferUnits("Free disk space", ""); got != "" {
+	if got := itemUnits("Free disk space", ""); got != "" {
 		t.Errorf("unrelated item: %q", got)
 	}
-	if got := inferUnits("Uptime, in seconds", "uptime"); got != "uptime" {
+	if got := itemUnits("Uptime, in seconds", "uptime"); got != "uptime" {
 		t.Errorf("explicit units must win: %q", got)
 	}
 }

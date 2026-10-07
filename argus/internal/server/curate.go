@@ -133,7 +133,11 @@ var itemLabelOrder = map[string]map[string]int{
 	// per-VM rows trail unranked (natural name order).
 	"Virtual machines": {"VMs running": 0, "VMs defined": 1},
 	// A Probe host reads data-flow first (is anything backing up?), then its caches.
-	"Probe": {"Unsent values": 0, "Delayed items (over 10 min)": 1, "History cache used": 2, "Configuration cache used": 3},
+	"Probe": {
+		"Unsent values": 0, "Delayed items": 1, "Delayed items (over 10 min)": 2, "Values processed": 3,
+		"History cache used": 4, "History index cache used": 5, "Trend cache used": 6, "Value cache used": 7,
+		"Configuration cache used": 8,
+	},
 }
 
 // itemRank returns the within-category order rank for a flat row's label; unranked labels get a large
@@ -326,12 +330,35 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 			return "Uptime", "Probe uptime", "", "", true
 		case "proxy_history":
 			return "Probe", "Unsent values", "", "", true
+		// The probe template reads one of each; the Zabbix server's own health template reads many
+		// more under the same names (every cache, values per type), so each keeps its own label and
+		// the per-type and free/total variants stay under "All sensors".
 		case "queue":
-			return "Probe", "Delayed items (over 10 min)", "", "", true
+			if param(p, 1) == "10m" {
+				return "Probe", "Delayed items (over 10 min)", "", "", true
+			}
+			if len(p) == 1 {
+				return "Probe", "Delayed items", "", "", true
+			}
 		case "wcache":
-			return "Probe", "History cache used", "", "", true
+			switch param(p, 1) + "," + param(p, 2) {
+			case "history,pused":
+				return "Probe", "History cache used", "", "", true
+			case "index,pused":
+				return "Probe", "History index cache used", "", "", true
+			case "trend,pused":
+				return "Probe", "Trend cache used", "", "", true
+			case "values,", "values,all":
+				return "Probe", "Values processed", "", "", true
+			}
 		case "rcache":
-			return "Probe", "Configuration cache used", "", "", true
+			if param(p, 2) == "pused" {
+				return "Probe", "Configuration cache used", "", "", true
+			}
+		case "vcache":
+			if param(p, 1) == "buffer" && param(p, 2) == "pused" {
+				return "Probe", "Value cache used", "", "", true
+			}
 		case "process":
 			// One "Process load" row, a channel per process type; the UI headlines the busiest.
 			if t := param(p, 1); t != "" {

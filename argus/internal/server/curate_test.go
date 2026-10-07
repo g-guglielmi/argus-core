@@ -381,3 +381,38 @@ func TestNaturalLess(t *testing.T) {
 		}
 	}
 }
+
+// The probe template's internal checks keep their labels, and the Zabbix server's own health
+// template (many more checks under the same names) no longer folds them into duplicate rows: each
+// cache and queue reads as itself, values per type stay under "All sensors".
+func TestClassifyZabbixInternal(t *testing.T) {
+	cases := map[string]string{
+		"zabbix[queue,10m]":                       "Delayed items (over 10 min)",
+		"zabbix[queue]":                           "Delayed items",
+		"zabbix[wcache,history,pused]":            "History cache used",
+		"zabbix[wcache,index,pused]":              "History index cache used",
+		"zabbix[wcache,trend,pused]":              "Trend cache used",
+		"zabbix[wcache,values]":                   "Values processed",
+		"zabbix[rcache,buffer,pused]":             "Configuration cache used",
+		"zabbix[vcache,buffer,pused]":             "Value cache used",
+		"zabbix[proxy_history]":                   "Unsent values",
+		"zabbix[wcache,values,float]":             "",
+		"zabbix[wcache,values,\"not supported\"]": "",
+		"zabbix[wcache,history,free]":             "",
+		"zabbix[rcache,buffer,free]":              "",
+		"zabbix[vcache,cache,hits]":               "",
+		"zabbix[queue,1m,10m]":                    "",
+	}
+	for key, want := range cases {
+		cat, label, _, _, ok := classifyItem(key, "")
+		if want == "" {
+			if ok {
+				t.Errorf("%s: curated as %q, want it under All sensors", key, label)
+			}
+			continue
+		}
+		if !ok || cat != "Probe" || label != want {
+			t.Errorf("%s: got %q / %q (ok %v), want Probe / %q", key, cat, label, ok, want)
+		}
+	}
+}

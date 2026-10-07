@@ -368,7 +368,7 @@ func (c *Client) Items(ctx context.Context, hostID string) ([]Item, error) {
 		return nil, err
 	}
 	for i := range items {
-		items[i].Units = inferUnits(items[i].Name, items[i].Units)
+		items[i].Units = itemUnits(items[i].Name, items[i].Units)
 	}
 	return items, nil
 }
@@ -377,8 +377,12 @@ func (c *Client) Items(ctx context.Context, hostID string) ([]Item, error) {
 // seen, in seconds"): their units field is empty, so readings and alerts would show a bare number.
 var secondsNameRe = regexp.MustCompile(`(?i)\bin seconds\b`)
 
-// inferUnits fills in "s" for an item whose name says it counts seconds but whose units are empty.
-func inferUnits(name, units string) string {
+// itemUnits is the unit Argus shows for an item. It fills in "s" for an item whose name says it counts
+// seconds but whose units are empty, and drops Zabbix's "!" prefix: "!vps" is Zabbix for "show vps as
+// it is, no K/M prefix" (its server health template counts processed values that way), and Argus
+// never puts a prefix on a unit it doesn't know, so it reads "vps".
+func itemUnits(name, units string) string {
+	units = strings.TrimPrefix(units, "!")
 	if units == "" && secondsNameRe.MatchString(name) {
 		return "s"
 	}
@@ -492,7 +496,7 @@ func (c *Client) AllItems(ctx context.Context) ([]ItemWithHosts, error) {
 		return nil, err
 	}
 	for i := range items {
-		items[i].Units = inferUnits(items[i].Name, items[i].Units)
+		items[i].Units = itemUnits(items[i].Name, items[i].Units)
 	}
 	return items, nil
 }
@@ -561,7 +565,7 @@ func (c *Client) Item(ctx context.Context, itemID string) (*Item, error) {
 	if len(items) == 0 {
 		return nil, fmt.Errorf("item %s not found", itemID)
 	}
-	items[0].Units = inferUnits(items[0].Name, items[0].Units)
+	items[0].Units = itemUnits(items[0].Name, items[0].Units)
 	return &items[0], nil
 }
 
@@ -625,7 +629,7 @@ func (c *Client) ItemsByIDs(ctx context.Context, ids []string) (map[string]Item,
 		return nil, err
 	}
 	for _, it := range items {
-		it.Units = inferUnits(it.Name, it.Units)
+		it.Units = itemUnits(it.Name, it.Units)
 		out[it.ItemID] = it
 	}
 	return out, nil

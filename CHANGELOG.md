@@ -13,6 +13,19 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Fixed:**
+- On a host with Zabbix's own Linux template (the Zabbix server), Total memory and the 5 and 15
+  minute load averages drew every reading in the error colour, with an error line at 0. That
+  template's "Lack of available memory" and "Load average is too high" alerts add a "total memory
+  above 0" and "load above 0" check only so they wait for data, and Argus read those as the
+  sensors' error thresholds. In an alert over several sensors, "above 0" is no longer a threshold.
+- The Zabbix server's own health sensors no longer share a handful of labels: its history, index,
+  trend, value and configuration caches each read as themselves, "Delayed items" and "Delayed items
+  (over 10 min)" are two rows, and the processed values read as one **Values processed** row (the
+  per-type counts stay under All sensors). They were all "History cache used" or "Delayed items
+  (over 10 min)".
+- A unit Zabbix marks "no prefix" shows without the mark: "29.05 vps", not "29.05 !vps".
+
 ## [0.8.3] - 2026-10-07
 
 A small release: reminders that back off instead of repeating at a fixed interval. Nothing to update

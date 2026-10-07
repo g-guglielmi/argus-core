@@ -1113,7 +1113,9 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   excursion stays marked after the alert clears. The values come from the sensor's **own triggers**
   (`trigger.get` with `expandExpression`, so host overrides, fleet defaults and per-disk-type macro
   contexts are already resolved - the chart shows exactly what alerts); `/api/hosts/{id}/items`
-  carries them per item as `thr`. On multi-channel group charts only the **main channel** is banded -
+  carries them per item as `thr`. A trigger over several items counts only the comparisons on this
+  one, and there a `>0` is a "has data" guard (Zabbix's own templates add `and last(total)>0` to
+  "Lack of available memory"), not a threshold. On multi-channel group charts only the **main channel** is banded -
   the primary, when it is the only channel on its unit (ICMP response time, a disk's Used %); every
   other channel, and peer groups (drive temps, CPU cores, In/Out) where a gold channel would read as
   "warning", keeps its identity colour and gets just the reference lines (one pair per distinct

@@ -49,6 +49,30 @@ func TestItemThresholdsFrom(t *testing.T) {
 			want: &itemThresholds{Warn: f(0.5), High: f(1)},
 		},
 		{
+			name: "a stock template's >0 guard on a second item is not that item's threshold",
+			key:  "vm.memory.size[total]",
+			trigs: []zabbix.ItemTrigger{
+				trig(3, 2, `max(/zbx1/vm.memory.size[available],5m)<20971520 and last(/zbx1/vm.memory.size[total])>0`),
+			},
+			want: nil,
+		},
+		{
+			name: "the load average guards (avg5, avg15) beside a ratio on avg1",
+			key:  "system.cpu.load[all,avg5]",
+			trigs: []zabbix.ItemTrigger{
+				trig(3, 4, `min(/zbx1/system.cpu.load[all,avg1],5m)/last(/zbx1/system.cpu.num)>1.5 and last(/zbx1/system.cpu.load[all,avg5])>0 and last(/zbx1/system.cpu.load[all,avg15])>0`),
+			},
+			want: nil,
+		},
+		{
+			name: "a single-item >0 trigger is a real threshold",
+			key:  "zabbix[queue,10m]",
+			trigs: []zabbix.ItemTrigger{
+				trig(4, 1, `min(/probe1/zabbix[queue,10m],10m)>0`),
+			},
+			want: &itemThresholds{High: f(0)},
+		},
+		{
 			name: "key params with empty fields",
 			key:  "net.tcp.service.perf[https,,443]",
 			trigs: []zabbix.ItemTrigger{

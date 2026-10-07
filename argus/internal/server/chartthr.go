@@ -237,6 +237,13 @@ func itemThresholdsFrom(trigs []zabbix.ItemTrigger, itemKey string) *itemThresho
 			if t.ItemCount > 1 && c.key != itemKey {
 				continue
 			}
+			// ...and in such a trigger `>0` on this item is a precondition, not its threshold: Zabbix's
+			// own templates add `and last(.../vm.memory.size[total])>0` to "Lack of available memory" and
+			// `and last(...avg5)>0` to "Load average is too high" only so they wait for data. Read as a
+			// threshold it drew every reading of total memory or the load averages past "error".
+			if t.ItemCount > 1 && c.op == ">" && c.val == 0 {
+				continue
+			}
 			if c.op[0] == '>' {
 				b.lo = append(b.lo, c.val)
 			} else {
