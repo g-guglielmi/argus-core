@@ -13,6 +13,12 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.8.6] - 2026-10-07
+
+A patch release for upstream devices the UniFi controller can't place: its answers are checked against
+the switch ports, and a flapping one no longer floods Changes. Nothing to update besides the core (the
+UniFi Switch template's new item comes with it); probes stay on r27 and the updater on 0.2.12.
+
 **Fixed:**
 - An upstream device the UniFi controller keeps changing its mind about no longer floods Changes or
   moves the hosts held behind it. The controller can flip between two answers every few minutes (two
