@@ -13,6 +13,11 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-10-07
+
+A patch release with fixes for the Zabbix server's own host: its colours, labels and units. Nothing
+to update besides the core; probes stay on r27 and the updater on 0.2.12.
+
 **Fixed:**
 - On a host with Zabbix's own Linux template (the Zabbix server), Total memory and the 5 and 15
   minute load averages drew every reading in the error colour, with an error line at 0. That
