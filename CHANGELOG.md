@@ -13,6 +13,11 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-10-07
+
+A small release: reminders that back off instead of repeating at a fixed interval. Nothing to update
+besides the core; probes stay on r27 and the updater on 0.2.12.
+
 **Reminders back off:** a problem nobody acknowledges is repeated less and less often instead of
 filling the channel. A channel's first reminder comes after its **First reminder** time (what was
 "Remind every"), each next one twice as long after the last, and once they are a day apart they stay
