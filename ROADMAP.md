@@ -271,7 +271,9 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   4. Hosts with **no LLDP** (Windows, most servers): the switches' MAC tables (Q-BRIDGE / BRIDGE-MIB)
      plus the ARP table, edge ports only (a port with a switch on the other end is a trunk). This is
      a guess like the UniFi controller's, so the settle and port checks apply.
-  5. **VMs**: their upstream is the hypervisor they run on (Nutanix, XCP-NG, Hyper-V).
+  5. **VMs**: their upstream is the hypervisor they run on. **XCP-NG done** (core, unreleased, with
+     probe r28: the collector lists each VM's MACs and guest IPs; DESIGN 7f); Nutanix and Hyper-V
+     still to come with their classes.
   Needs the Aruba CX and Sophos XGS classes (C2) first; to test: one Aruba switch's model and
   firmware for an SNMP LLDP walk, the SFOS version, SNMP access to both. - _(BE)_ **L**
 - [x] **Server-side census/counts** - the census is built in the background on the core and served

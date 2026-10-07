@@ -12,25 +12,29 @@ import (
 	"sync"
 	"time"
 
+	"argus/internal/provision"
 	"argus/internal/store"
 	"argus/internal/zabbix"
 )
 
-// Upstream devices (DESIGN section 7f): the device a host is plugged into. By default it is the UniFi
-// controller's answer: a UniFi switch or access point reports the device it hangs off (its uplink
-// MAC and port), and a switch or gateway lists the wired clients on its ports, which Argus matches to
-// hosts by IP (else by the MAC discovery saw). A host can be set to one chosen by hand, or to none.
+// Upstream devices (DESIGN section 7f): the device a host is plugged into. By default it is automatic:
+// the UniFi controller's answer (a UniFi switch or access point reports the device it hangs off, its
+// uplink MAC and port, and a switch or gateway lists the wired clients on its ports, which Argus
+// matches to hosts by IP, else by the MAC discovery saw), and for a host that is a VM, the hypervisor
+// it runs on (an XCP-NG pool lists its VMs' network cards; that answer wins, the controller only
+// seeing the VM's MAC on the hypervisor's switch port). A host can be set to one chosen by hand, or to
+// none.
 // While an upstream device is down, the hosts behind it are held like a down master holds its host's
 // sensors: Argus can't reach them through it anyway, and the upstream's own alert says it all.
 
 // upstreamItemKeys are the items the controller's answer is read from.
-var upstreamItemKeys = []string{"unifi.mac", "unifi.uplink.mac", "unifi.uplink.port", "unifi.uplink.local", "unifi.clients"}
+var upstreamItemKeys = []string{"unifi.mac", "unifi.uplink.mac", "unifi.uplink.port", "unifi.uplink.local", "unifi.clients", "xcp.vm.nics"}
 
 // upstreamLink is a host's upstream device: which host, on which of its ports, and who said so.
 type upstreamLink struct {
 	Host   string
 	Port   string
-	Source string // controller | manual
+	Source string // controller | xcpng (the hypervisor it runs on) | manual
 	// Doubt is why the controller's answer doesn't add up against the port it names (doubtUpstreams):
 	// Argus ignores such an answer and keeps the one it has.
 	Doubt string
@@ -123,6 +127,110 @@ func controllerUpstreams(items []zabbix.Item, ips map[string]string, discMACs ma
 					continue // a UniFi device's own uplink says it better
 				}
 				out[h] = upstreamLink{Host: sw, Port: portText(c.Port), Source: "controller"}
+			}
+		}
+	}
+	return out
+}
+
+// vmNicList is an XCP-NG pool's VM list (xcp.vm.nics): its members, and each VM's network cards,
+// guest addresses and the member it runs on.
+type vmNicList struct {
+	Members []struct {
+		Name    string `json:"name"`
+		Address string `json:"address"`
+	} `json:"members"`
+	VMs []struct {
+		Name string   `json:"name"`
+		Host string   `json:"host"`
+		MACs []string `json:"macs"`
+		IPs  []string `json:"ips"`
+	} `json:"vms"`
+}
+
+// hypervisorUpstreams places the hosts that are VMs under the hypervisor they run on, from each
+// XCP-NG pool's VM list (on the pool's host). A VM is matched to hosts by its guest addresses, and by
+// its MACs: through the UniFi wired-client lists (MAC to address) or the MACs discovery saw. Its
+// hypervisor is the host at the pool member's address, or the pool's own host when the pool has just
+// that member; a VM on a member Argus doesn't monitor is left to the other answers.
+func hypervisorUpstreams(items []zabbix.Item, ips map[string]string, discMACs map[string]string) map[string]upstreamLink {
+	ipHosts := map[string][]string{}
+	for id, ip := range ips {
+		ipHosts[ip] = append(ipHosts[ip], id)
+	}
+	for _, hs := range ipHosts {
+		sort.Strings(hs)
+	}
+	macIP := map[string]string{}
+	var pools []zabbix.Item
+	for _, it := range items {
+		switch it.Key {
+		case "unifi.clients":
+			var cs []wiredClient
+			if json.Unmarshal([]byte(it.LastValue), &cs) == nil {
+				for _, c := range cs {
+					if m := normMAC(c.MAC); len(m) == 12 && c.IP != "" {
+						macIP[m] = c.IP
+					}
+				}
+			}
+		case "xcp.vm.nics":
+			pools = append(pools, it)
+		}
+	}
+	macHost := map[string]string{}
+	for id, m := range discMACs {
+		if n := normMAC(m); len(n) == 12 {
+			macHost[n] = id
+		}
+	}
+	sort.Slice(pools, func(i, j int) bool { return pools[i].HostID < pools[j].HostID })
+	out := map[string]upstreamLink{}
+	for _, it := range pools {
+		var list vmNicList
+		if json.Unmarshal([]byte(it.LastValue), &list) != nil {
+			continue
+		}
+		member := map[string]string{}
+		for _, m := range list.Members {
+			hs := ipHosts[strings.TrimSpace(m.Address)]
+			switch {
+			case len(hs) > 0:
+				member[m.Name] = hs[0]
+				for _, h := range hs {
+					if h == it.HostID {
+						member[m.Name] = h
+					}
+				}
+			case len(list.Members) == 1:
+				member[m.Name] = it.HostID
+			}
+		}
+		for _, vm := range list.VMs {
+			hv := member[vm.Host]
+			if hv == "" {
+				continue
+			}
+			var hs []string
+			for _, ip := range vm.IPs {
+				hs = append(hs, ipHosts[strings.TrimSpace(ip)]...)
+			}
+			for _, mac := range vm.MACs {
+				n := normMAC(mac)
+				if ip := macIP[n]; ip != "" {
+					hs = append(hs, ipHosts[ip]...)
+				}
+				if h := macHost[n]; h != "" {
+					hs = append(hs, h)
+				}
+			}
+			for _, h := range hs {
+				if h == hv || h == it.HostID {
+					continue
+				}
+				if _, has := out[h]; !has {
+					out[h] = upstreamLink{Host: hv, Source: "xcpng"}
+				}
 			}
 		}
 	}
@@ -227,12 +335,16 @@ const (
 	upstreamFlapRelog  = 24 * 60 * 60
 )
 
-// recordedUpstreams is the controller's answer recordUpstreams last took for each host.
+// recordedUpstreams is the automatic answer recordUpstreams last took for each host.
 func recordedUpstreams(settings map[string]store.HostUpstream) map[string]upstreamLink {
 	out := map[string]upstreamLink{}
 	for h, u := range settings {
 		if u.AutoAt != 0 && u.AutoHost != "" {
-			out[h] = upstreamLink{Host: u.AutoHost, Port: u.AutoPort, Source: "controller"}
+			src := u.AutoSource
+			if src == "" {
+				src = "controller"
+			}
+			out[h] = upstreamLink{Host: u.AutoHost, Port: u.AutoPort, Source: src}
 		}
 	}
 	return out
@@ -280,6 +392,10 @@ func loadUpstreams(ctx context.Context, st *store.Store, zbx *zabbix.Client) ups
 		ips, _ := zbx.HostIPs(ctx)
 		macs, _ := st.DiscoveredMACs(ctx)
 		us.live = controllerUpstreams(items, ips, macs)
+		// A VM hangs off its hypervisor: that answer wins over the controller's for the same host.
+		for h, l := range hypervisorUpstreams(items, ips, macs) {
+			us.live[h] = l
+		}
 		own := map[string]string{}
 		for _, it := range items {
 			if it.Key == "unifi.uplink.local" {
@@ -297,7 +413,35 @@ func loadUpstreams(ctx context.Context, st *store.Store, zbx *zabbix.Client) ups
 	}
 	us.settled = settledUpstreams(us.live, settings, us.wrong)
 	us.eff = effectiveUpstreams(us.settled, settings)
+	if classes, err := st.DeviceClasses(ctx); err == nil {
+		dropProbeHosts(classes, us.live, us.settled, us.eff)
+	}
 	return us
+}
+
+// dropProbeHosts takes Argus's Probe hosts out of the answers: a Probe host never hangs off anything,
+// whoever says so. It is its site's master, and a device it monitors holding its "not reporting"
+// alert, while that device's own alerts wait on the probe, would silence both (a probe VM on a
+// hypervisor whose ping went down first).
+func dropProbeHosts(classes map[string]string, answers ...map[string]upstreamLink) {
+	for _, m := range answers {
+		for h := range m {
+			if c, ok := provision.ClassByID(classes[h]); ok && c.Internal {
+				delete(m, h)
+			}
+		}
+	}
+}
+
+// upstreamSourceName is who gave an automatic answer, as Changes and the alerts say it.
+func upstreamSourceName(src string) string {
+	switch src {
+	case "xcpng":
+		return "XCP-NG"
+	case "manual":
+		return "set by hand"
+	}
+	return "the UniFi controller"
 }
 
 // upstreamPending is a new answer the controller has been giving a host, and since when.
@@ -513,22 +657,30 @@ func (s *Server) recordUpstreams(ctx context.Context) {
 					held = "none"
 				}
 				c := store.Change{Category: "hosts", Action: "Upstream device keeps changing", Object: idx[h].Name, HostIDs: []string{h},
-					Detail: fmt.Sprintf("The UniFi controller changed its answer %d times in the last hour. Argus keeps %s until a new one holds for 15 minutes; setting the upstream device by hand in the host's settings pins it.", n, held)}
+					Detail: fmt.Sprintf("Its automatic upstream device (%s) changed %d times in the last hour. Argus keeps %s until a new one holds for 15 minutes; setting the upstream device by hand in the host's settings pins it.", upstreamSourceName(cur.Source), n, held)}
 				s.logArgusChange(ctx, c)
 			}
 		}
 		if !take {
 			continue
 		}
-		if err := s.st.SetAutoUpstream(ctx, h, cur.Host, cur.Port, now); err != nil {
+		src := cur.Source
+		if cur.Host == "" {
+			src = ""
+		}
+		if err := s.st.SetAutoUpstream(ctx, h, cur.Host, cur.Port, src, now); err != nil {
 			continue
 		}
 		if was.AutoAt == 0 {
 			continue // the first answer for this host: nothing changed, it's just known now
 		}
 		old := label(upstreamLink{Host: was.AutoHost, Port: was.AutoPort})
+		from := cur.Source
+		if cur.Host == "" {
+			from = was.AutoSource
+		}
 		c := store.Change{Category: "hosts", Action: "Upstream device", Object: idx[h].Name, HostIDs: []string{h},
-			Diff: []store.ChangeDiff{{Field: "Upstream (from the UniFi controller)", Old: old, New: label(cur)}}}
+			Diff: []store.ChangeDiff{{Field: "Upstream (from " + upstreamSourceName(from) + ")", Old: old, New: label(cur)}}}
 		if cur.Host == "" {
 			c.Diff[0].New = "none"
 		}
@@ -554,13 +706,14 @@ type hopView struct {
 type upstreamView struct {
 	Mode       string        `json:"mode"` // auto | manual | none
 	ManualHost string        `json:"manual_host,omitempty"`
-	Auto       *hopView      `json:"auto,omitempty"`    // the controller's answer
-	Path       []hopView     `json:"path"`              // the chain in effect, top first, ending with this host
-	Behind     []hostRefView `json:"behind"`            // the hosts plugged straight into this one
-	BehindAll  int           `json:"behind_all"`        // every host whose chain goes through this one
-	Source     string        `json:"source,omitempty"`  // controller | manual
-	Why        string        `json:"why,omitempty"`     // why the controller gives none, when it doesn't
-	Ignored    string        `json:"ignored,omitempty"` // the controller's answer right now, when Argus ignores it (and why)
+	Auto       *hopView      `json:"auto,omitempty"`        // the automatic answer
+	AutoSource string        `json:"auto_source,omitempty"` // who gave it: controller | xcpng
+	Path       []hopView     `json:"path"`                  // the chain in effect, top first, ending with this host
+	Behind     []hostRefView `json:"behind"`                // the hosts plugged straight into this one
+	BehindAll  int           `json:"behind_all"`            // every host whose chain goes through this one
+	Source     string        `json:"source,omitempty"`      // controller | manual
+	Why        string        `json:"why,omitempty"`         // why the controller gives none, when it doesn't
+	Ignored    string        `json:"ignored,omitempty"`     // the controller's answer right now, when Argus ignores it (and why)
 }
 
 type hostRefView struct {
@@ -581,6 +734,7 @@ func (s *Server) hostUpstreamView(ctx context.Context, hostID string) upstreamVi
 	}
 	if a, ok := auto[hostID]; ok {
 		v.Auto = &hopView{HostID: a.Host, Name: idx[a.Host].Name, Port: a.Port}
+		v.AutoSource = a.Source
 	}
 	if l, ok := eff[hostID]; ok {
 		v.Source = l.Source

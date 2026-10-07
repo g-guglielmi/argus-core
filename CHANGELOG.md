@@ -35,6 +35,16 @@ GitHub Release from the matching section below.
   map, with **Set the speed** opening the site's info right there.
 - **Edit site info** is in a site's menu (⋮) in the Monitoring tree too: no need to open the site
   first to find the button in its toolbar.
+- **VMs hang off the hypervisor they run on.** An XCP-NG pool now lists each VM's network cards (and,
+  with guest tools, its addresses) every poll, whatever VM monitoring is set to, and Argus places the
+  hosts that are those VMs under their hypervisor: on the map, on the Device tab path, and for alerts,
+  so while a hypervisor is down its VMs' alerts wait and its own alert names them, as behind a down
+  switch. This answer wins over the UniFi controller's, which only sees a VM on its hypervisor's
+  switch port. The host settings' upstream mode is now **Automatic** (the hypervisor, else the
+  controller), and Changes and the Device tab say which one answered. A Probe host never hangs off
+  anything, so a probe VM can't end up waiting on a hypervisor that waits on the probe. Needs the
+  probe image's updated XCP-NG collector (probe r28) for pools a probe monitors; the core's own
+  collector comes with this update.
 
 **Fixed:**
 - Secondary text such as the "-" of an empty cell or "Loading…" was meant to be dimmed but showed in

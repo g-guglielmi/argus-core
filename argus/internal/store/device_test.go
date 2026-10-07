@@ -71,3 +71,34 @@ func TestDeviceStore(t *testing.T) {
 		t.Fatalf("deleted entry: %v", err)
 	}
 }
+
+// An automatic upstream answer keeps who gave it; a row from before sources read as the controller's,
+// and setting the mode by hand leaves the answer alone.
+func TestHostUpstreamSource(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	if err := st.SetAutoUpstream(ctx, "60", "50", "", "xcpng", 100); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.ExecContext(ctx, `INSERT INTO host_upstream (host_id, auto_host, auto_port, auto_at) VALUES ('61', '9', '3', 100)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetUpstreamMode(ctx, "60", "manual", "7"); err != nil {
+		t.Fatal(err)
+	}
+	all, err := st.HostUpstreams(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u := all["60"]; u.AutoHost != "50" || u.AutoSource != "xcpng" || u.Mode != "manual" || u.ManualHost != "7" {
+		t.Fatalf("60: %+v", u)
+	}
+	if u := all["61"]; u.AutoSource != "controller" || u.AutoPort != "3" {
+		t.Fatalf("61: %+v", u)
+	}
+	_ = st.SetAutoUpstream(ctx, "60", "51", "", "controller", 200)
+	all, _ = st.HostUpstreams(ctx)
+	if u := all["60"]; u.AutoHost != "51" || u.AutoSource != "controller" || u.AutoAt != 200 {
+		t.Fatalf("60 after: %+v", u)
+	}
+}

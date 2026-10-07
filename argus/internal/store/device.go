@@ -269,12 +269,13 @@ type HostUpstream struct {
 	ManualHost string
 	AutoHost   string
 	AutoPort   string
-	AutoAt     int64 // when the controller's answer was first stored; 0 = never
+	AutoAt     int64  // when the automatic answer was first stored; 0 = never
+	AutoSource string // who gave it: "controller" (the UniFi controller) or a hypervisor ("xcpng")
 }
 
 // HostUpstreams returns every host's upstream setting (a host without a row is auto with no answer).
 func (s *Store) HostUpstreams(ctx context.Context) (map[string]HostUpstream, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT host_id, mode, manual_host, auto_host, auto_port, auto_at FROM host_upstream`)
+	rows, err := s.db.QueryContext(ctx, `SELECT host_id, mode, manual_host, auto_host, auto_port, auto_at, auto_source FROM host_upstream`)
 	if err != nil {
 		return nil, err
 	}
@@ -283,8 +284,11 @@ func (s *Store) HostUpstreams(ctx context.Context) (map[string]HostUpstream, err
 	for rows.Next() {
 		var id string
 		var u HostUpstream
-		if err := rows.Scan(&id, &u.Mode, &u.ManualHost, &u.AutoHost, &u.AutoPort, &u.AutoAt); err != nil {
+		if err := rows.Scan(&id, &u.Mode, &u.ManualHost, &u.AutoHost, &u.AutoPort, &u.AutoAt, &u.AutoSource); err != nil {
 			return nil, err
+		}
+		if u.AutoSource == "" {
+			u.AutoSource = "controller"
 		}
 		out[id] = u
 	}
@@ -301,9 +305,10 @@ func (s *Store) SetUpstreamMode(ctx context.Context, hostID, mode, manualHost st
 	return err
 }
 
-// SetAutoUpstream stores the controller's answer for a host.
-func (s *Store) SetAutoUpstream(ctx context.Context, hostID, host, port string, at int64) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO host_upstream (host_id, auto_host, auto_port, auto_at) VALUES (?, ?, ?, ?)
-		ON CONFLICT(host_id) DO UPDATE SET auto_host = excluded.auto_host, auto_port = excluded.auto_port, auto_at = excluded.auto_at`, hostID, host, port, at)
+// SetAutoUpstream stores the automatic answer for a host, and who gave it (source).
+func (s *Store) SetAutoUpstream(ctx context.Context, hostID, host, port, source string, at int64) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO host_upstream (host_id, auto_host, auto_port, auto_at, auto_source) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(host_id) DO UPDATE SET auto_host = excluded.auto_host, auto_port = excluded.auto_port, auto_at = excluded.auto_at,
+		auto_source = excluded.auto_source`, hostID, host, port, at, source)
 	return err
 }

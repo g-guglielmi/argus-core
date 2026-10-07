@@ -127,7 +127,7 @@ func hostConfigDiff(before hostConfigView, req hostConfigUpdate, proxies map[str
 			case "none":
 				return "none"
 			}
-			return "from the UniFi controller"
+			return "automatic"
 		}
 		was := before.Upstream.Mode
 		if was == "" {

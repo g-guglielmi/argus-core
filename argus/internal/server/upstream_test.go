@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"argus/internal/provision"
 	"argus/internal/store"
 	"argus/internal/zabbix"
 )
@@ -296,5 +297,60 @@ func TestWrongRecordedUpstream(t *testing.T) {
 	doubted := upstreamLink{Host: "205", Port: "3", Source: "controller", Doubt: "that port has no link"}
 	if got := settledUpstreams(map[string]upstreamLink{"204": doubted}, settings, wrong); len(got) != 0 {
 		t.Fatalf("a wrong recorded answer and a doubted live one should leave none: %+v", got)
+	}
+}
+
+// A VM hangs off the hypervisor it runs on: matched by its guest address (every host at it), or by its
+// MAC through a UniFi wired-client list or discovery. A single-member pool's member is the pool's own
+// host; in a bigger pool, the host at the member's address, and a VM on a member Argus doesn't monitor
+// is left alone. The hypervisor never hangs off itself.
+func TestHypervisorUpstreams(t *testing.T) {
+	ips := map[string]string{
+		"50": "10.0.0.4", "60": "10.0.0.7", "61": "10.0.0.7", "62": "10.0.0.5", "63": "10.0.0.9",
+		"70": "10.1.0.1", "71": "10.1.0.2", "72": "10.1.0.20", "73": "10.1.0.30",
+	}
+	disc := map[string]string{"63": "aa:bb:cc:00:00:09"}
+	items := []zabbix.Item{
+		{HostID: "1", Key: "unifi.clients", LastValue: `[{"mac":"aa:bb:cc:00:00:05","ip":"10.0.0.5","port":3}]`},
+		{HostID: "50", Key: "xcp.vm.nics", LastValue: `{"members":[{"name":"xen1","address":"10.0.0.4"}],"vms":[
+			{"name":"dns","host":"xen1","macs":["aa:bb:cc:00:00:01"],"ips":["10.0.0.7"]},
+			{"name":"media","host":"xen1","macs":["AA:BB:CC:00:00:05"],"ips":[]},
+			{"name":"disc","host":"xen1","macs":["aa:bb:cc:00:00:09"],"ips":[]},
+			{"name":"self","host":"xen1","macs":[],"ips":["10.0.0.4"]}]}`},
+		{HostID: "70", Key: "xcp.vm.nics", LastValue: `{"members":[{"name":"m1","address":"10.1.0.1"},{"name":"m2","address":"10.1.0.2"},{"name":"m3","address":"10.1.0.3"}],"vms":[
+			{"name":"a","host":"m2","macs":[],"ips":["10.1.0.20"]},
+			{"name":"b","host":"m3","macs":[],"ips":["10.1.0.30"]}]}`},
+		{HostID: "80", Key: "xcp.vm.nics", LastValue: ``}, // a collector before the VM list
+	}
+	got := hypervisorUpstreams(items, ips, disc)
+	want := map[string]string{"60": "50", "61": "50", "62": "50", "63": "50", "72": "71"}
+	if len(got) != len(want) {
+		t.Fatalf("got %+v", got)
+	}
+	for h, hv := range want {
+		if got[h].Host != hv || got[h].Source != "xcpng" || got[h].Port != "" {
+			t.Errorf("%s: %+v, want under %s", h, got[h], hv)
+		}
+	}
+}
+
+// An answer remembers who gave it; one stored before there were other sources is the controller's.
+func TestRecordedUpstreamSource(t *testing.T) {
+	got := recordedUpstreams(map[string]store.HostUpstream{
+		"1": {AutoHost: "50", AutoAt: 10, AutoSource: "xcpng"},
+		"2": {AutoHost: "9", AutoPort: "3", AutoAt: 10},
+	})
+	if got["1"].Source != "xcpng" || got["2"].Source != "controller" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+// A Probe host never hangs off anything (it is its site's master): taken out of every answer.
+func TestDropProbeHosts(t *testing.T) {
+	live := map[string]upstreamLink{"p": {Host: "50", Source: "xcpng"}, "60": {Host: "50", Source: "xcpng"}}
+	eff := map[string]upstreamLink{"p": {Host: "9", Source: "manual"}}
+	dropProbeHosts(map[string]string{"p": provision.ClassProbe, "60": "linux-snmp"}, live, eff)
+	if _, ok := live["p"]; ok || len(eff) != 0 || live["60"].Host != "50" {
+		t.Fatalf("live %+v eff %+v", live, eff)
 	}
 }

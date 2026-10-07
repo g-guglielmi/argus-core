@@ -92,8 +92,8 @@ API key, and MAC):
   maintenance windows, the channels its alerts reach). The **Journal** keeps lasting notes on the host
   (a part replaced, a move, a ticket) for as long as it exists.
 - **Upstream devices** - Argus knows what each host is plugged into, from the UniFi controller (a
-  switch's or access point's uplink, and the switch port of every wired client it sees) or set by
-  hand. While a switch is down, the hosts behind it wait: you get one alert for the switch, naming the
+  switch's or access point's uplink, and the switch port of every wired client it sees), from the
+  hypervisor a VM runs on (an XCP-NG pool's VMs, matched by their network cards), or set by hand. While a switch is down, the hosts behind it wait: you get one alert for the switch, naming the
   hosts behind it, instead of one per access point and camera. The Device tab shows the path
   (gateway › switch port 24 › this host).
 - **Speedtest and common SaaS** - two add-ons for a site's probe: the site's internet speed, latency,

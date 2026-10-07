@@ -191,6 +191,30 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.vm_running'
+        - uuid: a1aafdf9da914c7881ca70937ef8ec6f
+          name: 'VM network cards'
+          type: DEPENDENT
+          key: xcp.vm.nics
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: TEXT
+          description: 'Each VM''s network cards (MACs), its addresses when guest tools report them, and the hypervisor it runs on, whatever VM monitoring is set to: Argus places the hosts that are these VMs under their hypervisor (upstream devices). Not a sensor. A poll that can''t log in keeps the last list, so the VMs stay under their hypervisor while it is down and their alerts wait for its own.'
+          master_item:
+            key: 'argus_xcpng.py[{HOST.CONN},{$XCP.USER},{$XCP.PASS},{$XCP.VM.MODE},{$XCP.VM.IGNORE},{$XCP.TLS}]'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (!d.authed || !d.vm_nics) { throw 'no VM list this poll'; }
+                  var members = [];
+                  for (var i = 0; i < (d.hosts || []).length; i++) { members.push({ name: d.hosts[i].name, address: d.hosts[i].address || '' }); }
+                  return JSON.stringify({ members: members, vms: d.vm_nics });
+              error_handler: DISCARD_VALUE
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
       discovery_rules:
         - uuid: 29e6d10edb4d47bd85ed93c0b70e7496
           name: 'Hypervisor discovery'

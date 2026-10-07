@@ -650,6 +650,23 @@ no upstream says why on its Device tab and in its settings: no client lists yet 
 updated), a read that failed (the controller's reason), lists not read yet, or this address not among
 them.
 
+**VMs: the hypervisor they run on.** An XCP-NG pool's collector lists, every poll and whatever VM
+monitoring is set to, each VM's network cards (MACs from its VIFs), its IPv4 addresses when guest
+tools report them, and the member it runs on (resident, else its affinity, else the pool's only
+member; templates, snapshots and control domains left out, ignored VMs kept: this places hosts, it
+monitors nothing). The template carries it as `xcp.vm.nics` (plumbing, like `unifi.clients`), and a
+poll that can't log in keeps the last list, so the VMs stay behind their hypervisor while it is down.
+`hypervisorUpstreams` matches each VM to hosts by its guest addresses and by its MACs (through the
+UniFi wired-client lists, MAC to address, or the MACs discovery saw), and hangs them off the host at
+the member's address (the pool's own host when the pool has one member; a VM on a member Argus
+doesn't monitor is left to the other answers). That answer wins over the controller's for the same
+host: the controller only sees a VM's MAC on its hypervisor's switch port. It goes through the same
+settle (a live migration moves it once the new answer holds), and the stored answer keeps its source
+(`auto_source`: Changes say "Upstream (from XCP-NG)", the Device tab "from XCP-NG, the hypervisor it
+runs on"; the host settings' mode is **Automatic**). **A Probe host never has an upstream device**,
+whoever says so (`dropProbeHosts`): it is its site's master, and a probe VM behind a hypervisor whose
+ping went down first would hold the hypervisor's alert while the hypervisor held the probe's.
+
 **Holds.** The notifier's master set walks a host's chain of upstream devices, nearest first, and
 judges each one's main master (its ping) like the host's own (section 9): while one is down, or yet to
 report on a new problem, the host's alerts are held (`by: upstream`), its ping included. The top of an
@@ -792,7 +809,7 @@ listed under the map as not on it.
 **Drawn** top-down in the browser: each device centred over the ones below it, in port order. The hosts
 under a device stack in a column at its left, so only network devices spread sideways and a big site
 grows downward; hosts on one port share one box, a row each (one cable, one link, one label; each row
-opens its host). Five or more network devices with nothing below them, under one device, fold into
+opens its host). A VM hangs off its hypervisor on a link labelled "VM", with no traffic of its own. Five or more network devices with nothing below them, under one device, fold into
 columns of six too. A link is labelled
 above the device it feeds ("Port 9 ↓950 ↑12 Mbps · 95%"), coloured by how full it is (past 70% amber,
 past 90% red, dashed red with no link, grey with no reading) and thicker the more it carries (the square

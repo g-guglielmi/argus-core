@@ -66,6 +66,25 @@ macro (comma-separated names). Sensors of a VM that leaves the list - ignored, d
 mode turned down - are hidden from the curated view right away, disabled in Zabbix, and deleted
 after 7 days.
 
+## VMs under their hypervisor
+
+Whatever **VM monitoring** is set to, every poll also lists each VM's network cards (MAC addresses)
+and, when the XCP-NG **guest tools** report them, its IPv4 addresses, with the hypervisor it runs on.
+Argus uses it to place the hosts that are those VMs under their hypervisor (their **upstream
+device**): on the site's map, on the Device tab's path, and for alerts, so while the hypervisor is
+down its VMs' alerts wait and its own alert names them. Nothing to set up:
+
+- A VM is matched to an Argus host by its guest address, or by its MAC through the UniFi controller's
+  client lists (MAC to address) or what a discovery scan saw. A VM without guest tools is still found
+  by its MAC once it is on the network.
+- On a multi-host pool, a VM hangs off the member it runs on when that member is an Argus host (found
+  by its address); a live migration moves it once the new answer has held for 15 minutes.
+- When XAPI doesn't answer (the hypervisor is down, or the login fails), the last list is kept, so the
+  VMs stay behind their hypervisor while it is down.
+- Ignored VMs (the Monitored VMs list) are placed too: placing a host monitors nothing.
+
+A host can still be set to another upstream device, or to none, in its settings.
+
 ## CPU temperature (optional)
 
 XAPI does not expose host temperatures, so this class reads them through a tiny **XAPI plugin** on

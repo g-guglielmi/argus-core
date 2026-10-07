@@ -112,8 +112,9 @@ var synthCache struct {
 // check they'd read "stopped collecting" for as long as the URL stays down. With the master collecting
 // again, that is no sensor that stopped: the master's own sensors say what is wrong.
 // plumbingKeys are items that feed Argus itself rather than being read as sensors: the UniFi wired
-// client list (upstream.go). One that fails just leaves what it feeds unknown, so it never alerts.
-var plumbingKeys = map[string]bool{"unifi.clients": true}
+// client list and an XCP-NG pool's VM list (upstream.go). One that fails just leaves what it feeds
+// unknown, so it never alerts.
+var plumbingKeys = map[string]bool{"unifi.clients": true, "xcp.vm.nics": true}
 
 // A collector that isn't running alerts for itself, with why (collectors.go), so its readings, whose
 // steps only discard, say nothing more while it is down: one alert, not one per speed or latency.

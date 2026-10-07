@@ -920,6 +920,11 @@ CREATE TABLE IF NOT EXISTS site_maps (
 			return err
 		}
 	}
+	// Where a host's recorded upstream answer came from: "" (the UniFi controller, before there were
+	// others) or a hypervisor's class ("xcpng").
+	if err := s.ensureColumn("host_upstream", "auto_source TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	return s.seedLinkTemplates(context.Background())
 }
 

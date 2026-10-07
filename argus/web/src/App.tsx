@@ -7858,11 +7858,11 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
         </HsSection>
       )}
 
-      <HsSection title="Upstream device" {...sec('upstream')} summary={upMode === 'none' ? 'none' : upMode === 'manual' ? `chosen by hand: ${allHosts.find((x) => x.id === upHost)?.name || 'pick a host'}` : cfg.upstream?.auto ? `${cfg.upstream.auto.name}${cfg.upstream.auto.port ? ` port ${cfg.upstream.auto.port}` : ''} (from the UniFi controller)` : "from the UniFi controller: it doesn't list this host"}>
+      <HsSection title="Upstream device" {...sec('upstream')} summary={upMode === 'none' ? 'none' : upMode === 'manual' ? `chosen by hand: ${allHosts.find((x) => x.id === upHost)?.name || 'pick a host'}` : cfg.upstream?.auto ? `${cfg.upstream.auto.name}${cfg.upstream.auto.port ? ` port ${cfg.upstream.auto.port}` : ''} (${upstreamFrom(cfg.upstream.auto_source)})` : 'automatic: no answer for this host'}>
         <div className="hs-mon">
           <span className="hs-monlabel">Upstream</span>
           <div className="seg">
-            <button type="button" className={upMode === 'auto' ? 'on' : ''} disabled={!canEdit} onClick={() => setUpMode('auto')}>From the controller</button>
+            <button type="button" className={upMode === 'auto' ? 'on' : ''} disabled={!canEdit} onClick={() => setUpMode('auto')}>Automatic</button>
             <button type="button" className={upMode === 'manual' ? 'on' : ''} disabled={!canEdit} onClick={() => setUpMode('manual')}>Choose a host</button>
             <button type="button" className={upMode === 'none' ? 'on' : ''} disabled={!canEdit} onClick={() => setUpMode('none')}>None</button>
           </div>
@@ -7874,9 +7874,9 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
           )}
         </div>
         {upMode === 'auto' && cfg.upstream && (cfg.upstream.path.length > 0 && cfg.upstream.source !== 'manual'
-          ? <div className="info-line" style={{ padding: '2px 0 6px' }}><PathView hops={cfg.upstream.path} /></div>
+          ? <div className="info-line" style={{ padding: '2px 0 6px' }}><PathView hops={cfg.upstream.path} /><span className="sub-line">{upstreamFrom(cfg.upstream.source)}</span></div>
           : <div className="hs-note">{cfg.upstream.why ? `No answer from the UniFi controller. ${cfg.upstream.why}` : "The UniFi controller doesn't list this host (it knows its own devices, and the switch port of each wired client it sees). Choose a host if you know where it is plugged in."}</div>)}
-        <div className="hs-note">The default is the UniFi controller's answer when it knows this host, otherwise none. While the upstream device is down, this host's alerts wait: Argus can't reach it through that device anyway, and the device's own alert says so. Whatever is still wrong after it's back is alerted.</div>
+        <div className="hs-note">Automatic is the hypervisor this host runs on when it is a VM of an XCP-NG pool Argus monitors, else the UniFi controller's answer when it knows this host, otherwise none. While the upstream device is down, this host's alerts wait: Argus can't reach it through that device anyway, and the device's own alert says so. Whatever is still wrong after it's back is alerted.</div>
       </HsSection>
 
       <HsSection title="Device facts" {...sec('facts')} summary={[own.asset_tag && `asset ${own.asset_tag}`, own.location].filter(Boolean).join(' · ') || 'no asset tag or location'}>
@@ -8176,7 +8176,15 @@ type HostTab = 'sensors' | 'device' | 'history' | 'journal' | 'changes'
 type LinkRow = { id?: number; label: string; url: string; from?: string }
 type DeviceFacts = { model?: string; serial?: string; firmware?: string; os?: string; ip?: string; mac?: string; read_at?: number; from?: string; upgrade?: string }
 type Hop = { host_id: string; name: string; port?: string; down?: boolean }
-type UpstreamInfo = { mode: 'auto' | 'manual' | 'none'; manual_host?: string; auto?: Hop; path: Hop[]; behind: { id: string; name: string }[]; behind_all: number; source?: string; why?: string; ignored?: string }
+type UpstreamInfo = { mode: 'auto' | 'manual' | 'none'; manual_host?: string; auto?: Hop; auto_source?: string; path: Hop[]; behind: { id: string; name: string }[]; behind_all: number; source?: string; why?: string; ignored?: string }
+
+// upstreamFrom says who gave a host's upstream device: the hypervisor a VM runs on (XCP-NG), the UniFi
+// controller, or a person.
+function upstreamFrom(source?: string): string {
+  if (source === 'manual') return 'set by hand'
+  if (source === 'xcpng') return 'from XCP-NG, the hypervisor it runs on'
+  return 'from the UniFi controller'
+}
 type DeviceInfo = { facts: DeviceFacts; own: { asset_tag: string; location: string }; class?: string; links: LinkRow[]; tags: HostTag[]; used_by: { groups: string[]; probe: string; status_pages: string[]; maintenance: string[]; channels: string[] }; upstream: UpstreamInfo; site?: SiteInfo }
 type SiteContact = { role: string; name: string; phone: string; email: string }
 type SiteLine = { name: string; host_id: string; key: string; provider: string; circuit: string; phone: string; note: string; down_mbps?: number; up_mbps?: number; host_name?: string; sensor?: string; state?: string }
@@ -8461,7 +8469,7 @@ function DeviceTab({ hostId, onOpenSettings }: { hostId: string; onOpenSettings?
       </InfoRow>
       <InfoRow label="Path">
         {d.upstream.path.length > 0
-          ? <InfoLine><PathView hops={d.upstream.path} /><span className="sub-line">{d.upstream.source === 'manual' ? 'set by hand' : 'from the UniFi controller'}</span></InfoLine>
+          ? <InfoLine><PathView hops={d.upstream.path} /><span className="sub-line">{upstreamFrom(d.upstream.source)}</span></InfoLine>
           : <InfoLine><span className="muted">{d.upstream.mode === 'none' ? 'No upstream device: set to none in its settings.' : `No upstream device known. ${d.upstream.why || "The UniFi controller doesn't list this host. Pick one in its settings."}`}</span></InfoLine>}
         {d.upstream.ignored && d.upstream.mode === 'auto' && <InfoLine><span className="sub-line">{d.upstream.ignored}</span></InfoLine>}
         {d.upstream.behind.length > 0 && <InfoLine k="Behind it"><span className="v">{d.upstream.behind.map((b) => b.name).join(', ')}{d.upstream.behind_all > d.upstream.behind.length ? ` (${d.upstream.behind_all} hosts in all, further down)` : ''}</span></InfoLine>}
@@ -8598,6 +8606,7 @@ function mapWidth(l: MapLinkT): number {
 function mapWhere(l: MapLinkT, wan: boolean): string {
   if (wan) return `WAN ${l.port}`
   if (l.port) return `Port ${l.port}`
+  if (l.source === 'xcpng') return 'VM'
   return l.source === 'manual' ? 'set by hand' : ''
 }
 
@@ -9126,7 +9135,7 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
     const from = byId[l.from], to = byId[l.to]
     const wan = from?.kind === 'internet'
     const where = wan ? `${to?.name} WAN ${l.port}` : `${from?.name}${l.port ? ` port ${l.port}` : ''}${l.port_name ? ` (${l.port_name})` : ''}`
-    const bits = [`${where} → ${wan ? 'the internet' : to?.name}`]
+    const bits = [l.source === 'xcpng' ? `${to?.name} runs on ${from?.name} (XCP-NG)` : `${where} → ${wan ? 'the internet' : to?.name}`]
     if (l.spare) bits.push('not connected: a WAN set up on the gateway that has never had a link (its alert waits until it has worked once)')
     else if (l.no_link) bits.push('no link')
     else {

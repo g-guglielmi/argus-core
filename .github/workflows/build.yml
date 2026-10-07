@@ -101,6 +101,9 @@ jobs:
       # The speed test collector (argus_speedtest.py, mirrored in argus-probe): its parsing and limits.
       - name: Speedtest collector
         run: python3 deploy/core/externalscripts/tests/test_argus_speedtest.py
+      # The XCP-NG collector (argus_xcpng.py, mirrored in argus-probe): the VM list hosts are placed by.
+      - name: XCP-NG collector
+        run: python3 deploy/core/externalscripts/tests/test_argus_xcpng.py
 
   docker:
     permissions:
