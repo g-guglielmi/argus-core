@@ -856,7 +856,8 @@ CREATE TABLE IF NOT EXISTS site_info (
 	}
 	// Escalation + reminders, per channel (global and personal): "notify after" = minutes a problem must
 	// stay open and unacknowledged before this channel hears of it (0 = with the first alert); "remind
-	// every" = minutes between reminders while it stays open and unacknowledged (0 = no reminders).
+	// every" = minutes to the first reminder while it stays open and unacknowledged, each next one twice
+	// as long, at most a day apart (0 = no reminders).
 	for _, table := range []string{"notify_channels", "user_notify_channels"} {
 		// repeat_min_severity: reminders only for problems at or above it (2 = Warning, i.e. every alert).
 		// alerts / system_notices: what the channel carries - problem alerts (on by default, as before)

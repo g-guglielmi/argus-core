@@ -61,7 +61,7 @@ type notifyDest struct {
 	sites   []string
 	minSev  int
 	delay   int64    // seconds
-	repeat  int64    // seconds, 0 = no reminders
+	repeat  int64    // seconds to the first reminder, doubling after (reminderGap); 0 = no reminders
 	remSev  int      // reminders only at or above this severity
 	tags    []string // only hosts with one of these tags; empty = every host
 	alerts  bool     // carries problem alerts (a channel can carry only system notices)
@@ -600,8 +600,9 @@ type plannedDelivery struct {
 //     delay). A destination created after that moment doesn't get it: adding a channel isn't a reason
 //     to replay every open problem at it. A destination that got the alert at another severity
 //     (the incident escalated or eased on the same sensor) gets the new one straight away.
-//   - A destination that already has the alert at this severity gets a reminder once "remind every"
-//     has passed since its last send, if the problem is at or above its "remind for" severity.
+//   - A destination that already has the alert at this severity gets a reminder once the next gap of
+//     its reminder schedule (reminderGap) has passed since its last send, if the problem is at or above
+//     its "remind for" severity.
 func planDeliveries(dests []notifyDest, got map[string]store.NotifyDelivery, h hostRoute, sev int, start, firedAt, now int64) []plannedDelivery {
 	var out []plannedDelivery
 	for _, d := range dests {
@@ -610,7 +611,7 @@ func planDeliveries(dests []notifyDest, got map[string]store.NotifyDelivery, h h
 		}
 		row, has := got[d.key]
 		if has && row.Severity == sev {
-			if d.repeat > 0 && sev >= d.remSev && now-row.LastSent >= d.repeat {
+			if d.repeat > 0 && sev >= d.remSev && now-row.LastSent >= reminderGap(d.repeat, row.Reminders) {
 				out = append(out, plannedDelivery{dest: d, reminder: true, row: row})
 			}
 			continue
@@ -627,6 +628,21 @@ func planDeliveries(dests []notifyDest, got map[string]store.NotifyDelivery, h h
 		out = append(out, plannedDelivery{dest: d})
 	}
 	return out
+}
+
+// maxReminderGap is the longest wait between two reminders: once the gaps reach it, a day apart.
+const maxReminderGap = 24 * 60 * 60
+
+// reminderGap is how long after its last send a channel's next reminder is due, when it has sent
+// `sent` reminders so far: the channel's first gap, then twice as long each time, at most a day. A
+// problem nobody takes keeps being repeated, less and less often, instead of filling the channel: a
+// 1 h first gap reminds after 1, 2, 4, 8 and 16 hours, then daily. A new severity starts it over.
+func reminderGap(first int64, sent int) int64 {
+	gap := first
+	for i := 0; i < sent && gap < maxReminderGap; i++ {
+		gap *= 2
+	}
+	return min(gap, maxReminderGap)
 }
 
 // firedAtOf is when an alert went live (0 when it never did).

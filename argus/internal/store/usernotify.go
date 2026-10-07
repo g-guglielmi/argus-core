@@ -24,7 +24,7 @@ type UserNotifyChannel struct {
 	Tags        []string // only hosts with one of these tags; empty = every host
 	MinSeverity int
 	DelayMin    int  // escalation: minutes open + unacknowledged before this channel is told (0 = at once)
-	RepeatMin   int  // reminders: minutes between repeats while open + unacknowledged (0 = none)
+	RepeatMin   int  // reminders: minutes to the first while open + unacknowledged, each next twice as long up to a day (0 = none)
 	RepeatSev   int  // reminders only for problems at or above this severity (2..5)
 	Alerts      bool // carries problem alerts
 	Notices     bool // carries Argus's system notices

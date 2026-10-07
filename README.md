@@ -57,8 +57,8 @@ API key, and MAC):
 - **Notifications** - Argus-native alerting engine (Microsoft Teams, Slack, Discord, Telegram, email,
   ntfy, Gotify, Pushover and a generic JSON webhook) with an
   adjustable alert delay (60 s by default), per-channel escalation ("notify after") and
-  reminders until acknowledged, acknowledged and recovery notices, opt-in system notices (updates
-  available, self-update results, finished scans, failing channels), rich messages (status icons,
+  reminders until acknowledged (backing off: 1 h, 2 h, 4 h... then daily), acknowledged and
+  recovery notices, opt-in system notices (updates available, self-update results, finished scans, failing channels), rich messages (status icons,
   value + threshold, 2-hour trend graph, deep-links, one-click acknowledge). Shared channels are admin-managed;
   each user can also add their **own** Telegram, Discord, Teams, Slack, ntfy or Pushover in Account
   settings (sent only to addresses on the internet), and an email

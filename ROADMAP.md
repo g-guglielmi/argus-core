@@ -277,7 +277,8 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 ### H. Notification logic + status pages - COMPLETE, v0.5.9-v0.5.11
 - [x] **Escalation, reminders, acknowledged notice** - each channel (global or personal) gets a
   **Notify after** delay (it hears only of problems still open and unacknowledged by then, e.g. team
-  at once, managers after 30 min) and a **Remind every** interval (repeat until acknowledged, no cap).
+  at once, managers after 30 min) and reminders until acknowledged (now backing off: a
+  **First reminder** gap, then twice as long each time, at most a day apart).
   Acknowledging stops both and tells the channels that got the alert who took it. Reminders, the
   acknowledged notice and the recovery go to exactly the channels the alert reached. The 60 s flap
   delay becomes a setting (Settings -> Alerting). - v0.5.9

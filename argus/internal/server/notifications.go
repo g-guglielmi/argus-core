@@ -135,8 +135,9 @@ func channelCarries(alerts *bool, notices bool) (bool, bool, string) {
 	return a, notices, ""
 }
 
-// Escalation bounds: a channel can wait up to a day before it's told, and reminds at most every 5
-// minutes (a tighter loop is noise, since the notifier polls every 30 s anyway) and at least daily.
+// Escalation bounds: a channel can wait up to a day before it's told, and its first reminder comes
+// after 5 minutes at the soonest (a tighter loop is noise, since the notifier polls every 30 s anyway)
+// and a day at the latest; later ones double from there, at most a day apart (reminderGap).
 const (
 	maxChannelDelayMin  = 1440
 	minChannelRepeatMin = 5

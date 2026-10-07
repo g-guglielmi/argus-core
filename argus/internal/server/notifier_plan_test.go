@@ -57,6 +57,15 @@ func TestPlanDeliveries(t *testing.T) {
 		t.Fatalf("severity change: %v", p)
 	}
 
+	// The next reminder waits twice as long: after the first (at 2860), the second is due an hour later.
+	got["g:1"] = store.NotifyDelivery{Kind: "g", ChannelID: 1, Severity: 2, FirstSent: fired, LastSent: 2860, Reminders: 1}
+	if p := planKeys(planDeliveries(dests, got, hostRoute{groups: groups}, 2, start, fired, 2860+3599)); len(p) != 0 {
+		t.Fatalf("second reminder before its doubled gap: %v", p)
+	}
+	if p := planKeys(planDeliveries(dests, got, hostRoute{groups: groups}, 2, start, fired, 2860+3600)); len(p) != 1 || !p["g:1+r"] {
+		t.Fatalf("second reminder: %v", p)
+	}
+
 	// "Remind for" High and up: the warning is alerted but never reminded; the error is.
 	strict := notifyDest{alerts: true, key: "g:6", kind: "g", id: 6, minSev: 2, repeat: 900, remSev: 4}
 	sent := map[string]store.NotifyDelivery{"g:6": {Kind: "g", ChannelID: 6, Severity: 2, LastSent: fired}}
@@ -87,5 +96,30 @@ func TestAlertLevel(t *testing.T) {
 		if got := alertLevel(in); got != want {
 			t.Errorf("alertLevel(%d) = %d, want %d", in, got, want)
 		}
+	}
+}
+
+// Reminders back off: a 1 h first gap reminds after 1, 2, 4, 8 and 16 hours, then once a day; a 15
+// minute one doubles its way up to the same daily cap, and a first gap of a day stays a day.
+func TestReminderGap(t *testing.T) {
+	const h = int64(3600)
+	cases := []struct {
+		first int64
+		want  []int64
+	}{
+		{h, []int64{h, 2 * h, 4 * h, 8 * h, 16 * h, 24 * h, 24 * h, 24 * h}},
+		{900, []int64{900, 1800, h, 2 * h, 4 * h, 8 * h, 16 * h, 24 * h, 24 * h}},
+		{24 * h, []int64{24 * h, 24 * h, 24 * h}},
+	}
+	for _, c := range cases {
+		for sent, want := range c.want {
+			if got := reminderGap(c.first, sent); got != want {
+				t.Fatalf("first gap %ds, %d sent: next after %ds, want %ds", c.first, sent, got, want)
+			}
+		}
+	}
+	// Months of reminders never overflow past the daily cap.
+	if got := reminderGap(h, 1000); got != 24*h {
+		t.Fatalf("after 1000 reminders: %ds", got)
 	}
 }

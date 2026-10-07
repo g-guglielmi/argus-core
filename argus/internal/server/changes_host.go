@@ -256,7 +256,7 @@ func channelDiff(r *http.Request, was, now store.NotifyChannel) {
 		if m == 0 {
 			return "off"
 		}
-		return "every " + humanDur(int64(m)*60)
+		return "after " + humanDur(int64(m)*60) + ", then doubling"
 	}
 	changeDiff(r, "Remind", rep(was.RepeatMin), rep(now.RepeatMin))
 	changeDiff(r, "Problem alerts", onOff(was.Alerts), onOff(now.Alerts))

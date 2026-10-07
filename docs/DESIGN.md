@@ -866,11 +866,13 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
 - **Flap debounce (alert delay):** a problem must stay open for the **alert delay** (Settings ->
   Alerting, default 60 s, `ARGUS_ALERT_DELAY_SECONDS`) before anyone is notified.
 - **Escalation + reminders, per channel:** every channel (global or personal) has a **Notify after**
-  delay (0 = with the first alert) and a **Remind every** interval (0 = off). A channel hears of a
+  delay (0 = with the first alert) and a **First reminder** gap (0 = off). A channel hears of a
   problem only once the incident has been open and unacknowledged for its delay (counted from when
   the incident began, never before the alert delay has passed), so "team at once, managers after 30
   min" is two channels. Reminders (`[HIGH REMINDER]`, "Still open after 1h 5m (reminder 2)") repeat
-  while the problem stays open and unacknowledged, for problems at or above the channel's own
+  while the problem stays open and unacknowledged, backing off: the first after the channel's gap,
+  each next one twice as long after the last, at most a day apart (a 1 h gap reminds after 1, 2, 4, 8
+  and 16 hours, then daily; a new severity starts over), for problems at or above the channel's own
   **Remind for** severity (independent of its alert floor, so "alert on warnings, remind only about
   errors" is one channel); acknowledging, pausing or hiding stops them. A
   channel added after a problem went live isn't sent that problem.

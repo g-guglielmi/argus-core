@@ -2905,13 +2905,22 @@ function fmtMinutes(m: number): string {
   return r ? `${h} h ${r} min` : `${h} h`
 }
 
+// reminderSchedule spells out a channel's reminder gaps, as the notifier spaces them (reminderGap): the
+// first after "First reminder", each next one twice as long, at most a day apart ("1 h, 2 h, 4 h, 8 h,
+// 16 h, then every 24 h").
+function reminderSchedule(first: number): string {
+  const gaps: string[] = []
+  for (let g = first; g < 1440; g *= 2) gaps.push(fmtMinutes(g))
+  return gaps.length ? `${gaps.join(', ')}, then every 24 h` : 'every 24 h'
+}
+
 // timingLabel is the channel card's escalation summary, appended to its meta line ("" when immediate
 // with no reminders, which is how every channel behaved before escalation existed).
 function timingLabel(c: { min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; who_to_call?: boolean; alerts?: boolean }): string {
   let out = ''
   if (c.delay_min) out += ` · after ${fmtMinutes(c.delay_min)}`
   if (c.repeat_min) {
-    out += ` · reminds every ${fmtMinutes(c.repeat_min)}`
+    out += c.repeat_min >= 1440 ? ' · reminds daily' : ` · reminds after ${fmtMinutes(c.repeat_min)}, doubling to daily`
     const rs = c.repeat_min_severity || 2
     if (rs > c.min_severity) out += ` (${SEVERITIES.find((s) => s.v === rs)?.label || ''})`
   }
@@ -2925,14 +2934,14 @@ function EscalationSection({ delay, repeat, remSev, onDelay, onRepeat, onRemSev,
   const opts = (list: number[], cur: number) => (list.includes(cur) ? list : [...list, cur].sort((a, b) => a - b))
   return (
     <ChanSection title="Escalation and reminders"
-      note={`${who} ${who === 'You' ? 'hear' : 'hears'} only of problems still open and unacknowledged after "Notify after". Reminders repeat an open problem until someone acknowledges it.`}>
+      note={`${who} ${who === 'You' ? 'hear' : 'hears'} only of problems still open and unacknowledged after "Notify after". Reminders repeat an open problem until someone acknowledges it, each one twice as long after the last and at most a day apart${repeat ? `: ${reminderSchedule(repeat)}` : ''}.`}>
       <div className="chan-row chan-row-3">
         <label className="chan-field"><span className="flabel">Notify after</span>
           <Select value={delay} onChange={(e) => onDelay(Number(e.target.value))}>
             {opts(DELAY_CHOICES, delay).map((m) => <option key={m} value={m}>{m ? fmtMinutes(m) : 'Immediately'}</option>)}
           </Select>
         </label>
-        <label className="chan-field"><span className="flabel">Remind every</span>
+        <label className="chan-field"><span className="flabel">First reminder</span>
           <Select value={repeat} onChange={(e) => onRepeat(Number(e.target.value))}>
             {opts(REPEAT_CHOICES, repeat).map((m) => <option key={m} value={m}>{m ? fmtMinutes(m) : 'Off'}</option>)}
           </Select>

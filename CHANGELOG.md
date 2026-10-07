@@ -13,6 +13,12 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Reminders back off:** a problem nobody acknowledges is repeated less and less often instead of
+filling the channel. A channel's first reminder comes after its **First reminder** time (what was
+"Remind every"), each next one twice as long after the last, and once they are a day apart they stay
+daily: with 1 h, after 1, 2, 4, 8 and 16 hours, then every 24 hours. The channel's settings spell out
+the schedule. A problem that changes severity gets a fresh alert and starts the schedule over.
+
 ## [0.8.2] - 2026-10-07
 
 The speed test's own chart and runs list, sparklines in warning and error colours, a page that breaks
