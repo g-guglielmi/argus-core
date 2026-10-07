@@ -8552,6 +8552,11 @@ type SiteMapT = { probe: string; site: string; nodes: MapNodeT[]; links: MapLink
 const MAP_W = 176, MAP_H = 48, MAP_GAP = 28, MAP_LEVEL = 118, MAP_PAD = 24
 const MAP_COMB_MIN = 5, MAP_COMB_ROWS = 6, MAP_COMB_IN = 30, MAP_COMB_PITCH = MAP_H + 36
 const MAP_KIND_RANK: Record<string, number> = { internet: 0, gateway: 1, switch: 2, ap: 3, host: 4 }
+// A box of hosts that share a port: a row each.
+const MAP_ROW = 18
+const mapBoxH = (rows?: number) => (rows ? 16 + MAP_ROW * rows : MAP_H)
+// Fit never draws the map smaller than this: past it, the map scrolls sideways and stays readable.
+const MAP_MIN_SCALE = 0.75
 
 const MAP_ICON: Record<string, ReactNode> = {
   internet: <><circle cx="9" cy="9" r="7.5" /><path d="M1.5 9h15M9 1.5c2.2 2.2 2.2 12.8 0 15M9 1.5c-2.2 2.2-2.2 12.8 0 15" /></>,
@@ -8673,30 +8678,56 @@ function mapTree(m: SiteMapT, showHosts: boolean): MapTree {
   return { kids, link, wans, roots, shown }
 }
 
-type MapLayout = { pos: Record<string, { x: number; y: number }>; parent: Record<string, string>; comb: Record<string, boolean>; outline: { id: string; depth: number; link?: MapLinkT }[] }
+type MapLayout = {
+  pos: Record<string, { x: number; y: number }>
+  parent: Record<string, string>
+  comb: Record<string, boolean>
+  groups: Record<string, { members: string[]; link: MapLinkT }> // hosts sharing a port, drawn as one box
+  outline: { id: string; depth: number; link?: MapLinkT }[]
+}
 
-// mapLayout places the tree top-down: each device centred over the ones below it, a long row of
-// devices with nothing below them folded into columns. Devices in a loop (two that report each other)
-// still get a place, as roots of their own.
-function mapLayout(t: MapTree, ids: string[]): MapLayout {
+// mapLayout places the tree top-down: each device centred over the ones below it. The hosts under a
+// device stack in a column at its left (those on one port share a box: one cable, one link), so only
+// network devices spread sideways; a long row of network devices with nothing below them folds into
+// columns too. Devices in a loop (two that report each other) still get a place, as roots of their own.
+function mapLayout(t: MapTree, ids: string[], kindOf: (id: string) => string | undefined): MapLayout {
   type Slot = { id?: string; ids?: string[]; w: number }
   const info: Record<string, { w: number; slots: Slot[] }> = {}
   const seen = new Set<string>()
-  const pos: MapLayout['pos'] = {}, parent: MapLayout['parent'] = {}, comb: MapLayout['comb'] = {}
+  const pos: MapLayout['pos'] = {}, parent: MapLayout['parent'] = {}, comb: MapLayout['comb'] = {}, groups: MapLayout['groups'] = {}
   const outline: MapLayout['outline'] = []
   const kidsOf = (id: string) => t.kids[id] || []
+  const column = (boxes: string[]): Slot[] => {
+    const out: Slot[] = []
+    for (let i = 0; i < boxes.length; i += MAP_COMB_ROWS) out.push({ ids: boxes.slice(i, i + MAP_COMB_ROWS), w: MAP_W + MAP_COMB_IN })
+    return out
+  }
   const measure = (id: string): number => {
     seen.add(id)
     const ks = kidsOf(id).filter((k) => !seen.has(k))
     ks.forEach((k) => { seen.add(k); parent[k] = id })
-    const leaves = ks.filter((k) => kidsOf(k).every((g) => seen.has(g)))
-    const slots: Slot[] = []
-    if (leaves.length >= MAP_COMB_MIN) {
-      for (const k of ks) if (!leaves.includes(k)) slots.push({ id: k, w: measure(k) })
-      for (let i = 0; i < leaves.length; i += MAP_COMB_ROWS) slots.push({ ids: leaves.slice(i, i + MAP_COMB_ROWS), w: MAP_W + MAP_COMB_IN })
-    } else {
-      for (const k of ks) slots.push({ id: k, w: measure(k) })
+    const leaf = (k: string) => kidsOf(k).every((g) => seen.has(g))
+    const hosts = ks.filter((k) => leaf(k) && kindOf(k) === 'host')
+    const rest = ks.filter((k) => !hosts.includes(k))
+    const netLeaves = rest.filter(leaf)
+    // The hosts' boxes, in port order: hosts on one port share one.
+    const boxes: string[] = []
+    const done = new Set<string>()
+    for (const h of hosts) {
+      const port = t.link[h]?.port
+      if (done.has(h)) continue
+      const same = port ? hosts.filter((x) => t.link[x]?.port === port) : [h]
+      same.forEach((x) => done.add(x))
+      if (same.length < 2) { boxes.push(h); continue }
+      const gid = `hg:${id}:${port}`
+      groups[gid] = { members: same, link: t.link[h] }
+      parent[gid] = id
+      boxes.push(gid)
     }
+    const slots: Slot[] = column(boxes)
+    const fold = netLeaves.length >= MAP_COMB_MIN
+    for (const k of rest) if (!(fold && netLeaves.includes(k))) slots.push({ id: k, w: measure(k) })
+    if (fold) slots.push(...column(netLeaves))
     const span = slots.reduce((a, s) => a + s.w, 0) + MAP_GAP * Math.max(0, slots.length - 1)
     info[id] = { w: Math.max(MAP_W, span), slots }
     return info[id].w
@@ -8708,7 +8739,15 @@ function mapLayout(t: MapTree, ids: string[]): MapLayout {
     let cur = left + (inf.w - span) / 2
     for (const s of inf.slots) {
       if (s.id) place(s.id, cur, top + MAP_LEVEL)
-      else s.ids!.forEach((c, i) => { pos[c] = { x: cur + MAP_COMB_IN + MAP_W / 2, y: top + MAP_LEVEL + MAP_H / 2 + i * MAP_COMB_PITCH }; comb[c] = true })
+      else {
+        let y = top + MAP_LEVEL
+        for (const c of s.ids!) {
+          const h = mapBoxH(groups[c]?.members.length)
+          pos[c] = { x: cur + MAP_COMB_IN + MAP_W / 2, y: y + h / 2 }
+          comb[c] = true
+          y += h + MAP_COMB_PITCH - MAP_H
+        }
+      }
       cur += s.w + MAP_GAP
     }
   }
@@ -8729,7 +8768,7 @@ function mapLayout(t: MapTree, ids: string[]): MapLayout {
     for (const k of kidsOf(id)) if (parent[k] === id) walk(k, depth + 1)
   }
   for (const id of Object.keys(pos)) if (!parent[id]) walk(id, 0)
-  return { pos, parent, comb, outline }
+  return { pos, parent, comb, groups, outline }
 }
 
 // MapsView is the Maps page: the probes and their maps, or one site's map.
@@ -8808,7 +8847,8 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
   const [m, setM] = useState<SiteMapT | null>(null)
   const [err, setErr] = useState('')
   const [off, setOff] = useState(false)
-  const [showHosts, setShowHosts] = useState(true)
+  // Network devices only, to start: the hosts are a switch away (they make a big site's map busy).
+  const [showHosts, setShowHosts] = useState(false)
   const [asList, setAsList] = useState(() => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(max-width: 768px)').matches)
   const [fit, setFit] = useState(true)
   const [arrange, setArrange] = useState(false)
@@ -8842,8 +8882,8 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
   }, [probe, reload])
 
   const tree = useMemo(() => (m ? mapTree(m, showHosts) : null), [m, showHosts])
-  const lay = useMemo(() => (m && tree ? mapLayout(tree, m.nodes.map((n) => n.id)) : null), [m, tree])
   const byId = useMemo(() => { const o: Record<string, MapNodeT> = {}; for (const n of m?.nodes || []) o[n.id] = n; return o }, [m])
+  const lay = useMemo(() => (m && tree ? mapLayout(tree, m.nodes.map((n) => n.id), (id) => byId[id]?.kind) : null), [m, tree, byId])
 
   // Where each device is drawn: its place in the layout, moved by its own pin and its upstreams' (so a
   // moved switch takes the devices below it along), and by the drag in progress.
@@ -8960,6 +9000,12 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
       {' '}Argus doesn't know what {m.unplaced.length === 1 ? 'it is' : 'they are'} plugged into: pick the upstream device in a host's settings.
     </p>
   )
+  if (placed.length === 0 && !showHosts && m.nodes.some((n) => n.kind === 'host')) return (
+    <div className="panel">{head}
+      <EmptyState icon={ic.maps} title="Only hosts on this map" text="This site's map has no network devices, only hosts linked to each other." action={<Button onClick={() => setShowHosts(true)}>Show hosts</Button>} />
+      {unplacedNote}
+    </div>
+  )
   if (placed.length === 0) return (
     <div className="panel">{head}
       <EmptyState icon={ic.maps} title="Nothing to draw yet" text="No UniFi device on this site reports where it is plugged in, and no host has an upstream device set by hand." />
@@ -9026,9 +9072,10 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
   const drawn: Drawn[] = []
   for (const id of placed) {
     const p = at[id]
-    grow(p.x - MAP_W / 2, p.y - MAP_H / 2, p.x + MAP_W / 2, p.y + MAP_H / 2)
+    const bh = mapBoxH(lay.groups[id]?.members.length), top = p.y - bh / 2
+    grow(p.x - MAP_W / 2, top, p.x + MAP_W / 2, top + bh)
     const up = lay.parent[id]
-    const l = tree.link[id]
+    const l = lay.groups[id]?.link || tree.link[id]
     if (!up || !l || l.from !== up || !at[up]) continue
     const a = at[up]
     const pb = a.y + MAP_H / 2, mid = pb + 18
@@ -9039,8 +9086,8 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
     const lw = chars * 6.3 + 18
     if (lay.comb[id]) {
       const bus = p.x - MAP_W / 2 - MAP_COMB_IN / 2
-      d = `M${a.x} ${pb} V${mid} H${bus} V${p.y} H${p.x - MAP_W / 2}`
-      if (chars) label = { x: p.x - MAP_W / 2, y: p.y - MAP_H / 2 - 14, w: lw, anchor: 'start', parts }
+      d = `M${a.x} ${pb} V${mid} H${bus} V${top + MAP_H / 2} H${p.x - MAP_W / 2}`
+      if (chars) label = { x: p.x - MAP_W / 2, y: top - 14, w: lw, anchor: 'start', parts }
     } else {
       d = Math.abs(a.x - p.x) < 1 ? `M${a.x} ${pb} V${p.y - MAP_H / 2}` : `M${a.x} ${pb} V${mid} H${p.x} V${p.y - MAP_H / 2}`
       if (chars) label = { x: p.x, y: p.y - MAP_H / 2 - 16, w: lw, anchor: 'middle', parts }
@@ -9098,7 +9145,7 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
       {arrange && <div className="map-arrange">Drag a device to move it: the devices below it move along. Everyone sees the same map.</div>}
       <div className={'map-wrap' + (fit ? ' fit' : '')}>
         <svg ref={svgRef} className={'map-svg' + (arrange ? ' arranging' : '')} viewBox={box}
-          style={{ ...(fit ? { width: '100%', maxWidth: vbW } : { width: vbW, height: vbH }), overflow: drag ? 'visible' : undefined }} role="img" aria-label={`Network map of ${m.site}`}
+          style={{ ...(fit ? { width: '100%', maxWidth: vbW, minWidth: Math.round(vbW * MAP_MIN_SCALE) } : { width: vbW, height: vbH }), overflow: drag ? 'visible' : undefined }} role="img" aria-label={`Network map of ${m.site}`}
           onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => { dragFrom.current = null; setDrag(null) }}>
           {drawn.map(({ l, d, tone, w }) => (
             <g key={'l' + l.from + '>' + l.to} className={'ml' + (l.chart_item && !arrange ? ' click' : '')} onClick={() => { if (!arrange && l.chart_host && l.chart_item) goSensor(l.chart_host, l.chart_item) }}>
@@ -9108,6 +9155,31 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
             </g>
           ))}
           {placed.map((id) => {
+            const grp = lay.groups[id]
+            if (grp) {
+              const p = at[id], bh = mapBoxH(grp.members.length)
+              const states = grp.members.map((h) => mapStateTone(byId[h]?.state || 'ok'))
+              const worst = states.includes('err') ? 'err' : states.includes('warn') ? 'warn' : ''
+              return (
+                <g key={id} className={'mn mgroup' + (arrange ? ' drag' : '') + (drag?.id === id ? ' dragging' : '')} transform={`translate(${p.x - MAP_W / 2} ${p.y - bh / 2})`} onPointerDown={(e) => onDown(id, e)}>
+                  <rect className={'mn-box ' + worst} width={MAP_W} height={bh} rx={10} />
+                  {grp.members.map((h, i) => {
+                    const n = byId[h]
+                    const sub = mapNodeSub(n, nowSec)
+                    return (
+                      <g key={h} className={'mg-row' + (arrange ? '' : ' click')} transform={`translate(0 ${8 + i * MAP_ROW})`} tabIndex={arrange ? undefined : 0} role={arrange ? undefined : 'link'}
+                        onClick={() => { if (!arrange) goHost(h) }} onKeyDown={(e) => { if (e.key === 'Enter' && !arrange) goHost(h) }}>
+                        <title>{[n.name, sub].filter(Boolean).join(' · ')}</title>
+                        <rect className="mg-hit" x={4} width={MAP_W - 8} height={MAP_ROW} rx={5} />
+                        <circle className={'mn-dot ' + states[i]} cx={15} cy={MAP_ROW / 2} r={3.5} />
+                        <text className="mg-name" x={26} y={13}>{mapTrunc(n.name, n.ip ? 15 : 22)}</text>
+                        {n.ip && <text className="mg-ip" x={MAP_W - 10} y={13} textAnchor="end">{n.ip}</text>}
+                      </g>
+                    )
+                  })}
+                </g>
+              )
+            }
             const n = byId[id], p = at[id]
             const tone = mapStateTone(n.state)
             const wanLink = n.kind === 'internet' ? m.links.find((x) => x.from === id) : undefined

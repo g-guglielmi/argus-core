@@ -789,13 +789,18 @@ map; any other host only when it is linked. A device's state is its sensors': do
 error (and for how long), else its worst sensor, paused with its ping. A host with no known upstream is
 listed under the map as not on it.
 
-**Drawn** top-down in the browser: each device centred over the ones below it, in port order; five or
-more devices with nothing below them, under one device, fold into columns of six. A link is labelled
+**Drawn** top-down in the browser: each device centred over the ones below it, in port order. The hosts
+under a device stack in a column at its left, so only network devices spread sideways and a big site
+grows downward; hosts on one port share one box, a row each (one cable, one link, one label; each row
+opens its host). Five or more network devices with nothing below them, under one device, fold into
+columns of six too. A link is labelled
 above the device it feeds ("Port 9 ↓950 ↑12 Mbps · 95%"), coloured by how full it is (past 70% amber,
 past 90% red, dashed red with no link, grey with no reading) and thicker the more it carries (the square
 root of its traffic, the thickest at 1 Gbps). Links share their upstream's trunk, the worst-off drawn on
-top. A device opens its host, a link its traffic chart. **Hosts** (a switch) leaves out the hosts with
-nothing below them; **Fit** or **Actual size**; the page refreshes every 30 seconds. **List** draws the
+top. A device opens its host, a link its traffic chart. **Hosts** (a switch, off when a map opens: the
+network devices first) adds the hosts with nothing below them; a map with only hosts says so and offers
+to show them. **Fit** draws the map to the page's width but never below 75% (past that it scrolls
+sideways, so the text stays readable), **Actual size** at 100%; the page refreshes every 30 seconds. **List** draws the
 same tree as a table (device, port, down, up, a fill bar), one line per link on a phone, where it is
 the default. **Arrange** (admins and helpdesk) lets devices be dragged: each move is kept as an offset
 from where the layout puts the device, so a moved switch takes the devices below it along and a

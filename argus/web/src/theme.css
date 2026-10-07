@@ -1535,6 +1535,11 @@ input.tsel { width: 15px; height: 15px; accent-color: var(--accent); margin: 0 8
 .map-svg .mn-name { fill: var(--text); font-size: 12.5px; font-weight: 600; }
 .map-svg .mn-sub { fill: var(--faint); font-size: 10.5px; }
 .map-svg .mn-ic { stroke: var(--muted); fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.map-svg .mg-hit { fill: transparent; }
+.map-svg .mg-row.click { cursor: pointer; outline: none; }
+.map-svg .mg-row.click:hover .mg-hit, .map-svg .mg-row.click:focus-visible .mg-hit { fill: var(--accent-weak); }
+.map-svg .mg-name { fill: var(--text); font-size: 12px; font-weight: 600; }
+.map-svg .mg-ip { fill: var(--faint); font-size: 10.5px; }
 .map-svg .mn-dot { fill: var(--ok); }
 .map-svg .mn-dot.warn { fill: var(--warn); }
 .map-svg .mn-dot.err { fill: var(--err); }
