@@ -233,3 +233,42 @@ func TestSettledUpstreams(t *testing.T) {
 		t.Fatalf("an answer the controller dropped for now is kept until the drop holds: %+v", got["206"])
 	}
 }
+
+// The controller's flips for two USW Flex Minis (204, 205) on a USW Flex (201, uplink on port 1):
+// each Mini placed on a port of the other with no link, or on the other's own uplink port. Both kinds
+// are doubted; the true answers (201 port 3 and port 5, both linked) pass.
+func TestDoubtUpstreams(t *testing.T) {
+	own := map[string]string{"201": "1", "204": "1", "205": "1"}
+	ports := map[string]map[string]string{
+		"201": {"3": "1", "5": "1"},
+		"204": {"1": "1", "5": "0"},
+		"205": {"1": "1", "3": "0"},
+	}
+	cases := []struct {
+		host string
+		link upstreamLink
+		want string
+	}{
+		{"204", upstreamLink{Host: "201", Port: "3"}, ""},
+		{"205", upstreamLink{Host: "201", Port: "5"}, ""},
+		{"205", upstreamLink{Host: "204", Port: "5"}, "that port has no link"},
+		{"204", upstreamLink{Host: "205", Port: "3"}, "that port has no link"},
+		{"205", upstreamLink{Host: "204", Port: "1"}, "that is the port it uses for its own uplink"},
+		{"204", upstreamLink{Host: "205", Port: "1"}, "that is the port it uses for its own uplink"},
+		{"251", upstreamLink{Host: "201", Port: ""}, ""},  // a wireless uplink names no port
+		{"300", upstreamLink{Host: "999", Port: "7"}, ""}, // a port Argus knows nothing about
+	}
+	for _, c := range cases {
+		links := map[string]upstreamLink{c.host: c.link}
+		doubtUpstreams(links, own, ports)
+		if got := links[c.host].Doubt; got != c.want {
+			t.Errorf("%s on %s port %s: doubt %q, want %q", c.host, c.link.Host, c.link.Port, got, c.want)
+		}
+	}
+
+	// A doubted answer is never taken as a new host's first answer either.
+	live := map[string]upstreamLink{"205": {Host: "204", Port: "5", Doubt: "that port has no link"}}
+	if got := settledUpstreams(live, map[string]store.HostUpstream{}); len(got) != 0 {
+		t.Fatalf("a doubted first answer was taken: %+v", got)
+	}
+}

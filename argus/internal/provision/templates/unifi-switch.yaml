@@ -132,6 +132,7 @@ zabbix_export:
               mac: d.mac || '',
               uplink_mac: (d.uplink && d.uplink.uplink_mac) || (d.last_uplink && d.last_uplink.uplink_mac) || '',
               uplink_port: String((d.uplink && d.uplink.uplink_remote_port) || (d.last_uplink && d.last_uplink.uplink_remote_port) || ''),
+              uplink_local: String((d.uplink && d.uplink.port_idx) || ''),
               uptime: d.uptime || 0,
               cpu: parseFloat(ss.cpu),
               mem: parseFloat(ss.mem),
@@ -146,6 +147,7 @@ zabbix_export:
             var poeTotal = 0, hasPoe = false;
             for (var i = 0; i < pt.length; i++) {
               var q = pt[i];
+              if (q.is_uplink && !out.uplink_local) { out.uplink_local = String(q.port_idx); }
               var w = parseFloat(q.poe_power || '0') || 0;
               poeTotal += w;
               if (q.port_poe) { hasPoe = true; }
@@ -418,6 +420,24 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.uplink_port'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: d7408e6e36c04cdd9ed278745c585d6b
+          name: 'Own uplink port'
+          type: DEPENDENT
+          key: unifi.uplink.local
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'The port of this switch that leads to its own upstream device. Argus checks the controller''s answers against it: a device the controller places on this port would sit above this switch, not below it, so that answer is ignored.'
+          master_item:
+            key: unifi.switch.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.uplink_local'
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d

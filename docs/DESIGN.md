@@ -635,7 +635,12 @@ answer**: a UniFi switch or access point reports the device it hangs off (`unifi
 whose `unifi.mac` it is), and a UniFi switch or gateway lists the wired clients on its ports
 (`unifi.clients`: `stat/sta` filtered to `sw_mac` = its MAC, every 10 minutes, as `[{mac, ip,
 port}]`), which Argus matches to hosts by IP (hosts that share an address are one machine, a NAS and
-the services on it, so all of them are behind that port), else by the MAC discovery saw. A UniFi device's own uplink wins over a client entry. A host can be set (host settings,
+the services on it, so all of them are behind that port), else by the MAC discovery saw. A UniFi device's own uplink wins over a client entry.
+**Checked against the ports:** the controller guesses uplinks from what the switches have learned, and
+a guess can be plainly wrong (two USW Flex Minis on one switch were each placed on a port of the other).
+An answer that names a port with no link (`unifi.port.state[N]` = 0) or the named switch's own uplink
+port (`unifi.uplink.local`, which would put the device above it) is ignored: the one Argus has stays,
+and the Device tab says what the controller said and why it was ignored. A host can be set (host settings,
 Upstream device; `upstream` in `PATCH /api/hosts/{id}/config`) to a host **chosen by hand** (refused
 when that host is behind this one) or to **None** (`host_upstream`). `unifi.clients` is plumbing: it
 is never a sensor, and one that fails never raises "stopped collecting". A host the controller gives

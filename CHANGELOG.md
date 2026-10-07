@@ -21,6 +21,11 @@ GitHub Release from the matching section below.
   stays in effect meanwhile, and a device that flips 3 times in an hour is logged once a day as
   "Upstream device keeps changing", with a pointer to setting it by hand in the host's settings.
 - Argus read the controller's upstream answers every 90 seconds instead of every 5 minutes.
+- The controller's upstream answers are checked against the switch ports they name. An answer that
+  puts a device on a port with no link, or on the named switch's own uplink port (which would put the
+  device above that switch, not below it), is ignored, and the host's Device tab says what the
+  controller said and why Argus ignored it. Each of the flips above failed one of these checks. The
+  UniFi Switch template reads each switch's own uplink port for it.
 
 ## [0.8.5] - 2026-10-07
 

@@ -584,6 +584,21 @@ func (c *Client) ItemsByKeys(ctx context.Context, keys []string) ([]Item, error)
 	return items, c.call(ctx, "item.get", params, true, &items)
 }
 
+// HostItemsByKeys is ItemsByKeys limited to some hosts.
+func (c *Client) HostItemsByKeys(ctx context.Context, hostIDs, keys []string) ([]Item, error) {
+	if len(keys) == 0 || len(hostIDs) == 0 {
+		return nil, nil
+	}
+	params := map[string]any{
+		"output":    []string{"itemid", "hostid", "name", "key_", "lastvalue", "lastclock", "units", "value_type", "status", "state", "error"},
+		"hostids":   hostIDs,
+		"filter":    map[string]any{"key_": keys},
+		"templated": false,
+	}
+	var items []Item
+	return items, c.call(ctx, "item.get", params, true, &items)
+}
+
 // ItemsByKeyPrefix returns every host item whose key starts with prefix (a discovered instance's
 // item, like xcp.host.version[<uuid>]), across all hosts.
 func (c *Client) ItemsByKeyPrefix(ctx context.Context, prefix string) ([]Item, error) {

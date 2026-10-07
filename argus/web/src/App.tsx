@@ -8153,7 +8153,7 @@ type HostTab = 'sensors' | 'device' | 'history' | 'journal' | 'changes'
 type LinkRow = { id?: number; label: string; url: string; from?: string }
 type DeviceFacts = { model?: string; serial?: string; firmware?: string; os?: string; ip?: string; mac?: string; read_at?: number; from?: string; upgrade?: string }
 type Hop = { host_id: string; name: string; port?: string; down?: boolean }
-type UpstreamInfo = { mode: 'auto' | 'manual' | 'none'; manual_host?: string; auto?: Hop; path: Hop[]; behind: { id: string; name: string }[]; behind_all: number; source?: string; why?: string }
+type UpstreamInfo = { mode: 'auto' | 'manual' | 'none'; manual_host?: string; auto?: Hop; path: Hop[]; behind: { id: string; name: string }[]; behind_all: number; source?: string; why?: string; ignored?: string }
 type DeviceInfo = { facts: DeviceFacts; own: { asset_tag: string; location: string }; class?: string; links: LinkRow[]; tags: HostTag[]; used_by: { groups: string[]; probe: string; status_pages: string[]; maintenance: string[]; channels: string[] }; upstream: UpstreamInfo; site?: SiteInfo }
 type SiteContact = { role: string; name: string; phone: string; email: string }
 type SiteLine = { name: string; host_id: string; key: string; provider: string; circuit: string; phone: string; note: string; host_name?: string; sensor?: string; state?: string }
@@ -8426,7 +8426,10 @@ function DeviceTab({ hostId, onOpenSettings }: { hostId: string; onOpenSettings?
       </InfoRow>
       <InfoRow label="Path">
         {d.upstream.path.length > 0
-          ? <InfoLine><PathView hops={d.upstream.path} /><span className="sub-line">{d.upstream.source === 'manual' ? 'set by hand' : 'from the UniFi controller'}</span></InfoLine>
+          ? <>
+              <InfoLine><PathView hops={d.upstream.path} /><span className="sub-line">{d.upstream.source === 'manual' ? 'set by hand' : 'from the UniFi controller'}</span></InfoLine>
+              {d.upstream.ignored && d.upstream.source !== 'manual' && <InfoLine><span className="sub-line">{d.upstream.ignored}</span></InfoLine>}
+            </>
           : <InfoLine><span className="muted">{d.upstream.mode === 'none' ? 'No upstream device: set to none in its settings.' : `No upstream device known. ${d.upstream.why || "The UniFi controller doesn't list this host. Pick one in its settings."}`}</span></InfoLine>}
         {d.upstream.behind.length > 0 && <InfoLine k="Behind it"><span className="v">{d.upstream.behind.map((b) => b.name).join(', ')}{d.upstream.behind_all > d.upstream.behind.length ? ` (${d.upstream.behind_all} hosts in all, further down)` : ''}</span></InfoLine>}
       </InfoRow>

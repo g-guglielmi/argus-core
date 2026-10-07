@@ -24,13 +24,16 @@ import (
 // sensors: Argus can't reach them through it anyway, and the upstream's own alert says it all.
 
 // upstreamItemKeys are the items the controller's answer is read from.
-var upstreamItemKeys = []string{"unifi.mac", "unifi.uplink.mac", "unifi.uplink.port", "unifi.clients"}
+var upstreamItemKeys = []string{"unifi.mac", "unifi.uplink.mac", "unifi.uplink.port", "unifi.uplink.local", "unifi.clients"}
 
 // upstreamLink is a host's upstream device: which host, on which of its ports, and who said so.
 type upstreamLink struct {
 	Host   string
 	Port   string
 	Source string // controller | manual
+	// Doubt is why the controller's answer doesn't add up against the port it names (doubtUpstreams):
+	// Argus ignores such an answer and keeps the one it has.
+	Doubt string
 }
 
 type wiredClient struct {
@@ -126,6 +129,67 @@ func controllerUpstreams(items []zabbix.Item, ips map[string]string, discMACs ma
 	return out
 }
 
+// doubtUpstreams checks the controller's answers against the ports they name. The controller guesses a
+// device's uplink from what the switches have learned, and a guess can be plainly wrong: two USW Flex
+// Minis on one switch were each placed on a port of the other with no link, or on the other's own
+// uplink port. A device can't hang off a port with no link, nor off the port its upstream uses to
+// reach its own upstream (that would put it above, not below). ownUplink is each switch's own uplink
+// port (unifi.uplink.local), portUp the link state ("1" / "0") of the ports the answers name; what
+// isn't known isn't held against an answer.
+func doubtUpstreams(links map[string]upstreamLink, ownUplink map[string]string, portUp map[string]map[string]string) {
+	for h, l := range links {
+		if l.Port == "" {
+			continue
+		}
+		switch {
+		case ownUplink[l.Host] == l.Port:
+			l.Doubt = "that is the port it uses for its own uplink"
+		case portUp[l.Host][l.Port] == "0":
+			l.Doubt = "that port has no link"
+		default:
+			continue
+		}
+		links[h] = l
+	}
+}
+
+// upstreamPortStates reads the link state of the ports the controller's answers name: host -> port ->
+// "1" / "0", from the switches' (and gateways') port items.
+func upstreamPortStates(ctx context.Context, zbx *zabbix.Client, links map[string]upstreamLink) map[string]map[string]string {
+	hostSet, keySet := map[string]bool{}, map[string]bool{}
+	for _, l := range links {
+		if l.Port != "" {
+			hostSet[l.Host] = true
+			keySet["unifi.port.state["+l.Port+"]"] = true
+		}
+	}
+	hosts := make([]string, 0, len(hostSet))
+	for h := range hostSet {
+		hosts = append(hosts, h)
+	}
+	keys := make([]string, 0, len(keySet))
+	for k := range keySet {
+		keys = append(keys, k)
+	}
+	out := map[string]map[string]string{}
+	items, err := zbx.HostItemsByKeys(ctx, hosts, keys)
+	if err != nil {
+		return out
+	}
+	for _, it := range items {
+		v := strings.TrimSpace(it.LastValue)
+		if it.State != "0" || it.LastClock == "" || it.LastClock == "0" || (v != "0" && v != "1") {
+			continue // not read yet, or not supported: unknown
+		}
+		_, p := splitKey(it.Key)
+		if out[it.HostID] == nil {
+			out[it.HostID] = map[string]string{}
+		}
+		out[it.HostID][param(p, 0)] = v
+	}
+	return out
+}
+
 // effectiveUpstreams applies each host's setting to the controller's answer.
 func effectiveUpstreams(auto map[string]upstreamLink, settings map[string]store.HostUpstream) map[string]upstreamLink {
 	out := make(map[string]upstreamLink, len(auto))
@@ -166,7 +230,7 @@ const (
 func settledUpstreams(live map[string]upstreamLink, settings map[string]store.HostUpstream) map[string]upstreamLink {
 	out := map[string]upstreamLink{}
 	for h, l := range live {
-		if settings[h].AutoAt == 0 {
+		if settings[h].AutoAt == 0 && l.Doubt == "" {
 			out[h] = l
 		}
 	}
@@ -187,6 +251,13 @@ func loadUpstreams(ctx context.Context, st *store.Store, zbx *zabbix.Client) (ef
 		ips, _ := zbx.HostIPs(ctx)
 		macs, _ := st.DiscoveredMACs(ctx)
 		live = controllerUpstreams(items, ips, macs)
+		own := map[string]string{}
+		for _, it := range items {
+			if it.Key == "unifi.uplink.local" {
+				own[it.HostID] = strings.TrimSpace(it.LastValue)
+			}
+		}
+		doubtUpstreams(live, own, upstreamPortStates(ctx, zbx, live))
 	}
 	settings, _ := st.HostUpstreams(ctx)
 	settled = settledUpstreams(live, settings)
@@ -386,6 +457,9 @@ func (s *Server) recordUpstreams(ctx context.Context) {
 	}
 	for h := range hosts {
 		cur := auto[h]
+		if cur.Doubt != "" {
+			continue // an answer that doesn't add up is no news: keep what Argus has, and any wait
+		}
 		was := settings[h]
 		take, next, flipped := upstreamStep(was, cur, tr.pending[h], now)
 		if next != nil {
@@ -438,12 +512,13 @@ type hopView struct {
 type upstreamView struct {
 	Mode       string        `json:"mode"` // auto | manual | none
 	ManualHost string        `json:"manual_host,omitempty"`
-	Auto       *hopView      `json:"auto,omitempty"`   // the controller's answer
-	Path       []hopView     `json:"path"`             // the chain in effect, top first, ending with this host
-	Behind     []hostRefView `json:"behind"`           // the hosts plugged straight into this one
-	BehindAll  int           `json:"behind_all"`       // every host whose chain goes through this one
-	Source     string        `json:"source,omitempty"` // controller | manual
-	Why        string        `json:"why,omitempty"`    // why the controller gives none, when it doesn't
+	Auto       *hopView      `json:"auto,omitempty"`    // the controller's answer
+	Path       []hopView     `json:"path"`              // the chain in effect, top first, ending with this host
+	Behind     []hostRefView `json:"behind"`            // the hosts plugged straight into this one
+	BehindAll  int           `json:"behind_all"`        // every host whose chain goes through this one
+	Source     string        `json:"source,omitempty"`  // controller | manual
+	Why        string        `json:"why,omitempty"`     // why the controller gives none, when it doesn't
+	Ignored    string        `json:"ignored,omitempty"` // the controller's answer right now, when Argus ignores it (and why)
 }
 
 type hostRefView struct {
@@ -453,7 +528,7 @@ type hostRefView struct {
 
 // hostUpstreamView is a host's upstream as its Device tab and settings show it.
 func (s *Server) hostUpstreamView(ctx context.Context, hostID string) upstreamView {
-	eff, auto := s.upstreams(ctx)
+	eff, auto, live := s.upstreamsLive(ctx)
 	settings, _ := s.st.HostUpstreams(ctx)
 	idx, _ := s.hostIndex(ctx)
 	down := s.downHosts(ctx)
@@ -466,6 +541,9 @@ func (s *Server) hostUpstreamView(ctx context.Context, hostID string) upstreamVi
 	}
 	if l, ok := eff[hostID]; ok {
 		v.Source = l.Source
+	}
+	if l := live[hostID]; l.Doubt != "" {
+		v.Ignored = fmt.Sprintf("The UniFi controller now places it on %s port %s, but %s: Argus ignores that answer.", idx[l.Host].Name, l.Port, l.Doubt)
 	}
 	if v.Auto == nil && v.Mode == "auto" {
 		if items, err := s.zbx.ItemsByKeys(ctx, []string{"unifi.clients"}); err == nil {
