@@ -13,6 +13,13 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-10-07
+
+The speed test's own chart and runs list, sparklines in warning and error colours, a page that breaks
+showing why instead of a blank screen, and fixes: the OK list, interfaces renumbered by a NetBird or
+WireGuard update, and the speed test's readings. Update the core; one speed test fix is on the probes'
+side, in probe/v7.0.31-r27 (already out). The updater stays 0.2.12.
+
 **Speed test chart:** a test that runs every few hours gets a chart of its own.
 - Each run is a dot, with lines only between runs next to each other. A run that couldn't measure is
   a red ✕ at its time, and hovering it says why. The speed axis starts at 0.
