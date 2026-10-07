@@ -56,6 +56,7 @@ type Server struct {
 	maint         maintCache        // the hosts in a maintenance window right now (maintenance.go)
 	mux           *http.ServeMux    // the routes, so the change log can match a request before it runs (changes.go)
 	ups           upstreamCache     // the devices hosts are plugged into (upstream.go)
+	upsTrack      upstreamTrack     // the controller's answers on their way to being taken (upstream.go)
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {

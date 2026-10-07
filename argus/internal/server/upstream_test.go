@@ -147,3 +147,89 @@ func TestUpstreamWhy(t *testing.T) {
 		}
 	}
 }
+
+// A new answer from the controller is taken only once it has held for upstreamSettle; one that goes
+// back (or on to a third) before that is a flip, and the recorded answer stays.
+func TestUpstreamStep(t *testing.T) {
+	flex := upstreamLink{Host: "201", Port: "5", Source: "controller"}
+	mini := upstreamLink{Host: "204", Port: "5", Source: "controller"}
+	was := store.HostUpstream{AutoHost: "201", AutoPort: "5", AutoAt: 1000}
+
+	// The first answer for a host is taken at once.
+	if take, next, _ := upstreamStep(store.HostUpstream{}, flex, nil, 2000); !take || next != nil {
+		t.Fatalf("first answer: take %v next %+v", take, next)
+	}
+	// The same answer again: nothing to do.
+	if take, next, flipped := upstreamStep(was, flex, nil, 2000); take || next != nil || flipped {
+		t.Fatalf("same answer: take %v next %+v flipped %v", take, next, flipped)
+	}
+	// A new answer waits...
+	take, next, _ := upstreamStep(was, mini, nil, 2000)
+	if take || next == nil || next.since != 2000 {
+		t.Fatalf("new answer should wait: take %v next %+v", take, next)
+	}
+	if take, again, _ := upstreamStep(was, mini, next, 2000+upstreamSettle-1); take || again != next {
+		t.Fatalf("taken before it held: take %v", take)
+	}
+	// ...and is taken once it has held.
+	if take, _, _ := upstreamStep(was, mini, next, 2000+upstreamSettle); !take {
+		t.Fatal("not taken after it held")
+	}
+	// Going back before it held is a flip, and the recorded answer stays.
+	if take, cleared, flipped := upstreamStep(was, flex, next, 2300); take || cleared != nil || !flipped {
+		t.Fatalf("flip back: take %v next %+v flipped %v", take, cleared, flipped)
+	}
+	// Moving on to a third answer is a flip too, and the wait starts over.
+	third := upstreamLink{Host: "205", Port: "3", Source: "controller"}
+	if take, n3, flipped := upstreamStep(was, third, next, 2300); take || !flipped || n3 == nil || n3.since != 2300 || n3.link != third {
+		t.Fatalf("third answer: take %v next %+v flipped %v", take, n3, flipped)
+	}
+	// Losing the answer altogether waits like any other change.
+	if take, _, _ := upstreamStep(was, upstreamLink{}, nil, 2000); take {
+		t.Fatal("an empty answer was taken at once")
+	}
+}
+
+// A host that flips upstreamFlapAfter times within the window is logged once, then not again for a day.
+func TestUpstreamFlaps(t *testing.T) {
+	var tr upstreamTrack
+	for i, at := range []int64{0, 600, 1200} {
+		n, log := tr.noteFlip("205", 10000+at)
+		if n != i+1 || log != (i == 2) {
+			t.Fatalf("flip %d: n %d log %v", i+1, n, log)
+		}
+	}
+	if _, log := tr.noteFlip("205", 12000); log {
+		t.Fatal("logged twice in a day")
+	}
+	// Flips older than the window drop out of the count.
+	if n, _ := tr.noteFlip("205", 10000+upstreamFlapWindow+1300); n != 2 {
+		t.Fatalf("old flips still counted: %d", n)
+	}
+	if _, log := tr.noteFlip("205", 10000+upstreamFlapRelog+1200); log {
+		t.Fatal("a lone flip a day later shouldn't log")
+	}
+}
+
+// The upstream in effect is the answer Argus took, not the controller's latest flip; a host with none
+// taken yet uses the live answer.
+func TestSettledUpstreams(t *testing.T) {
+	live := map[string]upstreamLink{
+		"205": {Host: "204", Port: "5", Source: "controller"}, // the controller's latest flip
+		"300": {Host: "201", Port: "2", Source: "controller"}, // new: nothing taken yet
+	}
+	settings := map[string]store.HostUpstream{
+		"205": {Mode: "auto", AutoHost: "201", AutoPort: "5", AutoAt: 1000},
+		"206": {Mode: "auto", AutoHost: "201", AutoPort: "4", AutoAt: 1000}, // gone from the controller for now
+	}
+	got := settledUpstreams(live, settings)
+	if got["205"].Host != "201" || got["205"].Port != "5" {
+		t.Fatalf("205 should keep the answer Argus took: %+v", got["205"])
+	}
+	if got["300"].Host != "201" {
+		t.Fatalf("a new host takes the live answer: %+v", got["300"])
+	}
+	if got["206"].Host != "201" {
+		t.Fatalf("an answer the controller dropped for now is kept until the drop holds: %+v", got["206"])
+	}
+}

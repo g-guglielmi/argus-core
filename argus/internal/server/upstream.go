@@ -147,17 +147,104 @@ func effectiveUpstreams(auto map[string]upstreamLink, settings map[string]store.
 	return out
 }
 
+// upstreamSettle is how long the controller must keep giving a host a new upstream before Argus takes
+// it. Its answer can flip every few minutes (two USW Flex Minis on one switch report no neighbours,
+// so the controller guesses each hangs off the other as their switch's MAC table ages out), and
+// taking every flip moved the hosts held behind them and filled the Changes log.
+const upstreamSettle = 15 * 60
+
+// upstreamFlapAfter flips of one host's answer within upstreamFlapWindow are logged, once a day, as
+// "keeps changing" (each flip on its own isn't a change: Argus kept its answer).
+const (
+	upstreamFlapAfter  = 3
+	upstreamFlapWindow = 60 * 60
+	upstreamFlapRelog  = 24 * 60 * 60
+)
+
+// settledUpstreams is the controller's answer as Argus holds it: the one recordUpstreams last took (it
+// held for upstreamSettle), and the live one for a host with none taken yet.
+func settledUpstreams(live map[string]upstreamLink, settings map[string]store.HostUpstream) map[string]upstreamLink {
+	out := map[string]upstreamLink{}
+	for h, l := range live {
+		if settings[h].AutoAt == 0 {
+			out[h] = l
+		}
+	}
+	for h, u := range settings {
+		if u.AutoAt != 0 && u.AutoHost != "" {
+			out[h] = upstreamLink{Host: u.AutoHost, Port: u.AutoPort, Source: "controller"}
+		}
+	}
+	return out
+}
+
 // loadUpstreams reads the controller's answer and the hosts' settings: the upstream in effect for each
-// host, and the controller's answer on its own. Best effort: what can't be read is just unknown.
-func loadUpstreams(ctx context.Context, st *store.Store, zbx *zabbix.Client) (eff, auto map[string]upstreamLink) {
-	auto = map[string]upstreamLink{}
+// host, the controller's answer as Argus holds it (settled), and the controller's answer right now
+// (live). Best effort: what can't be read is just unknown.
+func loadUpstreams(ctx context.Context, st *store.Store, zbx *zabbix.Client) (eff, settled, live map[string]upstreamLink) {
+	live = map[string]upstreamLink{}
 	if items, err := zbx.ItemsByKeys(ctx, upstreamItemKeys); err == nil {
 		ips, _ := zbx.HostIPs(ctx)
 		macs, _ := st.DiscoveredMACs(ctx)
-		auto = controllerUpstreams(items, ips, macs)
+		live = controllerUpstreams(items, ips, macs)
 	}
 	settings, _ := st.HostUpstreams(ctx)
-	return effectiveUpstreams(auto, settings), auto
+	settled = settledUpstreams(live, settings)
+	return effectiveUpstreams(settled, settings), settled, live
+}
+
+// upstreamPending is a new answer the controller has been giving a host, and since when.
+type upstreamPending struct {
+	link  upstreamLink
+	since int64
+}
+
+// upstreamStep is what one read of the controller does to a host's recorded answer: take the live one
+// (the first answer, or a new one that has held for upstreamSettle), or wait on it. flipped is a new
+// answer that went away before it held (back to the recorded one, or on to a third).
+func upstreamStep(was store.HostUpstream, cur upstreamLink, pending *upstreamPending, now int64) (take bool, next *upstreamPending, flipped bool) {
+	same := func(a upstreamLink, host, port string) bool { return a.Host == host && a.Port == port }
+	switch {
+	case same(cur, was.AutoHost, was.AutoPort):
+		return false, nil, pending != nil
+	case was.AutoAt == 0:
+		return true, nil, false
+	case pending == nil || !same(cur, pending.link.Host, pending.link.Port):
+		return false, &upstreamPending{link: cur, since: now}, pending != nil
+	case now-pending.since >= upstreamSettle:
+		return true, nil, false
+	}
+	return false, pending, false
+}
+
+// upstreamTrack is recordUpstreams' memory between reads: the answer each host is moving to, the
+// times a new one went away before it held, and when "keeps changing" was last logged.
+type upstreamTrack struct {
+	mu      sync.Mutex
+	pending map[string]*upstreamPending
+	flips   map[string][]int64
+	flapLog map[string]int64
+}
+
+// noteFlip records a flip and reports how many the host had in the last upstreamFlapWindow, and
+// whether that is worth a "keeps changing" entry now.
+func (t *upstreamTrack) noteFlip(h string, now int64) (n int, log bool) {
+	if t.flips == nil {
+		t.flips, t.flapLog = map[string][]int64{}, map[string]int64{}
+	}
+	var kept []int64
+	for _, at := range t.flips[h] {
+		if now-at < upstreamFlapWindow {
+			kept = append(kept, at)
+		}
+	}
+	kept = append(kept, now)
+	t.flips[h] = kept
+	if last, logged := t.flapLog[h]; len(kept) >= upstreamFlapAfter && (!logged || now-last >= upstreamFlapRelog) {
+		t.flapLog[h] = now
+		return len(kept), true
+	}
+	return len(kept), false
 }
 
 // upstreamChain is a host's upstream devices, nearest first. A chain that loops back (two devices
@@ -201,18 +288,24 @@ type upstreamCache struct {
 	mu   sync.Mutex
 	at   time.Time
 	eff  map[string]upstreamLink
-	auto map[string]upstreamLink
+	auto map[string]upstreamLink // the controller's answer as Argus holds it
+	live map[string]upstreamLink // the controller's answer right now
 }
 
 func (s *Server) upstreams(ctx context.Context) (eff, auto map[string]upstreamLink) {
+	eff, auto, _ = s.upstreamsLive(ctx)
+	return eff, auto
+}
+
+func (s *Server) upstreamsLive(ctx context.Context) (eff, auto, live map[string]upstreamLink) {
 	s.ups.mu.Lock()
 	defer s.ups.mu.Unlock()
 	if s.ups.eff != nil && time.Since(s.ups.at) < time.Minute {
-		return s.ups.eff, s.ups.auto
+		return s.ups.eff, s.ups.auto, s.ups.live
 	}
-	s.ups.eff, s.ups.auto = loadUpstreams(ctx, s.st, s.zbx)
+	s.ups.eff, s.ups.auto, s.ups.live = loadUpstreams(ctx, s.st, s.zbx)
 	s.ups.at = time.Now()
-	return s.ups.eff, s.ups.auto
+	return s.ups.eff, s.ups.auto, s.ups.live
 }
 
 func (s *Server) forgetUpstreams() {
@@ -221,17 +314,20 @@ func (s *Server) forgetUpstreams() {
 	s.ups.mu.Unlock()
 }
 
-// startUpstreamRefresh keeps the controller's answers on record every few minutes, and logs it when one
-// changes (the first answer for a host is just stored).
+// startUpstreamRefresh reads the controller's answers 90 s after start and then every 5 minutes, and
+// records them (recordUpstreams). The first read waits on its own timer: a fresh 90 s wait on every
+// turn of the loop used to win over the ticker, so it read every 90 s.
 func (s *Server) startUpstreamRefresh(ctx context.Context) {
 	go func() {
+		first := time.NewTimer(90 * time.Second)
+		defer first.Stop()
 		t := time.NewTicker(5 * time.Minute)
 		defer t.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(90 * time.Second):
+			case <-first.C:
 			case <-t.C:
 			}
 			if s.zbx.Authenticated() {
@@ -243,10 +339,12 @@ func (s *Server) startUpstreamRefresh(ctx context.Context) {
 	}()
 }
 
-// recordUpstreams stores the controller's current answers and logs the ones that changed.
+// recordUpstreams takes the controller's current answers: a host's first answer at once, a new one once
+// it has held for upstreamSettle (logged as a change), and a host whose answer keeps flipping is logged
+// once a day as such, its recorded answer kept meanwhile.
 func (s *Server) recordUpstreams(ctx context.Context) {
 	s.forgetUpstreams()
-	_, auto := s.upstreams(ctx)
+	_, _, auto := s.upstreamsLive(ctx)
 	settings, err := s.st.HostUpstreams(ctx)
 	if err != nil {
 		return
@@ -275,10 +373,38 @@ func (s *Server) recordUpstreams(ctx context.Context) {
 			hosts[h] = true
 		}
 	}
+	tr := &s.upsTrack
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.pending == nil {
+		tr.pending = map[string]*upstreamPending{}
+	}
+	for h := range tr.pending {
+		if !hosts[h] {
+			delete(tr.pending, h)
+		}
+	}
 	for h := range hosts {
 		cur := auto[h]
 		was := settings[h]
-		if cur.Host == was.AutoHost && cur.Port == was.AutoPort {
+		take, next, flipped := upstreamStep(was, cur, tr.pending[h], now)
+		if next != nil {
+			tr.pending[h] = next
+		} else {
+			delete(tr.pending, h)
+		}
+		if flipped {
+			if n, log := tr.noteFlip(h, now); log {
+				held := label(upstreamLink{Host: was.AutoHost, Port: was.AutoPort})
+				if held == "" {
+					held = "none"
+				}
+				c := store.Change{Category: "hosts", Action: "Upstream device keeps changing", Object: idx[h].Name, HostIDs: []string{h},
+					Detail: fmt.Sprintf("The UniFi controller changed its answer %d times in the last hour. Argus keeps %s until a new one holds for 15 minutes; setting the upstream device by hand in the host's settings pins it.", n, held)}
+				s.logArgusChange(ctx, c)
+			}
+		}
+		if !take {
 			continue
 		}
 		if err := s.st.SetAutoUpstream(ctx, h, cur.Host, cur.Port, now); err != nil {

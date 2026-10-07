@@ -13,6 +13,15 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Fixed:**
+- An upstream device the UniFi controller keeps changing its mind about no longer floods Changes or
+  moves the hosts held behind it. The controller can flip between two answers every few minutes (two
+  USW Flex Minis on one switch are each guessed to hang off the other), and Argus took every flip.
+  Now a new answer is taken only once the controller has kept it for 15 minutes, the one Argus has
+  stays in effect meanwhile, and a device that flips 3 times in an hour is logged once a day as
+  "Upstream device keeps changing", with a pointer to setting it by hand in the host's settings.
+- Argus read the controller's upstream answers every 90 seconds instead of every 5 minutes.
+
 ## [0.8.5] - 2026-10-07
 
 A small release: the sidebar's fold button moves into the sidebar. Nothing to update besides the core;

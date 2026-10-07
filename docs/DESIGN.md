@@ -656,8 +656,13 @@ and as `behind` in the webhook.
 
 **Shown** on the Device tab as **Path** (top first, each hop with the port the next one is plugged
 into, a down hop red, and where it comes from) with the hosts plugged straight into it, and in host
-settings. Every 5 minutes Argus stores the controller's answers (`auto_*` in `host_upstream`) and logs
-one that changes in Changes, as Argus (a host's first answer is just stored).
+settings. Every 5 minutes Argus reads the controller's answers and stores them (`auto_*` in
+`host_upstream`): a host's first answer at once, a new one only once the controller has kept it for 15
+minutes (logged in Changes, as Argus). Until then the stored answer stays in effect, holds included:
+the controller can flip between two answers every few minutes (two USW Flex Minis on one switch report
+no neighbours, so it guesses each hangs off the other as the switch's MAC table ages out). A host whose
+answer flips 3 times in an hour is logged once a day as "Upstream device keeps changing", with a
+pointer to setting it by hand.
 
 ## 7g. Site info and who to call
 
