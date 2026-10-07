@@ -63,9 +63,13 @@ type mapLink struct {
 	SpeedUp  float64  `json:"speed_up,omitempty"`  // the internet: the upload speed, when the line gives one apart
 	Use      *int     `json:"use,omitempty"`       // percent of Speed, the busier way
 	NoLink   bool     `json:"no_link,omitempty"`   // the port (or the WAN) reports no link
-	Latency  *float64 `json:"latency,omitempty"`   // the internet: the WAN's latency, ms
-	State    string   `json:"state,omitempty"`     // the internet: the worst state of the WAN's sensors
-	Source   string   `json:"source,omitempty"`    // controller | manual: who said To hangs off From
+	// Spare is the internet on a WAN that reports no link and never raised an alert: a failover
+	// configured but not connected (the WAN's own alert is armed only once it has worked). It is drawn
+	// quiet and never counted as a link down.
+	Spare   bool     `json:"spare,omitempty"`
+	Latency *float64 `json:"latency,omitempty"` // the internet: the WAN's latency, ms
+	State   string   `json:"state,omitempty"`   // the internet: the worst state of the WAN's sensors
+	Source  string   `json:"source,omitempty"`  // controller | manual: who said To hangs off From
 	// Where the link's traffic chart is: the sensor the link was read from.
 	ChartHost string `json:"chart_host,omitempty"`
 	ChartItem string `json:"chart_item,omitempty"`
@@ -221,9 +225,26 @@ func buildSiteMap(in mapInput) mapView {
 	return v
 }
 
-// portLink reads a link's traffic: from the upstream's port when it names one the upstream reports,
-// else from the device's own uplink sensors. Down is toward the device: what the port sends.
+// portLink reads a link's traffic: from the upstream's port when it names one the upstream reports
+// (its speed, its state, its name), and from the device's own uplink sensors when it has them: both
+// count the same cable, and a gateway can read 0 on a port that is plainly busy while the switch on it
+// counts its own uplink right. Down is toward the device.
 func (in mapInput) portLink(l *mapLink, rd mapReadings) {
+	in.portReading(l, rd)
+	dIn, okIn := rd.num(l.To, "unifi.uplink.in", in.now)
+	dOut, okOut := rd.num(l.To, "unifi.uplink.out", in.now)
+	if okIn || okOut {
+		l.Down, l.Up = ptrF(dIn, okIn), ptrF(dOut, okOut)
+		if r, ok := rd.row(l.To, "unifi.uplink.in"); ok {
+			l.ChartHost, l.ChartItem = l.To, r.ItemID
+		}
+		l.Use = nil
+		linkUse(l)
+	}
+}
+
+// portReading reads a link from its upstream's port, else from the device's own uplink sensors.
+func (in mapInput) portReading(l *mapLink, rd mapReadings) {
 	if p := l.Port; p != "" {
 		inRow, hasIn := rd.row(l.From, "unifi.port.in["+p+"]")
 		outRow, hasOut := rd.row(l.From, "unifi.port.out["+p+"]")
@@ -312,21 +333,29 @@ func (in mapInput) internet(v *mapView, gw string, rd mapReadings) {
 		l.Down = ptrF(rd.num(gw, "unifi.wan.in["+w+"]", in.now))
 		l.Up = ptrF(rd.num(gw, "unifi.wan.out["+w+"]", in.now))
 		l.Latency = ptrF(rd.num(gw, "unifi.wan.latency["+w+"]", in.now))
-		if a, ok := rd.num(gw, "unifi.wan.avail["+w+"]", in.now); ok && a == 0 {
-			l.NoLink = true
-		}
 		for key, r := range rd[gw] {
 			if wanOf(key) != w {
 				continue
 			}
-			if r.State == "error" || (r.State == "warning" && l.State != "error") {
-				l.State = r.State
+			switch {
+			case r.State == "error" || r.State == "acked":
+				l.State = "error"
+			case r.State == "warning" && l.State != "error":
+				l.State = "warning"
+			}
+		}
+		// No link: a WAN that worked and died has its alert open; one that never had a link is a spare.
+		if a, ok := rd.num(gw, "unifi.wan.avail["+w+"]", in.now); ok && a == 0 {
+			if l.State == "" {
+				l.Spare = true
+			} else {
+				l.NoLink = true
 			}
 		}
 		if r, ok := rd.row(gw, "unifi.wan.in["+w+"]"); ok {
 			l.ChartHost, l.ChartItem = gw, r.ItemID
 		}
-		if !l.NoLink {
+		if !l.NoLink && !l.Spare {
 			linkUse(&l)
 		}
 		v.Nodes = append(v.Nodes, n)

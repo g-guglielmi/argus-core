@@ -772,12 +772,17 @@ devices in effect (section 7f: the controller's answer as Argus holds it, or one
 hosts both on the site (the hosts the probe monitors, and the server's own in the site's group; never
 Argus's Probe host). **Their traffic** comes from the census: the upstream's port sensors when the link
 names a port it reports (`unifi.port.out[N]` is the traffic down toward the device, `unifi.port.in[N]`
-up, `unifi.port.speed[N]` the speed, `unifi.port.state[N]` = 0 no link), else the device's own uplink
-sensors (`unifi.uplink.in` / `out`, no speed). How full a link is, is the busier way over its speed. A
+up, `unifi.port.speed[N]` the speed, `unifi.port.state[N]` = 0 no link), and the device's own uplink
+sensors (`unifi.uplink.in` / `out`) when it has them: both count the same cable, and a gateway can read
+0 on a busy port while the switch on it counts its own uplink right, so the device's count wins (the
+port still gives the speed and the state). How full a link is, is the busier way over its speed. A
 reading older than 10 minutes is unknown. A UniFi gateway's WANs lead up to the internet: one node per
 WAN, named after the site's line on it (section 7g), its link carrying `unifi.wan.in[N]` (the download),
-`unifi.wan.out[N]` and the latency, coloured by the WAN sensors' own state, no link when its
-availability reads 0. With the line's speed, the WAN also shows how full it is, each way against its
+`unifi.wan.out[N]` and the latency, coloured by the WAN sensors' own state. A WAN whose availability
+reads 0 has no link when its alert is open (it worked and died); with no alert it is a **spare**, a
+failover set up but never connected (its alert is armed only once it has worked): drawn dashed grey as
+"not connected", never counted as a link down. The internet boxes sit a level above their gateway, one
+per WAN side by side, each with its own link and label, and move with the gateway when it is moved. With the line's speed, the WAN also shows how full it is, each way against its
 own speed (an upload is often slower). The line is the one tied to that WAN, else one tied to the
 whole gateway when it has only that WAN. **The devices**: UniFi gateways, switches and access points are always on the
 map; any other host only when it is linked. A device's state is its sensors': down while its ping is in

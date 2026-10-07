@@ -8543,7 +8543,7 @@ type InvRow = { host_id: string; name: string; groups: string[]; probe: string; 
 
 type MapSite = { probe: string; site: string; on: boolean; on_by?: string; on_at?: number; devices: number; hosts: number; down: number; busy: number; no_link: number; busiest?: { from: string; to?: string; port?: string; wan?: string; use: number } }
 type MapNodeT = { id: string; name: string; kind: 'internet' | 'gateway' | 'switch' | 'ap' | 'host'; model?: string; ip?: string; state: string; errors?: number; warnings?: number; down_since?: number; clients?: number; provider?: string }
-type MapLinkT = { from: string; to: string; port?: string; port_name?: string; down?: number; up?: number; speed?: number; use?: number; no_link?: boolean; latency?: number; state?: string; source?: string; chart_host?: string; chart_item?: string; speed_up?: number }
+type MapLinkT = { from: string; to: string; port?: string; port_name?: string; down?: number; up?: number; speed?: number; use?: number; no_link?: boolean; latency?: number; state?: string; source?: string; chart_host?: string; chart_item?: string; speed_up?: number; spare?: boolean }
 type MapPin = { dx: number; dy: number }
 type SiteMapT = { probe: string; site: string; nodes: MapNodeT[]; links: MapLinkT[]; unplaced: { id: string; name: string }[]; pins: Record<string, MapPin>; at: number }
 
@@ -8571,8 +8571,9 @@ function mapRates(down?: number, up?: number): string {
 }
 
 // mapTone is how a link reads: no link, how full it is (past 70% busy, past 90% full), the internet's
-// own sensors' state, or no reading at all.
-function mapTone(l: MapLinkT): 'down' | 'err' | 'warn' | 'ok' | 'none' {
+// own sensors' state, no reading at all, or a spare WAN (configured, never connected).
+function mapTone(l: MapLinkT): 'down' | 'err' | 'warn' | 'ok' | 'none' | 'spare' {
+  if (l.spare) return 'spare'
   if (l.no_link) return 'down'
   if (l.state === 'error' || (l.use ?? 0) >= 90) return 'err'
   if (l.state === 'warning' || (l.use ?? 0) >= 70) return 'warn'
@@ -8582,6 +8583,7 @@ function mapTone(l: MapLinkT): 'down' | 'err' | 'warn' | 'ok' | 'none' {
 // mapWidth is a link's thickness: more traffic, thicker (a square root, so a quiet link still shows
 // some, and 1 Gbps or more is the thickest).
 function mapWidth(l: MapLinkT): number {
+  if (l.spare) return 1.5
   if (l.no_link) return 2
   if (l.down == null && l.up == null) return 1.5
   return 1.5 + 6.5 * Math.min(1, Math.sqrt(Math.max(l.down ?? 0, l.up ?? 0) / 1e9))
@@ -8597,6 +8599,7 @@ function mapWhere(l: MapLinkT, wan: boolean): string {
 // mapLabelParts is a link's label: where, its traffic, how full (coloured) and the internet's latency.
 function mapLabelParts(l: MapLinkT, wan: boolean): { text: string; use?: string; tail?: string } {
   const where = mapWhere(l, wan)
+  if (l.spare) return { text: where ? `${where} · ` : '', use: 'not connected' }
   if (l.no_link) return { text: where ? `${where} · ` : '', use: 'no link' }
   const text = [where, l.down != null || l.up != null ? mapRates(l.down, l.up) : ''].filter(Boolean).join(' ')
   const use = l.use != null ? mapUse(l) : undefined
@@ -8612,6 +8615,7 @@ function mapUse(l: MapLinkT): string {
 function mapTrunc(s: string, n: number): string { return s.length > n ? s.slice(0, n - 1) + '…' : s }
 
 function mapNodeSub(n: MapNodeT, nowSec: number, out?: MapLinkT): string {
+  if (n.kind === 'internet' && out?.spare) return [n.provider, 'not connected'].filter(Boolean).join(' · ')
   if (n.kind === 'internet') return [n.provider, out?.speed ? lineSpeed(out.speed / 1e6, out.speed_up ? out.speed_up / 1e6 : undefined) : ''].filter(Boolean).join(' · ') || 'Internet line'
   if (n.state === 'down') return n.down_since ? `down for ${relSpan(Math.max(0, nowSec - n.down_since))}` : 'down'
   const bits = [n.model || n.ip || '']
@@ -8626,6 +8630,7 @@ const mapStateTone = (s: string) => (s === 'down' || s === 'error' ? 'err' : s =
 type MapTree = {
   kids: Record<string, string[]> // the devices shown under each one, in port order
   link: Record<string, MapLinkT> // the link into each device
+  wans: Record<string, MapLinkT[]> // each gateway's internet links, by WAN (drawn above it)
   roots: string[]
   shown: Set<string>
 }
@@ -8637,11 +8642,14 @@ function mapTree(m: SiteMapT, showHosts: boolean): MapTree {
   for (const n of m.nodes) byId[n.id] = n
   const link: Record<string, MapLinkT> = {}
   const all: Record<string, string[]> = {}
+  const wans: Record<string, MapLinkT[]> = {}
   for (const l of m.links) {
     if (!byId[l.from] || !byId[l.to]) continue
+    if (byId[l.from].kind === 'internet') { (wans[l.to] ||= []).push(l); continue }
     link[l.to] = l
     ;(all[l.from] ||= []).push(l.to)
   }
+  for (const g of Object.keys(wans)) wans[g].sort((a, b) => (parseInt(a.port || '', 10) || 0) - (parseInt(b.port || '', 10) || 0))
   const memo: Record<string, boolean> = {}
   const shows = (id: string, path: Set<string> = new Set()): boolean => {
     if (memo[id] !== undefined) return memo[id]
@@ -8653,18 +8661,19 @@ function mapTree(m: SiteMapT, showHosts: boolean): MapTree {
     return (memo[id] = r)
   }
   const portNum = (l?: MapLinkT) => { const p = parseInt(l?.port || '', 10); return Number.isNaN(p) ? 1e6 : p }
-  const shown = new Set(m.nodes.filter((n) => shows(n.id)).map((n) => n.id))
+  const shown = new Set(m.nodes.filter((n) => n.kind !== 'internet' && shows(n.id)).map((n) => n.id))
+  for (const [g, ls] of Object.entries(wans)) if (shown.has(g)) for (const l of ls) shown.add(l.from)
   const kids: Record<string, string[]> = {}
   for (const p of Object.keys(all)) {
     if (!shown.has(p)) continue
     kids[p] = all[p].filter((k) => shown.has(k)).sort((a, b) => portNum(link[a]) - portNum(link[b]) || byId[a].name.localeCompare(byId[b].name))
   }
-  const roots = m.nodes.filter((n) => shown.has(n.id) && !(link[n.id] && shown.has(link[n.id].from)))
+  const roots = m.nodes.filter((n) => n.kind !== 'internet' && shown.has(n.id) && !(link[n.id] && shown.has(link[n.id].from)))
     .sort((a, b) => MAP_KIND_RANK[a.kind] - MAP_KIND_RANK[b.kind] || a.name.localeCompare(b.name)).map((n) => n.id)
-  return { kids, link, roots, shown }
+  return { kids, link, wans, roots, shown }
 }
 
-type MapLayout = { pos: Record<string, { x: number; y: number }>; parent: Record<string, string>; comb: Record<string, boolean>; outline: { id: string; depth: number }[] }
+type MapLayout = { pos: Record<string, { x: number; y: number }>; parent: Record<string, string>; comb: Record<string, boolean>; outline: { id: string; depth: number; link?: MapLinkT }[] }
 
 // mapLayout places the tree top-down: each device centred over the ones below it, a long row of
 // devices with nothing below them folded into columns. Devices in a loop (two that report each other)
@@ -8704,11 +8713,21 @@ function mapLayout(t: MapTree, ids: string[]): MapLayout {
     }
   }
   let x = 0
+  const internet = new Set(Object.values(t.wans).flat().map((l) => l.from))
   const placeRoot = (r: string) => { measure(r); place(r, x, 0); x += info[r].w + MAP_GAP * 2 }
   for (const r of t.roots) if (!seen.has(r)) placeRoot(r)
-  for (const id of ids) if (t.shown.has(id) && !seen.has(id)) placeRoot(id)
-  // The outline: the same tree, in port order.
-  const walk = (id: string, depth: number) => { outline.push({ id, depth }); for (const k of kidsOf(id)) if (parent[k] === id) walk(k, depth + 1) }
+  for (const id of ids) if (t.shown.has(id) && !seen.has(id) && !internet.has(id)) placeRoot(id)
+  // The internet sits a level above its gateway, one box per WAN side by side, and moves with it.
+  for (const [g, ls] of Object.entries(t.wans)) {
+    if (!pos[g]) continue
+    ls.forEach((l, i) => { pos[l.from] = { x: pos[g].x + (i - (ls.length - 1) / 2) * (MAP_W + MAP_GAP), y: pos[g].y - MAP_LEVEL }; parent[l.from] = g })
+  }
+  // The outline: the same tree, in port order, each gateway's internet lines just above it.
+  const walk = (id: string, depth: number) => {
+    for (const l of t.wans[id] || []) if (pos[l.from]) outline.push({ id: l.from, depth, link: l })
+    outline.push({ id, depth })
+    for (const k of kidsOf(id)) if (parent[k] === id) walk(k, depth + 1)
+  }
   for (const id of Object.keys(pos)) if (!parent[id]) walk(id, 0)
   return { pos, parent, comb, outline }
 }
@@ -8925,7 +8944,7 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
   const placed = Object.keys(at)
   // A gateway's WAN with no speed on its line can't show how full it is: those who may edit the site's
   // info get a pointer to it, and the editor right here.
-  const slowKnown = m.links.filter((l) => byId[l.from]?.kind === 'internet' && !l.speed && byId[l.to])
+  const slowKnown = m.links.filter((l) => byId[l.from]?.kind === 'internet' && !l.speed && !l.spare && byId[l.to])
   const speedNote = canArrange && slowKnown.length > 0 && (
     <>
       <p className="map-foot">
@@ -8956,9 +8975,9 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
         <table className="slist slist-maptree">
           <thead><tr><th>Device</th><th>Port</th><th>Down</th><th>Up</th><th>Link use</th></tr></thead>
           <tbody>
-            {lay.outline.map(({ id, depth }) => {
+            {lay.outline.map(({ id, depth, link }) => {
               const n = byId[id]
-              const l = tree.link[id] && lay.parent[id] === tree.link[id].from ? tree.link[id] : undefined
+              const l = link || (tree.link[id] && lay.parent[id] === tree.link[id].from ? tree.link[id] : undefined)
               const wan = !!l && byId[l.from]?.kind === 'internet'
               const tone = l ? mapTone(l) : 'none'
               const rate = (v?: number) => (v == null ? <span className="muted">-</span> : <span className="mono">{fmtNum(v, 'bps')}</span>)
@@ -8969,20 +8988,22 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
                       {depth > 0 && <span className="map-elbow" />}
                       <span className={'map-dot ' + mapStateTone(n.state)} />
                       {n.kind === 'internet' ? <b>{n.name}</b> : <span className="lnk-host" onClick={() => goHost(id)}>{n.name}</span>}
-                      <span className="inc-site"> {mapNodeSub(n, nowSec, n.kind === 'internet' ? m.links.find((x) => x.from === id) : undefined)}</span>
+                      <span className="inc-site"> {mapNodeSub(n, nowSec, n.kind === 'internet' ? link : undefined)}</span>
                     </span>
                   </td>
                   <td data-label="Port" className="mono">{l ? (mapWhere(l, wan) || '-') + (l.port_name ? ` · ${l.port_name}` : '') + (l.latency != null ? ` · ${roundNum(Math.round(l.latency * 10) / 10)} ms` : '') : <span className="muted">-</span>}</td>
                   <td data-label="Down">{l ? rate(l.down) : <span className="muted">-</span>}</td>
                   <td data-label="Up">{l ? rate(l.up) : <span className="muted">-</span>}</td>
                   <td data-label="Link use">{!l ? <span className="muted">-</span>
+                    : l.spare ? <span className="muted">not connected</span>
                     : l.no_link ? <span className="txt-err">no link</span>
                     : l.use != null ? <span className="map-use"><span className="map-bar"><span className={tone} style={{ width: `${Math.max(3, Math.min(100, l.use))}%` }} /></span><span className={'mono ' + (tone === 'err' ? 'txt-err' : tone === 'warn' ? 'txt-warn' : '')}>{mapUse(l)}</span></span>
                     : <span className="muted">-</span>}</td>
                   {/* A phone reads the link on one line under the device instead of four labelled ones. */}
                   <td className="map-compact" style={{ paddingLeft: depth * 18 + (depth ? 17 : 0) + 15 }}>{l && <>
                     <span className="mono">{[mapWhere(l, wan), !l.no_link && (l.down != null || l.up != null) ? mapRates(l.down, l.up) : ''].filter(Boolean).join(' · ')}</span>
-                    {l.no_link ? <span className="txt-err">· no link</span>
+                    {l.spare ? <span className="muted">· not connected</span>
+                      : l.no_link ? <span className="txt-err">· no link</span>
                       : l.use != null ? <span className="map-use"><span className="map-bar"><span className={tone} style={{ width: `${Math.max(3, Math.min(100, l.use))}%` }} /></span><span className={'mono ' + (tone === 'err' ? 'txt-err' : tone === 'warn' ? 'txt-warn' : '')}>{mapUse(l)}</span>{l.latency != null && <span className="mono">· {roundNum(Math.round(l.latency * 10) / 10)} ms</span>}</span>
                       : l.latency != null ? <span className="mono">· {roundNum(Math.round(l.latency * 10) / 10)} ms</span> : null}
                   </>}</td>
@@ -9027,13 +9048,31 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
     if (label) grow(label.anchor === 'middle' ? label.x - lw / 2 : label.x, label.y - 9, label.anchor === 'middle' ? label.x + lw / 2 : label.x + lw, label.y + 9)
     drawn.push({ l, d, tone: mapTone(l), w: mapWidth(l), label })
   }
+  for (const [g, ls] of Object.entries(tree.wans)) {
+    const gp = at[g]
+    if (!gp) continue
+    ls.forEach((l, i) => {
+      const a = at[l.from]
+      if (!a) return
+      const ab = a.y + MAP_H / 2, gt = gp.y - MAP_H / 2
+      const entry = gp.x + (i - (ls.length - 1) / 2) * 36
+      const mid = ab + Math.max(28, (gt - ab) * 0.62)
+      const d = Math.abs(a.x - entry) < 1 ? `M${a.x} ${ab} V${gt}` : `M${a.x} ${ab} V${mid} H${entry} V${gt}`
+      const parts = mapLabelParts(l, true)
+      const chars = parts.text.length + (parts.use ? parts.use.length : 0) + (parts.tail ? parts.tail.length + 3 : 0) + (parts.use && parts.text && !l.no_link && !l.spare ? 3 : 0)
+      const lw = chars * 6.3 + 18
+      const label = { x: a.x, y: ab + 14, w: lw, anchor: 'middle' as const, parts }
+      grow(a.x - lw / 2, label.y - 9, a.x + lw / 2, label.y + 9)
+      drawn.push({ l, d, tone: mapTone(l), w: mapWidth(l), label })
+    })
+  }
   minX -= MAP_PAD; minY -= MAP_PAD; maxX += MAP_PAD; maxY += MAP_PAD
   let vbW = Math.round(maxX - minX), vbH = Math.round(maxY - minY)
   let box = `${minX} ${minY} ${vbW} ${vbH}`
   if (drag && frozenBox.current) { box = frozenBox.current; const [, , w, h] = box.split(' ').map(Number); vbW = w; vbH = h }
   // Links share their upstream's trunk: the worst-off ones go on top (a busy link stays red all the way
   // up), and among alike the thick ones first, so a thin one still shows. No link goes under the rest.
-  const toneRank: Record<string, number> = { down: 0, none: 1, ok: 2, warn: 3, err: 4 }
+  const toneRank: Record<string, number> = { spare: 0, down: 1, none: 2, ok: 3, warn: 4, err: 5 }
   drawn.sort((a, b) => toneRank[a.tone] - toneRank[b.tone] || b.w - a.w)
 
   const linkTitle = (l: MapLinkT) => {
@@ -9041,7 +9080,8 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
     const wan = from?.kind === 'internet'
     const where = wan ? `${to?.name} WAN ${l.port}` : `${from?.name}${l.port ? ` port ${l.port}` : ''}${l.port_name ? ` (${l.port_name})` : ''}`
     const bits = [`${where} → ${wan ? 'the internet' : to?.name}`]
-    if (l.no_link) bits.push('no link')
+    if (l.spare) bits.push('not connected: a WAN set up on the gateway that has never had a link (its alert waits until it has worked once)')
+    else if (l.no_link) bits.push('no link')
     else {
       const speed = l.speed_up ? `${fmtNum(l.speed || 0, 'bps')} down, ${fmtNum(l.speed_up, 'bps')} up` : fmtNum(l.speed || 0, 'bps')
       if (l.down != null || l.up != null) bits.push(`${mapRates(l.down, l.up)}${l.use != null ? `, ${mapUse(l)} of ${speed}` : ''}`)
@@ -9070,10 +9110,11 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
           {placed.map((id) => {
             const n = byId[id], p = at[id]
             const tone = mapStateTone(n.state)
-            const sub = mapNodeSub(n, nowSec, n.kind === 'internet' ? m.links.find((x) => x.from === id) : undefined)
+            const wanLink = n.kind === 'internet' ? m.links.find((x) => x.from === id) : undefined
+            const sub = mapNodeSub(n, nowSec, wanLink)
             const open = () => { if (!arrange && n.kind !== 'internet') goHost(id) }
             return (
-              <g key={id} className={'mn' + (arrange ? ' drag' : n.kind !== 'internet' ? ' click' : '') + (drag?.id === id ? ' dragging' : '')} transform={`translate(${p.x - MAP_W / 2} ${p.y - MAP_H / 2})`}
+              <g key={id} className={'mn' + (arrange ? ' drag' : n.kind !== 'internet' ? ' click' : '') + (drag?.id === id ? ' dragging' : '') + (wanLink?.spare ? ' spare' : '')} transform={`translate(${p.x - MAP_W / 2} ${p.y - MAP_H / 2})`}
                 tabIndex={n.kind !== 'internet' && !arrange ? 0 : undefined} role={n.kind !== 'internet' && !arrange ? 'link' : undefined}
                 onClick={open} onKeyDown={(e) => { if (e.key === 'Enter') open() }} onPointerDown={(e) => onDown(id, e)}>
                 <title>{[n.name, sub].filter(Boolean).join(' · ')}</title>
@@ -9091,7 +9132,7 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
               <rect x={label.anchor === 'middle' ? label.x - label.w / 2 : label.x} y={label.y - 9} width={label.w} height={18} rx={9} />
               <text x={label.anchor === 'middle' ? label.x : label.x + 9} y={label.y + 3.5} textAnchor={label.anchor}>
                 <tspan>{label.parts.text}</tspan>
-                {label.parts.use && <tspan className={'u ' + (tone === 'down' ? 'err' : tone)}>{(label.parts.text && !l.no_link ? ' · ' : '') + label.parts.use}</tspan>}
+                {label.parts.use && <tspan className={'u ' + (tone === 'down' ? 'err' : tone)}>{(label.parts.text && !l.no_link && !l.spare ? ' · ' : '') + label.parts.use}</tspan>}
                 {label.parts.tail && <tspan>{' · ' + label.parts.tail}</tspan>}
               </text>
             </g>
@@ -9104,6 +9145,7 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
         <span><i className="err" />past 90%</span>
         <span><i className="down" />no link</span>
         <span><i className="none" />no traffic reading</span>
+        {m.links.some((l) => l.spare) && <span><i className="spare" />WAN not connected</span>}
         <span>thicker = more traffic</span>
         <span>{arrange ? 'drag a device to move it' : 'click a device for its page, a link for its traffic chart'}</span>
       </div>

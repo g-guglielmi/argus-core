@@ -34,6 +34,17 @@ func TestBuildSiteMap(t *testing.T) {
 		row("gw", "unifi.port.out[4]", "410000000", "", "i-gw4-out"),
 		row("gw", "unifi.port.speed[4]", "1000000000", "", ""),
 		row("gw", "unifi.port.state[4]", "1", "", ""),
+		// port 5 reads nothing, though the switch on it counts its own uplink busy
+		row("gw", "unifi.port.in[5]", "0", "", "i-gw5-in"),
+		row("gw", "unifi.port.out[5]", "0", "", ""),
+		row("gw", "unifi.port.speed[5]", "1000000000", "", ""),
+		row("sw2", "unifi.uplink.in", "98000", "", "i-sw2-up"),
+		row("sw2", "unifi.uplink.out", "22000", "", ""),
+		// WAN 2 is a failover never connected (no alert); WAN 3 worked and died (its alert is open)
+		row("gw", "unifi.wan.in[2]", "0", "", ""),
+		row("gw", "unifi.wan.avail[2]", "0", "", ""),
+		row("gw", "unifi.wan.in[3]", "0", "", ""),
+		row("gw", "unifi.wan.avail[3]", "0", "error", ""),
 		// the switch: port 2 to the AP (no link), port 9 to the NAS (busy), port 7 stale
 		row("sw", "unifi.port.state[2]", "0", "", ""),
 		row("sw", "unifi.port.in[2]", "0", "", "i-sw2-in"),
@@ -55,13 +66,14 @@ func TestBuildSiteMap(t *testing.T) {
 	in := mapInput{
 		probe: "proxy-site1", site: "site1", now: now, rows: rows,
 		hosts: map[string]hostInfo{
-			"gw": {Name: "gw-site1"}, "sw": {Name: "sw-core"}, "ap": {Name: "ap-lobby"}, "ap2": {Name: "ap-office"},
+			"gw": {Name: "gw-site1"}, "sw": {Name: "sw-core"}, "sw2": {Name: "sw-attic"}, "ap": {Name: "ap-lobby"}, "ap2": {Name: "ap-office"},
 			"nas": {Name: "nas1"}, "web": {Name: "web1"}, "lone": {Name: "sw-spare"}, "probe": {Name: "argus-probe-site1"},
 			"pc": {Name: "pc1"}, "tv": {Name: "tv1"},
 		},
-		classes: map[string]string{"gw": "unifi-gateway", "sw": "unifi-switch", "ap": "unifi-ap", "ap2": "unifi-ap", "lone": "unifi-switch", "probe": provision.ClassProbe},
+		classes: map[string]string{"gw": "unifi-gateway", "sw": "unifi-switch", "sw2": "unifi-switch", "ap": "unifi-ap", "ap2": "unifi-ap", "lone": "unifi-switch", "probe": provision.ClassProbe},
 		eff: map[string]upstreamLink{
 			"sw":    {Host: "gw", Port: "4", Source: "controller"},
+			"sw2":   {Host: "gw", Port: "5", Source: "controller"},
 			"ap":    {Host: "sw", Port: "2", Source: "controller"},
 			"nas":   {Host: "sw", Port: "9", Source: "controller"},
 			"tv":    {Host: "sw", Port: "7", Source: "controller"},
@@ -79,7 +91,12 @@ func TestBuildSiteMap(t *testing.T) {
 		nodes[n.ID] = n
 	}
 	links := map[string]mapLink{}
+	wans := map[string]mapLink{}
 	for _, l := range v.Links {
+		if l.To == "gw" {
+			wans[l.From] = l
+			continue
+		}
 		links[l.To] = l
 	}
 	// Network devices always; hosts only when linked; Argus's probe host never.
@@ -120,7 +137,16 @@ func TestBuildSiteMap(t *testing.T) {
 		t.Errorf("uplink fallback: %+v", l)
 	}
 	// The line's upload is slower: 38 of 50 Mbps up is fuller than 412 of 1000 down.
-	if l := links["gw"]; l.From != "wan:gw:1" || *l.Down != 412e6 || *l.Latency != 9 || l.State != "warning" || l.ChartItem != "i-wan-in" ||
+	if l := links["sw2"]; l.Down == nil || *l.Down != 98000 || *l.Up != 22000 || l.Speed != 1e9 || l.ChartHost != "sw2" || l.ChartItem != "i-sw2-up" || l.Use == nil || *l.Use != 0 {
+		t.Errorf("the switch's own uplink count wins over its gateway's 0: %+v", l)
+	}
+	if l := wans["wan:gw:2"]; !l.Spare || l.NoLink || l.Use != nil {
+		t.Errorf("a WAN never connected is a spare: %+v", l)
+	}
+	if l := wans["wan:gw:3"]; l.Spare || !l.NoLink || l.State != "error" {
+		t.Errorf("a WAN that died has no link: %+v", l)
+	}
+	if l := wans["wan:gw:1"]; l.From != "wan:gw:1" || *l.Down != 412e6 || *l.Latency != 9 || l.State != "warning" || l.ChartItem != "i-wan-in" ||
 		l.Speed != 1e9 || l.SpeedUp != 50e6 || l.Use == nil || *l.Use != 76 {
 		t.Errorf("internet: %+v", l)
 	}
@@ -130,7 +156,7 @@ func TestBuildSiteMap(t *testing.T) {
 
 	var sv mapSiteView
 	sv.summarize(v)
-	if sv.Devices != 5 || sv.Hosts != 2 || sv.Down != 1 || sv.Busy != 2 || sv.NoLink != 1 || sv.Busiest == nil || sv.Busiest.To != "nas1" || sv.Busiest.Use != 95 {
+	if sv.Devices != 6 || sv.Hosts != 2 || sv.Down != 1 || sv.Busy != 2 || sv.NoLink != 2 || sv.Busiest == nil || sv.Busiest.To != "nas1" || sv.Busiest.Use != 95 {
 		t.Errorf("summary: %+v %+v", sv, sv.Busiest)
 	}
 }
