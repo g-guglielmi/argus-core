@@ -25,7 +25,9 @@ GitHub Release from the matching section below.
   puts a device on a port with no link, or on the named switch's own uplink port (which would put the
   device above that switch, not below it), is ignored, and the host's Device tab says what the
   controller said and why Argus ignored it. Each of the flips above failed one of these checks. The
-  UniFi Switch template reads each switch's own uplink port for it.
+  answer Argus already has is checked the same way: one taken before the checks that fails them is
+  dropped, and the first answer that passes takes over at once (meanwhile the host has no upstream
+  rather than an impossible one). The UniFi Switch template reads each switch's own uplink port for it.
 
 ## [0.8.5] - 2026-10-07
 

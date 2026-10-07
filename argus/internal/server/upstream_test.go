@@ -156,36 +156,36 @@ func TestUpstreamStep(t *testing.T) {
 	was := store.HostUpstream{AutoHost: "201", AutoPort: "5", AutoAt: 1000}
 
 	// The first answer for a host is taken at once.
-	if take, next, _ := upstreamStep(store.HostUpstream{}, flex, nil, 2000); !take || next != nil {
+	if take, next, _ := upstreamStep(store.HostUpstream{}, false, flex, nil, 2000); !take || next != nil {
 		t.Fatalf("first answer: take %v next %+v", take, next)
 	}
 	// The same answer again: nothing to do.
-	if take, next, flipped := upstreamStep(was, flex, nil, 2000); take || next != nil || flipped {
+	if take, next, flipped := upstreamStep(was, false, flex, nil, 2000); take || next != nil || flipped {
 		t.Fatalf("same answer: take %v next %+v flipped %v", take, next, flipped)
 	}
 	// A new answer waits...
-	take, next, _ := upstreamStep(was, mini, nil, 2000)
+	take, next, _ := upstreamStep(was, false, mini, nil, 2000)
 	if take || next == nil || next.since != 2000 {
 		t.Fatalf("new answer should wait: take %v next %+v", take, next)
 	}
-	if take, again, _ := upstreamStep(was, mini, next, 2000+upstreamSettle-1); take || again != next {
+	if take, again, _ := upstreamStep(was, false, mini, next, 2000+upstreamSettle-1); take || again != next {
 		t.Fatalf("taken before it held: take %v", take)
 	}
 	// ...and is taken once it has held.
-	if take, _, _ := upstreamStep(was, mini, next, 2000+upstreamSettle); !take {
+	if take, _, _ := upstreamStep(was, false, mini, next, 2000+upstreamSettle); !take {
 		t.Fatal("not taken after it held")
 	}
 	// Going back before it held is a flip, and the recorded answer stays.
-	if take, cleared, flipped := upstreamStep(was, flex, next, 2300); take || cleared != nil || !flipped {
+	if take, cleared, flipped := upstreamStep(was, false, flex, next, 2300); take || cleared != nil || !flipped {
 		t.Fatalf("flip back: take %v next %+v flipped %v", take, cleared, flipped)
 	}
 	// Moving on to a third answer is a flip too, and the wait starts over.
 	third := upstreamLink{Host: "205", Port: "3", Source: "controller"}
-	if take, n3, flipped := upstreamStep(was, third, next, 2300); take || !flipped || n3 == nil || n3.since != 2300 || n3.link != third {
+	if take, n3, flipped := upstreamStep(was, false, third, next, 2300); take || !flipped || n3 == nil || n3.since != 2300 || n3.link != third {
 		t.Fatalf("third answer: take %v next %+v flipped %v", take, n3, flipped)
 	}
 	// Losing the answer altogether waits like any other change.
-	if take, _, _ := upstreamStep(was, upstreamLink{}, nil, 2000); take {
+	if take, _, _ := upstreamStep(was, false, upstreamLink{}, nil, 2000); take {
 		t.Fatal("an empty answer was taken at once")
 	}
 }
@@ -222,7 +222,7 @@ func TestSettledUpstreams(t *testing.T) {
 		"205": {Mode: "auto", AutoHost: "201", AutoPort: "5", AutoAt: 1000},
 		"206": {Mode: "auto", AutoHost: "201", AutoPort: "4", AutoAt: 1000}, // gone from the controller for now
 	}
-	got := settledUpstreams(live, settings)
+	got := settledUpstreams(live, settings, nil)
 	if got["205"].Host != "201" || got["205"].Port != "5" {
 		t.Fatalf("205 should keep the answer Argus took: %+v", got["205"])
 	}
@@ -268,7 +268,33 @@ func TestDoubtUpstreams(t *testing.T) {
 
 	// A doubted answer is never taken as a new host's first answer either.
 	live := map[string]upstreamLink{"205": {Host: "204", Port: "5", Doubt: "that port has no link"}}
-	if got := settledUpstreams(live, map[string]store.HostUpstream{}); len(got) != 0 {
+	if got := settledUpstreams(live, map[string]store.HostUpstream{}, nil); len(got) != 0 {
 		t.Fatalf("a doubted first answer was taken: %+v", got)
+	}
+}
+
+// A recorded answer that fails the port checks now (taken before they existed: 204 on 205's own
+// uplink port) is dropped: a live answer that passes takes over at once, without the 15-minute wait;
+// with none, the host has no upstream rather than an impossible one.
+func TestWrongRecordedUpstream(t *testing.T) {
+	was := store.HostUpstream{AutoHost: "205", AutoPort: "1", AutoAt: 1000}
+	right := upstreamLink{Host: "201", Port: "3", Source: "controller"}
+	if take, _, _ := upstreamStep(was, true, right, nil, 2000); !take {
+		t.Fatal("a plausible answer should replace a wrong recorded one at once")
+	}
+	if take, _, _ := upstreamStep(was, false, right, nil, 2000); take {
+		t.Fatal("a sound recorded answer still waits for the new one to hold")
+	}
+
+	settings := map[string]store.HostUpstream{"204": was}
+	wrong := map[string]string{"204": "that is the port it uses for its own uplink"}
+	// The controller now says 201 port 3 (passes): that stands in at once.
+	if got := settledUpstreams(map[string]upstreamLink{"204": right}, settings, wrong); got["204"] != right {
+		t.Fatalf("the plausible live answer should stand in: %+v", got["204"])
+	}
+	// The controller now says 205 port 3 (no link): no upstream at all.
+	doubted := upstreamLink{Host: "205", Port: "3", Source: "controller", Doubt: "that port has no link"}
+	if got := settledUpstreams(map[string]upstreamLink{"204": doubted}, settings, wrong); len(got) != 0 {
+		t.Fatalf("a wrong recorded answer and a doubted live one should leave none: %+v", got)
 	}
 }

@@ -640,7 +640,9 @@ the services on it, so all of them are behind that port), else by the MAC discov
 a guess can be plainly wrong (two USW Flex Minis on one switch were each placed on a port of the other).
 An answer that names a port with no link (`unifi.port.state[N]` = 0) or the named switch's own uplink
 port (`unifi.uplink.local`, which would put the device above it) is ignored: the one Argus has stays,
-and the Device tab says what the controller said and why it was ignored. A host can be set (host settings,
+and the Device tab says what the controller said and why it was ignored. The recorded answer is checked
+the same way on every read: one that fails is dropped (the host has no upstream meanwhile) and the
+first live answer that passes is taken at once, without the 15-minute wait. A host can be set (host settings,
 Upstream device; `upstream` in `PATCH /api/hosts/{id}/config`) to a host **chosen by hand** (refused
 when that host is behind this one) or to **None** (`host_upstream`). `unifi.clients` is plumbing: it
 is never a sensor, and one that fails never raises "stopped collecting". A host the controller gives

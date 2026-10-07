@@ -8426,11 +8426,9 @@ function DeviceTab({ hostId, onOpenSettings }: { hostId: string; onOpenSettings?
       </InfoRow>
       <InfoRow label="Path">
         {d.upstream.path.length > 0
-          ? <>
-              <InfoLine><PathView hops={d.upstream.path} /><span className="sub-line">{d.upstream.source === 'manual' ? 'set by hand' : 'from the UniFi controller'}</span></InfoLine>
-              {d.upstream.ignored && d.upstream.source !== 'manual' && <InfoLine><span className="sub-line">{d.upstream.ignored}</span></InfoLine>}
-            </>
+          ? <InfoLine><PathView hops={d.upstream.path} /><span className="sub-line">{d.upstream.source === 'manual' ? 'set by hand' : 'from the UniFi controller'}</span></InfoLine>
           : <InfoLine><span className="muted">{d.upstream.mode === 'none' ? 'No upstream device: set to none in its settings.' : `No upstream device known. ${d.upstream.why || "The UniFi controller doesn't list this host. Pick one in its settings."}`}</span></InfoLine>}
+        {d.upstream.ignored && d.upstream.mode === 'auto' && <InfoLine><span className="sub-line">{d.upstream.ignored}</span></InfoLine>}
         {d.upstream.behind.length > 0 && <InfoLine k="Behind it"><span className="v">{d.upstream.behind.map((b) => b.name).join(', ')}{d.upstream.behind_all > d.upstream.behind.length ? ` (${d.upstream.behind_all} hosts in all, further down)` : ''}</span></InfoLine>}
       </InfoRow>
       {d.site && <InfoRow label={`Site · ${d.site.site}`}><SiteLines info={d.site} /></InfoRow>}

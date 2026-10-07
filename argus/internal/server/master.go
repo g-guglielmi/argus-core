@@ -85,7 +85,7 @@ func loadMasters(ctx context.Context, st *store.Store, zbx *zabbix.Client, hosts
 		byHost: map[string][]masterItem{}, siteMaster: map[string]masterItem{}, probeHost: map[string]string{},
 		hostProxy: map[string]string{}, proxyByName: map[string]string{}, down: masterDown(problems, targets),
 	}
-	m.upstream, _, _ = loadUpstreams(ctx, st, zbx)
+	m.upstream = loadUpstreams(ctx, st, zbx).eff
 	classes, _ := st.DeviceClasses(ctx)
 	for _, h := range hosts {
 		m.hostProxy[h.HostID] = h.ProxyID

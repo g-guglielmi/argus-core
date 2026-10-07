@@ -153,14 +153,16 @@ func doubtUpstreams(links map[string]upstreamLink, ownUplink map[string]string, 
 	}
 }
 
-// upstreamPortStates reads the link state of the ports the controller's answers name: host -> port ->
-// "1" / "0", from the switches' (and gateways') port items.
-func upstreamPortStates(ctx context.Context, zbx *zabbix.Client, links map[string]upstreamLink) map[string]map[string]string {
+// upstreamPortStates reads the link state of the ports the answers name: host -> port -> "1" / "0",
+// from the switches' (and gateways') port items.
+func upstreamPortStates(ctx context.Context, zbx *zabbix.Client, answers ...map[string]upstreamLink) map[string]map[string]string {
 	hostSet, keySet := map[string]bool{}, map[string]bool{}
-	for _, l := range links {
-		if l.Port != "" {
-			hostSet[l.Host] = true
-			keySet["unifi.port.state["+l.Port+"]"] = true
+	for _, links := range answers {
+		for _, l := range links {
+			if l.Port != "" {
+				hostSet[l.Host] = true
+				keySet["unifi.port.state["+l.Port+"]"] = true
+			}
 		}
 	}
 	hosts := make([]string, 0, len(hostSet))
@@ -225,15 +227,9 @@ const (
 	upstreamFlapRelog  = 24 * 60 * 60
 )
 
-// settledUpstreams is the controller's answer as Argus holds it: the one recordUpstreams last took (it
-// held for upstreamSettle), and the live one for a host with none taken yet.
-func settledUpstreams(live map[string]upstreamLink, settings map[string]store.HostUpstream) map[string]upstreamLink {
+// recordedUpstreams is the controller's answer recordUpstreams last took for each host.
+func recordedUpstreams(settings map[string]store.HostUpstream) map[string]upstreamLink {
 	out := map[string]upstreamLink{}
-	for h, l := range live {
-		if settings[h].AutoAt == 0 && l.Doubt == "" {
-			out[h] = l
-		}
-	}
 	for h, u := range settings {
 		if u.AutoAt != 0 && u.AutoHost != "" {
 			out[h] = upstreamLink{Host: u.AutoHost, Port: u.AutoPort, Source: "controller"}
@@ -242,26 +238,66 @@ func settledUpstreams(live map[string]upstreamLink, settings map[string]store.Ho
 	return out
 }
 
-// loadUpstreams reads the controller's answer and the hosts' settings: the upstream in effect for each
-// host, the controller's answer as Argus holds it (settled), and the controller's answer right now
-// (live). Best effort: what can't be read is just unknown.
-func loadUpstreams(ctx context.Context, st *store.Store, zbx *zabbix.Client) (eff, settled, live map[string]upstreamLink) {
-	live = map[string]upstreamLink{}
+// settledUpstreams is the controller's answer as Argus holds it: the one recordUpstreams last took (it
+// held for upstreamSettle), and the live one for a host with none taken yet. A recorded answer that
+// fails the port checks now (wrong: one taken before the checks, or since proven impossible) is no
+// answer: a live one that passes stands in until recordUpstreams takes it, else the host has none.
+func settledUpstreams(live map[string]upstreamLink, settings map[string]store.HostUpstream, wrong map[string]string) map[string]upstreamLink {
+	out := map[string]upstreamLink{}
+	for h, l := range live {
+		if settings[h].AutoAt == 0 && l.Doubt == "" {
+			out[h] = l
+		}
+	}
+	for h, l := range recordedUpstreams(settings) {
+		if _, bad := wrong[h]; bad {
+			if lv, ok := live[h]; ok && lv.Doubt == "" {
+				out[h] = lv
+			}
+			continue
+		}
+		out[h] = l
+	}
+	return out
+}
+
+// upstreamState is one read of the upstream devices.
+type upstreamState struct {
+	eff     map[string]upstreamLink // in effect: each host's setting applied to settled
+	settled map[string]upstreamLink // the controller's answer as Argus holds it
+	live    map[string]upstreamLink // the controller's answer right now (Doubt set where it doesn't add up)
+	wrong   map[string]string       // hosts whose recorded answer fails the port checks now, and why
+}
+
+// loadUpstreams reads the controller's answer and the hosts' settings. Both the live answers and the
+// recorded ones are checked against the ports they name (doubtUpstreams). Best effort: what can't be
+// read is just unknown.
+func loadUpstreams(ctx context.Context, st *store.Store, zbx *zabbix.Client) upstreamState {
+	us := upstreamState{live: map[string]upstreamLink{}, wrong: map[string]string{}}
+	settings, _ := st.HostUpstreams(ctx)
+	recorded := recordedUpstreams(settings)
 	if items, err := zbx.ItemsByKeys(ctx, upstreamItemKeys); err == nil {
 		ips, _ := zbx.HostIPs(ctx)
 		macs, _ := st.DiscoveredMACs(ctx)
-		live = controllerUpstreams(items, ips, macs)
+		us.live = controllerUpstreams(items, ips, macs)
 		own := map[string]string{}
 		for _, it := range items {
 			if it.Key == "unifi.uplink.local" {
 				own[it.HostID] = strings.TrimSpace(it.LastValue)
 			}
 		}
-		doubtUpstreams(live, own, upstreamPortStates(ctx, zbx, live))
+		ports := upstreamPortStates(ctx, zbx, us.live, recorded)
+		doubtUpstreams(us.live, own, ports)
+		doubtUpstreams(recorded, own, ports)
+		for h, l := range recorded {
+			if l.Doubt != "" {
+				us.wrong[h] = l.Doubt
+			}
+		}
 	}
-	settings, _ := st.HostUpstreams(ctx)
-	settled = settledUpstreams(live, settings)
-	return effectiveUpstreams(settled, settings), settled, live
+	us.settled = settledUpstreams(us.live, settings, us.wrong)
+	us.eff = effectiveUpstreams(us.settled, settings)
+	return us
 }
 
 // upstreamPending is a new answer the controller has been giving a host, and since when.
@@ -271,14 +307,15 @@ type upstreamPending struct {
 }
 
 // upstreamStep is what one read of the controller does to a host's recorded answer: take the live one
-// (the first answer, or a new one that has held for upstreamSettle), or wait on it. flipped is a new
-// answer that went away before it held (back to the recorded one, or on to a third).
-func upstreamStep(was store.HostUpstream, cur upstreamLink, pending *upstreamPending, now int64) (take bool, next *upstreamPending, flipped bool) {
+// (the first answer, one replacing a recorded answer that fails the port checks now, or a new one that
+// has held for upstreamSettle), or wait on it. flipped is a new answer that went away before it held
+// (back to the recorded one, or on to a third).
+func upstreamStep(was store.HostUpstream, wasWrong bool, cur upstreamLink, pending *upstreamPending, now int64) (take bool, next *upstreamPending, flipped bool) {
 	same := func(a upstreamLink, host, port string) bool { return a.Host == host && a.Port == port }
 	switch {
 	case same(cur, was.AutoHost, was.AutoPort):
 		return false, nil, pending != nil
-	case was.AutoAt == 0:
+	case was.AutoAt == 0, wasWrong:
 		return true, nil, false
 	case pending == nil || !same(cur, pending.link.Host, pending.link.Port):
 		return false, &upstreamPending{link: cur, since: now}, pending != nil
@@ -358,25 +395,25 @@ func behindHosts(m map[string]upstreamLink, up string) []string {
 type upstreamCache struct {
 	mu   sync.Mutex
 	at   time.Time
-	eff  map[string]upstreamLink
-	auto map[string]upstreamLink // the controller's answer as Argus holds it
-	live map[string]upstreamLink // the controller's answer right now
+	st   upstreamState
+	read bool
 }
 
+// upstreams is the upstream in effect for each host, and the controller's answer as Argus holds it.
 func (s *Server) upstreams(ctx context.Context) (eff, auto map[string]upstreamLink) {
-	eff, auto, _ = s.upstreamsLive(ctx)
-	return eff, auto
+	us := s.upstreamState(ctx)
+	return us.eff, us.settled
 }
 
-func (s *Server) upstreamsLive(ctx context.Context) (eff, auto, live map[string]upstreamLink) {
+func (s *Server) upstreamState(ctx context.Context) upstreamState {
 	s.ups.mu.Lock()
 	defer s.ups.mu.Unlock()
-	if s.ups.eff != nil && time.Since(s.ups.at) < time.Minute {
-		return s.ups.eff, s.ups.auto, s.ups.live
+	if s.ups.read && time.Since(s.ups.at) < time.Minute {
+		return s.ups.st
 	}
-	s.ups.eff, s.ups.auto, s.ups.live = loadUpstreams(ctx, s.st, s.zbx)
-	s.ups.at = time.Now()
-	return s.ups.eff, s.ups.auto, s.ups.live
+	s.ups.st = loadUpstreams(ctx, s.st, s.zbx)
+	s.ups.at, s.ups.read = time.Now(), true
+	return s.ups.st
 }
 
 func (s *Server) forgetUpstreams() {
@@ -415,7 +452,8 @@ func (s *Server) startUpstreamRefresh(ctx context.Context) {
 // once a day as such, its recorded answer kept meanwhile.
 func (s *Server) recordUpstreams(ctx context.Context) {
 	s.forgetUpstreams()
-	_, _, auto := s.upstreamsLive(ctx)
+	us := s.upstreamState(ctx)
+	auto := us.live
 	settings, err := s.st.HostUpstreams(ctx)
 	if err != nil {
 		return
@@ -461,7 +499,8 @@ func (s *Server) recordUpstreams(ctx context.Context) {
 			continue // an answer that doesn't add up is no news: keep what Argus has, and any wait
 		}
 		was := settings[h]
-		take, next, flipped := upstreamStep(was, cur, tr.pending[h], now)
+		wrongWhy, wasWrong := us.wrong[h]
+		take, next, flipped := upstreamStep(was, wasWrong, cur, tr.pending[h], now)
 		if next != nil {
 			tr.pending[h] = next
 		} else {
@@ -493,8 +532,11 @@ func (s *Server) recordUpstreams(ctx context.Context) {
 		if cur.Host == "" {
 			c.Diff[0].New = "none"
 		}
-		if was.Mode == "manual" || was.Mode == "none" {
+		switch {
+		case was.Mode == "manual" || was.Mode == "none":
 			c.Detail = "not in effect: this host's upstream is set by hand"
+		case wasWrong:
+			c.Detail = "the answer it replaces didn't add up: " + wrongWhy
 		}
 		s.logArgusChange(ctx, c)
 	}
@@ -528,7 +570,8 @@ type hostRefView struct {
 
 // hostUpstreamView is a host's upstream as its Device tab and settings show it.
 func (s *Server) hostUpstreamView(ctx context.Context, hostID string) upstreamView {
-	eff, auto, live := s.upstreamsLive(ctx)
+	us := s.upstreamState(ctx)
+	eff, auto := us.eff, us.settled
 	settings, _ := s.st.HostUpstreams(ctx)
 	idx, _ := s.hostIndex(ctx)
 	down := s.downHosts(ctx)
@@ -542,10 +585,19 @@ func (s *Server) hostUpstreamView(ctx context.Context, hostID string) upstreamVi
 	if l, ok := eff[hostID]; ok {
 		v.Source = l.Source
 	}
-	if l := live[hostID]; l.Doubt != "" {
-		v.Ignored = fmt.Sprintf("The UniFi controller now places it on %s port %s, but %s: Argus ignores that answer.", idx[l.Host].Name, l.Port, l.Doubt)
+	var ignored []string
+	if why, bad := us.wrong[hostID]; bad {
+		if u := settings[hostID]; u.AutoHost != "" {
+			ignored = append(ignored, fmt.Sprintf("Argus dropped the answer it had, %s port %s: %s.", idx[u.AutoHost].Name, u.AutoPort, why))
+		}
 	}
-	if v.Auto == nil && v.Mode == "auto" {
+	if l := us.live[hostID]; l.Doubt != "" {
+		ignored = append(ignored, fmt.Sprintf("The UniFi controller now places it on %s port %s, but %s: Argus ignores that answer.", idx[l.Host].Name, l.Port, l.Doubt))
+	}
+	v.Ignored = strings.Join(ignored, " ")
+	if v.Auto == nil && v.Mode == "auto" && v.Ignored != "" {
+		v.Why = "The UniFi controller's answers for it don't add up right now."
+	} else if v.Auto == nil && v.Mode == "auto" {
 		if items, err := s.zbx.ItemsByKeys(ctx, []string{"unifi.clients"}); err == nil {
 			ips, _ := s.zbx.HostIPs(ctx)
 			names := map[string]string{}
