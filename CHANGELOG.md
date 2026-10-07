@@ -18,8 +18,8 @@ with an icon that shows which way it will move the sidebar. Folded, the logo is 
 unfolds it: pointing at it (or tabbing to it) swaps it for the unfold icon, and on a touch screen a
 small › beside the logo says it can be tapped. The **[** key folds and unfolds it too (not while
 typing). On the folded sidebar an amber dot on **Updates** says an update is available, where the
-unfolded one shows "update available" under the menu. On a phone the ☰ stays in the top bar to open
-the menu, and the same button inside it closes it.
+unfolded one shows "update available" under the menu. On a phone the button that opens the menu stays
+in the top bar, with the same unfold icon (it was a ☰), and the fold button inside the menu closes it.
 
 ## [0.8.4] - 2026-10-07
 

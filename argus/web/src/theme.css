@@ -148,7 +148,7 @@ a { color: var(--accent); }
 .iconbtn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer; display: grid; place-items: center; flex-shrink: 0; }
 .iconbtn:hover { background: var(--elevated); color: var(--text); }
 .iconbtn svg { width: 19px; height: 19px; }
-/* The top bar's ☰ opens the phone drawer; a desktop folds the sidebar from the sidebar itself. */
+/* The top bar's button opens the phone drawer; a desktop folds the sidebar from the sidebar itself. */
 .topbar .nav-burger { display: none; }
 .topbar h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: -0.01em; line-height: 1.2; }
 .topbar .sub { color: var(--muted); font-size: 12px; }

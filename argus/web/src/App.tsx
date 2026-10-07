@@ -2071,7 +2071,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   }
 
   // The sidebar's own button (and the [ key) folds it to the icon rail on a desktop; on a phone the
-  // sidebar is an off-screen drawer, opened by the top bar's ☰ and closed from inside it.
+  // sidebar is an off-screen drawer, opened by the top bar's button and closed from inside it.
   function toggleNav() {
     if (window.matchMedia('(max-width: 768px)').matches) { setCollapsed(false); setNavOpen((o) => !o) }
     else setCollapsed((c) => !c)
@@ -2241,9 +2241,8 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           </div>
         )}
         <div className="topbar">
-          <button className="iconbtn nav-burger" title="Menu" aria-label="Open menu" onClick={toggleNav}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M3.5 6h17M3.5 12h17M3.5 18h17" /></svg>
-          </button>
+          {/* A phone's sidebar is an off-screen drawer: this opens it, with the desktop's unfold icon. */}
+          <button className="iconbtn nav-burger" title="Open menu" aria-label="Open menu" onClick={toggleNav}>{ic.sideOpen}</button>
           <button className="iconbtn" title="Search (Ctrl-K)" aria-label="Search" onClick={() => setSearchOpen(true)}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
           </button>
