@@ -139,9 +139,11 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   cover (site, period, who made it, a logo set in Settings), then per host its availability and the
   problems of the period, and per sensor its chart, min / avg / max and uptime % with the incidents.
   Report definitions saved, to make the same report again next month. Built from what Argus already
-  keeps (trends, incidents, uptime). Open question: render in the browser (a print-ready page, no
-  weight on the core) or on the core (needed anyway for the follow-up, **scheduled reports by
-  email**). - _(FE+BE)_ M-L
+  keeps (trends, incidents, uptime). **Rendered on the core** (user's call, 2026-10-08), so a report
+  can be **emailed**: downloaded or sent on demand, and a saved definition sent **on a schedule**
+  (monthly, weekly) to chosen addresses through the email settings Argus already has. The charts come
+  from the core's own renderer (the banded PNGs alerts already carry), laid out by a permissively
+  licensed Go PDF library, so the distroless image needs no browser. - _(FE+BE)_ L
 
 ### E. Auth / account gaps
 - [x] **Self-service email password reset** (single-use emailed link; reuses the email channel) - v0.3.3
