@@ -134,6 +134,14 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   dragged by hand stay put for everyone; a list of the same tree on phones. Off per site until an admin
   turns it on (DESIGN 7j). Core v0.8.7. Beyond UniFi it grows with the upstream sources of
   section G. - _(FE+BE)_ M
+- [ ] **PDF reports** - pick the hosts and sensors by hand (search, tree checkboxes, a site or a
+  group as a shortcut) and a period (last 7 or 30 days, a calendar month, custom), and get a PDF: a
+  cover (site, period, who made it, a logo set in Settings), then per host its availability and the
+  problems of the period, and per sensor its chart, min / avg / max and uptime % with the incidents.
+  Report definitions saved, to make the same report again next month. Built from what Argus already
+  keeps (trends, incidents, uptime). Open question: render in the browser (a print-ready page, no
+  weight on the core) or on the core (needed anyway for the follow-up, **scheduled reports by
+  email**). - _(FE+BE)_ M-L
 
 ### E. Auth / account gaps
 - [x] **Self-service email password reset** (single-use emailed link; reuses the email channel) - v0.3.3
@@ -210,6 +218,16 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Import from a spreadsheet or PRTG** - rows checked before anything is made, fixed in place;
   PRTG read with an API key (probes mapped, groups and tags kept, class guessed from its sensors).
   DESIGN section 7h. - _(BE+FE)_ M
+- [ ] **PRTG history migration** - bring a PRTG install's past readings over with its hosts (the
+  import above), so charts carry on across the switch instead of starting empty. Read through PRTG's
+  API (`historicdata`, per sensor and period): the hourly averages, and min / max where PRTG keeps
+  them, mapped channel by channel to the Argus sensor that replaces each one (ping to ping, traffic
+  to traffic, by the class the import guessed; channels with no match listed and skipped). Written as
+  Zabbix **trends** (hourly min / avg / max, what the long chart ranges read) for the period before
+  the switch-over: Zabbix's API only pushes history into trapper items, so this writes the trends
+  tables directly, which needs database access Argus doesn't have today (it uses the API only). A
+  background job with progress, resumable and throttled so PRTG keeps working: 6000 sensors over a
+  year is about 50 million hourly rows. With the production rollout. - _(BE+FE)_ L
 - [x] **Site info and who to call** - address, contacts and internet lines per site, each line tied
   to its sensor; who to call in the problem lists and, per channel, in the alerts. DESIGN section
   7g. - _(BE+FE)_ S
@@ -276,6 +294,20 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
      still to come with their classes.
   Needs the Aruba CX and Sophos XGS classes (C2) first; to test: one Aruba switch's model and
   firmware for an SNMP LLDP walk, the SFOS version, SNMP access to both. - _(BE)_ **L**
+- [ ] **Zabbix 8.0 LTS** - move the whole stack off 7.0 LTS, whose full support ends around mid-2027
+  (check Zabbix's life cycle page when planning), once 8.0 has had a few point releases. Pieces:
+  1. **Core**: the Zabbix server, frontend and agent 2 packages, the database schema upgrade (a
+     backup first, section 14e), the TimescaleDB version 8.0 supports (pinned to 2.28 for 7.0 today),
+     `setup-core.sh`, the core VM image, and the core's Zabbix update window (minors only today).
+  2. **Probes**: the probe image's base moves to the 8.0 proxy (`.zabbix-base`, back to `-r1`). The
+     core goes first, since a newer server only partly supports an older proxy, then the fleet
+     through the normal probe update.
+  3. **Templates**: every Argus template checked and exported in the 8.0 format (keys,
+     preprocessing, trigger functions, anything removed), with the import tests.
+  4. **API client** (`internal/zabbix`): methods and fields 8.0 changes or drops, and the version
+     checks.
+  5. **Existing installs** upgraded through the normal update path, never a script to run by hand.
+  Lab first (site1), then the fleet. - _(BE+ops+image)_ **L**
 - [x] **Server-side census/counts** - the census is built in the background on the core and served
   from memory (every 20 s while in use, every minute otherwise, rebuilt at once after a change made
   through Argus); the app fetches counts plus only the rows of the states on screen
@@ -371,7 +403,8 @@ v0.4.56-v0.4.58) · plus the §14 lifecycle line (OS patching, core Zabbix minor
    **C2** (Aruba/Instant On, QNAP, Sophos, NetScaler, Libraesva, Hyper-V, Nutanix Prism, Citrix,
    vSphere): build each class when a production site actually needs it, lab-first as always.
 3. **Scale & production readiness (§G)** - sizing pass + server-side census before the
-   ~6000-sensor deployment.
-4. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
+   ~6000-sensor deployment; the **PRTG history migration** (§F) with it, and **PDF reports** (§D).
+4. **Zabbix 8.0 LTS** (§G) - before 7.0's full support ends (around mid-2027).
+5. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
 
 Blocked / deferred: **site4** probe (§A) - its building is under renovation, so it won't come online in the near term; bring it online once that's done.
