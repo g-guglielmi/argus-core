@@ -105,6 +105,19 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [ ] **Self-hosted / agentless**: ~~AdGuard Home~~, ~~Home Assistant~~, ~~UPS via NUT~~ (direct `argus_nut.py` collector + PeaNUT HTTP variant), ~~DNS server~~ (per-name resolve via stdlib `dns-resolver.py`) - all **v0.4.43**, lab-confirmed on core + proxy; ~~Linux SSH (no-SNMP fallback)~~ - shipped as a one-login-per-poll collector (`argus_linux_ssh.py`: reads /proc + df + /proc/net/dev in a single SSH session; native item keys so curation is shared; key or password auth). Collectors baked into the probe (`probe/v7.0.30-r7`+) and the core (`setup-core.sh`) - _(BE)_ M
 - [ ] **API-source heavies** (register-endpoint + host-prototype LLD): Nutanix Prism, ~~XCP-NG~~ (shipped as a **collector** class instead of host prototypes: `argus_xcpng.py` against the pool master, one device per pool with per-hypervisor sensors + opt-in per-VM state/perf via `{$XCP.VM.MODE}`; CPU temp via the optional argus-temp dom0 plugin), Citrix farm (OData) - _(BE)_ **L**
 - [ ] **vSphere** (native VMware collector) - **low priority, production-only** (not the lab) - _(BE)_ M
+- [ ] **Windows (Zabbix agent 2)** - for production Windows estates, beside Windows (SNMP), which stays
+  for servers where nothing can be installed. Zabbix agent 2 in **active** mode on each server,
+  connecting out to its site's probe (the probe listening for agents on the site LAN, port 10051),
+  encrypted with a key Argus makes per host, installed once by an MSI pushed with Group Policy or
+  Intune (a deployment guide, and the ready command line in Add device). It reads locally what PRTG
+  reads over remote WMI: CPU, memory, disks and their latency, network, services (the automatic ones,
+  with exclusions), chosen event log channels, performance counters, and `wmi.get` for anything else;
+  every sensor with a warning and an error threshold. **No Windows account stored anywhere**: PRTG's
+  remote WMI keeps a domain account with remote rights on every server and needs firewall openings
+  for it, and remote WMI from a Linux probe is fragile. Agents could also add themselves (Zabbix
+  autoregistration, adopted like a discovery result). The PRTG import maps WMI devices to it (today
+  they become Windows (SNMP)). Lab first on a Windows 11 and a Windows Server VM. - _(BE+templates+
+  docs)_ M-L
 
 **SNMP gaps** (DESIGN §5) - unRAID disk-temp/SMART, Hyper-V per-VM (WMI), XCP-NG XAPI, UniFi PoE/WAN, AdGuard stats, NUT protocol - are handled inside the per-class work above, not a separate track.
 
@@ -393,7 +406,8 @@ v0.4.56-v0.4.58) · plus the §14 lifecycle line (OS patching, core Zabbix minor
 1. ~~**Notification logic + status pages (§H)**~~ ✅ (v0.5.9-v0.5.11).
 2. **Production rollout** - move real sites onto Argus. This is also the trigger for the rest of
    **C2** (Aruba/Instant On, QNAP, Sophos, NetScaler, Libraesva, Hyper-V, Nutanix Prism, Citrix,
-   vSphere): build each class when a production site actually needs it, lab-first as always.
+   vSphere, Windows agent): build each class when a production site actually needs it, lab-first as
+   always.
 3. **Scale & production readiness (§G)** - sizing pass + server-side census before the
    ~6000-sensor deployment, and **PDF reports** (§D).
 4. **Zabbix 8.0 LTS** (§G) - before 7.0's full support ends (around mid-2027).
