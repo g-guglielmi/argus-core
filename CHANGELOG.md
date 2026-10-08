@@ -37,7 +37,8 @@ GitHub Release from the matching section below.
   first to find the button in its toolbar.
 - **VMs hang off the hypervisor they run on.** An XCP-NG pool now lists each VM's network cards (and,
   with guest tools, its addresses) every poll, whatever VM monitoring is set to, and Argus places the
-  hosts that are those VMs under their hypervisor: on the map, on the Device tab path, and for alerts,
+  hosts that are those VMs under their hypervisor: on the map (one box for a hypervisor's VMs, as for
+  hosts sharing a port), on the Device tab path, and for alerts,
   so while a hypervisor is down its VMs' alerts wait and its own alert names them, as behind a down
   switch. This answer wins over the UniFi controller's, which only sees a VM on its hypervisor's
   switch port. The host settings' upstream mode is now **Automatic** (the hypervisor, else the

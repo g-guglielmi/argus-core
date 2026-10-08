@@ -8723,12 +8723,14 @@ function mapLayout(t: MapTree, ids: string[], kindOf: (id: string) => string | u
     const boxes: string[] = []
     const done = new Set<string>()
     for (const h of hosts) {
-      const port = t.link[h]?.port
+      // A box is the hosts on one port, or the VMs on one hypervisor.
+      const boxKey = (x: string) => t.link[x]?.port || (t.link[x]?.source === 'xcpng' ? 'vm' : '')
+      const key = boxKey(h)
       if (done.has(h)) continue
-      const same = port ? hosts.filter((x) => t.link[x]?.port === port) : [h]
+      const same = key ? hosts.filter((x) => boxKey(x) === key) : [h]
       same.forEach((x) => done.add(x))
       if (same.length < 2) { boxes.push(h); continue }
-      const gid = `hg:${id}:${port}`
+      const gid = `hg:${id}:${key}`
       groups[gid] = { members: same, link: t.link[h] }
       parent[gid] = id
       boxes.push(gid)
@@ -9091,6 +9093,7 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
     let d: string
     let label: Drawn['label']
     const parts = mapLabelParts(l, byId[up]?.kind === 'internet')
+    if (l.source === 'xcpng' && lay.groups[id]) parts.text = `${lay.groups[id].members.length} VMs`
     const chars = parts.text.length + (parts.use ? parts.use.length + (parts.text ? 3 : 0) : 0) + (parts.tail ? parts.tail.length + 3 : 0)
     const lw = chars * 6.3 + 18
     if (lay.comb[id]) {

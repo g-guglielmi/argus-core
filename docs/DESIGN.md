@@ -809,7 +809,8 @@ listed under the map as not on it.
 **Drawn** top-down in the browser: each device centred over the ones below it, in port order. The hosts
 under a device stack in a column at its left, so only network devices spread sideways and a big site
 grows downward; hosts on one port share one box, a row each (one cable, one link, one label; each row
-opens its host). A VM hangs off its hypervisor on a link labelled "VM", with no traffic of its own. Five or more network devices with nothing below them, under one device, fold into
+opens its host). A VM hangs off its hypervisor on a link labelled "VM", with no traffic of its own;
+the VMs on one hypervisor share one box the same way ("2 VMs"). Five or more network devices with nothing below them, under one device, fold into
 columns of six too. A link is labelled
 above the device it feeds ("Port 9 ↓950 ↑12 Mbps · 95%"), coloured by how full it is (past 70% amber,
 past 90% red, dashed red with no link, grey with no reading) and thicker the more it carries (the square
