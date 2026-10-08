@@ -220,16 +220,6 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Import from a spreadsheet or PRTG** - rows checked before anything is made, fixed in place;
   PRTG read with an API key (probes mapped, groups and tags kept, class guessed from its sensors).
   DESIGN section 7h. - _(BE+FE)_ M
-- [ ] **PRTG history migration** - bring a PRTG install's past readings over with its hosts (the
-  import above), so charts carry on across the switch instead of starting empty. Read through PRTG's
-  API (`historicdata`, per sensor and period): the hourly averages, and min / max where PRTG keeps
-  them, mapped channel by channel to the Argus sensor that replaces each one (ping to ping, traffic
-  to traffic, by the class the import guessed; channels with no match listed and skipped). Written as
-  Zabbix **trends** (hourly min / avg / max, what the long chart ranges read) for the period before
-  the switch-over: Zabbix's API only pushes history into trapper items, so this writes the trends
-  tables directly, which needs database access Argus doesn't have today (it uses the API only). A
-  background job with progress, resumable and throttled so PRTG keeps working: 6000 sensors over a
-  year is about 50 million hourly rows. With the production rollout. - _(BE+FE)_ L
 - [x] **Site info and who to call** - address, contacts and internet lines per site, each line tied
   to its sensor; who to call in the problem lists and, per channel, in the alerts. DESIGN section
   7g. - _(BE+FE)_ S
@@ -405,7 +395,7 @@ v0.4.56-v0.4.58) · plus the §14 lifecycle line (OS patching, core Zabbix minor
    **C2** (Aruba/Instant On, QNAP, Sophos, NetScaler, Libraesva, Hyper-V, Nutanix Prism, Citrix,
    vSphere): build each class when a production site actually needs it, lab-first as always.
 3. **Scale & production readiness (§G)** - sizing pass + server-side census before the
-   ~6000-sensor deployment; the **PRTG history migration** (§F) with it, and **PDF reports** (§D).
+   ~6000-sensor deployment, and **PDF reports** (§D).
 4. **Zabbix 8.0 LTS** (§G) - before 7.0's full support ends (around mid-2027).
 5. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
 
