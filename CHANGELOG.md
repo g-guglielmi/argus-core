@@ -13,6 +13,13 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.8.7] - 2026-10-08
+
+Network maps: each site drawn as a tree with the traffic on its links, off per site until an admin
+turns it on. Also an internet line's speed, Edit site info in a site's menu, and VMs placed under the
+XCP-NG hypervisor they run on. Update the core; probes that monitor an XCP-NG pool need **r28** (its
+collector lists the VMs' network cards), the updater stays on 0.2.12.
+
 **Added:**
 - **Network maps.** A new Maps page (in the sidebar, under Watch) lists the probes; a site's map draws
   its network as a tree, from what Argus already knows: the internet at the top, then the gateway, the
@@ -20,14 +27,14 @@ GitHub Release from the matching section below.
   traffic both ways and how full it is. A gateway's WANs each get an internet box above it; a WAN set
   up but never connected is drawn as "not connected", not as a broken link. The hosts linked to the
   devices are a switch away (Hosts, off when a map opens); shown, they stack in a column under their
-  device, and hosts on one port share one box. A link is amber past 70% of its
-  port speed, red past 90%, dashed red with no link, and thicker the more it carries; a device's box
-  is red while it is down. Click a device for its page, a link for its traffic chart. Arrange
-  (admins and helpdesk) lets devices be dragged, the ones below following, and the layout is kept for
-  everyone; Reset layout puts them back. Fit never draws the map below 75% (it scrolls sideways
-  instead). List shows the same tree as a table, and is what a phone opens. Hosts with no known upstream device are listed under the map. A site's map is **off until
-  an admin turns it on** on the Maps page: an off map is never built, and one that is on reads only
-  what Argus already holds, while someone has it open.
+  device, and hosts on one port share one box. A link is amber past 70% of its port speed, red past
+  90%, dashed red with no link, and thicker the more it carries; a device's box is red while it is
+  down. Click a device for its page, a link for its traffic chart. Arrange (admins and helpdesk) lets
+  devices be dragged, the ones below following, and the layout is kept for everyone; Reset layout
+  puts them back. Fit never draws the map below 75% (it scrolls sideways instead). List shows the same
+  tree as a table, and is what a phone opens. Hosts with no known upstream device are listed under
+  the map. A site's map is **off until an admin turns it on** on the Maps page: an off map is never
+  built, and one that is on reads only what Argus already holds, while someone has it open.
 - **An internet line's speed.** A site's internet lines (Edit site info) take the download and upload
   speed as contracted, in Mbps (a blank upload is the download's). The site page and the Device tab
   show it beside the provider, and the map shows how full the gateway's WAN is from it, each way
@@ -38,11 +45,11 @@ GitHub Release from the matching section below.
 - **VMs hang off the hypervisor they run on.** An XCP-NG pool now lists each VM's network cards (and,
   with guest tools, its addresses) every poll, whatever VM monitoring is set to, and Argus places the
   hosts that are those VMs under their hypervisor: on the map (one box for a hypervisor's VMs, as for
-  hosts sharing a port), on the Device tab path, and for alerts,
-  so while a hypervisor is down its VMs' alerts wait and its own alert names them, as behind a down
-  switch. This answer wins over the UniFi controller's, which only sees a VM on its hypervisor's
-  switch port. The host settings' upstream mode is now **Automatic** (the hypervisor, else the
-  controller), and Changes and the Device tab say which one answered. A Probe host never hangs off
+  hosts sharing a port), on the Device tab path, and for alerts, so while a hypervisor is down its
+  VMs' alerts wait and its own alert names them, as behind a down switch. This answer wins over the
+  UniFi controller's, which only sees a VM on its hypervisor's switch port. The host settings'
+  upstream mode is now **Automatic** (the hypervisor, else the controller), and Changes and the
+  Device tab say which one answered. A Probe host never hangs off
   anything, so a probe VM can't end up waiting on a hypervisor that waits on the probe. Needs the
   probe image's updated XCP-NG collector (probe r28) for pools a probe monitors; the core's own
   collector comes with this update.

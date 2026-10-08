@@ -132,7 +132,7 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   devices (the internet, the gateway, the switches, what hangs off each), every link labelled with its
   port, traffic and how full it is, coloured past 70% / 90% and thicker the more it carries; devices
   dragged by hand stay put for everyone; a list of the same tree on phones. Off per site until an admin
-  turns it on (DESIGN 7j). Unreleased (next core). Beyond UniFi it grows with the upstream sources of
+  turns it on (DESIGN 7j). Core v0.8.7. Beyond UniFi it grows with the upstream sources of
   section G. - _(FE+BE)_ M
 
 ### E. Auth / account gaps
@@ -271,7 +271,7 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   4. Hosts with **no LLDP** (Windows, most servers): the switches' MAC tables (Q-BRIDGE / BRIDGE-MIB)
      plus the ARP table, edge ports only (a port with a switch on the other end is a trunk). This is
      a guess like the UniFi controller's, so the settle and port checks apply.
-  5. **VMs**: their upstream is the hypervisor they run on. **XCP-NG done** (core, unreleased, with
+  5. **VMs**: their upstream is the hypervisor they run on. **XCP-NG done** (core v0.8.7, with
      probe r28: the collector lists each VM's MACs and guest IPs; DESIGN 7f); Nutanix and Hyper-V
      still to come with their classes.
   Needs the Aruba CX and Sophos XGS classes (C2) first; to test: one Aruba switch's model and
