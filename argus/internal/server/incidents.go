@@ -26,8 +26,8 @@ const (
 	incidentsDefaultDays = 7
 	incidentsMaxDays     = 90
 	incidentsMaxRows     = 500
-	incidentReasonLookup = 50 // incidents per request whose reason is read from the reason item's history
-	argusIncidentKeep    = 120 * 24 * time.Hour
+	incidentReasonLookup = 50                   // incidents per request whose reason is read from the reason item's history
+	argusIncidentKeep    = 400 * 24 * time.Hour // a year of them, for reports (reports.go)
 )
 
 type incidentView struct {
@@ -55,6 +55,12 @@ type incidentView struct {
 // itemIDs narrows it to those sensors (a drilled-down sensor, or all channels of a group): Zabbix is
 // asked for their triggers' events only, so a busy host's other incidents can't crowd them out.
 func (s *Server) collectIncidents(ctx context.Context, hostIDs, itemIDs []string, from int64, limit int) ([]incidentView, error) {
+	return s.collectIncidentsTill(ctx, hostIDs, itemIDs, from, 0, limit)
+}
+
+// collectIncidentsTill is collectIncidents for the incidents that started before till too (0: up to
+// now), for a report on a past period.
+func (s *Server) collectIncidentsTill(ctx context.Context, hostIDs, itemIDs []string, from, till int64, limit int) ([]incidentView, error) {
 	var tids []string
 	if len(itemIDs) > 0 {
 		trigs, err := s.zbx.ItemTriggers(ctx, itemIDs)
@@ -74,7 +80,7 @@ func (s *Server) collectIncidents(ctx context.Context, hostIDs, itemIDs []string
 	var evs []zabbix.Event
 	if len(itemIDs) == 0 || len(tids) > 0 { // sensors without a trigger have no Zabbix incidents
 		var err error
-		if evs, err = s.zbx.ProblemEvents(ctx, hostIDs, tids, from, limit); err != nil {
+		if evs, err = s.zbx.ProblemEvents(ctx, hostIDs, tids, from, till, limit); err != nil {
 			return nil, err
 		}
 	}
@@ -122,6 +128,9 @@ func (s *Server) collectIncidents(ctx context.Context, hostIDs, itemIDs []string
 	argusRows, _ := s.st.ArgusIncidents(ctx, hostIDs, from, limit)
 	for _, a := range argusRows {
 		if len(wantItem) > 0 && !wantItem[a.ItemID] {
+			continue
+		}
+		if till > 0 && a.StartedAt >= till {
 			continue
 		}
 		out = append(out, incidentView{EventID: a.EventID, HostID: a.HostID, HostName: a.HostName, ItemID: a.ItemID,

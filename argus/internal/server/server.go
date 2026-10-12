@@ -94,6 +94,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	s.syncTimezoneFile(context.Background())
 	// Keep the UniFi controller's upstream answers on record and log their changes (upstream.go).
 	s.startUpstreamRefresh(context.Background())
+	// Email the scheduled PDF reports when they are due (reportsapi.go).
+	s.startReportSchedule(context.Background())
 	// Import the device-class templates into Zabbix (§C). Background + idempotent; soft-skips
 	// until a Zabbix token is configured, and the create path re-checks before it needs them.
 	s.startTemplateReconcile(context.Background())
@@ -256,6 +258,19 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/maintenance", auth.RequireRoles(s.handleCreateMaintenance, "admin", "helpdesk"))
 	mux.HandleFunc("PATCH /api/maintenance/{id}", auth.RequireRoles(s.handleUpdateMaintenance, "admin", "helpdesk"))
 	mux.HandleFunc("DELETE /api/maintenance/{id}", auth.RequireRoles(s.handleDeleteMaintenance, "admin", "helpdesk"))
+	// PDF reports (reports.go, reportsapi.go): anyone makes one of what they can see; admins and
+	// helpdesk save, email and schedule them; the logo on their first page is an admin setting.
+	mux.HandleFunc("GET /api/reports", auth.RequireAuth(s.handleListReports))
+	mux.HandleFunc("POST /api/reports", auth.RequireRoles(s.handleCreateReport, "admin", "helpdesk"))
+	mux.HandleFunc("PUT /api/reports/{id}", auth.RequireRoles(s.handleUpdateReport, "admin", "helpdesk"))
+	mux.HandleFunc("DELETE /api/reports/{id}", auth.RequireRoles(s.handleDeleteReport, "admin", "helpdesk"))
+	mux.HandleFunc("GET /api/reports/{id}/pdf", auth.RequireAuth(s.handleReportPDF))
+	mux.HandleFunc("POST /api/reports/pdf", auth.RequireAuth(s.handleDraftPDF))
+	mux.HandleFunc("POST /api/reports/{id}/email", auth.RequireRoles(s.handleEmailReport, "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/reports/email", auth.RequireRoles(s.handleEmailDraft, "admin", "helpdesk"))
+	mux.HandleFunc("GET /api/reports/logo", auth.RequireAuth(s.handleReportLogo))
+	mux.HandleFunc("PUT /api/reports/logo", auth.RequireRole("admin", s.handleSetReportLogo))
+	mux.HandleFunc("DELETE /api/reports/logo", auth.RequireRole("admin", s.handleDeleteReportLogo))
 	mux.HandleFunc("GET /api/groups", auth.RequireAuth(s.handleGroups))
 	mux.HandleFunc("POST /api/groups", auth.RequireRoles(s.handleCreateGroup, "admin", "helpdesk"))
 	mux.HandleFunc("PATCH /api/groups/{id}", auth.RequireRoles(s.handleRenameGroup, "admin", "helpdesk"))

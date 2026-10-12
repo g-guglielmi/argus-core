@@ -33,7 +33,7 @@ import (
 const changeReasonHeader = "X-Argus-Reason"
 
 // changeCategories are the change log's kinds, as its filter offers them.
-var changeCategories = []string{"hosts", "states", "thresholds", "groups", "maintenance", "discovery", "probes", "channels", "users", "statuspages", "updates", "settings"}
+var changeCategories = []string{"hosts", "states", "thresholds", "groups", "maintenance", "discovery", "probes", "channels", "users", "statuspages", "reports", "updates", "settings"}
 
 type changeCtxKey struct{}
 
@@ -218,6 +218,15 @@ var changeRoutes = map[string]routeChange{
 	"DELETE /api/status-pages/{id}/note": {cat: "statuspages", action: "Took a status page's note down", obj: "page"},
 	"POST /api/status-pages/{id}/rotate": {cat: "statuspages", action: "Made a new status page link", obj: "page"},
 	"DELETE /api/status-pages/{id}":      {cat: "statuspages", action: "Deleted a status page", obj: "page", pre: true},
+
+	// reports
+	"POST /api/reports":            {cat: "reports", action: "Saved a report", detail: fieldDetail("name")},
+	"PUT /api/reports/{id}":        {cat: "reports", action: "Changed a report", obj: "report"},
+	"DELETE /api/reports/{id}":     {cat: "reports", action: "Deleted a report", obj: "report", pre: true},
+	"POST /api/reports/{id}/email": {cat: "reports", action: "Emailed a report", obj: "report"},
+	"POST /api/reports/email":      {cat: "reports", action: "Emailed a report", detail: fieldDetail("name")},
+	"PUT /api/reports/logo":        {cat: "settings", action: "Changed the reports' logo"},
+	"DELETE /api/reports/logo":     {cat: "settings", action: "Removed the reports' logo"},
 
 	// the journal and device links
 	"POST /api/hosts/{id}/journal": {cat: "hosts", action: "Added a journal entry", obj: "host", detail: fieldDetail("text")},
@@ -597,6 +606,12 @@ func (s *Server) resolveChangeObject(ctx context.Context, kind string, vals map[
 		if n, err := strconv.ParseInt(id, 10, 64); err == nil {
 			if m, err := s.st.MaintenanceWindow(ctx, n); err == nil {
 				return resolvedObject{name: m.Name, hostIDs: m.HostIDs}
+			}
+		}
+	case "report":
+		if n, err := strconv.ParseInt(id, 10, 64); err == nil {
+			if rep, err := s.st.Report(ctx, n); err == nil {
+				return resolvedObject{name: rep.Name}
 			}
 		}
 	case "page":

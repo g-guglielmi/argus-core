@@ -818,11 +818,12 @@ function ResetPassword({ token, onDone }: { token: string; onDone: () => void })
   )
 }
 
-type View = 'overview' | 'triggers' | 'history' | 'monitoring' | 'maps' | 'inventory' | 'maintenance' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'changes' | 'users' | 'updates' | 'settings' | 'account' | 'list'
+type View = 'overview' | 'triggers' | 'history' | 'reports' | 'monitoring' | 'maps' | 'inventory' | 'maintenance' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'changes' | 'users' | 'updates' | 'settings' | 'account' | 'list'
 const VIEW_TITLES: Record<View, [string, string]> = {
   overview: ['Overview', 'What needs attention right now'],
   triggers: ['Triggers', 'Alert rules - firing, or all by host'],
   history: ['History', 'What went wrong, and when'],
+  reports: ['Reports', 'PDFs of chosen hosts and sensors over a period'],
   monitoring: ['Monitoring', 'Sites, hosts and sensors'],
   maps: ['Maps', "Each site's network and the traffic on its links"],
   inventory: ['Inventory', 'Models, firmware, serials and addresses'],
@@ -844,6 +845,7 @@ const ic = {
   overview: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><g transform="translate(0 4)"><path d="M3 12a9 9 0 0 1 18 0" /><path d="M12 12l4-2" /><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" /></g></svg>,
   triggers: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l2-6 4 12 2-6h6" /></svg>,
   history: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" /><path d="M3 4.5V8.5h4" /><path d="M12 7.5V12l3 2" /></svg>,
+  reports: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /><path d="M9 17v-3M12 17v-6M15 17v-2" /></svg>,
   monitoring: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"><rect x="9" y="3" width="6" height="5" rx="1.5" /><rect x="3" y="16" width="6" height="5" rx="1.5" /><rect x="15" y="16" width="6" height="5" rx="1.5" /><path d="M12 8v4" /><path d="M6 16v-2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" /></svg>,
   notifications: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>,
   maintenance: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" /></svg>,
@@ -893,7 +895,7 @@ function useTheme(): ['dark' | 'light', () => void] {
 // bookmark, shared link, or Back/Forward restores the exact screen - instead of always
 // resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
 // (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
-const NAV_VIEWS: View[] = ['overview', 'triggers', 'history', 'monitoring', 'maps', 'inventory', 'maintenance', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'changes', 'users', 'updates', 'settings', 'account', 'list']
+const NAV_VIEWS: View[] = ['overview', 'triggers', 'history', 'reports', 'monitoring', 'maps', 'inventory', 'maintenance', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'changes', 'users', 'updates', 'settings', 'account', 'list']
 type NavState = { view: View; filter: string; host?: string; item?: string; group?: string; scan?: string; edit?: string; map?: string }
 
 function parseNav(): NavState {
@@ -1991,6 +1993,15 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   const [sensorsNext, setSensorsNext] = useState(0) // when the next fetch runs (the header counts down to it)
   const [listFilter, setListFilter] = useState<string>(() => initialNav().filter)
   const canPause = me.role === 'admin' || me.role === 'helpdesk'
+  // The report on Reports' New report tab, kept in this browser: "Add to a report" in a row's menu adds
+  // to it where the user is, and says so.
+  const toast = useToast()
+  const [reportDraft, setReportDraftState] = useState<ReportDraft>(loadReportDraft)
+  function setReportDraft(d: ReportDraft) { setReportDraftState(d); keepReportDraft(d) }
+  function addToReport(a: ReportAdd, label: string) {
+    setReportDraft(addToReportDraft(reportDraft, a))
+    toast.success(`${label} is in the report: open Watch, Reports to make it`)
+  }
   // Rows come for the Overview's states always, plus the open drill-down's own state: the OK list is
   // most of the census, so it is fetched only while it is on screen.
   const attentionStates = ['error', 'warning', 'acked']
@@ -2208,6 +2219,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         {nav('maps', 'Maps')}
         {nav('inventory', 'Inventory')}
         {nav('history', 'History')}
+        {nav('reports', 'Reports')}
         <div className="navlabel">Configure</div>
         {nav('probes', 'Probes')}
         {me.role === 'admin' && nav('discovery', 'Discovery')}
@@ -2276,10 +2288,11 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
             {view === 'overview' && <StatusListView filter="attention" sensors={sensors} loading={!sensorsLoaded} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => {}} />}
             {view === 'triggers' && <TriggersView goHost={goHost} />}
             {view === 'history' && <HistoryView goHost={goHost} />}
+            {view === 'reports' && <ReportsView me={me} draft={reportDraft} setDraft={setReportDraft} />}
             {view === 'maps' && <MapsView probe={mapProbe} onOpen={openMap} role={me.role} goHost={goHost} goSensor={goSensor} />}
             {view === 'inventory' && <InventoryView goHost={goHost} />}
             {view === 'list' && <StatusListView filter={listFilter} sensors={sensors} loading={!sensorsLoaded || !rowsFor.split(',').includes(listFilter)} canPause={canPause} goHost={goHost} goSensor={goSensor} onBack={() => goto('overview')} />}
-            {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} advanced={!!me.advanced} />}
+            {view === 'monitoring' && <MonitoringView role={me.role} target={treeTarget} homeSignal={monHome} onNavigate={onTreeNav} advanced={!!me.advanced} onAddToReport={addToReport} />}
             {view === 'maintenance' && <MaintenanceView canEdit={me.role === 'admin' || me.role === 'helpdesk'} />}
             {view === 'notifications' && <NotificationsView />}
             {view === 'probes' && <ProbesView role={me.role} enroll={probeEnroll} goHost={goHost} goUpdates={me.role === 'admin' ? () => goto('updates') : undefined} />}
@@ -2522,6 +2535,8 @@ function SettingsView({ me, onMe, onOpenUpdates }: { me: Me; onMe: (m: Me) => vo
         <TagsCard />
         {/* Device links: buttons every host of some classes gets, filled in from the host. */}
         <LinksCard />
+        {/* The logo on the reports' first page (reportsapi.go). */}
+        <ReportLogoCard />
         {/* Zabbix housekeeping (history / trends / compression), saved through its own endpoint. */}
         <DataRetention />
         {/* The core host's own backups (backup.go, deploy/core/host/argus-backup). */}
@@ -4187,6 +4202,8 @@ function noteActions(notes: { edit: (k: string[], s: string, c?: SensorNote) => 
 }
 
 const kbIcon = {
+  report: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /><path d="M9 17v-3M12 17v-6M15 17v-2" /></svg>,
+  mail: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3.5 6.5 12 13l8.5-6.5" /></svg>,
   pause: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>,
   hide: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7" /><path d="M3 3l18 18" /><path d="M9.5 9.5a3 3 0 0 0 4.2 4.2" /></svg>,
   resume: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M7 5l12 7-12 7z" /></svg>,
@@ -4349,7 +4366,7 @@ type GNode = { path: string; name: string; group?: Group; parentPath?: string; c
 // one `kind`, listed in manual order (group paths, or host ids). Unlisted siblings fall back to alpha.
 type OrderSet = { scope: string; kind: 'group' | 'host' | 'sibling'; items: string[] }
 
-function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { role: string; target: { hostId?: string; itemId?: string; itemName?: string; groupPath?: string; editHost?: string; n: number } | null; homeSignal: number; onNavigate: (hostId: string | null, itemId: string | null, group?: string | null, push?: boolean, edit?: string | null) => void; advanced: boolean }) {
+function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddToReport }: { role: string; target: { hostId?: string; itemId?: string; itemName?: string; groupPath?: string; editHost?: string; n: number } | null; homeSignal: number; onNavigate: (hostId: string | null, itemId: string | null, group?: string | null, push?: boolean, edit?: string | null) => void; advanced: boolean; onAddToReport?: (a: ReportAdd, label: string) => void }) {
   const confirm = useConfirm()
   const [hosts, setHosts] = useState<Host[]>([])
   const [groups, setGroups] = useState<Group[]>([])
@@ -4783,12 +4800,13 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
                 { label: 'Settings…', icon: kbIcon.gear, onClick: () => openSettings(h.id) },
                 { label: 'Edit groups…', icon: kbIcon.folder, onClick: () => { setSettingsHost(null); setEditGroupsHost((cur) => (cur === h.id ? null : h.id)) } },
                 { label: 'Discover now', icon: kbIcon.discover, onClick: () => discoverNow(h) },
+                ...(onAddToReport ? [{ sep: true, label: '' }, { label: 'Add to a report', icon: kbIcon.report, onClick: () => onAddToReport({ host: h.id }, h.name) }] : []),
               ]} />
             )}
           </div>
         </div>
         {editGroupsHost === h.id && <GroupEditor current={h.groups || []} groups={groups} onSave={(ids) => setHostGroups(h.id, ids)} onCancel={() => setEditGroupsHost(null)} />}
-        {hopen && <div className="host-body" style={{ paddingLeft: indent(depth) }}><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} maintenance={h.maintenance} showAll={showAllEff} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(path, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} onOpenSettings={canPause ? () => openSettings(h.id) : undefined} heldBehind={h.held_behind} /></div>}
+        {hopen && <div className="host-body" style={{ paddingLeft: indent(depth) }}><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} maintenance={h.maintenance} showAll={showAllEff} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(path, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} onOpenSettings={canPause ? () => openSettings(h.id) : undefined} heldBehind={h.held_behind} onAddToReport={onAddToReport} /></div>}
       </div>
     )
   }
@@ -4822,6 +4840,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced }: { ro
               <Kebab actions={[
                 ...(!node.path.includes('/') ? [
                   { label: 'Edit site info…', icon: kbIcon.site, onClick: () => { setError(null); setSiteInfoFor(node.path) } },
+                  ...(onAddToReport ? [{ label: 'Add to a report', icon: kbIcon.report, onClick: () => onAddToReport({ site: node.path }, node.path) }] : []),
                   { sep: true, label: '' },
                 ] : []),
                 { label: 'New subgroup…', icon: kbIcon.folder, onClick: () => { setError(null); setGAction(null); setNewSubPath(node.path); setCollapsed((c) => { const n = new Set(c); n.delete(node.path); return n }) } },
@@ -9653,7 +9672,7 @@ type ChangeRow = { id: number; at: number; actor: string; by_argus?: boolean; ca
 const CHANGE_CATEGORIES: [string, string][] = [
   ['', 'Everything'], ['hosts', 'Hosts and sensors'], ['states', 'Alert states'], ['thresholds', 'Thresholds'], ['groups', 'Groups'],
   ['maintenance', 'Maintenance'], ['discovery', 'Discovery and imports'], ['probes', 'Probes'], ['channels', 'Alert channels'],
-  ['users', 'Users and sign-in'], ['statuspages', 'Status pages'], ['updates', 'Updates'], ['settings', 'Settings'],
+  ['users', 'Users and sign-in'], ['statuspages', 'Status pages'], ['reports', 'Reports'], ['updates', 'Updates'], ['settings', 'Settings'],
 ]
 
 // ChangeRows lists change log entries newest first: what changed (with each value before and after,
@@ -9831,7 +9850,7 @@ function HostIncidents({ hostId, goHost, itemIds, asTab }: { hostId: string; goH
   )
 }
 
-function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, showAll, autoOpenItem, onlyItem, onDrillSensor, onItemName, onNavigate, onOpenSettings, heldBehind }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; maintenance?: MaintHit; showAll: boolean; autoOpenItem?: string; onlyItem?: string; onDrillSensor?: (itemId: string, itemName: string) => void; onItemName?: (itemId: string, itemName: string) => void; onNavigate: (hostId: string | null, itemId: string | null) => void; onOpenSettings?: () => void; heldBehind?: string }) {
+function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, showAll, autoOpenItem, onlyItem, onDrillSensor, onItemName, onNavigate, onOpenSettings, heldBehind, onAddToReport }: { hostId: string; canPause: boolean; hostPaused: boolean; hostHidden: boolean; maintenance?: MaintHit; showAll: boolean; autoOpenItem?: string; onlyItem?: string; onDrillSensor?: (itemId: string, itemName: string) => void; onItemName?: (itemId: string, itemName: string) => void; onNavigate: (hostId: string | null, itemId: string | null) => void; onOpenSettings?: () => void; heldBehind?: string; onAddToReport?: (a: ReportAdd, label: string) => void }) {
   // The host's tabs: its sensors (the default), its Device facts, History, Journal and Changes.
   const toast = useToast()
   const [tab, setTab] = useState<HostTab>('sensors')
@@ -10207,6 +10226,8 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                   if (gTrouble.length || gNoted.length) actions.push(...noteActions(notes, gNoteKeys, row.instance, gNoted[0]?.note))
                   if (actions.length && acts.length) actions.push({ sep: true, label: '' })
                   actions.push(...acts)
+                  const gCharted = row.items.filter((i) => i.numeric)
+                  if (onAddToReport && gCharted.length) actions.push({ sep: true, label: '' }, { label: 'Add to a report', icon: kbIcon.report, onClick: () => onAddToReport({ sensor: { host_id: hostId, items: gCharted.map((i) => i.id), label: row.instance } }, row.instance) })
                   return (
                     <Fragment key={gkey}>
                       {catRow}
@@ -10312,6 +10333,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                 if (it.note || problems.some((p) => p.item_ids.includes(it.id))) actions.push(...noteActions(notes, [it.id], label, it.note))
                 if (actions.length && acts.length) actions.push({ sep: true, label: '' })
                 actions.push(...acts)
+                if (onAddToReport && it.numeric) actions.push({ sep: true, label: '' }, { label: 'Add to a report', icon: kbIcon.report, onClick: () => onAddToReport({ sensor: { host_id: hostId, items: [it.id], label } }, label) })
                 const trendColor = st ? healthColor(st, itemAcked[it.id]) : 'var(--accent)'
                 // A daily-ratio sensor (block rate) charts as daily bars and minis like the
                 // counter group above it - one bar per day, the day's closing rate.
@@ -10590,6 +10612,594 @@ function HistoryView({ goHost }: { goHost: (h: string) => void }) {
         ? <EmptyState tone="ok" icon={ic.ok} title="Nothing went wrong" text={needle ? 'No incident in this period matches the filter.' : `No incidents in ${period}.`} />
         : <IncidentRows rows={shown} goHost={goHost} />)}
     </div>
+  )
+}
+
+// ---------- Reports (reports.go): PDFs of the hosts and sensors picked, over a period ----------
+
+type ReportSensorPick = { host_id: string; items: string[]; label: string }
+type ReportSpec = { sites: string[]; hosts: string[]; sensors: ReportSensorPick[]; period: string; from?: string; to?: string; target: number; skip_maintenance: boolean }
+type ReportSchedule = { every: '' | 'day' | 'week' | 'month'; weekday: number; day: number; minute: number; to: string[]; enabled: boolean }
+type SavedReport = {
+  id: number; name: string; spec: ReportSpec; schedule: ReportSchedule; owner_id: number; owner_name?: string
+  created_at: number; updated_at: number; last_made_at: number; last_sent_at: number; last_error: string
+  covers: string; period_label: string; next?: number
+}
+// ReportDraft is the report on the New report tab: kept in this browser between visits, and what
+// "Add to a report" in a row's menu adds to. id is set while a saved one is being edited.
+type ReportDraft = { id?: number; name: string; spec: ReportSpec; schedule: ReportSchedule }
+type ReportAdd = { site?: string; host?: string; sensor?: ReportSensorPick }
+
+const REPORT_PERIODS: [string, string][] = [['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['last_month', 'Last month'], ['this_month', 'This month'], ['custom', 'From… to…']]
+const REPORT_PERIOD_NOTES: Record<string, string> = {
+  '7d': 'The 7 whole days before the day it is made.',
+  '30d': 'The 30 whole days before the day it is made.',
+  last_month: 'The calendar month before the day it is made: September, when made on October 1.',
+  this_month: 'From the 1st of the month up to the moment it is made.',
+  custom: 'The days you pick, both included: a year at most.',
+}
+const REPORT_DRAFT_KEY = 'argus-report-draft'
+
+function newReportDraft(): ReportDraft {
+  return {
+    name: '',
+    spec: { sites: [], hosts: [], sensors: [], period: 'last_month', target: 99.9, skip_maintenance: true },
+    schedule: { every: '', weekday: 1, day: 1, minute: 7 * 60, to: [], enabled: true },
+  }
+}
+
+function loadReportDraft(): ReportDraft {
+  const d = newReportDraft()
+  try {
+    const v = JSON.parse(localStorage.getItem(REPORT_DRAFT_KEY) || 'null')
+    if (v && v.spec) return { ...d, ...v, spec: { ...d.spec, ...v.spec }, schedule: { ...d.schedule, ...v.schedule } }
+  } catch { /* none kept, or unreadable */ }
+  return d
+}
+
+function keepReportDraft(d: ReportDraft) {
+  try { localStorage.setItem(REPORT_DRAFT_KEY, JSON.stringify(d)) } catch { /* private window: the draft just isn't kept */ }
+}
+
+const sameReportSensor = (a: ReportSensorPick, b: ReportSensorPick) => a.host_id === b.host_id && a.items[0] === b.items[0]
+
+// addToReportDraft adds a site, a host or a sensor to the draft (once).
+function addToReportDraft(d: ReportDraft, a: ReportAdd): ReportDraft {
+  const spec = { ...d.spec }
+  if (a.site && !spec.sites.includes(a.site)) spec.sites = [...spec.sites, a.site]
+  if (a.host && !spec.hosts.includes(a.host)) spec.hosts = [...spec.hosts, a.host]
+  if (a.sensor && !spec.sensors.some((s) => sameReportSensor(s, a.sensor!))) spec.sensors = [...spec.sensors, a.sensor]
+  return { ...d, spec }
+}
+
+// reportPicks are a host's sensors as a report picks them: a group's channels together (one chart),
+// every other numeric sensor on its own, in the host page's order.
+function reportPicks(hostId: string, items: SensorItem[]): { pick: ReportSensorPick; cat: string; value: string }[] {
+  const out: { pick: ReportSensorPick; cat: string; value: string }[] = []
+  const groups = new Map<string, number>()
+  for (const it of items) {
+    if (!it.numeric) continue
+    const value = it.last_value !== '' && !Number.isNaN(Number(it.last_value)) ? fmtNum(Number(it.last_value), it.units) : ''
+    if (it.instance && it.category) {
+      const k = it.category + '|' + it.instance
+      const at = groups.get(k)
+      if (at !== undefined) { out[at].pick.items.push(it.id); continue }
+      groups.set(k, out.length)
+      out.push({ pick: { host_id: hostId, items: [it.id], label: it.instance }, cat: it.category, value })
+      continue
+    }
+    out.push({ pick: { host_id: hostId, items: [it.id], label: it.label || it.name }, cat: it.category || '', value })
+  }
+  return out
+}
+
+function reportScheduleText(s: ReportSchedule): string {
+  if (!s.every || !s.enabled) return ''
+  const when = s.every === 'day' ? 'Every day' : s.every === 'week' ? `Every ${WEEKDAYS[s.weekday]}` : `Every month on ${s.day === -1 ? 'the last day' : 'day ' + s.day}`
+  return `${when} at ${fmtHM24(s.minute)}, to ${s.to.length === 1 ? s.to[0] : `${s.to.length} addresses`}`
+}
+
+function splitAddresses(v: string): string[] { return v.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean) }
+
+// saveReportPDF hands the PDF in a response to the browser, under the name the server gave it.
+async function saveReportPDF(res: Response) {
+  const blob = await res.blob()
+  const m = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '')
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = m ? m[1] : 'report.pdf'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function ReportsView({ me, draft, setDraft }: { me: Me; draft: ReportDraft; setDraft: (d: ReportDraft) => void }) {
+  const canEdit = me.role === 'admin' || me.role === 'helpdesk'
+  const toast = useToast()
+  const confirm = useConfirm()
+  const prompt = usePrompt()
+  const [tab, setTab] = useState<'new' | 'saved'>('new')
+  const [saved, setSaved] = useState<SavedReport[] | null>(null)
+  const [hosts, setHosts] = useState<Host[] | null>(null)
+  const [busy, setBusy] = useState('')
+  const [scheduling, setScheduling] = useState(false)
+
+  function loadSaved() {
+    fetch('/api/reports').then((r) => (r.ok ? r.json() : Promise.reject(r))).then((l) => setSaved(l || [])).catch(() => { setSaved([]); toast.error('Could not load the saved reports') })
+  }
+  useEffect(() => {
+    loadSaved()
+    fetch('/api/hosts').then((r) => (r.ok ? r.json() : [])).then((h) => setHosts(h || [])).catch(() => setHosts([]))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const draftName = draft.name.trim() || 'Report'
+  async function run(key: string, url: string, init: RequestInit | undefined, fail: string): Promise<Response | null> {
+    setBusy(key)
+    const res = await fetch(url, init).catch(() => null)
+    setBusy('')
+    if (!res || !res.ok) { toast.error(await errText(res, fail)); return null }
+    return res
+  }
+  const post = (body: unknown): RequestInit => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+
+  async function downloadDraft() {
+    const res = await run('pdf', '/api/reports/pdf', post({ name: draftName, spec: draft.spec }), 'Could not make the report')
+    if (res) await saveReportPDF(res)
+  }
+  async function askRecipients(initial: string): Promise<string[] | null> {
+    const v = await prompt({ title: 'Email the report now', message: 'It is made now, for the period it covers, and sent with the first email channel under Notifications.', label: 'To', initial, placeholder: 'it@example.com, manager@example.com', required: true })
+    return v === null ? null : splitAddresses(v)
+  }
+  async function emailDraft() {
+    const to = await askRecipients(draft.schedule.to.join(', ') || me.email)
+    if (!to) return
+    const res = await run('email', '/api/reports/email', post({ name: draftName, spec: draft.spec, to }), 'Could not email the report')
+    if (res) toast.success(`Sent to ${to.join(', ')}`)
+  }
+  async function downloadSaved(r: SavedReport) {
+    const res = await run('pdf:' + r.id, `/api/reports/${r.id}/pdf`, undefined, 'Could not make the report')
+    if (res) { await saveReportPDF(res); loadSaved() }
+  }
+  async function emailSaved(r: SavedReport) {
+    const to = await askRecipients(r.schedule.to.join(', ') || me.email)
+    if (!to) return
+    const res = await run('email:' + r.id, `/api/reports/${r.id}/email`, post({ to }), 'Could not email the report')
+    loadSaved()
+    if (res) toast.success(`Sent to ${to.join(', ')}`)
+  }
+  function edit(r: SavedReport) { setDraft({ id: r.id, name: r.name, spec: r.spec, schedule: r.schedule }); setTab('new') }
+  function duplicate(r: SavedReport) { setDraft({ name: `${r.name} (copy)`, spec: r.spec, schedule: { ...r.schedule, enabled: false } }); setTab('new') }
+  async function del(r: SavedReport) {
+    if (!(await confirm({ title: 'Delete report', message: `Delete "${r.name}"? ${r.schedule.every && r.schedule.enabled ? 'It stops being emailed.' : ''}`, confirmLabel: 'Delete', danger: true }))) return
+    const res = await run('del', `/api/reports/${r.id}`, { method: 'DELETE' }, 'Could not delete the report')
+    if (!res) return
+    if (draft.id === r.id) setDraft({ ...draft, id: undefined })
+    toast.success('Report deleted')
+    loadSaved()
+  }
+
+  return (
+    <>
+      <div className="rep-tabs">
+        <div className="seg" role="tablist" aria-label="Reports">
+          <button type="button" role="tab" aria-selected={tab === 'new'} className={tab === 'new' ? 'on' : ''} onClick={() => setTab('new')}>{draft.id ? 'Edit report' : 'New report'}</button>
+          <button type="button" role="tab" aria-selected={tab === 'saved'} className={tab === 'saved' ? 'on' : ''} onClick={() => setTab('saved')}>Saved reports{saved ? ` (${saved.length})` : ''}</button>
+        </div>
+      </div>
+      {tab === 'new' ? (
+        <div className="rep-grid">
+          <ReportPicker hosts={hosts} spec={draft.spec} onChange={(spec) => setDraft({ ...draft, spec })} />
+          <ReportSide draft={draft} setDraft={setDraft} hosts={hosts || []} canEdit={canEdit} busy={busy}
+            onDownload={downloadDraft} onEmail={emailDraft} onSchedule={() => setScheduling(true)} onNew={() => setDraft(newReportDraft())} />
+        </div>
+      ) : (
+        <SavedReports list={saved} canEdit={canEdit} busy={busy} onNew={() => { setDraft(newReportDraft()); setTab('new') }}
+          onDownload={downloadSaved} onEmail={emailSaved} onEdit={edit} onDuplicate={duplicate} onDelete={del} />
+      )}
+      {scheduling && <ReportScheduleDialog draft={draft} onCancel={() => setScheduling(false)} onSaved={(d) => {
+        setScheduling(false)
+        setDraft(d)
+        toast.success(d.schedule.every && d.schedule.enabled ? `Saved: ${reportScheduleText(d.schedule)}` : 'Report saved')
+        loadSaved()
+      }} />}
+    </>
+  )
+}
+
+// ReportPicker is the tree a report is picked from: a site or a host adds its uptime and problems, a
+// sensor its chart.
+function ReportPicker({ hosts, spec, onChange }: { hosts: Host[] | null; spec: ReportSpec; onChange: (s: ReportSpec) => void }) {
+  const [q, setQ] = useState('')
+  const [open, setOpen] = useState<Set<string>>(() => new Set())
+  const [picks, setPicks] = useState<Record<string, ReturnType<typeof reportPicks> | 'loading' | 'error'>>({})
+  const sites = useMemo(() => {
+    const m = new Map<string, Host[]>()
+    for (const h of hosts || []) {
+      const tops = new Set((h.groups || []).map((g) => g.split('/')[0]))
+      if (tops.size === 0) tops.add('')
+      for (const t of tops) m.set(t, [...(m.get(t) || []), h])
+    }
+    for (const list of m.values()) list.sort((a, b) => a.name.localeCompare(b.name))
+    return [...m.entries()].sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)))
+  }, [hosts])
+
+  function loadPicks(id: string) {
+    if (picks[id] && picks[id] !== 'error') return
+    setPicks((p) => ({ ...p, [id]: 'loading' }))
+    fetch(`/api/hosts/${id}/items`).then((r) => (r.ok ? r.json() : Promise.reject(r)))
+      .then((list: SensorItem[]) => setPicks((p) => ({ ...p, [id]: reportPicks(id, list || []) })))
+      .catch(() => setPicks((p) => ({ ...p, [id]: 'error' })))
+  }
+  function toggleOpen(key: string, hostId?: string) {
+    setOpen((o) => { const n = new Set(o); if (n.has(key)) n.delete(key); else n.add(key); return n })
+    if (hostId) loadPicks(hostId)
+  }
+  const siteOfHost = (h: Host) => reportSiteOf(h, spec.sites)
+  const sensorsOf = (id: string) => spec.sensors.filter((s) => s.host_id === id)
+  const toggleSite = (s: string) => onChange({ ...spec, sites: spec.sites.includes(s) ? spec.sites.filter((x) => x !== s) : [...spec.sites, s] })
+  const toggleHost = (id: string) => onChange({ ...spec, hosts: spec.hosts.includes(id) ? spec.hosts.filter((x) => x !== id) : [...spec.hosts, id] })
+  const toggleSensor = (p: ReportSensorPick) => onChange({ ...spec, sensors: spec.sensors.some((s) => sameReportSensor(s, p)) ? spec.sensors.filter((s) => !sameReportSensor(s, p)) : [...spec.sensors, p] })
+
+  const ql = q.trim().toLowerCase()
+  const hostMatches = (h: Host) => !ql || h.name.toLowerCase().includes(ql) ||
+    (Array.isArray(picks[h.id]) && (picks[h.id] as ReturnType<typeof reportPicks>).some((p) => p.pick.label.toLowerCase().includes(ql)))
+  const nHosts = new Set([...(hosts || []).filter((h) => spec.hosts.includes(h.id) || siteOfHost(h)).map((h) => h.id)]).size
+  const box = (on: boolean, some: boolean, onToggle: () => void, label: string, disabled?: boolean, title?: string) => (
+    <input type="checkbox" className="tsel" aria-label={label} title={title} checked={on} disabled={disabled}
+      ref={(el) => { if (el) el.indeterminate = !on && some }} onChange={onToggle} onClick={(e) => e.stopPropagation()} />
+  )
+
+  return (
+    <div className="panel rep-pick">
+      <div className="phead">
+        <PanelTitle eyebrow="Covers">Hosts and sensors</PanelTitle>
+        <span className="hint">{plural(nHosts, 'host')}, {plural(spec.sensors.length, 'sensor')} picked</span>
+        <div className="tools"><input className="input rep-q" type="search" placeholder="Find a host or sensor" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Find a host or sensor" /></div>
+      </div>
+      <p className="panel-intro" style={{ paddingBottom: 10 }}>Tick a site or a host for its uptime and problems; open a host to tick sensors for their charts.</p>
+      {hosts === null ? <Skeleton rows={6} cols={2} /> : sites.length === 0 ? <div className="empty-state" style={{ padding: '24px 16px' }}>No hosts to report on.</div> : (
+        <div className="rep-tree">
+          {sites.map(([site, list]) => {
+            const shown = list.filter(hostMatches)
+            if (ql && shown.length === 0) return null
+            const sKey = 's:' + site
+            const sOpen = !!ql || open.has(sKey)
+            const sOn = site !== '' && spec.sites.includes(site)
+            const sSome = list.some((h) => spec.hosts.includes(h.id) || sensorsOf(h.id).length > 0)
+            return (
+              <div key={sKey} className="rep-site">
+                <div className="rep-row rep-srow" onClick={() => toggleOpen(sKey)}>
+                  <svg className={'chev' + (sOpen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+                  {site !== '' ? box(sOn, sSome, () => toggleSite(site), `Report on ${site}`) : <span className="rep-nobox" />}
+                  <span className="rep-name"><b>{site || 'Ungrouped'}</b> <span className="muted">{plural(list.length, 'host')}</span></span>
+                  <span className="rep-note">{sOn ? 'whole site' : sSome ? 'some' : ''}</span>
+                </div>
+                {sOpen && shown.map((h) => {
+                  const hKey = 'h:' + site + ':' + h.id
+                  const hOpen = open.has(hKey) || (!!ql && !h.name.toLowerCase().includes(ql))
+                  const via = siteOfHost(h)
+                  const hOn = spec.hosts.includes(h.id) || !!via
+                  const hs = sensorsOf(h.id)
+                  const hp = picks[h.id]
+                  const note = [hOn ? 'uptime' : '', hs.length ? plural(hs.length, 'chart') : ''].filter(Boolean).join(' + ')
+                  return (
+                    <div key={hKey}>
+                      <div className="rep-row rep-hrow" onClick={() => toggleOpen(hKey, h.id)}>
+                        <svg className={'chev' + (hOpen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+                        {box(hOn, hs.length > 0, () => toggleHost(h.id), `Report on ${h.name}`, !!via && !spec.hosts.includes(h.id), via ? `Covered by ${via}` : undefined)}
+                        <span className="rep-name"><span className="dev-ico">{hostGlyph(h.icon)}</span><span className="rep-ell">{h.name}</span></span>
+                        <span className="rep-note">{note}</span>
+                      </div>
+                      {(hOpen || (ql && Array.isArray(hp))) && (
+                        hp === 'loading' || hp === undefined ? <div className="rep-row rep-irow muted">Loading sensors…</div>
+                          : hp === 'error' ? <div className="rep-row rep-irow txt-err">Could not load its sensors</div>
+                            : hp.length === 0 ? <div className="rep-row rep-irow muted">No sensors with values to chart</div>
+                              : hp.filter((p) => !ql || h.name.toLowerCase().includes(ql) || p.pick.label.toLowerCase().includes(ql)).map((p) => {
+                                const on = spec.sensors.some((s) => sameReportSensor(s, p.pick))
+                                return (
+                                  <label key={p.pick.items[0]} className="rep-row rep-irow">
+                                    <span className="rep-nobox" />
+                                    {box(on, false, () => toggleSensor(p.pick), `Chart ${p.pick.label}`)}
+                                    <span className="rep-name">{p.pick.label}{p.pick.items.length > 1 && <span className="muted"> · {p.pick.items.length} channels</span>}</span>
+                                    <span className="rep-note mono">{p.value}</span>
+                                  </label>
+                                )
+                              })
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })}
+          {/* Picked sensors of hosts no longer listed (gone, or outside the user's sites since). */}
+          {spec.sensors.filter((s) => !(hosts || []).some((h) => h.id === s.host_id)).map((s) => (
+            <label key={s.host_id + ':' + s.items[0]} className="rep-row rep-irow">
+              <span className="rep-nobox" />
+              {box(true, false, () => toggleSensor(s), `Chart ${s.label}`)}
+              <span className="rep-name">{s.label} <span className="muted">· its host is gone</span></span>
+              <span className="rep-note" />
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function plural(n: number, one: string): string { return `${n} ${one}${n === 1 ? '' : 's'}` }
+
+// reportSiteOf is the picked site that covers a host, if one does. Argus's own probe host is covered
+// only when picked by name, as the server makes it (reports.go).
+function reportSiteOf(h: Host, sites: string[]): string | undefined {
+  if (h.class_id === 'probe') return undefined
+  return sites.find((s) => (h.groups || []).some((g) => g === s || g.startsWith(s + '/')))
+}
+
+// ReportSide names the report, sets its period and uptime target, outlines what it holds, and makes it.
+function ReportSide({ draft, setDraft, hosts, canEdit, busy, onDownload, onEmail, onSchedule, onNew }: {
+  draft: ReportDraft; setDraft: (d: ReportDraft) => void; hosts: Host[]; canEdit: boolean; busy: string
+  onDownload: () => void; onEmail: () => void; onSchedule: () => void; onNew: () => void
+}) {
+  const spec = draft.spec
+  const set = (p: Partial<ReportSpec>) => setDraft({ ...draft, spec: { ...spec, ...p } })
+  const covered = hosts.filter((h) => spec.hosts.includes(h.id) || !!reportSiteOf(h, spec.sites))
+  const sensorHosts = hosts.filter((h) => spec.sensors.some((s) => s.host_id === h.id) && !covered.includes(h))
+  const empty = spec.sites.length + spec.hosts.length + spec.sensors.length === 0
+  const charts = (id: string) => spec.sensors.filter((s) => s.host_id === id).map((s) => s.label)
+  // About how many pages: page 1, then each host's header and strip, its problems, and its charts.
+  const points = covered.length * 90 + sensorHosts.length * 50 + spec.sensors.length * 175
+  const pages = empty ? 0 : 1 + Math.ceil(Math.max(0, points - 300) / 740)
+  const outline = [...covered, ...sensorHosts].sort((a, b) => a.name.localeCompare(b.name)).slice(0, 12)
+  const more = covered.length + sensorHosts.length - outline.length
+  const customBad = spec.period === 'custom' && (!spec.from || !spec.to || spec.to < spec.from)
+  return (
+    <div className="panel rep-side">
+      <div className="phead">
+        <PanelTitle eyebrow={draft.id ? 'Editing a saved report' : 'Report'}>{draft.name.trim() || 'Untitled report'}</PanelTitle>
+        {(draft.id || !empty) && <div className="tools"><button type="button" className="btn ghost compact" onClick={onNew}>Start over</button></div>}
+      </div>
+      <div className="rep-form">
+        <label className="chan-field"><span className="flabel">Name</span>
+          <input className="input" value={draft.name} placeholder="e.g. Monthly availability, site1" maxLength={120} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+        </label>
+        <div className="chan-field"><span className="flabel">Period</span>
+          <div className="seg rep-period" role="radiogroup" aria-label="Period">
+            {REPORT_PERIODS.map(([v, l]) => <button key={v} type="button" role="radio" aria-checked={spec.period === v} className={spec.period === v ? 'on' : ''} onClick={() => set({ period: v })}>{l}</button>)}
+          </div>
+          {spec.period === 'custom' && (
+            <div className="rep-dates">
+              <input className="input" type="date" aria-label="First day" value={spec.from || ''} onChange={(e) => set({ from: e.target.value })} />
+              <span className="muted">to</span>
+              <input className="input" type="date" aria-label="Last day" value={spec.to || ''} onChange={(e) => set({ to: e.target.value })} />
+            </div>
+          )}
+          <span className="set-hint">{REPORT_PERIOD_NOTES[spec.period] || ''}</span>
+        </div>
+        <div className="chan-field"><span className="flabel">Uptime</span>
+          <div className="rep-uptime">
+            <label className="rep-target"><input className="input" type="number" min={0} max={100} step={0.01} value={spec.target || ''} placeholder="none"
+              onChange={(e) => set({ target: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })} aria-label="Uptime target" /><span>% target</span></label>
+            <Switch checked={spec.skip_maintenance} onChange={(v) => set({ skip_maintenance: v })} label="Leave maintenance out" />
+          </div>
+          <span className="set-hint">Hosts under the target are marked. Maintenance windows left out count as neither up nor down.</span>
+        </div>
+        <div className="rep-outline">
+          <div className="chan-sec-h">In this report</div>
+          {empty ? <p className="set-note" style={{ margin: 0 }}>Nothing yet: tick a site, a host or a sensor on the left.</p> : (
+            <>
+              <div className="rep-oline"><b>Summary</b><span>{covered.length ? `uptime${spec.target ? ` against ${spec.target} %` : ''}, downtime, problems` : ''}{covered.length && spec.sensors.length ? '; ' : ''}{spec.sensors.length ? 'sensor figures' : ''}</span></div>
+              {outline.map((h) => {
+                const cs = charts(h.id)
+                return <div key={h.id} className="rep-oline"><b>{h.name}</b><span>{[covered.includes(h) ? 'uptime, problems' : '', cs.join(', ')].filter(Boolean).join(', ')}</span></div>
+              })}
+              {more > 0 && <div className="rep-oline"><b /><span className="muted">and {plural(more, 'more host')}</span></div>}
+              <p className="set-note" style={{ margin: '8px 0 0' }}>About {plural(pages, 'page')}.</p>
+            </>
+          )}
+        </div>
+        <div className="rep-actions">
+          {canEdit && <button type="button" className="btn" disabled={empty || customBad || !!busy} onClick={onEmail}>{busy === 'email' ? 'Sending…' : 'Email now…'}</button>}
+          {canEdit && <button type="button" className="btn" disabled={empty || customBad || !!busy} onClick={onSchedule}>{draft.id ? 'Save…' : 'Save and schedule…'}</button>}
+          <button type="button" className="btn primary" style={{ marginLeft: 'auto' }} disabled={empty || customBad || !!busy} onClick={onDownload}>{busy === 'pdf' ? 'Making the PDF…' : 'Download PDF'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ReportScheduleDialog saves the draft: its name, and whether and when it is emailed, to whom.
+function ReportScheduleDialog({ draft, onCancel, onSaved }: { draft: ReportDraft; onCancel: () => void; onSaved: (d: ReportDraft) => void }) {
+  const [name, setName] = useState(draft.name)
+  const [sch, setSch] = useState<ReportSchedule>(draft.schedule)
+  const [to, setTo] = useState(draft.schedule.to.join(', '))
+  const [time, setTime] = useState(fmtHM24(draft.schedule.minute))
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onCancel])
+  async function save(e: FormEvent) {
+    e.preventDefault(); setErr('')
+    const [h, m] = time.split(':').map(Number)
+    const schedule: ReportSchedule = { ...sch, minute: (h || 0) * 60 + (m || 0), to: splitAddresses(to) }
+    setBusy(true)
+    const res = await fetch(draft.id ? `/api/reports/${draft.id}` : '/api/reports', {
+      method: draft.id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, spec: draft.spec, schedule }),
+    }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { setErr(await errText(res, 'Could not save the report')); return }
+    const j = await res.json()
+    onSaved({ ...draft, id: j.id, name: name.trim(), schedule })
+  }
+  return createPortal(
+    <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel() }}>
+      <form className="dlg" role="dialog" aria-modal="true" onSubmit={save} style={{ maxWidth: 'min(560px, 94vw)', maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
+        <div className="dlg-title">{draft.id ? 'Save the report' : 'Save and schedule'}</div>
+        <div className="dlg-scroll"><div className="chan-form">
+          <ChanSection title="Report">
+            <label className="chan-field"><span className="flabel">Name</span>
+              <input className="input" value={name} maxLength={120} placeholder="e.g. Monthly availability, site1" onChange={(e) => setName(e.target.value)} required autoFocus />
+            </label>
+          </ChanSection>
+          <ChanSection title="Email" note="Made at the time below, for its period, and sent with the first email channel under Notifications. Times in the Argus timezone.">
+            <div className="rep-when">
+              <label className="chan-field"><span className="flabel">Send</span>
+                <Select value={sch.every} onChange={(e) => setSch({ ...sch, every: e.target.value as ReportSchedule['every'] })}>
+                  <option value="">Only on request</option>
+                  <option value="day">Every day</option>
+                  <option value="week">Every week</option>
+                  <option value="month">Every month</option>
+                </Select>
+              </label>
+              {sch.every === 'week' && (
+                <label className="chan-field"><span className="flabel">On</span>
+                  <Select value={sch.weekday} onChange={(e) => setSch({ ...sch, weekday: Number(e.target.value) })}>
+                    {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+                  </Select>
+                </label>
+              )}
+              {sch.every === 'month' && (
+                <label className="chan-field"><span className="flabel">On day</span>
+                  <Select value={sch.day} onChange={(e) => setSch({ ...sch, day: Number(e.target.value) })}>
+                    {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
+                    <option value={-1}>The last day</option>
+                  </Select>
+                </label>
+              )}
+              {sch.every && (
+                <label className="chan-field"><span className="flabel">At</span>
+                  <input className="input" type="time" value={time} onChange={(e) => setTime(e.target.value)} required />
+                </label>
+              )}
+            </div>
+            {sch.every && (
+              <>
+                <label className="chan-field"><span className="flabel">To</span>
+                  <input className="input" value={to} placeholder="it@example.com, manager@example.com" onChange={(e) => setTo(e.target.value)} required />
+                </label>
+                <div className="chan-field"><Switch checked={sch.enabled} onChange={(v) => setSch({ ...sch, enabled: v })} label={sch.enabled ? 'Sending on schedule' : 'Not sending for now'} /></div>
+              </>
+            )}
+          </ChanSection>
+          {err && <p className="set-note txt-err" style={{ margin: 0 }}>{err}</p>}
+        </div></div>
+        <div className="chan-dlg-foot">
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            <button type="button" className="btn" onClick={onCancel}>Cancel</button>
+            <button type="submit" className="btn primary" disabled={busy || !name.trim()}>{busy ? 'Saving…' : 'Save report'}</button>
+          </div>
+        </div>
+      </form>
+    </div>,
+    document.body,
+  )
+}
+
+// SavedReports lists the saved reports: what each covers, its period, when it is emailed and how the
+// last one went.
+function SavedReports({ list, canEdit, busy, onNew, onDownload, onEmail, onEdit, onDuplicate, onDelete }: {
+  list: SavedReport[] | null; canEdit: boolean; busy: string; onNew: () => void
+  onDownload: (r: SavedReport) => void; onEmail: (r: SavedReport) => void; onEdit: (r: SavedReport) => void; onDuplicate: (r: SavedReport) => void; onDelete: (r: SavedReport) => void
+}) {
+  const periodName = (p: string) => (p === 'custom' ? 'Custom' : REPORT_PERIODS.find(([v]) => v === p)?.[1] || p)
+  return (
+    <div className="panel">
+      <div className="phead">
+        <PanelTitle eyebrow={watchEyebrow()}>Saved reports</PanelTitle>
+        <span className="hint">times in the Argus timezone{CLOCK.tz ? ` (${CLOCK.tz})` : ''}</span>
+        <div className="tools"><button type="button" className="btn primary" onClick={onNew}>+ New report</button></div>
+      </div>
+      <p className="panel-intro">A report is a PDF of the hosts and sensors you pick, over a period: their uptime, the problems they had and their sensors' charts. Download it, email it now, or have it emailed every day, week or month.</p>
+      {list === null ? <Skeleton rows={3} cols={5} /> : list.length === 0 ? (
+        <div className="empty-state" style={{ padding: '28px 16px' }}>No saved reports yet.{canEdit ? ' Pick what one covers on New report, then save it there.' : ''}</div>
+      ) : (
+        <table className="utable mtable rep-table">
+          <thead><tr><th style={{ width: '22%' }}>Name</th><th>Covers</th><th>Period</th><th>Emailed</th><th>Last made</th><th style={{ textAlign: 'right' }}>Manage</th></tr></thead>
+          <tbody>
+            {list.map((r) => {
+              const sched = reportScheduleText(r.schedule)
+              return (
+                <tr key={r.id}>
+                  <td data-label="Name"><b>{r.name}</b>{r.owner_name && <div className="sub-line">saved by {r.owner_name}</div>}</td>
+                  <td data-label="Covers" className="mwrap">{r.covers || '-'}</td>
+                  <td data-label="Period" className="mwrap">{periodName(r.spec.period)}{r.period_label && <div className="sub-line">{r.period_label}</div>}</td>
+                  <td data-label="Emailed" className="mwrap">{sched ? <>{sched}{r.next ? <div className="sub-line">next {fmtWhen(r.next)}</div> : null}</> : <span className="set-src">on request</span>}</td>
+                  <td data-label="Last made">
+                    {r.last_error ? <span className="tag err rep-err" title={r.last_error}>not sent: {r.last_error}</span>
+                      : r.last_made_at ? <span className="okquiet">{fmtWhen(r.last_made_at)}</span> : <span className="set-src">never</span>}
+                  </td>
+                  <td data-label="Manage" style={{ textAlign: 'right' }}>
+                    <Kebab disabled={busy.endsWith(':' + r.id)} actions={[
+                      { label: busy === 'pdf:' + r.id ? 'Making the PDF…' : 'Download PDF', icon: kbIcon.report, onClick: () => onDownload(r) },
+                      ...(canEdit ? [
+                        { label: 'Email now…', icon: kbIcon.mail, onClick: () => onEmail(r) },
+                        { sep: true, label: '' },
+                        { label: 'Edit', icon: kbIcon.edit, onClick: () => onEdit(r) },
+                        { label: 'Duplicate', icon: kbIcon.folder, onClick: () => onDuplicate(r) },
+                        { sep: true, label: '' },
+                        { label: 'Delete', icon: uIcon.trash, danger: true, onClick: () => onDelete(r) },
+                      ] : []),
+                    ]} />
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
+// ReportLogoCard (Settings) sets the logo on the first page of every report.
+function ReportLogoCard() {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const file = useRef<HTMLInputElement>(null)
+  const [stamp, setStamp] = useState(0)
+  const [has, setHas] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    fetch('/api/reports/logo', { method: 'GET' }).then((r) => setHas(r.ok)).catch(() => setHas(false))
+  }, [stamp])
+  async function upload(f?: File) {
+    if (!f) return
+    if (f.size > 512 * 1024) { toast.error('The logo is too big: 512 KB at most'); return }
+    setBusy(true)
+    const res = await fetch('/api/reports/logo', { method: 'PUT', headers: { 'Content-Type': f.type || 'application/octet-stream' }, body: f }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the logo')); return }
+    toast.success('Logo saved')
+    setStamp(Date.now())
+  }
+  async function remove() {
+    if (!(await confirm({ title: 'Remove the logo', message: 'Reports are made without a logo from now on.', confirmLabel: 'Remove', danger: true }))) return
+    const res = await fetch('/api/reports/logo', { method: 'DELETE' }).catch(() => null)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not remove the logo')); return }
+    setStamp(Date.now())
+  }
+  return (
+    <section className="set-card">
+      <h3>Reports</h3>
+      <p className="set-note">The logo on the first page of every PDF report (Watch, Reports). A PNG or JPEG, 512 KB at most; it is drawn up to 170 by 54 points, keeping its shape.</p>
+      <div className="set-row">
+        <div className="set-head"><span className="flabel">Logo</span></div>
+        <div className="rep-logo">
+          {has ? <img src={`/api/reports/logo?t=${stamp}`} alt="Report logo" /> : <span className="muted">{has === null ? 'Loading…' : 'No logo: reports start with their title.'}</span>}
+        </div>
+        <input ref={file} type="file" accept="image/png,image/jpeg" hidden onChange={(e) => { upload(e.target.files?.[0]); e.target.value = '' }} />
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button type="button" className="btn" disabled={busy} onClick={() => file.current?.click()}>{busy ? 'Saving…' : has ? 'Change logo…' : 'Upload logo…'}</button>
+          {has && <button type="button" className="btn ghost" onClick={remove}>Remove</button>}
+        </div>
+      </div>
+    </section>
   )
 }
 

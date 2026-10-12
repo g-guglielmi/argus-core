@@ -317,11 +317,29 @@ func (s *Server) hostUptimes(ctx context.Context, hostIDs []string) map[string]h
 	if len(hostIDs) == 0 {
 		return out
 	}
+	itemOf := s.hostUptimeItems(ctx, hostIDs)
+	ids := make([]string, 0, len(itemOf))
+	for _, id := range itemOf {
+		ids = append(ids, id)
+	}
+	now := time.Now()
+	loc := s.mgr.Location()
+	window := windowDays(now, loc, uptimeWindowDays)
+	days := s.uptimeDaysFor(ctx, ids, now, loc)
+	for h, id := range itemOf {
+		d := days[id]
+		out[h] = hostUptime{D7: sumDays(d, window, 7).pct(), D30: sumDays(d, window, uptimeWindowDays).pct()}
+	}
+	return out
+}
+
+// hostUptimeItems is the sensor each host's uptime is measured on (hostUptimeItem: the same pick as
+// the host page), by host; hosts without one are left out.
+func (s *Server) hostUptimeItems(ctx context.Context, hostIDs []string) map[string]string {
 	want := map[string]bool{}
 	for _, h := range hostIDs {
 		want[h] = true
 	}
-	// One uptime sensor per host, the same pick as the host page (hostUptimeItem).
 	byHost := map[string][]zabbix.Item{}
 	if items, err := s.zbx.ItemsByKeys(ctx, append([]string{defaultMasterKey}, collectorMasterKeys...)); err == nil {
 		for _, it := range items {
@@ -346,22 +364,12 @@ func (s *Server) hostUptimes(ctx context.Context, hostIDs []string) map[string]h
 		}
 	}
 	itemOf := map[string]string{}
-	var ids []string
 	for h, items := range byHost {
 		if it, ok := hostUptimeItem(items, overrides[h]); ok {
 			itemOf[h] = it.ItemID
-			ids = append(ids, it.ItemID)
 		}
 	}
-	now := time.Now()
-	loc := s.mgr.Location()
-	window := windowDays(now, loc, uptimeWindowDays)
-	days := s.uptimeDaysFor(ctx, ids, now, loc)
-	for h, id := range itemOf {
-		d := days[id]
-		out[h] = hostUptime{D7: sumDays(d, window, 7).pct(), D30: sumDays(d, window, uptimeWindowDays).pct()}
-	}
-	return out
+	return itemOf
 }
 
 // uptimeDaysFor returns each item's checks per day of the window. Complete days come from

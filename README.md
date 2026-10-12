@@ -85,6 +85,12 @@ API key, and MAC):
   who acknowledged it, the note left on the sensor and the reason the device's collector gave, over
   24 h to 90 days, by probe and group too. Hidden sensors' incidents are left out unless you ask for
   them. Export the list as CSV.
+- **PDF reports** - tick the sites, hosts and sensors a report covers and a period (the last 7 or 30
+  days, last month, this month, or any days up to a year), and get a PDF: the uptime against your
+  target, the downtime and the problems, then each host with its days, its problems (who
+  acknowledged them and why) and its sensors' charts with their min, average, max and 95th
+  percentile. Save it, email it now, or have it emailed every day, week or month; your logo goes on
+  its first page.
 - **Host tabs** - a host's page has **Sensors**, **Device**, **History**, **Journal** and **Changes**,
   each with its count. **Device** shows what Argus reads from the device (model, serial, firmware or
   OS, IP, MAC, with copy buttons), your asset tag and location, its links ("Web UI", "UniFi
@@ -483,3 +489,6 @@ Foundation, either version 3 of the License, or (at your option) any later versi
 Because it is network-served software, the AGPL's §13 applies: if you run a modified
 version and let users interact with it over a network, you must also offer them the
 corresponding source.
+
+The PDF reports are set in Open Sans (Google, Apache License 2.0), bundled unmodified with its
+licence in [`argus/internal/report/fonts`](argus/internal/report/fonts).

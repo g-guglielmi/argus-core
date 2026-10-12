@@ -24,3 +24,4 @@ deploy/core/host/argus-backup  text eol=lf
 deploy/core/host/argus-restore text eol=lf
 *.timer     text eol=lf
 *.path      text eol=lf
+*.ttf binary

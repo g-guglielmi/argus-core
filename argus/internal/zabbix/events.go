@@ -20,10 +20,10 @@ type Event struct {
 	Hosts    []TargetHost `json:"hosts"`
 }
 
-// ProblemEvents returns the problem events that started since from, newest first, at most limit,
-// for the given hosts (all hosts when hostIDs is empty) and, when triggerIDs is set, those triggers
-// only. Closed ones carry their recovery event.
-func (c *Client) ProblemEvents(ctx context.Context, hostIDs, triggerIDs []string, from int64, limit int) ([]Event, error) {
+// ProblemEvents returns the problem events that started since from (and before till, unless it is
+// 0), newest first, at most limit, for the given hosts (all hosts when hostIDs is empty) and, when
+// triggerIDs is set, those triggers only. Closed ones carry their recovery event.
+func (c *Client) ProblemEvents(ctx context.Context, hostIDs, triggerIDs []string, from, till int64, limit int) ([]Event, error) {
 	params := map[string]any{
 		"output":      []string{"eventid", "clock", "name", "severity", "r_eventid", "objectid"},
 		"selectHosts": []string{"hostid", "name", "status"},
@@ -34,6 +34,9 @@ func (c *Client) ProblemEvents(ctx context.Context, hostIDs, triggerIDs []string
 		"sortfield":   []string{"clock", "eventid"},
 		"sortorder":   "DESC",
 		"limit":       limit,
+	}
+	if till > 0 {
+		params["time_till"] = till
 	}
 	if len(hostIDs) > 0 {
 		params["hostids"] = hostIDs

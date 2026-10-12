@@ -674,6 +674,22 @@ CREATE TABLE IF NOT EXISTS site_maps (
   enabled_at INTEGER NOT NULL DEFAULT 0,
   pins       TEXT NOT NULL DEFAULT '{}'
 );
+-- Saved PDF reports (reports.go): what they cover and when they are emailed, as JSON, and how the
+-- last run went.
+CREATE TABLE IF NOT EXISTS reports (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  name         TEXT NOT NULL,
+  spec         TEXT NOT NULL DEFAULT '{}',
+  schedule     TEXT NOT NULL DEFAULT '{}',
+  owner_id     INTEGER NOT NULL DEFAULT 0,
+  created_at   INTEGER NOT NULL DEFAULT 0,
+  updated_at   INTEGER NOT NULL DEFAULT 0,
+  last_made_at INTEGER NOT NULL DEFAULT 0,
+  last_sent_at INTEGER NOT NULL DEFAULT 0,
+  last_error   TEXT NOT NULL DEFAULT '',
+  last_run_at  INTEGER NOT NULL DEFAULT 0,
+  last_try_at  INTEGER NOT NULL DEFAULT 0
+);
 `); err != nil {
 		return err
 	}

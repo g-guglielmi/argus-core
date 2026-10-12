@@ -144,9 +144,37 @@ func SimpleMessage(from string, to []string, subject, text, html string) []byte 
 	return []byte(b.String())
 }
 
+// AttachmentMessage builds a multipart/mixed email: the plain + HTML body, then one file attached
+// (a report's PDF).
+func AttachmentMessage(from string, to []string, subject, text, html, filename, contentType string, data []byte) []byte {
+	var b strings.Builder
+	b.WriteString("From: Argus <" + from + ">\r\n")
+	b.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
+	b.WriteString("Subject: " + mime.QEncoding.Encode("UTF-8", subject) + "\r\n")
+	b.WriteString("MIME-Version: 1.0\r\n")
+	b.WriteString("Content-Type: multipart/mixed; boundary=\"" + mixBoundary + "\"\r\n\r\n")
+	b.WriteString("--" + mixBoundary + "\r\n")
+	b.WriteString("Content-Type: multipart/alternative; boundary=\"" + altBoundary + "\"\r\n\r\n")
+	b.WriteString("--" + altBoundary + "\r\n")
+	b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
+	b.WriteString(text)
+	b.WriteString("\r\n\r\n--" + altBoundary + "\r\n")
+	b.WriteString("Content-Type: text/html; charset=UTF-8\r\n\r\n")
+	b.WriteString(html)
+	b.WriteString("\r\n--" + altBoundary + "--\r\n")
+	b.WriteString("\r\n--" + mixBoundary + "\r\n")
+	name := mime.QEncoding.Encode("UTF-8", filename)
+	b.WriteString("Content-Type: " + contentType + "; name=\"" + name + "\"\r\nContent-Transfer-Encoding: base64\r\n")
+	b.WriteString("Content-Disposition: attachment; filename=\"" + name + "\"\r\n\r\n")
+	b.WriteString(wrap76(base64.StdEncoding.EncodeToString(data)))
+	b.WriteString("\r\n--" + mixBoundary + "--\r\n")
+	return []byte(b.String())
+}
+
 const (
 	altBoundary = "argus-alt-boundary-4f2c9a"
 	relBoundary = "argus-rel-boundary-7b1e30"
+	mixBoundary = "argus-mix-boundary-c83d51"
 )
 
 // buildMessage assembles the email: a multipart/alternative (plain + styled HTML), wrapped in a

@@ -486,7 +486,7 @@ sensor's alerts, reminders and RESOLVED in every channel (`note` / `note_by` in 
 notifier clears it once the sensor has had no open problem for the alert delay (at least the hold
 grace), so a blip keeps it, and only when it could read every open problem's trigger. Cleared notes
 stay for the incident history, which shows the note an incident's sensor had while it was open;
-they're pruned with the Argus incidents (120 days).
+they're pruned with the Argus incidents (a year).
 
 ## 7b. Uptime and incident history
 
@@ -517,7 +517,7 @@ Zabbix keeps every problem event with the recovery that closed it; the problems 
 (a sensor that stopped collecting, an interface that stopped answering) exist only while they are
 open, so the notifier logs them in `argus_incidents` as they open and close (only from a complete
 lookup, so a failed read never closes them; the reason is kept from the moment they opened; closed
-ones kept 120 days). A host card ends with its last 30 days, folded (`GET
+ones kept a year, for the reports of section 7k). A host card ends with its last 30 days, folded (`GET
 /api/hosts/{id}/incidents?days=30`), and a drilled-down sensor with its own history, open
 (`&items=<its id, or every channel of its group>`: Zabbix is asked for those sensors' triggers only,
 so a busy host's other incidents can't crowd them out); the **History** page lists the fleet's, 24 h / 7 / 30 / 90 days,
@@ -847,6 +847,57 @@ on or off; `PUT /api/maps/{probe}/layout` (`{"pins": {"<id>": {"dx", "dy"}}}`, a
 to 1000) keeps the moved devices. A removed probe takes its map along. Per-site visibility applies: a
 user sees only their sites' probes and, on a map, only their hosts. The models and addresses on the
 devices are read every 10 minutes at most.
+
+## 7k. PDF reports
+
+A report is a PDF of the sites, hosts and sensors someone picked, over a period (`reports.go` works
+the figures out, `reportsapi.go` serves, saves, emails and schedules, `internal/report` draws).
+**Watch, Reports** has two tabs: **New report**, a tree of sites, hosts and sensors to tick (a site
+covers every host in it, now and later, but not Argus's own probe host unless it is picked; a host
+its uptime and problems; a sensor its chart, a group's channels together) beside the report's name,
+period, uptime target, whether maintenance is left out, an outline of what it holds and about how
+many pages; and **Saved reports**. The draft stays in the browser between visits, and **Add to a
+report** in a site's, host's or sensor's row menu adds to it where the user is.
+
+- **Period** (`reportPeriod`, Argus timezone): the 7 or 30 whole days before the day it is made, last
+  calendar month, this month up to now, or from one day to another (both included; a year at most).
+- **Uptime**: each covered host's availability sensor (the same pick as the host page and the status
+  pages, `hostUptimeItems`), read hour by hour from Zabbix's trends over the period, each hour
+  weighted by its checks; downtime is each hour's share of checks that found it down. With
+  maintenance left out, every hour a window covering the host overlaps (`occurrencesBetween`, from
+  the windows enabled now) counts as neither up nor down. The strip has a cell per day (per week past
+  two months), green with no downtime, amber at or over the target, red under it (99 % without one).
+- **Problems**: every problem at Warning and above that overlaps the period, on any host in the
+  report (`collectIncidentsTill`: Zabbix's events since a month before the period up to its end, and
+  Argus's own incidents, kept a year for this), with how long it lasted and who acknowledged it with
+  their note (else the note on its sensor); 40 per host, then a count.
+- **Sensors**: up to 3 days, raw history; longer, hourly trends (each hour's average drawn, min and
+  max from the hours' extremes, the 95th percentile of the averages). A group's channels share a
+  chart when they share units, one chart per kind of units otherwise, and its up/down channels shade
+  the time they read down; a lone up/down sensor is drawn as up with the time down in red. The chart
+  is banded by the first channel's own thresholds (`itemThresholdsFrom`: the line past a threshold
+  takes its colour, dashed lines with a tag on the axis); a threshold more than twice the highest
+  value away is left out so the line isn't flattened. Time in warning and in error is how long the
+  sensor's own alerts were open within the period. 60 sensors are charted at most.
+- **Page 1**: the logo (Settings, Reports: a PNG or JPEG of 512 KB at most, kept in `app_meta`, drawn
+  up to 170 by 54 points), what it covers, when it was made and for whom; the title and period; the
+  tiles (uptime, under target, downtime, problems); the hosts table (more than 12 hosts: those at
+  100 % with no problems fold into one line) and the sensors table; a footnote on how the figures are
+  read. Every page has the title, the period and "page N of M" at its foot.
+- **Drawing**: A4 in points with gopdf (MIT), vectors only, set in Open Sans (Apache 2.0, embedded as
+  the subset a report uses), so the distroless image needs no browser and the text can be searched
+  and copied. Two reports are made at a time at most, 2 minutes each.
+- **Saving and email**: `reports` holds each saved report's spec and schedule (JSON), who saved it
+  last (its owner) and how its last run went. Anyone signed in makes the PDF of a report, saved or
+  not, with what they can see (`GET /api/reports/{id}/pdf`, `POST /api/reports/pdf`); admins and
+  helpdesk save, change, delete and email them (`POST`, `PUT`, `DELETE /api/reports[/{id}]`, `POST
+  /api/reports/{id}/email`, `POST /api/reports/email`), logged in Changes under Reports. A saved
+  report is listed only to those who can see everything it covers. Email goes through the first
+  enabled email channel, the PDF attached. A schedule sends every day, every week on a weekday or
+  every month on a day (1 to 28, or the last), at a time: checked every minute, made with what its
+  owner can see now (a disabled or deleted owner stops it, saying so), a failed send tried again every
+  half hour until six hours past its time, and the error shown on the list. Saving a report starts its
+  schedule from then, so a time already past today waits for the next one.
 
 ---
 

@@ -147,16 +147,16 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   dragged by hand stay put for everyone; a list of the same tree on phones. Off per site until an admin
   turns it on (DESIGN 7j). Core v0.8.7. Beyond UniFi it grows with the upstream sources of
   section G. - _(FE+BE)_ M
-- [ ] **PDF reports** - pick the hosts and sensors by hand (search, tree checkboxes, a site or a
-  group as a shortcut) and a period (last 7 or 30 days, a calendar month, custom), and get a PDF: a
-  cover (site, period, who made it, a logo set in Settings), then per host its availability and the
-  problems of the period, and per sensor its chart, min / avg / max and uptime % with the incidents.
-  Report definitions saved, to make the same report again next month. Built from what Argus already
-  keeps (trends, incidents, uptime). **Rendered on the core** (user's call, 2026-10-08), so a report
-  can be **emailed**: downloaded or sent on demand, and a saved definition sent **on a schedule**
-  (monthly, weekly) to chosen addresses through the email settings Argus already has. The charts come
-  from the core's own renderer (the banded PNGs alerts already carry), laid out by a permissively
-  licensed Go PDF library, so the distroless image needs no browser. - _(FE+BE)_ L
+- [x] **PDF reports** - Watch, Reports: a tree of sites, hosts and sensors to tick (search; a site
+  or host adds its uptime and problems, a sensor its chart; **Add to a report** in their row menus), a
+  period (last 7 or 30 days, last month, this month, from one day to another) and an uptime target,
+  maintenance left out or not. Page 1 sums it up (uptime, hosts under the target, downtime,
+  problems; a hosts table and a sensors table with min / avg / max / 95th and time in warning and in
+  error), then a section per host: uptime and a strip of its days, its problems with who acknowledged
+  them, and its sensors' charts full width, banded by their thresholds. Saved reports are emailed on
+  request or every day, week or month through the first email channel; a logo set in Settings. Drawn
+  on the core in vectors (gopdf, MIT; Open Sans, Apache 2.0), no browser in the image (DESIGN 7k).
+  Later: a previous-period comparison, business hours, an archive of the PDFs sent. - _(FE+BE)_ L
 
 ### E. Auth / account gaps
 - [x] **Self-service email password reset** (single-use emailed link; reuses the email channel) - v0.3.3
@@ -409,7 +409,7 @@ v0.4.56-v0.4.58) · plus the §14 lifecycle line (OS patching, core Zabbix minor
    vSphere, Windows agent): build each class when a production site actually needs it, lab-first as
    always.
 3. **Scale & production readiness (§G)** - sizing pass + server-side census before the
-   ~6000-sensor deployment, and **PDF reports** (§D).
+   ~6000-sensor deployment. ~~**PDF reports** (§D)~~ ✅.
 4. **Zabbix 8.0 LTS** (§G) - before 7.0's full support ends (around mid-2027).
 5. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
 

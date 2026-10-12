@@ -13,6 +13,26 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Added:**
+- **PDF reports** (Watch, Reports): tick the sites, hosts and sensors a report covers, pick a period
+  (the last 7 or 30 days, last month, this month, or from one day to another) and an uptime target,
+  and download the PDF. Page 1 sums it up: the uptime, the hosts under the target, the downtime and
+  the problems, a table of the hosts and one of the sensors (min, average, max, 95th percentile, time
+  in warning and in error). Then each host has its section: its uptime and a strip of its days, the
+  problems it had (when, how long, who acknowledged them and their note), and its sensors' charts,
+  coloured past their thresholds like the app's. Maintenance windows can be left out of the uptime.
+- Reports can be saved, emailed now, or emailed by themselves every day, week or month at a set time
+  (through the first email channel under Notifications); the Saved reports list says when each was
+  last made and why a send failed. Sites, hosts and sensors have **Add to a report** in their menu.
+  Anyone can make a report of what they can see; admins and helpdesk save and email them, and a
+  scheduled one covers what the person who saved it can see.
+- A logo for the reports' first page (Settings, Reports).
+
+**Changed:**
+- The incidents Argus raises itself (a sensor that stopped collecting, an interface that stopped
+  answering) and the notes left on sensors are kept a year instead of 120 days, so a report can cover
+  a year.
+
 ## [0.8.10] - 2026-10-12
 
 Paths that follow the cables: a UniFi device sits under the switch whose ports list it, and nothing
