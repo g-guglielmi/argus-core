@@ -5,7 +5,7 @@
 // token-based classes in theme.css (.btn, .card, .field, .banner, .badge) so the same
 // widgets look and behave the same across every view, instead of being rebuilt ad-hoc
 // with inline styles and hardcoded colors.
-import { Component, useEffect, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type ErrorInfo, type InputHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type SelectHTMLAttributes } from 'react'
+import { Component, useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type ErrorInfo, type InputHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type SelectHTMLAttributes } from 'react'
 import { createPortal } from 'react-dom'
 
 // copyToClipboard works over HTTPS (navigator.clipboard) and falls back to execCommand so Copy
@@ -87,6 +87,8 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
 
 export type ComboOption = { value: string; label: string; hint?: string }
 
+const COMBO_MAX_H = 240 // the option list's tallest (px), as .combo-list says
+
 // Combobox is a searchable single-select: an .input-skinned box that filters its options as you type,
 // with arrow/enter/escape keys and click-to-pick. For lists that have grown past a comfortable native
 // <select> (the device-class catalog). Options are shown in the order passed; the caller sorts.
@@ -100,7 +102,7 @@ export function Combobox({ value, onChange, options, placeholder = 'Search…', 
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
-  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null)
+  const [rect, setRect] = useState<{ top?: number; bottom?: number; left: number; width: number; maxHeight: number } | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
@@ -108,13 +110,28 @@ export function Combobox({ value, onChange, options, placeholder = 'Search…', 
   const q = query.trim().toLowerCase()
   const filtered = q ? options.filter((o) => o.label.toLowerCase().includes(q) || (o.hint || '').toLowerCase().includes(q)) : options
 
-  // The option list is portaled to <body> and fixed-positioned under the input, so it is never
-  // clipped by a scroll container or modal. Reposition it on scroll/resize while open, and close
-  // when a click lands outside both the input and the (portaled) list.
-  const place = () => { const r = inputRef.current?.getBoundingClientRect(); if (r) setRect({ top: r.bottom + 3, left: r.left, width: r.width }) }
+  // The option list is portaled to <body> and fixed-positioned by the input, so it is never clipped by
+  // a scroll container or modal. It opens below the input, or above it when it doesn't fit below and
+  // there is more room above (the last rows of a long list, like a discovery scan's last host), and
+  // never runs past the window: its height is capped to the room on its side. Measured again once the
+  // list has rendered (its real height) and on scroll/resize while open; a click outside both the
+  // input and the (portaled) list closes it.
+  const place = () => {
+    const r = inputRef.current?.getBoundingClientRect()
+    if (!r) return
+    const gap = 3, margin = 8
+    const below = window.innerHeight - r.bottom - gap - margin
+    const above = r.top - gap - margin
+    const want = Math.min(COMBO_MAX_H, listRef.current?.scrollHeight ?? COMBO_MAX_H)
+    const next = want <= below || below >= above
+      ? { top: r.bottom + gap, left: r.left, width: r.width, maxHeight: Math.min(COMBO_MAX_H, below) }
+      : { bottom: window.innerHeight - r.top + gap, left: r.left, width: r.width, maxHeight: Math.min(COMBO_MAX_H, above) }
+    setRect((p) => (p && p.top === next.top && p.bottom === next.bottom && p.left === next.left && p.width === next.width && p.maxHeight === next.maxHeight ? p : next))
+  }
+  const shown = rect !== null
+  useLayoutEffect(() => { if (open) place() }, [open, shown, filtered.length]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!open) return
-    place()
     const reposition = () => place()
     const onDoc = (e: MouseEvent) => { const t = e.target as Node; if (rootRef.current?.contains(t) || listRef.current?.contains(t)) return; setOpen(false); setQuery('') }
     window.addEventListener('scroll', reposition, true)
@@ -153,7 +170,7 @@ export function Combobox({ value, onChange, options, placeholder = 'Search…', 
       />
       <span className="combo-caret" aria-hidden="true">▾</span>
       {open && rect && createPortal(
-        <ul className="combo-list" role="listbox" ref={listRef} style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width }}>
+        <ul className="combo-list" role="listbox" ref={listRef} style={{ position: 'fixed', top: rect.top, bottom: rect.bottom, left: rect.left, width: rect.width, maxHeight: rect.maxHeight }}>
           {filtered.length === 0 && <li className="combo-empty">{emptyText}</li>}
           {filtered.map((o, i) => (
             <li

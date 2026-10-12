@@ -29,6 +29,9 @@ GitHub Release from the matching section below.
 - A sensor's reason (on hover and in alerts) showed the start of the collector's raw data whenever a
   processing step failed ("Preprocessing failed for: {"error": "", "urls": ...}"); it now shows what
   failed.
+- The class picker (a discovery scan's rows, Add device, a host's class) opened its list off the
+  bottom of the window on the last rows: it now opens above when there is more room there, and never
+  runs past the window.
 
 ## [0.8.8] - 2026-10-12
 
