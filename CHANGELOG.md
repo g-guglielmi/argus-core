@@ -13,6 +13,11 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.8.8] - 2026-10-12
+
+The probes' minute report to Argus works again, and Argus now flags a probe whose report stops.
+Update the probes to **r29** (released 2026-10-12) and the core; the updater stays on 0.2.12.
+
 **Added:**
 - **A probe that stops reporting to Argus is flagged.** Every probe reports to Argus once a minute
   (its version, what it can do, its Zabbix process counts and CPU), and that report is also how it
