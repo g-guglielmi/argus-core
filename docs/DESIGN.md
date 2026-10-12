@@ -891,11 +891,17 @@ report** in a site's, host's or sensor's row menu adds to it where the user is.
   last (its owner) and how its last run went. Anyone signed in makes the PDF of a report, saved or
   not, with what they can see (`GET /api/reports/{id}/pdf`, `POST /api/reports/pdf`); admins and
   helpdesk save, change, delete and email them (`POST`, `PUT`, `DELETE /api/reports[/{id}]`, `POST
-  /api/reports/{id}/email`, `POST /api/reports/email`), logged in Changes under Reports. A saved
-  report is listed only to those who can see everything it covers. Email goes through the first
-  enabled email channel, the PDF attached. A schedule sends every day, every week on a weekday or
-  every month on a day (1 to 28, or the last), at a time: checked every minute, made with what its
-  owner can see now (a disabled or deleted owner stops it, saying so), a failed send tried again every
+  /api/reports/{id}/email`, `POST /api/reports/email`), logged in Changes under Reports.
+- **Per site** (one Argus serving several customers): an account limited to some sites lists, makes,
+  emails, changes and deletes only the saved reports whose every site, host and sensor is inside its
+  sites (`reportVisible`); any other report, one that also covers another site or a host Argus can't
+  place any more, answers 404 as if it didn't exist. What it saves or makes can't reach outside its
+  sites, and every PDF is drawn with only the hosts the one making it can see. An account with no
+  sites set sees every site, here as everywhere. The New report draft is kept per account in the
+  browser, so a shared browser never starts a customer from someone else's picks.
+- **Email** goes through the first enabled email channel, the PDF attached. A schedule sends every
+  day, every week on a weekday or every month on a day (1 to 28, or the last), at a time: checked
+  every minute, made with what its owner can see now (a disabled or deleted owner stops it, saying so), a failed send tried again every
   half hour until six hours past its time, and the error shown on the list. Saving a report starts its
   schedule from then, so a time already past today waits for the next one.
 

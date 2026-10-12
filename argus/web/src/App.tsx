@@ -1996,8 +1996,8 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   // The report on Reports' New report tab, kept in this browser: "Add to a report" in a row's menu adds
   // to it where the user is, and says so.
   const toast = useToast()
-  const [reportDraft, setReportDraftState] = useState<ReportDraft>(loadReportDraft)
-  function setReportDraft(d: ReportDraft) { setReportDraftState(d); keepReportDraft(d) }
+  const [reportDraft, setReportDraftState] = useState<ReportDraft>(() => loadReportDraft(me.email))
+  function setReportDraft(d: ReportDraft) { setReportDraftState(d); keepReportDraft(me.email, d) }
   function addToReport(a: ReportAdd, label: string) {
     setReportDraft(addToReportDraft(reportDraft, a))
     toast.success(`${label} is in the report: open Watch, Reports to make it`)
@@ -10638,7 +10638,9 @@ const REPORT_PERIOD_NOTES: Record<string, string> = {
   this_month: 'From the 1st of the month up to the moment it is made.',
   custom: 'The days you pick, both included: a year at most.',
 }
-const REPORT_DRAFT_KEY = 'argus-report-draft'
+// Each account keeps its own draft: a browser shared by an MSP's technician and a customer limited to
+// one site never starts the customer from the technician's picks (other customers' sensor names).
+const reportDraftKey = (email: string) => 'argus-report-draft:' + email.toLowerCase()
 
 function newReportDraft(): ReportDraft {
   return {
@@ -10648,17 +10650,18 @@ function newReportDraft(): ReportDraft {
   }
 }
 
-function loadReportDraft(): ReportDraft {
+function loadReportDraft(email: string): ReportDraft {
   const d = newReportDraft()
   try {
-    const v = JSON.parse(localStorage.getItem(REPORT_DRAFT_KEY) || 'null')
+    localStorage.removeItem('argus-report-draft') // the one draft every account shared before
+    const v = JSON.parse(localStorage.getItem(reportDraftKey(email)) || 'null')
     if (v && v.spec) return { ...d, ...v, spec: { ...d.spec, ...v.spec }, schedule: { ...d.schedule, ...v.schedule } }
   } catch { /* none kept, or unreadable */ }
   return d
 }
 
-function keepReportDraft(d: ReportDraft) {
-  try { localStorage.setItem(REPORT_DRAFT_KEY, JSON.stringify(d)) } catch { /* private window: the draft just isn't kept */ }
+function keepReportDraft(email: string, d: ReportDraft) {
+  try { localStorage.setItem(reportDraftKey(email), JSON.stringify(d)) } catch { /* private window: the draft just isn't kept */ }
 }
 
 const sameReportSensor = (a: ReportSensorPick, b: ReportSensorPick) => a.host_id === b.host_id && a.items[0] === b.items[0]

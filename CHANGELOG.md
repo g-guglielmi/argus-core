@@ -26,6 +26,9 @@ GitHub Release from the matching section below.
   last made and why a send failed. Sites, hosts and sensors have **Add to a report** in their menu.
   Anyone can make a report of what they can see; admins and helpdesk save and email them, and a
   scheduled one covers what the person who saved it can see.
+- Reports are kept apart per site, for one Argus serving several customers: an account limited to
+  some sites sees and handles only the saved reports that cover nothing outside its sites, and can't
+  save one that does.
 - A logo for the reports' first page (Settings, Reports).
 
 **Changed:**
