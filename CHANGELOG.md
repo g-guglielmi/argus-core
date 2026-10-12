@@ -13,6 +13,11 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.8.10] - 2026-10-12
+
+Paths that follow the cables: a UniFi device sits under the switch whose ports list it, and nothing
+is matched across sites. Also UniFi switches and gateways lose a stray "Connected clients" row.
+
 **Fixed:**
 - A UniFi device could be placed on the wrong switch, and its path with it: the controller's record
   of a device's own uplink can name a switch it isn't plugged into (on a site with Flex Minis an
