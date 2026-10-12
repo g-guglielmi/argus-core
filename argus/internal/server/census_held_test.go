@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"argus/internal/store"
 	"argus/internal/zabbix"
@@ -62,6 +63,11 @@ func censusFixture(t *testing.T, ping, running string, open map[string]string) *
 				"value_type": "3", "status": "0", "state": "0", "hosts": []map[string]string{{"hostid": s.host, "name": hostName[s.host], "status": "0"}}}
 		}
 		switch req.Method {
+		case "hostinterface.get": // the machine's SNMP stops answering when it is down
+			if ping == "0" {
+				result = []map[string]any{{"interfaceid": "9", "hostid": "10", "type": "2", "error": "Timeout", "errors_from": "900",
+					"hosts": []map[string]string{{"hostid": "10", "name": "adguard1", "status": "0"}}}}
+			}
 		case "problem.get":
 			var out []map[string]string
 			for item, name := range open {
@@ -120,6 +126,10 @@ func censusFixture(t *testing.T, ping, running string, open map[string]string) *
 	t.Cleanup(func() { _ = st.Close() })
 	s := &Server{st: st, zbx: zabbix.New(mock.URL, "test-token"), logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	s.census = newCensusCache(s.buildCensus)
+	// The read-only Argus-raised problems are shared for a few seconds; this fixture's Zabbix is new.
+	synthCache.mu.Lock()
+	synthCache.at = time.Time{}
+	synthCache.mu.Unlock()
 	return s
 }
 
@@ -144,8 +154,8 @@ func TestCensusHeld(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := byItem(rows)
-	if p := got["100"]; p.State != "error" || p.HeldBy != nil || p.Holds != 3 {
-		t.Fatalf("ping row: state %s held %+v holds %d (want error, not held, holding 3)", p.State, p.HeldBy, p.Holds)
+	if p := got["100"]; p.State != "error" || p.HeldBy != nil || p.Holds != 4 {
+		t.Fatalf("ping row: state %s held %+v holds %d (want error, not held, holding 4)", p.State, p.HeldBy, p.Holds)
 	}
 	for _, id := range []string{"103", "101", "104"} {
 		h := got[id].HeldBy
@@ -155,6 +165,13 @@ func TestCensusHeld(t *testing.T) {
 	}
 	if sw := got["203"]; sw.State != "warning" || sw.HeldBy != nil {
 		t.Fatalf("another host's warning is not held: %+v", sw)
+	}
+	// Its SNMP not responding is on no sensor: its own row, held by the ping too (the host page shows it).
+	if h := s.problemHolds(t.Context()).of(synthInterface+"9", nil); h == nil || h.ItemID != "100" || h.Name != "Reachable (ICMP)" {
+		t.Fatalf("SNMP not responding should be held by the ping, got %+v", h)
+	}
+	if h := s.problemHolds(t.Context()).of("e103", []string{"103"}); h == nil || h.ItemID != "100" {
+		t.Fatalf("the loss problem should be held by the ping, got %+v", h)
 	}
 
 	// The pills count the ping and the switch; the three held apart. The held rows still come with
@@ -169,8 +186,8 @@ func TestCensusHeld(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp.Counts["error"] != 1 || resp.Counts["warning"] != 1 || resp.Counts["held"] != 3 || len(resp.Rows) != 5 {
-		t.Fatalf("counts %v with %d rows (want error 1, warning 1, held 3, 5 rows)", resp.Counts, len(resp.Rows))
+	if resp.Counts["error"] != 1 || resp.Counts["warning"] != 1 || resp.Counts["held"] != 4 || len(resp.Rows) != 6 {
+		t.Fatalf("counts %v with %d rows (want error 1, warning 1, held 4, 6 rows)", resp.Counts, len(resp.Rows))
 	}
 
 	// The service stopped, the machine answers: the collector holds the DNS check, not the ping's loss.

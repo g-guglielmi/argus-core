@@ -29,6 +29,10 @@ GitHub Release from the matching section below.
 - A sensor's reason (on hover and in alerts) showed the start of the collector's raw data whenever a
   processing step failed ("Preprocessing failed for: {"error": "", "urls": ...}"); it now shows what
   failed.
+- A device whose ping is down stayed red in the tree after its ping was acknowledged: its packet
+  loss and "SNMP not responding" counted as open problems, though the ping's outage holds them. The
+  host now reads as acknowledged (and stops pulsing) once its master is, and its problems list shows
+  the held ones muted, "held: Reachable (ICMP) is down".
 - The class picker (a discovery scan's rows, Add device, a host's class) opened its list off the
   bottom of the window on the last rows: it now opens above when there is more room there, and never
   runs past the window.

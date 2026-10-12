@@ -1015,7 +1015,13 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   holds (not one merely yet to report, so rows don't flicker) carries `held_by` (the master's host,
   item and label), the master's row `holds` (how many), and `/api/census` counts them as `held`
   instead of their state. The lists show the master and fold the held rows behind a **Show held**
-  toggle. A status page folds them into the master's row (`foldHeld`, below).
+  toggle. A status page folds them into the master's row (`foldHeld`, below). A held row is its
+  master's, not one more open problem: the tree's host dot (`unackedHosts` / `ackedHosts`) leaves it
+  out, so a device whose ping is down and acknowledged reads as acknowledged (washed red, no pulse)
+  instead of red because its packet loss and SNMP are down too; and the host page's problems list
+  (`held_by` on `/api/hosts/{id}/problems`, from the census rows, where a problem on no sensor has a
+  row keyed by its event) shows a held one muted, "held: Reachable (ICMP) is down", outside the open
+  count.
 - **Argus-raised problems:** Zabbix raises no problem when monitoring itself stops, so Argus adds its
   own, shaped like Zabbix problems (event ids `argus-unsupported-<item>` / `argus-interface-<iface>`)
   and merged into the notifier's list, the Overview and the host page: a sensor **not supported** on

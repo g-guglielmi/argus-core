@@ -150,26 +150,34 @@ func TestServiceContainerSensors(t *testing.T) {
 	}
 }
 
-// A host's tree dot pulses only for a warning or error nobody has acknowledged.
+// A host's tree dot pulses only for a warning or error nobody has acknowledged, and one a down master
+// holds is that master's: host 6's ping is acknowledged and its packet loss is held by it.
 func TestUnackedHosts(t *testing.T) {
+	ping := &heldRef{HostID: "6", ItemID: "60", Name: "Reachable (ICMP)"}
 	got := unackedHosts([]sensorRow{
 		{HostID: "1", State: "error"}, {HostID: "2", State: "acked"}, {HostID: "3", State: "warning"},
 		{HostID: "4", State: "ok"}, {HostID: "5", State: "paused"}, {HostID: "2", State: "hidden"},
+		{HostID: "6", ItemID: "60", State: "acked"}, {HostID: "6", ItemID: "61", State: "error", HeldBy: ping},
 	})
-	if !got["1"] || !got["3"] || got["2"] || got["4"] || got["5"] {
+	if !got["1"] || !got["3"] || got["2"] || got["4"] || got["5"] || got["6"] {
 		t.Fatalf("unacked hosts = %v, want only 1 and 3", got)
 	}
 }
 
 // A host reads as acknowledged only when everything wrong on it is: an acked sensor and no open one.
 func TestAckedHosts(t *testing.T) {
+	ping := &heldRef{HostID: "6", ItemID: "60", Name: "Reachable (ICMP)"}
 	got := ackedHosts([]sensorRow{
 		{HostID: "1", State: "acked"}, {HostID: "1", State: "ok"},
 		{HostID: "2", State: "acked"}, {HostID: "2", State: "warning"},
 		{HostID: "3", State: "error"}, {HostID: "4", State: "ok"}, {HostID: "5", State: "held"},
+		// A down device whose ping is acknowledged: its other errors are the ping's, so it is handled.
+		{HostID: "6", ItemID: "60", State: "acked"}, {HostID: "6", ItemID: "61", State: "error", HeldBy: ping},
+		// Held, but nothing on it acknowledged (a host behind a down switch): not acknowledged either.
+		{HostID: "7", ItemID: "70", State: "error", HeldBy: &heldRef{HostID: "8", ItemID: "80", Via: "upstream"}},
 	})
-	if !got["1"] || got["2"] || got["3"] || got["4"] || got["5"] {
-		t.Fatalf("acked hosts = %v, want only 1", got)
+	if !got["1"] || got["2"] || got["3"] || got["4"] || got["5"] || !got["6"] || got["7"] {
+		t.Fatalf("acked hosts = %v, want only 1 and 6", got)
 	}
 }
 

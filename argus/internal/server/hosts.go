@@ -272,11 +272,12 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 }
 
 // unackedHosts marks the hosts with a sensor in warning or error that nobody has acknowledged (the
-// census puts an acknowledged one in "acked").
+// census puts an acknowledged one in "acked"). A sensor a down master holds doesn't count: its master
+// is the incident, so acknowledging the master (a device's ping) handles the host.
 func unackedHosts(rows []sensorRow) map[string]bool {
 	out := map[string]bool{}
 	for _, r := range rows {
-		if r.State == "error" || r.State == "warning" {
+		if (r.State == "error" || r.State == "warning") && r.HeldBy == nil {
 			out[r.HostID] = true
 		}
 	}
@@ -284,15 +285,16 @@ func unackedHosts(rows []sensorRow) map[string]bool {
 }
 
 // ackedHosts marks the hosts whose sensors in trouble are all acknowledged: one "acked" at least and
-// none in warning or error. A census that couldn't be read marks none, so no host reads as handled
-// by mistake.
+// none in warning or error, save the ones a down master holds (a device whose acknowledged ping is
+// down reads as handled, not as red because its packet loss is high too). A census that couldn't be
+// read marks none, so no host reads as handled by mistake.
 func ackedHosts(rows []sensorRow) map[string]bool {
 	acked, open := map[string]bool{}, map[string]bool{}
 	for _, r := range rows {
-		switch r.State {
-		case "acked":
+		switch {
+		case r.State == "acked":
 			acked[r.HostID] = true
-		case "error", "warning":
+		case (r.State == "error" || r.State == "warning") && r.HeldBy == nil:
 			open[r.HostID] = true
 		}
 	}
@@ -310,6 +312,9 @@ type problemView struct {
 	Acknowledged bool     `json:"acknowledged"`
 	AckUntil     *int64   `json:"ack_until,omitempty"`
 	ItemIDs      []string `json:"item_ids"`
+	// HeldBy is the down master whose outage holds this problem's alerts (master.go): the host page
+	// shows it as held, not as one more thing to handle.
+	HeldBy *heldRef `json:"held_by,omitempty"`
 }
 
 func (s *Server) handleHostProblems(w http.ResponseWriter, r *http.Request) {
@@ -351,6 +356,7 @@ func (s *Server) handleHostProblems(w http.ResponseWriter, r *http.Request) {
 		problems = append(problems, p)
 	}
 
+	held := s.problemHolds(ctx)
 	out := make([]problemView, 0, len(problems))
 	for _, p := range problems {
 		sev := atoi(p.Severity)
@@ -369,9 +375,40 @@ func (s *Server) handleHostProblems(w http.ResponseWriter, r *http.Request) {
 			pv.Acknowledged = true
 			pv.AckUntil = u
 		}
+		pv.HeldBy = held.of(p.EventID, ids)
 		out = append(out, pv)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// problemHolds says which problems a down master holds, from the cached census rows (markHeld): a
+// problem on sensors by their rows, one on no sensor (an agent or SNMP that stopped answering) by
+// its own row, which the census keys by the problem's event id.
+type problemHolds map[string]*heldRef
+
+func (s *Server) problemHolds(ctx context.Context) problemHolds {
+	h := problemHolds{}
+	if rows, err := s.sensorCensus(ctx); err == nil {
+		for _, r := range rows {
+			if r.HeldBy != nil {
+				h[r.ItemID] = r.HeldBy
+			}
+		}
+	}
+	return h
+}
+
+// of is the master holding a problem (its event, on the sensors itemIDs), or nil.
+func (h problemHolds) of(eventID string, itemIDs []string) *heldRef {
+	if len(itemIDs) == 0 {
+		return h[eventID]
+	}
+	for _, id := range itemIDs {
+		if ref := h[id]; ref != nil {
+			return ref
+		}
+	}
+	return nil
 }
 
 // POST /api/events/{id}/ack - acknowledge a problem (any signed-in user), optional duration.

@@ -56,7 +56,7 @@ type SensorItem = { id: string; name: string; key: string; last_value: string; u
 type SensorNote = { text: string; by?: string; at: number }
 // A sensor's effective warning/high values, read from its own triggers (below = lower is worse).
 type Thr = { warn?: number; high?: number; below?: boolean }
-type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[] }
+type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[]; held_by?: HeldBy }
 type TriggerHost = { id: string; name: string }
 type Trigger = { id: string; description: string; severity: number; enabled: boolean; problem: boolean; since: number; hosts: TriggerHost[]; sensors: string[] }
 type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean; maintenance?: MaintHit; held_by?: HeldBy; holds?: number; note?: SensorNote; call?: string }
@@ -8036,6 +8036,13 @@ function watchEyebrow(): string { return SCOPE.sites.length ? `Watch · ${sitesL
 // fmtWhen renders a unix time in Argus's timezone: "29 Sep, 14:05".
 // probeReportNote explains a probe whose minute report stopped reaching Argus while Zabbix still hears
 // from it (probereport.go): since when, and what it costs.
+// heldLabel says what holds a problem or sensor on host hostId: its own master that is down, a master on
+// another host (the site's probe), or the down device it is plugged into.
+function heldLabel(h: HeldBy, hostId: string): string {
+  if (h.via === 'upstream') return `held: behind ${h.host_name}, which is down`
+  return `held: ${h.name}${h.host_id !== hostId ? ` on ${h.host_name}` : ''} is down`
+}
+
 function probeReportNote(p: Proxy): string {
   return `Zabbix hears from this probe, but its minute report ${p.report_at ? `hasn't reached Argus since ${fmtWhen(p.report_at)}` : 'has never reached Argus'}. ` +
     `Without it Argus can't hand it scans, UniFi sweeps or certificate checks, nor size its Zabbix processes. The probe's container log should say why; updating the probe may fix it.`
@@ -10067,7 +10074,9 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
 
   // The problems banner takes the worst severity nobody has acknowledged: red for errors, amber when
   // it's warnings only, the acknowledged colour once every problem is.
-  const open = problems.filter((p) => !p.acknowledged)
+  // A problem a down master holds (its ping is down, so its packet loss and SNMP are too) is that
+  // master's: it waits with it, so it isn't one more thing to handle.
+  const open = problems.filter((p) => !p.acknowledged && !p.held_by)
   const probErr = open.some((p) => p.state === 'error')
   const probColor = open.length === 0 ? 'var(--acked)' : probErr ? 'var(--err)' : 'var(--warn)'
   return (
@@ -10089,18 +10098,22 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
       {tab !== 'sensors' && !onlyItem && <HostTabBody hostId={hostId} tab={tab} canEdit={canPause} onOpenSettings={onOpenSettings} onChanged={() => setCountTick((t) => t + 1)} />}
       {(tab === 'sensors' || onlyItem) && problems.length > 0 && (
         <div style={{ border: `1px solid color-mix(in srgb, ${probColor} 30%, var(--border))`, background: `color-mix(in srgb, ${probColor} 7%, var(--panel))`, borderRadius: 8, padding: '0.5rem 0.75rem', marginBottom: '0.5rem' }}>
-          <div style={{ color: probColor, fontSize: 12, marginBottom: 4, fontWeight: 600 }}>{open.length === 0 ? 'Acknowledged problems' : probErr ? 'Active problems' : 'Active warnings'}</div>
-          {problems.map((p, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.2rem 0' }}>
-              <span className={'sdot' + (p.acknowledged ? '' : ' pulse')} style={{ '--dot': healthColor(p.state, p.acknowledged) } as CSSProperties} />
-              <span style={{ opacity: p.acknowledged ? 0.7 : 1 }}>{p.name}</span>
-              <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                {p.acknowledged
-                  ? <><span className="acktag">✓ acked · {untilLabel(p.ack_until)}</span><button className="btn ghost" onClick={() => unack(p)}>Unacknowledge</button></>
-                  : <DurationButton label="Acknowledge" onPick={(s) => ack(p, s)} />}
-              </span>
-            </div>
-          ))}
+          <div style={{ color: probColor, fontSize: 12, marginBottom: 4, fontWeight: 600 }}>{open.length === 0 ? (problems.some((p) => p.acknowledged) ? 'Acknowledged problems' : 'Problems on hold') : probErr ? 'Active problems' : 'Active warnings'}</div>
+          {problems.map((p, i) => {
+            const handled = p.acknowledged || !!p.held_by
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.2rem 0' }}>
+                <span className={'sdot' + (handled ? '' : ' pulse')} style={{ '--dot': healthColor(p.state, handled) } as CSSProperties} />
+                <span style={{ opacity: handled ? 0.7 : 1 }}>{p.name}</span>
+                <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  {p.held_by && !p.acknowledged && <span className="heldtag" title="Its alerts wait until that is back; whatever is still wrong then is alerted">{heldLabel(p.held_by, hostId)}</span>}
+                  {p.acknowledged
+                    ? <><span className="acktag">✓ acked · {untilLabel(p.ack_until)}</span><button className="btn ghost" onClick={() => unack(p)}>Unacknowledge</button></>
+                    : <DurationButton label="Acknowledge" onPick={(s) => ack(p, s)} />}
+                </span>
+              </div>
+            )
+          })}
         </div>
       )}
       {(tab !== 'sensors' && !onlyItem) ? null : items.length === 0

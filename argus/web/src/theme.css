@@ -360,6 +360,7 @@ span.muted, p.muted { color: var(--muted); }
 .row .when { color: var(--faint); font-size: 12px; min-width: 52px; text-align: right; }
 .row.acked { opacity: 0.72; }
 .acktag { font-size: 12px; color: var(--acked); }
+.heldtag { font-size: 12px; color: var(--muted); font-style: italic; }
 .mini { display: inline-flex; align-items: center; }
 .spark { display: block; }
 
