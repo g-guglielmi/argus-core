@@ -241,8 +241,8 @@ zabbix_export:
           value: https
           description: 'For paths and a blank list: http or https.'
         - macro: '{$HTTP.PORT}'
-          value: '443'
-          description: 'For paths and a blank list: the TCP port.'
+          value: ''
+          description: 'For paths and a blank list: the TCP port. Blank uses the scheme''s own: 443 for https, 80 for http (a set 443 checked an http device on 443).'
         - macro: '{$HTTP.EXPECT}'
           value: 200-299
           description: 'The status codes that count as up, of the final answer after redirects: "200-299", "200,204,401".'

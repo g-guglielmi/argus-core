@@ -5246,7 +5246,7 @@ function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCrea
             <Switch checked={http} onChange={setHttp} label="Also check HTTP/HTTPS" />
             {http && <>
               <Select value={httpScheme} onChange={(e) => setHttpScheme(e.target.value)} style={{ width: 'auto' }}><option value="https">HTTPS</option><option value="http">HTTP</option></Select>
-              <input className="input" style={{ width: 120 }} placeholder="port (443)" value={httpPort} onChange={(e) => setHttpPort(e.target.value)} />
+              <input className="input" style={{ width: 120 }} placeholder={`port (${httpScheme === 'http' ? 80 : 443})`} value={httpPort} onChange={(e) => setHttpPort(e.target.value)} />
             </>}
           </div>
         )}
@@ -6480,7 +6480,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
                                 <Switch checked={cfg.http} onChange={(v) => setCfg(r.id, { http: v })} label="Also check HTTP/HTTPS" />
                                 {cfg.http && <>
                                   <Select value={cfg.httpScheme} onChange={(e) => setCfg(r.id, { httpScheme: e.target.value })} style={{ width: 'auto' }}><option value="https">HTTPS</option><option value="http">HTTP</option></Select>
-                                  <input className="input" style={{ width: 120 }} placeholder="port (443)" value={cfg.httpPort} onChange={(e) => setCfg(r.id, { httpPort: e.target.value })} />
+                                  <input className="input" style={{ width: 120 }} placeholder={`port (${cfg.httpScheme === 'http' ? 80 : 443})`} value={cfg.httpPort} onChange={(e) => setCfg(r.id, { httpPort: e.target.value })} />
                                   {r.http && <span style={{ fontSize: 12, color: 'var(--muted)' }}>scan saw {r.http.scheme.toUpperCase()} on :{r.http.port}</span>}
                                 </>}
                               </div>

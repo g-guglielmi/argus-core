@@ -69,7 +69,7 @@ var addOns = []AddOn{
 		Macros: []MacroSpec{
 			{Macro: "{$HTTP.URLS}", Label: "URLs", Hint: "https://portal.example.com/app, /login", Check: checkURLList},
 			{Macro: "{$HTTP.SCHEME}", Label: "Scheme (for paths and hosts)", Hint: "https", Options: []string{"https", "http"}},
-			{Macro: "{$HTTP.PORT}", Label: "Port (for paths and a blank list)", Hint: "443", Pattern: patternPort},
+			{Macro: "{$HTTP.PORT}", Label: "Port (for paths and a blank list)", Hint: "443 for https, 80 for http", Pattern: patternPort},
 			{Macro: "{$HTTP.EXPECT}", Label: "Accepted status codes", Hint: "200-299", Pattern: patternCodes},
 			{Macro: "{$HTTP.TLS.VERIFY}", Label: "Certificate", Hint: "verify", Options: []string{"verify", "self-signed", "ignore"}},
 			{Macro: "{$HTTP.TIMEOUT}", Label: "Timeout (seconds)", Hint: "10", Pattern: patternSeconds},

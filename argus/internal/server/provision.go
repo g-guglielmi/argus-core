@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -633,7 +634,11 @@ func buildMacros(req createHostRequest, class provision.Class) ([]zabbix.Macro, 
 	var macros []zabbix.Macro
 	used := map[string]bool{}
 	if req.HTTP {
+		// No port: the scheme's own (the template's is blank, the collector picks 443 or 80).
 		if p := strings.TrimSpace(req.HTTPPort); p != "" {
+			if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+				return nil, fmt.Errorf("the HTTP port must be a number from 1 to 65535")
+			}
 			macros = append(macros, zabbix.Macro{Macro: "{$HTTP.PORT}", Value: p})
 			used["{$HTTP.PORT}"] = true
 		}

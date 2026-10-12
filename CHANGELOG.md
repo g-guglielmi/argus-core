@@ -33,6 +33,10 @@ GitHub Release from the matching section below.
   loss and "SNMP not responding" counted as open problems, though the ping's outage holds them. The
   host now reads as acknowledged (and stops pulsing) once its master is, and its problems list shows
   the held ones muted, "held: Reachable (ICMP) is down".
+- A device added with its HTTP check set to HTTP and no port (from a discovery scan that saw HTTP on
+  port 80, or Add device) was checked on port 443: the HTTP add-on's port defaulted to 443 whatever
+  the scheme. A blank port now follows the scheme (80 for HTTP, 443 for HTTPS), devices already added
+  that way move to port 80 with this update, and the port field's placeholder says which.
 - The class picker (a discovery scan's rows, Add device, a host's class) opened its list off the
   bottom of the window on the last rows: it now opens above when there is more room there, and never
   runs past the window.
