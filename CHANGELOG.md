@@ -25,6 +25,10 @@ GitHub Release from the matching section below.
   from site to site. VMs and switch clients are now matched only among the hosts on the same probe's
   network (a host the server monitors counts with its site's probe); a wrong path clears by itself
   once the new answer has held for 15 minutes.
+- UniFi switches and gateways showed a "Connected clients" sensor under Wireless holding a raw list
+  (since 0.8.0): the wired-client list Argus reads upstream devices from shared its key with an
+  access point's client count. It has its own key now (`unifi.wired.clients`) and stays out of the
+  sensor list; access points keep their count. A new template test refuses one key with two meanings.
 
 ## [0.8.9] - 2026-10-12
 

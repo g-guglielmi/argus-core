@@ -25,7 +25,7 @@ zabbix_export:
         - uuid: 70a58121252146d0b3a5fa1297022d49
           name: 'UniFi wired clients'
           type: SCRIPT
-          key: unifi.clients
+          key: unifi.wired.clients
           delay: 10m
           history: 1h
           trends: '0'

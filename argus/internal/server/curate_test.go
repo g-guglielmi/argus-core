@@ -58,6 +58,13 @@ func TestClassifyUnifiWirelessAndWan(t *testing.T) {
 			t.Errorf("%s: got (%q, %q, %q), want (%q, %q, %q)", c.key, cat, inst, ch, c.cat, c.inst, c.channel)
 		}
 	}
+	// A switch's lists of what is on its ports feed the upstream devices: plumbing, not sensors (the
+	// wired-client list once shared the AP's key and read as "Connected clients" on every switch).
+	for _, k := range [][2]string{{"unifi.wired.clients", "UniFi wired clients"}, {"unifi.downlinks", "Devices plugged into its ports"}} {
+		if cat, _, _, _, ok := classifyItem(k[0], k[1]); ok {
+			t.Errorf("%s: classified under %q, want uncurated", k[0], cat)
+		}
+	}
 }
 
 // The HTTP add-on's two items group like ICMP: reachability + response time under one instance,

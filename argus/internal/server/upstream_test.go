@@ -26,7 +26,7 @@ func TestControllerUpstreams(t *testing.T) {
 		{HostID: "3", Key: "unifi.uplink.port", LastValue: "24"},
 		{HostID: "4", Key: "unifi.uplink.mac", LastValue: "00:00:5e:00:53:21"}, // an AP on the floor switch
 		{HostID: "4", Key: "unifi.uplink.port", LastValue: "3"},
-		{HostID: "2", Key: "unifi.clients", LastValue: `[{"mac":"aa:bb:cc:00:00:01","ip":"10.0.0.9","port":5},{"mac":"aa:bb:cc:00:00:02","ip":"10.0.0.30","port":6},{"mac":"aa:bb:cc:00:00:03","ip":"10.0.0.50","port":7},{"mac":"00:00:5e:00:53:21","ip":"10.0.0.3","port":24}]`},
+		{HostID: "2", Key: "unifi.wired.clients", LastValue: `[{"mac":"aa:bb:cc:00:00:01","ip":"10.0.0.9","port":5},{"mac":"aa:bb:cc:00:00:02","ip":"10.0.0.30","port":6},{"mac":"aa:bb:cc:00:00:03","ip":"10.0.0.50","port":7},{"mac":"00:00:5e:00:53:21","ip":"10.0.0.3","port":24}]`},
 	}
 	ips := map[string]string{"10": "10.0.0.9", "11": "10.0.0.88", "12": "10.0.0.50", "13": "10.0.0.50", "3": "10.0.0.3"}
 	disc := map[string]string{"11": "AA-BB-CC-00-00-02"}
@@ -132,11 +132,11 @@ func TestUpstreamWhy(t *testing.T) {
 		want  []string
 	}{
 		{nil, nil, []string{"No UniFi switch or gateway lists its wired clients"}},
-		{[]zabbix.Item{{HostID: "4", Key: "unifi.clients", LastClock: "100"}}, all,
+		{[]zabbix.Item{{HostID: "4", Key: "unifi.wired.clients", LastClock: "100"}}, all,
 			[]string{"sw-core, sw-floor2 have no wired-client list: their template hasn't been updated", "The wired clients of gw-site1 don't include 10.0.0.30"}},
-		{[]zabbix.Item{{HostID: "2", Key: "unifi.clients", State: "1", Error: "UniFi API HTTP 401 reading the client list"}, {HostID: "3", Key: "unifi.clients", LastClock: "100"}}, []string{"2", "3"},
+		{[]zabbix.Item{{HostID: "2", Key: "unifi.wired.clients", State: "1", Error: "UniFi API HTTP 401 reading the client list"}, {HostID: "3", Key: "unifi.wired.clients", LastClock: "100"}}, []string{"2", "3"},
 			[]string{"Reading the wired clients failed on sw-core: UniFi API HTTP 401", "The wired clients of sw-floor2 don't include"}},
-		{[]zabbix.Item{{HostID: "2", Key: "unifi.clients", LastClock: "0"}, {HostID: "3", Key: "unifi.clients", LastClock: "100"}}, []string{"2", "3"},
+		{[]zabbix.Item{{HostID: "2", Key: "unifi.wired.clients", LastClock: "0"}, {HostID: "3", Key: "unifi.wired.clients", LastClock: "100"}}, []string{"2", "3"},
 			[]string{"sw-core hasn't read its wired clients yet"}},
 	}
 	for i, c := range cases {
@@ -311,7 +311,7 @@ func TestHypervisorUpstreams(t *testing.T) {
 	}
 	disc := map[string]string{"63": "aa:bb:cc:00:00:09"}
 	items := []zabbix.Item{
-		{HostID: "1", Key: "unifi.clients", LastValue: `[{"mac":"aa:bb:cc:00:00:05","ip":"10.0.0.5","port":3}]`},
+		{HostID: "1", Key: "unifi.wired.clients", LastValue: `[{"mac":"aa:bb:cc:00:00:05","ip":"10.0.0.5","port":3}]`},
 		{HostID: "50", Key: "xcp.vm.nics", LastValue: `{"members":[{"name":"xen1","address":"10.0.0.4"}],"vms":[
 			{"name":"dns","host":"xen1","macs":["aa:bb:cc:00:00:01"],"ips":["10.0.0.7"]},
 			{"name":"media","host":"xen1","macs":["AA:BB:CC:00:00:05"],"ips":[]},
@@ -386,7 +386,7 @@ func TestUpstreamsStayOnTheirSite(t *testing.T) {
 	ips := map[string]string{"50": "10.0.0.4", "61": "10.0.0.8", "62": "10.0.0.8", "64": "10.0.0.5", "63": "10.0.0.5", "90": "10.0.0.9"}
 	disc := map[string]string{"60": "00:0c:29:2b:40:e6"} // only site2's scan saw the shared MAC
 	items := []zabbix.Item{
-		{HostID: "1", Key: "unifi.clients", LastValue: `[{"mac":"aa:bb:cc:00:00:05","ip":"10.0.0.5","port":3}]`},
+		{HostID: "1", Key: "unifi.wired.clients", LastValue: `[{"mac":"aa:bb:cc:00:00:05","ip":"10.0.0.5","port":3}]`},
 		{HostID: "50", Key: "xcp.vm.nics", LastValue: `{"members":[{"name":"xen1","address":"10.0.0.4"}],"vms":[
 			{"name":"adguardbck","host":"xen1","macs":["00:0C:29:2B:40:E6"],"ips":["10.0.0.8"]},
 			{"name":"monitoring","host":"xen1","macs":[],"ips":["10.0.0.9"]}]}`},

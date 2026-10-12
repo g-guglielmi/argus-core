@@ -28,7 +28,7 @@ import (
 // sensors: Argus can't reach them through it anyway, and the upstream's own alert says it all.
 
 // upstreamItemKeys are the items the controller's answer is read from.
-var upstreamItemKeys = []string{"unifi.mac", "unifi.uplink.mac", "unifi.uplink.port", "unifi.uplink.local", "unifi.clients", "unifi.downlinks", "xcp.vm.nics"}
+var upstreamItemKeys = []string{"unifi.mac", "unifi.uplink.mac", "unifi.uplink.port", "unifi.uplink.local", "unifi.wired.clients", "unifi.downlinks", "xcp.vm.nics"}
 
 // upstreamLink is a host's upstream device: which host, on which of its ports, and who said so.
 type upstreamLink struct {
@@ -121,7 +121,7 @@ func controllerUpstreams(items []zabbix.Item, ips map[string]string, discMACs ma
 			}
 		case "unifi.uplink.port":
 			uplinkPort[it.HostID] = strings.TrimSpace(it.LastValue)
-		case "unifi.clients":
+		case "unifi.wired.clients":
 			var cs []wiredClient
 			if json.Unmarshal([]byte(it.LastValue), &cs) == nil {
 				clients[it.HostID] = cs
@@ -233,7 +233,7 @@ func hypervisorUpstreams(items []zabbix.Item, ips map[string]string, discMACs ma
 	var pools []zabbix.Item
 	for _, it := range items {
 		switch it.Key {
-		case "unifi.clients":
+		case "unifi.wired.clients":
 			var cs []wiredClient
 			if json.Unmarshal([]byte(it.LastValue), &cs) == nil {
 				for _, c := range cs {
@@ -827,7 +827,7 @@ func (s *Server) hostUpstreamView(ctx context.Context, hostID string) upstreamVi
 	if v.Auto == nil && v.Mode == "auto" && v.Ignored != "" {
 		v.Why = "The UniFi controller's answers for it don't add up right now."
 	} else if v.Auto == nil && v.Mode == "auto" {
-		if items, err := s.zbx.ItemsByKeys(ctx, []string{"unifi.clients"}); err == nil {
+		if items, err := s.zbx.ItemsByKeys(ctx, []string{"unifi.wired.clients"}); err == nil {
 			ips, _ := s.zbx.HostIPs(ctx)
 			names := map[string]string{}
 			for id, h := range idx {
@@ -877,7 +877,7 @@ func upstreamWhy(lists []zabbix.Item, names map[string]string, ip string, unifiH
 	why := ""
 	have := map[string]bool{}
 	for _, it := range lists {
-		if it.Key != "unifi.clients" {
+		if it.Key != "unifi.wired.clients" {
 			continue
 		}
 		have[it.HostID] = true

@@ -14,8 +14,9 @@ access point, the UniFi device it is plugged into (its upstream). A switch, gate
 list of the UniFi devices on its ports wins over that, as it follows the cables where a device's own
 uplink can name the wrong switch (Flex Minis confuse it). A switch and a gateway also list
 the wired clients on their ports every 10 minutes, so servers, NAS and cameras plugged into them get
-their upstream too: while a switch is down, the hosts behind it wait and only the switch alerts. On
-top of that, each class adds:
+their upstream too: while a switch is down, the hosts behind it wait and only the switch alerts.
+Both lists only feed Argus: they are not sensors and don't show among them. On top of that, each
+class adds:
 
 | Class | Additionally monitors |
 |---|---|

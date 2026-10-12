@@ -89,6 +89,51 @@ func TestClassTemplatesShareNoItemKey(t *testing.T) {
 	}
 }
 
+// Argus reads a sensor by its key alone (its label, its category, whether it is plumbing), so a key
+// two templates carry must mean one thing: the switch's wired-client list (text) once shared
+// unifi.clients with an access point's client count and showed on every switch as "Connected
+// clients" under Wireless. Every item key has one value type across all templates.
+func TestItemKeysMeanOneThing(t *testing.T) {
+	docs, _, err := loadTemplates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	type seen struct{ vt, tpl string }
+	byKey := map[string]seen{}
+	for _, d := range docs {
+		section, key, vt := "", "", ""
+		flush := func() {
+			if key == "" {
+				return
+			}
+			if vt == "" {
+				vt = "UNSIGNED" // the export's default
+			}
+			if s, ok := byKey[key]; ok && s.vt != vt {
+				t.Errorf("item %s is %s in %s but %s in %s: give one of them its own key", key, s.vt, s.tpl, vt, d.name)
+			} else if !ok {
+				byKey[key] = seen{vt, d.name}
+			}
+			key, vt = "", ""
+		}
+		for _, line := range strings.Split(strings.ReplaceAll(d.content, "\r\n", "\n"), "\n") {
+			switch {
+			case strings.HasPrefix(line, "      ") && !strings.HasPrefix(line, "       ") && strings.HasSuffix(line, ":"):
+				flush()
+				section = strings.TrimSuffix(strings.TrimSpace(line), ":")
+			case section != "items":
+			case strings.HasPrefix(line, "        - uuid: "):
+				flush()
+			case strings.HasPrefix(line, "          key: "):
+				key = strings.Trim(strings.TrimPrefix(line, "          key: "), "'")
+			case strings.HasPrefix(line, "          value_type: "):
+				vt = strings.TrimPrefix(line, "          value_type: ")
+			}
+		}
+		flush()
+	}
+}
+
 // A RESOLVED notification is titled with what came back ("GitHub answers again from this site"), not
 // the problem that ended: every trigger in an Argus template carries that sentence as its
 // argus.recovery tag (the notifier keeps it from the problem's tags while the alert is open).

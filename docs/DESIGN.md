@@ -634,7 +634,7 @@ The device a host is plugged into (`upstream.go`). By default it is the **UniFi 
 answer**: a UniFi switch or access point reports the device it hangs off (`unifi.uplink.mac` and
 `unifi.uplink.port`, kept from the controller record its template already reads, matched to the host
 whose `unifi.mac` it is), and a UniFi switch or gateway lists the wired clients on its ports
-(`unifi.clients`: `stat/sta` filtered to `sw_mac` = its MAC, every 10 minutes, as `[{mac, ip,
+(`unifi.wired.clients`: `stat/sta` filtered to `sw_mac` = its MAC, every 10 minutes, as `[{mac, ip,
 port}]`), which Argus matches to hosts by IP (hosts that share an address are one machine, a NAS and
 the services on it, so all of them are behind that port), else by the MAC discovery saw. A UniFi device's own uplink wins over a client entry.
 **The ports' side wins:** a switch, gateway or console also lists the UniFi devices on its ports
@@ -657,7 +657,7 @@ and the Device tab says what the controller said and why it was ignored. The rec
 the same way on every read: one that fails is dropped (the host has no upstream meanwhile) and the
 first live answer that passes is taken at once, without the 15-minute wait. A host can be set (host settings,
 Upstream device; `upstream` in `PATCH /api/hosts/{id}/config`) to a host **chosen by hand** (refused
-when that host is behind this one) or to **None** (`host_upstream`). `unifi.clients` is plumbing: it
+when that host is behind this one) or to **None** (`host_upstream`). `unifi.wired.clients` is plumbing: it
 is never a sensor, and one that fails never raises "stopped collecting". A host the controller gives
 no upstream says why on its Device tab and in its settings: no client lists yet (the templates not
 updated), a read that failed (the controller's reason), lists not read yet, or this address not among
@@ -667,7 +667,7 @@ them.
 monitoring is set to, each VM's network cards (MACs from its VIFs), its IPv4 addresses when guest
 tools report them, and the member it runs on (resident, else its affinity, else the pool's only
 member; templates, snapshots and control domains left out, ignored VMs kept: this places hosts, it
-monitors nothing). The template carries it as `xcp.vm.nics` (plumbing, like `unifi.clients`), and a
+monitors nothing). The template carries it as `xcp.vm.nics` (plumbing, like `unifi.wired.clients`), and a
 poll that can't log in keeps the last list, so the VMs stay behind their hypervisor while it is down.
 `hypervisorUpstreams` matches each VM to hosts by its guest addresses and by its MACs (through the
 UniFi wired-client lists, MAC to address, or the MACs discovery saw), on the pool's own network only

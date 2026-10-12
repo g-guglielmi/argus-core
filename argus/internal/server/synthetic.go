@@ -114,7 +114,7 @@ var synthCache struct {
 // plumbingKeys are items that feed Argus itself rather than being read as sensors: the UniFi wired
 // client list and an XCP-NG pool's VM list (upstream.go). One that fails just leaves what it feeds
 // unknown, so it never alerts.
-var plumbingKeys = map[string]bool{"unifi.clients": true, "unifi.downlinks": true, "xcp.vm.nics": true}
+var plumbingKeys = map[string]bool{"unifi.wired.clients": true, "unifi.downlinks": true, "xcp.vm.nics": true}
 
 // A collector that isn't running alerts for itself, with why (collectors.go), so its readings, whose
 // steps only discard, say nothing more while it is down: one alert, not one per speed or latency.
