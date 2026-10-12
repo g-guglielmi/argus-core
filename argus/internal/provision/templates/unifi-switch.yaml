@@ -130,6 +130,7 @@ zabbix_export:
               upgrade_to: d.upgradable ? String(d.upgrade_to_firmware || 'a newer version') : '',
               serial: d.serial || '',
               mac: d.mac || '',
+              downlinks: [],
               uplink_mac: (d.uplink && d.uplink.uplink_mac) || (d.last_uplink && d.last_uplink.uplink_mac) || '',
               uplink_port: String((d.uplink && d.uplink.uplink_remote_port) || (d.last_uplink && d.last_uplink.uplink_remote_port) || ''),
               uplink_local: String((d.uplink && d.uplink.port_idx) || ''),
@@ -163,6 +164,12 @@ zabbix_export:
               });
             }
             if (hasPoe) { out.poe_total_w = Math.round(poeTotal * 100) / 100; }
+            // The UniFi devices plugged into its ports, from its own port side (downlink_table): it
+            // follows the cables, where a device's own uplink field can name the wrong switch.
+            var dl = d.downlink_table || [];
+            for (var j = 0; j < dl.length; j++) {
+              if (dl[j] && dl[j].mac && dl[j].port_idx) { out.downlinks.push({ mac: String(dl[j].mac).toLowerCase(), port: String(dl[j].port_idx) }); }
+            }
             return JSON.stringify(out);
           parameters:
             - name: url
@@ -399,6 +406,25 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.mac'
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+        - uuid: 092a31d11d3f48b6bf1f367711884cf0
+          name: 'Devices plugged into its ports'
+          type: DEPENDENT
+          key: unifi.downlinks
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: TEXT
+          description: 'The UniFi devices the controller sees plugged into this one''s ports (downlink_table), as [{mac, port}]: Argus places each on its port here, over that device''s own uplink field, which can name the wrong switch. Plumbing, not a sensor.'
+          master_item:
+            key: unifi.switch.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.downlinks'
+              error_handler: DISCARD_VALUE
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d

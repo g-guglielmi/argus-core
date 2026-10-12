@@ -28,7 +28,7 @@ import (
 // sensors: Argus can't reach them through it anyway, and the upstream's own alert says it all.
 
 // upstreamItemKeys are the items the controller's answer is read from.
-var upstreamItemKeys = []string{"unifi.mac", "unifi.uplink.mac", "unifi.uplink.port", "unifi.uplink.local", "unifi.clients", "xcp.vm.nics"}
+var upstreamItemKeys = []string{"unifi.mac", "unifi.uplink.mac", "unifi.uplink.port", "unifi.uplink.local", "unifi.clients", "unifi.downlinks", "xcp.vm.nics"}
 
 // upstreamLink is a host's upstream device: which host, on which of its ports, and who said so.
 type upstreamLink struct {
@@ -38,6 +38,12 @@ type upstreamLink struct {
 	// Doubt is why the controller's answer doesn't add up against the port it names (doubtUpstreams):
 	// Argus ignores such an answer and keeps the one it has.
 	Doubt string
+}
+
+// downlink is a UniFi device a switch or gateway lists on one of its ports (unifi.downlinks).
+type downlink struct {
+	MAC  string `json:"mac"`
+	Port string `json:"port"`
 }
 
 type wiredClient struct {
@@ -91,9 +97,15 @@ func upstreamNetworks(hosts []zabbix.Host, proxies []zabbix.Proxy) map[string]st
 func onNet(nets map[string]string, hostID, v string) string { return nets[hostID] + "|" + v }
 
 // controllerUpstreams works out each host's upstream from what the UniFi controller reports, matching
-// MACs and addresses within the reporting device's network only (nets, upstreamNetworks).
+// MACs and addresses within the reporting device's network only (nets, upstreamNetworks). A switch's
+// own list of the UniFi devices on its ports (unifi.downlinks, the controller's downlink_table) wins
+// over a device's own uplink field: on a site with Flex Minis, whose LLDP frames reach devices they
+// aren't cabled to, that field named the wrong switch (an access point on a Flex's port 2 read as on a
+// Flex Mini's port 2, the Flex Mini itself as on another Flex Mini's unused port), while the port side
+// follows the cables.
 func controllerUpstreams(items []zabbix.Item, ips map[string]string, discMACs map[string]string, nets map[string]string) map[string]upstreamLink {
 	macHost := map[string]string{} // network | MAC -> host
+	downlinks := map[string][]downlink{}
 	uplinkMAC := map[string]string{}
 	uplinkPort := map[string]string{}
 	clients := map[string][]wiredClient{}
@@ -113,6 +125,11 @@ func controllerUpstreams(items []zabbix.Item, ips map[string]string, discMACs ma
 			var cs []wiredClient
 			if json.Unmarshal([]byte(it.LastValue), &cs) == nil {
 				clients[it.HostID] = cs
+			}
+		case "unifi.downlinks":
+			var ds []downlink
+			if json.Unmarshal([]byte(it.LastValue), &ds) == nil {
+				downlinks[it.HostID] = ds
 			}
 		}
 	}
@@ -135,8 +152,25 @@ func controllerUpstreams(items []zabbix.Item, ips map[string]string, discMACs ma
 			out[h] = upstreamLink{Host: up, Port: uplinkPort[h], Source: "controller"}
 		}
 	}
+	// The ports' side, in a stable order: a device two switches list (they shouldn't) settles the same way.
+	sws := make([]string, 0, len(downlinks))
+	for sw := range downlinks {
+		sws = append(sws, sw)
+	}
+	sort.Strings(sws)
+	listed := map[string]bool{}
+	for _, sw := range sws {
+		for _, d := range downlinks[sw] {
+			h := macHost[onNet(nets, sw, normMAC(d.MAC))]
+			if h == "" || h == sw || listed[h] {
+				continue
+			}
+			listed[h] = true
+			out[h] = upstreamLink{Host: sw, Port: strings.TrimSpace(d.Port), Source: "controller"}
+		}
+	}
 	// Wired clients, in a stable order so a client two devices list (it shouldn't) settles the same way.
-	sws := make([]string, 0, len(clients))
+	sws = sws[:0]
 	for sw := range clients {
 		sws = append(sws, sw)
 	}

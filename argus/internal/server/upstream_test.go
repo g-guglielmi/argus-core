@@ -408,3 +408,46 @@ func TestUpstreamsStayOnTheirSite(t *testing.T) {
 		t.Errorf("site2's host at the same address hangs off site1's switch: %+v", l)
 	}
 }
+
+// A switch's list of the UniFi devices on its ports wins over a device's own uplink field. On a site
+// with Flex Minis, whose LLDP frames reach devices they aren't cabled to, the access point on the
+// Flex's port 2 reported a Flex Mini's port 2, and that Flex Mini (on the Flex's port 5) another Flex
+// Mini's unused port 5; the Flex lists all three on their real ports.
+func TestDownlinksBeatUplinkFields(t *testing.T) {
+	items := []zabbix.Item{
+		{HostID: "1", Key: "unifi.mac", LastValue: "00:00:5e:00:53:01"}, // the gateway
+		{HostID: "1", Key: "unifi.downlinks", LastValue: `[{"mac":"00:00:5e:00:53:02","port":"3"},{"mac":"00:00:5e:00:53:10","port":"4"}]`},
+		{HostID: "201", Key: "unifi.mac", LastValue: "00:00:5e:00:53:10"}, // the Flex
+		{HostID: "201", Key: "unifi.uplink.mac", LastValue: "00:00:5e:00:53:01"},
+		{HostID: "201", Key: "unifi.uplink.port", LastValue: "4"},
+		{HostID: "201", Key: "unifi.downlinks", LastValue: `[{"mac":"00:00:5e:00:53:51","port":"2"},{"mac":"00:00:5e:00:53:41","port":"3"},{"mac":"00:00:5e:00:53:42","port":"5"}]`},
+		{HostID: "204", Key: "unifi.mac", LastValue: "00:00:5e:00:53:41"}, // a Flex Mini, right
+		{HostID: "204", Key: "unifi.uplink.mac", LastValue: "00:00:5e:00:53:10"},
+		{HostID: "204", Key: "unifi.uplink.port", LastValue: "3"},
+		{HostID: "204", Key: "unifi.downlinks", LastValue: `[]`},
+		{HostID: "205", Key: "unifi.mac", LastValue: "00:00:5e:00:53:42"}, // a Flex Mini, wrong
+		{HostID: "205", Key: "unifi.uplink.mac", LastValue: "00:00:5e:00:53:41"},
+		{HostID: "205", Key: "unifi.uplink.port", LastValue: "5"},
+		{HostID: "251", Key: "unifi.mac", LastValue: "00:00:5e:00:53:51"}, // the access point, wrong
+		{HostID: "251", Key: "unifi.uplink.mac", LastValue: "00:00:5e:00:53:42"},
+		{HostID: "251", Key: "unifi.uplink.port", LastValue: "2"},
+		{HostID: "202", Key: "unifi.mac", LastValue: "00:00:5e:00:53:02"}, // listed only, no uplink field
+		{HostID: "9", Key: "unifi.downlinks", LastValue: `not json`},
+	}
+	got := controllerUpstreams(items, nil, nil, nil)
+	want := map[string]upstreamLink{
+		"201": {Host: "1", Port: "4", Source: "controller"},
+		"202": {Host: "1", Port: "3", Source: "controller"},
+		"204": {Host: "201", Port: "3", Source: "controller"},
+		"205": {Host: "201", Port: "5", Source: "controller"},
+		"251": {Host: "201", Port: "2", Source: "controller"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %+v", got)
+	}
+	for h, l := range want {
+		if got[h] != l {
+			t.Errorf("%s: got %+v, want %+v", h, got[h], l)
+		}
+	}
+}

@@ -14,6 +14,12 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 **Fixed:**
+- A UniFi device could be placed on the wrong switch, and its path with it: the controller's record
+  of a device's own uplink can name a switch it isn't plugged into (on a site with Flex Minis an
+  access point read as on a Flex Mini's port, and a Flex Mini as on another's unused port), and the
+  UniFi topology view flips the same way. Argus now reads each switch's, gateway's and console's own
+  list of the UniFi devices on its ports, which follows the cables, and that list beats a device's
+  own uplink field. The path corrects itself 15 minutes after the update.
 - A host could be placed behind a device on another site: a VM on one site's XCP-NG pool was matched
   to a host on another site that shared its MAC (a cloned VM keeps it), and private addresses repeat
   from site to site. VMs and switch clients are now matched only among the hosts on the same probe's

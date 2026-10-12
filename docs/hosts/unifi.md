@@ -10,7 +10,9 @@ alert), CPU utilization, memory utilization, uptime, temperature (on models that
 firmware version and the firmware update the controller offers (empty when the device is on the
 newest for its model), plus high-CPU and high-memory alerts. The controller's record also gives the
 host's **Device** tab and the **Inventory** its model, serial number and MAC, and, for a switch or an
-access point, the UniFi device it is plugged into (its upstream). A switch and a gateway also list
+access point, the UniFi device it is plugged into (its upstream). A switch, gateway or console's own
+list of the UniFi devices on its ports wins over that, as it follows the cables where a device's own
+uplink can name the wrong switch (Flex Minis confuse it). A switch and a gateway also list
 the wired clients on their ports every 10 minutes, so servers, NAS and cameras plugged into them get
 their upstream too: while a switch is down, the hosts behind it wait and only the switch alerts. On
 top of that, each class adds:

@@ -637,6 +637,13 @@ whose `unifi.mac` it is), and a UniFi switch or gateway lists the wired clients 
 (`unifi.clients`: `stat/sta` filtered to `sw_mac` = its MAC, every 10 minutes, as `[{mac, ip,
 port}]`), which Argus matches to hosts by IP (hosts that share an address are one machine, a NAS and
 the services on it, so all of them are behind that port), else by the MAC discovery saw. A UniFi device's own uplink wins over a client entry.
+**The ports' side wins:** a switch, gateway or console also lists the UniFi devices on its ports
+(`unifi.downlinks`: the record's `downlink_table` as `[{mac, port}]`, a plumbing item), and that
+beats a device's own uplink field. On a site with Flex Minis, whose LLDP frames reach devices they
+aren't cabled to, the uplink field named the wrong switch (an access point on a Flex's port 2 read
+as on a Flex Mini's port 2, and that Flex Mini as on another Flex Mini's unused port), and the
+controller's own topology view flipped with it, while every switch's downlink list followed the
+cables. The uplink field still answers for a device no switch lists.
 **One network at a time:** private addresses repeat from site to site and a cloned VM keeps its MAC,
 so every address and MAC is matched only among the hosts on the reporting device's network
 (`upstreamNetworks`: the probe that monitors a host, or for a host the server monitors the probe of
