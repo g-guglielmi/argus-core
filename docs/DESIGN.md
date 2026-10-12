@@ -637,6 +637,11 @@ whose `unifi.mac` it is), and a UniFi switch or gateway lists the wired clients 
 (`unifi.clients`: `stat/sta` filtered to `sw_mac` = its MAC, every 10 minutes, as `[{mac, ip,
 port}]`), which Argus matches to hosts by IP (hosts that share an address are one machine, a NAS and
 the services on it, so all of them are behind that port), else by the MAC discovery saw. A UniFi device's own uplink wins over a client entry.
+**One network at a time:** private addresses repeat from site to site and a cloned VM keeps its MAC,
+so every address and MAC is matched only among the hosts on the reporting device's network
+(`upstreamNetworks`: the probe that monitors a host, or for a host the server monitors the probe of
+its site, the way the site's map takes it): a VM on one site's hypervisor was once placed over a
+host on another site that shared its MAC.
 **Checked against the ports:** the controller guesses uplinks from what the switches have learned, and
 a guess can be plainly wrong (two USW Flex Minis on one switch were each placed on a port of the other).
 An answer that names a port with no link (`unifi.port.state[N]` = 0) or the named switch's own uplink
@@ -658,7 +663,8 @@ member; templates, snapshots and control domains left out, ignored VMs kept: thi
 monitors nothing). The template carries it as `xcp.vm.nics` (plumbing, like `unifi.clients`), and a
 poll that can't log in keeps the last list, so the VMs stay behind their hypervisor while it is down.
 `hypervisorUpstreams` matches each VM to hosts by its guest addresses and by its MACs (through the
-UniFi wired-client lists, MAC to address, or the MACs discovery saw), and hangs them off the host at
+UniFi wired-client lists, MAC to address, or the MACs discovery saw), on the pool's own network only
+(above), and hangs them off the host at
 the member's address (the pool's own host when the pool has one member; a VM on a member Argus
 doesn't monitor is left to the other answers). That answer wins over the controller's for the same
 host: the controller only sees a VM's MAC on its hypervisor's switch port. It goes through the same

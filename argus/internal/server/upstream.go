@@ -58,9 +58,42 @@ func portText(v any) string {
 	return ""
 }
 
-// controllerUpstreams works out each host's upstream from what the UniFi controller reports.
-func controllerUpstreams(items []zabbix.Item, ips map[string]string, discMACs map[string]string) map[string]upstreamLink {
-	macHost := map[string]string{}
+// upstreamNetworks keys each host by the network its addresses and MACs mean something in: the probe
+// that monitors it, or, for a host the server monitors, the probe of the site it is in (the way a
+// site's map takes it), else "server". Private addresses repeat from site to site and a cloned VM
+// keeps its MAC, so an answer only ever links hosts on one network: a VM on one site's hypervisor was
+// matched, by a MAC it shared, to a host on another site.
+func upstreamNetworks(hosts []zabbix.Host, proxies []zabbix.Proxy) map[string]string {
+	sort.Slice(proxies, func(i, j int) bool { return probeSite(proxies[i].Name) < probeSite(proxies[j].Name) })
+	out := make(map[string]string, len(hosts))
+	for _, h := range hosts {
+		if h.ProxyID != "" && h.ProxyID != "0" {
+			out[h.HostID] = "probe:" + h.ProxyID
+			continue
+		}
+		groups := make([]string, 0, len(h.Groups))
+		for _, g := range h.Groups {
+			groups = append(groups, g.Name)
+		}
+		out[h.HostID] = "server"
+		for _, p := range proxies {
+			if inSite(probeSite(p.Name), groups) {
+				out[h.HostID] = "probe:" + p.ProxyID
+				break
+			}
+		}
+	}
+	return out
+}
+
+// onNet keys an address or a MAC by the network of the host it was seen from (nets, "" when unknown:
+// then every host is on one network, as before the networks were read).
+func onNet(nets map[string]string, hostID, v string) string { return nets[hostID] + "|" + v }
+
+// controllerUpstreams works out each host's upstream from what the UniFi controller reports, matching
+// MACs and addresses within the reporting device's network only (nets, upstreamNetworks).
+func controllerUpstreams(items []zabbix.Item, ips map[string]string, discMACs map[string]string, nets map[string]string) map[string]upstreamLink {
+	macHost := map[string]string{} // network | MAC -> host
 	uplinkMAC := map[string]string{}
 	uplinkPort := map[string]string{}
 	clients := map[string][]wiredClient{}
@@ -68,7 +101,7 @@ func controllerUpstreams(items []zabbix.Item, ips map[string]string, discMACs ma
 		switch it.Key {
 		case "unifi.mac":
 			if m := normMAC(it.LastValue); len(m) == 12 {
-				macHost[m] = it.HostID
+				macHost[onNet(nets, it.HostID, m)] = it.HostID
 			}
 		case "unifi.uplink.mac":
 			if m := normMAC(it.LastValue); len(m) == 12 {
@@ -85,20 +118,20 @@ func controllerUpstreams(items []zabbix.Item, ips map[string]string, discMACs ma
 	}
 	for id, m := range discMACs {
 		if n := normMAC(m); len(n) == 12 {
-			if _, ok := macHost[n]; !ok {
-				macHost[n] = id
+			if _, ok := macHost[onNet(nets, id, n)]; !ok {
+				macHost[onNet(nets, id, n)] = id
 			}
 		}
 	}
 	// Hosts that share an address are one machine (a NAS and the services on it): a client at that
 	// address is all of them.
-	ipHosts := map[string][]string{}
+	ipHosts := map[string][]string{} // network | address -> hosts
 	for id, ip := range ips {
-		ipHosts[ip] = append(ipHosts[ip], id)
+		ipHosts[onNet(nets, id, ip)] = append(ipHosts[onNet(nets, id, ip)], id)
 	}
 	out := map[string]upstreamLink{}
 	for h, m := range uplinkMAC {
-		if up := macHost[m]; up != "" && up != h {
+		if up := macHost[onNet(nets, h, m)]; up != "" && up != h {
 			out[h] = upstreamLink{Host: up, Port: uplinkPort[h], Source: "controller"}
 		}
 	}
@@ -112,10 +145,10 @@ func controllerUpstreams(items []zabbix.Item, ips map[string]string, discMACs ma
 		for _, c := range clients[sw] {
 			var hs []string
 			if c.IP != "" {
-				hs = ipHosts[c.IP]
+				hs = ipHosts[onNet(nets, sw, c.IP)]
 			}
 			if len(hs) == 0 {
-				if h := macHost[normMAC(c.MAC)]; h != "" {
+				if h := macHost[onNet(nets, sw, normMAC(c.MAC))]; h != "" {
 					hs = []string{h}
 				}
 			}
@@ -150,18 +183,19 @@ type vmNicList struct {
 
 // hypervisorUpstreams places the hosts that are VMs under the hypervisor they run on, from each
 // XCP-NG pool's VM list (on the pool's host). A VM is matched to hosts by its guest addresses, and by
-// its MACs: through the UniFi wired-client lists (MAC to address) or the MACs discovery saw. Its
-// hypervisor is the host at the pool member's address, or the pool's own host when the pool has just
-// that member; a VM on a member Argus doesn't monitor is left to the other answers.
-func hypervisorUpstreams(items []zabbix.Item, ips map[string]string, discMACs map[string]string) map[string]upstreamLink {
-	ipHosts := map[string][]string{}
+// its MACs: through the UniFi wired-client lists (MAC to address) or the MACs discovery saw - all on
+// the pool's own network (nets, upstreamNetworks), never another site's. Its hypervisor is the host at
+// the pool member's address, or the pool's own host when the pool has just that member; a VM on a
+// member Argus doesn't monitor is left to the other answers.
+func hypervisorUpstreams(items []zabbix.Item, ips map[string]string, discMACs map[string]string, nets map[string]string) map[string]upstreamLink {
+	ipHosts := map[string][]string{} // network | address -> hosts
 	for id, ip := range ips {
-		ipHosts[ip] = append(ipHosts[ip], id)
+		ipHosts[onNet(nets, id, ip)] = append(ipHosts[onNet(nets, id, ip)], id)
 	}
 	for _, hs := range ipHosts {
 		sort.Strings(hs)
 	}
-	macIP := map[string]string{}
+	macIP := map[string]string{} // network | MAC -> address, from the wired-client lists
 	var pools []zabbix.Item
 	for _, it := range items {
 		switch it.Key {
@@ -170,7 +204,7 @@ func hypervisorUpstreams(items []zabbix.Item, ips map[string]string, discMACs ma
 			if json.Unmarshal([]byte(it.LastValue), &cs) == nil {
 				for _, c := range cs {
 					if m := normMAC(c.MAC); len(m) == 12 && c.IP != "" {
-						macIP[m] = c.IP
+						macIP[onNet(nets, it.HostID, m)] = c.IP
 					}
 				}
 			}
@@ -178,10 +212,10 @@ func hypervisorUpstreams(items []zabbix.Item, ips map[string]string, discMACs ma
 			pools = append(pools, it)
 		}
 	}
-	macHost := map[string]string{}
+	macHost := map[string]string{} // network | MAC -> host
 	for id, m := range discMACs {
 		if n := normMAC(m); len(n) == 12 {
-			macHost[n] = id
+			macHost[onNet(nets, id, n)] = id
 		}
 	}
 	sort.Slice(pools, func(i, j int) bool { return pools[i].HostID < pools[j].HostID })
@@ -191,9 +225,10 @@ func hypervisorUpstreams(items []zabbix.Item, ips map[string]string, discMACs ma
 		if json.Unmarshal([]byte(it.LastValue), &list) != nil {
 			continue
 		}
+		pool := it.HostID // its network is the one every match below is looked up in
 		member := map[string]string{}
 		for _, m := range list.Members {
-			hs := ipHosts[strings.TrimSpace(m.Address)]
+			hs := ipHosts[onNet(nets, pool, strings.TrimSpace(m.Address))]
 			switch {
 			case len(hs) > 0:
 				member[m.Name] = hs[0]
@@ -213,14 +248,14 @@ func hypervisorUpstreams(items []zabbix.Item, ips map[string]string, discMACs ma
 			}
 			var hs []string
 			for _, ip := range vm.IPs {
-				hs = append(hs, ipHosts[strings.TrimSpace(ip)]...)
+				hs = append(hs, ipHosts[onNet(nets, pool, strings.TrimSpace(ip))]...)
 			}
 			for _, mac := range vm.MACs {
 				n := normMAC(mac)
-				if ip := macIP[n]; ip != "" {
-					hs = append(hs, ipHosts[ip]...)
+				if ip := macIP[onNet(nets, pool, n)]; ip != "" {
+					hs = append(hs, ipHosts[onNet(nets, pool, ip)]...)
 				}
-				if h := macHost[n]; h != "" {
+				if h := macHost[onNet(nets, pool, n)]; h != "" {
 					hs = append(hs, h)
 				}
 			}
@@ -391,9 +426,15 @@ func loadUpstreams(ctx context.Context, st *store.Store, zbx *zabbix.Client) ups
 	if items, err := zbx.ItemsByKeys(ctx, upstreamItemKeys); err == nil {
 		ips, _ := zbx.HostIPs(ctx)
 		macs, _ := st.DiscoveredMACs(ctx)
-		us.live = controllerUpstreams(items, ips, macs)
+		var nets map[string]string // unknown (nil) when the hosts or probes can't be read: one network
+		if hosts, err := zbx.Hosts(ctx); err == nil {
+			if proxies, err := zbx.Proxies(ctx); err == nil {
+				nets = upstreamNetworks(hosts, proxies)
+			}
+		}
+		us.live = controllerUpstreams(items, ips, macs, nets)
 		// A VM hangs off its hypervisor: that answer wins over the controller's for the same host.
-		for h, l := range hypervisorUpstreams(items, ips, macs) {
+		for h, l := range hypervisorUpstreams(items, ips, macs, nets) {
 			us.live[h] = l
 		}
 		own := map[string]string{}

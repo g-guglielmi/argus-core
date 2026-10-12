@@ -13,6 +13,13 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Fixed:**
+- A host could be placed behind a device on another site: a VM on one site's XCP-NG pool was matched
+  to a host on another site that shared its MAC (a cloned VM keeps it), and private addresses repeat
+  from site to site. VMs and switch clients are now matched only among the hosts on the same probe's
+  network (a host the server monitors counts with its site's probe); a wrong path clears by itself
+  once the new answer has held for 15 minutes.
+
 ## [0.8.9] - 2026-10-12
 
 Notifications that read right: a RESOLVED says what came back, and a service that stops answering

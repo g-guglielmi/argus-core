@@ -30,7 +30,7 @@ func TestControllerUpstreams(t *testing.T) {
 	}
 	ips := map[string]string{"10": "10.0.0.9", "11": "10.0.0.88", "12": "10.0.0.50", "13": "10.0.0.50", "3": "10.0.0.3"}
 	disc := map[string]string{"11": "AA-BB-CC-00-00-02"}
-	got := controllerUpstreams(items, ips, disc)
+	got := controllerUpstreams(items, ips, disc, nil)
 	want := map[string]upstreamLink{
 		"2":  {Host: "1", Port: "8", Source: "controller"},
 		"3":  {Host: "2", Port: "24", Source: "controller"},
@@ -322,7 +322,7 @@ func TestHypervisorUpstreams(t *testing.T) {
 			{"name":"b","host":"m3","macs":[],"ips":["10.1.0.30"]}]}`},
 		{HostID: "80", Key: "xcp.vm.nics", LastValue: ``}, // a collector before the VM list
 	}
-	got := hypervisorUpstreams(items, ips, disc)
+	got := hypervisorUpstreams(items, ips, disc, nil)
 	want := map[string]string{"60": "50", "61": "50", "62": "50", "63": "50", "72": "71"}
 	if len(got) != len(want) {
 		t.Fatalf("got %+v", got)
@@ -352,5 +352,59 @@ func TestDropProbeHosts(t *testing.T) {
 	dropProbeHosts(map[string]string{"p": provision.ClassProbe, "60": "linux-snmp"}, live, eff)
 	if _, ok := live["p"]; ok || len(eff) != 0 || live["60"].Host != "50" {
 		t.Fatalf("live %+v eff %+v", live, eff)
+	}
+}
+
+// Addresses and MACs only mean something on one network: a VM on site1's hypervisor is matched to
+// site1's hosts, never to a site2 host that shares its MAC (a cloned VM) or its private address, and a
+// switch's wired client likewise. A host the server monitors is on its site's probe network.
+func TestUpstreamsStayOnTheirSite(t *testing.T) {
+	g := func(names ...string) []zabbix.HostGroup {
+		var out []zabbix.HostGroup
+		for _, n := range names {
+			out = append(out, zabbix.HostGroup{Name: n})
+		}
+		return out
+	}
+	hosts := []zabbix.Host{
+		{HostID: "50", ProxyID: "1", Groups: g("site1")},          // site1's hypervisor (its pool)
+		{HostID: "1", ProxyID: "1", Groups: g("site1/Network")},   // site1's switch
+		{HostID: "61", ProxyID: "1", Groups: g("site1/DNS")},      // site1's backup DNS, a VM on 50
+		{HostID: "64", ProxyID: "1", Groups: g("site1/Servers")},  // a site1 server on the switch
+		{HostID: "60", ProxyID: "2", Groups: g("site2/DNS")},      // site2's backup DNS: the VM it was cloned from
+		{HostID: "62", ProxyID: "2", Groups: g("site2/Servers")},  // a site2 host at the same private address
+		{HostID: "63", ProxyID: "2", Groups: g("site2/Servers")},  // and one at the switch client's address
+		{HostID: "90", ProxyID: "0", Groups: g("site1/Servers")},  // the server monitors it, on site1
+		{HostID: "91", ProxyID: "0", Groups: g("Zabbix servers")}, // on no site
+	}
+	proxies := []zabbix.Proxy{{ProxyID: "2", Name: "proxy-site2"}, {ProxyID: "1", Name: "proxy-site1"}}
+	nets := upstreamNetworks(hosts, proxies)
+	if nets["90"] != nets["50"] || nets["91"] != "server" || nets["60"] == nets["61"] {
+		t.Fatalf("networks: %v", nets)
+	}
+
+	ips := map[string]string{"50": "10.0.0.4", "61": "10.0.0.8", "62": "10.0.0.8", "64": "10.0.0.5", "63": "10.0.0.5", "90": "10.0.0.9"}
+	disc := map[string]string{"60": "00:0c:29:2b:40:e6"} // only site2's scan saw the shared MAC
+	items := []zabbix.Item{
+		{HostID: "1", Key: "unifi.clients", LastValue: `[{"mac":"aa:bb:cc:00:00:05","ip":"10.0.0.5","port":3}]`},
+		{HostID: "50", Key: "xcp.vm.nics", LastValue: `{"members":[{"name":"xen1","address":"10.0.0.4"}],"vms":[
+			{"name":"adguardbck","host":"xen1","macs":["00:0C:29:2B:40:E6"],"ips":["10.0.0.8"]},
+			{"name":"monitoring","host":"xen1","macs":[],"ips":["10.0.0.9"]}]}`},
+	}
+	hv := hypervisorUpstreams(items, ips, disc, nets)
+	if hv["61"].Host != "50" || hv["90"].Host != "50" {
+		t.Errorf("site1's VMs belong under its hypervisor: %+v", hv)
+	}
+	for _, h := range []string{"60", "62"} {
+		if l, ok := hv[h]; ok {
+			t.Errorf("site2 host %s placed on site1's hypervisor: %+v", h, l)
+		}
+	}
+	ctl := controllerUpstreams(items, ips, disc, nets)
+	if ctl["64"].Host != "1" {
+		t.Errorf("site1's server should hang off its switch: %+v", ctl)
+	}
+	if l, ok := ctl["63"]; ok {
+		t.Errorf("site2's host at the same address hangs off site1's switch: %+v", l)
 	}
 }
