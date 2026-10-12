@@ -70,6 +70,9 @@ zabbix_export:
             - uuid: 60355bb838b142d9a56b5e8dce95b1fd
               expression: 'max(/Argus Linux by SSH/linux.ssh.reachable,#3)=0'
               name: 'SSH monitoring is unreachable'
+              tags:
+                - tag: argus.recovery
+                  value: 'SSH monitoring is reachable again'
               priority: HIGH
               description: 'The SSH collector has not completed a poll on the last 3 checks (host down, SSH refused, or the login/key is wrong).'
         - uuid: bfa8719a8f284e29909b5e7091f55f2f
@@ -93,11 +96,17 @@ zabbix_export:
             - uuid: 08e77a7599c2408e9c16e810af1db841
               expression: 'min(/Argus Linux by SSH/system.cpu.util[ssh],#3)>={$CPU.UTIL.WARN} and min(/Argus Linux by SSH/system.cpu.util[ssh],#3)<{$CPU.UTIL.HIGH}'
               name: 'High CPU utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU utilization is back to normal'
               priority: WARNING
               description: 'CPU utilization at/above the warning threshold on the last 3 checks.'
             - uuid: 9c173a6590a946ff8cf685d8c5d284b7
               expression: 'min(/Argus Linux by SSH/system.cpu.util[ssh],#3)>={$CPU.UTIL.HIGH}'
               name: 'Very high CPU utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU utilization is back to normal'
               priority: HIGH
               description: 'CPU utilization at/above the high threshold on the last 3 checks.'
         - uuid: 578ed2f66db648909a4fd5b518da6c9f
@@ -121,11 +130,17 @@ zabbix_export:
             - uuid: 7f5c16abe9e94b36b7830f6ba798b89d
               expression: 'min(/Argus Linux by SSH/system.cpu.util[ssh,iowait],#3)>={$CPU.IOWAIT.WARN} and min(/Argus Linux by SSH/system.cpu.util[ssh,iowait],#3)<{$CPU.IOWAIT.HIGH}'
               name: 'High CPU iowait'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU iowait is back to normal'
               priority: WARNING
               description: 'CPU iowait at/above the warning threshold on the last 3 checks: the host is waiting on its storage.'
             - uuid: 989863f439754abca83503576598a792
               expression: 'min(/Argus Linux by SSH/system.cpu.util[ssh,iowait],#3)>={$CPU.IOWAIT.HIGH}'
               name: 'Very high CPU iowait'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU iowait is back to normal'
               priority: HIGH
               description: 'CPU iowait at/above the high threshold on the last 3 checks: the host is waiting on its storage.'
         - uuid: 8dacd9f792e34ff39a667575f7883eb7
@@ -149,11 +164,17 @@ zabbix_export:
             - uuid: c27931dcb7864ac1b3f654a26eced458
               expression: 'min(/Argus Linux by SSH/system.cpu.util[ssh,steal],#3)>={$CPU.STEAL.WARN} and min(/Argus Linux by SSH/system.cpu.util[ssh,steal],#3)<{$CPU.STEAL.HIGH}'
               name: 'High CPU steal'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU steal is back to normal'
               priority: WARNING
               description: 'CPU steal at/above the warning threshold on the last 3 checks: other guests on the same hypervisor are taking this VM''s CPU time.'
             - uuid: 8eb97af8e4e64c9cad8a8db74ca910e8
               expression: 'min(/Argus Linux by SSH/system.cpu.util[ssh,steal],#3)>={$CPU.STEAL.HIGH}'
               name: 'Very high CPU steal'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU steal is back to normal'
               priority: HIGH
               description: 'CPU steal at/above the high threshold on the last 3 checks: other guests on the same hypervisor are taking this VM''s CPU time.'
         - uuid: b0d05050128e4e538aae3084fd0021f3
@@ -259,11 +280,17 @@ zabbix_export:
             - uuid: 68b389fdb8904984876bca62c4f1eb82
               expression: 'min(/Argus Linux by SSH/vm.memory.utilization[ssh],#3)>={$MEM.USED.WARN} and min(/Argus Linux by SSH/vm.memory.utilization[ssh],#3)<{$MEM.USED.HIGH}'
               name: 'High memory utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'Memory utilization is back to normal'
               priority: WARNING
               description: 'Memory utilization at/above the warning threshold on the last 3 checks.'
             - uuid: bf47fee91ca949ea942dfd07a2ec333d
               expression: 'min(/Argus Linux by SSH/vm.memory.utilization[ssh],#3)>={$MEM.USED.HIGH}'
               name: 'Very high memory utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'Memory utilization is back to normal'
               priority: HIGH
               description: 'Memory utilization at/above the high threshold on the last 3 checks.'
         - uuid: aa15a655797248ffa1a871e1ba092be7
@@ -329,6 +356,9 @@ zabbix_export:
                 - uuid: 4c328783beab476286579cdbeabfb39f
                   expression: 'max(/Argus Linux by SSH/linux.ssh.unit.active[{#UNIT}],#3)=0'
                   name: 'Service down: {#UNIT}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Service running again: {#UNIT}'
                   priority: HIGH
                   description: 'The unit has not been active on the last 3 checks (failed, stopped, restarting, or not on this host).'
             - uuid: bff68c2bbb944fee8cee22d1bbb9d70c
@@ -405,6 +435,9 @@ zabbix_export:
                 - uuid: 76b99fe5fca64b2cbfddb43241cd8be2
                   expression: 'max(/Argus Linux by SSH/linux.ssh.container.running[{#CONTAINER}],#3)=0'
                   name: 'Container down: {#CONTAINER}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Container running again: {#CONTAINER}'
                   priority: HIGH
                   description: 'The container has not been up and healthy on the last 3 checks (exited, restarting, paused, unhealthy, or removed).'
             - uuid: 12575228849144728b0a3e2842dc5544
@@ -488,11 +521,17 @@ zabbix_export:
                 - uuid: b2f64a5f276441c38d7f26067fdff69b
                   expression: 'min(/Argus Linux by SSH/linux.ssh.units.failed[{#SYSTEMD}],#3)>={$SSH.FAILED.WARN} and min(/Argus Linux by SSH/linux.ssh.units.failed[{#SYSTEMD}],#3)<{$SSH.FAILED.HIGH}'
                   name: 'Failed systemd units'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'No failed systemd units left'
                   priority: WARNING
                   description: 'At least the warning number of systemd units has been failed on the last 3 checks. Their names are in the sensor''s reason.'
                 - uuid: cc53c01804274722aa681332ae54ce25
                   expression: 'min(/Argus Linux by SSH/linux.ssh.units.failed[{#SYSTEMD}],#3)>={$SSH.FAILED.HIGH}'
                   name: 'Many failed systemd units'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'No failed systemd units left'
                   priority: HIGH
                   description: 'At least the high number of systemd units has been failed on the last 3 checks. Their names are in the sensor''s reason.'
             - uuid: 5ea5f72c3c1f4922badba51029469e5e
@@ -604,11 +643,17 @@ zabbix_export:
                 - uuid: fff5938365af4a3baf14e01f8b8bc48c
                   expression: 'min(/Argus Linux by SSH/vfs.fs.size[{#FSNAME},pused],#3)>={$DISK.PUSED.WARN} and min(/Argus Linux by SSH/vfs.fs.size[{#FSNAME},pused],#3)<{$DISK.PUSED.HIGH}'
                   name: 'Disk space low: {#FSNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Disk space back to normal: {#FSNAME}'
                   priority: WARNING
                   description: 'Filesystem usage at/above the warning threshold.'
                 - uuid: 84f13a2c6d154cadb3ff744896de6384
                   expression: 'min(/Argus Linux by SSH/vfs.fs.size[{#FSNAME},pused],#3)>={$DISK.PUSED.HIGH}'
                   name: 'Disk space critical: {#FSNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Disk space back to normal: {#FSNAME}'
                   priority: HIGH
                   description: 'Filesystem usage at/above the high threshold.'
         - uuid: 0b110777a32248b39676b7a04fa58f34

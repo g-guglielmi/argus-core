@@ -71,11 +71,17 @@ zabbix_export:
             - uuid: 9ed3dd79d3ce45d991ba96d72202a39c
               expression: 'min(/Argus Windows by SNMP/system.cpu.util[snmp],#3)>={$CPU.UTIL.WARN} and min(/Argus Windows by SNMP/system.cpu.util[snmp],#3)<{$CPU.UTIL.HIGH}'
               name: 'High CPU utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU utilization is back to normal'
               priority: WARNING
               description: 'CPU utilization at/above the warning threshold on the last 3 checks.'
             - uuid: ca3a29bd174f4d37b801366b5dfc3b5f
               expression: 'min(/Argus Windows by SNMP/system.cpu.util[snmp],#3)>={$CPU.UTIL.HIGH}'
               name: 'Very high CPU utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU utilization is back to normal'
               priority: HIGH
               description: 'CPU utilization at/above the high threshold on the last 3 checks.'
         - uuid: b1aa3392fea348ccbdffdafd2f58a068
@@ -155,11 +161,17 @@ zabbix_export:
             - uuid: 537e947f5a54483997e8310c59ca3599
               expression: 'min(/Argus Windows by SNMP/vm.memory.utilization[snmp],#3)>={$MEM.USED.WARN} and min(/Argus Windows by SNMP/vm.memory.utilization[snmp],#3)<{$MEM.USED.HIGH}'
               name: 'High memory utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'Memory utilization is back to normal'
               priority: WARNING
               description: 'Memory use at/above the warning threshold on the last 3 checks.'
             - uuid: f024618d2f784f73a88ea40f562b5c69
               expression: 'min(/Argus Windows by SNMP/vm.memory.utilization[snmp],#3)>={$MEM.USED.HIGH}'
               name: 'Very high memory utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'Memory utilization is back to normal'
               priority: HIGH
               description: 'Memory use at/above the high threshold on the last 3 checks.'
         - uuid: c3c2375fb24b466f82aeade194318731
@@ -308,11 +320,17 @@ zabbix_export:
                 - uuid: 9e752327cf0c4ebda939487061b4cc08
                   expression: 'min(/Argus Windows by SNMP/vfs.fs.size[{#FSNAME},pused],#3)>={$DISK.PUSED.WARN} and min(/Argus Windows by SNMP/vfs.fs.size[{#FSNAME},pused],#3)<{$DISK.PUSED.HIGH}'
                   name: 'Disk space low: {#FSNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Disk space back to normal: {#FSNAME}'
                   priority: WARNING
                   description: 'Filesystem usage at/above the warning threshold.'
                 - uuid: 86631e3ef58a4a1da268935eeedc2270
                   expression: 'min(/Argus Windows by SNMP/vfs.fs.size[{#FSNAME},pused],#3)>={$DISK.PUSED.HIGH}'
                   name: 'Disk space critical: {#FSNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Disk space back to normal: {#FSNAME}'
                   priority: HIGH
                   description: 'Filesystem usage at/above the high threshold.'
         - uuid: 3610b69efb4742d4847104da4d1518d5
@@ -403,6 +421,9 @@ zabbix_export:
                 - uuid: 2c7b0c786ece45b480ec9179c7fa4a25
                   expression: 'nodata(/Argus Windows by SNMP/win.service.state[{#WINSVC}],10m)=1 or last(/Argus Windows by SNMP/win.service.state[{#WINSVC}])<>1'
                   name: 'Service not running: {#WINSVC}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Service running again: {#WINSVC}'
                   priority: HIGH
                   description: 'The service is not reporting an active state (stopped, paused, or gone from the service table).'
                   manual_close: 'YES'

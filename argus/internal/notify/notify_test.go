@@ -71,7 +71,7 @@ func TestBodyLinesSeverity(t *testing.T) {
 		t.Fatalf("problem body should name the severity once:\n%s", lines)
 	}
 	rec := strings.Join(sampleRecovery().bodyLines(), "\n")
-	if strings.Contains(rec, "Severity:") || !strings.Contains(rec, "has recovered after 3h 12m") {
+	if strings.Contains(rec, "Severity:") || !strings.Contains(rec, "Back after 3h 12m.") || !strings.Contains(rec, "Value: 100 %\n") || strings.Contains(rec, "threshold") {
 		t.Fatalf("recovery body:\n%s", rec)
 	}
 }
@@ -93,7 +93,7 @@ func TestHTMLBody(t *testing.T) {
 		t.Errorf("trigger name should appear once (in the header), got %d", n)
 	}
 	r := htmlBody(sampleRecovery())
-	if !strings.Contains(r, "has recovered after 3h 12m") || strings.Contains(r, ">Acknowledge<") || strings.Contains(r, ">Severity<") {
+	if !strings.Contains(r, "Back after 3h 12m.") || !strings.Contains(r, ">Reading<") || strings.Contains(r, "threshold") || strings.Contains(r, ">Acknowledge<") || strings.Contains(r, ">Severity<") || strings.Count(r, "Unavailable by ICMP ping") != 1 {
 		t.Errorf("recovery html: %s", r)
 	}
 }

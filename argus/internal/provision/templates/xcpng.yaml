@@ -69,6 +69,9 @@ zabbix_export:
             - uuid: 491942846a0048e4a567af83b274485e
               expression: 'max(/Argus XCP-NG by XAPI/xcp.reachable,#3)=0'
               name: 'XCP-NG XAPI is unreachable'
+              tags:
+                - tag: argus.recovery
+                  value: 'XCP-NG XAPI is reachable again'
               priority: HIGH
               description: 'XAPI has not answered on the last 3 checks (host down, wrong address, or HTTPS blocked between the proxy/core and the pool master).'
         - uuid: 2093e033e31241cb80b34fea0e2d9d01
@@ -90,6 +93,9 @@ zabbix_export:
             - uuid: c5761b7281634b23a56a1418d656ff23
               expression: 'max(/Argus XCP-NG by XAPI/xcp.authed,#2)=0 and max(/Argus XCP-NG by XAPI/xcp.reachable,#2)=1'
               name: 'XCP-NG credentials rejected'
+              tags:
+                - tag: argus.recovery
+                  value: 'XCP-NG credentials are accepted again'
               priority: HIGH
               description: 'XAPI answers but refuses the login - check {$XCP.USER}/{$XCP.PASS} in host settings (the password is the host root password unless you changed it).'
         - uuid: 526304f545e94f84ae27ec14c8547642
@@ -159,6 +165,9 @@ zabbix_export:
             - uuid: 97cd78fb27b64e19851e5560eb038e46
               expression: 'last(/Argus XCP-NG by XAPI/xcp.hosts.live)<last(/Argus XCP-NG by XAPI/xcp.hosts.total) and max(/Argus XCP-NG by XAPI/xcp.reachable,#2)=1'
               name: 'An XCP-NG pool member is down'
+              tags:
+                - tag: argus.recovery
+                  value: 'All XCP-NG pool members are up'
               priority: HIGH
               description: 'At least one hypervisor in the pool is not live (the per-hypervisor down trigger names it).'
         - uuid: fc80e1b7f98d4d65a35b9147a4648338
@@ -268,11 +277,17 @@ zabbix_export:
                 - uuid: 0111dda07c9f46fd9f2ef072ed979efe
                   expression: 'avg(/Argus XCP-NG by XAPI/xcp.host.cpu[{#HVUUID}],5m)>={$XCP.CPU.UTIL.WARN} and avg(/Argus XCP-NG by XAPI/xcp.host.cpu[{#HVUUID}],5m)<{$XCP.CPU.UTIL.HIGH}'
                   name: 'High CPU utilization on {#HVNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'CPU utilization on {#HVNAME} is back to normal'
                   priority: WARNING
                   description: 'CPU utilization on hypervisor {#HVNAME} has averaged at or above {$XCP.CPU.UTIL.WARN}% (below the high threshold) for 5 minutes.'
                 - uuid: 0211dda07c9f46fd9f2ef072ed979eff
                   expression: 'avg(/Argus XCP-NG by XAPI/xcp.host.cpu[{#HVUUID}],5m)>={$XCP.CPU.UTIL.HIGH}'
                   name: 'Very high CPU utilization on {#HVNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'CPU utilization on {#HVNAME} is back to normal'
                   priority: HIGH
                   description: 'CPU utilization on hypervisor {#HVNAME} has averaged at or above {$XCP.CPU.UTIL.HIGH}% for 5 minutes.'
             - uuid: 03f5e1e9d91d4ad5a247e31415d92313
@@ -328,11 +343,17 @@ zabbix_export:
                 - uuid: c99d6558edfb47c79ec08ff67a9a25bf
                   expression: 'avg(/Argus XCP-NG by XAPI/xcp.host.mem.pct[{#HVUUID}],5m)>={$XCP.MEM.WARN} and avg(/Argus XCP-NG by XAPI/xcp.host.mem.pct[{#HVUUID}],5m)<{$XCP.MEM.HIGH}'
                   name: 'High memory usage on {#HVNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Memory usage on {#HVNAME} is back to normal'
                   priority: WARNING
                   description: 'Memory usage on hypervisor {#HVNAME} has averaged at or above {$XCP.MEM.WARN}% (below the high threshold) for 5 minutes - little headroom left for starting or migrating VMs.'
                 - uuid: c99d6558edfb47c79ec08ff67a9a25c0
                   expression: 'avg(/Argus XCP-NG by XAPI/xcp.host.mem.pct[{#HVUUID}],5m)>={$XCP.MEM.HIGH}'
                   name: 'Very high memory usage on {#HVNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Memory usage on {#HVNAME} is back to normal'
                   priority: HIGH
                   description: 'Memory usage on hypervisor {#HVNAME} has averaged at or above {$XCP.MEM.HIGH}% for 5 minutes.'
             - uuid: bb4b9d4be7a3482c880b692843f7ef4c
@@ -414,11 +435,17 @@ zabbix_export:
                 - uuid: 2429ad2f580b4677999ebc3556a1b296
                   expression: 'min(/Argus XCP-NG by XAPI/xcp.host.temp[{#HVUUID}],#3)>={$XCP.TEMP.WARN}'
                   name: 'CPU running hot on {#HVNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'CPU temperature on {#HVNAME} is back to normal'
                   priority: WARNING
                   description: 'CPU package temperature on {#HVNAME} has been at or above {$XCP.TEMP.WARN} C for 3 consecutive readings.'
                 - uuid: 600e04cbe6904a9ea11a8cf05fdee1b4
                   expression: 'min(/Argus XCP-NG by XAPI/xcp.host.temp[{#HVUUID}],#3)>={$XCP.TEMP.HIGH}'
                   name: 'CPU overheating on {#HVNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'CPU temperature on {#HVNAME} is back to normal'
                   priority: HIGH
                   description: 'CPU package temperature on {#HVNAME} has been at or above {$XCP.TEMP.HIGH} C for 3 consecutive readings.'
             - uuid: e8bb7a8e05674f62bd9a4926fba4dbf4
@@ -472,6 +499,9 @@ zabbix_export:
                 - uuid: d47d8bbb1a3b4833a4f967b456d18368
                   expression: 'max(/Argus XCP-NG by XAPI/xcp.host.live[{#HVUUID}],#2)=0 and max(/Argus XCP-NG by XAPI/xcp.reachable,#2)=1'
                   name: 'Hypervisor {#HVNAME} is down'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Hypervisor {#HVNAME} is up again'
                   priority: HIGH
                   description: 'Pool member {#HVNAME} has not been live on the last 2 checks (crashed, powered off, or lost its heartbeat to the master).'
         - uuid: 69c8b87dd9e44473bdbe419a2b5d6ed7
@@ -525,6 +555,9 @@ zabbix_export:
                 - uuid: 2aad4a38004c4b1b809a9db7c38c7c9d
                   expression: 'last(/Argus XCP-NG by XAPI/xcp.vm.state[{#VMUUID}])<>"Running" and max(/Argus XCP-NG by XAPI/xcp.reachable,#2)=1'
                   name: 'VM {#VMNAME} is not running'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'VM {#VMNAME} is running again'
                   priority: WARNING
                   manual_close: 'YES'
                   description: 'The VM is halted, paused or suspended. Intentionally stopped VM? Close the alert manually - it re-fires only after the VM runs and stops again - or turn VM monitoring off for this pool in host settings.'

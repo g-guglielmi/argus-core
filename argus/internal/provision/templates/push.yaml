@@ -103,6 +103,9 @@ zabbix_export:
                 - uuid: f05c571f3778495084cbebef6604b92e
                   expression: 'last(/Argus Push/argus.push.ok[{#PUSH.ID}])=0'
                   name: '{#PUSH.NAME} reported a failure'
+                  tags:
+                    - tag: argus.recovery
+                      value: '{#PUSH.NAME} reported success again'
                   priority: HIGH
                   description: 'The last run of {#PUSH.NAME} reported a failure. Its message is the sensor''s reason; the next successful run clears it.'
             - uuid: aef55d979b1b4db89a879d509ace76cc
@@ -130,11 +133,17 @@ zabbix_export:
                 - uuid: 2ac7ba9a11204b3ca9e742873955826b
                   expression: 'last(/Argus Push/argus.push.age[{#PUSH.ID}])>{#PUSH.LATE} and last(/Argus Push/argus.push.age[{#PUSH.ID}])<={#PUSH.MISSED}'
                   name: '{#PUSH.NAME} is late'
+                  tags:
+                    - tag: argus.recovery
+                      value: '{#PUSH.NAME} ran again'
                   priority: WARNING
                   description: 'No run of {#PUSH.NAME} reported for longer than its late time ({#PUSH.LATE} s), but not yet its missed time.'
                 - uuid: 1d0f07fec5dc42beb9c5b8c6bd9cbdfb
                   expression: 'last(/Argus Push/argus.push.age[{#PUSH.ID}])>{#PUSH.MISSED}'
                   name: '{#PUSH.NAME} has not run'
+                  tags:
+                    - tag: argus.recovery
+                      value: '{#PUSH.NAME} has run'
                   priority: HIGH
                   description: 'No run of {#PUSH.NAME} reported for longer than its missed time ({#PUSH.MISSED} s).'
             - uuid: a01c1ddcd40d41f09959325ce0ab8c00

@@ -718,6 +718,14 @@ type Problem struct {
 	Clock        string `json:"clock"`        // unix seconds
 	Acknowledged string `json:"acknowledged"` // "0" / "1"
 	ObjectID     string `json:"objectid"`     // triggerid
+	// The problem's tags (AllProblems only): an Argus template trigger's argus.recovery sentence.
+	Tags []ProblemTag `json:"tags,omitempty"`
+}
+
+// ProblemTag is one of a problem's tags (its trigger's, with macros resolved).
+type ProblemTag struct {
+	Tag   string `json:"tag"`
+	Value string `json:"value"`
 }
 
 // Problems returns the active (unresolved) problems on one host, newest first.
@@ -735,9 +743,10 @@ func (c *Client) Problems(ctx context.Context, hostID string) ([]Problem, error)
 // AllProblems returns every active (unresolved) problem across all hosts, newest first.
 func (c *Client) AllProblems(ctx context.Context) ([]Problem, error) {
 	params := map[string]any{
-		"output":    []string{"eventid", "name", "severity", "clock", "acknowledged", "objectid"},
-		"sortfield": []string{"eventid"},
-		"sortorder": "DESC",
+		"output":     []string{"eventid", "name", "severity", "clock", "acknowledged", "objectid"},
+		"selectTags": []string{"tag", "value"},
+		"sortfield":  []string{"eventid"},
+		"sortorder":  "DESC",
 	}
 	var ps []Problem
 	return ps, c.call(ctx, "problem.get", params, true, &ps)

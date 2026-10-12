@@ -865,6 +865,10 @@ CREATE TABLE IF NOT EXISTS site_maps (
 		return err
 	}
 	// Set once the channels that got an alert have been told it was acknowledged; cleared on un-ack.
+	// How a RESOLVED message names what came back (its trigger's argus.recovery tag).
+	if err := s.ensureColumn("notify_events", "recovery TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	if err := s.ensureColumn("notify_events", "ack_notified INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}

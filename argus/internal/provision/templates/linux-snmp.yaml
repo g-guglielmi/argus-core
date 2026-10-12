@@ -54,11 +54,17 @@ zabbix_export:
             - uuid: 674010d8c3a74449a3f84740eb6018b2
               expression: 'min(/Argus Linux by SNMP/system.cpu.util[snmp],#3)>={$CPU.UTIL.WARN} and min(/Argus Linux by SNMP/system.cpu.util[snmp],#3)<{$CPU.UTIL.HIGH}'
               name: 'High CPU utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU utilization is back to normal'
               priority: WARNING
               description: 'CPU utilization at/above the warning threshold on the last 3 checks.'
             - uuid: cb80958726c44574ac0ea6b93c8fa801
               expression: 'min(/Argus Linux by SNMP/system.cpu.util[snmp],#3)>={$CPU.UTIL.HIGH}'
               name: 'Very high CPU utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU utilization is back to normal'
               priority: HIGH
               description: 'CPU utilization at/above the high threshold on the last 3 checks.'
         - uuid: ff83fbd3df554720906553c51652c316
@@ -171,11 +177,17 @@ zabbix_export:
             - uuid: 44ec860e6a6b4d55b69d87ced935811b
               expression: 'min(/Argus Linux by SNMP/vm.memory.utilization[snmp],#3)>={$MEM.USED.WARN} and min(/Argus Linux by SNMP/vm.memory.utilization[snmp],#3)<{$MEM.USED.HIGH}'
               name: 'High memory utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'Memory utilization is back to normal'
               priority: WARNING
               description: 'Memory use at/above the warning threshold on the last 3 checks.'
             - uuid: 7ea18238f2664652b939b1ac4cda76cb
               expression: 'min(/Argus Linux by SNMP/vm.memory.utilization[snmp],#3)>={$MEM.USED.HIGH}'
               name: 'Very high memory utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'Memory utilization is back to normal'
               priority: HIGH
               description: 'Memory use at/above the high threshold on the last 3 checks.'
         - uuid: 7ce217f526164cc680eccb21fc023d0c
@@ -327,11 +339,17 @@ zabbix_export:
                 - uuid: f55a56a47fd944359c9b9b20f9c8931a
                   expression: 'min(/Argus Linux by SNMP/vfs.fs.size[{#FSNAME},pused],#3)>={$DISK.PUSED.WARN} and min(/Argus Linux by SNMP/vfs.fs.size[{#FSNAME},pused],#3)<{$DISK.PUSED.HIGH}'
                   name: 'Disk space low: {#FSNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Disk space back to normal: {#FSNAME}'
                   priority: WARNING
                   description: 'Filesystem usage at/above the warning threshold.'
                 - uuid: 570ef8d5c45a4f2184c17de4e8a7b350
                   expression: 'min(/Argus Linux by SNMP/vfs.fs.size[{#FSNAME},pused],#3)>={$DISK.PUSED.HIGH}'
                   name: 'Disk space critical: {#FSNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Disk space back to normal: {#FSNAME}'
                   priority: HIGH
                   description: 'Filesystem usage at/above the high threshold.'
         - uuid: 9372f862ad054df38bfa1a0f9c82ddee

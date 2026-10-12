@@ -76,6 +76,9 @@ zabbix_export:
                 - uuid: deeaf34e28d043e5901437366af2596f
                   expression: 'max(/Argus DNS resolution/dns.resolve.success[{#DNSNAME}],#3)=0'
                   name: 'DNS not resolving {#DNSNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'DNS resolves {#DNSNAME} again'
                   priority: HIGH
                   description: 'The server failed to resolve {#DNSNAME} on the last 3 checks.'
             - uuid: 79c5262689984c58a4b02a037f209d74
@@ -99,11 +102,17 @@ zabbix_export:
                 - uuid: c3cb39ab07ed46bb9f231a3a2807f99f
                   expression: 'min(/Argus DNS resolution/dns.resolve.time[{#DNSNAME}],#3)>={$DNS.RTT.WARN} and min(/Argus DNS resolution/dns.resolve.time[{#DNSNAME}],#3)<{$DNS.RTT.HIGH} and max(/Argus DNS resolution/dns.resolve.success[{#DNSNAME}],#3)=1'
                   name: 'DNS resolution slow for {#DNSNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'DNS resolution of {#DNSNAME} is fast again'
                   priority: WARNING
                   description: 'Resolving {#DNSNAME} took at least {$DNS.RTT.WARN}s (below the high threshold) on the last 3 checks (while still resolving).'
                 - uuid: d3cb39ab07ed46bb9f231a3a2807f9a0
                   expression: 'min(/Argus DNS resolution/dns.resolve.time[{#DNSNAME}],#3)>={$DNS.RTT.HIGH} and max(/Argus DNS resolution/dns.resolve.success[{#DNSNAME}],#3)=1'
                   name: 'DNS resolution very slow for {#DNSNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'DNS resolution of {#DNSNAME} is fast again'
                   priority: HIGH
                   description: 'Resolving {#DNSNAME} took at least {$DNS.RTT.HIGH}s on the last 3 checks (while still resolving).'
             - uuid: ccdcb51da08a40ce85e5b99aae32a8b1

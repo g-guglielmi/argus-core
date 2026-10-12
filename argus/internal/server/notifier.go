@@ -390,11 +390,12 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 				}
 			}
 		} else if stt.State == "firing" && len(deliveries[eid]) > 0 {
+			value, _ := reading(ctx, zbx, stt.ItemID, false, time.Now().In(loc))
 			ev := notify.Event{
 				Kind: "recovery", Severity: stt.Severity, State: "ok",
-				Host: stt.HostName, Name: stt.Name, Site: primarySite(hostGroups[stt.HostID]), Groups: hostGroups[stt.HostID], When: time.Now().In(loc),
+				Host: stt.HostName, Name: recoveryTitle(stt), Site: primarySite(hostGroups[stt.HostID]), Groups: hostGroups[stt.HostID], When: time.Now().In(loc),
 				SinceSecs: time.Now().Unix() - incidentStart(stt), OpenURL: OpenLink(publicURL, stt.HostID, stt.ItemID),
-				ChartPNG: alertChart(ctx, zbx, stt.ItemID, "ok"),
+				Value: value, ChartPNG: alertChart(ctx, zbx, stt.ItemID, "ok"),
 			}
 			ev.Note, ev.NoteBy = noteFor(notes, stt.ItemID, eid)
 			ev.Behind = masters.behindFor(stt.HostID, []masterRef{{id: stt.ItemID}}, hostNames)
@@ -449,9 +450,13 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		if !seen {
 			_ = st.UpsertNotifyState(ctx, store.NotifyState{
 				EventID: p.EventID, HostID: hostID, ItemID: itemID, HostName: hostName, Name: p.Name,
-				Severity: sev, State: "pending", FirstSeen: now.Unix(), IncidentStart: start,
+				Severity: sev, State: "pending", FirstSeen: now.Unix(), IncidentStart: start, Recovery: recoveryOf(p),
 			})
 			continue
+		}
+		if r := recoveryOf(p); r != stt.Recovery { // an alert from before the sentences existed, or a template change
+			stt.Recovery = r
+			_ = st.UpsertNotifyState(ctx, stt)
 		}
 		if stt.State == "baseline" {
 			continue
@@ -499,6 +504,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			stt = store.NotifyState{
 				EventID: p.EventID, HostID: hostID, ItemID: itemID, HostName: hostName, Name: p.Name,
 				Severity: sev, State: "firing", FirstSeen: stt.FirstSeen, FiredAt: &firedAt, IncidentStart: start,
+				Recovery: stt.Recovery,
 			}
 			_ = st.UpsertNotifyState(ctx, stt)
 		}
@@ -688,6 +694,41 @@ func backfillDeliveries(ctx context.Context, st *store.Store, states map[string]
 // reading is an alert's current value for the message - the sensor's last value with its units or, for
 // a "no data" alert, how long data has been missing ("No data for 4m (since 00:56)") - and the
 // sensor's units, for the threshold.
+// recoveryTag is the trigger tag that holds a RESOLVED message's sentence ("GitHub answers again from
+// this site"): every trigger in an Argus template has one (TestTriggersSayHowTheyRecover).
+const recoveryTag = "argus.recovery"
+
+// recoveryOf is a problem's recovery sentence, from its tags ("" without one).
+func recoveryOf(p zabbix.Problem) string {
+	for _, t := range p.Tags {
+		if t.Tag == recoveryTag {
+			return strings.TrimSpace(t.Value)
+		}
+	}
+	return ""
+}
+
+// recoveryTitle names what came back in a RESOLVED message: the sentence the trigger carries, the
+// obvious one for Argus's own problems (a sensor collecting again, an agent reachable again), and
+// "Back to normal: <the problem>" for a trigger from outside Argus's templates.
+func recoveryTitle(stt store.NotifyState) string {
+	if stt.Recovery != "" {
+		return stt.Recovery
+	}
+	if isSynthetic(stt.EventID) {
+		if label, ok := strings.CutSuffix(stt.Name, " stopped collecting"); ok {
+			if strings.HasSuffix(label, " checks") { // a collector: "HTTP checks", "DNS checks"
+				return label + " are collecting again"
+			}
+			return label + " is collecting again"
+		}
+		if up := interfaceUpName(stt.Name); up != "" {
+			return up
+		}
+	}
+	return "Back to normal: " + stt.Name
+}
+
 func reading(ctx context.Context, zbx *zabbix.Client, itemID string, noData bool, now time.Time) (string, string) {
 	if itemID == "" {
 		return "", ""

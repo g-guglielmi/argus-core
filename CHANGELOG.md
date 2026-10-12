@@ -13,6 +13,23 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Changed:**
+- **A RESOLVED notification says what came back.** It used to repeat the problem that ended
+  ("[RESOLVED] GitHub does not answer from this site"); it now reads "GitHub answers again from this
+  site", "Cloudflare is fast again from this site", "CPU utilization is back to normal", "UPS back on
+  utility power". Every alert of every Argus template has its own sentence; a sensor that stopped
+  collecting says it is collecting again, and an alert from outside Argus's templates reads "Back to
+  normal: <the problem>". It also shows the reading now (without the threshold) and says "Back after
+  3m" in every channel.
+
+**Fixed:**
+- A service that stops answering no longer alerts "response time stopped collecting" a minute
+  before its "does not answer" alert: a response time, status code, certificate or resolved address
+  that can't be read while its own service doesn't answer stays quiet, and that alert says it all.
+- A sensor's reason (on hover and in alerts) showed the start of the collector's raw data whenever a
+  processing step failed ("Preprocessing failed for: {"error": "", "urls": ...}"); it now shows what
+  failed.
+
 ## [0.8.8] - 2026-10-12
 
 The probes' minute report to Argus works again, and Argus now flags a probe whose report stops.

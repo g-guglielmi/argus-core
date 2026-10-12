@@ -64,3 +64,42 @@ func TestLeftOverUnsupported(t *testing.T) {
 		}
 	}
 }
+
+// A response time, status code, certificate or resolved address can't be read while its target
+// doesn't answer: that's its target's alert ("does not answer"), not a reading that stopped.
+func TestTargetDown(t *testing.T) {
+	for key, want := range map[string]string{
+		"saas.time[95c9a05036]":       "saas.up[95c9a05036]",
+		"http.url.status[ab12]":       "http.url.up[ab12]",
+		"http.url.cert[ab12]":         "http.url.up[ab12]",
+		"tcp.port.time[443]":          "tcp.port.up[443]",
+		"dns.resolve.ip[example.com]": "dns.resolve.success[example.com]",
+		"saas.up[95c9a05036]":         "",
+		"system.cpu.util[,user]":      "",
+		"icmppingsec":                 "",
+	} {
+		if got := downFlagFor(key); got != want {
+			t.Errorf("downFlagFor(%q) = %q, want %q", key, got, want)
+		}
+	}
+	flags := map[string]string{
+		"10\x00saas.up[gh]": "0", // GitHub doesn't answer from probe 10
+		"10\x00saas.up[cf]": "1", // Cloudflare does
+	}
+	cases := []struct {
+		name string
+		it   zabbix.UnsupportedItem
+		want bool
+	}{
+		{"its service doesn't answer", zabbix.UnsupportedItem{HostID: "10", Key: "saas.time[gh]"}, true},
+		{"its service answers: really stopped", zabbix.UnsupportedItem{HostID: "10", Key: "saas.time[cf]"}, false},
+		{"the flag on another host doesn't count", zabbix.UnsupportedItem{HostID: "20", Key: "saas.time[gh]"}, false},
+		{"no flag read", zabbix.UnsupportedItem{HostID: "10", Key: "saas.time[zz]"}, false},
+		{"no flag at all", zabbix.UnsupportedItem{HostID: "10", Key: "system.cpu.util"}, false},
+	}
+	for _, c := range cases {
+		if got := targetDown(c.it, flags); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}

@@ -109,6 +109,9 @@ zabbix_export:
             - uuid: 9ed9e27b51d144d7855c6cdbfa97ae67
               expression: 'max(/Argus Home Assistant by HTTP/hass.running,#3)=0'
               name: 'Home Assistant is down or not ready'
+              tags:
+                - tag: argus.recovery
+                  value: 'Home Assistant is up and ready again'
               priority: HIGH
               description: 'The API has not reported ready on the last 3 checks (down, unreachable, or a long restart/upgrade).'
         - uuid: ebb27bd0e7e84cd6ae05009e899eda9f

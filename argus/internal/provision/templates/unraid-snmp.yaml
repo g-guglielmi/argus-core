@@ -103,11 +103,17 @@ zabbix_export:
             - uuid: b067d30d644d4d0b9fd835fbf94f4ca2
               expression: 'min(/Argus unRAID by SNMP/unraid.cputemp,#3)>={$CPU.TEMP.WARN} and min(/Argus unRAID by SNMP/unraid.cputemp,#3)<{$CPU.TEMP.HIGH}'
               name: 'CPU running hot'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU temperature is back to normal'
               priority: WARNING
               description: 'CPU temperature at/above the warning threshold on the last 3 checks.'
             - uuid: 579f0b3b17e243878ac328b1d60e5411
               expression: 'min(/Argus unRAID by SNMP/unraid.cputemp,#3)>={$CPU.TEMP.HIGH}'
               name: 'CPU overheating'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU temperature is back to normal'
               priority: HIGH
               description: 'CPU temperature at/above the high threshold on the last 3 checks.'
       discovery_rules:
@@ -173,11 +179,17 @@ zabbix_export:
                 - uuid: 0bd565d559364f51b4468582576ee4a6
                   expression: 'min(/Argus unRAID by SNMP/unraid.disktemp["{#DISKID}"],#3)>={$DISK.TEMP.WARN} and min(/Argus unRAID by SNMP/unraid.disktemp["{#DISKID}"],#3)<{$DISK.TEMP.HIGH}'
                   name: 'Disk {#DISKID} running hot'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Disk {#DISKID} temperature is back to normal'
                   priority: WARNING
                   description: 'Drive temperature at/above the warning threshold on the last 3 checks.'
                 - uuid: fa9878282f4e4cea899ebaa2490bb7f1
                   expression: 'min(/Argus unRAID by SNMP/unraid.disktemp["{#DISKID}"],#3)>={$DISK.TEMP.HIGH}'
                   name: 'Disk {#DISKID} overheating'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Disk {#DISKID} temperature is back to normal'
                   priority: HIGH
                   description: 'Drive temperature at/above the high threshold on the last 3 checks.'
         - uuid: 9119ec7fa0cc4dde956e29c88b6617f0
@@ -249,11 +261,17 @@ zabbix_export:
                 - uuid: d79dcdda87d3462c82e58fd321c77536
                   expression: 'min(/Argus unRAID by SNMP/unraid.arraytemp["{#DISKID}"],#3)>={$DISK.TEMP.WARN} and min(/Argus unRAID by SNMP/unraid.arraytemp["{#DISKID}"],#3)<{$DISK.TEMP.HIGH}'
                   name: '{#SLOT} running hot'
+                  tags:
+                    - tag: argus.recovery
+                      value: '{#SLOT} temperature is back to normal'
                   priority: WARNING
                   description: 'Drive temperature at/above the warning threshold on the last 3 checks.'
                 - uuid: 1572f7d8a7904df09b18b36d22d55254
                   expression: 'min(/Argus unRAID by SNMP/unraid.arraytemp["{#DISKID}"],#3)>={$DISK.TEMP.HIGH}'
                   name: '{#SLOT} overheating'
+                  tags:
+                    - tag: argus.recovery
+                      value: '{#SLOT} temperature is back to normal'
                   priority: HIGH
                   description: 'Drive temperature at/above the high threshold on the last 3 checks.'
         - uuid: 26f9bf403a034f43bf9f73049fbddde0
@@ -325,11 +343,17 @@ zabbix_export:
                 - uuid: 1bfc4081788e4aeaad3d81ccf7214d77
                   expression: 'min(/Argus unRAID by SNMP/unraid.pooltemp["{#DISKID}"],#3)>={$POOL.TEMP.WARN} and min(/Argus unRAID by SNMP/unraid.pooltemp["{#DISKID}"],#3)<{$POOL.TEMP.HIGH}'
                   name: '{#SLOT} running hot'
+                  tags:
+                    - tag: argus.recovery
+                      value: '{#SLOT} temperature is back to normal'
                   priority: WARNING
                   description: 'Pool drive temperature at/above the warning threshold on the last 3 checks.'
                 - uuid: ddb95480417445788b6aae27f8be481a
                   expression: 'min(/Argus unRAID by SNMP/unraid.pooltemp["{#DISKID}"],#3)>={$POOL.TEMP.HIGH}'
                   name: '{#SLOT} overheating'
+                  tags:
+                    - tag: argus.recovery
+                      value: '{#SLOT} temperature is back to normal'
                   priority: HIGH
                   description: 'Pool drive temperature at/above the high threshold on the last 3 checks.'
         - uuid: 940bdfc5ddbe4aa5a79b8f5c75938267

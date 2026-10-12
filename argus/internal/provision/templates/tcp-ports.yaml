@@ -70,6 +70,9 @@ zabbix_export:
                 - uuid: 11d06e8b37b24dd783ef531ba180fe84
                   expression: 'max(/Argus TCP ports/tcp.port.up[{#PORT}],#3)=0'
                   name: 'Port {#PORTNAME} is not answering'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Port {#PORTNAME} answers again'
                   priority: HIGH
                   description: 'Port {#PORT} has refused or ignored the connection on the last 3 checks. Why is in the sensor''s reason.'
             - uuid: 387aa99496884024bce39b48c42bfeb6
@@ -96,11 +99,17 @@ zabbix_export:
                 - uuid: ffbd0f98410047a182ec8e11efe49d36
                   expression: 'min(/Argus TCP ports/tcp.port.time[{#PORT}],#3)>={$TCP.TIME.WARN} and min(/Argus TCP ports/tcp.port.time[{#PORT}],#3)<{$TCP.TIME.HIGH} and max(/Argus TCP ports/tcp.port.up[{#PORT}],#3)=1'
                   name: 'Port {#PORTNAME} is slow to connect'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Port {#PORTNAME} connects quickly again'
                   priority: WARNING
                   description: 'Opening port {#PORT} took at least {$TCP.TIME.WARN}s (below the high threshold) on the last 3 checks, while it still answers.'
                 - uuid: 7661f86af46f4e7dad3bd606cc1353fc
                   expression: 'min(/Argus TCP ports/tcp.port.time[{#PORT}],#3)>={$TCP.TIME.HIGH} and max(/Argus TCP ports/tcp.port.up[{#PORT}],#3)=1'
                   name: 'Port {#PORTNAME} is very slow to connect'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Port {#PORTNAME} connects quickly again'
                   priority: HIGH
                   description: 'Opening port {#PORT} took at least {$TCP.TIME.HIGH}s on the last 3 checks, while it still answers.'
             - uuid: f2f3e16ce4f74d169751fb319d1cf260

@@ -76,6 +76,9 @@ zabbix_export:
                 - uuid: d6cc8ca82b7a4c589d53ad6b17e9aad3
                   expression: 'max(/Argus Common SaaS/saas.up[{#URLID}],#3)=0'
                   name: '{#URLNAME} does not answer from this site'
+                  tags:
+                    - tag: argus.recovery
+                      value: '{#URLNAME} answers again from this site'
                   priority: HIGH
                   description: '{#URLNAME} has not answered on the last 3 checks. Why is in the sensor''s reason.'
             - uuid: e918d5f84e94482082b984f21dc24135
@@ -102,11 +105,17 @@ zabbix_export:
                 - uuid: f21f39f4e89d441aaf7481620c654a83
                   expression: 'min(/Argus Common SaaS/saas.time[{#URLID}],#3)>={$SAAS.TIME.WARN} and min(/Argus Common SaaS/saas.time[{#URLID}],#3)<{$SAAS.TIME.HIGH} and max(/Argus Common SaaS/saas.up[{#URLID}],#3)=1'
                   name: '{#URLNAME} is slow from this site'
+                  tags:
+                    - tag: argus.recovery
+                      value: '{#URLNAME} is fast again from this site'
                   priority: WARNING
                   description: '{#URLNAME} took at least {$SAAS.TIME.WARN}s (below the high threshold) on the last 3 checks, while it still answers.'
                 - uuid: fad6ef4ab23745c9bedb96a343782f10
                   expression: 'min(/Argus Common SaaS/saas.time[{#URLID}],#3)>={$SAAS.TIME.HIGH} and max(/Argus Common SaaS/saas.up[{#URLID}],#3)=1'
                   name: '{#URLNAME} is very slow from this site'
+                  tags:
+                    - tag: argus.recovery
+                      value: '{#URLNAME} is fast again from this site'
                   priority: HIGH
                   description: '{#URLNAME} took at least {$SAAS.TIME.HIGH}s on the last 3 checks, while it still answers.'
             - uuid: 4415f10a242546dabc6b6205e082d167

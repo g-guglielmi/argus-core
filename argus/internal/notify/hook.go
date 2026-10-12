@@ -84,5 +84,8 @@ func webhookPayload(e Event) WebhookPayload {
 	if e.isAlert() {
 		p.Severity, p.SeverityLabel, p.Value, p.Threshold, p.AckURL = e.Severity, severityLabel(e.Severity), e.Value, e.Threshold, e.AckURL
 	}
+	if e.Kind == "recovery" {
+		p.Value = e.Value // what it reads now it is back
+	}
 	return p
 }

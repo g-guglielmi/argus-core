@@ -1026,10 +1026,17 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   `item_unsupported` records since when, as Zabbix doesn't say). A dependent sensor whose own steps
   can't fail (each discards, or sets, its value on error) is left out while its master collects:
   only its master's failure made it unsupported, and Zabbix keeps that state until it stores a value,
-  which a URL that doesn't answer never gives its response time (`leftOverUnsupported`). And an **agent / SNMP / IPMI / JMX
+  which a URL that doesn't answer never gives its response time (`leftOverUnsupported`). A reading
+  of a target that doesn't answer is left out too, whatever made it unsupported: a response time,
+  status code, certificate or resolved address whose own up/down flag (same key parameters,
+  `downFlags`: `saas.time` and `saas.up`, `http.url.*` and `http.url.up`, `tcp.port.time` and
+  `tcp.port.up`, `dns.resolve.*` and `dns.resolve.success`) reads down: the flag's alert ("does not
+  answer") says what is wrong, where GitHub's response time used to alert "stopped collecting" a
+  minute before it (`targetDown`). And an **agent / SNMP / IPMI / JMX
   interface** Zabbix marks unavailable (timed from its `errors_from`). Both are High and skip the
   alert delay, since failed checks or Zabbix's retries already are the wait. The reading is Zabbix's
-  error. Acks stay in Argus (no Zabbix event to mirror). Those present when the
+  error; for a failed preprocessing step, the step's own line ("1. Failed: ..."), not the
+  "Preprocessing failed for: <value>" line above it, which only echoes the value (`itemError`). Acks stay in Argus (no Zabbix event to mirror). Those present when the
   feature arrived were baselined. Supported sensors with no new values are deliberately not alerted:
   many store only changes, so an old last value is normal; a silent device or probe is caught by its
   master instead.
@@ -1086,6 +1093,13 @@ alert, recovery, or the **Send test** button - is recorded on the channel (`last
 webhook or SMTP password is visible in the UI rather than only in the core log. The message format is
 shared across channels: `[SEVERITY] host - trigger` with the status emoji (the Zabbix severity, e.g.
 `[HIGH]`; `[RESOLVED]` for recoveries), the reading + threshold, the site, the time, and deep links -
+a RESOLVED is titled with what came back, not the problem that ended ("GitHub answers again from
+this site", "UPS back on utility power"): every trigger in an Argus template carries that sentence
+as its `argus.recovery` tag (`TestTriggersSayHowTheyRecover` holds every template to it), the
+notifier keeps it from the problem's tags while the alert is open (`notify_events.recovery`), Argus's
+own problems word theirs ("... is collecting again", "SNMP is responding again"), and a trigger from
+elsewhere reads "Back to normal: <problem>"; it leads with "Back after 3m" and shows the reading
+now, without the threshold -
 **Open in Argus** and, for problems, a signed one-click **Acknowledge**. Email is a single-card HTML
 message with a plain-text alternative, the inline 2-hour chart, a dark-mode override for clients that
 honour it, and a footer linking back to the channel page; Telegram is a compact card whose links are

@@ -65,6 +65,18 @@ const (
 // carry the severity, the reading and the Acknowledge action.
 func (e Event) isAlert() bool { return e.Kind == "problem" || e.Kind == "reminder" }
 
+// showsReading reports whether the event carries the sensor's reading: an alert's, or what it reads now
+// that it recovered (the proof it is back).
+func (e Event) showsReading() bool { return e.isAlert() || e.Kind == "recovery" }
+
+// backLine is a recovery's lead line: "Back after 3m" ("" when how long it lasted is unknown).
+func (e Event) backLine() string {
+	if e.Kind != "recovery" || e.SinceSecs <= 0 {
+		return ""
+	}
+	return "Back after " + fmtDur(e.SinceSecs)
+}
+
 func (e Event) color() int {
 	if e.Kind == "ack" {
 		return colorAck
@@ -221,12 +233,13 @@ func (e Event) whereLine() string {
 // title is the subject with its status emoji, for chat channels.
 func (e Event) title() string { return e.emoji() + " " + e.subject() }
 
-// valueLine renders the reading + threshold context, or "" when there's no value.
+// valueLine renders the reading + threshold context, or "" when there's no value. A recovery shows the
+// reading alone: there is nothing past the threshold any more.
 func (e Event) valueLine() string {
 	if e.Value == "" {
 		return ""
 	}
-	if e.Threshold != "" {
+	if e.Threshold != "" && e.Kind != "recovery" {
 		return fmt.Sprintf("Value: %s (threshold %s)", e.Value, e.Threshold)
 	}
 	return "Value: " + e.Value
@@ -248,10 +261,9 @@ func (e Event) bodyLines() []string {
 	}
 	switch e.Kind {
 	case "recovery":
-		if e.SinceSecs > 0 {
-			lines = append(lines, fmt.Sprintf("%s has recovered after %s.", e.Name, fmtDur(e.SinceSecs)))
-		} else {
-			lines = append(lines, e.Name+" has recovered.")
+		lines = append(lines, e.Name)
+		if bl := e.backLine(); bl != "" {
+			lines = append(lines, bl+".")
 		}
 	case "ack":
 		lines = append(lines, e.Name, e.ackLine())
@@ -275,7 +287,7 @@ func (e Event) bodyLines() []string {
 	if e.Site != "" {
 		lines = append(lines, "Site: "+e.Site)
 	}
-	if v := e.valueLine(); v != "" && e.isAlert() {
+	if v := e.valueLine(); v != "" && e.showsReading() {
 		lines = append(lines, v)
 	}
 	when := "problem"
@@ -303,8 +315,11 @@ func (e Event) cardLines() []string {
 	case "info":
 		out = append(out, e.detailLines()...)
 	case "recovery":
-		if e.SinceSecs > 0 {
-			out = append(out, "Recovered after "+fmtDur(e.SinceSecs))
+		if bl := e.backLine(); bl != "" {
+			out = append(out, bl)
+		}
+		if v := e.valueLine(); v != "" {
+			out = append(out, v)
 		}
 	case "ack":
 		out = append(out, e.ackLine())

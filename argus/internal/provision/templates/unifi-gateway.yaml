@@ -234,6 +234,9 @@ zabbix_export:
             - uuid: fe093e38c0e044929f82cf19d45d76f5
               expression: 'max(/Argus UniFi Gateway by HTTP/unifi.device.state,#3)=0'
               name: 'Gateway offline on the UniFi controller'
+              tags:
+                - tag: argus.recovery
+                  value: 'Gateway online again on the UniFi controller'
               priority: HIGH
               description: 'The controller has not reported the gateway connected on the last 3 checks.'
         - uuid: 5d946a9b880a43d2b386564b60db67c5
@@ -255,11 +258,17 @@ zabbix_export:
             - uuid: d61d904bd18c439ca2ef101d3b8d859f
               expression: 'min(/Argus UniFi Gateway by HTTP/unifi.cpu.util,#3)>={$CPU.UTIL.WARN} and min(/Argus UniFi Gateway by HTTP/unifi.cpu.util,#3)<{$CPU.UTIL.HIGH}'
               name: 'High CPU utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU utilization is back to normal'
               priority: WARNING
               description: 'CPU utilization at/above the warning threshold on the last 3 checks.'
             - uuid: 3fc73b7c54314fb495bad5a5603142d0
               expression: 'min(/Argus UniFi Gateway by HTTP/unifi.cpu.util,#3)>={$CPU.UTIL.HIGH}'
               name: 'Very high CPU utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU utilization is back to normal'
               priority: HIGH
               description: 'CPU utilization at/above the high threshold on the last 3 checks.'
         - uuid: 093c91dc10844742b078fd01ab36105a
@@ -281,11 +290,17 @@ zabbix_export:
             - uuid: a8c6bed9993c4b03b4bc2738a7edcd3c
               expression: 'min(/Argus UniFi Gateway by HTTP/unifi.mem.util,#3)>={$MEM.USED.WARN} and min(/Argus UniFi Gateway by HTTP/unifi.mem.util,#3)<{$MEM.USED.HIGH}'
               name: 'High memory utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'Memory utilization is back to normal'
               priority: WARNING
               description: 'Memory use at/above the warning threshold on the last 3 checks.'
             - uuid: 55f5ad27ff154defa68ba35d502ede97
               expression: 'min(/Argus UniFi Gateway by HTTP/unifi.mem.util,#3)>={$MEM.USED.HIGH}'
               name: 'Very high memory utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'Memory utilization is back to normal'
               priority: HIGH
               description: 'Memory use at/above the high threshold on the last 3 checks.'
         - uuid: 506251fa235b43eab0a85ae77056e260
@@ -585,6 +600,9 @@ zabbix_export:
                   recovery_mode: RECOVERY_EXPRESSION
                   recovery_expression: 'min(/Argus UniFi Gateway by HTTP/unifi.wan.avail[{#WANIDX}],#3)>={$UNIFI.WAN.AVAIL.MIN:"{#WANIDX}"}'
                   name: 'WAN {#WANIDX} degraded ({#WANNAME})'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'WAN {#WANIDX} healthy again ({#WANNAME})'
                   priority: HIGH
                   manual_close: 'YES'
                   description: 'Uplink availability below the threshold on the last 3 checks, on a WAN that was healthy within the last 3 hours - so a configured-but-never-connected failover never alerts, while a WAN that worked and then died (unplugged, lossy, or ISP-dead) fires and STAYS open until it is genuinely healthy again (the recovery expression, not the arming window, closes it). Deliberately decommissioning a previously working WAN: close the problem manually once, or set the per-WAN threshold to 0 via macro context ({$UNIFI.WAN.AVAIL.MIN:"2"} = 0 on the host).'

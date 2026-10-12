@@ -30,6 +30,10 @@ func TestItemError(t *testing.T) {
 		"Cannot execute script: Error: cannot get URL: timed out":           "cannot get URL: timed out",
 		"Timeout while executing a shell script.\nmore detail":              "Timeout while executing a shell script.",
 		"  ": "",
+		// Zabbix's preprocessing error: the value it failed on, then the failed step (last first).
+		"Preprocessing failed for: {\"error\": \"\", \"urls\": [{\"id\": \"95c9a05036\", \"up\": 1, \"status\": 200...\n...\n1. Failed: no response time\n": "no response time",
+		"Preprocessing failed for: 12 abc\n...\n2. Failed (set error): not a number\r\n1. Result: 12 abc\n":                                                 "not a number",
+		"Preprocessing failed for: odd": "Preprocessing failed for: odd",
 	} {
 		if got := itemError(in); got != want {
 			t.Errorf("itemError(%q) = %q, want %q", in, got, want)

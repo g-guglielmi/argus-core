@@ -263,11 +263,8 @@ func htmlBody(e Event) string {
 	if e.Site != "" {
 		row("Site", e.Site, "")
 	}
-	if v := e.valueLine(); v != "" && e.isAlert() {
+	if v := e.valueLine(); v != "" && e.showsReading() {
 		row("Reading", strings.TrimPrefix(v, "Value: "), "")
-	}
-	if e.Kind == "recovery" && e.SinceSecs > 0 {
-		row("Duration", fmtDur(e.SinceSecs), "")
 	}
 	when := "Problem since"
 	switch e.Kind {
@@ -286,7 +283,9 @@ func htmlBody(e Event) string {
 	}
 	switch e.Kind {
 	case "recovery":
-		lead = leadDiv(e.bodyLines()[0])
+		if bl := e.backLine(); bl != "" {
+			lead = leadDiv(bl + ".")
+		}
 	case "reminder":
 		lead = leadDiv(e.stillOpen())
 	case "info":

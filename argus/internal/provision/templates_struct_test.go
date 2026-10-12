@@ -88,3 +88,40 @@ func TestClassTemplatesShareNoItemKey(t *testing.T) {
 		}
 	}
 }
+
+// A RESOLVED notification is titled with what came back ("GitHub answers again from this site"), not
+// the problem that ended: every trigger in an Argus template carries that sentence as its
+// argus.recovery tag (the notifier keeps it from the problem's tags while the alert is open).
+func TestTriggersSayHowTheyRecover(t *testing.T) {
+	docs, _, err := loadTemplates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	indent := func(l string) int { return len(l) - len(strings.TrimLeft(l, " -")) }
+	for _, d := range docs {
+		lines := strings.Split(strings.ReplaceAll(d.content, "\r\n", "\n"), "\n")
+		for n, line := range lines {
+			tl := strings.TrimLeft(line, " -")
+			if !strings.HasPrefix(tl, "expression: ") {
+				continue
+			}
+			// The trigger's own fields share the expression's indent; the block ends where one shallower starts.
+			ind, name, value := indent(line), "", ""
+			for i := n + 1; i < len(lines) && (strings.TrimSpace(lines[i]) == "" || indent(lines[i]) >= ind) && !(indent(lines[i]) == ind && strings.HasPrefix(strings.TrimLeft(lines[i], " "), "- ")); i++ {
+				l := strings.TrimSpace(lines[i])
+				switch {
+				case indent(lines[i]) == ind && strings.HasPrefix(l, "name: "):
+					name = strings.TrimPrefix(l, "name: ")
+				case strings.HasPrefix(l, "- tag: argus.recovery") && i+1 < len(lines):
+					value = strings.Trim(strings.TrimPrefix(strings.TrimSpace(lines[i+1]), "value: "), "'")
+				}
+			}
+			if value == "" {
+				t.Errorf("%s line %d: trigger %s has no argus.recovery sentence", d.name, n+1, name)
+			}
+			if strings.ContainsAny(value, "\u2013\u2014") {
+				t.Errorf("%s: trigger %s recovery uses a dash: %q", d.name, name, value)
+			}
+		}
+	}
+}

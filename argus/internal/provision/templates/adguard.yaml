@@ -125,6 +125,9 @@ zabbix_export:
             - uuid: 662dce6c8cb146b198d76499498cece2
               expression: 'max(/Argus AdGuard Home by HTTP/adguard.running,#3)=0'
               name: 'AdGuard Home is down or unreachable'
+              tags:
+                - tag: argus.recovery
+                  value: 'AdGuard Home is up and reachable again'
               priority: HIGH
               description: 'The admin API has not answered on the last 3 checks.'
         - uuid: 669033dd96cd45ed943e06b531f31e5d
@@ -146,6 +149,9 @@ zabbix_export:
             - uuid: cbdad755a29145cf9e099dd7ebedaffc
               expression: 'max(/Argus AdGuard Home by HTTP/adguard.protection,#3)=0 and max(/Argus AdGuard Home by HTTP/adguard.running,#3)=1'
               name: 'AdGuard protection is disabled'
+              tags:
+                - tag: argus.recovery
+                  value: 'AdGuard protection is enabled again'
               priority: WARNING
               description: 'Filtering protection has been switched off on the last 3 checks (while AdGuard is up).'
         - uuid: fd00d647351b43edbf140aa18b8b39f6

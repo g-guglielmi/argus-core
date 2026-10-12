@@ -36,7 +36,7 @@ func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 	if e.Site != "" {
 		fields = append(fields, map[string]any{"name": "Site", "value": mdEscape(e.Site), "inline": true})
 	}
-	if v := e.valueLine(); v != "" && e.isAlert() {
+	if v := e.valueLine(); v != "" && e.showsReading() {
 		fields = append(fields, map[string]any{"name": "Reading", "value": strings.TrimPrefix(v, "Value: "), "inline": true})
 	}
 
@@ -44,7 +44,7 @@ func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 	var desc []string
 	switch {
 	case e.Kind == "recovery" && e.SinceSecs > 0:
-		desc = append(desc, fmt.Sprintf("Recovered after %s.", fmtDur(e.SinceSecs)))
+		desc = append(desc, e.backLine()+".")
 	case e.Kind == "reminder":
 		desc = append(desc, e.stillOpen())
 	case e.Kind == "info":

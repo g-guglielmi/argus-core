@@ -56,6 +56,9 @@ zabbix_export:
             - uuid: 4a09fa380c714c0ea7bb258bfca08e56
               expression: 'max(/Argus Speedtest/speedtest.ok,#2)=0'
               name: 'Speedtest could not run'
+              tags:
+                - tag: argus.recovery
+                  value: 'Speedtest runs again'
               priority: WARNING
               description: 'The last two speed tests could not measure the connection. Why is in the sensor''s reason.'
         - uuid: 125f168d78e940aba4f75ff31f735a3e
@@ -103,11 +106,17 @@ zabbix_export:
             - uuid: 37588e2951a047d0877dfc48653529de
               expression: 'max(/Argus Speedtest/speedtest.down,#2)<{$SPEEDTEST.DOWN.WARN} and max(/Argus Speedtest/speedtest.down,#2)>={$SPEEDTEST.DOWN.HIGH}'
               name: 'Download speed below {$SPEEDTEST.DOWN.WARN} Mbps'
+              tags:
+                - tag: argus.recovery
+                  value: 'Download speed is back to normal'
               priority: WARNING
               description: 'The last two speed tests measured the download speed below the warning threshold (but above the high one).'
             - uuid: ef8dba1ae2144d7cae033d25cc390eb0
               expression: 'max(/Argus Speedtest/speedtest.down,#2)<{$SPEEDTEST.DOWN.HIGH}'
               name: 'Download speed below {$SPEEDTEST.DOWN.HIGH} Mbps'
+              tags:
+                - tag: argus.recovery
+                  value: 'Download speed is back to normal'
               priority: HIGH
               description: 'The last two speed tests measured the download speed below the high threshold.'
         - uuid: 5b4f0a74cc1846bb9a01faef0d5b8448
@@ -134,11 +143,17 @@ zabbix_export:
             - uuid: 814edbbc0c0c435c8d0d4afc8fe00582
               expression: 'max(/Argus Speedtest/speedtest.up,#2)<{$SPEEDTEST.UP.WARN} and max(/Argus Speedtest/speedtest.up,#2)>={$SPEEDTEST.UP.HIGH}'
               name: 'Upload speed below {$SPEEDTEST.UP.WARN} Mbps'
+              tags:
+                - tag: argus.recovery
+                  value: 'Upload speed is back to normal'
               priority: WARNING
               description: 'The last two speed tests measured the upload speed below the warning threshold (but above the high one).'
             - uuid: c3402808328d4c499e70000850d61695
               expression: 'max(/Argus Speedtest/speedtest.up,#2)<{$SPEEDTEST.UP.HIGH}'
               name: 'Upload speed below {$SPEEDTEST.UP.HIGH} Mbps'
+              tags:
+                - tag: argus.recovery
+                  value: 'Upload speed is back to normal'
               priority: HIGH
               description: 'The last two speed tests measured the upload speed below the high threshold.'
         - uuid: 8c71b721a89f48598f9f9f6bd29aaa95
@@ -165,11 +180,17 @@ zabbix_export:
             - uuid: 2214c759a19d441788b2df4f963aafca
               expression: 'min(/Argus Speedtest/speedtest.latency,#2)>={$SPEEDTEST.LATENCY.WARN} and min(/Argus Speedtest/speedtest.latency,#2)<{$SPEEDTEST.LATENCY.HIGH}'
               name: 'Internet latency high'
+              tags:
+                - tag: argus.recovery
+                  value: 'Internet latency is back to normal'
               priority: WARNING
               description: 'The last two speed tests measured the idle round trip at or above the warning threshold (but below the high one).'
             - uuid: 4e1984870af84aa9998896c65504e6ef
               expression: 'min(/Argus Speedtest/speedtest.latency,#2)>={$SPEEDTEST.LATENCY.HIGH}'
               name: 'Internet latency very high'
+              tags:
+                - tag: argus.recovery
+                  value: 'Internet latency is back to normal'
               priority: HIGH
               description: 'The last two speed tests measured the idle round trip at or above the high threshold.'
         - uuid: d4628d7dd8074c7eaa3a75d43de2de0f
@@ -196,11 +217,17 @@ zabbix_export:
             - uuid: f5ea0b00b05e4aef88904f23feadd66f
               expression: 'min(/Argus Speedtest/speedtest.jitter,#2)>={$SPEEDTEST.JITTER.WARN} and min(/Argus Speedtest/speedtest.jitter,#2)<{$SPEEDTEST.JITTER.HIGH}'
               name: 'Internet jitter high'
+              tags:
+                - tag: argus.recovery
+                  value: 'Internet jitter is back to normal'
               priority: WARNING
               description: 'The last two speed tests measured the jitter at or above the warning threshold (but below the high one).'
             - uuid: 7a8702a42d744c85ad92da9342253bbe
               expression: 'min(/Argus Speedtest/speedtest.jitter,#2)>={$SPEEDTEST.JITTER.HIGH}'
               name: 'Internet jitter very high'
+              tags:
+                - tag: argus.recovery
+                  value: 'Internet jitter is back to normal'
               priority: HIGH
               description: 'The last two speed tests measured the jitter at or above the high threshold.'
         - uuid: 329f25e2c039411fa0b7492364ea80f9
@@ -227,11 +254,17 @@ zabbix_export:
             - uuid: c57332dea83343058abd20d744b62e1f
               expression: 'min(/Argus Speedtest/speedtest.loaded.down,#2)>={$SPEEDTEST.LOADED.WARN} and min(/Argus Speedtest/speedtest.loaded.down,#2)<{$SPEEDTEST.LOADED.HIGH}'
               name: 'Latency while downloading high'
+              tags:
+                - tag: argus.recovery
+                  value: 'Latency while downloading is back to normal'
               priority: WARNING
               description: 'The last two speed tests measured the round trip while downloading at or above the warning threshold (but below the high one).'
             - uuid: 825e2c3853be4c9d83c6bb8ee3425d66
               expression: 'min(/Argus Speedtest/speedtest.loaded.down,#2)>={$SPEEDTEST.LOADED.HIGH}'
               name: 'Latency while downloading very high'
+              tags:
+                - tag: argus.recovery
+                  value: 'Latency while downloading is back to normal'
               priority: HIGH
               description: 'The last two speed tests measured the round trip while downloading at or above the high threshold.'
         - uuid: 4062c8a26635499096f9267777e3d8e4
@@ -258,11 +291,17 @@ zabbix_export:
             - uuid: db286ec8aa9e408995106373d71985fb
               expression: 'min(/Argus Speedtest/speedtest.loaded.up,#2)>={$SPEEDTEST.LOADED.WARN} and min(/Argus Speedtest/speedtest.loaded.up,#2)<{$SPEEDTEST.LOADED.HIGH}'
               name: 'Latency while uploading high'
+              tags:
+                - tag: argus.recovery
+                  value: 'Latency while uploading is back to normal'
               priority: WARNING
               description: 'The last two speed tests measured the round trip while uploading at or above the warning threshold (but below the high one).'
             - uuid: 95af8d4b36cd4e87bc4a3a99304f9af1
               expression: 'min(/Argus Speedtest/speedtest.loaded.up,#2)>={$SPEEDTEST.LOADED.HIGH}'
               name: 'Latency while uploading very high'
+              tags:
+                - tag: argus.recovery
+                  value: 'Latency while uploading is back to normal'
               priority: HIGH
               description: 'The last two speed tests measured the round trip while uploading at or above the high threshold.'
         - uuid: af566a255c644ca3b63eb776ee340eab
@@ -289,11 +328,17 @@ zabbix_export:
             - uuid: f9c94c18cc17440db2e29b6313d82f64
               expression: 'min(/Argus Speedtest/speedtest.loss,#2)>={$SPEEDTEST.LOSS.WARN} and min(/Argus Speedtest/speedtest.loss,#2)<{$SPEEDTEST.LOSS.HIGH}'
               name: 'Packet loss high'
+              tags:
+                - tag: argus.recovery
+                  value: 'Packet loss is back to normal'
               priority: WARNING
               description: 'The last two speed tests lost packets at or above the warning threshold (but below the high one).'
             - uuid: 113ada97baab49eba1f8032beaa971d3
               expression: 'min(/Argus Speedtest/speedtest.loss,#2)>={$SPEEDTEST.LOSS.HIGH}'
               name: 'Packet loss very high'
+              tags:
+                - tag: argus.recovery
+                  value: 'Packet loss is back to normal'
               priority: HIGH
               description: 'The last two speed tests lost packets at or above the high threshold.'
         - uuid: f59749b415ba4798b27bf32602b87663

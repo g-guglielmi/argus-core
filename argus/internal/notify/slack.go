@@ -49,13 +49,13 @@ func slackMessage(e Event) map[string]any {
 	if e.Site != "" {
 		fields = append(fields, map[string]any{"title": "Site", "value": slackEscape(e.Site), "short": true})
 	}
-	if v := e.valueLine(); v != "" && e.isAlert() {
+	if v := e.valueLine(); v != "" && e.showsReading() {
 		fields = append(fields, map[string]any{"title": "Reading", "value": slackEscape(strings.TrimPrefix(v, "Value: ")), "short": true})
 	}
 	// The card's lines without the ones the fields already carry: where it is and the reading.
 	var text []string
 	for _, l := range e.cardLines() {
-		if l == e.whereLine() || (e.isAlert() && l == e.valueLine()) {
+		if l == e.whereLine() || (e.showsReading() && l == e.valueLine()) {
 			continue
 		}
 		text = append(text, slackEscape(l))

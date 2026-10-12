@@ -69,6 +69,9 @@ zabbix_export:
             - uuid: 186c3e58705f4ad698ab87a20c72f585
               expression: 'max(/Argus UPS by NUT/nut.reachable,#3)=0'
               name: 'UPS monitoring is unreachable'
+              tags:
+                - tag: argus.recovery
+                  value: 'UPS monitoring is reachable again'
               priority: HIGH
               description: 'upsd has not answered for this UPS on the last 3 checks (NUT down or unreachable).'
         - uuid: 6d638c61c5314333934ca911091645fa
@@ -210,6 +213,9 @@ zabbix_export:
             - uuid: 9c91357249624bad98fce0850ba117cc
               expression: 'max(/Argus UPS by NUT/nut.on_battery,#2)=1 and max(/Argus UPS by NUT/nut.reachable,#2)=1'
               name: 'UPS on battery (utility power lost)'
+              tags:
+                - tag: argus.recovery
+                  value: 'UPS back on utility power'
               priority: WARNING
               description: 'The UPS has been running on battery for the last 2 checks.'
         - uuid: d859104f71b14de9b7f443999e81fd5a
@@ -231,6 +237,9 @@ zabbix_export:
             - uuid: 3bbc163d6b8a4ef0b4f945076f5ba6e3
               expression: 'max(/Argus UPS by NUT/nut.low_battery,#2)=1 and max(/Argus UPS by NUT/nut.reachable,#2)=1'
               name: 'UPS battery low - shutdown imminent'
+              tags:
+                - tag: argus.recovery
+                  value: 'UPS battery is no longer low'
               priority: HIGH
               description: 'The UPS has reported a low battery on the last 2 checks.'
       macros:

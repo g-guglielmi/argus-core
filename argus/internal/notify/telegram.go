@@ -78,8 +78,11 @@ func telegramMessage(e Event) (string, [][]map[string]string) {
 		}
 		b.WriteString("At " + e.When.Format("2006-01-02 15:04 MST") + "\n")
 	case "recovery":
-		if e.SinceSecs > 0 {
-			b.WriteString("Recovered after " + fmtDur(e.SinceSecs) + "\n")
+		if bl := e.backLine(); bl != "" {
+			b.WriteString(bl + "\n")
+		}
+		if v := e.valueLine(); v != "" {
+			b.WriteString(htmlEscape(v) + "\n")
 		}
 		if nl := e.noteLine(); nl != "" {
 			b.WriteString("<i>" + htmlEscape(nl) + "</i>\n")

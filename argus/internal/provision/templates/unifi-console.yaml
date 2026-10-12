@@ -134,6 +134,9 @@ zabbix_export:
             - uuid: 0f6056dc0da340d4aa2e53517462974e
               expression: 'max(/Argus UniFi OS Console by HTTP/unifi.device.state,#3)=0'
               name: 'Console offline on the UniFi controller'
+              tags:
+                - tag: argus.recovery
+                  value: 'Console online again on the UniFi controller'
               priority: HIGH
               description: 'The controller has not reported the console connected on the last 3 checks.'
         - uuid: 0df8dab93906408bade4cb42113b87ce
@@ -155,11 +158,17 @@ zabbix_export:
             - uuid: 2d1eef06d453496b9ceb0994dbac1935
               expression: 'min(/Argus UniFi OS Console by HTTP/unifi.cpu.util,#3)>={$CPU.UTIL.WARN} and min(/Argus UniFi OS Console by HTTP/unifi.cpu.util,#3)<{$CPU.UTIL.HIGH}'
               name: 'High CPU utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU utilization is back to normal'
               priority: WARNING
               description: 'CPU utilization at/above the warning threshold on the last 3 checks.'
             - uuid: c22096aa66d043648befc96d5396e836
               expression: 'min(/Argus UniFi OS Console by HTTP/unifi.cpu.util,#3)>={$CPU.UTIL.HIGH}'
               name: 'Very high CPU utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU utilization is back to normal'
               priority: HIGH
               description: 'CPU utilization at/above the high threshold on the last 3 checks.'
         - uuid: 3a5397a8326a4d698482aa25736d1ba1
@@ -181,11 +190,17 @@ zabbix_export:
             - uuid: 30a9944a2ce64206869d559b5a9eb3fa
               expression: 'min(/Argus UniFi OS Console by HTTP/unifi.mem.util,#3)>={$MEM.USED.WARN} and min(/Argus UniFi OS Console by HTTP/unifi.mem.util,#3)<{$MEM.USED.HIGH}'
               name: 'High memory utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'Memory utilization is back to normal'
               priority: WARNING
               description: 'Memory use at/above the warning threshold on the last 3 checks.'
             - uuid: f0cedc1f7f1045969217c529c3c1523b
               expression: 'min(/Argus UniFi OS Console by HTTP/unifi.mem.util,#3)>={$MEM.USED.HIGH}'
               name: 'Very high memory utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'Memory utilization is back to normal'
               priority: HIGH
               description: 'Memory use at/above the high threshold on the last 3 checks.'
         - uuid: 8c01e01f50d74d8e80b97593a8ca874d
@@ -358,11 +373,17 @@ zabbix_export:
                 - uuid: 1c8f20f8237844639fcd145dcbdf9960
                   expression: 'min(/Argus UniFi OS Console by HTTP/unifi.storage.pused[{#STORAGE}],#3)>={$DISK.PUSED.WARN} and min(/Argus UniFi OS Console by HTTP/unifi.storage.pused[{#STORAGE}],#3)<{$DISK.PUSED.HIGH}'
                   name: 'Storage {#STORAGE} almost full'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Storage {#STORAGE} has room again'
                   priority: WARNING
                   description: 'Storage volume at/above the warning threshold on the last 3 checks.'
                 - uuid: 228651c1fcd74e5693618c2d48011b54
                   expression: 'min(/Argus UniFi OS Console by HTTP/unifi.storage.pused[{#STORAGE}],#3)>={$DISK.PUSED.HIGH}'
                   name: 'Storage {#STORAGE} critically full'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Storage {#STORAGE} has room again'
                   priority: HIGH
                   description: 'Storage volume at/above the high threshold on the last 3 checks.'
       macros:

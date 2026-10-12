@@ -129,6 +129,9 @@ zabbix_export:
             - uuid: 06ad745eb38b43f19ae3df3c0c3a4e06
               expression: 'max(/Argus UniFi AP by HTTP/unifi.device.state,#3)=0'
               name: 'Access point offline on the UniFi controller'
+              tags:
+                - tag: argus.recovery
+                  value: 'Access point online again on the UniFi controller'
               priority: HIGH
               description: 'The controller has not reported the access point connected on the last 3 checks.'
         - uuid: 83af81798ee24e53b7467c77e73c76ce
@@ -150,11 +153,17 @@ zabbix_export:
             - uuid: dfb20555d3154ef9a22ee976a67c51b6
               expression: 'min(/Argus UniFi AP by HTTP/unifi.cpu.util,#3)>={$CPU.UTIL.WARN} and min(/Argus UniFi AP by HTTP/unifi.cpu.util,#3)<{$CPU.UTIL.HIGH}'
               name: 'High CPU utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU utilization is back to normal'
               priority: WARNING
               description: 'CPU utilization at/above the warning threshold on the last 3 checks.'
             - uuid: 53bd343c8a1d444c8b2a93950b6d9985
               expression: 'min(/Argus UniFi AP by HTTP/unifi.cpu.util,#3)>={$CPU.UTIL.HIGH}'
               name: 'Very high CPU utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU utilization is back to normal'
               priority: HIGH
               description: 'CPU utilization at/above the high threshold on the last 3 checks.'
         - uuid: b1fe6b1f4c174b74bb4de66d82931e9b
@@ -176,11 +185,17 @@ zabbix_export:
             - uuid: e4ee4d69e6ee4f82803715d71ce1c396
               expression: 'min(/Argus UniFi AP by HTTP/unifi.mem.util,#3)>={$MEM.USED.WARN} and min(/Argus UniFi AP by HTTP/unifi.mem.util,#3)<{$MEM.USED.HIGH}'
               name: 'High memory utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'Memory utilization is back to normal'
               priority: WARNING
               description: 'Memory use at/above the warning threshold on the last 3 checks.'
             - uuid: bef23faaf2eb417d82cfdef11166a70f
               expression: 'min(/Argus UniFi AP by HTTP/unifi.mem.util,#3)>={$MEM.USED.HIGH}'
               name: 'Very high memory utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'Memory utilization is back to normal'
               priority: HIGH
               description: 'Memory use at/above the high threshold on the last 3 checks.'
         - uuid: bae66d01b2e040c88fee316ac2b5c95a

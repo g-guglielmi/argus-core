@@ -189,7 +189,7 @@ func TestTeamsMessage(t *testing.T) {
 		}
 	}
 	b, _ = json.Marshal(teamsMessage(sampleRecovery()))
-	if s = string(b); !strings.Contains(s, `"style":"good"`) || strings.Contains(s, "Acknowledge") || !strings.Contains(s, "Recovered after 3h 12m") {
+	if s = string(b); !strings.Contains(s, `"style":"good"`) || strings.Contains(s, "Acknowledge") || !strings.Contains(s, "Back after 3h 12m") || !strings.Contains(s, `"text":"Value: 100 %"`) {
 		t.Errorf("recovery card: %s", s)
 	}
 	e := sampleAck()

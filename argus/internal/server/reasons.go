@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -98,10 +99,22 @@ func isReasonKey(key string) bool {
 // flagDown reports whether a collector flag's reading is "down" (0).
 func flagDown(value string) bool { return strings.TrimSpace(value) == "0" }
 
+// ppFailed is the line of a preprocessing error that says which step failed and why ("1. Failed: no
+// response time", "2. Failed (set error): ...").
+var ppFailed = regexp.MustCompile(`(?m)^\d+\. Failed(?: \([a-z ]+\))?: *(.*?)\s*$`)
+
 // itemError trims Zabbix's error text for display: its first line, without the "Cannot execute
-// script: " wrapper a script item's own message comes in, at most 200 characters.
+// script: " wrapper a script item's own message comes in, at most 200 characters. A failed
+// preprocessing step is worded "Preprocessing failed for: <the value, cut short>" with the step's
+// own error on a line below it: that line is the reason, not the value (every Common SaaS alert read
+// as the collector's JSON).
 func itemError(msg string) string {
 	msg = strings.TrimSpace(msg)
+	if strings.HasPrefix(msg, "Preprocessing failed for:") {
+		if m := ppFailed.FindStringSubmatch(msg); m != nil && m[1] != "" {
+			msg = m[1]
+		}
+	}
 	if i := strings.IndexAny(msg, "\r\n"); i >= 0 {
 		msg = strings.TrimSpace(msg[:i])
 	}

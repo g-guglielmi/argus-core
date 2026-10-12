@@ -136,6 +136,73 @@ func leftOverUnsupported(it zabbix.UnsupportedItem, master zabbix.MasterItem) bo
 	return true
 }
 
+// downFlags maps a reading to the up/down flag of the same target (same key parameters): a response
+// time, a status code, a certificate or a resolved address has nothing to measure while its target
+// doesn't answer, and that flag's own alert ("does not answer", "is down") says what is wrong.
+var downFlags = map[string]string{
+	"saas.time":        "saas.up",
+	"http.url.time":    "http.url.up",
+	"http.url.status":  "http.url.up",
+	"http.url.cert":    "http.url.up",
+	"tcp.port.time":    "tcp.port.up",
+	"dns.resolve.time": "dns.resolve.success",
+	"dns.resolve.ip":   "dns.resolve.success",
+}
+
+// downFlagFor is the key of the up/down flag of the target a reading measures, or "".
+func downFlagFor(key string) string {
+	f, ok := downFlags[keyBase(key)]
+	if !ok {
+		return ""
+	}
+	return f + key[len(keyBase(key)):]
+}
+
+// targetDown reports a reading that is not supported because its target doesn't answer: its flag
+// (flags: host + "\x00" + key -> last value) reads down. It never "stopped collecting": GitHub not
+// answering made its response time not supported at the very first failed check, which alerted a
+// minute before "GitHub does not answer from this site" did.
+func targetDown(it zabbix.UnsupportedItem, flags map[string]string) bool {
+	f := downFlagFor(it.Key)
+	if f == "" {
+		return false
+	}
+	v, ok := flags[it.HostID+"\x00"+f]
+	return ok && flagDown(v)
+}
+
+// downFlagValues reads the up/down flags of the readings that have one, by host and key.
+func downFlagValues(ctx context.Context, zbx *zabbix.Client, items []zabbix.UnsupportedItem) map[string]string {
+	var hosts, keys []string
+	seenH, seenK := map[string]bool{}, map[string]bool{}
+	for _, it := range items {
+		f := downFlagFor(it.Key)
+		if f == "" {
+			continue
+		}
+		if !seenH[it.HostID] {
+			seenH[it.HostID] = true
+			hosts = append(hosts, it.HostID)
+		}
+		if !seenK[f] {
+			seenK[f] = true
+			keys = append(keys, f)
+		}
+	}
+	out := map[string]string{}
+	if len(keys) == 0 {
+		return out
+	}
+	flags, err := zbx.HostItemsByKeys(ctx, hosts, keys)
+	if err != nil {
+		return out
+	}
+	for _, f := range flags {
+		out[f.HostID+"\x00"+f.Key] = f.LastValue
+	}
+	return out
+}
+
 func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, record bool) synthSet {
 	out := synthSet{targets: map[string]zabbix.TriggerTarget{}, readings: map[string]string{}, silent: map[string]bool{}, rediscover: map[string]bool{}}
 	now := time.Now().Unix()
@@ -160,6 +227,7 @@ func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, 
 			}
 		}
 		masterOf, _ := zbx.MasterItems(ctx, masters)
+		flags := downFlagValues(ctx, zbx, items)
 		for _, it := range items {
 			start, ok := since[it.ItemID]
 			delay := it.Delay
@@ -174,6 +242,10 @@ func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, 
 			}
 			if dep && leftOverUnsupported(it, m) {
 				out.silent[id] = true
+				continue
+			}
+			if targetDown(it, flags) {
+				out.silent[id] = true // its target's own alert says it doesn't answer
 				continue
 			}
 			// A speed test reading a run didn't produce (no latency while busy, no download when
@@ -289,6 +361,23 @@ func interfaceDownName(ifaceType string) string {
 		return "JMX not reachable"
 	}
 	return "Monitoring interface not reachable"
+}
+
+// interfaceUpName is the RESOLVED sentence for an interface problem (interfaceDownName's), or "".
+func interfaceUpName(down string) string {
+	switch down {
+	case "Zabbix agent not reachable":
+		return "Zabbix agent is reachable again"
+	case "SNMP not responding":
+		return "SNMP is responding again"
+	case "IPMI not reachable":
+		return "IPMI is reachable again"
+	case "JMX not reachable":
+		return "JMX is reachable again"
+	case "Monitoring interface not reachable":
+		return "Monitoring interface is reachable again"
+	}
+	return ""
 }
 
 // unsupportedReading is a "stopped collecting" alert's reading: Zabbix's reason, trimmed (itemError).

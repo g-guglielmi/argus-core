@@ -32,11 +32,17 @@ zabbix_export:
             - uuid: bd87ce638a894bba82b645998832cc79
               expression: 'min(/Argus NAS by Zabbix agent/system.cpu.util,#3)>={$CPU.UTIL.WARN} and min(/Argus NAS by Zabbix agent/system.cpu.util,#3)<{$CPU.UTIL.HIGH}'
               name: 'High CPU utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU utilization is back to normal'
               priority: WARNING
               description: 'CPU utilization at/above the warning threshold on the last 3 checks.'
             - uuid: 2f00744b6f474968b140bb765edbfe73
               expression: 'min(/Argus NAS by Zabbix agent/system.cpu.util,#3)>={$CPU.UTIL.HIGH}'
               name: 'Very high CPU utilization'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU utilization is back to normal'
               priority: HIGH
               description: 'CPU utilization at/above the high threshold on the last 3 checks.'
         - uuid: de9219b0cc6a42f38502256f4d09afaf
@@ -74,11 +80,17 @@ zabbix_export:
             - uuid: 4c0e48c26cd6445fa0db075f40ffc297
               expression: 'min(/Argus NAS by Zabbix agent/vm.memory.size[pused],#3)>={$MEM.USED.WARN} and min(/Argus NAS by Zabbix agent/vm.memory.size[pused],#3)<{$MEM.USED.HIGH}'
               name: 'High memory usage'
+              tags:
+                - tag: argus.recovery
+                  value: 'Memory usage is back to normal'
               priority: WARNING
               description: 'Memory usage at/above the warning threshold on the last 3 checks.'
             - uuid: 111825e05f914e95b30c7dd8f6f1fbfe
               expression: 'min(/Argus NAS by Zabbix agent/vm.memory.size[pused],#3)>={$MEM.USED.HIGH}'
               name: 'Very high memory usage'
+              tags:
+                - tag: argus.recovery
+                  value: 'Memory usage is back to normal'
               priority: HIGH
               description: 'Memory usage at/above the high threshold on the last 3 checks.'
         - uuid: f6e154a40c674b9693b7865e4cbed6e0
@@ -109,11 +121,17 @@ zabbix_export:
             - uuid: 12e8fd66e1994271958c75e1a9295eee
               expression: 'min(/Argus NAS by Zabbix agent/ugreen.cpu.temp,#3)>={$CPU.TEMP.WARN} and min(/Argus NAS by Zabbix agent/ugreen.cpu.temp,#3)<{$CPU.TEMP.HIGH}'
               name: 'CPU running hot'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU temperature is back to normal'
               priority: WARNING
               description: 'CPU package temperature at/above the warning threshold on the last 3 checks.'
             - uuid: ffee40fd40e1406fbf84b40aa4eed1e6
               expression: 'min(/Argus NAS by Zabbix agent/ugreen.cpu.temp,#3)>={$CPU.TEMP.HIGH}'
               name: 'CPU overheating'
+              tags:
+                - tag: argus.recovery
+                  value: 'CPU temperature is back to normal'
               priority: HIGH
               description: 'CPU package temperature at/above the high threshold on the last 3 checks.'
       discovery_rules:
@@ -176,11 +194,17 @@ zabbix_export:
                 - uuid: a6af88078499401aa7d63c7dd636c400
                   expression: 'min(/Argus NAS by Zabbix agent/vfs.fs.size[{#FSNAME},pused],#3)>={$DISK.PUSED.WARN} and min(/Argus NAS by Zabbix agent/vfs.fs.size[{#FSNAME},pused],#3)<{$DISK.PUSED.HIGH}'
                   name: 'Disk space low: {#FSNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Disk space back to normal: {#FSNAME}'
                   priority: WARNING
                   description: 'Filesystem usage at/above the warning threshold.'
                 - uuid: 818433f5cd064c0994bfde58730e58d7
                   expression: 'min(/Argus NAS by Zabbix agent/vfs.fs.size[{#FSNAME},pused],#3)>={$DISK.PUSED.HIGH}'
                   name: 'Disk space critical: {#FSNAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Disk space back to normal: {#FSNAME}'
                   priority: HIGH
                   description: 'Filesystem usage at/above the high threshold.'
         - uuid: e838d45cea6645859dc4f728584efaca
@@ -248,11 +272,17 @@ zabbix_export:
                 - uuid: e099678e1a594756878f44f13107481c
                   expression: 'min(/Argus NAS by Zabbix agent/ugreen.disk.temp[{#PATH}],#3)>={$DISK.TEMP.WARN:"{#DISKTYPE}"} and min(/Argus NAS by Zabbix agent/ugreen.disk.temp[{#PATH}],#3)<{$DISK.TEMP.HIGH:"{#DISKTYPE}"}'
                   name: 'Disk running warm: {#NAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Disk temperature back to normal: {#NAME}'
                   priority: WARNING
                   description: 'Disk temperature at/above the warning threshold on the last 3 checks. The threshold follows the disk type ({#DISKTYPE}): the SSD/NVMe macros run higher than the HDD default.'
                 - uuid: 8ef63d4173554437934dc701a3bb2ad1
                   expression: 'min(/Argus NAS by Zabbix agent/ugreen.disk.temp[{#PATH}],#3)>={$DISK.TEMP.HIGH:"{#DISKTYPE}"}'
                   name: 'Disk overheating: {#NAME}'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'Disk temperature back to normal: {#NAME}'
                   priority: HIGH
                   description: 'Disk temperature at/above the high threshold on the last 3 checks.'
       macros:
