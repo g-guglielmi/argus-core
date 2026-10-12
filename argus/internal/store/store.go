@@ -795,6 +795,11 @@ CREATE TABLE IF NOT EXISTS site_maps (
 			return err
 		}
 	}
+	// When the probe container's own minute report last arrived (the sidecar's check-ins don't count):
+	// a probe Zabbix hears from without it is flagged (probereport.go).
+	if err := s.ensureColumn("probe_agents", "report_at INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	// Discovery job kind ('scan' = subnet scan, 'unifi' = controller sweep) plus the sweep's
 	// controller reference: the id resolves credentials at dispatch time, the name is a display
 	// snapshot that survives the controller's deletion.

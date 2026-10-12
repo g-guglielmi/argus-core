@@ -13,6 +13,22 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Added:**
+- **A probe that stops reporting to Argus is flagged.** Every probe reports to Argus once a minute
+  (its version, what it can do, its Zabbix process counts and CPU), and that report is also how it
+  receives subnet scans, UniFi sweeps and certificate checks. Nothing showed when it stopped: the
+  Probes page's "online" is Zabbix hearing the probe's data, and the updater sidecar checks in on
+  its own. Now a probe Zabbix hears from whose report hasn't arrived for 5 minutes shows **not
+  reporting to Argus** on the Probes page (since when and what it costs, on hover), the probe pickers
+  for scans, sweeps and "Ask the probe" say so instead of "needs probe update", and a system notice
+  goes out if it lasts 15 minutes more.
+
+**Fixed:**
+- Probes r8 to r28 sent that report empty, so Argus refused it: no process counts or CPU, new probes
+  never said they can run scans and sweeps ("needs probe update"), and queued scans, sweeps and
+  certificate checks never reached any probe. Fixed in the probe, **probe/v7.0.31-r29** (released
+  2026-10-12); update the probes.
+
 ## [0.8.7] - 2026-10-08
 
 Network maps: each site drawn as a tree with the traffic on its links, off per site until an admin

@@ -235,8 +235,9 @@ func (s *Server) coreOSNotices() []notice {
 }
 
 // probeNotices: per probe, a probe or updater behind the newest release (for six hours: the fleet
-// normally updates itself sooner), pending OS updates or a reboot on a probe VM, and the outcome of
-// self-updates - a new version reported (success) or a handed-out update not running in time (failed).
+// normally updates itself sooner), pending OS updates or a reboot on a probe VM, a minute report that
+// stopped reaching Argus (probereport.go), and the outcome of self-updates - a new version reported
+// (success) or a handed-out update not running in time (failed).
 func (s *Server) probeNotices(ctx context.Context) (conds, events []notice) {
 	agents, err := s.st.ProbeAgents(ctx)
 	if err != nil {
@@ -298,6 +299,7 @@ func (s *Server) probeNotices(ctx context.Context) (conds, events []notice) {
 			events = append(events, s.selfUpdateEvents(ctx, name, "updater", ag.UpdaterVersion, noticeUpdVerPrefix, noticeUpdPending, host, site)...)
 		}
 	}
+	conds = append(conds, s.probeReportNotices(ctx, agents)...)
 	return conds, events
 }
 

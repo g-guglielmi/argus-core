@@ -19,8 +19,13 @@ type ProbeAgent struct {
 	SelfUpdate     bool
 	Scans          bool   // the probe container advertises the network-scan capability (§B discovery)
 	Sweeps         bool   // the probe container advertises the UniFi-sweep capability (§B discovery)
-	LastCheckin    int64  // unix seconds, 0 if never
+	LastCheckin    int64  // unix seconds, 0 if never (the proxy container's check-ins or its sidecar's)
 	UpdaterVersion string // version of the argus-updater sidecar managing this probe, "" if none
+	// ReportAt is when the proxy container's own minute report last arrived (0 = never): only it
+	// carries the scan capability, so the sidecar's check-ins and the start-time sync don't move it.
+	// CredentialAt is when the probe got its check-in credential (enrollment, or Enable reporting).
+	ReportAt     int64
+	CredentialAt int64
 	// Break-glass console credential (VM probes). The secret itself is never carried here - only
 	// whether one exists + its username + when it was last reported; reveal it via BreakGlass().
 	BreakGlassUser string
@@ -47,7 +52,7 @@ func (s *Store) UpsertProbeCredential(ctx context.Context, proxyName, tokenHash 
 		`INSERT INTO probe_agents(proxy_name,token_hash,created_at,version,selfupdate,last_checkin)
 		 VALUES(?,?,?,'',0,0)
 		 ON CONFLICT(proxy_name) DO UPDATE SET token_hash=excluded.token_hash, created_at=excluded.created_at,
-		   version='', selfupdate=0, last_checkin=0`,
+		   version='', selfupdate=0, last_checkin=0, report_at=0`,
 		proxyName, tokenHash, time.Now().Unix())
 	return err
 }
@@ -68,10 +73,16 @@ func (s *Store) ProbeNameByToken(ctx context.Context, tokenHash string) (string,
 // version and scan capability but (when it holds no socket) omits self-update capability, while a
 // socket-holding updater sidecar advertises capability but reports no version. An empty version
 // keeps the last known version; a nil selfUpdate/scans keeps the last known flag - so the two never
-// clobber each other. last_checkin is always refreshed.
+// clobber each other. last_checkin is always refreshed; report_at only by the proxy container's
+// minute report, the one check-in that carries the scan capability.
 func (s *Store) RecordProbeCheckin(ctx context.Context, proxyName, version string, selfUpdate, scans, sweeps *bool) error {
+	now := time.Now().Unix()
 	set := "last_checkin=?"
-	args := []any{time.Now().Unix()}
+	args := []any{now}
+	if scans != nil {
+		set += ", report_at=?"
+		args = append(args, now)
+	}
 	if strings.TrimSpace(version) != "" {
 		set += ", version=?"
 		args = append(args, version)
@@ -112,9 +123,9 @@ func (s *Store) ProbeAgentByName(ctx context.Context, name string) (*ProbeAgent,
 	var su, sc, sw, bg, rr int
 	var pr probeProcsScan
 	err := s.db.QueryRowContext(ctx,
-		`SELECT proxy_name,version,selfupdate,scans,sweeps,last_checkin,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version,update_to,updater_update_to,`+probeProcsColumns+`
+		`SELECT proxy_name,version,selfupdate,scans,sweeps,last_checkin,report_at,created_at,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version,update_to,updater_update_to,`+probeProcsColumns+`
 		 FROM probe_agents WHERE proxy_name=?`, name).
-		Scan(append([]any{&a.ProxyName, &a.Version, &su, &sc, &sw, &a.LastCheckin, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion, &a.PendingUpdate, &a.PendingUpdaterUpdate}, pr.dest(&a.Procs)...)...)
+		Scan(append([]any{&a.ProxyName, &a.Version, &su, &sc, &sw, &a.LastCheckin, &a.ReportAt, &a.CredentialAt, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion, &a.PendingUpdate, &a.PendingUpdaterUpdate}, pr.dest(&a.Procs)...)...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -169,7 +180,7 @@ func (s *Store) TakeProbeUpdate(ctx context.Context, name string) (string, error
 
 // ProbeAgents returns every probe's fleet-update state, keyed by proxy name (for the fleet view).
 func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,version,selfupdate,scans,sweeps,last_checkin,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version,update_to,updater_update_to,`+probeProcsColumns+` FROM probe_agents`)
+	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,version,selfupdate,scans,sweeps,last_checkin,report_at,created_at,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version,update_to,updater_update_to,`+probeProcsColumns+` FROM probe_agents`)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +190,7 @@ func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) 
 		var a ProbeAgent
 		var su, sc, sw, bg, rr int
 		var pr probeProcsScan
-		if err := rows.Scan(append([]any{&a.ProxyName, &a.Version, &su, &sc, &sw, &a.LastCheckin, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion, &a.PendingUpdate, &a.PendingUpdaterUpdate}, pr.dest(&a.Procs)...)...); err != nil {
+		if err := rows.Scan(append([]any{&a.ProxyName, &a.Version, &su, &sc, &sw, &a.LastCheckin, &a.ReportAt, &a.CredentialAt, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion, &a.PendingUpdate, &a.PendingUpdaterUpdate}, pr.dest(&a.Procs)...)...); err != nil {
 			return nil, err
 		}
 		pr.decode(&a.Procs)

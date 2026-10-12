@@ -58,13 +58,14 @@ type Server struct {
 	ups           upstreamCache     // the devices hosts are plugged into (upstream.go)
 	upsTrack      upstreamTrack     // the controller's answers on their way to being taken (upstream.go)
 	mapFactCache  mapFactCache      // the devices' models and addresses for the maps (maps.go)
+	startedAt     time.Time         // when this Argus started: the probes' report check counts from it (probereport.go)
 }
 
 func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {
 	dummy, _ := auth.HashPassword("argus-nonexistent-user")
 	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, mgr: mgr, dummyHash: dummy,
 		signingSecret: GetSigningSecret(context.Background(), st),
-		loginLimiter:  mgr.Limiter(), pkLimiter: ratelimit.New(30, 5*time.Minute), probeLatest: &probeLatestCache{}, updaterLatest: &probeLatestCache{}, appLatest: &appLatestCache{}, probeVM: &probeVMCache{}}
+		loginLimiter:  mgr.Limiter(), pkLimiter: ratelimit.New(30, 5*time.Minute), probeLatest: &probeLatestCache{}, updaterLatest: &probeLatestCache{}, appLatest: &appLatestCache{}, probeVM: &probeVMCache{}, startedAt: time.Now()}
 	// The sensor census behind the pills, the Overview and the status pages, built in the
 	// background and served from memory.
 	s.census = newCensusCache(s.buildCensus)

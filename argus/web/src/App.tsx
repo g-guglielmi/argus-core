@@ -35,7 +35,7 @@ type SaaSService = { id: string; name: string; url: string; default: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg; tags?: HostTag[]; own?: { asset_tag: string; location: string }; links?: LinkRow[]; class_links?: LinkRow[]; upstream?: UpstreamInfo }
 // A host's master sensor: while it's down, the host's other alerts are held (item_id "" = none).
 type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; options: { id: string; label: string }[] }
-type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean }
+type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; report_at?: number; report_stale?: boolean; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean }
 // One Zabbix process kind on a probe: what it runs, Argus's target, the busiest hour at the last
 // evaluation, and a hold (put back after a raise that didn't lower its load).
 // An update Argus asked a probe's sidecar for, while it is in hand: queued for the sidecar's next
@@ -3578,6 +3578,7 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
                   <div className="cell-stack">
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       {p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}
+                      {p.report_stale && <span className="tag avail" title={probeReportNote(p)}>not reporting to Argus</span>}
                       {/* The probe's own health sensors (queue, backlog, caches, process load) live on its
                           Argus-managed Probe host in the site group; its worst open problem shows here. */}
                       {p.probe_host_id && (
@@ -3751,7 +3752,7 @@ function ProbeProcesses({ p, isAdmin, onChanged, onClose }: { p: Proxy; isAdmin:
         </div>
       )}
       {rows.length === 0
-        ? <div className="hs-note">This probe doesn't report its process counts yet. It needs a probe image from 7.0.31-r8 on.</div>
+        ? <div className="hs-note">{p.report_stale ? probeReportNote(p) : `This probe doesn't report its process counts yet. It needs a probe image from 7.0.31-r8 on.`}</div>
         : (
           <table className="sensors" style={{ marginTop: 6 }}>
             <thead><tr><th>Process</th><th>Running</th><th>Busiest hour</th><th>Argus</th></tr></thead>
@@ -6205,7 +6206,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
             <Select value={proxyId} onChange={(e) => setProxyId(e.target.value)}>
               <option value="">Choose…</option>
               <option value="core">Core server</option>
-              {(proxies || []).map((p) => <option key={p.id} value={p.id} disabled={!p.scans}>{p.name}{p.scans ? '' : ' (needs probe update)'}</option>)}
+              {(proxies || []).map((p) => <option key={p.id} value={p.id} disabled={!p.scans || p.report_stale}>{p.name}{probeCanLabel(p, p.scans)}</option>)}
             </Select>
           </Field>
           <Field label="Subnet" placeholder="10.0.0.0/24" value={cidr} onChange={(e) => setCidr(e.target.value)} />
@@ -6244,7 +6245,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
                 <Select value={sweepFrom} onChange={(e) => setSweepFrom(e.target.value)}>
                   <option value="">Choose…</option>
                   <option value="core">Core server</option>
-                  {(proxies || []).map((p) => <option key={p.id} value={p.id} disabled={!p.sweeps}>{p.name}{p.sweeps ? '' : ' (needs probe update)'}</option>)}
+                  {(proxies || []).map((p) => <option key={p.id} value={p.id} disabled={!p.sweeps || p.report_stale}>{p.name}{probeCanLabel(p, p.sweeps)}</option>)}
                 </Select>
               </Field>
               {proxies !== null && sweepCapable.length === 0 && (
@@ -6302,7 +6303,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
                   <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
                     <Select value={certProbe} onChange={(e) => setCertProbe(e.target.value)}>
                       <option value="">Choose a probe…</option>
-                      {(proxies || []).map((p) => <option key={p.id} value={p.id} disabled={!p.sweeps}>{p.name}{p.sweeps ? '' : ' (needs probe update)'}</option>)}
+                      {(proxies || []).map((p) => <option key={p.id} value={p.id} disabled={!p.sweeps || p.report_stale}>{p.name}{probeCanLabel(p, p.sweeps)}</option>)}
                     </Select>
                     <Button onClick={() => void askProbeForCertificate()} disabled={!certProbe || certAsking}>{certAsking ? 'Asking the probe…' : 'Ask the probe'}</Button>
                   </div>
@@ -8033,6 +8034,20 @@ const SCOPE: { sites: string[] } = { sites: [] }
 function watchEyebrow(): string { return SCOPE.sites.length ? `Watch · ${sitesLabel(SCOPE.sites)}` : 'Watch · all sites' }
 
 // fmtWhen renders a unix time in Argus's timezone: "29 Sep, 14:05".
+// probeReportNote explains a probe whose minute report stopped reaching Argus while Zabbix still hears
+// from it (probereport.go): since when, and what it costs.
+function probeReportNote(p: Proxy): string {
+  return `Zabbix hears from this probe, but its minute report ${p.report_at ? `hasn't reached Argus since ${fmtWhen(p.report_at)}` : 'has never reached Argus'}. ` +
+    `Without it Argus can't hand it scans, UniFi sweeps or certificate checks, nor size its Zabbix processes. The probe's container log should say why; updating the probe may fix it.`
+}
+
+// probeCanLabel is the note beside a probe in a picker for a discovery job: nothing when it can take
+// the job, else why not (its report stopped, or its image predates the job).
+function probeCanLabel(p: Proxy, can?: boolean): string {
+  if (p.report_stale) return ' (not reporting to Argus)'
+  return can ? '' : ' (needs probe update)'
+}
+
 function fmtWhen(unix: number): string {
   const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: !CLOCK.h24, timeZone: CLOCK.tz }
   try { return new Intl.DateTimeFormat(undefined, opts).format(new Date(unix * 1000)) }

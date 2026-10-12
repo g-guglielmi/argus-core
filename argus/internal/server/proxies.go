@@ -66,6 +66,10 @@ type proxyView struct {
 	CPUPeak    *float64  `json:"cpu_peak,omitempty"`
 	CPUStarved bool      `json:"cpu_starved,omitempty"`
 	IsVM       bool      `json:"is_vm,omitempty"` // a probe VM (it reports OS status), not a container on another host
+	// The probe container's own minute report (0 = never), and whether it's missing while Zabbix
+	// hears from the probe (probereport.go).
+	ReportAt    int64 `json:"report_at"`
+	ReportStale bool  `json:"report_stale,omitempty"`
 }
 
 // handleProxies lists Zabbix proxies (the per-site collectors) with their last-access time, so
@@ -119,6 +123,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			mode = "passive"
 		}
 		ag := agents[p.Name]
+		online := la > 0 && now-la <= 120
 		// Prefer the precise version a fleet-aware probe self-reports (includes our wrapper
 		// revision, e.g. 7.0.29-r2). Fall back to the Zabbix-reported proxy version so probes that
 		// don't check in (older images, or ones updated outside Argus like unRAID) still show a
@@ -133,7 +138,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			ID:             p.ProxyID,
 			Name:           p.Name,
 			LastAccess:     la,
-			Online:         la > 0 && now-la <= 120,
+			Online:         online,
 			Mode:           mode,
 			EnrolledAt:     enrolled[p.Name],
 			Version:        version,
@@ -144,6 +149,8 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			Sweeps:         ag.Sweeps,
 			UpdateStatus:   status,
 			LastCheckin:    ag.LastCheckin,
+			ReportAt:       ag.ReportAt,
+			ReportStale:    reportStale(ag, online, s.startedAt.Unix(), now),
 			UpdaterVersion: ag.UpdaterVersion,
 			UpdaterLatest:  updaterLatest,
 			UpdaterStatus:  updaterViewStatus(ag, updaterLatest),

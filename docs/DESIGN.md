@@ -1043,7 +1043,8 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   updates, reboot, Zabbix candidate), discovery jobs past a watermark, and channels whose last
   attempt failed. **Conditions** are tracked in `notice_conditions` (since when) and told once they
   have held their minimum time (probe/updater behind 6 h, security updates 48 h, reboot and Zabbix
-  update 24 h, failing channel 30 min, a new release at once); **events** are told once. The
+  update 24 h, failing channel 30 min, a probe not reporting to Argus 15 min, a new release at once);
+  **events** are told once. The
   `notices_sent` ledger dedupes (a condition's row goes when it ends, so it can be told again;
   events are kept a year). Probe self-update outcomes are inferred: a newly reported version is a
   success, and an update handed out at check-in that isn't running 20 minutes later failed (the
@@ -1736,6 +1737,19 @@ plane; the probe checks in and converges.
   reports no proxy version - the check-in fields are sticky (an omitted field keeps the stored value),
   and one-shots are handed only to a capability-advertising caller, so the two never clobber each
   other or race. See the [argus-updater](https://github.com/g-guglielmi/argus-updater) repo.
+- **A probe whose report stops is flagged.** The proxy container's minute report (version,
+  capabilities, process counts, CPU) is what hands it discovery jobs and what the process sizing works
+  from, yet nothing showed when it stopped: Zabbix's "online" is the proxy's data channel, and the
+  sidecar keeps `last_checkin` fresh with the same token. Probe images r8 to r28 sent a report Argus
+  couldn't read (an empty body, refused with 400) for two weeks unnoticed. So the check-in that
+  carries `scans` (only the proxy container's minute report does; not its start-time sync, not the
+  sidecar) stamps `probe_agents.report_at`, and `reportStale` (`probereport.go`) flags a probe Zabbix
+  hears from with no report for 5 minutes, counting from the newest of its last report, its check-in
+  credential (`created_at`) and the core's own start, so a new probe or a restarted core gets the full
+  grace. The Probes page shows **not reporting to Argus** beside online (the why on hover), the probe
+  pickers of the discovery dialogs say "(not reporting to Argus)" and refuse it instead of "(needs
+  probe update)", its Processes panel says why it has no counts, and a system notice goes out after
+  15 more minutes (`probe-report:<proxy>`). A re-enrollment resets `report_at`.
 - **Updates show their steps.** The Updates page follows a core update and a sidecar self-update step by
   step until it ends. The core update's `status.json` keeps every message in `steps`; a sidecar
   self-update is remembered by the core in `updater-job.json` (the request file is consumed when the
