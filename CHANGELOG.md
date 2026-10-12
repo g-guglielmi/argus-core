@@ -13,6 +13,13 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.8.9] - 2026-10-12
+
+Notifications that read right: a RESOLVED says what came back, and a service that stops answering
+alerts once. Also a down device with its ping acknowledged reads as acknowledged, the HTTP check's
+port follows its scheme, and the class picker stays on screen. Update the core; the probes stay on
+**r29** and the updater on 0.2.12.
+
 **Changed:**
 - **A RESOLVED notification says what came back.** It used to repeat the problem that ended
   ("[RESOLVED] GitHub does not answer from this site"); it now reads "GitHub answers again from this
