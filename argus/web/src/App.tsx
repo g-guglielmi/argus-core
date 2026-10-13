@@ -10664,6 +10664,15 @@ function keepReportDraft(email: string, d: ReportDraft) {
   try { localStorage.setItem(reportDraftKey(email), JSON.stringify(d)) } catch { /* private window: the draft just isn't kept */ }
 }
 
+// reportDraftUsed reports whether a draft holds anything Clear all would reset.
+function reportDraftUsed(d: ReportDraft): boolean {
+  const n = newReportDraft()
+  const s = d.spec
+  return d.id !== undefined || d.name.trim() !== '' || s.sites.length + s.hosts.length + s.sensors.length > 0 ||
+    s.period !== n.spec.period || !!s.from || !!s.to || s.target !== n.spec.target || s.skip_maintenance !== n.spec.skip_maintenance ||
+    !!s.skip_host_charts || d.schedule.every !== '' || d.schedule.to.length > 0
+}
+
 const sameReportSensor = (a: ReportSensorPick, b: ReportSensorPick) => a.host_id === b.host_id && a.items[0] === b.items[0]
 
 // addToReportDraft adds a site, a host or a sensor to the draft (once).
@@ -10793,9 +10802,10 @@ function ReportsView({ me, draft, setDraft }: { me: Me; draft: ReportDraft; setD
       </div>
       {tab === 'new' ? (
         <div className="rep-grid">
-          <ReportPicker hosts={hosts} spec={draft.spec} onChange={(spec) => setDraft({ ...draft, spec })} />
+          <ReportPicker hosts={hosts} spec={draft.spec} onChange={(spec) => setDraft({ ...draft, spec })}
+            onReset={reportDraftUsed(draft) ? () => setDraft(newReportDraft()) : undefined} />
           <ReportSide draft={draft} setDraft={setDraft} hosts={hosts || []} canEdit={canEdit} busy={busy}
-            onDownload={downloadDraft} onEmail={emailDraft} onSchedule={() => setScheduling(true)} onNew={() => setDraft(newReportDraft())} />
+            onDownload={downloadDraft} onEmail={emailDraft} onSchedule={() => setScheduling(true)} />
         </div>
       ) : (
         <SavedReports list={saved} canEdit={canEdit} busy={busy} onNew={() => { setDraft(newReportDraft()); setTab('new') }}
@@ -10813,7 +10823,7 @@ function ReportsView({ me, draft, setDraft }: { me: Me; draft: ReportDraft; setD
 
 // ReportPicker is the tree a report is picked from: a site or a host adds its uptime and problems, a
 // sensor its chart.
-function ReportPicker({ hosts, spec, onChange }: { hosts: Host[] | null; spec: ReportSpec; onChange: (s: ReportSpec) => void }) {
+function ReportPicker({ hosts, spec, onChange, onReset }: { hosts: Host[] | null; spec: ReportSpec; onChange: (s: ReportSpec) => void; onReset?: () => void }) {
   const [q, setQ] = useState('')
   const ql = q.trim().toLowerCase()
   const [open, setOpen] = useState<Set<string>>(() => new Set())
@@ -10872,7 +10882,6 @@ function ReportPicker({ hosts, spec, onChange }: { hosts: Host[] | null; spec: R
     if (spec.hosts.includes(id)) onChange({ ...spec, hosts: spec.hosts.filter((x) => x !== id), sensors: spec.sensors.filter((p) => p.host_id !== id) })
     else onChange({ ...spec, hosts: [...spec.hosts, id] })
   }
-  const picked = spec.sites.length + spec.hosts.length + spec.sensors.length > 0
   const toggleSensor = (p: ReportSensorPick) => onChange({ ...spec, sensors: spec.sensors.some((s) => sameReportSensor(s, p)) ? spec.sensors.filter((s) => !sameReportSensor(s, p)) : [...spec.sensors, p] })
 
   const hostMatches = (h: Host) => !ql || h.name.toLowerCase().includes(ql) ||
@@ -10889,7 +10898,10 @@ function ReportPicker({ hosts, spec, onChange }: { hosts: Host[] | null; spec: R
         <PanelTitle eyebrow="Covers">Hosts and sensors</PanelTitle>
         <span className="hint">{plural(nHosts, 'host')}, {plural(spec.sensors.length, 'sensor')} picked</span>
         <div className="tools">
-          {picked && <button type="button" className="btn ghost compact" onClick={() => onChange({ ...spec, sites: [], hosts: [], sensors: [] })}>Clear</button>}
+          <button type="button" className="btn rep-reset" disabled={!onReset} onClick={onReset} title="Back to a new, empty report: the picks, name, period, target and switches (a saved report stays saved)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1" /><path d="M3 4v5h5" /></svg>
+            Clear all
+          </button>
           <input className="input rep-q" type="search" placeholder="Find a host or sensor" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Find a host or sensor" />
         </div>
       </div>
@@ -10976,9 +10988,9 @@ function reportSiteOf(h: Host, sites: string[]): string | undefined {
 }
 
 // ReportSide names the report, sets its period and uptime target, outlines what it holds, and makes it.
-function ReportSide({ draft, setDraft, hosts, canEdit, busy, onDownload, onEmail, onSchedule, onNew }: {
+function ReportSide({ draft, setDraft, hosts, canEdit, busy, onDownload, onEmail, onSchedule }: {
   draft: ReportDraft; setDraft: (d: ReportDraft) => void; hosts: Host[]; canEdit: boolean; busy: string
-  onDownload: () => void; onEmail: () => void; onSchedule: () => void; onNew: () => void
+  onDownload: () => void; onEmail: () => void; onSchedule: () => void
 }) {
   const spec = draft.spec
   const set = (p: Partial<ReportSpec>) => setDraft({ ...draft, spec: { ...spec, ...p } })
@@ -10997,7 +11009,6 @@ function ReportSide({ draft, setDraft, hosts, canEdit, busy, onDownload, onEmail
     <div className="panel rep-side">
       <div className="phead">
         <PanelTitle eyebrow={draft.id ? 'Editing a saved report' : 'Report'}>{draft.name.trim() || 'Untitled report'}</PanelTitle>
-        {(draft.id || !empty) && <div className="tools"><button type="button" className="btn ghost compact" onClick={onNew}>Start over</button></div>}
       </div>
       <div className="rep-form">
         <label className="chan-field"><span className="flabel">Name</span>

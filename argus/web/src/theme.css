@@ -1599,6 +1599,8 @@ input.tsel { width: 15px; height: 15px; accent-color: var(--accent); margin: 0 8
 .rep-grid > .panel + .panel { margin-top: 0; }
 .rep-q { width: 220px; max-width: 100%; }
 .rep-pick .phead .tools { align-items: center; }
+.rep-reset { display: inline-flex; align-items: center; gap: 6px; }
+.rep-reset svg { width: 13px; height: 13px; }
 .rep-tree { padding-bottom: 4px; }
 .rep-row { display: grid; grid-template-columns: 18px 24px minmax(0, 1fr) auto; align-items: center; gap: 2px; min-height: 36px; padding: 4px 16px; font-size: 13px; border-top: 1px solid var(--border); cursor: pointer; user-select: none; }
 .rep-srow { background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }

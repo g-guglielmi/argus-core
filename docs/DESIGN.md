@@ -858,7 +858,8 @@ its uptime and problems; a sensor its chart, a group's channels together) beside
 period, uptime target, whether maintenance is left out, an outline of what it holds and about how
 many pages; and **Saved reports**. The tree ticks like any checkbox tree: a site takes over the hosts
 picked in it one by one, unticking a site clears everything under it (its hosts' sensors too) and
-unticking a host clears its sensors; **Clear** empties the picks. The draft stays in the browser
+unticking a host clears its sensors; **Clear all** resets the whole report (the picks, its name,
+period, target and switches; a saved one being edited stays saved, untouched). The draft stays in the browser
 between visits, and **Add to a report** in a site's, host's or sensor's row menu adds to it where the
 user is.
 
