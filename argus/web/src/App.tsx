@@ -10815,7 +10815,12 @@ function ReportsView({ me, draft, setDraft }: { me: Me; draft: ReportDraft; setD
 // sensor its chart.
 function ReportPicker({ hosts, spec, onChange }: { hosts: Host[] | null; spec: ReportSpec; onChange: (s: ReportSpec) => void }) {
   const [q, setQ] = useState('')
+  const ql = q.trim().toLowerCase()
   const [open, setOpen] = useState<Set<string>>(() => new Set())
+  // While a search is typed, the sites and hosts holding a match open by themselves, but a click still
+  // opens or closes any row; those clicks are forgotten when the search changes.
+  const [searchOpen, setSearchOpen] = useState<Map<string, boolean>>(() => new Map())
+  useEffect(() => { setSearchOpen(new Map()) }, [ql])
   const [picks, setPicks] = useState<Record<string, ReturnType<typeof reportPicks> | 'loading' | 'error'>>({})
   const sites = useMemo(() => {
     const m = new Map<string, Host[]>()
@@ -10835,8 +10840,17 @@ function ReportPicker({ hosts, spec, onChange }: { hosts: Host[] | null; spec: R
       .then((list: SensorItem[]) => setPicks((p) => ({ ...p, [id]: reportPicks(id, list || []) })))
       .catch(() => setPicks((p) => ({ ...p, [id]: 'error' })))
   }
-  function toggleOpen(key: string, hostId?: string) {
-    setOpen((o) => { const n = new Set(o); if (n.has(key)) n.delete(key); else n.add(key); return n })
+  function isOpen(key: string, auto: boolean): boolean {
+    if (!ql) return open.has(key)
+    return searchOpen.get(key) ?? auto
+  }
+  function toggleOpen(key: string, auto: boolean, hostId?: string) {
+    if (ql) {
+      const now = isOpen(key, auto)
+      setSearchOpen((m) => new Map(m).set(key, !now))
+    } else {
+      setOpen((o) => { const n = new Set(o); if (n.has(key)) n.delete(key); else n.add(key); return n })
+    }
     if (hostId) loadPicks(hostId)
   }
   const siteOfHost = (h: Host) => reportSiteOf(h, spec.sites)
@@ -10845,7 +10859,6 @@ function ReportPicker({ hosts, spec, onChange }: { hosts: Host[] | null; spec: R
   const toggleHost = (id: string) => onChange({ ...spec, hosts: spec.hosts.includes(id) ? spec.hosts.filter((x) => x !== id) : [...spec.hosts, id] })
   const toggleSensor = (p: ReportSensorPick) => onChange({ ...spec, sensors: spec.sensors.some((s) => sameReportSensor(s, p)) ? spec.sensors.filter((s) => !sameReportSensor(s, p)) : [...spec.sensors, p] })
 
-  const ql = q.trim().toLowerCase()
   const hostMatches = (h: Host) => !ql || h.name.toLowerCase().includes(ql) ||
     (Array.isArray(picks[h.id]) && (picks[h.id] as ReturnType<typeof reportPicks>).some((p) => p.pick.label.toLowerCase().includes(ql)))
   const nHosts = new Set([...(hosts || []).filter((h) => spec.hosts.includes(h.id) || siteOfHost(h)).map((h) => h.id)]).size
@@ -10868,12 +10881,12 @@ function ReportPicker({ hosts, spec, onChange }: { hosts: Host[] | null; spec: R
             const shown = list.filter(hostMatches)
             if (ql && shown.length === 0) return null
             const sKey = 's:' + site
-            const sOpen = !!ql || open.has(sKey)
+            const sOpen = isOpen(sKey, true)
             const sOn = site !== '' && spec.sites.includes(site)
             const sSome = list.some((h) => spec.hosts.includes(h.id) || sensorsOf(h.id).length > 0)
             return (
               <div key={sKey} className="rep-site">
-                <div className="rep-row rep-srow" onClick={() => toggleOpen(sKey)}>
+                <div className="rep-row rep-srow" onClick={() => toggleOpen(sKey, true)}>
                   <svg className={'chev' + (sOpen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
                   {site !== '' ? box(sOn, sSome, () => toggleSite(site), `Report on ${site}`) : <span className="rep-nobox" />}
                   <span className="rep-name"><b>{site || 'Ungrouped'}</b> <span className="muted">{plural(list.length, 'host')}</span></span>
@@ -10881,7 +10894,9 @@ function ReportPicker({ hosts, spec, onChange }: { hosts: Host[] | null; spec: R
                 </div>
                 {sOpen && shown.map((h) => {
                   const hKey = 'h:' + site + ':' + h.id
-                  const hOpen = open.has(hKey) || (!!ql && !h.name.toLowerCase().includes(ql))
+                  // Searching, a host opens by itself when it is listed for a sensor's name, not its own.
+                  const hAuto = !h.name.toLowerCase().includes(ql)
+                  const hOpen = isOpen(hKey, hAuto)
                   const via = siteOfHost(h)
                   const hOn = spec.hosts.includes(h.id) || !!via
                   const hs = sensorsOf(h.id)
@@ -10889,13 +10904,13 @@ function ReportPicker({ hosts, spec, onChange }: { hosts: Host[] | null; spec: R
                   const note = [hOn ? 'uptime' : '', hs.length ? plural(hs.length, 'chart') : ''].filter(Boolean).join(' + ')
                   return (
                     <div key={hKey}>
-                      <div className="rep-row rep-hrow" onClick={() => toggleOpen(hKey, h.id)}>
+                      <div className="rep-row rep-hrow" onClick={() => toggleOpen(hKey, hAuto, h.id)}>
                         <svg className={'chev' + (hOpen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
                         {box(hOn, hs.length > 0, () => toggleHost(h.id), `Report on ${h.name}`, !!via && !spec.hosts.includes(h.id), via ? `Covered by ${via}` : undefined)}
                         <span className="rep-name"><span className="dev-ico">{hostGlyph(h.icon)}</span><span className="rep-ell">{h.name}</span></span>
                         <span className="rep-note">{note}</span>
                       </div>
-                      {(hOpen || (ql && Array.isArray(hp))) && (
+                      {hOpen && (
                         hp === 'loading' || hp === undefined ? <div className="rep-row rep-irow muted">Loading sensors…</div>
                           : hp === 'error' ? <div className="rep-row rep-irow txt-err">Could not load its sensors</div>
                             : hp.length === 0 ? <div className="rep-row rep-irow muted">No sensors with values to chart</div>
