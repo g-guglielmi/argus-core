@@ -45,6 +45,9 @@ type ReportSpec struct {
 	To              string  `json:"to,omitempty"`
 	Target          float64 `json:"target"` // uptime target in percent, 0: none
 	SkipMaintenance bool    `json:"skip_maintenance"`
+	// SkipHostCharts leaves out the chart every covered host gets of its availability sensor (its
+	// ping's response time, the time it was down shaded).
+	SkipHostCharts bool `json:"skip_host_charts"`
 }
 
 // ReportSensor is a sensor picked for its chart: one item, or a group's channels in their order.

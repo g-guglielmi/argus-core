@@ -39,7 +39,8 @@ const (
 	reportFoldHosts   = 12 // more hosts than this and the clean ones fold into one line
 	reportProblemRows = 40 // per host
 	reportMaxSensors  = 60
-	reportHistoryDays = 3 // up to this long, charts read raw history; longer, hourly trends
+	reportHostCharts  = 100 // hosts whose availability is charted, at most
+	reportHistoryDays = 3   // up to this long, charts read raw history; longer, hourly trends
 	reportLogoKey     = "report:logo"
 )
 
@@ -524,12 +525,49 @@ func (s *Server) buildReport(ctx context.Context, run reportRun) (report.Doc, er
 		}
 	}
 
+	// Each covered host's availability chart: its ping's response time with the time it was down
+	// shaded (a collector's flag alone when it has no ping), unless the report leaves them out or a
+	// sensor picked on the host already is that sensor.
+	hostCharts := map[string]store.ReportSensor{}
+	if !spec.SkipHostCharts {
+		var pinged []string
+		for _, h := range hosts {
+			if h.covered && h.item != "" {
+				pinged = append(pinged, h.h.HostID)
+			}
+		}
+		rtt := map[string]string{} // host -> its ping's response time
+		if len(pinged) > 0 {
+			if its, err := s.zbx.HostItemsByKeys(ctx, pinged, []string{"icmppingsec"}); err == nil {
+				for _, it := range its {
+					if it.Status == "0" {
+						rtt[it.HostID] = it.ItemID
+					}
+				}
+			}
+		}
+		for _, h := range hosts {
+			if !h.covered || h.item == "" || len(hostCharts) == reportHostCharts {
+				continue
+			}
+			if slices.ContainsFunc(h.sensors, func(sn store.ReportSensor) bool { return slices.Contains(sn.Items, h.item) }) {
+				continue
+			}
+			sn := store.ReportSensor{HostID: h.h.HostID, Items: []string{h.item}}
+			if id := rtt[h.h.HostID]; id != "" {
+				sn.Items = append(sn.Items, id)
+			}
+			hostCharts[h.h.HostID] = sn
+		}
+	}
+
 	// Sensors: their items, thresholds and values.
 	var itemIDs []string
 	for _, h := range hosts {
 		for _, sn := range h.sensors {
 			itemIDs = append(itemIDs, sn.Items...)
 		}
+		itemIDs = append(itemIDs, hostCharts[h.h.HostID].Items...)
 	}
 	items := map[string]zabbix.Item{}
 	trigs := map[string][]zabbix.ItemTrigger{}
@@ -654,6 +692,9 @@ func (s *Server) buildReport(ctx context.Context, run reportRun) (report.Doc, er
 				sec.Problems = append(sec.Problems, reportProblem(v, run.now, loc, s.mgr.Clock24h()))
 			}
 		}
+		if hc, ok := hostCharts[h.h.HostID]; ok {
+			sec.Charts = append(sec.Charts, s.hostChart(ctx, hc, h, items, trigs, from, to, loc, run.now, sec.Uptime)...)
+		}
 		for _, sn := range h.sensors {
 			charts, row := s.sensorReport(ctx, sn, h, items, trigs, from, to, loc, run.now)
 			sec.Charts = append(sec.Charts, charts...)
@@ -676,9 +717,12 @@ func (s *Server) buildReport(ctx context.Context, run reportRun) (report.Doc, er
 			notes = append(notes, "Maintenance windows count like any other time.")
 		}
 	}
-	if nSensors > 0 {
+	if len(hostCharts) > 0 {
+		notes = append(notes, "Each host's ping chart shows its response time, the time it was down shaded red (as counted in its uptime).")
+	}
+	if nSensors > 0 || len(hostCharts) > 0 {
 		if to.Sub(from) > reportHistoryDays*24*time.Hour {
-			notes = append(notes, "Sensor charts show hourly averages; min and max are the extremes within the hours, 95th the value the hourly averages stayed under 95 % of the time.")
+			notes = append(notes, "Charts show hourly averages; min and max are the extremes within the hours, 95th the value the hourly averages stayed under 95 % of the time.")
 		} else {
 			notes = append(notes, "95th: the value the sensor stayed under 95 % of the time.")
 		}
@@ -775,6 +819,40 @@ func reportProblem(v incidentView, now time.Time, loc *time.Location, h24 bool) 
 		p.Ack = "Note: " + v.Note
 	}
 	return p
+}
+
+// hostChart is a covered host's availability chart: "Ping" (or its collector's flag), drawn like a
+// picked sensor, but its down time agrees with the host's uptime: without the hours a maintenance
+// window left out, and the host's own downtime in its figures.
+func (s *Server) hostChart(ctx context.Context, sn store.ReportSensor, h *reportHost, items map[string]zabbix.Item, trigs map[string][]zabbix.ItemTrigger, from, to time.Time, loc *time.Location, now time.Time, uptime string) []report.Chart {
+	if it, ok := items[h.item]; ok {
+		sn.Label = "Ping"
+		if it.Key != defaultMasterKey {
+			sn.Label = sensorLabel(it.Key, it.Name)
+		}
+	}
+	charts, _ := s.sensorReport(ctx, sn, h, items, trigs, from, to, loc, now)
+	for i := range charts {
+		c := &charts[i]
+		down := c.Down[:0:0]
+		for _, d := range c.Down {
+			if !overlapsAny(h.maint, d.From, d.To) {
+				down = append(down, d)
+			}
+		}
+		c.Down = down
+		if c.Kind == report.UpDownChart {
+			c.Stats = []report.Stat{{Label: "uptime", Value: uptime}, {Label: "down", Value: fmtSpan(h.down)}}
+		} else if c.Foot != "" {
+			if i := strings.Index(c.Foot, "; down "); i >= 0 {
+				c.Foot = c.Foot[:i]
+			}
+			if h.down > 0 {
+				c.Foot += "; down " + fmtSpan(h.down) + " (shaded)"
+			}
+		}
+	}
+	return charts
 }
 
 // sensorReport is a picked sensor's charts and its row on page 1. A group's channels share a chart
@@ -899,7 +977,12 @@ func (s *Server) sensorReport(ctx context.Context, sn store.ReportSensor, h *rep
 	for i, u := range unitOrder {
 		chs := byUnit[u]
 		units := u
-		lbl := func(v float64) string { return notify.FormatReading(strconv.FormatFloat(v, 'f', -1, 64), units) }
+		lbl := func(v float64) string {
+			if v == 0 && units == "s" {
+				return "0" // not "0 s" under "1 ms"
+			}
+			return notify.FormatReading(strconv.FormatFloat(v, 'f', -1, 64), units)
+		}
 		c := report.Chart{Title: label, From: from, To: to, Loc: loc, Label: lbl, Base1024: units == "B" || units == "Bps", Down: down}
 		if len(unitOrder) > 1 {
 			names := make([]string, 0, len(chs))

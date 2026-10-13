@@ -10618,7 +10618,7 @@ function HistoryView({ goHost }: { goHost: (h: string) => void }) {
 // ---------- Reports (reports.go): PDFs of the hosts and sensors picked, over a period ----------
 
 type ReportSensorPick = { host_id: string; items: string[]; label: string }
-type ReportSpec = { sites: string[]; hosts: string[]; sensors: ReportSensorPick[]; period: string; from?: string; to?: string; target: number; skip_maintenance: boolean }
+type ReportSpec = { sites: string[]; hosts: string[]; sensors: ReportSensorPick[]; period: string; from?: string; to?: string; target: number; skip_maintenance: boolean; skip_host_charts?: boolean }
 type ReportSchedule = { every: '' | 'day' | 'week' | 'month'; weekday: number; day: number; minute: number; to: string[]; enabled: boolean }
 type SavedReport = {
   id: number; name: string; spec: ReportSpec; schedule: ReportSchedule; owner_id: number; owner_name?: string
@@ -10645,7 +10645,7 @@ const reportDraftKey = (email: string) => 'argus-report-draft:' + email.toLowerC
 function newReportDraft(): ReportDraft {
   return {
     name: '',
-    spec: { sites: [], hosts: [], sensors: [], period: 'last_month', target: 99.9, skip_maintenance: true },
+    spec: { sites: [], hosts: [], sensors: [], period: 'last_month', target: 99.9, skip_maintenance: true, skip_host_charts: false },
     schedule: { every: '', weekday: 1, day: 1, minute: 7 * 60, to: [], enabled: true },
   }
 }
@@ -10967,8 +10967,9 @@ function ReportSide({ draft, setDraft, hosts, canEdit, busy, onDownload, onEmail
   const sensorHosts = hosts.filter((h) => spec.sensors.some((s) => s.host_id === h.id) && !covered.includes(h))
   const empty = spec.sites.length + spec.hosts.length + spec.sensors.length === 0
   const charts = (id: string) => spec.sensors.filter((s) => s.host_id === id).map((s) => s.label)
+  const hostCharts = !spec.skip_host_charts
   // About how many pages: page 1, then each host's header and strip, its problems, and its charts.
-  const points = covered.length * 90 + sensorHosts.length * 50 + spec.sensors.length * 175
+  const points = covered.length * (hostCharts ? 265 : 90) + sensorHosts.length * 50 + spec.sensors.length * 175
   const pages = empty ? 0 : 1 + Math.ceil(Math.max(0, points - 300) / 740)
   const outline = [...covered, ...sensorHosts].sort((a, b) => a.name.localeCompare(b.name)).slice(0, 12)
   const more = covered.length + sensorHosts.length - outline.length
@@ -11004,6 +11005,10 @@ function ReportSide({ draft, setDraft, hosts, canEdit, busy, onDownload, onEmail
           </div>
           <span className="set-hint">Hosts under the target are marked. Maintenance windows left out count as neither up nor down.</span>
         </div>
+        <div className="chan-field"><span className="flabel">Charts</span>
+          <Switch checked={hostCharts} onChange={(v) => set({ skip_host_charts: !v })} label="A ping chart for each host" />
+          <span className="set-hint">Its response time over the period, the time it was down shaded red. The sensors you tick add their own charts.</span>
+        </div>
         <div className="rep-outline">
           <div className="chan-sec-h">In this report</div>
           {empty ? <p className="set-note" style={{ margin: 0 }}>Nothing yet: tick a site, a host or a sensor on the left.</p> : (
@@ -11011,7 +11016,7 @@ function ReportSide({ draft, setDraft, hosts, canEdit, busy, onDownload, onEmail
               <div className="rep-oline"><b>Summary</b><span>{covered.length ? `uptime${spec.target ? ` against ${spec.target} %` : ''}, downtime, problems` : ''}{covered.length && spec.sensors.length ? '; ' : ''}{spec.sensors.length ? 'sensor figures' : ''}</span></div>
               {outline.map((h) => {
                 const cs = charts(h.id)
-                return <div key={h.id} className="rep-oline"><b>{h.name}</b><span>{[covered.includes(h) ? 'uptime, problems' : '', cs.join(', ')].filter(Boolean).join(', ')}</span></div>
+                return <div key={h.id} className="rep-oline"><b>{h.name}</b><span>{[covered.includes(h) ? (hostCharts ? 'uptime, problems, ping' : 'uptime, problems') : '', cs.join(', ')].filter(Boolean).join(', ')}</span></div>
               })}
               {more > 0 && <div className="rep-oline"><b /><span className="muted">and {plural(more, 'more host')}</span></div>}
               <p className="set-note" style={{ margin: '8px 0 0' }}>About {plural(pages, 'page')}.</p>

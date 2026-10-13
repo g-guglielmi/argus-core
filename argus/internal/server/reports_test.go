@@ -157,6 +157,8 @@ func reportZabbix(t *testing.T, from time.Time) *httptest.Server {
 		"110": {"itemid": "110", "hostid": "11", "name": "ICMP ping", "key_": "icmpping", "value_type": "3", "status": "0"},
 		"120": {"itemid": "120", "hostid": "12", "name": "ICMP ping", "key_": "icmpping", "value_type": "3", "status": "0"},
 		"111": {"itemid": "111", "hostid": "11", "name": "HTTPS response time", "key_": "web.time", "value_type": "0", "units": "s", "status": "0"},
+		"101": {"itemid": "101", "hostid": "10", "name": "ICMP response time", "key_": "icmppingsec", "value_type": "0", "units": "s", "status": "0"},
+		"112": {"itemid": "112", "hostid": "11", "name": "ICMP response time", "key_": "icmppingsec", "value_type": "0", "units": "s", "status": "0"},
 	}
 	down := from.Add(11*24*time.Hour + 3*time.Hour) // Sep 12, 03:00 and 04:00
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -209,6 +211,9 @@ func reportZabbix(t *testing.T, from time.Time) *httptest.Server {
 					avg, lo, hi := "1", "1", "1"
 					if id == "110" && (at.Equal(down) || at.Equal(down.Add(time.Hour))) {
 						avg, lo = "0", "0"
+					}
+					if id == "101" || id == "112" {
+						avg, lo, hi = "0.002", "0.001", "0.004"
 					}
 					if id == "111" {
 						avg, lo, hi = "0.2", "0.1", "0.3"
@@ -296,10 +301,20 @@ func TestBuildReport(t *testing.T) {
 	if len(web.Problems) != 2 || web.Problems[0].Name != "HTTPS response time over 800 ms" || web.Problems[0].Lasted != "35 min" || web.Problems[1].Tone != report.Err {
 		t.Fatalf("web1 problems: %+v", web.Problems)
 	}
-	if len(web.Charts) != 1 {
+	// Every covered host is charted by its ping: response time, the hour it was down shaded (the one
+	// in maintenance isn't, as in its uptime), then the sensors picked on it.
+	if len(doc.Sections[0].Charts) != 1 || doc.Sections[0].Charts[0].Title != "Ping" || doc.Sections[0].Charts[0].Foot != "in warning 0, in error 0" {
+		t.Fatalf("sw-core charts: %+v", doc.Sections[0].Charts)
+	}
+	if len(web.Charts) != 2 {
 		t.Fatalf("web1 charts: %+v", web.Charts)
 	}
-	ch := web.Charts[0]
+	ping := web.Charts[0]
+	if ping.Title != "Ping" || len(ping.Series) != 1 || len(ping.Down) != 1 || !ping.Down[0].From.Equal(from.Add(11*24*time.Hour+3*time.Hour)) ||
+		ping.Foot != "in warning 0, in error 2 h; down 1 h (shaded)" || ping.Label(0.002) != "2 ms" {
+		t.Fatalf("web1 ping chart: %+v %q", ping, ping.Foot)
+	}
+	ch := web.Charts[1]
 	if len(ch.Thresholds) != 2 || ch.Thresholds[0].V != 0.8 || ch.Thresholds[1].Tone != report.Err || len(ch.Series) != 1 || len(ch.Series[0].Points) != 720 {
 		t.Fatalf("web1 chart: %+v", ch)
 	}
@@ -316,9 +331,19 @@ func TestBuildReport(t *testing.T) {
 	if len(doc.Hosts) != 2 || !doc.Hosts[1].Under || doc.Hosts[1].Longest != "2 h" || doc.Hosts[0].Uptime != "100 %" {
 		t.Fatalf("hosts table: %+v", doc.Hosts)
 	}
-	if !strings.Contains(doc.Footnote, "Maintenance windows (1 h in all) are left out") {
+	if !strings.Contains(doc.Footnote, "Maintenance windows (1 h in all) are left out") || !strings.Contains(doc.Footnote, "ping chart") {
 		t.Fatalf("footnote: %q", doc.Footnote)
 	}
+	// Turned off, the hosts keep only the sensors picked on them.
+	spec.SkipHostCharts = true
+	bare, err := s.buildReport(ctx, reportRun{name: "No pings", spec: spec, scope: siteScope{sites: []string{"site1"}}, now: time.Date(2026, 10, 1, 7, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bare.Sections[0].Charts) != 0 || len(bare.Sections[1].Charts) != 1 || bare.Sections[1].Charts[0].Title != "HTTPS response time" || strings.Contains(bare.Footnote, "ping chart") {
+		t.Fatalf("host charts off: %+v / %+v", bare.Sections[0].Charts, bare.Sections[1].Charts)
+	}
+
 	pdf, err := report.Render(doc)
 	if err != nil {
 		t.Fatal(err)

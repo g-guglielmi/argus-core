@@ -592,7 +592,7 @@ func (w *writer) chart(c Chart) {
 }
 
 // scale works out a chart's value range: from 0 (or the lowest value, when it goes below 0) to a
-// round number past the highest value, taking in a threshold that is no more than twice that value
+// round number a little past the highest value, taking in a threshold that is no more than twice that value
 // away (one further off would flatten the line; it is left out).
 func scale(c Chart) (lo, hi float64, thr []Threshold) {
 	first := true
@@ -618,7 +618,7 @@ func scale(c Chart) (lo, hi float64, thr []Threshold) {
 			}
 		}
 	}
-	hi = niceCeil(hi, c.Base1024)
+	hi = niceCeil(hi*1.08, c.Base1024) // a little room above the highest value
 	if lo < 0 {
 		lo = -niceCeil(-lo, c.Base1024)
 	}
@@ -716,13 +716,15 @@ func (w *writer) lines(c Chart, px0, px1, py0, py1 float64) {
 		}
 		return false
 	}
-	for _, d := range c.Down {
+	// The time it was down: shaded across the plot over the fill, and marked in red along its foot
+	// over everything, so an outage of minutes in a month still shows.
+	downAt := func(d Span) (float64, float64) {
 		x0, x1 := math.Max(xAt(d.From), px0), math.Min(xAt(d.To), px1)
-		if x1-x0 < 1.2 {
+		if x1-x0 < 1.6 {
 			m := (x0 + x1) / 2
-			x0, x1 = m-0.6, m+0.6
+			x0, x1 = m-0.8, m+0.8
 		}
-		w.rect(x0, py0, x1-x0, py1-py0, cDownShade)
+		return x0, x1
 	}
 	w.dashed(false)
 	for _, v := range []float64{lo, (lo + hi) / 2, hi} {
@@ -735,15 +737,10 @@ func (w *writer) lines(c Chart, px0, px1, py0, py1 float64) {
 	}
 
 	single := len(c.Series) == 1
-	for si, s := range c.Series {
-		pts := decimate(s.Points, 900)
-		if len(pts) == 0 {
-			continue
-		}
-		step := medianStep(pts)
-		col := seriesColors[si%len(seriesColors)]
-		// A single channel gets the light fill under it, run by run.
-		if single {
+	// A single channel gets the light fill under it, run by run.
+	if single {
+		if pts := decimate(c.Series[0].Points, 900); len(pts) > 0 {
+			step := medianStep(pts)
 			w.fill(cFill)
 			run := []gopdf.Point{}
 			flush := func() {
@@ -762,6 +759,18 @@ func (w *writer) lines(c Chart, px0, px1, py0, py1 float64) {
 			}
 			flush()
 		}
+	}
+	for _, d := range c.Down {
+		x0, x1 := downAt(d)
+		w.rect(x0, py0, x1-x0, py1-py0, cDownShade)
+	}
+	for si, s := range c.Series {
+		pts := decimate(s.Points, 900)
+		if len(pts) == 0 {
+			continue
+		}
+		step := medianStep(pts)
+		col := seriesColors[si%len(seriesColors)]
 		w.dashed(false)
 		w.p.SetLineWidth(1)
 		for i := 1; i < len(pts); i++ {
@@ -814,6 +823,10 @@ func (w *writer) lines(c Chart, px0, px1, py0, py1 float64) {
 		w.fill(bg)
 		w.round(px0-4-tw, t.y-4.8, tw, 9.6, 2, "F")
 		w.text(px0-4-tw+3, t.y+2.2, t.text)
+	}
+	for _, d := range c.Down {
+		x0, x1 := downAt(d)
+		w.rect(x0, py1-3, x1-x0, 3, cErr)
 	}
 }
 

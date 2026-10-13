@@ -153,7 +153,8 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   maintenance left out or not. Page 1 sums it up (uptime, hosts under the target, downtime,
   problems; a hosts table and a sensors table with min / avg / max / 95th and time in warning and in
   error), then a section per host: uptime and a strip of its days, its problems with who acknowledged
-  them, and its sensors' charts full width, banded by their thresholds. Saved reports are emailed on
+  them, its ping chart (down time shaded) and its ticked sensors' charts full width, banded by their
+  thresholds. Saved reports are emailed on
   request or every day, week or month through the first email channel; a logo set in Settings. Drawn
   on the core in vectors (gopdf, MIT; Open Sans, Apache 2.0), no browser in the image (DESIGN 7k).
   Later: a previous-period comparison, business hours, an archive of the PDFs sent. - _(FE+BE)_ L

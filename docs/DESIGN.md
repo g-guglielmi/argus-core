@@ -871,6 +871,12 @@ report** in a site's, host's or sensor's row menu adds to it where the user is.
   report (`collectIncidentsTill`: Zabbix's events since a month before the period up to its end, and
   Argus's own incidents, kept a year for this), with how long it lasted and who acknowledged it with
   their note (else the note on its sensor); 40 per host, then a count.
+- **Host charts**: every covered host gets a chart of its availability sensor under its problems,
+  "Ping": its response time (`icmppingsec`) with the time `icmpping` read down shaded red and marked
+  along the chart's foot (a collector's flag alone, drawn as up and down, for a host without a ping),
+  its down time the same as in its uptime (maintenance left out the same way); 100 hosts at most. A
+  switch on New report leaves them out (`skip_host_charts`), and a host whose own ping sensor is
+  picked isn't charted twice.
 - **Sensors**: up to 3 days, raw history; longer, hourly trends (each hour's average drawn, min and
   max from the hours' extremes, the 95th percentile of the averages). A group's channels share a
   chart when they share units, one chart per kind of units otherwise, and its up/down channels shade
