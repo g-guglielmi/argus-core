@@ -93,9 +93,6 @@ func checkReport(b *reportBody, sc siteScope, idx map[string]hostInfo, now time.
 		}
 		return r
 	}, b.Name))
-	if b.Name == "" {
-		return errors.New("give the report a name")
-	}
 	if len([]rune(b.Name)) > 120 {
 		return errors.New("the name is too long (120 characters at most)")
 	}
@@ -125,6 +122,9 @@ func checkReport(b *reportBody, sc siteScope, idx map[string]hostInfo, now time.
 	if _, _, _, err := reportPeriod(*sp, now, loc); err != nil {
 		return err
 	}
+	if b.Name == "" {
+		b.Name = reportAutoName(*sp, idx, now, loc)
+	}
 	if !withSchedule {
 		return nil
 	}
@@ -146,6 +146,58 @@ func checkReport(b *reportBody, sc siteScope, idx map[string]hostInfo, now time.
 		return errors.New("say who to email it to")
 	}
 	return nil
+}
+
+// reportAutoName names a report left unnamed, from what it covers and its period: "Firewall-BZ, last
+// month", "mybz and myng, last 7 days", "mybz and 2 hosts, this month", "web1, 3 sensors, 1 to 15
+// October 2026". The period is said the way it was picked, so a saved report's name stays right
+// every time it is made. The UI shows the same as the name field's placeholder.
+func reportAutoName(spec store.ReportSpec, idx map[string]hostInfo, now time.Time, loc *time.Location) string {
+	hostName := func(id string) string { return idx[id].Name }
+	var items []string
+	if n := len(spec.Sites); n > 3 {
+		items = append(items, spec.Sites[0], spec.Sites[1], plural(n-2, "more site", "more sites"))
+	} else {
+		items = append(items, spec.Sites...)
+	}
+	switch n := len(spec.Hosts); {
+	case n == 1 && len(items) == 0 && hostName(spec.Hosts[0]) != "":
+		items = append(items, hostName(spec.Hosts[0]))
+	case n > 0:
+		items = append(items, plural(n, "host", "hosts"))
+	}
+	if n := len(spec.Sensors); n > 0 && len(items) == 0 {
+		one := true
+		for _, sn := range spec.Sensors {
+			one = one && sn.HostID == spec.Sensors[0].HostID
+		}
+		switch {
+		case n == 1:
+			items = append(items, strings.TrimSpace(hostName(spec.Sensors[0].HostID)+" "+spec.Sensors[0].Label))
+		case one && hostName(spec.Sensors[0].HostID) != "":
+			items = append(items, hostName(spec.Sensors[0].HostID)+", "+plural(n, "sensor", "sensors"))
+		default:
+			items = append(items, plural(n, "sensor", "sensors"))
+		}
+	}
+	what := "Report"
+	switch len(items) {
+	case 0:
+	case 1:
+		what = items[0]
+	default:
+		what = strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+	}
+	period := map[string]string{"": "last 7 days", "7d": "last 7 days", "30d": "last 30 days", "last_month": "last month", "this_month": "this month"}[spec.Period]
+	if spec.Period == "custom" {
+		if _, _, label, err := reportPeriod(spec, now, loc); err == nil {
+			period = label
+		}
+	}
+	if period == "" {
+		return what
+	}
+	return what + ", " + period
 }
 
 func cleanList(in []string) []string {

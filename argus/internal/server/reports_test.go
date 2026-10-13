@@ -127,7 +127,6 @@ func TestCheckReport(t *testing.T) {
 		t.Fatalf("a valid report: %v %+v", err, ok)
 	}
 	for name, b := range map[string]reportBody{
-		"no name":             {Spec: store.ReportSpec{Sites: []string{"site1"}, Period: "7d"}},
 		"nothing picked":      {Name: "x", Spec: store.ReportSpec{Period: "7d"}},
 		"site out of scope":   {Name: "x", Spec: store.ReportSpec{Sites: []string{"site2"}, Period: "7d"}},
 		"host out of scope":   {Name: "x", Spec: store.ReportSpec{Hosts: []string{"20"}, Period: "7d"}},
@@ -225,6 +224,27 @@ func reportZabbix(t *testing.T, from time.Time) *httptest.Server {
 				}
 			}
 			result = out
+		case "history.get":
+			// Web1's raw checks: down from 03:02 to 03:58 on Sep 12, its ping's response time 2 ms
+			// otherwise (and 0 while down).
+			id, _ := req.Params["itemids"].(string)
+			lo, _ := req.Params["time_from"].(float64)
+			hi, _ := req.Params["time_till"].(float64)
+			var out []map[string]string
+			for t := time.Unix(int64(lo), 0).Truncate(time.Minute); !t.After(time.Unix(int64(hi), 0)); t = t.Add(time.Minute) {
+				isDown := !t.Before(down.Add(2*time.Minute)) && t.Before(down.Add(58*time.Minute))
+				v := ""
+				switch id {
+				case "110":
+					v = map[bool]string{true: "0", false: "1"}[isDown]
+				case "112":
+					v = map[bool]string{true: "0", false: "0.002"}[isDown]
+				}
+				if v != "" {
+					out = append(out, map[string]string{"clock": strconv.FormatInt(t.Unix(), 10), "value": v})
+				}
+			}
+			result = out
 		case "trigger.get":
 			if _, byItem := req.Params["itemids"]; byItem {
 				result = []map[string]any{
@@ -254,6 +274,7 @@ func reportZabbix(t *testing.T, from time.Time) *httptest.Server {
 
 func TestBuildReport(t *testing.T) {
 	from := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	down := from.Add(11*24*time.Hour + 3*time.Hour) // web1's outage (reportZabbix)
 	mock := reportZabbix(t, from)
 	defer mock.Close()
 	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
@@ -306,7 +327,7 @@ func TestBuildReport(t *testing.T) {
 	if len(doc.Sections[0].Charts) != 1 || doc.Sections[0].Charts[0].Title != "Ping" || doc.Sections[0].Charts[0].Foot != "in warning 0, in error 0" {
 		t.Fatalf("sw-core charts: %+v", doc.Sections[0].Charts)
 	}
-	if len(web.Charts) != 2 {
+	if len(web.Charts) != 3 {
 		t.Fatalf("web1 charts: %+v", web.Charts)
 	}
 	ping := web.Charts[0]
@@ -314,7 +335,18 @@ func TestBuildReport(t *testing.T) {
 		ping.Foot != "in warning 0, in error 2 h; down 1 h (shaded)" || ping.Label(0.002) != "2 ms" {
 		t.Fatalf("web1 ping chart: %+v %q", ping, ping.Foot)
 	}
-	ch := web.Charts[1]
+	// Its outage up close, from the raw checks: 03:02 to 03:58 (the hour after it, in maintenance, is
+	// left out like in its uptime), half an hour either side, the problem open then.
+	cu := web.Charts[1]
+	if cu.Title != "Down Sep 12, 03:02 to 03:58" || !cu.Compact || len(cu.Down) != 1 || cu.Stats[0].Value != "56 min" ||
+		!cu.From.Equal(down.Add(-28*time.Minute)) || !cu.To.Equal(down.Add(88*time.Minute)) || cu.Foot != "open then: web1 is unavailable by ICMP ping" ||
+		len(cu.Series) != 1 || len(cu.Series[0].Points) < 100 || cu.Label(0.002) != "2 ms" {
+		t.Fatalf("web1 close-up: %+v %q", cu, cu.Title)
+	}
+	if len(doc.Sections[0].Charts) != 1 {
+		t.Fatalf("sw-core had no outage, so no close-up: %+v", doc.Sections[0].Charts)
+	}
+	ch := web.Charts[2]
 	if len(ch.Thresholds) != 2 || ch.Thresholds[0].V != 0.8 || ch.Thresholds[1].Tone != report.Err || len(ch.Series) != 1 || len(ch.Series[0].Points) != 720 {
 		t.Fatalf("web1 chart: %+v", ch)
 	}
@@ -331,16 +363,18 @@ func TestBuildReport(t *testing.T) {
 	if len(doc.Hosts) != 2 || !doc.Hosts[1].Under || doc.Hosts[1].Longest != "2 h" || doc.Hosts[0].Uptime != "100 %" {
 		t.Fatalf("hosts table: %+v", doc.Hosts)
 	}
-	if !strings.Contains(doc.Footnote, "Maintenance windows (1 h in all) are left out") || !strings.Contains(doc.Footnote, "ping chart") {
+	if !strings.Contains(doc.Footnote, "Maintenance windows (1 h in all) are left out") || !strings.Contains(doc.Footnote, "ping chart") ||
+		!strings.Contains(doc.Footnote, "close-up shows an outage") || strings.Contains(doc.Footnote, "no close-up") {
 		t.Fatalf("footnote: %q", doc.Footnote)
 	}
 	// Turned off, the hosts keep only the sensors picked on them.
-	spec.SkipHostCharts = true
+	spec.SkipHostCharts, spec.SkipCloseUps = true, true
 	bare, err := s.buildReport(ctx, reportRun{name: "No pings", spec: spec, scope: siteScope{sites: []string{"site1"}}, now: time.Date(2026, 10, 1, 7, 0, 0, 0, time.UTC)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(bare.Sections[0].Charts) != 0 || len(bare.Sections[1].Charts) != 1 || bare.Sections[1].Charts[0].Title != "HTTPS response time" || strings.Contains(bare.Footnote, "ping chart") {
+	if len(bare.Sections[0].Charts) != 0 || len(bare.Sections[1].Charts) != 1 || bare.Sections[1].Charts[0].Title != "HTTPS response time" ||
+		strings.Contains(bare.Footnote, "ping chart") || strings.Contains(bare.Footnote, "close-up") {
 		t.Fatalf("host charts off: %+v / %+v", bare.Sections[0].Charts, bare.Sections[1].Charts)
 	}
 
@@ -411,5 +445,35 @@ func TestReportTickRetries(t *testing.T) {
 	}
 	if next := reportNext(sched, time.Unix(state().LastRunAt, 0), mgr.Location()); !next.After(due.Add(7 * time.Hour)) {
 		t.Fatalf("next send %v", next)
+	}
+}
+
+// A report left unnamed is named after what it covers and its period as picked, so a saved one stays
+// right each month; checkReport fills it in.
+func TestReportAutoName(t *testing.T) {
+	idx := map[string]hostInfo{"10": {Name: "Firewall-BZ"}, "11": {Name: "web1"}}
+	now, loc := time.Date(2026, 10, 13, 9, 0, 0, 0, time.UTC), time.UTC
+	sensor := func(host, label string) store.ReportSensor {
+		return store.ReportSensor{HostID: host, Items: []string{host + label}, Label: label}
+	}
+	for _, c := range []struct {
+		spec store.ReportSpec
+		want string
+	}{
+		{store.ReportSpec{Hosts: []string{"10"}, Period: "last_month"}, "Firewall-BZ, last month"},
+		{store.ReportSpec{Sites: []string{"mybz", "myng"}, Period: "7d"}, "mybz and myng, last 7 days"},
+		{store.ReportSpec{Sites: []string{"mybz"}, Hosts: []string{"10", "11"}, Period: "this_month"}, "mybz and 2 hosts, this month"},
+		{store.ReportSpec{Sites: []string{"a", "b", "c", "d", "e"}, Period: "30d"}, "a, b and 3 more sites, last 30 days"},
+		{store.ReportSpec{Sensors: []store.ReportSensor{sensor("11", "HTTPS response time")}, Period: "7d"}, "web1 HTTPS response time, last 7 days"},
+		{store.ReportSpec{Sensors: []store.ReportSensor{sensor("11", "CPU"), sensor("11", "Memory"), sensor("11", "Disk")}, Period: "custom", From: "2026-10-01", To: "2026-10-15"}, "web1, 3 sensors, 1 to 13 October 2026"},
+		{store.ReportSpec{Sensors: []store.ReportSensor{sensor("10", "WAN"), sensor("11", "CPU")}, Period: "7d"}, "2 sensors, last 7 days"},
+	} {
+		if got := reportAutoName(c.spec, idx, now, loc); got != c.want {
+			t.Errorf("%+v: %q, want %q", c.spec, got, c.want)
+		}
+	}
+	b := reportBody{Spec: store.ReportSpec{Hosts: []string{"10"}, Period: "last_month"}}
+	if err := checkReport(&b, siteScope{all: true}, idx, now, loc, true); err != nil || b.Name != "Firewall-BZ, last month" {
+		t.Fatalf("unnamed: %q %v", b.Name, err)
 	}
 }

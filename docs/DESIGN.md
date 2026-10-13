@@ -881,6 +881,14 @@ user is.
   its down time the same as in its uptime (maintenance left out the same way); 100 hosts at most. A
   switch on New report leaves them out (`skip_host_charts`), and a host whose own ping sensor is
   picked isn't charted twice.
+- **Close-ups of outages**: the hours a covered host's availability sensor read down (from the same
+  trends as its uptime, maintenance left out alike) are grouped into stretches, the most downtime
+  first; up to 3 per host (60 in a report) are read check by check from Zabbix's raw history, an
+  hour either side, and drawn as a lower chart from half the outage's length before it (30 minutes
+  at least, 6 hours at most) to as long after: the minutes down shaded and marked red, the ping's
+  response time around them, the problems open then ("no problem was raised for it" otherwise), a
+  count of the shorter ones not drawn. An outage older than the raw history Zabbix keeps has no
+  close-up, and the footnote says how many. A switch leaves them out (`skip_close_ups`).
 - **Sensors**: up to 3 days, raw history; longer, hourly trends (each hour's average drawn, min and
   max from the hours' extremes, the 95th percentile of the averages). A group's channels share a
   chart when they share units, one chart per kind of units otherwise, and its up/down channels shade
@@ -889,6 +897,10 @@ user is.
   takes its colour, dashed lines with a tag on the axis); a threshold more than twice the highest
   value away is left out so the line isn't flattened. Time in warning and in error is how long the
   sensor's own alerts were open within the period. 60 sensors are charted at most.
+- **Name**: one left empty is named after what it covers and its period as picked (`reportAutoName`:
+  "Firewall-BZ, last month", "mybz and myng, last 7 days", "web1, 3 sensors, 1 to 15 October 2026"),
+  so a saved report's name stays right each time it is made; the name field shows it as its
+  placeholder and the save dialog fills it in.
 - **Page 1**: the logo (Settings, Reports: a PNG or JPEG of 512 KB at most, kept in `app_meta`, drawn
   up to 170 by 54 points), what it covers, when it was made and for whom; the title and period; the
   tiles (uptime, under target, downtime, problems); the hosts table (more than 12 hosts: those at

@@ -10618,7 +10618,7 @@ function HistoryView({ goHost }: { goHost: (h: string) => void }) {
 // ---------- Reports (reports.go): PDFs of the hosts and sensors picked, over a period ----------
 
 type ReportSensorPick = { host_id: string; items: string[]; label: string }
-type ReportSpec = { sites: string[]; hosts: string[]; sensors: ReportSensorPick[]; period: string; from?: string; to?: string; target: number; skip_maintenance: boolean; skip_host_charts?: boolean }
+type ReportSpec = { sites: string[]; hosts: string[]; sensors: ReportSensorPick[]; period: string; from?: string; to?: string; target: number; skip_maintenance: boolean; skip_host_charts?: boolean; skip_close_ups?: boolean }
 type ReportSchedule = { every: '' | 'day' | 'week' | 'month'; weekday: number; day: number; minute: number; to: string[]; enabled: boolean }
 type SavedReport = {
   id: number; name: string; spec: ReportSpec; schedule: ReportSchedule; owner_id: number; owner_name?: string
@@ -10645,7 +10645,7 @@ const reportDraftKey = (email: string) => 'argus-report-draft:' + email.toLowerC
 function newReportDraft(): ReportDraft {
   return {
     name: '',
-    spec: { sites: [], hosts: [], sensors: [], period: 'last_month', target: 99.9, skip_maintenance: true, skip_host_charts: false },
+    spec: { sites: [], hosts: [], sensors: [], period: 'last_month', target: 99.9, skip_maintenance: true, skip_host_charts: false, skip_close_ups: false },
     schedule: { every: '', weekday: 1, day: 1, minute: 7 * 60, to: [], enabled: true },
   }
 }
@@ -10670,7 +10670,39 @@ function reportDraftUsed(d: ReportDraft): boolean {
   const s = d.spec
   return d.id !== undefined || d.name.trim() !== '' || s.sites.length + s.hosts.length + s.sensors.length > 0 ||
     s.period !== n.spec.period || !!s.from || !!s.to || s.target !== n.spec.target || s.skip_maintenance !== n.spec.skip_maintenance ||
-    !!s.skip_host_charts || d.schedule.every !== '' || d.schedule.to.length > 0
+    !!s.skip_host_charts || !!s.skip_close_ups || d.schedule.every !== '' || d.schedule.to.length > 0
+}
+
+// reportAutoName names a report left unnamed, the way the server does (reportAutoName in
+// reportsapi.go): what it covers, then its period as picked.
+function reportAutoName(spec: ReportSpec, hosts: Host[]): string {
+  const hostName = (id: string) => hosts.find((h) => h.id === id)?.name || ''
+  const items: string[] = spec.sites.length > 3 ? [spec.sites[0], spec.sites[1], plural(spec.sites.length - 2, 'more site')] : [...spec.sites]
+  if (spec.hosts.length === 1 && items.length === 0 && hostName(spec.hosts[0])) items.push(hostName(spec.hosts[0]))
+  else if (spec.hosts.length > 0) items.push(plural(spec.hosts.length, 'host'))
+  if (spec.sensors.length > 0 && items.length === 0) {
+    const first = hostName(spec.sensors[0].host_id)
+    const one = spec.sensors.every((s) => s.host_id === spec.sensors[0].host_id)
+    if (spec.sensors.length === 1) items.push(`${first} ${spec.sensors[0].label}`.trim())
+    else if (one && first) items.push(`${first}, ${plural(spec.sensors.length, 'sensor')}`)
+    else items.push(plural(spec.sensors.length, 'sensor'))
+  }
+  const what = items.length === 0 ? 'Report' : items.length === 1 ? items[0] : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+  const named: Record<string, string> = { '7d': 'last 7 days', '30d': 'last 30 days', last_month: 'last month', this_month: 'this month' }
+  const period = spec.period === 'custom' ? (spec.from && spec.to ? reportDays(spec.from, spec.to) : '') : named[spec.period] || ''
+  return period ? `${what}, ${period}` : what
+}
+
+// reportDays reads a custom period like the PDF does: "1 to 30 September 2026", "28 September to 4
+// October 2026".
+function reportDays(from: string, to: string): string {
+  const a = new Date(from + 'T00:00:00'), b = new Date(to + 'T00:00:00')
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return ''
+  const full = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  if (from === to) return full(a)
+  if (a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth()) return `${a.getDate()} to ${full(b)}`
+  if (a.getFullYear() === b.getFullYear()) return `${a.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })} to ${full(b)}`
+  return `${full(a)} to ${full(b)}`
 }
 
 const sameReportSensor = (a: ReportSensorPick, b: ReportSensorPick) => a.host_id === b.host_id && a.items[0] === b.items[0]
@@ -10746,7 +10778,9 @@ function ReportsView({ me, draft, setDraft }: { me: Me; draft: ReportDraft; setD
     fetch('/api/hosts').then((r) => (r.ok ? r.json() : [])).then((h) => setHosts(h || [])).catch(() => setHosts([]))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const draftName = draft.name.trim() || 'Report'
+  // Left empty, the server names it (reportAutoName); the page shows the same name beforehand.
+  const draftName = draft.name.trim()
+  const autoName = reportAutoName(draft.spec, hosts || [])
   async function run(key: string, url: string, init: RequestInit | undefined, fail: string): Promise<Response | null> {
     setBusy(key)
     const res = await fetch(url, init).catch(() => null)
@@ -10804,14 +10838,14 @@ function ReportsView({ me, draft, setDraft }: { me: Me; draft: ReportDraft; setD
         <div className="rep-grid">
           <ReportPicker hosts={hosts} spec={draft.spec} onChange={(spec) => setDraft({ ...draft, spec })}
             onReset={reportDraftUsed(draft) ? () => setDraft(newReportDraft()) : undefined} />
-          <ReportSide draft={draft} setDraft={setDraft} hosts={hosts || []} canEdit={canEdit} busy={busy}
+          <ReportSide draft={draft} setDraft={setDraft} hosts={hosts || []} canEdit={canEdit} busy={busy} autoName={autoName}
             onDownload={downloadDraft} onEmail={emailDraft} onSchedule={() => setScheduling(true)} />
         </div>
       ) : (
         <SavedReports list={saved} canEdit={canEdit} busy={busy} onNew={() => { setDraft(newReportDraft()); setTab('new') }}
           onDownload={downloadSaved} onEmail={emailSaved} onEdit={edit} onDuplicate={duplicate} onDelete={del} />
       )}
-      {scheduling && <ReportScheduleDialog draft={draft} onCancel={() => setScheduling(false)} onSaved={(d) => {
+      {scheduling && <ReportScheduleDialog draft={draft} autoName={autoName} onCancel={() => setScheduling(false)} onSaved={(d) => {
         setScheduling(false)
         setDraft(d)
         toast.success(d.schedule.every && d.schedule.enabled ? `Saved: ${reportScheduleText(d.schedule)}` : 'Report saved')
@@ -10988,8 +11022,8 @@ function reportSiteOf(h: Host, sites: string[]): string | undefined {
 }
 
 // ReportSide names the report, sets its period and uptime target, outlines what it holds, and makes it.
-function ReportSide({ draft, setDraft, hosts, canEdit, busy, onDownload, onEmail, onSchedule }: {
-  draft: ReportDraft; setDraft: (d: ReportDraft) => void; hosts: Host[]; canEdit: boolean; busy: string
+function ReportSide({ draft, setDraft, hosts, canEdit, busy, autoName, onDownload, onEmail, onSchedule }: {
+  draft: ReportDraft; setDraft: (d: ReportDraft) => void; hosts: Host[]; canEdit: boolean; busy: string; autoName: string
   onDownload: () => void; onEmail: () => void; onSchedule: () => void
 }) {
   const spec = draft.spec
@@ -11008,11 +11042,12 @@ function ReportSide({ draft, setDraft, hosts, canEdit, busy, onDownload, onEmail
   return (
     <div className="panel rep-side">
       <div className="phead">
-        <PanelTitle eyebrow={draft.id ? 'Editing a saved report' : 'Report'}>{draft.name.trim() || 'Untitled report'}</PanelTitle>
+        <PanelTitle eyebrow={draft.id ? 'Editing a saved report' : 'Report'}>{draft.name.trim() || (empty ? 'Untitled report' : autoName)}</PanelTitle>
       </div>
       <div className="rep-form">
         <label className="chan-field"><span className="flabel">Name</span>
-          <input className="input" value={draft.name} placeholder="e.g. Monthly availability, site1" maxLength={120} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+          <input className="input" value={draft.name} placeholder={empty ? 'e.g. Monthly availability, site1' : autoName} maxLength={120} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+          {!empty && !draft.name.trim() && <span className="set-hint">Left empty, it is named after what it covers and its period.</span>}
         </label>
         <div className="chan-field"><span className="flabel">Period</span>
           <div className="seg rep-period" role="radiogroup" aria-label="Period">
@@ -11037,7 +11072,8 @@ function ReportSide({ draft, setDraft, hosts, canEdit, busy, onDownload, onEmail
         </div>
         <div className="chan-field"><span className="flabel">Charts</span>
           <Switch checked={hostCharts} onChange={(v) => set({ skip_host_charts: !v })} label="A ping chart for each host" />
-          <span className="set-hint">Its response time over the period, the time it was down shaded red. The sensors you tick add their own charts.</span>
+          <Switch checked={!spec.skip_close_ups} onChange={(v) => set({ skip_close_ups: !v })} label="A close-up of each outage" />
+          <span className="set-hint">The ping chart shows its response time over the period, the time it was down shaded red; a close-up shows an outage minute by minute (up to 3 per host). The sensors you tick add their own charts.</span>
         </div>
         <div className="rep-outline">
           <div className="chan-sec-h">In this report</div>
@@ -11064,8 +11100,8 @@ function ReportSide({ draft, setDraft, hosts, canEdit, busy, onDownload, onEmail
 }
 
 // ReportScheduleDialog saves the draft: its name, and whether and when it is emailed, to whom.
-function ReportScheduleDialog({ draft, onCancel, onSaved }: { draft: ReportDraft; onCancel: () => void; onSaved: (d: ReportDraft) => void }) {
-  const [name, setName] = useState(draft.name)
+function ReportScheduleDialog({ draft, autoName, onCancel, onSaved }: { draft: ReportDraft; autoName: string; onCancel: () => void; onSaved: (d: ReportDraft) => void }) {
+  const [name, setName] = useState(draft.name.trim() || autoName)
   const [sch, setSch] = useState<ReportSchedule>(draft.schedule)
   const [to, setTo] = useState(draft.schedule.to.join(', '))
   const [time, setTime] = useState(fmtHM24(draft.schedule.minute))

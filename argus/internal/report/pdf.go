@@ -540,8 +540,11 @@ const gutter = 48.0 // the y axis labels and threshold tags
 
 func (w *writer) chart(c Chart) {
 	plotH := 104.0
-	if c.Kind == UpDownChart {
+	switch {
+	case c.Kind == UpDownChart:
 		plotH = 30
+	case c.Compact:
+		plotH = 64
 	}
 	legend := len(c.Series) > 1
 	total := 16 + plotH + 14 + 10
@@ -908,12 +911,18 @@ func (w *writer) timeAxis(c Chart, px0, px1, py1 float64) {
 	var layout string
 	switch days := span.Hours() / 24; {
 	case days <= 2.5:
-		stepH := 6
-		if days <= 1.1 {
-			stepH = 3
+		// The shortest round step that gives at most 7 ticks: 5 minutes for a close-up of an outage,
+		// hours over a day or two.
+		step := 12 * time.Hour
+		for _, s := range []time.Duration{5 * time.Minute, 10 * time.Minute, 15 * time.Minute, 30 * time.Minute, time.Hour, 2 * time.Hour, 3 * time.Hour, 6 * time.Hour} {
+			if span/s <= 7 {
+				step = s
+				break
+			}
 		}
-		t := time.Date(from.Year(), from.Month(), from.Day(), from.Hour()/stepH*stepH, 0, 0, 0, loc)
-		for ; !t.After(c.To); t = t.Add(time.Duration(stepH) * time.Hour) {
+		midnight := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, loc)
+		t := midnight.Add(from.Sub(midnight) / step * step)
+		for ; !t.After(c.To); t = t.Add(step) {
 			ticks = append(ticks, t)
 		}
 		layout = "15:04"

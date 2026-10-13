@@ -110,9 +110,10 @@ type Chart struct {
 
 	// Down is the time it was down: an UpDownChart's red bars, or a LineChart's shading (a group's
 	// availability channel).
-	Down []Span
-	Foot string // under the chart: "in warning 1 h 50 min, in error 0"
-	Loc  *time.Location
+	Down    []Span
+	Foot    string // under the chart: "in warning 1 h 50 min, in error 0"
+	Loc     *time.Location
+	Compact bool // a close-up of an outage: a lower plot
 }
 
 // Stat is a label and its value.

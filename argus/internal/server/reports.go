@@ -40,6 +40,8 @@ const (
 	reportProblemRows = 40 // per host
 	reportMaxSensors  = 60
 	reportHostCharts  = 100 // hosts whose availability is charted, at most
+	reportCloseUps    = 3   // outages drawn up close per host, the longest first
+	reportCloseUpsAll = 60  // and in a report
 	reportHistoryDays = 3   // up to this long, charts read raw history; longer, hourly trends
 	reportLogoKey     = "report:logo"
 )
@@ -529,14 +531,14 @@ func (s *Server) buildReport(ctx context.Context, run reportRun) (report.Doc, er
 	// shaded (a collector's flag alone when it has no ping), unless the report leaves them out or a
 	// sensor picked on the host already is that sensor.
 	hostCharts := map[string]store.ReportSensor{}
-	if !spec.SkipHostCharts {
+	rtt := map[string]string{} // host -> its ping's response time
+	if !spec.SkipHostCharts || !spec.SkipCloseUps {
 		var pinged []string
 		for _, h := range hosts {
 			if h.covered && h.item != "" {
 				pinged = append(pinged, h.h.HostID)
 			}
 		}
-		rtt := map[string]string{} // host -> its ping's response time
 		if len(pinged) > 0 {
 			if its, err := s.zbx.HostItemsByKeys(ctx, pinged, []string{"icmppingsec"}); err == nil {
 				for _, it := range its {
@@ -546,6 +548,8 @@ func (s *Server) buildReport(ctx context.Context, run reportRun) (report.Doc, er
 				}
 			}
 		}
+	}
+	if !spec.SkipHostCharts {
 		for _, h := range hosts {
 			if !h.covered || h.item == "" || len(hostCharts) == reportHostCharts {
 				continue
@@ -568,6 +572,12 @@ func (s *Server) buildReport(ctx context.Context, run reportRun) (report.Doc, er
 			itemIDs = append(itemIDs, sn.Items...)
 		}
 		itemIDs = append(itemIDs, hostCharts[h.h.HostID].Items...)
+		if !spec.SkipCloseUps && h.covered && h.item != "" {
+			itemIDs = append(itemIDs, h.item)
+			if id := rtt[h.h.HostID]; id != "" {
+				itemIDs = append(itemIDs, id)
+			}
+		}
 	}
 	items := map[string]zabbix.Item{}
 	trigs := map[string][]zabbix.ItemTrigger{}
@@ -660,6 +670,7 @@ func (s *Server) buildReport(ctx context.Context, run reportRun) (report.Doc, er
 	}
 
 	// The sections, with each host's sensors (and their rows on page 1).
+	closeUpsLeft, noHistory := reportCloseUpsAll, 0
 	for _, h := range hosts {
 		sec := report.Section{Name: h.h.Name}
 		sub := []string{}
@@ -695,6 +706,12 @@ func (s *Server) buildReport(ctx context.Context, run reportRun) (report.Doc, er
 		if hc, ok := hostCharts[h.h.HostID]; ok {
 			sec.Charts = append(sec.Charts, s.hostChart(ctx, hc, h, items, trigs, from, to, loc, run.now, sec.Uptime)...)
 		}
+		if !spec.SkipCloseUps && h.covered && h.item != "" && closeUpsLeft > 0 {
+			cs, old := s.closeUps(ctx, h, items[h.item], items[rtt[h.h.HostID]], hours[h.item], from, to, loc, run.now, min(reportCloseUps, closeUpsLeft))
+			sec.Charts = append(sec.Charts, cs...)
+			closeUpsLeft -= len(cs)
+			noHistory += old
+		}
 		for _, sn := range h.sensors {
 			charts, row := s.sensorReport(ctx, sn, h, items, trigs, from, to, loc, run.now)
 			sec.Charts = append(sec.Charts, charts...)
@@ -727,6 +744,12 @@ func (s *Server) buildReport(ctx context.Context, run reportRun) (report.Doc, er
 			notes = append(notes, "95th: the value the sensor stayed under 95 % of the time.")
 		}
 		notes = append(notes, "In warning and in error: how long the sensor's own alerts were open.")
+	}
+	if closeUpsLeft < reportCloseUpsAll {
+		notes = append(notes, "A close-up shows an outage minute by minute from Zabbix's raw checks, with the time around it; up to "+strconv.Itoa(reportCloseUps)+" per host, the longest first.")
+	}
+	if noHistory > 0 {
+		notes = append(notes, plural(noHistory, "outage has", "outages have")+" no close-up: older than the raw checks Zabbix keeps (Settings, Data retention).")
 	}
 	for _, sec := range doc.Sections {
 		if slices.ContainsFunc(sec.Days, func(d report.Day) bool { return d.Tone == report.Muted }) {
@@ -819,6 +842,177 @@ func reportProblem(v incidentView, now time.Time, loc *time.Location, h24 bool) 
 		p.Ack = "Note: " + v.Note
 	}
 	return p
+}
+
+// closeUps draws a host's outages up close. The hours its availability sensor read down (from the
+// trends its uptime came from, without the ones maintenance left out) are grouped into stretches, the
+// most downtime first; each is read check by check from Zabbix's raw history, an hour either side,
+// and drawn from half its length before it (30 minutes at least, 6 hours at most) to as long after:
+// the minutes it was down marked red, its ping's response time around them, and the problems open
+// then. old counts the stretches with no raw history left; a host with more outages than n says how
+// many weren't drawn under its last close-up.
+func (s *Server) closeUps(ctx context.Context, h *reportHost, up, rtt zabbix.Item, hours []trendHour, from, to time.Time, loc *time.Location, now time.Time, n int) (charts []report.Chart, old int) {
+	if up.ItemID == "" || n <= 0 {
+		return nil, 0
+	}
+	type stretch struct {
+		a, b time.Time
+		down time.Duration
+	}
+	sorted := append([]trendHour(nil), hours...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].at.Before(sorted[j].at) })
+	var cands []stretch
+	for _, tr := range sorted {
+		if tr.num == 0 || tr.avg >= 0.999 || overlapsAny(h.maint, tr.at, tr.at.Add(time.Hour)) {
+			continue
+		}
+		d := time.Duration((1 - math.Max(0, math.Min(1, tr.avg))) * float64(time.Hour))
+		if k := len(cands) - 1; k >= 0 && !tr.at.After(cands[k].b.Add(time.Hour)) {
+			cands[k].b, cands[k].down = tr.at.Add(time.Hour), cands[k].down+d
+			continue
+		}
+		cands = append(cands, stretch{tr.at, tr.at.Add(time.Hour), d})
+	}
+	sort.SliceStable(cands, func(i, j int) bool { return cands[i].down > cands[j].down })
+	more := 0
+	if len(cands) > n {
+		more, cands = len(cands)-n, cands[:n]
+	}
+	layout, short := "Jan 2, 15:04", "15:04"
+	if !s.mgr.Clock24h() {
+		layout, short = "Jan 2, 3:04 PM", "3:04 PM"
+	}
+	for _, c := range cands {
+		hist, err := s.zbx.History(ctx, up.ItemID, atoi(up.ValueType), c.a.Add(-time.Hour).Unix(), c.b.Add(time.Hour).Unix())
+		if err != nil || len(hist) == 0 {
+			old++
+			continue
+		}
+		var eps []report.Span
+		var down time.Duration
+		for _, e := range downEpisodes(hist) {
+			if overlapsAny(h.maint, e.From, e.To) || !e.To.After(from) || !e.From.Before(to) {
+				continue
+			}
+			eps = append(eps, e)
+			down += e.To.Sub(e.From)
+		}
+		if len(eps) == 0 {
+			continue
+		}
+		start, end := eps[0].From, eps[len(eps)-1].To
+		pad := max(30*time.Minute, end.Sub(start)/2)
+		pad = min(pad, 6*time.Hour)
+		wa, wb := start.Add(-pad), end.Add(pad)
+		if wb.After(now) {
+			wb = now
+		}
+		when := start.In(loc).Format(layout) + " to " + end.In(loc).Format(short)
+		if start.In(loc).YearDay() != end.In(loc).YearDay() {
+			when = start.In(loc).Format(layout) + " to " + end.In(loc).Format(layout)
+		}
+		ch := report.Chart{Title: "Down " + when, Stats: []report.Stat{{Label: "down", Value: fmtSpan(down)}},
+			From: wa, To: wb, Loc: loc, Down: eps, Compact: true}
+		if rtt.ItemID != "" {
+			if rh, err := s.zbx.History(ctx, rtt.ItemID, atoi(rtt.ValueType), wa.Unix(), wb.Unix()); err == nil {
+				var pts []report.Point
+				for _, p := range rh {
+					if v, err := strconv.ParseFloat(p.Value, 64); err == nil {
+						pts = append(pts, report.Point{T: time.Unix(atoi64(p.Clock), 0), V: v})
+					}
+				}
+				if len(pts) > 0 {
+					ch.Series = []report.Series{{Points: pts}}
+					ch.Label = func(v float64) string {
+						if v == 0 {
+							return "0"
+						}
+						return notify.FormatReading(strconv.FormatFloat(v, 'f', -1, 64), rtt.Units)
+					}
+				}
+			}
+		}
+		if len(ch.Series) == 0 { // no ping: the flag itself, up and down
+			if fh, err := s.zbx.History(ctx, up.ItemID, atoi(up.ValueType), wa.Unix(), wb.Unix()); err == nil {
+				var pts []report.Point
+				for _, p := range fh {
+					if v, err := strconv.ParseFloat(p.Value, 64); err == nil {
+						pts = append(pts, report.Point{T: time.Unix(atoi64(p.Clock), 0), V: v})
+					}
+				}
+				ch.Kind, ch.Series = report.UpDownChart, []report.Series{{Points: pts}}
+			}
+		}
+		var open []string
+		for _, v := range h.probs {
+			e := now
+			if v.End != 0 {
+				e = time.Unix(v.End, 0)
+			}
+			if time.Unix(v.Start, 0).Before(end) && e.After(start) && !slices.Contains(open, v.Name) {
+				open = append(open, v.Name)
+			}
+		}
+		ch.Foot = "no problem was raised for it"
+		if len(open) > 0 {
+			ch.Foot = "open then: " + strings.Join(open, "; ")
+		}
+		charts = append(charts, ch)
+	}
+	if more > 0 && len(charts) > 0 {
+		charts[len(charts)-1].Foot += "; " + plural(more, "shorter outage", "shorter outages") + " not drawn up close"
+	}
+	return charts, old
+}
+
+// downEpisodes reads the stretches an up/down sensor's raw checks found it down: from the first
+// check that read down to the first that read up again (or a check's interval past the last), with
+// gaps of under 10 minutes between them joined.
+func downEpisodes(hist []zabbix.HistoryPoint) []report.Span {
+	var times []time.Time
+	var vals []float64
+	for _, p := range hist {
+		if v, err := strconv.ParseFloat(p.Value, 64); err == nil {
+			times, vals = append(times, time.Unix(atoi64(p.Clock), 0)), append(vals, v)
+		}
+	}
+	step := time.Minute
+	if len(times) > 1 {
+		gaps := make([]time.Duration, 0, len(times)-1)
+		for i := 1; i < len(times); i++ {
+			gaps = append(gaps, times[i].Sub(times[i-1]))
+		}
+		sort.Slice(gaps, func(i, j int) bool { return gaps[i] < gaps[j] })
+		step = gaps[len(gaps)/2]
+	}
+	var out []report.Span
+	var cur *report.Span
+	for i, t := range times {
+		if vals[i] < 0.5 {
+			if cur == nil {
+				cur = &report.Span{From: t}
+			}
+			cur.To = t.Add(step)
+			continue
+		}
+		if cur != nil {
+			cur.To = t
+			out = append(out, *cur)
+			cur = nil
+		}
+	}
+	if cur != nil {
+		out = append(out, *cur)
+	}
+	var joined []report.Span
+	for _, e := range out {
+		if k := len(joined) - 1; k >= 0 && e.From.Sub(joined[k].To) < 10*time.Minute {
+			joined[k].To = e.To
+			continue
+		}
+		joined = append(joined, e)
+	}
+	return joined
 }
 
 // hostChart is a covered host's availability chart: "Ping" (or its collector's flag), drawn like a

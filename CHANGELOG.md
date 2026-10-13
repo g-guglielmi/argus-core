@@ -20,8 +20,10 @@ GitHub Release from the matching section below.
   the problems, a table of the hosts and one of the sensors (min, average, max, 95th percentile, time
   in warning and in error). Then each host has its section: its uptime and a strip of its days, the
   problems it had (when, how long, who acknowledged them and their note), a chart of its ping (the
-  response time, the time it was down shaded red; a switch leaves these out) and the charts of the
-  sensors you ticked, coloured past their thresholds like the app's. Maintenance windows can be left out of the uptime.
+  response time, the time it was down shaded red; a switch leaves these out), a close-up of each of
+  its longest outages minute by minute (the problem open then, the ping around it; another switch)
+  and the charts of the sensors you ticked, coloured past their thresholds like the app's. A report
+  left unnamed is named after what it covers and its period ("Firewall-BZ, last month"). Maintenance windows can be left out of the uptime.
 - Reports can be saved, emailed now, or emailed by themselves every day, week or month at a set time
   (through the first email channel under Notifications); the Saved reports list says when each was
   last made and why a send failed. Sites, hosts and sensors have **Add to a report** in their menu.

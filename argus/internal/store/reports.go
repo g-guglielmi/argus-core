@@ -48,6 +48,8 @@ type ReportSpec struct {
 	// SkipHostCharts leaves out the chart every covered host gets of its availability sensor (its
 	// ping's response time, the time it was down shaded).
 	SkipHostCharts bool `json:"skip_host_charts"`
+	// SkipCloseUps leaves out the close-up of each outage (its minutes, from the raw history).
+	SkipCloseUps bool `json:"skip_close_ups"`
 }
 
 // ReportSensor is a sensor picked for its chart: one item, or a group's channels in their order.
