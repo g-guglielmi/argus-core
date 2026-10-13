@@ -497,6 +497,12 @@ the raw history; 7 and 30 days are calendar days in the Argus timezone (today an
 it), summed from Zabbix's hourly trends weighted by their sample counts, plus the raw values of the
 hour the trends don't cover yet. A host's uptime is measured on its master sensor when that is an
 up/down one, else on its ping, else on a collector's reachable flag.
+**Exact hours** (`exactUptime`): Zabbix keeps the hourly average of a sensor stored as whole numbers
+(value type 3, the ping among them) rounded down, so an hour with one missed check in sixty reads 0,
+as if down all of it. Every hour of such a sensor that reads under 1 is read again from the raw checks
+(an hour few apart in one read, a month of flapping in one), while the raw history still has them, as
+the share of checks that found it up; older hours stay as read. The host card, the status pages and
+the reports all go through it; days stored before it were dropped once to be read again.
 - **Host card:** a band at the top with the 24 h / 7 day / 30 day figures and a strip of the last 60
   checks (`GET /api/hosts/{id}/availability`); an up/down sensor's chart reveal shows the same plus
   one bar per day for 30 days (`GET /api/items/{id}/availability`), above the group's chart for a

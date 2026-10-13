@@ -34,6 +34,14 @@ GitHub Release from the matching section below.
   save one that does.
 - A logo for the reports' first page (Settings, Reports).
 
+**Fixed:**
+- Uptime counted an hour with a single failed ping as down all of it (the 7 and 30 day figures and
+  the day bars on a host's page, the status pages, the reports): Zabbix keeps the hourly average of a
+  sensor stored as whole numbers rounded down. Such hours are now read from the raw checks while
+  Zabbix keeps them, so a 3-minute outage is 3 minutes, not an hour; the days already stored are read
+  again once after the update. In a report, older hours are still counted whole, and its footnote
+  says how many.
+
 **Changed:**
 - The incidents Argus raises itself (a sensor that stopped collecting, an interface that stopped
   answering) and the notes left on sensors are kept a year instead of 120 days, so a report can cover

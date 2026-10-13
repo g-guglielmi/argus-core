@@ -209,15 +209,24 @@ type trendHour struct {
 	avg float64
 }
 
-// trendHours reads the hourly trends of many items within [from, to), by item.
-func (s *Server) trendHours(ctx context.Context, ids []string, from, to time.Time) (map[string][]trendHour, error) {
-	out := map[string][]trendHour{}
+// trendHours reads the hourly trends of up/down items within [from, to), by item, each hour exact
+// where the raw history still has its checks (exactUptime); stale counts the hours it hasn't.
+func (s *Server) trendHours(ctx context.Context, ids []string, from, to time.Time) (out map[string][]trendHour, stale int, err error) {
+	out = map[string][]trendHour{}
+	valueType := map[string]string{}
+	if its, err := s.zbx.ItemsByIDs(ctx, ids); err == nil {
+		for id, it := range its {
+			valueType[id] = it.ValueType
+		}
+	}
 	for start := 0; start < len(ids); start += uptimeBatchItems {
 		chunk := ids[start:min(start+uptimeBatchItems, len(ids))]
 		rows, err := s.zbx.TrendRows(ctx, chunk, from.Unix(), to.Unix()-1)
 		if err != nil {
-			return out, err
+			return out, stale, err
 		}
+		rows, n := s.exactUptime(ctx, rows, valueType)
+		stale += n
 		for _, r := range rows {
 			avg, err := strconv.ParseFloat(r.ValueAvg, 64)
 			if err != nil {
@@ -226,7 +235,7 @@ func (s *Server) trendHours(ctx context.Context, ids []string, from, to time.Tim
 			out[r.ItemID] = append(out[r.ItemID], trendHour{at: time.Unix(atoi64(r.Clock), 0), num: atoi64(r.Num), avg: avg})
 		}
 	}
-	return out, nil
+	return out, stale, nil
 }
 
 // series is a sensor channel's values over the period, and its figures.
@@ -267,6 +276,18 @@ func (s *Server) readSeries(ctx context.Context, it zabbix.Item, from, to time.T
 			return out, false
 		}
 		sort.Slice(trends, func(i, j int) bool { return atoi64(trends[i].Clock) < atoi64(trends[j].Clock) })
+		if isUpDownKey(it.Key) && it.ValueType == "3" {
+			rows := make([]zabbix.TrendRow, len(trends))
+			for i, t := range trends {
+				rows[i] = zabbix.TrendRow{ItemID: it.ItemID, Clock: t.Clock, Num: "1", ValueAvg: t.ValueAvg}
+			}
+			rows, _ = s.exactUptime(ctx, rows, map[string]string{it.ItemID: "3"})
+			for i := range trends {
+				if rows[i].ValueAvg != trends[i].ValueAvg {
+					trends[i].ValueAvg, trends[i].ValueMin = rows[i].ValueAvg, "0"
+				}
+			}
+		}
 		first := true
 		for _, t := range trends {
 			avg, e1 := strconv.ParseFloat(t.ValueAvg, 64)
@@ -302,6 +323,16 @@ func (s *Server) readSeries(ctx context.Context, it zabbix.Item, from, to time.T
 		out.step = to.Sub(from) / time.Duration(len(out.pts))
 	}
 	return out, true
+}
+
+// leadRank orders a group's channels for the one it leads with, as the host page does.
+func leadRank(channel string) int {
+	for i, c := range []string{"Response time", "Used %", "In", "Download", "Clients", "Since last run", "Total"} {
+		if channel == c || strings.HasPrefix(channel, c+" ") {
+			return i
+		}
+	}
+	return 99
 }
 
 // downOf is when an up/down channel read down: each value under 1 takes its share of its step.
@@ -466,7 +497,7 @@ func (s *Server) buildReport(ctx context.Context, run reportRun) (report.Doc, er
 	for _, id := range itemOf {
 		upIDs = append(upIDs, id)
 	}
-	hours, upErr := s.trendHours(ctx, upIDs, from, to)
+	hours, staleHours, upErr := s.trendHours(ctx, upIDs, from, to)
 	for _, h := range hosts {
 		if !h.covered {
 			continue
@@ -747,6 +778,9 @@ func (s *Server) buildReport(ctx context.Context, run reportRun) (report.Doc, er
 	}
 	if closeUpsLeft < reportCloseUpsAll {
 		notes = append(notes, "A close-up shows an outage minute by minute from Zabbix's raw checks, with the time around it; up to "+strconv.Itoa(reportCloseUps)+" per host, the longest first.")
+	}
+	if staleHours > 0 {
+		notes = append(notes, plural(staleHours, "hour", "hours")+" with a failed check, older than the raw checks Zabbix keeps, count as down in full: Zabbix's hourly figures of an up/down sensor are whole numbers.")
 	}
 	if noHistory > 0 {
 		notes = append(notes, plural(noHistory, "outage has", "outages have")+" no close-up: older than the raw checks Zabbix keeps (Settings, Data retention).")
@@ -1148,7 +1182,9 @@ func (s *Server) sensorReport(ctx context.Context, sn store.ReportSensor, h *rep
 			Series: []report.Series{{Points: c.ss.pts}}, Down: down}}, row
 	}
 
-	// The figures on page 1 are the first channel's.
+	// A group leads with the channel the host page headlines (its response time, a disk's used %, a
+	// port's traffic in, the download): the figures on page 1 and its first chart are that channel's.
+	sort.SliceStable(numeric, func(i, j int) bool { return leadRank(numeric[i].name) < leadRank(numeric[j].name) })
 	first := numeric[0]
 	fmtV := func(v float64) string {
 		return notify.FormatReading(strconv.FormatFloat(v, 'f', -1, 64), first.it.Units)

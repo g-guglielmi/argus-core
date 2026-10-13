@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -311,9 +312,10 @@ func TestBuildReport(t *testing.T) {
 	if len(doc.Sections) != 2 || doc.Sections[0].Name != "sw-core" || doc.Sections[1].Name != "web1" {
 		t.Fatalf("sections: %+v", doc.Sections)
 	}
-	// Web1 was down 2 hours, one of them in maintenance (left out): 1 hour of 719 counted.
+	// Web1 was down 2 hours by its hourly trends, one of them in maintenance (left out); its raw checks
+	// put the other at 56 minutes, not the whole hour the trend's rounded-down average says.
 	web := doc.Sections[1]
-	if web.Uptime != "99.86 %" || web.UptimeTone != report.Err || web.Sub != "site1/Servers - 10.0.0.21" {
+	if web.Uptime != "99.87 %" || web.UptimeTone != report.Err || web.Sub != "site1/Servers - 10.0.0.21" {
 		t.Fatalf("web1 header: %q %v %q", web.Uptime, web.UptimeTone, web.Sub)
 	}
 	if len(web.Days) != 30 || web.Days[11].Tone != report.Err || web.Days[10].Tone != report.Good {
@@ -332,7 +334,7 @@ func TestBuildReport(t *testing.T) {
 	}
 	ping := web.Charts[0]
 	if ping.Title != "Ping" || len(ping.Series) != 1 || len(ping.Down) != 1 || !ping.Down[0].From.Equal(from.Add(11*24*time.Hour+3*time.Hour)) ||
-		ping.Foot != "in warning 0, in error 2 h; down 1 h (shaded)" || ping.Label(0.002) != "2 ms" {
+		ping.Foot != "in warning 0, in error 2 h; down 56 min (shaded)" || ping.Label(0.002) != "2 ms" {
 		t.Fatalf("web1 ping chart: %+v %q", ping, ping.Foot)
 	}
 	// Its outage up close, from the raw checks: 03:02 to 03:58 (the hour after it, in maintenance, is
@@ -357,7 +359,7 @@ func TestBuildReport(t *testing.T) {
 		t.Fatalf("sensor row: %+v", doc.Sensors)
 	}
 	// Page 1: two hosts, web1 under the target, an hour of downtime, two problems.
-	if len(doc.Tiles) != 4 || doc.Tiles[1].Value != "1 host" || doc.Tiles[1].Sub != "web1, 99.86 %" || doc.Tiles[2].Value != "1 h" || doc.Tiles[3].Sub != "1 error, 1 warning" {
+	if len(doc.Tiles) != 4 || doc.Tiles[1].Value != "1 host" || doc.Tiles[1].Sub != "web1, 99.87 %" || doc.Tiles[2].Value != "56 min" || doc.Tiles[3].Sub != "1 error, 1 warning" {
 		t.Fatalf("tiles: %+v", doc.Tiles)
 	}
 	if len(doc.Hosts) != 2 || !doc.Hosts[1].Under || doc.Hosts[1].Longest != "2 h" || doc.Hosts[0].Uptime != "100 %" {
@@ -475,5 +477,14 @@ func TestReportAutoName(t *testing.T) {
 	b := reportBody{Spec: store.ReportSpec{Hosts: []string{"10"}, Period: "last_month"}}
 	if err := checkReport(&b, siteScope{all: true}, idx, now, loc, true); err != nil || b.Name != "Firewall-BZ, last month" {
 		t.Fatalf("unnamed: %q %v", b.Name, err)
+	}
+}
+
+// A group leads with the channel the host page headlines: ICMP with its response time, not its loss.
+func TestLeadRank(t *testing.T) {
+	chans := []string{"Loss", "Reachable", "Response time"}
+	sort.SliceStable(chans, func(i, j int) bool { return leadRank(chans[i]) < leadRank(chans[j]) })
+	if chans[0] != "Response time" || leadRank("Used % (/)") >= leadRank("Total") || leadRank("In") >= leadRank("Out") {
+		t.Fatalf("lead order: %v", chans)
 	}
 }

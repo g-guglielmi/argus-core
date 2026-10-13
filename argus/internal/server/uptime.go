@@ -119,6 +119,69 @@ type availabilityView struct {
 	Days     []uptimeDayView `json:"days"`
 }
 
+// exactUptime corrects the hourly trends of up/down sensors kept as whole numbers (value type 3, the
+// ping among them). Zabbix keeps such a trend's average as a whole number too, rounded down, so an
+// hour with one missed check in sixty reads 0: down, all of it. Every hour that reads under 1 is read
+// again from the raw checks, while the raw history still has them, as the share of checks that found
+// it up. stale counts the hours it couldn't correct (older than the raw history): they stay as read.
+func (s *Server) exactUptime(ctx context.Context, rows []zabbix.TrendRow, valueType map[string]string) (out []zabbix.TrendRow, stale int) {
+	out = append([]zabbix.TrendRow(nil), rows...)
+	byItem := map[string][]int{} // item -> its rows under 1, by index
+	for i, r := range out {
+		if valueType[r.ItemID] != "3" {
+			continue
+		}
+		if avg, err := strconv.ParseFloat(r.ValueAvg, 64); err == nil && avg < 1 {
+			byItem[r.ItemID] = append(byItem[r.ItemID], i)
+		}
+	}
+	for id, idx := range byItem {
+		sort.Slice(idx, func(a, b int) bool { return atoi64(out[idx[a]].Clock) < atoi64(out[idx[b]].Clock) })
+		// Hours a few apart are read together; a host that flapped all month is read in one go.
+		type window struct{ a, b int64 }
+		var ws []window
+		for _, i := range idx {
+			c := atoi64(out[i].Clock)
+			if k := len(ws) - 1; k >= 0 && c <= ws[k].b+3*3600 {
+				ws[k].b = c + 3600
+				continue
+			}
+			ws = append(ws, window{c, c + 3600})
+		}
+		if len(ws) > 20 {
+			ws = []window{{ws[0].a, ws[len(ws)-1].b}}
+		}
+		up, all := map[int64]int64{}, map[int64]int64{}
+		for _, w := range ws {
+			hist, err := s.zbx.History(ctx, id, 3, w.a, w.b-1)
+			if err != nil {
+				continue
+			}
+			for _, h := range hist {
+				v, err := strconv.ParseFloat(h.Value, 64)
+				if err != nil {
+					continue
+				}
+				hour := atoi64(h.Clock) / 3600 * 3600
+				all[hour]++
+				if v >= 0.5 {
+					up[hour]++
+				}
+			}
+		}
+		for _, i := range idx {
+			hour := atoi64(out[i].Clock) / 3600 * 3600
+			if all[hour] == 0 {
+				stale++
+				continue
+			}
+			out[i].ValueAvg = strconv.FormatFloat(float64(up[hour])/float64(all[hour]), 'f', -1, 64)
+			out[i].Num = strconv.FormatInt(all[hour], 10)
+		}
+	}
+	return out, stale
+}
+
 // buildAvailability computes a sensor's view from its trend rows (the window) and its last 24 h of
 // history. History newer than the last trend hour fills the hour the trends don't cover yet.
 func buildAvailability(itemID string, trends []zabbix.TrendRow, hist []zabbix.HistoryPoint, now time.Time, loc *time.Location) availabilityView {
@@ -197,6 +260,7 @@ func (s *Server) availability(ctx context.Context, it zabbix.Item) (availability
 	if err != nil {
 		return availabilityView{}, err
 	}
+	trends, _ = s.exactUptime(ctx, trends, map[string]string{it.ItemID: it.ValueType})
 	hist, err := s.zbx.History(ctx, it.ItemID, atoi(it.ValueType), now.Add(-24*time.Hour).Unix(), now.Unix())
 	if err != nil {
 		return availabilityView{}, err
@@ -432,6 +496,12 @@ func (s *Server) uptimeDaysFor(ctx context.Context, itemIDs []string, now time.T
 			}
 		}
 	}
+	valueType := map[string]string{} // the ones kept as whole numbers are read exactly (exactUptime)
+	if its, err := s.zbx.ItemsByIDs(ctx, todo); err == nil {
+		for id, it := range its {
+			valueType[id] = it.ValueType
+		}
+	}
 	fetch := func(ids []string, fromDay string, toTime time.Time) map[string]map[string]upAgg {
 		got := map[string]map[string]upAgg{}
 		from, err := time.ParseInLocation("2006-01-02", fromDay, loc)
@@ -444,6 +514,7 @@ func (s *Server) uptimeDaysFor(ctx context.Context, itemIDs []string, now time.T
 			if err != nil {
 				continue
 			}
+			rows, _ = s.exactUptime(ctx, rows, valueType)
 			for _, r := range rows {
 				avg, err := strconv.ParseFloat(r.ValueAvg, 64)
 				if err != nil {

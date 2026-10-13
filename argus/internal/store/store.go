@@ -950,6 +950,14 @@ CREATE TABLE IF NOT EXISTS reports (
 	if err := s.ensureColumn("host_upstream", "auto_source TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// Days of uptime stored before their hours were read exactly (server/uptime.go exactUptime): an
+	// hour with one missed check read as down all of it. Dropped once, so they're read again.
+	if _, err := s.db.Exec(`DELETE FROM uptime_days WHERE NOT EXISTS (SELECT 1 FROM app_meta WHERE key='migr:uptime_days_exact')`); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO app_meta(key, value) VALUES('migr:uptime_days_exact', '1')`); err != nil {
+		return err
+	}
 	return s.seedLinkTemplates(context.Background())
 }
 

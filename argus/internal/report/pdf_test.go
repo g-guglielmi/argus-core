@@ -88,6 +88,7 @@ func sampleDoc() Doc {
 					{"Sep 12, 03:21", "2 h 18 min", "HTTPS response time over 800 ms", "HTTPS response time", "", Warn},
 				},
 				Charts: []Chart{
+					{Title: "SMTP (25)", Kind: UpDownChart, From: from, To: to, Loc: loc, Foot: "no values in the period"},
 					{
 						Title: "HTTPS check", Kind: UpDownChart, Stats: []Stat{{"uptime", "99.98 %"}, {"down", "9 min in 2 problems"}},
 						From: from, To: to, Loc: loc, Series: []Series{{"", up}},

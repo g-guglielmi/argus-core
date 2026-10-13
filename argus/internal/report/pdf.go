@@ -312,11 +312,11 @@ func (w *writer) summary(d Doc) {
 		w.y += 18
 	}
 	if len(d.Sensors) > 0 {
-		cols := []col{{"Sensor", 0.21, false}, {"Host", 0.12, false}, {"Min", 0.11, true}, {"Avg", 0.11, true}, {"Max", 0.11, true}, {"95th", 0.11, true}, {"In warning", 0.13, true}, {"In error", 0.10, true}}
+		cols := []col{{"Sensor", 0.18, false}, {"Host", 0.15, false}, {"Min", 0.11, true}, {"Avg", 0.11, true}, {"Max", 0.11, true}, {"95th", 0.11, true}, {"In warning", 0.12, true}, {"In error", 0.11, true}}
 		rows := make([]row, 0, len(d.Sensors))
 		for _, s := range d.Sensors {
 			rows = append(rows, row{cells: []cell{
-				{text: s.Name, bold: true}, {text: s.Host, tone: Muted}, {text: s.Min}, {text: s.Avg}, {text: s.Max}, {text: s.P95},
+				{text: s.Name, bold: true, wrap: true}, {text: s.Host, tone: Muted, wrap: true}, {text: s.Min}, {text: s.Avg}, {text: s.Max}, {text: s.P95},
 				{text: s.InWarn, tone: s.WarnTone, bold: s.WarnTone != Plain}, {text: s.InErr, tone: s.ErrTone, bold: s.ErrTone != Plain},
 			}})
 		}
@@ -550,6 +550,16 @@ func (w *writer) chart(c Chart) {
 	total := 16 + plotH + 14 + 10
 	if legend || c.Foot != "" {
 		total += 13
+	}
+	if len(c.Series) == 0 && len(c.Down) == 0 { // nothing to draw: its title, and why
+		w.need(30)
+		y := w.y + 12
+		w.font(true, 9.5, cInk)
+		w.text(marginL, y, w.fit(c.Title, contentW*0.42))
+		w.font(false, 7.5, cMuted)
+		w.right(pageW-marginR, y, c.Foot)
+		w.y = y + 10
+		return
 	}
 	w.need(total)
 	y := w.y + 12
