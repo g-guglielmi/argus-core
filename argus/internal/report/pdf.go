@@ -509,7 +509,7 @@ func (w *writer) section(s Section) {
 	defer func() { w.sec = "" }()
 	switch {
 	case len(s.Problems) > 0:
-		cols := []col{{"Started", 0.15, false}, {"Lasted", 0.1, true}, {"Problem", 0.45, false}, {"Acknowledged", 0.3, false}}
+		cols := []col{{"Started", 0.15, false}, {"Lasted", 0.13, true}, {"Problem", 0.42, false}, {"Acknowledged", 0.3, false}}
 		rows := make([]row, 0, len(s.Problems))
 		for _, p := range s.Problems {
 			ack := cell{text: p.Ack, tone: Muted, wrap: true}
@@ -517,7 +517,7 @@ func (w *writer) section(s Section) {
 				ack.text = "-"
 			}
 			rows = append(rows, row{cells: []cell{
-				{text: p.Started}, {text: p.Lasted}, {text: p.Name, sub: p.Sensor, dot: p.Tone, wrap: true}, ack,
+				{text: p.Started}, {text: p.Lasted, wrap: true}, {text: p.Name, sub: p.Sensor, dot: p.Tone, wrap: true}, ack,
 			}})
 		}
 		w.table(cols, rows, s.ProblemsMore)

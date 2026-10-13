@@ -13,6 +13,7 @@ import (
 	_ "image/jpeg" // logos
 	_ "image/png"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -682,6 +683,12 @@ func (s *Server) buildReport(ctx context.Context, run reportRun) (report.Doc, er
 			notes = append(notes, "95th: the value the sensor stayed under 95 % of the time.")
 		}
 		notes = append(notes, "In warning and in error: how long the sensor's own alerts were open.")
+	}
+	for _, sec := range doc.Sections {
+		if slices.ContainsFunc(sec.Days, func(d report.Day) bool { return d.Tone == report.Muted }) {
+			notes = append(notes, "A grey day in a host's strip had no checks: the host wasn't monitored yet, or none reached Argus.")
+			break
+		}
 	}
 	notes = append(notes, "Times are in "+loc.String()+".")
 	if upErr != nil {

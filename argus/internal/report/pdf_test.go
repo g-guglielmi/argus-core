@@ -85,7 +85,7 @@ func sampleDoc() Doc {
 				Name: "web1", Sub: "site1/Servers - Linux (SSH) - 10.0.0.21", Uptime: "99.98 %", UptimeTone: Warn, Days: webDays,
 				Problems: []Problem{
 					{"Sep 12, 03:14", "6 min", "HTTPS check failed: connection timed out", "HTTPS check", "Alex P.: certificate renewal restarted nginx", Err},
-					{"Sep 12, 03:21", "35 min", "HTTPS response time over 800 ms", "HTTPS response time", "", Warn},
+					{"Sep 12, 03:21", "2 h 18 min", "HTTPS response time over 800 ms", "HTTPS response time", "", Warn},
 				},
 				Charts: []Chart{
 					{
