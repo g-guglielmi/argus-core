@@ -605,8 +605,9 @@ func (w *writer) chart(c Chart) {
 }
 
 // scale works out a chart's value range: from 0 (or the lowest value, when it goes below 0) to a
-// round number a little past the highest value, taking in a threshold that is no more than twice that value
-// away (one further off would flatten the line; it is left out).
+// round number a little past the highest value (never past the chart's ceiling, 100 for a
+// percentage), taking in a threshold that is no more than twice that value away (one further off
+// would flatten the line; it is left out).
 func scale(c Chart) (lo, hi float64, thr []Threshold) {
 	first := true
 	for _, s := range c.Series {
@@ -632,6 +633,9 @@ func scale(c Chart) (lo, hi float64, thr []Threshold) {
 		}
 	}
 	hi = niceCeil(hi*1.08, c.Base1024) // a little room above the highest value
+	if c.Ceil > 0 && hi > c.Ceil {
+		hi = math.Max(c.Ceil, niceCeil(math.Max(lo, 0), c.Base1024))
+	}
 	if lo < 0 {
 		lo = -niceCeil(-lo, c.Base1024)
 	}
@@ -641,7 +645,8 @@ func scale(c Chart) (lo, hi float64, thr []Threshold) {
 	return lo, hi, thr
 }
 
-// niceCeil rounds v up to 1, 2, 2.5, 5 or 10 times a power of ten (of 1024 first, for bytes).
+// niceCeil rounds v up to a round number: 1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a power of ten
+// (of 1024 first, for bytes), so a little room above 100 is 120, not 200.
 func niceCeil(v float64, base1024 bool) float64 {
 	if v <= 0 {
 		return 0
@@ -654,7 +659,7 @@ func niceCeil(v float64, base1024 bool) float64 {
 	}
 	m := v / k
 	p := math.Pow(10, math.Floor(math.Log10(m)))
-	for _, f := range []float64{1, 2, 2.5, 5, 10} {
+	for _, f := range []float64{1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10} {
 		if f*p >= m*0.9999999 {
 			if base1024 && f*p >= 1000 {
 				return 1024 * k // a round 1 GiB, not 1000 MiB

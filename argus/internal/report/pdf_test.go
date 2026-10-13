@@ -137,12 +137,31 @@ func TestRenderLongTable(t *testing.T) {
 	}
 }
 
+// A percentage that reaches 100 stops at 100 %: the room above it doesn't make the axis 120 or 200.
+func TestScaleCeil(t *testing.T) {
+	now := time.Now()
+	c := Chart{Ceil: 100, Series: []Series{{Points: []Point{{now, 0}, {now.Add(time.Hour), 100}}}}}
+	if lo, hi, _ := scale(c); lo != 0 || hi != 100 {
+		t.Fatalf("loss up to 100 %%: %v to %v", lo, hi)
+	}
+	c.Series[0].Points[1].V = 37
+	if _, hi, _ := scale(c); hi != 40 {
+		t.Fatalf("loss up to 37 %%: to %v, want 40", hi)
+	}
+	c.Ceil = 0
+	c.Series[0].Points[1].V = 100
+	if _, hi, _ := scale(c); hi != 120 {
+		t.Fatalf("no ceiling: to %v, want 120", hi)
+	}
+}
+
 func TestNiceCeil(t *testing.T) {
 	for _, c := range []struct {
 		v    float64
 		b    bool
 		want float64
-	}{{894e6, false, 1e9}, {0.9, false, 1}, {1.44, false, 2}, {72.2, false, 100}, {48, false, 50}, {23, false, 25}, {600 * 1024 * 1024, true, 1024 * 1024 * 1024}, {3, false, 5}} {
+	}{{894e6, false, 1e9}, {0.9, false, 1}, {1.44, false, 1.5}, {72.2, false, 80}, {48, false, 50}, {23, false, 25}, {108, false, 120},
+		{600 * 1024 * 1024, true, 600 * 1024 * 1024}, {1000 * 1024 * 1024, true, 1024 * 1024 * 1024}, {3, false, 3}} {
 		if got := niceCeil(c.v, c.b); math.Abs(got-c.want) > 1e-9*c.want {
 			t.Errorf("niceCeil(%v, %v) = %v, want %v", c.v, c.b, got, c.want)
 		}

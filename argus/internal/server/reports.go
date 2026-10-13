@@ -1214,6 +1214,9 @@ func (s *Server) sensorReport(ctx context.Context, sn store.ReportSensor, h *rep
 			return notify.FormatReading(strconv.FormatFloat(v, 'f', -1, 64), units)
 		}
 		c := report.Chart{Title: label, From: from, To: to, Loc: loc, Label: lbl, Base1024: units == "B" || units == "Bps", Down: down}
+		if units == "%" {
+			c.Ceil = 100
+		}
 		if len(unitOrder) > 1 {
 			names := make([]string, 0, len(chs))
 			for _, ch := range chs {

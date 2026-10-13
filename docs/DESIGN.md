@@ -901,7 +901,8 @@ user is.
   the time they read down; a lone up/down sensor is drawn as up with the time down in red. The chart
   is banded by the first channel's own thresholds (`itemThresholdsFrom`: the line past a threshold
   takes its colour, dashed lines with a tag on the axis); a threshold more than twice the highest
-  value away is left out so the line isn't flattened. Time in warning and in error is how long the
+  value away is left out so the line isn't flattened; the axis ends at a round number a little past
+  the highest value, and a percentage's never past 100 %. Time in warning and in error is how long the
   sensor's own alerts were open within the period. 60 sensors are charted at most.
 - **Name**: one left empty is named after what it covers and its period as picked (`reportAutoName`:
   "Firewall-BZ, last month", "mybz and myng, last 7 days", "web1, 3 sensors, 1 to 15 October 2026"),

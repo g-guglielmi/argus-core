@@ -107,6 +107,9 @@ type Chart struct {
 
 	Label    func(v float64) string // an axis or threshold value, with its units
 	Base1024 bool                   // the axis steps in powers of 1024 (bytes)
+	// Ceil is as high as the values can go (100 for a percentage), 0 for no limit: the axis stops
+	// there rather than at a round number past it.
+	Ceil float64
 
 	// Down is the time it was down: an UpDownChart's red bars, or a LineChart's shading (a group's
 	// availability channel).
