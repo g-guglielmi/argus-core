@@ -10855,8 +10855,24 @@ function ReportPicker({ hosts, spec, onChange }: { hosts: Host[] | null; spec: R
   }
   const siteOfHost = (h: Host) => reportSiteOf(h, spec.sites)
   const sensorsOf = (id: string) => spec.sensors.filter((s) => s.host_id === id)
-  const toggleSite = (s: string) => onChange({ ...spec, sites: spec.sites.includes(s) ? spec.sites.filter((x) => x !== s) : [...spec.sites, s] })
-  const toggleHost = (id: string) => onChange({ ...spec, hosts: spec.hosts.includes(id) ? spec.hosts.filter((x) => x !== id) : [...spec.hosts, id] })
+  // A checkbox tree: ticking a site takes over the hosts picked in it one by one (it covers them),
+  // unticking it clears everything under it, its hosts' sensors too; unticking a host clears its
+  // sensors. Untick a site and nothing of it is left picked.
+  const inSite = (h: Host, s: string) => (h.groups || []).some((g) => g === s || g.startsWith(s + '/'))
+  function toggleSite(s: string) {
+    const all = (hosts || []).filter((h) => inSite(h, s)).map((h) => h.id)
+    if (spec.sites.includes(s)) {
+      onChange({ ...spec, sites: spec.sites.filter((x) => x !== s), hosts: spec.hosts.filter((id) => !all.includes(id)), sensors: spec.sensors.filter((p) => !all.includes(p.host_id)) })
+      return
+    }
+    const covered = (hosts || []).filter((h) => reportSiteOf(h, [s])).map((h) => h.id)
+    onChange({ ...spec, sites: [...spec.sites, s], hosts: spec.hosts.filter((id) => !covered.includes(id)) })
+  }
+  function toggleHost(id: string) {
+    if (spec.hosts.includes(id)) onChange({ ...spec, hosts: spec.hosts.filter((x) => x !== id), sensors: spec.sensors.filter((p) => p.host_id !== id) })
+    else onChange({ ...spec, hosts: [...spec.hosts, id] })
+  }
+  const picked = spec.sites.length + spec.hosts.length + spec.sensors.length > 0
   const toggleSensor = (p: ReportSensorPick) => onChange({ ...spec, sensors: spec.sensors.some((s) => sameReportSensor(s, p)) ? spec.sensors.filter((s) => !sameReportSensor(s, p)) : [...spec.sensors, p] })
 
   const hostMatches = (h: Host) => !ql || h.name.toLowerCase().includes(ql) ||
@@ -10872,7 +10888,10 @@ function ReportPicker({ hosts, spec, onChange }: { hosts: Host[] | null; spec: R
       <div className="phead">
         <PanelTitle eyebrow="Covers">Hosts and sensors</PanelTitle>
         <span className="hint">{plural(nHosts, 'host')}, {plural(spec.sensors.length, 'sensor')} picked</span>
-        <div className="tools"><input className="input rep-q" type="search" placeholder="Find a host or sensor" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Find a host or sensor" /></div>
+        <div className="tools">
+          {picked && <button type="button" className="btn ghost compact" onClick={() => onChange({ ...spec, sites: [], hosts: [], sensors: [] })}>Clear</button>}
+          <input className="input rep-q" type="search" placeholder="Find a host or sensor" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Find a host or sensor" />
+        </div>
       </div>
       <p className="panel-intro" style={{ paddingBottom: 10 }}>Tick a site or a host for its uptime and problems; open a host to tick sensors for their charts.</p>
       {hosts === null ? <Skeleton rows={6} cols={2} /> : sites.length === 0 ? <div className="empty-state" style={{ padding: '24px 16px' }}>No hosts to report on.</div> : (

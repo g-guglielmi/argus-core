@@ -1597,9 +1597,8 @@ input.tsel { width: 15px; height: 15px; accent-color: var(--accent); margin: 0 8
 .rep-tabs { margin-bottom: 12px; }
 .rep-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(320px, 1fr); gap: 14px; align-items: start; }
 .rep-grid > .panel + .panel { margin-top: 0; }
-/* What the report holds stays in view beside a long tree, just below the sticky top bar. */
-.rep-side { position: sticky; top: 76px; max-height: calc(100dvh - 88px); overflow-y: auto; }
 .rep-q { width: 220px; max-width: 100%; }
+.rep-pick .phead .tools { align-items: center; }
 .rep-tree { padding-bottom: 4px; }
 .rep-row { display: grid; grid-template-columns: 18px 24px minmax(0, 1fr) auto; align-items: center; gap: 2px; min-height: 36px; padding: 4px 16px; font-size: 13px; border-top: 1px solid var(--border); cursor: pointer; user-select: none; }
 .rep-srow { background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
@@ -1632,7 +1631,7 @@ div.rep-irow { cursor: default; }
 .rep-err { display: inline-block; max-width: 260px; white-space: normal; }
 .rep-logo { display: flex; align-items: center; min-height: 40px; margin: 4px 0 8px; }
 .rep-logo img { max-width: 220px; max-height: 54px; padding: 6px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
-@media (max-width: 900px) { .rep-grid { grid-template-columns: minmax(0, 1fr); } .rep-side { position: static; max-height: none; overflow: visible; } }
+@media (max-width: 900px) { .rep-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 768px) {
   .rep-q { width: 100%; }
   .rep-pick .phead .tools { flex-basis: 100%; }

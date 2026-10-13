@@ -856,8 +856,11 @@ the figures out, `reportsapi.go` serves, saves, emails and schedules, `internal/
 covers every host in it, now and later, but not Argus's own probe host unless it is picked; a host
 its uptime and problems; a sensor its chart, a group's channels together) beside the report's name,
 period, uptime target, whether maintenance is left out, an outline of what it holds and about how
-many pages; and **Saved reports**. The draft stays in the browser between visits, and **Add to a
-report** in a site's, host's or sensor's row menu adds to it where the user is.
+many pages; and **Saved reports**. The tree ticks like any checkbox tree: a site takes over the hosts
+picked in it one by one, unticking a site clears everything under it (its hosts' sensors too) and
+unticking a host clears its sensors; **Clear** empties the picks. The draft stays in the browser
+between visits, and **Add to a report** in a site's, host's or sensor's row menu adds to it where the
+user is.
 
 - **Period** (`reportPeriod`, Argus timezone): the 7 or 30 whole days before the day it is made, last
   calendar month, this month up to now, or from one day to another (both included; a year at most).
