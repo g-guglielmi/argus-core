@@ -157,6 +157,7 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   ticked sensors' charts full width, banded by their thresholds; unnamed reports name themselves. Saved reports are emailed on
   request or every day, week or month through the first email channel; a logo set in Settings. Drawn
   on the core in vectors (gopdf, MIT; Open Sans, Apache 2.0), no browser in the image (DESIGN 7k).
+  Core v0.8.11.
   Later: a previous-period comparison, business hours, an archive of the PDFs sent. - _(FE+BE)_ L
 
 ### E. Auth / account gaps

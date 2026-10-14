@@ -13,6 +13,12 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.8.11] - 2026-10-14
+
+PDF reports: the uptime, problems and charts of the sites, hosts and sensors you pick, over a
+period, downloaded, emailed now or on a schedule, kept apart per customer site. Also uptime that
+counts a missed ping as the minutes it was, not the whole hour.
+
 **Added:**
 - **PDF reports** (Watch, Reports): tick the sites, hosts and sensors a report covers, pick a period
   (the last 7 or 30 days, last month, this month, or from one day to another) and an uptime target,
@@ -23,7 +29,8 @@ GitHub Release from the matching section below.
   response time, the time it was down shaded red; a switch leaves these out), a close-up of each of
   its longest outages minute by minute (the problem open then, the ping around it; another switch)
   and the charts of the sensors you ticked, coloured past their thresholds like the app's. A report
-  left unnamed is named after what it covers and its period ("Firewall-BZ, last month"). Maintenance windows can be left out of the uptime.
+  left unnamed is named after what it covers and its period ("Firewall-BZ, last month").
+  Maintenance windows can be left out of the uptime.
 - Reports can be saved, emailed now, or emailed by themselves every day, week or month at a set time
   (through the first email channel under Notifications); the Saved reports list says when each was
   last made and why a send failed. Sites, hosts and sensors have **Add to a report** in their menu.
