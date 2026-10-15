@@ -84,7 +84,11 @@ func (c *CA) SignCSR(csrPEM []byte, cn string, ttl time.Duration) ([]byte, error
 		if k.N.BitLen() < 2048 {
 			return nil, fmt.Errorf("RSA key too small (%d bits; 2048 or more)", k.N.BitLen())
 		}
-	case *ecdsa.PublicKey, ed25519.PublicKey:
+	case *ecdsa.PublicKey:
+		if k.Curve == nil || k.Curve.Params().BitSize < 256 {
+			return nil, fmt.Errorf("ECDSA curve too small (P-256 or larger)")
+		}
+	case ed25519.PublicKey:
 	default:
 		return nil, fmt.Errorf("unsupported key type %T", csr.PublicKey)
 	}

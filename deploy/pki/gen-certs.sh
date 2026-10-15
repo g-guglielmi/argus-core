@@ -24,7 +24,7 @@ set -euo pipefail
 
 OUT="${OUT:-./out}"
 DAYS_CA="${DAYS_CA:-3650}"      # 10y CA
-DAYS_LEAF="${DAYS_LEAF:-1825}"  # 5y leaf certs
+DAYS_LEAF="${DAYS_LEAF:-730}"   # 2y leaf certs: Zabbix pins issuer+subject and there is no revocation, so a leaked key lives until its certificate ends or the proxy is re-keyed
 CA_CN="Monitoring Core CA"
 CORE_CN="zabbix-core"
 DEFAULT_SITES=(site1 site2 site3 site4 site5)

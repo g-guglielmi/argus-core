@@ -95,7 +95,7 @@ func main() {
 			logger.Error("reset encrypted secrets", "err", rerr)
 			os.Exit(1)
 		}
-		logger.Warn("ARGUS_SECRET_KEY_RESET: dropped the secrets the current key can't read; re-enter channel, SNMP and UniFi credentials, and users set up two-factor again. Remove the variable now.", "rows", n)
+		logger.Warn("ARGUS_SECRET_KEY_RESET: dropped every secret the current key can't read: notification channel credentials, SNMP and UniFi credentials, the Zabbix API token kept in Settings, the backup passphrase and its SMB, S3 and SSH credentials, status-page and push-sensor links, and users' two-factor (set it up again). Re-enter them, and remove the variable now.", "rows", n)
 	} else if cfg.SecretKeyReset {
 		logger.Warn("ARGUS_SECRET_KEY_RESET is set but the key matches the database; nothing was reset. Remove the variable.")
 	}
@@ -199,17 +199,23 @@ func bootstrapAdmin(ctx context.Context, st *store.Store, cfg config.Config, log
 		}
 		return nil
 	}
-	if cfg.AdminEmail == "" || cfg.AdminPassword == "" {
+	// The same shape the Users page gives an account: a trimmed, lowercased email (sign-in matches
+	// it as typed) and a password of at least 8 characters.
+	email := strings.ToLower(strings.TrimSpace(cfg.AdminEmail))
+	if email == "" || cfg.AdminPassword == "" {
 		logger.Warn("no users exist; set ARGUS_ADMIN_EMAIL and ARGUS_ADMIN_PASSWORD and restart to create the first admin")
 		return nil
+	}
+	if len(cfg.AdminPassword) < 8 {
+		return errors.New("ARGUS_ADMIN_PASSWORD must be at least 8 characters")
 	}
 	hash, err := auth.HashPassword(cfg.AdminPassword)
 	if err != nil {
 		return err
 	}
-	if _, err := st.CreateUser(ctx, store.User{Email: cfg.AdminEmail, Role: "admin", PasswordHash: hash}); err != nil {
+	if _, err := st.CreateUser(ctx, store.User{Email: email, Role: "admin", PasswordHash: hash}); err != nil {
 		return err
 	}
-	logger.Info("created initial admin user", "email", cfg.AdminEmail)
+	logger.Info("created initial admin user", "email", email)
 	return nil
 }

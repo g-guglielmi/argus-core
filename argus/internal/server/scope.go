@@ -12,7 +12,6 @@ import (
 
 	"argus/internal/auth"
 	"argus/internal/store"
-	"argus/internal/zabbix"
 )
 
 // Per-site visibility. A helpdesk or viewer account can be limited to some sites: host groups, where
@@ -436,19 +435,4 @@ func (s *Server) scopedProxy(h http.HandlerFunc) http.HandlerFunc {
 		}
 		h(w, r)
 	}
-}
-
-// scopedHostGroups is the host groups a scoped user may see (the tree's groups): inside the scope or on
-// the path down to it.
-func scopedHostGroups(sc siteScope, groups []zabbix.HostGroup) []zabbix.HostGroup {
-	if sc.all {
-		return groups
-	}
-	out := make([]zabbix.HostGroup, 0, len(groups))
-	for _, g := range groups {
-		if sc.showsGroup(g.Name) {
-			out = append(out, g)
-		}
-	}
-	return out
 }

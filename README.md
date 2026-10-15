@@ -459,6 +459,12 @@ GitHub Actions (`.github/workflows/build.yml`):
   (`argus-probe`).
 - **Push a tag `vX.Y.Z`** → the versioned image, pushed as `:vX.Y.Z` + `:latest` (and `:testing`)
   → a GitHub Release published from the matching `CHANGELOG.md` section.
+- **Every image is signed** (Sigstore, keyless) by the workflow itself, and the base images are
+  pinned by digest (Dependabot keeps them moving). To check that an image came from this build and
+  not from someone holding a registry token:
+  ```bash
+  cosign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com --certificate-identity-regexp '^https://github.com/g-guglielmi/argus-core/.github/workflows/build.yml@' ghcr.io/g-guglielmi/argus:latest
+  ```
 
 See [`docs/RELEASING.md`](docs/RELEASING.md) for the step-by-step release checklist (and the
 concurrency gotcha that can silently cancel a tag build).

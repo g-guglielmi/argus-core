@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"time"
 )
@@ -129,6 +130,9 @@ func (s *Store) DeleteMaintenanceWindow(ctx context.Context, id int64) error {
 // VacuumInto writes a consistent, compacted copy of the whole database to path (the core backup):
 // SQLite's own online copy, safe while the app keeps writing.
 func (s *Store) VacuumInto(ctx context.Context, path string) error {
-	_, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, path)
-	return err
+	if _, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, path); err != nil {
+		return err
+	}
+	// SQLite creates the copy with the default mode; it holds the same secrets as the database.
+	return os.Chmod(path, 0o600)
 }

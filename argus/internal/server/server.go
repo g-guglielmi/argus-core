@@ -750,7 +750,9 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 // issueSession creates a server-side session, sets the cookie, and returns the user.
 func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, u *store.User) {
 	if u.Disabled {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "this account has been disabled"})
+		// The same answer as a wrong password: a disabled account must not confirm that the password
+		// (often reused elsewhere) was right. The admin who disabled it knows; the person can ask.
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
 	raw, id, err := auth.NewSessionToken()
@@ -859,6 +861,11 @@ func spaHandler() http.Handler {
 		}
 		if r.URL.Path == "/" {
 			serveIndex()
+			return
+		}
+		// An API path no route claimed is a 404 to a program, not the app's HTML with a 200.
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
 		}
 		name := r.URL.Path[1:]

@@ -1,0 +1,30 @@
+# Dependabot keeps the pinned things moving with a reviewed pull request: the base image digests and
+# the Go patch in the Dockerfile, the SHA-pinned actions, the Go modules and the frontend's packages.
+# Each PR runs the same gate as any push (govulncheck at the Dockerfile's Go version, npm audit, the
+# collector tests) before it can be merged.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /argus
+    schedule:
+      interval: weekly
+    labels: [dependencies, docker]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels: [dependencies, ci]
+  - package-ecosystem: gomod
+    directory: /argus
+    schedule:
+      interval: weekly
+    labels: [dependencies, go]
+  - package-ecosystem: npm
+    directory: /argus/web
+    schedule:
+      interval: weekly
+    labels: [dependencies, npm]
+    # The dev toolchain (vite, typescript) moves on its own schedule; production packages are few.
+    groups:
+      dev-tools:
+        dependency-type: development

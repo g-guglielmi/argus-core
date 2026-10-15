@@ -146,6 +146,8 @@ func (s *Server) handleAdminResetMFA(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
+	// The account is down to one factor now: whoever holds a session on it proves the password again.
+	_ = s.st.DeleteUserSessions(r.Context(), id)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

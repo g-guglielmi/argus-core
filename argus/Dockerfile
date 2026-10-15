@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1
 
+# Base images are pinned by digest as well as by tag: a tag can be re-pointed upstream without any
+# change here, a digest can't. Dependabot (.github/dependabot.yml) moves the digests (and the Go
+# patch) with a reviewed pull request; the version-gate in CI reads the Go version from this file.
 # ---- Stage 1: build the React frontend ----
-FROM node:22-alpine AS web
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --ignore-scripts # reproducible install from the committed lockfile; no package runs code in the build
@@ -9,7 +12,7 @@ COPY web/ ./
 RUN npm run build          # tsc --noEmit && vite build -> /web/dist
 
 # ---- Stage 2: build the Go binary (embeds the frontend) ----
-FROM golang:1.27.2-alpine AS build
+FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS build
 WORKDIR /src
 # The image's toolchain is the one that builds: a dependency that needs a newer Go fails loudly
 # here instead of downloading one at build time. Keep the tag on a supported Go (the two newest
@@ -27,7 +30,7 @@ COPY --from=web /web/dist ./web/dist
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X 'argus/internal/buildinfo.Version=${ARGUS_VERSION}'" -o /argus .
 
 # ---- Stage 3: minimal runtime ----
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 COPY --from=build /argus /argus
 # The core's collectors (deploy/core/externalscripts), from the "collectors" build context CI passes
 # in (a local build: docker build --build-context collectors=deploy/core/externalscripts argus). The

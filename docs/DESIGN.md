@@ -158,6 +158,13 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
   Public URL, else from the request's host only when that host is allow-listed or loopback; a probe's
   check-in URL comes from the Public URL alone (probes write it into their own configuration, and
   derive it from their enroll URL when there is none). "Probe core host" is validated as `host[:port]`.
+- **Images** are built from base images pinned by digest and signed keyless with Sigstore by the
+  build workflow (the signature names the workflow; `cosign verify` with the repository's identity
+  proves an image came from it). The update hand-out pins digests; signature verification in the
+  updater is still to come, so until then the digest check only catches a tag moved between
+  hand-out and pull.
+- **The status page** allows only its one inline script, by hash; the acknowledgement page from an
+  email link allows none; a disabled account answers a sign-in like a wrong password.
 - **The Zabbix API token** is a super-admin credential sent as a Bearer header on every poll, so from
   another host the API must be https: the core appliance serves the frontend and API over TLS on
   `:8443` with the VM's certificate (signed by the monitoring CA), the client trusts that CA

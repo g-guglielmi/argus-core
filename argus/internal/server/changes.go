@@ -33,7 +33,6 @@ import (
 const changeReasonHeader = "X-Argus-Reason"
 
 // changeCategories are the change log's kinds, as its filter offers them.
-var changeCategories = []string{"hosts", "states", "thresholds", "groups", "maintenance", "discovery", "probes", "channels", "users", "statuspages", "reports", "updates", "settings"}
 
 type changeCtxKey struct{}
 

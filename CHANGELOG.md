@@ -13,6 +13,47 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+The last of the 2026-10-14 review: the build's supply chain, and the small things.
+
+**Security:**
+- **Every image is signed** (Sigstore, keyless): the signature is bound to this repository's build
+  workflow and recorded in the public transparency log, so anyone can check that an image came
+  from the build and not from someone holding a registry token:
+  `cosign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com --certificate-identity-regexp '^https://github.com/g-guglielmi/argus-core/.github/workflows/build.yml@' ghcr.io/g-guglielmi/argus:vX.Y.Z`.
+  The updater does not verify signatures yet; that is its own change.
+- **The base images are pinned by digest** as well as by tag, and Dependabot moves the digests, the
+  Go patch, the actions, the Go modules and the frontend's packages with a reviewed pull request
+  that runs the same gate as any push.
+- **The status page's policy names its one script by hash** instead of allowing any inline script;
+  the acknowledgement page opened from an email link gets a policy of its own (no scripts at all);
+  an unknown `/api/` path answers a JSON 404 instead of the app's HTML.
+- **Signing in to a disabled account answers like a wrong password**, so a disabled account no
+  longer confirms that a guessed password was right.
+- **An admin's two-factor or passkey reset also signs the person out everywhere**: the account is
+  down to one factor and whoever holds a session on it proves the password again.
+- A probe's certificate request must carry an ECDSA key of P-256 or larger (RSA already had to be
+  2048 or more).
+- The database file is made private before its write-ahead files are created, so they inherit the
+  mode; the backup's database copy is made private as soon as it is written.
+- **Manual install:** the Zabbix database password is read from the terminal rather than put on the
+  `sudo` command line (where `ps` and the shell history keep it), and `zabbix_server.conf` is
+  readable by the zabbix user only once it holds the password. `gen-certs.sh` makes two-year leaf
+  certificates (was five), and the deploy guide says how a leaked probe key is cut off.
+
+**Fixed:**
+- A PDF report that legitimately takes over a minute is no longer cut off by the server's write
+  timeout.
+- The first admin seeded from `ARGUS_ADMIN_EMAIL` is stored trimmed and lowercased like every other
+  account (sign-in matches the email as typed), and `ARGUS_ADMIN_PASSWORD` must be 8 characters or
+  more like every other password.
+- The `ARGUS_SECRET_KEY_RESET` warning now lists everything the reset drops (it also drops the
+  Zabbix API token kept in Settings, the backup passphrase and credentials, and the status-page
+  and push-sensor links).
+
+**Changed:**
+- A UniFi controller's "sites" note says that leaving it empty hands the key to every probe that
+  scans.
+
 ## [0.8.12] - 2026-10-15
 
 The security release from the 2026-10-14 review of v0.8.11: every finding that lives in the core

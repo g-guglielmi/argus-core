@@ -6305,7 +6305,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
               <label className="field"><span>Sites</span>
                 <SitePicker options={siteNames} value={ctlForm.sites} onChange={(v) => setCtlForm({ ...ctlForm, sites: v })} />
               </label>
-              <p className="set-note">Which probes may use this controller (its API key travels to them for scans and sweeps). Leave empty for every site.</p>
+              <p className="set-note">Which probes may use this controller (its API key travels to them for scans and sweeps). Leave empty for every site, which means every probe that scans can read this key: pick the sites when the controller serves only some.</p>
               <label className="field"><span>Certificate</span>
                 <Select value={ctlForm.tls} onChange={(e) => setCtlForm({ ...ctlForm, tls: e.target.value as CtlForm['tls'] })}>
                   <option value="verify">Verify (system roots; self-signed consoles are offered for pinning)</option>

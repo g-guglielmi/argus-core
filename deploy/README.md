@@ -278,6 +278,10 @@ Enrollment was designed to be safe as a public endpoint, but mind these:
   single-CA setup is fine to start; the intermediate is the hardening step for a public deployment.
 - **Scope the Zabbix API token.** It needs super-admin for `proxy.create`; keep it Argus-only and
   rotate it if leaked (now easy from Settings).
+- **A leaked probe key is cut off by re-keying the proxy**: there is no revocation list, the Zabbix
+  server pins each proxy's certificate by issuer and subject only, and a leaf lasts two years
+  (`gen-certs.sh`; the enrolled ones five). Delete the proxy in Zabbix (or change its subject pin)
+  and enroll the site again with a fresh token; just re-enrolling leaves the old certificate valid.
 - **Keep 10051 pinned.** The Zabbix server accepts proxies only by certificate issuer+subject, so
   exposing 10051 doesn't accept anonymous connections - but only publish it as far as remote sites
   need.

@@ -80,10 +80,12 @@ func Open(path string) (*Store, error) {
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(0)
 	db.SetConnMaxIdleTime(0)
+	// The file holds hashed and encrypted secrets; nobody else needs it. Before the WAL pragma: SQLite
+	// creates the -wal and -shm files with the main file's mode, so they inherit 0600 from the start.
+	_ = os.Chmod(path, 0o600)
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil { // persistent in the file
 		return nil, fmt.Errorf("pragma journal_mode: %w", err)
 	}
-	_ = os.Chmod(path, 0o600) // the file holds hashed and encrypted secrets; nobody else needs it
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		return nil, err

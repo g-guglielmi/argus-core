@@ -528,8 +528,16 @@ func writePDF(w http.ResponseWriter, filename string, pdf []byte) {
 	_, _ = w.Write(pdf)
 }
 
+// allowReportTime lifts the server's write deadline for one request to the report budget: a PDF
+// that legitimately takes over a minute (http.Server's WriteTimeout is shorter) is not cut off after
+// the handler spent its Zabbix time.
+func allowReportTime(w http.ResponseWriter) {
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(reportRenderTime + 30*time.Second))
+}
+
 // handleReportPDF serves GET /api/reports/{id}/pdf: a saved report, made now for the one asking.
 func (s *Server) handleReportPDF(w http.ResponseWriter, r *http.Request) {
+	allowReportTime(w)
 	rep, ok := s.savedReport(w, r)
 	if !ok {
 		return
@@ -546,6 +554,7 @@ func (s *Server) handleReportPDF(w http.ResponseWriter, r *http.Request) {
 
 // handleDraftPDF serves POST /api/reports/pdf: a report not saved (yet), from the builder.
 func (s *Server) handleDraftPDF(w http.ResponseWriter, r *http.Request) {
+	allowReportTime(w)
 	b, ok := readReportBody(w, r)
 	if !ok {
 		return
@@ -608,6 +617,7 @@ func (s *Server) emailReport(ctx context.Context, run reportRun) error {
 // handleEmailReport serves POST /api/reports/{id}/email: a saved report, now, to the addresses given
 // (else its own).
 func (s *Server) handleEmailReport(w http.ResponseWriter, r *http.Request) {
+	allowReportTime(w)
 	rep, ok := s.savedReport(w, r)
 	if !ok {
 		return
@@ -642,6 +652,7 @@ func (s *Server) handleEmailReport(w http.ResponseWriter, r *http.Request) {
 
 // handleEmailDraft serves POST /api/reports/email: a report from the builder, emailed now.
 func (s *Server) handleEmailDraft(w http.ResponseWriter, r *http.Request) {
+	allowReportTime(w)
 	b, ok := readReportBody(w, r)
 	if !ok {
 		return

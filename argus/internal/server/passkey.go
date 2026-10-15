@@ -306,5 +306,7 @@ func (s *Server) handleAdminResetPasskeys(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
+	// An admin removes someone's passkeys because they are suspect: the sessions they opened go too.
+	_ = s.st.DeleteUserSessions(r.Context(), id)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

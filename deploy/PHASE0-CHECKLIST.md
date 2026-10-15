@@ -31,9 +31,10 @@ B1 · RUN - make the installer executable:
 cd ~/deploy/core && chmod +x setup-core.sh
 ```
 
-B2 · RUN - install Zabbix + PostgreSQL + TimescaleDB (use your real password):
+B2 · RUN - install Zabbix + PostgreSQL + TimescaleDB (the password is read from the terminal, so it
+never sits on a command line, in `ps` or in the shell history):
 ```bash
-sudo DBPASS='YOURPASS' ./setup-core.sh
+read -rs -p 'DB password: ' DBPASS; echo; export DBPASS; sudo -E ./setup-core.sh; unset DBPASS
 ```
 
 B3 · RUN - append the TLS + tuning settings to the server config:

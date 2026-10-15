@@ -16,7 +16,8 @@
 #                    database, no config - the core appliance's first-boot service does those
 #                    per-instance (deploy/core-vm/files/argus-core-firstboot.py). Used by Packer.
 #
-# Usage:  sudo DBPASS='choose-a-strong-pass' ./setup-core.sh
+# Usage:  read -rs -p 'DB password: ' DBPASS; echo; export DBPASS; sudo -E ./setup-core.sh; unset DBPASS
+#         (the password is read from the terminal: never on a command line, in ps or in the history)
 #         sudo SETUP_MODE=image ./setup-core.sh
 set -euo pipefail
 
@@ -24,7 +25,7 @@ SETUP_MODE="${SETUP_MODE:-full}"
 # Directory this script lives in - its externalscripts/ sibling ships the external-check collectors.
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 if [[ "$SETUP_MODE" == "full" ]]; then
-  : "${DBPASS:?Set DBPASS to the Zabbix DB password, e.g. sudo DBPASS=... ./setup-core.sh}"
+  : "${DBPASS:?Set DBPASS to the Zabbix DB password: read -rs DBPASS; export DBPASS; sudo -E ./setup-core.sh}"
 fi
 ZBX_MAJOR="7.0"                                   # LTS; bump if a newer LTS is out
 CODENAME="$(. /etc/os-release && echo "${VERSION_CODENAME:-trixie}")"   # Debian 13 = trixie
@@ -160,6 +161,8 @@ CONF=/etc/zabbix/zabbix_server.conf
 sed -i "s/^# *DBName=.*/DBName=zabbix/"     "$CONF" || true
 sed -i "s/^# *DBUser=.*/DBUser=zabbix/"     "$CONF" || true
 grep -q "^DBPassword=" "$CONF" || echo "DBPassword=${DBPASS}" >> "$CONF"
+# The file now holds the database password: root writes it, the zabbix user reads it, nobody else.
+chown root:zabbix "$CONF" && chmod 640 "$CONF"
 
 fi # SETUP_MODE=full
 

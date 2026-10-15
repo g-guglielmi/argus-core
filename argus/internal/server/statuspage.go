@@ -4,8 +4,10 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
@@ -343,13 +345,27 @@ func (s *Server) handleDeleteStatusPage(w http.ResponseWriter, r *http.Request) 
 
 // --- the public page ---
 
+// statusScriptSrc is the CSP source of the page's one inline script: its hash, computed from the
+// embedded file at start, so only that script runs. Should anyone later template a value into the
+// page (there is none today: data arrives by fetch and lands through textContent), it still can't
+// bring a script of its own.
+var statusScriptSrc = func() string {
+	i := bytes.Index(statusPageHTML, []byte("<script>"))
+	j := bytes.LastIndex(statusPageHTML, []byte("</script>"))
+	if i < 0 || j < i {
+		return "'none'"
+	}
+	sum := sha256.Sum256(statusPageHTML[i+len("<script>") : j])
+	return "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+}()
+
 // statusHeaders keeps the page out of search engines, other sites' frames, caches and Referer headers.
 func statusHeaders(w http.ResponseWriter) {
 	h := w.Header()
 	h.Set("Referrer-Policy", "no-referrer")
 	h.Set("X-Robots-Tag", "noindex, nofollow")
 	h.Set("X-Frame-Options", "DENY")
-	h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+	h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src "+statusScriptSrc+"; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
 }

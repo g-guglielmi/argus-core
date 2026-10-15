@@ -115,6 +115,7 @@ jobs:
     permissions:
       contents: read
       packages: write   # push images to GHCR
+      id-token: write   # keyless cosign: the signature names this workflow as the signer
     needs: [changes, checks]
     if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-latest
@@ -161,6 +162,7 @@ jobs:
             type=sha,format=short
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ./argus
@@ -182,6 +184,17 @@ jobs:
             org.opencontainers.image.version=${{ steps.version.outputs.value }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Keyless signature (Sigstore): the image digest is signed with a short-lived certificate
+      # bound to THIS workflow's identity, recorded in the public transparency log. A pull can
+      # then prove the image came from this repository's build.yml and not from someone holding a
+      # registry token: cosign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      # --certificate-identity-regexp '^https://github.com/<owner>/argus-core/.github/workflows/build.yml@' <image>@<digest>
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign the image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "ghcr.io/${{ github.repository_owner }}/argus@${DIGEST}"
 
   # The self-enrolling probe image (ghcr.io/<owner>/argus-probe) is built by its OWN workflow
   # (.github/workflows/probe-image.yml), on a different lifecycle: it tracks the upstream Zabbix

@@ -112,6 +112,8 @@ func writeAlertHTML(w http.ResponseWriter, status int, title, body string) {
 		`<div style="max-width:440px;margin:14vh auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:28px 26px;text-align:center">` +
 		body + `</div></body></html>`
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// The one page opened from an email link: no scripts at all, its own inline styles, posts to itself.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(page))
 }
