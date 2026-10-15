@@ -76,6 +76,16 @@ GitHub Release from the matching section below.
   it by naming its own address in `X-Forwarded-For`.
 
 **Fixed:**
+- **CPU utilization on Linux hosts read over SSH can't go past 100 % or under 0 % any more.** It is
+  worked out from two reads of the kernel's CPU counters a second apart, and the kernel documents
+  that the I/O-wait counter can go backwards: on a busy, disk-heavy host the idle share came out
+  negative (a reading of 112 %) and overshot on the next read (a dip to about 0 %), which also
+  raised and cleared a CPU warning. Each counter's change is now taken on its own, a counter that
+  went backwards counts as no time, and the share is held to 0-100. Hosts monitored by the core
+  get it with this update; hosts monitored by a probe get it with the next probe image.
+- **A percentage chart shows a reading past 100 % (or under 0 %) instead of cutting it off.** The
+  axis kept to 0-100 whatever the data said, so the line ran off the top of the plot; the PDF
+  report's axis did the same. 0 and 100 are now walls only for data that stays inside them.
 - **The report logo upload works again.** The browser sent the image and the cross-site guard,
   which takes JSON only, refused it ("This endpoint takes a JSON body"). The guard now lets exactly
   the two image types the logo may be (PNG, JPEG), which no HTML form can send, so the protection

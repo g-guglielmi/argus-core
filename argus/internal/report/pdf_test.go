@@ -148,6 +148,11 @@ func TestScaleCeil(t *testing.T) {
 	if _, hi, _ := scale(c); hi != 40 {
 		t.Fatalf("loss up to 37 %%: to %v, want 40", hi)
 	}
+	// Past the ceiling the data wins: a CPU at 112 % is drawn, not cut at 100.
+	c.Series[0].Points[1].V = 112
+	if _, hi, _ := scale(c); hi < 112 {
+		t.Fatalf("CPU up to 112 %%: axis to %v cuts it", hi)
+	}
 	c.Ceil = 0
 	c.Series[0].Points[1].V = 100
 	if _, hi, _ := scale(c); hi != 120 {

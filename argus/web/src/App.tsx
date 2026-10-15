@@ -371,7 +371,9 @@ function Spark({ values, color, width = 84, fill = false, units, thr }: { values
   let rng = Math.max(max - min, Math.max(Math.abs(min), Math.abs(max), 1e-9) * 0.1)
   if (units === '%' && max - min < PCT_MIN_SPAN) {
     rng = PCT_MIN_SPAN
-    mid = Math.min(Math.max(mid, PCT_MIN_SPAN / 2), 100 - PCT_MIN_SPAN / 2)
+    // Kept inside 0-100 only on a side the data doesn't cross (see pctRange).
+    if (min >= 0) mid = Math.max(mid, PCT_MIN_SPAN / 2)
+    if (max <= 100) mid = Math.min(mid, 100 - PCT_MIN_SPAN / 2)
   }
   const px = (i: number) => (i / (values.length - 1)) * (w - 2) + 1
   // Half-pixel y endpoints (17.5 / 1.5): a horizontal stroke centered ON a pixel boundary (integer y)
@@ -11681,20 +11683,27 @@ const axisSize = axisAutoSize as unknown as uPlot.Axis['size']
 
 // A percentage axis must never zoom so tight that a near-constant value renders as a dramatic ramp
 // with every gridline rounding to the same label (a disk sitting at 57.3 % slowly filling). Enforce
-// a minimum visible span, centered on the data and clamped to [0,100]; a series that genuinely
+// a minimum visible span, centered on the data and kept inside [0,100]; a series that genuinely
 // varies more than the floor keeps uPlot's normal 10%-padded auto-range. % is bounded and often
 // near-constant, so it gets this treatment where other units keep tight auto-range.
+// 0 and 100 are walls only for data that stays inside them: a reading past either (a VM's CPU at
+// 112 % of its share, a change of -30 %) widens the axis to show it, never runs off the plot.
 const PCT_MIN_SPAN = 10
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function pctRange(_u: any, dataMin: number | null, dataMax: number | null): [number, number] {
   if (dataMin == null || dataMax == null) return [0, 100]
-  let lo: number, hi: number
+  const floor = dataMin < 0 ? -Infinity : 0
+  const ceil = dataMax > 100 ? Infinity : 100
   const span = dataMax - dataMin
-  if (span >= PCT_MIN_SPAN) { const pad = span * 0.1; lo = dataMin - pad; hi = dataMax + pad }
-  else { const mid = (dataMin + dataMax) / 2; lo = mid - PCT_MIN_SPAN / 2; hi = mid + PCT_MIN_SPAN / 2 }
-  if (lo < 0) { hi -= lo; lo = 0 }
-  if (hi > 100) { lo -= hi - 100; hi = 100 }
-  return [Math.max(0, lo), Math.min(100, hi)]
+  if (span >= PCT_MIN_SPAN) {
+    const pad = span * 0.1
+    return [Math.max(floor, dataMin - pad), Math.min(ceil, dataMax + pad)]
+  }
+  const mid = (dataMin + dataMax) / 2
+  let lo = mid - PCT_MIN_SPAN / 2, hi = mid + PCT_MIN_SPAN / 2
+  if (lo < floor) { hi += floor - lo; lo = floor }
+  if (hi > ceil) { lo -= hi - ceil; hi = ceil }
+  return [lo, hi]
 }
 
 // A certificate's days left drop a tenth of a day every couple of hours: auto-ranged, that sliver

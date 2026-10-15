@@ -621,6 +621,7 @@ func scale(c Chart) (lo, hi float64, thr []Threshold) {
 			first = false
 		}
 	}
+	dataHi := hi
 	if lo > 0 {
 		lo = 0
 	}
@@ -633,7 +634,9 @@ func scale(c Chart) (lo, hi float64, thr []Threshold) {
 		}
 	}
 	hi = niceCeil(hi*1.08, c.Base1024) // a little room above the highest value
-	if c.Ceil > 0 && hi > c.Ceil {
+	// The ceiling caps the headroom, never the data: a percentage that stays under 100 tops out
+	// at 100, one that went past it (a VM's CPU at 112 %) keeps the axis that shows it.
+	if c.Ceil > 0 && hi > c.Ceil && dataHi <= c.Ceil {
 		hi = math.Max(c.Ceil, niceCeil(math.Max(lo, 0), c.Base1024))
 	}
 	if lo < 0 {
