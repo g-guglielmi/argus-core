@@ -35,7 +35,10 @@ type Config struct {
 	// CSRs and register their proxies in Zabbix. CAKeyFile is the crown jewel - mount read-only.
 	// (ARGUS_PROBE_CORE_HOST is resolved by the settings manager, so it can be edited in the UI.)
 	CACertFile string // ARGUS_CA_CERT_FILE, path to the monitoring CA certificate (ca.crt)
-	CAKeyFile  string // ARGUS_CA_KEY_FILE, path to the CA private key (ca.key)
+	// ZabbixCAFile is a CA (PEM) the Zabbix API client trusts besides the system roots: the appliance
+	// serves the API over TLS on :8443 with a certificate from the monitoring CA. Defaults to CACertFile.
+	ZabbixCAFile string // ARGUS_ZABBIX_CA_FILE
+	CAKeyFile    string // ARGUS_CA_KEY_FILE, path to the CA private key (ca.key)
 
 	// WebAuthn / passkeys. Passkeys need a real domain (never a bare IP) and HTTPS,
 	// so they're only active when RPID and at least one origin are configured.
@@ -76,6 +79,7 @@ func Load() Config {
 		LoginMaxAttempts: envInt("ARGUS_LOGIN_MAX_ATTEMPTS", 7),
 		LoginWindow:      time.Duration(envInt("ARGUS_LOGIN_WINDOW_MINUTES", 15)) * time.Minute,
 		CACertFile:       env("ARGUS_CA_CERT_FILE", ""),
+		ZabbixCAFile:     env("ARGUS_ZABBIX_CA_FILE", env("ARGUS_CA_CERT_FILE", "")),
 		CAKeyFile:        env("ARGUS_CA_KEY_FILE", ""),
 		RPID:             env("ARGUS_RP_ID", ""),
 		RPDisplayName:    env("ARGUS_RP_DISPLAY_NAME", "Argus"),

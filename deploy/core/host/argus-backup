@@ -46,6 +46,8 @@ DEFAULT_STATE_DIR = "/docker/argus-update"  # docs/folder-layout.md; main() find
 STATE_DIR = os.environ.get("ARGUS_STATE_DIR", DEFAULT_STATE_DIR)
 CONTAINER = os.environ.get("ARGUS_CONTAINER", "argus")
 UPDATER = os.environ.get("ARGUS_UPDATER_CONTAINER", "argus-updater")
+# Container environment variables that never go into an archive (a human's one-time password).
+SCRUB_ENV = ("ARGUS_ADMIN_PASSWORD",)
 PLAN_CACHE = os.environ.get("ARGUS_BACKUP_PLAN_CACHE", "/etc/argus-core/backup-plan.json")
 LOCAL_DIR = os.environ.get("ARGUS_BACKUP_DIR", "/var/backups/argus")
 RUN_DIR = os.environ.get("ARGUS_BACKUP_RUN_DIR", "/run/argus-backup")
@@ -371,7 +373,15 @@ def part_containers(work, manifest):
         except (Fail, ValueError):
             continue
         if isinstance(info, list) and info:
-            found.append(info[0])
+            c = info[0]
+            # The one-time admin seed is a human's password (reused for the Zabbix Admin and the
+            # Linux user on the appliance): it belongs in no archive. The machine secrets stay,
+            # a restore needs them.
+            cfg = c.get("Config") or {}
+            env = cfg.get("Env") or []
+            cfg["Env"] = [e for e in env if e.split("=", 1)[0] not in SCRUB_ENV]
+            c["Config"] = cfg
+            found.append(c)
     if not found:
         return
     path = os.path.join(work, "containers.json")

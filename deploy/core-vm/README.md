@@ -109,8 +109,10 @@ PostgreSQL and nginx keep their usual places.
   the reboot is operator-scheduled from the Argus **Updates** page; the host reporter and
   reboot-window watcher are baked in via `setup-core.sh`.
 - **Ports**: Argus on **:443** (https, via nginx; the container itself listens on `127.0.0.1:8081`
-  only), Zabbix UI/API on **:8080**, proxies inbound on **:10051**, and **:80** serves the setup page
-  first, then a permanent redirect to Argus over https.
+  only), Zabbix UI/API on **:8080** (plain) and on **:8443** (https, the same certificate as Argus:
+  for an Argus running on another host, whose API token must not cross the LAN in clear), proxies
+  inbound on **:10051**, and **:80** serves the setup page first, then a permanent redirect to Argus
+  over https.
 - **The setup page asks for a setup code** that the VM prints on its console (the hypervisor's
   console window, and the console login banner). Anyone on the network can reach the page; only
   someone who can see the console can use it. **No console?** Attach a CD/DVD labelled `ARGUSSEED`
@@ -161,7 +163,10 @@ rebuild after a disaster, import a new VM from this image, finish first boot wit
 reload nginx, or put your reverse proxy (HAProxy/nginx/Caddy) in front of `:443`, then update
 **Settings → Public URL** and add the proxy's address to **Settings → Reverse proxy** (and
 `ARGUS_RP_*` for passkeys in `/etc/argus-core/argus.env` + `systemctl restart argus-core`). Remote
-probes additionally need **:10051** published/forwarded to the VM.
+probes additionally need **:10051** published/forwarded to the VM. The https front sends HSTS (six
+months): once a browser trusts the VM's certificate it refuses a plain-http or click-through
+visit from then on, so a replacement certificate must be trusted by the PCs before the old one
+expires (the same CA signing it is enough).
 
 ## Scope / notes
 

@@ -86,7 +86,7 @@ source "qemu" "argus-core" {
   // connection would fail once the host keys are gone. (provision.sh already purged cloud-init and its
   // state, so there's no `cloud-init clean` to run here.) The first-boot service regenerates SSH host
   // keys; systemd regenerates the machine-id.
-  shutdown_command = "sudo bash -c 'rm -f /etc/ssh/ssh_host_* /etc/machine-id /var/lib/dbus/machine-id; touch /etc/machine-id; userdel -f -r packer 2>/dev/null || true; shutdown -P now'"
+  shutdown_command = "sudo bash -c 'rm -f /etc/ssh/ssh_host_* /etc/machine-id /var/lib/dbus/machine-id; touch /etc/machine-id; userdel -f -r packer 2>/dev/null || true; rm -f /etc/sudoers.d/90-cloud-init-users; shutdown -P now'"
   shutdown_timeout = "5m"
 }
 

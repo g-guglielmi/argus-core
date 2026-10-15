@@ -496,8 +496,14 @@ def step_https(cfg, state):
         os.unlink(csr)
         os.unlink(ext)
         os.chmod(key, 0o600)
+    # HSTS: once a browser trusts the certificate it refuses a plain-http downgrade of the login
+    # page from then on (a replacement certificate must therefore be trusted before this one ends;
+    # the README says so). The Zabbix frontend and its API get the same certificate on :8443, so
+    # an Argus running on another host can use https://<vm>:8443/api_jsonrpc.php and its
+    # super-admin token never crosses the LAN in clear (:8080 stays plain for the VM itself).
     with open(NGINX_HTTPS, "w", encoding="utf-8") as fh:
-        fh.write("# Written by the Argus core appliance first-boot setup: Argus over https.\n"
+        fh.write("# Written by the Argus core appliance first-boot setup: Argus over https, and the\n"
+                 "# Zabbix frontend/API over https on :8443 for an Argus on another host.\n"
                  "server {\n"
                  "    listen 443 ssl default_server;\n"
                  "    server_name _;\n"
@@ -505,6 +511,7 @@ def step_https(cfg, state):
                  "    ssl_certificate_key %s;\n"
                  "    ssl_protocols TLSv1.2 TLSv1.3;\n"
                  "    ssl_prefer_server_ciphers off;\n"
+                 "    add_header Strict-Transport-Security \"max-age=15552000\" always;\n"
                  "    client_max_body_size 8m;\n"
                  "    location / {\n"
                  "        proxy_pass http://127.0.0.1:8081;\n"
@@ -515,7 +522,24 @@ def step_https(cfg, state):
                  "        proxy_set_header X-Forwarded-Host $host;\n"
                  "        proxy_read_timeout 90s;\n"
                  "    }\n"
-                 "}\n" % (crt, key))
+                 "}\n"
+                 "server {\n"
+                 "    listen 8443 ssl;\n"
+                 "    server_name _;\n"
+                 "    ssl_certificate %s;\n"
+                 "    ssl_certificate_key %s;\n"
+                 "    ssl_protocols TLSv1.2 TLSv1.3;\n"
+                 "    ssl_prefer_server_ciphers off;\n"
+                 "    client_max_body_size 16m;\n"
+                 "    location / {\n"
+                 "        proxy_pass http://127.0.0.1:8080;\n"
+                 "        proxy_http_version 1.1;\n"
+                 "        proxy_set_header Host $host;\n"
+                 "        proxy_set_header X-Forwarded-For $remote_addr;\n"
+                 "        proxy_set_header X-Forwarded-Proto https;\n"
+                 "        proxy_read_timeout 300s;\n"
+                 "    }\n"
+                 "}\n" % (crt, key, crt, key))
     run(["nginx", "-t"], timeout=30)
     run(["systemctl", "reload-or-restart", "nginx"], timeout=60)
 
@@ -674,6 +698,10 @@ def step_finish(cfg, state):
         write_private(ARGUS_ENV, env)
     except FileNotFoundError:
         pass
+    # The running container still carries the password in its environment (docker inspect shows
+    # it, and the updater clones that environment on every recreate): recreate it from the
+    # scrubbed file now, so the human's password lives on only as a hash in Argus's database.
+    run(["systemctl", "restart", "argus-core"], timeout=300, check=False)
 
     # Park a redirect on :80 so http://<vm>/ lands on Argus (over https) from now on: the Public URL
     # when it is https, else this VM's own address (never the request's Host header, which a client

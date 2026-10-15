@@ -114,6 +114,9 @@ echo argus-core > /etc/hostname
 echo "==> removing cloud-init (the appliance self-configures without it)"
 apt-get purge -y cloud-init || true
 rm -rf /etc/cloud /var/lib/cloud
+# cloud-init wrote the build user's passwordless sudo rule as a drop-in that the purge leaves behind;
+# the user goes at shutdown, the rule must not wait for someone to create a user of that name.
+rm -f /etc/sudoers.d/90-cloud-init-users
 
 echo "==> trimming build artifacts"
 apt-get autoremove -y || true

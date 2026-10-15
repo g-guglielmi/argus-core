@@ -331,7 +331,7 @@ docker run -d \
   -e ARGUS_UPDATE_DIR=/update \
   -e ARGUS_CA_CERT_FILE=/ca/ca.crt \
   -e ARGUS_CA_KEY_FILE=/ca/ca.key \
-  -e ARGUS_ZABBIX_API_URL=http://10.0.0.10:8080/api_jsonrpc.php \
+  -e ARGUS_ZABBIX_API_URL=https://10.0.0.10:8443/api_jsonrpc.php \
   -e ARGUS_ZABBIX_API_TOKEN=<zabbix-api-token> \
   -e ARGUS_ADMIN_EMAIL=admin@example.com \
   -e ARGUS_ADMIN_PASSWORD=<strong-password> \
@@ -358,6 +358,14 @@ docker run -d \
 > **Port note:** the Zabbix web UI usually holds host 8080, so Argus is published on host
 > 8081 (→ container 8080).
 >
+> **Zabbix API over https:** the token is a super-admin credential sent as a `Bearer` header on
+> every poll. When Argus runs on another host than Zabbix, use an https address: the core appliance
+> serves the Zabbix frontend and API over TLS on **:8443** with a certificate signed by the
+> monitoring CA, and Argus trusts that CA through the `ca.crt` it already mounts
+> (`ARGUS_CA_CERT_FILE`; another CA goes in `ARGUS_ZABBIX_CA_FILE`). Over plain http to another
+> host, Argus logs a warning at start. On the appliance itself the container reaches Zabbix on the
+> same VM, where http is fine.
+>
 > **Passkeys** (`ARGUS_RP_*`) need HTTPS + a real domain - omit them for a plain-HTTP/IP
 > setup and Argus falls back to password + TOTP.
 >
@@ -373,13 +381,17 @@ docker run -d \
 
 #### 2c. Verify
 
-Open `http://<core-ip>:8081` - you should see the Argus login page. Sign in with the
-admin credentials from step 2b. The Monitoring tab should show hosts and live data from
-Zabbix.
+Open Argus at the https address of your reverse proxy (the Public URL above) - you should see the
+login page. Sign in with the admin credentials from step 2b. The Monitoring tab should show hosts
+and live data from Zabbix. For a LAN-only trial over plain http, leave out `ARGUS_COOKIE_SECURE`
+and the https Public URL and open `http://<core-ip>:8081`: a `Secure` cookie is never sent over
+http, so the two settings together with a plain-http address can't sign in.
 
 ### 3. Updating Argus
 
-Argus uses a rolling `:latest` tag - pushing to `main` builds a new image. To update:
+Releases carry `:latest` and `:vX.Y.Z`; the tip of `main` is `:testing` and is not meant for
+production. Argus checks for a newer release on its own and offers it on the **Updates** page (the
+sidecar applies it); by hand, it is a pull and a recreate:
 
 ```bash
 docker pull ghcr.io/<your-account>/argus:latest
@@ -441,10 +453,12 @@ CORE  [VM]
 ## CI/CD
 
 GitHub Actions (`.github/workflows/build.yml`):
-- **Push to `main`** → builds the app image (`argus`) **and** the self-enrolling probe image
-  (`argus-probe`) → pushes `:latest` + `:sha-xxxxx` to GHCR.
-- **Push a tag `vX.Y.Z`** → builds the versioned images → auto-publishes a GitHub Release
-  from the matching `CHANGELOG.md` section.
+- **Push to `main`** → a dependency gate (`govulncheck` at the toolchain the image builds with,
+  `npm audit` on the production dependencies, the collector tests), then the app image (`argus`)
+  → pushed as `:testing` + `:sha-xxxxx` to GHCR. The probe image is built in its own repository
+  (`argus-probe`).
+- **Push a tag `vX.Y.Z`** → the versioned image, pushed as `:vX.Y.Z` + `:latest` (and `:testing`)
+  → a GitHub Release published from the matching `CHANGELOG.md` section.
 
 See [`docs/RELEASING.md`](docs/RELEASING.md) for the step-by-step release checklist (and the
 concurrency gotcha that can silently cancel a tag build).

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -120,6 +121,27 @@ func main() {
 		os.Exit(1)
 	}
 
+	// The Zabbix API token is a super-admin credential sent as a Bearer header on every poll: over
+	// plain http to another host it crosses the LAN in clear. The appliance serves the API over
+	// https on :8443 for this case, with a certificate from the monitoring CA, which the client
+	// trusts when the CA file is at hand (ARGUS_ZABBIX_CA_FILE, else the enrollment CA's cert).
+	if cfg.ZabbixCAFile != "" {
+		if pem, err := os.ReadFile(cfg.ZabbixCAFile); err != nil {
+			logger.Warn("Zabbix CA file not read; the API's certificate must then be signed by a system-trusted CA", "file", cfg.ZabbixCAFile, "err", err)
+		} else if err := zbx.TrustCA(pem); err != nil {
+			logger.Warn("Zabbix CA file not usable", "file", cfg.ZabbixCAFile, "err", err)
+		} else {
+			logger.Info("Zabbix API certificates signed by the CA in this file are trusted", "file", cfg.ZabbixCAFile)
+		}
+	}
+	if u, err := url.Parse(zbx.URL()); err == nil && u.Scheme == "http" {
+		switch u.Hostname() {
+		case "127.0.0.1", "::1", "localhost", "host.docker.internal":
+		default:
+			logger.Warn("the Zabbix API URL is plain http to another host: the API token travels in clear on every poll; put TLS on the Zabbix frontend (the core appliance serves it on :8443) and use https", "zabbix_api", zbx.URL())
+		}
+	}
+
 	// Background sweeper: re-enables timed pauses and prunes expired suppressions.
 	sweepCtx, sweepCancel := context.WithCancel(context.Background())
 	defer sweepCancel()
@@ -172,6 +194,9 @@ func bootstrapAdmin(ctx context.Context, st *store.Store, cfg config.Config, log
 		return err
 	}
 	if n > 0 {
+		if cfg.AdminPassword != "" {
+			logger.Warn("ARGUS_ADMIN_PASSWORD is still set although users exist: it is ignored, and a human's password has no place in a container's environment (docker inspect shows it); remove it")
+		}
 		return nil
 	}
 	if cfg.AdminEmail == "" || cfg.AdminPassword == "" {

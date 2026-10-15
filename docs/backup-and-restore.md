@@ -46,7 +46,9 @@ Everything is in **Settings, Backups** (admin):
 - **Encryption passphrase**: at least 12 characters. With it set, every archive is encrypted (gpg,
   AES-256), and exporting needs one. **Store it in your password manager now**: Argus never shows it
   again, and without it no archive can be opened, not even by us. Changing it later only affects new
-  archives.
+  archives. An archive holds Argus's database together with the key that opens its stored secrets
+  (a restore needs both), so the passphrase is the only thing protecting them once an archive leaves
+  the VM; without a passphrase the copies on the VM itself are plain, readable by root only.
 - **Export to**: where a copy of each archive goes (below). Only encrypted archives leave the VM.
 
 The status line shows the last backup (when, how big, how long), how many archives are on the VM and

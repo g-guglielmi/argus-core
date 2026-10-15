@@ -9,6 +9,8 @@ package zabbix
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,6 +55,29 @@ func (c *Client) endpoint() (url, token string) {
 }
 
 // Authenticated reports whether an API token is configured for read calls.
+// URL is the API endpoint the client talks to (as configured, env or Settings).
+func (c *Client) URL() string { return c.url }
+
+// TrustCA makes the client accept an https endpoint whose certificate the given CA (PEM) signed,
+// on top of the system roots: the core appliance serves the API over TLS on :8443 with a
+// certificate from the monitoring CA, which an Argus on another host already mounts for
+// enrollment.
+func (c *Client) TrustCA(pemBytes []byte) error {
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		return errors.New("no certificate found in the CA file")
+	}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+	c.mu.Lock()
+	c.http = &http.Client{Timeout: c.http.Timeout, Transport: tr}
+	c.mu.Unlock()
+	return nil
+}
+
 func (c *Client) Authenticated() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

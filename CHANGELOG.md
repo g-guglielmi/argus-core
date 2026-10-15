@@ -104,6 +104,39 @@ GitHub Release from the matching section below.
 - **A short `ARGUS_SECRET_KEY` (under 20 characters) is refused on a new install** and warned
   about, loudly, on an existing one: with a public salt, a short value is guessable offline from a
   copy of the database. Existing installs keep starting; set a longer key when you can.
+- **The Zabbix API over https, from another host.** The API token is a super-admin credential sent
+  on every poll, and every example put it on plain http to another host. The core appliance now
+  serves the Zabbix frontend and API over TLS on `:8443` (core-vm 0.1.5 below), Argus trusts the
+  monitoring CA that signs it through the `ca.crt` it already mounts (`ARGUS_ZABBIX_CA_FILE` for
+  another CA), the examples say `https://...:8443`, and Argus warns at start when the URL is plain
+  http to another host. On the appliance itself, where the container reaches Zabbix on the same VM,
+  nothing changes.
+- Argus warns at start when `ARGUS_ADMIN_PASSWORD` is still set although users exist: it is ignored
+  then, and a human's password has no place in a container's environment.
+- The README no longer says that pushing to `main` moves `:latest` (it moves `:testing`; releases
+  move `:latest`), its verify step opens Argus over https instead of pairing a Secure cookie with
+  a plain-http address, the Unraid template leaves `ARGUS_COOKIE_SECURE` empty (the cookie follows
+  the Public URL's scheme), and the deploy guide no longer recommends Watchtower for probes.
+
+## [core-vm/v0.1.5] - 2026-10-15
+
+Hardening of the core appliance from the 2026-10-14 security review. It is what a new deployment
+gets; an existing VM is unaffected until it is redeployed.
+
+**Changed:**
+- **The Zabbix frontend and API are served over https on `:8443`** with the VM's own certificate
+  (the one Argus uses on `:443`, signed by the monitoring CA), for an Argus running on another host:
+  its super-admin API token no longer crosses the LAN in clear. `:8080` stays plain for the VM
+  itself.
+- **The https front sends HSTS** (six months): once a browser trusts the VM's certificate it refuses
+  a plain-http downgrade of the sign-in page. A replacement certificate must therefore be trusted
+  before the old one expires; the README says so.
+- **The first-boot admin password leaves the container.** It was scrubbed from the environment file
+  but the running container kept it (visible to `docker inspect`, and cloned by the updater on
+  every recreate); the setup now recreates the core container once at the end. The host backup
+  also strips it from the container record it archives.
+- The build no longer leaves cloud-init's passwordless-sudo rule for the deleted build user behind
+  in `/etc/sudoers.d`.
 
 **Changed:**
 - **Notes are one line** of up to 500 characters: an acknowledgement's message, a hide's reason,

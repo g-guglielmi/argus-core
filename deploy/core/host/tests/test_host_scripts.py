@@ -70,7 +70,7 @@ PASS = "correct horse battery staple"
 ARGUS_INSPECT = {
     "Name": "/argus",
     "Config": {"Image": "ghcr.io/g-guglielmi/argus:latest",
-               "Env": ["PATH=/usr/bin", "ARGUS_SECRET_KEY=k3y with space", "ARGUS_UPDATE_DIR=/update"]},
+               "Env": ["PATH=/usr/bin", "ARGUS_SECRET_KEY=k3y with space", "ARGUS_ADMIN_PASSWORD=hunter2", "ARGUS_UPDATE_DIR=/update"]},
     "HostConfig": {"RestartPolicy": {"Name": "unless-stopped"}, "NetworkMode": "bridge",
                    "PortBindings": {"8080/tcp": [{"HostIp": "", "HostPort": "8081"}]},
                    "ExtraHosts": ["host.docker.internal:host-gateway"]},
@@ -278,6 +278,8 @@ class BackupTest(unittest.TestCase):
         self.assertEqual(manifest["argus_mounts"]["/ca"], ca)
         self.assertEqual(manifest["containers"], ["argus"])
         self.assertIn("ARGUS_SECRET_KEY=k3y with space", kept[0]["Config"]["Env"])
+        # The one-time admin seed (a human's password) is never archived; the machine secrets are.
+        self.assertNotIn("ARGUS_ADMIN_PASSWORD=hunter2", kept[0]["Config"]["Env"])
         # The data folder and the update folder are not packed as files: the database has its own part.
         self.assertNotIn(self.mod.under_root(self.dirs["data"]), manifest["files"])
 

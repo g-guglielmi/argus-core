@@ -176,13 +176,9 @@ recreate - **no re-enrollment**: the signed cert + `ca.crt` live on the persiste
 `/var/lib/zabbix` volume, and the entrypoint skips enrollment whenever those certs already exist
 (so the single-use token is never needed again). Options:
 
-- **Watchtower** (recommended, per probe host): run one alongside the probe and it pulls new
-  `:latest` images and recreates the container with the same volume + env automatically:
-  ```bash
-  docker run -d --name watchtower --restart unless-stopped \
-    -v /var/run/docker.sock:/var/run/docker.sock \
-    containrrr/watchtower --cleanup --interval 3600 argus-proxy-<site>
-  ```
+- **Argus** (recommended): the Updates page shows every probe's version against the fleet target
+  and applies an update through the probe's updater sidecar (next section). No third-party
+  auto-updater is needed or supported next to it.
 - **unRAID**: the built-in *CA Auto Update* plugin updates the container on a schedule.
 - **Manual / cron**: `docker pull …/argus-probe:latest && docker rm -f argus-proxy-<site> && docker run …`
   (same command you deployed with - the token env is harmless once certs exist).

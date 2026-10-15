@@ -158,6 +158,11 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
   Public URL, else from the request's host only when that host is allow-listed or loopback; a probe's
   check-in URL comes from the Public URL alone (probes write it into their own configuration, and
   derive it from their enroll URL when there is none). "Probe core host" is validated as `host[:port]`.
+- **The Zabbix API token** is a super-admin credential sent as a Bearer header on every poll, so from
+  another host the API must be https: the core appliance serves the frontend and API over TLS on
+  `:8443` with the VM's certificate (signed by the monitoring CA), the client trusts that CA
+  through `ARGUS_ZABBIX_CA_FILE` (default: the enrollment CA's `ca.crt` it already mounts), and a
+  plain-http URL to a host that isn't the container's own is a warning at start.
 - **Secrets at rest** are AES-256-GCM under `ARGUS_SECRET_KEY` (stretched into the key with argon2id,
   so a passphrase can't be guessed from a database dump at hashing speed; a database written under
   the earlier SHA-256 derivation is re-encrypted once at start) or a generated `secret.key` on the
