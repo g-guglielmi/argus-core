@@ -161,7 +161,7 @@ func (s *Server) handleAdoptProxySNMP(w http.ResponseWriter, r *http.Request) {
 	inherit, _ := s.st.SNMPInheritMap(ctx)
 	hosts, err := s.zbx.HostsByProxy(ctx, proxyID)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	details := defaultToDetails(def)

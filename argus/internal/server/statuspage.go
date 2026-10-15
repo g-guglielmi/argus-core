@@ -692,30 +692,53 @@ func statusCovers(sites []string, g string) bool {
 }
 
 // statusData caches each page's view briefly: a wall of screens refreshing every 30 s shares one read.
-var statusData = &statusCache{m: map[int64]statusEntry{}}
+var statusData = &statusCache{m: map[int64]statusEntry{}, inflight: map[int64]*statusFlight{}}
 
 type statusEntry struct {
 	at time.Time
 	v  statusView
 }
 
-type statusCache struct {
-	mu sync.Mutex
-	m  map[int64]statusEntry
+// statusFlight is one page's build in progress: later readers of the same page wait for it
+// instead of building again, and readers of other pages aren't held up at all.
+type statusFlight struct {
+	done chan struct{}
+	v    statusView
+	err  error
 }
 
+type statusCache struct {
+	mu       sync.Mutex
+	m        map[int64]statusEntry
+	inflight map[int64]*statusFlight
+}
+
+// get returns a page's view from the cache, or builds it. The map lock is never held across a
+// build (up to 25 s of Zabbix reads), so one slow page can't stall every wall screen.
 func (c *statusCache) get(id int64, build func() (statusView, error)) (statusView, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if e, ok := c.m[id]; ok && time.Since(e.at) < statusCacheTTL {
+		c.mu.Unlock()
 		return e.v, nil
 	}
-	v, err := build()
-	if err != nil {
-		return v, err
+	if f, running := c.inflight[id]; running {
+		c.mu.Unlock()
+		<-f.done
+		return f.v, f.err
 	}
-	c.m[id] = statusEntry{at: time.Now(), v: v}
-	return v, nil
+	f := &statusFlight{done: make(chan struct{})}
+	c.inflight[id] = f
+	c.mu.Unlock()
+
+	f.v, f.err = build()
+	c.mu.Lock()
+	if f.err == nil {
+		c.m[id] = statusEntry{at: time.Now(), v: f.v}
+	}
+	delete(c.inflight, id)
+	c.mu.Unlock()
+	close(f.done)
+	return f.v, f.err
 }
 
 func (c *statusCache) forget(id int64) {

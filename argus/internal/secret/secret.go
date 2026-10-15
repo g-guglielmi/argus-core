@@ -99,6 +99,10 @@ func Load(envKey, dataDir string) (*Cipher, string, error) {
 // is the secret; the salt only ties the derivation to Argus.
 const envKeySalt = "argus.at-rest.key.v2"
 
+// MinEnvKeyLen is the shortest ARGUS_SECRET_KEY a new install accepts: with a public salt, a
+// short or dictionary value is guessable offline from a copy of the database, argon2id or not.
+const MinEnvKeyLen = 20
+
 // deriveEnvKey stretches ARGUS_SECRET_KEY into the 256-bit key with argon2id (64 MiB, 3 passes),
 // so a memorable passphrase can't be guessed offline from a database dump at hashing speed. It
 // runs once, at start.

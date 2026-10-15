@@ -355,6 +355,18 @@ func (s *Server) changeLog(next http.Handler) http.Handler {
 		pattern := s.routePattern(r)
 		rc, listed := changeRoutes[pattern]
 		vals := patternValues(pattern, r.URL.Path)
+		// A viewer's writes (acknowledgements, notes) are each a change-log row kept for months:
+		// bounded per minute, so a looping account can't grow the log past what a person could do.
+		if write && listed {
+			if u, ok := auth.UserFrom(r.Context()); ok && u.Role == "viewer" {
+				key := "write:uid:" + strconv.FormatInt(u.ID, 10)
+				if blocked, retry := s.writeLimiter.Blocked(key); blocked {
+					writeThrottled(w, retry)
+					return
+				}
+				s.writeLimiter.Fail(key)
+			}
+		}
 		// The body, for the route's generic detail; the handler reads the same bytes. Only a listed
 		// write's: check-ins and scan uploads pass untouched.
 		var body map[string]any

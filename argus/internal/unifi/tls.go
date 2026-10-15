@@ -70,6 +70,9 @@ func Fingerprint(der []byte) string {
 func newHTTPClient(o Options) *http.Client {
 	return &http.Client{
 		Timeout: requestTimeout,
+		// The API key rides in a header Go would forward to wherever a redirect points: a
+		// controller (or whatever answers at its address) must not be able to send it elsewhere.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		Transport: &http.Transport{
 			TLSClientConfig: tlsConfigFor(o),
 		},

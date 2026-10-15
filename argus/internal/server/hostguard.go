@@ -72,11 +72,18 @@ func crossSiteVerdict(r *http.Request, list []string, publicURL string, trustPro
 	}
 	if r.ContentLength != 0 {
 		ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if ct != "application/json" {
+		if ct != "application/json" && !rawBodyRoutes[r.Method+" "+r.URL.Path][ct] {
 			return false, "This endpoint takes a JSON body."
 		}
 	}
 	return true, ""
+}
+
+// rawBodyRoutes take a body of one fixed type instead of JSON: the report logo, an image. Only
+// types no HTML form can send are listed, so a cross-site page still can't post one with the
+// cookie: a fetch with such a type is preflighted, and Argus answers no preflight.
+var rawBodyRoutes = map[string]map[string]bool{
+	"PUT /api/reports/logo": {"image/png": true, "image/jpeg": true},
 }
 
 // hostAllowed reports whether a normalized host may be used to reach the browser-facing API.

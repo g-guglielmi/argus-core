@@ -90,6 +90,13 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid probe token"})
 		return
 	}
+	// A probe checks in once a minute, its sidecar too: every check-in writes rows, so a token
+	// looping faster than that is held to a sane rate.
+	if blocked, retry := s.checkinLimit.Blocked("checkin:" + proxyName); blocked {
+		writeThrottled(w, retry)
+		return
+	}
+	s.checkinLimit.Fail("checkin:" + proxyName)
 	var req struct {
 		Version        string `json:"version"`
 		SelfUpdate     *bool  `json:"selfupdate"`      // pointer: omitted keeps the stored flag (two-reporter model)

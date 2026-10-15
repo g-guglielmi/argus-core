@@ -1,15 +1,15 @@
 # syntax=docker/dockerfile:1
 
 # ---- Stage 1: build the React frontend ----
-FROM node:20-alpine AS web
+FROM node:22-alpine AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
-RUN npm ci                 # reproducible install from the committed lockfile
+RUN npm ci --ignore-scripts # reproducible install from the committed lockfile; no package runs code in the build
 COPY web/ ./
 RUN npm run build          # tsc --noEmit && vite build -> /web/dist
 
 # ---- Stage 2: build the Go binary (embeds the frontend) ----
-FROM golang:1.27.1-alpine AS build
+FROM golang:1.27.2-alpine AS build
 WORKDIR /src
 # The image's toolchain is the one that builds: a dependency that needs a newer Go fails loudly
 # here instead of downloading one at build time. Keep the tag on a supported Go (the two newest
@@ -24,7 +24,7 @@ COPY . .
 # bring in the freshly built assets so go:embed bakes them in
 COPY --from=web /web/dist ./web/dist
 # build a static binary (readonly module mode: fails if go.mod/go.sum drift from imports)
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X 'argus/internal/buildinfo.Version=${ARGUS_VERSION}'" -o /argus .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X 'argus/internal/buildinfo.Version=${ARGUS_VERSION}'" -o /argus .
 
 # ---- Stage 3: minimal runtime ----
 FROM gcr.io/distroless/static-debian12:nonroot

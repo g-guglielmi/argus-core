@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -142,6 +143,11 @@ func ValidateMacroValue(ms MacroSpec, v string) error {
 	}
 	if ms.Pattern != "" && !regexp.MustCompile(ms.Pattern).MatchString(v) {
 		return fmt.Errorf("%s: %q isn't an accepted value", ms.Label, v)
+	}
+	// A fixed set of values is just that: a template's delay or mode can't be typed freely
+	// (a speed test every second would saturate a site's line).
+	if len(ms.Options) > 0 && !slices.Contains(ms.Options, v) {
+		return fmt.Errorf("%s: %q isn't one of its options", ms.Label, v)
 	}
 	if ms.Check != nil {
 		if err := ms.Check(v); err != nil {

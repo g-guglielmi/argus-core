@@ -169,7 +169,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 
 	hosts, err := s.zbx.Hosts(ctx)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 
@@ -327,7 +327,7 @@ func (s *Server) handleHostProblems(w http.ResponseWriter, r *http.Request) {
 
 	problems, err := s.zbx.Problems(ctx, r.PathValue("id"))
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	// Best-effort: map each problem's trigger to the item(s) it references for highlighting.
@@ -522,7 +522,7 @@ func (s *Server) zbxEnableHandler(scope string, enabled bool) http.HandlerFunc {
 		}
 		if err != nil {
 			// Most often a permission error: the token's Zabbix user lacks write access.
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 			return
 		}
 		caller, _ := auth.UserFrom(r.Context())
@@ -553,7 +553,7 @@ func (s *Server) muteHandler(mute bool) http.HandlerFunc {
 		defer cancel()
 		trigIDs, err := s.zbx.TriggerIDsForItem(ctx, r.PathValue("id"))
 		if err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 			return
 		}
 		if len(trigIDs) == 0 {
@@ -561,7 +561,7 @@ func (s *Server) muteHandler(mute bool) http.HandlerFunc {
 			return
 		}
 		if err := s.zbx.SetTriggersEnabled(ctx, trigIDs, !mute); err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -578,7 +578,7 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 
 	items, err := s.zbx.Items(ctx, r.PathValue("id"))
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	all := r.URL.Query().Get("all") == "1"
@@ -915,7 +915,7 @@ func (s *Server) handleItemHistory(w http.ResponseWriter, r *http.Request) {
 	itemID := r.PathValue("id")
 	item, err := s.zbx.Item(ctx, itemID)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	if !numericValueType(item.ValueType) {
@@ -934,7 +934,7 @@ func (s *Server) handleItemHistory(w http.ResponseWriter, r *http.Request) {
 		resp.Kind = "trend"
 		pts, err := s.zbx.Trends(ctx, itemID, from, now)
 		if err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 			return
 		}
 		for _, p := range pts {
@@ -944,7 +944,7 @@ func (s *Server) handleItemHistory(w http.ResponseWriter, r *http.Request) {
 		resp.Kind = "history"
 		pts, err := s.zbx.History(ctx, itemID, atoi(item.ValueType), from, now)
 		if err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 			return
 		}
 		for _, p := range pts {

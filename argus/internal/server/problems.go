@@ -34,13 +34,13 @@ func (s *Server) handleProblems(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	out, err := s.activeProblems(ctx)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	if sc := scopeFrom(r); !sc.all { // per-site visibility (scope.go)
 		vis, err := s.visibleHosts(ctx, sc)
 		if err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 			return
 		}
 		kept := out[:0]

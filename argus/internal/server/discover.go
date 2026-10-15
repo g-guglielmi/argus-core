@@ -63,7 +63,7 @@ func (s *Server) handleDiscoverNow(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	rules, err := s.runDiscovery(ctx, r.PathValue("id"))
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	names := make([]string, 0, len(rules))

@@ -55,6 +55,17 @@ func main() {
 		os.Exit(1)
 	}
 	st.SetCipher(cipher)
+	// A short ARGUS_SECRET_KEY is guessable offline from a copy of the database (the salt is a
+	// public constant). A new install is refused one; an install that already holds data under
+	// it must keep starting, and is told loudly instead.
+	_, hadCanary, _ := st.MetaGet(context.Background(), "cipher_canary")
+	if k := strings.TrimSpace(cfg.SecretKey); k != "" && len(k) < secret.MinEnvKeyLen {
+		if !hadCanary {
+			logger.Error("ARGUS_SECRET_KEY is too short: use at least 20 characters (openssl rand -hex 32), or unset it to use a generated secret.key", "length", len(k))
+			os.Exit(1)
+		}
+		logger.Warn("ARGUS_SECRET_KEY is short: a copy of the database could be opened by guessing it. Set a longer key (at least 20 characters) and re-enter the stored secrets, or move to the generated secret.key", "length", len(k))
+	}
 	// The key must be the one the database was encrypted with; otherwise every stored credential
 	// is unreadable and the app must not run as if they were blank (or worse, use the ciphertext).
 	verr := st.VerifyCipher(context.Background())
@@ -114,8 +125,14 @@ func main() {
 	defer sweepCancel()
 	go server.StartExpirySweeper(sweepCtx, st, zbx, logger)
 
+	// The alert-link signing secret, shared by the notifier (signs) and the server (verifies). A
+	// secret that can't be read is a stop, not an empty key anyone could sign with.
+	notifySecret, err := server.GetSigningSecret(context.Background(), st)
+	if err != nil {
+		logger.Error("alert-link signing secret", "err", err)
+		os.Exit(1)
+	}
 	// Background notifier: polls problems and dispatches alerts to the configured channels.
-	notifySecret := server.GetSigningSecret(context.Background(), st)
 	go server.StartNotifier(sweepCtx, st, zbx, logger, mgr, notifySecret)
 
 	// One-time backfill: give each already-enrolled proxy its own site host group.
@@ -123,7 +140,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           server.New(cfg, zbx, st, logger, mgr),
+		Handler:           server.New(cfg, zbx, st, logger, mgr, notifySecret),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      60 * time.Second, // above the longest handler budget (a status build, a census)

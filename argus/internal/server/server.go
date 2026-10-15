@@ -42,6 +42,8 @@ type Server struct {
 	loginLimiter  *ratelimit.Limiter // brute-force protection for login (owned by mgr)
 	pkLimiter     *ratelimit.Limiter // anonymous passkey-login begins per address (each stores a ceremony)
 	acct          acctStripes        // attempts on an over-limit account wait their turn (limits.go)
+	writeLimiter  *ratelimit.Limiter // a viewer's logged writes per minute (changes.go)
+	checkinLimit  *ratelimit.Limiter // a probe's check-ins per minute (probefleet.go)
 	featMu        sync.Mutex         // guards the cached public /api/features answer
 	featResetOK   bool
 	featResetAt   time.Time
@@ -62,11 +64,14 @@ type Server struct {
 	startedAt     time.Time         // when this Argus started: the probes' report check counts from it (probereport.go)
 }
 
-func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager) http.Handler {
+// New builds the HTTP handler. signingSecret is the alert-link HMAC secret main resolved (and
+// refused to start without), shared with the notifier.
+func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Logger, mgr *settings.Manager, signingSecret string) http.Handler {
 	dummy, _ := auth.HashPassword("argus-nonexistent-user")
 	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, mgr: mgr, dummyHash: dummy,
-		signingSecret: GetSigningSecret(context.Background(), st),
-		loginLimiter:  mgr.Limiter(), pkLimiter: ratelimit.New(30, 5*time.Minute), probeLatest: &probeLatestCache{}, updaterLatest: &probeLatestCache{}, appLatest: &appLatestCache{}, probeVM: &probeVMCache{}, startedAt: time.Now()}
+		signingSecret: signingSecret,
+		loginLimiter:  mgr.Limiter(), pkLimiter: ratelimit.New(30, 5*time.Minute), writeLimiter: ratelimit.New(60, time.Minute), checkinLimit: ratelimit.New(12, time.Minute),
+		probeLatest: &probeLatestCache{}, updaterLatest: &probeLatestCache{}, appLatest: &appLatestCache{}, probeVM: &probeVMCache{}, startedAt: time.Now()}
 	// The sensor census behind the pills, the Overview and the status pages, built in the
 	// background and served from memory.
 	s.census = newCensusCache(s.buildCensus)
@@ -464,8 +469,9 @@ func securityHeaders(next http.Handler) http.Handler {
 		case strings.HasPrefix(r.URL.Path, "/api/"):
 			// Authenticated JSON is never worth caching, and some of it (credentials, links) must not be.
 			h.Set("Cache-Control", "no-store")
-		case strings.HasPrefix(r.URL.Path, "/status"):
-			// statusHeaders sets the status pages' own policy.
+		case r.URL.Path == "/status" || strings.HasPrefix(r.URL.Path, "/status/"):
+			// statusHeaders sets the status pages' own policy. (Only those paths: "/status-x" is
+			// the app, served with the app's policy.)
 		default:
 			h.Set("Content-Security-Policy", spaCSP)
 		}
@@ -621,9 +627,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Two address keys: the client's (behind a trusted proxy, what the proxy said) and the
+	// socket peer's, so a LAN client that reaches the port directly and names its own address in
+	// X-Forwarded-For is still counted by the connection it comes from.
 	ipKey := "login:ip:" + s.limiterIP(r)
+	peerKey := "login:peer:" + limiterAddr(peerIP(r))
 	acctKey := "login:acct:" + strings.ToLower(strings.TrimSpace(req.Email))
-	if s.rateBlocked(w, ipKey) {
+	if s.rateBlocked(w, ipKey, peerKey) {
 		return
 	}
 	// The account counter slows a guess spread over many addresses without letting anyone lock
@@ -636,6 +646,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	loginFailed := func() {
 		s.loginLimiter.Fail(ipKey)
+		s.loginLimiter.Fail(peerKey)
 		s.loginLimiter.Fail(acctKey)
 		if acctBlocked {
 			writeThrottled(w, acctRetry)
@@ -655,8 +666,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		loginFailed()
 		return
 	}
-	// Password correct - clear the failure counters for this IP and account.
+	// Password correct - clear the failure counters for this IP, peer and account.
 	s.loginLimiter.Reset(ipKey)
+	s.loginLimiter.Reset(peerKey)
 	s.loginLimiter.Reset(acctKey)
 
 	// If MFA is enabled, the password alone doesn't authenticate: issue a short-lived

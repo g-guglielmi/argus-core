@@ -28,7 +28,7 @@ func (s *Server) handleTreeOrder(w http.ResponseWriter, r *http.Request) {
 	if sc := scopeFrom(r); !sc.all { // per-site visibility (scope.go)
 		vis, err := s.visibleHosts(ctx, sc)
 		if err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 			return
 		}
 		sets = scopedOrderSets(sc, vis, sets)

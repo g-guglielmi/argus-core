@@ -11260,8 +11260,10 @@ function ReportLogoCard() {
   async function upload(f?: File) {
     if (!f) return
     if (f.size > 512 * 1024) { toast.error('The logo is too big: 512 KB at most'); return }
+    // The server takes exactly these two types (hostguard.go); anything else is told here.
+    if (f.type !== 'image/png' && f.type !== 'image/jpeg') { toast.error('The logo must be a PNG or a JPEG image'); return }
     setBusy(true)
-    const res = await fetch('/api/reports/logo', { method: 'PUT', headers: { 'Content-Type': f.type || 'application/octet-stream' }, body: f }).catch(() => null)
+    const res = await fetch('/api/reports/logo', { method: 'PUT', headers: { 'Content-Type': f.type }, body: f }).catch(() => null)
     setBusy(false)
     if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the logo')); return }
     toast.success('Logo saved')

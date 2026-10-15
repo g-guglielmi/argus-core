@@ -55,6 +55,9 @@ func (l *Limiter) Configure(max int, window time.Duration) {
 // Blocked reports whether the key currently has >= max failures inside the window, and if so how
 // long until the oldest counted failure ages out (the retry-after hint).
 func (l *Limiter) Blocked(key string) (bool, time.Duration) {
+	if l == nil { // no limiter configured (a bare Server in tests): nothing is ever blocked
+		return false, 0
+	}
 	key = normKey(key)
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -77,6 +80,9 @@ func (l *Limiter) Blocked(key string) (bool, time.Duration) {
 
 // Fail records one failure against the key.
 func (l *Limiter) Fail(key string) {
+	if l == nil {
+		return
+	}
 	key = normKey(key)
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -97,6 +103,9 @@ func (l *Limiter) Fail(key string) {
 
 // Reset clears a key's failures (called after a successful authentication).
 func (l *Limiter) Reset(key string) {
+	if l == nil {
+		return
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	delete(l.fails, normKey(key))

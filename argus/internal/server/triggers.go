@@ -40,14 +40,14 @@ func (s *Server) handleTriggers(w http.ResponseWriter, r *http.Request) {
 
 	trs, err := s.zbx.AllTriggers(ctx)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	hideHost, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 	sc := scopeFrom(r)
 	vis, err := s.visibleHosts(ctx, sc) // per-site visibility (scope.go); nil = every host
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 

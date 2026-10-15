@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -84,7 +85,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 
 	proxies, err := s.zbx.Proxies(ctx)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	if sc := scopeFrom(r); !sc.all { // per-site visibility (scope.go): only the user's sites' probes
@@ -298,7 +299,7 @@ func (s *Server) handleDeleteProxy(w http.ResponseWriter, r *http.Request) {
 	// Resolve the proxy's name (name-keyed Argus records need it).
 	proxies, err := s.zbx.Proxies(ctx)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	name := ""
@@ -319,7 +320,7 @@ func (s *Server) handleDeleteProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.zbx.DeleteProxy(ctx, id); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	if err := s.st.DeleteProxyRecords(ctx, id, name); err != nil {
@@ -339,7 +340,7 @@ func (s *Server) handleReconcileProxies(w http.ResponseWriter, r *http.Request) 
 	defer cancel()
 	proxies, err := s.zbx.Proxies(ctx)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	names := make(map[string]bool, len(proxies))
@@ -349,6 +350,10 @@ func (s *Server) handleReconcileProxies(w http.ResponseWriter, r *http.Request) 
 		ids[p.ProxyID] = true
 	}
 	pruned, err := s.st.ReconcileProxies(ctx, names, ids)
+	if errors.Is(err, store.ErrNoProxies) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cleanup failed"})
 		return

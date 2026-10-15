@@ -163,7 +163,7 @@ func (s *Server) handleCreatePush(w http.ResponseWriter, r *http.Request) {
 	// A failure takes the push sensor back out, so there's never one Zabbix can't see.
 	if err := s.ensurePushHost(ctx, r, hostID); err != nil {
 		_ = s.st.DeletePushSensor(ctx, id)
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	p, err := s.st.GetPushSensor(ctx, id)

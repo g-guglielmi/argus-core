@@ -77,11 +77,10 @@ func (c prtgClient) table(ctx context.Context, content, columns string) ([]map[s
 		return nil, "", fmt.Errorf("PRTG refused the API key (HTTP %d): use a key with read access (PRTG 22.4 or later: Setup, Account settings, API keys)", res.StatusCode)
 	}
 	if res.StatusCode != http.StatusOK {
+		// The page's title says enough (a sign-in page, an error page); its body is not echoed.
 		why := ""
 		if m := prtgTitle.FindSubmatch(body); m != nil {
-			why = " (" + strings.TrimSpace(string(m[1])) + ")"
-		} else if len(body) > 0 && len(body) < 300 {
-			why = " (" + strings.TrimSpace(string(body)) + ")"
+			why = " (" + clip(printable(string(m[1])), 120) + ")"
 		}
 		return nil, "", fmt.Errorf("PRTG answered HTTP %d%s reading its %s", res.StatusCode, why, content)
 	}
@@ -286,7 +285,10 @@ func (s *Server) handleImportPRTG(w http.ResponseWriter, r *http.Request) {
 	if req.Insecure {
 		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // the admin's explicit choice for a self-signed PRTG
 	}
-	c := prtgClient{base: base, key: key, http: &http.Client{Timeout: 90 * time.Second, Transport: tr}}
+	// No redirects: the key is in the URL, and whatever answers at the address must not be able
+	// to send it elsewhere.
+	c := prtgClient{base: base, key: key, http: &http.Client{Timeout: 90 * time.Second, Transport: tr,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
 	defer cancel()
 	v, err := readPRTG(ctx, c)

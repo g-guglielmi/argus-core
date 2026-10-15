@@ -180,7 +180,7 @@ func (s *Server) handleCreateDiscoveryJob(w http.ResponseWriter, r *http.Request
 		// Resolve the proxy: jobs are keyed by proxy NAME (the probe token identity at check-in).
 		proxies, err := s.zbx.Proxies(ctx)
 		if err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 			return
 		}
 		for _, p := range proxies {
@@ -734,7 +734,7 @@ func (s *Server) handleCertificateViaProbe(w http.ResponseWriter, r *http.Reques
 	defer cancel()
 	proxies, err := s.zbx.Proxies(ctx)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	proxyName := ""

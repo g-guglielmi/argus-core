@@ -38,7 +38,7 @@ func (s *Server) handleGroups(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	gs, err := s.zbx.HostGroups(ctx)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	sc := scopeFrom(r) // per-site visibility (scope.go)
@@ -111,7 +111,7 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	id, err := s.zbx.CreateHostGroup(ctx, name)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	changeObject(r, name)
@@ -147,7 +147,7 @@ func (s *Server) handleRenameGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	old, _ := s.groupNameByID(ctx, r.PathValue("id"))
 	if err := s.zbx.RenameHostGroup(ctx, r.PathValue("id"), name); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	// A site renamed keeps its info (siteinfo.go).
@@ -174,7 +174,7 @@ func (s *Server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	gs, err := s.zbx.HostGroups(ctx)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	for _, g := range gs {
@@ -184,7 +184,7 @@ func (s *Server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.zbx.DeleteHostGroup(ctx, id); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -222,7 +222,7 @@ func (s *Server) handleSetHostGroups(w http.ResponseWriter, r *http.Request) {
 		was = idx[r.PathValue("id")].Groups
 	}
 	if err := s.zbx.SetHostGroups(ctx, r.PathValue("id"), req.GroupIDs); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	if gs, err := s.zbx.HostGroups(ctx); err == nil {

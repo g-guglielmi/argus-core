@@ -134,15 +134,26 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
 - **Cookies:** `argus_session` is HttpOnly, `SameSite=Lax`, `Path=/`, `Secure` when
   `ARGUS_COOKIE_SECURE` says so or, unset, when the Public URL is https; secure, it is named
   `__Host-argus_session` (a browser only accepts that name from a Secure, `Path=/`, domain-less
-  setter, so plain-HTTP pages and sibling subdomains can't plant one). Sessions end at once when the
-  user is disabled, when an admin resets their password, and (all but the current one) when they
-  change their own.
+  setter, so plain-HTTP pages and sibling subdomains can't plant one), and only that name is read:
+  a bare-name cookie seen while secure is ignored and expired. Sessions end at once when the user
+  is disabled, when an admin resets their password, and (all but the current one) when they change
+  their own; a replaced password takes the user's API tokens and outstanding reset links with it
+  (`RevokeUserCredentials`), so a token minted from a stolen session doesn't outlive the change.
+- **Sign-in attempts:** limited per client address (IPv6 by its /64), per socket peer (so a LAN
+  client that names its own address in `X-Forwarded-For` is still counted by its connection) and
+  per account. There is no lockout: over the account's limit, every attempt on it waits its turn
+  and three seconds before the password is checked, and a wrong one is answered 429; the right one
+  still signs in. The re-authentication prompts, turning two-factor off and changing the own
+  password count wrong attempts per user the same way.
 - **Second factor:** the password step returns a 10-minute challenge, `/api/login/totp` completes it;
-  a TOTP code is accepted once (the last accepted time step is stored per user). A passkey logs in
-  without the TOTP prompt, so user verification (PIN, biometric) is **required** at registration and
-  at every login, and an assertion whose signature counter didn't advance (a cloned credential) is
-  refused. Adding a passkey takes the password again; turning TOTP off takes the password and a
-  current code.
+  a TOTP code is accepted once: the time step the code was made for (not the server's clock step,
+  which would let it pass again one step later) is claimed per user in one statement
+  (`ClaimTOTPStep`), so a racing second use loses. A passkey logs in without the TOTP prompt, so
+  user verification (PIN, biometric) is **required** at registration and at every login, an
+  assertion whose signature counter didn't advance (a cloned credential) is refused, and a ceremony
+  is consumed in one statement. Anything that adds a way into the account or takes one away takes
+  both factors (`reauth`): adding a passkey, making new recovery codes, creating an API token and
+  turning TOTP off ask for the password and, with two-factor on, a current code.
 - **Links that leave Argus** (reset emails, the enroll command shown to admins) are built from the
   Public URL, else from the request's host only when that host is allow-listed or loopback; a probe's
   check-in URL comes from the Public URL alone (probes write it into their own configuration, and
@@ -784,7 +795,10 @@ For scripts and other tools (Account, API tokens; `/api/me/tokens`, `apitokens.g
 `auth/token.go`). A token is `argus_pat_` and 40 hex characters, shown once when it is made; only its
 SHA-256 is kept (`api_tokens`), with its name, the last 4 characters (to tell tokens apart), its
 scope, when it expires (30, 90, 182 or 365 days, or never) and when and from where it was last used
-(recorded at most once a minute). A user has up to 25.
+(recorded at most once a minute). A user has up to 25. Making one takes the password and, with
+two-factor on, a current code (a token is a way in, so a session alone can't mint one), and every
+token of a user is revoked when their password is replaced (an admin's reset, the self-service
+reset, their own change).
 
 **Signing in.** `Authorization: Bearer argus_pat_...` makes the request its user's, as a session
 would (`TokenMiddleware`, after the session middleware: a session cookie wins). An unknown or expired
@@ -793,8 +807,10 @@ token, or one whose user is disabled or removed, is refused at once with a 401. 
 more, and its **scope** narrows it further (`tokenScope`): **read only** (GET), **acknowledge, add
 notes** (acknowledge and un-acknowledge, sensor notes, journal entries, the bulk sensor actions ack
 and note), **open and close maintenance windows**, or **everything its user can do**. No token may
-manage tokens, change a password, two-factor or passkeys, sign out, or reveal a probe's break-glass
-password: those need a person in the app.
+manage tokens, change a password, two-factor or passkeys, sign out, reveal a probe's break-glass
+password, or (an admin's) administer accounts, change the settings or the notification channels:
+who can sign in, how, and where the reset mail goes need a person in the app, so a leaked admin
+token can't make itself a new admin or point the reset mail elsewhere.
 
 **Logged.** Every change a token makes is in the change log as "Alice Example (token ticketing)";
 making and revoking a token are logged too (its scope, the user's role and when it expires, never the

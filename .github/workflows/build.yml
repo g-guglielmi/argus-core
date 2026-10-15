@@ -69,21 +69,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      # The same Go line as the build image, newest patch: govulncheck rates the standard library at
-      # the toolchain that runs it, and go.mod names the minimum, not the patch level.
+      # The exact toolchain the image builds with, read from the Dockerfile: govulncheck rates the
+      # standard library at the toolchain that runs it, so checking a newer patch than the one that
+      # builds would pass a gate the image fails. Bumping the Dockerfile is what moves this.
+      - name: Go version of the build image
+        id: gover
+        run: echo "v=$(sed -n 's/^FROM golang:\([0-9.]*\)-alpine.*/\1/p' argus/Dockerfile)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.27.x'
-          check-latest: true
+          go-version: ${{ steps.gover.outputs.v }}
           cache-dependency-path: argus/go.sum
       - name: govulncheck
         working-directory: argus
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           govulncheck ./...
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: argus/web/package-lock.json
       - name: npm audit (production dependencies)

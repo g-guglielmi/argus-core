@@ -8,6 +8,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"html"
 	"net/http"
 	"net/url"
@@ -21,9 +22,14 @@ const alertLinkTTL = 14 * 24 * time.Hour
 
 // GetSigningSecret returns the persistent HMAC secret used to sign alert links (decrypted at rest),
 // generating one on first use. Both the server and the notifier resolve the same value from it.
-func GetSigningSecret(ctx context.Context, st *store.Store) string {
-	secret, _ := st.GetOrCreateSigningSecret(ctx)
-	return secret
+// An error means the stored secret can't be read: the caller must not run without one, since an
+// empty secret would let anyone sign an ack link.
+func GetSigningSecret(ctx context.Context, st *store.Store) (string, error) {
+	secret, err := st.GetOrCreateSigningSecret(ctx)
+	if err == nil && secret == "" {
+		err = errors.New("empty alert-link signing secret")
+	}
+	return secret, err
 }
 
 func signAlert(secret, eventID string, exp int64) string {

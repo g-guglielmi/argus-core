@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -86,6 +87,14 @@ func UserMessage(err error) string {
 	var re *rpcError
 	if errors.As(err, &re) {
 		return fmt.Sprintf("zabbix rpc error %d: %s", re.Code, re.Message)
+	}
+	// A transport error carries the API's address: not for a viewer.
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		if ue.Timeout() {
+			return "the Zabbix API did not answer in time"
+		}
+		return "the Zabbix API could not be reached"
 	}
 	return err.Error()
 }

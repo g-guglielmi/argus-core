@@ -6,6 +6,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 )
 
 // DeleteProxyRecords removes all Argus-side bookkeeping for one proxy (matched by its Zabbix id and
@@ -37,7 +38,15 @@ func (s *Store) DeleteProxyRecords(ctx context.Context, proxyID, proxyName strin
 // band). liveNames / liveIDs are the proxies that currently exist in Zabbix. **Pending (unused)
 // enrollment tokens are kept** - their proxy doesn't exist yet by design, so they aren't orphans.
 // Returns the number of rows pruned.
+// ErrNoProxies is ReconcileProxies refusing to prune against an empty answer.
+var ErrNoProxies = errors.New("Zabbix reported no proxies at all; nothing was pruned (check the API token's rights)")
+
 func (s *Store) ReconcileProxies(ctx context.Context, liveNames, liveIDs map[string]bool) (int, error) {
+	// Zabbix answers an empty list, not an error, to a token that may not see proxies: pruning
+	// on it would drop every probe's credential in the fleet in one click.
+	if len(liveNames) == 0 && len(liveIDs) == 0 {
+		return 0, ErrNoProxies
+	}
 	pruned := 0
 	del := func(q, arg string) error {
 		res, err := s.db.ExecContext(ctx, q, arg)

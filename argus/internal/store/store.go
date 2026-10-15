@@ -1118,7 +1118,12 @@ func (s *Store) GetOrCreateSigningSecret(ctx context.Context) (string, error) {
 		if s.cipher.Enabled() && !secret.IsEncrypted(raw) {
 			_ = s.MetaSet(ctx, "signing_secret", s.cipher.Encrypt(raw))
 		}
-		return s.cipher.Decrypt(raw), nil
+		// Never an empty secret: with one, anyone could sign an ack link for any event.
+		pt, err := s.cipher.TryDecrypt(raw)
+		if err != nil || pt == "" {
+			return "", fmt.Errorf("the alert-link signing secret can't be read (%v): restore the at-rest key, or set ARGUS_SECRET_KEY_RESET=true once to make a new one", err)
+		}
+		return pt, nil
 	}
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {

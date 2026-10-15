@@ -255,7 +255,7 @@ func (s *Server) provisionHost(ctx context.Context, req *createHostRequest, sour
 	}
 	ids, err := s.zbx.TemplateIDsByName(ctx, names)
 	if err != nil {
-		return "", provisionFail(http.StatusBadGateway, "Zabbix: "+err.Error())
+		return "", provisionFail(http.StatusBadGateway, "Zabbix: "+zabbix.UserMessage(err))
 	}
 	tmplIDs := make([]string, 0, len(names))
 	for _, n := range names {
@@ -264,7 +264,7 @@ func (s *Server) provisionHost(ctx context.Context, req *createHostRequest, sour
 
 	groupID, err := s.zbx.EnsureHostGroupID(ctx, req.Site)
 	if err != nil {
-		return "", provisionFail(http.StatusBadGateway, "Zabbix: "+err.Error())
+		return "", provisionFail(http.StatusBadGateway, "Zabbix: "+zabbix.UserMessage(err))
 	}
 
 	monitoredBy, proxyID := 0, ""
@@ -298,7 +298,7 @@ func (s *Server) provisionHost(ctx context.Context, req *createHostRequest, sour
 		},
 	})
 	if err != nil {
-		return "", provisionFail(http.StatusBadGateway, "Zabbix: "+err.Error())
+		return "", provisionFail(http.StatusBadGateway, "Zabbix: "+zabbix.UserMessage(err))
 	}
 	// Record the Argus overlay. A failure here doesn't undo the host (it exists + is monitored); it
 	// just means the class tag on the Zabbix host is the only record until the next reconcile.
@@ -365,7 +365,7 @@ func (s *Server) handleChangeHostClass(w http.ResponseWriter, r *http.Request) {
 	hostID := r.PathValue("id")
 	hd, err := s.zbx.HostDetail(ctx, hostID)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	oldClassID, _, _ := s.st.GetDeviceClass(ctx, hostID)
@@ -385,7 +385,7 @@ func (s *Server) handleChangeHostClass(w http.ResponseWriter, r *http.Request) {
 	// clears that template's items/history - unavoidable when the monitoring changes.
 	linkedNames, err := s.zbx.HostLinkedTemplateNames(ctx, hostID)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	linked := map[string]bool{}
@@ -409,18 +409,18 @@ func (s *Server) handleChangeHostClass(w http.ResponseWriter, r *http.Request) {
 	}
 	ids, err := s.zbx.TemplateIDsByName(ctx, append(append([]string{}, toAdd...), toRemove...))
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	for _, t := range toAdd {
 		if err := s.zbx.LinkHostTemplate(ctx, hostID, ids[t]); err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 			return
 		}
 	}
 	for _, t := range toRemove {
 		if err := s.zbx.UnlinkHostTemplate(ctx, hostID, ids[t]); err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 			return
 		}
 	}
@@ -434,7 +434,7 @@ func (s *Server) handleChangeHostClass(w http.ResponseWriter, r *http.Request) {
 
 	// Apply the new class's preset macros + the entered per-host macros.
 	if err := s.applyNewClassMacros(ctx, hostID, newClass, req.Macros); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	if err := s.st.SetDeviceClass(ctx, hostID, newClass.ID, "manual"); err != nil {
@@ -480,7 +480,7 @@ func (s *Server) ensureClassInterface(ctx context.Context, hd *zabbix.HostDetail
 	}
 	if want == 1 {
 		if _, err := s.zbx.CreateHostInterface(ctx, hd.HostID, zabbix.HostInterface{Type: 1, Main: 1, UseIP: u, IP: ip, DNS: dns, Port: "10050"}); err != nil {
-			return "Zabbix: " + err.Error()
+			return "Zabbix: " + zabbix.UserMessage(err)
 		}
 		return ""
 	}
@@ -512,7 +512,7 @@ func (s *Server) ensureClassInterface(ctx context.Context, hd *zabbix.HostDetail
 	}
 	newID, err := s.zbx.CreateHostInterface(ctx, hd.HostID, zabbix.HostInterface{Type: 2, Main: 1, UseIP: u, IP: ip, DNS: dns, Port: port, SNMP: details})
 	if err != nil {
-		return "Zabbix: " + err.Error()
+		return "Zabbix: " + zabbix.UserMessage(err)
 	}
 	if inherit {
 		_ = s.st.SetSNMPInherit(ctx, newID, true)

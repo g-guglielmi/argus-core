@@ -66,7 +66,7 @@ func (s *Server) handleSpeedtestRuns(w http.ResponseWriter, r *http.Request) {
 	hostID := r.PathValue("id")
 	items, err := s.zbx.Items(ctx, hostID)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	now := time.Now().Unix()
@@ -86,7 +86,7 @@ func (s *Server) handleSpeedtestRuns(w http.ResponseWriter, r *http.Request) {
 		case raw:
 			pts, err := s.zbx.History(ctx, it.ItemID, atoi(it.ValueType), from, now)
 			if err != nil {
-				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 				return
 			}
 			for _, p := range pts {
@@ -95,7 +95,7 @@ func (s *Server) handleSpeedtestRuns(w http.ResponseWriter, r *http.Request) {
 		case numericValueType(it.ValueType):
 			pts, err := s.zbx.Trends(ctx, it.ItemID, from, now)
 			if err != nil {
-				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 				return
 			}
 			for _, p := range pts {

@@ -87,6 +87,24 @@ func TestCrossSiteVerdictBodies(t *testing.T) {
 	if ok, _ := hostGuardVerdict(post("/api/alert/ack", "application/x-www-form-urlencoded", "same-origin"), nil, "", false); !ok {
 		t.Error("the signed ack form must pass")
 	}
+	// The report logo is the one write that takes raw bytes: an image type, which no form can
+	// send; a form's types and anything else are refused like everywhere.
+	put := func(ct string) *http.Request {
+		r := post("/api/reports/logo", ct, "same-origin")
+		r.Method = "PUT"
+		return r
+	}
+	if ok, _ := hostGuardVerdict(put("image/png"), nil, "", false); !ok {
+		t.Error("a PNG logo upload must pass")
+	}
+	if ok, _ := hostGuardVerdict(put("image/jpeg"), nil, "", false); !ok {
+		t.Error("a JPEG logo upload must pass")
+	}
+	for _, ct := range []string{"multipart/form-data", "text/plain", "application/octet-stream", "image/svg+xml"} {
+		if ok, _ := hostGuardVerdict(put(ct), nil, "", false); ok {
+			t.Errorf("a logo upload as %s must be refused", ct)
+		}
+	}
 	if ok, _ := hostGuardVerdict(post("/api/probes/checkin", "text/plain", "cross-site"), nil, "", false); !ok {
 		t.Error("probe endpoints are not browser endpoints")
 	}

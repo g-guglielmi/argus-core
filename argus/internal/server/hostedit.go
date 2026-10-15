@@ -187,7 +187,7 @@ func (s *Server) handleHostConfig(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	out, err := s.hostConfigFor(ctx, r.PathValue("id"), canEditHosts(r))
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -257,7 +257,9 @@ func (s *Server) hostConfigFor(ctx context.Context, hostID string, canEdit bool)
 				f := macroFieldView{Macro: ms.Macro, Label: ms.Label, Hint: ms.Hint, Secret: ms.Secret, Options: ms.Options}
 				if m, has := curMacros[ms.Macro]; has {
 					f.Set = strings.TrimSpace(m.Value) != "" || ms.Secret
-					if !ms.Secret {
+					// A viewer learns that a macro is set, not its value: a login name, a key path
+					// or a management URL is the other half of a credential.
+					if !ms.Secret && canEdit {
 						f.Value = m.Value
 					}
 				}
@@ -454,7 +456,7 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 	// Current interfaces, to know which ids exist (for update vs delete) and to reuse masked secrets.
 	cur, err := s.zbx.HostDetail(ctx, r.PathValue("id"))
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	curByID := map[string]zabbix.HostInterface{}
@@ -471,11 +473,11 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 	before, beforeErr := s.hostConfigFor(ctx, cur.HostID, true)
 
 	if err := s.zbx.UpdateHost(ctx, cur.HostID, req.Host, req.Name); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	if err := s.zbx.SetHostProxy(ctx, cur.HostID, req.MonitoredBy, strings.TrimSpace(req.ProxyID)); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 
@@ -525,13 +527,13 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		if id != "" {
 			keep[id] = true
 			if err := s.zbx.UpdateHostInterface(ctx, iface); err != nil {
-				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 				return
 			}
 		} else {
 			newID, err := s.zbx.CreateHostInterface(ctx, cur.HostID, iface)
 			if err != nil {
-				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 				return
 			}
 			id = newID
@@ -570,7 +572,7 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 				}
 			}
 			if err := s.zbx.DeleteHostInterface(ctx, i.InterfaceID); err != nil {
-				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 				return
 			}
 			_ = s.st.DeleteSNMPInherit(ctx, i.InterfaceID)
@@ -582,7 +584,7 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 	// alone; a cleared field reverts to the template/global default).
 	if req.Macros != nil {
 		if err := s.applyClassMacros(ctx, cur.HostID, req.Macros); err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 			return
 		}
 	}
@@ -629,7 +631,7 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 		}
 		if u.Mode == "manual" {
 			idx, _ := s.hostIndex(ctx)
-			if _, ok := idx[u.HostID]; !ok || u.HostID == cur.HostID {
+			if _, ok := idx[u.HostID]; !ok || u.HostID == cur.HostID || !s.hostInScope(ctx, scopeFrom(r), u.HostID) {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "pick another host as its upstream device"})
 				return
 			}
@@ -952,7 +954,7 @@ func (s *Server) handleSetHostProxy(w http.ResponseWriter, r *http.Request) {
 		was = idx[r.PathValue("id")].ProxyID
 	}
 	if err := s.zbx.SetHostProxy(ctx, r.PathValue("id"), req.MonitoredBy, strings.TrimSpace(req.ProxyID)); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
 	now := "0"

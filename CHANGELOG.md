@@ -58,6 +58,38 @@ GitHub Release from the matching section below.
   sibling host or a plain-HTTP page can plant, was still honoured; it is ignored and expired now.
 - A passkey ceremony is taken in one statement (finished once at most); a probe's scan job is
   handed out in one statement (two check-ins racing get it once).
+- **The image is built with Go 1.27.2** (ten standard-library advisories fixed since 1.27.1, one of
+  them an unauthenticated slowdown in the file server that serves the app), and the vulnerability
+  gate in CI now checks the exact toolchain the Dockerfile builds with, read from it, so the two
+  can't drift again. Also Node 22 for the frontend build (Node 20 is past its end of life), no
+  package scripts run during the image build, and `-trimpath`.
+- **Viewers see less.** Zabbix errors reach non-admins without their internal detail (the API's
+  address, SQL fragments) everywhere now, not only on some pages; a viewer sees that a class macro
+  is set (an SSH user, a key path, a controller URL) but not its value.
+- **Smaller things:** the app's security policy applies to any path that merely starts with
+  `/status` (only the status pages have their own); a manual upstream device must be in the
+  editor's own sites; a macro with a fixed set of options (the speed test's interval) takes only
+  one of them; the UniFi and PRTG clients follow no redirects, so a key can't be sent elsewhere by
+  whatever answers at a controller's address; the alert-link signing secret is a stop at start when
+  it can't be read instead of an empty key; a viewer's logged writes and a probe's check-ins are
+  held to a rate; the first sign-in limiter also counts the socket peer, so a LAN client can't dodge
+  it by naming its own address in `X-Forwarded-For`.
+
+**Fixed:**
+- **The report logo upload works again.** The browser sent the image and the cross-site guard,
+  which takes JSON only, refused it ("This endpoint takes a JSON body"). The guard now lets exactly
+  the two image types the logo may be (PNG, JPEG), which no HTML form can send, so the protection
+  stays whole.
+- **"Sync the probes with Zabbix" refuses to prune when Zabbix lists no proxies at all**: a token
+  without the right to see proxies answers an empty list, not an error, and one click would have
+  dropped every probe's check-in credential. It says to check the API token's rights instead.
+- **One slow status page no longer stalls the others:** the cache lock was held while a page was
+  built (up to 25 s of Zabbix reads), so every wall screen waited on the slowest page.
+
+**Changed:**
+- **A short `ARGUS_SECRET_KEY` (under 20 characters) is refused on a new install** and warned
+  about, loudly, on an existing one: with a public salt, a short value is guessable offline from a
+  copy of the database. Existing installs keep starting; set a longer key when you can.
 
 **Changed:**
 - **Notes are one line** of up to 500 characters: an acknowledgement's message, a hide's reason,

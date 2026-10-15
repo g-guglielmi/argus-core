@@ -5,6 +5,7 @@ package server
 
 import (
 	"hash/fnv"
+	"net"
 	"net/http"
 	"net/netip"
 	"sync"
@@ -32,6 +33,14 @@ func limiterAddr(ip string) string {
 
 // limiterIP is limiterAddr of the request's client address.
 func (s *Server) limiterIP(r *http.Request) string { return limiterAddr(s.clientIP(r)) }
+
+// peerIP is the address the connection itself came from, whatever any forwarded header says.
+func peerIP(r *http.Request) string {
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
 
 // acctDelay is how long an attempt on an over-limit account waits before its password is checked.
 const acctDelay = 3 * time.Second
