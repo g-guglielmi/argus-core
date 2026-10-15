@@ -13,6 +13,14 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.8.12] - 2026-10-15
+
+The security release from the 2026-10-14 review of v0.8.11: every finding that lives in the core
+is closed here (the boundaries between customer sites, the probe's trust boundary, both factors to
+add a way into an account, API tokens revoked with the password, slower guessing, the build on Go
+1.27.2), plus the CPU readings that went past 100 % and the charts that cut them off, the report
+logo upload, and the Zabbix API over https from another host.
+
 **Security** (from the 2026-10-14 review of v0.8.11):
 - **A host's settings save may only name the host's own interfaces.** Zabbix updates an interface
   by its id alone, so a helpdesk account limited to one site could, by typing another host's
