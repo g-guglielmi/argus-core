@@ -114,7 +114,7 @@ logo upload, and the Zabbix API over https from another host.
   copy of the database. Existing installs keep starting; set a longer key when you can.
 - **The Zabbix API over https, from another host.** The API token is a super-admin credential sent
   on every poll, and every example put it on plain http to another host. The core appliance now
-  serves the Zabbix frontend and API over TLS on `:8443` (core-vm 0.1.5 below), Argus trusts the
+  serves the Zabbix frontend and API over TLS on `:8443` (core-vm 0.1.6 below), Argus trusts the
   monitoring CA that signs it through the `ca.crt` it already mounts (`ARGUS_ZABBIX_CA_FILE` for
   another CA), the examples say `https://...:8443`, and Argus warns at start when the URL is plain
   http to another host. On the appliance itself, where the container reaches Zabbix on the same VM,
@@ -126,10 +126,11 @@ logo upload, and the Zabbix API over https from another host.
   a plain-http address, the Unraid template leaves `ARGUS_COOKIE_SECURE` empty (the cookie follows
   the Public URL's scheme), and the deploy guide no longer recommends Watchtower for probes.
 
-## [core-vm/v0.1.5] - 2026-10-15
+## [core-vm/v0.1.6] - 2026-10-15
 
 Hardening of the core appliance from the 2026-10-14 security review. It is what a new deployment
-gets; an existing VM is unaffected until it is redeployed.
+gets; an existing VM is unaffected until it is redeployed. (core-vm/v0.1.5 was tagged on a build
+that could not power itself off; nothing was published under it.)
 
 **Changed:**
 - **The Zabbix frontend and API are served over https on `:8443`** with the VM's own certificate
