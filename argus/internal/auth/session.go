@@ -23,13 +23,17 @@ const (
 	SecureCookieName = "__Host-" + CookieName
 )
 
-// SessionCookie returns the raw session token carried by a request, checking the secure name
-// first, and "" when there is none.
-func SessionCookie(r *http.Request) string {
-	for _, name := range []string{SecureCookieName, CookieName} {
-		if c, err := r.Cookie(name); err == nil && c.Value != "" {
-			return c.Value
-		}
+// SessionCookie returns the raw session token carried by a request under the cookie name in use,
+// and "" when there is none. Once cookies are Secure only the __Host- name counts: a cookie a
+// sibling host or a plain-HTTP page tossed in under the bare name is never read, which is the
+// whole point of the prefix.
+func SessionCookie(r *http.Request, secure bool) string {
+	name := CookieName
+	if secure {
+		name = SecureCookieName
+	}
+	if c, err := r.Cookie(name); err == nil && c.Value != "" {
+		return c.Value
 	}
 	return ""
 }
@@ -56,14 +60,23 @@ func HashToken(raw string) string {
 }
 
 // Middleware loads the session user into the request context when a valid cookie is present.
-// idle and maxLife return the currently-configured idle timeout and absolute max lifetime (0 =
-// disabled); both are read per request so an admin's change in Settings takes effect immediately.
-func Middleware(st *store.Store, idle, maxLife func() time.Duration) func(http.Handler) http.Handler {
+// secure says whether sessions are Secure right now (which cookie name is in use); idle and
+// maxLife return the currently-configured idle timeout and absolute max lifetime (0 = disabled).
+// All three are read per request so an admin's change in Settings takes effect immediately.
+func Middleware(st *store.Store, secure func() bool, idle, maxLife func() time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if raw := SessionCookie(r); raw != "" {
+			sec := secure()
+			if raw := SessionCookie(r, sec); raw != "" {
 				if u, err := st.SessionUserTouch(r.Context(), HashToken(raw), idle(), maxLife(), time.Now()); err == nil {
 					r = r.WithContext(context.WithValue(r.Context(), userKey, u))
+				}
+			}
+			// A bare-name cookie left from before the switch to Secure (or planted since) is not
+			// read; expire it so the browser stops sending it.
+			if sec {
+				if c, err := r.Cookie(CookieName); err == nil && c.Value != "" {
+					http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 				}
 			}
 			next.ServeHTTP(w, r)

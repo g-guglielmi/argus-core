@@ -47,13 +47,25 @@ var tokenMaintRoutes = map[string]bool{
 	"DELETE /api/maintenance/{id}": true,
 }
 
-// tokenRefused is what no token may do, whatever its scope.
+// tokenRefused is what no token may do, whatever its scope: anything that changes who can sign
+// in, how, or where the reset mail goes. A leaked admin token must not be able to make itself a
+// new admin with a password of its choosing, reset another person's password, two-factor or
+// passkeys, change the settings that steer sign-in, or add a mail channel it controls: those
+// take a person in the app.
 func tokenRefused(pattern string) bool {
 	if pattern == "GET /api/probes/{name}/break-glass" || pattern == "POST /api/logout" {
 		return true
 	}
-	_, path, _ := strings.Cut(pattern, " ")
-	for _, p := range []string{"/api/me/tokens", "/api/me/password", "/api/me/mfa", "/api/me/passkeys", "/api/login", "/api/users/{id}/tokens"} {
+	method, path, _ := strings.Cut(pattern, " ")
+	for _, p := range []string{"/api/me/tokens", "/api/me/password", "/api/me/mfa", "/api/me/passkeys", "/api/login"} {
+		if path == p || strings.HasPrefix(path, p+"/") {
+			return true
+		}
+	}
+	if method == http.MethodGet {
+		return false
+	}
+	for _, p := range []string{"/api/users", "/api/settings", "/api/notify/channels"} {
 		if path == p || strings.HasPrefix(path, p+"/") {
 			return true
 		}
@@ -143,16 +155,28 @@ var tokenExpiryDays = map[int]bool{0: true, 30: true, 90: true, 182: true, 365: 
 
 const maxTokensPerUser = 25
 
-// POST /api/me/tokens: make a token. The answer carries it, once.
+// POST /api/me/tokens: make a token. The answer carries it, once. Making one takes the password
+// and the current code (reauth): a token is a way into the account, so a session alone must not
+// be enough to mint one.
 func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r.Context())
+	caller, _ := auth.UserFrom(r.Context())
 	var req struct {
-		Name    string `json:"name"`
-		Scope   string `json:"scope"`
-		Expires int    `json:"expires_days"`
+		Name     string `json:"name"`
+		Scope    string `json:"scope"`
+		Expires  int    `json:"expires_days"`
+		Password string `json:"password"`
+		Code     string `json:"code"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	u, err := s.st.UserByID(r.Context(), caller.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if !s.reauthWith(w, r, u, req.Password, req.Code) {
 		return
 	}
 	name := strings.TrimSpace(req.Name)

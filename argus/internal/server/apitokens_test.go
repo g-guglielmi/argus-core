@@ -36,6 +36,16 @@ func TestTokenScopes(t *testing.T) {
 		{"all", "POST", "POST /api/me/mfa/disable", false},
 		{"all", "GET", "GET /api/probes/{name}/break-glass", false},
 		{"all", "DELETE", "DELETE /api/users/{id}/tokens", false},
+		// Who can sign in, how, and where the reset mail goes: a person in the app, never a token.
+		{"all", "POST", "POST /api/users", false},
+		{"all", "PATCH", "PATCH /api/users/{id}", false},
+		{"all", "POST", "POST /api/users/{id}/password", false},
+		{"all", "POST", "POST /api/users/{id}/mfa/reset", false},
+		{"all", "PATCH", "PATCH /api/settings", false},
+		{"all", "POST", "POST /api/notify/channels", false},
+		{"all", "PATCH", "PATCH /api/notify/channels/{id}", false},
+		{"all", "GET", "GET /api/users", true},
+		{"all", "GET", "GET /api/settings", true},
 		{"bogus", "GET", "GET /api/census", false},
 	}
 	for _, c := range cases {

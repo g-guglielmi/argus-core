@@ -18,7 +18,10 @@ import (
 	"encoding/hex"
 	"image/png"
 	"strings"
+	"time"
 
+	"github.com/pquerna/otp"
+	"github.com/pquerna/otp/hotp"
 	"github.com/pquerna/otp/totp"
 )
 
@@ -27,9 +30,9 @@ const Issuer = "Argus"
 
 // Enrollment is what the client needs to add Argus to an authenticator.
 type Enrollment struct {
-	Secret     string `json:"secret"`       // base32 key to paste into Bitwarden's TOTP field
-	OtpauthURL string `json:"otpauth_url"`  // the otpauth:// URI encoded in the QR
-	QRDataURI  string `json:"qr_data_uri"`  // data:image/png;base64,… for an <img>
+	Secret     string `json:"secret"`      // base32 key to paste into Bitwarden's TOTP field
+	OtpauthURL string `json:"otpauth_url"` // the otpauth:// URI encoded in the QR
+	QRDataURI  string `json:"qr_data_uri"` // data:image/png;base64,… for an <img>
 }
 
 // Generate creates a new random secret and a scannable QR for the given account.
@@ -56,6 +59,21 @@ func Generate(accountEmail string) (*Enrollment, error) {
 // Validate reports whether a 6-digit code is currently valid for the secret.
 func Validate(code, secret string) bool {
 	return totp.Validate(strings.TrimSpace(code), secret)
+}
+
+// MatchStep reports the 30-second time step a code is valid for at now, trying the one-step skew
+// Validate allows (the step before and after). ok is false when the code is valid for none. The
+// caller claims that step so the same code is refused for the rest of its window: recording the
+// server's current step instead would let a code seen at step N pass again at step N+1.
+func MatchStep(code, secret string, now time.Time) (step int64, ok bool) {
+	code = strings.TrimSpace(code)
+	cur := now.Unix() / 30
+	for _, d := range []int64{0, -1, 1} {
+		if valid, _ := hotp.ValidateCustom(code, uint64(cur+d), secret, hotp.ValidateOpts{Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1}); valid {
+			return cur + d, true
+		}
+	}
+	return 0, false
 }
 
 // GenerateRecoveryCodes returns n human-friendly codes and their storage hashes.

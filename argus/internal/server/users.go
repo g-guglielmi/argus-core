@@ -268,8 +268,9 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	// An admin resets a password because the old one is suspect: whoever holds a session on it is out.
-	_ = s.st.DeleteUserSessions(r.Context(), id)
+	// An admin resets a password because the old one is suspect: whoever holds a session, an API
+	// token or a reset link on it is out.
+	_ = s.st.RevokeUserCredentials(r.Context(), id, "")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -320,10 +321,17 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
+	// Guessing the current password from a stolen cookie is limited like any re-auth.
+	key := "reauth:uid:" + strconv.FormatInt(u.ID, 10)
+	if s.rateBlocked(w, key) {
+		return
+	}
 	if ok, err := auth.VerifyPassword(req.CurrentPassword, u.PasswordHash); err != nil || !ok {
+		s.loginLimiter.Fail(key)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "current password is incorrect"})
 		return
 	}
+	s.loginLimiter.Reset(key)
 	hash, err := auth.HashPassword(req.NewPassword)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
@@ -333,10 +341,14 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	// The other devices signed in with the old password are signed out; this one stays.
-	if raw := auth.SessionCookie(r); raw != "" {
-		_ = s.st.DeleteUserSessionsExcept(r.Context(), caller.ID, auth.HashToken(raw))
+	// The other devices signed in with the old password are signed out, and so are the API
+	// tokens made under it (a stolen cookie turned into a token must not outlive the change);
+	// this session stays.
+	keep := ""
+	if raw := auth.SessionCookie(r, s.cookieSecure()); raw != "" {
+		keep = auth.HashToken(raw)
 	}
+	_ = s.st.RevokeUserCredentials(r.Context(), caller.ID, keep)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

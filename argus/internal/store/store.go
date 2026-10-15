@@ -1631,6 +1631,48 @@ func (s *Store) DeleteWebAuthnSession(ctx context.Context, id string) error {
 	return err
 }
 
+// ConsumeWebAuthnSession returns a valid ceremony's data and removes it in the same statement, so
+// one captured assertion or attestation finishes at most one ceremony. ErrNotFound when unknown
+// or expired.
+func (s *Store) ConsumeWebAuthnSession(ctx context.Context, id string) (userID *int64, data string, err error) {
+	var uid sql.NullInt64
+	err = s.db.QueryRowContext(ctx,
+		`DELETE FROM webauthn_sessions WHERE id=? AND expires_at>=? RETURNING user_id, data`, id, time.Now().Unix()).Scan(&uid, &data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, "", ErrNotFound
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	if uid.Valid {
+		userID = &uid.Int64
+	}
+	return userID, data, nil
+}
+
+// RevokeUserCredentials is for when a user's password was replaced because the old one is
+// suspect (an admin reset, a self-service reset, the user's own change): every session but
+// keepSession ("" for none), every personal API token and every outstanding reset token goes,
+// in one transaction. A session is revoked by a password change; a token must be too, or a
+// stolen cookie turned into a token outlives the change.
+func (s *Store) RevokeUserCredentials(ctx context.Context, userID int64, keepSession string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id=? AND id<>?`, userID, keepSession); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM api_tokens WHERE user_id=?`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM password_resets WHERE user_id=?`, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // --- sessions ---
 
 func (s *Store) CreateSession(ctx context.Context, id string, userID int64, expires time.Time) error {
@@ -1701,16 +1743,16 @@ func (s *Store) DeleteUserSessionsExcept(ctx context.Context, userID int64, keep
 
 // TOTPLastStep is the time step (unix seconds / 30) of the last TOTP code the user signed in with,
 // so a code can't be used twice inside its validity window.
-func (s *Store) TOTPLastStep(ctx context.Context, userID int64) (int64, error) {
-	var step int64
-	err := s.db.QueryRowContext(ctx, `SELECT totp_last_step FROM users WHERE id=?`, userID).Scan(&step)
-	return step, err
-}
-
-// SetTOTPLastStep records the time step of an accepted TOTP code.
-func (s *Store) SetTOTPLastStep(ctx context.Context, userID, step int64) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET totp_last_step=? WHERE id=? AND totp_last_step<?`, step, userID, step)
-	return err
+// ClaimTOTPStep records the time step of an accepted TOTP code and reports whether it was newer
+// than the last one claimed: the UPDATE is the check, so two requests racing with the same code
+// get one claim between them.
+func (s *Store) ClaimTOTPStep(ctx context.Context, userID, step int64) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE users SET totp_last_step=? WHERE id=? AND totp_last_step<?`, step, userID, step)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
 }
 
 func (s *Store) DeleteSession(ctx context.Context, id string) error {

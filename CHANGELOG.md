@@ -33,6 +33,31 @@ GitHub Release from the matching section below.
 - **Probe-reported text is bounded**: a scan's error, the probe and updater versions, the OS line
   and the break-glass user are clipped to one printable line (or a tag's shape) before they reach
   a notice or a title; the UniFi MAC macro must look like a MAC.
+- **Adding a passkey, making new recovery codes and creating an API token take both factors.**
+  They took the password alone, so a session plus the password (phished, reused) was enough to
+  plant a way in that skips the authenticator for good. With two-factor on, the current code is
+  asked too, like turning two-factor off already did.
+- **A replaced password revokes the API tokens as well.** An admin's reset, the self-service reset
+  and your own change signed every other session out but left the tokens, so a token minted from a
+  stolen session outlived the change. Tokens are revoked with the sessions now (a password change
+  keeps the device it was made from signed in).
+- **An API token can't administer accounts, settings or mail channels**, whatever its scope: who
+  can sign in, how, and where the reset mail goes take a person in the app, so a leaked admin
+  token can't make itself a new admin or point the reset mail elsewhere.
+- **Guessing from a session is limited.** Turning two-factor off, the re-authentication prompts and
+  changing your own password now count wrong attempts per user, like sign-in does, instead of
+  letting a stolen cookie try passwords or codes at full speed.
+- **A sign-in on an account that is over its attempt limit waits a few seconds**, right password or
+  wrong, one attempt at a time, so a guess spread over many addresses crawls. There is still no
+  lockout: the right password always signs in. Addresses are counted per IPv6 /64, so one
+  connection's million addresses are one client.
+- **A two-factor code works once, for real.** The replay guard recorded the server's clock step,
+  so a code could pass again in the next 30-second step; it now records the step the code was
+  made for, and claims it in one statement so two sign-ins racing with the same code get one.
+- **Over HTTPS only the `__Host-` session cookie is read.** A cookie under the bare name, which a
+  sibling host or a plain-HTTP page can plant, was still honoured; it is ignored and expired now.
+- A passkey ceremony is taken in one statement (finished once at most); a probe's scan job is
+  handed out in one statement (two check-ins racing get it once).
 
 **Changed:**
 - **Notes are one line** of up to 500 characters: an acknowledgement's message, a hide's reason,

@@ -101,7 +101,7 @@ func (s *Server) handleRequestPasswordReset(w http.ResponseWriter, r *http.Reque
 	email := strings.TrimSpace(req.Email)
 
 	// Rate-limit by IP and by account so the endpoint can't be used to blast reset mail.
-	ipKey := "pwreq:ip:" + s.clientIP(r)
+	ipKey := "pwreq:ip:" + s.limiterIP(r)
 	acctKey := "pwreq:acct:" + strings.ToLower(email)
 	ipBlocked, _ := s.loginLimiter.Blocked(ipKey)
 	acctBlocked, _ := s.loginLimiter.Blocked(acctKey)
@@ -175,7 +175,7 @@ func (s *Server) handleConfirmPasswordReset(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	// Light throttle on token submission (tokens are 256-bit, so this is belt-and-braces).
-	ipKey := "pwconf:ip:" + s.clientIP(r)
+	ipKey := "pwconf:ip:" + s.limiterIP(r)
 	if s.rateBlocked(w, ipKey) {
 		return
 	}
@@ -197,9 +197,8 @@ func (s *Server) handleConfirmPasswordReset(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	// Consume every outstanding token for this user and revoke all sessions.
-	_ = s.st.DeleteUserPasswordResets(ctx, uid)
-	_ = s.st.DeleteUserSessions(ctx, uid)
+	// Consume every outstanding token for this user and revoke all sessions and API tokens.
+	_ = s.st.RevokeUserCredentials(ctx, uid, "")
 	s.loginLimiter.Reset(ipKey)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

@@ -12551,6 +12551,7 @@ const TOKEN_EXPIRY: [number, string][] = [[30, 'Expires in 30 days'], [90, 'Expi
 // narrowed to a scope; shown once when made.
 function TokensCard() {
   const confirm = useConfirm()
+  const prompt = usePrompt()
   const toast = useToast()
   const [tokens, setTokens] = useState<APIToken[] | null>(null)
   const [name, setName] = useState('')
@@ -12561,8 +12562,11 @@ function TokensCard() {
   const load = () => fetch('/api/me/tokens').then((r) => (r.ok ? r.json() : [])).then((t) => setTokens(t || [])).catch(() => setTokens([]))
   useEffect(() => { load() }, [])
   async function create() {
+    // A token is a way into the account: making one takes the password (and the code, with 2FA).
+    const re = await askReauth(prompt, 'Create an API token')
+    if (!re) return
     setBusy(true)
-    const res = await fetch('/api/me/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), scope, expires_days: expires }) }).catch(() => null)
+    const res = await fetch('/api/me/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), scope, expires_days: expires, ...re }) }).catch(() => null)
     setBusy(false)
     if (!res || !res.ok) { toast.error(await errText(res, 'Could not create the token')); return }
     const d: { token: string; info: APIToken } = await res.json()
@@ -12723,6 +12727,22 @@ function PasswordCard() {
 
 type Enrollment = { secret: string; otpauth_url: string; qr_data_uri: string }
 
+// askReauth asks for the password and, when two-factor is on (checked live, so a 2FA just turned
+// on counts), the current authenticator code: what the server wants before it adds a way into the
+// account (a passkey, new recovery codes, an API token). null when the person backed out.
+async function askReauth(prompt: ReturnType<typeof usePrompt>, title: string): Promise<{ password: string; code: string } | null> {
+  const password = await prompt({ title, label: 'Confirm your password', type: 'password', confirmLabel: 'Continue', required: true })
+  if (!password) return null
+  const on = await fetch('/api/me/mfa').then((r) => (r.ok ? r.json() : null)).then((d) => !!(d && d.enabled)).catch(() => false)
+  let code = ''
+  if (on) {
+    const c = await prompt({ title, label: 'Enter the current code from your authenticator', confirmLabel: 'Continue', required: true })
+    if (!c) return null
+    code = c
+  }
+  return { password, code }
+}
+
 function MfaCard() {
   const prompt = usePrompt()
   const toast = useToast()
@@ -12763,9 +12783,9 @@ function MfaCard() {
   }
   async function regen() {
     setError(null); setCodes(null)
-    const pw = await prompt({ title: 'New recovery codes', label: 'Confirm your password', type: 'password', confirmLabel: 'Generate', required: true })
-    if (!pw) return
-    const res = await fetch('/api/me/mfa/recovery-codes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) })
+    const re = await askReauth(prompt, 'New recovery codes')
+    if (!re) return
+    const res = await fetch('/api/me/mfa/recovery-codes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(re) })
     if (!res.ok) { setError(await errText(res, 'Could not regenerate codes')); return }
     const d = await res.json()
     setCodes(d.recovery_codes); toast.success('New recovery codes generated. The old ones no longer work.'); loadStatus()
@@ -12851,11 +12871,11 @@ function PasskeyCard() {
     setError(null)
     const name = await prompt({ title: 'Add a passkey', label: 'Name this passkey (e.g. "Bitwarden", "Phone", "YubiKey")', initial: 'Bitwarden', confirmLabel: 'Continue' })
     if (name === null) return
-    const pw = await prompt({ title: 'Add a passkey', label: 'Confirm your password', type: 'password', confirmLabel: 'Continue', required: true })
-    if (!pw) return
+    const re = await askReauth(prompt, 'Add a passkey')
+    if (!re) return
     setBusy(true)
     try {
-      await registerPasskey(name || 'Passkey', pw)
+      await registerPasskey(name || 'Passkey', re.password, re.code)
       toast.success('Passkey added.'); load()
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : 'Could not add passkey')

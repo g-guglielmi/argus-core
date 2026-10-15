@@ -123,7 +123,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "probe enrollment is not configured on this server"})
 		return
 	}
-	if s.rateBlocked(w, "enroll:ip:"+s.clientIP(r)) {
+	if s.rateBlocked(w, "enroll:ip:"+s.limiterIP(r)) {
 		return
 	}
 	var req enrollRequest
@@ -144,7 +144,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	// two probes however closely they race. A failure past this point hands it back.
 	t, err := s.st.ClaimEnrollToken(ctx, auth.HashToken(token), time.Now())
 	if err != nil {
-		s.loginLimiter.Fail("enroll:ip:" + s.clientIP(r))
+		s.loginLimiter.Fail("enroll:ip:" + s.limiterIP(r))
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid, used, or expired enrollment token"})
 		return
 	}

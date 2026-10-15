@@ -41,6 +41,7 @@ type Server struct {
 	signingSecret string             // HMAC secret for signed alert links
 	loginLimiter  *ratelimit.Limiter // brute-force protection for login (owned by mgr)
 	pkLimiter     *ratelimit.Limiter // anonymous passkey-login begins per address (each stores a ceremony)
+	acct          acctStripes        // attempts on an over-limit account wait their turn (limits.go)
 	featMu        sync.Mutex         // guards the cached public /api/features answer
 	featResetOK   bool
 	featResetAt   time.Time
@@ -430,7 +431,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// Every request gets the security headers and passes the cross-site check (plus the
 	// allowed-hosts check once configured), then session resolution (idle timeout read live).
 	// A personal API token signs a script in like a session, held to its scope (apitokens.go).
-	return securityHeaders(s.hostGuard(auth.Middleware(s.st, s.mgr.SessionIdleTimeout, s.mgr.SessionMaxLifetime)(auth.TokenMiddleware(s.st, s.clientIP)(s.tokenScope(s.censusInvalidator(s.changeLog(mux)))))))
+	return securityHeaders(s.hostGuard(auth.Middleware(s.st, s.cookieSecure, s.mgr.SessionIdleTimeout, s.mgr.SessionMaxLifetime)(auth.TokenMiddleware(s.st, s.clientIP)(s.tokenScope(s.censusInvalidator(s.changeLog(mux)))))))
 }
 
 // cookieSecure says whether session cookies carry the Secure flag: ARGUS_COOKIE_SECURE when given,
@@ -620,15 +621,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ipKey := "login:ip:" + s.clientIP(r)
+	ipKey := "login:ip:" + s.limiterIP(r)
 	acctKey := "login:acct:" + strings.ToLower(strings.TrimSpace(req.Email))
 	if s.rateBlocked(w, ipKey) {
 		return
 	}
 	// The account counter slows a guess spread over many addresses without letting anyone lock
-	// a user out: while it is over the limit a wrong password is answered 429 instead of 401,
-	// but the right one still signs in (and clears the counter).
+	// a user out: while it is over the limit every attempt on the account, right or wrong,
+	// waits its turn and a few seconds before the password is even checked, and a wrong one is
+	// answered 429 instead of 401. The right one still signs in (and clears the counter).
 	acctBlocked, acctRetry := s.loginLimiter.Blocked(acctKey)
+	if acctBlocked && !s.acct.slow(r, acctKey) {
+		return
+	}
 	loginFailed := func() {
 		s.loginLimiter.Fail(ipKey)
 		s.loginLimiter.Fail(acctKey)
@@ -690,7 +695,7 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ipKey := "totp:ip:" + s.clientIP(r)
+	ipKey := "totp:ip:" + s.limiterIP(r)
 	userKey := "totp:uid:" + strconv.FormatInt(uid, 10)
 	if s.rateBlocked(w, ipKey, userKey) {
 		return
@@ -703,17 +708,9 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Accept either a current TOTP code or one of the user's one-time recovery codes. A TOTP code
-	// works once: the time step of the last accepted code is kept, so a code seen over a shoulder
-	// can't be replayed inside its validity window.
-	step := time.Now().Unix() / 30
-	valid := mfa.Validate(req.Code, u.TOTPSecret)
-	if valid {
-		if last, err := s.st.TOTPLastStep(r.Context(), u.ID); err == nil && step <= last {
-			valid = false
-		} else {
-			_ = s.st.SetTOTPLastStep(r.Context(), u.ID, step)
-		}
-	}
+	// works once: the time step it matched is claimed, so a code seen over a shoulder can't be
+	// replayed inside its validity window (totpOnce).
+	valid := s.totpOnce(r.Context(), u, req.Code)
 	if !valid {
 		if consumed, _ := s.st.ConsumeRecoveryCode(r.Context(), u.ID, mfa.HashRecoveryCode(req.Code)); consumed {
 			valid = true
@@ -759,7 +756,7 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, u *store.U
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	if raw := auth.SessionCookie(r); raw != "" {
+	if raw := auth.SessionCookie(r, s.cookieSecure()); raw != "" {
 		_ = s.st.DeleteSession(r.Context(), auth.HashToken(raw))
 	}
 	auth.ClearSessionCookie(w, s.cookieSecure())

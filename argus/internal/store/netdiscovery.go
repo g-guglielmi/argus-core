@@ -197,10 +197,16 @@ func (s *Store) TakeDiscoveryJob(ctx context.Context, proxyName string) (*Discov
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.db.ExecContext(ctx,
+	// The UPDATE is the claim: two check-ins of the same probe overlapping here get the job
+	// (and its community) once between them.
+	res, err := s.db.ExecContext(ctx,
 		`UPDATE discovery_jobs SET state='dispatched', dispatched_at=? WHERE id=? AND state='pending'`,
-		time.Now().Unix(), j.ID); err != nil {
+		time.Now().Unix(), j.ID)
+	if err != nil {
 		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, nil
 	}
 	j.State = "dispatched"
 	j.SNMPCommunity = s.cipher.Decrypt(enc)

@@ -4,10 +4,14 @@
 package server
 
 import (
+	"context"
 	"net/http"
+	"strconv"
+	"time"
 
 	"argus/internal/auth"
 	"argus/internal/mfa"
+	"argus/internal/store"
 )
 
 const recoveryCodeCount = 10
@@ -94,14 +98,9 @@ func (s *Server) handleMFADisable(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	if ok, err := auth.VerifyPassword(req.Password, u.PasswordHash); err != nil || !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "password is incorrect"})
-		return
-	}
 	// Turning the second factor off takes the second factor: a password alone (the thing MFA
 	// guards against being enough) can't remove it.
-	if u.TOTPEnabled && !mfa.Validate(req.Code, u.TOTPSecret) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "that code isn't valid - check your authenticator and try again"})
+	if !s.reauthWith(w, r, u, req.Password, req.Code) {
 		return
 	}
 	if err := s.st.DisableTOTP(r.Context(), caller.ID); err != nil {
@@ -150,11 +149,15 @@ func (s *Server) handleAdminResetMFA(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// reauth verifies the caller's password from a {"password": "..."} body.
+// reauth verifies the caller again from a {"password": "...", "code": "..."} body: the password,
+// and the current authenticator code when two-factor is on. Anything that adds a way into the
+// account (a passkey, fresh recovery codes, an API token) or takes one away takes both factors,
+// or a session plus the password would be enough to leave the second factor behind for good.
 func (s *Server) reauth(w http.ResponseWriter, r *http.Request) bool {
 	caller, _ := auth.UserFrom(r.Context())
 	var req struct {
 		Password string `json:"password"`
+		Code     string `json:"code"`
 	}
 	if !decode(w, r, &req) {
 		return false
@@ -164,11 +167,40 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request) bool {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return false
 	}
-	if ok, err := auth.VerifyPassword(req.Password, u.PasswordHash); err != nil || !ok {
+	return s.reauthWith(w, r, u, req.Password, req.Code)
+}
+
+// reauthWith is reauth for a handler that read the password and code itself. Attempts are
+// limited per user: a stolen cookie must not be a place to guess the password or the code at
+// argon2 speed.
+func (s *Server) reauthWith(w http.ResponseWriter, r *http.Request, u *store.User, password, code string) bool {
+	key := "reauth:uid:" + strconv.FormatInt(u.ID, 10)
+	if s.rateBlocked(w, key) {
+		return false
+	}
+	if ok, err := auth.VerifyPassword(password, u.PasswordHash); err != nil || !ok {
+		s.loginLimiter.Fail(key)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "password is incorrect"})
 		return false
 	}
+	if u.TOTPEnabled && !s.totpOnce(r.Context(), u, code) {
+		s.loginLimiter.Fail(key)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "that code isn't valid - check your authenticator and try again"})
+		return false
+	}
+	s.loginLimiter.Reset(key)
 	return true
+}
+
+// totpOnce accepts a current code once: the time step it matched is claimed (ClaimTOTPStep), so
+// the same code is refused for the rest of its window, from this request or a racing one.
+func (s *Server) totpOnce(ctx context.Context, u *store.User, code string) bool {
+	step, ok := mfa.MatchStep(code, u.TOTPSecret, time.Now())
+	if !ok {
+		return false
+	}
+	claimed, err := s.st.ClaimTOTPStep(ctx, u.ID, step)
+	return err == nil && claimed
 }
 
 // freshRecoveryCodes generates, stores, and returns a new set; writes an error and returns nil on failure.

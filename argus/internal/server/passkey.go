@@ -73,10 +73,11 @@ func (s *Server) storeWASession(ctx context.Context, userID *int64, sd *webauthn
 	return raw, nil
 }
 
-// loadWASession restores ceremony data referenced by the X-WebAuthn-Session header.
+// loadWASession takes the ceremony referenced by the X-WebAuthn-Session header: read and removed
+// in one statement, so a captured attestation or assertion can finish a ceremony once at most.
 func (s *Server) loadWASession(ctx context.Context, r *http.Request) (userID *int64, sd webauthn.SessionData, id string, ok bool) {
 	id = auth.HashToken(r.Header.Get("X-WebAuthn-Session"))
-	uid, data, err := s.st.WebAuthnSession(ctx, id)
+	uid, data, err := s.st.ConsumeWebAuthnSession(ctx, id)
 	if err != nil {
 		return nil, webauthn.SessionData{}, "", false
 	}
@@ -137,7 +138,7 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 	}
 	ctx := r.Context()
 	caller, _ := auth.UserFrom(ctx)
-	uid, sd, sid, ok := s.loadWASession(ctx, r)
+	uid, sd, _, ok := s.loadWASession(ctx, r)
 	if !ok || uid == nil || *uid != caller.ID {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no active registration; start again"})
 		return
@@ -157,7 +158,6 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not register this passkey"})
 		return
 	}
-	_ = s.st.DeleteWebAuthnSession(ctx, sid)
 
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	if name == "" {
@@ -183,7 +183,7 @@ func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	// Each begin stores a ceremony row; keep an anonymous caller to a sane number per address.
-	pkKey := "pkbegin:ip:" + s.clientIP(r)
+	pkKey := "pkbegin:ip:" + s.limiterIP(r)
 	if blocked, retry := s.pkLimiter.Blocked(pkKey); blocked {
 		writeThrottled(w, retry)
 		return
@@ -209,7 +209,7 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 		return
 	}
 	ctx := r.Context()
-	_, sd, sid, ok := s.loadWASession(ctx, r)
+	_, sd, _, ok := s.loadWASession(ctx, r)
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "this sign-in has expired; please start again"})
 		return
@@ -234,7 +234,6 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "passkey login failed"})
 		return
 	}
-	_ = s.st.DeleteWebAuthnSession(ctx, sid)
 	// A signature counter that didn't move forward means a second copy of this credential is in use.
 	if cred.Authenticator.CloneWarning {
 		s.logger.Warn("passkey login refused: credential may be cloned", "user", loggedIn.Email)
@@ -244,7 +243,7 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 	if blob, err := json.Marshal(cred); err == nil {
 		_ = s.st.UpdatePasskeyCredential(ctx, cred.ID, string(blob))
 	}
-	s.pkLimiter.Reset("pkbegin:ip:" + s.clientIP(r))
+	s.pkLimiter.Reset("pkbegin:ip:" + s.limiterIP(r))
 	s.issueSession(w, r, loggedIn)
 }
 
