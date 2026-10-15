@@ -76,13 +76,17 @@ GitHub Release from the matching section below.
   it by naming its own address in `X-Forwarded-For`.
 
 **Fixed:**
-- **CPU utilization on Linux hosts read over SSH can't go past 100 % or under 0 % any more.** It is
+- **CPU utilization of a Windows PC read over SNMP can't go past 100 % any more.** Under heavy load
+  the Windows SNMP service can report a core's load above 100 % (seen: 112 % overall), which no CPU
+  can be; the line ran off the chart and the reading fed the CPU warning. Each core's load is held
+  to 0-100, in the overall sensor and in the per-core ones.
+- **CPU utilization of a Linux host read over SSH can't go past 100 % or under 0 % either.** It is
   worked out from two reads of the kernel's CPU counters a second apart, and the kernel documents
-  that the I/O-wait counter can go backwards: on a busy, disk-heavy host the idle share came out
-  negative (a reading of 112 %) and overshot on the next read (a dip to about 0 %), which also
-  raised and cleared a CPU warning. Each counter's change is now taken on its own, a counter that
-  went backwards counts as no time, and the share is held to 0-100. Hosts monitored by the core
-  get it with this update; hosts monitored by a probe get it with the next probe image.
+  that the I/O-wait counter can go backwards, so on a busy, disk-heavy host the idle share could
+  come out negative (a reading over 100 %) and overshoot on the next read (a dip toward 0 %). Each
+  counter's change is now taken on its own, a counter that went backwards counts as no time, and
+  the share is held to 0-100. Hosts monitored by the core get it with this update; hosts monitored
+  by a probe get it with the next probe image.
 - **A percentage chart shows a reading past 100 % (or under 0 %) instead of cutting it off.** The
   axis kept to 0-100 whatever the data said, so the line ran off the top of the plot; the PDF
   report's axis did the same. 0 and 100 are now walls only for data that stays inside them.

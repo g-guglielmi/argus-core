@@ -51,7 +51,7 @@ zabbix_export:
           trends: 365d
           value_type: FLOAT
           units: '%'
-          description: 'Average load across all logical CPUs (Windows reports per-processor load, not an idle counter).'
+          description: 'Average load across all logical CPUs (Windows reports per-processor load, not an idle counter). Each core is held to 0-100: under heavy load the Windows SNMP service can report a core above 100 %, which no CPU can be.'
           master_item:
             key: snmp.cpu.cores.raw
           preprocessing:
@@ -62,7 +62,7 @@ zabbix_export:
                   var lines = String(value).split('\n');
                   for (var i = 0; i < lines.length; i++) {
                     var m = lines[i].match(/\.(\d+)\s*=\s*INTEGER:?\s*(-?\d+)\s*$/);
-                    if (m) { vals.push(parseInt(m[2], 10)); }
+                    if (m) { vals.push(Math.max(0, Math.min(100, parseInt(m[2], 10)))); }
                   }
                   if (!vals.length) { throw 'no processor load reported'; }
                   var s = 0; for (var i = 0; i < vals.length; i++) { s += vals[i]; }
@@ -222,7 +222,7 @@ zabbix_export:
               trends: 365d
               value_type: FLOAT
               units: '%'
-              description: 'Load of this logical CPU (hrProcessorLoad).'
+              description: 'Load of this logical CPU (hrProcessorLoad), held to 0-100 (Windows can report a core above 100 % under heavy load).'
               master_item:
                 key: snmp.cpu.cores.raw
               preprocessing:
@@ -238,7 +238,7 @@ zabbix_export:
                       rows.sort(function (a, b) { return a[0] - b[0]; });
                       var n = parseInt('{#COREN}', 10);
                       if (!(n >= 1 && n <= rows.length)) { throw 'core {#COREN} not reported'; }
-                      return rows[n - 1][1];
+                      return Math.max(0, Math.min(100, rows[n - 1][1]));
         - uuid: 31589d34b7cc487480ebbf99b1e2682c
           name: 'Filesystem discovery'
           type: SNMP_AGENT
