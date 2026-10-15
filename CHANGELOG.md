@@ -13,6 +13,24 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Security** (from the 2026-10-14 review of v0.8.11):
+- **A host's settings save may only name the host's own interfaces.** Zabbix updates an interface
+  by its id alone, so a helpdesk account limited to one site could, by typing another host's
+  interface id into its own host's save, rewrite that host's address and SNMP credentials anywhere
+  in the fleet. Refused now, before anything is written.
+- **A report's sensors must be on the host they are listed under.** A sensor row carried any item
+  id, so a site-limited account could chart (and email) a sensor of a host outside its sites. The
+  check runs when a report is saved, drawn or emailed, and the renderer skips a foreign item too.
+- **Alert emails can't be given an extra part by a note.** The MIME boundaries were fixed strings
+  and the body was written raw, so an acknowledgement message shaped like a boundary could add an
+  HTML part of its own to the ACKNOWLEDGED mail every recipient gets. Boundaries are random per
+  message and the parts are quoted-printable now.
+
+**Changed:**
+- **Notes are one line** of up to 500 characters: an acknowledgement's message, a hide's reason,
+  a sensor note (alone or in bulk) and the lines of a site's info. A note with a line break is
+  refused with a message saying so.
+
 ## [0.8.11] - 2026-10-14
 
 PDF reports: the uptime, problems and charts of the sites, hosts and sensors you pick, over a

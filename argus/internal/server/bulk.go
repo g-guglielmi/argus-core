@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"argus/internal/auth"
 	"argus/internal/provision"
@@ -207,7 +206,10 @@ func (s *Server) handleBulkHosts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	until := untilFrom(req.DurationSeconds)
-	note := strings.TrimSpace(req.Note)
+	note, ok := noteOrRefuse(w, req.Note)
+	if !ok {
+		return
+	}
 	res := bulkResult{Failed: []bulkFailure{}}
 	var doneIDs, doneNames []string
 	acked := 0
@@ -343,8 +345,11 @@ func (s *Server) handleBulkSensors(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("pick between 1 and %d sensors", bulkMax)})
 		return
 	}
-	note := strings.TrimSpace(req.Note)
-	if req.Action == "note" && (note == "" || utf8.RuneCountInString(note) > sensorNoteMax) {
+	note, ok := noteOrRefuse(w, req.Note)
+	if !ok {
+		return
+	}
+	if req.Action == "note" && note == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a note is 1 to 500 characters"})
 		return
 	}

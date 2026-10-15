@@ -32,6 +32,22 @@ func TestViewToSNMPCarriesMaskedPassphrases(t *testing.T) {
 	}
 }
 
+// A host save may only name the host's own interfaces: Zabbix updates an interface by id alone, so
+// a foreign id (another site's host) would have its address and SNMP credentials rewritten by a
+// helpdesk account that can't even see that host.
+func TestForeignInterfaceIDRefused(t *testing.T) {
+	own := map[string]zabbix.HostInterface{"31": {InterfaceID: "31"}, "32": {InterfaceID: "32"}}
+	if got := foreignInterfaceID([]ifaceView{{InterfaceID: "31"}, {InterfaceID: ""}, {InterfaceID: "32"}}, own); got != "" {
+		t.Fatalf("own and new interfaces refused: %q", got)
+	}
+	if got := foreignInterfaceID([]ifaceView{{InterfaceID: "31"}, {InterfaceID: "7"}}, own); got != "7" {
+		t.Fatalf("foreign id not caught: %q", got)
+	}
+	if got := foreignInterfaceID([]ifaceView{{InterfaceID: "7"}}, map[string]zabbix.HostInterface{}); got != "7" {
+		t.Fatalf("a host with no interfaces owns none: %q", got)
+	}
+}
+
 func TestDefaultPort(t *testing.T) {
 	for _, c := range []struct {
 		typ  int

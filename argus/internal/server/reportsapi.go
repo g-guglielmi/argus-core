@@ -84,6 +84,31 @@ func reportVisible(spec store.ReportSpec, sc siteScope, idx map[string]hostInfo)
 	return true
 }
 
+// checkReportItems refuses a sensor whose items aren't the listed host's own. reportVisible places
+// the host inside the caller's sites; this keeps a foreign item id (any sensor in the fleet, ids are
+// sequential) from riding under it. Also catches an item gone since the report was saved.
+func (s *Server) checkReportItems(ctx context.Context, sp store.ReportSpec) error {
+	var ids []string
+	for _, sn := range sp.Sensors {
+		ids = append(ids, sn.Items...)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	items, err := s.zbx.ItemsByIDs(ctx, ids)
+	if err != nil {
+		return errors.New("could not check the report's sensors against Zabbix")
+	}
+	for _, sn := range sp.Sensors {
+		for _, id := range sn.Items {
+			if it, ok := items[id]; !ok || it.HostID != sn.HostID {
+				return errors.New("a sensor in the report is gone, or isn't on the host it is listed under")
+			}
+		}
+	}
+	return nil
+}
+
 // checkReport validates a report's name, contents and schedule for a user who may save it.
 func checkReport(b *reportBody, sc siteScope, idx map[string]hostInfo, now time.Time, loc *time.Location, withSchedule bool) error {
 	// The name heads the PDF and the email's subject: one line, no control characters.
@@ -377,6 +402,10 @@ func (s *Server) handleCreateReport(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	if err := s.checkReportItems(r.Context(), b.Spec); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	u, _ := auth.UserFrom(r.Context())
 	id, err := s.st.CreateReport(r.Context(), store.Report{Name: b.Name, Spec: b.Spec, Schedule: b.Schedule, OwnerID: u.ID})
 	if err != nil {
@@ -414,6 +443,10 @@ func (s *Server) handleUpdateReport(w http.ResponseWriter, r *http.Request) {
 	}
 	idx, _ := s.reportIndex(r)
 	if err := checkReport(&b, scopeFrom(r), idx, time.Now(), s.mgr.Location(), true); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := s.checkReportItems(r.Context(), b.Spec); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
@@ -523,6 +556,10 @@ func (s *Server) handleDraftPDF(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	if err := s.checkReportItems(r.Context(), b.Spec); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	_, pdf, err := s.makeReport(r.Context(), reportRun{name: b.Name, spec: b.Spec, scope: scopeFrom(r), now: now})
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
@@ -612,6 +649,10 @@ func (s *Server) handleEmailDraft(w http.ResponseWriter, r *http.Request) {
 	idx, _ := s.reportIndex(r)
 	now := time.Now()
 	if err := checkReport(&b, scopeFrom(r), idx, now, s.mgr.Location(), false); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := s.checkReportItems(r.Context(), b.Spec); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}

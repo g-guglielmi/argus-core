@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"argus/internal/auth"
 	"argus/internal/store"
@@ -89,13 +88,12 @@ func (s *Server) handleSetSensorNote(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
-	text := strings.TrimSpace(req.Text)
-	if text == "" {
+	if strings.TrimSpace(req.Text) == "" {
 		s.handleClearSensorNote(w, r)
 		return
 	}
-	if utf8.RuneCountInString(text) > sensorNoteMax {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a note is at most 500 characters"})
+	text, ok := noteOrRefuse(w, req.Text)
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), censusBuildTime)

@@ -419,13 +419,17 @@ func (s *Server) handleAckEvent(w http.ResponseWriter, r *http.Request) {
 		DurationSeconds int64  `json:"duration_seconds"`
 	}
 	decodeOptional(w, r, &req)
+	msg, ok := noteOrRefuse(w, req.Message)
+	if !ok {
+		return
+	}
 	id := r.PathValue("id")
 	caller, _ := auth.UserFrom(r.Context())
 	var by int64
 	if caller != nil {
 		by = caller.ID
 	}
-	if err := s.ackEvent(r.Context(), id, by, req.Message, untilFrom(req.DurationSeconds)); err != nil {
+	if err := s.ackEvent(r.Context(), id, by, msg, untilFrom(req.DurationSeconds)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
@@ -466,12 +470,16 @@ func (s *Server) hideHandler(scope string) http.HandlerFunc {
 			DurationSeconds int64  `json:"duration_seconds"`
 		}
 		decodeOptional(w, r, &req)
+		note, ok := noteOrRefuse(w, req.Note)
+		if !ok {
+			return
+		}
 		caller, _ := auth.UserFrom(r.Context())
 		var by int64
 		if caller != nil {
 			by = caller.ID
 		}
-		if err := s.st.SetSuppression(r.Context(), "hide", scope, r.PathValue("id"), by, req.Note, untilFrom(req.DurationSeconds)); err != nil {
+		if err := s.st.SetSuppression(r.Context(), "hide", scope, r.PathValue("id"), by, note, untilFrom(req.DurationSeconds)); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return
 		}

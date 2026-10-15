@@ -461,6 +461,12 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 	for _, i := range cur.Interfaces {
 		curByID[i.InterfaceID] = i
 	}
+	// Zabbix updates an interface by its id alone, so an id that isn't this host's would rewrite
+	// another host's address and credentials: refused before anything is written.
+	if id := foreignInterfaceID(req.Interfaces, curByID); id != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "that interface isn't one of this host's"})
+		return
+	}
 	// The settings as they were, for the change log's before and after.
 	before, beforeErr := s.hostConfigFor(ctx, cur.HostID, true)
 
@@ -975,6 +981,20 @@ func defaultPort(ifaceType int) string {
 
 // viewToSNMP maps the browser SNMP shape to client details, carrying forward masked v3 passphrases
 // (blank from the browser) from the currently-stored interface so they aren't wiped on save.
+// foreignInterfaceID returns the first submitted interface id that isn't one of the host's own
+// (the ones Zabbix lists for it), or "" when every id is. A blank id is a new interface.
+func foreignInterfaceID(submitted []ifaceView, own map[string]zabbix.HostInterface) string {
+	for _, iv := range submitted {
+		if iv.InterfaceID == "" {
+			continue
+		}
+		if _, ok := own[iv.InterfaceID]; !ok {
+			return iv.InterfaceID
+		}
+	}
+	return ""
+}
+
 func viewToSNMP(v *snmpView, cur *zabbix.SNMPDetails) *zabbix.SNMPDetails {
 	d := &zabbix.SNMPDetails{
 		Version: v.Version, Community: v.Community, Bulk: v.Bulk,

@@ -1096,8 +1096,10 @@ func (s *Server) sensorReport(ctx context.Context, sn store.ReportSensor, h *rep
 	}
 	var numeric, updown []channel
 	for _, id := range sn.Items {
+		// A sensor's items are its host's own: the host placed the sensor inside the reader's sites
+		// (reportVisible), so an item from elsewhere must not ride under it.
 		it, ok := items[id]
-		if !ok || !numericValueType(it.ValueType) {
+		if !ok || it.HostID != h.h.HostID || !numericValueType(it.ValueType) {
 			continue
 		}
 		if label == "" {

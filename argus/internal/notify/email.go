@@ -5,10 +5,13 @@ package notify
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"mime"
+	"mime/quotedprintable"
 	"net"
 	"net/smtp"
 	"strings"
@@ -19,13 +22,14 @@ import (
 // so both alert emails and transactional mail (e.g. password resets) can share one sender.
 //
 // Config keys (from an email channel's config map):
-//   host     - SMTP server hostname
-//   port     - SMTP port (default 587)
-//   username - SMTP auth user ("" = no auth)
-//   password - SMTP auth password
-//   from     - envelope + header From address
-//   to       - comma-separated recipient list (alerts only; transactional mail passes its own)
-//   tls      - "starttls" (default), "tls" (implicit, e.g. port 465), or "none"
+//
+//	host     - SMTP server hostname
+//	port     - SMTP port (default 587)
+//	username - SMTP auth user ("" = no auth)
+//	password - SMTP auth password
+//	from     - envelope + header From address
+//	to       - comma-separated recipient list (alerts only; transactional mail passes its own)
+//	tls      - "starttls" (default), "tls" (implicit, e.g. port 465), or "none"
 type SMTP struct {
 	Host, Port, Username, Password, From, TLS string
 }
@@ -133,14 +137,7 @@ func SimpleMessage(from string, to []string, subject, text, html string) []byte 
 	b.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
 	b.WriteString("Subject: " + mime.QEncoding.Encode("UTF-8", subject) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
-	b.WriteString("Content-Type: multipart/alternative; boundary=\"" + altBoundary + "\"\r\n\r\n")
-	b.WriteString("--" + altBoundary + "\r\n")
-	b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
-	b.WriteString(text)
-	b.WriteString("\r\n\r\n--" + altBoundary + "\r\n")
-	b.WriteString("Content-Type: text/html; charset=UTF-8\r\n\r\n")
-	b.WriteString(html)
-	b.WriteString("\r\n--" + altBoundary + "--\r\n")
+	writeTextAndHTML(&b, text, html)
 	return []byte(b.String())
 }
 
@@ -148,34 +145,57 @@ func SimpleMessage(from string, to []string, subject, text, html string) []byte 
 // (a report's PDF).
 func AttachmentMessage(from string, to []string, subject, text, html, filename, contentType string, data []byte) []byte {
 	var b strings.Builder
+	mix := newBoundary("argus-mix-")
 	b.WriteString("From: Argus <" + from + ">\r\n")
 	b.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
 	b.WriteString("Subject: " + mime.QEncoding.Encode("UTF-8", subject) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
-	b.WriteString("Content-Type: multipart/mixed; boundary=\"" + mixBoundary + "\"\r\n\r\n")
-	b.WriteString("--" + mixBoundary + "\r\n")
-	b.WriteString("Content-Type: multipart/alternative; boundary=\"" + altBoundary + "\"\r\n\r\n")
-	b.WriteString("--" + altBoundary + "\r\n")
-	b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
-	b.WriteString(text)
-	b.WriteString("\r\n\r\n--" + altBoundary + "\r\n")
-	b.WriteString("Content-Type: text/html; charset=UTF-8\r\n\r\n")
-	b.WriteString(html)
-	b.WriteString("\r\n--" + altBoundary + "--\r\n")
-	b.WriteString("\r\n--" + mixBoundary + "\r\n")
+	b.WriteString("Content-Type: multipart/mixed; boundary=\"" + mix + "\"\r\n\r\n")
+	b.WriteString("--" + mix + "\r\n")
+	writeTextAndHTML(&b, text, html)
+	b.WriteString("\r\n--" + mix + "\r\n")
 	name := mime.QEncoding.Encode("UTF-8", filename)
 	b.WriteString("Content-Type: " + contentType + "; name=\"" + name + "\"\r\nContent-Transfer-Encoding: base64\r\n")
 	b.WriteString("Content-Disposition: attachment; filename=\"" + name + "\"\r\n\r\n")
 	b.WriteString(wrap76(base64.StdEncoding.EncodeToString(data)))
-	b.WriteString("\r\n--" + mixBoundary + "--\r\n")
+	b.WriteString("\r\n--" + mix + "--\r\n")
 	return []byte(b.String())
 }
 
-const (
-	altBoundary = "argus-alt-boundary-4f2c9a"
-	relBoundary = "argus-rel-boundary-7b1e30"
-	mixBoundary = "argus-mix-boundary-c83d51"
-)
+// newBoundary is a MIME boundary for one message: random, so no text a user typed into a note can
+// be made to end a part early and start one of its own (an HTML part, say). A fixed boundary
+// would be in the public source for anyone to copy.
+func newBoundary(prefix string) string {
+	var b [12]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic("email: crypto/rand failed: " + err.Error())
+	}
+	return prefix + hex.EncodeToString(b[:])
+}
+
+// qp encodes a part's body as quoted-printable: lines stay under the SMTP limit, bytes outside
+// ASCII travel safely, and a line of the body can never read as a boundary or a header.
+func qp(s string) string {
+	var b strings.Builder
+	w := quotedprintable.NewWriter(&b)
+	_, _ = w.Write([]byte(s))
+	_ = w.Close()
+	return b.String()
+}
+
+// writeTextAndHTML writes a complete multipart/alternative block (its own Content-Type header, the
+// plain and HTML parts, each quoted-printable, and its closing boundary).
+func writeTextAndHTML(b *strings.Builder, text, html string) {
+	alt := newBoundary("argus-alt-")
+	b.WriteString("Content-Type: multipart/alternative; boundary=\"" + alt + "\"\r\n\r\n")
+	b.WriteString("--" + alt + "\r\n")
+	b.WriteString("Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n")
+	b.WriteString(qp(text))
+	b.WriteString("\r\n--" + alt + "\r\n")
+	b.WriteString("Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n")
+	b.WriteString(qp(html))
+	b.WriteString("\r\n--" + alt + "--\r\n")
+}
 
 // buildMessage assembles the email: a multipart/alternative (plain + styled HTML), wrapped in a
 // multipart/related with the inline chart image (referenced as cid:chart) when one is present.
@@ -187,14 +207,15 @@ func buildMessage(from string, to []string, e Event) []byte {
 	b.WriteString("MIME-Version: 1.0\r\n")
 
 	if len(e.ChartPNG) > 0 {
-		b.WriteString("Content-Type: multipart/related; type=\"multipart/alternative\"; boundary=\"" + relBoundary + "\"\r\n\r\n")
-		b.WriteString("--" + relBoundary + "\r\n")
+		rel := newBoundary("argus-rel-")
+		b.WriteString("Content-Type: multipart/related; type=\"multipart/alternative\"; boundary=\"" + rel + "\"\r\n\r\n")
+		b.WriteString("--" + rel + "\r\n")
 		writeAlternative(&b, e)
-		b.WriteString("\r\n--" + relBoundary + "\r\n")
+		b.WriteString("\r\n--" + rel + "\r\n")
 		b.WriteString("Content-Type: image/png\r\nContent-Transfer-Encoding: base64\r\n")
 		b.WriteString("Content-ID: <chart@argus>\r\nContent-Disposition: inline; filename=\"chart.png\"\r\n\r\n")
 		b.WriteString(wrap76(base64.StdEncoding.EncodeToString(e.ChartPNG)))
-		b.WriteString("\r\n--" + relBoundary + "--\r\n")
+		b.WriteString("\r\n--" + rel + "--\r\n")
 		return []byte(b.String())
 	}
 
@@ -202,26 +223,16 @@ func buildMessage(from string, to []string, e Event) []byte {
 	return []byte(b.String())
 }
 
-// writeAlternative writes a complete multipart/alternative block (its own Content-Type header,
-// the plain + HTML parts, and its closing boundary).
+// writeAlternative writes an alert's plain + HTML block.
 func writeAlternative(b *strings.Builder, e Event) {
-	b.WriteString("Content-Type: multipart/alternative; boundary=\"" + altBoundary + "\"\r\n\r\n")
-
-	b.WriteString("--" + altBoundary + "\r\n")
-	b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
-	b.WriteString(strings.Join(e.bodyLines(), "\r\n"))
+	text := strings.Join(e.bodyLines(), "\r\n")
 	if e.OpenURL != "" {
-		b.WriteString("\r\nOpen in Argus: " + e.OpenURL)
+		text += "\r\nOpen in Argus: " + e.OpenURL
 	}
 	if e.isAlert() && e.AckURL != "" {
-		b.WriteString("\r\nAcknowledge: " + e.AckURL)
+		text += "\r\nAcknowledge: " + e.AckURL
 	}
-	b.WriteString("\r\n\r\n")
-
-	b.WriteString("--" + altBoundary + "\r\n")
-	b.WriteString("Content-Type: text/html; charset=UTF-8\r\n\r\n")
-	b.WriteString(htmlBody(e))
-	b.WriteString("\r\n--" + altBoundary + "--\r\n")
+	writeTextAndHTML(b, text, htmlBody(e))
 }
 
 // wrap76 breaks a base64 string into 76-character lines per MIME.

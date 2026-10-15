@@ -151,11 +151,13 @@ func TestReportsStayInTheirSites(t *testing.T) {
 		t.Fatalf("site1 report PDF for the site1 account: %d %s", rec.Code, rec.Body.String())
 	}
 
-	// Nothing it saves or makes can reach outside site1.
+	// Nothing it saves or makes can reach outside site1: not by site, not by host, not by a sensor
+	// listed under a host it sees but holding another host's item (item 120 is host 12's).
 	for _, spec := range []store.ReportSpec{
 		{Sites: []string{"site2"}, Period: "7d"},
 		{Sites: []string{"site1"}, Hosts: []string{"12"}, Period: "7d"},
 		{Sensors: []store.ReportSensor{{HostID: "12", Items: []string{"120"}}}, Period: "7d"},
+		{Sensors: []store.ReportSensor{{HostID: "11", Items: []string{"120"}}}, Period: "7d"},
 	} {
 		body := map[string]any{"name": "sneaky", "spec": spec}
 		if rec := call(site1, "POST", "/api/reports", s.handleCreateReport, 0, body); rec.Code != http.StatusBadRequest {
@@ -167,5 +169,11 @@ func TestReportsStayInTheirSites(t *testing.T) {
 		if rec := call(site1, "PUT", "/api/reports/x", s.handleUpdateReport, ids["site1"], body); rec.Code != http.StatusBadRequest {
 			t.Errorf("site1 account widened its report to %+v: %d", spec, rec.Code)
 		}
+	}
+	// A sensor's items are its host's own for everyone, the admin included: an item is placed in
+	// a site by its host, never by the host id typed next to it.
+	mixed := map[string]any{"name": "mixed", "spec": store.ReportSpec{Sensors: []store.ReportSensor{{HostID: "11", Items: []string{"120"}}}, Period: "7d"}}
+	if rec := call(admin, "POST", "/api/reports/pdf", s.handleDraftPDF, 0, mixed); rec.Code != http.StatusBadRequest {
+		t.Errorf("admin made a PDF of a sensor listed under the wrong host: %d", rec.Code)
 	}
 }
