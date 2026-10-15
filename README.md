@@ -362,7 +362,8 @@ docker run -d \
 > setup and Argus falls back to password + TOTP.
 >
 > **`ARGUS_SECRET_KEY`** encrypts stored secrets at rest; keep it off the data volume and
-> **stable** - changing it makes existing encrypted values unreadable.
+> **stable** - changing it makes existing encrypted values unreadable. Use at least 20 characters
+> (`openssl rand -hex 32`): a new install refuses a shorter one, an existing one warns at start.
 >
 > **`ARGUS_TRUST_PROXY`** is required behind a reverse proxy for correct client addresses:
 > `true` for one proxy on the LAN or the same host, or the proxies' addresses / networks
