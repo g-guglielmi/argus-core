@@ -113,11 +113,12 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
-	if err := s.st.RecordProbeCheckin(ctx, proxyName, strings.TrimSpace(req.Version), req.SelfUpdate, req.Scans, req.Sweeps); err != nil {
+	// The two versions are shown in notice titles and on the Probes page: a tag's shape or nothing.
+	if err := s.st.RecordProbeCheckin(ctx, proxyName, reportedVersion(req.Version), req.SelfUpdate, req.Scans, req.Sweeps); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record check-in"})
 		return
 	}
-	_ = s.st.SetUpdaterVersion(ctx, proxyName, strings.TrimSpace(req.UpdaterVersion))
+	_ = s.st.SetUpdaterVersion(ctx, proxyName, reportedVersion(req.UpdaterVersion))
 	if req.Procs != nil {
 		running, pinned := cleanProcs(req.Procs, req.ProcsPinned)
 		_ = s.st.RecordProbeProcs(ctx, proxyName, running, pinned)

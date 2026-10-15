@@ -170,7 +170,11 @@ func TestListDiscoveryJobsReadsEveryColumn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetDiscoveryJobCertificate(ctx, id, `{"fingerprint":"AA"}`); err != nil {
+	// Only the owning probe's report is kept, and only while the job is open.
+	if err := st.SetDiscoveryJobCertificate(ctx, id, "proxy-site2", `{"fingerprint":"XX"}`); err != ErrNotFound {
+		t.Fatalf("another probe's certificate: err = %v, want ErrNotFound", err)
+	}
+	if err := st.SetDiscoveryJobCertificate(ctx, id, "proxy-site1", `{"fingerprint":"AA"}`); err != nil {
 		t.Fatal(err)
 	}
 	jobs, err := st.ListDiscoveryJobs(ctx, 10)

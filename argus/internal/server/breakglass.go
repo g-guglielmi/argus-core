@@ -42,7 +42,7 @@ func (s *Server) handleReportBreakGlass(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
-	user := strings.TrimSpace(req.Username)
+	user := clip(printable(req.Username), 32)
 	if user == "" {
 		user = "argus"
 	}

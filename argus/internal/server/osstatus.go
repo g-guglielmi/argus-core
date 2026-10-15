@@ -194,7 +194,7 @@ func (s *Server) handleReportProbeOSStatus(w http.ResponseWriter, r *http.Reques
 	if req.SecUpdates != nil {
 		count = *req.SecUpdates
 	}
-	if err := s.st.SetProbeOSStatus(ctx, proxyName, count, req.RebootRequired, req.OS); err != nil {
+	if err := s.st.SetProbeOSStatus(ctx, proxyName, count, req.RebootRequired, clip(printable(req.OS), 80)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not store OS status"})
 		return
 	}

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -400,13 +401,41 @@ func (s *Server) injectUniFiMacros(ctx context.Context, req *createHostRequest) 
 		}
 	}
 	if ctlID != 0 {
-		if ctl, err := s.st.UniFiControllerByID(ctx, ctlID); err == nil {
+		// The key lands on a host the row's probe monitors, and Zabbix hands a host's macros to
+		// its proxy: so only a controller that probe's site may receive (the same rule as the
+		// scan hand-out), whatever reference the row carries.
+		site := ""
+		if job, err := s.st.DiscoveryJobByID(ctx, res.JobID); err == nil {
+			site = probeSite(job.ProxyName)
+		}
+		if ctl, err := s.st.UniFiControllerByID(ctx, ctlID); err == nil && ctl.InScope(site) {
 			set("{$UNIFI.URL}", ctl.URL)
 			set("{$UNIFI.KEY}", ctl.APIKey)
 		}
 	}
-	set("{$UNIFI.MAC}", unifiMACFor(res.MAC, uf))
+	if mac := unifiMACFor(res.MAC, uf); macShape.MatchString(mac) {
+		set("{$UNIFI.MAC}", mac)
+	}
 	set("{$UNIFI.SITE}", uf.Site)
+}
+
+// macShape is a MAC address as the UniFi macros take it: six hex pairs with colons.
+var macShape = regexp.MustCompile(`^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$`)
+
+// scanControllerIDs is the set of saved controllers a probe at site may be handed (see
+// scanControllerRefs), without decrypting their keys.
+func (s *Server) scanControllerIDs(ctx context.Context, site string) map[int64]bool {
+	out := map[int64]bool{}
+	ctls, err := s.st.ListUniFiControllers(ctx)
+	if err != nil {
+		return out
+	}
+	for _, c := range ctls {
+		if c.InScope(site) {
+			out[c.ID] = true
+		}
+	}
+	return out
 }
 
 // unifiMACFor is the {$UNIFI.MAC} for a controller-backed discovery row: the controller's own MAC
@@ -1008,18 +1037,30 @@ func (s *Server) handleScanResults(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
+	// The job first: a probe reports on its own jobs only, and nothing below (the certificate,
+	// the controller enrichment, the rows) happens for a job that isn't this probe's. Job ids
+	// are small integers, so a stranger's guess must land nowhere.
+	job, err := s.st.DiscoveryJobByID(ctx, req.JobID)
+	if err != nil || job.ProxyName != proxyName || job.State == "done" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown scan job"})
+		return
+	}
 	if c := req.Certificate; c != nil {
 		c.Fingerprint = unifi.NormalizeFingerprint(c.Fingerprint)
 		if len(c.Fingerprint) == 64 && strings.Trim(c.Fingerprint, "0123456789abcdef") == "" {
-			c.Subject, c.Issuer, c.NotAfter = clip(c.Subject, 200), clip(c.Issuer, 200), clip(c.NotAfter, 40)
+			c.Subject, c.Issuer, c.NotAfter = clip(printable(c.Subject), 200), clip(printable(c.Issuer), 200), clip(printable(c.NotAfter), 40)
 			if b, err := json.Marshal(c); err == nil {
-				_ = s.st.SetDiscoveryJobCertificate(ctx, req.JobID, string(b))
+				_ = s.st.SetDiscoveryJobCertificate(ctx, job.ID, proxyName, string(b))
 			}
 		}
 	}
 	if len(req.Hosts) > maxScanHosts {
 		req.Hosts = req.Hosts[:maxScanHosts]
 	}
+	// A row may name a controller only among those this probe was handed for the scan: the
+	// reference decides whose API key lands on the host when the row is adopted, and a probe
+	// must never reach another site's key that way.
+	allowedCtl := s.scanControllerIDs(ctx, probeSite(proxyName))
 	results := make([]store.DiscoveryResult, 0, len(req.Hosts))
 	for _, h := range req.Hosts {
 		if strings.TrimSpace(h.IP) == "" {
@@ -1044,7 +1085,9 @@ func (s *Server) handleScanResults(w http.ResponseWriter, r *http.Request) {
 			// Controller device facts (a sweep result, or a probe-enriched scan row): the
 			// controller's record IS the identity - no fingerprinting.
 			res.UniFiJSON = string(h.Unifi)
-			res.ControllerID = h.UnifiCtl
+			if allowedCtl[h.UnifiCtl] {
+				res.ControllerID = h.UnifiCtl
+			}
 			var uf unifiFacts
 			if json.Unmarshal(h.Unifi, &uf) == nil {
 				res.SuggestedClass = provision.SuggestUniFiClass(uf.Type, uf.Model)
@@ -1063,20 +1106,19 @@ func (s *Server) handleScanResults(w http.ResponseWriter, r *http.Request) {
 	// Post-processing by job kind: probe-sweep rows carry their controller reference (adopt-time
 	// macro injection resolves through it); scan rows get controller enrichment (best-effort,
 	// bounded - see enrichScanResults).
-	if job, jerr := s.st.DiscoveryJobByID(ctx, req.JobID); jerr == nil {
-		if job.Kind == "unifi" {
-			for i := range results {
-				results[i].ControllerID = job.ControllerID
-			}
-		} else if len(results) > 0 {
-			ectx, ecancel := context.WithTimeout(ctx, 12*time.Second)
-			if n := enrichScanResults(results, s.fetchControllerInventories(ectx)); n > 0 {
-				s.logger.Info("discovery: scan rows enriched from controllers", "job", req.JobID, "rows", n)
-			}
-			ecancel()
+	if job.Kind == "unifi" {
+		for i := range results {
+			results[i].ControllerID = job.ControllerID
 		}
+	} else if len(results) > 0 {
+		ectx, ecancel := context.WithTimeout(ctx, 12*time.Second)
+		if n := enrichScanResults(results, s.fetchControllerInventories(ectx)); n > 0 {
+			s.logger.Info("discovery: scan rows enriched from controllers", "job", req.JobID, "rows", n)
+		}
+		ecancel()
 	}
-	err = s.st.CompleteDiscoveryJob(ctx, req.JobID, proxyName, strings.TrimSpace(req.Error), results)
+	// The probe's error text goes into a notice on every channel: one short printable line.
+	err = s.st.CompleteDiscoveryJob(ctx, job.ID, proxyName, clip(printable(req.Error), 200), results)
 	if errors.Is(err, store.ErrNotFound) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown scan job"})
 		return

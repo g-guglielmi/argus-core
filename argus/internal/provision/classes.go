@@ -114,6 +114,7 @@ const (
 	patternEngine   = `^(cloudflare|ookla)?$`                               // the speed test's engine, or blank (Cloudflare)
 	patternServerID = `^([0-9]{1,9})?$`                                     // an Ookla server ID, or blank (Ookla picks)
 	patternPort     = `^([1-9][0-9]{0,4})?$`                                // 1-65535 or blank (the template default)
+	patternMAC      = `^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$`                // a MAC address, six hex pairs with colons
 	patternKey      = `^(/var/lib/zabbix/ssh/[A-Za-z0-9][A-Za-z0-9._-]*)?$` // a key inside the proxy's ssh dir, or blank
 	// systemd unit names, comma or space separated: systemd's own characters, never a leading "-"
 	patternUnits = `^([A-Za-z0-9][A-Za-z0-9@._:-]*([ ,]+[A-Za-z0-9][A-Za-z0-9@._:-]*)*[ ,]*)?$`
@@ -440,7 +441,7 @@ var registry = []Class{
 		Macros: []MacroSpec{
 			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
 			{Macro: "{$UNIFI.KEY}", Label: "API key", Hint: "UniFi Network → Settings → Control Plane → Integrations", Required: true, Secret: true},
-			{Macro: "{$UNIFI.MAC}", Label: "Switch MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true},
+			{Macro: "{$UNIFI.MAC}", Label: "Switch MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true, Pattern: patternMAC},
 			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "default"},
 		},
 	},
@@ -458,7 +459,7 @@ var registry = []Class{
 		Macros: []MacroSpec{
 			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
 			{Macro: "{$UNIFI.KEY}", Label: "API key", Hint: "UniFi Network → Settings → Control Plane → Integrations", Required: true, Secret: true},
-			{Macro: "{$UNIFI.MAC}", Label: "Gateway MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true},
+			{Macro: "{$UNIFI.MAC}", Label: "Gateway MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true, Pattern: patternMAC},
 			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "default"},
 		},
 	},
@@ -474,7 +475,7 @@ var registry = []Class{
 		Macros: []MacroSpec{
 			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
 			{Macro: "{$UNIFI.KEY}", Label: "API key", Hint: "UniFi Network → Settings → Control Plane → Integrations", Required: true, Secret: true},
-			{Macro: "{$UNIFI.MAC}", Label: "Access point MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true},
+			{Macro: "{$UNIFI.MAC}", Label: "Access point MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true, Pattern: patternMAC},
 			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "default"},
 		},
 	},
@@ -493,7 +494,7 @@ var registry = []Class{
 		Macros: []MacroSpec{
 			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
 			{Macro: "{$UNIFI.KEY}", Label: "API key", Hint: "UniFi Network → Settings → Control Plane → Integrations", Required: true, Secret: true},
-			{Macro: "{$UNIFI.MAC}", Label: "Console MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true},
+			{Macro: "{$UNIFI.MAC}", Label: "Console MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true, Pattern: patternMAC},
 			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "default"},
 		},
 	},

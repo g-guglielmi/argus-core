@@ -96,11 +96,19 @@ func scanDiscoveryJob(row interface{ Scan(...any) error }) (DiscoveryJob, error)
 	return j, err
 }
 
-// SetDiscoveryJobCertificate records the certificate a probe reported for a job (before the job
-// completes), so the admin can pin it.
-func (s *Store) SetDiscoveryJobCertificate(ctx context.Context, jobID int64, certJSON string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE discovery_jobs SET certificate=? WHERE id=?`, certJSON, jobID)
-	return err
+// SetDiscoveryJobCertificate records the certificate the owning probe reported for a job still in
+// flight, so the admin can pin it. Another probe's job, or a finished one, is left alone
+// (ErrNotFound): the admin pins what the probe that will talk to the controller saw, never what
+// some other probe claims.
+func (s *Store) SetDiscoveryJobCertificate(ctx context.Context, jobID int64, proxyName, certJSON string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE discovery_jobs SET certificate=? WHERE id=? AND proxy_name=? AND state<>'done'`, certJSON, jobID, proxyName)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // expireStaleDiscoveryJobs fails jobs stuck in pending/dispatched past their grace periods, so a

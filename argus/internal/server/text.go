@@ -5,6 +5,7 @@ package server
 
 import (
 	"net/http"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -24,6 +25,30 @@ func oneLine(s string, max int) (string, bool) {
 		}
 	}
 	return s, utf8.RuneCountInString(s) <= max
+}
+
+// printable drops control characters (line breaks, tabs, NUL, escapes) from text that a machine
+// reported and people will read in a notice, a title or a log line.
+func printable(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// versionShape is a version or image tag as a probe reports it; anything else is kept as "".
+var versionShape = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
+
+// reportedVersion keeps a probe-reported version string only when it is shaped like one: it is
+// shown in notice titles and the Probes page.
+func reportedVersion(s string) string {
+	s = strings.TrimSpace(s)
+	if !versionShape.MatchString(s) {
+		return ""
+	}
+	return s
 }
 
 // noteOrRefuse applies oneLine to a note and, when it fails, writes the 400 that says why.

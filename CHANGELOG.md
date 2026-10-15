@@ -25,6 +25,14 @@ GitHub Release from the matching section below.
   and the body was written raw, so an acknowledgement message shaped like a boundary could add an
   HTML part of its own to the ACKNOWLEDGED mail every recipient gets. Boundaries are random per
   message and the parts are quoted-printable now.
+- **A probe reports on its own discovery jobs only.** The certificate a probe reported (the one an
+  admin pins for a controller) was written onto any job by id before the job's owner was checked,
+  and a scan row could name any saved controller, whose API key then landed on the host at
+  adoption, so one probe could reach another site's controller key. The job's owner is checked
+  first now, a row may only name a controller its site is handed, and adoption checks the same.
+- **Probe-reported text is bounded**: a scan's error, the probe and updater versions, the OS line
+  and the break-glass user are clipped to one printable line (or a tag's shape) before they reach
+  a notice or a title; the UniFi MAC macro must look like a MAC.
 
 **Changed:**
 - **Notes are one line** of up to 500 characters: an acknowledgement's message, a hide's reason,

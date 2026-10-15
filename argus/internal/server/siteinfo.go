@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"argus/internal/store"
 )
@@ -325,13 +324,7 @@ const (
 // siteField trims a field, drops control characters (the lines go into notification bodies) and
 // caps its length in characters.
 func siteField(s string) string {
-	s = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
-			return -1
-		}
-		return r
-	}, s)
-	return clip(s, maxSiteField)
+	return clip(printable(s), maxSiteField)
 }
 
 // PUT /api/sites/{site}/info: replace a site's info. Its editor writes the whole thing.
