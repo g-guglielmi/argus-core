@@ -100,7 +100,7 @@ docker run -d \
    and the Zabbix API as **reachable** with its version. That confirms the whole
    GitHub → GHCR → docker run → Zabbix chain works end to end.
 
-## Local development (optional, needs Go 1.22+ and Node 20+)
+## Local development (optional, needs Go 1.26+ and Node 22.12+; the image builds with Go 1.27 and Node 24)
 ```bash
 # terminal 1 - backend
 cd argus && ARGUS_ZABBIX_API_URL=http://<reachable-zabbix>:8080/api_jsonrpc.php go run .

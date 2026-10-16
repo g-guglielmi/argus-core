@@ -13,6 +13,13 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Changed:**
+- **The frontend is built with Node 24 (the active LTS line) and Vite 8** with its React plugin 6,
+  from Node 22 and Vite 5. Build-time only: nothing of Node or Vite ships in the image, the app's
+  code is unchanged, and the built page keeps the same shape (no inline script, so the security
+  policy holds). Dependabot proposes no major jumps for the base images or the frontend's
+  production packages; those are deliberate moves like this one.
+
 ## [0.8.13] - 2026-10-17
 
 The last of the 2026-10-14 review: the build's supply chain and the small things, plus the first
