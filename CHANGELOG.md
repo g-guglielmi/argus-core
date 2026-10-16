@@ -22,6 +22,11 @@ GitHub Release from the matching section below.
   with no route to Sigstore.
 
 **Changed:**
+- **The app runs on React 19** (from 18.3), and is type-checked by TypeScript 7 (from 5.9), the
+  new native compiler. The app's code is the same; what changed is one type import and Vite's type
+  declarations for the stylesheet imports. Checked by a click-through of every view, the dialogs
+  and menus, the charts, the report builder and the sign-in screen, at desktop and phone widths,
+  against the mock API, with React's development build watched for warnings.
 - **The frontend is built with Node 24 (the active LTS line) and Vite 8** with its React plugin 6,
   from Node 22 and Vite 5. Build-time only: nothing of Node or Vite ships in the image, the app's
   code is unchanged, and the built page keeps the same shape (no inline script, so the security
