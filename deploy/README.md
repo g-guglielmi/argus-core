@@ -193,6 +193,14 @@ Argus is a **control plane** for probe versions: it holds a **fleet target** (Up
 against it. Every probe self-reports its baked-in version every ~5 min over an outbound-only
 check-in (a long-lived token issued at enrollment) - nothing inbound is opened.
 
+- **What the sidecar checks before it swaps a container.** The pulled image must carry the digest
+  Argus handed out with the tag, and a Sigstore signature from the one workflow allowed to have
+  built it (the core's, the probe's or the updater's own build). An image pushed with a registry
+  token rather than a build, or one with no signature, is refused and the running container is left
+  as it is; the reason shows on the Updates page. Images older than core v0.8.13, probe r31 and
+  updater 0.2.13 are unsigned, so a verifying sidecar will not move a container back to them.
+  `ARGUS_VERIFY_SIGNATURES=0` on the sidecar keeps the digest check alone for a site with no route
+  to Sigstore's public trust root.
 - **Visibility + manual update (any deployment).** The Probes page flags drift, and the Updates
   page shows a `docker pull … && docker restart argus-<proxy>` for an outdated probe without a sidecar. No Docker
   socket involved. Version is shown even for probes that never check in (read from Zabbix).

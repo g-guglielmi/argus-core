@@ -13,6 +13,14 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Security:**
+- **The update sidecar now verifies every image's signature** (argus-updater 0.2.13, and probe
+  images are signed from r31): after the pull and the digest check, the pulled image must carry a
+  Sigstore signature from the one workflow allowed to have built it, or it is refused with the
+  reason on the Updates page and the running container is left untouched. Nothing changes in the
+  core itself; the docs say what is checked and how to switch the signature check off for a site
+  with no route to Sigstore.
+
 **Changed:**
 - **The frontend is built with Node 24 (the active LTS line) and Vite 8** with its React plugin 6,
   from Node 22 and Vite 5. Build-time only: nothing of Node or Vite ships in the image, the app's

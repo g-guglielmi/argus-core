@@ -160,9 +160,12 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
   derive it from their enroll URL when there is none). "Probe core host" is validated as `host[:port]`.
 - **Images** are built from base images pinned by digest and signed keyless with Sigstore by the
   build workflow (the signature names the workflow; `cosign verify` with the repository's identity
-  proves an image came from it). The update hand-out pins digests; signature verification in the
-  updater is still to come, so until then the digest check only catches a tag moved between
-  hand-out and pull.
+  proves an image came from it). The update hand-out pins digests, and the updater (0.2.13 and
+  later) verifies both before a container is recreated: the pulled image must carry the digest the
+  core handed out, and a signature from the one workflow allowed to build it (argus-core's
+  `build.yml`, argus-probe's `probe-image.yml`, argus-updater's `updater-image.yml`). An image
+  pushed with a registry token, or an unsigned one, is refused with the reason on the Updates page.
+  The three repositories' images carry signatures from core v0.8.13, probe r31 and updater 0.2.13.
 - **The status page** allows only its one inline script, by hash; the acknowledgement page from an
   email link allows none; a disabled account answers a sign-in like a wrong password.
 - **The Zabbix API token** is a super-admin credential sent as a Bearer header on every poll, so from
