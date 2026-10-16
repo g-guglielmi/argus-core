@@ -88,6 +88,10 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           govulncheck ./...
+      # The Go test suite: the boundary tests (sites, probes, tokens), the store, the renderers.
+      - name: go test
+        working-directory: argus
+        run: go test ./...
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
