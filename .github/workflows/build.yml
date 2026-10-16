@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  # A pull request (Dependabot's, or anyone's) runs the checks job only: the read-only token a
+  # pull request gets reaches no secret and pushes no image, so a fork can't use this to publish.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 # Permissions are granted per job: the change detection needs nothing, the image build pushes to
@@ -17,8 +21,8 @@ permissions: {}
 # the two runs race and the main build can clobber :testing back to a same-commit rebuild with a
 # different digest, which used to surface as a phantom "update available" on a just-released box.
 concurrency:
-  group: build-image
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'build-image' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Skip the image build for docs-only branch pushes. Markdown / LICENSE never change the runtime
@@ -117,7 +121,7 @@ jobs:
       packages: write   # push images to GHCR
       id-token: write   # keyless cosign: the signature names this workflow as the signer
     needs: [changes, checks]
-    if: needs.changes.outputs.build == 'true'
+    if: needs.changes.outputs.build == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
