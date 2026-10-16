@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 g-guglielmi
 
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, Fragment, type FormEvent, type ReactNode, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, Fragment, type FormEvent, type JSX, type ReactNode, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
