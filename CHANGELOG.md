@@ -13,7 +13,12 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
-The last of the 2026-10-14 review: the build's supply chain, and the small things.
+## [0.8.13] - 2026-10-17
+
+The last of the 2026-10-14 review: the build's supply chain and the small things, plus the first
+sweep of dependency updates (the SQLite driver, the passkey and crypto libraries, the build
+actions) now that Dependabot watches the repository. This is the first release whose image carries
+a signature.
 
 **Security:**
 - **Every image is signed** (Sigstore, keyless): the signature is bound to this repository's build
@@ -53,6 +58,11 @@ The last of the 2026-10-14 review: the build's supply chain, and the small thing
 **Changed:**
 - A UniFi controller's "sites" note says that leaving it empty hands the key to every probe that
   scans.
+- **Dependencies:** golang.org/x/crypto 0.58 (password hashing, TLS), the SQLite driver
+  modernc.org/sqlite 1.60.1, the passkey library go-webauthn 0.18.2, golang.org/x/image 0.47 and
+  x/sys 0.49; in CI, actions/checkout 7, setup-go 7, upload-artifact 7, docker/setup-buildx 4,
+  metadata-action 6 and build-push-action 7. Pull requests now run the dependency gate (with a
+  read-only token, never the image build), and the gate runs the Go test suite, which it never did.
 
 ## [0.8.12] - 2026-10-15
 
