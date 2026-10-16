@@ -37,7 +37,7 @@ jobs:
     outputs:
       build: ${{ steps.detect.outputs.build }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0   # need both BEFORE and HEAD to diff a branch push
       - name: Detect non-doc changes
@@ -72,7 +72,7 @@ jobs:
     if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # The exact toolchain the image builds with, read from the Dockerfile: govulncheck rates the
       # standard library at the toolchain that runs it, so checking a newer patch than the one that
       # builds would pass a gate the image fails. Bumping the Dockerfile is what moves this.
@@ -124,7 +124,7 @@ jobs:
     if: needs.changes.outputs.build == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0   # full history + tags so `git describe` can name the build
 
@@ -214,7 +214,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Extract changelog section for this tag
         run: |
