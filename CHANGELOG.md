@@ -13,6 +13,13 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.8.15] - 2026-10-17
+
+Quieter after an outage and in the host tree: a settle window keeps a site coming back up from
+alerting on the way, a system notice now says when its condition cleared, a hidden sensor's problem
+no longer colours its host, and an add-on's thresholds (the HTTP check's response time and certificate
+days among them) can be set per host.
+
 **Added:**
 - **A settle window after an outage.** When a probe came back after a night offline, the hosts behind
   it were coming back too, and their first minutes alerted: services still starting on a server
