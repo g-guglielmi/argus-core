@@ -171,9 +171,14 @@ func (s *Server) handleBulkHosts(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown device class"})
 			return
 		}
+		// The class's thresholds and its add-ons': an add-on's lands on every host picked, idle on
+		// one without the add-on and in force on the others, so the dialog names it under the add-on.
 		labels := map[string]provision.ThresholdSpec{}
-		for _, tt := range provision.ThresholdsForTemplates(class.HostTemplates()) {
+		for _, tt := range provision.ThresholdsForClass(class) {
 			for _, sp := range tt.Specs {
+				if tt.AddOn != "" {
+					sp.Label = tt.Group + " · " + sp.Label
+				}
 				labels[sp.Macro] = sp
 			}
 		}

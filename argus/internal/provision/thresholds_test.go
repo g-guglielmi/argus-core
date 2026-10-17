@@ -55,6 +55,55 @@ func TestThresholdCatalogMatchesTemplates(t *testing.T) {
 }
 
 // TestThresholdsForTemplates returns only the requested templates' catalog entries.
+// A host overrides its class templates' thresholds and those of the add-ons offered on its class, each
+// add-on's tagged with it: a Linux box gets the HTTP, DNS and TCP add-ons but not the probe's; the
+// probe host (no Base Ping, internal) gets the speed test and the SaaS checks and none of the others.
+func TestThresholdsForClass(t *testing.T) {
+	groups := func(c Class) map[string]string {
+		out := map[string]string{}
+		for _, ct := range ThresholdsForClass(c) {
+			out[ct.Template] = ct.AddOn
+		}
+		return out
+	}
+	linux, ok := ClassByID("linux-snmp")
+	if !ok {
+		t.Fatal("linux-snmp class missing")
+	}
+	got := groups(linux)
+	for tpl, addon := range map[string]string{TemplateBasePing: "", "Argus Linux by SNMP": "", TemplateHTTP: "http", "Argus DNS resolution": "dns-resolve", TemplateTCP: "tcp"} {
+		if a, has := got[tpl]; !has || a != addon {
+			t.Errorf("linux-snmp: template %q: want add-on %q, got %q (present %v)", tpl, addon, a, has)
+		}
+	}
+	for _, tpl := range []string{TemplateSpeedtest, TemplateSaaS, TemplateProbeHealth} {
+		if _, has := got[tpl]; has {
+			t.Errorf("linux-snmp: template %q must not be offered", tpl)
+		}
+	}
+	all := ThresholdsForClass(linux)
+	if all[0].Template != TemplateBasePing || all[0].Group != "Base Ping" {
+		t.Errorf("the class's own thresholds come first, Base Ping heading first: got %q / %q", all[0].Template, all[0].Group)
+	}
+	for _, ct := range all {
+		if ct.AddOn == "http" && ct.Group != "HTTP/HTTPS endpoint" {
+			t.Errorf("an add-on's heading is its label, got %q", ct.Group)
+		}
+	}
+	probe, _ := ClassByID(ClassProbe)
+	got = groups(probe)
+	for tpl, addon := range map[string]string{TemplateProbeHealth: "", TemplateSpeedtest: "speedtest", TemplateSaaS: "saas"} {
+		if a, has := got[tpl]; !has || a != addon {
+			t.Errorf("probe: template %q: want add-on %q, got %q (present %v)", tpl, addon, a, has)
+		}
+	}
+	for _, tpl := range []string{TemplateBasePing, TemplateHTTP, TemplateTCP, "Argus DNS resolution"} {
+		if _, has := got[tpl]; has {
+			t.Errorf("probe: template %q must not be offered", tpl)
+		}
+	}
+}
+
 func TestThresholdsForTemplates(t *testing.T) {
 	got := ThresholdsForTemplates([]string{TemplateBasePing, "Argus Linux by SNMP", "Argus Nonexistent"})
 	if len(got) != 2 {

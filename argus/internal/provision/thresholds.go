@@ -180,6 +180,44 @@ func ThresholdsForTemplates(templates []string) []TemplateThresholds {
 	return out
 }
 
+// ClassThresholds is one template's thresholds as a host of a class may override them: the class's
+// own (Base Ping + its templates) or an offered add-on's, tagged with the add-on so the host dialog
+// can show them only while the add-on is on. Group is the heading the dialog puts over them: the
+// add-on's label (the name the dialog's Add-ons section uses) or the template's display name.
+type ClassThresholds struct {
+	TemplateThresholds
+	AddOn string `json:"addon,omitempty"`
+	Group string `json:"group"`
+}
+
+// DisplayTemplateName drops the "Argus " prefix templates carry, for a cleaner heading.
+func DisplayTemplateName(name string) string { return strings.TrimPrefix(name, "Argus ") }
+
+// ThresholdsForClass returns every threshold a host of this class may override: its own templates'
+// (catalog order) and then those of each add-on offered on the class (registry order), skipping an
+// add-on whose template the class already carries. Add-on thresholds are listed whether or not the
+// add-on is on: a per-host value is a host macro, idle on a host without the template and in force
+// the moment the add-on is turned on, so a save may set them in the same breath as the add-on.
+func ThresholdsForClass(c Class) []ClassThresholds {
+	var out []ClassThresholds
+	for _, tt := range ThresholdsForTemplates(c.HostTemplates()) {
+		out = append(out, ClassThresholds{TemplateThresholds: tt, Group: DisplayTemplateName(tt.Template)})
+	}
+	own := map[string]bool{}
+	for _, t := range c.Templates {
+		own[t] = true
+	}
+	for _, a := range addOns {
+		if own[a.Template] || !a.OffersOn(c.ID, c.Internal) {
+			continue
+		}
+		for _, tt := range ThresholdsForTemplates([]string{a.Template}) {
+			out = append(out, ClassThresholds{TemplateThresholds: tt, AddOn: a.ID, Group: a.Label})
+		}
+	}
+	return out
+}
+
 // TemplateClassLabels returns the human labels of the classes that link this template, so the UI can
 // show a template group's scope ("Applies to: ..."). Base Ping / HTTP are handled by the caller.
 func TemplateClassLabels(template string) []string {

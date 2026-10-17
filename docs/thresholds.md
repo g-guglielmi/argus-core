@@ -15,8 +15,10 @@ fleet-wide defaults is **admin-only** and lives in the sidebar under **Admin →
   every host of those classes that has no override.
 - **Per-device override** - a value for one host only. Edited in that host's settings dialog
   (**Monitoring → a host → Settings → Thresholds**, a folded section: its title says which values the
-  host sets, or that it keeps the defaults, and opens it). An override always wins over the fleet-wide
-  default.
+  host sets, or that it keeps the defaults, and opens it). The section groups the thresholds under the
+  template that carries them (Base Ping first, then the class's own) and, while an add-on is on, under
+  that add-on (the HTTP/HTTPS endpoint's response time and certificate days, a DNS resolution's
+  resolve time, a TCP port's connect time). An override always wins over the fleet-wide default.
 
 In both places, a field left blank means "use the level above": a blank per-host field inherits the
 fleet-wide default, and a blank/reset fleet-wide field uses the template's factory value. The current

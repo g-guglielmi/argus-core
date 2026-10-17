@@ -107,12 +107,25 @@ func (d addOnDesired) accepted(macro string) bool {
 
 // thresholdFieldView is one per-host threshold override in the settings editor: the effective global
 // default (placeholder / reset target) plus the host's own value if it overrides. All text, never secret.
+// Group is the heading it sits under (its template, or its add-on's label); AddOn names the add-on
+// whose template carries it, and the dialog shows such a field only while that add-on is on.
 type thresholdFieldView struct {
 	Macro   string `json:"macro"`
 	Label   string `json:"label"`
 	Unit    string `json:"unit,omitempty"`
 	Default string `json:"default"`         // effective global default (store override or template factory)
 	Value   string `json:"value,omitempty"` // this host's override ("" = using the default)
+	Group   string `json:"group"`
+	AddOn   string `json:"addon,omitempty"`
+}
+
+// diffField is the change log's name for a threshold: an add-on's under its label, since "Response
+// time" is a Ping threshold and an HTTP one too.
+func (t thresholdFieldView) diffField() string {
+	if t.AddOn != "" {
+		return t.Group + " · " + t.Label
+	}
+	return t.Label
 }
 
 type hostConfigView struct {
@@ -265,19 +278,19 @@ func (s *Server) hostConfigFor(ctx context.Context, hostID string, canEdit bool)
 				}
 				out.Macros = append(out.Macros, f)
 			}
-			// Per-host threshold overrides: the class's templates + Base Ping (every host). The
-			// placeholder is the effective global default (store override, else template factory);
-			// blank means "inherit the default". Argus is the source of truth, so no Zabbix read here.
+			// Per-host threshold overrides: the class's templates + Base Ping (every host), then those
+			// of the add-ons offered on the class (shown while the add-on is on). The placeholder is
+			// the effective global default (store override, else template factory); blank means
+			// "inherit the default". Argus is the source of truth, so no Zabbix read here.
 			factory, _ := provision.TemplateFactoryDefaults()
 			gdef, _ := s.st.ThresholdDefaults(ctx)
-			tset := class.HostTemplates()
-			for _, tt := range provision.ThresholdsForTemplates(tset) {
+			for _, tt := range provision.ThresholdsForClass(class) {
 				for _, sp := range tt.Specs {
 					def := gdef[tt.Template][sp.Macro]
 					if def == "" {
 						def = factory[tt.Template][sp.Macro]
 					}
-					tf := thresholdFieldView{Macro: sp.Macro, Label: sp.Label, Unit: sp.Unit, Default: def}
+					tf := thresholdFieldView{Macro: sp.Macro, Label: sp.Label, Unit: sp.Unit, Default: def, Group: tt.Group, AddOn: tt.AddOn}
 					if m, has := curMacros[sp.Macro]; has {
 						tf.Value = m.Value
 					}
@@ -813,7 +826,8 @@ func (s *Server) applyClassMacros(ctx context.Context, hostID string, desired ma
 		return nil
 	}
 	// Editable macros = the class's declared macros (some secret) plus its threshold macros (§D, all
-	// text: the class's templates + Base Ping). Nothing else the host carries is ever touched.
+	// text: the class's templates + Base Ping, and the add-ons offered on the class). Nothing else the
+	// host carries is ever touched.
 	type editableMacro struct {
 		macro     string
 		secret    bool
@@ -828,8 +842,7 @@ func (s *Server) applyClassMacros(ctx context.Context, hostID string, desired ma
 			editable = append(editable, editableMacro{macro: ms.Macro, secret: ms.Secret, spec: ms})
 		}
 	}
-	tset := class.HostTemplates()
-	for _, tt := range provision.ThresholdsForTemplates(tset) {
+	for _, tt := range provision.ThresholdsForClass(class) {
 		for _, sp := range tt.Specs {
 			if !seen[sp.Macro] {
 				seen[sp.Macro] = true

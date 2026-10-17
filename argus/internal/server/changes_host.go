@@ -69,7 +69,7 @@ func hostConfigDiff(before hostConfigView, req hostConfigUpdate, proxies map[str
 				continue
 			}
 			nv = strings.TrimSpace(nv)
-			add(t.Label, thresholdText(t.Value, t.Default, t.Unit), thresholdText(nv, t.Default, t.Unit))
+			add(t.diffField(), thresholdText(t.Value, t.Default, t.Unit), thresholdText(nv, t.Default, t.Unit))
 		}
 	}
 	if req.AddOns != nil {

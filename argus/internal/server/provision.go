@@ -620,7 +620,7 @@ func buildMacros(req createHostRequest, class provision.Class) ([]zabbix.Macro, 
 		specs[ms.Macro] = ms
 	}
 	thresholds := map[string]bool{}
-	for _, tt := range provision.ThresholdsForTemplates(class.HostTemplates()) {
+	for _, tt := range provision.ThresholdsForClass(class) {
 		for _, sp := range tt.Specs {
 			thresholds[sp.Macro] = true
 		}

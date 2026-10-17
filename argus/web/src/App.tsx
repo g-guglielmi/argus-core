@@ -22,7 +22,34 @@ type DeviceClass = { id: string; label: string; family: string; pattern: string;
 type SnmpCfg = { version: number; community: string; bulk: number; security_name: string; security_level: number; auth_protocol: number; auth_passphrase: string; priv_protocol: number; priv_passphrase: string; context_name: string }
 type Iface = { interfaceid?: string; type: number; useip: number; ip: string; dns: string; port: string; snmp?: SnmpCfg; inherit?: boolean }
 type MacroField = { macro: string; label: string; hint?: string; secret?: boolean; options?: string[]; value: string; set?: boolean }
-type ThresholdField = { macro: string; label: string; unit?: string; default: string; value?: string }
+type ThresholdField = { macro: string; label: string; unit?: string; default: string; value?: string; group?: string; addon?: string }
+
+// thrVal is a threshold value with its unit: glued for a symbol (20%, 45°C), a space before letters (0.5 s, 14 days, 100 Mbps), as the charts and the change log write them.
+function thrVal(v: string, unit?: string): string { return unit ? v + (/^[A-Za-z]/.test(unit) ? ' ' : '') + unit : v }
+
+// thresholdsShown is the per-host thresholds a dialog lists: the class's own, and an add-on's only
+// while that add-on is on (the server sends them for every add-on the class may have).
+function thresholdsShown(cfg: HostCfg): ThresholdField[] {
+  return (cfg.thresholds || []).filter((t) => !t.addon || cfg.addons?.find((a) => a.id === t.addon)?.enabled)
+}
+
+// withGroups lays the thresholds out with a heading over each group (its template, or the add-on's
+// label), so a "Response time" of the ping and one of the HTTP check read apart; none when there is
+// one group only.
+function withGroups(fields: ThresholdField[], render: (f: ThresholdField) => ReactNode): ReactNode[] {
+  const groups = new Set(fields.map((f) => f.group || ''))
+  const out: ReactNode[] = []
+  let last: string | null = null
+  for (const f of fields) {
+    const g = f.group || ''
+    if (groups.size > 1 && g !== last) {
+      out.push(<div className="thr-group" key={'g:' + g}>{g}</div>)
+      last = g
+    }
+    out.push(render(f))
+  }
+  return out
+}
 type ThrRowData = { macro: string; label: string; unit?: string; default: string; value?: string }
 type ThrTemplate = { template: string; label: string; every_host?: boolean; optional?: boolean; classes?: string[]; thresholds: ThrRowData[] }
 type ThresholdsData = { templates: ThrTemplate[] }
@@ -5037,21 +5064,21 @@ function BulkTagsDialog({ tags, count, busy, reason, setReason, onApply, onClose
 function BulkThresholdsDialog({ hostId, count, busy, reason, setReason, onApply, onClose }: { hostId: string; count: number; busy: boolean; reason: string; setReason: (v: string) => void; onApply: (macros: Record<string, string>) => void; onClose: () => void }) {
   const [fields, setFields] = useState<ThresholdField[] | null>(null)
   const [vals, setVals] = useState<Record<string, string>>({})
-  useEffect(() => { fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : null)).then((c: HostCfg | null) => setFields(c?.thresholds || [])).catch(() => setFields([])) }, [hostId])
+  useEffect(() => { fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : null)).then((c: HostCfg | null) => setFields(c ? thresholdsShown(c) : [])).catch(() => setFields([])) }, [hostId])
   const set = Object.keys(vals).length
   return (
     <BulkDialog title={`Thresholds of ${count} host${count === 1 ? '' : 's'}`} note="Fill only what should change; empty fields stay as each host has them." busy={busy} applyLabel="Apply" canApply={set > 0} reason={reason} setReason={setReason} onClose={onClose} onApply={() => onApply(vals)}>
       {fields === null ? <span className="muted">Loading…</span> : fields.length === 0 ? <span className="muted">This class has no thresholds to set.</span> : (
         <div className="thr-rows">
-          {fields.map((f) => (
+          {withGroups(fields, (f) => (
             <div className="thr-row" key={f.macro}>
               <span className="thr-row-label">{f.label}{f.unit ? ` (${f.unit})` : ''}</span>
               <div className="thr-row-input">
-                <input className="input" inputMode="decimal" placeholder={vals[f.macro] === '' ? `default ${f.default}${f.unit || ''}` : 'unchanged'} value={vals[f.macro] ?? ''}
+                <input className="input" inputMode="decimal" placeholder={vals[f.macro] === '' ? `default ${thrVal(f.default, f.unit)}` : 'unchanged'} value={vals[f.macro] ?? ''}
                   onChange={(e) => { const v = e.target.value; setVals((cur) => { const n = { ...cur }; if (v.trim() === '') delete n[f.macro]; else n[f.macro] = v; return n }) }} />
                 <button type="button" className={'btn ghost thr-reset' + (vals[f.macro] === '' ? ' on' : '')} onClick={() => setVals((cur) => { const n = { ...cur }; if (n[f.macro] === '') delete n[f.macro]; else n[f.macro] = ''; return n })}>{vals[f.macro] === '' ? 'Back to unchanged' : 'Use the default'}</button>
               </div>
-              <span className="thr-row-def">{vals[f.macro] === '' ? `Each host goes back to the default of ${f.default}${f.unit || ''}` : `Default ${f.default}${f.unit || ''}`}</span>
+              <span className="thr-row-def">{vals[f.macro] === '' ? `Each host goes back to the default of ${thrVal(f.default, f.unit)}` : `Default ${thrVal(f.default, f.unit)}`}</span>
             </div>
           ))}
         </div>
@@ -6628,7 +6655,7 @@ function ThrRow({ template, row, onSaved, reason = '' }: { template: string; row
     <div className="thr-row">
       <span className="thr-row-label">{row.label}{row.unit ? ` (${row.unit})` : ''}</span>
       <div className="thr-row-input">
-        <input className="input" value={val} inputMode="decimal" placeholder={`default ${row.default}${row.unit || ''}`}
+        <input className="input" value={val} inputMode="decimal" placeholder={`default ${thrVal(row.default, row.unit)}`}
           onChange={(e) => setVal(e.target.value)} onBlur={() => commit(val)}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
         {overridden && <button className="btn ghost thr-reset" onClick={() => { setVal(''); commit('') }}>Reset</button>}
@@ -6636,7 +6663,7 @@ function ThrRow({ template, row, onSaved, reason = '' }: { template: string; row
         {status === 'saved' && <span className="thr-row-def txt-ok">Saved</span>}
       </div>
       {status === 'err' ? <span className="thr-row-def txt-err">{err}</span>
-        : overridden ? <span className="thr-row-def">Overrides the default of {row.default}{row.unit || ''}</span>
+        : overridden ? <span className="thr-row-def">Overrides the default of {thrVal(row.default, row.unit)}</span>
         : <span className="thr-row-def">Factory default</span>}
     </div>
   )
@@ -7840,16 +7867,17 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
       )}
 
       {cfg.thresholds && cfg.thresholds.length > 0 && (() => {
-        const own = cfg.thresholds.filter((t) => (t.value || '').trim())
+        const shown = thresholdsShown(cfg)
+        const own = shown.filter((t) => (t.value || '').trim())
         return (
           <HsSection title="Thresholds" {...sec('thr')} summary={own.length === 0 ? 'all at the defaults'
-            : `${own.length} set for this host: ` + own.map((t) => `${t.label} ${t.value!.trim()}${t.unit || ''}`).join(', ')}>
-            <div className="hs-note" style={{ margin: '0 0 10px' }}>Per-host overrides. Leave a field blank to use the current default (shown in the field). Set a number to override it for this host only; fleet-wide defaults live in the Thresholds screen.</div>
+            : `${own.length} set for this host: ` + own.map((t) => `${t.addon ? t.group + ' ' : ''}${t.label} ${thrVal(t.value!.trim(), t.unit)}`).join(', ')}>
+            <div className="hs-note" style={{ margin: '0 0 10px' }}>Per-host overrides. Leave a field blank to use the current default (shown in the field). Set a number to override it for this host only; fleet-wide defaults live in the Thresholds screen. An add-on's thresholds are listed while it is on.</div>
             <div className="hs-grid">
-              {cfg.thresholds.map((t) => (
+              {withGroups(shown, (t) => (
                 <label className="field" key={t.macro}>
                   <span>{t.label}{t.unit ? ` (${t.unit})` : ''}</span>
-                  <input className="input" type="text" inputMode="decimal" placeholder={t.default ? `default ${t.default}${t.unit || ''}` : 'default'} value={t.value || ''} disabled={!canEdit} onChange={(e) => setThreshold(t.macro, e.target.value)} />
+                  <input className="input" type="text" inputMode="decimal" placeholder={t.default ? `default ${thrVal(t.default, t.unit)}` : 'default'} value={t.value || ''} disabled={!canEdit} onChange={(e) => setThreshold(t.macro, e.target.value)} />
                 </label>
               ))}
             </div>

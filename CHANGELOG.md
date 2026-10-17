@@ -13,6 +13,15 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Fixed:**
+- **An add-on's thresholds can be overridden per host.** The host settings Thresholds section listed
+  the class templates' thresholds only, so a host with the HTTP/HTTPS endpoint add-on had no way to set
+  its own response time or certificate days (the same for a DNS resolution's resolve time, a TCP port's
+  connect time, the probe's speed test and SaaS checks); only the fleet-wide default in the Thresholds
+  screen applied. The section now lists every threshold the host can override, grouped under the
+  template that carries it and, while an add-on is on, under that add-on; the bulk thresholds action
+  and the change log take and name them the same way.
+
 ## [0.8.14] - 2026-10-17
 
 The app on React 19 and TypeScript 7, built with Node 24 and Vite 8; nothing changes in what it

@@ -1251,6 +1251,10 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .thr-list-meta { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 12px; flex-shrink: 0; }
 .thr-list-caret { color: var(--accent); font-size: 16px; }
 .thr-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 12px; }
+/* A heading over a group of per-host thresholds (its template, or the add-on's label) in the host
+   settings grid and the bulk dialog: spans the row, sits close to the fields it names. */
+.thr-group { grid-column: 1 / -1; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); margin: 6px 0 -6px; }
+.thr-group:first-child { margin-top: 0; }
 .thr-row { display: flex; flex-direction: column; gap: 4px; }
 .thr-row-label { font-size: 12.5px; color: var(--muted); }
 .thr-row-input { display: flex; align-items: center; gap: 8px; }

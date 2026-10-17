@@ -42,7 +42,7 @@ type thresholdsResponse struct {
 }
 
 // displayTemplateName drops the "Argus " prefix templates carry, for a cleaner section heading.
-func displayTemplateName(name string) string { return strings.TrimPrefix(name, "Argus ") }
+func displayTemplateName(name string) string { return provision.DisplayTemplateName(name) }
 
 // handleThresholds returns the global-default catalog for the thresholds screen, grouped by template
 // (one row per template; the UI opens an edit dialog per template). Admin-only.
