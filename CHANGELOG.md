@@ -14,6 +14,12 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 **Fixed:**
+- **A hidden sensor's problem no longer colours its host.** The host's badge, problem count and
+  colour in the tree counted every active trigger, hidden sensors included, so a host read red with a
+  "4" while the error was on a sensor hidden on purpose; the Overview, the pills, the status pages and
+  the alerts already left such a problem out. The host now takes only the problems on sensors that are
+  not hidden, and its own page lists a hidden sensor's problem dimmed under the others, marked "hidden
+  sensor", so it isn't lost. A trigger over several sensors still counts while any of them is shown.
 - **An add-on's thresholds can be overridden per host.** The host settings Thresholds section listed
   the class templates' thresholds only, so a host with the HTTP/HTTPS endpoint add-on had no way to set
   its own response time or certificate days (the same for a DNS resolution's resolve time, a TCP port's

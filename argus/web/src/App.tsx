@@ -83,7 +83,7 @@ type SensorItem = { id: string; name: string; key: string; last_value: string; u
 type SensorNote = { text: string; by?: string; at: number }
 // A sensor's effective warning/high values, read from its own triggers (below = lower is worse).
 type Thr = { warn?: number; high?: number; below?: boolean }
-type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[]; held_by?: HeldBy }
+type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[]; held_by?: HeldBy; hidden?: boolean }
 type TriggerHost = { id: string; name: string }
 type Trigger = { id: string; description: string; severity: number; enabled: boolean; problem: boolean; since: number; hosts: TriggerHost[]; sensors: string[] }
 type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean; maintenance?: MaintHit; held_by?: HeldBy; holds?: number; note?: SensorNote; call?: string }
@@ -10125,9 +10125,13 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
   // it's warnings only, the acknowledged colour once every problem is.
   // A problem a down master holds (its ping is down, so its packet loss and SNMP are too) is that
   // master's: it waits with it, so it isn't one more thing to handle.
-  const open = problems.filter((p) => !p.acknowledged && !p.held_by)
+  // A problem on hidden sensors only isn't news (the badge and the Overview leave it out): it sits
+  // dimmed under its own line, never colours the banner, and a panel of hidden ones only is grey.
+  const shown = problems.filter((p) => !p.hidden)
+  const hiddenProblems = problems.filter((p) => p.hidden)
+  const open = shown.filter((p) => !p.acknowledged && !p.held_by)
   const probErr = open.some((p) => p.state === 'error')
-  const probColor = open.length === 0 ? 'var(--acked)' : probErr ? 'var(--err)' : 'var(--warn)'
+  const probColor = open.length === 0 ? (shown.length === 0 ? 'var(--muted)' : 'var(--acked)') : probErr ? 'var(--err)' : 'var(--warn)'
   return (
     <div>
       {!onlyItem && <HostUptime hostId={hostId} />}
@@ -10147,13 +10151,14 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
       {tab !== 'sensors' && !onlyItem && <HostTabBody hostId={hostId} tab={tab} canEdit={canPause} onOpenSettings={onOpenSettings} onChanged={() => setCountTick((t) => t + 1)} />}
       {(tab === 'sensors' || onlyItem) && problems.length > 0 && (
         <div style={{ border: `1px solid color-mix(in srgb, ${probColor} 30%, var(--border))`, background: `color-mix(in srgb, ${probColor} 7%, var(--panel))`, borderRadius: 8, padding: '0.5rem 0.75rem', marginBottom: '0.5rem' }}>
-          <div style={{ color: probColor, fontSize: 12, marginBottom: 4, fontWeight: 600 }}>{open.length === 0 ? (problems.some((p) => p.acknowledged) ? 'Acknowledged problems' : 'Problems on hold') : probErr ? 'Active problems' : 'Active warnings'}</div>
-          {problems.map((p, i) => {
-            const handled = p.acknowledged || !!p.held_by
+          <div style={{ color: probColor, fontSize: 12, marginBottom: 4, fontWeight: 600 }}>{shown.length === 0 ? 'Problems on hidden sensors' : open.length === 0 ? (shown.some((p) => p.acknowledged) ? 'Acknowledged problems' : 'Problems on hold') : probErr ? 'Active problems' : 'Active warnings'}</div>
+          {[...shown, ...hiddenProblems].map((p, i) => {
+            const handled = p.acknowledged || !!p.held_by || !!p.hidden
+            const firstHidden = p.hidden && shown.length > 0 && i === shown.length
             return (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.2rem 0' }}>
-                <span className={'sdot' + (handled ? '' : ' pulse')} style={{ '--dot': healthColor(p.state, handled) } as CSSProperties} />
-                <span style={{ opacity: handled ? 0.7 : 1 }}>{p.name}</span>
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.2rem 0', ...(firstHidden ? { borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 6 } : {}) }} title={p.hidden ? 'On a hidden sensor: not counted for this host, no alerts' : undefined}>
+                <span className={'sdot' + (handled ? '' : ' pulse')} style={{ '--dot': p.hidden ? 'var(--muted)' : healthColor(p.state, handled) } as CSSProperties} />
+                <span style={{ opacity: handled ? 0.7 : 1 }}>{p.name}{p.hidden && <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>hidden sensor</span>}</span>
                 <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   {p.held_by && !p.acknowledged && <span className="heldtag" title="Its alerts wait until that is back; whatever is still wrong then is alerted">{heldLabel(p.held_by, hostId)}</span>}
                   {p.acknowledged

@@ -173,12 +173,15 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Aggregate active problems per host (best-effort: if this fails, hosts still list as ok).
+	// Aggregate active problems per host (best-effort: if this fails, hosts still list as ok). A
+	// problem on hidden sensors only is not the host's: its badge, count and colour leave it out,
+	// as the Overview and the alerts do (sensorsHidden).
 	worst := map[string]int{}
 	count := map[string]int{}
+	hiddenItems, _ := s.st.ActiveSuppressionMap(ctx, "hide", "item")
 	if triggers, err := s.zbx.ActiveTriggers(ctx); err == nil {
 		for _, t := range triggers {
-			if t.Value != "1" {
+			if t.Value != "1" || sensorsHidden(t.ItemIDs(), hiddenItems) {
 				continue
 			}
 			sev := atoi(t.Priority)
@@ -195,6 +198,9 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 	synth := syntheticProblems(ctx, s.st, s.zbx, false)
 	for _, p := range synth.problems {
 		sev := atoi(p.Severity)
+		if sensorsHidden(targetItemIDs(synth.targets[p.ObjectID]), hiddenItems) {
+			continue
+		}
 		for _, h := range synth.targets[p.ObjectID].Hosts {
 			count[h.HostID]++
 			if sev > worst[h.HostID] {
@@ -315,6 +321,9 @@ type problemView struct {
 	// HeldBy is the down master whose outage holds this problem's alerts (master.go): the host page
 	// shows it as held, not as one more thing to handle.
 	HeldBy *heldRef `json:"held_by,omitempty"`
+	// Hidden: on hidden sensors only (or a hidden host), so not news: the host page lists it dimmed,
+	// apart from the problems to handle, and it never colours the banner.
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 func (s *Server) handleHostProblems(w http.ResponseWriter, r *http.Request) {
@@ -337,6 +346,9 @@ func (s *Server) handleHostProblems(w http.ResponseWriter, r *http.Request) {
 	}
 	itemsByTrigger, _ := s.zbx.TriggerItems(ctx, tids)
 	acked, _ := s.st.ActiveSuppressionMap(ctx, "ack", "event") // Argus is the ack source of truth
+	hiddenItems, _ := s.st.ActiveSuppressionMap(ctx, "hide", "item")
+	hiddenHosts, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
+	_, hostHidden := hiddenHosts[r.PathValue("id")]
 
 	// Argus-raised problems on this host (a sensor that stopped collecting, an unreachable agent).
 	synth := syntheticProblems(ctx, s.st, s.zbx, false)
@@ -376,6 +388,7 @@ func (s *Server) handleHostProblems(w http.ResponseWriter, r *http.Request) {
 			pv.AckUntil = u
 		}
 		pv.HeldBy = held.of(p.EventID, ids)
+		pv.Hidden = hostHidden || sensorsHidden(ids, hiddenItems)
 		out = append(out, pv)
 	}
 	writeJSON(w, http.StatusOK, out)

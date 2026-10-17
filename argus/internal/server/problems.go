@@ -7,6 +7,8 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	"argus/internal/zabbix"
 )
 
 type problemRow struct {
@@ -54,6 +56,32 @@ func (s *Server) handleProblems(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// sensorsHidden says whether a problem is on hidden sensors only: every sensor its trigger reads is
+// hidden in Argus. Hiding a sensor says its problems aren't news, so such a problem is left out of
+// the Overview, the status pages, the pills, the host badge and the alerts, and listed dimmed on the
+// host's own page. A trigger over several sensors stays news while any of them is not hidden; a
+// problem with no sensor (an unreachable agent) can't be hidden this way.
+func sensorsHidden(itemIDs []string, hiddenItems map[string]*int64) bool {
+	if len(itemIDs) == 0 {
+		return false
+	}
+	for _, id := range itemIDs {
+		if _, ok := hiddenItems[id]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// targetItemIDs is the sensors a trigger target reads.
+func targetItemIDs(t zabbix.TriggerTarget) []string {
+	out := make([]string, 0, len(t.Items))
+	for _, it := range t.Items {
+		out = append(out, it.ItemID)
+	}
+	return out
+}
+
 // activeProblems is every active problem across all hosts (Zabbix's and Argus-raised), minus those on
 // hidden or paused hosts and those whose sensors are all hidden. Shared by the Overview and the
 // status pages.
@@ -85,18 +113,8 @@ func (s *Server) activeProblems(ctx context.Context) ([]problemRow, error) {
 		if _, hostHidden := hiddenHosts[h.HostID]; hostHidden || h.Status == "1" { // hidden or paused
 			continue
 		}
-		// Skip if the trigger's sensors are all hidden in Argus.
-		if len(t.Items) > 0 {
-			allHidden := true
-			for _, it := range t.Items {
-				if _, ok := hiddenItems[it.ItemID]; !ok {
-					allHidden = false
-					break
-				}
-			}
-			if allHidden {
-				continue
-			}
+		if sensorsHidden(targetItemIDs(t), hiddenItems) {
+			continue
 		}
 		sev := atoi(p.Severity)
 		itemIDs := make([]string, 0, len(t.Items))

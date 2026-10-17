@@ -557,7 +557,11 @@ Errors + Warnings or Errors only, filterable by host, sensor or reason, and by p
 (`GET /api/incidents?days=N&probe=<proxy id, 0 = the server>&group=<name>`, each repeatable; a group
 covers its subgroups, and the filter narrows within the user's sites). **Export CSV** saves the list
 as shown. Zabbix's events follow its housekeeping retention (Settings, Data retention).
-Hiding a sensor says its incidents aren't news, so the history leaves out a hidden sensor's incidents,
+Hiding a sensor says its problems aren't news: a problem whose sensors are all hidden (`sensorsHidden`)
+is left out of the Overview, the status pages, the pills and the alerts, and of the host's badge,
+count and colour in the tree too (`handleHosts`); the host's own page still lists it, dimmed under
+the problems to handle and marked "hidden sensor" (`hidden` on the problem), so it isn't lost. A
+trigger over several sensors stays news while any of them is not hidden. The history leaves out a hidden sensor's incidents,
 and on the History page a hidden host's too, and says how many (`hidden` in the response; at most
 twice the row limit is read, so a noisy hidden sensor can't crowd the rest out). **Show N from hidden
 sensors** asks again with `&hidden=1`, and they come back dimmed and tagged. A drilled-down sensor

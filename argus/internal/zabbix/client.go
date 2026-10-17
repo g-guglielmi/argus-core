@@ -220,6 +220,18 @@ type Trigger struct {
 	Hosts     []struct {
 		HostID string `json:"hostid"`
 	} `json:"hosts"`
+	Items []struct {
+		ItemID string `json:"itemid"`
+	} `json:"items"`
+}
+
+// ItemIDs is the trigger's sensors.
+func (t Trigger) ItemIDs() []string {
+	out := make([]string, 0, len(t.Items))
+	for _, it := range t.Items {
+		out = append(out, it.ItemID)
+	}
+	return out
 }
 
 // Hosts returns all hosts, sorted by name, each with its host groups (used to build the
@@ -578,6 +590,7 @@ func (c *Client) ActiveTriggers(ctx context.Context) ([]Trigger, error) {
 	params := map[string]any{
 		"output":        []string{"triggerid", "priority", "value"},
 		"selectHosts":   []string{"hostid"},
+		"selectItems":   []string{"itemid"},
 		"filter":        map[string]any{"value": 1},
 		"monitored":     true,
 		"skipDependent": true,
