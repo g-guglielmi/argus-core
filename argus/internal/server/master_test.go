@@ -139,6 +139,88 @@ func TestMasterHold(t *testing.T) {
 	}
 }
 
+// After a master recovers, what it holds waits out the settle window: a service still starting or
+// an agent not yet listening on a host coming back up doesn't alert on the way, whatever the problem
+// began; past the window, or with the window off, nothing is held. The master's own problems never
+// are, and a window only counts for a master that is back (one still down holds as down).
+func TestSettleHold(t *testing.T) {
+	cpu := []masterRef{{id: "101", key: "system.cpu.util"}}
+	ping := []masterRef{{id: "100", key: "icmpping"}}
+	// settled is the set with one master (the host's ping, or the site's probe) back at `at`, every
+	// master reporting since (at 1090), so only the settle window can hold.
+	settled := func(master string, at int64, settle int64, down ...string) masterSet {
+		m := testMasters(down...)
+		for h, ms := range m.byHost {
+			for i := range ms {
+				ms[i].lastClock = 1090
+			}
+			m.byHost[h] = ms
+		}
+		for k, sm := range m.siteMaster {
+			sm.lastClock = 1090
+			m.siteMaster[k] = sm
+		}
+		m.recovered = map[string]int64{master: at}
+		m.settle = settle
+		return m
+	}
+	// The ping came back 60 s ago, the window is 300 s: the CPU problem waits, not as "down".
+	if v := settled("100", 1040, 300).hold("10", cpu, 1050, 1100); !v.held || v.down || !v.settling || v.by != "host" {
+		t.Fatalf("inside the window: %+v", v)
+	}
+	// A problem that began before the recovery waits too.
+	if v := settled("100", 1040, 300).hold("10", cpu, 900, 1100); !v.held || !v.settling {
+		t.Fatalf("older problem inside the window: %+v", v)
+	}
+	// The ping's own problem goes out.
+	if v := settled("100", 1040, 300).hold("10", ping, 1050, 1100); v.held {
+		t.Fatalf("the master's own alert was held: %+v", v)
+	}
+	// Past the window: alerts as usual.
+	if v := settled("100", 700, 300).hold("10", cpu, 900, 1100); v.held {
+		t.Fatalf("past the window: %+v", v)
+	}
+	// Window off: no settling hold.
+	if v := settled("100", 1040, 0).hold("10", cpu, 900, 1100); v.held {
+		t.Fatalf("window off: %+v", v)
+	}
+	// The probe came back: its whole site waits, the ping problem of a host included.
+	if v := settled("700", 1040, 300).hold("10", ping, 1050, 1100); !v.held || !v.settling || v.by != "site" {
+		t.Fatalf("site settling: %+v", v)
+	}
+	// A master still down holds as down, whatever its last recovery says.
+	if v := settled("100", 1040, 300, "100").hold("10", cpu, 1050, 1100); !v.held || !v.down || v.settling {
+		t.Fatalf("down master: %+v", v)
+	}
+}
+
+// A master's recovery time is its "down" trigger's last change while it is OK: an error-level or a
+// "no data" trigger, enabled; a warning (packet loss), a trigger in problem, a disabled one or one
+// that never fired don't count.
+func TestMasterRecoveries(t *testing.T) {
+	trigs := map[string][]zabbix.ItemTrigger{
+		"100": {
+			{TriggerID: "1", Priority: 4, Value: 0, LastChange: 5000},                              // unreachable, back at 5000
+			{TriggerID: "2", Priority: 2, Value: 0, LastChange: 6000},                              // packet loss: a warning, not a "down"
+			{TriggerID: "3", Priority: 4, Value: 0, LastChange: 4000},                              // an older down trigger
+			{TriggerID: "4", Priority: 4, Value: 0, LastChange: 7000, Status: 1},                   // disabled
+			{TriggerID: "5", Priority: 1, Value: 0, LastChange: 5500, Expression: "nodata(x,10m)"}, // no data, any severity
+		},
+		"200": {{TriggerID: "6", Priority: 4, Value: 1, LastChange: 5000}}, // in problem now
+		"300": {{TriggerID: "7", Priority: 4, Value: 0, LastChange: 0}},    // never fired
+	}
+	got := masterRecoveries(trigs)
+	if got["100"] != 5500 {
+		t.Errorf("item 100: want 5500 (the newest down trigger back to OK), got %d", got["100"])
+	}
+	if _, has := got["200"]; has {
+		t.Errorf("item 200 is in problem, must have no recovery")
+	}
+	if _, has := got["300"]; has {
+		t.Errorf("item 300 never fired, must have no recovery")
+	}
+}
+
 func TestMasterDown(t *testing.T) {
 	var targets map[string]zabbix.TriggerTarget
 	_ = json.Unmarshal([]byte(`{

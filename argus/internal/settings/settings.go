@@ -41,6 +41,7 @@ const (
 	KeySessionIdle   = "session_idle_minutes"
 	KeyAllowedHosts  = "allowed_hosts"
 	KeyAlertDelay    = "alert_delay_seconds"
+	KeySettle        = "settle_seconds"
 	KeyTrustProxy    = "trust_proxy"
 	KeyTimeFormat    = "time_format"
 	KeyAutoscale     = "probe_autoscale"
@@ -89,6 +90,7 @@ var defs = []def{
 	{KeyAllowedHosts, "ARGUS_TRUSTED_ORIGINS", "FQDNs and IPs", "Access", "hostlist", false, "", "The FQDNs or IPs people type in the browser's address bar to open Argus, comma-separated (a pasted URL is reduced to its host). Empty turns the check off (any address works). The Public URL's host and localhost are always allowed, and probes are never checked. To recover from a lockout, set ARGUS_TRUSTED_ORIGINS=* and restart.", 0},
 	{KeyTimeFormat, "ARGUS_TIME_FORMAT", "Time format", "General", "choice", false, "24h", "How clocks read in Argus and on status pages: 24h (16:43) or 12h (4:43 PM).", 0},
 	{KeyAlertDelay, "ARGUS_ALERT_DELAY_SECONDS", "Alert delay (seconds)", "Alerting", "int", false, "60", "How long a problem must last before anyone is notified, so a brief blip doesn't alert. 0 alerts at once. \"No data\" alerts skip it: their own period already is the wait.", 0},
+	{KeySettle, "ARGUS_SETTLE_SECONDS", "Settle after an outage (seconds)", "Alerting", "int", false, "300", "After a probe, a device's ping, a collector or an upstream device comes back, the alerts of what it holds wait this long, so services still starting and agents not yet listening don't alert on the way up. Whatever is still wrong when it ends is alerted then. 0 switches it off.", 0},
 	{KeyTrustProxy, "ARGUS_TRUST_PROXY", "Trusted proxies", "Proxy", "proxylist", false, "", "Leave empty when people reach Argus directly. true = one reverse proxy on the LAN or the same host in front of Argus (the client is the address it adds to X-Forwarded-For; a connection from a public address is taken as a direct client). Or list the proxies' addresses or networks, comma-separated, e.g. 10.0.0.2, 10.0.5.0/24: forwarded headers then count only from them, and a chain of proxies (NetScaler -> HAProxy -> Argus) resolves to the real client.", 0},
 	{KeyProbeCoreHost, "ARGUS_PROBE_CORE_HOST", "Probe core host", "Probes", "host", false, "", "Address probes dial for :10051 (host or host:port). Prefer an IP: the proxy re-resolves this on every data send, so an FQDN here generates heavy DNS load. Baked into new enrollments and re-synced to existing probes at their next restart. Falls back to the Public URL host if empty.", 0},
 	{KeyHeartbeatURL, "ARGUS_HEARTBEAT_URL", "Heartbeat URL", "Watchdog", "url", false, "", "An outside monitor's ping URL, e.g. a healthchecks.io check or an Uptime Kuma push monitor. Argus requests it once a minute while it is healthy end to end, so the monitor alerts you when the pings stop. Empty turns it off.", 0},
@@ -145,6 +147,7 @@ type Manager struct {
 	sessionIdle   time.Duration
 	allowedHosts  []string // nil = the allowed-hosts check is off
 	alertDelay    time.Duration
+	settle        time.Duration
 	trustProxy    TrustProxy
 	clock24h      bool
 	autoscale     string // probe process autoscaling mode
@@ -229,6 +232,14 @@ func (m *Manager) AlertDelay() time.Duration {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.alertDelay
+}
+
+// Settle is how long the alerts of what a master holds wait after that master recovers, so a site or
+// a device coming back up doesn't alert on the way; 0 = no settle window.
+func (m *Manager) Settle() time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.settle
 }
 
 // Clock24h reports whether clocks read 24-hour (the default) rather than 12-hour.
@@ -382,6 +393,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	sessIdleMin := atoiClamp(effective(snap[KeySessionIdle]), 0, 0)
 	allowed, _ := ParseHostList(effective(snap[KeyAllowedHosts])) // validated on the way in
 	alertDelayS := atoiClamp(effective(snap[KeyAlertDelay]), 60, 0)
+	settleS := atoiClamp(effective(snap[KeySettle]), 300, 0)
 	trust, _, _ := ParseTrustProxy(effective(snap[KeyTrustProxy])) // validated on the way in
 	clock24 := strings.ToLower(effective(snap[KeyTimeFormat])) != "12h"
 	autoscale := strings.ToLower(strings.TrimSpace(effective(snap[KeyAutoscale])))
@@ -403,6 +415,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	m.sessionIdle = time.Duration(sessIdleMin) * time.Minute
 	m.allowedHosts = allowed
 	m.alertDelay = time.Duration(alertDelayS) * time.Second
+	m.settle = time.Duration(settleS) * time.Second
 	m.trustProxy = trust
 	m.clock24h = clock24
 	m.autoscale = autoscale

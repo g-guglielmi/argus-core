@@ -1143,9 +1143,16 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   alerts are held behind it, so a dead switch sends one alert, not one per access point and camera. To
   win the race with a slow master (ping
   needs 3 failed checks), a new problem also waits up to 5 minutes while the master hasn't reported
-  since the problem began, or its last ping failed. A problem held by a down master waits out the
-  alert delay again (at least 90 s) after the master recovers, so readings that settle while a device
-  or probe reconnects don't alert; a held problem that is still open after that alerts normally.
+  since the problem began, or its last ping failed. After a master recovers, what it holds waits out
+  the **settle window** (Settings -> Alerting, "Settle after an outage", default 5 min,
+  `ARGUS_SETTLE_SECONDS`, 0 = off): a site or a device coming back up has services still starting
+  and agents not yet listening, which would otherwise alert on the way (the maintenance rule applied
+  to recoveries: whatever is still open when the window ends alerts then). The recovery time is the
+  master's "down" trigger's `lastchange` in Zabbix (`masterRecoveries`, read with the masters'
+  triggers each tick), so the window survives a core restart; a settling hold isn't shown on the
+  rows (`markHeld` reads no trigger states). A problem held by a down master also waits out the
+  alert delay again (at least 90 s) after the master recovers; a held problem that is still open
+  after that alerts normally.
   The census applies the same rule (`markHeld`): an unacknowledged error or warning a **down** master
   holds (not one merely yet to report, so rows don't flicker) carries `held_by` (the master's host,
   item and label), the master's row `holds` (how many), and `/api/census` counts them as `held`

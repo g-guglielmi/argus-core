@@ -337,7 +337,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	}
 
 	// Master sensors: a host's ping (or chosen sensor) and its site's probe hold its other alerts while down.
-	masters := loadMasters(ctx, st, zbx, hosts, problems, targets)
+	masters := loadMasters(ctx, st, zbx, hosts, problems, targets, int64(mgr.Settle()/time.Second))
 	grace := int64(flapDelay / time.Second)
 	if grace < minHoldGraceSecs {
 		grace = minHoldGraceSecs
@@ -467,10 +467,13 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			if !alertable {
 				continue // acked/hidden/paused: keep waiting quietly
 			}
-			// Held by a master that is down (or yet to report): stay pending. Once a down master is back,
-			// wait out the alert delay again, so readings that settle as the device (or probe)
-			// reconnects don't alert on the way.
+			// Held by a master that is down (or yet to report, or just back and settling): stay
+			// pending. Once a down master is back, wait out the alert delay again, so readings that
+			// settle as the device (or probe) reconnects don't alert on the way.
 			if hv.held {
+				if hv.settling {
+					logger.Debug("notifier: alert waits for its master's settle window", "event", p.EventID, "host", hostName, "name", p.Name, "by", hv.by)
+				}
 				if hv.down && stt.HeldAt != now.Unix() {
 					if stt.HeldAt == 0 {
 						logger.Info("notifier: alert held while its master sensor is down", "event", p.EventID, "host", hostName, "name", p.Name, "by", hv.by)

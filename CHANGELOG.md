@@ -14,6 +14,15 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 **Added:**
+- **A settle window after an outage.** When a probe came back after a night offline, the hosts behind
+  it were coming back too, and their first minutes alerted: services still starting on a server
+  ("Service not running", 2 minutes), its boot-time CPU, a NAS whose Zabbix agent wasn't listening yet.
+  Those problems began after the probe had recovered, so only the 60-second alert delay stood in the
+  way. Now, after a master comes back (a probe's reporting, a device's ping, a collector, an upstream
+  device), the alerts of what it holds wait out a settle window, 5 minutes by default (Settings,
+  Alerting, "Settle after an outage"; `ARGUS_SETTLE_SECONDS`; 0 switches it off), and whatever is still
+  wrong when it ends is alerted then, as after a maintenance window. The recovery time is read from
+  Zabbix, so the window survives a core restart. History still lists such incidents: they happened.
 - **System notices get an all-clear.** A condition told as a system notice ended in silence: "Probe
   office isn't reporting to Argus" came, and nothing said when the reports resumed. The conditions
   whose ending is news now say so, in the same [INFO] shape to the same channels, with how long it

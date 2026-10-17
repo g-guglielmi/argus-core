@@ -968,10 +968,12 @@ func (c *Client) TriggerItems(ctx context.Context, triggerIDs []string) (map[str
 // (mute) action, which turns a sensor's triggers off while leaving the item collecting data.
 type ItemTrigger struct {
 	TriggerID  string `json:"triggerid"`
-	Status     int    `json:"status,string"`   // 0 = enabled, 1 = disabled
-	Priority   int    `json:"priority,string"` // Zabbix severity 0..5
-	Expression string `json:"expression"`      // with user macros resolved (expandExpression)
-	ItemCount  int    `json:"-"`               // how many items the trigger references
+	Status     int    `json:"status,string"`     // 0 = enabled, 1 = disabled
+	Priority   int    `json:"priority,string"`   // Zabbix severity 0..5
+	Expression string `json:"expression"`        // with user macros resolved (expandExpression)
+	Value      int    `json:"value,string"`      // 0 = OK, 1 = problem
+	LastChange int64  `json:"lastchange,string"` // when it last changed state (unix), 0 = never
+	ItemCount  int    `json:"-"`                 // how many items the trigger references
 }
 
 // ItemTriggers maps each item id to the triggers that reference it (with status, severity and the
@@ -985,7 +987,7 @@ func (c *Client) ItemTriggers(ctx context.Context, itemIDs []string) (map[string
 		return out, nil
 	}
 	params := map[string]any{
-		"output":           []string{"triggerid", "status", "priority", "expression"},
+		"output":           []string{"triggerid", "status", "priority", "expression", "value", "lastchange"},
 		"expandExpression": true,
 		"selectItems":      []string{"itemid"},
 		"itemids":          itemIDs,

@@ -76,11 +76,18 @@ type masterSet struct {
 	proxyByName map[string]string       // proxy name -> proxy id
 	down        map[string]bool         // master item id -> it has an open "down" problem
 	upstream    map[string]upstreamLink // host id -> the device it is plugged into (upstream.go)
+	// recovered is when each master's "down" trigger last went back to OK (its lastchange in Zabbix),
+	// and settle how long after that the alerts it holds still wait: a site or a device coming back
+	// up has services still starting and agents not yet listening, which would alert on the way.
+	// Zabbix keeps the time, so the window survives a core restart. settle 0 = no window.
+	recovered map[string]int64
+	settle    int64
 }
 
 // loadMasters builds the master set for one notifier tick. Best effort: whatever can't be read just
-// means no hold for the hosts it concerns.
-func loadMasters(ctx context.Context, st *store.Store, zbx *zabbix.Client, hosts []zabbix.Host, problems []zabbix.Problem, targets map[string]zabbix.TriggerTarget) masterSet {
+// means no hold for the hosts it concerns. settle (seconds) is the window after a master's recovery
+// in which what it holds still waits; 0 skips reading the masters' trigger states.
+func loadMasters(ctx context.Context, st *store.Store, zbx *zabbix.Client, hosts []zabbix.Host, problems []zabbix.Problem, targets map[string]zabbix.TriggerTarget, settle int64) masterSet {
 	m := masterSet{
 		byHost: map[string][]masterItem{}, siteMaster: map[string]masterItem{}, probeHost: map[string]string{},
 		hostProxy: map[string]string{}, proxyByName: map[string]string{}, down: masterDown(problems, targets),
@@ -148,7 +155,46 @@ func loadMasters(ctx context.Context, st *store.Store, zbx *zabbix.Client, hosts
 		}
 		m.byHost[h.HostID] = append(m.byHost[h.HostID], collectors[h.HostID]...)
 	}
+	if settle > 0 {
+		ids := map[string]bool{}
+		for _, ms := range m.byHost {
+			for _, mi := range ms {
+				ids[mi.itemID] = true
+			}
+		}
+		for _, mi := range m.siteMaster {
+			ids[mi.itemID] = true
+		}
+		list := make([]string, 0, len(ids))
+		for id := range ids {
+			list = append(list, id)
+		}
+		if trigs, err := zbx.ItemTriggers(ctx, list); err == nil {
+			m.recovered, m.settle = masterRecoveries(trigs), settle
+		}
+	}
 	return m
+}
+
+// masterRecoveries reads, per master sensor, when its "down" trigger (an error-level one, or a "no
+// data" one at any severity, as masterDown counts them) last went back to OK: the newest lastchange
+// among its enabled such triggers that are OK now. A trigger that never fired has none.
+func masterRecoveries(trigs map[string][]zabbix.ItemTrigger) map[string]int64 {
+	out := map[string]int64{}
+	for itemID, ts := range trigs {
+		for _, t := range ts {
+			if t.Status != 0 || t.Value != 0 || t.LastChange <= 0 {
+				continue
+			}
+			if t.Priority < 3 && !strings.Contains(t.Expression, "nodata(") {
+				continue
+			}
+			if t.LastChange > out[itemID] {
+				out[itemID] = t.LastChange
+			}
+		}
+	}
+	return out
 }
 
 // masterDown marks the items with an open problem that means "down": an error-level one (what the app
@@ -173,6 +219,7 @@ func masterDown(problems []zabbix.Problem, targets map[string]zabbix.TriggerTarg
 // delay again once the master recovers, since its readings settle only after reconnecting.
 type holdVerdict struct {
 	held, down bool
+	settling   bool       // the master is back but inside its settle window
 	by         string     // which master: "site" or "host", for the log
 	master     masterItem // the master that holds it
 	host       string     // the master's host (the Probe host for a site hold)
@@ -301,6 +348,10 @@ func (m masterSet) judge(master masterItem, items []masterRef, start, now int64)
 	if m.down[master.itemID] {
 		return holdVerdict{held: true, down: true}
 	}
+	// Just back: what it holds waits out the settle window (whatever is still open then alerts).
+	if r := m.recovered[master.itemID]; m.settle > 0 && r > 0 && now-r < m.settle {
+		return holdVerdict{held: true, settling: true}
+	}
 	if now-start < masterWaitSecs {
 		if master.lastClock < start {
 			return holdVerdict{held: true}
@@ -334,7 +385,7 @@ func (s *Server) markHeld(ctx context.Context, rows []sensorRow, problems []zabb
 	if err != nil {
 		return
 	}
-	set := loadMasters(ctx, s.st, s.zbx, hosts, problems, targets)
+	set := loadMasters(ctx, s.st, s.zbx, hosts, problems, targets, 0) // a settling hold isn't shown
 	hostName := make(map[string]string, len(hosts))
 	for _, h := range hosts {
 		hostName[h.HostID] = h.Name
