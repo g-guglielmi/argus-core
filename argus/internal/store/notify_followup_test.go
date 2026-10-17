@@ -147,20 +147,37 @@ func TestSyncUnsupported(t *testing.T) {
 func TestNoticeLedger(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
-	if fresh, err := st.ClaimNotice(ctx, "argus-release:0.6.0", NoticeFact); err != nil || !fresh {
+	rel := SentNotice{Key: "argus-release:0.6.0", Kind: NoticeFact}
+	if fresh, err := st.ClaimNotice(ctx, rel); err != nil || !fresh {
 		t.Fatalf("first claim: %v %v", fresh, err)
 	}
-	if fresh, _ := st.ClaimNotice(ctx, "argus-release:0.6.0", NoticeFact); fresh {
+	if fresh, _ := st.ClaimNotice(ctx, rel); fresh {
 		t.Fatal("a notice was claimed twice")
 	}
 	facts, _ := st.SentFacts(ctx)
-	if len(facts) != 1 {
-		t.Fatalf("facts: %v", facts)
+	if len(facts) != 1 || facts[0].Key != rel.Key || facts[0].Cleared != "" {
+		t.Fatalf("facts: %+v", facts)
 	}
 	_ = st.ReleaseNotice(ctx, "argus-release:0.6.0")
-	if fresh, _ := st.ClaimNotice(ctx, "argus-release:0.6.0", NoticeFact); !fresh {
+	if fresh, _ := st.ClaimNotice(ctx, rel); !fresh {
 		t.Fatal("a released notice couldn't be claimed again")
 	}
+	// A fact with an all-clear keeps what the all-clear needs.
+	rep := SentNotice{Key: "probe-report:p1", Kind: NoticeFact, Since: 1700000000, Cleared: "Probe site1 is reporting to Argus again", Host: "Probe site1", Site: "site1", View: "probes"}
+	if fresh, err := st.ClaimNotice(ctx, rep); err != nil || !fresh {
+		t.Fatalf("claim with all-clear: %v %v", fresh, err)
+	}
+	facts, _ = st.SentFacts(ctx)
+	var got SentNotice
+	for _, f := range facts {
+		if f.Key == rep.Key {
+			got = f
+		}
+	}
+	if got.Since != rep.Since || got.Cleared != rep.Cleared || got.Host != rep.Host || got.Site != rep.Site || got.View != rep.View || got.SentAt == 0 {
+		t.Fatalf("all-clear fields not kept: %+v", got)
+	}
+	_ = st.ReleaseNotice(ctx, rep.Key)
 	since, err := st.SyncNoticeConditions(ctx, []string{"core-reboot"})
 	if err != nil || since["core-reboot"] == 0 {
 		t.Fatalf("conditions: %v %v", since, err)

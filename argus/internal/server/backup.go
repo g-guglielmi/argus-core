@@ -457,16 +457,16 @@ func (s *Server) backupNotices(ctx context.Context) []notice {
 	}
 	var out []notice
 	if lr := st.LastRun; lr != nil && !lr.OK {
-		out = append(out, notice{key: "backup-failed", title: "Core backup failed", detail: lr.Error, view: "settings"})
+		out = append(out, notice{key: "backup-failed", title: "Core backup failed", detail: lr.Error, view: "settings", cleared: "Core backup succeeded again"})
 	}
 	if st.LastOKAt > 0 {
 		if age := time.Since(time.Unix(st.LastOKAt, 0)); age > 36*time.Hour {
 			out = append(out, notice{key: "backup-overdue", title: "No core backup lately",
-				detail: fmt.Sprintf("The last good backup is %d hours old.", int(age.Hours())), view: "settings"})
+				detail: fmt.Sprintf("The last good backup is %d hours old.", int(age.Hours())), view: "settings", cleared: "Core backups are back on schedule"})
 		}
 	}
 	if rm := st.Remote; rm != nil && !rm.OK && rm.Error != "" {
-		out = append(out, notice{key: "backup-remote", title: "Core backup export failed", detail: rm.Error, view: "settings"})
+		out = append(out, notice{key: "backup-remote", title: "Core backup export failed", detail: rm.Error, view: "settings", cleared: "Core backup export works again"})
 	}
 	return out
 }

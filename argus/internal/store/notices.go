@@ -16,15 +16,30 @@ const (
 
 const noticeEventKeep = 365 * 24 * time.Hour
 
+// SentNotice is one row of the sent-notices ledger. A fact keeps what its all-clear needs once the
+// condition ends: since when it held, the words to say it cleared (none = no all-clear), and where
+// it belonged (host, site, view), since the condition itself is gone by then.
+type SentNotice struct {
+	Key     string
+	Kind    string
+	SentAt  int64
+	Since   int64  // when the condition started holding (facts)
+	Cleared string // the all-clear's title, "" when the notice has none
+	Host    string
+	Site    string
+	View    string
+}
+
 // ClaimNotice records a notice as sent and reports whether it is new, i.e. whether the caller should
 // send it now. A key already in the ledger returns false.
-func (s *Store) ClaimNotice(ctx context.Context, key, kind string) (bool, error) {
-	res, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO notices_sent(key, kind, sent_at) VALUES(?, ?, ?)`, key, kind, time.Now().Unix())
+func (s *Store) ClaimNotice(ctx context.Context, n SentNotice) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO notices_sent(key, kind, sent_at, since, cleared, host, site, view) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+		n.Key, n.Kind, time.Now().Unix(), n.Since, n.Cleared, n.Host, n.Site, n.View)
 	if err != nil {
 		return false, err
 	}
-	n, err := res.RowsAffected()
-	return n == 1, err
+	c, err := res.RowsAffected()
+	return c == 1, err
 }
 
 // ReleaseNotice forgets one notice, so it can be claimed (and sent) again.
@@ -33,20 +48,20 @@ func (s *Store) ReleaseNotice(ctx context.Context, key string) error {
 	return err
 }
 
-// SentFacts returns the keys of the fact notices currently in the ledger.
-func (s *Store) SentFacts(ctx context.Context) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT key FROM notices_sent WHERE kind=?`, NoticeFact)
+// SentFacts returns the fact notices currently in the ledger.
+func (s *Store) SentFacts(ctx context.Context) ([]SentNotice, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT key, kind, sent_at, since, cleared, host, site, view FROM notices_sent WHERE kind=?`, NoticeFact)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []string
+	var out []SentNotice
 	for rows.Next() {
-		var k string
-		if err := rows.Scan(&k); err != nil {
+		var n SentNotice
+		if err := rows.Scan(&n.Key, &n.Kind, &n.SentAt, &n.Since, &n.Cleared, &n.Host, &n.Site, &n.View); err != nil {
 			return nil, err
 		}
-		out = append(out, k)
+		out = append(out, n)
 	}
 	return out, rows.Err()
 }

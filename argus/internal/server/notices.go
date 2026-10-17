@@ -21,7 +21,11 @@ import (
 //   - a condition that holds for a while - an update available, a probe behind, pending OS updates,
 //     a reboot needed, a channel that keeps failing - is told once it has held for its own minimum
 //     time (so routine churn, like security updates the VMs apply by themselves within a day, stays
-//     quiet), and again only after it cleared and came back;
+//     quiet), and again only after it cleared and came back. One that was told and whose ending is
+//     news of its own (a probe reporting again, a channel delivering again, a backup that succeeded)
+//     says so when it ends, as an all-clear in the same shape, with how long it held; one that ends
+//     because someone acted on it (an update available, a probe behind) ends quietly, its outcome
+//     told elsewhere;
 //   - an event - a self-update finished or failed, a discovery scan finished - is told once.
 //
 // Most of these states are only read on request elsewhere (caches, the update-dir files, the probes'
@@ -48,6 +52,8 @@ type notice struct {
 	key, title, detail string
 	host, site, view   string // host label, site group, and the Argus view to link to
 	minAge             time.Duration
+	// cleared is the all-clear's title, told when this condition ends after being told ("" = none).
+	cleared string
 	// skip leaves a destination out (a failing channel isn't told about itself; a personal channel's
 	// failure only goes to its owner).
 	skip func(notifyDest) bool
@@ -102,14 +108,18 @@ func (s *Server) noticeTick(ctx context.Context) {
 		now := time.Now()
 		for _, n := range conds {
 			if now.Sub(time.Unix(since[n.key], 0)) >= n.minAge {
-				s.tellOnce(ctx, n, store.NoticeFact, dests)
+				s.tellOnce(ctx, n, store.NoticeFact, dests, since[n.key])
 			}
 		}
 		if sent, err := s.st.SentFacts(ctx); err == nil {
-			for _, k := range sent {
-				if _, holds := since[k]; !holds {
-					_ = s.st.ReleaseNotice(ctx, k)
+			for _, f := range sent {
+				if _, holds := since[f.Key]; holds {
+					continue
 				}
+				if f.Cleared != "" {
+					s.tellCleared(ctx, f, now, dests)
+				}
+				_ = s.st.ReleaseNotice(ctx, f.Key)
 			}
 		}
 	}
@@ -118,19 +128,24 @@ func (s *Server) noticeTick(ctx context.Context) {
 	events := append(probeEvents, s.coreUpdateNotices()...)
 	events = append(events, s.scanNotices(ctx)...)
 	for _, n := range events {
-		s.tellOnce(ctx, n, store.NoticeEvent, dests)
+		s.tellOnce(ctx, n, store.NoticeEvent, dests, 0)
 	}
 	_ = s.st.PruneNoticeEvents(ctx)
 }
 
 // tellOnce sends a notice to the destinations it belongs to, unless it was told already. With no
-// destination at all it isn't claimed, so it still goes out once someone turns notices on.
-func (s *Server) tellOnce(ctx context.Context, n notice, kind string, dests []notifyDest) {
+// destination at all it isn't claimed, so it still goes out once someone turns notices on. A fact
+// is claimed with what its all-clear needs (since when it held, the words, where it belonged).
+func (s *Server) tellOnce(ctx context.Context, n notice, kind string, dests []notifyDest, since int64) {
 	to := noticeTargets(n, dests)
 	if len(to) == 0 {
 		return
 	}
-	if fresh, err := s.st.ClaimNotice(ctx, n.key, kind); err != nil || !fresh {
+	row := store.SentNotice{Key: n.key, Kind: kind}
+	if kind == store.NoticeFact {
+		row.Since, row.Cleared, row.Host, row.Site, row.View = since, n.cleared, n.host, n.site, n.view
+	}
+	if fresh, err := s.st.ClaimNotice(ctx, row); err != nil || !fresh {
 		return
 	}
 	ev := notify.Event{
@@ -140,6 +155,34 @@ func (s *Server) tellOnce(ctx context.Context, n notice, kind string, dests []no
 	s.logger.Info("notices: sending", "key", n.key, "channels", len(to))
 	for _, d := range to {
 		d.send(ctx, ev)
+	}
+}
+
+// tellCleared sends a told condition's all-clear once it has ended: the same [INFO] shape, to the
+// destinations the condition went to, saying how long it held. A failing channel's all-clear goes to
+// that channel too (it delivers again). The ledger row is released by the caller.
+func (s *Server) tellCleared(ctx context.Context, f store.SentNotice, now time.Time, dests []notifyDest) {
+	to := noticeTargets(notice{key: f.Key, title: f.Cleared, host: f.Host, site: f.Site, view: f.View}, dests)
+	if len(to) == 0 {
+		return
+	}
+	ev := clearedEvent(f, now.In(s.mgr.Location()), s.mgr.PublicURL())
+	s.logger.Info("notices: sending all-clear", "key", f.Key, "channels", len(to))
+	for _, d := range to {
+		d.send(ctx, ev)
+	}
+}
+
+// clearedEvent words a condition's all-clear: its title, and since when and for how long it held.
+func clearedEvent(f store.SentNotice, now time.Time, publicURL string) notify.Event {
+	detail := "Cleared."
+	if f.Since > 0 {
+		started := time.Unix(f.Since, 0).In(now.Location())
+		detail = "It held since " + started.Format("Jan 2, 15:04") + ", for " + notify.FormatDuration(now.Unix()-f.Since) + "."
+	}
+	return notify.Event{
+		Kind: "info", State: "ok", Name: f.Cleared, Detail: detail, Host: f.Host, Site: f.Site,
+		When: now, SinceSecs: max(0, now.Unix()-f.Since), OpenURL: viewLink(publicURL, f.View),
 	}
 }
 
@@ -219,12 +262,12 @@ func (s *Server) coreOSNotices() []notice {
 	if v.SecUpdates > 0 {
 		out = append(out, notice{key: "core-os-updates", title: "Security updates pending on the core VM",
 			detail: plural(v.SecUpdates, "security update has", "security updates have") + " been waiting for over two days; automatic patching may be stuck.",
-			view:   "updates", minAge: 48 * time.Hour})
+			view:   "updates", minAge: 48 * time.Hour, cleared: "Security updates applied on the core VM"})
 	}
 	if v.RebootRequired {
 		out = append(out, notice{key: "core-reboot", title: "The core VM needs a reboot",
 			detail: "Updates installed on the core VM need a restart to take effect. It reboots in its reboot window, or restart it yourself.",
-			view:   "updates", minAge: 24 * time.Hour})
+			view:   "updates", minAge: 24 * time.Hour, cleared: "The core VM rebooted"})
 	}
 	if v.ZbxCandidate != "" && v.ZbxServer != "" && v.ZbxCandidate != v.ZbxServer {
 		out = append(out, notice{key: "core-zabbix:" + v.ZbxCandidate, title: "Zabbix " + v.ZbxCandidate + " is available for the core",
@@ -262,11 +305,12 @@ func (s *Server) probeNotices(ctx context.Context) (conds, events []notice) {
 		if ag.OSReportedAt > 0 && ag.SecUpdates > 0 {
 			conds = append(conds, notice{key: "probe-os-updates:" + name, title: "Security updates pending on probe " + site,
 				detail: plural(ag.SecUpdates, "security update has", "security updates have") + " been waiting for over two days; automatic patching may be stuck.",
-				host:   host, site: site, view: "updates", minAge: 48 * time.Hour})
+				host:   host, site: site, view: "updates", minAge: 48 * time.Hour, cleared: "Security updates applied on probe " + site})
 		}
 		if ag.OSReportedAt > 0 && ag.RebootRequired {
 			conds = append(conds, notice{key: "probe-reboot:" + name, title: "Probe " + site + " needs a reboot",
-				detail: "Updates installed on the probe VM need a restart to take effect.", host: host, site: site, view: "updates", minAge: 24 * time.Hour})
+				detail: "Updates installed on the probe VM need a restart to take effect.", host: host, site: site, view: "updates", minAge: 24 * time.Hour,
+				cleared: "Probe " + site + " rebooted"})
 		}
 		// Argus changed the probe's process counts: told once per decision, while it is recent. A
 		// decision that put a kind back after a raise that didn't help says so in its title.
@@ -291,7 +335,8 @@ func (s *Server) probeNotices(ctx context.Context) (conds, events []notice) {
 		if ag.Procs.CPU.Starved || len(ag.Procs.Held) > 0 {
 			if s.mgr.ProbeAutoscale() != settings.AutoscaleOff {
 				title, detail := probeCPUNotice(site, ag)
-				conds = append(conds, notice{key: "probe-cpu:" + name, title: title, detail: detail, host: host, site: site, view: "probes"})
+				conds = append(conds, notice{key: "probe-cpu:" + name, title: title, detail: detail, host: host, site: site, view: "probes",
+					cleared: "Probe " + site + " is no longer short on CPU"})
 			}
 		}
 		events = append(events, s.selfUpdateEvents(ctx, name, "probe", ag.Version, noticeProbeVerPrefix, noticeProbePending, host, site)...)
@@ -433,7 +478,7 @@ func channelFailingNotices(channels []store.NotifyChannel, userChannels []store.
 		key := store.DeliveryKey(store.DeliveryGlobal, c.ID)
 		out = append(out, notice{key: "channel-failing:" + key, title: "Notification channel failing: " + c.Name,
 			detail: "Its deliveries keep failing: " + c.LastError, view: "notifications", minAge: 30 * time.Minute,
-			skip: func(d notifyDest) bool { return d.key == key }})
+			skip: func(d notifyDest) bool { return d.key == key }, cleared: "Notification channel delivering again: " + c.Name})
 	}
 	for _, c := range userChannels {
 		if c.LastErrorAt == 0 || c.LastErrorAt <= c.LastSentAt {

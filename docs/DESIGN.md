@@ -1182,8 +1182,9 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   many store only changes, so an old last value is normal; a silent device or probe is caught by its
   master instead.
 - **Who to call:** a channel can add the site's internet line and contact to its alerts (section 7g).
-- **System notices:** Argus's own news as `[INFO]` messages (neutral colour, no reminders, no
-  recovery), for channels with **System notices** on (`system_notices`, off by default; a channel's
+- **System notices:** Argus's own news as `[INFO]` messages (neutral colour, no reminders; an
+  all-clear only for the conditions whose ending is news, below), for channels with **System
+  notices** on (`system_notices`, off by default; a channel's
   alert level can be **None** = `alerts` off, for a notices-only channel; one with neither is
   refused). A loop in the server checks once a minute, since most sources are only read on request:
   the release cache (`appUpdateStatus`), the update-dir status files (core self-update outcome), the
@@ -1222,7 +1223,7 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   alert's threshold comes from.
 - Telegram = one shared bot, per-site topic. Discord = dedicated webhook per site.
   Model supports flipping either to shared/dedicated with no code change.
-- Secrets entered in the UI later (placeholders for now).
+- Secrets entered in the UI later (placeholders for now). A told condition whose ending is news carries an all-clear (`cleared` on the notice, kept in `notices_sent` with since when it held and where it belonged): when it ends, the same destinations get "Probe <site> is reporting to Argus again", "Notification channel delivering again", "Core backup succeeded again", "Security updates applied", "rebooted", "no longer short on CPU", with how long it held. An update available or a probe behind ends quietly: someone acted, and the outcome is told as its own event.
 
 **Status (2026-09).** Channels are managed in the **Notifications** tab (Discord webhook / Telegram
 bot + chat (+ forum topic) / SMTP, and from 2026-10 Microsoft Teams, Slack, ntfy, Gotify, Pushover and a

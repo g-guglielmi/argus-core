@@ -13,6 +13,15 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Added:**
+- **System notices get an all-clear.** A condition told as a system notice ended in silence: "Probe
+  office isn't reporting to Argus" came, and nothing said when the reports resumed. The conditions
+  whose ending is news now say so, in the same [INFO] shape to the same channels, with how long it
+  held: a probe reporting to Argus again, a notification channel delivering again, a core backup (or
+  its export) succeeding again or back on schedule, security updates applied on the core VM or a
+  probe, the core VM or a probe rebooted, a probe no longer short on CPU. An update available or a
+  probe behind still ends quietly: someone acted, and the outcome is told as its own notice.
+
 **Fixed:**
 - **A hidden sensor's problem no longer colours its host.** The host's badge, problem count and
   colour in the tree counted every active trigger, hidden sensors included, so a host read red with a

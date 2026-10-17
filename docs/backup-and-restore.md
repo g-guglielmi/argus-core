@@ -53,7 +53,8 @@ Everything is in **Settings, Backups** (admin):
 
 The status line shows the last backup (when, how big, how long), how many archives are on the VM and
 the free space there, the last export and the next backup. When a backup fails, the export fails, or
-no backup has succeeded for 36 hours, Argus sends a system notice to the channels that take them
+no backup has succeeded for 36 hours, Argus sends a system notice to the channels that take them,
+and an all-clear once a backup succeeds again
 (**Notifications**, "System notices").
 
 **On an existing core.** The core VM image has the backup tools from `core-vm/v0.1.3` on. On a core
