@@ -13,6 +13,12 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.8.14] - 2026-10-17
+
+The app on React 19 and TypeScript 7, built with Node 24 and Vite 8; nothing changes in what it
+does. Also the word that the update sidecar now verifies every image's signature (argus-updater
+0.2.13, probe images signed from r31).
+
 **Security:**
 - **The update sidecar now verifies every image's signature** (argus-updater 0.2.13, and probe
   images are signed from r31): after the pull and the digest check, the pulled image must carry a
