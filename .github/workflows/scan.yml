@@ -55,6 +55,10 @@ jobs:
     steps:
       # HIGH and CRITICAL findings with a fix available fail the job; a finding the distribution
       # has not fixed yet is listed but doesn't, or every week would fail on things nobody can act on.
+      # The updater's cosign is upstream's own release binary: its Go modules carry advisories that
+      # only a new cosign release can fix (v3.1.3 of 2026-08 is the newest), so it is left out of
+      # the gate and shown by the informational pass below. Bump COSIGN_VERSION in the updater's
+      # Dockerfile when a release lands, then drop the exclusion.
       - name: Trivy on the published image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -62,6 +66,7 @@ jobs:
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
+          skip-files: /usr/local/bin/cosign
           exit-code: '1'
       - name: Trivy, the whole picture (informational)
         if: always()
