@@ -1,0 +1,74 @@
+name: scan
+
+# A standing watch, not a gate: every push already runs govulncheck and npm audit (build.yml), but
+# an advisory published after the last push would otherwise wait for the next one. This runs the
+# same checks on a schedule, and scans the three PUBLISHED images (core, probe, updater) with Trivy
+# for known vulnerabilities in what they carry: the OS packages of the probe's and the updater's
+# Alpine base and the core's distroless base, the Go binary's modules, the probe's Zabbix build.
+# A failed run is the alert (GitHub mails the owner); nothing is published or changed here.
+
+on:
+  schedule:
+    - cron: '23 5 * * 1'   # Mondays 05:23 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  code:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Go version of the build image
+        id: gover
+        run: echo "v=$(sed -n 's/^FROM golang:\([0-9.]*\)-alpine.*/\1/p' argus/Dockerfile)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: ${{ steps.gover.outputs.v }}
+          cache-dependency-path: argus/go.sum
+      - name: govulncheck
+        working-directory: argus
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          govulncheck ./...
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: argus/web/package-lock.json
+      - name: npm audit (production dependencies)
+        working-directory: argus/web
+        run: |
+          npm ci --ignore-scripts
+          npm audit --omit=dev --audit-level=high
+
+  images:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [argus, argus-probe, argus-updater]
+    steps:
+      # HIGH and CRITICAL findings with a fix available fail the job; a finding the distribution
+      # has not fixed yet is listed but doesn't, or every week would fail on things nobody can act on.
+      - name: Trivy on the published image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: Trivy, the whole picture (informational)
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest
+          format: table
+          severity: MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: '0'
