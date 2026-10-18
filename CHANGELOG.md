@@ -13,6 +13,12 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-18
+
+The app looks different: every view lies flat on one surface, nothing in a page is boxed, the list
+headers stick and fold while you scroll, and Settings and Account are grouped with jump links. The
+minor bump marks the new look; nothing changes in what the app does or in how it is deployed.
+
 **Changed:**
 - **The app lies flat on one surface.** Every view used to sit in a box: a bordered, shadowed panel
   with 22px of page around it, inherited from the cards the settings are made of. The box is gone. A
