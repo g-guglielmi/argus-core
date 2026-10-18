@@ -15,9 +15,9 @@
   --dur-base: 180ms;
   --dur-slow: 260ms;
   --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
-  /* The surface (v0.9): a view's lists lie flat on it, edge to edge, with --gutter from the edges;
-     a group is a bordered block on it (a settings section, a channel card); --hover is a row under
-     the pointer. Light: a white surface, grey groups. Dark: the deep page tone, panel-tone groups. */
+  /* The surface (v0.9): everything lies flat on it, edge to edge, --gutter from the edges, sections
+     and rows divided by hairlines; no boxes but the floating ones (menus, dialogs, toasts) and the
+     inline editors. --hover is a row under the pointer. Light: white. Dark: the deep page tone. */
   --gutter: 22px;
 
   --bg: #eaeef4;
@@ -29,7 +29,7 @@
   --muted: #4f5b69;
   --faint: #647082;
   --shadow: 0 1px 2px rgba(20,30,45,0.06), 0 6px 20px rgba(20,30,45,0.06);
-  --surface: #ffffff; --group: #f4f7fb; --hover: #f4f7fb;
+  --surface: #ffffff; --hover: #f4f7fb;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -37,7 +37,7 @@
     --bg: #0e1218; --panel: #151b23; --elevated: #1b222c; --border: #262f3b; --border-strong: #333f4e;
     --text: #eef2f8; --muted: #b3bfcd; --faint: #8b98a8;
     --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 8px 28px rgba(0,0,0,0.35); --accent-weak: rgba(46,168,201,0.16);
-    --surface: #0e1218; --group: #151b23; --hover: #151b23;
+    --surface: #0e1218; --hover: #151b23;
     color-scheme: dark;
   }
 }
@@ -45,14 +45,14 @@
   --bg: #0e1218; --panel: #151b23; --elevated: #1b222c; --border: #262f3b; --border-strong: #333f4e;
   --text: #eef2f8; --muted: #b3bfcd; --faint: #8b98a8;
   --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 8px 28px rgba(0,0,0,0.35); --accent-weak: rgba(46,168,201,0.16);
-  --surface: #0e1218; --group: #151b23; --hover: #151b23;
+  --surface: #0e1218; --hover: #151b23;
   color-scheme: dark;
 }
 :root[data-theme="light"] {
   --bg: #eaeef4; --panel: #ffffff; --elevated: #f4f7fb; --border: #dbe2ec; --border-strong: #c7d0dd;
   --text: #141d28; --muted: #4f5b69; --faint: #647082;
   --shadow: 0 1px 2px rgba(20,30,45,0.06), 0 6px 20px rgba(20,30,45,0.06); --accent-weak: rgba(46,168,201,0.14);
-  --surface: #ffffff; --group: #f4f7fb; --hover: #f4f7fb;
+  --surface: #ffffff; --hover: #f4f7fb;
   color-scheme: light;
 }
 
@@ -188,13 +188,11 @@ span.muted, p.muted { color: var(--muted); }
 .content { padding: 0 0 60px; background: var(--surface); }
 
 /* ---------- panels ---------- */
-.panel { background: var(--group); border: 1px solid var(--border); border-radius: 12px; }
-.panel + .panel { margin-top: 14px; }
-/* A view's own panels (the direct children of the content) lie flat on the surface, edge to edge,
-   their rows divided by hairlines; two in a row divide with one. A panel inside another (a map's
-   sections, a report's side) stays a group. Floating things (menus, dialogs, toasts) keep --panel. */
-.content > .panel { background: transparent; border: 0; border-radius: 0; box-shadow: none; }
-.content > .panel + .panel { margin-top: 0; border-top: 1px solid var(--border); }
+/* A panel is a stretch of the surface: no fill, no frame; two in a row divide with a hairline. The
+   rows and sections inside divide the same way. Floating things (menus, dialogs, toasts) keep
+   --panel, and so do the inline editors a row opens (a host's settings, a group's name). */
+.panel { background: transparent; border: 0; border-radius: 0; }
+.panel + .panel { margin-top: 0; border-top: 1px solid var(--border); }
 /* The list header sticks under the topbar and, scrolled past, folds to one line (the app marks it
    .stuck): the eyebrow and the counts go, the buttons shrink, so the actions stay in reach. */
 .content > .panel > .phead { position: sticky; top: calc(var(--topbar-h, 66px) - 1px); z-index: 10; background: var(--surface); } /* 1px under the topbar's edge: stuck, it is clipped by that pixel, which is how the app tells */
@@ -250,7 +248,11 @@ span.muted, p.muted { color: var(--muted); }
 .tag-hidden { font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border-strong); border-radius: 999px; padding: 1px 6px; }
 
 /* shared card (panel-toned) - Account / Dashboard sub-cards, backing <Card> */
-.card { border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; background: var(--group); }
+/* A section (Account, and the Card component): a stretch of the surface under a hairline. */
+.card { padding: 18px var(--gutter) 20px; border-top: 1px solid var(--border); }
+.card:first-child { border-top: 0; }
+.acct { display: grid; }
+.acct .card > :not(.card-title) { max-width: 600px; } /* the dividers span the width, the forms stay a column */
 .card-title { font-size: 1rem; margin: 0 0 6px; font-weight: 650; }
 .card-note { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
 
@@ -834,8 +836,9 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .toast-x { margin-left: 4px; flex-shrink: 0; background: none; border: none; color: var(--faint); font-size: 17px; line-height: 1; cursor: pointer; padding: 0 3px; border-radius: 4px; }
 .toast-x:hover { color: var(--text); background: var(--elevated); }
 .soon-badge { display: inline-block; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); background: var(--accent-weak); border-radius: 999px; padding: 3px 12px; font-weight: 700; margin-bottom: 14px; }
-.chan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; padding: 4px var(--gutter) 20px; }
-.chan { border: 1px solid var(--border); border-radius: 12px; padding: 15px; background: var(--group); display: flex; flex-direction: column; }
+.chan-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; padding: 0 0 8px; }
+.chan { padding: 14px var(--gutter); border-top: 1px solid var(--border); display: flex; flex-direction: column; }
+.card .chan { padding-left: 0; padding-right: 0; } /* inside a section, which has the gutter */
 .chan .ct { display: flex; align-items: center; gap: 10px; font-weight: 650; margin-bottom: 6px; }
 .chan .ci { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: #fff; flex-shrink: 0; font-weight: 700; }
 /* A status page card's pinned note: a line in its style's colour, cut to two lines. */
@@ -982,8 +985,9 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 
 /* Settings page */
 /* minmax(0, 1fr): a card never grows past the page for a wide child (a table scrolls inside it). */
-.set-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 14px var(--gutter) 18px; }
-.set-card { border: 1px solid var(--border); border-radius: 10px; background: var(--group); padding: 14px 16px; }
+.set-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; padding: 0 0 8px; }
+.set-card { padding: 18px var(--gutter) 20px; border-top: 1px solid var(--border); }
+.set-body > .set-card:first-child { border-top: 0; } /* the head above draws that line */
 .set-card h3 { margin: 0 0 2px; font-size: 14px; }
 /* Width-capped like .panel-intro: an intro spanning the whole panel while the rows below cap at
    560px reads as inconsistent (and 200-char lines are hard to read anyway). */
@@ -1266,10 +1270,12 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .cat-order .cat-move .btn { padding: 2px 9px; line-height: 1.3; font-size: 13px; }
 
 /* §D thresholds screen: a list of templates, each opening an edit dialog */
-.thr-view { display: flex; flex-direction: column; gap: 16px; }
-.thr-list { display: flex; flex-direction: column; gap: 8px; }
-.thr-list-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left; border: 1px solid var(--border); border-radius: 10px; background: var(--group); padding: 12px 14px; cursor: pointer; color: var(--text); }
-.thr-list-row:hover { background: var(--hover); border-color: var(--border-strong); }
+.thr-view { display: flex; flex-direction: column; gap: 0; }
+.thr-view > .set-note { padding: 12px var(--gutter) 0; margin-bottom: 10px; }
+.thr-list { display: flex; flex-direction: column; gap: 0; }
+.thr-list-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: transparent; padding: 12px var(--gutter); cursor: pointer; color: var(--text); }
+.thr-list-row:last-child { border-bottom: 1px solid var(--border); }
+.thr-list-row:hover { background: var(--hover); }
 .thr-list-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .thr-list-title { font-weight: 650; font-size: 14px; }
 .thr-list-scope { font-size: 12px; color: var(--muted); }
@@ -1624,8 +1630,8 @@ input.tsel { width: 15px; height: 15px; accent-color: var(--accent); margin: 0 8
 
 /* ---------- Reports (ReportsView): the tree a report is picked from beside what it holds ---------- */
 .rep-tabs { margin-bottom: 12px; }
-.rep-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(320px, 1fr); gap: 14px; align-items: start; }
-.rep-grid > .panel + .panel { margin-top: 0; }
+.rep-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(320px, 1fr); gap: 0; align-items: start; }
+.rep-grid > .panel + .panel { margin-top: 0; border-top: 0; border-left: 1px solid var(--border); }
 .rep-q { width: 220px; max-width: 100%; }
 .rep-pick .phead .tools { align-items: center; }
 .rep-reset { display: inline-flex; align-items: center; gap: 6px; }

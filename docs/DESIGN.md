@@ -1397,9 +1397,11 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
 - **The surface (v0.9):** the content area is one surface (`--surface`: white in light, the deep
   page tone in dark; `.main` and `.content` carry it). A view's own panels (`.content > .panel`)
   lie flat on it, edge to edge, their rows divided by hairlines and inset by `--gutter` (22px, 14px
-  on phones); a panel inside another, a `.card`, `.set-card`, `.chan` or `.thr-list-row` is a
-  **group**: a bordered block in `--group` (soft grey in light, the panel tone in dark). Floating
-  things (menus, dialogs, toasts) and the sidebar keep `--panel`. A row under the pointer takes
+  on phones); every panel is flat (`.panel + .panel` divide with a hairline, the Reports columns
+  with a vertical one), and so are the sections and cards inside: `.card`, `.set-card`, `.chan`,
+  `.thr-list-row` are stretches of the surface under a hairline, inset by the gutter. Nothing in a
+  page is boxed; floating things (menus, dialogs, toasts), the inline editors a row opens and the
+  sidebar keep `--panel`. A row under the pointer takes
   `--hover`. A list's header (`.content > .panel > .phead`) sticks under the topbar (`--topbar-h`,
   kept by `useStickyHeads`) and folds to one line (`.stuck`) while scrolled past.
 - Phone (S25 Ultra), tablet (Galaxy Tab S9), desktop 16:9 / 16:10 / 32:9.

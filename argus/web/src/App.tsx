@@ -12605,7 +12605,7 @@ function UsersView() {
 
 function AccountView({ me, onMe, passkeysAvailable, theme, toggleTheme }: { me: Me; onMe: (m: Me) => void; passkeysAvailable: boolean; theme: 'dark' | 'light'; toggleTheme: () => void }) {
   return (
-    <div style={{ display: 'grid', gap: '1rem', maxWidth: 560 }}>
+    <div className="acct">
       <Card title="Appearance" note={`Theme is remembered on this device. Currently ${theme}.`}>
         <Button variant="primary" onClick={toggleTheme}>Switch to {theme === 'dark' ? 'light' : 'dark'} mode</Button>
       </Card>
