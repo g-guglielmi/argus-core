@@ -195,11 +195,12 @@ span.muted, p.muted { color: var(--muted); }
 .panel + .panel { margin-top: 0; border-top: 1px solid var(--border); }
 /* The list header sticks under the topbar and, scrolled past, folds to one line (the app marks it
    .stuck): the eyebrow and the counts go, the buttons shrink, so the actions stay in reach. It sits
-   1px under the topbar's edge: stuck, it is clipped by that pixel, which is how the app tells. On a
+   1px under the topbar's edge: stuck, its top is above the topbar's bottom, which is what the app
+   measures on each scroll frame. On a
    phone the actions take a row of their own, so a stuck head would be two or three rows under a
    two-row topbar: there the head scrolls with the page. */
 @media (min-width: 769px) {
-  .content > .panel > .phead { position: sticky; top: calc(var(--topbar-h, 66px) - 1px); z-index: 10; background: var(--surface); transition: padding var(--dur-fast); }
+  .content > .panel > .phead, .rep-grid > .panel > .phead { position: sticky; top: calc(var(--topbar-h, 66px) - 1px); z-index: 10; background: var(--surface); transition: padding var(--dur-fast); }
   .phead.stuck { padding-top: 6px; padding-bottom: 6px; }
   .phead.stuck, .phead.stuck:has(.ptitle) { align-items: center; }
   .phead.stuck .eyebrow, .phead.stuck .hint { display: none; }
@@ -1054,6 +1055,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
    The edge MUST be an inset box-shadow, never a border: uPlot idles this element collapsed at 0x0 in
    the plot's top-left corner (it only zeroes the size, it never hides it), and a border on a 0x0 box
    paints a 2px accent dot there - the infamous "stray blue dot". An inset shadow paints nothing at 0x0. */
+.uplot { isolation: isolate; } /* its cursor lines (z-index 100) stay under a stuck list head */
 .uplot .u-select { background: color-mix(in srgb, var(--accent) 18%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
 
 .nav-backdrop { display: none; }
@@ -1122,7 +1124,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   /* --- Overview / status-list card (the sensors list): a compact 4-row grid instead of one labelled
      field per line. Host + ⋮ on the title row (the kebab used to sit alone on its own row), sensor +
      reason under it, sparkline beside the value, then "last check 1m ago" beside the priority. --- */
-  .slist-sensors tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "host act" "sensor sensor" "trend value" "dur prio"; align-items: center; column-gap: 12px; row-gap: 3px; padding: 10px 14px; }
+  .slist-sensors tr { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(60%); grid-template-areas: "host act" "sensor sensor" "trend value" "dur prio"; align-items: center; column-gap: 12px; row-gap: 3px; padding: 10px 14px; }
   .slist-sensors td { padding: 0; }
   .slist-sensors td.slhost { grid-area: host; margin: 0; }
   .slist-sensors td.act { grid-area: act; margin: 0; }
@@ -1130,7 +1132,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   .slist-sensors td.slgrow { grid-area: sensor; }
   .slist-sensors td.trend { grid-area: trend; display: block; padding-top: 2px; }
   .slist-sensors td.trend::before { display: none; }
-  .slist-sensors td.val { grid-area: value; display: block; text-align: right !important; }
+  .slist-sensors td.val { grid-area: value; display: block; text-align: right !important; min-width: 0; white-space: normal; overflow-wrap: anywhere; } /* a long reading wraps in its column instead of running off the card */
   .slist-sensors td.val::before { display: none; }
   .slist-sensors td.dur { grid-area: dur; display: block; color: var(--faint); font-size: 12px; }
   .slist-sensors td.dur::before { content: attr(data-label) " "; text-transform: lowercase; font: inherit; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; letter-spacing: 0; color: var(--faint); }

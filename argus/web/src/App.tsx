@@ -9887,41 +9887,49 @@ function PanelTitle({ eyebrow, children }: { eyebrow: string; children: ReactNod
   return <div className="ptitle"><div className="eyebrow">{eyebrow}</div><h2>{children}</h2></div>
 }
 
-// The list headers (a view's own panel heads) stick under the topbar; scrolled past, each folds to one
-// compact line (.stuck in theme.css): the eyebrow and the counts go, the buttons shrink. The topbar's
-// height is the sticky offset (--topbar-h), and the heads are found again whenever a view's DOM
-// changes. A stuck head sits 1px under the topbar's edge (theme.css), so the root's top edge, pulled
-// down to the topbar's bottom, cuts it by that pixel: an intersection ratio under 1 while it is there.
+// The list headers (a view's own panel heads, and the Reports columns') stick under the topbar;
+// scrolled past, each folds to one compact line (.stuck in theme.css): the eyebrow and the counts go,
+// the buttons shrink. The topbar's height is the sticky offset (--topbar-h); a stuck head sits 1px
+// above it (theme.css), which is what a measurement on each scroll frame reads. The heads are found
+// again whenever a view's DOM changes.
 function useStickyHeads() {
   useEffect(() => {
     const root = document.documentElement
     const topbar = document.querySelector<HTMLElement>('.topbar')
     let h = topbar?.offsetHeight || 66
     root.style.setProperty('--topbar-h', h + 'px')
-    let io: IntersectionObserver | null = null
-    const bind = () => {
-      io?.disconnect()
-      io = new IntersectionObserver((entries) => {
-        // A page barely taller than the viewport would shrink under the fold until it can't scroll,
-        // unfold, and flicker on every wheel tick: such a page keeps its full head.
-        const room = document.documentElement.scrollHeight - window.innerHeight > 80
-        for (const e of entries) e.target.classList.toggle('stuck', room && e.intersectionRatio < 1 && e.boundingClientRect.top < h)
-      }, { threshold: [1], rootMargin: `-${h}px 0px 0px 0px` })
-      document.querySelectorAll('.content > .panel > .phead').forEach((el) => io!.observe(el))
+    let heads: HTMLElement[] = []
+    let raf = 0
+    const measure = () => {
+      raf = 0
+      // A page barely taller than the viewport would shrink under the fold until it can't scroll,
+      // unfold, and flicker on every wheel tick: such a page keeps its full head.
+      const room = root.scrollHeight - window.innerHeight > 80
+      for (const el of heads) el.classList.toggle('stuck', room && el.getBoundingClientRect().top < h)
     }
-    bind()
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(measure) }
+    const find = () => {
+      heads = Array.from(document.querySelectorAll<HTMLElement>('.content > .panel > .phead, .rep-grid > .panel > .phead'))
+      schedule()
+    }
+    find()
+    window.addEventListener('scroll', schedule, { passive: true })
+    window.addEventListener('resize', schedule)
     const ro = topbar ? new ResizeObserver(() => {
       const nh = topbar.offsetHeight
-      if (nh && nh !== h) { h = nh; root.style.setProperty('--topbar-h', h + 'px'); bind() }
+      if (nh && nh !== h) { h = nh; root.style.setProperty('--topbar-h', h + 'px'); schedule() }
     }) : null
     if (topbar && ro) ro.observe(topbar)
     let t: number | undefined
-    // A view's new heads are bound at once (a still-scrolled page would otherwise show a stuck head
+    // A view's new heads are found at once (a still-scrolled page would otherwise show a stuck head
     // unfolded for a beat), and again once its DOM settles.
-    const mo = new MutationObserver(() => { bind(); window.clearTimeout(t); t = window.setTimeout(bind, 120) })
+    const mo = new MutationObserver(() => { find(); window.clearTimeout(t); t = window.setTimeout(find, 120) })
     const main = document.querySelector('.main')
     if (main) mo.observe(main, { childList: true, subtree: true })
-    return () => { io?.disconnect(); ro?.disconnect(); mo.disconnect(); window.clearTimeout(t) }
+    return () => {
+      window.removeEventListener('scroll', schedule); window.removeEventListener('resize', schedule)
+      ro?.disconnect(); mo.disconnect(); window.clearTimeout(t); if (raf) cancelAnimationFrame(raf)
+    }
   }, [])
 }
 
