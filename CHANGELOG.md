@@ -13,6 +13,17 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Added:**
+- **Drag to reorder the monitoring tree.** In Reorder mode, with a mouse or trackpad, every group and
+  host row gets a grip and can be dragged: drop a row above or below a sibling to place it there in
+  one move (the up/down arrows stay, for keyboards and phones), or drop a host onto a group row to
+  move it into that group, at the end, or between that group's rows to land at that place. The
+  dragged row dims, a line marks where it would land, and a group lights up when it would take a
+  host. A group only moves among its siblings (its place in the hierarchy is its Zabbix path, which
+  Rename changes) and a host can't land between sites. A host moved into another site still gets the
+  offer to switch its collector. Same storage and endpoints as the arrows (`PUT /api/tree/order`,
+  `POST /api/hosts/{id}/groups`); admin and helpdesk only.
+
 ## [0.9.0] - 2026-10-18
 
 The app looks different: every view lies flat on one surface, nothing in a page is boxed, the list

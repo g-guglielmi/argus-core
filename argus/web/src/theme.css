@@ -251,6 +251,17 @@ span.muted, p.muted { color: var(--muted); }
 .ord-btn svg { width: 15px; height: 15px; }
 .ord-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
 .ord-btn:disabled { opacity: 0.3; cursor: default; }
+/* Drag to reorder (Reorder mode with a mouse or trackpad; the app sets .reorder only then): a grip at
+   the row's start, the dragged row dimmed, a line above or below the row it would land at, a group lit
+   up when it would take a host. */
+.grip { display: inline-flex; flex: none; width: 16px; height: 16px; color: var(--faint); margin-right: -2px; }
+.grip svg { width: 16px; height: 16px; }
+.tree.reorder .site-head, .tree.reorder .host-head { cursor: grab; }
+.tree.reorder .site-head:active, .tree.reorder .host-head:active { cursor: grabbing; }
+.tree.reorder .dragging { opacity: 0.35; }
+.tree.reorder .drop-before { box-shadow: inset 0 2px 0 0 var(--accent); }
+.tree.reorder .drop-after { box-shadow: inset 0 -2px 0 0 var(--accent); }
+.tree.reorder .drop-into { background: var(--accent-weak) !important; box-shadow: inset 0 0 0 1px var(--accent); }
 .site.ghost > .site-head .name, .site.ghost > .site-head .loc { opacity: 0.5; }
 .tag-hidden { font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border-strong); border-radius: 999px; padding: 1px 6px; }
 

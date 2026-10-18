@@ -1410,6 +1410,18 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   This Argus, Monitoring, Hosts, Access and security, Data; Account is three (`ACCOUNT_GROUPS`:
   Preferences, Notifications, Sign-in and security), the per-user Interface preference (Advanced
   mode) among its Preferences. `JumpLinks` draws the links for both.
+- **Tree order (Reorder mode):** the Monitoring tree's order is Argus's own, per sibling set (a
+  parent's direct hosts and subgroups as one list, `PUT /api/tree/order`), set in Reorder mode by
+  admins and helpdesk. Every row has up/down arrows; with a mouse or trackpad (`(hover: hover) and
+  (pointer: fine)`) each row also takes a grip and drags (HTML5 drag and drop on the rows). Dropped
+  above or below a sibling, a row takes that place (`reorderSiblings`); a host dropped on the middle
+  of a group row moves into that group (`setHostGroups`, the source group swapped for the target),
+  and dropped between that group's rows it lands there (the target's order is saved first, then the
+  move, so the host takes its place when the tree reloads). A group only moves among its siblings
+  (its hierarchy is its Zabbix path, which Rename changes), a host never lands between sites, and
+  nothing drops onto itself or into the group it is already in. The dragged row dims, the target
+  shows a line above or below, a group taking a host lights up (`.dragging`, `.drop-before`,
+  `.drop-after`, `.drop-into`); the arrows stay for keyboards and phones.
 - Phone (S25 Ultra), tablet (Galaxy Tab S9), desktop 16:9 / 16:10 / 32:9.
 - Look: PRTG-style density, Uptime-Kuma-grade polish.
 

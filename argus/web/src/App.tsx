@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 g-guglielmi
 
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, Fragment, type FormEvent, type JSX, type ReactNode, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, Fragment, type FormEvent, type JSX, type ReactNode, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type DragEvent as ReactDragEvent } from 'react'
 import { createPortal } from 'react-dom'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
@@ -4465,6 +4465,9 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
   const [busyId, setBusyId] = useState<string | null>(null)
   const [order, setOrder] = useState<OrderSet[]>([]) // saved manual sibling orderings
   const [reorder, setReorder] = useState(false)      // "Reorder" mode: show inline up/down arrows
+  // Drag to reorder (Reorder mode, with a pointer): what is being dragged and where it would land.
+  const [drag, setDrag] = useState<{ key: string; scope: string } | null>(null)
+  const [dropAt, setDropAt] = useState<{ key: string; pos: 'before' | 'after' | 'into' } | null>(null)
   const [hidden, setHidden] = useState<Set<string>>(() => new Set()) // group paths hidden from the tree
   const [showHidden, setShowHidden] = useState(false) // reveal hidden groups (to manage them)
   // "All sensors" and hidden-group management are advanced-only; when advanced mode is off they stay
@@ -4762,6 +4765,78 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
     const next = ids.slice();[next[index], next[j]] = [next[j], next[index]]
     reorderSiblings(scope, kind, next)
   }
+  // Drag to reorder, in Reorder mode with a mouse or trackpad (the arrows stay for keyboards and phones). A row
+  // dragged over a sibling lands before or after it, like the arrows do but in one move; a host dragged
+  // onto the middle of a group row moves into that group (its groups change, the source group for the
+  // target), at the end, or at a place among that group's rows when dropped before or after one of
+  // them. A group only moves among its siblings: its place in the hierarchy is its Zabbix path, which
+  // Rename changes. Hosts can't land between top-level sites: a host lives in a group.
+  const finePointer = useMemo(() => typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches, [])
+  const dragOn = reorder && canPause && finePointer
+  function dragStart(e: ReactDragEvent<HTMLElement>, key: string, scope: string) {
+    e.dataTransfer.setData('text/plain', key)
+    e.dataTransfer.effectAllowed = 'move'
+    setDrag({ key, scope })
+  }
+  function dragEnd() { setDrag(null); setDropAt(null) }
+  function dragOver(e: ReactDragEvent<HTMLElement>, key: string, scope: string, isGroup: boolean) {
+    if (!drag || drag.key === key) return
+    const host = drag.key.startsWith('h:')
+    if (!host && scope !== drag.scope) return // a group stays among its siblings
+    const r = e.currentTarget.getBoundingClientRect()
+    const y = (e.clientY - r.top) / Math.max(1, r.height)
+    const pos: 'before' | 'after' | 'into' = host && isGroup && y > 0.3 && y < 0.7 ? 'into' : y < 0.5 ? 'before' : 'after'
+    if (host && scope === '' && pos !== 'into') return // not between sites
+    if (pos === 'into' && key.slice(2) === drag.scope) return // already in that group
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDropAt((d) => (d && d.key === key && d.pos === pos ? d : { key, pos }))
+  }
+  async function drop(e: ReactDragEvent<HTMLElement>, key: string, scope: string, keys: string[], groupPath?: string) {
+    e.preventDefault()
+    const d = drag, at = dropAt
+    setDrag(null); setDropAt(null)
+    if (!d || !at || at.key !== key || d.key === key) return
+    if (at.pos === 'into') {
+      if (groupPath && groupPath !== d.scope) await moveHostTo(d, groupPath, null)
+      return
+    }
+    const next = keys.filter((k) => k !== d.key)
+    const i = next.indexOf(key)
+    if (i < 0) return
+    next.splice(at.pos === 'before' ? i : i + 1, 0, d.key)
+    if (scope === d.scope) { reorderSiblings(scope, 'sibling', next); return }
+    if (d.key.startsWith('h:')) await moveHostTo(d, scope, next)
+  }
+  // A host into another group: its groups swap the source for the target; with an order, its place among
+  // the target's rows is saved too (the order first, so the host lands there when the tree reloads).
+  async function moveHostTo(d: { key: string; scope: string }, groupPath: string, order: string[] | null) {
+    const hostId = d.key.slice(2)
+    const h = hosts.find((x) => x.id === hostId)
+    const target = groups.find((g) => g.name === groupPath)
+    if (!h || !target) return
+    const ids = new Set((h.groups || []).map((n) => groups.find((g) => g.name === n)?.id).filter((x): x is string => !!x))
+    const source = groups.find((g) => g.name === d.scope)
+    if (source) ids.delete(source.id)
+    ids.add(target.id)
+    if (order) await reorderSiblings(groupPath, 'sibling', order)
+    await setHostGroups(hostId, [...ids])
+  }
+  // The row's drag props and the classes that show the drag: the dragged row dims, the target shows a
+  // line above or below, a group taking a host lights up.
+  function dragProps(key: string, scope: string, keys: string[], groupPath?: string) {
+    if (!dragOn) return { cls: '', props: {} }
+    const cls = (drag?.key === key ? ' dragging' : '') + (dropAt?.key === key ? ' drop-' + dropAt.pos : '')
+    const props = {
+      draggable: true,
+      onDragStart: (e: ReactDragEvent<HTMLElement>) => dragStart(e, key, scope),
+      onDragEnd: dragEnd,
+      onDragOver: (e: ReactDragEvent<HTMLElement>) => dragOver(e, key, scope, !!groupPath),
+      onDrop: (e: ReactDragEvent<HTMLElement>) => { void drop(e, key, scope, keys, groupPath) },
+    }
+    return { cls, props }
+  }
+  const grip = dragOn ? <span className="grip" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6" /><circle cx="15" cy="6" r="1.6" /><circle cx="9" cy="12" r="1.6" /><circle cx="15" cy="12" r="1.6" /><circle cx="9" cy="18" r="1.6" /><circle cx="15" cy="18" r="1.6" /></svg></span> : null
   // Hide or unhide a group in the tree (Argus-local; the group stays in Zabbix). Optimistic, reverts on
   // failure. Admin-gated via the controls that call it (see the kebab, gated on advanced ⇒ admin).
   async function setGroupHidden(path: string, hide: boolean) {
@@ -4836,11 +4911,13 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
     const key = path + '::' + h.id
     const hopen = openHost === key || focusHostId === h.id
     const shade = hostShade(h)
+    const dh = dragProps('h:' + h.id, path, sibIds)
     return (
       <div className="host" key={key}>
-        <div className={'host-head' + (selecting && sel.has(h.id) ? ' selected' : '')} style={{ paddingLeft: indent(depth) }} onClick={() => { const next = hopen ? null : key; setOpenHost(next); onNavigate(next ? h.id : null, null) }}>
+        <div className={'host-head' + (selecting && sel.has(h.id) ? ' selected' : '') + dh.cls} style={{ paddingLeft: indent(depth) }} onClick={() => { const next = hopen ? null : key; setOpenHost(next); onNavigate(next ? h.id : null, null) }} {...dh.props}>
           {guides(depth)}
           <div className="c-name">
+            {grip}
             {selecting && <input type="checkbox" className="tsel" checked={sel.has(h.id)} onClick={(e) => e.stopPropagation()} onChange={(e) => toggleSel([h.id], e.target.checked)} aria-label={`Select ${h.name}`} />}
             <svg className={'chev' + (hopen ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
             <span className="dev-ico" title={h.class_id || undefined}>{hostGlyph(h.icon)}<span className={'dev-badge' + (needsEye(h) ? ' pulse' : '')} style={{ '--dot': dotColor(h.paused, h.hidden, shade) } as CSSProperties} /></span>
@@ -4888,11 +4965,13 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
     const expanded = (focus.level === 'group' && focus.path === node.path) ? true : !collapsed.has(node.path)
     const g = node.group
     const isHidden = hidden.has(node.path)
+    const dg = dragProps('g:' + node.path, scope, sibIds, node.path)
     return (
       <div className={'site' + (isHidden ? ' ghost' : '')} key={node.path}>
-        <div className="site-head" style={{ paddingLeft: indent(depth) }} onClick={() => toggleNode(node.path)}>
+        <div className={'site-head' + dg.cls} style={{ paddingLeft: indent(depth) }} onClick={() => toggleNode(node.path)} {...dg.props}>
           {guides(depth)}
           <div className="c-name">
+            {grip}
             {selecting && sub.length > 0 && <input type="checkbox" className="tsel" checked={sub.every((x) => sel.has(x.id))} onClick={(e) => e.stopPropagation()} onChange={(e) => toggleSel(sub.map((x) => x.id), e.target.checked)} aria-label={`Select every host in ${node.path}`} />}
             <svg className={'chev' + (expanded ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 6l6 6-6 6" /></svg>
             <span className="fold-ico">{expanded ? kbIcon.folderOpen : kbIcon.folder}</span>
@@ -5027,7 +5106,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
       {loading && <Skeleton rows={5} cols={3} />}
       {error && <div style={{ padding: '0.9rem 16px', color: 'var(--err)' }}>{error}</div>}
       {!loading && !error && hosts.length === 0 && <EmptyState icon={ic.monitoring} title="No hosts yet" text="Hosts monitored in Zabbix appear here, grouped by site. If you expected some, check the Zabbix connection in Settings." />}
-      <div className="tree">
+      <div className={'tree' + (dragOn ? ' reorder' : '')}>
         {focus.level === 'root' && (() => { const kids = mergedChildren([], roots, ''); const keys = kids.map((k) => k.key); return kids.map((k, i) => renderNode(k.group!, 0, keys, i, '')) })()}
         {focus.level === 'group' && (focusNode ? renderNode(focusNode, 0) : <div style={{ padding: '0.9rem 16px', color: 'var(--muted)' }}>This group no longer exists.</div>)}
         {(focus.level === 'host' || focus.level === 'sensor') && (focusHost ? renderHost(focusHost, focus.path, 0) : null)}
