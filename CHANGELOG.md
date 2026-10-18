@@ -31,7 +31,9 @@ GitHub Release from the matching section below.
   Device links), Access and security (Allowed FQDNs and IPs, Reverse proxy, Login rate limiting,
   Sessions) and Data (Backups, Data retention, Change log); the page header carries a jump link to
   each. The Interface section (Advanced mode) is a personal preference, so it moved to Account,
-  next to Appearance and Landing page.
+  next to Appearance and Landing page. Account is grouped the same way: Preferences (Appearance,
+  Landing page, Interface), Notifications (Personal notifications, Quiet hours) and Sign-in and
+  security (Password, Two-factor, Passkeys, API tokens), with its own jump links.
 
 ## [0.8.15] - 2026-10-17
 

@@ -2398,9 +2398,28 @@ function VMClock({ tz, clock24 = true }: { tz: string; clock24?: boolean }) {
 
 // The settings page's five groups, in page order; the header's jump links scroll to each.
 const SETTINGS_GROUPS = [
-  { id: 'argus', title: 'This Argus' }, { id: 'monitoring', title: 'Monitoring' }, { id: 'hosts', title: 'Hosts' },
-  { id: 'access', title: 'Access and security' }, { id: 'data', title: 'Data' },
+  { id: 'set-argus', title: 'This Argus' }, { id: 'set-monitoring', title: 'Monitoring' }, { id: 'set-hosts', title: 'Hosts' },
+  { id: 'set-access', title: 'Access and security' }, { id: 'set-data', title: 'Data' },
 ]
+// The account page's three groups, likewise.
+const ACCOUNT_GROUPS = [
+  { id: 'acct-prefs', title: 'Preferences' }, { id: 'acct-notify', title: 'Notifications' }, { id: 'acct-security', title: 'Sign-in and security' },
+]
+
+// JumpLinks is a long page's table of contents in its header: one link per group, scrolling the
+// group's caption to just under the folded header (scroll-margin-top in theme.css).
+function JumpLinks({ groups, label }: { groups: { id: string; title: string }[]; label: string }) {
+  const jump = (e: { preventDefault(): void }, id: string) => {
+    e.preventDefault()
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    document.getElementById(id)?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
+  }
+  return (
+    <nav className="set-jump" aria-label={label}>
+      {groups.map((g) => <a key={g.id} href={'#' + g.id} onClick={(e) => jump(e, g.id)}>{g.title}</a>)}
+    </nav>
+  )
+}
 
 function SettingsView({ onOpenUpdates }: { onOpenUpdates: () => void }) {
   const toast = useToast()
@@ -2530,22 +2549,12 @@ function SettingsView({ onOpenUpdates }: { onOpenUpdates: () => void }) {
             </form>
     )
   }
-  // The header's jump links: the page is long, the groups are five.
-  const jump = (e: { preventDefault(): void }, id: string) => {
-    e.preventDefault()
-    document.getElementById('set-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-
   return (
     <div className="panel">
       <div className="phead">
         <PanelTitle eyebrow="Admin">Settings</PanelTitle>
         <span className="hint">each section saves on its own</span>
-        <div className="tools">
-          <nav className="set-jump" aria-label="Settings groups">
-            {SETTINGS_GROUPS.map((g) => <a key={g.id} href={'#set-' + g.id} onClick={(e) => jump(e, g.id)}>{g.title}</a>)}
-          </nav>
-        </div>
+        <div className="tools"><JumpLinks groups={SETTINGS_GROUPS} label="Settings groups" /></div>
       </div>
 
       <div className="set-body">
@@ -12626,18 +12635,34 @@ function UsersView() {
 
 function AccountView({ me, onMe, passkeysAvailable, theme, toggleTheme }: { me: Me; onMe: (m: Me) => void; passkeysAvailable: boolean; theme: 'dark' | 'light'; toggleTheme: () => void }) {
   return (
-    <div className="acct">
-      <Card title="Appearance" note={`Theme is remembered on this device. Currently ${theme}.`}>
-        <Button variant="primary" onClick={toggleTheme}>Switch to {theme === 'dark' ? 'light' : 'dark'} mode</Button>
-      </Card>
-      <LandingCard me={me} onMe={onMe} />
-      <InterfaceCard me={me} onMe={onMe} />
-      <PersonalNotifyCard />
-      <QuietHoursCard me={me} onMe={onMe} />
-      <PasswordCard />
-      <MfaCard />
-      {passkeysAvailable && <PasskeyCard />}
-      <TokensCard />
+    <div className="panel">
+      <div className="phead">
+        <PanelTitle eyebrow="You">Account</PanelTitle>
+        <span className="hint">personal to this account; each section saves on its own</span>
+        <div className="tools"><JumpLinks groups={ACCOUNT_GROUPS} label="Account groups" /></div>
+      </div>
+      <div className="acct">
+        <div className="set-group" id="acct-prefs">
+          <div className="set-group-cap">Preferences</div>
+          <Card title="Appearance" note={`Theme is remembered on this device. Currently ${theme}.`}>
+            <Button variant="primary" onClick={toggleTheme}>Switch to {theme === 'dark' ? 'light' : 'dark'} mode</Button>
+          </Card>
+          <LandingCard me={me} onMe={onMe} />
+          <InterfaceCard me={me} onMe={onMe} />
+        </div>
+        <div className="set-group" id="acct-notify">
+          <div className="set-group-cap">Notifications</div>
+          <PersonalNotifyCard />
+          <QuietHoursCard me={me} onMe={onMe} />
+        </div>
+        <div className="set-group" id="acct-security">
+          <div className="set-group-cap">Sign-in and security</div>
+          <PasswordCard />
+          <MfaCard />
+          {passkeysAvailable && <PasskeyCard />}
+          <TokensCard />
+        </div>
+      </div>
     </div>
   )
 }

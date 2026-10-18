@@ -1405,8 +1405,9 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   `--hover`. A list's header (`.content > .panel > .phead`) sticks under the topbar (`--topbar-h`,
   kept by `useStickyHeads`) and folds to one line (`.stuck`) while scrolled past. Settings is
   five groups (`SETTINGS_GROUPS`, a caption over each, the header's jump links scroll to them):
-  This Argus, Monitoring, Hosts, Access and security, Data; the per-user Interface preference
-  (Advanced mode) lives on Account.
+  This Argus, Monitoring, Hosts, Access and security, Data; Account is three (`ACCOUNT_GROUPS`:
+  Preferences, Notifications, Sign-in and security), the per-user Interface preference (Advanced
+  mode) among its Preferences. `JumpLinks` draws the links for both.
 - Phone (S25 Ultra), tablet (Galaxy Tab S9), desktop 16:9 / 16:10 / 32:9.
 - Look: PRTG-style density, Uptime-Kuma-grade polish.
 
