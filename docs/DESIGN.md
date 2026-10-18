@@ -1403,7 +1403,10 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   page is boxed; floating things (menus, dialogs, toasts), the inline editors a row opens and the
   sidebar keep `--panel`. A row under the pointer takes
   `--hover`. A list's header (`.content > .panel > .phead`) sticks under the topbar (`--topbar-h`,
-  kept by `useStickyHeads`) and folds to one line (`.stuck`) while scrolled past.
+  kept by `useStickyHeads`) and folds to one line (`.stuck`) while scrolled past. Settings is
+  five groups (`SETTINGS_GROUPS`, a caption over each, the header's jump links scroll to them):
+  This Argus, Monitoring, Hosts, Access and security, Data; the per-user Interface preference
+  (Advanced mode) lives on Account.
 - Phone (S25 Ultra), tablet (Galaxy Tab S9), desktop 16:9 / 16:10 / 32:9.
 - Look: PRTG-style density, Uptime-Kuma-grade polish.
 

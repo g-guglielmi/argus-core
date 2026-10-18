@@ -25,6 +25,13 @@ GitHub Release from the matching section below.
   row under the pointer takes a clear tone in both themes. Phones gain the gutters back (14px from
   the edge instead of 26px), and the header's actions wrap under the title there. Also gone: the
   Monitoring tree's last row painting over the panel's rounded corner.
+- **Settings in five groups.** Its seventeen sections stood in the order they were added, related
+  ones far apart. They now sit under five captions: This Argus (About, General, Reports),
+  Monitoring (Zabbix connection, Core SNMP default, Probes, Alerting, Heartbeat), Hosts (Tags,
+  Device links), Access and security (Allowed FQDNs and IPs, Reverse proxy, Login rate limiting,
+  Sessions) and Data (Backups, Data retention, Change log); the page header carries a jump link to
+  each. The Interface section (Advanced mode) is a personal preference, so it moved to Account,
+  next to Appearance and Landing page.
 
 ## [0.8.15] - 2026-10-17
 

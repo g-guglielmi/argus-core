@@ -2332,7 +2332,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
             {view === 'changes' && me.role === 'admin' && <ChangesView goHost={goHost} />}
             {view === 'users' && me.role === 'admin' && <UsersView />}
             {view === 'updates' && me.role === 'admin' && <UpdatesView />}
-            {view === 'settings' && me.role === 'admin' && <SettingsView me={me} onMe={onMe} onOpenUpdates={() => goto('updates')} />}
+            {view === 'settings' && me.role === 'admin' && <SettingsView onOpenUpdates={() => goto('updates')} />}
             {view === 'account' && <AccountView me={me} onMe={onMe} passkeysAvailable={passkeysAvailable} theme={theme} toggleTheme={toggleTheme} />}
           </ErrorBoundary>
         </div>
@@ -2396,27 +2396,21 @@ function VMClock({ tz, clock24 = true }: { tz: string; clock24?: boolean }) {
   return <input className="input" disabled value={text || tz} aria-label="Core VM local time" />
 }
 
-function SettingsView({ me, onMe, onOpenUpdates }: { me: Me; onMe: (m: Me) => void; onOpenUpdates: () => void }) {
+// The settings page's five groups, in page order; the header's jump links scroll to each.
+const SETTINGS_GROUPS = [
+  { id: 'argus', title: 'This Argus' }, { id: 'monitoring', title: 'Monitoring' }, { id: 'hosts', title: 'Hosts' },
+  { id: 'access', title: 'Access and security' }, { id: 'data', title: 'Data' },
+]
+
+function SettingsView({ onOpenUpdates }: { onOpenUpdates: () => void }) {
   const toast = useToast()
   const [items, setItems] = useState<SettingItem[] | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [busyGroup, setBusyGroup] = useState<string | null>(null)
-  const [advBusy, setAdvBusy] = useState(false)
   const [zbx, setZbx] = useState<{ reachable: boolean; version?: string; error?: string } | null>(null)
   // The core VM's time status (zone + NTP sync), shown under the General group's Timezone field
   // since that setting is what drives the VM's clock.
   const [coreTime, setCoreTime] = useState<OSStatus['core'] | null>(null)
-
-  // Advanced mode is a per-user preference (saved on the admin's own account, like the landing page),
-  // NOT a server-wide setting - enabling it never changes what anyone else sees.
-  async function setAdvanced(next: boolean) {
-    setAdvBusy(true)
-    try {
-      const res = await fetch('/api/me/preferences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ advanced: next }) })
-      if (!res.ok) { toast.error(await errText(res, 'Could not save preference')); return }
-      onMe(await res.json()); toast.success(`Advanced mode ${next ? 'enabled' : 'disabled'}.`)
-    } catch { toast.error('Could not save preference') } finally { setAdvBusy(false) }
-  }
 
   function load() {
     fetch('/api/settings').then((r) => r.json()).then((s) => { setItems(s || []); setEdits({}) }).catch(() => toast.error('Failed to load settings'))
@@ -2493,41 +2487,16 @@ function SettingsView({ me, onMe, onOpenUpdates }: { me: Me; onMe: (m: Me) => vo
     { name: 'Changes', title: 'Change log', note: 'How long Argus keeps who changed what (Admin, Changes).' },
   ]
 
-  return (
-    <div className="panel">
-      <div className="phead">
-        <PanelTitle eyebrow="Admin">Settings</PanelTitle>
-        <span className="hint">each section saves on its own</span>
-      </div>
-
-      <div className="set-body">
-        {/* The running version and its licence; updating it, the probes and the VMs is on Updates. */}
-        <AboutCard onOpenUpdates={onOpenUpdates} />
-        {/* The core server's own SNMP default (stored under proxy id "0"): a server setting, not a probe's. */}
-        <section className="set-card">
-          <h3>Core SNMP default</h3>
-          <p className="set-note">The SNMP credentials of the core server itself: hosts it monitors (Monitored by: Server) that inherit them, and its own discovery scans, use these. Each probe has its own default, under Probes.</p>
-          <ProxySNMP proxyId="0" proxyName="the core server" embedded />
-        </section>
-        {/* Advanced mode - a per-user preference (saved on this admin's account), kept here so only an
-            admin can turn it on, and only for their own view. Theme is likewise a per-device preference,
-            but lives in Account (reachable by every role) rather than this admin-only server-settings tab. */}
-        <section className="set-card">
-          <h3>Interface</h3>
-          <p className="set-note">Personal to your account - other users aren't affected.</p>
-          <div className="set-row set-toggle">
-            <div className="set-head"><span className="flabel">Advanced mode</span></div>
-            <Switch checked={!!me.advanced} disabled={advBusy} onChange={setAdvanced} label={me.advanced ? 'On' : 'Off'} />
-            <span className="set-hint">Reveals power-user controls in the monitoring tree: the “All sensors” view and hidden-group management (hide groups / show hidden).</span>
-          </div>
-        </section>
-        {items === null ? <Skeleton rows={4} cols={2} /> : groups.map((g) => {
-          const gi = items.filter((it) => it.group === g.name)
-          if (gi.length === 0) return null
-          const busy = busyGroup === g.name
-          const gDirty = gi.some((it) => it.key in edits)
-          return (
-            // A form per card, so Enter in a field saves just this card.
+  // One form per registry group, so Enter in a field saves just that group; placed by the page below.
+  const groupForm = (name: string) => {
+    const g = groups.find((x) => x.name === name)
+    if (!g) return null
+    if (items === null) return <div className="set-card" key={name}><Skeleton rows={3} cols={2} /></div>
+    const gi = items.filter((it) => it.group === g.name)
+    if (gi.length === 0) return null
+    const busy = busyGroup === g.name
+    const gDirty = gi.some((it) => it.key in edits)
+    return (
             <form className="set-card" key={g.name} onSubmit={(e) => saveGroup(g, e)}>
               <h3>{g.title}</h3>
               {g.note && <p className="set-note">{g.note}</p>}
@@ -2559,18 +2528,70 @@ function SettingsView({ me, onMe, onOpenUpdates }: { me: Me; onMe: (m: Me) => vo
                 </div>
               )}
             </form>
-          )
-        })}
-        {/* Tags: labels across sites, on hosts and probes, for the tree's filter and channel routing. */}
-        <TagsCard />
-        {/* Device links: buttons every host of some classes gets, filled in from the host. */}
-        <LinksCard />
-        {/* The logo on the reports' first page (reportsapi.go). */}
-        <ReportLogoCard />
-        {/* Zabbix housekeeping (history / trends / compression), saved through its own endpoint. */}
-        <DataRetention />
-        {/* The core host's own backups (backup.go, deploy/core/host/argus-backup). */}
-        <BackupsCard />
+    )
+  }
+  // The header's jump links: the page is long, the groups are five.
+  const jump = (e: { preventDefault(): void }, id: string) => {
+    e.preventDefault()
+    document.getElementById('set-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  return (
+    <div className="panel">
+      <div className="phead">
+        <PanelTitle eyebrow="Admin">Settings</PanelTitle>
+        <span className="hint">each section saves on its own</span>
+        <div className="tools">
+          <nav className="set-jump" aria-label="Settings groups">
+            {SETTINGS_GROUPS.map((g) => <a key={g.id} href={'#set-' + g.id} onClick={(e) => jump(e, g.id)}>{g.title}</a>)}
+          </nav>
+        </div>
+      </div>
+
+      <div className="set-body">
+        <div className="set-group" id="set-argus">
+          <div className="set-group-cap">This Argus</div>
+          {/* The running version and its licence; updating it, the probes and the VMs is on Updates. */}
+          <AboutCard onOpenUpdates={onOpenUpdates} />
+          {groupForm('General')}
+          {/* The logo on the reports' first page (reportsapi.go). */}
+          <ReportLogoCard />
+        </div>
+        <div className="set-group" id="set-monitoring">
+          <div className="set-group-cap">Monitoring</div>
+          {groupForm('Connection')}
+        {/* The core server's own SNMP default (stored under proxy id "0"): a server setting, not a probe's. */}
+        <section className="set-card">
+          <h3>Core SNMP default</h3>
+          <p className="set-note">The SNMP credentials of the core server itself: hosts it monitors (Monitored by: Server) that inherit them, and its own discovery scans, use these. Each probe has its own default, under Probes.</p>
+          <ProxySNMP proxyId="0" proxyName="the core server" embedded />
+        </section>
+          {groupForm('Probes')}
+          {groupForm('Alerting')}
+          {groupForm('Watchdog')}
+        </div>
+        <div className="set-group" id="set-hosts">
+          <div className="set-group-cap">Hosts</div>
+          {/* Tags: labels across sites, on hosts and probes, for the tree's filter and channel routing. */}
+          <TagsCard />
+          {/* Device links: buttons every host of some classes gets, filled in from the host. */}
+          <LinksCard />
+        </div>
+        <div className="set-group" id="set-access">
+          <div className="set-group-cap">Access and security</div>
+          {groupForm('Access')}
+          {groupForm('Proxy')}
+          {groupForm('Security')}
+          {groupForm('Sessions')}
+        </div>
+        <div className="set-group" id="set-data">
+          <div className="set-group-cap">Data</div>
+          {/* The core host's own backups (backup.go, deploy/core/host/argus-backup). */}
+          <BackupsCard />
+          {/* Zabbix housekeeping (history / trends / compression), saved through its own endpoint. */}
+          <DataRetention />
+          {groupForm('Changes')}
+        </div>
       </div>
     </div>
   )
@@ -12610,6 +12631,7 @@ function AccountView({ me, onMe, passkeysAvailable, theme, toggleTheme }: { me: 
         <Button variant="primary" onClick={toggleTheme}>Switch to {theme === 'dark' ? 'light' : 'dark'} mode</Button>
       </Card>
       <LandingCard me={me} onMe={onMe} />
+      <InterfaceCard me={me} onMe={onMe} />
       <PersonalNotifyCard />
       <QuietHoursCard me={me} onMe={onMe} />
       <PasswordCard />
@@ -12742,6 +12764,31 @@ function QuietHoursCard({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
         </div>
       )}
       <p className="set-note">During quiet hours anything below that waits: if it is still open when they end, you get it then. Reminders, acknowledgements and recoveries below it are not sent meanwhile.</p>
+    </Card>
+  )
+}
+
+// Advanced mode: a per-user preference (saved on this account, like the landing page), never a
+// server-wide setting: turning it on changes nothing for anyone else. It reveals the power-user
+// controls in the monitoring tree (the "All sensors" view, hidden-group management).
+function InterfaceCard({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  async function setAdvanced(next: boolean) {
+    setBusy(true)
+    try {
+      const res = await fetch('/api/me/preferences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ advanced: next }) })
+      if (!res.ok) { toast.error(await errText(res, 'Could not save preference')); return }
+      onMe(await res.json()); toast.success(`Advanced mode ${next ? 'enabled' : 'disabled'}.`)
+    } catch { toast.error('Could not save preference') } finally { setBusy(false) }
+  }
+  return (
+    <Card title="Interface" note="Personal to your account - other users aren't affected.">
+      <div className="set-row set-toggle">
+        <div className="set-head"><span className="flabel">Advanced mode</span></div>
+        <Switch checked={!!me.advanced} disabled={busy} onChange={setAdvanced} label={me.advanced ? 'On' : 'Off'} />
+        <span className="set-hint">Reveals power-user controls in the monitoring tree: the "All sensors" view and hidden-group management (hide groups / show hidden).</span>
+      </div>
     </Card>
   )
 }

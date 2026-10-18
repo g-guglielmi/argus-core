@@ -987,7 +987,15 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 /* minmax(0, 1fr): a card never grows past the page for a wide child (a table scrolls inside it). */
 .set-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; padding: 0 0 8px; }
 .set-card { padding: 18px var(--gutter) 20px; border-top: 1px solid var(--border); }
-.set-body > .set-card:first-child { border-top: 0; } /* the head above draws that line */
+/* Settings: five groups, each a caption over its sections; the header's jump links scroll to one,
+   landing it under the folded header. */
+.set-group { scroll-margin-top: calc(var(--topbar-h, 66px) + 44px); }
+.set-group + .set-group { border-top: 1px solid var(--border); }
+.set-group-cap { padding: 16px var(--gutter) 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); }
+.set-group-cap + .set-card { border-top: 0; }
+.set-jump { display: flex; flex-wrap: wrap; gap: 2px; }
+.set-jump a { font-size: 12px; font-weight: 600; color: var(--muted); text-decoration: none; padding: 4px 9px; border-radius: 7px; }
+.set-jump a:hover { background: var(--hover); color: var(--text); }
 .set-card h3 { margin: 0 0 2px; font-size: 14px; }
 /* Width-capped like .panel-intro: an intro spanning the whole panel while the rows below cap at
    560px reads as inconsistent (and 200-char lines are hard to read anyway). */
