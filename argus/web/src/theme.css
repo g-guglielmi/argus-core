@@ -150,6 +150,10 @@ span.muted, p.muted { color: var(--muted); }
 .app-shell.collapsed .side-nav > .navlabel:first-child { display: none; }
 
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--surface); } /* the surface fills the column, past a short page's content */
+/* No scroll anchoring under the content: when a list's head folds (it sticks, then loses its eyebrow
+   and hint) the rows below it move up, and the browser would move the scroll position to hold them
+   still, which pulls the head back past the fold and makes it flicker on a slow wheel. */
+.main { overflow-anchor: none; }
 .updbar { display: flex; align-items: center; gap: 12px; padding: 9px 22px; font-size: 13px; color: var(--text); background: color-mix(in srgb, var(--accent) 16%, var(--panel)); border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border)); }
 .updbar span { flex: 1 1 auto; }
 .updbar .btn { flex: 0 0 auto; }
@@ -185,7 +189,7 @@ span.muted, p.muted { color: var(--muted); }
   .scaret { transition: none; }
 }
 
-.content { padding: 0 0 60px; background: var(--surface); }
+.content { padding: 0 0 var(--gutter); background: var(--surface); }
 
 /* ---------- panels ---------- */
 /* A panel is a stretch of the surface: no fill, no frame; two in a row divide with a hairline. The
@@ -193,6 +197,10 @@ span.muted, p.muted { color: var(--muted); }
    --panel, and so do the inline editors a row opens (a host's settings, a group's name). */
 .panel { background: transparent; border: 0; border-radius: 0; }
 .panel + .panel { margin-top: 0; border-top: 1px solid var(--border); }
+/* A view's list closes with a hairline under its last row (the rows draw the lines between them,
+   not after the last one); the next panel down starts right under it. */
+.content > .panel, .content > .rep-grid { border-bottom: 1px solid var(--border); }
+.content > .panel + .panel { border-top: 0; }
 /* The list header sticks under the topbar and, scrolled past, folds to one line (the app marks it
    .stuck): the eyebrow and the counts go, the buttons shrink, so the actions stay in reach. It sits
    1px under the topbar's edge: stuck, its top is above the topbar's bottom, which is what the app
@@ -217,7 +225,7 @@ span.muted, p.muted { color: var(--muted); }
 .phead .hint { color: var(--muted); font-size: 12px; }
 .phead .tools { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
 /* One-paragraph explainer under a panel header (Notifications, Probes). */
-.panel-intro { color: var(--muted); font-size: 12.5px; line-height: 1.5; padding: 10px var(--gutter) 0; margin: 0; max-width: 90ch; }
+.panel-intro { color: var(--muted); font-size: 12.5px; line-height: 1.5; padding: 10px var(--gutter) 12px; margin: 0; max-width: 90ch; } /* a row of its own: room under the text before the hairline of what follows */
 
 /* Drill-down breadcrumb (Monitoring): Sites & hosts / Group / Host / Sensor */
 .crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 9px var(--gutter); font-size: 13px; border-bottom: 1px solid var(--border); }

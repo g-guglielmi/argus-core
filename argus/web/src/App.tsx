@@ -9979,12 +9979,19 @@ function useStickyHeads() {
     root.style.setProperty('--topbar-h', h + 'px')
     let heads: HTMLElement[] = []
     let raf = 0
+    let anyStuck = false
     const measure = () => {
       raf = 0
       // A page barely taller than the viewport would shrink under the fold until it can't scroll,
-      // unfold, and flicker on every wheel tick: such a page keeps its full head.
-      const room = root.scrollHeight - window.innerHeight > 80
-      for (const el of heads) el.classList.toggle('stuck', room && el.getBoundingClientRect().top < h)
+      // unfold, and flicker on every wheel tick: such a page keeps its full head. The fold takes
+      // some of the room, so a page that is stuck stays stuck down to a lower bar.
+      const room = root.scrollHeight - window.innerHeight > (anyStuck ? 50 : 80)
+      anyStuck = false
+      for (const el of heads) {
+        const stuck = room && el.getBoundingClientRect().top < h
+        el.classList.toggle('stuck', stuck)
+        if (stuck) anyStuck = true
+      }
     }
     const schedule = () => { if (!raf) raf = requestAnimationFrame(measure) }
     const find = () => {

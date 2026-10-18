@@ -24,6 +24,14 @@ GitHub Release from the matching section below.
   offer to switch its collector. Same storage and endpoints as the arrows (`PUT /api/tree/order`,
   `POST /api/hosts/{id}/groups`); admin and helpdesk only.
 
+**Fixed:**
+- **The surface, after the first days on v0.9.0.** A list now closes with a hairline under its last
+  row (Users, Probes and the other tables ended on nothing), the page ends a gutter below the list
+  instead of 60px of empty surface, and a view's description (Status pages, Notifications, Discovery,
+  Reports) has room under its text before the line of what follows. The folding list head no longer
+  flickers on a slow wheel: each time it folded, the browser's scroll anchoring moved the page back
+  across the fold to hold the rows still, so the content now opts out of scroll anchoring.
+
 ## [0.9.0] - 2026-10-18
 
 The app looks different: every view lies flat on one surface, nothing in a page is boxed, the list

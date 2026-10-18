@@ -1404,7 +1404,11 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   which float on the page itself), the inline editors a row opens and the sidebar keep `--panel`.
   The sticky, folding head and the table gutters are desktop rules (min-width 769px): a phone stacks
   rows into cards with insets of their own, and its head scrolls with the page. A row under the pointer takes
-  `--hover`. A list's header (`.content > .panel > .phead`) sticks under the topbar (`--topbar-h`,
+  `--hover`. A view's list closes with a hairline under its last row (`.content > .panel`, the Reports
+  grid; the rows draw only the lines between them) and the content ends a gutter below it; a view's
+  description (`.panel-intro`) is a row of its own, with room under the text. `.main` turns scroll
+  anchoring off: a folding head shrinks, and the browser would otherwise move the scroll position to
+  hold the rows still, pulling the head back across the fold (it flickered on a slow wheel). A list's header (`.content > .panel > .phead`) sticks under the topbar (`--topbar-h`,
   kept by `useStickyHeads`, which measures the heads on each scroll frame) and folds to one line (`.stuck`) while scrolled past. Settings is
   five groups (`SETTINGS_GROUPS`, a caption over each, the header's jump links scroll to them):
   This Argus, Monitoring, Hosts, Access and security, Data; Account is three (`ACCOUNT_GROUPS`:
