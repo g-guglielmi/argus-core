@@ -194,12 +194,18 @@ span.muted, p.muted { color: var(--muted); }
 .panel { background: transparent; border: 0; border-radius: 0; }
 .panel + .panel { margin-top: 0; border-top: 1px solid var(--border); }
 /* The list header sticks under the topbar and, scrolled past, folds to one line (the app marks it
-   .stuck): the eyebrow and the counts go, the buttons shrink, so the actions stay in reach. */
-.content > .panel > .phead { position: sticky; top: calc(var(--topbar-h, 66px) - 1px); z-index: 10; background: var(--surface); } /* 1px under the topbar's edge: stuck, it is clipped by that pixel, which is how the app tells */
-.phead.stuck { padding-top: 6px; padding-bottom: 6px; align-items: center; }
-.phead.stuck .eyebrow, .phead.stuck .hint { display: none; }
-.phead.stuck h2 { font-size: 13px; }
-.phead.stuck .btn { padding: 3px 9px; font-size: 11.5px; }
+   .stuck): the eyebrow and the counts go, the buttons shrink, so the actions stay in reach. It sits
+   1px under the topbar's edge: stuck, it is clipped by that pixel, which is how the app tells. On a
+   phone the actions take a row of their own, so a stuck head would be two or three rows under a
+   two-row topbar: there the head scrolls with the page. */
+@media (min-width: 769px) {
+  .content > .panel > .phead { position: sticky; top: calc(var(--topbar-h, 66px) - 1px); z-index: 10; background: var(--surface); transition: padding var(--dur-fast); }
+  .phead.stuck { padding-top: 6px; padding-bottom: 6px; }
+  .phead.stuck, .phead.stuck:has(.ptitle) { align-items: center; }
+  .phead.stuck .eyebrow, .phead.stuck .hint { display: none; }
+  .phead.stuck h2 { font-size: 13px; }
+  .phead.stuck .btn { padding: 3px 9px; font-size: 11.5px; }
+}
 .phead { display: flex; align-items: center; gap: 12px; padding: 12px var(--gutter); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .phead h2 { font-size: 14px; margin: 0; font-weight: 650; }
 /* PanelTitle: a small label above the title (the sidebar section, and the scope of a cross-site list). */
@@ -248,11 +254,16 @@ span.muted, p.muted { color: var(--muted); }
 .tag-hidden { font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border-strong); border-radius: 999px; padding: 1px 6px; }
 
 /* shared card (panel-toned) - Account / Dashboard sub-cards, backing <Card> */
-/* A section (Account, and the Card component): a stretch of the surface under a hairline. */
-.card { padding: 18px var(--gutter) 20px; border-top: 1px solid var(--border); }
-.card:first-child { border-top: 0; }
+/* The Card component: a framed box for what floats on the page itself (the sign-in, reset and
+   two-factor cards); inside the app, Account's sections are flat, see .acct below. */
+.card { border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; background: var(--panel); box-shadow: var(--shadow); }
+/* Account: its sections are stretches of the surface under a hairline, sized like the settings
+   sections; the dividers span the width, the forms stay a column. */
 .acct { display: grid; }
-.acct .card > :not(.card-title) { max-width: 600px; } /* the dividers span the width, the forms stay a column */
+.acct .card { border: 0; border-top: 1px solid var(--border); border-radius: 0; background: transparent; box-shadow: none; padding: 18px var(--gutter) 20px; }
+.acct .card-title { font-size: 14px; margin: 0 0 2px; }
+.acct .card-note { font-size: 12.5px; }
+.acct .card > :not(.card-title) { max-width: 600px; }
 .card-title { font-size: 1rem; margin: 0 0 6px; font-weight: 650; }
 .card-note { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
 
@@ -390,9 +401,12 @@ span.muted, p.muted { color: var(--muted); }
 .slist { width: 100%; border-collapse: collapse; font-size: 13px; }
 .slist th { text-align: left; color: var(--faint); font-weight: 600; font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; padding: 9px 16px; border-bottom: 1px solid var(--border); }
 .slist td { padding: 11px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
-/* On the surface a table's first and last cells take the gutter, like every row. */
-.content > .panel .slist th:first-child, .content > .panel .slist td:first-child, .content > .panel .enroll th:first-child, .content > .panel .enroll td:first-child, .content > .panel .utable th:first-child, .content > .panel .utable td:first-child { padding-left: var(--gutter); }
-.content > .panel .slist th:last-child, .content > .panel .slist td:last-child, .content > .panel .enroll th:last-child, .content > .panel .enroll td:last-child, .content > .panel .utable th:last-child, .content > .panel .utable td:last-child { padding-right: var(--gutter); }
+/* On the surface a table's first and last cells take the gutter, like every row (a phone stacks the
+   rows into cards with insets of their own, below). */
+@media (min-width: 769px) {
+  .content > .panel .slist th:first-child, .content > .panel .slist td:first-child, .content > .panel .enroll th:first-child, .content > .panel .enroll td:first-child, .content > .panel .utable th:first-child, .content > .panel .utable td:first-child { padding-left: var(--gutter); }
+  .content > .panel .slist th:last-child, .content > .panel .slist td:last-child, .content > .panel .enroll th:last-child, .content > .panel .enroll td:last-child, .content > .panel .utable th:last-child, .content > .panel .utable td:last-child { padding-right: var(--gutter); }
+}
 .slist tr:last-child td { border-bottom: none; }
 .slist td.slhost { border-left: 3px solid transparent; font-weight: 650; }
 .slist .dur { color: var(--muted); }
@@ -406,14 +420,14 @@ span.muted, p.muted { color: var(--muted); }
 .slist-sensors, .slist-problems, .slist-trig { table-layout: fixed; }
 .slist-trig th:nth-child(1){width:36%} .slist-trig th:nth-child(2){width:12%} .slist-trig th:nth-child(3){width:18%} .slist-trig th:nth-child(4){width:22%} .slist-trig th:nth-child(5){width:12%}
 .slist td.tsensors, .trig-list td.tsensors { color: var(--muted); }
-/* The actions column is a fixed 48px (the 26px kebab + its cell padding) rather than a percentage: at a
-   4% share the button no longer fit once the panel was under ~1100px and spilled outside the card. The
-   other six columns share the remainder. */
+/* The actions column is a small fixed share rather than a percentage: at a 4% share the button no longer
+   fit once the panel was under ~1100px and spilled outside the card. The other six columns share the
+   remainder; its right inset is the surface's gutter (above). */
 /* Column order + proportions mirror the host sensor table: sensor/value roomy, trend 16%, then the
    compact priority and last-check pair (cols 5/6 after the swap). Plain percentages only: Chrome
    ignores calc(% - px) on fixed-layout table columns and falls back to equal widths. */
 .slist-sensors  th:nth-child(1){width:20%} .slist-sensors  th:nth-child(2){width:20%} .slist-sensors  th:nth-child(3){width:20%} .slist-sensors  th:nth-child(4){width:18%} .slist-sensors  th:nth-child(5){width:10%} .slist-sensors  th:nth-child(6){width:8%} .slist-sensors  th:nth-child(7){width:4%}
-.slist-sensors td.act, .slist-sensors th:nth-child(7) { padding-left: 6px; padding-right: 12px; }
+.slist-sensors td.act, .slist-sensors th:nth-child(7) { padding-left: 6px; }
 .slist-problems th:nth-child(1){width:12%} .slist-problems th:nth-child(2){width:37%} .slist-problems th:nth-child(3){width:15%} .slist-problems th:nth-child(4){width:9%}  .slist-problems th:nth-child(5){width:11%} .slist-problems th:nth-child(6){width:10%} .slist-problems th:nth-child(7){width:6%}
 .slist td.slprio, .slist td.slsev { white-space: nowrap; }
 .slist td.act .acktag { margin-right: 6px; }
@@ -571,7 +585,7 @@ span.muted, p.muted { color: var(--muted); }
 
 /* Inline "Settings…" band under a host row */
 .host-settings { margin: 0 var(--gutter) 10px calc(var(--gutter) + 22px); padding: 14px; background: var(--elevated); border: 1px solid var(--border); border-radius: 8px; }
-/* The core's SNMP default as a Settings section: the card is the frame. */
+/* The core's SNMP default as a Settings section: the section is the frame. */
 .host-settings.snmp-embedded { margin: 0; padding: 0; background: none; border: 0; border-radius: 0; max-width: 560px; }
 /* ...and reads like the other Settings sections: their labels, two fields a row, Save on the left. */
 .host-settings.snmp-embedded .if-snmp { grid-template-columns: 1fr 1fr; }
@@ -814,7 +828,7 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .empty-state.err .empty-action { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 .empty-state .err-detail { display: block; margin-top: 10px; font-size: 12px; color: var(--faint); overflow-wrap: anywhere; }
 .err-full { min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg); }
-.err-full .panel { width: 100%; max-width: 560px; }
+.err-full .panel { width: 100%; max-width: 560px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
 
 /* ---------- loading skeleton (backs <Skeleton>) ---------- */
 @keyframes skel-shimmer { to { transform: translateX(100%); } }
@@ -940,7 +954,7 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .iconbtn.disc-warn { color: var(--warn); }
 /* recent-scans history rows open on click */
 .disc-scan-row { cursor: pointer; }
-.disc-scan-row:hover td { background: var(--elevated); }
+.disc-scan-row:hover td { background: var(--hover); }
 .disc-scan-row.on td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 
 /* ---------- users / forms ---------- */
@@ -978,7 +992,6 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
    sub-heading rather than a faint form label. */
 .complabel { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text); font-weight: 700; }
 
-.acct-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
 .field { display: block; margin-bottom: 12px; }
 .field > span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
 .field input, .field select { width: 100%; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--elevated); color: var(--text); font: inherit; }
@@ -993,6 +1006,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .set-group + .set-group { border-top: 1px solid var(--border); }
 .set-group-cap { padding: 16px var(--gutter) 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); }
 .set-group-cap + .set-card, .set-group-cap + .card { border-top: 0; }
+.phead + .set-body > .set-card:first-child { border-top: 0; } /* the head above draws that line (Updates) */
 .set-jump { display: flex; flex-wrap: wrap; gap: 2px; }
 .set-jump a { font-size: 12px; font-weight: 600; color: var(--muted); text-decoration: none; padding: 4px 9px; border-radius: 7px; }
 .set-jump a:hover { background: var(--hover); color: var(--text); }
@@ -1074,8 +1088,8 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   .topbar .sub { display: none; }
   .topbar .iconbtn { width: 36px; height: 36px; }
   .topbar .nav-burger { display: grid; }
-  /* Panel header: keep the tools beside the title and drop the hint to its own line underneath. */
-  .phead .tools { order: 1; margin-left: auto; }
+  /* Panel header: the title, then the actions on a row of their own, then the hint. */
+  .phead .tools { order: 1; flex-basis: 100%; margin-left: 0; }
   .phead .hint { order: 2; flex-basis: 100%; }
   .tools-desktop { display: none; }
   .tools-mobile { display: inline-flex; align-items: center; }
@@ -1087,7 +1101,6 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   .content { padding: 0 0 48px; }
   .phead { padding: 10px var(--gutter); gap: 6px 10px; }
   .phead h2 { font-size: 15px; }
-  .phead .tools { flex-basis: 100%; margin-left: 0; } /* the actions wrap under the title on a phone */
   .menu { max-width: calc(100vw - 24px); } /* keep kebab menus on-screen */
 
   /* --- problem/status lists: stack each row into a labelled card (no side-scroll) --- */
@@ -1245,7 +1258,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   /* 16px inputs stop iOS Safari zooming the page when a field is focused. */
   .input, .cellinput, .roleselect, .field input, .field select, .cmdk-input { font-size: 16px; }
 
-  .chan-grid { grid-template-columns: 1fr; padding: 4px 14px 18px; }
+  .chan-grid { padding: 0 0 8px; }
 
   /* --- type: the smallest text sizes were at the edge on a phone (10px labels, 11.5px sub-lines) --- */
   .slist td[data-label]::before, .slist td.trend::before, .utable td::before, .enroll td::before { font-size: 11px; letter-spacing: 0.03em; }
@@ -1420,7 +1433,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .imp-drop-act { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
 .imp-strip { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 2px 6px; }
 .imp-scroll { max-height: 380px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
-.imp-table th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.imp-table th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
 .imp-table th, .imp-table td { padding: 7px 10px; }
 .imp-table td { font-size: 12.5px; vertical-align: top; }
 .imp-table td.imp-n { color: var(--faint); white-space: nowrap; }
@@ -1555,7 +1568,7 @@ input.tsel { width: 15px; height: 15px; accent-color: var(--accent); margin: 0 8
    full they are (past 70% amber, past 90% red), dashed red for no link, grey with no reading. */
 .map-note { margin: 0; padding: 10px var(--gutter); color: var(--muted); font-size: 12.5px; line-height: 1.45; border-bottom: 1px solid var(--border); }
 .slist-maps tr.map-row:not(.off) { cursor: pointer; }
-.slist-maps tr.map-row:not(.off):hover td { background: var(--elevated); }
+.slist-maps tr.map-row:not(.off):hover td { background: var(--hover); }
 .slist-maps tr.off td.slhost { color: var(--muted); }
 .map-chips { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; }
 .map-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
@@ -1637,7 +1650,7 @@ input.tsel { width: 15px; height: 15px; accent-color: var(--accent); margin: 0 8
 }
 
 /* ---------- Reports (ReportsView): the tree a report is picked from beside what it holds ---------- */
-.rep-tabs { margin-bottom: 12px; }
+.rep-tabs { margin: 0 0 12px; padding: 12px var(--gutter) 0; }
 .rep-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(320px, 1fr); gap: 0; align-items: start; }
 .rep-grid > .panel + .panel { margin-top: 0; border-top: 0; border-left: 1px solid var(--border); }
 .rep-q { width: 220px; max-width: 100%; }
@@ -1676,10 +1689,9 @@ div.rep-irow { cursor: default; }
 .rep-err { display: inline-block; max-width: 260px; white-space: normal; }
 .rep-logo { display: flex; align-items: center; min-height: 40px; margin: 4px 0 8px; }
 .rep-logo img { max-width: 220px; max-height: 54px; padding: 6px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
-@media (max-width: 900px) { .rep-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 900px) { .rep-grid { grid-template-columns: minmax(0, 1fr); } .rep-grid > .panel + .panel { border-left: 0; border-top: 1px solid var(--border); } }
 @media (max-width: 768px) {
   .rep-q { width: 100%; }
-  .rep-pick .phead .tools { flex-basis: 100%; }
   .rep-hrow { padding-left: 24px; }
   .rep-irow { padding-left: 36px; }
   .rep-note { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; }

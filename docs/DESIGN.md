@@ -1398,10 +1398,12 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   page tone in dark; `.main` and `.content` carry it). A view's own panels (`.content > .panel`)
   lie flat on it, edge to edge, their rows divided by hairlines and inset by `--gutter` (22px, 14px
   on phones); every panel is flat (`.panel + .panel` divide with a hairline, the Reports columns
-  with a vertical one), and so are the sections and cards inside: `.card`, `.set-card`, `.chan`,
+  with a vertical one), and so are the sections and cards inside: `.acct .card`, `.set-card`, `.chan`,
   `.thr-list-row` are stretches of the surface under a hairline, inset by the gutter. Nothing in a
-  page is boxed; floating things (menus, dialogs, toasts), the inline editors a row opens and the
-  sidebar keep `--panel`. A row under the pointer takes
+  page is boxed; floating things (menus, dialogs, toasts, the sign-in card and the full-page error,
+  which float on the page itself), the inline editors a row opens and the sidebar keep `--panel`.
+  The sticky, folding head and the table gutters are desktop rules (min-width 769px): a phone stacks
+  rows into cards with insets of their own, and its head scrolls with the page. A row under the pointer takes
   `--hover`. A list's header (`.content > .panel > .phead`) sticks under the topbar (`--topbar-h`,
   kept by `useStickyHeads`) and folds to one line (`.stuck`) while scrolled past. Settings is
   five groups (`SETTINGS_GROUPS`, a caption over each, the header's jump links scroll to them):

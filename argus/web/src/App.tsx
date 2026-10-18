@@ -866,7 +866,7 @@ const VIEW_TITLES: Record<View, [string, string]> = {
   users: ['Users', 'Accounts and access'],
   updates: ['Updates', "Argus, the probes and the VMs' operating systems"],
   settings: ['Settings', 'System configuration'],
-  account: ['Account', 'Your security settings'],
+  account: ['Account', 'Your preferences, notifications and sign-in'],
   list: ['Sensors', 'Filtered across all sites'],
 }
 
@@ -2411,8 +2411,17 @@ const ACCOUNT_GROUPS = [
 function JumpLinks({ groups, label }: { groups: { id: string; title: string }[]; label: string }) {
   const jump = (e: { preventDefault(): void }, id: string) => {
     e.preventDefault()
+    const el = document.getElementById(id)
+    if (!el) return
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    document.getElementById(id)?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
+    // The caption lands under the folded head: fold it now and measure, rather than guess its height
+    // (the actions wrap to a second row on a narrow window). On a phone the head isn't sticky.
+    const head = el.closest('.panel')?.querySelector<HTMLElement>(':scope > .phead')
+    let headH = 0
+    if (head && getComputedStyle(head).position === 'sticky') { head.classList.add('stuck'); headH = head.offsetHeight }
+    const topbar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--topbar-h')) || 66
+    const top = el.getBoundingClientRect().top + window.scrollY - topbar - headH - 6
+    window.scrollTo({ top: Math.max(0, top), behavior: reduced ? 'auto' : 'smooth' })
   }
   return (
     <nav className="set-jump" aria-label={label}>
@@ -2569,12 +2578,12 @@ function SettingsView({ onOpenUpdates }: { onOpenUpdates: () => void }) {
         <div className="set-group" id="set-monitoring">
           <div className="set-group-cap">Monitoring</div>
           {groupForm('Connection')}
-        {/* The core server's own SNMP default (stored under proxy id "0"): a server setting, not a probe's. */}
-        <section className="set-card">
-          <h3>Core SNMP default</h3>
-          <p className="set-note">The SNMP credentials of the core server itself: hosts it monitors (Monitored by: Server) that inherit them, and its own discovery scans, use these. Each probe has its own default, under Probes.</p>
-          <ProxySNMP proxyId="0" proxyName="the core server" embedded />
-        </section>
+          {/* The core server's own SNMP default (stored under proxy id "0"): a server setting, not a probe's. */}
+          <section className="set-card">
+            <h3>Core SNMP default</h3>
+            <p className="set-note">The SNMP credentials of the core server itself: hosts it monitors (Monitored by: Server) that inherit them, and its own discovery scans, use these. Each probe has its own default, under Probes.</p>
+            <ProxySNMP proxyId="0" proxyName="the core server" embedded />
+          </section>
           {groupForm('Probes')}
           {groupForm('Alerting')}
           {groupForm('Watchdog')}
@@ -6227,8 +6236,8 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
       {ctls !== null && ctls.length === 0 && (
         <p className="panel-intro">Tip: save your UniFi controllers first (<b>Discovery settings</b>). Discovery matches what it finds against them, so UniFi devices come back exactly identified, ready to adopt with their settings pre-filled.</p>
       )}
-      {err && <div style={{ padding: '10px 1rem 0' }}><Banner variant="error">{err}</Banner></div>}
-      {jobs === null && <div style={{ padding: '10px 1rem 1rem' }}><Skeleton rows={2} cols={5} /></div>}
+      {err && <div style={{ padding: '10px var(--gutter) 0' }}><Banner variant="error">{err}</Banner></div>}
+      {jobs === null && <div style={{ padding: '10px var(--gutter) 1rem' }}><Skeleton rows={2} cols={5} /></div>}
       {jobs !== null && jobs.length === 0 && <p style={{ color: 'var(--muted)', fontSize: 13, padding: '10px 1rem 1rem', margin: 0 }}>No discoveries yet - start a subnet scan with <b>+ New scan</b>, or pull a controller's devices with <b>UniFi sweep</b>.</p>}
       {jobs !== null && jobs.length > 0 && (
         <div className="enroll-scroll">
@@ -7203,8 +7212,8 @@ function ThresholdsView() {
   function onRowSaved(template: string, macro: string, value: string) {
     setData((d) => d ? { ...d, templates: d.templates.map((t) => t.template === template ? { ...t, thresholds: t.thresholds.map((r) => r.macro === macro ? { ...r, value } : r) } : t) } : d)
   }
-  if (err && !data) return <div className="txt-err" style={{ fontSize: 13 }}>{err}</div>
-  if (!data) return <div style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</div>
+  if (err && !data) return <div className="txt-err" style={{ fontSize: 13, padding: '12px var(--gutter)' }}>{err}</div>
+  if (!data) return <div style={{ color: 'var(--muted)', fontSize: 13, padding: '12px var(--gutter)' }}>Loading…</div>
   const active = open ? data.templates.find((t) => t.template === open) : null
   return (
     <div className="thr-view">
@@ -9893,7 +9902,10 @@ function useStickyHeads() {
     const bind = () => {
       io?.disconnect()
       io = new IntersectionObserver((entries) => {
-        for (const e of entries) e.target.classList.toggle('stuck', e.intersectionRatio < 1 && e.boundingClientRect.top < h)
+        // A page barely taller than the viewport would shrink under the fold until it can't scroll,
+        // unfold, and flicker on every wheel tick: such a page keeps its full head.
+        const room = document.documentElement.scrollHeight - window.innerHeight > 80
+        for (const e of entries) e.target.classList.toggle('stuck', room && e.intersectionRatio < 1 && e.boundingClientRect.top < h)
       }, { threshold: [1], rootMargin: `-${h}px 0px 0px 0px` })
       document.querySelectorAll('.content > .panel > .phead').forEach((el) => io!.observe(el))
     }
@@ -9904,7 +9916,9 @@ function useStickyHeads() {
     }) : null
     if (topbar && ro) ro.observe(topbar)
     let t: number | undefined
-    const mo = new MutationObserver(() => { window.clearTimeout(t); t = window.setTimeout(bind, 120) })
+    // A view's new heads are bound at once (a still-scrolled page would otherwise show a stuck head
+    // unfolded for a beat), and again once its DOM settles.
+    const mo = new MutationObserver(() => { bind(); window.clearTimeout(t); t = window.setTimeout(bind, 120) })
     const main = document.querySelector('.main')
     if (main) mo.observe(main, { childList: true, subtree: true })
     return () => { io?.disconnect(); ro?.disconnect(); mo.disconnect(); window.clearTimeout(t) }
@@ -12637,7 +12651,7 @@ function AccountView({ me, onMe, passkeysAvailable, theme, toggleTheme }: { me: 
   return (
     <div className="panel">
       <div className="phead">
-        <PanelTitle eyebrow="You">Account</PanelTitle>
+        <PanelTitle eyebrow={me.email}>Account</PanelTitle>
         <span className="hint">personal to this account; each section saves on its own</span>
         <div className="tools"><JumpLinks groups={ACCOUNT_GROUPS} label="Account groups" /></div>
       </div>
@@ -12648,7 +12662,7 @@ function AccountView({ me, onMe, passkeysAvailable, theme, toggleTheme }: { me: 
             <Button variant="primary" onClick={toggleTheme}>Switch to {theme === 'dark' ? 'light' : 'dark'} mode</Button>
           </Card>
           <LandingCard me={me} onMe={onMe} />
-          <InterfaceCard me={me} onMe={onMe} />
+          {me.role === 'admin' && <InterfaceCard me={me} onMe={onMe} />}
         </div>
         <div className="set-group" id="acct-notify">
           <div className="set-group-cap">Notifications</div>
@@ -12795,7 +12809,8 @@ function QuietHoursCard({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
 
 // Advanced mode: a per-user preference (saved on this account, like the landing page), never a
 // server-wide setting: turning it on changes nothing for anyone else. It reveals the power-user
-// controls in the monitoring tree (the "All sensors" view, hidden-group management).
+// controls in the monitoring tree (the "All sensors" view, hidden-group management), which are admin
+// actions, so only an admin's Account offers the switch.
 function InterfaceCard({ me, onMe }: { me: Me; onMe: (m: Me) => void }) {
   const toast = useToast()
   const [busy, setBusy] = useState(false)
