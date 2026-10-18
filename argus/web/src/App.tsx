@@ -1995,6 +1995,7 @@ function AboutCard({ onOpenUpdates }: { onOpenUpdates: () => void }) {
 }
 
 function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }: { me: Me; onMe: (m: Me) => void; onLogout: () => void; passkeysAvailable: boolean; probeEnroll: boolean; enter?: boolean }) {
+  useStickyHeads()
   SCOPE.sites = me.sites || []
   // Admin-only views can't be restored from a shared/stale URL by a non-admin.
   const clampView = (v: View): View => ((v === 'users' || v === 'updates' || v === 'settings' || v === 'discovery' || v === 'thresholds' || v === 'statuspages' || v === 'changes') && me.role !== 'admin' ? 'overview' : v)
@@ -9845,6 +9846,39 @@ function HostChanges({ hostId, asTab }: { hostId: string; asTab?: boolean }) {
 // for a list spanning sites, its scope ("Watch · all sites").
 function PanelTitle({ eyebrow, children }: { eyebrow: string; children: ReactNode }) {
   return <div className="ptitle"><div className="eyebrow">{eyebrow}</div><h2>{children}</h2></div>
+}
+
+// The list headers (a view's own panel heads) stick under the topbar; scrolled past, each folds to one
+// compact line (.stuck in theme.css): the eyebrow and the counts go, the buttons shrink. The topbar's
+// height is the sticky offset (--topbar-h), and the heads are found again whenever a view's DOM
+// changes. A stuck head sits 1px under the topbar's edge (theme.css), so the root's top edge, pulled
+// down to the topbar's bottom, cuts it by that pixel: an intersection ratio under 1 while it is there.
+function useStickyHeads() {
+  useEffect(() => {
+    const root = document.documentElement
+    const topbar = document.querySelector<HTMLElement>('.topbar')
+    let h = topbar?.offsetHeight || 66
+    root.style.setProperty('--topbar-h', h + 'px')
+    let io: IntersectionObserver | null = null
+    const bind = () => {
+      io?.disconnect()
+      io = new IntersectionObserver((entries) => {
+        for (const e of entries) e.target.classList.toggle('stuck', e.intersectionRatio < 1 && e.boundingClientRect.top < h)
+      }, { threshold: [1], rootMargin: `-${h}px 0px 0px 0px` })
+      document.querySelectorAll('.content > .panel > .phead').forEach((el) => io!.observe(el))
+    }
+    bind()
+    const ro = topbar ? new ResizeObserver(() => {
+      const nh = topbar.offsetHeight
+      if (nh && nh !== h) { h = nh; root.style.setProperty('--topbar-h', h + 'px'); bind() }
+    }) : null
+    if (topbar && ro) ro.observe(topbar)
+    let t: number | undefined
+    const mo = new MutationObserver(() => { window.clearTimeout(t); t = window.setTimeout(bind, 120) })
+    const main = document.querySelector('.main')
+    if (main) mo.observe(main, { childList: true, subtree: true })
+    return () => { io?.disconnect(); ro?.disconnect(); mo.disconnect(); window.clearTimeout(t) }
+  }, [])
 }
 
 // HostIncidents is the host card's history: the last 30 days, folded until opened. With itemIds (a

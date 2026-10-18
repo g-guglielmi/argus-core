@@ -1393,7 +1393,15 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
 
 ---
 
-## 13. Responsive UI targets
+## 13. UI surface and responsive targets
+- **The surface (v0.9):** the content area is one surface (`--surface`: white in light, the deep
+  page tone in dark; `.main` and `.content` carry it). A view's own panels (`.content > .panel`)
+  lie flat on it, edge to edge, their rows divided by hairlines and inset by `--gutter` (22px, 14px
+  on phones); a panel inside another, a `.card`, `.set-card`, `.chan` or `.thr-list-row` is a
+  **group**: a bordered block in `--group` (soft grey in light, the panel tone in dark). Floating
+  things (menus, dialogs, toasts) and the sidebar keep `--panel`. A row under the pointer takes
+  `--hover`. A list's header (`.content > .panel > .phead`) sticks under the topbar (`--topbar-h`,
+  kept by `useStickyHeads`) and folds to one line (`.stuck`) while scrolled past.
 - Phone (S25 Ultra), tablet (Galaxy Tab S9), desktop 16:9 / 16:10 / 32:9.
 - Look: PRTG-style density, Uptime-Kuma-grade polish.
 

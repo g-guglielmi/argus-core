@@ -13,6 +13,19 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+**Changed:**
+- **The app lies flat on one surface.** Every view used to sit in a box: a bordered, shadowed panel
+  with 22px of page around it, inherited from the cards the settings are made of. The box is gone. A
+  view's lists now sit flat on the content surface, edge to edge with the sidebar, their rows divided
+  by hairlines and aligned with the page title; the views made of groups (Settings, Notifications,
+  Updates, Account, the status pages) keep their groups as bordered blocks on that same surface. In
+  dark mode the surface is the deep page tone, so groups, dialogs and menus stand off it; in light
+  mode it is white, with soft grey groups. A list's header sticks under the topbar and folds to one
+  line while you scroll (the title and the actions), so "+ Add device" and Select stay in reach; a
+  row under the pointer takes a clear tone in both themes. Phones gain the gutters back (14px from
+  the edge instead of 26px), and the header's actions wrap under the title there. Also gone: the
+  Monitoring tree's last row painting over the panel's rounded corner.
+
 ## [0.8.15] - 2026-10-17
 
 Quieter after an outage and in the host tree: a settle window keeps a site coming back up from
