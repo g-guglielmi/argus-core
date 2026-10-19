@@ -30,6 +30,12 @@ GitHub Release from the matching section below.
   (core-vm, in the next image). The other twelve findings are by design and are dismissed with
   their reasons in the repository's code scanning view.
 
+### Documentation
+- **The sizing pass** (DESIGN 14b): what one Argus sensor costs in values per second, measured on
+  the lab, what each device class brings, and the numbers for a 19-site, 650-device deployment:
+  ~13k sensors, ~280 values/s, the retention to set, the core VM and the Zabbix server and proxy
+  sizes above their defaults. The first boot and the probe image apply them in their next images.
+
 ## [0.9.1] - 2026-10-19
 
 **Added:**

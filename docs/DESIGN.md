@@ -1588,9 +1588,31 @@ SSD storage; grow later if needed.
 **Probe (each):** container ≈ 1 vCPU / 0.5-1 GB RAM / 4-8 GB disk (7-day SQLite spool is small).
 As a VM ≈ 1-2 vCPU / 2 GB / ~15 GB.
 
-**Future ~6000-sensor work deployment (rough; sizing pass TBD):** ~8 vCPU / 16-32 GB RAM /
-DB on fast SSD, likely with PostgreSQL/Timescale split onto its own VM. ~100-200 NVPS =
-moderate Zabbix load; architecture unchanged, resources scaled.
+**Sizing pass (2026-10-19), from measurements.** One Argus sensor costs 0.022 values/s of
+Zabbix "required server performance" (lab: 2,312 sensors, 50.97 values/s), about one polled value
+every 45 s; most sensors are dependent items carved out of one poll, so history writes run up to
+twice the required-performance figure. A device brings, by class: Windows over SNMP ~23 sensors
+(plus one per watched service), Linux over SNMP ~25, XCP-NG ~18, UniFi switch ~41, UniFi gateway
+~38, access point 16, unRAID ~105, ping only 5, a probe's own health 40; an HTTP endpoint add-on 4,
+a TCP port 1, DNS resolution 3. An SNMP network device (the family still to build) is ~10 fixed
+plus 2 per discovered interface, so the interface filter is the biggest lever on the total: filter
+to ports that are up or carry a description, as the Linux and Windows classes filter to physical
+interfaces.
+
+**The work deployment (19 sites, ~650 devices, ~5,000 PRTG sensors)** comes out at ~12.5-13k
+Argus sensors, ~280 values/s required performance, up to ~570 values/s written. Recommended:
+history 31 days and trends 2 years in Settings > Retention (~45 GB with Timescale compression;
+90 days of history would be ~78 GB). Core VM **8 vCPU / 16 GB / 200 GB SSD**, one VM as today
+(no database split needed at this load). Zabbix server, above its defaults: CacheSize 256M,
+HistoryCacheSize 256M (30 min of proxy backlog), HistoryIndexCacheSize 64M, TrendCacheSize 64M,
+ValueCacheSize 512M, StartDBSyncers 8, StartTrappers 16 (19 active proxies), StartPreprocessors 8,
+StartPollers 16, StartPingers 4, StartSNMPPollers 2, Timeout 10 (SNMP over VPN); PostgreSQL from
+timescaledb-tune (the first boot runs it) with max_connections 200. Probes size their own
+pollers from their hosts (14c); the image's ceilings for the biggest site (~1,800 sensors,
+~40 values/s): CacheSize 64M, ProxyMemoryBufferSize 128M, so a 30 minute WAN outage stays in
+memory before the SQLite spool; 1 vCPU / 1 GB as a container, 2 vCPU / 2 GB as a VM. To apply:
+the appliance first boot writes the server sizes from the VM's RAM and cores (next core-vm
+image), the probe image carries its ceilings (next revision).
 
 **Sensor census (the pills, the Overview, the status pages).** The census reads every host item,
 every open problem and their triggers, so its cost grows with the fleet. It is built on the core in
