@@ -142,9 +142,9 @@ packer build argus-core-vm.pkr.hcl        # -> output/argus-core-vm.qcow2
 
 1. **Import the disk** - `argus-core-vm.ova` (VMware / Nutanix / VirtualBox / Xen Orchestra
    **Import → OVA**), `argus-core-vm.qcow2` (KVM/libvirt), or `argus-core-vm.vhd` (XCP-NG VDI import /
-   Hyper-V; gunzip first). Give it **2+ vCPU and 4+ GB RAM** (more for bigger fleets, §14b: the first boot sizes Zabbix's
-   caches and process counts to the VM; after growing it, run `sudo argus-size-zabbix --apply` and
-   restart what it names).
+   Hyper-V; gunzip first). Give it **2+ vCPU and 4+ GB RAM** (more for bigger fleets, §14b: every boot sizes Zabbix's caches
+   and process counts, and PostgreSQL's memory, to the VM, so to grow it you shut it down, add RAM
+   or cores, and start it).
 2. **Boot it on a network with DHCP** and find its address (your hypervisor console shows it, or your
    DHCP leases). First boot needs DHCP - see *Scope* below for static addressing.
 3. **Browse to `http://<vm-ip>/`**, type the **setup code** shown on the VM's console, fill in the

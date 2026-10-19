@@ -312,12 +312,14 @@ def step_system(cfg, state):
 
 
 def step_database(cfg, state):
-    # Size PostgreSQL's connection limit to the DEPLOYED VM before timescaledb-tune reads it, then
-    # tune for this VM's RAM (the image build ran on a small builder). A sizing failure is logged by
-    # the tool and not fatal: the stock limit still works.
+    # Size PostgreSQL's connection limit to the DEPLOYED VM, then timescaledb-tune for its RAM (the
+    # image build ran on a small builder): argus-size-zabbix does both, and its boot-time unit does
+    # the same at every later boot, so a grown VM re-sizes itself. A sizing failure is logged by the
+    # tool and not fatal: the stock limit still works.
     if os.path.exists(SIZER):
-        run([SIZER, "--apply", "--postgres"], check=False, timeout=60)
-    run(["timescaledb-tune", "--quiet", "--yes"], check=False, timeout=120)
+        run([SIZER, "--apply", "--postgres", "--tune"], check=False, timeout=240)
+    else:
+        run(["timescaledb-tune", "--quiet", "--yes"], check=False, timeout=120)
     run(["systemctl", "restart", "postgresql"], timeout=180)
     for _ in range(60):
         if subprocess.run(["sudo", "-u", "postgres", "pg_isready", "-q"], capture_output=True).returncode == 0:

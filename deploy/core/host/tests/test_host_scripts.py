@@ -697,6 +697,61 @@ class SizingTest(unittest.TestCase):
         self.assertNotIn("2026-10-19", second)
         self.assertEqual(second.index("### snippet"), first.index("### snippet"))
 
+    def test_tune_runs_timescaledb_tune_and_names_postgresql_when_it_changed(self):
+        tmp = tempfile.mkdtemp()
+        conf = os.path.join(tmp, "zabbix_server.conf")
+        with open(conf, "w") as fh:
+            fh.write("Timeout=4\n")
+        pgd = os.path.join(tmp, "conf.d")
+        os.makedirs(pgd)
+        pgconf = os.path.join(tmp, "postgresql.conf")
+        with open(pgconf, "w") as fh:
+            fh.write("shared_buffers = 128MB\n")
+        self.mod.pg_conf_files = lambda: [pgconf]
+        calls = []
+
+        def fake_run(args, **kw):
+            calls.append(args)
+            with open(pgconf, "w") as fh:
+                fh.write("shared_buffers = 4GB\n")
+            return types.SimpleNamespace(returncode=0)
+        self.mod.subprocess = types.SimpleNamespace(run=fake_run)
+        self.mod.shutil = types.SimpleNamespace(which=lambda name: "/usr/bin/timescaledb-tune")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = self.mod.main(["--apply", "--postgres", "--tune", "--ram-gb", "16", "--cores", "8", "--conf", conf, "--pg-conf-dir", pgd])
+        self.assertEqual(rc, 0)
+        self.assertEqual(calls[0][0], "/usr/bin/timescaledb-tune")
+        self.assertIn("settings changed for this machine", out.getvalue())
+        self.assertIn("restart to apply: systemctl restart postgresql", out.getvalue())
+        # a second boot finds everything in place: nothing to restart
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.mod.main(["--apply", "--postgres", "--tune", "--ram-gb", "16", "--cores", "8", "--conf", conf, "--pg-conf-dir", pgd])
+        self.assertIn("already tuned", out.getvalue())
+        self.assertIn("nothing changed", out.getvalue())
+
+    def test_tune_without_the_tool_is_said_and_not_fatal(self):
+        tmp = tempfile.mkdtemp()
+        pgd = os.path.join(tmp, "conf.d")
+        os.makedirs(pgd)
+        self.mod.shutil = types.SimpleNamespace(which=lambda name: None)
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = self.mod.main(["--apply", "--postgres", "--tune", "--ram-gb", "8", "--cores", "4", "--pg-conf-dir", pgd])
+        self.assertEqual(rc, 0)
+        self.assertIn("timescaledb-tune is not installed", err.getvalue())
+
+    def test_boot_unit_runs_before_the_database_and_the_server(self):
+        with open(os.path.join(HOST, "argus-size-zabbix.service")) as fh:
+            unit = fh.read()
+        self.assertIn("Before=postgresql.service zabbix-server.service", unit)
+        self.assertIn("ExecStart=/usr/local/sbin/argus-size-zabbix --apply --tune", unit)
+        self.assertIn("WantedBy=multi-user.target", unit)
+        with open(os.path.join(HOST, "argus-size-zabbix-postgresql.conf")) as fh:
+            dropin = fh.read()
+        self.assertIn("After=argus-size-zabbix.service", dropin)
+
     def test_apply_writes_both_files_and_says_what_to_restart(self):
         tmp = tempfile.mkdtemp()
         conf = os.path.join(tmp, "zabbix_server.conf")

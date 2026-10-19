@@ -18,9 +18,10 @@ GitHub Release from the matching section below.
   process counts, and PostgreSQL's connection limit, to the machine's RAM and cores, as one marked
   block at the end of `zabbix_server.conf` (Zabbix takes the last value, so it wins over the
   snippet; a re-run replaces the block) and a conf.d drop-in. The appliance's first boot runs it
-  (core-vm, in the next image); `setup-core.sh` installs it for a core set up by hand, to run after
-  appending the snippet and again after growing the VM. The sizes never go below the snippet's, so
-  a small lab VM stays small.
+  (core-vm, in the next image); `setup-core.sh` installs it for a core set up by hand, to run once
+  after appending the snippet. Its boot-time unit re-runs it, with timescaledb-tune, before
+  PostgreSQL and the server start, so growing a VM is: shut down, add RAM or cores, start. The
+  sizes never go below the snippet's, so a small lab VM stays small.
 
 ### Security
 - **The weekly scan reads the repositories too.** Besides the three published images, `scan.yml`

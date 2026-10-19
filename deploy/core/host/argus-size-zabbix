@@ -9,13 +9,15 @@
 # This reads the machine's RAM and cores and appends one marked block to zabbix_server.conf with the
 # sizes that fit it: Zabbix takes the last value given for a parameter, so the block overrides what
 # comes before it, and a previous block of ours is replaced, never duplicated. PostgreSQL's
-# connection limit goes in a conf.d drop-in. The appliance's first boot runs it (the database step
+# connection limit goes in a conf.d drop-in, and --tune runs timescaledb-tune for the machine's RAM
+# as well. It runs at every boot: argus-size-zabbix.service (installed and enabled by setup-core.sh)
+# is ordered before PostgreSQL and the Zabbix server, so a VM given more RAM or cores comes up sized
+# for them with nothing to run by hand. The appliance's first boot runs it too (the database step
 # for PostgreSQL, before timescaledb-tune reads the limit; the zabbix step for the server, after the
-# TLS snippet); on a core installed by hand, or after growing a VM, run it yourself:
+# TLS snippet), and a core installed by hand runs it once after appending the snippet:
 #
-#   sudo argus-size-zabbix            # show what this machine gets
-#   sudo argus-size-zabbix --apply    # write it, then restart zabbix-server (and postgresql when
-#                                     # the connection limit changed; it says which)
+#   sudo argus-size-zabbix                   # show what this machine gets
+#   sudo argus-size-zabbix --apply --tune    # write it; it names what to restart
 #
 # The sizes scale with RAM and cores and never go below the snippet's values, so a small lab VM
 # keeps small caches (about 7 % of its RAM in Zabbix shared memory) and a 16 GB, 8 core production
@@ -25,6 +27,8 @@ import argparse
 import glob
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 
@@ -111,6 +115,22 @@ def read(path):
         return fh.read()
 
 
+def pg_conf_files():
+    return sorted(glob.glob("/etc/postgresql/*/main/postgresql.conf"))
+
+
+def run_tune():
+    """timescaledb-tune for this machine's RAM: True when it changed postgresql.conf, False when the
+    file already matched, None when the tool is not installed."""
+    exe = shutil.which("timescaledb-tune")
+    if not exe:
+        return None
+    before = {p: read(p) for p in pg_conf_files()}
+    subprocess.run([exe, "--quiet", "--yes"], check=False, timeout=180, capture_output=True)
+    after = {p: read(p) for p in pg_conf_files()}
+    return before != after
+
+
 def write(path, text):
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
@@ -123,6 +143,7 @@ def main(argv=None):
     ap.add_argument("--apply", action="store_true", help="write the sizes (default: only show them)")
     ap.add_argument("--zabbix", action="store_true", help="only the Zabbix server block")
     ap.add_argument("--postgres", action="store_true", help="only the PostgreSQL drop-in")
+    ap.add_argument("--tune", action="store_true", help="also run timescaledb-tune for this machine's RAM (with --apply)")
     ap.add_argument("--ram-gb", type=float, help="size for this much RAM instead of the machine's")
     ap.add_argument("--cores", type=int, help="size for this many cores instead of the machine's")
     ap.add_argument("--conf", default=ZBX_CONF, help="zabbix_server.conf to write (default %(default)s)")
@@ -170,6 +191,14 @@ def main(argv=None):
                     write(p, text)
                     restart.append("postgresql")
                 print("written: %s" % p)
+            if args.tune:
+                changed = run_tune()
+                if changed is None:
+                    print("timescaledb-tune is not installed: PostgreSQL's memory settings stay as they are", file=sys.stderr)
+                else:
+                    print("timescaledb-tune: %s" % ("settings changed for this machine" if changed else "already tuned for this machine"))
+                    if changed and "postgresql" not in restart:
+                        restart.append("postgresql")
     if args.apply:
         if restart:
             print("restart to apply: systemctl restart " + " ".join(restart))

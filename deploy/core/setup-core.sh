@@ -394,11 +394,16 @@ if [[ -f "${SCRIPT_DIR}/host/install-backup.sh" ]]; then
 fi
 
 # Sizing (DESIGN section 14b): argus-size-zabbix sizes the server's caches and process counts, and
-# PostgreSQL's connection limit, to the machine, in BOTH modes. The appliance's first boot runs it;
-# a core set up by hand runs it after the snippet, and again after growing the VM.
+# PostgreSQL's connection limit and memory, to the machine, in BOTH modes. Its unit runs it at every
+# boot before PostgreSQL and the server start, so a VM given more RAM or cores re-sizes itself; the
+# appliance's first boot runs it too, and a core set up by hand runs it once after the snippet.
 if [[ -f "${SCRIPT_DIR}/host/argus-size-zabbix" ]]; then
-  echo "==> sizing tool"
+  echo "==> sizing tool + its boot-time unit"
   install -m 0755 "${SCRIPT_DIR}/host/argus-size-zabbix" /usr/local/sbin/argus-size-zabbix
+  install -m 0644 "${SCRIPT_DIR}/host/argus-size-zabbix.service" /etc/systemd/system/argus-size-zabbix.service
+  install -D -m 0644 "${SCRIPT_DIR}/host/argus-size-zabbix-postgresql.conf" /etc/systemd/system/postgresql@.service.d/argus-size-zabbix.conf
+  systemctl daemon-reload
+  systemctl enable argus-size-zabbix.service
 fi
 
 if [[ "$SETUP_MODE" != "full" ]]; then
@@ -410,8 +415,8 @@ fi
 echo
 echo ">>> Now append the TLS + tuning lines from core/zabbix_server.conf.snippet to $CONF,"
 echo ">>> place ca.crt + zabbix-core.crt/.key under /etc/zabbix/certs/, size Zabbix and PostgreSQL"
-echo ">>> to this machine (re-run it after adding RAM or cores), then start everything:"
-echo "      argus-size-zabbix --apply"
+echo ">>> to this machine (every boot re-runs this, so a grown VM re-sizes itself), then start everything:"
+echo "      argus-size-zabbix --apply --tune"
 echo "      systemctl enable --now zabbix-server zabbix-agent2 nginx php8.4-fpm  # Debian 13 = PHP 8.4"
 echo ">>> Finish the frontend setup wizard in the browser, and in Housekeeping enable"
 echo "    'Override history/trend period' so TimescaleDB compression kicks in."

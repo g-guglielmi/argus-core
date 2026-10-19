@@ -1,0 +1,17 @@
+# argus-size-zabbix.service - size Zabbix and PostgreSQL to this machine at every boot (DESIGN 14b).
+# Ordered before the Zabbix server and before PostgreSQL (the postgresql@.service drop-in installed
+# next to this unit orders the database instances), so a VM that was given more RAM or cores comes
+# up sized for them with nothing to run by hand: grow it, boot it, done. Installed and enabled by
+# setup-core.sh; the appliance image carries it.
+[Unit]
+Description=Argus core: size Zabbix and PostgreSQL to this machine
+Documentation=https://github.com/g-guglielmi/argus-core/blob/main/docs/DESIGN.md
+Before=postgresql.service zabbix-server.service
+ConditionPathExists=/etc/zabbix/zabbix_server.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/argus-size-zabbix --apply --tune
+
+[Install]
+WantedBy=multi-user.target

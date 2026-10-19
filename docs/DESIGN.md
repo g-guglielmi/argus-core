@@ -1611,10 +1611,13 @@ timescaledb-tune (the first boot runs it) with max_connections 200. Probes size 
 pollers from their hosts (14c); the image's ceilings for the biggest site (~1,800 sensors,
 ~40 values/s): CacheSize 64M, ProxyMemoryBufferSize 128M, so a 30 minute WAN outage stays in
 memory before the SQLite spool; 1 vCPU / 1 GB as a container, 2 vCPU / 2 GB as a VM. Applied by
-`argus-size-zabbix` (deploy/core/host): the appliance first boot runs it (PostgreSQL's limit before
-timescaledb-tune, the server block after the TLS snippet, so its values win), a hand-installed core
-runs it after appending the snippet, and anyone re-runs it after growing the VM; the sizes scale
-with RAM and cores (about 7 % of RAM in Zabbix shared memory) and never go below the snippet's.
+`argus-size-zabbix` (deploy/core/host): its unit runs it at every boot, with timescaledb-tune,
+before PostgreSQL and the server start (a postgresql@.service drop-in orders the instances), so a
+VM given more RAM or cores re-sizes itself on the reboot the resize needs anyway; the appliance
+first boot runs it too (PostgreSQL's limit and tune in the database step, the server block after
+the TLS snippet, so its values win), and a hand-installed core runs it once after appending the
+snippet. The sizes scale with RAM and cores (about 7 % of RAM in Zabbix shared memory) and never
+go below the snippet's.
 The probe image carries its ceilings in its next revision.
 
 **Sensor census (the pills, the Overview, the status pages).** The census reads every host item,

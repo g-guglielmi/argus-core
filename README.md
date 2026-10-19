@@ -197,7 +197,7 @@ the probe-enrollment PKI, and Argus + its update sidecar.
 
 1. Download `argus-core-vm.ova` / `.qcow2` / `.vhd.gz` from the newest
    [`core-vm/vX.Y.Z` Release](https://github.com/g-guglielmi/argus-core/releases).
-2. Import it (2+ vCPU, 4+ GB RAM, more for bigger fleets: Zabbix is sized to the VM at first boot;
+2. Import it (2+ vCPU, 4+ GB RAM, more for bigger fleets: Zabbix is sized to the VM at every boot;
    the 100 GB disk is thin) and boot it on a DHCP network.
 3. Browse to `http://<vm-ip>/` and fill in **one form** (hostname, keyboard, timezone, your
    admin email + password). A live progress page configures everything - database, Zabbix,
@@ -256,7 +256,7 @@ Zabbix-compatible 2.28.x). Then append the TLS + tuning config and deploy the ce
 
 ```bash
 cat zabbix_server.conf.snippet | sudo tee -a /etc/zabbix/zabbix_server.conf
-sudo argus-size-zabbix --apply   # caches + process counts for this machine; re-run after adding RAM or cores
+sudo argus-size-zabbix --apply --tune   # caches, process counts and PostgreSQL for this machine; every boot re-runs it
 
 sudo mkdir -p /etc/zabbix/certs
 sudo cp ../pki/out/{ca.crt,zabbix-core.crt,zabbix-core.key} /etc/zabbix/certs/
