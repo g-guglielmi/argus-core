@@ -39,13 +39,14 @@ username, and the Public URL). Then, step by step, with live progress and ground
 1. **System** - hostname, timezone, console keymap, and the **local Debian sudo user** (default
    `argus`) with the password you chose - your console and SSH access (password login over SSH is
    allowed for this account only; root and any other account take keys).
-2. **Database** - `timescaledb-tune` against *this* VM's RAM, then the `zabbix` role + database with a
-   **generated password** (root-only in the configs, never shown), the Zabbix schema import (the long
-   step), and the TimescaleDB conversion.
+2. **Database** - PostgreSQL's connection limit for *this* VM (`argus-size-zabbix`), `timescaledb-tune`
+   against its RAM, then the `zabbix` role + database with a **generated password** (root-only in the
+   configs, never shown), the Zabbix schema import (the long step), and the TimescaleDB conversion.
 3. **PKI** - a private CA (`CN=Monitoring Core CA`, same convention as `deploy/pki/gen-certs.sh`) +
    the core server cert. The CA is mounted read-only into Argus, so **probe enrollment works out of
    the box**; Zabbix gets its mTLS server cert from day one.
-4. **Zabbix** - `zabbix_server.conf` (DB + the TLS/tuning snippet), the frontend `zabbix.conf.php`
+4. **Zabbix** - `zabbix_server.conf` (DB + the TLS/tuning snippet, then the caches and process
+   counts sized to the VM by `argus-size-zabbix`), the frontend `zabbix.conf.php`
    (what the browser wizard would have written - so the wizard never runs), nginx on **:8080**,
    php-fpm timezone, agent2 self-monitoring, services enabled.
 5. **HTTPS** - a server certificate for this VM (its hostname and address) signed by the monitoring
@@ -141,7 +142,9 @@ packer build argus-core-vm.pkr.hcl        # -> output/argus-core-vm.qcow2
 
 1. **Import the disk** - `argus-core-vm.ova` (VMware / Nutanix / VirtualBox / Xen Orchestra
    **Import → OVA**), `argus-core-vm.qcow2` (KVM/libvirt), or `argus-core-vm.vhd` (XCP-NG VDI import /
-   Hyper-V; gunzip first). Give it **2+ vCPU and 4+ GB RAM** (more for bigger fleets, §14b).
+   Hyper-V; gunzip first). Give it **2+ vCPU and 4+ GB RAM** (more for bigger fleets, §14b: the first boot sizes Zabbix's
+   caches and process counts to the VM; after growing it, run `sudo argus-size-zabbix --apply` and
+   restart what it names).
 2. **Boot it on a network with DHCP** and find its address (your hypervisor console shows it, or your
    DHCP leases). First boot needs DHCP - see *Scope* below for static addressing.
 3. **Browse to `http://<vm-ip>/`**, type the **setup code** shown on the VM's console, fill in the

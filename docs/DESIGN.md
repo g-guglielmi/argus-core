@@ -1610,9 +1610,12 @@ StartPollers 16, StartPingers 4, StartSNMPPollers 2, Timeout 10 (SNMP over VPN);
 timescaledb-tune (the first boot runs it) with max_connections 200. Probes size their own
 pollers from their hosts (14c); the image's ceilings for the biggest site (~1,800 sensors,
 ~40 values/s): CacheSize 64M, ProxyMemoryBufferSize 128M, so a 30 minute WAN outage stays in
-memory before the SQLite spool; 1 vCPU / 1 GB as a container, 2 vCPU / 2 GB as a VM. To apply:
-the appliance first boot writes the server sizes from the VM's RAM and cores (next core-vm
-image), the probe image carries its ceilings (next revision).
+memory before the SQLite spool; 1 vCPU / 1 GB as a container, 2 vCPU / 2 GB as a VM. Applied by
+`argus-size-zabbix` (deploy/core/host): the appliance first boot runs it (PostgreSQL's limit before
+timescaledb-tune, the server block after the TLS snippet, so its values win), a hand-installed core
+runs it after appending the snippet, and anyone re-runs it after growing the VM; the sizes scale
+with RAM and cores (about 7 % of RAM in Zabbix shared memory) and never go below the snippet's.
+The probe image carries its ceilings in its next revision.
 
 **Sensor census (the pills, the Overview, the status pages).** The census reads every host item,
 every open problem and their triggers, so its cost grows with the fleet. It is built on the core in
@@ -1720,13 +1723,13 @@ ground-truth progress page (idempotent steps; retry/edit on failure; reboot-safe
 
 1. **system** - hostname/tz/keymap + the local Debian sudo user (console + SSH access; password
    login over SSH for this account only, no docker group).
-2. **database** - `timescaledb-tune` for the deployed RAM, `zabbix` role + DB with a **generated**
+2. **database** - `argus-size-zabbix` (PostgreSQL's connection limit), `timescaledb-tune` for the deployed RAM, `zabbix` role + DB with a **generated**
    password, schema import, TimescaleDB conversion.
 3. **pki** - CA (`CN=Monitoring Core CA`) + core server cert; CA mounted RO into Argus so **probe
    enrollment works out of the box**. It lives in `/docker/argus/pki` (root's, readable by the
    container's group), mounted as `/ca` and over `/data/pki`, both read-only, so the container can't
    replace it through its writable `/data`.
-4. **zabbix** - `zabbix_server.conf` (DB + TLS/tuning snippet), frontend `zabbix.conf.php` written
+4. **zabbix** - `zabbix_server.conf` (DB + TLS/tuning snippet + the sizes for this VM), frontend `zabbix.conf.php` written
    directly (**the browser setup wizard never runs**), nginx `:8080`, php-fpm tz, agent2
    self-monitoring, services enabled.
 5. **https** - a server certificate for the VM (hostname + address) signed by the monitoring CA;

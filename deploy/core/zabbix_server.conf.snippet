@@ -17,7 +17,8 @@ AllowUnsupportedDBVersions=1
 ### --- listen for proxy connections (this is the ONE inbound port to publish) ---
 ListenPort=10051
 
-### --- capacity tuning for ~5 proxies / a few hundred items (adjust as you grow) ---
+### --- capacity tuning for ~5 proxies / a few hundred items: the floor. argus-size-zabbix
+### --- appends the sizes for the machine after this block (DESIGN 14b); they win. ---
 StartPollers=10
 StartPreprocessors=6
 StartDBSyncers=6

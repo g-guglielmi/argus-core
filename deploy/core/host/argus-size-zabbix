@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+
+# argus-size-zabbix - size the Zabbix server's caches and process counts, and PostgreSQL's
+# connection limit, to the machine they run on (DESIGN section 14b).
+#
+# Zabbix's defaults, and the fixed numbers in zabbix_server.conf.snippet, fit a few hundred items.
+# This reads the machine's RAM and cores and appends one marked block to zabbix_server.conf with the
+# sizes that fit it: Zabbix takes the last value given for a parameter, so the block overrides what
+# comes before it, and a previous block of ours is replaced, never duplicated. PostgreSQL's
+# connection limit goes in a conf.d drop-in. The appliance's first boot runs it (the database step
+# for PostgreSQL, before timescaledb-tune reads the limit; the zabbix step for the server, after the
+# TLS snippet); on a core installed by hand, or after growing a VM, run it yourself:
+#
+#   sudo argus-size-zabbix            # show what this machine gets
+#   sudo argus-size-zabbix --apply    # write it, then restart zabbix-server (and postgresql when
+#                                     # the connection limit changed; it says which)
+#
+# The sizes scale with RAM and cores and never go below the snippet's values, so a small lab VM
+# keeps small caches (about 7 % of its RAM in Zabbix shared memory) and a 16 GB, 8 core production
+# VM gets the numbers the sizing pass arrived at: 13k sensors, 19 proxies, ~300 values/s.
+
+import argparse
+import glob
+import os
+import re
+import sys
+import time
+
+ZBX_CONF = "/etc/zabbix/zabbix_server.conf"
+PG_CONF_GLOB = "/etc/postgresql/*/main/conf.d"
+PG_DROPIN = "argus-sizing.conf"
+BEGIN = "# --- sized by argus-size-zabbix"
+END = "# --- end of argus-size-zabbix ---"
+
+
+def clamp(v, lo, hi):
+    return max(lo, min(hi, int(v)))
+
+
+def mb(per_gb, ram_gb, lo, hi):
+    """A cache size in MB: so many MB per GB of RAM, clamped, in whole multiples of 16 MB."""
+    return (clamp(per_gb * ram_gb, lo, hi) // 16) * 16
+
+
+def plan(ram_gb, cores):
+    """What a machine with this much RAM (whole GB) and this many cores gets.
+
+    Caches (Zabbix shared memory, allocated at start): configuration and history caches 16 MB per GB,
+    index and trend caches 4 MB per GB, value cache 32 MB per GB: about 7 % of RAM in all, 288 MB at
+    4 GB, 1.1 GB at 16 GB. Processes follow the cores, with the snippet's numbers as the floor.
+    """
+    ram_gb = max(1, int(round(ram_gb)))
+    cores = max(1, int(cores))
+    zabbix = [
+        ("CacheSize", "%dM" % mb(16, ram_gb, 64, 1024)),              # configuration cache: hosts, items, triggers
+        ("HistoryCacheSize", "%dM" % mb(16, ram_gb, 64, 1024)),       # values waiting for the database (proxy backlog)
+        ("HistoryIndexCacheSize", "%dM" % mb(4, ram_gb, 16, 256)),    # about 100 bytes per item
+        ("TrendCacheSize", "%dM" % mb(4, ram_gb, 16, 256)),           # one slot per numeric item per hour
+        ("ValueCacheSize", "%dM" % mb(32, ram_gb, 128, 2048)),        # trigger functions over time windows
+        ("StartDBSyncers", str(clamp(cores, 6, 8))),
+        ("StartPollers", str(clamp(2 * cores, 10, 16))),
+        ("StartPollersUnreachable", str(clamp(cores // 2, 1, 4))),
+        ("StartPreprocessors", str(clamp(cores, 6, 8))),
+        ("StartTrappers", str(clamp(2 * cores, 5, 16))),              # active proxies deliver through trappers
+        ("StartPingers", str(clamp(cores // 2, 1, 4))),
+        ("StartSNMPPollers", "1" if cores < 4 else "2"),              # asynchronous: one handles hundreds of hosts
+        ("Timeout", "10"),                                            # SNMP and agents over VPN links
+    ]
+    postgres = {"max_connections": 200 if ram_gb >= 8 else 100}
+    return zabbix, postgres
+
+
+def detect():
+    """The machine's RAM in whole GB and its cores; None for RAM when /proc/meminfo is not there."""
+    ram_gb = None
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("MemTotal:"):
+                    ram_gb = int(round(int(line.split()[1]) / 1048576.0))
+                    break
+    except OSError:
+        pass
+    return ram_gb, os.cpu_count() or 1
+
+
+def render_block(zabbix, ram_gb, cores, when=None):
+    when = when or time.strftime("%Y-%m-%d")
+    lines = ["%s for %d GB RAM, %d cores (%s) ---" % (BEGIN, ram_gb, cores, when)]
+    lines += ["%s=%s" % kv for kv in zabbix]
+    lines.append(END)
+    return "\n".join(lines) + "\n"
+
+
+def with_block(text, block):
+    """The config text with our block at the end, any earlier block of ours removed."""
+    text = re.sub(r"\n*" + re.escape(BEGIN) + r".*?" + re.escape(END) + r"\n?", "\n", text, flags=re.S)
+    return text.rstrip("\n") + "\n\n" + block
+
+
+def render_dropin(postgres, ram_gb, cores):
+    return ("# Written by argus-size-zabbix (Argus core) for %d GB RAM, %d cores: the connection limit for\n"
+            "# the Zabbix server's processes, the frontend and the backups. Re-run it after growing the machine.\n"
+            "max_connections = %d\n" % (ram_gb, cores, postgres["max_connections"]))
+
+
+def read(path):
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def write(path, text):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    os.replace(tmp, path)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Size Zabbix's caches and processes, and PostgreSQL's connection limit, to this machine.")
+    ap.add_argument("--apply", action="store_true", help="write the sizes (default: only show them)")
+    ap.add_argument("--zabbix", action="store_true", help="only the Zabbix server block")
+    ap.add_argument("--postgres", action="store_true", help="only the PostgreSQL drop-in")
+    ap.add_argument("--ram-gb", type=float, help="size for this much RAM instead of the machine's")
+    ap.add_argument("--cores", type=int, help="size for this many cores instead of the machine's")
+    ap.add_argument("--conf", default=ZBX_CONF, help="zabbix_server.conf to write (default %(default)s)")
+    ap.add_argument("--pg-conf-dir", help="PostgreSQL conf.d directory (default: the one under /etc/postgresql)")
+    args = ap.parse_args(argv)
+    do_zbx = args.zabbix or not args.postgres
+    do_pg = args.postgres or not args.zabbix
+
+    ram_gb, cores = detect()
+    if args.ram_gb is not None:
+        ram_gb = args.ram_gb
+    if args.cores is not None:
+        cores = args.cores
+    if ram_gb is None:
+        print("could not read the machine's RAM; give --ram-gb", file=sys.stderr)
+        return 2
+    ram_gb = max(1, int(round(ram_gb)))
+    zabbix, postgres = plan(ram_gb, cores)
+
+    print("machine: %d GB RAM, %d cores" % (ram_gb, cores))
+    restart = []
+    if do_zbx:
+        for k, v in zabbix:
+            print("  %-24s %s" % (k, v))
+        if args.apply:
+            if not os.path.exists(args.conf):
+                print("no %s: is the Zabbix server installed?" % args.conf, file=sys.stderr)
+                return 2
+            old = read(args.conf)
+            new = with_block(old, render_block(zabbix, ram_gb, cores))
+            if new != old:
+                write(args.conf, new)
+                restart.append("zabbix-server")
+            print("written: %s (one block at the end, earlier block replaced)" % args.conf)
+    if do_pg:
+        print("  %-24s %d" % ("max_connections", postgres["max_connections"]))
+        if args.apply:
+            d = args.pg_conf_dir or (sorted(glob.glob(PG_CONF_GLOB)) or [None])[-1]
+            if not d or not os.path.isdir(d):
+                print("no PostgreSQL conf.d directory found: the connection limit stays as it is", file=sys.stderr)
+            else:
+                p = os.path.join(d, PG_DROPIN)
+                text = render_dropin(postgres, ram_gb, cores)
+                if not os.path.exists(p) or read(p) != text:
+                    write(p, text)
+                    restart.append("postgresql")
+                print("written: %s" % p)
+    if args.apply:
+        if restart:
+            print("restart to apply: systemctl restart " + " ".join(restart))
+        else:
+            print("nothing changed")
+    else:
+        print("(shown only; add --apply to write)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

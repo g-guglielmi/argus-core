@@ -636,5 +636,96 @@ class RestoreTest(unittest.TestCase):
         self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 1)
 
 
+class SizingTest(unittest.TestCase):
+    """argus-size-zabbix: the sizes a machine gets, and the one block it writes."""
+
+    def setUp(self):
+        self.mod = load("argus-size-zabbix", {})
+
+    def test_production_vm_gets_the_sizing_pass_numbers(self):
+        zabbix, postgres = self.mod.plan(16, 8)
+        got = dict(zabbix)
+        self.assertEqual(got["CacheSize"], "256M")
+        self.assertEqual(got["HistoryCacheSize"], "256M")
+        self.assertEqual(got["HistoryIndexCacheSize"], "64M")
+        self.assertEqual(got["TrendCacheSize"], "64M")
+        self.assertEqual(got["ValueCacheSize"], "512M")
+        self.assertEqual(got["StartDBSyncers"], "8")
+        self.assertEqual(got["StartTrappers"], "16")
+        self.assertEqual(got["StartPreprocessors"], "8")
+        self.assertEqual(got["StartPollers"], "16")
+        self.assertEqual(got["StartPingers"], "4")
+        self.assertEqual(got["StartSNMPPollers"], "2")
+        self.assertEqual(got["Timeout"], "10")
+        self.assertEqual(postgres["max_connections"], 200)
+
+    def test_small_vm_never_goes_below_the_snippet(self):
+        got = dict(self.mod.plan(4, 2)[0])
+        self.assertEqual(got["CacheSize"], "64M")
+        self.assertEqual(got["HistoryCacheSize"], "64M")
+        self.assertEqual(got["ValueCacheSize"], "128M")
+        self.assertEqual(got["StartPollers"], "10")
+        self.assertEqual(got["StartPreprocessors"], "6")
+        self.assertEqual(got["StartDBSyncers"], "6")
+        self.assertEqual(got["StartTrappers"], "5")
+        self.assertEqual(got["StartPingers"], "1")
+        self.assertEqual(got["StartSNMPPollers"], "1")
+        self.assertEqual(self.mod.plan(4, 2)[1]["max_connections"], 100)
+        # a 7.7 GB MemTotal is an 8 GB VM
+        self.assertEqual(dict(self.mod.plan(7.7, 4)[0])["CacheSize"], "128M")
+
+    def test_caches_grow_with_ram_and_stop_at_the_ceiling(self):
+        sizes = [int(dict(self.mod.plan(gb, 8)[0])["ValueCacheSize"][:-1]) for gb in (4, 8, 16, 32, 64, 128)]
+        self.assertEqual(sizes, sorted(sizes))
+        self.assertEqual(sizes[-1], 2048)
+        self.assertEqual(sizes[-2], 2048)
+
+    def test_one_block_at_the_end_replaced_on_rerun(self):
+        stock = "# stock\nTimeout=4\nLogFile=/var/log/zabbix/zabbix_server.log\n\n### snippet\nCacheSize=64M\nTimeout=10\n"
+        first = self.mod.with_block(stock, self.mod.render_block(self.mod.plan(8, 4)[0], 8, 4, "2026-10-19"))
+        self.assertTrue(first.startswith(stock.rstrip("\n")))
+        self.assertEqual(first.count(self.mod.BEGIN), 1)
+        self.assertTrue(first.rstrip("\n").endswith(self.mod.END))
+        self.assertIn("\nCacheSize=128M\n", first)
+        # the snippet's own CacheSize line stays (Zabbix takes the last value: ours)
+        self.assertIn("### snippet\nCacheSize=64M\n", first)
+        second = self.mod.with_block(first, self.mod.render_block(self.mod.plan(16, 8)[0], 16, 8, "2026-11-01"))
+        self.assertEqual(second.count(self.mod.BEGIN), 1)
+        self.assertEqual(second.count(self.mod.END), 1)
+        self.assertIn("CacheSize=256M", second)
+        self.assertNotIn("CacheSize=128M", second)
+        self.assertNotIn("2026-10-19", second)
+        self.assertEqual(second.index("### snippet"), first.index("### snippet"))
+
+    def test_apply_writes_both_files_and_says_what_to_restart(self):
+        tmp = tempfile.mkdtemp()
+        conf = os.path.join(tmp, "zabbix_server.conf")
+        pgd = os.path.join(tmp, "conf.d")
+        os.makedirs(pgd)
+        with open(conf, "w") as fh:
+            fh.write("Timeout=4\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = self.mod.main(["--apply", "--ram-gb", "16", "--cores", "8", "--conf", conf, "--pg-conf-dir", pgd])
+        self.assertEqual(rc, 0)
+        self.assertIn("restart to apply: systemctl restart zabbix-server postgresql", out.getvalue())
+        with open(conf) as fh:
+            text = fh.read()
+        self.assertIn("ValueCacheSize=512M", text)
+        with open(os.path.join(pgd, "argus-sizing.conf")) as fh:
+            self.assertIn("max_connections = 200", fh.read())
+        # a second run changes nothing and says so
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.mod.main(["--apply", "--ram-gb", "16", "--cores", "8", "--conf", conf, "--pg-conf-dir", pgd])
+        self.assertIn("nothing changed", out.getvalue())
+        # the zabbix scope alone leaves PostgreSQL out
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.mod.main(["--zabbix", "--ram-gb", "4", "--cores", "2", "--conf", conf])
+        self.assertNotIn("max_connections", out.getvalue())
+        self.assertIn("(shown only", out.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

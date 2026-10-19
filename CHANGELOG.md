@@ -13,6 +13,15 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **`argus-size-zabbix`** (deploy/core/host, DESIGN 14b): sizes the Zabbix server's caches and
+  process counts, and PostgreSQL's connection limit, to the machine's RAM and cores, as one marked
+  block at the end of `zabbix_server.conf` (Zabbix takes the last value, so it wins over the
+  snippet; a re-run replaces the block) and a conf.d drop-in. The appliance's first boot runs it
+  (core-vm, in the next image); `setup-core.sh` installs it for a core set up by hand, to run after
+  appending the snippet and again after growing the VM. The sizes never go below the snippet's, so
+  a small lab VM stays small.
+
 ### Security
 - **The weekly scan reads the repositories too.** Besides the three published images, `scan.yml`
   now runs Trivy over the checkout of argus-core, argus-probe and argus-updater for

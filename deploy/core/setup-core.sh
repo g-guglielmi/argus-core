@@ -393,6 +393,14 @@ if [[ -f "${SCRIPT_DIR}/host/install-backup.sh" ]]; then
   ARGUS_STATE_DIR="$ARGUS_STATE_DIR" bash "${SCRIPT_DIR}/host/install-backup.sh"
 fi
 
+# Sizing (DESIGN section 14b): argus-size-zabbix sizes the server's caches and process counts, and
+# PostgreSQL's connection limit, to the machine, in BOTH modes. The appliance's first boot runs it;
+# a core set up by hand runs it after the snippet, and again after growing the VM.
+if [[ -f "${SCRIPT_DIR}/host/argus-size-zabbix" ]]; then
+  echo "==> sizing tool"
+  install -m 0755 "${SCRIPT_DIR}/host/argus-size-zabbix" /usr/local/sbin/argus-size-zabbix
+fi
+
 if [[ "$SETUP_MODE" != "full" ]]; then
   echo
   echo ">>> Image mode: packages + OS patching installed. Database, zabbix_server.conf, TLS, and the"
@@ -401,7 +409,9 @@ if [[ "$SETUP_MODE" != "full" ]]; then
 fi
 echo
 echo ">>> Now append the TLS + tuning lines from core/zabbix_server.conf.snippet to $CONF,"
-echo ">>> place ca.crt + zabbix-core.crt/.key under /etc/zabbix/certs/, then:"
+echo ">>> place ca.crt + zabbix-core.crt/.key under /etc/zabbix/certs/, size Zabbix and PostgreSQL"
+echo ">>> to this machine (re-run it after adding RAM or cores), then start everything:"
+echo "      argus-size-zabbix --apply"
 echo "      systemctl enable --now zabbix-server zabbix-agent2 nginx php8.4-fpm  # Debian 13 = PHP 8.4"
 echo ">>> Finish the frontend setup wizard in the browser, and in Housekeeping enable"
 echo "    'Override history/trend period' so TimescaleDB compression kicks in."

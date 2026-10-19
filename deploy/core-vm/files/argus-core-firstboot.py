@@ -58,6 +58,7 @@ DONE_PATH = os.path.join(STATE_DIR, "setup-done")      # marker + summary for th
 ARGUS_ENV = "/etc/argus-core/argus.env"
 IMAGE_ENV = "/etc/argus-core/image.env"
 SNIPPET = "/etc/argus-core/zabbix_server.conf.snippet"
+SIZER = "/usr/local/sbin/argus-size-zabbix"          # sizes Zabbix + PostgreSQL to this VM (DESIGN 14b)
 ZBX_CONF = "/etc/zabbix/zabbix_server.conf"
 ZBX_WEB_CONF = "/etc/zabbix/web/zabbix.conf.php"
 ZBX_NGINX = "/etc/zabbix/nginx.conf"
@@ -311,7 +312,11 @@ def step_system(cfg, state):
 
 
 def step_database(cfg, state):
-    # Tune PostgreSQL for the DEPLOYED VM's RAM (the image build ran on a small builder).
+    # Size PostgreSQL's connection limit to the DEPLOYED VM before timescaledb-tune reads it, then
+    # tune for this VM's RAM (the image build ran on a small builder). A sizing failure is logged by
+    # the tool and not fatal: the stock limit still works.
+    if os.path.exists(SIZER):
+        run([SIZER, "--apply", "--postgres"], check=False, timeout=60)
     run(["timescaledb-tune", "--quiet", "--yes"], check=False, timeout=120)
     run(["systemctl", "restart", "postgresql"], timeout=180)
     for _ in range(60):
@@ -422,6 +427,12 @@ def step_zabbix(cfg, state):
             snippet = fh.read()
         with open(ZBX_CONF, "a", encoding="utf-8") as fh:
             fh.write("\n" + snippet_marker + "\n" + snippet)
+
+    # The server's caches and process counts for this VM's RAM and cores (argus-size-zabbix, DESIGN
+    # 14b): one marked block after the snippet, so its values win; a re-run replaces it. After
+    # growing the VM: `argus-size-zabbix --apply`, then restart what it names.
+    if os.path.exists(SIZER):
+        run([SIZER, "--apply", "--zabbix"], check=False, timeout=60)
 
     # Frontend config - what the browser setup wizard would have written.
     php_pass = dbpass.replace("\\", "\\\\").replace("'", "\\'")
