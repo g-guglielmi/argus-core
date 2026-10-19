@@ -192,6 +192,7 @@ def self_signed(tmp, name, san, cn=None):
     subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "30", "-config", cfg,
                     "-keyout", key, "-out", crt], check=True, capture_output=True)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.load_cert_chain(crt, key)
     return crt, ctx
 
@@ -215,6 +216,7 @@ def device_chain(tmp):
     with open(p("dchain.pem"), "w") as f, open(p("dleaf.pem")) as a, open(p("dca.pem")) as b:
         f.write(a.read() + b.read())
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.load_cert_chain(p("dchain.pem"), p("dleaf.key"))
     return ctx
 

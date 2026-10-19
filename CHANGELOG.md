@@ -22,6 +22,13 @@ GitHub Release from the matching section below.
   security updates are on for all three repositories, and the probe and updater repositories got
   the Dependabot version updates the core already had (the actions' pins, the updater's Alpine
   digest).
+- **CodeQL's first pass, answered.** The email builders strip CR and LF from every address on the
+  `To:` line (every caller already validates them; now the builders are safe by construction), the
+  expiry of the legacy bare session cookie carries `Secure` like every cookie in that mode, the
+  collector tests' TLS servers refuse anything below TLS 1.2, and the appliance's first-boot form
+  checks the email address without a regular expression that backtracks on long odd input
+  (core-vm, in the next image). The other twelve findings are by design and are dismissed with
+  their reasons in the repository's code scanning view.
 
 ## [0.9.1] - 2026-10-19
 

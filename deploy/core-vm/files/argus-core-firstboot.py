@@ -1040,6 +1040,15 @@ def done_page():
 
 # ---------------------------------------------------------------- validation + HTTP
 
+def email_ok(s):
+    """Something, one @, a domain with a dot inside it, no whitespace: the shape the form has always
+    accepted, checked without a regular expression that backtracks on long odd input."""
+    if not s or any(c.isspace() for c in s):
+        return False
+    local, at, domain = s.partition("@")
+    return bool(at) and bool(local) and "@" not in domain and "." in domain[1:-1]
+
+
 def validate(form):
     def one(key):
         return (form.get(key, [""])[0] or "").strip()
@@ -1055,7 +1064,7 @@ def validate(form):
         return None, "Unknown keyboard layout."
     if not os.path.exists("/usr/share/zoneinfo/" + vals["timezone"]) or ".." in vals["timezone"]:
         return None, "Unknown timezone."
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", vals["email"]):
+    if not email_ok(vals["email"]):
         return None, "That email address doesn't look valid."
     user = vals["linux_user"].lower() or "argus"
     if not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", user):

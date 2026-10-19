@@ -129,12 +129,24 @@ func sendEmail(ctx context.Context, cfg map[string]string, e Event) error {
 	return s.Send(ctx, to, buildMessage(s.From, to, e))
 }
 
+// headerAddrs joins recipients for a To: line. Every caller validates its addresses first (the
+// reports parse them with net/mail, a reset goes to the user's stored address, a channel's list is
+// an admin's); the CR and LF are stripped here all the same, so no list that reaches a builder can
+// end the header early. The subject is Q-encoded for the same reason.
+func headerAddrs(to []string) string {
+	out := make([]string, 0, len(to))
+	for _, a := range to {
+		out = append(out, strings.NewReplacer("\r", "", "\n", "").Replace(a))
+	}
+	return strings.Join(out, ", ")
+}
+
 // SimpleMessage builds a minimal multipart/alternative email (plain + HTML) for transactional
 // mail such as password resets, with a Q-encoded subject.
 func SimpleMessage(from string, to []string, subject, text, html string) []byte {
 	var b strings.Builder
 	b.WriteString("From: Argus <" + from + ">\r\n")
-	b.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
+	b.WriteString("To: " + headerAddrs(to) + "\r\n")
 	b.WriteString("Subject: " + mime.QEncoding.Encode("UTF-8", subject) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
 	writeTextAndHTML(&b, text, html)
@@ -147,7 +159,7 @@ func AttachmentMessage(from string, to []string, subject, text, html, filename, 
 	var b strings.Builder
 	mix := newBoundary("argus-mix-")
 	b.WriteString("From: Argus <" + from + ">\r\n")
-	b.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
+	b.WriteString("To: " + headerAddrs(to) + "\r\n")
 	b.WriteString("Subject: " + mime.QEncoding.Encode("UTF-8", subject) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: multipart/mixed; boundary=\"" + mix + "\"\r\n\r\n")
@@ -202,7 +214,7 @@ func writeTextAndHTML(b *strings.Builder, text, html string) {
 func buildMessage(from string, to []string, e Event) []byte {
 	var b strings.Builder
 	b.WriteString("From: Argus <" + from + ">\r\n")
-	b.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
+	b.WriteString("To: " + headerAddrs(to) + "\r\n")
 	b.WriteString("Subject: " + mime.QEncoding.Encode("UTF-8", e.emoji()+" "+e.subject()) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
 

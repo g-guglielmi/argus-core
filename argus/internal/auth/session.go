@@ -73,10 +73,11 @@ func Middleware(st *store.Store, secure func() bool, idle, maxLife func() time.D
 				}
 			}
 			// A bare-name cookie left from before the switch to Secure (or planted since) is not
-			// read; expire it so the browser stops sending it.
+			// read; expire it so the browser stops sending it. Secure like every cookie set in this
+			// mode: the expiry replaces the old cookie by name and path whatever its own flags were.
 			if sec {
 				if c, err := r.Cookie(CookieName); err == nil && c.Value != "" {
-					http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+					http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 				}
 			}
 			next.ServeHTTP(w, r)
