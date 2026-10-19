@@ -68,6 +68,8 @@ func (s *Server) reconcileTemplates(ctx context.Context) {
 	}
 	// Every probe gets its Argus-managed Probe health host (needs the template imported above).
 	s.EnsureProbeHosts(c)
+	// The server's own host becomes the Argus core (needs the template imported above).
+	s.EnsureCoreHost(c)
 }
 
 // templatesFailure is the last template import's failure ("" when it went through), and when.

@@ -323,46 +323,70 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	case "icmppingsec":
 		return "Ping", "ICMP response time", "ICMP", "Response time", true
 
-	// Argus Probe Health: Zabbix internal checks on the per-site Probe host, measured by its proxy.
+	// Argus Probe Health and Argus Core Health: Zabbix internal checks, measured by the proxy that
+	// monitors the per-site Probe host, or by the server itself on its own host. The core template
+	// names its items "Core ...", so the same keys file under Core there and under Probe elsewhere.
 	case "zabbix":
+		who := "Probe"
+		if strings.HasPrefix(name, "Core ") {
+			who = "Core"
+		}
 		switch param(p, 0) {
 		case "uptime":
-			return "Uptime", "Probe uptime", "", "", true
+			return "Uptime", who + " uptime", "", "", true
 		case "proxy_history":
-			return "Probe", "Unsent values", "", "", true
+			return who, "Unsent values", "", "", true
+		case "requiredperformance":
+			return who, "Required performance (values per second)", "", "", true
+		case "vps":
+			if param(p, 1) == "written" {
+				return who, "Values written per second", "", "", true
+			}
+		case "hosts":
+			if len(p) == 1 {
+				return who, "Hosts monitored", "", "", true
+			}
+		case "items":
+			if len(p) == 1 {
+				return who, "Items monitored", "", "", true
+			}
+		case "items_unsupported":
+			if len(p) == 1 {
+				return who, "Unsupported items", "", "", true
+			}
 		// The probe template reads one of each; the Zabbix server's own health template reads many
 		// more under the same names (every cache, values per type), so each keeps its own label and
 		// the per-type and free/total variants stay under "All sensors".
 		case "queue":
 			if param(p, 1) == "10m" {
-				return "Probe", "Delayed items (over 10 min)", "", "", true
+				return who, "Delayed items (over 10 min)", "", "", true
 			}
 			if len(p) == 1 {
-				return "Probe", "Delayed items", "", "", true
+				return who, "Delayed items", "", "", true
 			}
 		case "wcache":
 			switch param(p, 1) + "," + param(p, 2) {
 			case "history,pused":
-				return "Probe", "History cache used", "", "", true
+				return who, "History cache used", "", "", true
 			case "index,pused":
-				return "Probe", "History index cache used", "", "", true
+				return who, "History index cache used", "", "", true
 			case "trend,pused":
-				return "Probe", "Trend cache used", "", "", true
+				return who, "Trend cache used", "", "", true
 			case "values,", "values,all":
-				return "Probe", "Values processed", "", "", true
+				return who, "Values processed per second", "", "", true
 			}
 		case "rcache":
 			if param(p, 2) == "pused" {
-				return "Probe", "Configuration cache used", "", "", true
+				return who, "Configuration cache used", "", "", true
 			}
 		case "vcache":
 			if param(p, 1) == "buffer" && param(p, 2) == "pused" {
-				return "Probe", "Value cache used", "", "", true
+				return who, "Value cache used", "", "", true
 			}
 		case "process":
 			// One "Process load" row, a channel per process type; the UI headlines the busiest.
 			if t := param(p, 1); t != "" {
-				return "Probe", "Process load (" + t + ")", "Process load", strings.ToUpper(t[:1]) + t[1:], true
+				return who, "Process load (" + t + ")", "Process load", strings.ToUpper(t[:1]) + t[1:], true
 			}
 		}
 		return "", "", "", "", false

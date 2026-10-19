@@ -1,0 +1,695 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: a7cec4c0412c491691f66a85da33c784
+      template: 'Argus Core Health'
+      name: 'Argus Core Health'
+      description: |
+        Health and capacity of the Argus core, measured by the Zabbix server itself: internal checks on
+        the server's own host ("Zabbix server"), which Argus adopts at startup in place of Zabbix's stock
+        server health template. The sensors are the figures the sizing pass (DESIGN 14b) is built on:
+        required performance and values per second against the pass's design point, the caches (more RAM
+        when full), the processes (more cores when busy), hosts, items, unsupported and delayed items. The
+        VM re-sizes Zabbix to its RAM and cores at every boot (argus-size-zabbix). Thresholds are user
+        macros, editable in the Argus Thresholds screen. Items are named "Core ..." so Argus files them
+        under Core.
+      groups:
+        - name: Templates/Argus
+      items:
+        - uuid: 4539be13a80d4c34afc9fe5bca572a8a
+          name: 'Core required performance'
+          type: INTERNAL
+          key: 'zabbix[requiredperformance]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: 'vps'
+          description: 'Zabbix''s own estimate of the values per second it must collect for the items it has: the figure the sizing pass sizes the core for. More than the design point means the fleet outgrew the sizing: redo the pass.'
+          triggers:
+            - uuid: ae240cd3d5d644b7933b9c416a2d683f
+              expression: 'min(/Argus Core Health/zabbix[requiredperformance],10m)>={$CORE.VPS.WARN} and min(/Argus Core Health/zabbix[requiredperformance],10m)<{$CORE.VPS.HIGH}'
+              name: 'Core load above the sizing warning'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core load back within the sizing'
+              priority: WARNING
+              description: 'The required performance stayed at or above the warning threshold for 10 minutes (below the high threshold): the fleet is approaching what the core was sized for.'
+            - uuid: 258abe4b91fa46e9be1e5857d2001604
+              expression: 'min(/Argus Core Health/zabbix[requiredperformance],10m)>={$CORE.VPS.HIGH}'
+              name: 'Core load above the sizing design point'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core load back within the sizing'
+              priority: HIGH
+              description: 'The required performance stayed at or above the high threshold for 10 minutes: the fleet has outgrown the sizing. Redo the sizing pass, then grow the VM.'
+        - uuid: 657df94aed3743de93b5b7630c0bb6e9
+          name: 'Core values processed per second'
+          type: INTERNAL
+          key: 'zabbix[wcache,values,all]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: 'vps'
+          description: 'Values the server actually processed per second, all types together (polled and dependent items alike).'
+          preprocessing:
+            - type: CHANGE_PER_SECOND
+              parameters:
+                - ''
+          triggers:
+            - uuid: 8f1e2369cfa94cac81eb274ceed01f20
+              expression: 'min(/Argus Core Health/zabbix[wcache,values,all],10m)>={$CORE.VPS.WARN} and min(/Argus Core Health/zabbix[wcache,values,all],10m)<{$CORE.VPS.HIGH}'
+              name: 'Core processing above the sizing warning'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core processing back within the sizing'
+              priority: WARNING
+              description: 'Values processed per second stayed at or above the warning threshold for 10 minutes (below the high threshold).'
+            - uuid: 5989ede9ef7a45d2a8fa2658e4a52a4f
+              expression: 'min(/Argus Core Health/zabbix[wcache,values,all],10m)>={$CORE.VPS.HIGH}'
+              name: 'Core processing above the sizing design point'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core processing back within the sizing'
+              priority: HIGH
+              description: 'Values processed per second stayed at or above the high threshold for 10 minutes: more than the core was sized for. Redo the sizing pass, then grow the VM.'
+        - uuid: 586041112bc24d938cceff7f7b95aa19
+          name: 'Core values written per second'
+          type: INTERNAL
+          key: 'zabbix[vps,written]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: 'vps'
+          description: 'History values written to the database per second: what the database and its disk carry.'
+          preprocessing:
+            - type: CHANGE_PER_SECOND
+              parameters:
+                - ''
+          triggers:
+            - uuid: abd49d2df6834080ae7fbf803b80a10c
+              expression: 'min(/Argus Core Health/zabbix[vps,written],10m)>={$CORE.WRITTEN.WARN} and min(/Argus Core Health/zabbix[vps,written],10m)<{$CORE.WRITTEN.HIGH}'
+              name: 'Core database writes above the sizing warning'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core database writes back within the sizing'
+              priority: WARNING
+              description: 'Values written per second stayed at or above the warning threshold for 10 minutes (below the high threshold).'
+            - uuid: 5ae3c4c7916241158ba7ad1025159234
+              expression: 'min(/Argus Core Health/zabbix[vps,written],10m)>={$CORE.WRITTEN.HIGH}'
+              name: 'Core database writes above the sizing design point'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core database writes back within the sizing'
+              priority: HIGH
+              description: 'Values written per second stayed at or above the high threshold for 10 minutes: more than the database was sized for. Redo the sizing pass, then grow the VM and its disk.'
+        - uuid: 7dd0d893e5014037bd0773be39091bb3
+          name: 'Core hosts monitored'
+          type: INTERNAL
+          key: 'zabbix[hosts]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Hosts the server and its probes monitor.'
+          triggers:
+            - uuid: 54dc5a3c09c64fe38ae3886b1a026d17
+              expression: 'min(/Argus Core Health/zabbix[hosts],10m)>={$CORE.HOSTS.WARN} and min(/Argus Core Health/zabbix[hosts],10m)<{$CORE.HOSTS.HIGH}'
+              name: 'Core host count above the sizing warning'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core host count back within the sizing'
+              priority: WARNING
+              description: 'The host count is at or above the warning threshold (below the high threshold): the fleet is approaching what the core was sized for.'
+            - uuid: 7eb9f364804f4f30aba3a60fabff59a5
+              expression: 'min(/Argus Core Health/zabbix[hosts],10m)>={$CORE.HOSTS.HIGH}'
+              name: 'Core host count above the sizing design point'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core host count back within the sizing'
+              priority: HIGH
+              description: 'The host count is at or above the high threshold: the fleet has outgrown the sizing. Redo the sizing pass.'
+        - uuid: 71b49ec3ee8f4f809011509ae46fc7ef
+          name: 'Core items monitored'
+          type: INTERNAL
+          key: 'zabbix[items]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Enabled items across every host: the sensor count the sizing pass is built on.'
+          triggers:
+            - uuid: 7d2ffb00d5e947afb86d0d97f9f60ec3
+              expression: 'min(/Argus Core Health/zabbix[items],10m)>={$CORE.ITEMS.WARN} and min(/Argus Core Health/zabbix[items],10m)<{$CORE.ITEMS.HIGH}'
+              name: 'Core item count above the sizing warning'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core item count back within the sizing'
+              priority: WARNING
+              description: 'The item count is at or above the warning threshold (below the high threshold): the fleet is approaching what the core was sized for.'
+            - uuid: 714c951e2d9342b19e2d3d980d03fc40
+              expression: 'min(/Argus Core Health/zabbix[items],10m)>={$CORE.ITEMS.HIGH}'
+              name: 'Core item count above the sizing design point'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core item count back within the sizing'
+              priority: HIGH
+              description: 'The item count is at or above the high threshold: the fleet has outgrown the sizing. Redo the sizing pass.'
+        - uuid: 7203f1d4f4fd4a01b80a5a66e14896dd
+          name: 'Core unsupported items'
+          type: INTERNAL
+          key: 'zabbix[items_unsupported]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Items that cannot be read right now, across every host: each is a sensor Argus shows with why.'
+          triggers:
+            - uuid: 7ca83dc387a4443d984b98349b892f78
+              expression: 'min(/Argus Core Health/zabbix[items_unsupported],15m)>={$CORE.UNSUPPORTED.WARN} and min(/Argus Core Health/zabbix[items_unsupported],15m)<{$CORE.UNSUPPORTED.HIGH}'
+              name: 'Core: many sensors not reading'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core sensors reading again'
+              priority: WARNING
+              description: 'Unsupported items stayed at or above the warning threshold for 15 minutes (below the high threshold): a class, a credential or a device family is failing across hosts.'
+            - uuid: 39e56194e36d44c5ac91d3ee16b10297
+              expression: 'min(/Argus Core Health/zabbix[items_unsupported],15m)>={$CORE.UNSUPPORTED.HIGH}'
+              name: 'Core: very many sensors not reading'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core sensors reading again'
+              priority: HIGH
+              description: 'Unsupported items stayed at or above the high threshold for 15 minutes: something failing across the fleet.'
+        - uuid: d0c892620eec428b9740936f5471b773
+          name: 'Core delayed items (over 10 min)'
+          type: INTERNAL
+          key: 'zabbix[queue,10m]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: UNSIGNED
+          description: 'Items whose next reading is more than 10 minutes overdue, across the server and its probes. A growing number means the core or a probe cannot keep up.'
+          triggers:
+            - uuid: 1fdcb78088ba48e8960660019a170134
+              expression: 'min(/Argus Core Health/zabbix[queue,10m],15m)>={$CORE.QUEUE.WARN} and min(/Argus Core Health/zabbix[queue,10m],15m)<{$CORE.QUEUE.HIGH}'
+              name: 'Core falling behind'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core caught up'
+              priority: WARNING
+              description: 'Delayed items stayed at or above the warning threshold for 15 minutes (below the high threshold): the server or a probe is not keeping up.'
+            - uuid: f29d49d838c9433eb4812200642bb145
+              expression: 'min(/Argus Core Health/zabbix[queue,10m],15m)>={$CORE.QUEUE.HIGH}'
+              name: 'Core far behind'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core caught up'
+              priority: HIGH
+              description: 'Delayed items stayed at or above the high threshold for 15 minutes: the server or a probe is well behind. Check busy processes and the probes.'
+        - uuid: 64bad99137f342929346c6b00d8ac994
+          name: 'Core configuration cache used'
+          type: INTERNAL
+          key: 'zabbix[rcache,buffer,pused]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of the server''s configuration cache (hosts, items, triggers) in use. It is sized to the VM''s RAM at every boot (argus-size-zabbix); a full cache means a bigger VM.'
+          triggers:
+            - uuid: 30943a4bce9d421bafecaed4c75e6470
+              expression: 'min(/Argus Core Health/zabbix[rcache,buffer,pused],5m)>={$CORE.CACHE.WARN} and min(/Argus Core Health/zabbix[rcache,buffer,pused],5m)<{$CORE.CACHE.HIGH}'
+              name: 'Core configuration cache filling up'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core configuration cache back to normal'
+              priority: WARNING
+              description: 'The configuration cache (hosts, items, triggers) stayed at or above the warning threshold for 5 minutes (below the high threshold). Give the VM more RAM: it re-sizes itself at boot.'
+            - uuid: 6779b2bcc9fa47c5aa2a6637f60ed958
+              expression: 'min(/Argus Core Health/zabbix[rcache,buffer,pused],5m)>={$CORE.CACHE.HIGH}'
+              name: 'Core configuration cache nearly full'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core configuration cache back to normal'
+              priority: HIGH
+              description: 'The configuration cache (hosts, items, triggers) stayed at or above the high threshold for 5 minutes: values will be lost when it is full. Give the VM more RAM now: it re-sizes itself at boot.'
+        - uuid: d7d04f8f74714686b7c2c7e0377d8ebc
+          name: 'Core history cache used'
+          type: INTERNAL
+          key: 'zabbix[wcache,history,pused]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of the server''s history cache (values waiting for the database) in use. It is sized to the VM''s RAM at every boot (argus-size-zabbix); a full cache means a bigger VM.'
+          triggers:
+            - uuid: e6828993926b475f801a7ee1b1a8b152
+              expression: 'min(/Argus Core Health/zabbix[wcache,history,pused],5m)>={$CORE.CACHE.WARN} and min(/Argus Core Health/zabbix[wcache,history,pused],5m)<{$CORE.CACHE.HIGH}'
+              name: 'Core history cache filling up'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core history cache back to normal'
+              priority: WARNING
+              description: 'The history cache (values waiting for the database) stayed at or above the warning threshold for 5 minutes (below the high threshold). Give the VM more RAM: it re-sizes itself at boot.'
+            - uuid: 2743f5a2ed334678a321373c12cd1571
+              expression: 'min(/Argus Core Health/zabbix[wcache,history,pused],5m)>={$CORE.CACHE.HIGH}'
+              name: 'Core history cache nearly full'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core history cache back to normal'
+              priority: HIGH
+              description: 'The history cache (values waiting for the database) stayed at or above the high threshold for 5 minutes: values will be lost when it is full. Give the VM more RAM now: it re-sizes itself at boot.'
+        - uuid: a3c5be18c4e940c192098e50ea59ca69
+          name: 'Core history index cache used'
+          type: INTERNAL
+          key: 'zabbix[wcache,index,pused]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of the server''s history index cache in use. It is sized to the VM''s RAM at every boot (argus-size-zabbix); a full cache means a bigger VM.'
+          triggers:
+            - uuid: c809bfb9231e4a43828f3f5ca45f5b24
+              expression: 'min(/Argus Core Health/zabbix[wcache,index,pused],5m)>={$CORE.CACHE.WARN} and min(/Argus Core Health/zabbix[wcache,index,pused],5m)<{$CORE.CACHE.HIGH}'
+              name: 'Core history index cache filling up'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core history index cache back to normal'
+              priority: WARNING
+              description: 'The history index cache stayed at or above the warning threshold for 5 minutes (below the high threshold). Give the VM more RAM: it re-sizes itself at boot.'
+            - uuid: 3b775e54039e40b0a06c48d0667c9a77
+              expression: 'min(/Argus Core Health/zabbix[wcache,index,pused],5m)>={$CORE.CACHE.HIGH}'
+              name: 'Core history index cache nearly full'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core history index cache back to normal'
+              priority: HIGH
+              description: 'The history index cache stayed at or above the high threshold for 5 minutes: values will be lost when it is full. Give the VM more RAM now: it re-sizes itself at boot.'
+        - uuid: 05c16da6eb704e59a1ea9c4e835decde
+          name: 'Core trend cache used'
+          type: INTERNAL
+          key: 'zabbix[wcache,trend,pused]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of the server''s trend cache in use. It is sized to the VM''s RAM at every boot (argus-size-zabbix); a full cache means a bigger VM.'
+          triggers:
+            - uuid: 9d43f79d5a6b492988fb6585201bc549
+              expression: 'min(/Argus Core Health/zabbix[wcache,trend,pused],5m)>={$CORE.CACHE.WARN} and min(/Argus Core Health/zabbix[wcache,trend,pused],5m)<{$CORE.CACHE.HIGH}'
+              name: 'Core trend cache filling up'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core trend cache back to normal'
+              priority: WARNING
+              description: 'The trend cache stayed at or above the warning threshold for 5 minutes (below the high threshold). Give the VM more RAM: it re-sizes itself at boot.'
+            - uuid: bca2cf1e23d64549b0493ae0f2d88010
+              expression: 'min(/Argus Core Health/zabbix[wcache,trend,pused],5m)>={$CORE.CACHE.HIGH}'
+              name: 'Core trend cache nearly full'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core trend cache back to normal'
+              priority: HIGH
+              description: 'The trend cache stayed at or above the high threshold for 5 minutes: values will be lost when it is full. Give the VM more RAM now: it re-sizes itself at boot.'
+        - uuid: 1ec29cce487249b28dbd3ce02d9332f0
+          name: 'Core value cache used'
+          type: INTERNAL
+          key: 'zabbix[vcache,buffer,pused]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of the server''s value cache (trigger functions over time windows) in use. It is sized to the VM''s RAM at every boot (argus-size-zabbix); a full cache means a bigger VM.'
+          triggers:
+            - uuid: 793c9dda4707467dafe31e659f3f5d03
+              expression: 'min(/Argus Core Health/zabbix[vcache,buffer,pused],5m)>={$CORE.CACHE.WARN} and min(/Argus Core Health/zabbix[vcache,buffer,pused],5m)<{$CORE.CACHE.HIGH}'
+              name: 'Core value cache filling up'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core value cache back to normal'
+              priority: WARNING
+              description: 'The value cache (trigger functions over time windows) stayed at or above the warning threshold for 5 minutes (below the high threshold). Give the VM more RAM: it re-sizes itself at boot.'
+            - uuid: 97f62ed9d1014452980573e097224409
+              expression: 'min(/Argus Core Health/zabbix[vcache,buffer,pused],5m)>={$CORE.CACHE.HIGH}'
+              name: 'Core value cache nearly full'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core value cache back to normal'
+              priority: HIGH
+              description: 'The value cache (trigger functions over time windows) stayed at or above the high threshold for 5 minutes: values will be lost when it is full. Give the VM more RAM now: it re-sizes itself at boot.'
+        - uuid: 87cf350b681647eaa918178f988c96a9
+          name: 'Core process load: poller'
+          type: INTERNAL
+          key: 'zabbix[process,poller,avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the server''s poller processes were busy. Their count follows the VM''s cores at every boot (argus-size-zabbix); busy processes mean more cores.'
+          triggers:
+            - uuid: 9e333174b05e4abbab69b936277ade43
+              expression: 'avg(/Argus Core Health/zabbix[process,poller,avg,busy],5m)>={$CORE.PROC.WARN} and avg(/Argus Core Health/zabbix[process,poller,avg,busy],5m)<{$CORE.PROC.HIGH}'
+              name: 'Core poller processes busy'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core poller processes back to normal'
+              priority: WARNING
+              description: 'The poller processes averaged at or above the warning threshold for 5 minutes (below the high threshold). Give the VM more cores: it re-sizes itself at boot.'
+            - uuid: d39d4fb4e46f4199b70443b794840eb8
+              expression: 'avg(/Argus Core Health/zabbix[process,poller,avg,busy],5m)>={$CORE.PROC.HIGH}'
+              name: 'Core poller processes saturated'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core poller processes back to normal'
+              priority: HIGH
+              description: 'The poller processes averaged at or above the high threshold for 5 minutes: the server is not keeping up. Give the VM more cores now: it re-sizes itself at boot.'
+        - uuid: a404becf7f7047599c2df64ffbf1903d
+          name: 'Core process load: unreachable poller'
+          type: INTERNAL
+          key: 'zabbix[process,"unreachable poller",avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the server''s unreachable poller processes were busy. Their count follows the VM''s cores at every boot (argus-size-zabbix); busy processes mean more cores.'
+          triggers:
+            - uuid: 41f1426cf24e4ff1b12d77f8e08f4a98
+              expression: 'avg(/Argus Core Health/zabbix[process,"unreachable poller",avg,busy],5m)>={$CORE.PROC.WARN} and avg(/Argus Core Health/zabbix[process,"unreachable poller",avg,busy],5m)<{$CORE.PROC.HIGH}'
+              name: 'Core unreachable poller processes busy'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core unreachable poller processes back to normal'
+              priority: WARNING
+              description: 'The unreachable poller processes averaged at or above the warning threshold for 5 minutes (below the high threshold). Give the VM more cores: it re-sizes itself at boot.'
+            - uuid: 6c8103b02f3c4ba38dcc3c36d9a2db9f
+              expression: 'avg(/Argus Core Health/zabbix[process,"unreachable poller",avg,busy],5m)>={$CORE.PROC.HIGH}'
+              name: 'Core unreachable poller processes saturated'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core unreachable poller processes back to normal'
+              priority: HIGH
+              description: 'The unreachable poller processes averaged at or above the high threshold for 5 minutes: the server is not keeping up. Give the VM more cores now: it re-sizes itself at boot.'
+        - uuid: 3985687f32674999a703c689dd988556
+          name: 'Core process load: agent poller'
+          type: INTERNAL
+          key: 'zabbix[process,"agent poller",avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the server''s agent poller processes were busy. Their count follows the VM''s cores at every boot (argus-size-zabbix); busy processes mean more cores.'
+          triggers:
+            - uuid: eb89b4cc0fcc4f439d52bbe673fbbaa2
+              expression: 'avg(/Argus Core Health/zabbix[process,"agent poller",avg,busy],5m)>={$CORE.PROC.WARN} and avg(/Argus Core Health/zabbix[process,"agent poller",avg,busy],5m)<{$CORE.PROC.HIGH}'
+              name: 'Core agent poller processes busy'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core agent poller processes back to normal'
+              priority: WARNING
+              description: 'The agent poller processes averaged at or above the warning threshold for 5 minutes (below the high threshold). Give the VM more cores: it re-sizes itself at boot.'
+            - uuid: ff11eeca49b04bb0812088ee878d77bc
+              expression: 'avg(/Argus Core Health/zabbix[process,"agent poller",avg,busy],5m)>={$CORE.PROC.HIGH}'
+              name: 'Core agent poller processes saturated'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core agent poller processes back to normal'
+              priority: HIGH
+              description: 'The agent poller processes averaged at or above the high threshold for 5 minutes: the server is not keeping up. Give the VM more cores now: it re-sizes itself at boot.'
+        - uuid: 13f6bba7b27a43c486eee382900c75f2
+          name: 'Core process load: snmp poller'
+          type: INTERNAL
+          key: 'zabbix[process,"snmp poller",avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the server''s snmp poller processes were busy. Their count follows the VM''s cores at every boot (argus-size-zabbix); busy processes mean more cores.'
+          triggers:
+            - uuid: b39dd915f9cb48e9acd255b856261297
+              expression: 'avg(/Argus Core Health/zabbix[process,"snmp poller",avg,busy],5m)>={$CORE.PROC.WARN} and avg(/Argus Core Health/zabbix[process,"snmp poller",avg,busy],5m)<{$CORE.PROC.HIGH}'
+              name: 'Core snmp poller processes busy'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core snmp poller processes back to normal'
+              priority: WARNING
+              description: 'The snmp poller processes averaged at or above the warning threshold for 5 minutes (below the high threshold). Give the VM more cores: it re-sizes itself at boot.'
+            - uuid: 0bd9aa3f3e56469f8f33fd74bbfb7432
+              expression: 'avg(/Argus Core Health/zabbix[process,"snmp poller",avg,busy],5m)>={$CORE.PROC.HIGH}'
+              name: 'Core snmp poller processes saturated'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core snmp poller processes back to normal'
+              priority: HIGH
+              description: 'The snmp poller processes averaged at or above the high threshold for 5 minutes: the server is not keeping up. Give the VM more cores now: it re-sizes itself at boot.'
+        - uuid: 4d19c5f619d642e49743671d1dab8375
+          name: 'Core process load: http agent poller'
+          type: INTERNAL
+          key: 'zabbix[process,"http agent poller",avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the server''s http agent poller processes were busy. Their count follows the VM''s cores at every boot (argus-size-zabbix); busy processes mean more cores.'
+          triggers:
+            - uuid: 4289a88630e14ec2b737d90c295ffb16
+              expression: 'avg(/Argus Core Health/zabbix[process,"http agent poller",avg,busy],5m)>={$CORE.PROC.WARN} and avg(/Argus Core Health/zabbix[process,"http agent poller",avg,busy],5m)<{$CORE.PROC.HIGH}'
+              name: 'Core http agent poller processes busy'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core http agent poller processes back to normal'
+              priority: WARNING
+              description: 'The http agent poller processes averaged at or above the warning threshold for 5 minutes (below the high threshold). Give the VM more cores: it re-sizes itself at boot.'
+            - uuid: 352eef4eaee046fc86b417a0f7e5ec25
+              expression: 'avg(/Argus Core Health/zabbix[process,"http agent poller",avg,busy],5m)>={$CORE.PROC.HIGH}'
+              name: 'Core http agent poller processes saturated'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core http agent poller processes back to normal'
+              priority: HIGH
+              description: 'The http agent poller processes averaged at or above the high threshold for 5 minutes: the server is not keeping up. Give the VM more cores now: it re-sizes itself at boot.'
+        - uuid: 989c3eb7f55b450a9abb2d78629c5995
+          name: 'Core process load: icmp pinger'
+          type: INTERNAL
+          key: 'zabbix[process,"icmp pinger",avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the server''s icmp pinger processes were busy. Their count follows the VM''s cores at every boot (argus-size-zabbix); busy processes mean more cores.'
+          triggers:
+            - uuid: df2e301253324ad5ad23a6a1480eb443
+              expression: 'avg(/Argus Core Health/zabbix[process,"icmp pinger",avg,busy],5m)>={$CORE.PROC.WARN} and avg(/Argus Core Health/zabbix[process,"icmp pinger",avg,busy],5m)<{$CORE.PROC.HIGH}'
+              name: 'Core icmp pinger processes busy'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core icmp pinger processes back to normal'
+              priority: WARNING
+              description: 'The icmp pinger processes averaged at or above the warning threshold for 5 minutes (below the high threshold). Give the VM more cores: it re-sizes itself at boot.'
+            - uuid: cbd0a93f7fb8476e813ca059e59e1eb7
+              expression: 'avg(/Argus Core Health/zabbix[process,"icmp pinger",avg,busy],5m)>={$CORE.PROC.HIGH}'
+              name: 'Core icmp pinger processes saturated'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core icmp pinger processes back to normal'
+              priority: HIGH
+              description: 'The icmp pinger processes averaged at or above the high threshold for 5 minutes: the server is not keeping up. Give the VM more cores now: it re-sizes itself at boot.'
+        - uuid: cabf73e7cad6445f9c444609812eee7d
+          name: 'Core process load: trapper'
+          type: INTERNAL
+          key: 'zabbix[process,trapper,avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the server''s trapper processes were busy. Their count follows the VM''s cores at every boot (argus-size-zabbix); busy processes mean more cores.'
+          triggers:
+            - uuid: 60d5267578024215bd02ea4520f164a4
+              expression: 'avg(/Argus Core Health/zabbix[process,trapper,avg,busy],5m)>={$CORE.PROC.WARN} and avg(/Argus Core Health/zabbix[process,trapper,avg,busy],5m)<{$CORE.PROC.HIGH}'
+              name: 'Core trapper processes busy'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core trapper processes back to normal'
+              priority: WARNING
+              description: 'The trapper processes averaged at or above the warning threshold for 5 minutes (below the high threshold). Give the VM more cores: it re-sizes itself at boot.'
+            - uuid: 52c592e124224a8abffb7f98452522a0
+              expression: 'avg(/Argus Core Health/zabbix[process,trapper,avg,busy],5m)>={$CORE.PROC.HIGH}'
+              name: 'Core trapper processes saturated'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core trapper processes back to normal'
+              priority: HIGH
+              description: 'The trapper processes averaged at or above the high threshold for 5 minutes: the server is not keeping up. Give the VM more cores now: it re-sizes itself at boot.'
+        - uuid: 23d9afdec3d04687993ffb17a735b99b
+          name: 'Core process load: preprocessing worker'
+          type: INTERNAL
+          key: 'zabbix[process,"preprocessing worker",avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the server''s preprocessing worker processes were busy. Their count follows the VM''s cores at every boot (argus-size-zabbix); busy processes mean more cores.'
+          triggers:
+            - uuid: 2f5dcec1bec44bb4a3af2ace6bb01d2d
+              expression: 'avg(/Argus Core Health/zabbix[process,"preprocessing worker",avg,busy],5m)>={$CORE.PROC.WARN} and avg(/Argus Core Health/zabbix[process,"preprocessing worker",avg,busy],5m)<{$CORE.PROC.HIGH}'
+              name: 'Core preprocessing worker processes busy'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core preprocessing worker processes back to normal'
+              priority: WARNING
+              description: 'The preprocessing worker processes averaged at or above the warning threshold for 5 minutes (below the high threshold). Give the VM more cores: it re-sizes itself at boot.'
+            - uuid: 23ef5817f0734a82aba46b2fc7b2743d
+              expression: 'avg(/Argus Core Health/zabbix[process,"preprocessing worker",avg,busy],5m)>={$CORE.PROC.HIGH}'
+              name: 'Core preprocessing worker processes saturated'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core preprocessing worker processes back to normal'
+              priority: HIGH
+              description: 'The preprocessing worker processes averaged at or above the high threshold for 5 minutes: the server is not keeping up. Give the VM more cores now: it re-sizes itself at boot.'
+        - uuid: 82fb76fca5294415b3b91b4157211a01
+          name: 'Core process load: history syncer'
+          type: INTERNAL
+          key: 'zabbix[process,"history syncer",avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the server''s history syncer processes were busy. Their count follows the VM''s cores at every boot (argus-size-zabbix); busy processes mean more cores.'
+          triggers:
+            - uuid: 3d61cd11880749ea971f946088b7d3e1
+              expression: 'avg(/Argus Core Health/zabbix[process,"history syncer",avg,busy],5m)>={$CORE.PROC.WARN} and avg(/Argus Core Health/zabbix[process,"history syncer",avg,busy],5m)<{$CORE.PROC.HIGH}'
+              name: 'Core history syncer processes busy'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core history syncer processes back to normal'
+              priority: WARNING
+              description: 'The history syncer processes averaged at or above the warning threshold for 5 minutes (below the high threshold). Give the VM more cores: it re-sizes itself at boot.'
+            - uuid: 83b55e4af04c41f1ac9d458aec7cd165
+              expression: 'avg(/Argus Core Health/zabbix[process,"history syncer",avg,busy],5m)>={$CORE.PROC.HIGH}'
+              name: 'Core history syncer processes saturated'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core history syncer processes back to normal'
+              priority: HIGH
+              description: 'The history syncer processes averaged at or above the high threshold for 5 minutes: the server is not keeping up. Give the VM more cores now: it re-sizes itself at boot.'
+        - uuid: 8a9dccbafb4a4340b7786b61db17612b
+          name: 'Core process load: configuration syncer'
+          type: INTERNAL
+          key: 'zabbix[process,"configuration syncer",avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the server''s configuration syncer processes were busy. Their count follows the VM''s cores at every boot (argus-size-zabbix); busy processes mean more cores.'
+          triggers:
+            - uuid: a59aa67ceac24ed69d8e4e44a15d7be3
+              expression: 'avg(/Argus Core Health/zabbix[process,"configuration syncer",avg,busy],5m)>={$CORE.PROC.WARN} and avg(/Argus Core Health/zabbix[process,"configuration syncer",avg,busy],5m)<{$CORE.PROC.HIGH}'
+              name: 'Core configuration syncer processes busy'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core configuration syncer processes back to normal'
+              priority: WARNING
+              description: 'The configuration syncer processes averaged at or above the warning threshold for 5 minutes (below the high threshold). Give the VM more cores: it re-sizes itself at boot.'
+            - uuid: 24dc962c516d479c8c4483ae67868888
+              expression: 'avg(/Argus Core Health/zabbix[process,"configuration syncer",avg,busy],5m)>={$CORE.PROC.HIGH}'
+              name: 'Core configuration syncer processes saturated'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core configuration syncer processes back to normal'
+              priority: HIGH
+              description: 'The configuration syncer processes averaged at or above the high threshold for 5 minutes: the server is not keeping up. Give the VM more cores now: it re-sizes itself at boot.'
+        - uuid: 33e819d443914d5fb153082fb3e86d92
+          name: 'Core process load: housekeeper'
+          type: INTERNAL
+          key: 'zabbix[process,housekeeper,avg,busy]'
+          delay: 1m
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of time the server''s housekeeper processes were busy. Their count follows the VM''s cores at every boot (argus-size-zabbix); busy processes mean more cores.'
+          triggers:
+            - uuid: 43d1c8c58a0d49c08b7f24f91affc98d
+              expression: 'avg(/Argus Core Health/zabbix[process,housekeeper,avg,busy],5m)>={$CORE.PROC.WARN} and avg(/Argus Core Health/zabbix[process,housekeeper,avg,busy],5m)<{$CORE.PROC.HIGH}'
+              name: 'Core housekeeper processes busy'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core housekeeper processes back to normal'
+              priority: WARNING
+              description: 'The housekeeper processes averaged at or above the warning threshold for 5 minutes (below the high threshold). Give the VM more cores: it re-sizes itself at boot.'
+            - uuid: a7ff7bd09355408f90c184f7b58a612a
+              expression: 'avg(/Argus Core Health/zabbix[process,housekeeper,avg,busy],5m)>={$CORE.PROC.HIGH}'
+              name: 'Core housekeeper processes saturated'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core housekeeper processes back to normal'
+              priority: HIGH
+              description: 'The housekeeper processes averaged at or above the high threshold for 5 minutes: the server is not keeping up. Give the VM more cores now: it re-sizes itself at boot.'
+      macros:
+        - macro: '{$CORE.VPS.WARN}'
+          value: '300'
+          description: 'Values per second (required performance, processed) that raise a warning: approaching the sizing pass''s design point.'
+        - macro: '{$CORE.VPS.HIGH}'
+          value: '500'
+          description: 'Values per second (required performance, processed) that raise a high-severity alert: beyond the sizing pass''s design point.'
+        - macro: '{$CORE.WRITTEN.WARN}'
+          value: '600'
+          description: 'History values written per second that raise a warning.'
+        - macro: '{$CORE.WRITTEN.HIGH}'
+          value: '1000'
+          description: 'History values written per second that raise a high-severity alert.'
+        - macro: '{$CORE.HOSTS.WARN}'
+          value: '1500'
+          description: 'Monitored hosts that raise a warning.'
+        - macro: '{$CORE.HOSTS.HIGH}'
+          value: '2500'
+          description: 'Monitored hosts that raise a high-severity alert.'
+        - macro: '{$CORE.ITEMS.WARN}'
+          value: '20000'
+          description: 'Monitored items that raise a warning.'
+        - macro: '{$CORE.ITEMS.HIGH}'
+          value: '30000'
+          description: 'Monitored items that raise a high-severity alert.'
+        - macro: '{$CORE.UNSUPPORTED.WARN}'
+          value: '50'
+          description: 'Unsupported items that raise a warning.'
+        - macro: '{$CORE.UNSUPPORTED.HIGH}'
+          value: '200'
+          description: 'Unsupported items that raise a high-severity alert.'
+        - macro: '{$CORE.QUEUE.WARN}'
+          value: '50'
+          description: 'Items delayed over 10 minutes that raise a warning.'
+        - macro: '{$CORE.QUEUE.HIGH}'
+          value: '200'
+          description: 'Items delayed over 10 minutes that raise a high-severity alert.'
+        - macro: '{$CORE.CACHE.WARN}'
+          value: '75'
+          description: 'Cache use percentage that raises a warning.'
+        - macro: '{$CORE.CACHE.HIGH}'
+          value: '90'
+          description: 'Cache use percentage that raises a high-severity alert.'
+        - macro: '{$CORE.PROC.WARN}'
+          value: '75'
+          description: 'Process busy percentage that raises a warning.'
+        - macro: '{$CORE.PROC.HIGH}'
+          value: '90'
+          description: 'Process busy percentage that raises a high-severity alert.'

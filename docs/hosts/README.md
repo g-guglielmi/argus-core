@@ -56,6 +56,12 @@ the per-host tunables.
   the probe is reaching the core (alerting when it stops), values waiting to be sent, items running
   late, cache use and how busy its processes are. It's linked from each probe's **Health** cell on
   the Probes page, and deleted along with the probe. Its thresholds are on the Thresholds screen.
+- **Core health** - nothing to add: Argus adopts the Zabbix server's own **Zabbix server** host as
+  the **Argus core** (its class, and the **Argus Core Health** template in place of Zabbix's stock
+  server health template). Its sensors are the capacity gauges: required performance and values
+  per second against the sizing pass's design point, cache use and busy processes (the answer is a
+  bigger VM, which re-sizes itself at boot), hosts, items, unsupported and delayed items. Thresholds
+  on the Thresholds screen.
   Argus also reads its process load to size the probe's Zabbix process counts (Probes page,
   **Processes**; Settings, **Probes**, Process autoscaling).
 

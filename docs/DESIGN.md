@@ -2140,6 +2140,33 @@ update, a reboot), `off` (no evaluation, no counts handed out; probes keep what 
 change is logged, shown on the Probes page (Processes: running count, busiest hour, target) and
 told once as a system notice.
 
+## 18d. Core health (implemented)
+
+**What.** The Zabbix server's own host, **Zabbix server** (created by Zabbix itself), is adopted by
+Argus at startup (`server.EnsureCoreHost`): it takes the **Argus core** class (internal, never
+offered in the pickers, the core glyph in the tree) and the **Argus Core Health** template, and
+Zabbix's stock *Zabbix server health* template makes way for it (unlinked and cleared: the two read
+the same internal keys, and Argus's carries its thresholds and recovery sentences). Whatever agent
+template the host has stays (Linux by Zabbix agent on the appliance: the VM's CPU, memory and
+disks). Zabbix runs the internal checks on the server itself, so the sensors are the figures the
+sizing pass (14b) is built on:
+
+- `zabbix[requiredperformance]`, the "required server performance" the pass sized the core for, and
+  `zabbix[wcache,values,all]` / `zabbix[vps,written]` as rates (values processed and written per
+  second), with thresholds at the pass's design point (`{$CORE.VPS.*}` 300/500, `{$CORE.WRITTEN.*}`
+  600/1000): "the fleet outgrew the sizing" is an alert, not a surprise.
+- `zabbix[hosts]`, `zabbix[items]`, `zabbix[items_unsupported]` and `zabbix[queue,10m]`, each with
+  a warning and a high threshold.
+- the five caches' use (`wcache` history, index and trend, `rcache`, `vcache`) at
+  `{$CORE.CACHE.WARN/HIGH}` 75/90 %: the answer is a bigger VM, which re-sizes itself at boot.
+- `zabbix[process,<type>,avg,busy]` for eleven process types at `{$CORE.PROC.WARN/HIGH}` 75/90 %,
+  one **Process load** sensor with a channel per type: the answer is more cores, same story.
+
+The items are named "Core ..." so the sensor curation files them under **Core** (the same keys file
+under **Probe** on a Probe host). Thresholds sit on the Thresholds screen like any class. A core
+installed by hand whose server host was renamed is left alone and logged; renaming it back adopts it
+at the next start.
+
 ## 19. Parking lot / future
 - **Android native app** with push notifications (device registers with Argus → notifier delivers
   via a "push"/FCM channel) - the planned last step (ROADMAP §I). iOS undecided (would need APNs).

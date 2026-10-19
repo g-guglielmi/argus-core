@@ -27,6 +27,10 @@ const (
 	TemplatePush = "Argus Push"
 	// TemplateProbeHealth is the per-probe health template (internal checks run on the proxy).
 	TemplateProbeHealth = "Argus Probe Health"
+	// ClassCore is the Argus core itself: the Zabbix server's own host, adopted at startup.
+	ClassCore = "core"
+	// TemplateCoreHealth is the core's health template (internal checks the server runs on itself).
+	TemplateCoreHealth = "Argus Core Health"
 )
 
 // Pattern is how a class is monitored (drives which collector/template style it uses). See DESIGN §5.
@@ -291,6 +295,21 @@ var registry = []Class{
 		Iface:     IfaceNone,
 		Templates: []string{TemplateProbeHealth},
 		Icon:      "probe",
+		Internal:  true,
+	},
+	{
+		// The core itself: the Zabbix server's own host ("Zabbix server", created by Zabbix), adopted
+		// by Argus at startup (server.EnsureCoreHost). The stock server health template makes way for
+		// Argus Core Health, whose internal checks the server runs on itself: the capacity gauges the
+		// sizing pass (DESIGN 14b) is built on. Argus adds no interface and no Base Ping; whatever
+		// agent template the host has stays.
+		ID:        ClassCore,
+		Label:     "Argus core",
+		Family:    "Argus",
+		Pattern:   PatternBase,
+		Iface:     IfaceNone,
+		Templates: []string{TemplateCoreHealth},
+		Icon:      "core",
 		Internal:  true,
 	},
 	{

@@ -22,6 +22,13 @@ GitHub Release from the matching section below.
   after appending the snippet. Its boot-time unit re-runs it, with timescaledb-tune, before
   PostgreSQL and the server start, so growing a VM is: shut down, add RAM or cores, start. The
   sizes never go below the snippet's, so a small lab VM stays small.
+- **The core's own health, as a class** (`Argus core`, DESIGN 18d): at startup Argus adopts the
+  Zabbix server's own host, gives it the Argus Core Health template in place of Zabbix's stock
+  server health template, and shows the capacity gauges the sizing pass is built on: required
+  performance and values processed and written per second against the pass's design point, the
+  five caches' use, eleven process types' busy share, hosts, items, unsupported and delayed items,
+  each with a warning and a high threshold on the Thresholds screen. Its sensors file under
+  **Core**, and the host carries the core glyph in the tree.
 
 ### Security
 - **The weekly scan reads the repositories too.** Besides the three published images, `scan.yml`

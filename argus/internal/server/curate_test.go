@@ -399,7 +399,7 @@ func TestClassifyZabbixInternal(t *testing.T) {
 		"zabbix[wcache,history,pused]":            "History cache used",
 		"zabbix[wcache,index,pused]":              "History index cache used",
 		"zabbix[wcache,trend,pused]":              "Trend cache used",
-		"zabbix[wcache,values]":                   "Values processed",
+		"zabbix[wcache,values]":                   "Values processed per second",
 		"zabbix[rcache,buffer,pused]":             "Configuration cache used",
 		"zabbix[vcache,buffer,pused]":             "Value cache used",
 		"zabbix[proxy_history]":                   "Unsent values",
