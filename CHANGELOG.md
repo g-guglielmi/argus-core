@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-19
+
 **Added:**
 - **Drag to reorder the monitoring tree.** In Reorder mode, with a mouse or trackpad, every group and
   host row gets a grip and can be dragged: drop a row above or below a sibling to place it there in
