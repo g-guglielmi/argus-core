@@ -214,7 +214,9 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
   deletes them, so a race yields one session. Zabbix RPC errors reach non-admin users without their
   `data` part. A check-in token is issued only for a proxy Zabbix knows. CI runs `govulncheck` and
   `npm audit` on the production dependencies before any image is built, and the Go toolchain is the
-  pinned image's own.
+  pinned image's own. A weekly run repeats them and adds Trivy over the three published images (what
+  they carry) and over the three repositories (misconfigurations, committed secrets); CodeQL and
+  Dependabot watch the repositories through GitHub's own alerts.
 - **Passkey caveat (accepted):** WebAuthn RP IDs must be a domain, not a bare IP.
   → Passkey login works via `monitoring.example.com`; direct **private-IP** access
   (troubleshooting) falls back to **password + MFA**.

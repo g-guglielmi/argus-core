@@ -466,6 +466,11 @@ GitHub Actions (`.github/workflows/build.yml`):
   ```bash
   cosign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com --certificate-identity-regexp '^https://github.com/g-guglielmi/argus-core/.github/workflows/build.yml@' ghcr.io/g-guglielmi/argus:latest
   ```
+- **Every Monday** (`.github/workflows/scan.yml`, also on demand) → the dependency gate again, Trivy
+  over the three published images (core, probe, updater) for known vulnerabilities in what they
+  carry, and Trivy over the three repositories for misconfigurations and committed secrets. A failed
+  run is the alert. CodeQL (default setup) and Dependabot (alerts, security updates, weekly version
+  bumps) watch the three repositories through GitHub's own alerts.
 
 See [`docs/RELEASING.md`](docs/RELEASING.md) for the step-by-step release checklist (and the
 concurrency gotcha that can silently cancel a tag build).

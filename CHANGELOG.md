@@ -13,6 +13,16 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Security
+- **The weekly scan reads the repositories too.** Besides the three published images, `scan.yml`
+  now runs Trivy over the checkout of argus-core, argus-probe and argus-updater for
+  misconfigurations (the Dockerfiles first) and for secrets committed by mistake; HIGH and CRITICAL
+  fail the run, and a deliberate exception lives in that repository's `.trivyignore` with its reason
+  (the probe's and the updater's root user). CodeQL default setup and Dependabot alerts with
+  security updates are on for all three repositories, and the probe and updater repositories got
+  the Dependabot version updates the core already had (the actions' pins, the updater's Alpine
+  digest).
+
 ## [0.9.1] - 2026-10-19
 
 **Added:**

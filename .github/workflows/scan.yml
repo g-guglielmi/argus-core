@@ -2,10 +2,14 @@ name: scan
 
 # A standing watch, not a gate: every push already runs govulncheck and npm audit (build.yml), but
 # an advisory published after the last push would otherwise wait for the next one. This runs the
-# same checks on a schedule, and scans the three PUBLISHED images (core, probe, updater) with Trivy
-# for known vulnerabilities in what they carry: the OS packages of the probe's and the updater's
-# Alpine base and the core's distroless base, the Go binary's modules, the probe's Zabbix build.
-# A failed run is the alert (GitHub mails the owner); nothing is published or changed here.
+# same checks on a schedule, scans the three PUBLISHED images (core, probe, updater) with Trivy
+# for known vulnerabilities in what they carry (the OS packages of the probe's and the updater's
+# Alpine base and the core's distroless base, the Go binary's modules, the probe's Zabbix build),
+# and reads the three REPOSITORIES with Trivy for misconfigurations in what the images are built
+# from (the Dockerfiles first) and for secrets committed by mistake. A failed run is the alert
+# (GitHub mails the owner); nothing is published or changed here. CodeQL (default setup, in each
+# repository's settings) and Dependabot (alerts, security updates, the weekly version bumps) are
+# the other standing watches; they report through GitHub's own alerts, not this run.
 
 on:
   schedule:
@@ -76,4 +80,44 @@ jobs:
           format: table
           severity: MEDIUM,HIGH,CRITICAL
           ignore-unfixed: false
+          exit-code: '0'
+
+  repos:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: [argus-core, argus-probe, argus-updater]
+    steps:
+      # The sibling repositories are public, so the workflow's own token reads them (their default
+      # branch); this repository is read at the ref that runs.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ github.repository_owner }}/${{ matrix.repo }}
+      # Misconfigurations (Trivy's checks for Dockerfiles and the other formats it knows) and secrets
+      # in the checkout. HIGH and CRITICAL fail the job; a deliberate exception is listed in that
+      # repository's own .trivyignore with its reason (the probe's and the updater's root user, which
+      # each image needs: the probe's entrypoint prepares the volume before the stock entrypoint
+      # drops to the zabbix user, the updater holds the Docker socket). Known vulnerabilities in the
+      # code's dependencies are the code job's (govulncheck, npm audit) and are not repeated here.
+      - name: Trivy on the repository
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: misconfig,secret
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+      - name: Trivy, the whole picture (informational)
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: misconfig,secret
+          format: table
+          severity: LOW,MEDIUM,HIGH,CRITICAL
           exit-code: '0'
