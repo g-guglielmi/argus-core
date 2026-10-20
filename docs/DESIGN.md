@@ -1202,7 +1202,10 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   attempt failed. **Conditions** are tracked in `notice_conditions` (since when) and told once they
   have held their minimum time (probe/updater behind 6 h, security updates 48 h, reboot and Zabbix
   update 24 h, failing channel 30 min, a probe not reporting to Argus 15 min, a new release at once);
-  **events** are told once. The
+  **events** are told once, except that the "updated to" events of one fleet update (probes, or
+  their updaters, moving to the same version) wait five minutes after the first in `notice_pool`
+  (app_meta, so a restart loses nothing) and go out as one message listing the probes; a single
+  one keeps its own words and a failure is never pooled. The
   `notices_sent` ledger dedupes (a condition's row goes when it ends, so it can be told again;
   events are kept a year). Probe self-update outcomes are inferred: a newly reported version is a
   success, and an update handed out at check-in that isn't running 20 minutes later failed (the

@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -26,7 +27,11 @@ import (
 //     says so when it ends, as an all-clear in the same shape, with how long it held; one that ends
 //     because someone acted on it (an update available, a probe behind) ends quietly, its outcome
 //     told elsewhere;
-//   - an event - a self-update finished or failed, a discovery scan finished - is told once.
+//   - an event - a self-update finished or failed, a discovery scan finished - is told once. The
+//     "updated to" events of one fleet update (every probe, or every updater, moving to the same
+//     version within minutes of each other) are pooled: held for a few minutes after the first and
+//     told as one message listing the probes, since a dozen identical successes is noise, not news.
+//     A failure is never pooled.
 //
 // Most of these states are only read on request elsewhere (caches, the update-dir files, the probes'
 // check-in rows), so one loop compares them against the ledger once a minute.
@@ -44,6 +49,10 @@ const (
 	noticeUpdPending     = "notice_pending_updater:"
 	noticeProbeFailed    = "notice_failed_probe:" // app_meta: a hand-out that didn't take, "tag|unix" (the Updates and Probes pages say so)
 	noticeUpdFailed      = "notice_failed_updater:"
+	noticePoolKey        = "notice_pool" // app_meta: the "updated to" events waiting to be told together (JSON)
+	// noticePoolHold is how long after the first "updated to" of a fleet update the pool waits for
+	// the others before telling them as one; a straggler after that starts a pool of its own.
+	noticePoolHold = 5 * time.Minute
 )
 
 // notice is one system notice: a stable key (the ledger dedupes on it), what to say, and where it
@@ -57,6 +66,88 @@ type notice struct {
 	// skip leaves a destination out (a failing channel isn't told about itself; a personal channel's
 	// failure only goes to its owner).
 	skip func(notifyDest) bool
+	// pool groups an event with its siblings (one fleet update: "probe|7.0.31-r32"); member is its
+	// line in the pooled message ("mybz (was 7.0.31-r31)"). Empty = told on its own.
+	pool, member string
+}
+
+// noticePool is the "updated to" events held back to be told together, persisted across restarts.
+type noticePool struct {
+	Groups []noticePoolGroup `json:"groups"`
+}
+
+type noticePoolGroup struct {
+	Key     string   `json:"key"`   // "probe|7.0.31-r32" or "updater|v0.2.16"
+	First   int64    `json:"first"` // unix seconds the first member arrived
+	Members []string `json:"members"`
+}
+
+// poolNotices adds this tick's pooled events to the pool and returns the pool and the notices of
+// the groups whose hold is over: one message per group, or the single event's own words when the
+// fleet update turned out to be one probe.
+func poolNotices(pool noticePool, events []notice, now time.Time) (noticePool, []notice) {
+	for _, n := range events {
+		idx := -1
+		for i, g := range pool.Groups {
+			if g.Key == n.pool {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			pool.Groups = append(pool.Groups, noticePoolGroup{Key: n.pool, First: now.Unix()})
+			idx = len(pool.Groups) - 1
+		}
+		pool.Groups[idx].Members = append(pool.Groups[idx].Members, n.member)
+	}
+	var out []notice
+	kept := pool.Groups[:0]
+	for _, g := range pool.Groups {
+		if now.Sub(time.Unix(g.First, 0)) < noticePoolHold {
+			kept = append(kept, g)
+			continue
+		}
+		what, version, _ := strings.Cut(g.Key, "|")
+		n := notice{key: what + "-updated-pool:" + version + ":" + itoa64(g.First), view: "updates"}
+		if len(g.Members) == 1 {
+			site, prev, _ := strings.Cut(g.Members[0], " (was ")
+			subject := "Probe " + site
+			if what == "updater" {
+				subject = "The updater of probe " + site
+			}
+			n.title, n.detail, n.site = subject+" updated to "+version, "It was on "+strings.TrimSuffix(prev, ")")+".", site
+			n.host = "Probe " + site
+		} else {
+			if what == "updater" {
+				n.title = "The updaters of " + plural(len(g.Members), "probe", "probes") + " updated to " + version
+			} else {
+				n.title = plural(len(g.Members), "probe", "probes") + " updated to " + version
+			}
+			n.detail = strings.Join(g.Members, ", ") + "."
+		}
+		out = append(out, n)
+	}
+	pool.Groups = kept
+	return pool, out
+}
+
+// loadNoticePool and saveNoticePool keep the pool in app_meta, so a core restart in the middle of a
+// fleet update loses nothing.
+func (s *Server) loadNoticePool(ctx context.Context) noticePool {
+	var pool noticePool
+	if raw, ok, _ := s.st.MetaGet(ctx, noticePoolKey); ok && raw != "" {
+		_ = json.Unmarshal([]byte(raw), &pool)
+	}
+	return pool
+}
+
+func (s *Server) saveNoticePool(ctx context.Context, pool noticePool) {
+	if len(pool.Groups) == 0 {
+		_ = s.st.MetaDelete(ctx, noticePoolKey)
+		return
+	}
+	b, _ := json.Marshal(pool)
+	_ = s.st.MetaSet(ctx, noticePoolKey, string(b))
 }
 
 // startNotices runs the system-notice loop in the background.
@@ -124,11 +215,24 @@ func (s *Server) noticeTick(ctx context.Context) {
 		}
 	}
 
-	// Events.
+	// Events. The "updated to" ones of a fleet update wait in the pool and go out together.
 	events := append(probeEvents, s.coreUpdateNotices()...)
 	events = append(events, s.scanNotices(ctx)...)
+	var pooled []notice
 	for _, n := range events {
+		if n.pool != "" {
+			pooled = append(pooled, n)
+			continue
+		}
 		s.tellOnce(ctx, n, store.NoticeEvent, dests, 0)
+	}
+	pool := s.loadNoticePool(ctx)
+	if len(pooled) > 0 || len(pool.Groups) > 0 {
+		pool, due := poolNotices(pool, pooled, time.Now())
+		s.saveNoticePool(ctx, pool)
+		for _, n := range due {
+			s.tellOnce(ctx, n, store.NoticeEvent, dests, 0)
+		}
 	}
 	_ = s.st.PruneNoticeEvents(ctx)
 }
@@ -367,7 +471,8 @@ func (s *Server) selfUpdateEvents(ctx context.Context, proxy, what, version, ver
 		if seen && prev != "" && prev != version {
 			changed = true
 			out = append(out, notice{key: what + "-updated:" + proxy + ":" + version, title: subject + " updated to " + version,
-				detail: "It was on " + prev + ".", host: host, site: site, view: "updates"})
+				detail: "It was on " + prev + ".", host: host, site: site, view: "updates",
+				pool: what + "|" + version, member: site + " (was " + prev + ")"})
 			_ = s.st.MetaDelete(ctx, failPrefix+proxy) // an earlier update that didn't take is moot now
 		}
 		if !seen || prev != version {

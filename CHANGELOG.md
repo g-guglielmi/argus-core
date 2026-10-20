@@ -54,6 +54,12 @@ GitHub Release from the matching section below.
   alert months ahead rather than a chart to read. The caches and process loads stay plain gauges:
   they jump with configuration, they do not grow.
 
+### Changed
+- **One message per fleet update, not one per probe.** The "updated to" notices of the probes, or
+  of their updaters, moving to the same version are held for five minutes after the first and told
+  together ("4 probes updated to 7.0.31-r32", with each probe and what it was on); a single probe
+  keeps its own words, and a failure is never pooled. A core restart during the wait loses nothing.
+
 ### Fixed
 - **The Operating systems card on a core without the host reporter** (Argus as a container with
   Zabbix elsewhere, or a distro the installer doesn't cover) said "not reporting" with a hint to run

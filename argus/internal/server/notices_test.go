@@ -5,6 +5,7 @@ package server
 
 import (
 	"testing"
+	"time"
 
 	"argus/internal/store"
 )
@@ -60,5 +61,57 @@ func TestVersionMatchesTag(t *testing.T) {
 		if got := versionMatchesTag(c.v, c.tag); got != c.want {
 			t.Errorf("versionMatchesTag(%q, %q) = %v", c.v, c.tag, got)
 		}
+	}
+}
+
+func TestFleetUpdateNoticesArePooled(t *testing.T) {
+	t0 := time.Unix(1_700_000_000, 0)
+	ev := func(what, version, site, prev string) notice {
+		return notice{key: what + "-updated:proxy-" + site + ":" + version, pool: what + "|" + version, member: site + " (was " + prev + ")"}
+	}
+	// Three probes finish within the hold: nothing goes out until it is over, then one message.
+	pool, due := poolNotices(noticePool{}, []notice{ev("probe", "7.0.31-r32", "mybz", "7.0.31-r31"), ev("probe", "7.0.31-r32", "myng", "7.0.31-r31")}, t0)
+	if len(due) != 0 || len(pool.Groups) != 1 || len(pool.Groups[0].Members) != 2 {
+		t.Fatalf("first tick: due=%d pool=%+v", len(due), pool)
+	}
+	pool, due = poolNotices(pool, []notice{ev("probe", "7.0.31-r32", "myrn", "7.0.31-r31")}, t0.Add(2*time.Minute))
+	if len(due) != 0 || len(pool.Groups[0].Members) != 3 {
+		t.Fatalf("second tick: due=%d pool=%+v", len(due), pool)
+	}
+	pool, due = poolNotices(pool, nil, t0.Add(noticePoolHold+time.Second))
+	if len(due) != 1 || len(pool.Groups) != 0 {
+		t.Fatalf("after the hold: due=%d pool=%+v", len(due), pool)
+	}
+	if due[0].title != "3 probes updated to 7.0.31-r32" || due[0].detail != "mybz (was 7.0.31-r31), myng (was 7.0.31-r31), myrn (was 7.0.31-r31)." || due[0].view != "updates" {
+		t.Errorf("pooled notice: %q / %q", due[0].title, due[0].detail)
+	}
+	if due[0].key != "probe-updated-pool:7.0.31-r32:1700000000" {
+		t.Errorf("pooled key: %q", due[0].key)
+	}
+
+	// The updaters, and a version on its own, pool apart; one member keeps the single wording.
+	pool, _ = poolNotices(noticePool{}, []notice{ev("updater", "v0.2.16", "mybz", "v0.2.15"), ev("updater", "v0.2.16", "myng", "v0.2.15"), ev("probe", "7.0.32-r1", "ovh", "7.0.31-r32")}, t0)
+	if len(pool.Groups) != 2 {
+		t.Fatalf("groups: %+v", pool.Groups)
+	}
+	_, due = poolNotices(pool, nil, t0.Add(noticePoolHold))
+	if len(due) != 2 {
+		t.Fatalf("due: %d", len(due))
+	}
+	titles := map[string]notice{}
+	for _, n := range due {
+		titles[n.title] = n
+	}
+	if n, ok := titles["The updaters of 2 probes updated to v0.2.16"]; !ok || n.detail != "mybz (was v0.2.15), myng (was v0.2.15)." {
+		t.Errorf("updater pool: %+v", due)
+	}
+	if n, ok := titles["Probe ovh updated to 7.0.32-r1"]; !ok || n.detail != "It was on 7.0.31-r32." || n.site != "ovh" || n.host != "Probe ovh" {
+		t.Errorf("single: %+v", due)
+	}
+
+	// A straggler after the hold starts a pool of its own, told after its own hold.
+	pool, due = poolNotices(noticePool{}, []notice{ev("probe", "7.0.31-r32", "late", "7.0.31-r31")}, t0.Add(10*time.Minute))
+	if len(due) != 0 || len(pool.Groups) != 1 || pool.Groups[0].First != t0.Add(10*time.Minute).Unix() {
+		t.Errorf("straggler: due=%d pool=%+v", len(due), pool)
 	}
 }
