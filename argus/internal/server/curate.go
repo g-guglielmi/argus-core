@@ -323,6 +323,20 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	case "icmppingsec":
 		return "Ping", "ICMP response time", "ICMP", "Response time", true
 
+	// Argus Core Health's forecasts: days of growth left before a figure reaches its high threshold.
+	case "argus.core.headroom":
+		switch param(p, 0) {
+		case "items":
+			return "Core", "Headroom: items", "", "", true
+		case "hosts":
+			return "Core", "Headroom: hosts", "", "", true
+		case "load":
+			return "Core", "Headroom: load", "", "", true
+		case "disk":
+			return "Core", "Headroom: database disk", "", "", true
+		}
+		return "", "", "", "", false
+
 	// Argus Probe Health and Argus Core Health: Zabbix internal checks, measured by the proxy that
 	// monitors the per-site Probe host, or by the server itself on its own host. The core template
 	// names its items "Core ...", so the same keys file under Core there and under Probe elsewhere.

@@ -2162,10 +2162,20 @@ sizing pass (14b) is built on:
 - `zabbix[process,<type>,avg,busy]` for eleven process types at `{$CORE.PROC.WARN/HIGH}` 75/90 %,
   one **Process load** sensor with a channel per type: the answer is more cores, same story.
 
+- **Headroom**, four calculated sensors (hourly): days until items, hosts, required performance
+  and the database disk reach their high thresholds, from a linear fit of the last 30 days
+  (`timeleft`), warning under `{$CORE.HEADROOM.WARN}` 90 days and high under 30; a trend that never
+  gets there reads 36500. The chart says what was, these say when it runs out. The disk one reads
+  the Linux agent template's root filesystem (`vfs.fs.dependent.size[/,pused]`, the appliance keeps
+  the database there) against `{$CORE.DISK.HIGH}` 90 %; a core set up by hand without that item
+  sees the sensor unsupported, with Zabbix's reason. The caches and process loads get no forecast
+  on purpose: they jump with configuration rather than grow, so a fit on them is noise.
+
 The items are named "Core ..." so the sensor curation files them under **Core** (the same keys file
 under **Probe** on a Probe host). Thresholds sit on the Thresholds screen like any class. A core
 installed by hand whose server host was renamed is left alone and logged; renaming it back adopts it
-at the next start.
+at the next start. A sensor Zabbix has never read shows no reading ("-") rather than Zabbix's
+placeholder zero, on every host.
 
 ## 19. Parking lot / future
 - **Android native app** with push notifications (device registers with Argus → notifier delivers

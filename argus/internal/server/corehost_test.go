@@ -65,6 +65,10 @@ func TestClassifyCoreHealthKeys(t *testing.T) {
 		{"zabbix[wcache,history,pused]", "Core history cache used", "Core", "History cache used", "", ""},
 		{"zabbix[vcache,buffer,pused]", "Core value cache used", "Core", "Value cache used", "", ""},
 		{`zabbix[process,"history syncer",avg,busy]`, "Core process load: history syncer", "Core", "Process load (history syncer)", "Process load", "History syncer"},
+		{"argus.core.headroom[items]", "Core headroom: items", "Core", "Headroom: items", "", ""},
+		{"argus.core.headroom[hosts]", "Core headroom: hosts", "Core", "Headroom: hosts", "", ""},
+		{"argus.core.headroom[load]", "Core headroom: load", "Core", "Headroom: load", "", ""},
+		{"argus.core.headroom[disk]", "Core headroom: database disk", "Core", "Headroom: database disk", "", ""},
 		// the same keys on a Probe host keep filing under Probe
 		{"zabbix[wcache,history,pused]", "History cache used", "Probe", "History cache used", "", ""},
 		{"zabbix[uptime]", "Probe uptime", "Uptime", "Probe uptime", "", ""},

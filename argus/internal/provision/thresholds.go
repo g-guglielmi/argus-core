@@ -93,6 +93,9 @@ var thresholdCatalog = []TemplateThresholds{
 		{Macro: "{$CORE.CACHE.HIGH}", Label: "Cache used - high", Unit: "%"},
 		{Macro: "{$CORE.PROC.WARN}", Label: "Process busy - warning", Unit: "%"},
 		{Macro: "{$CORE.PROC.HIGH}", Label: "Process busy - high", Unit: "%"},
+		{Macro: "{$CORE.HEADROOM.WARN}", Label: "Headroom (days of growth left) - warning", Unit: "days"},
+		{Macro: "{$CORE.HEADROOM.HIGH}", Label: "Headroom (days of growth left) - high", Unit: "days"},
+		{Macro: "{$CORE.DISK.HIGH}", Label: "Database disk counts as full at", Unit: "%"},
 	}},
 	{Template: "Argus Linux by SNMP", Specs: concat(cpuUtilSpecs(), memUsedSpecs(), diskUsedSpecs())},
 	{Template: "Argus Linux by SSH", Specs: concat(cpuUtilSpecs(), []ThresholdSpec{

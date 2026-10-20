@@ -625,11 +625,17 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 		if it.LastClock != "" {
 			clock, _ = strconv.ParseInt(it.LastClock, 10, 64)
 		}
+		// Zabbix reports "0" for an item it has never read; that is no reading, and the lists show
+		// none ("-") until the first one lands.
+		lastValue := it.LastValue
+		if clock == 0 {
+			lastValue = ""
+		}
 		iv := itemView{
 			ID:        it.ItemID,
 			Name:      it.Name,
 			Key:       it.Key,
-			LastValue: it.LastValue,
+			LastValue: lastValue,
 			Units:     it.Units,
 			LastClock: clock,
 			Supported: it.State == "0",

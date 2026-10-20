@@ -29,6 +29,17 @@ GitHub Release from the matching section below.
   five caches' use, eleven process types' busy share, hosts, items, unsupported and delayed items,
   each with a warning and a high threshold on the Thresholds screen. Its sensors file under
   **Core**, and the host carries the core glyph in the tree.
+- **Headroom forecasts on the core**: four calculated sensors say in how many days items, hosts,
+  required performance and the database disk reach their high thresholds at the last 30 days'
+  trend, with a warning under 90 days and a high alert under 30 (both editable), so outgrowing the
+  sizing becomes an alert months ahead rather than a chart to read. The caches and process loads
+  stay plain gauges: they jump with configuration, they do not grow.
+
+### Fixed
+- **A sensor Zabbix has never read shows no reading.** The lists showed Zabbix's placeholder zero
+  for an item that had not been polled yet (a freshly linked template, a new host), which read as
+  a real value; it now shows "-" until the first reading lands, and a never-read reachability
+  sensor no longer reads as "Not reachable".
 
 ### Security
 - **The weekly scan reads the repositories too.** Besides the three published images, `scan.yml`

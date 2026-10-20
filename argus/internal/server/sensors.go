@@ -237,7 +237,9 @@ func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 		}
 		// A 1/0 reachability (ping, a service check, a collector's "reachable") reads as words.
 		value, units := it.LastValue, it.Units
-		if r, ok := reachabilityReading(it.Key, it.LastValue); ok {
+		if atoi64(it.LastClock) == 0 {
+			value = "" // never read yet: Zabbix's placeholder "0" is no reading (the list shows "-")
+		} else if r, ok := reachabilityReading(it.Key, it.LastValue); ok {
 			value, units = r, ""
 		}
 		// An empty list, never null: the lists read its length on every row, OK ones included.

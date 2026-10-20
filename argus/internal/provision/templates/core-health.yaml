@@ -644,6 +644,150 @@ zabbix_export:
                   value: 'Core housekeeper processes back to normal'
               priority: HIGH
               description: 'The housekeeper processes averaged at or above the high threshold for 5 minutes: the server is not keeping up. Give the VM more cores now: it re-sizes itself at boot.'
+        - uuid: 346d002500b44263bca73e6c4be3e828
+          name: 'Core headroom: items'
+          type: CALCULATED
+          key: 'argus.core.headroom[items]'
+          delay: 1h
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '!days'
+          params: 'timeleft(//zabbix[items],30d,{$CORE.ITEMS.HIGH})'
+          description: 'Days until the monitored items reach their high threshold, at the last 30 days'' trend (a linear fit of this host''s items count). 36500 means the trend never gets there.'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var s = parseFloat(value);
+                  if (!(s >= 0)) throw 'not enough readings yet to forecast (it needs a day of data)';
+                  if (s > 3153600000) return 36500;
+                  return Math.round(s / 8640) / 10;
+          triggers:
+            - uuid: f8d647763c014e1ea68b6f4f80c2d346
+              expression: 'last(/Argus Core Health/argus.core.headroom[items])<{$CORE.HEADROOM.WARN} and last(/Argus Core Health/argus.core.headroom[items])>={$CORE.HEADROOM.HIGH}'
+              name: 'Core items headroom shrinking'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core items headroom back'
+              priority: WARNING
+              description: 'At the last 30 days'' trend, items reach their limit in fewer days than the warning threshold (more than the high one). Plan the next sizing step.'
+            - uuid: 34ada9fe8aa34e45ba4e35cb6e3284e4
+              expression: 'last(/Argus Core Health/argus.core.headroom[items])<{$CORE.HEADROOM.HIGH}'
+              name: 'Core items headroom nearly gone'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core items headroom back'
+              priority: HIGH
+              description: 'At the last 30 days'' trend, items reach their limit in fewer days than the high threshold. Act now: redo the sizing pass and grow the VM.'
+        - uuid: 6cd3f6bd9cea48cc8266f4b4e1526f67
+          name: 'Core headroom: hosts'
+          type: CALCULATED
+          key: 'argus.core.headroom[hosts]'
+          delay: 1h
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '!days'
+          params: 'timeleft(//zabbix[hosts],30d,{$CORE.HOSTS.HIGH})'
+          description: 'Days until the monitored hosts reach their high threshold, at the last 30 days'' trend. 36500 means the trend never gets there.'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var s = parseFloat(value);
+                  if (!(s >= 0)) throw 'not enough readings yet to forecast (it needs a day of data)';
+                  if (s > 3153600000) return 36500;
+                  return Math.round(s / 8640) / 10;
+          triggers:
+            - uuid: 464a8a159d32467aa080d7ee92883247
+              expression: 'last(/Argus Core Health/argus.core.headroom[hosts])<{$CORE.HEADROOM.WARN} and last(/Argus Core Health/argus.core.headroom[hosts])>={$CORE.HEADROOM.HIGH}'
+              name: 'Core hosts headroom shrinking'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core hosts headroom back'
+              priority: WARNING
+              description: 'At the last 30 days'' trend, hosts reach their limit in fewer days than the warning threshold (more than the high one). Plan the next sizing step.'
+            - uuid: 32fd265260ad4277a0ca358dc0c3b978
+              expression: 'last(/Argus Core Health/argus.core.headroom[hosts])<{$CORE.HEADROOM.HIGH}'
+              name: 'Core hosts headroom nearly gone'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core hosts headroom back'
+              priority: HIGH
+              description: 'At the last 30 days'' trend, hosts reach their limit in fewer days than the high threshold. Act now: redo the sizing pass and grow the VM.'
+        - uuid: 9e489f4b4a40436daeca8af7f27f7df2
+          name: 'Core headroom: load'
+          type: CALCULATED
+          key: 'argus.core.headroom[load]'
+          delay: 1h
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '!days'
+          params: 'timeleft(//zabbix[requiredperformance],30d,{$CORE.VPS.HIGH})'
+          description: 'Days until the required performance reaches its high threshold, at the last 30 days'' trend. 36500 means the trend never gets there.'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var s = parseFloat(value);
+                  if (!(s >= 0)) throw 'not enough readings yet to forecast (it needs a day of data)';
+                  if (s > 3153600000) return 36500;
+                  return Math.round(s / 8640) / 10;
+          triggers:
+            - uuid: 1c5b88c0b6cb476a8257932f729f9dfa
+              expression: 'last(/Argus Core Health/argus.core.headroom[load])<{$CORE.HEADROOM.WARN} and last(/Argus Core Health/argus.core.headroom[load])>={$CORE.HEADROOM.HIGH}'
+              name: 'Core load headroom shrinking'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core load headroom back'
+              priority: WARNING
+              description: 'At the last 30 days'' trend, load reach their limit in fewer days than the warning threshold (more than the high one). Plan the next sizing step.'
+            - uuid: 08b21cec1eb44edab0bc760c2d44bd2f
+              expression: 'last(/Argus Core Health/argus.core.headroom[load])<{$CORE.HEADROOM.HIGH}'
+              name: 'Core load headroom nearly gone'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core load headroom back'
+              priority: HIGH
+              description: 'At the last 30 days'' trend, load reach their limit in fewer days than the high threshold. Act now: redo the sizing pass and grow the VM.'
+        - uuid: 1e232b77b9ac467eb2eb9686a735d206
+          name: 'Core headroom: database disk'
+          type: CALCULATED
+          key: 'argus.core.headroom[disk]'
+          delay: 1h
+          history: 7d
+          trends: 365d
+          value_type: FLOAT
+          units: '!days'
+          params: 'timeleft(//vfs.fs.dependent.size[/,pused],30d,{$CORE.DISK.HIGH})'
+          description: 'Days until the root filesystem, where the appliance keeps the database, reaches the disk-full threshold, at the last 30 days'' trend, read from the Linux agent template on this host. 36500 means the trend never gets there; a core set up by hand without that template sees this sensor unsupported, with the reason.'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var s = parseFloat(value);
+                  if (!(s >= 0)) throw 'not enough readings yet to forecast (it needs a day of data)';
+                  if (s > 3153600000) return 36500;
+                  return Math.round(s / 8640) / 10;
+          triggers:
+            - uuid: 2594f50108f54dc691be1461a2296ae0
+              expression: 'last(/Argus Core Health/argus.core.headroom[disk])<{$CORE.HEADROOM.WARN} and last(/Argus Core Health/argus.core.headroom[disk])>={$CORE.HEADROOM.HIGH}'
+              name: 'Core database disk headroom shrinking'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core database disk headroom back'
+              priority: WARNING
+              description: 'At the last 30 days'' trend, database disk reach their limit in fewer days than the warning threshold (more than the high one). Plan the next sizing step.'
+            - uuid: 16299f786b634108859d556ece608c44
+              expression: 'last(/Argus Core Health/argus.core.headroom[disk])<{$CORE.HEADROOM.HIGH}'
+              name: 'Core database disk headroom nearly gone'
+              tags:
+                - tag: argus.recovery
+                  value: 'Core database disk headroom back'
+              priority: HIGH
+              description: 'At the last 30 days'' trend, database disk reach their limit in fewer days than the high threshold. Act now: redo the sizing pass and grow the VM.'
       macros:
         - macro: '{$CORE.VPS.WARN}'
           value: '300'
@@ -693,3 +837,12 @@ zabbix_export:
         - macro: '{$CORE.PROC.HIGH}'
           value: '90'
           description: 'Process busy percentage that raises a high-severity alert.'
+        - macro: '{$CORE.HEADROOM.WARN}'
+          value: '90'
+          description: 'Days of headroom (items, hosts, load, database disk) below which a warning is raised.'
+        - macro: '{$CORE.HEADROOM.HIGH}'
+          value: '30'
+          description: 'Days of headroom below which a high-severity alert is raised.'
+        - macro: '{$CORE.DISK.HIGH}'
+          value: '90'
+          description: 'Root filesystem use, in percent, that counts as the database disk being full for the headroom forecast.'
