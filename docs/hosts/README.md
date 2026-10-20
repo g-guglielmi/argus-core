@@ -61,9 +61,9 @@ the per-host tunables.
   server health template). Its sensors are the capacity gauges: required performance and values
   per second against the sizing pass's design point, cache use and busy processes (the answer is a
   bigger VM, which re-sizes itself at boot), hosts, items, unsupported and delayed items, and four
-  **Headroom** forecasts: the days until items, hosts, load and the database disk reach their
-  limits at the last month's trend, warning under 90 days and high under 30. Thresholds on the
-  Thresholds screen.
+  forecasts that read as sentences, "Database disk full in 121 days", "Hosts at the limit in over
+  a year": when items, hosts, load and the database disk reach their limits at the last month's
+  trend, warning under 90 days and high under 30. Thresholds on the Thresholds screen.
   Argus also reads its process load to size the probe's Zabbix process counts (Probes page,
   **Processes**; Settings, **Probes**, Process autoscaling).
 

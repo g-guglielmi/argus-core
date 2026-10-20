@@ -308,9 +308,10 @@ func chanMode(dir string, p []string) string {
 	return dir
 }
 
-// headroomReading words a core headroom forecast beyond a year: that far out a linear fit says only
-// "not at this trend", so the lists read that, while the number (the template caps it at two
-// years) stays for the chart and the triggers.
+// headroomReading words a core headroom forecast beyond a year as "over a year": that far out a
+// linear fit says nothing more precise, and the row reads as a sentence with its label ("Hosts at
+// the limit in: over a year"), while the number (the template caps it at two years) stays for the
+// chart and the triggers.
 func headroomReading(key, value string) (string, bool) {
 	if !strings.HasPrefix(key, "argus.core.headroom[") {
 		return "", false
@@ -319,7 +320,7 @@ func headroomReading(key, value string) (string, bool) {
 	if err != nil || d <= 365 {
 		return "", false
 	}
-	return "not at this trend", true
+	return "over a year", true
 }
 
 // classifyItem returns (category, label, instance, channel, matched) for a Zabbix item key/name.
@@ -338,17 +339,18 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	case "icmppingsec":
 		return "Ping", "ICMP response time", "ICMP", "Response time", true
 
-	// Argus Core Health's forecasts: days of growth left before a figure reaches its high threshold.
+	// Argus Core Health's forecasts: when a figure reaches its high threshold at the current trend.
+	// The label names the event and the value finishes the sentence: "Hosts at the limit in 121 days".
 	case "argus.core.headroom":
 		switch param(p, 0) {
 		case "items":
-			return "Core", "Headroom: items", "", "", true
+			return "Core", "Items at the limit in", "", "", true
 		case "hosts":
-			return "Core", "Headroom: hosts", "", "", true
+			return "Core", "Hosts at the limit in", "", "", true
 		case "load":
-			return "Core", "Headroom: load", "", "", true
+			return "Core", "Load at the limit in", "", "", true
 		case "disk":
-			return "Core", "Headroom: database disk", "", "", true
+			return "Core", "Database disk full in", "", "", true
 		}
 		return "", "", "", "", false
 

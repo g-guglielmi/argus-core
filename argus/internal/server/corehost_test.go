@@ -65,10 +65,10 @@ func TestClassifyCoreHealthKeys(t *testing.T) {
 		{"zabbix[wcache,history,pused]", "Core history cache used", "Core", "History cache used", "", ""},
 		{"zabbix[vcache,buffer,pused]", "Core value cache used", "Core", "Value cache used", "", ""},
 		{`zabbix[process,"history syncer",avg,busy]`, "Core process load: history syncer", "Core", "Process load (history syncer)", "Process load", "History syncer"},
-		{"argus.core.headroom[items]", "Core headroom: items", "Core", "Headroom: items", "", ""},
-		{"argus.core.headroom[hosts]", "Core headroom: hosts", "Core", "Headroom: hosts", "", ""},
-		{"argus.core.headroom[load]", "Core headroom: load", "Core", "Headroom: load", "", ""},
-		{"argus.core.headroom[disk]", "Core headroom: database disk", "Core", "Headroom: database disk", "", ""},
+		{"argus.core.headroom[items]", "Core headroom: items", "Core", "Items at the limit in", "", ""},
+		{"argus.core.headroom[hosts]", "Core headroom: hosts", "Core", "Hosts at the limit in", "", ""},
+		{"argus.core.headroom[load]", "Core headroom: load", "Core", "Load at the limit in", "", ""},
+		{"argus.core.headroom[disk]", "Core headroom: database disk", "Core", "Database disk full in", "", ""},
 		// the same keys on a Probe host keep filing under Probe
 		{"zabbix[wcache,history,pused]", "History cache used", "Probe", "History cache used", "", ""},
 		{"zabbix[uptime]", "Probe uptime", "Uptime", "Probe uptime", "", ""},
@@ -87,8 +87,8 @@ func TestHeadroomReadsInWordsBeyondAYear(t *testing.T) {
 		words      string
 		ok         bool
 	}{
-		{"argus.core.headroom[items]", "730", "not at this trend", true},
-		{"argus.core.headroom[disk]", "366", "not at this trend", true},
+		{"argus.core.headroom[items]", "730", "over a year", true},
+		{"argus.core.headroom[disk]", "366", "over a year", true},
 		{"argus.core.headroom[disk]", "365", "", false}, // a year or less is a number worth reading
 		{"argus.core.headroom[load]", "121", "", false},
 		{"argus.core.headroom[hosts]", "", "", false},

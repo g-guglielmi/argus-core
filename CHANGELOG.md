@@ -29,12 +29,12 @@ GitHub Release from the matching section below.
   five caches' use, eleven process types' busy share, hosts, items, unsupported and delayed items,
   each with a warning and a high threshold on the Thresholds screen. Its sensors file under
   **Core**, and the host carries the core glyph in the tree.
-- **Headroom forecasts on the core**: four calculated sensors say in how many days items, hosts,
-  required performance and the database disk reach their high thresholds at the last 30 days'
-  trend, with a warning under 90 days and a high alert under 30 (both editable), so outgrowing the
-  sizing becomes an alert months ahead rather than a chart to read. Beyond a year the lists read
-  "not at this trend"; a year or less reads as the number. The caches and process loads stay plain
-  gauges: they jump with configuration, they do not grow.
+- **Forecasts on the core**: four calculated sensors say when items, hosts, required performance
+  and the database disk reach their high thresholds at the last 30 days' trend, each row a
+  sentence ("Database disk full in 121 days", "Hosts at the limit in over a year"), with a warning
+  under 90 days and a high alert under 30 (both editable), so outgrowing the sizing becomes an
+  alert months ahead rather than a chart to read. The caches and process loads stay plain gauges:
+  they jump with configuration, they do not grow.
 
 ### Fixed
 - **A page switch starts at the top.** The window kept its scroll offset across views, so the next

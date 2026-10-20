@@ -654,7 +654,7 @@ zabbix_export:
           value_type: FLOAT
           units: '!days'
           params: 'timeleft(//zabbix[items],30d,{$CORE.ITEMS.HIGH})'
-          description: 'Days until the monitored items reach their high threshold, at the last 30 days'' trend (a linear fit of this host''s items count). Beyond a year the lists read "not at this trend" (the number, capped at two years, stays for the chart).'
+          description: 'Days until the monitored items reach their high threshold, at the last 30 days'' trend (a linear fit of this host''s items count). Beyond a year the lists read "over a year" (the number, capped at two years, stays for the chart).'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -690,7 +690,7 @@ zabbix_export:
           value_type: FLOAT
           units: '!days'
           params: 'timeleft(//zabbix[hosts],30d,{$CORE.HOSTS.HIGH})'
-          description: 'Days until the monitored hosts reach their high threshold, at the last 30 days'' trend. Beyond a year the lists read "not at this trend" (the number, capped at two years, stays for the chart).'
+          description: 'Days until the monitored hosts reach their high threshold, at the last 30 days'' trend. Beyond a year the lists read "over a year" (the number, capped at two years, stays for the chart).'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -726,7 +726,7 @@ zabbix_export:
           value_type: FLOAT
           units: '!days'
           params: 'timeleft(//zabbix[requiredperformance],30d,{$CORE.VPS.HIGH})'
-          description: 'Days until the required performance reaches its high threshold, at the last 30 days'' trend. Beyond a year the lists read "not at this trend" (the number, capped at two years, stays for the chart).'
+          description: 'Days until the required performance reaches its high threshold, at the last 30 days'' trend. Beyond a year the lists read "over a year" (the number, capped at two years, stays for the chart).'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
@@ -762,7 +762,7 @@ zabbix_export:
           value_type: FLOAT
           units: '!days'
           params: 'timeleft(//vfs.fs.dependent.size[/,pused],30d,{$CORE.DISK.HIGH})'
-          description: 'Days until the root filesystem, where the appliance keeps the database, reaches the disk-full threshold, at the last 30 days'' trend, read from the Linux agent template on this host. Beyond a year the lists read "not at this trend" (the number, capped at two years, stays for the chart); a core set up by hand without that template sees this sensor unsupported, with the reason.'
+          description: 'Days until the root filesystem, where the appliance keeps the database, reaches the disk-full threshold, at the last 30 days'' trend, read from the Linux agent template on this host. Beyond a year the lists read "over a year" (the number, capped at two years, stays for the chart); a core set up by hand without that template sees this sensor unsupported, with the reason.'
           preprocessing:
             - type: JAVASCRIPT
               parameters:

@@ -2164,10 +2164,11 @@ sizing pass (14b) is built on:
 
 - **Headroom**, four calculated sensors (hourly): days until items, hosts, required performance
   and the database disk reach their high thresholds, from a linear fit of the last 30 days
-  (`timeleft`), warning under `{$CORE.HEADROOM.WARN}` 90 days and high under 30. Beyond a year the
-  lists read "not at this trend" (that far out a linear fit says nothing useful); the number, capped
-  at two years, stays for the chart and the triggers. The chart says what was, these say when it
-  runs out. The disk one reads
+  (`timeleft`), warning under `{$CORE.HEADROOM.WARN}` 90 days and high under 30. Each row reads as
+  a sentence, label then value: "Database disk full in 121 days", "Hosts at the limit in over a
+  year"; beyond a year the value is the words (that far out a linear fit says nothing more
+  precise), and the number, capped at two years, stays for the chart and the triggers. The chart
+  says what was, these say when it runs out. The disk one reads
   the Linux agent template's root filesystem (`vfs.fs.dependent.size[/,pused]`, the appliance keeps
   the database there) against `{$CORE.DISK.HIGH}` 90 %; a core set up by hand without that item
   sees the sensor unsupported, with Zabbix's reason. The caches and process loads get no forecast
