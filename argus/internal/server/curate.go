@@ -5,6 +5,7 @@ package server
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -305,6 +306,20 @@ func chanMode(dir string, p []string) string {
 		return dir + " " + mode
 	}
 	return dir
+}
+
+// headroomReading words a core headroom forecast beyond a year: that far out a linear fit says only
+// "not at this trend", so the lists read that, while the number (the template caps it at two
+// years) stays for the chart and the triggers.
+func headroomReading(key, value string) (string, bool) {
+	if !strings.HasPrefix(key, "argus.core.headroom[") {
+		return "", false
+	}
+	d, err := strconv.ParseFloat(value, 64)
+	if err != nil || d <= 365 {
+		return "", false
+	}
+	return "not at this trend", true
 }
 
 // classifyItem returns (category, label, instance, channel, matched) for a Zabbix item key/name.

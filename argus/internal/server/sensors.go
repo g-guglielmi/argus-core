@@ -241,6 +241,8 @@ func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 			value = "" // never read yet: Zabbix's placeholder "0" is no reading (the list shows "-")
 		} else if r, ok := reachabilityReading(it.Key, it.LastValue); ok {
 			value, units = r, ""
+		} else if r, ok := headroomReading(it.Key, it.LastValue); ok {
+			value, units = r, ""
 		}
 		// An empty list, never null: the lists read its length on every row, OK ones included.
 		events := itemEvents[it.ItemID]

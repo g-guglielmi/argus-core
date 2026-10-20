@@ -18,8 +18,8 @@ func TestCoreHostPlan(t *testing.T) {
 		{[]string{"Linux by Zabbix agent", "Zabbix server health"}, true, true}, // a stock core: the stock template makes way
 		{[]string{"Linux by Zabbix agent"}, false, true},                        // the stock template already gone: just link
 		{nil, false, true},
-		{[]string{"Linux by Zabbix agent", "Argus Core Health"}, false, false},             // adopted already
-		{[]string{"Zabbix server health", "Argus Core Health"}, false, false},              // adopted; never touch the rest again
+		{[]string{"Linux by Zabbix agent", "Argus Core Health"}, false, false}, // adopted already
+		{[]string{"Zabbix server health", "Argus Core Health"}, false, false},  // adopted; never touch the rest again
 		{[]string{"Argus Core Health", "Linux by Zabbix agent", "Zabbix server health"}, false, false},
 	}
 	for _, c := range cases {
@@ -77,6 +77,27 @@ func TestClassifyCoreHealthKeys(t *testing.T) {
 		cat, label, inst, ch, ok := classifyItem(c.key, c.name)
 		if !ok || cat != c.cat || label != c.label || inst != c.instance || ch != c.channel {
 			t.Errorf("%s (%q) -> (%q, %q, %q, %q, %v), want (%q, %q, %q, %q)", c.key, c.name, cat, label, inst, ch, ok, c.cat, c.label, c.instance, c.channel)
+		}
+	}
+}
+
+func TestHeadroomReadsInWordsBeyondAYear(t *testing.T) {
+	cases := []struct {
+		key, value string
+		words      string
+		ok         bool
+	}{
+		{"argus.core.headroom[items]", "730", "not at this trend", true},
+		{"argus.core.headroom[disk]", "366", "not at this trend", true},
+		{"argus.core.headroom[disk]", "365", "", false}, // a year or less is a number worth reading
+		{"argus.core.headroom[load]", "121", "", false},
+		{"argus.core.headroom[hosts]", "", "", false},
+		{"zabbix[items]", "730", "", false}, // only the forecasts
+	}
+	for _, c := range cases {
+		got, ok := headroomReading(c.key, c.value)
+		if ok != c.ok || got != c.words {
+			t.Errorf("%s %q -> (%q, %v), want (%q, %v)", c.key, c.value, got, ok, c.words, c.ok)
 		}
 	}
 }

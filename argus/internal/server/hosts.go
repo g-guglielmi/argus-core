@@ -627,16 +627,18 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 		}
 		// Zabbix reports "0" for an item it has never read; that is no reading, and the lists show
 		// none ("-") until the first one lands.
-		lastValue := it.LastValue
+		lastValue, units := it.LastValue, it.Units
 		if clock == 0 {
 			lastValue = ""
+		} else if r, ok := headroomReading(it.Key, lastValue); ok {
+			lastValue, units = r, "" // a forecast beyond a year reads as words (curate.go)
 		}
 		iv := itemView{
 			ID:        it.ItemID,
 			Name:      it.Name,
 			Key:       it.Key,
 			LastValue: lastValue,
-			Units:     it.Units,
+			Units:     units,
 			LastClock: clock,
 			Supported: it.State == "0",
 			Why:       reasons.why(it.HostID, it.Key, it.LastValue, it.Error, it.State == "0"),

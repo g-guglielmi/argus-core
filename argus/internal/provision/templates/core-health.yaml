@@ -654,14 +654,14 @@ zabbix_export:
           value_type: FLOAT
           units: '!days'
           params: 'timeleft(//zabbix[items],30d,{$CORE.ITEMS.HIGH})'
-          description: 'Days until the monitored items reach their high threshold, at the last 30 days'' trend (a linear fit of this host''s items count). 36500 means the trend never gets there.'
+          description: 'Days until the monitored items reach their high threshold, at the last 30 days'' trend (a linear fit of this host''s items count). Beyond a year the lists read "not at this trend" (the number, capped at two years, stays for the chart).'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
                 - |
                   var s = parseFloat(value);
                   if (!(s >= 0)) throw 'not enough readings yet to forecast (it needs a day of data)';
-                  if (s > 3153600000) return 36500;
+                  if (s > 63072000) return 730;
                   return Math.round(s / 8640) / 10;
           triggers:
             - uuid: f8d647763c014e1ea68b6f4f80c2d346
@@ -690,14 +690,14 @@ zabbix_export:
           value_type: FLOAT
           units: '!days'
           params: 'timeleft(//zabbix[hosts],30d,{$CORE.HOSTS.HIGH})'
-          description: 'Days until the monitored hosts reach their high threshold, at the last 30 days'' trend. 36500 means the trend never gets there.'
+          description: 'Days until the monitored hosts reach their high threshold, at the last 30 days'' trend. Beyond a year the lists read "not at this trend" (the number, capped at two years, stays for the chart).'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
                 - |
                   var s = parseFloat(value);
                   if (!(s >= 0)) throw 'not enough readings yet to forecast (it needs a day of data)';
-                  if (s > 3153600000) return 36500;
+                  if (s > 63072000) return 730;
                   return Math.round(s / 8640) / 10;
           triggers:
             - uuid: 464a8a159d32467aa080d7ee92883247
@@ -726,14 +726,14 @@ zabbix_export:
           value_type: FLOAT
           units: '!days'
           params: 'timeleft(//zabbix[requiredperformance],30d,{$CORE.VPS.HIGH})'
-          description: 'Days until the required performance reaches its high threshold, at the last 30 days'' trend. 36500 means the trend never gets there.'
+          description: 'Days until the required performance reaches its high threshold, at the last 30 days'' trend. Beyond a year the lists read "not at this trend" (the number, capped at two years, stays for the chart).'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
                 - |
                   var s = parseFloat(value);
                   if (!(s >= 0)) throw 'not enough readings yet to forecast (it needs a day of data)';
-                  if (s > 3153600000) return 36500;
+                  if (s > 63072000) return 730;
                   return Math.round(s / 8640) / 10;
           triggers:
             - uuid: 1c5b88c0b6cb476a8257932f729f9dfa
@@ -762,14 +762,14 @@ zabbix_export:
           value_type: FLOAT
           units: '!days'
           params: 'timeleft(//vfs.fs.dependent.size[/,pused],30d,{$CORE.DISK.HIGH})'
-          description: 'Days until the root filesystem, where the appliance keeps the database, reaches the disk-full threshold, at the last 30 days'' trend, read from the Linux agent template on this host. 36500 means the trend never gets there; a core set up by hand without that template sees this sensor unsupported, with the reason.'
+          description: 'Days until the root filesystem, where the appliance keeps the database, reaches the disk-full threshold, at the last 30 days'' trend, read from the Linux agent template on this host. Beyond a year the lists read "not at this trend" (the number, capped at two years, stays for the chart); a core set up by hand without that template sees this sensor unsupported, with the reason.'
           preprocessing:
             - type: JAVASCRIPT
               parameters:
                 - |
                   var s = parseFloat(value);
                   if (!(s >= 0)) throw 'not enough readings yet to forecast (it needs a day of data)';
-                  if (s > 3153600000) return 36500;
+                  if (s > 63072000) return 730;
                   return Math.round(s / 8640) / 10;
           triggers:
             - uuid: 2594f50108f54dc691be1461a2296ae0
