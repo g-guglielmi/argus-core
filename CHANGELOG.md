@@ -13,6 +13,29 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [core-vm/v0.1.7] - 2026-10-21
+
+The appliance with the sizing and host tools work of Argus v0.9.2 baked in. It is what a new
+deployment gets; an existing VM takes the same pieces through its updater once it runs sidecar 0.2.16
+and Argus v0.9.2, after one last run of the patching installer.
+
+**Added:**
+- **Zabbix and PostgreSQL sized to the VM**, at first boot and at every boot (`argus-size-zabbix`
+  and its unit, DESIGN 14b): the caches and process counts follow the VM's RAM and cores, and
+  timescaledb-tune runs before PostgreSQL starts, so growing the VM is: shut down, add RAM or cores,
+  start.
+- **The host scripts and units from one manifest** (`deploy/core/host`, DESIGN 14c): the OS
+  reporter, the reboot, patch and Zabbix minor-update watchers with their request units (Update now,
+  Reboot now and Patch now on the Updates page), the timezone check, the backup tools, and
+  `argus-host-tools.path`, which lets the argus-updater keep all of them current from the Argus image
+  after each core update. Nothing on the VM is re-run by hand after first boot.
+
+**Fixed:**
+- The first-boot form checks the email address without a regular expression that backtracks on long
+  odd input.
+
+The image pulls Argus `:latest` (v0.9.2) and argus-updater `:latest` (0.2.16) at build.
+
 ## [0.9.2] - 2026-10-21
 
 ### Added
