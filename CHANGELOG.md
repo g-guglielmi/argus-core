@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-10-21
+
 ### Added
 - **The core host's scripts and units ride the image** (DESIGN 14c): everything the core VM runs
   outside the container (the OS reporter, the reboot, patch and Zabbix watchers, the timezone
