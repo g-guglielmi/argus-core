@@ -1028,8 +1028,10 @@ function collectorsState(c: CollectorsReport | undefined, running?: string): { p
 }
 
 type OSWindow = { mode: string; weekday: number; hour: number; minute: number }
+// The host's account of its last Zabbix minor update (done or failed, why it ran, one sentence).
+type ZbxUpdateResult = { state: string; from: string; to: string; at: number; why: string; detail: string }
 type OSStatus = {
-  core: { available: boolean; sec_updates: number; reboot_required: boolean; reported_at: number; os?: string; zbx_server?: string; zbx_candidate?: string; tz?: string; clock_sync?: boolean }
+  core: { available: boolean; sec_updates: number; reboot_required: boolean; reported_at: number; os?: string; zbx_server?: string; zbx_candidate?: string; tz?: string; clock_sync?: boolean; zbx_update_now?: boolean; zbx_update_pending?: number; zbx_update?: ZbxUpdateResult }
   reboot_window: OSWindow
   zbx_window: OSWindow
   fleet_zbx?: string
@@ -1082,6 +1084,8 @@ function windowText(w?: OSWindow): string {
 // Zabbix minor updates (a pet that must not bounce unannounced), which host timers honour locally.
 function OSUpdatesCard({ proxies, vmLatest }: { proxies: Proxy[] | null; vmLatest: string }) {
   const toast = useToast()
+  const confirm = useConfirm()
+  const [zReq, setZReq] = useState(0) // when Update now was clicked (unix seconds), 0 = not this session
   const [os, setOs] = useState<OSStatus | null>(null)
   const [mode, setMode] = useState('notify')
   const [weekday, setWeekday] = useState(0)
@@ -1119,8 +1123,25 @@ function OSUpdatesCard({ proxies, vmLatest }: { proxies: Proxy[] | null; vmLates
   const c = os?.core
   const reported = c?.available && c.reported_at > 0 ? `Reported ${relTime(c.reported_at)}.` : ''
   const vms = (proxies || []).filter((p) => p.os_reported_at)
+  // Update now on a pending Zabbix minor: pending from the click until the host's result lands (or,
+  // on a fresh page, while the request file still waits); the status is polled meanwhile.
+  const zAvail = !!c?.zbx_server && !!c.zbx_candidate && c.zbx_candidate !== c.zbx_server
+  const zPending = !!c && ((zReq > 0 && !(c.zbx_update && c.zbx_update.at >= zReq)) || (!!c.zbx_update_pending && (!c.zbx_update || c.zbx_update.at < c.zbx_update_pending)))
+  useEffect(() => { if (!zPending) return; const id = setInterval(load, 10000); return () => clearInterval(id) }, [zPending]) // eslint-disable-line react-hooks/exhaustive-deps
+  const zFailed = c?.zbx_update && c.zbx_update.state === 'failed' && zAvail && !zPending ? c.zbx_update : null
+  const updateZbxNow = async () => {
+    if (!c) return
+    if (!(await confirm({ title: 'Update Zabbix on the core', message: `Update the core's Zabbix packages from ${c.zbx_server} to ${c.zbx_candidate}? The host applies it right away and restarts the Zabbix server: about a minute without polling, which the probes buffer through. Take a hypervisor snapshot first if you want a way back.`, confirmLabel: `Update to ${c.zbx_candidate}` }))) return
+    setBusy(true)
+    try {
+      const res = await fetch('/api/os/zbx-update', { method: 'POST' })
+      if (!res.ok) { toast.error(await errText(res, 'Could not request the update')); return }
+      setZReq(Math.floor(Date.now() / 1000)); toast.success('Update requested: the host applies it within a minute.'); await load()
+    } finally { setBusy(false) }
+  }
   const zPill = !c?.zbx_server ? <UpdPill kind="none">not reporting</UpdPill>
-    : c.zbx_candidate && c.zbx_candidate !== c.zbx_server ? <UpdPill kind="avail" title="A minor update is available from the Zabbix repo: it applies in the Core Zabbix updates window, or by hand">{c.zbx_candidate} available</UpdPill>
+    : zPending ? <UpdPill kind="busy" title="The host is applying the update; the Zabbix server restarts when it is done">updating to {c.zbx_candidate}…</UpdPill>
+    : zAvail ? <UpdPill kind="avail" title="A minor update is available from the Zabbix repo: it applies in the Core Zabbix updates window, with Update now, or by hand">{c.zbx_candidate} available</UpdPill>
     : <UpdPill kind="ok" title={os?.fleet_zbx && os.fleet_zbx !== c.zbx_server ? `The probes run ${os.fleet_zbx}.` : undefined}>up to date</UpdPill>
   return (
     <section className="set-card">
@@ -1157,8 +1178,10 @@ function OSUpdatesCard({ proxies, vmLatest }: { proxies: Proxy[] | null; vmLates
         <UpdGroup label="Core VM" sub="this server">
           <UpdPart label="OS">{c?.available && c.os && <UpdVer v={osName(c.os)} title="The operating system the core VM reports" />}{c?.available ? osPill(c.sec_updates, c.reboot_required, reported) : <UpdPill kind="none">not reporting</UpdPill>}</UpdPart>
           {!c?.available && <UpdBelow><p className="set-hint">The core's OS patch status isn't wired up yet. Run the host reporter from <span className="mono">deploy/core/setup-core.sh</span> and share the self-update dir with the core container.</p></UpdBelow>}
-          <UpdPart label="Zabbix">{c?.zbx_server && <UpdVer v={c.zbx_server} title="The Zabbix server version on the core" />}{zPill}</UpdPart>
+          <UpdPart label="Zabbix">{c?.zbx_server && <UpdVer v={c.zbx_server} title="The Zabbix server version on the core" />}{zPill}{zAvail && !zPending && c?.zbx_update_now && <Button variant="default" onClick={updateZbxNow} disabled={busy} title="The host applies the update right away, outside the window">Update now</Button>}</UpdPart>
           {c?.available && !c.zbx_server && <UpdBelow><p className="set-hint">The host reporter predates Zabbix version reporting: re-run <span className="mono">deploy/core/setup-core-patching.sh</span> from the repo to enable it.</p></UpdBelow>}
+          {zAvail && c && !c.zbx_update_now && <UpdBelow><p className="set-hint">Update now needs the newer host scripts: re-run <span className="mono">deploy/core/setup-core-patching.sh</span> on the core VM, or let the window apply it.</p></UpdBelow>}
+          {zFailed && <UpdBelow><p className="set-hint" style={{ color: 'var(--err)' }}>The last update attempt ({relTime(zFailed.at)}) failed: {zFailed.detail}</p></UpdBelow>}
         </UpdGroup>
       </>}
 

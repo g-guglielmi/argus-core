@@ -43,6 +43,26 @@ const zbxWindowFile = "zbx-update-window.json"
 // zbxWindowKey is the app_meta key holding the Zabbix minor-update window (JSON).
 const zbxWindowKey = "core_zbx_update_window"
 
+// zbxUpdateRequestFile is the request Argus drops for the host when an admin clicks Update now on a
+// pending Zabbix minor update: a path unit starts argus-zbx-update within seconds, and the script
+// removes the file as it starts. zbxUpdateResultFile is what the script leaves afterwards, done or
+// failed, the versions, why it ran (request or window) and one sentence, which the Updates page
+// shows. Argus never runs apt itself: the host applies, Argus asks and reads.
+const (
+	zbxUpdateRequestFile = "zbx-update-request.json"
+	zbxUpdateResultFile  = "zbx-update-result.json"
+)
+
+// zbxUpdateResult is the host's account of its last Zabbix minor update (zbx-update-result.json).
+type zbxUpdateResult struct {
+	State  string `json:"state"` // done | failed
+	From   string `json:"from"`
+	To     string `json:"to"`
+	At     int64  `json:"at"`
+	Why    string `json:"why"` // request | window
+	Detail string `json:"detail"`
+}
+
 // tzFile is where Argus mirrors the configured timezone for the host timer (argus-tz-check
 // applies it via timedatectl after validating against the zoneinfo database). The source of
 // truth is the ordinary Settings -> General -> Timezone setting (ARGUS_TZ): ONE timezone drives
@@ -218,6 +238,12 @@ type coreOSView struct {
 	// warning.
 	TZ        string `json:"tz,omitempty"`
 	ClockSync *bool  `json:"clock_sync,omitempty"`
+	// Update now (reporter r4+): the host honours a request file for a pending Zabbix minor update.
+	// ZbxUpdatePending is the request's time while the host has not picked it up yet; ZbxUpdate is
+	// the host's account of the last update it ran.
+	ZbxUpdateNow     bool             `json:"zbx_update_now"`
+	ZbxUpdatePending int64            `json:"zbx_update_pending,omitempty"`
+	ZbxUpdate        *zbxUpdateResult `json:"zbx_update,omitempty"`
 }
 
 // osStatusResponse drives the OS-patching UI: the core's own status and the operator windows.
@@ -244,6 +270,7 @@ func (s *Server) coreOSStatus() coreOSView {
 		ZbxCandidate   string `json:"zbx_candidate"`
 		TZ             string `json:"tz"`
 		Clock          string `json:"clock"` // timedatectl NTPSynchronized: "yes" | "no" | ""
+		ZbxUpdateNow   bool   `json:"zbx_update_now"`
 	}
 	ok, err := readUpdateJSON(s.updatePath(coreOSStatusFile), &rec)
 	if err != nil || !ok {
@@ -261,7 +288,59 @@ func (s *Server) coreOSStatus() coreOSView {
 		synced := rec.Clock == "yes"
 		v.ClockSync = &synced
 	}
+	v.ZbxUpdateNow = rec.ZbxUpdateNow
+	var res zbxUpdateResult
+	if ok, err := readUpdateJSON(s.updatePath(zbxUpdateResultFile), &res); err == nil && ok && res.State != "" {
+		v.ZbxUpdate = &res
+	}
+	var req struct {
+		At int64 `json:"at"`
+	}
+	if ok, err := readUpdateJSON(s.updatePath(zbxUpdateRequestFile), &req); err == nil && ok {
+		v.ZbxUpdatePending = req.At
+	}
 	return v
+}
+
+// zbxUpdateRefusal says why an Update now request can't go ahead, "" when it can. A request the host
+// never picked up stops blocking after 15 minutes (the path unit was not installed, or the VM was off).
+func zbxUpdateRefusal(v coreOSView, now int64) string {
+	switch {
+	case !v.Available:
+		return "the core's host reporter is not wired up (deploy/core/setup-core-patching.sh)"
+	case !v.ZbxUpdateNow:
+		return "the core's host scripts predate Update now: re-run deploy/core/setup-core-patching.sh on the core VM, or let the window apply it"
+	case v.ZbxServer == "":
+		return "the host reports no Zabbix server package"
+	case v.ZbxCandidate == "" || v.ZbxCandidate == v.ZbxServer:
+		return "Zabbix on the core is up to date"
+	case v.ZbxUpdatePending > 0 && now-v.ZbxUpdatePending < 15*60:
+		return "an update is already requested; the host applies it within a minute"
+	}
+	return ""
+}
+
+// handleZbxUpdateNow queues the pending Zabbix minor update on the core for the host to apply right
+// away (admin): POST /api/os/zbx-update. Argus drops zbx-update-request.json in the shared dir; the
+// host's path unit starts argus-zbx-update, which reports back through os-status.json and
+// zbx-update-result.json.
+func (s *Server) handleZbxUpdateNow(w http.ResponseWriter, r *http.Request) {
+	v := s.coreOSStatus()
+	if why := zbxUpdateRefusal(v, time.Now().Unix()); why != "" {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": why})
+		return
+	}
+	by := ""
+	if u, ok := auth.UserFrom(r.Context()); ok {
+		by = u.Email
+	}
+	at := time.Now().Unix()
+	if err := s.writeUpdateJSONAtomic(zbxUpdateRequestFile, map[string]any{"at": at, "by": by, "from": v.ZbxServer, "to": v.ZbxCandidate}); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not write the request: " + err.Error()})
+		return
+	}
+	s.logger.Info("core zabbix update requested", "from", v.ZbxServer, "to", v.ZbxCandidate, "by", by)
+	writeJSON(w, http.StatusAccepted, map[string]any{"requested_at": at, "from": v.ZbxServer, "to": v.ZbxCandidate})
 }
 
 // fleetZbxVersion returns the newest Zabbix version the probe fleet reports (the image versions

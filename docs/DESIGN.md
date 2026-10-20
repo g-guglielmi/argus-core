@@ -1679,6 +1679,13 @@ candidate / fleet" with a second operator mask (notify-only default), Argus mirr
 pinning makes majors unreachable anyway; the script double-guards) - then restarts `zabbix-server`
 (a seconds-long blip the proxies buffer through) and re-reports. **Major Zabbix upgrades stay a
 planned manual event**: DB migration on first start + Timescale compatibility, snapshot first.
+**Update now (same channel).** The Updates page offers a pending minor as a button: Argus drops
+`zbx-update-request.json` and a path unit (`argus-zbx-update.path`) starts the same script within
+seconds, outside the window; it removes the request as it starts and leaves
+`zbx-update-result.json` (done or failed, the versions, why it ran, one sentence) for the page,
+which polls until the host reports the new version and shows a failure with its reason. The
+reporter's `zbx_update_now` flag says the host honours requests; a core whose scripts predate it
+keeps the window and the hint to re-run the patching installer, and the API refuses the request.
 
 **Core time (same machinery).** Every schedule above runs on the VM's clock, so the reporter also
 carries the VM timezone and `timedatectl`'s NTPSynchronized flag (Debian syncs via

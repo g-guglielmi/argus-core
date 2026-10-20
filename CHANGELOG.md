@@ -14,6 +14,12 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 ### Added
+- **Update now for the core's Zabbix minor update** (Updates page, DESIGN 14c): a pending minor
+  gets a button next to its "available" pill; the host applies it right away, outside the window,
+  and restarts the Zabbix server, and the page shows "updating" until the new version reports, or
+  the failure with its reason. Argus still never runs apt itself: it drops a request file in the
+  shared dir and a path unit on the host starts the same script the window uses. A core whose host
+  scripts predate the feature keeps the window and gets the hint to re-run the patching installer.
 - **`argus-size-zabbix`** (deploy/core/host, DESIGN 14b): sizes the Zabbix server's caches and
   process counts, and PostgreSQL's connection limit, to the machine's RAM and cores, as one marked
   block at the end of `zabbix_server.conf` (Zabbix takes the last value, so it wins over the

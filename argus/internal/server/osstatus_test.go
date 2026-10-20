@@ -75,3 +75,32 @@ func TestValidTimezone(t *testing.T) {
 		}
 	}
 }
+
+func TestZbxUpdateRefusal(t *testing.T) {
+	ok := coreOSView{Available: true, ZbxUpdateNow: true, ZbxServer: "7.0.31", ZbxCandidate: "7.0.32"}
+	if why := zbxUpdateRefusal(ok, 1000); why != "" {
+		t.Fatalf("a pending minor on a current host was refused: %s", why)
+	}
+	cases := []struct {
+		name string
+		v    coreOSView
+		want string
+	}{
+		{"reporter not wired", coreOSView{}, "not wired up"},
+		{"host scripts predate it", coreOSView{Available: true, ZbxServer: "7.0.31", ZbxCandidate: "7.0.32"}, "predate Update now"},
+		{"up to date", coreOSView{Available: true, ZbxUpdateNow: true, ZbxServer: "7.0.32", ZbxCandidate: "7.0.32"}, "up to date"},
+		{"no candidate", coreOSView{Available: true, ZbxUpdateNow: true, ZbxServer: "7.0.32"}, "up to date"},
+		{"already requested", coreOSView{Available: true, ZbxUpdateNow: true, ZbxServer: "7.0.31", ZbxCandidate: "7.0.32", ZbxUpdatePending: 900}, "already requested"},
+	}
+	for _, c := range cases {
+		if why := zbxUpdateRefusal(c.v, 1000); !strings.Contains(why, c.want) {
+			t.Errorf("%s: got %q, want it to say %q", c.name, why, c.want)
+		}
+	}
+	// A request the host never picked up (no path unit, VM off) stops blocking after 15 minutes.
+	stale := ok
+	stale.ZbxUpdatePending = 1000 - 16*60
+	if why := zbxUpdateRefusal(stale, 1000); why != "" {
+		t.Errorf("a stale request still blocks: %s", why)
+	}
+}

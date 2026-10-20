@@ -782,5 +782,121 @@ class SizingTest(unittest.TestCase):
         self.assertIn("(shown only", out.getvalue())
 
 
+CORE_DEPLOY = os.path.dirname(HOST)
+PATCHING = os.path.join(CORE_DEPLOY, "setup-core-patching.sh")
+SETUP = os.path.join(CORE_DEPLOY, "setup-core.sh")
+
+
+def installer_block(path, start, end):
+    """The text of an installer from the line `start` begins up to and including the line `end` begins."""
+    with open(path, encoding="utf-8") as fh:
+        s = fh.read()
+    i = s.index(start)
+    j = s.index(end, i)
+    return s[i:s.index("\n", j) + 1]
+
+
+def heredoc_body(path, opener, terminator):
+    """The body of a `cat > ... <<'TAG'` heredoc in an installer."""
+    with open(path, encoding="utf-8") as fh:
+        s = fh.read()
+    i = s.index(opener) + len(opener)
+    j = s.index("\n" + terminator + "\n", i)
+    return s[i:j + 1]
+
+
+class PatchingTest(unittest.TestCase):
+    """The host scripts setup-core.sh and setup-core-patching.sh install, and the Zabbix minor updater."""
+
+    def test_installers_share_the_host_scripts_byte_for_byte(self):
+        start = "cat > /usr/local/sbin/argus-os-report <<'REPORT'\n"
+        end = "systemctl enable --now argus-os-report.timer"
+        self.assertEqual(installer_block(SETUP, start, end), installer_block(PATCHING, start, end))
+
+    def test_reporter_says_the_host_honours_update_requests(self):
+        body = heredoc_body(PATCHING, "cat > /usr/local/sbin/argus-os-report <<'REPORT'\n", "REPORT")
+        self.assertIn('"zbx_update_now":true', body)
+        self.assertIn("argus-zbx-update.path", installer_block(PATCHING, "systemctl enable --now argus-os-report.timer", "systemctl enable --now argus-os-report.timer"))
+
+    def zbx_update(self, zi, zc, request=True, apt_rc=0, window=None):
+        """Run the updater with stand-ins for apt, dpkg and systemctl; returns (result, log, request_left)."""
+        tmp = tempfile.mkdtemp()
+        state = os.path.join(tmp, "state")
+        shims = os.path.join(tmp, "bin")
+        os.makedirs(state)
+        os.makedirs(shims)
+        script = os.path.join(tmp, "argus-zbx-update")
+        with open(script, "w", newline="\n") as fh:
+            fh.write(heredoc_body(PATCHING, "cat > /usr/local/sbin/argus-zbx-update <<'ZUPD'\n", "ZUPD"))
+        log = os.path.join(tmp, "calls.log")
+        for name, body in {
+            "dpkg-query": "case \"$*\" in *'zabbix-*'*) printf 'zabbix-server-pgsql zabbix-frontend-php ' ;; *) printf '%s' \"$ZI\" ;; esac\n",
+            "apt-cache": "printf 'Candidate: %s\\n' \"$ZC\"\n",
+            "apt-get": "echo \"apt-get $*\" >> \"$LOG\"; case \"$*\" in *install*) exit \"${APT_RC:-0}\" ;; esac\n",
+            "systemctl": "echo \"systemctl $*\" >> \"$LOG\"\n",
+            "logger": "echo \"logger $*\" >> \"$LOG\"\n",
+        }.items():
+            path = os.path.join(shims, name)
+            with open(path, "w", newline="\n") as fh:
+                fh.write("#!/usr/bin/env bash\n" + body)
+            os.chmod(path, 0o755)
+        if request:
+            with open(os.path.join(state, "zbx-update-request.json"), "w") as fh:
+                fh.write('{"at":1,"by":"test"}')
+        if window:
+            with open(os.path.join(state, "zbx-update-window.json"), "w") as fh:
+                fh.write(window)
+        env = dict(os.environ, ARGUS_STATE_DIR=winpath(state), ZI=zi, ZC=zc, LOG=winpath(log), APT_RC=str(apt_rc),
+                   PATH=winpath(shims) + os.pathsep + os.environ.get("PATH", ""))
+        r = subprocess.run([WHICH("bash"), winpath(script)], env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        result = None
+        rp = os.path.join(state, "zbx-update-result.json")
+        if os.path.exists(rp):
+            with open(rp) as fh:
+                result = json.load(fh)
+        calls = ""
+        if os.path.exists(log):
+            with open(log) as fh:
+                calls = fh.read()
+        return result, calls, os.path.exists(os.path.join(state, "zbx-update-request.json"))
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_update_now_applies_the_minor_and_reports(self):
+        result, calls, left = self.zbx_update("1:7.0.31-1+debian13", "1:7.0.32-1+debian13")
+        self.assertFalse(left, "the request must be consumed")
+        self.assertEqual((result["state"], result["from"], result["to"], result["why"]), ("done", "7.0.31", "7.0.32", "request"))
+        self.assertIn("--only-upgrade", calls)
+        self.assertIn("zabbix-server-pgsql zabbix-frontend-php", calls)
+        self.assertIn("systemctl restart zabbix-server", calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_update_now_refuses_a_major_jump_and_says_so(self):
+        result, calls, left = self.zbx_update("1:7.0.31-1", "1:8.0.1-1")
+        self.assertFalse(left)
+        self.assertEqual(result["state"], "failed")
+        self.assertIn("not on the 7.0 line", result["detail"])
+        self.assertNotIn("--only-upgrade", calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_update_now_on_a_current_core_reports_done(self):
+        result, calls, _ = self.zbx_update("1:7.0.32-1", "1:7.0.32-1")
+        self.assertEqual((result["state"], result["detail"]), ("done", "already up to date"))
+        self.assertNotIn("--only-upgrade", calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_update_now_reports_an_apt_failure(self):
+        result, calls, _ = self.zbx_update("1:7.0.31-1", "1:7.0.32-1", apt_rc=1)
+        self.assertEqual(result["state"], "failed")
+        self.assertIn("apt-get could not", result["detail"])
+        self.assertNotIn("systemctl restart", calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_without_a_request_the_window_rules(self):
+        result, calls, _ = self.zbx_update("1:7.0.31-1", "1:7.0.32-1", request=False, window='{"mode":"notify"}')
+        self.assertIsNone(result)
+        self.assertNotIn("--only-upgrade", calls)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

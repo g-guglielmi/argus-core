@@ -226,7 +226,7 @@ cs="$(timedatectl show -p NTPSynchronized --value 2>/dev/null)"
 [ -d "$DIR" ] || install -d -m 0755 "$DIR"
 umask 022  # so the new file is created world-readable, not mktemp's default 0600
 tmp="$(mktemp "$DIR/.os-status.XXXXXX")"
-printf '{"sec_updates":%d,"reboot_required":%s,"reported_at":%d,"os":"%s","zbx_server":"%s","zbx_candidate":"%s","tz":"%s","clock":"%s"}\n' "$sec" "$reboot" "$(date +%s)" "$os" "$zi" "$zc" "$tz" "$cs" > "$tmp"
+printf '{"sec_updates":%d,"reboot_required":%s,"reported_at":%d,"os":"%s","zbx_server":"%s","zbx_candidate":"%s","tz":"%s","clock":"%s","zbx_update_now":true}\n' "$sec" "$reboot" "$(date +%s)" "$os" "$zi" "$zc" "$tz" "$cs" > "$tmp"
 mv -f "$tmp" "$DIR/os-status.json"
 chmod 0644 "$DIR/os-status.json"  # bulletproof: the Argus container (possibly non-root) reads it via the bind mount
 REPORT
@@ -257,47 +257,80 @@ RCHK
 chmod +x /usr/local/sbin/argus-reboot-check
 
 # Zabbix minor-update watcher: honour the operator window Argus writes to zbx-update-window.json
-# (mode "auto" + weekday/hour/minute, same shape as the reboot window). Applies SAME-major.minor
-# zabbix-* updates only - the Zabbix apt repo is pinned per major anyway, this is the
-# belt-and-braces guard - then restarts zabbix-server (a seconds-long blip the proxies buffer
-# through). Major upgrades stay a planned manual event. Local, never remote.
+# (mode "auto" + weekday/hour/minute, same shape as the reboot window), or a request Argus drops as
+# zbx-update-request.json ("Update now" on the Updates page; the path unit below starts the script
+# within seconds). Applies SAME-major.minor zabbix-* updates only - the Zabbix apt repo is pinned per
+# major anyway, this is the belt-and-braces guard - then restarts zabbix-server (a seconds-long blip
+# the proxies buffer through) and leaves the outcome in zbx-update-result.json for the page to show.
+# Major upgrades stay a planned manual event. Local, never remote.
 cat > /usr/local/sbin/argus-zbx-update <<'ZUPD'
 #!/usr/bin/env bash
 set -u
 DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
 WIN="$DIR/zbx-update-window.json"
-[ -f "$WIN" ] || exit 0
-mode="$(sed -n 's/.*"mode":"\([a-z]*\)".*/\1/p' "$WIN")"
-[ "$mode" = "auto" ] || exit 0
-wd="$(sed -n 's/.*"weekday":\([0-9]*\).*/\1/p' "$WIN")"
-wh="$(sed -n 's/.*"hour":\([0-9]*\).*/\1/p' "$WIN")"
-wm="$(sed -n 's/.*"minute":\([0-9]*\).*/\1/p' "$WIN")"
-now_wd="$(date +%w)"; now_h="$(date +%-H)"; now_m="$(date +%-M)"
-[ "$now_wd" = "$wd" ] && [ "$now_h" = "$wh" ] || exit 0
-# The timer fires every 5 min; act if we're within a 10-minute slack of the target minute.
-[ "$now_m" -ge "$wm" ] && [ "$now_m" -lt $((wm + 10)) ] || exit 0
+REQ="$DIR/zbx-update-request.json"
+RES="$DIR/zbx-update-result.json"
+# Two ways in: Argus dropped a request (Update now on the Updates page; the path unit starts this
+# within seconds of it), or the timer found the operator window open. The work is the same.
+why=""
+if [ -f "$REQ" ]; then
+  why="request"
+  rm -f "$REQ"
+else
+  [ -f "$WIN" ] || exit 0
+  mode="$(sed -n 's/.*"mode":"\([a-z]*\)".*/\1/p' "$WIN")"
+  [ "$mode" = "auto" ] || exit 0
+  wd="$(sed -n 's/.*"weekday":\([0-9]*\).*/\1/p' "$WIN")"
+  wh="$(sed -n 's/.*"hour":\([0-9]*\).*/\1/p' "$WIN")"
+  wm="$(sed -n 's/.*"minute":\([0-9]*\).*/\1/p' "$WIN")"
+  now_wd="$(date +%w)"; now_h="$(date +%-H)"; now_m="$(date +%-M)"
+  [ "$now_wd" = "$wd" ] && [ "$now_h" = "$wh" ] || exit 0
+  # The timer fires every 5 min; act if we're within a 10-minute slack of the target minute.
+  [ "$now_m" -ge "$wm" ] && [ "$now_m" -lt $((wm + 10)) ] || exit 0
+  why="window"
+fi
+# What Argus shows afterwards (zbx-update-result.json): done or failed, the versions, why it ran,
+# and one sentence. Versions are digits and dots, the sentence has no quotes: plain JSON by printf.
+result() {
+  umask 022
+  tmp="$(mktemp "$DIR/.zbx-update-result.XXXXXX")"
+  printf '{"state":"%s","from":"%s","to":"%s","at":%d,"why":"%s","detail":"%s"}\n' "$1" "${zi:-}" "${zc:-}" "$(date +%s)" "$why" "$2" > "$tmp"
+  mv -f "$tmp" "$RES"; chmod 0644 "$RES"
+}
 zi="$(dpkg-query -W -f='${Version}' zabbix-server-pgsql 2>/dev/null)"
 zi="${zi#*:}"; zi="${zi%%-*}"
-[ -n "$zi" ] || exit 0
+if [ -z "$zi" ]; then
+  [ "$why" = "request" ] && result failed "Zabbix is not installed from packages on this host"
+  exit 0
+fi
 apt-get update -qq -o DPkg::Lock::Timeout=300 || true
 zc="$(apt-cache policy zabbix-server-pgsql 2>/dev/null | awk '/Candidate:/{print $2}')"
 [ "$zc" = "(none)" ] && zc=""
 zc="${zc#*:}"; zc="${zc%%-*}"
-[ -n "$zc" ] && [ "$zc" != "$zi" ] || exit 0
+if [ -z "$zc" ] || [ "$zc" = "$zi" ]; then
+  if [ "$why" = "request" ]; then
+    result done "already up to date"
+    /usr/local/sbin/argus-os-report || true
+  fi
+  exit 0
+fi
 # Same major.minor line only (e.g. 7.0.x -> 7.0.y). A major jump is always a planned manual event.
 if [ "${zi%.*}" != "${zc%.*}" ]; then
-  logger -t argus-zbx-update "candidate $zc is not on the $zi line; skipping (major upgrades are manual)"
+  logger -t argus-zbx-update "candidate $zc is not on the ${zi%.*} line; skipping (major upgrades are manual)"
+  [ "$why" = "request" ] && result failed "$zc is not on the ${zi%.*} line: a major upgrade is a planned manual event"
   exit 0
 fi
 pkgs="$(dpkg-query -W -f='${Package} ' 'zabbix-*' 2>/dev/null)"
 [ -n "$pkgs" ] || exit 0
-logger -t argus-zbx-update "updating Zabbix $zi -> $zc in the operator window: $pkgs"
+logger -t argus-zbx-update "updating Zabbix $zi -> $zc ($why): $pkgs"
 # shellcheck disable=SC2086
 if DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade -o DPkg::Lock::Timeout=300 $pkgs; then
   systemctl restart zabbix-server || true
   logger -t argus-zbx-update "Zabbix updated to $zc; zabbix-server restarted"
+  result done "zabbix-server restarted on the new version"
 else
   logger -t argus-zbx-update "Zabbix update failed; leaving packages as they are"
+  result failed "apt-get could not update the packages: journalctl -t argus-zbx-update on the core VM has the details"
 fi
 # Refresh the status file right away so the Argus panel flips without waiting for the hourly run.
 /usr/local/sbin/argus-os-report || true
@@ -371,6 +404,15 @@ OnUnitActiveSec=5min
 [Install]
 WantedBy=timers.target
 T3
+cat > /etc/systemd/system/argus-zbx-update.path <<P3
+[Unit]
+Description=Apply a Zabbix minor update as soon as Argus requests one (Update now)
+[Path]
+PathChanged=${ARGUS_STATE_DIR}/zbx-update-request.json
+Unit=argus-zbx-update.service
+[Install]
+WantedBy=multi-user.target
+P3
 cat > /etc/systemd/system/argus-tz-check.timer <<'T4'
 [Unit]
 Description=Apply the operator-chosen VM timezone from Argus
@@ -381,7 +423,7 @@ OnUnitActiveSec=5min
 WantedBy=timers.target
 T4
 systemctl daemon-reload
-systemctl enable --now argus-os-report.timer argus-reboot-check.timer argus-zbx-update.timer argus-tz-check.timer
+systemctl enable --now argus-os-report.timer argus-reboot-check.timer argus-zbx-update.timer argus-zbx-update.path argus-tz-check.timer
 /usr/local/sbin/argus-os-report || true
 echo "    unattended-upgrades (security only, no auto-reboot) + host reporter + zabbix-minor watcher installed"
 echo "    reporting OS status into ${ARGUS_STATE_DIR} (map this as ARGUS_UPDATE_DIR in the core container)"
