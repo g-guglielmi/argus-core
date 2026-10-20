@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+set -u
+DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
+REQ="$DIR/patch-request.json"
+RES="$DIR/patch-result.json"
+[ -f "$REQ" ] || exit 0
+rm -f "$REQ"
+why="request"
+result() {
+  umask 022
+  tmp="$(mktemp "$DIR/.patch-result.XXXXXX")"
+  printf '{"state":"%s","at":%d,"why":"%s","detail":"%s"}\n' "$1" "$(date +%s)" "$why" "$2" > "$tmp"
+  mv -f "$tmp" "$RES"; chmod 0644 "$RES"
+}
+logger -t argus-patch "applying the pending security updates on request from Argus"
+DEBIAN_FRONTEND=noninteractive unattended-upgrade -v 2>&1 | logger -t argus-patch
+if [ "${PIPESTATUS[0]}" -eq 0 ]; then
+  result done "security updates applied"
+else
+  result failed "unattended-upgrade reported a problem: journalctl -t argus-patch on the core VM has the details"
+fi
+/usr/local/sbin/argus-os-report || true

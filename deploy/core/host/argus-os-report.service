@@ -1,0 +1,6 @@
+[Unit]
+Description=Argus OS os-report (DESIGN 14c)
+[Service]
+Type=oneshot
+Environment=ARGUS_STATE_DIR=@STATE_DIR@
+ExecStart=/usr/local/sbin/argus-os-report

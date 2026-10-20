@@ -40,6 +40,13 @@ COPY --from=build /argus /argus
 # The label tells the updater the image carries them.
 COPY --from=collectors *.py /collectors/
 LABEL io.argus.collectors="/collectors"
+# The core host's scripts and units (deploy/core/host with its manifest, the "hosttools" build
+# context; a local build adds --build-context hosttools=deploy/core/host) ride the image the same
+# way: after each core update the updater runs this image once with the host's /usr/local/sbin and
+# /etc/systemd/system bound in, and `/argus install-host-tools` writes the ones that changed; a path
+# unit on the host then reloads systemd (hosttools.go, DESIGN 14c). The label says the image has them.
+COPY --from=hosttools . /host-tools/
+LABEL io.argus.host-tools="/host-tools"
 ENV ARGUS_LISTEN=":8080" ARGUS_DATA_DIR="/data"
 EXPOSE 8080
 VOLUME ["/data"]

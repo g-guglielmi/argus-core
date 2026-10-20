@@ -1,0 +1,8 @@
+[Unit]
+Description=Report the core's OS patch status to Argus hourly
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1h
+Persistent=true
+[Install]
+WantedBy=timers.target

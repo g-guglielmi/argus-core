@@ -969,6 +969,7 @@ type UpdateState = {
   updater_status?: string // current | outdated | unknown, like the core's own verdict
   updater_pending?: boolean // a sidecar self-update is queued
   collectors?: CollectorsReport // the sidecar's word on this server's collectors
+  host_tools?: CollectorsReport // ... and on the core host's scripts and units (same shape)
   requested_at?: string
   steps?: JobStep[] // every step of the core update so far
   sidecar?: SidecarJob // the sidecar's own update, while there is one to show
@@ -1022,6 +1023,25 @@ function collectorsState(c: CollectorsReport | undefined, running?: string): { p
   if (c.state === 'ok') {
     if (c.version && running && vv(c.version) !== vv(running)) return { pill: <UpdPill kind="busy" title={`${what} This version's are going in now.`}>updating</UpdPill>, warn: false, note: '' }
     return { pill: <UpdPill kind="ok" title={`${what} Installed from this version${ago ? `, checked ${ago}` : ''}${c.installed && c.installed.length ? `; last copied in: ${c.installed.join(', ')}` : ''}.`}>up to date</UpdPill>, warn: false, note: '' }
+  }
+  if (c.state === 'skipped') return { pill: <UpdPill kind="info" title={`${what} ${c.message || 'Skipped.'}${ago ? ` (${ago})` : ''}`}>not needed</UpdPill>, warn: false, note: '' }
+  return { pill: <UpdPill kind="bad" title={what}>not installed</UpdPill>, warn: true, note: `The sidecar couldn't install them: ${c.message || 'no reason given'}. It tries again every 10 minutes.` }
+}
+
+// hostToolsState: the same for the core host's scripts and units (the OS reporter, the reboot, patch
+// and Zabbix watchers, the sizing tool, the backup tools, their systemd units), which the sidecar
+// writes onto the host after each core update; a path unit on the host reloads systemd when a unit
+// changed, so the host side of the core keeps itself current.
+function hostToolsState(c: CollectorsReport | undefined, running?: string): { pill: ReactNode; note: string; warn: boolean } {
+  const when = c?.at ? Date.parse(c.at) / 1000 : 0
+  const ago = when ? relTime(when) : ''
+  const what = "The scripts and systemd units on this core's host: the OS reporter, the reboot, patch and Zabbix watchers, the sizing tool, the backup tools."
+  if (!c) return { pill: <UpdPill kind="avail" title={what}>not installed by the sidecar</UpdPill>, warn: false,
+    note: "This sidecar version doesn't install them yet: update the sidecar, and it writes this version's host tools in by itself." }
+  if (c.state === 'ok') {
+    if (c.version && running && vv(c.version) !== vv(running)) return { pill: <UpdPill kind="busy" title={`${what} This version's are going in now.`}>updating</UpdPill>, warn: false, note: '' }
+    const last = c.installed && c.installed.length ? `; last written: ${c.installed.map((f) => f.split('/').pop()).join(', ')}` : ''
+    return { pill: <UpdPill kind="ok" title={`${what} Installed from this version${ago ? `, checked ${ago}` : ''}${last}.`}>up to date</UpdPill>, warn: false, note: '' }
   }
   if (c.state === 'skipped') return { pill: <UpdPill kind="info" title={`${what} ${c.message || 'Skipped.'}${ago ? ` (${ago})` : ''}`}>not needed</UpdPill>, warn: false, note: '' }
   return { pill: <UpdPill kind="bad" title={what}>not installed</UpdPill>, warn: true, note: `The sidecar couldn't install them: ${c.message || 'no reason given'}. It tries again every 10 minutes.` }
@@ -1762,6 +1782,7 @@ function CoreRows({ v, upd, onChanged }: { v: VersionInfo; upd: UpdateState; onC
     : <UpdPill kind="info" title="The newest published argus-updater isn't known yet: Check for updates looks it up">newest unknown</UpdPill>
   const sideAction = self && !sideBusy && upd.updater_status === 'outdated' ? <button className="btn" onClick={updateSidecar}>Update</button> : null
   const coll = collectorsState(upd.collectors, v.version)
+  const tools = hostToolsState(upd.host_tools, v.version)
 
   const channel = v.channel || ''
   const channelText = channel === 'latest' || channel === 'testing' ? channel : channel ? `${vv(channel)} (pinned)` : 'unknown'
@@ -1822,6 +1843,7 @@ function CoreRows({ v, upd, onChanged }: { v: VersionInfo; upd: UpdateState; onC
         )}
 
         {self && <UpdPart label="Collectors">{upd.collectors?.version && <UpdVer v={vv(upd.collectors.version)} title="The Argus version they were installed from" />}{coll.pill}</UpdPart>}
+        {self && <UpdPart label="Host tools">{upd.host_tools?.version && <UpdVer v={vv(upd.host_tools.version)} title="The Argus version they were installed from" />}{tools.pill}</UpdPart>}
         {self && coll.note && <UpdBelow><p className="set-hint" style={coll.warn ? { color: 'var(--warn)' } : undefined}>{coll.note}</p></UpdBelow>}
       </UpdGroup>
     </section>

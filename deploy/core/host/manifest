@@ -1,0 +1,33 @@
+# The Argus core's host files (DESIGN 14c): source in this folder, destination on the host, mode, flags.
+# flags: render = substitute @STATE_DIR@ with the folder shared with the Argus container;
+#        enable = systemctl enable --now it (timers, path units, the sizing service).
+# install-host-tools.sh reads this at first install; `argus install-host-tools` (the image, run by the
+# argus-updater after each core update) reads the same lines. Keep it the one list.
+argus-os-report                    /usr/local/sbin/argus-os-report                                   0755
+argus-reboot-check                 /usr/local/sbin/argus-reboot-check                                0755
+argus-zbx-update                   /usr/local/sbin/argus-zbx-update                                  0755
+argus-tz-check                     /usr/local/sbin/argus-tz-check                                    0755
+argus-patch                        /usr/local/sbin/argus-patch                                       0755
+argus-host-tools-apply             /usr/local/sbin/argus-host-tools-apply                            0755
+argus-size-zabbix                  /usr/local/sbin/argus-size-zabbix                                 0755
+argus-backup                       /usr/local/sbin/argus-backup                                      0755
+argus-restore                      /usr/local/sbin/argus-restore                                     0755
+argus-os-report.service            /etc/systemd/system/argus-os-report.service                       0644 render
+argus-os-report.timer              /etc/systemd/system/argus-os-report.timer                         0644 enable
+argus-reboot-check.service         /etc/systemd/system/argus-reboot-check.service                    0644 render
+argus-reboot-check.timer           /etc/systemd/system/argus-reboot-check.timer                      0644 enable
+argus-reboot-check.path            /etc/systemd/system/argus-reboot-check.path                       0644 render enable
+argus-zbx-update.service           /etc/systemd/system/argus-zbx-update.service                      0644 render
+argus-zbx-update.timer             /etc/systemd/system/argus-zbx-update.timer                        0644 enable
+argus-zbx-update.path              /etc/systemd/system/argus-zbx-update.path                         0644 render enable
+argus-tz-check.service             /etc/systemd/system/argus-tz-check.service                        0644 render
+argus-tz-check.timer               /etc/systemd/system/argus-tz-check.timer                          0644 enable
+argus-patch.service                /etc/systemd/system/argus-patch.service                           0644 render
+argus-patch.path                   /etc/systemd/system/argus-patch.path                              0644 render enable
+argus-host-tools.service           /etc/systemd/system/argus-host-tools.service                      0644 render
+argus-host-tools.path              /etc/systemd/system/argus-host-tools.path                         0644 render enable
+argus-size-zabbix.service          /etc/systemd/system/argus-size-zabbix.service                     0644 enable
+argus-size-zabbix-postgresql.conf  /etc/systemd/system/postgresql@.service.d/argus-size-zabbix.conf  0644
+argus-backup.service               /etc/systemd/system/argus-backup.service                          0644 render
+argus-backup.timer                 /etc/systemd/system/argus-backup.timer                            0644 render enable
+argus-backup.path                  /etc/systemd/system/argus-backup.path                             0644 render enable

@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+set -u
+DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
+WIN="$DIR/reboot-window.json"
+REQ="$DIR/reboot-request.json"
+RES="$DIR/reboot-result.json"
+RR="${ARGUS_REBOOT_FLAG:-/var/run/reboot-required}"
+# What Argus shows afterwards (reboot-result.json): rebooting, done or failed, why, one sentence.
+why=""
+result() {
+  umask 022
+  tmp="$(mktemp "$DIR/.reboot-result.XXXXXX")"
+  printf '{"state":"%s","at":%d,"why":"%s","detail":"%s"}\n' "$1" "$(date +%s)" "$why" "$2" > "$tmp"
+  mv -f "$tmp" "$RES"; chmod 0644 "$RES"
+}
+# On request (Reboot now on the Updates page; the path unit starts this within seconds) the core
+# reboots if the OS still asks for it. Otherwise only in the operator window.
+if [ -f "$REQ" ]; then
+  why="request"
+  rm -f "$REQ"
+  if [ -f "$RR" ]; then
+    logger -t argus-reboot "rebooting the core on request from Argus"
+    result rebooting "rebooting the core"
+    systemctl reboot
+  else
+    result done "no reboot is needed"
+    /usr/local/sbin/argus-os-report || true
+  fi
+  exit 0
+fi
+[ -f "$WIN" ] || exit 0
+[ -f "$RR" ] || exit 0
+mode="$(sed -n 's/.*"mode":"\([a-z]*\)".*/\1/p' "$WIN")"
+[ "$mode" = "auto" ] || exit 0
+wd="$(sed -n 's/.*"weekday":\([0-9]*\).*/\1/p' "$WIN")"
+wh="$(sed -n 's/.*"hour":\([0-9]*\).*/\1/p' "$WIN")"
+wm="$(sed -n 's/.*"minute":\([0-9]*\).*/\1/p' "$WIN")"
+now_wd="$(date +%w)"; now_h="$(date +%-H)"; now_m="$(date +%-M)"
+[ "$now_wd" = "$wd" ] && [ "$now_h" = "$wh" ] || exit 0
+# The timer fires every 5 min; reboot if we're within a 10-minute slack of the target minute.
+if [ "$now_m" -ge "$wm" ] && [ "$now_m" -lt $((wm + 10)) ]; then
+  why="window"
+  logger -t argus-reboot "OS reboot-required in the operator window; rebooting the core"
+  result rebooting "rebooting the core in its window"
+  systemctl reboot
+fi

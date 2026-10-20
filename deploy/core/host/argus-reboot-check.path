@@ -1,0 +1,7 @@
+[Unit]
+Description=Reboot the core as soon as Argus requests it (Reboot now)
+[Path]
+PathChanged=@STATE_DIR@/reboot-request.json
+Unit=argus-reboot-check.service
+[Install]
+WantedBy=multi-user.target

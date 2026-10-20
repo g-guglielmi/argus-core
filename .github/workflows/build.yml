@@ -175,9 +175,11 @@ jobs:
         with:
           context: ./argus
           file: ./argus/Dockerfile
-          # The core's collectors ride the image (/collectors) for the argus-updater to install.
+          # The core's collectors (/collectors) and the core host's scripts and units (/host-tools)
+          # ride the image for the argus-updater to install after each core update.
           build-contexts: |
             collectors=./deploy/core/externalscripts
+            hosttools=./deploy/core/host
           push: true
           provenance: true
           sbom: true

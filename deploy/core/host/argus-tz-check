@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+set -u
+DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
+WANT="$DIR/timezone.json"
+[ -f "$WANT" ] || exit 0
+tz="$(sed -n 's/.*"tz":"\([A-Za-z0-9_+/-]*\)".*/\1/p' "$WANT")"
+[ -n "$tz" ] || exit 0
+cur="$(timedatectl show -p Timezone --value 2>/dev/null)"
+[ "$tz" = "$cur" ] && exit 0
+if [ ! -f "/usr/share/zoneinfo/$tz" ]; then
+  logger -t argus-tz "requested timezone $tz is not in the zoneinfo database; ignoring"
+  exit 0
+fi
+if timedatectl set-timezone "$tz"; then
+  logger -t argus-tz "timezone changed $cur -> $tz (operator setting from Argus)"
+  systemctl try-restart zabbix-server 2>/dev/null || true
+  systemctl try-restart php8*-fpm 2>/dev/null || true
+fi
+/usr/local/sbin/argus-os-report || true

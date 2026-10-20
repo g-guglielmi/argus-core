@@ -1,0 +1,7 @@
+[Unit]
+Description=Reboot the core in its operator-scheduled window when the OS requires it
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+[Install]
+WantedBy=timers.target

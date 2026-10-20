@@ -38,6 +38,10 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "install-collectors" {
 		os.Exit(runInstallCollectors(os.Args[1:]))
 	}
+	// The argus-updater writes this image's host scripts and units onto the core host (hosttools.go).
+	if len(os.Args) > 1 && os.Args[1] == "install-host-tools" {
+		os.Exit(runInstallHostTools(os.Args[1:]))
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	cfg := config.Load()

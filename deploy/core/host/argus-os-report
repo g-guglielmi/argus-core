@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+# Report the core VM's OS patch status for Argus (DESIGN §14c). Writes os-status.json into the shared
+# self-update dir the core container reads. Best-effort: an unknown count is reported as -1.
+set -u
+DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
+sec="$(apt-get -s -o Debug::NoLocking=true upgrade 2>/dev/null | awk '/^Inst/ && /[Ss]ecurity/ {n++} END{print n+0}')"
+[ -n "$sec" ] || sec=-1
+reboot=false; [ -f /var/run/reboot-required ] && reboot=true
+os="$( . /etc/os-release 2>/dev/null && printf '%s' "${PRETTY_NAME:-Linux}" )"
+# Zabbix server package: installed + candidate version (normalized: no epoch, no revision) so
+# Argus can show "x.y.z available" and the zbx-update watcher knows when to act. Both empty
+# when Zabbix isn't installed on this host.
+zi="$(dpkg-query -W -f='${Version}' zabbix-server-pgsql 2>/dev/null)"
+zi="${zi#*:}"; zi="${zi%%-*}"
+zc="$(apt-cache policy zabbix-server-pgsql 2>/dev/null | awk '/Candidate:/{print $2}')"
+[ "$zc" = "(none)" ] && zc=""
+zc="${zc#*:}"; zc="${zc%%-*}"
+# VM timezone + NTP sync state (systemd-timesyncd by default on Debian): the Settings card
+# shows both, and a drifting clock on a monitoring box deserves a loud pill.
+tz="$(timedatectl show -p Timezone --value 2>/dev/null)"
+cs="$(timedatectl show -p NTPSynchronized --value 2>/dev/null)"
+[ -d "$DIR" ] || install -d -m 0755 "$DIR"
+umask 022  # so the new file is created world-readable, not mktemp's default 0600
+tmp="$(mktemp "$DIR/.os-status.XXXXXX")"
+printf '{"sec_updates":%d,"reboot_required":%s,"reported_at":%d,"os":"%s","zbx_server":"%s","zbx_candidate":"%s","tz":"%s","clock":"%s","zbx_update_now":true,"reboot_now":true,"patch_now":true}\n' "$sec" "$reboot" "$(date +%s)" "$os" "$zi" "$zc" "$tz" "$cs" > "$tmp"
+mv -f "$tmp" "$DIR/os-status.json"
+chmod 0644 "$DIR/os-status.json"  # bulletproof: the Argus container (possibly non-root) reads it via the bind mount

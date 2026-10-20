@@ -65,8 +65,8 @@ cd /tmp && curl -fsSL https://github.com/g-guglielmi/argus-core/archive/refs/tag
 cd argus-core-X.Y.Z/deploy/core/host && sudo ./install-backup.sh
 ```
 
-(`vX.Y.Z` is the Argus release the core runs; re-running `setup-core-patching.sh` from a checkout does
-the same.) The tools report to the folder Argus shares with the host as its update dir, and the
+(`vX.Y.Z` is the Argus release the core runs; running `setup-core-patching.sh` from a checkout does
+the same, and on a core set up that way the argus-updater keeps the tools current afterwards.) The tools report to the folder Argus shares with the host as its update dir, and the
 installer finds it from the running Argus container; `ARGUS_STATE_DIR=<folder>` names it instead.
 Settings, Backups shows "The core host hasn't reported yet" until the first report arrives (within 15
 minutes, or at once after `sudo systemctl start argus-backup.service`).

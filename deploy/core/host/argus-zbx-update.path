@@ -1,0 +1,7 @@
+[Unit]
+Description=Apply a Zabbix minor update as soon as Argus requests one (Update now)
+[Path]
+PathChanged=@STATE_DIR@/zbx-update-request.json
+Unit=argus-zbx-update.service
+[Install]
+WantedBy=multi-user.target

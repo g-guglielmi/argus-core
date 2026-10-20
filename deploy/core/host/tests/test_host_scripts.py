@@ -16,6 +16,7 @@ import importlib.util
 import itertools
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -796,32 +797,62 @@ def installer_block(path, start, end):
     return s[i:s.index("\n", j) + 1]
 
 
-def heredoc_body(path, opener, terminator):
-    """The body of a `cat > ... <<'TAG'` heredoc in an installer."""
-    with open(path, encoding="utf-8") as fh:
-        s = fh.read()
-    i = s.index(opener) + len(opener)
-    j = s.index("\n" + terminator + "\n", i)
-    return s[i:j + 1]
+def script_body(name):
+    """One of the host scripts, as the manifest installs it."""
+    with open(os.path.join(HOST, name), encoding="utf-8") as fh:
+        return fh.read()
 
 
 class PatchingTest(unittest.TestCase):
     """The host scripts setup-core.sh and setup-core-patching.sh install, and the Zabbix minor updater."""
 
-    def test_installers_share_the_host_scripts_byte_for_byte(self):
-        start = "cat > /usr/local/sbin/argus-os-report <<'REPORT'\n"
-        end = "systemctl enable --now argus-os-report.timer"
-        self.assertEqual(installer_block(SETUP, start, end), installer_block(PATCHING, start, end))
+    def test_both_installers_install_the_host_tools_from_the_manifest(self):
+        for path in (SETUP, PATCHING):
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+            self.assertIn("host/install-host-tools.sh", text, path)
+            self.assertNotIn("<<'REPORT'", text, "the scripts live in host/, not in the installers")
 
     def test_reporter_says_the_host_honours_requests(self):
-        body = heredoc_body(PATCHING, "cat > /usr/local/sbin/argus-os-report <<'REPORT'\n", "REPORT")
-        self.assertIn('"zbx_update_now":true,"reboot_now":true,"patch_now":true', body)
-        enable = installer_block(PATCHING, "systemctl enable --now argus-os-report.timer", "systemctl enable --now argus-os-report.timer")
-        for unit in ("argus-zbx-update.path", "argus-reboot-check.path", "argus-patch.path"):
-            self.assertIn(unit, enable)
+        self.assertIn('"zbx_update_now":true,"reboot_now":true,"patch_now":true', script_body("argus-os-report"))
+        with open(os.path.join(HOST, "manifest"), encoding="utf-8") as fh:
+            manifest = fh.read()
+        for unit in ("argus-zbx-update.path", "argus-reboot-check.path", "argus-patch.path", "argus-host-tools.path"):
+            self.assertRegex(manifest, r"%s +0644 render enable" % re.escape(unit))
 
-    def host_script(self, opener, terminator, shims, state_files, env=None):
-        """Run one installer-written script under bash with stand-ins on PATH; returns (results, log)."""
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_install_host_tools_renders_the_manifest_into_a_root(self):
+        root = tempfile.mkdtemp()
+        env = dict(os.environ, ARGUS_HOST_ROOT=winpath(root), ARGUS_STATE_DIR="/docker/argus-update")
+        r = subprocess.run([WHICH("bash"), winpath(os.path.join(HOST, "install-host-tools.sh"))], env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(os.path.join(root, "etc", "systemd", "system", "argus-os-report.service")) as fh:
+            self.assertIn("ARGUS_STATE_DIR=/docker/argus-update", fh.read())
+        with open(os.path.join(root, "etc", "systemd", "system", "argus-backup.path")) as fh:
+            self.assertIn("/docker/argus-update/backup-request.json", fh.read())
+        with open(os.path.join(root, "etc", "systemd", "system", "postgresql@.service.d", "argus-size-zabbix.conf")) as fh:
+            self.assertIn("After=argus-size-zabbix.service", fh.read())
+        for script in ("argus-os-report", "argus-patch", "argus-host-tools-apply", "argus-size-zabbix", "argus-backup"):
+            self.assertTrue(os.path.exists(os.path.join(root, "usr", "local", "sbin", script)), script)
+        self.assertIn("would enable: ", r.stdout)
+        for unit in ("argus-os-report.timer", "argus-host-tools.path", "argus-size-zabbix.service", "argus-backup.path", "argus-patch.path"):
+            self.assertIn(unit, r.stdout)
+        self.assertTrue(os.path.isdir(os.path.join(root, "docker", "argus-update")), "the shared dir is created when missing")
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_host_tools_apply_reloads_and_enables_what_the_marker_lists(self):
+        shims = {"systemctl": "echo \"systemctl $*\" >> \"$LOG\"\n", "logger": ":\n"}
+        marker = '{"at":1,"version":"v0.9.2","enable":"argus-os-report.timer argus-host-tools.path","changed":"argus-os-report.timer"}'
+        results, calls = self.host_script("argus-host-tools-apply", shims, {"host-tools-apply.json": marker})
+        self.assertNotIn("host-tools-apply.json", results, "the marker must be consumed")
+        self.assertIn("systemctl daemon-reload", calls)
+        self.assertIn("systemctl enable --now argus-os-report.timer", calls)
+        self.assertIn("systemctl enable --now argus-host-tools.path", calls)
+        _, quiet = self.host_script("argus-host-tools-apply", shims, {})
+        self.assertEqual(quiet, "", "without a marker it does nothing")
+
+    def host_script(self, name, shims, state_files, env=None):
+        """Run one host script under bash with stand-ins on PATH; returns (results, log)."""
         tmp = tempfile.mkdtemp()
         state = os.path.join(tmp, "state")
         sdir = os.path.join(tmp, "bin")
@@ -829,7 +860,7 @@ class PatchingTest(unittest.TestCase):
         os.makedirs(sdir)
         script = os.path.join(tmp, "script")
         with open(script, "w", newline="\n") as fh:
-            fh.write(heredoc_body(PATCHING, opener, terminator))
+            fh.write(script_body(name))
         log = os.path.join(tmp, "calls.log")
         for name, body in shims.items():
             path = os.path.join(sdir, name)
@@ -841,14 +872,15 @@ class PatchingTest(unittest.TestCase):
                 fh.write(body)
         e = dict(os.environ, ARGUS_STATE_DIR=winpath(state), LOG=winpath(log), PATH=winpath(sdir) + os.pathsep + os.environ.get("PATH", ""))
         e.update(env or {})
-        r = subprocess.run([WHICH("bash"), winpath(script)], env=e, capture_output=True, text=True, timeout=60)
+        # stdin closed: a stand-in that drains its input (logger) must not wait on the test runner
+        r = subprocess.run([WHICH("bash"), winpath(script)], env=e, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         results = {}
         for name in os.listdir(state):
             if name.endswith("-result.json"):
                 with open(os.path.join(state, name)) as fh:
                     results[name] = json.load(fh)
-            elif name.endswith("-request.json"):
+            else:
                 results[name] = "still there"
         calls = ""
         if os.path.exists(log):
@@ -862,7 +894,7 @@ class PatchingTest(unittest.TestCase):
         with open(flag, "w") as fh:
             fh.write("")
         shims = {"systemctl": "echo \"systemctl $*\" >> \"$LOG\"\n", "logger": ":\n"}
-        results, calls = self.host_script("cat > /usr/local/sbin/argus-reboot-check <<'RCHK'\n", "RCHK", shims,
+        results, calls = self.host_script("argus-reboot-check", shims,
                                           {"reboot-request.json": '{"at":1}'}, {"ARGUS_REBOOT_FLAG": winpath(flag)})
         self.assertNotIn("reboot-request.json", results, "the request must be consumed")
         self.assertEqual((results["reboot-result.json"]["state"], results["reboot-result.json"]["why"]), ("rebooting", "request"))
@@ -871,7 +903,7 @@ class PatchingTest(unittest.TestCase):
     @unittest.skipUnless(WHICH("bash"), "needs bash")
     def test_reboot_now_without_a_pending_reboot_reports_done(self):
         shims = {"systemctl": "echo \"systemctl $*\" >> \"$LOG\"\n", "logger": ":\n"}
-        results, calls = self.host_script("cat > /usr/local/sbin/argus-reboot-check <<'RCHK'\n", "RCHK", shims,
+        results, calls = self.host_script("argus-reboot-check", shims,
                                           {"reboot-request.json": '{"at":1}'}, {"ARGUS_REBOOT_FLAG": winpath(os.path.join(tempfile.mkdtemp(), "absent"))})
         self.assertEqual((results["reboot-result.json"]["state"], results["reboot-result.json"]["detail"]), ("done", "no reboot is needed"))
         self.assertNotIn("systemctl reboot", calls)
@@ -882,22 +914,22 @@ class PatchingTest(unittest.TestCase):
         flag = os.path.join(tempfile.mkdtemp(), "reboot-required")
         with open(flag, "w") as fh:
             fh.write("")
-        results, calls = self.host_script("cat > /usr/local/sbin/argus-reboot-check <<'RCHK'\n", "RCHK", shims,
+        results, calls = self.host_script("argus-reboot-check", shims,
                                           {"reboot-window.json": '{"mode":"notify"}'}, {"ARGUS_REBOOT_FLAG": winpath(flag)})
-        self.assertEqual(results, {})
+        self.assertNotIn("reboot-result.json", results)
         self.assertNotIn("systemctl reboot", calls)
 
     @unittest.skipUnless(WHICH("bash"), "needs bash")
     def test_patch_now_runs_the_nightly_policy_and_reports(self):
         shims = {"unattended-upgrade": "echo \"unattended-upgrade $*\" >> \"$LOG\"; exit \"${UA_RC:-0}\"\n", "logger": "cat > /dev/null\n"}
-        results, calls = self.host_script("cat > /usr/local/sbin/argus-patch <<'PTCH'\n", "PTCH", shims, {"patch-request.json": '{"at":1}'})
+        results, calls = self.host_script("argus-patch", shims, {"patch-request.json": '{"at":1}'})
         self.assertNotIn("patch-request.json", results)
         self.assertEqual((results["patch-result.json"]["state"], results["patch-result.json"]["detail"]), ("done", "security updates applied"))
         self.assertIn("unattended-upgrade -v", calls)
-        failed, _ = self.host_script("cat > /usr/local/sbin/argus-patch <<'PTCH'\n", "PTCH", shims, {"patch-request.json": '{"at":1}'}, {"UA_RC": "1"})
+        failed, _ = self.host_script("argus-patch", shims, {"patch-request.json": '{"at":1}'}, {"UA_RC": "1"})
         self.assertEqual(failed["patch-result.json"]["state"], "failed")
         self.assertIn("unattended-upgrade reported a problem", failed["patch-result.json"]["detail"])
-        quiet, _ = self.host_script("cat > /usr/local/sbin/argus-patch <<'PTCH'\n", "PTCH", shims, {})
+        quiet, _ = self.host_script("argus-patch", shims, {})
         self.assertEqual(quiet, {}, "without a request the patcher does nothing")
 
     def zbx_update(self, zi, zc, request=True, apt_rc=0, window=None):
@@ -909,7 +941,7 @@ class PatchingTest(unittest.TestCase):
         os.makedirs(shims)
         script = os.path.join(tmp, "argus-zbx-update")
         with open(script, "w", newline="\n") as fh:
-            fh.write(heredoc_body(PATCHING, "cat > /usr/local/sbin/argus-zbx-update <<'ZUPD'\n", "ZUPD"))
+            fh.write(script_body("argus-zbx-update"))
         log = os.path.join(tmp, "calls.log")
         for name, body in {
             "dpkg-query": "case \"$*\" in *'zabbix-*'*) printf 'zabbix-server-pgsql zabbix-frontend-php ' ;; *) printf '%s' \"$ZI\" ;; esac\n",
@@ -930,7 +962,7 @@ class PatchingTest(unittest.TestCase):
                 fh.write(window)
         env = dict(os.environ, ARGUS_STATE_DIR=winpath(state), ZI=zi, ZC=zc, LOG=winpath(log), APT_RC=str(apt_rc),
                    PATH=winpath(shims) + os.pathsep + os.environ.get("PATH", ""))
-        r = subprocess.run([WHICH("bash"), winpath(script)], env=env, capture_output=True, text=True, timeout=60)
+        r = subprocess.run([WHICH("bash"), winpath(script)], env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         result = None
         rp = os.path.join(state, "zbx-update-result.json")

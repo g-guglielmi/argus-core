@@ -35,6 +35,7 @@ const (
 	updaterInfoFile    = "updater.json"         // the sidecar reports its OWN version here
 	updaterRequestFile = "updater-request.json" // the core drops this to update the sidecar itself
 	collectorsFile     = "collectors.json"      // the sidecar reports installing the core's collectors here
+	hostToolsFile      = "host-tools.json"      // ... and the core host's scripts and units (same shape)
 	updaterJobFile     = "updater-job.json"     // the core remembers the sidecar update it asked for (the request is consumed)
 	updaterStatusFile  = "updater-status.json"  // the sidecar reports that update's steps here (from argus-updater 0.2.12)
 )
@@ -210,6 +211,7 @@ type updateStateResponse struct {
 	UpdaterPending bool   `json:"updater_pending,omitempty"` // a sidecar self-update is queued, not yet consumed
 	// The core host's collectors, as the sidecar last installed them (nil: no report yet).
 	Collectors *collectorsReport `json:"collectors,omitempty"`
+	HostTools  *collectorsReport `json:"host_tools,omitempty"` // the sidecar's word on the core host's scripts and units
 }
 
 func (s *Server) updatePath(name string) string { return filepath.Join(s.cfg.UpdateDir, name) }
@@ -265,6 +267,10 @@ func (s *Server) currentUpdateState() (updateStateResponse, error) {
 	var cr collectorsReport
 	if ok, _ := readUpdateJSON(s.updatePath(collectorsFile), &cr); ok && cr.State != "" {
 		resp.Collectors = &cr
+	}
+	var ht collectorsReport
+	if ok, _ := readUpdateJSON(s.updatePath(hostToolsFile), &ht); ok && ht.State != "" {
+		resp.HostTools = &ht
 	}
 	var req updateRequest
 	hasReq, err := readUpdateJSON(s.updatePath(updateRequestFile), &req)

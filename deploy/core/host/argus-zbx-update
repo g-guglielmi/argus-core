@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+set -u
+DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
+WIN="$DIR/zbx-update-window.json"
+REQ="$DIR/zbx-update-request.json"
+RES="$DIR/zbx-update-result.json"
+# Two ways in: Argus dropped a request (Update now on the Updates page; the path unit starts this
+# within seconds of it), or the timer found the operator window open. The work is the same.
+why=""
+if [ -f "$REQ" ]; then
+  why="request"
+  rm -f "$REQ"
+else
+  [ -f "$WIN" ] || exit 0
+  mode="$(sed -n 's/.*"mode":"\([a-z]*\)".*/\1/p' "$WIN")"
+  [ "$mode" = "auto" ] || exit 0
+  wd="$(sed -n 's/.*"weekday":\([0-9]*\).*/\1/p' "$WIN")"
+  wh="$(sed -n 's/.*"hour":\([0-9]*\).*/\1/p' "$WIN")"
+  wm="$(sed -n 's/.*"minute":\([0-9]*\).*/\1/p' "$WIN")"
+  now_wd="$(date +%w)"; now_h="$(date +%-H)"; now_m="$(date +%-M)"
+  [ "$now_wd" = "$wd" ] && [ "$now_h" = "$wh" ] || exit 0
+  # The timer fires every 5 min; act if we're within a 10-minute slack of the target minute.
+  [ "$now_m" -ge "$wm" ] && [ "$now_m" -lt $((wm + 10)) ] || exit 0
+  why="window"
+fi
+# What Argus shows afterwards (zbx-update-result.json): done or failed, the versions, why it ran,
+# and one sentence. Versions are digits and dots, the sentence has no quotes: plain JSON by printf.
+result() {
+  umask 022
+  tmp="$(mktemp "$DIR/.zbx-update-result.XXXXXX")"
+  printf '{"state":"%s","from":"%s","to":"%s","at":%d,"why":"%s","detail":"%s"}\n' "$1" "${zi:-}" "${zc:-}" "$(date +%s)" "$why" "$2" > "$tmp"
+  mv -f "$tmp" "$RES"; chmod 0644 "$RES"
+}
+zi="$(dpkg-query -W -f='${Version}' zabbix-server-pgsql 2>/dev/null)"
+zi="${zi#*:}"; zi="${zi%%-*}"
+if [ -z "$zi" ]; then
+  [ "$why" = "request" ] && result failed "Zabbix is not installed from packages on this host"
+  exit 0
+fi
+apt-get update -qq -o DPkg::Lock::Timeout=300 || true
+zc="$(apt-cache policy zabbix-server-pgsql 2>/dev/null | awk '/Candidate:/{print $2}')"
+[ "$zc" = "(none)" ] && zc=""
+zc="${zc#*:}"; zc="${zc%%-*}"
+if [ -z "$zc" ] || [ "$zc" = "$zi" ]; then
+  if [ "$why" = "request" ]; then
+    result done "already up to date"
+    /usr/local/sbin/argus-os-report || true
+  fi
+  exit 0
+fi
+# Same major.minor line only (e.g. 7.0.x -> 7.0.y). A major jump is always a planned manual event.
+if [ "${zi%.*}" != "${zc%.*}" ]; then
+  logger -t argus-zbx-update "candidate $zc is not on the ${zi%.*} line; skipping (major upgrades are manual)"
+  [ "$why" = "request" ] && result failed "$zc is not on the ${zi%.*} line: a major upgrade is a planned manual event"
+  exit 0
+fi
+pkgs="$(dpkg-query -W -f='${Package} ' 'zabbix-*' 2>/dev/null)"
+[ -n "$pkgs" ] || exit 0
+logger -t argus-zbx-update "updating Zabbix $zi -> $zc ($why): $pkgs"
+# shellcheck disable=SC2086
+if DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade -o DPkg::Lock::Timeout=300 $pkgs; then
+  systemctl restart zabbix-server || true
+  logger -t argus-zbx-update "Zabbix updated to $zc; zabbix-server restarted"
+  result done "zabbix-server restarted on the new version"
+else
+  logger -t argus-zbx-update "Zabbix update failed; leaving packages as they are"
+  result failed "apt-get could not update the packages: journalctl -t argus-zbx-update on the core VM has the details"
+fi
+# Refresh the status file right away so the Argus panel flips without waiting for the hourly run.
+/usr/local/sbin/argus-os-report || true

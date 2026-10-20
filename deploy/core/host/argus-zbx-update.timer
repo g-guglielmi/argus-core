@@ -1,0 +1,7 @@
+[Unit]
+Description=Apply Zabbix minor updates in the operator-scheduled window
+[Timer]
+OnBootSec=4min
+OnUnitActiveSec=5min
+[Install]
+WantedBy=timers.target

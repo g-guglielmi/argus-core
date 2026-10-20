@@ -1685,7 +1685,9 @@ seconds, outside the window; it removes the request as it starts and leaves
 `zbx-update-result.json` (done or failed, the versions, why it ran, one sentence) for the page,
 which polls until the host reports the new version and shows a failure with its reason. The
 reporter's `zbx_update_now` flag says the host honours requests; a core whose scripts predate it
-keeps the window and the hint to re-run the patching installer, and the API refuses the request.
+keeps the window and the hint to re-run the patching installer, and the API refuses the request
+(from the host-tools-carrying release on, the updater brings the scripts and the hint goes away by
+itself).
 **Reboot now and Patch now** ride the same channel: `reboot-request.json` makes the reboot watcher
 reboot right away if the OS still asks for it (`reboot-result.json` says rebooting, and the page
 waits for the first report after boot), `patch-request.json` makes `argus-patch` run
@@ -1794,8 +1796,10 @@ The core backs itself up, and one command restores it onto a new core (the user 
 env files, the CA and the Zabbix config, none of which the distroless, non-root Argus container can
 reach; **Argus holds the plan** (Settings, Backups, `internal/server/backup.go`) and shows the outcome.
 
-- **Tools** (`deploy/core/host`, installed by `install-backup.sh`, which `setup-core.sh` runs in both
-  modes and `setup-core-patching.sh` runs on an existing core; the core VM image bakes them in):
+- **Tools** (`deploy/core/host`, in the host tools manifest that `install-host-tools.sh` installs
+  and the argus-updater keeps current from the Argus image; `install-backup.sh`, which `setup-core.sh`
+  runs in both modes and `setup-core-patching.sh` on an existing core, adds the packages and the
+  archive folder; the core VM image bakes them in):
   `argus-backup` and `argus-restore` (Python 3, stdlib only: python3 is already on every core),
   `argus-backup.timer` (every 15 minutes), `argus-backup.path` (on a request from Argus) and
   `argus-backup.service` (oneshot, idle IO class, `Nice=10`).
@@ -2022,6 +2026,23 @@ plane; the probe checks in and converges.
   failure, and reports in `collectors.json` (`ok` | `failed` | `skipped`, with the version and what
   it wrote); the Updates page shows it. The long-running core never gets write access to a folder
   the Zabbix server executes from. `setup-core.sh` still installs them on a fresh core.
+- **The core host's scripts and units ride the image too.** Everything the core VM runs outside
+  the container (the OS reporter, the reboot, patch and Zabbix minor-update watchers, the timezone
+  check, the sizing tool, the backup tools, their systemd units) is a file in `deploy/core/host`,
+  listed in its `manifest` (destination, mode, whether `@STATE_DIR@` is rendered, whether the unit
+  is enabled). `install-host-tools.sh` installs them from that list the first time (`setup-core.sh`
+  in both modes, `setup-core-patching.sh` on an existing core, the appliance image at build). The
+  Argus image carries the same folder (`/host-tools`, the `hosttools` build context, labelled
+  `io.argus.host-tools`) and `/argus install-host-tools --root /host --state-dir DIR` writes the
+  files that changed (atomically, with their modes) and, when a systemd file changed, drops
+  `host-tools-apply.json` in the shared dir. The `core`-mode updater runs that image once, as root,
+  `--network none`, read-only, with the host's `/usr/local/sbin` and `/etc/systemd/system` bound
+  under `/host` and the shared dir at `/update`, on the same rhythm as the collectors, and only
+  where the reporter's `os-status.json` shows the host was set up as a core (Argus on Unraid or a
+  plain Docker host is skipped); it reports in `host-tools.json`, shown on the Updates page. A
+  container cannot reload systemd: `argus-host-tools.path` on the host starts
+  `argus-host-tools-apply`, which reloads, enables every timer and path unit the marker lists, and
+  re-reports. From a core's first install on, nothing on its host side is ever re-run by hand.
 
 **Tradeoff acknowledged.** Any automatic in-place container update needs Docker socket access at
 the site (the same mechanism Watchtower uses). The win over Watchtower is **central version control

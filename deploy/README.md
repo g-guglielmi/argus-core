@@ -57,10 +57,11 @@ existing **Settings → General → Timezone** setting (`ARGUS_TZ`) - one value 
 timestamps AND the VM's clock (a host timer applies changes via `timedatectl` after validating
 against zoneinfo; the built-in UTC default is never pushed).
 
-> On an **already-running core**, don't re-run the whole installer just for this - run the standalone
-> `core/setup-core-patching.sh` instead: `sudo ARGUS_STATE_DIR=/docker/argus-update ./setup-core-patching.sh`
-> (the host path bound to the core container's `/update`). It installs only the patching + reporter +
-> zabbix-watcher bits, and re-running it after an upgrade refreshes them in place.
+> On an **already-running core** that predates this, don't re-run the whole installer - run the
+> standalone `core/setup-core-patching.sh` once: `sudo ARGUS_STATE_DIR=/docker/argus-update ./setup-core-patching.sh`
+> (the host path bound to the core container's `/update`). It installs the patching policy and the
+> host scripts and units from `core/host`; from then on the argus-updater keeps those current after
+> each core update, so it never needs re-running (DESIGN 14c).
 
 After it's up:
 - Zabbix web UI (admin engine room) on the VM - lock it to the private network / admin only.

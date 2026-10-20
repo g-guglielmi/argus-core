@@ -14,6 +14,15 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 ### Added
+- **The core host's scripts and units ride the image** (DESIGN 14c): everything the core VM runs
+  outside the container (the OS reporter, the reboot, patch and Zabbix watchers, the timezone
+  check, the sizing tool, the backup tools, their systemd units) is now a file in `deploy/core/host`
+  with a manifest. `install-host-tools.sh` installs them the first time, from `setup-core.sh`,
+  `setup-core-patching.sh` and the appliance image; after that the Argus image carries the same
+  files and the argus-updater writes the ones that changed onto the host after each core update
+  (`argus install-host-tools`), with a path unit on the host reloading systemd. The Updates page
+  shows the outcome next to the collectors. A core predating this needs `setup-core-patching.sh`
+  once more, the last time; from then on nothing on its host side is re-run by hand.
 - **Update now, Reboot now and Patch now on the core** (Updates page, DESIGN 14c): a pending
   Zabbix minor, a reboot the OS asked for and pending security updates each get a button next to
   their pill; the host acts right away, outside its window, and the page shows "updating",

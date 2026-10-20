@@ -1,0 +1,7 @@
+[Unit]
+Description=Apply the pending security updates as soon as Argus requests it (Patch now)
+[Path]
+PathChanged=@STATE_DIR@/patch-request.json
+Unit=argus-patch.service
+[Install]
+WantedBy=multi-user.target

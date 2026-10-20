@@ -1,0 +1,6 @@
+[Unit]
+Description=Argus OS zbx-update (DESIGN 14c)
+[Service]
+Type=oneshot
+Environment=ARGUS_STATE_DIR=@STATE_DIR@
+ExecStart=/usr/local/sbin/argus-zbx-update
