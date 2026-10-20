@@ -28,7 +28,9 @@ GitHub Release from the matching section below.
   performance and values processed and written per second against the pass's design point, the
   five caches' use, eleven process types' busy share, hosts, items, unsupported and delayed items,
   each with a warning and a high threshold on the Thresholds screen. Its sensors file under
-  **Core**, and the host carries the core glyph in the tree.
+  **Core** in a reading order (load first, each gauge followed by its forecast, then the fleet,
+  then processes and caches, the database disk last), and the host carries the core glyph in the
+  tree.
 - **Forecasts on the core**: four calculated sensors say when items, hosts, required performance
   and the database disk reach their high thresholds at the last 30 days' trend, each row a
   sentence ("Database disk full in 121 days", "Hosts at the limit in over a year"), with a warning

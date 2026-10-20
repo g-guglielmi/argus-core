@@ -2175,7 +2175,9 @@ sizing pass (14b) is built on:
   on purpose: they jump with configuration rather than grow, so a fit on them is noise.
 
 The items are named "Core ..." so the sensor curation files them under **Core** (the same keys file
-under **Probe** on a Probe host). Thresholds sit on the Thresholds screen like any class. A core
+under **Probe** on a Probe host), in a pinned reading order (`itemLabelOrder`): load first, each
+gauge followed by its forecast, then the fleet it carries, then processes and caches (the answers:
+cores, RAM), the database disk last. Thresholds sit on the Thresholds screen like any class. A core
 installed by hand whose server host was renamed is left alone and logged; renaming it back adopts it
 at the next start. A sensor Zabbix has never read shows no reading ("-") rather than Zabbix's
 placeholder zero, on every host.

@@ -133,11 +133,24 @@ var itemLabelOrder = map[string]map[string]int{
 	// An XCP-NG host's Virtual machines section leads with the running/total count group; the
 	// per-VM rows trail unranked (natural name order).
 	"Virtual machines": {"VMs running": 0, "VMs defined": 1},
-	// A Probe host reads data-flow first (is anything backing up?), then its caches.
+	// A Probe host reads data-flow first (is anything backing up?), then its caches, then its processes.
 	"Probe": {
-		"Unsent values": 0, "Delayed items": 1, "Delayed items (over 10 min)": 2, "Values processed": 3,
+		"Unsent values": 0, "Delayed items": 1, "Delayed items (over 10 min)": 2, "Values processed per second": 3,
 		"History cache used": 4, "History index cache used": 5, "Trend cache used": 6, "Value cache used": 7,
-		"Configuration cache used": 8,
+		"Configuration cache used": 8, "Process load": 9,
+	},
+	// The core reads load first (is it within the sizing?), each gauge followed by its forecast, then
+	// the fleet it carries, then what the answers are made of (processes: cores; caches: RAM), and the
+	// database disk last.
+	"Core": {
+		"Required performance (values per second)": 0, "Values processed per second": 1, "Values written per second": 2,
+		"Load at the limit in": 3,
+		"Hosts monitored":      4, "Hosts at the limit in": 5, "Items monitored": 6, "Items at the limit in": 7,
+		"Unsupported items": 8, "Delayed items (over 10 min)": 9, "Delayed items": 9,
+		"Process load":             10,
+		"Configuration cache used": 11, "History cache used": 12, "History index cache used": 13,
+		"Trend cache used": 14, "Value cache used": 15,
+		"Database disk full in": 16,
 	},
 }
 

@@ -4,6 +4,7 @@
 package server
 
 import (
+	"sort"
 	"testing"
 
 	"argus/internal/provision"
@@ -99,5 +100,28 @@ func TestHeadroomReadsInWordsBeyondAYear(t *testing.T) {
 		if ok != c.ok || got != c.words {
 			t.Errorf("%s %q -> (%q, %v), want (%q, %v)", c.key, c.value, got, ok, c.words, c.ok)
 		}
+	}
+}
+
+func TestCoreRowsReadInOrder(t *testing.T) {
+	// Alphabetical put the forecasts away from their gauges; the pinned order reads load, fleet,
+	// processes, caches, disk, and a process channel ranks as its "Process load" group.
+	want := []string{
+		"Required performance (values per second)", "Values processed per second", "Values written per second", "Load at the limit in",
+		"Hosts monitored", "Hosts at the limit in", "Items monitored", "Items at the limit in", "Unsupported items", "Delayed items (over 10 min)",
+		"Process load (poller)",
+		"Configuration cache used", "History cache used", "History index cache used", "Trend cache used", "Value cache used",
+		"Database disk full in",
+	}
+	labels := append([]string(nil), want...)
+	sort.Slice(labels, func(i, j int) bool { return labels[j] < labels[i] }) // scramble: reverse alphabetical
+	sort.SliceStable(labels, func(i, j int) bool { return itemRank("Core", labels[i]) < itemRank("Core", labels[j]) })
+	for i := range want {
+		if labels[i] != want[i] {
+			t.Fatalf("row %d = %q, want %q (order: %v)", i, labels[i], want[i], labels)
+		}
+	}
+	if itemRank("Core", "Something new") != 1<<30 {
+		t.Error("an unlisted core row must fall after the ranked ones")
 	}
 }
