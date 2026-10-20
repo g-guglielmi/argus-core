@@ -1028,10 +1028,10 @@ function collectorsState(c: CollectorsReport | undefined, running?: string): { p
 }
 
 type OSWindow = { mode: string; weekday: number; hour: number; minute: number }
-// The host's account of its last Zabbix minor update (done or failed, why it ran, one sentence).
-type ZbxUpdateResult = { state: string; from: string; to: string; at: number; why: string; detail: string }
+// The host's account of its last action of one kind (done, failed or rebooting, why it ran, one sentence).
+type HostActionResult = { state: string; from?: string; to?: string; at: number; why: string; detail: string }
 type OSStatus = {
-  core: { available: boolean; sec_updates: number; reboot_required: boolean; reported_at: number; os?: string; zbx_server?: string; zbx_candidate?: string; tz?: string; clock_sync?: boolean; zbx_update_now?: boolean; zbx_update_pending?: number; zbx_update?: ZbxUpdateResult }
+  core: { available: boolean; sec_updates: number; reboot_required: boolean; reported_at: number; os?: string; zbx_server?: string; zbx_candidate?: string; tz?: string; clock_sync?: boolean; zbx_update_now?: boolean; reboot_now?: boolean; patch_now?: boolean; zbx_update_pending?: number; reboot_pending?: number; patch_pending?: number; zbx_update?: HostActionResult; reboot?: HostActionResult; patch?: HostActionResult }
   reboot_window: OSWindow
   zbx_window: OSWindow
   fleet_zbx?: string
@@ -1085,7 +1085,10 @@ function windowText(w?: OSWindow): string {
 function OSUpdatesCard({ proxies, vmLatest }: { proxies: Proxy[] | null; vmLatest: string }) {
   const toast = useToast()
   const confirm = useConfirm()
-  const [zReq, setZReq] = useState(0) // when Update now was clicked (unix seconds), 0 = not this session
+  // When Update now / Reboot now / Patch now was clicked (unix seconds), 0 = not this session.
+  const [zReq, setZReq] = useState(0)
+  const [rReq, setRReq] = useState(0)
+  const [pReq, setPReq] = useState(0)
   const [os, setOs] = useState<OSStatus | null>(null)
   const [mode, setMode] = useState('notify')
   const [weekday, setWeekday] = useState(0)
@@ -1123,22 +1126,49 @@ function OSUpdatesCard({ proxies, vmLatest }: { proxies: Proxy[] | null; vmLates
   const c = os?.core
   const reported = c?.available && c.reported_at > 0 ? `Reported ${relTime(c.reported_at)}.` : ''
   const vms = (proxies || []).filter((p) => p.os_reported_at)
-  // Update now on a pending Zabbix minor: pending from the click until the host's result lands (or,
-  // on a fresh page, while the request file still waits); the status is polled meanwhile.
+  // The three "now" actions share one shape: a request is pending from the click until the host has
+  // reported again after it (every script re-reports when done; a reboot reports after boot), or
+  // its result says failed; a fresh page sees a request file still waiting the same way. The
+  // status is polled while anything is pending.
+  const settled = (req: number, res?: HostActionResult) => !!c && (c.reported_at > req || (!!res && res.at >= req && res.state !== 'rebooting'))
+  const pendingOf = (req: number, file?: number, res?: HostActionResult) => !!c && ((req > 0 && !settled(req, res)) || (!!file && c.reported_at < file && !(res && res.at >= file && res.state === 'failed')))
   const zAvail = !!c?.zbx_server && !!c.zbx_candidate && c.zbx_candidate !== c.zbx_server
-  const zPending = !!c && ((zReq > 0 && !(c.zbx_update && c.zbx_update.at >= zReq)) || (!!c.zbx_update_pending && (!c.zbx_update || c.zbx_update.at < c.zbx_update_pending)))
-  useEffect(() => { if (!zPending) return; const id = setInterval(load, 10000); return () => clearInterval(id) }, [zPending]) // eslint-disable-line react-hooks/exhaustive-deps
-  const zFailed = c?.zbx_update && c.zbx_update.state === 'failed' && zAvail && !zPending ? c.zbx_update : null
+  const zPending = pendingOf(zReq, c?.zbx_update_pending, c?.zbx_update)
+  const rPending = pendingOf(rReq, c?.reboot_pending, c?.reboot)
+  const pPending = pendingOf(pReq, c?.patch_pending, c?.patch)
+  const anyPending = zPending || rPending || pPending
+  useEffect(() => { if (!anyPending) return; const id = setInterval(load, 10000); return () => clearInterval(id) }, [anyPending]) // eslint-disable-line react-hooks/exhaustive-deps
+  const failedOf = (res: HostActionResult | undefined, stillDue: boolean, pending: boolean) => res && res.state === 'failed' && stillDue && !pending ? res : null
+  const zFailed = failedOf(c?.zbx_update, zAvail, zPending)
+  const rFailed = failedOf(c?.reboot, !!c?.reboot_required, rPending)
+  const pFailed = failedOf(c?.patch, !!c && c.sec_updates > 0, pPending)
+  const request = async (url: string, failMsg: string, okMsg: string, mark: (t: number) => void) => {
+    setBusy(true)
+    try {
+      const res = await fetch(url, { method: 'POST' })
+      if (!res.ok) { toast.error(await errText(res, failMsg)); return }
+      mark(Math.floor(Date.now() / 1000)); toast.success(okMsg); await load()
+    } finally { setBusy(false) }
+  }
   const updateZbxNow = async () => {
     if (!c) return
     if (!(await confirm({ title: 'Update Zabbix on the core', message: `Update the core's Zabbix packages from ${c.zbx_server} to ${c.zbx_candidate}? The host applies it right away and restarts the Zabbix server: about a minute without polling, which the probes buffer through. Take a hypervisor snapshot first if you want a way back.`, confirmLabel: `Update to ${c.zbx_candidate}` }))) return
-    setBusy(true)
-    try {
-      const res = await fetch('/api/os/zbx-update', { method: 'POST' })
-      if (!res.ok) { toast.error(await errText(res, 'Could not request the update')); return }
-      setZReq(Math.floor(Date.now() / 1000)); toast.success('Update requested: the host applies it within a minute.'); await load()
-    } finally { setBusy(false) }
+    await request('/api/os/zbx-update', 'Could not request the update', 'Update requested: the host applies it within a minute.', setZReq)
   }
+  const rebootNow = async () => {
+    if (!(await confirm({ title: 'Reboot the core', message: 'Reboot the core VM now? Zabbix and Argus are away for a minute or two; the probes buffer their data meanwhile and send it when the core is back. Take a hypervisor snapshot first if you want a way back.', confirmLabel: 'Reboot now', danger: true }))) return
+    await request('/api/os/reboot', 'Could not request the reboot', 'Reboot requested: the core goes down within a minute and reports when it is back.', setRReq)
+  }
+  const patchNow = async () => {
+    if (!c) return
+    if (!(await confirm({ title: 'Patch the core', message: `Apply the ${c.sec_updates} pending security update${c.sec_updates === 1 ? '' : 's'} now? They are the ones that would apply by themselves tonight; services restart as needed, and a kernel update asks for a reboot afterwards.`, confirmLabel: 'Patch now' }))) return
+    await request('/api/os/patch', 'Could not request the patching', 'Patching requested: the host applies the updates within a minute.', setPReq)
+  }
+  const canNow = !!c?.zbx_update_now && !!c.reboot_now && !!c.patch_now
+  const osPillNode = !c?.available ? <UpdPill kind="none">not reporting</UpdPill>
+    : rPending ? <UpdPill kind="busy" title="The core is rebooting; it reports when it is back">rebooting…</UpdPill>
+    : pPending ? <UpdPill kind="busy" title="The host is applying the pending security updates">patching…</UpdPill>
+    : osPill(c.sec_updates, c.reboot_required, reported)
   const zPill = !c?.zbx_server ? <UpdPill kind="none">not reporting</UpdPill>
     : zPending ? <UpdPill kind="busy" title="The host is applying the update; the Zabbix server restarts when it is done">updating to {c.zbx_candidate}…</UpdPill>
     : zAvail ? <UpdPill kind="avail" title="A minor update is available from the Zabbix repo: it applies in the Core Zabbix updates window, with Update now, or by hand">{c.zbx_candidate} available</UpdPill>
@@ -1146,8 +1176,10 @@ function OSUpdatesCard({ proxies, vmLatest }: { proxies: Proxy[] | null; vmLates
   return (
     <section className="set-card">
       <div className="upd-head"><h3>Operating systems</h3></div>
-      <p className="set-note">The Debian under the core and probe VMs patches itself: security updates only, applied automatically. Argus never runs apt remotely, since there's no clean rollback. A probe VM reboots by itself in a weekly window around 03:00 when an update needs it; the core hosts the database and Zabbix, so its reboot and its Zabbix minor updates wait for the windows below. A container probe patches with its Docker host and isn't listed.</p>
-      {!os ? <Skeleton rows={3} cols={2} /> : <>
+      {!os || os.core.available
+        ? <p className="set-note">The Debian under the core and probe VMs patches itself: security updates only, applied automatically. Argus never runs apt remotely, since there's no clean rollback. A probe VM reboots by itself in a weekly window around 03:00 when an update needs it; the core hosts the database and Zabbix, so its reboot and its Zabbix minor updates wait for the windows below, or for a click on their row. A container probe patches with its Docker host and isn't listed.</p>
+        : <p className="set-note">The core's operating system is managed outside Argus here: this section covers the Argus appliance and a Debian core set up with <span className="mono">deploy/core/setup-core.sh</span>, whose host reporter shows the OS and Zabbix patch status and takes the windows and buttons. Probe VMs report on their own and are listed below; a container probe patches with its Docker host and isn't listed.</p>}
+      {!os ? <Skeleton rows={3} cols={2} /> : !os.core.available ? null : <>
         <UpdPolicy label="Core reboot" value={windowText(os.reboot_window)}
           title={os.reboot_window.mode === 'auto' ? "The core reboots only when an update needs it, in this window (the core VM's local time)" : 'Argus flags "reboot needed" and leaves the reboot to you'}
           onEdit={() => setEditR(true)}
@@ -1176,11 +1208,14 @@ function OSUpdatesCard({ proxies, vmLatest }: { proxies: Proxy[] | null; vmLates
             : 'Notify only: Argus shows when a minor is available and leaves applying it to you. Major upgrades are never automated: they migrate the database.'}</p> : undefined} />
 
         <UpdGroup label="Core VM" sub="this server">
-          <UpdPart label="OS">{c?.available && c.os && <UpdVer v={osName(c.os)} title="The operating system the core VM reports" />}{c?.available ? osPill(c.sec_updates, c.reboot_required, reported) : <UpdPill kind="none">not reporting</UpdPill>}</UpdPart>
-          {!c?.available && <UpdBelow><p className="set-hint">The core's OS patch status isn't wired up yet. Run the host reporter from <span className="mono">deploy/core/setup-core.sh</span> and share the self-update dir with the core container.</p></UpdBelow>}
+          <UpdPart label="OS">{c?.available && c.os && <UpdVer v={osName(c.os)} title="The operating system the core VM reports" />}{osPillNode}
+            {c?.available && c.reboot_required && c.reboot_now && !rPending && <Button variant="default" onClick={rebootNow} disabled={busy} title="The core reboots right away, outside the window">Reboot now</Button>}
+            {c?.available && c.sec_updates > 0 && c.patch_now && !pPending && <Button variant="default" onClick={patchNow} disabled={busy} title="The host applies the pending security updates right away">Patch now</Button>}</UpdPart>
+          {rFailed && <UpdBelow><p className="set-hint" style={{ color: 'var(--err)' }}>The last reboot request ({relTime(rFailed.at)}) failed: {rFailed.detail}</p></UpdBelow>}
+          {pFailed && <UpdBelow><p className="set-hint" style={{ color: 'var(--err)' }}>The last patching ({relTime(pFailed.at)}) failed: {pFailed.detail}</p></UpdBelow>}
           <UpdPart label="Zabbix">{c?.zbx_server && <UpdVer v={c.zbx_server} title="The Zabbix server version on the core" />}{zPill}{zAvail && !zPending && c?.zbx_update_now && <Button variant="default" onClick={updateZbxNow} disabled={busy} title="The host applies the update right away, outside the window">Update now</Button>}</UpdPart>
           {c?.available && !c.zbx_server && <UpdBelow><p className="set-hint">The host reporter predates Zabbix version reporting: re-run <span className="mono">deploy/core/setup-core-patching.sh</span> from the repo to enable it.</p></UpdBelow>}
-          {zAvail && c && !c.zbx_update_now && <UpdBelow><p className="set-hint">Update now needs the newer host scripts: re-run <span className="mono">deploy/core/setup-core-patching.sh</span> on the core VM, or let the window apply it.</p></UpdBelow>}
+          {c?.available && !canNow && (zAvail || c.reboot_required || c.sec_updates > 0) && <UpdBelow><p className="set-hint">Update now, Reboot now and Patch now need the newer host scripts: re-run <span className="mono">deploy/core/setup-core-patching.sh</span> on the core VM; until then the windows apply them.</p></UpdBelow>}
           {zFailed && <UpdBelow><p className="set-hint" style={{ color: 'var(--err)' }}>The last update attempt ({relTime(zFailed.at)}) failed: {zFailed.detail}</p></UpdBelow>}
         </UpdGroup>
       </>}

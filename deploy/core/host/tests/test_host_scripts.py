@@ -813,10 +813,92 @@ class PatchingTest(unittest.TestCase):
         end = "systemctl enable --now argus-os-report.timer"
         self.assertEqual(installer_block(SETUP, start, end), installer_block(PATCHING, start, end))
 
-    def test_reporter_says_the_host_honours_update_requests(self):
+    def test_reporter_says_the_host_honours_requests(self):
         body = heredoc_body(PATCHING, "cat > /usr/local/sbin/argus-os-report <<'REPORT'\n", "REPORT")
-        self.assertIn('"zbx_update_now":true', body)
-        self.assertIn("argus-zbx-update.path", installer_block(PATCHING, "systemctl enable --now argus-os-report.timer", "systemctl enable --now argus-os-report.timer"))
+        self.assertIn('"zbx_update_now":true,"reboot_now":true,"patch_now":true', body)
+        enable = installer_block(PATCHING, "systemctl enable --now argus-os-report.timer", "systemctl enable --now argus-os-report.timer")
+        for unit in ("argus-zbx-update.path", "argus-reboot-check.path", "argus-patch.path"):
+            self.assertIn(unit, enable)
+
+    def host_script(self, opener, terminator, shims, state_files, env=None):
+        """Run one installer-written script under bash with stand-ins on PATH; returns (results, log)."""
+        tmp = tempfile.mkdtemp()
+        state = os.path.join(tmp, "state")
+        sdir = os.path.join(tmp, "bin")
+        os.makedirs(state)
+        os.makedirs(sdir)
+        script = os.path.join(tmp, "script")
+        with open(script, "w", newline="\n") as fh:
+            fh.write(heredoc_body(PATCHING, opener, terminator))
+        log = os.path.join(tmp, "calls.log")
+        for name, body in shims.items():
+            path = os.path.join(sdir, name)
+            with open(path, "w", newline="\n") as fh:
+                fh.write("#!/usr/bin/env bash\n" + body)
+            os.chmod(path, 0o755)
+        for name, body in state_files.items():
+            with open(os.path.join(state, name), "w") as fh:
+                fh.write(body)
+        e = dict(os.environ, ARGUS_STATE_DIR=winpath(state), LOG=winpath(log), PATH=winpath(sdir) + os.pathsep + os.environ.get("PATH", ""))
+        e.update(env or {})
+        r = subprocess.run([WHICH("bash"), winpath(script)], env=e, capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        results = {}
+        for name in os.listdir(state):
+            if name.endswith("-result.json"):
+                with open(os.path.join(state, name)) as fh:
+                    results[name] = json.load(fh)
+            elif name.endswith("-request.json"):
+                results[name] = "still there"
+        calls = ""
+        if os.path.exists(log):
+            with open(log) as fh:
+                calls = fh.read()
+        return results, calls
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_reboot_now_reboots_when_the_os_asks_and_says_so(self):
+        flag = os.path.join(tempfile.mkdtemp(), "reboot-required")
+        with open(flag, "w") as fh:
+            fh.write("")
+        shims = {"systemctl": "echo \"systemctl $*\" >> \"$LOG\"\n", "logger": ":\n"}
+        results, calls = self.host_script("cat > /usr/local/sbin/argus-reboot-check <<'RCHK'\n", "RCHK", shims,
+                                          {"reboot-request.json": '{"at":1}'}, {"ARGUS_REBOOT_FLAG": winpath(flag)})
+        self.assertNotIn("reboot-request.json", results, "the request must be consumed")
+        self.assertEqual((results["reboot-result.json"]["state"], results["reboot-result.json"]["why"]), ("rebooting", "request"))
+        self.assertIn("systemctl reboot", calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_reboot_now_without_a_pending_reboot_reports_done(self):
+        shims = {"systemctl": "echo \"systemctl $*\" >> \"$LOG\"\n", "logger": ":\n"}
+        results, calls = self.host_script("cat > /usr/local/sbin/argus-reboot-check <<'RCHK'\n", "RCHK", shims,
+                                          {"reboot-request.json": '{"at":1}'}, {"ARGUS_REBOOT_FLAG": winpath(os.path.join(tempfile.mkdtemp(), "absent"))})
+        self.assertEqual((results["reboot-result.json"]["state"], results["reboot-result.json"]["detail"]), ("done", "no reboot is needed"))
+        self.assertNotIn("systemctl reboot", calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_reboot_window_alone_does_not_reboot_outside_it(self):
+        shims = {"systemctl": "echo \"systemctl $*\" >> \"$LOG\"\n", "logger": ":\n"}
+        flag = os.path.join(tempfile.mkdtemp(), "reboot-required")
+        with open(flag, "w") as fh:
+            fh.write("")
+        results, calls = self.host_script("cat > /usr/local/sbin/argus-reboot-check <<'RCHK'\n", "RCHK", shims,
+                                          {"reboot-window.json": '{"mode":"notify"}'}, {"ARGUS_REBOOT_FLAG": winpath(flag)})
+        self.assertEqual(results, {})
+        self.assertNotIn("systemctl reboot", calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_patch_now_runs_the_nightly_policy_and_reports(self):
+        shims = {"unattended-upgrade": "echo \"unattended-upgrade $*\" >> \"$LOG\"; exit \"${UA_RC:-0}\"\n", "logger": "cat > /dev/null\n"}
+        results, calls = self.host_script("cat > /usr/local/sbin/argus-patch <<'PTCH'\n", "PTCH", shims, {"patch-request.json": '{"at":1}'})
+        self.assertNotIn("patch-request.json", results)
+        self.assertEqual((results["patch-result.json"]["state"], results["patch-result.json"]["detail"]), ("done", "security updates applied"))
+        self.assertIn("unattended-upgrade -v", calls)
+        failed, _ = self.host_script("cat > /usr/local/sbin/argus-patch <<'PTCH'\n", "PTCH", shims, {"patch-request.json": '{"at":1}'}, {"UA_RC": "1"})
+        self.assertEqual(failed["patch-result.json"]["state"], "failed")
+        self.assertIn("unattended-upgrade reported a problem", failed["patch-result.json"]["detail"])
+        quiet, _ = self.host_script("cat > /usr/local/sbin/argus-patch <<'PTCH'\n", "PTCH", shims, {})
+        self.assertEqual(quiet, {}, "without a request the patcher does nothing")
 
     def zbx_update(self, zi, zc, request=True, apt_rc=0, window=None):
         """Run the updater with stand-ins for apt, dpkg and systemctl; returns (result, log, request_left)."""

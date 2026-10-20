@@ -1686,6 +1686,14 @@ seconds, outside the window; it removes the request as it starts and leaves
 which polls until the host reports the new version and shows a failure with its reason. The
 reporter's `zbx_update_now` flag says the host honours requests; a core whose scripts predate it
 keeps the window and the hint to re-run the patching installer, and the API refuses the request.
+**Reboot now and Patch now** ride the same channel: `reboot-request.json` makes the reboot watcher
+reboot right away if the OS still asks for it (`reboot-result.json` says rebooting, and the page
+waits for the first report after boot), `patch-request.json` makes `argus-patch` run
+`unattended-upgrade` now, the same security-only policy that runs nightly, and report
+(`patch-result.json`); the reporter's `reboot_now` / `patch_now` flags gate the buttons and the
+API the same way. **Without the host reporter** (Argus as a container on Unraid with Zabbix
+elsewhere, or a core on a distro the installer doesn't cover) the card says the core's OS is managed
+outside Argus and shows neither windows nor buttons; the probe VMs still list.
 
 **Core time (same machinery).** Every schedule above runs on the VM's clock, so the reporter also
 carries the VM timezone and `timedatectl`'s NTPSynchronized flag (Debian syncs via

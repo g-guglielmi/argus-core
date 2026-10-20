@@ -226,21 +226,49 @@ cs="$(timedatectl show -p NTPSynchronized --value 2>/dev/null)"
 [ -d "$DIR" ] || install -d -m 0755 "$DIR"
 umask 022  # so the new file is created world-readable, not mktemp's default 0600
 tmp="$(mktemp "$DIR/.os-status.XXXXXX")"
-printf '{"sec_updates":%d,"reboot_required":%s,"reported_at":%d,"os":"%s","zbx_server":"%s","zbx_candidate":"%s","tz":"%s","clock":"%s","zbx_update_now":true}\n' "$sec" "$reboot" "$(date +%s)" "$os" "$zi" "$zc" "$tz" "$cs" > "$tmp"
+printf '{"sec_updates":%d,"reboot_required":%s,"reported_at":%d,"os":"%s","zbx_server":"%s","zbx_candidate":"%s","tz":"%s","clock":"%s","zbx_update_now":true,"reboot_now":true,"patch_now":true}\n' "$sec" "$reboot" "$(date +%s)" "$os" "$zi" "$zc" "$tz" "$cs" > "$tmp"
 mv -f "$tmp" "$DIR/os-status.json"
 chmod 0644 "$DIR/os-status.json"  # bulletproof: the Argus container (possibly non-root) reads it via the bind mount
 REPORT
 chmod +x /usr/local/sbin/argus-os-report
 
 # Reboot watcher: honour the operator-chosen window Argus writes to reboot-window.json (mode "auto" +
-# weekday/hour/minute). Only reboots when the OS actually flagged reboot-required. Local, never remote.
+# weekday/hour/minute), or a request Argus drops as reboot-request.json ("Reboot now" on the Updates
+# page; the path unit below starts the script within seconds). Only reboots when the OS actually
+# flagged reboot-required, and leaves reboot-result.json for the page. Local, never remote.
 cat > /usr/local/sbin/argus-reboot-check <<'RCHK'
 #!/usr/bin/env bash
 set -u
 DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
 WIN="$DIR/reboot-window.json"
+REQ="$DIR/reboot-request.json"
+RES="$DIR/reboot-result.json"
+RR="${ARGUS_REBOOT_FLAG:-/var/run/reboot-required}"
+# What Argus shows afterwards (reboot-result.json): rebooting, done or failed, why, one sentence.
+why=""
+result() {
+  umask 022
+  tmp="$(mktemp "$DIR/.reboot-result.XXXXXX")"
+  printf '{"state":"%s","at":%d,"why":"%s","detail":"%s"}\n' "$1" "$(date +%s)" "$why" "$2" > "$tmp"
+  mv -f "$tmp" "$RES"; chmod 0644 "$RES"
+}
+# On request (Reboot now on the Updates page; the path unit starts this within seconds) the core
+# reboots if the OS still asks for it. Otherwise only in the operator window.
+if [ -f "$REQ" ]; then
+  why="request"
+  rm -f "$REQ"
+  if [ -f "$RR" ]; then
+    logger -t argus-reboot "rebooting the core on request from Argus"
+    result rebooting "rebooting the core"
+    systemctl reboot
+  else
+    result done "no reboot is needed"
+    /usr/local/sbin/argus-os-report || true
+  fi
+  exit 0
+fi
 [ -f "$WIN" ] || exit 0
-[ -f /var/run/reboot-required ] || exit 0
+[ -f "$RR" ] || exit 0
 mode="$(sed -n 's/.*"mode":"\([a-z]*\)".*/\1/p' "$WIN")"
 [ "$mode" = "auto" ] || exit 0
 wd="$(sed -n 's/.*"weekday":\([0-9]*\).*/\1/p' "$WIN")"
@@ -250,11 +278,43 @@ now_wd="$(date +%w)"; now_h="$(date +%-H)"; now_m="$(date +%-M)"
 [ "$now_wd" = "$wd" ] && [ "$now_h" = "$wh" ] || exit 0
 # The timer fires every 5 min; reboot if we're within a 10-minute slack of the target minute.
 if [ "$now_m" -ge "$wm" ] && [ "$now_m" -lt $((wm + 10)) ]; then
+  why="window"
   logger -t argus-reboot "OS reboot-required in the operator window; rebooting the core"
+  result rebooting "rebooting the core in its window"
   systemctl reboot
 fi
 RCHK
 chmod +x /usr/local/sbin/argus-reboot-check
+
+# Patch now: apply the pending security updates right away when Argus drops patch-request.json (the
+# path unit starts this within seconds): the same security-only policy unattended-upgrades runs
+# daily, just now. Services restart as needrestart decides; a kernel update then asks for a reboot,
+# which the reboot watcher above handles. Local, never remote.
+cat > /usr/local/sbin/argus-patch <<'PTCH'
+#!/usr/bin/env bash
+set -u
+DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
+REQ="$DIR/patch-request.json"
+RES="$DIR/patch-result.json"
+[ -f "$REQ" ] || exit 0
+rm -f "$REQ"
+why="request"
+result() {
+  umask 022
+  tmp="$(mktemp "$DIR/.patch-result.XXXXXX")"
+  printf '{"state":"%s","at":%d,"why":"%s","detail":"%s"}\n' "$1" "$(date +%s)" "$why" "$2" > "$tmp"
+  mv -f "$tmp" "$RES"; chmod 0644 "$RES"
+}
+logger -t argus-patch "applying the pending security updates on request from Argus"
+DEBIAN_FRONTEND=noninteractive unattended-upgrade -v 2>&1 | logger -t argus-patch
+if [ "${PIPESTATUS[0]}" -eq 0 ]; then
+  result done "security updates applied"
+else
+  result failed "unattended-upgrade reported a problem: journalctl -t argus-patch on the core VM has the details"
+fi
+/usr/local/sbin/argus-os-report || true
+PTCH
+chmod +x /usr/local/sbin/argus-patch
 
 # Zabbix minor-update watcher: honour the operator window Argus writes to zbx-update-window.json
 # (mode "auto" + weekday/hour/minute, same shape as the reboot window), or a request Argus drops as
@@ -366,7 +426,7 @@ chmod +x /usr/local/sbin/argus-tz-check
 
 # systemd units: report hourly, check the reboot window every 5 minutes. ARGUS_STATE_DIR is baked in
 # so the scripts and Argus agree on the shared path.
-for unit in argus-os-report argus-reboot-check argus-zbx-update argus-tz-check; do
+for unit in argus-os-report argus-reboot-check argus-zbx-update argus-tz-check argus-patch; do
   cat > "/etc/systemd/system/${unit}.service" <<SVC
 [Unit]
 Description=Argus OS ${unit#argus-} (DESIGN §14c)
@@ -413,6 +473,24 @@ Unit=argus-zbx-update.service
 [Install]
 WantedBy=multi-user.target
 P3
+cat > /etc/systemd/system/argus-reboot-check.path <<P2
+[Unit]
+Description=Reboot the core as soon as Argus requests it (Reboot now)
+[Path]
+PathChanged=${ARGUS_STATE_DIR}/reboot-request.json
+Unit=argus-reboot-check.service
+[Install]
+WantedBy=multi-user.target
+P2
+cat > /etc/systemd/system/argus-patch.path <<P4
+[Unit]
+Description=Apply the pending security updates as soon as Argus requests it (Patch now)
+[Path]
+PathChanged=${ARGUS_STATE_DIR}/patch-request.json
+Unit=argus-patch.service
+[Install]
+WantedBy=multi-user.target
+P4
 cat > /etc/systemd/system/argus-tz-check.timer <<'T4'
 [Unit]
 Description=Apply the operator-chosen VM timezone from Argus
@@ -423,7 +501,7 @@ OnUnitActiveSec=5min
 WantedBy=timers.target
 T4
 systemctl daemon-reload
-systemctl enable --now argus-os-report.timer argus-reboot-check.timer argus-zbx-update.timer argus-zbx-update.path argus-tz-check.timer
+systemctl enable --now argus-os-report.timer argus-reboot-check.timer argus-zbx-update.timer argus-zbx-update.path argus-reboot-check.path argus-patch.path argus-tz-check.timer
 /usr/local/sbin/argus-os-report || true
 echo "    unattended-upgrades (security only, no auto-reboot) + host reporter + zabbix-minor watcher installed"
 echo "    reporting OS status into ${ARGUS_STATE_DIR} (map this as ARGUS_UPDATE_DIR in the core container)"

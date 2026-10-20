@@ -76,31 +76,43 @@ func TestValidTimezone(t *testing.T) {
 	}
 }
 
-func TestZbxUpdateRefusal(t *testing.T) {
-	ok := coreOSView{Available: true, ZbxUpdateNow: true, ZbxServer: "7.0.31", ZbxCandidate: "7.0.32"}
-	if why := zbxUpdateRefusal(ok, 1000); why != "" {
-		t.Fatalf("a pending minor on a current host was refused: %s", why)
+func TestHostRequestRefusal(t *testing.T) {
+	ok := coreOSView{Available: true, ZbxUpdateNow: true, RebootNow: true, PatchNow: true, ZbxServer: "7.0.31", ZbxCandidate: "7.0.32", RebootRequired: true, SecUpdates: 3}
+	for _, kind := range []string{"zbx-update", "reboot", "patch"} {
+		if why := hostRequestRefusal(kind, ok, 1000); why != "" {
+			t.Fatalf("%s refused on a host that can: %s", kind, why)
+		}
 	}
 	cases := []struct {
-		name string
-		v    coreOSView
-		want string
+		name, kind string
+		v          coreOSView
+		want       string
 	}{
-		{"reporter not wired", coreOSView{}, "not wired up"},
-		{"host scripts predate it", coreOSView{Available: true, ZbxServer: "7.0.31", ZbxCandidate: "7.0.32"}, "predate Update now"},
-		{"up to date", coreOSView{Available: true, ZbxUpdateNow: true, ZbxServer: "7.0.32", ZbxCandidate: "7.0.32"}, "up to date"},
-		{"no candidate", coreOSView{Available: true, ZbxUpdateNow: true, ZbxServer: "7.0.32"}, "up to date"},
-		{"already requested", coreOSView{Available: true, ZbxUpdateNow: true, ZbxServer: "7.0.31", ZbxCandidate: "7.0.32", ZbxUpdatePending: 900}, "already requested"},
+		{"reporter not wired", "zbx-update", coreOSView{}, "not wired up"},
+		{"host scripts predate it", "zbx-update", coreOSView{Available: true, ZbxServer: "7.0.31", ZbxCandidate: "7.0.32"}, "predate Update now"},
+		{"up to date", "zbx-update", coreOSView{Available: true, ZbxUpdateNow: true, ZbxServer: "7.0.32", ZbxCandidate: "7.0.32"}, "up to date"},
+		{"no candidate", "zbx-update", coreOSView{Available: true, ZbxUpdateNow: true, ZbxServer: "7.0.32"}, "up to date"},
+		{"already requested", "zbx-update", coreOSView{Available: true, ZbxUpdateNow: true, ZbxServer: "7.0.31", ZbxCandidate: "7.0.32", ZbxUpdatePending: 900}, "already requested"},
+		{"reboot: scripts predate it", "reboot", coreOSView{Available: true, RebootRequired: true}, "predate Reboot now"},
+		{"reboot: not needed", "reboot", coreOSView{Available: true, RebootNow: true}, "does not need a reboot"},
+		{"reboot: already requested", "reboot", coreOSView{Available: true, RebootNow: true, RebootRequired: true, RebootPending: 950}, "already requested"},
+		{"patch: scripts predate it", "patch", coreOSView{Available: true, SecUpdates: 2}, "predate Patch now"},
+		{"patch: nothing pending", "patch", coreOSView{Available: true, PatchNow: true, SecUpdates: 0}, "no security updates"},
+		{"patch: count unknown", "patch", coreOSView{Available: true, PatchNow: true, SecUpdates: -1}, "no security updates"},
+		{"patch: already requested", "patch", coreOSView{Available: true, PatchNow: true, SecUpdates: 2, PatchPending: 990}, "already requested"},
+		{"unknown kind", "wipe", ok, "unknown request"},
 	}
 	for _, c := range cases {
-		if why := zbxUpdateRefusal(c.v, 1000); !strings.Contains(why, c.want) {
+		if why := hostRequestRefusal(c.kind, c.v, 1000); !strings.Contains(why, c.want) {
 			t.Errorf("%s: got %q, want it to say %q", c.name, why, c.want)
 		}
 	}
 	// A request the host never picked up (no path unit, VM off) stops blocking after 15 minutes.
 	stale := ok
-	stale.ZbxUpdatePending = 1000 - 16*60
-	if why := zbxUpdateRefusal(stale, 1000); why != "" {
-		t.Errorf("a stale request still blocks: %s", why)
+	stale.ZbxUpdatePending, stale.RebootPending, stale.PatchPending = 1000-16*60, 1000-16*60, 1000-16*60
+	for _, kind := range []string{"zbx-update", "reboot", "patch"} {
+		if why := hostRequestRefusal(kind, stale, 1000); why != "" {
+			t.Errorf("%s: a stale request still blocks: %s", kind, why)
+		}
 	}
 }

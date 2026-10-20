@@ -14,12 +14,13 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 ### Added
-- **Update now for the core's Zabbix minor update** (Updates page, DESIGN 14c): a pending minor
-  gets a button next to its "available" pill; the host applies it right away, outside the window,
-  and restarts the Zabbix server, and the page shows "updating" until the new version reports, or
-  the failure with its reason. Argus still never runs apt itself: it drops a request file in the
-  shared dir and a path unit on the host starts the same script the window uses. A core whose host
-  scripts predate the feature keeps the window and gets the hint to re-run the patching installer.
+- **Update now, Reboot now and Patch now on the core** (Updates page, DESIGN 14c): a pending
+  Zabbix minor, a reboot the OS asked for and pending security updates each get a button next to
+  their pill; the host acts right away, outside its window, and the page shows "updating",
+  "rebooting" or "patching" until the host reports again, or the failure with its reason. Argus
+  still never runs apt or reboots anything itself: it drops a request file in the shared dir and a
+  path unit on the host starts the same script the window uses. A core whose host scripts predate
+  the feature keeps its windows and gets the hint to re-run the patching installer.
 - **`argus-size-zabbix`** (deploy/core/host, DESIGN 14b): sizes the Zabbix server's caches and
   process counts, and PostgreSQL's connection limit, to the machine's RAM and cores, as one marked
   block at the end of `zabbix_server.conf` (Zabbix takes the last value, so it wins over the
@@ -45,6 +46,10 @@ GitHub Release from the matching section below.
   they jump with configuration, they do not grow.
 
 ### Fixed
+- **The Operating systems card on a core without the host reporter** (Argus as a container with
+  Zabbix elsewhere, or a distro the installer doesn't cover) said "not reporting" with a hint to run
+  the Debian installer and offered reboot and update windows that nothing would read; it now says
+  the core's OS is managed outside Argus and shows only the probe VMs.
 - **A page switch starts at the top.** The window kept its scroll offset across views, so the next
   page opened wherever the previous one was scrolled to, and Back and Forward let the browser
   restore an offset against a different page; every view change now scrolls to the top, and the

@@ -43,21 +43,26 @@ const zbxWindowFile = "zbx-update-window.json"
 // zbxWindowKey is the app_meta key holding the Zabbix minor-update window (JSON).
 const zbxWindowKey = "core_zbx_update_window"
 
-// zbxUpdateRequestFile is the request Argus drops for the host when an admin clicks Update now on a
-// pending Zabbix minor update: a path unit starts argus-zbx-update within seconds, and the script
-// removes the file as it starts. zbxUpdateResultFile is what the script leaves afterwards, done or
-// failed, the versions, why it ran (request or window) and one sentence, which the Updates page
-// shows. Argus never runs apt itself: the host applies, Argus asks and reads.
+// The requests Argus drops for the host when an admin clicks Update now (a pending Zabbix minor),
+// Reboot now (the OS asked for a reboot) or Patch now (pending security updates): a path unit starts
+// the matching host script within seconds, and the script removes the file as it starts. Each
+// leaves a result file afterwards, done, failed or rebooting, why it ran (request or window) and
+// one sentence, which the Updates page shows. Argus never runs apt or reboots anything itself: the
+// host applies, Argus asks and reads.
 const (
 	zbxUpdateRequestFile = "zbx-update-request.json"
 	zbxUpdateResultFile  = "zbx-update-result.json"
+	rebootRequestFile    = "reboot-request.json"
+	rebootResultFile     = "reboot-result.json"
+	patchRequestFile     = "patch-request.json"
+	patchResultFile      = "patch-result.json"
 )
 
-// zbxUpdateResult is the host's account of its last Zabbix minor update (zbx-update-result.json).
-type zbxUpdateResult struct {
-	State  string `json:"state"` // done | failed
-	From   string `json:"from"`
-	To     string `json:"to"`
+// hostActionResult is the host's account of the last action of one kind (a *-result.json).
+type hostActionResult struct {
+	State  string `json:"state"`          // done | failed | rebooting
+	From   string `json:"from,omitempty"` // versions, for the Zabbix update
+	To     string `json:"to,omitempty"`
 	At     int64  `json:"at"`
 	Why    string `json:"why"` // request | window
 	Detail string `json:"detail"`
@@ -238,12 +243,18 @@ type coreOSView struct {
 	// warning.
 	TZ        string `json:"tz,omitempty"`
 	ClockSync *bool  `json:"clock_sync,omitempty"`
-	// Update now (reporter r4+): the host honours a request file for a pending Zabbix minor update.
-	// ZbxUpdatePending is the request's time while the host has not picked it up yet; ZbxUpdate is
-	// the host's account of the last update it ran.
-	ZbxUpdateNow     bool             `json:"zbx_update_now"`
-	ZbxUpdatePending int64            `json:"zbx_update_pending,omitempty"`
-	ZbxUpdate        *zbxUpdateResult `json:"zbx_update,omitempty"`
+	// Update now, Reboot now, Patch now (reporter r4+): the host honours a request file for each.
+	// The *Pending fields carry a request's time while the host has not picked it up yet; ZbxUpdate,
+	// Reboot and Patch are the host's account of the last action of that kind.
+	ZbxUpdateNow     bool              `json:"zbx_update_now"`
+	RebootNow        bool              `json:"reboot_now"`
+	PatchNow         bool              `json:"patch_now"`
+	ZbxUpdatePending int64             `json:"zbx_update_pending,omitempty"`
+	RebootPending    int64             `json:"reboot_pending,omitempty"`
+	PatchPending     int64             `json:"patch_pending,omitempty"`
+	ZbxUpdate        *hostActionResult `json:"zbx_update,omitempty"`
+	Reboot           *hostActionResult `json:"reboot,omitempty"`
+	Patch            *hostActionResult `json:"patch,omitempty"`
 }
 
 // osStatusResponse drives the OS-patching UI: the core's own status and the operator windows.
@@ -271,6 +282,8 @@ func (s *Server) coreOSStatus() coreOSView {
 		TZ             string `json:"tz"`
 		Clock          string `json:"clock"` // timedatectl NTPSynchronized: "yes" | "no" | ""
 		ZbxUpdateNow   bool   `json:"zbx_update_now"`
+		RebootNow      bool   `json:"reboot_now"`
+		PatchNow       bool   `json:"patch_now"`
 	}
 	ok, err := readUpdateJSON(s.updatePath(coreOSStatusFile), &rec)
 	if err != nil || !ok {
@@ -288,45 +301,80 @@ func (s *Server) coreOSStatus() coreOSView {
 		synced := rec.Clock == "yes"
 		v.ClockSync = &synced
 	}
-	v.ZbxUpdateNow = rec.ZbxUpdateNow
-	var res zbxUpdateResult
-	if ok, err := readUpdateJSON(s.updatePath(zbxUpdateResultFile), &res); err == nil && ok && res.State != "" {
-		v.ZbxUpdate = &res
+	v.ZbxUpdateNow, v.RebootNow, v.PatchNow = rec.ZbxUpdateNow, rec.RebootNow, rec.PatchNow
+	v.ZbxUpdate, v.ZbxUpdatePending = s.hostAction(zbxUpdateResultFile, zbxUpdateRequestFile)
+	v.Reboot, v.RebootPending = s.hostAction(rebootResultFile, rebootRequestFile)
+	v.Patch, v.PatchPending = s.hostAction(patchResultFile, patchRequestFile)
+	return v
+}
+
+// hostAction reads one kind's last result and, when its request file still waits for the host, the
+// request's time.
+func (s *Server) hostAction(resultFile, requestFile string) (*hostActionResult, int64) {
+	var res hostActionResult
+	var out *hostActionResult
+	if ok, err := readUpdateJSON(s.updatePath(resultFile), &res); err == nil && ok && res.State != "" {
+		out = &res
 	}
 	var req struct {
 		At int64 `json:"at"`
 	}
-	if ok, err := readUpdateJSON(s.updatePath(zbxUpdateRequestFile), &req); err == nil && ok {
-		v.ZbxUpdatePending = req.At
+	pending := int64(0)
+	if ok, err := readUpdateJSON(s.updatePath(requestFile), &req); err == nil && ok {
+		pending = req.At
 	}
-	return v
+	return out, pending
 }
 
-// zbxUpdateRefusal says why an Update now request can't go ahead, "" when it can. A request the host
-// never picked up stops blocking after 15 minutes (the path unit was not installed, or the VM was off).
-func zbxUpdateRefusal(v coreOSView, now int64) string {
-	switch {
-	case !v.Available:
+// hostRequestRefusal says why a request of one kind ("zbx-update", "reboot", "patch") can't go ahead,
+// "" when it can. A request the host never picked up stops blocking after 15 minutes (the path unit
+// was not installed, or the VM was off).
+func hostRequestRefusal(kind string, v coreOSView, now int64) string {
+	if !v.Available {
 		return "the core's host reporter is not wired up (deploy/core/setup-core-patching.sh)"
-	case !v.ZbxUpdateNow:
-		return "the core's host scripts predate Update now: re-run deploy/core/setup-core-patching.sh on the core VM, or let the window apply it"
-	case v.ZbxServer == "":
-		return "the host reports no Zabbix server package"
-	case v.ZbxCandidate == "" || v.ZbxCandidate == v.ZbxServer:
-		return "Zabbix on the core is up to date"
-	case v.ZbxUpdatePending > 0 && now-v.ZbxUpdatePending < 15*60:
-		return "an update is already requested; the host applies it within a minute"
+	}
+	stale := func(pending int64) bool { return pending > 0 && now-pending < 15*60 }
+	switch kind {
+	case "zbx-update":
+		switch {
+		case !v.ZbxUpdateNow:
+			return "the core's host scripts predate Update now: re-run deploy/core/setup-core-patching.sh on the core VM, or let the window apply it"
+		case v.ZbxServer == "":
+			return "the host reports no Zabbix server package"
+		case v.ZbxCandidate == "" || v.ZbxCandidate == v.ZbxServer:
+			return "Zabbix on the core is up to date"
+		case stale(v.ZbxUpdatePending):
+			return "an update is already requested; the host applies it within a minute"
+		}
+	case "reboot":
+		switch {
+		case !v.RebootNow:
+			return "the core's host scripts predate Reboot now: re-run deploy/core/setup-core-patching.sh on the core VM, or let the window reboot it"
+		case !v.RebootRequired:
+			return "the core does not need a reboot"
+		case stale(v.RebootPending):
+			return "a reboot is already requested"
+		}
+	case "patch":
+		switch {
+		case !v.PatchNow:
+			return "the core's host scripts predate Patch now: re-run deploy/core/setup-core-patching.sh on the core VM; the updates apply by themselves tonight"
+		case v.SecUpdates <= 0:
+			return "no security updates are pending"
+		case stale(v.PatchPending):
+			return "patching is already requested"
+		}
+	default:
+		return "unknown request"
 	}
 	return ""
 }
 
-// handleZbxUpdateNow queues the pending Zabbix minor update on the core for the host to apply right
-// away (admin): POST /api/os/zbx-update. Argus drops zbx-update-request.json in the shared dir; the
-// host's path unit starts argus-zbx-update, which reports back through os-status.json and
-// zbx-update-result.json.
-func (s *Server) handleZbxUpdateNow(w http.ResponseWriter, r *http.Request) {
+// requestHostAction drops one kind's request file for the host (admin): the path unit on the host
+// starts the matching script, which reports back through os-status.json and its result file.
+func (s *Server) requestHostAction(w http.ResponseWriter, r *http.Request, kind, file string, extra map[string]any) {
 	v := s.coreOSStatus()
-	if why := zbxUpdateRefusal(v, time.Now().Unix()); why != "" {
+	if why := hostRequestRefusal(kind, v, time.Now().Unix()); why != "" {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": why})
 		return
 	}
@@ -335,12 +383,33 @@ func (s *Server) handleZbxUpdateNow(w http.ResponseWriter, r *http.Request) {
 		by = u.Email
 	}
 	at := time.Now().Unix()
-	if err := s.writeUpdateJSONAtomic(zbxUpdateRequestFile, map[string]any{"at": at, "by": by, "from": v.ZbxServer, "to": v.ZbxCandidate}); err != nil {
+	req := map[string]any{"at": at, "by": by}
+	for k, val := range extra {
+		req[k] = val
+	}
+	if err := s.writeUpdateJSONAtomic(file, req); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not write the request: " + err.Error()})
 		return
 	}
-	s.logger.Info("core zabbix update requested", "from", v.ZbxServer, "to", v.ZbxCandidate, "by", by)
-	writeJSON(w, http.StatusAccepted, map[string]any{"requested_at": at, "from": v.ZbxServer, "to": v.ZbxCandidate})
+	s.logger.Info("core host action requested", "kind", kind, "by", by)
+	req["requested_at"] = at
+	writeJSON(w, http.StatusAccepted, req)
+}
+
+// handleZbxUpdateNow: POST /api/os/zbx-update, the pending Zabbix minor update, right away.
+func (s *Server) handleZbxUpdateNow(w http.ResponseWriter, r *http.Request) {
+	v := s.coreOSStatus()
+	s.requestHostAction(w, r, "zbx-update", zbxUpdateRequestFile, map[string]any{"from": v.ZbxServer, "to": v.ZbxCandidate})
+}
+
+// handleRebootNow: POST /api/os/reboot, the reboot the OS asked for, right away.
+func (s *Server) handleRebootNow(w http.ResponseWriter, r *http.Request) {
+	s.requestHostAction(w, r, "reboot", rebootRequestFile, nil)
+}
+
+// handlePatchNow: POST /api/os/patch, the pending security updates, right away.
+func (s *Server) handlePatchNow(w http.ResponseWriter, r *http.Request) {
+	s.requestHostAction(w, r, "patch", patchRequestFile, nil)
 }
 
 // fleetZbxVersion returns the newest Zabbix version the probe fleet reports (the image versions
