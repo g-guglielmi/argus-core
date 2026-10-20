@@ -2093,10 +2093,14 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   function pushNav(v: View, opts?: { host?: string; item?: string; filter?: string }) {
     window.history.pushState({}, '', buildNav({ view: v, filter: opts?.filter ?? listFilter, host: opts?.host, item: opts?.item }))
   }
-  function goHost(hostId: string) { navN.current += 1; setTreeTarget({ hostId, n: navN.current }); setView('monitoring'); pushNav('monitoring', { host: hostId }); setMenuOpen(false); setNavOpen(false) }
-  function goSensor(hostId: string, itemId: string, itemName?: string) { navN.current += 1; setTreeTarget({ hostId, itemId, itemName, n: navN.current }); setView('monitoring'); pushNav('monitoring', { host: hostId, item: itemId }); setMenuOpen(false); setNavOpen(false) }
-  function openList(st: string) { setListFilter(st); setView('list'); pushNav('list', { filter: st }); setMenuOpen(false); setNavOpen(false) }
-  function goGroup(path: string) { navN.current += 1; setTreeTarget({ groupPath: path, n: navN.current }); setView('monitoring'); window.history.pushState({}, '', buildNav({ view: 'monitoring', filter: listFilter, group: path })); setMenuOpen(false); setNavOpen(false) }
+  // A page switch starts at the top: the window keeps its scroll offset across views otherwise, so
+  // the next page opened wherever the previous one was scrolled to. In-page jumps (a settings jump
+  // link, the tree focusing a host) run after this and still land where they mean to.
+  const toTop = () => window.scrollTo(0, 0)
+  function goHost(hostId: string) { navN.current += 1; setTreeTarget({ hostId, n: navN.current }); setView('monitoring'); pushNav('monitoring', { host: hostId }); setMenuOpen(false); setNavOpen(false); toTop() }
+  function goSensor(hostId: string, itemId: string, itemName?: string) { navN.current += 1; setTreeTarget({ hostId, itemId, itemName, n: navN.current }); setView('monitoring'); pushNav('monitoring', { host: hostId, item: itemId }); setMenuOpen(false); setNavOpen(false); toTop() }
+  function openList(st: string) { setListFilter(st); setView('list'); pushNav('list', { filter: st }); setMenuOpen(false); setNavOpen(false); toTop() }
+  function goGroup(path: string) { navN.current += 1; setTreeTarget({ groupPath: path, n: navN.current }); setView('monitoring'); window.history.pushState({}, '', buildNav({ view: 'monitoring', filter: listFilter, group: path })); setMenuOpen(false); setNavOpen(false); toTop() }
   // Dispatch a quick-switcher hit to the right navigation.
   function goSearch(r: SearchHit) {
     if (r.type === 'sensor' && r.host_id && r.item_id) goSensor(r.host_id, r.item_id, r.label)
@@ -2130,8 +2134,12 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
     // so a bare "/" that lands on Errors becomes ?view=list&filter=error and Back/Forward is sane.
     const s = initialNav()
     window.history.replaceState({}, '', buildNav({ ...s, view: clampView(s.view) }))
+    // The browser would restore the offset it remembers for a history entry against content that is
+    // no longer the same page; the app positions every view itself (toTop).
+    if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual'
     const onPop = () => {
       const n = parseNav()
+      toTop()
       setView(clampView(n.view)); setListFilter(n.filter); setMenuOpen(false); setNavOpen(false)
       setDiscScan(n.view === 'discovery' ? n.scan || null : null)
       setMapProbe(n.view === 'maps' ? n.map || null : null)
@@ -2164,7 +2172,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   }, [])
 
   async function logout() { await fetch('/api/logout', { method: 'POST' }).catch(() => {}); onLogout() }
-  function goto(v: View) { setTreeTarget(null); setDiscScan(null); setMapProbe(null); if (v === 'monitoring') setMonHome((n) => n + 1); setView(v); pushNav(v); setMenuOpen(false); setNavOpen(false) }
+  function goto(v: View) { setTreeTarget(null); setDiscScan(null); setMapProbe(null); if (v === 'monitoring') setMonHome((n) => n + 1); setView(v); pushNav(v); setMenuOpen(false); setNavOpen(false); toTop() }
   // Open (or leave, with null) a discovery scan's results - its own history entry, so Back works.
   // Open (or leave, with null) a site's map: its own history entry too.
   function openMap(probe: string | null) {

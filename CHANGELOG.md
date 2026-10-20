@@ -37,6 +37,10 @@ GitHub Release from the matching section below.
   gauges: they jump with configuration, they do not grow.
 
 ### Fixed
+- **A page switch starts at the top.** The window kept its scroll offset across views, so the next
+  page opened wherever the previous one was scrolled to, and Back and Forward let the browser
+  restore an offset against a different page; every view change now scrolls to the top, and the
+  browser's own restoration is off. In-page jumps still land where they mean to.
 - **A sensor Zabbix has never read shows no reading.** The lists showed Zabbix's placeholder zero
   for an item that had not been polled yet (a freshly linked template, a new host), which read as
   a real value; it now shows "-" until the first reading lands, and a never-read reachability
