@@ -21,6 +21,20 @@ function bufToB64url(buf: ArrayBuffer): string {
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+// A password manager extension (Bitwarden, 1Password and the like) takes over navigator.credentials
+// on every page it runs in and answers passkey calls through a script of its own in the page. When
+// the page outlives the extension (it updated or restarted while the tab sat open for hours), that
+// script keeps running but can no longer reach the extension: the call gets no answer and ends in a
+// plain Error ("Something went wrong."), where the browser itself always throws a DOMException.
+// Only a reload re-connects the page to the extension, so the login screen reloads once by itself
+// on this error and starts the sign-in again on the fresh page.
+export class PasskeyBridgeError extends Error {
+  constructor(what: string) {
+    super(`${what} was handed to a browser extension (a password manager) that didn't answer. That happens to a page left open while the extension updated or restarted: reload the page and try again.`)
+    this.name = 'PasskeyBridgeError'
+  }
+}
+
 // The browser's own WebAuthn errors are terse and point at the spec ("The operation either timed
 // out or was not allowed. See: https://www.w3.org/..."). Say what happened in Argus's words.
 function friendly(e: unknown, action: 'setup' | 'login'): Error {
@@ -33,6 +47,9 @@ function friendly(e: unknown, action: 'setup' | 'login'): Error {
     case 'AbortError': return new Error(`${what} was interrupted.`)
     case 'NotSupportedError': return new Error("This browser or authenticator doesn't support the kind of passkey Argus asks for (a discoverable key with user verification).")
   }
+  // Not the browser's (always a DOMException) and not our own options being malformed (a
+  // TypeError): an extension's script in between dropped the call.
+  if (e instanceof Error && !(e instanceof DOMException) && !(e instanceof TypeError)) return new PasskeyBridgeError(what)
   return e instanceof Error && e.message ? e : new Error(`${what} failed.`)
 }
 

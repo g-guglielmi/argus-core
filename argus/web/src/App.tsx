@@ -5,7 +5,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, Fragment,
 import { createPortal } from 'react-dom'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
-import { registerPasskey, loginWithPasskey } from './webauthn'
+import { registerPasskey, loginWithPasskey, PasskeyBridgeError } from './webauthn'
 import { Button, Card, Field, Banner, Badge, CopyButton, Switch, Select, Combobox, Skeleton, EmptyState, ErrorBoundary, copyToClipboard, type ComboOption } from './ui'
 import { useConfirm, usePrompt, useAlert } from './dialog'
 import { useToast } from './toast'
@@ -659,6 +659,10 @@ function Frame({ children }: { children: ReactNode }) {
   )
 }
 
+// Set in sessionStorage (this tab only, survives a reload) when the login screen reloads itself to
+// get a passkey sign-in past a dropped password manager bridge; the fresh page starts the sign-in.
+const passkeyRetryKey = 'argus.passkey.retry'
+
 function Login({ onSuccess, passkeysAvailable, passwordReset, notice }: { onSuccess: (m: Me) => void; passkeysAvailable: boolean; passwordReset: boolean; notice?: string | null }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -666,11 +670,37 @@ function Login({ onSuccess, passkeysAvailable, passwordReset, notice }: { onSucc
   const [busy, setBusy] = useState(false)
   const [forgot, setForgot] = useState(false)
 
-  async function passkeyLogin() {
+  // A passkey call that a password manager extension took over and then dropped (the page outlived
+  // the extension; see webauthn.ts) only works again after a reload. So reload once by ourselves and
+  // start the sign-in again on the fresh page, which is what the person just asked for. A second
+  // failure of the same kind is shown, not retried, so a broken extension can't keep the page
+  // reloading.
+  const passkeyAgain = useRef(false)
+  useEffect(() => {
+    try {
+      passkeyAgain.current = sessionStorage.getItem(passkeyRetryKey) === '1'
+      sessionStorage.removeItem(passkeyRetryKey)
+    } catch { /* no session storage: no automatic second try, the error is shown instead */ }
+  }, [])
+  useEffect(() => {
+    if (passkeysAvailable && passkeyAgain.current) { passkeyAgain.current = false; void passkeyLogin(true) }
+  }, [passkeysAvailable])
+
+  async function passkeyLogin(afterReload = false) {
     setBusy(true); setError(null)
     try {
       onSuccess(await loginWithPasskey())
     } catch (e) {
+      if (e instanceof PasskeyBridgeError) {
+        if (!afterReload) {
+          let flagged = false
+          try { sessionStorage.setItem(passkeyRetryKey, '1'); flagged = true } catch { /* shown instead */ }
+          if (flagged) { window.location.reload(); return }
+        } else {
+          setError("Passkey sign-in was handed to a browser extension (a password manager) that didn't answer, even on a freshly loaded page. Check the extension, or sign in with your password.")
+          return
+        }
+      }
       setError(e instanceof Error && e.message ? e.message : 'Passkey login failed')
     } finally { setBusy(false) }
   }
@@ -763,7 +793,7 @@ function Login({ onSuccess, passkeysAvailable, passwordReset, notice }: { onSucc
         {passkeysAvailable && (
           <>
             <div style={{ textAlign: 'center', color: 'var(--faint)', margin: '0.9rem 0 0.6rem', fontSize: '0.85rem' }}>or</div>
-            <Button variant="ghost" block onClick={passkeyLogin} disabled={busy}>Sign in with a passkey</Button>
+            <Button variant="ghost" block onClick={() => passkeyLogin()} disabled={busy}>Sign in with a passkey</Button>
           </>
         )}
       </Card>

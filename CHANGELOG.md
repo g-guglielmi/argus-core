@@ -13,6 +13,15 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Fixed
+- **Passkey sign-in on a page left open for hours.** A password manager extension (Bitwarden and
+  the like) answers passkey calls through its own script in the page; once the tab outlived the
+  extension (it updated or restarted meanwhile), that script got no answer and the login screen
+  showed its bare "Something went wrong." until a manual reload. Argus now recognises the case,
+  reloads the page once by itself and starts the sign-in again on the fresh page; if that fails the
+  same way it says so and points at the extension, or at the password. Password sign-in was never
+  affected.
+
 ## [core-vm/v0.1.7] - 2026-10-21
 
 The appliance with the sizing and host tools work of Argus v0.9.2 baked in. It is what a new

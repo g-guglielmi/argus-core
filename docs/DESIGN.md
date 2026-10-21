@@ -220,6 +220,15 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
 - **Passkey caveat (accepted):** WebAuthn RP IDs must be a domain, not a bare IP.
   → Passkey login works via `monitoring.example.com`; direct **private-IP** access
   (troubleshooting) falls back to **password + MFA**.
+- **Passkeys behind a password manager extension.** Bitwarden, 1Password and the like take over
+  `navigator.credentials` on every page and answer passkey calls through a script of their own in
+  the page. A tab left open across an extension update or restart keeps that script but loses its
+  link to the extension: the next passkey call gets no answer and ends in a plain `Error`
+  ("Something went wrong."), where the browser itself always throws a `DOMException`. `webauthn.ts`
+  turns that into `PasskeyBridgeError`; the login screen reloads the page once by itself on it (a
+  flag in `sessionStorage`, this tab only) and starts the sign-in again on the fresh page, and shows
+  the reason instead when the fresh page fails the same way. Adding a passkey in Account shows the
+  same reason with the advice to reload. Password sign-in never goes through the extension.
 
 ---
 
