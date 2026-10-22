@@ -22,9 +22,11 @@ GitHub Release from the matching section below.
   minutes), change the hostname, test connectivity, restart Argus, the updater or Zabbix server,
   view logs, install OS updates, grow the disk, keyboard layout and time zone, the console
   password, reboot, power off, and a shell. It rides the host tools, so every core host gets it as
-  `sudo argus-console`; the next core VM image makes it the Debian user's login shell (the
-  password typed at login is the only one asked) and carries `growpart` for the disk item. Every
-  action is logged in the journal. DESIGN 14f.
+  `sudo argus-console`, and `sudo argus-console --make-login-shell` makes it what a login of that
+  account opens (the password typed at login is then the only one asked); the next core VM image
+  does that for the Debian user at first boot and carries `growpart` for the disk item. Versions
+  in its status block are read from the images, since a container's own labels stay what they
+  were when it was first created. Every action is logged in the journal. DESIGN 14f.
 
 ### Changed
 - **CI actions on the Node 24 runtime.** The four remaining actions pinned to Node 20 releases

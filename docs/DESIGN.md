@@ -1870,17 +1870,30 @@ then numbered actions, with a shell as one of them.
 
 - **Where it comes from.** `deploy/core/host/argus-console` (Python, standard library) and its
   login-shell wrapper `argus-console-login` ride the host tools (14c), so every core host that has
-  them gets the menu as a command: `sudo argus-console`. On the appliance, first boot makes the
-  wrapper the Debian user's login shell (added to `/etc/shells`), and a sudoers drop-in
-  (`/etc/sudoers.d/argus-console`, checked with `visudo -cf` before it is kept) lets that account
-  run the menu, and only the menu, without a second password: the one typed at login is the
-  authentication. An ssh command, scp or sftp with that account is handed to bash untouched.
-  "Open a shell" drops privileges back to the account and runs bash; sudo there asks the password
-  and logs as always. Every action logs to the journal under `argus-console`.
-- **Status block.** Hostname and uptime; the primary link's addresses, gateway, DHCP or static
-  (static = the console's own `00-argus-static.network` exists), the interface; DNS servers from
-  resolved; the https address that always works (the VM's IP) plus the name on the appliance's own
-  certificate; NTP sync and the time zone; `/docker` and `/` usage; the OS line from
+  them gets the menu as a command: `sudo argus-console`. It runs as root because everything it
+  touches is root's: the Docker socket, the shared update folder, networkd's files, the journal,
+  apt, the partition table. `sudo argus-console --make-login-shell [user]` (the account that ran
+  sudo when none is named) wires an account so that its logins open the menu instead: the
+  wrapper becomes the login shell (added to `/etc/shells`) and a sudoers drop-in
+  (`/etc/sudoers.d/argus-console`, kept only if `visudo -cf` accepts it) lets that account run the
+  menu, and only the menu, without a second password, so the one typed at login is the
+  authentication. The appliance's first boot runs exactly that for the Debian user;
+  `--remove-login-shell` puts bash back. An ssh command, scp or sftp with the account is handed
+  to bash untouched. "Open a shell" drops privileges back to the account and runs bash; sudo
+  there asks the password and logs as always. Every action logs to the journal under
+  `argus-console`.
+- **Versions in the status block come from the image, not the container.** A container's labels
+  are a copy taken when it was first created, and the updater's recreate clones that config, so
+  on a long-lived core they still say what the first image said (a lab core showed v0.4.11 and
+  0.2.1 under v0.9.4 and 0.2.16). The menu reads the container's image id and that image's
+  labels: the updater's `io.argus.updater.version` first, then the OCI version label the core's
+  build writes from `git describe`.
+- **Status block.** An ASCII "ARGUS" banner (plain characters, so a serial console and any SSH
+  client render it), then hostname and uptime; the primary link's addresses, gateway, DHCP or
+  static (static = the console's own `00-argus-static.network` exists), the interface; DNS servers
+  from resolved; the https address that always works (the VM's IP) plus the name on the
+  appliance's own certificate; NTP sync and the time zone; `/` usage, with `/docker` on its own
+  line only when it is a file system of its own; the OS line from
   `os-status.json` (security updates, reboot pending, a newer Zabbix); the units (PostgreSQL,
   Zabbix server, nginx, Docker) and the containers (`argus`, `argus-updater`) with their health and
   the image version label. The status is a courtesy: if any of it fails, the menu still comes up.

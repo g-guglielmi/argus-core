@@ -78,8 +78,6 @@ FIRSTBOOT_SERVICE = "argus-firstboot.service"
 LISTEN = ("0.0.0.0", 80)
 SSHD_DROPIN = "/etc/ssh/sshd_config.d/20-argus-user.conf"
 CONSOLE = "/usr/local/sbin/argus-console"              # the console menu (DESIGN 14f), from the host tools
-CONSOLE_LOGIN = CONSOLE + "-login"                      # its login-shell wrapper
-SUDOERS_CONSOLE = "/etc/sudoers.d/argus-console"
 ISSUE_FILE = "/etc/issue.d/argus-setup.issue"
 # A disk labelled ARGUSSEED with an argus.env holding ARGUS_SETUP_CODE=XXXX-XXXX supplies the setup
 # code when there is no console to read it from (attaching media is the same proof of hypervisor
@@ -312,25 +310,12 @@ def step_system(cfg, state):
     with open(SSHD_DROPIN, "w", encoding="utf-8") as fh:
         fh.write("# Written by the Argus core appliance first-boot setup.\nMatch User %s\n    PasswordAuthentication yes\n" % user)
     run(["systemctl", "reload-or-restart", "ssh"], check=False)
-    # The console menu is this account's login shell: an interactive login (the hypervisor console
-    # or SSH) lands in it, as root through sudo without a second password for that one command;
-    # ssh commands and scp pass through to bash. The menu's "Open a shell" is the way to bash.
-    if os.path.exists(CONSOLE_LOGIN) and os.path.exists(CONSOLE):
-        try:
-            with open("/etc/shells", encoding="utf-8") as fh:
-                shells = fh.read()
-        except OSError:
-            shells = ""
-        if CONSOLE_LOGIN not in shells.split():
-            with open("/etc/shells", "a", encoding="utf-8") as fh:
-                fh.write(CONSOLE_LOGIN + "\n")
-        with open(SUDOERS_CONSOLE, "w", encoding="utf-8") as fh:
-            fh.write("# Written by the Argus core appliance first-boot setup: the console menu without a second password.\n"
-                     "%s ALL=(root) NOPASSWD: %s\n" % (user, CONSOLE))
-        os.chmod(SUDOERS_CONSOLE, 0o440)
-        if subprocess.run(["visudo", "-cf", SUDOERS_CONSOLE], capture_output=True).returncode != 0:
-            os.remove(SUDOERS_CONSOLE)  # never leave sudo a file it can't parse; the menu then asks the password
-        run(["usermod", "-s", CONSOLE_LOGIN, user], check=False)
+    # The console menu (DESIGN 14f) is this account's login shell: an interactive login (the
+    # hypervisor console or SSH) lands in it, as root through sudo without a second password for
+    # that one command; ssh commands and scp pass through to bash. The menu does its own wiring
+    # (login shell, /etc/shells, the sudoers drop-in checked with visudo).
+    if os.path.exists(CONSOLE):
+        run([CONSOLE, "--make-login-shell", user], check=False)
 
 
 def step_database(cfg, state):

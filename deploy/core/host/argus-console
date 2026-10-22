@@ -41,7 +41,18 @@ REVERT_BACKUP = os.path.join(REVERT_DIR, "network-before-change.json")
 REVERT_UNIT = "argus-console-net-revert"
 REVERT_AFTER = 180  # seconds a remote operator has to log in again before a network change reverts
 SELF = "/usr/local/sbin/argus-console"
+LOGIN_SHELL = SELF + "-login"
+SHELLS_FILE = ROOT + "/etc/shells"
+SUDOERS_FILE = ROOT + "/etc/sudoers.d/argus-console"
 OS_REPORT = "/usr/local/sbin/argus-os-report"
+
+BANNER = r"""
+    _     ____    ____  _   _  ____
+   / \   |  _ \  / ___|| | | |/ ___|
+  / _ \  | |_) || |  _ | | | |\___ \
+ / ___ \ |  _ < | |_| || |_| | ___) |
+/_/   \_\|_| \_\ \____| \___/ |____/
+""".strip("\n")
 
 UNITS = (("PostgreSQL", "postgresql"), ("Zabbix server", "zabbix-server"), ("nginx", "nginx"), ("Docker", "docker"))
 CONTAINERS = (("Argus", "argus"), ("updater", "argus-updater"))
@@ -98,12 +109,24 @@ def write_file(path, text, mode=0o644):
     with open(tmp, "w", encoding="utf-8") as fh:
         fh.write(text)
     os.chmod(tmp, mode)
+    if os.name == "nt" and os.path.exists(path):
+        os.chmod(path, 0o644)  # the tests run on Windows too, where a read-only file can't be replaced
     os.replace(tmp, path)
+
+
+def remove_file(path):
+    """Remove a file that may be read-only (the sudoers drop-in); fine if it is already gone."""
+    try:
+        if os.name == "nt" and os.path.exists(path):
+            os.chmod(path, 0o644)
+        os.remove(path)
+    except OSError:
+        pass
 
 
 # ------------------------------------------------------------------ terminal
 
-COLORS = {"ok": "\x1b[32m", "warn": "\x1b[33m", "err": "\x1b[31m", "head": "\x1b[1m", "dim": "\x1b[2m"}
+COLORS = {"ok": "\x1b[32m", "warn": "\x1b[33m", "err": "\x1b[31m", "head": "\x1b[1m", "dim": "\x1b[2m", "brand": "\x1b[36m"}
 
 
 def tty():
@@ -283,6 +306,27 @@ def disk_text(path):
     return "%s %d%% of %s" % (path, round(100.0 * u.used / u.total) if u.total else 0, human(u.total))
 
 
+def same_fs(a, b):
+    try:
+        return os.stat(a).st_dev == os.stat(b).st_dev
+    except OSError:
+        return False
+
+
+DOCKER_DIR = "/docker"
+
+
+def disk_lines():
+    """The root file system, and /docker when it is a file system of its own (on the appliance it
+    is a folder of the root one, so one line says both)."""
+    root = disk_text("/")
+    if not root:
+        return [d for d in (disk_text(DOCKER_DIR),) if d]
+    if os.path.isdir(DOCKER_DIR) and same_fs("/", DOCKER_DIR):
+        return [root + " (holds /docker)"]
+    return [d for d in (root, disk_text(DOCKER_DIR)) if d]
+
+
 def human(n):
     for unit in ("B", "KB", "MB", "GB", "TB"):
         if n < 1024 or unit == "TB":
@@ -295,17 +339,35 @@ def unit_state(unit):
     return out(["systemctl", "is-active", unit]) or "inactive"
 
 
-INSPECT_FMT = "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}|{{index .Config.Labels \"org.opencontainers.image.version\"}}"
+INSPECT_FMT = "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}|{{.Image}}"
+# The updater stamps its own label; the core's build writes the OCI one from git describe.
+VERSION_LABELS = ("io.argus.updater.version", "org.opencontainers.image.version")
+IMAGE_FMT = "|".join('{{index .Config.Labels "%s"}}' % l for l in VERSION_LABELS)
 
 
 def container_state(name):
-    """(state, version): 'healthy' / 'running' / 'exited' / 'missing', and the image's version label."""
+    """(state, version): 'healthy' / 'running' / 'exited' / 'missing', and the version of the image it runs."""
     rc, so, _ = run(["docker", "inspect", "-f", INSPECT_FMT, name], timeout=20)
     if rc != 0:
         return "missing", ""
     parts = (so.strip().split("|") + ["", "", ""])[:3]
     state = parts[1] or parts[0] or "unknown"
-    return state, parts[2]
+    return state, image_version(parts[2])
+
+
+def image_version(image):
+    """The version label of the image itself. A container's own labels are a copy taken when it was
+    first created, and the updater's recreate clones that config, so they still say what the first
+    image said long after every update; the image's labels move with the image."""
+    if not image:
+        return ""
+    rc, so, _ = run(["docker", "inspect", "-f", IMAGE_FMT, image], timeout=20)
+    if rc != 0:
+        return ""
+    for v in so.strip().split("|"):
+        if v and v != "<no value>":
+            return v
+    return ""
 
 
 def status():
@@ -317,7 +379,7 @@ def status():
         "mode": net_mode(), "dns": dns_servers(), "web": web_addresses(ip),
         "ntp": out(["timedatectl", "show", "-p", "NTPSynchronized", "--value"]) == "yes",
         "tz": out(["timedatectl", "show", "-p", "Timezone", "--value"]),
-        "disks": [d for d in (disk_text("/docker"), disk_text("/")) if d], "os": os_status(),
+        "disks": disk_lines(), "os": os_status(),
         "units": [(label, unit_state(u)) for label, u in UNITS],
         "containers": [(label, ) + container_state(c) for label, c in CONTAINERS],
     }
@@ -333,7 +395,10 @@ def tone_for(state):
 
 
 def render_status(st):
-    say("  ARGUS CORE".ljust(WIDTH - 24) + ("%s   %s" % (st["hostname"], st["uptime"])).rjust(22), "head")
+    for l in BANNER.split("\n"):
+        say("  " + l, "brand")
+    who = "%s   %s" % (st["hostname"], st["uptime"])
+    say("  Monitoring cockpit, core".ljust(WIDTH - 2 - len(who)) + who, "head")
     print()
     addr = ", ".join(st["addrs"]) or "no address"
     if st["gateway"]:
@@ -834,6 +899,57 @@ def open_shell(user):
     interactive(["/bin/bash", "-l"], env=env, preexec=demote)
 
 
+# ------------------------------------------------------------------ the login shell
+
+def user_exists(user):
+    import pwd  # Unix only
+    try:
+        pwd.getpwnam(user)
+        return True
+    except KeyError:
+        return False
+
+
+def make_login_shell(user, remove=False):
+    """Make the menu what a login of `user` opens: the wrapper as the login shell (listed in
+    /etc/shells) and a sudoers drop-in that lets the account run the menu, and only the menu, without
+    a second password, kept only if visudo accepts it. The appliance's first boot does this for the
+    Debian user; `sudo argus-console --make-login-shell` does it for whoever runs it on any core.
+    --remove-login-shell puts bash back and drops the sudoers file."""
+    if not user or user == "root":
+        say("Say which account: argus-console --make-login-shell <user> (root keeps its shell).", "err")
+        return 1
+    if not user_exists(user):
+        say("There is no user %s on this host." % user, "err")
+        return 1
+    if remove:
+        rc, _, err = run(["usermod", "-s", "/bin/bash", user], timeout=20)
+        if rc != 0:
+            say("usermod refused: %s" % err.strip(), "err")
+            return 1
+        remove_file(SUDOERS_FILE)
+        log("console menu removed as the login shell of " + user)
+        say("Logins of %s open bash again; the menu stays available as sudo argus-console." % user, "ok")
+        return 0
+    if LOGIN_SHELL not in read_file(SHELLS_FILE).split():
+        with open(SHELLS_FILE, "a", encoding="utf-8") as fh:
+            fh.write(LOGIN_SHELL + "\n")
+    write_file(SUDOERS_FILE, "# Written by argus-console: the console menu without a second password for its login account.\n"
+               "%s ALL=(root) NOPASSWD: %s\n" % (user, SELF), 0o440)
+    rc, _, _ = run(["visudo", "-cf", SUDOERS_FILE], timeout=20)
+    if rc != 0:
+        remove_file(SUDOERS_FILE)  # never leave sudo a file it can't parse; the menu then asks the password
+        say("visudo did not accept the sudoers line; the menu will ask the password at login.", "warn")
+    rc, _, err = run(["usermod", "-s", LOGIN_SHELL, user], timeout=20)
+    if rc != 0:
+        say("usermod refused: %s" % err.strip(), "err")
+        return 1
+    log("console menu is now the login shell of " + user)
+    say("Logins of %s (console and SSH) now open the menu; Open a shell gives bash, and ssh commands" % user, "ok")
+    say("and scp still work. Undo with: sudo argus-console --remove-login-shell %s" % user, "ok")
+    return 0
+
+
 # ------------------------------------------------------------------ the menu
 
 MENU = (
@@ -916,6 +1032,11 @@ def main(argv=None):
         print("argus-console runs as root: sudo argus-console", file=sys.stderr)
         return 1
     user = os.environ.get("SUDO_USER") or ""
+    for flag in ("--make-login-shell", "--remove-login-shell"):
+        if flag in argv:
+            i = argv.index(flag)
+            named = argv[i + 1] if i + 1 < len(argv) and not argv[i + 1].startswith("--") else user
+            return make_login_shell(named, remove=flag == "--remove-login-shell")
     if cancel_revert("a login reached the VM on the new address"):
         print(paint("The network change made a moment ago is kept: this login reached the VM on it.", "ok"))
         pause()

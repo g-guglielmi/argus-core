@@ -95,7 +95,10 @@ everything else (a normal bash; `sudo` asks your password there as usual). Ssh c
 with the same account work unchanged.
 
 The menu is `argus-console` from the core's host tools, so a core installed by hand has it too:
-`sudo argus-console`. Details in DESIGN 14f.
+`sudo argus-console` (it runs as root: the Docker socket, networkd, the journal and apt are
+root's). To get the same login behaviour as the appliance there, `sudo argus-console
+--make-login-shell` wires the account that ran it; `--remove-login-shell` undoes it. Details in
+DESIGN 14f.
 
 ## Folders
 

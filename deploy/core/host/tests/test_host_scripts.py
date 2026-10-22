@@ -1164,7 +1164,8 @@ class ConsoleTest(unittest.TestCase):
         self.outputs[("timedatectl", "show", "-p", "Timezone", "--value")] = (0, "Europe/Rome\n", "")
         self.outputs[("systemctl", "is-active", "docker")] = (3, "inactive\n", "")
         self.outputs[("systemctl", "is-active")] = (0, "active\n", "")
-        self.outputs[("docker", "inspect", "-f", m.INSPECT_FMT, "argus")] = (0, "running|healthy|v0.9.4\n", "")
+        self.outputs[("docker", "inspect", "-f", m.INSPECT_FMT, "argus")] = (0, "running|healthy|sha256:aaa\n", "")
+        self.outputs[("docker", "inspect", "-f", m.IMAGE_FMT, "sha256:aaa")] = (0, "<no value>|v0.9.4\n", "")
         self.outputs[("docker", "inspect", "-f", m.INSPECT_FMT, "argus-updater")] = (1, "", "Error: No such object")
         with open(os.path.join(self.state, "os-status.json"), "w") as fh:
             fh.write('{"sec_updates":3,"reboot_required":true,"zbx_server":"1:7.0.32-1","zbx_candidate":"1:7.0.33-1"}')
@@ -1177,6 +1178,73 @@ class ConsoleTest(unittest.TestCase):
             fh.write("[Match]\nName=ens18\n")
         text, _ = self.do(lambda: m.render_status(m.status()))
         self.assertIn("(static)", text)
+        self.assertIn("/ ___|| | | |/ ___|", text, "the banner")
+        self.assertIn("Monitoring cockpit, core", text)
+
+    def test_versions_come_from_the_image_not_the_container(self):
+        m = self.mod
+        # The updater's recreate clones the old container's config, labels included: only the image tells.
+        self.outputs[("docker", "inspect", "-f", m.INSPECT_FMT, "argus-updater")] = (0, "running|healthy|sha256:bbb\n", "")
+        self.outputs[("docker", "inspect", "-f", m.IMAGE_FMT, "sha256:bbb")] = (0, "0.2.16|latest\n", "")
+        self.assertEqual(m.container_state("argus-updater"), ("healthy", "0.2.16"), "the updater's own label wins over the OCI one")
+        self.outputs[("docker", "inspect", "-f", m.IMAGE_FMT, "sha256:bbb")] = (0, "|v0.9.4-1-gee76ed1\n", "")
+        self.assertEqual(m.container_state("argus-updater"), ("healthy", "v0.9.4-1-gee76ed1"))
+        self.outputs[("docker", "inspect", "-f", m.IMAGE_FMT, "sha256:bbb")] = (1, "", "gone")
+        self.assertEqual(m.container_state("argus-updater"), ("healthy", ""))
+        self.outputs[("docker", "inspect", "-f", m.INSPECT_FMT, "argus-updater")] = (0, "exited||sha256:bbb\n", "")
+        self.assertEqual(m.container_state("argus-updater")[0], "exited")
+
+    def test_one_disk_line_when_docker_sits_on_the_root_file_system(self):
+        m = self.mod
+        m.DOCKER_DIR = self.root
+        m.same_fs = lambda a, b: True
+        lines = m.disk_lines()
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith("/ ") and lines[0].endswith("(holds /docker)"), lines)
+        m.same_fs = lambda a, b: False
+        self.assertEqual(len(m.disk_lines()), 2)
+
+    def test_make_login_shell_wires_the_account_and_undoes_it(self):
+        m = self.mod
+        as_root(self)
+        os.makedirs(os.path.dirname(m.SUDOERS_FILE))
+        with open(m.SHELLS_FILE, "w") as fh:
+            fh.write("/bin/sh\n/bin/bash\n")
+        m.user_exists = lambda u: u == "argus"
+        text, rc = self.do(lambda: m.main(["--make-login-shell", "nobody-here"]))
+        self.assertEqual(rc, 1)
+        self.assertIn("no user nobody-here", text)
+        text, rc = self.do(lambda: m.main(["--make-login-shell", "argus"]))
+        self.assertEqual(rc, 0)
+        self.assertEqual(m.read_file(m.SHELLS_FILE), "/bin/sh\n/bin/bash\n/usr/local/sbin/argus-console-login\n")
+        self.assertIn("argus ALL=(root) NOPASSWD: /usr/local/sbin/argus-console\n", m.read_file(m.SUDOERS_FILE))
+        self.assertIn("visudo -cf " + m.SUDOERS_FILE, self.calls)
+        self.assertIn("usermod -s /usr/local/sbin/argus-console-login argus", self.calls)
+        self.assertIn("log console menu is now the login shell of argus", self.calls)
+        self.assertIn("Undo with", text)
+        # Twice is fine: /etc/shells gets the line once.
+        self.do(lambda: m.main(["--make-login-shell", "argus"]))
+        self.assertEqual(m.read_file(m.SHELLS_FILE).count("argus-console-login"), 1)
+        # A sudoers line visudo rejects is not left behind.
+        self.outputs[("visudo",)] = (1, "", "syntax error")
+        text, rc = self.do(lambda: m.main(["--make-login-shell", "argus"]))
+        self.assertEqual(rc, 0)
+        self.assertFalse(os.path.exists(m.SUDOERS_FILE))
+        self.assertIn("will ask the password", text)
+        del self.outputs[("visudo",)]
+        self.do(lambda: m.main(["--make-login-shell", "argus"]))
+        self.assertTrue(os.path.exists(m.SUDOERS_FILE))
+        # The account comes from sudo when none is named; root is refused.
+        os.environ["SUDO_USER"] = "argus"
+        self.addCleanup(os.environ.pop, "SUDO_USER", None)
+        text, rc = self.do(lambda: m.main(["--remove-login-shell"]))
+        self.assertEqual(rc, 0)
+        self.assertIn("usermod -s /bin/bash argus", self.calls)
+        self.assertFalse(os.path.exists(m.SUDOERS_FILE))
+        os.environ["SUDO_USER"] = "root"
+        text, rc = self.do(lambda: m.main(["--make-login-shell"]))
+        self.assertEqual(rc, 1)
+        self.assertIn("root keeps its shell", text)
 
     def test_restarts_ask_first(self):
         self.do(lambda: self.mod.restart("Argus", container="argus"), "no")
@@ -1279,7 +1347,7 @@ class ConsoleTest(unittest.TestCase):
         m = self.mod
         text, rc = self.do(lambda: m.main([]), "15")
         self.assertEqual(rc, 0)
-        self.assertIn("ARGUS CORE", text)
+        self.assertIn("Monitoring cockpit, core", text)
         self.assertIn("15) Log out", text)
         self.assertIn("!! Reboot the VM !!", text)
         text, rc = self.do(lambda: m.main(["--status"]))
