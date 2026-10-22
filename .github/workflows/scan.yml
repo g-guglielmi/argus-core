@@ -24,7 +24,7 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Go version of the build image
         id: gover
         run: echo "v=$(sed -n 's/^FROM golang:\([0-9.]*\)-alpine.*/\1/p' argus/Dockerfile)" >> "$GITHUB_OUTPUT"
@@ -37,7 +37,7 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           govulncheck ./...
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -93,7 +93,7 @@ jobs:
     steps:
       # The sibling repositories are public, so the workflow's own token reads them (their default
       # branch); this repository is read at the ref that runs.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository_owner }}/${{ matrix.repo }}
       # Misconfigurations (Trivy's checks for Dockerfiles and the other formats it knows) and secrets

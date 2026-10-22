@@ -13,6 +13,11 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Changed
+- **CI actions on the Node 24 runtime.** The four remaining actions pinned to Node 20 releases
+  (checkout in the weekly scan, setup-node, the registry login, the release publisher) move to
+  their Node 24 releases, so the runner stops warning that it forces them onto Node 24.
+
 ## [0.9.4] - 2026-10-22
 
 The v0.9.3 tag was cut on the same fix but never built: the `govulncheck` gate stopped it on a
