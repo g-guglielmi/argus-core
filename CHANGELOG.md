@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-10-22
+
 ### Fixed
 - **Passkey sign-in on a page left open for hours.** A password manager extension (Bitwarden and
   the like) answers passkey calls through its own script in the page; once the tab outlived the

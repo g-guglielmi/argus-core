@@ -40,7 +40,7 @@ API key, and MAC):
 
 > Screenshots use generic placeholder data.
 
-**What it does today (v0.9.2):**
+**What it does today (v0.9.3):**
 
 - **Monitoring tree** - site → host → sensor, grouped by Zabbix host group and ordered by hand
   (drag a row, or use the arrows), with curated "key sensor" views, live values, inline sparklines,
