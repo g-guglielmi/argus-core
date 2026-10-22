@@ -20,7 +20,8 @@ apt-get update
 # systemd-resolved: DHCP DNS under networkd. kbd: console keymaps + loadkeys (configurable keyboard
 # layout). sudo + openssh-server: the local admin user created by the setup page. openssl: the
 # first-boot PKI (CA + core server cert). python3 runs the first-boot service itself.
-apt-get install -y --no-install-recommends ca-certificates curl gnupg python3 systemd-resolved kbd sudo openssh-server openssl
+# cloud-guest-utils is growpart, for the console menu's "Grow the disk" (no cloud-init comes with it).
+apt-get install -y --no-install-recommends ca-certificates curl gnupg python3 systemd-resolved kbd sudo openssh-server openssl cloud-guest-utils
 
 echo "==> installing the Zabbix + PostgreSQL/TimescaleDB stack (setup-core.sh, image mode)"
 # The SAME script the manual install path runs - image mode does repos + packages + the TimescaleDB

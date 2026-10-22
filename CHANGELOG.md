@@ -13,6 +13,19 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **A console menu for the core VM (`argus-console`).** What an operator at the hypervisor console
+  sees instead of a shell prompt: the address, gateway and DNS (DHCP or static), the web address,
+  time sync, disk usage, pending OS updates and the state of PostgreSQL, Zabbix server, nginx,
+  Docker, Argus and its updater; then numbered actions: configure networking (a change made over
+  SSH reverts by itself unless you confirm it or log in again on the new address within three
+  minutes), change the hostname, test connectivity, restart Argus, the updater or Zabbix server,
+  view logs, install OS updates, grow the disk, keyboard layout and time zone, the console
+  password, reboot, power off, and a shell. It rides the host tools, so every core host gets it as
+  `sudo argus-console`; the next core VM image makes it the Debian user's login shell (the
+  password typed at login is the only one asked) and carries `growpart` for the disk item. Every
+  action is logged in the journal. DESIGN 14f.
+
 ### Changed
 - **CI actions on the Node 24 runtime.** The four remaining actions pinned to Node 20 releases
   (checkout in the weekly scan, setup-node, the registry login, the release publisher) move to

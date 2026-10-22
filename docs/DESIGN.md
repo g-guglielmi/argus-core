@@ -1862,6 +1862,57 @@ reach; **Argus holds the plan** (Settings, Backups, `internal/server/backup.go`)
 - **Tests**: `deploy/core/host/tests/test_host_scripts.py` builds, encrypts, exports, decrypts and
   restores real archives with the core's own commands faked; CI runs it on Linux.
 
+## 14f. Appliance console (`argus-console`)
+
+What an operator at the VM's console (or on an SSH login of the console account) sees, instead of a
+bare shell prompt. Modelled on the console menus of mail and firewall appliances: a status block,
+then numbered actions, with a shell as one of them.
+
+- **Where it comes from.** `deploy/core/host/argus-console` (Python, standard library) and its
+  login-shell wrapper `argus-console-login` ride the host tools (14c), so every core host that has
+  them gets the menu as a command: `sudo argus-console`. On the appliance, first boot makes the
+  wrapper the Debian user's login shell (added to `/etc/shells`), and a sudoers drop-in
+  (`/etc/sudoers.d/argus-console`, checked with `visudo -cf` before it is kept) lets that account
+  run the menu, and only the menu, without a second password: the one typed at login is the
+  authentication. An ssh command, scp or sftp with that account is handed to bash untouched.
+  "Open a shell" drops privileges back to the account and runs bash; sudo there asks the password
+  and logs as always. Every action logs to the journal under `argus-console`.
+- **Status block.** Hostname and uptime; the primary link's addresses, gateway, DHCP or static
+  (static = the console's own `00-argus-static.network` exists), the interface; DNS servers from
+  resolved; the https address that always works (the VM's IP) plus the name on the appliance's own
+  certificate; NTP sync and the time zone; `/docker` and `/` usage; the OS line from
+  `os-status.json` (security updates, reboot pending, a newer Zabbix); the units (PostgreSQL,
+  Zabbix server, nginx, Docker) and the containers (`argus`, `argus-updater`) with their health and
+  the image version label. The status is a courtesy: if any of it fails, the menu still comes up.
+- **Networking.** DHCP or a static address. Static writes `00-argus-static.network` for the primary
+  interface (address with prefix, gateway inside that network, one to three DNS servers, optional
+  search domain); it sorts before the image's `10-argus-dhcp.network`, and networkd applies the
+  first matching file, so deleting it is the way back to DHCP (the menu's DHCP choice does that).
+  Applied with `networkctl reload` + `reconfigure`. **Lock-out protection:** over SSH (a
+  pseudo-terminal) the change arms a `systemd-run` timer that reverts the files after 180 s; the
+  timer is cancelled by Enter in a session that survived the change (a DNS-only change, say) or by
+  any new login of the menu within the window, since reaching the VM on the new address proves it.
+  On the VM's own console nothing is armed. The files before the change sit in
+  `/run/argus-console/` until kept or reverted.
+- **The rest.** Hostname (`hostnamectl` plus the `127.0.1.1` line of `/etc/hosts`; nothing else is
+  tied to it). Connectivity test: gateway ping, DNS, TCP to ghcr.io, Docker Hub and deb.debian.org,
+  NTP. Restarts: `docker restart` for Argus and the updater (the same on the appliance and on a core
+  installed by hand), `systemctl restart zabbix-server`. Logs: the last 150 lines of a chosen
+  service, paged. OS updates: `unattended-upgrade -v` on the terminal, then the host reporter so
+  Argus sees the result. Grow the disk: `growpart` on the root partition then `resize2fs` or
+  `xfs_growfs`, after the virtual disk was enlarged in the hypervisor (the image carries
+  `cloud-guest-utils` for it). Keyboard layout (`/etc/vconsole.conf`, as first boot does) and the
+  time zone, which is only offered when Argus doesn't manage it (`timezone.json` absent; otherwise
+  the `argus-tz-check` timer would put Argus's setting back within the hour, so the menu says to
+  change it in Settings). Console password (`passwd` for the login account). Reboot and power off
+  ask for the word. Log out ends the session.
+- **Probe VM.** The same menu with a probe profile (site, core, last check-in, the proxy and updater
+  containers, re-point the core, check in now) is on the roadmap behind the probe host-tools
+  channel, so it can reach existing probe VMs the way the core's host tools reach cores.
+- **Tests**: `deploy/core/host/tests/test_host_scripts.py` drives the actions with faked commands
+  and a rooted file tree (static and DHCP files, the revert timer, hostname, status, restarts, disk
+  growth, connectivity, the login wrapper).
+
 ## 15. Tech stack (confirmed)
 - **App name:** **Argus.** Split across three repos: **argus-core** (this repo - the app in `argus/`, docs, core deploy kit), **argus-probe** (the probe Docker image + self-configuring golden VM), and **argus-updater** (the core self-update sidecar). Image names stay `argus` / `argus-probe` / `argus-updater` regardless of repo names.
 - **Backend / notifier:** **Go** (single static binary, distroless image).

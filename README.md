@@ -202,6 +202,8 @@ the probe-enrollment PKI, and Argus + its update sidecar.
 3. Browse to `http://<vm-ip>/` and fill in **one form** (hostname, keyboard, timezone, your
    admin email + password). A live progress page configures everything - database, Zabbix,
    accounts and API token, certificates, Argus - in a few minutes, ending at your sign-in.
+4. The VM's console (or an SSH login of its Debian user) opens a menu: address and DNS, hostname,
+   service restarts, logs, OS updates, growing the disk, reboot, and a shell when you need one.
 
 No Zabbix frontend wizard, no token copy-pasting, no SQL. Details, the security model, and
 what each step does: [`deploy/core-vm/README.md`](deploy/core-vm/README.md).

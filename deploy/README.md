@@ -61,7 +61,9 @@ against zoneinfo; the built-in UTC default is never pushed).
 > standalone `core/setup-core-patching.sh` once: `sudo ARGUS_STATE_DIR=/docker/argus-update ./setup-core-patching.sh`
 > (the host path bound to the core container's `/update`). It installs the patching policy and the
 > host scripts and units from `core/host`; from then on the argus-updater keeps those current after
-> each core update, so it never needs re-running (DESIGN 14c).
+> each core update, so it never needs re-running (DESIGN 14c). The same host tools carry the
+> console menu: `sudo argus-console` for networking, hostname, restarts, logs, OS updates and the
+> rest (DESIGN 14f); on the appliance it is the Debian user's login shell.
 
 After it's up:
 - Zabbix web UI (admin engine room) on the VM - lock it to the private network / admin only.

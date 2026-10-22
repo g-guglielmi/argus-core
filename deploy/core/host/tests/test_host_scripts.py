@@ -1012,5 +1012,308 @@ class PatchingTest(unittest.TestCase):
         self.assertNotIn("--only-upgrade", calls)
 
 
+class ConsoleTest(unittest.TestCase):
+    """argus-console (DESIGN 14f): the menu's actions, driven through faked commands and a rooted file tree."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.state = os.path.join(self.root, "update")
+        os.makedirs(self.state)
+        self.mod = m = load("argus-console", {"ARGUS_CONSOLE_ROOT": self.root, "ARGUS_STATE_DIR": self.state})
+        os.makedirs(m.NET_DIR)
+        with open(m.DHCP_FILE, "w") as fh:
+            fh.write("[Match]\nName=en* eth*\n\n[Network]\nDHCP=yes\n")
+        os.makedirs(os.path.dirname(m.RESOLV_FILES[0]))
+        with open(m.RESOLV_FILES[0], "w") as fh:
+            fh.write("nameserver 10.0.0.1\n")
+        self.calls, self.prompts, self.answers, self.outputs = [], [], [], {}
+        self.remote, self.enter = False, False
+
+        def fake_run(cmd, input_text=None, timeout=120):
+            self.calls.append(" ".join(cmd))
+            for prefix, result in self.outputs.items():
+                if tuple(cmd[:len(prefix)]) == prefix:
+                    return result
+            return 0, "", ""
+
+        def fake_ask(prompt, default=None):
+            self.prompts.append(prompt)
+            a = self.answers.pop(0) if self.answers else ""
+            return a if a != "" else (default or "")
+
+        m.run = fake_run
+        m.ask = fake_ask
+        m.is_remote = lambda: self.remote
+        m.wait_enter = lambda seconds: self.enter
+        m.log = lambda msg: self.calls.append("log " + msg)
+        m.clear = lambda: None
+        m.pause = lambda: None
+        m.interactive = lambda cmd, env=None, preexec=None: self.calls.append("interactive " + " ".join(cmd)) or 0
+        m.socket = types.SimpleNamespace(gethostname=lambda: "zbx-core", getaddrinfo=lambda *a: [], create_connection=self.connect)
+        self.unreachable = set()
+        self.net()
+
+    def connect(self, addr, timeout=5):
+        if addr[0] in self.unreachable:
+            raise OSError("timed out")
+        return contextlib.nullcontext()
+
+    def net(self, dev="ens18", gw="10.0.0.1", addr="10.0.0.10/24"):
+        self.outputs[("ip", "-j", "route", "show", "default")] = (0, json.dumps([{"dev": dev, "gateway": gw}]), "")
+        ip, plen = addr.split("/")
+        self.outputs[("ip", "-j", "-4", "addr", "show", "dev", dev)] = (
+            0, json.dumps([{"addr_info": [{"family": "inet", "scope": "global", "local": ip, "prefixlen": int(plen)}]}]), "")
+
+    def do(self, fn, *answers):
+        """Run a menu action with scripted answers; (what it printed, what it returned)."""
+        self.answers = list(answers)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = fn()
+        return buf.getvalue(), result
+
+    def static(self):
+        return self.mod.read_file(self.mod.STATIC_FILE) if os.path.exists(self.mod.STATIC_FILE) else None
+
+    STATIC = ("# Written by argus-console: a static address for the primary NIC. Delete this file (or pick DHCP\n"
+              "# in the console menu) to go back to the DHCP of 10-argus-dhcp.network.\n"
+              "[Match]\nName=ens18\n\n[Network]\nAddress=10.0.0.20/24\nGateway=10.0.0.1\nDNS=10.0.0.1\nDNS=1.1.1.1\nDomains=example.lan\n")
+
+    def test_a_static_address_is_validated_written_and_applied(self):
+        text, _ = self.do(self.mod.configure_network, "2", "10.0.0.20", "10.0.0.20/24", "10.0.1.1", "10.0.0.1",
+                          "10.0.0.1 1.1.1.1", "example.lan", "yes")
+        self.assertIn("prefix length", text, "an address without its prefix is refused")
+        self.assertIn("outside 10.0.0.0/24", text, "a gateway outside the network is refused")
+        self.assertEqual(self.static(), self.STATIC)
+        self.assertEqual(self.mod.net_mode(), "static")
+        self.assertIn("networkctl reload", self.calls)
+        self.assertIn("networkctl reconfigure ens18", self.calls)
+        self.assertFalse(any(c.startswith("systemd-run") for c in self.calls), "on the console nothing is armed")
+        self.assertFalse(os.path.exists(self.mod.REVERT_BACKUP))
+        self.assertIn("log network changed to static 10.0.0.20/24 via 10.0.0.1 on ens18, DNS 10.0.0.1 1.1.1.1", self.calls)
+
+    def test_without_the_yes_nothing_changes(self):
+        self.do(self.mod.configure_network, "2", "10.0.0.20/24", "10.0.0.1", "10.0.0.1", "", "no")
+        self.assertIsNone(self.static())
+        self.assertNotIn("networkctl reload", self.calls)
+
+    def test_dhcp_removes_the_static_file(self):
+        with open(self.mod.STATIC_FILE, "w") as fh:
+            fh.write("[Match]\nName=ens18\n")
+        self.do(self.mod.configure_network, "1")
+        self.assertIsNone(self.static())
+        self.assertIn("networkctl reload", self.calls)
+        self.assertIn("log network changed to DHCP on ens18", self.calls)
+        text, _ = self.do(self.mod.configure_network, "1")
+        self.assertIn("Already DHCP", text)
+
+    def test_over_ssh_a_change_reverts_unless_confirmed_or_reached(self):
+        self.remote = True
+        text, _ = self.do(self.mod.configure_network, "2", "10.0.0.20/24", "10.0.0.1", "10.0.0.1", "", "yes")
+        armed = [c for c in self.calls if c.startswith("systemd-run")]
+        self.assertEqual(len(armed), 1)
+        self.assertIn("--on-active=180", armed[0])
+        self.assertIn("--revert-network", armed[0])
+        self.assertTrue(os.path.exists(self.mod.REVERT_BACKUP))
+        self.assertIsNotNone(self.static())
+        self.assertIn("reverts in a moment", text)
+        # The timer fires: the files from before the change come back.
+        self.assertEqual(self.mod.revert_network_main(), 0)
+        self.assertIsNone(self.static())
+        self.assertFalse(os.path.exists(self.mod.REVERT_BACKUP))
+        self.assertIn("log network change reverted: no login within 180 s", self.calls)
+        # Enter in a session that survived keeps it.
+        self.enter, self.calls = True, []
+        self.do(self.mod.configure_network, "2", "10.0.0.20/24", "10.0.0.1", "10.0.0.1", "", "yes")
+        self.assertIn("systemctl stop argus-console-net-revert.timer", self.calls)
+        self.assertFalse(os.path.exists(self.mod.REVERT_BACKUP))
+        self.assertIsNotNone(self.static())
+        self.assertIn("log network change kept: confirmed in the session", self.calls)
+        # A new login reaching the VM keeps it too (the menu does this as it starts).
+        self.enter, self.calls = False, []
+        self.do(self.mod.configure_network, "1")
+        self.assertTrue(os.path.exists(self.mod.REVERT_BACKUP))
+        self.assertTrue(self.mod.cancel_revert("a login reached the VM on the new address"))
+        self.assertFalse(os.path.exists(self.mod.REVERT_BACKUP))
+        self.assertIsNone(self.static())
+        self.assertFalse(self.mod.cancel_revert("again"), "nothing pending")
+
+    def test_when_networkd_refuses_the_files_go_back(self):
+        self.outputs[("networkctl", "reload")] = (1, "", "Failed to reload")
+        text, _ = self.do(self.mod.configure_network, "2", "10.0.0.20/24", "10.0.0.1", "10.0.0.1", "", "yes")
+        self.assertIn("did not take the change", text)
+        self.assertIsNone(self.static())
+
+    def test_hostname_change_rewrites_the_hosts_line(self):
+        with open(self.mod.HOSTS_FILE, "w") as fh:
+            fh.write("127.0.0.1\tlocalhost\n127.0.1.1\tzbx-core\n")
+        text, _ = self.do(self.mod.change_hostname, "Bad_Name!", "core-01.example.lan")
+        self.assertEqual(len(self.prompts), 2, "an invalid name is asked again")
+        self.assertIn("hostnamectl set-hostname core-01.example.lan", self.calls)
+        self.assertEqual(self.mod.read_file(self.mod.HOSTS_FILE), "127.0.0.1\tlocalhost\n127.0.1.1\tcore-01.example.lan core-01\n")
+        self.assertIn("log hostname changed zbx-core -> core-01.example.lan", self.calls)
+        self.calls = []
+        text, _ = self.do(self.mod.change_hostname, "")
+        self.assertIn("Unchanged", text)
+        self.assertEqual(self.calls, [])
+
+    def test_the_status_block_reads_the_host(self):
+        m = self.mod
+        self.outputs[("timedatectl", "show", "-p", "NTPSynchronized", "--value")] = (0, "yes\n", "")
+        self.outputs[("timedatectl", "show", "-p", "Timezone", "--value")] = (0, "Europe/Rome\n", "")
+        self.outputs[("systemctl", "is-active", "docker")] = (3, "inactive\n", "")
+        self.outputs[("systemctl", "is-active")] = (0, "active\n", "")
+        self.outputs[("docker", "inspect", "-f", m.INSPECT_FMT, "argus")] = (0, "running|healthy|v0.9.4\n", "")
+        self.outputs[("docker", "inspect", "-f", m.INSPECT_FMT, "argus-updater")] = (1, "", "Error: No such object")
+        with open(os.path.join(self.state, "os-status.json"), "w") as fh:
+            fh.write('{"sec_updates":3,"reboot_required":true,"zbx_server":"1:7.0.32-1","zbx_candidate":"1:7.0.33-1"}')
+        text, _ = self.do(lambda: m.render_status(m.status()))
+        for needle in ("zbx-core", "10.0.0.10/24 via 10.0.0.1 (DHCP) on ens18", "https://10.0.0.10/", "%-11s %s" % ("DNS", "10.0.0.1"),
+                       "synced (NTP)  Europe/Rome", "3 security updates, reboot pending, Zabbix 1:7.0.33-1 available",
+                       "Docker inactive", "Argus v0.9.4 healthy", "updater missing"):
+            self.assertIn(needle, text)
+        with open(m.STATIC_FILE, "w") as fh:
+            fh.write("[Match]\nName=ens18\n")
+        text, _ = self.do(lambda: m.render_status(m.status()))
+        self.assertIn("(static)", text)
+
+    def test_restarts_ask_first(self):
+        self.do(lambda: self.mod.restart("Argus", container="argus"), "no")
+        self.assertNotIn("docker restart argus", self.calls)
+        self.do(lambda: self.mod.restart("Argus", container="argus"), "yes")
+        self.assertIn("docker restart argus", self.calls)
+        self.do(lambda: self.mod.restart("Zabbix server", unit="zabbix-server"), "yes")
+        self.assertIn("systemctl restart zabbix-server", self.calls)
+        self.assertIn("log Zabbix server restarted from the console", self.calls)
+
+    def test_grow_disk_knows_the_device_names(self):
+        split = self.mod.split_partition
+        self.assertEqual(split("/dev/sda1"), ("/dev/sda", 1))
+        self.assertEqual(split("/dev/vda3"), ("/dev/vda", 3))
+        self.assertEqual(split("/dev/xvda1"), ("/dev/xvda", 1))
+        self.assertEqual(split("/dev/nvme0n1p2"), ("/dev/nvme0n1", 2))
+        self.assertEqual(split("/dev/mmcblk0p2"), ("/dev/mmcblk0", 2))
+        self.assertEqual(split("/dev/mapper/vg-root"), (None, None))
+        self.outputs[("findmnt", "-n", "-o", "SOURCE", "/")] = (0, "/dev/sda1\n", "")
+        self.outputs[("findmnt", "-n", "-o", "FSTYPE", "/")] = (0, "ext4\n", "")
+        self.do(self.mod.grow_disk, "yes")
+        self.assertIn("growpart /dev/sda 1", self.calls)
+        self.assertIn("resize2fs /dev/sda1", self.calls)
+        self.calls = []
+        self.outputs[("growpart",)] = (1, "NOCHANGE: partition 1 is size 419428319. it cannot be grown", "")
+        text, _ = self.do(self.mod.grow_disk, "yes")
+        self.assertIn("already fills the disk", text)
+        self.assertNotIn("resize2fs /dev/sda1", self.calls)
+        self.outputs[("growpart",)] = (127, "", "growpart is not installed")
+        text, _ = self.do(self.mod.grow_disk, "yes")
+        self.assertIn("cloud-guest-utils", text)
+        self.calls = []
+        self.outputs[("growpart",)] = (0, "CHANGED: partition=1 start=2048 old: size=1 end=2 new: size=3 end=4", "")
+        self.outputs[("findmnt", "-n", "-o", "FSTYPE", "/")] = (0, "xfs\n", "")
+        self.do(self.mod.grow_disk, "yes")
+        self.assertIn("xfs_growfs /", self.calls)
+        self.outputs[("findmnt", "-n", "-o", "SOURCE", "/")] = (0, "/dev/mapper/vg-root\n", "")
+        text, _ = self.do(self.mod.grow_disk, "yes")
+        self.assertIn("doesn't know how to grow", text)
+
+    def test_connectivity_reports_each_check(self):
+        self.unreachable = {"deb.debian.org"}
+        self.outputs[("ping",)] = (0, "", "")
+        self.outputs[("timedatectl",)] = (0, "no\n", "")
+        text, results = self.do(self.mod.test_connectivity)
+        self.assertIn("PASS  gateway 10.0.0.1", text)
+        self.assertIn("PASS  DNS (10.0.0.1)", text)
+        self.assertIn("PASS  ghcr.io:443", text)
+        self.assertIn("FAIL  deb.debian.org:443  no connection", text)
+        self.assertIn("FAIL  time sync (NTP)  clock not synchronised", text)
+        self.assertEqual(len(results), 6)
+
+    def test_os_updates_run_only_when_pending(self):
+        with open(os.path.join(self.state, "os-status.json"), "w") as fh:
+            fh.write('{"sec_updates":0,"reboot_required":true}')
+        text, _ = self.do(self.mod.install_updates)
+        self.assertIn("No security updates are pending", text)
+        self.assertIn("A reboot is pending", text)
+        self.assertFalse(any(c.startswith("interactive") for c in self.calls))
+        with open(os.path.join(self.state, "os-status.json"), "w") as fh:
+            fh.write('{"sec_updates":2,"reboot_required":false}')
+        self.do(self.mod.install_updates, "yes")
+        self.assertIn("interactive unattended-upgrade -v", self.calls)
+        self.assertIn("log security updates installed from the console", self.calls)
+
+    def test_keyboard_and_the_time_zone_argus_manages(self):
+        m = self.mod
+        with open(m.VCONSOLE_FILE, "w") as fh:
+            fh.write("KEYMAP=us\nFONT=eurlatgr\n")
+        with open(os.path.join(self.state, "timezone.json"), "w") as fh:
+            fh.write('{"tz":"Europe/Rome"}')
+        text, _ = self.do(m.keyboard_and_timezone, "it")
+        self.assertEqual(m.read_file(m.VCONSOLE_FILE), "KEYMAP=it\nFONT=eurlatgr\n")
+        self.assertIn("systemctl restart systemd-vconsole-setup.service", self.calls)
+        self.assertIn("follows the one set in Argus", text)
+        self.assertEqual(len(self.prompts), 1, "no time zone question while Argus manages it")
+        os.remove(os.path.join(self.state, "timezone.json"))
+        os.makedirs(self.root + "/usr/share/zoneinfo/Europe")
+        with open(self.root + "/usr/share/zoneinfo/Europe/Rome", "w") as fh:
+            fh.write("")
+        self.calls = []
+        text, _ = self.do(m.keyboard_and_timezone, "", "Mars/Olympus")
+        self.assertIn("not in the zoneinfo database", text)
+        self.assertFalse(any(c.startswith("timedatectl set-timezone") for c in self.calls))
+        text, _ = self.do(m.keyboard_and_timezone, "", "Europe/Rome")
+        self.assertIn("timedatectl set-timezone Europe/Rome", self.calls)
+        self.assertIn("log time zone set to Europe/Rome", self.calls)
+
+    def test_reboot_and_power_off_want_the_word(self):
+        self.do(lambda: self.mod.power("reboot"), "no")
+        self.assertNotIn("systemctl reboot", self.calls)
+        self.do(lambda: self.mod.power("reboot"), "REBOOT")
+        self.assertIn("systemctl reboot", self.calls)
+        self.do(lambda: self.mod.power("poweroff"), "poweroff")
+        self.assertIn("systemctl poweroff", self.calls)
+        self.assertIn("log poweroff requested from the console", self.calls)
+
+    def test_the_menu_shows_logs_out_and_refuses_non_root(self):
+        as_root(self)
+        m = self.mod
+        text, rc = self.do(lambda: m.main([]), "15")
+        self.assertEqual(rc, 0)
+        self.assertIn("ARGUS CORE", text)
+        self.assertIn("15) Log out", text)
+        self.assertIn("!! Reboot the VM !!", text)
+        text, rc = self.do(lambda: m.main(["--status"]))
+        self.assertEqual(rc, 0)
+        self.assertIn("Address", text)
+        # A pending network revert is kept by the login that reached the VM.
+        m.save_network_backup()
+        text, rc = self.do(lambda: m.main([]), "15")
+        self.assertIn("is kept", text)
+        self.assertFalse(os.path.exists(m.REVERT_BACKUP))
+        os.geteuid = lambda: 1000
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            self.assertEqual(m.main([]), 1)
+        self.assertIn("sudo argus-console", buf.getvalue())
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_the_login_wrapper_opens_the_menu_or_passes_a_command_to_bash(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        shims = os.path.join(tmp, "bin")
+        os.makedirs(shims)
+        with open(os.path.join(shims, "sudo"), "w", newline="\n") as fh:
+            fh.write("#!/usr/bin/env bash\necho \"sudo $*\"\n")
+        os.chmod(os.path.join(shims, "sudo"), 0o755)
+        script = os.path.join(tmp, "argus-console-login")
+        with open(script, "w", newline="\n") as fh:
+            fh.write(script_body("argus-console-login"))
+        env = dict(os.environ, PATH=winpath(shims) + os.pathsep + os.environ.get("PATH", ""))
+        r = subprocess.run([WHICH("bash"), winpath(script)], env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.stdout.strip(), "sudo /usr/local/sbin/argus-console")
+        r = subprocess.run([WHICH("bash"), winpath(script), "-c", "echo passed-through"], env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.stdout.strip(), "passed-through", "an ssh command or scp goes to bash, not the menu")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

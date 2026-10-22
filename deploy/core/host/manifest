@@ -12,6 +12,8 @@ argus-host-tools-apply             /usr/local/sbin/argus-host-tools-apply       
 argus-size-zabbix                  /usr/local/sbin/argus-size-zabbix                                 0755
 argus-backup                       /usr/local/sbin/argus-backup                                      0755
 argus-restore                      /usr/local/sbin/argus-restore                                     0755
+argus-console                      /usr/local/sbin/argus-console                                     0755
+argus-console-login                /usr/local/sbin/argus-console-login                               0755
 argus-os-report.service            /etc/systemd/system/argus-os-report.service                       0644 render
 argus-os-report.timer              /etc/systemd/system/argus-os-report.timer                         0644 enable
 argus-reboot-check.service         /etc/systemd/system/argus-reboot-check.service                    0644 render

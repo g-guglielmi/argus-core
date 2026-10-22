@@ -82,6 +82,21 @@ Machine-generated and never displayed: the **database password** (in `zabbix_ser
 `zabbix.conf.php`, root-only), the **`argus-svc` API token** (in `argus.env`, root-only), and the
 **at-rest encryption key**. Rotate any human password later without touching the others.
 
+## The console menu
+
+Logging in as the Debian user, at the hypervisor console or over SSH, opens a menu instead of a
+shell prompt: the VM's address, gateway and DNS (DHCP or static), the web address, time sync, disk
+usage, pending OS updates, and the state of PostgreSQL, Zabbix server, nginx, Docker and the two
+containers. Below it, numbered actions: configure networking (DHCP or a static address, with a
+safety revert when you change it over SSH), change the hostname, test connectivity, restart Argus,
+the updater or Zabbix server, view logs, install OS updates, grow the disk after enlarging it in
+the hypervisor, keyboard layout, the console password, reboot, power off, and **Open a shell** for
+everything else (a normal bash; `sudo` asks your password there as usual). Ssh commands and scp
+with the same account work unchanged.
+
+The menu is `argus-console` from the core's host tools, so a core installed by hand has it too:
+`sudo argus-console`. Details in DESIGN 14f.
+
 ## Folders
 
 The containers keep their files in `/docker/<container name>`, like a manual install

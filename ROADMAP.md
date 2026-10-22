@@ -63,6 +63,21 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
   host timer (`argus-zbx-update`) honours locally: same-major `zabbix-*` updates only, then a
   `zabbix-server` restart. Majors stay manual (DB migration + Timescale). Existing cores enable it by
   re-running `deploy/core/setup-core-patching.sh`. - _(ops+BE+FE)_ S-M
+- [x] **Appliance console menu (core)** - `argus-console`, the console account's login shell on the
+  core VM and `sudo argus-console` on any core host (it rides the host tools): status block
+  (address, DNS, web, time, disk, OS updates, services), networking with an SSH safety revert,
+  hostname, connectivity test, restarts, logs, OS updates, grow the disk, keyboard and time zone,
+  console password, reboot, power off, a shell. DESIGN 14f. - main 2026-10-22, next core cut +
+  core-vm image. _(ops)_ M
+- [ ] **Probe host-tools channel** - the core's pattern (14c) for the probe VM: the probe image
+  carries its host scripts and units under `/host-tools` with a manifest, the updater's probe mode
+  installs them after each probe update, a path unit applies them. Then a probe VM's host files
+  (the OS reporter, the patch and reboot timers, the console menu below) follow the probe release
+  instead of waiting for a new probe-vm image. _(image+updater)_ M
+- [ ] **Appliance console menu (probe)** - `argus-console` with a probe profile: site, the core it
+  reports to, last check-in, the proxy and updater containers; items to re-point the core and to
+  check in now. Delivered through the probe host-tools channel; the break-glass `argus` user's
+  login shell. _(image)_ S
 - [x] **OS patching & lifecycle** (core + probe VMs) - `unattended-upgrades` (security-suite only, respects the core's Timescale hold) + `needrestart` baked into the golden image and installed on the core by `setup-core.sh`. **Probes** auto-reboot in a weekly ~03:00 window (they buffer offline); **core** reboot is operator-scheduled via a **Settings → OS updates** mask (pick day+time, or notify-only; default notify-only). Probes report pending-security-update count + `reboot-required` hourly (`POST /api/probes/os-status`) and the core reports its own via a host timer into the shared update dir; surfaced on the **Probes** page (**OS** column + "N need a reboot") and Settings. Patching stays **local, never remote-triggered** (no clean apt rollback); hypervisor snapshots are the safety net. See DESIGN §14c. **v0.4.32 (core) + probe-vm/v0.3.1.** - _(ops+BE+FE)_ M-L
 
 ### B. Auto-provisioning / discovery (Phase 4 - "replaces PRTG Add Sensor") - COMPLETE, v0.5.0 milestone
