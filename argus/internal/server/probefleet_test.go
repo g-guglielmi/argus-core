@@ -102,3 +102,61 @@ func TestUpdateStatus(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckinKeepsTheSidecarsHostToolsReport(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	mgr, err := settings.New(ctx, st, zabbix.New("", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{st: st, mgr: mgr, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	s.digests.entries = map[string]digestEntry{}
+	const raw = "probe-token"
+	if err := st.UpsertProbeCredential(ctx, "proxy-site1", auth.HashToken(raw)); err != nil {
+		t.Fatal(err)
+	}
+	checkin := func(body string) {
+		t.Helper()
+		r := httptest.NewRequest("POST", "/api/probes/checkin", strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer "+raw)
+		w := httptest.NewRecorder()
+		s.handleProbeCheckin(w, r)
+		if w.Code != 200 {
+			t.Fatalf("check-in: %d %s", w.Code, w.Body.String())
+		}
+	}
+	// A sidecar that doesn't know the channel, or hasn't run it yet: nothing stored.
+	checkin(`{"selfupdate":true,"updater_version":"v0.2.17"}`)
+	checkin(`{"selfupdate":true,"updater_version":"v0.2.17","host_tools":null}`)
+	ag, _ := st.ProbeAgentByName(ctx, "proxy-site1")
+	if ag.HostTools != "" {
+		t.Fatalf("stored %q, want nothing", ag.HostTools)
+	}
+	// A run: the state, its reason, the version, when, the count of files written, the reload flag.
+	checkin(`{"selfupdate":true,"updater_version":"v0.2.17","host_tools":{"state":"ok","at":"2026-10-23T01:00:00Z","image":"sha256:abc","version":"7.0.33-r1","installed":["/usr/local/sbin/argus-console","/etc/systemd/system/argus-host-tools.path"],"units_changed":["argus-host-tools.path"],"apply":true}}`)
+	ag, _ = st.ProbeAgentByName(ctx, "proxy-site1")
+	got := parseHostTools(ag.HostTools)
+	want := &probeHostTools{State: "ok", Version: "7.0.33-r1", At: "2026-10-23T01:00:00Z", Installed: 2, Apply: true}
+	if got == nil || *got != *want {
+		t.Fatalf("stored %+v, want %+v", got, want)
+	}
+	// A skipped run says why; the words are cut short and the state must be one of three.
+	checkin(`{"host_tools":{"state":"skipped","message":"` + strings.Repeat("x", 400) + `"}}`)
+	ag, _ = st.ProbeAgentByName(ctx, "proxy-site1")
+	if got := parseHostTools(ag.HostTools); got == nil || got.State != "skipped" || len(got.Message) != 300 || got.Version != "" {
+		t.Fatalf("skipped: %+v", got)
+	}
+	checkin(`{"host_tools":{"state":"exploded"}}`)
+	ag, _ = st.ProbeAgentByName(ctx, "proxy-site1")
+	if got := parseHostTools(ag.HostTools); got == nil || got.State != "skipped" {
+		t.Fatalf("an unknown state must leave the last report alone: %+v", got)
+	}
+	if cleanHostTools(json.RawMessage(`"a string"`)) != "" || cleanHostTools(json.RawMessage(`{"state":"ok","version":"not a tag; drop table"}`)) != `{"state":"ok"}` {
+		t.Fatal("odd shapes are not stored, a non-tag version is dropped")
+	}
+}

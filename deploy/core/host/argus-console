@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 g-guglielmi
-"""argus-console: the Argus core's console menu (DESIGN 14f).
+"""argus-console: the console menu of the Argus core and probe VMs (DESIGN 14f).
 
 The login shell of the appliance's console account (argus-console-login runs it through sudo) and a
-command, `sudo argus-console`, on any core host that carries the host tools. Before any key is
-pressed it shows what an operator at the console came to see: address, DNS, web address, time sync,
-disk, pending OS updates and the state of every service. Then the handful of actions that otherwise
-end in a search engine: networking (DHCP or static, DNS), hostname, a connectivity test, service
-restarts, logs, OS updates, growing the disk, the keyboard layout, the console password, reboot,
-power off, and a shell for everything else.
+command, `sudo argus-console`, on any host that carries the host tools. Before any key is pressed it
+shows what an operator at the console came to see: address, DNS, the web address (core) or the core
+it reports to (probe), time sync, disk, pending OS updates and the state of every service. Then the
+handful of actions that otherwise end in a search engine: networking (DHCP or static, DNS),
+hostname, a connectivity test, service restarts, logs, OS updates, growing the disk, the keyboard
+layout, reboot, power off, and a shell for everything else; on the core also the console password
+and a Zabbix server restart, on a probe a check-in on demand and the core it talks to.
+
+ONE FILE, TWO REPOSITORIES: this script is kept byte for byte identical in argus-core
+(deploy/core/host/argus-console) and argus-probe (deploy/probe-vm/host/argus-console); it tells the
+two hosts apart at start (ROLE), and the core's weekly scan fails when the copies drift.
 
 Standard library only; every command runs without a shell. Paths can be rooted elsewhere with
-ARGUS_CONSOLE_ROOT (the tests do).
+ARGUS_CONSOLE_ROOT and the role forced with ARGUS_CONSOLE_ROLE (the tests do both).
 """
 import ipaddress
 import json
@@ -24,9 +29,29 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 
 ROOT = os.environ.get("ARGUS_CONSOLE_ROOT", "")
-STATE_DIR = os.environ.get("ARGUS_STATE_DIR", "/docker/argus-update")
+# A probe VM keeps the proxy's enrollment (proxy.env) in its data folder; a core has the Zabbix server.
+PROBE_DIR = "/docker/argus-probe"
+PROBE_META = ROOT + PROBE_DIR + "/enroll/proxy.env"
+PROBE_ENV = ROOT + "/etc/argus-probe/probe.env"   # the appliance's container env (ZBX_SERVER_HOST may be set there)
+CORE_SIGN = ROOT + "/etc/zabbix/zabbix_server.conf"
+
+
+def detect_role():
+    forced = os.environ.get("ARGUS_CONSOLE_ROLE", "")
+    if forced in ("core", "probe"):
+        return forced
+    if os.path.exists(PROBE_META) and not os.path.exists(CORE_SIGN):
+        return "probe"
+    return "core"
+
+
+ROLE = detect_role()
+STATE_DIR = os.environ.get("ARGUS_STATE_DIR", (ROOT + PROBE_DIR) if ROLE == "probe" else "/docker/argus-update")
 NET_DIR = ROOT + "/etc/systemd/network"
 DHCP_FILE = os.path.join(NET_DIR, "10-argus-dhcp.network")
 # Sorts before the DHCP unit: networkd applies the first matching .network file, so this one wins
@@ -54,8 +79,12 @@ BANNER = r"""
 /_/   \_\|_| \_\ \____| \___/ |____/
 """.strip("\n")
 
-UNITS = (("PostgreSQL", "postgresql"), ("Zabbix server", "zabbix-server"), ("nginx", "nginx"), ("Docker", "docker"))
-CONTAINERS = (("Argus", "argus"), ("updater", "argus-updater"))
+if ROLE == "probe":
+    UNITS = (("Docker", "docker"),)
+    CONTAINERS = (("Probe", "argus-probe"), ("updater", "argus-updater"))
+else:
+    UNITS = (("PostgreSQL", "postgresql"), ("Zabbix server", "zabbix-server"), ("nginx", "nginx"), ("Docker", "docker"))
+    CONTAINERS = (("Argus", "argus"), ("updater", "argus-updater"))
 REGISTRIES = (("ghcr.io", 443), ("registry-1.docker.io", 443), ("deb.debian.org", 443))
 
 WIDTH = 80
@@ -379,11 +408,51 @@ def status():
         "mode": net_mode(), "dns": dns_servers(), "web": web_addresses(ip),
         "ntp": out(["timedatectl", "show", "-p", "NTPSynchronized", "--value"]) == "yes",
         "tz": out(["timedatectl", "show", "-p", "Timezone", "--value"]),
-        "disks": disk_lines(), "os": os_status(),
+        "disks": disk_lines(), "os": os_status(), "tools": host_tools_status(),
         "units": [(label, unit_state(u)) for label, u in UNITS],
         "containers": [(label, ) + container_state(c) for label, c in CONTAINERS],
     }
+    if ROLE == "probe":
+        meta = read_kv(PROBE_META)
+        env = read_kv(PROBE_ENV)
+        st["site"] = meta.get("PROXY_NAME", "")
+        st["core"] = env.get("ZBX_SERVER_HOST") or meta.get("CORE_HOST", "")
+        st["checkin"] = meta.get("CHECKIN_URL", "")
     return st
+
+
+def read_kv(path):
+    """KEY=value lines (proxy.env, probe.env, os-release); comments and blanks skipped."""
+    out = {}
+    for line in read_file(path).splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            out[k.strip()] = v.strip()
+    return out
+
+
+def write_kv(path, updates, mode=0o600):
+    """Set keys in a KEY=value file, keeping every other line as it is (a missing key is appended)."""
+    lines = read_file(path).splitlines()
+    done = set()
+    for i, line in enumerate(lines):
+        k = line.split("=", 1)[0].strip() if "=" in line and not line.lstrip().startswith("#") else None
+        if k in updates:
+            lines[i] = "%s=%s" % (k, updates[k])
+            done.add(k)
+    for k, v in updates.items():
+        if k not in done:
+            lines.append("%s=%s" % (k, v))
+    write_file(path, "\n".join(lines) + "\n", mode)
+
+
+def host_tools_status():
+    """What the updater last did with this host's scripts and units (host-tools.json), if anything."""
+    try:
+        return json.loads(read_file(os.path.join(STATE_DIR, "host-tools.json")) or "{}")
+    except ValueError:
+        return {}
 
 
 def tone_for(state):
@@ -399,7 +468,8 @@ def render_status(st):
         say("  " + l, "brand")
     print()
     who = "%s   %s" % (st["hostname"], st["uptime"])
-    say("  Monitoring cockpit, core".ljust(WIDTH - 2 - len(who)) + who, "head")
+    what = "  Monitoring cockpit, " + ("probe" + (" " + st["site"] if st.get("site") else "") if ROLE == "probe" else "core")
+    say(what.ljust(WIDTH - 2 - len(who)) + who, "head")
     print()
     addr = ", ".join(st["addrs"]) or "no address"
     if st["gateway"]:
@@ -409,7 +479,12 @@ def render_status(st):
         addr += " on " + st["dev"]
     line("Address", addr)
     line("DNS", ", ".join(st["dns"]) or "none")
-    if st["web"]:
+    if ROLE == "probe":
+        core = st.get("core") or "not enrolled yet"
+        if st.get("checkin"):
+            core += "   check-in " + (urllib.parse.urlsplit(st["checkin"]).netloc or st["checkin"])
+        line("Core", core)
+    elif st["web"]:
         line("Web", "   also ".join(st["web"]))
     line("Time", (paint("synced (NTP)", "ok") if st["ntp"] else paint("not synced", "warn")) + ("  " + st["tz"] if st["tz"] else ""))
     if st["disks"]:
@@ -423,6 +498,14 @@ def render_status(st):
         if o.get("zbx_candidate") and o.get("zbx_candidate") != o.get("zbx_server"):
             os_text += ", Zabbix %s available" % o["zbx_candidate"]
         line("OS", os_text)
+    t = st["tools"]
+    if t.get("state"):
+        text = paint(t["state"], tone_for({"ok": "active", "skipped": "starting"}.get(t["state"], "failed")))
+        if t.get("version"):
+            text += "  " + t["version"]
+        if t.get("message"):
+            text += "  " + t["message"]
+        line("Tools", text)
     print()
     line("Services", "   ".join("%s %s" % (label, paint(state, tone_for(state))) for label, state in st["units"]))
     cs = []
@@ -694,6 +777,17 @@ def test_connectivity():
         results.append(("DNS (%s)" % (", ".join(dns_servers()) or "none"), True, ""))
     except OSError as e:
         results.append(("DNS (%s)" % (", ".join(dns_servers()) or "none"), False, str(e)))
+    if ROLE == "probe":
+        meta = read_kv(PROBE_META)
+        core = read_kv(PROBE_ENV).get("ZBX_SERVER_HOST") or meta.get("CORE_HOST", "")
+        if core:
+            ok = tcp_check(core, 10051)
+            results.append(("core %s:10051 (Zabbix server)" % core, ok, "" if ok else "no connection"))
+        u = urllib.parse.urlsplit(meta.get("CHECKIN_URL", ""))
+        if u.hostname:
+            port = u.port or (443 if u.scheme == "https" else 80)
+            ok = tcp_check(u.hostname, port)
+            results.append(("check-in %s:%d (Argus)" % (u.hostname, port), ok, "" if ok else "no connection"))
     for host, port in REGISTRIES:
         ok = tcp_check(host, port)
         results.append(("%s:%d" % (host, port), ok, "" if ok else "no connection"))
@@ -717,16 +811,25 @@ def restart(label, unit=None, container=None):
         say("  Restart failed: %s" % err.strip(), "err")
 
 
-LOGS = (
-    ("Argus", ["docker", "logs", "--tail", "150", "argus"]),
-    ("updater", ["docker", "logs", "--tail", "150", "argus-updater"]),
-    ("Zabbix server", ["journalctl", "-u", "zabbix-server", "-n", "150", "--no-pager"]),
-    ("PostgreSQL", ["journalctl", "-u", "postgresql", "-u", "postgresql@*", "-n", "150", "--no-pager"]),
-    ("nginx", ["journalctl", "-u", "nginx", "-n", "150", "--no-pager"]),
-    ("host tools (patching, Zabbix updates, this console)",
-     ["journalctl", "-t", "argus-patch", "-t", "argus-zbx-update", "-t", "argus-tz", "-t", "argus-console", "-t", "argus-backup", "-n", "150", "--no-pager"]),
-    ("system (warnings and errors)", ["journalctl", "-p", "warning", "-n", "150", "--no-pager"]),
-)
+if ROLE == "probe":
+    LOGS = (
+        ("Probe (Zabbix proxy)", ["docker", "logs", "--tail", "150", "argus-probe"]),
+        ("updater", ["docker", "logs", "--tail", "150", "argus-updater"]),
+        ("host tools (OS reporter, this console)",
+         ["journalctl", "-t", "argus-os-report", "-t", "argus-host-tools", "-t", "argus-console", "-n", "150", "--no-pager"]),
+        ("system (warnings and errors)", ["journalctl", "-p", "warning", "-n", "150", "--no-pager"]),
+    )
+else:
+    LOGS = (
+        ("Argus", ["docker", "logs", "--tail", "150", "argus"]),
+        ("updater", ["docker", "logs", "--tail", "150", "argus-updater"]),
+        ("Zabbix server", ["journalctl", "-u", "zabbix-server", "-n", "150", "--no-pager"]),
+        ("PostgreSQL", ["journalctl", "-u", "postgresql", "-u", "postgresql@*", "-n", "150", "--no-pager"]),
+        ("nginx", ["journalctl", "-u", "nginx", "-n", "150", "--no-pager"]),
+        ("host tools (patching, Zabbix updates, this console)",
+         ["journalctl", "-t", "argus-patch", "-t", "argus-zbx-update", "-t", "argus-tz", "-t", "argus-console", "-t", "argus-backup", "-t", "argus-host-tools", "-n", "150", "--no-pager"]),
+        ("system (warnings and errors)", ["journalctl", "-p", "warning", "-n", "150", "--no-pager"]),
+    )
 
 
 def view_logs():
@@ -741,6 +844,99 @@ def view_logs():
     text = (so + err).strip() or "(nothing logged)"
     print()
     page(text)
+
+
+def http_post(url, token, body, timeout=15):
+    """(status, text) of a JSON POST with the probe's bearer token; a transport failure is (0, why)."""
+    req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), method="POST",
+                                 headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", "replace")
+    except (urllib.error.URLError, OSError) as e:
+        return 0, str(getattr(e, "reason", e))
+
+
+def checkin_now():
+    """A check-in with Argus right now, with the probe's own credential: proves the path and moves the
+    probe's last check-in in Argus. The proxy container keeps its own minute loop."""
+    say("Check in with Argus", "head")
+    meta = read_kv(PROBE_META)
+    token, url = meta.get("PROBE_TOKEN", ""), meta.get("CHECKIN_URL", "")
+    if not token or not url:
+        say("  This probe has no check-in credential yet (not enrolled, or an older Argus).", "warn")
+        return
+    status, text = http_post(url, token, {})
+    if status == 200:
+        try:
+            resp = json.loads(text)
+        except ValueError:
+            resp = {}
+        target = resp.get("target") or ""
+        say("  Argus answered: check-in recorded%s." % (", fleet target " + target if target else ""), "ok")
+        log("check-in from the console answered by Argus")
+    elif status:
+        say("  Argus answered HTTP %d: %s" % (status, text.strip()[:160] or "no detail"), "err")
+    else:
+        say("  No answer from %s: %s" % (urllib.parse.urlsplit(url).netloc or url, text), "err")
+
+
+def check_host(h):
+    h = h.strip()
+    try:
+        ipaddress.ip_address(h)
+        return h
+    except ValueError:
+        pass
+    return check_hostname(h)
+
+
+def check_url(u):
+    u = u.strip()
+    p = urllib.parse.urlsplit(u)
+    if p.scheme not in ("https", "http") or not p.hostname or not p.path.endswith("/checkin") or p.query or p.fragment:
+        raise ValueError("the check-in URL looks like https://monitoring.example.com/api/probes/checkin")
+    if re.search(r"[^A-Za-z0-9.:/_%-]", u):
+        raise ValueError("unexpected characters in the URL")
+    return u
+
+
+def change_core():
+    """Where this probe reports: the Zabbix server it connects to and the Argus check-in URL. For the
+    day the core moved and Argus can no longer tell the probe itself."""
+    say("The core this probe talks to", "head")
+    meta = read_kv(PROBE_META)
+    env = read_kv(PROBE_ENV)
+    pinned = env.get("ZBX_SERVER_HOST", "")
+    core = pinned or meta.get("CORE_HOST", "")
+    print("  Zabbix server: %s%s" % (core or "unknown", " (set on the container, in probe.env)" if pinned else " (from Argus, in proxy.env)"))
+    print("  Check-in URL:  %s" % (meta.get("CHECKIN_URL") or "unknown"))
+    print("  Argus hands the Zabbix server address to the probe at every check-in (Settings > Probes), so")
+    print("  change it there when Argus is reachable; here is for when it isn't, or the check-in URL moved.")
+    new_core = ask_valid("Zabbix server (hostname or IP)", check_host, core or None)
+    new_url = ask_valid("Check-in URL", check_url, meta.get("CHECKIN_URL") or None)
+    if new_url.startswith("http://") and env.get("ARGUS_ALLOW_INSECURE_CHECKIN") != "true":
+        say("  A plain-http check-in URL is refused by the probe unless probe.env says ARGUS_ALLOW_INSECURE_CHECKIN=true.", "warn")
+    if new_core == core and new_url == meta.get("CHECKIN_URL", ""):
+        say("  Unchanged.", "dim")
+        return
+    if ask("Apply and restart the probe? (yes/no)", "no").lower() != "yes":
+        return
+    if os.path.exists(PROBE_META):
+        write_kv(PROBE_META, {"CORE_HOST": new_core, "CHECKIN_URL": new_url}, 0o600)
+    if pinned:
+        write_kv(PROBE_ENV, {"ZBX_SERVER_HOST": new_core}, 0o600)
+        # The container reads probe.env when it is created, so the unit recreates it.
+        rc, _, err = run(["systemctl", "restart", "argus-probe.service"], timeout=300)
+    else:
+        rc, _, err = run(["docker", "restart", "argus-probe"], timeout=180)
+    if rc == 0:
+        log("core changed from the console: %s, %s" % (new_core, new_url))
+        say("  Done: the probe reports to %s and checks in at %s." % (new_core, new_url), "ok")
+    else:
+        say("  The files are written but the probe did not restart: %s" % err.strip(), "err")
 
 
 def install_updates():
@@ -953,31 +1149,58 @@ def make_login_shell(user, remove=False):
 
 # ------------------------------------------------------------------ the menu
 
-MENU = (
-    ("Network", (
-        ("1", "Configure networking (DHCP or a static address, gateway, DNS)", "network"),
-        ("2", "Change hostname", "hostname"),
-        ("3", "Test connectivity (gateway, DNS, the registries, time sync)", "connectivity"),
-    )),
-    ("Services", (
-        ("4", "Restart Argus", "restart-argus"),
-        ("5", "Restart the updater", "restart-updater"),
-        ("6", "Restart Zabbix server", "restart-zabbix"),
-        ("7", "View logs", "logs"),
-    )),
-    ("Maintenance", (
-        ("8", "Install OS updates now", "updates"),
-        ("9", "Grow the disk (after enlarging the virtual disk)", "grow"),
-        ("10", "Keyboard layout and time zone", "keyboard"),
-        ("11", "Change the console password", "password"),
-        ("12", "!! Reboot the VM !!", "reboot"),
-        ("13", "!! Power off the VM !!", "poweroff"),
-    )),
-    ("Other", (
-        ("14", "Open a shell", "shell"),
-        ("15", "Log out", "logout"),
-    )),
-)
+if ROLE == "probe":
+    MENU = (
+        ("Network", (
+            ("1", "Configure networking (DHCP or a static address, gateway, DNS)", "network"),
+            ("2", "Change hostname", "hostname"),
+            ("3", "Test connectivity (gateway, DNS, the core, the registries, time sync)", "connectivity"),
+        )),
+        ("Probe", (
+            ("4", "Restart the probe (Zabbix proxy)", "restart-probe"),
+            ("5", "Restart the updater", "restart-updater"),
+            ("6", "Check in with Argus now", "checkin"),
+            ("7", "View logs", "logs"),
+            ("8", "The core this probe talks to", "core"),
+        )),
+        ("Maintenance", (
+            ("9", "Install OS updates now", "updates"),
+            ("10", "Grow the disk (after enlarging the virtual disk)", "grow"),
+            ("11", "Keyboard layout and time zone", "keyboard"),
+            ("12", "!! Reboot the VM !!", "reboot"),
+            ("13", "!! Power off the VM !!", "poweroff"),
+        )),
+        ("Other", (
+            ("14", "Open a shell", "shell"),
+            ("15", "Log out", "logout"),
+        )),
+    )
+else:
+    MENU = (
+        ("Network", (
+            ("1", "Configure networking (DHCP or a static address, gateway, DNS)", "network"),
+            ("2", "Change hostname", "hostname"),
+            ("3", "Test connectivity (gateway, DNS, the registries, time sync)", "connectivity"),
+        )),
+        ("Services", (
+            ("4", "Restart Argus", "restart-argus"),
+            ("5", "Restart the updater", "restart-updater"),
+            ("6", "Restart Zabbix server", "restart-zabbix"),
+            ("7", "View logs", "logs"),
+        )),
+        ("Maintenance", (
+            ("8", "Install OS updates now", "updates"),
+            ("9", "Grow the disk (after enlarging the virtual disk)", "grow"),
+            ("10", "Keyboard layout and time zone", "keyboard"),
+            ("11", "Change the console password", "password"),
+            ("12", "!! Reboot the VM !!", "reboot"),
+            ("13", "!! Power off the VM !!", "poweroff"),
+        )),
+        ("Other", (
+            ("14", "Open a shell", "shell"),
+            ("15", "Log out", "logout"),
+        )),
+    )
 
 
 def render_menu():
@@ -998,10 +1221,16 @@ def dispatch(action, user):
         test_connectivity()
     elif action == "restart-argus":
         restart("Argus", container="argus")
+    elif action == "restart-probe":
+        restart("the probe", container="argus-probe")
     elif action == "restart-updater":
         restart("the updater", container="argus-updater")
     elif action == "restart-zabbix":
         restart("Zabbix server", unit="zabbix-server")
+    elif action == "checkin":
+        checkin_now()
+    elif action == "core":
+        change_core()
     elif action == "logs":
         view_logs()
     elif action == "updates":

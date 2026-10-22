@@ -1740,6 +1740,27 @@ every probe VM, the core's own status and the reboot-window mask; `GET /api/os/s
 `PUT /api/os/reboot-window`, default **notify only**). The window is mirrored to `reboot-window.json` for the core's host watcher; patching stays
 strictly local (Argus never runs `apt` remotely).
 
+### The probe host-tools channel
+
+The core's pattern (above) applied to the probe VM, so a probe VM's host side follows the probe
+release instead of waiting for a new probe-vm image. `deploy/probe-vm/host/` in argus-probe holds
+the VM's host files (the OS reporter, the console menu and its login wrapper, the apply script,
+their units) with a `manifest` of the same grammar, and `install-host-tools.py` (Python, standard
+library, the Go installer's logic: write only what changed, atomically, with the manifest's mode,
+`@STATE_DIR@` rendered, the reload marker dropped when a systemd file changed). The probe image
+carries that folder as `/host-tools` (a named build context, `LABEL io.argus.host-tools`), and the
+image build of the VM runs the same installer against `/` and writes `host-tools.json` into the
+probe's data folder: that file is the sign of a probe VM. The argus-updater's probe-watch mode
+(0.2.17) runs the probe image once after each probe update, and daily, as root and offline, with
+`/usr/local/sbin`, `/etc/systemd/system` and the data folder bound; a probe as a container
+elsewhere (no sign, or no systemd to bind) is skipped once per image. The sidecar's mount of the
+data folder is read-only, so the probe image writes the outcome file for it, and the sidecar's
+own check-in carries the report as `host_tools` (state, reason, version, when, files written,
+reload); Argus keeps it on the probe (`probe_agents.host_tools`) and shows it as a pill beside
+the OS status on the Probes page and the Updates page. `argus-host-tools.path` on the VM does the
+reload and re-runs the reporter. The reporter now also keeps `os-status.json` in the data folder,
+for the console. A change to `deploy/probe-vm/host/**` is a probe release like any image change.
+
 ## 14d. Self-installing core appliance VM (`deploy/core-vm/`)
 
 The probe golden-image pattern (§14a) applied to the **core**: one Packer-built Debian 13 image with
@@ -1923,9 +1944,18 @@ then numbered actions, with a shell as one of them.
   the `argus-tz-check` timer would put Argus's setting back within the hour, so the menu says to
   change it in Settings). Console password (`passwd` for the login account). Reboot and power off
   ask for the word. Log out ends the session.
-- **Probe VM.** The same menu with a probe profile (site, core, last check-in, the proxy and updater
-  containers, re-point the core, check in now) is on the roadmap behind the probe host-tools
-  channel, so it can reach existing probe VMs the way the core's host tools reach cores.
+- **Probe VM.** The same file (`deploy/probe-vm/host/argus-console` in argus-probe, byte for byte
+  the core's; the weekly scan fails when the copies drift) tells the host apart at start: a probe
+  VM has the proxy's `enroll/proxy.env` in its data folder and no Zabbix server. The probe profile
+  shows the site, the core it reports to (the Zabbix server, pinned on the container or handed out
+  by Argus, and the check-in address), the proxy and updater containers and the OS line from the
+  reporter's local copy; its items are the probe restart, a check-in on demand with the probe's
+  own credential (proves the path, moves the probe's last check-in in Argus), the logs, and the
+  core it talks to (for the day the core moved and Argus can no longer tell the probe itself:
+  `proxy.env`, and `probe.env` when the server is pinned there, then a restart). No password item:
+  the break-glass password is Argus's to hold and reveal. First boot makes the wrapper the
+  break-glass account's login shell. It reaches probe VMs through the probe host-tools channel
+  (14c).
 - **Tests**: `deploy/core/host/tests/test_host_scripts.py` drives the actions with faked commands
   and a rooted file tree (static and DHCP files, the revert timer, hostname, status, restarts, disk
   growth, connectivity, the login wrapper).

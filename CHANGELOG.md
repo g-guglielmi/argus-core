@@ -13,6 +13,19 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **The Probes page shows a probe VM's host tools.** A probe VM's host side (the OS reporter, the
+  console menu, their units) now follows the probe release: the probe image carries them and the
+  updater's probe-watch mode (0.2.17) installs what changed after each update (DESIGN 14c, the
+  probe host-tools channel). The sidecar reports the outcome at check-in (`host_tools`), and the
+  Probes page and the Updates page show it as a pill beside the OS status: current, failed with
+  the reason, or nothing to keep current on a container probe.
+- **The console menu on probe VMs.** `argus-console` tells a probe VM apart and shows its profile:
+  site, the core it reports to and the check-in address, the proxy and updater containers; it can
+  restart the probe, check in with Argus on demand, show the logs and change the core the probe
+  talks to for the day the core moved. The same file as the core's, kept identical by the weekly
+  scan (DESIGN 14f).
+
 ## [core-vm/v0.1.8] - 2026-10-23
 
 The appliance with the console menu of Argus v0.9.5 wired in. It is what a new core VM boots from;

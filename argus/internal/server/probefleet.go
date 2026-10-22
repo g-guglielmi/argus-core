@@ -115,6 +115,9 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 			Quota float64   `json:"quota"`
 			Load  []float64 `json:"load"`
 		} `json:"cpu"`
+		// The sidecar's report on the probe VM's host scripts and units, kept current from the probe
+		// image (DESIGN 14c). null until its first run; absent from a proxy container's report.
+		HostTools json.RawMessage `json:"host_tools"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -126,6 +129,9 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.st.SetUpdaterVersion(ctx, proxyName, reportedVersion(req.UpdaterVersion))
+	if doc := cleanHostTools(req.HostTools); doc != "" {
+		_ = s.st.SetProbeHostTools(ctx, proxyName, doc)
+	}
 	if req.Procs != nil {
 		running, pinned := cleanProcs(req.Procs, req.ProcsPinned)
 		_ = s.st.RecordProbeProcs(ctx, proxyName, running, pinned)
@@ -361,4 +367,69 @@ func bearerToken(r *http.Request) string {
 		return strings.TrimSpace(h[len(p):])
 	}
 	return ""
+}
+
+// probeHostTools is what Argus keeps of the sidecar's host-tools report: the state and its reason,
+// the probe version the tools belong to, when, how many files were written and whether the host had
+// to reload systemd. Lists of paths stay on the host.
+type probeHostTools struct {
+	State     string `json:"state"`
+	Message   string `json:"message,omitempty"`
+	Version   string `json:"version,omitempty"`
+	At        string `json:"at,omitempty"`
+	Installed int    `json:"installed,omitempty"`
+	Apply     bool   `json:"apply,omitempty"`
+}
+
+// cleanHostTools turns the sidecar's report into the compact document stored for the Probes page, or
+// "" when there is none or it has an unexpected shape. The sidecar's words are data from another
+// container: the state is one of three, the message and the timestamp are cut short, the version is
+// a tag or nothing.
+func cleanHostTools(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var in struct {
+		State     string   `json:"state"`
+		Message   string   `json:"message"`
+		Version   string   `json:"version"`
+		At        string   `json:"at"`
+		Installed []string `json:"installed"`
+		Apply     bool     `json:"apply"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return ""
+	}
+	switch in.State {
+	case "ok", "failed", "skipped":
+	default:
+		return ""
+	}
+	out := probeHostTools{State: in.State, Version: reportedVersion(in.Version), Installed: len(in.Installed), Apply: in.Apply}
+	if m := strings.TrimSpace(in.Message); m != "" {
+		if len(m) > 300 {
+			m = m[:300]
+		}
+		out.Message = m
+	}
+	if at := strings.TrimSpace(in.At); at != "" && len(at) <= 40 {
+		out.At = at
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// parseHostTools is the stored document back as a value for the view (nil when none).
+func parseHostTools(doc string) *probeHostTools {
+	if doc == "" {
+		return nil
+	}
+	var t probeHostTools
+	if err := json.Unmarshal([]byte(doc), &t); err != nil || t.State == "" {
+		return nil
+	}
+	return &t
 }

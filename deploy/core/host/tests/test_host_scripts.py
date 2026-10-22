@@ -1020,7 +1020,8 @@ class ConsoleTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, True)
         self.state = os.path.join(self.root, "update")
         os.makedirs(self.state)
-        self.mod = m = load("argus-console", {"ARGUS_CONSOLE_ROOT": self.root, "ARGUS_STATE_DIR": self.state})
+        self.mod = m = load("argus-console", {"ARGUS_CONSOLE_ROOT": self.root, "ARGUS_STATE_DIR": self.state, "ARGUS_CONSOLE_ROLE": "core"})
+        self.addCleanup(os.environ.pop, "ARGUS_CONSOLE_ROLE", None)
         os.makedirs(m.NET_DIR)
         with open(m.DHCP_FILE, "w") as fh:
             fh.write("[Match]\nName=en* eth*\n\n[Network]\nDHCP=yes\n")
@@ -1042,8 +1043,14 @@ class ConsoleTest(unittest.TestCase):
             a = self.answers.pop(0) if self.answers else ""
             return a if a != "" else (default or "")
 
-        m.run = fake_run
-        m.ask = fake_ask
+        self.fake_run, self.fake_ask = fake_run, fake_ask
+        self.unreachable = set()
+        self.fake(m)
+        self.net()
+
+    def fake(self, m):
+        m.run = self.fake_run
+        m.ask = self.fake_ask
         m.is_remote = lambda: self.remote
         m.wait_enter = lambda seconds: self.enter
         m.log = lambda msg: self.calls.append("log " + msg)
@@ -1051,8 +1058,21 @@ class ConsoleTest(unittest.TestCase):
         m.pause = lambda: None
         m.interactive = lambda cmd, env=None, preexec=None: self.calls.append("interactive " + " ".join(cmd)) or 0
         m.socket = types.SimpleNamespace(gethostname=lambda: "zbx-core", getaddrinfo=lambda *a: [], create_connection=self.connect)
-        self.unreachable = set()
-        self.net()
+
+    def probe(self, core="10.0.0.10", checkin="https://monitoring.example.com/api/probes/checkin", pinned=""):
+        """Reload the console as a probe VM: proxy.env in the data folder, probe.env on the host."""
+        state = os.path.join(self.root, "docker", "argus-probe")
+        os.makedirs(os.path.join(state, "enroll"), exist_ok=True)
+        with open(os.path.join(state, "enroll", "proxy.env"), "w") as fh:
+            fh.write("PROXY_NAME=site1\nCORE_HOST=%s\nPROBE_TOKEN=tok-123\nCHECKIN_URL=%s\n" % (core, checkin))
+        os.makedirs(os.path.join(self.root, "etc", "argus-probe"), exist_ok=True)
+        with open(os.path.join(self.root, "etc", "argus-probe", "probe.env"), "w") as fh:
+            fh.write("ARGUS_ENROLL_URL=x\n" + ("ZBX_SERVER_HOST=%s\n" % pinned if pinned else ""))
+        os.environ.pop("ARGUS_STATE_DIR", None)
+        self.mod = m = load("argus-console", {"ARGUS_CONSOLE_ROOT": self.root, "ARGUS_CONSOLE_ROLE": "probe"})
+        self.fake(m)
+        self.state = m.STATE_DIR
+        return m
 
     def connect(self, addr, timeout=5):
         if addr[0] in self.unreachable:
@@ -1363,6 +1383,76 @@ class ConsoleTest(unittest.TestCase):
         with contextlib.redirect_stderr(buf):
             self.assertEqual(m.main([]), 1)
         self.assertIn("sudo argus-console", buf.getvalue())
+
+    def test_a_probe_vm_is_told_apart_and_shows_its_core(self):
+        m = self.probe()
+        self.assertEqual(m.ROLE, "probe")
+        self.assertEqual(m.STATE_DIR, self.root + "/docker/argus-probe", "the probe's data folder is its state dir")
+        self.outputs[("docker", "inspect", "-f", m.INSPECT_FMT, "argus-probe")] = (0, "running|healthy|sha256:p\n", "")
+        self.outputs[("docker", "inspect", "-f", m.IMAGE_FMT, "sha256:p")] = (0, "|7.0.32-r1\n", "")
+        self.outputs[("docker", "inspect", "-f", m.INSPECT_FMT, "argus-updater")] = (0, "running|healthy|sha256:u\n", "")
+        self.outputs[("docker", "inspect", "-f", m.IMAGE_FMT, "sha256:u")] = (0, "0.2.17|latest\n", "")
+        with open(os.path.join(self.root, "docker", "argus-probe", "host-tools.json"), "w") as fh:
+            fh.write('{"state":"ok","version":"7.0.32-r1","at":"2026-10-23T00:00:00Z"}')
+        text, _ = self.do(lambda: m.render_status(m.status()))
+        self.assertIn("Monitoring cockpit, probe site1", text)
+        self.assertIn("%-11s %s" % ("Core", "10.0.0.10   check-in monitoring.example.com"), text)
+        self.assertNotIn("Web ", text)
+        self.assertIn("Probe 7.0.32-r1 healthy   updater 0.2.17 healthy", text)
+        self.assertIn("%-11s %s" % ("Tools", "ok  7.0.32-r1"), text)
+        text, _ = self.do(lambda: m.render_menu())
+        self.assertIn("6) Check in with Argus now", text)
+        self.assertIn("8) The core this probe talks to", text)
+        self.assertNotIn("Zabbix server", text)
+        self.assertNotIn("console password", text)
+        # Role detection without the override: proxy.env present and no Zabbix server = a probe.
+        os.environ.pop("ARGUS_CONSOLE_ROLE", None)
+        self.assertEqual(load("argus-console", {"ARGUS_CONSOLE_ROOT": self.root}).ROLE, "probe")
+        os.makedirs(os.path.join(self.root, "etc", "zabbix"))
+        with open(os.path.join(self.root, "etc", "zabbix", "zabbix_server.conf"), "w") as fh:
+            fh.write("")
+        self.assertEqual(load("argus-console", {"ARGUS_CONSOLE_ROOT": self.root}).ROLE, "core", "a core wins when both signs exist")
+
+    def test_a_probe_checks_its_core_in_the_connectivity_test(self):
+        m = self.probe()
+        self.unreachable = {"10.0.0.10"}
+        self.outputs[("ping",)] = (0, "", "")
+        self.outputs[("timedatectl",)] = (0, "yes\n", "")
+        text, results = self.do(m.test_connectivity)
+        self.assertIn("FAIL  core 10.0.0.10:10051 (Zabbix server)  no connection", text)
+        self.assertIn("PASS  check-in monitoring.example.com:443 (Argus)", text)
+        self.assertEqual(len(results), 8)
+
+    def test_check_in_now_uses_the_probe_credential(self):
+        m = self.probe()
+        posts = []
+        m.http_post = lambda url, token, body, timeout=15: posts.append((url, token, body)) or (200, '{"target":"latest"}')
+        text, _ = self.do(m.checkin_now)
+        self.assertEqual(posts, [("https://monitoring.example.com/api/probes/checkin", "tok-123", {})])
+        self.assertIn("check-in recorded, fleet target latest", text)
+        m.http_post = lambda url, token, body, timeout=15: (401, '{"error":"unauthorized"}')
+        text, _ = self.do(m.checkin_now)
+        self.assertIn("HTTP 401", text)
+        m.http_post = lambda url, token, body, timeout=15: (0, "timed out")
+        text, _ = self.do(m.checkin_now)
+        self.assertIn("No answer from monitoring.example.com: timed out", text)
+
+    def test_the_core_a_probe_talks_to_can_be_changed_from_the_console(self):
+        m = self.probe()
+        text, _ = self.do(m.change_core, "bad host!", "10.0.0.20", "ftp://x", "https://new.example.com/api/probes/checkin", "yes")
+        self.assertIn("looks like https://", text)
+        meta = m.read_kv(m.PROBE_META)
+        self.assertEqual((meta["CORE_HOST"], meta["CHECKIN_URL"], meta["PROBE_TOKEN"]), ("10.0.0.20", "https://new.example.com/api/probes/checkin", "tok-123"))
+        self.assertIn("docker restart argus-probe", self.calls)
+        self.assertIn("log core changed from the console: 10.0.0.20, https://new.example.com/api/probes/checkin", self.calls)
+        # Pinned on the container: probe.env moves too and the unit recreates the container.
+        m = self.probe(pinned="10.0.0.10")
+        self.do(m.change_core, "core.example.lan", "", "yes")
+        self.assertEqual(m.read_kv(m.PROBE_ENV)["ZBX_SERVER_HOST"], "core.example.lan")
+        self.assertEqual(m.read_kv(m.PROBE_ENV)["ARGUS_ENROLL_URL"], "x", "other keys stay")
+        self.assertIn("systemctl restart argus-probe.service", self.calls)
+        text, _ = self.do(m.change_core, "", "")
+        self.assertIn("Unchanged", text)
 
     @unittest.skipUnless(WHICH("bash"), "needs bash")
     def test_the_login_wrapper_opens_the_menu_or_passes_a_command_to_bash(self):

@@ -69,15 +69,16 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
   hostname, connectivity test, restarts, logs, OS updates, grow the disk, keyboard and time zone,
   console password, reboot, power off, a shell. DESIGN 14f. - main 2026-10-22, next core cut +
   core-vm image. _(ops)_ M
-- [ ] **Probe host-tools channel** - the core's pattern (14c) for the probe VM: the probe image
-  carries its host scripts and units under `/host-tools` with a manifest, the updater's probe mode
-  installs them after each probe update, a path unit applies them. Then a probe VM's host files
-  (the OS reporter, the patch and reboot timers, the console menu below) follow the probe release
-  instead of waiting for a new probe-vm image. _(image+updater)_ M
-- [ ] **Appliance console menu (probe)** - `argus-console` with a probe profile: site, the core it
-  reports to, last check-in, the proxy and updater containers; items to re-point the core and to
-  check in now. Delivered through the probe host-tools channel; the break-glass `argus` user's
-  login shell. _(image)_ S
+- [x] **Probe host-tools channel** - the core's pattern (14c) for the probe VM: the probe image
+  carries `deploy/probe-vm/host` as `/host-tools` (manifest + `install-host-tools.py`), the
+  updater's probe-watch mode (0.2.17) installs them after each probe update, `argus-host-tools.path`
+  applies them; the sidecar's check-in reports it (`host_tools`, a pill beside the OS status). A
+  probe VM's host files now follow the probe release. DESIGN 14c. - 2026-10-23, next probe release
+  + updater 0.2.17. _(image+updater+BE+FE)_ M
+- [x] **Appliance console menu (probe)** - the same `argus-console` file with its probe profile
+  (site, core and check-in address, the proxy and updater containers, OS line; restart the probe,
+  check in now, logs, the core it talks to), the break-glass `argus` account's login shell from
+  first boot; delivered through the probe host-tools channel. DESIGN 14f. - 2026-10-23. _(image)_ S
 - [x] **OS patching & lifecycle** (core + probe VMs) - `unattended-upgrades` (security-suite only, respects the core's Timescale hold) + `needrestart` baked into the golden image and installed on the core by `setup-core.sh`. **Probes** auto-reboot in a weekly ~03:00 window (they buffer offline); **core** reboot is operator-scheduled via a **Settings → OS updates** mask (pick day+time, or notify-only; default notify-only). Probes report pending-security-update count + `reboot-required` hourly (`POST /api/probes/os-status`) and the core reports its own via a host timer into the shared update dir; surfaced on the **Probes** page (**OS** column + "N need a reboot") and Settings. Patching stays **local, never remote-triggered** (no clean apt rollback); hypervisor snapshots are the safety net. See DESIGN §14c. **v0.4.32 (core) + probe-vm/v0.3.1.** - _(ops+BE+FE)_ M-L
 
 ### B. Auto-provisioning / discovery (Phase 4 - "replaces PRTG Add Sensor") - COMPLETE, v0.5.0 milestone

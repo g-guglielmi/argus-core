@@ -62,7 +62,7 @@ type SaaSService = { id: string; name: string; url: string; default: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg; tags?: HostTag[]; own?: { asset_tag: string; location: string }; links?: LinkRow[]; class_links?: LinkRow[]; upstream?: UpstreamInfo }
 // A host's master sensor: while it's down, the host's other alerts are held (item_id "" = none).
 type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; options: { id: string; label: string }[] }
-type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; report_at?: number; report_stale?: boolean; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean }
+type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; report_at?: number; report_stale?: boolean; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; host_tools?: ProbeHostTools; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean }
 // One Zabbix process kind on a probe: what it runs, Argus's target, the busiest hour at the last
 // evaluation, and a hold (put back after a raise that didn't lower its load).
 // An update Argus asked a probe's sidecar for, while it is in hand: queued for the sidecar's next
@@ -1120,6 +1120,16 @@ function osPill(sec: number, reboot: boolean, when: string): ReactNode {
 // osName trims the "GNU/Linux" filler off a reported PRETTY_NAME: "Debian 13 (trixie)".
 function osName(s?: string): string { return (s || '').replace('GNU/Linux ', '') }
 
+// The sidecar's last report on a probe VM's host scripts and units, kept current from the probe
+// image (DESIGN 14c): whether the last run installed them, failed, or found nothing to do here.
+type ProbeHostTools = { state: string; message?: string; version?: string; at?: string; installed?: number; apply?: boolean }
+function hostToolsPill(t: ProbeHostTools): ReactNode {
+  const when = t.at ? ` Last run ${t.at}.` : ''
+  if (t.state === 'ok') return <UpdPill kind="ok" title={`The VM's host scripts and units match the probe image${t.version ? ' ' + t.version : ''}${t.installed ? `; ${t.installed} file${t.installed === 1 ? '' : 's'} written at the last run${t.apply ? ', systemd reloaded' : ''}` : ''}.${when}`}>host tools current</UpdPill>
+  if (t.state === 'failed') return <UpdPill kind="bad" title={`${t.message || 'The last run failed.'}${when}`}>host tools failed</UpdPill>
+  return <UpdPill kind="none" title={`${t.message || 'Nothing to keep current on this host.'}${when}`}>no host tools</UpdPill>
+}
+
 // WeeklyWindow picks when something on the core happens by itself: never (notify only), or weekly at
 // a day and time on the core VM's clock. Shared by the core's reboot and its Zabbix minor updates.
 function WeeklyWindow({ autoLabel, mode, weekday, time, onMode, onWeekday, onTime }: {
@@ -1292,7 +1302,7 @@ function OSUpdatesCard({ proxies, vmLatest }: { proxies: Proxy[] | null; vmLates
 
       {vms.map((p) => (
         <UpdGroup key={p.name} label={p.name} sub="probe VM">
-          <UpdPart label="OS"><UpdVer v={osName(p.os_version)} title="The operating system this VM reports" />{osPill(typeof p.sec_updates === 'number' ? p.sec_updates : -1, !!p.reboot_required, `Reported ${relTime(p.os_reported_at!)}.`)}</UpdPart>
+          <UpdPart label="OS"><UpdVer v={osName(p.os_version)} title="The operating system this VM reports" />{osPill(typeof p.sec_updates === 'number' ? p.sec_updates : -1, !!p.reboot_required, `Reported ${relTime(p.os_reported_at!)}.`)}{p.host_tools && p.host_tools.state !== 'skipped' && hostToolsPill(p.host_tools)}</UpdPart>
         </UpdGroup>
       ))}
       {proxies && vms.length === 0 && <UpdGroup label="Probe VMs"><UpdPart label=""><UpdPill kind="none">none reporting</UpdPill></UpdPart></UpdGroup>}
@@ -3873,6 +3883,7 @@ function OSCell({ p }: { p: Proxy }) {
     <span className="vcell">
       {p.os_version && <UpdVer v={osName(p.os_version)} title="Operating system reported by the VM" />}
       {osPill(typeof p.sec_updates === 'number' ? p.sec_updates : -1, !!p.reboot_required, `Reported ${relTime(p.os_reported_at)}.`)}
+      {p.host_tools && p.host_tools.state !== 'skipped' && hostToolsPill(p.host_tools)}
     </span>
   )
 }

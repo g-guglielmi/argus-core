@@ -37,6 +37,9 @@ type ProbeAgent struct {
 	RebootRequired bool
 	OSReportedAt   int64
 	OSVersion      string
+	// HostTools is the sidecar's last report on the VM's host scripts and units (JSON: state,
+	// message, version, at, installed, apply), "" until one arrived (DESIGN 14c).
+	HostTools string
 	// One-shot updates queued for the next check-in of the probe's sidecar ("" when none): the
 	// proxy's and the sidecar's own.
 	PendingUpdate        string
@@ -123,9 +126,9 @@ func (s *Store) ProbeAgentByName(ctx context.Context, name string) (*ProbeAgent,
 	var su, sc, sw, bg, rr int
 	var pr probeProcsScan
 	err := s.db.QueryRowContext(ctx,
-		`SELECT proxy_name,version,selfupdate,scans,sweeps,last_checkin,report_at,created_at,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version,update_to,updater_update_to,`+probeProcsColumns+`
+		`SELECT proxy_name,version,selfupdate,scans,sweeps,last_checkin,report_at,created_at,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version,update_to,updater_update_to,host_tools,`+probeProcsColumns+`
 		 FROM probe_agents WHERE proxy_name=?`, name).
-		Scan(append([]any{&a.ProxyName, &a.Version, &su, &sc, &sw, &a.LastCheckin, &a.ReportAt, &a.CredentialAt, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion, &a.PendingUpdate, &a.PendingUpdaterUpdate}, pr.dest(&a.Procs)...)...)
+		Scan(append([]any{&a.ProxyName, &a.Version, &su, &sc, &sw, &a.LastCheckin, &a.ReportAt, &a.CredentialAt, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion, &a.PendingUpdate, &a.PendingUpdaterUpdate, &a.HostTools}, pr.dest(&a.Procs)...)...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -139,6 +142,22 @@ func (s *Store) ProbeAgentByName(ctx context.Context, name string) (*ProbeAgent,
 	a.BreakGlassSet = bg != 0
 	a.RebootRequired = rr != 0
 	return &a, nil
+}
+
+// SetProbeHostTools records the sidecar's report on the probe VM's host tools (a JSON document the
+// handler already cleaned). Empty leaves the stored one alone; ErrNotFound for an unknown probe.
+func (s *Store) SetProbeHostTools(ctx context.Context, proxyName, doc string) error {
+	if strings.TrimSpace(doc) == "" {
+		return nil
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE probe_agents SET host_tools=? WHERE proxy_name=?`, doc, proxyName)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // SetProbeUpdate queues a self-update for a probe: the target image tag it should converge on,
@@ -180,7 +199,7 @@ func (s *Store) TakeProbeUpdate(ctx context.Context, name string) (string, error
 
 // ProbeAgents returns every probe's fleet-update state, keyed by proxy name (for the fleet view).
 func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,version,selfupdate,scans,sweeps,last_checkin,report_at,created_at,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version,update_to,updater_update_to,`+probeProcsColumns+` FROM probe_agents`)
+	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,version,selfupdate,scans,sweeps,last_checkin,report_at,created_at,updater_version,bg_user,(bg_secret != ''),bg_updated_at,sec_updates,reboot_required,os_reported_at,os_version,update_to,updater_update_to,host_tools,`+probeProcsColumns+` FROM probe_agents`)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +209,7 @@ func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) 
 		var a ProbeAgent
 		var su, sc, sw, bg, rr int
 		var pr probeProcsScan
-		if err := rows.Scan(append([]any{&a.ProxyName, &a.Version, &su, &sc, &sw, &a.LastCheckin, &a.ReportAt, &a.CredentialAt, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion, &a.PendingUpdate, &a.PendingUpdaterUpdate}, pr.dest(&a.Procs)...)...); err != nil {
+		if err := rows.Scan(append([]any{&a.ProxyName, &a.Version, &su, &sc, &sw, &a.LastCheckin, &a.ReportAt, &a.CredentialAt, &a.UpdaterVersion, &a.BreakGlassUser, &bg, &a.BreakGlassAt, &a.SecUpdates, &rr, &a.OSReportedAt, &a.OSVersion, &a.PendingUpdate, &a.PendingUpdaterUpdate, &a.HostTools}, pr.dest(&a.Procs)...)...); err != nil {
 			return nil, err
 		}
 		pr.decode(&a.Procs)

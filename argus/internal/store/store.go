@@ -818,6 +818,11 @@ CREATE TABLE IF NOT EXISTS reports (
 	if err := s.ensureColumn("probe_agents", "report_at INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	// The sidecar's last report on the probe VM's host tools (DESIGN 14c, the probe host-tools
+	// channel): a small JSON document, "" until a sidecar that knows the channel checks in.
+	if err := s.ensureColumn("probe_agents", "host_tools TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	// Discovery job kind ('scan' = subnet scan, 'unifi' = controller sweep) plus the sweep's
 	// controller reference: the id resolves credentials at dispatch time, the name is a display
 	// snapshot that survives the controller's deletion.

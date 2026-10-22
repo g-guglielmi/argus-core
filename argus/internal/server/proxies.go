@@ -46,6 +46,9 @@ type proxyView struct {
 	RebootRequired bool   `json:"reboot_required"`
 	OSReportedAt   int64  `json:"os_reported_at"`
 	OSVersion      string `json:"os_version"` // the probe VM's OS pretty-name ("" if not reported)
+	// The sidecar's last report on the probe VM's host scripts and units, kept current from the
+	// probe image (DESIGN 14c); nil until a sidecar that knows the channel checked in.
+	HostTools *probeHostTools `json:"host_tools,omitempty"`
 	// The probe's Argus-managed Probe health host: its id (for the link to its sensors; "" until it
 	// exists) and its worst open problem: "ok" | "warning" | "error" ("" when there's no host).
 	ProbeHostID string `json:"probe_host_id,omitempty"`
@@ -163,6 +166,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			RebootRequired: ag.RebootRequired,
 			OSReportedAt:   ag.OSReportedAt,
 			OSVersion:      ag.OSVersion,
+			HostTools:      parseHostTools(ag.HostTools),
 			ProbeHostID:    probeHosts[p.Name],
 			ProbeHealth:    probeHealth[p.Name],
 			Procs:          procViews(ag.Procs),

@@ -96,6 +96,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository_owner }}/${{ matrix.repo }}
+      # The console menu is one file kept identical in argus-core (deploy/core/host) and argus-probe
+      # (deploy/probe-vm/host): a copy that drifted is a bug, caught here every week.
+      - name: The console menu matches the core's copy
+        if: matrix.repo == 'argus-probe'
+        run: |
+          mkdir -p ../core && cd ../core
+          git clone -q --depth 1 https://github.com/${{ github.repository_owner }}/argus-core.git .
+          cd "$GITHUB_WORKSPACE"
+          for f in argus-console argus-console-login; do
+            if ! cmp -s "../core/deploy/core/host/$f" "deploy/probe-vm/host/$f"; then
+              echo "::error::deploy/probe-vm/host/$f differs from argus-core's deploy/core/host/$f"; exit 1
+            fi
+          done
       # Misconfigurations (Trivy's checks for Dockerfiles and the other formats it knows) and secrets
       # in the checkout. HIGH and CRITICAL fail the job; a deliberate exception is listed in that
       # repository's own .trivyignore with its reason (the probe's and the updater's root user, which
