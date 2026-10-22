@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-10-22
+
 ### Added
 - **A console menu for the core VM (`argus-console`).** What an operator at the hypervisor console
   sees instead of a shell prompt: the address, gateway and DNS (DHCP or static), the web address,
