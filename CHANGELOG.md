@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-10-23
+
 ### Added
 - **The Probes page shows a probe VM's host tools.** A probe VM's host side (the OS reporter, the
   console menu, their units) now follows the probe release: the probe image carries them and the
