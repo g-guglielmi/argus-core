@@ -28,6 +28,12 @@ GitHub Release from the matching section below.
   in its status block are read from the images, since a container's own labels stay what they
   were when it was first created. Every action is logged in the journal. DESIGN 14f.
 
+### Fixed
+- **A passkey sign-in on a login page that outlived a core update runs on the new bundle.** Such a
+  page kept running the code it had loaded, so the passkey fix of 0.9.4 could not reach a tab left
+  open from before it. Before starting a passkey sign-in the page now checks whether the server
+  serves a different bundle and, if so, reloads itself and starts the sign-in on the fresh page.
+
 ### Changed
 - **CI actions on the Node 24 runtime.** The four remaining actions pinned to Node 20 releases
   (checkout in the weekly scan, setup-node, the registry login, the release publisher) move to

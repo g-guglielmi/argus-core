@@ -663,6 +663,21 @@ function Frame({ children }: { children: ReactNode }) {
 // get a passkey sign-in past a dropped password manager bridge; the fresh page starts the sign-in.
 const passkeyRetryKey = 'argus.passkey.retry'
 
+// True when the server now serves a different bundle than the one this page runs: a login page
+// left open across a core update. Its code is whatever it was at load time, fixes included, so a
+// passkey sign-in reloads first and runs on the current bundle. index.html is served no-cache and
+// names its script by content hash; the running script's own URL is in the DOM. Any doubt: false.
+async function bundleIsStale(): Promise<boolean> {
+  try {
+    const mine = document.querySelector<HTMLScriptElement>('script[src*="/assets/index-"]')?.getAttribute('src')
+    if (!mine) return false
+    const res = await fetch('/index.html', { cache: 'no-store', headers: { Accept: 'text/html' } })
+    if (!res.ok) return false
+    const theirs = (await res.text()).match(/\/assets\/index-[^"']+\.js/)?.[0]
+    return !!theirs && !mine.endsWith(theirs)
+  } catch { return false }
+}
+
 function Login({ onSuccess, passkeysAvailable, passwordReset, notice }: { onSuccess: (m: Me) => void; passkeysAvailable: boolean; passwordReset: boolean; notice?: string | null }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -689,6 +704,11 @@ function Login({ onSuccess, passkeysAvailable, passwordReset, notice }: { onSucc
   async function passkeyLogin(afterReload = false) {
     setBusy(true); setError(null)
     try {
+      if (!afterReload && await bundleIsStale()) {
+        let flagged = false
+        try { sessionStorage.setItem(passkeyRetryKey, '1'); flagged = true } catch { /* then just sign in on this bundle */ }
+        if (flagged) { window.location.reload(); return }
+      }
       onSuccess(await loginWithPasskey())
     } catch (e) {
       if (e instanceof PasskeyBridgeError) {

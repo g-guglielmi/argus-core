@@ -397,6 +397,7 @@ def tone_for(state):
 def render_status(st):
     for l in BANNER.split("\n"):
         say("  " + l, "brand")
+    print()
     who = "%s   %s" % (st["hostname"], st["uptime"])
     say("  Monitoring cockpit, core".ljust(WIDTH - 2 - len(who)) + who, "head")
     print()

@@ -229,6 +229,10 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
   flag in `sessionStorage`, this tab only) and starts the sign-in again on the fresh page, and shows
   the reason instead when the fresh page fails the same way. Adding a passkey in Account shows the
   same reason with the advice to reload. Password sign-in never goes through the extension.
+  A login page left open across a core update runs the bundle it loaded, fixes included, so before
+  a passkey sign-in the page compares its script's hashed name with the one `index.html` (served
+  no-cache) names now, and reloads itself first when they differ; the fresh page then starts the
+  sign-in by itself.
 
 ---
 
