@@ -13,7 +13,16 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
-## [0.9.3] - 2026-10-22
+## [0.9.4] - 2026-10-22
+
+The v0.9.3 tag was cut on the same fix but never built: the `govulncheck` gate stopped it on a
+Go standard library advisory published that day. This release carries the fix and the Go update.
+
+### Security
+- **Go 1.27.3.** The build image and the CI toolchain move from 1.27.2 to 1.27.3 for GO-2026-6809
+  (`crypto/x509` distrusts compromised intermediate certificates; Argus calls the affected
+  verification when it inspects a UniFi controller's certificate). Caught by the `govulncheck` gate
+  before any image was built.
 
 ### Fixed
 - **Passkey sign-in on a page left open for hours.** A password manager extension (Bitwarden and
