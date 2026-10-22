@@ -13,6 +13,20 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [core-vm/v0.1.8] - 2026-10-23
+
+The appliance with the console menu of Argus v0.9.5 wired in. It is what a new core VM boots from;
+an appliance already running gets the menu as a command through its updater, not the login shell.
+
+### Added
+- **The console menu is the Debian user's login shell.** First boot runs
+  `argus-console --make-login-shell` for the account it creates: a login at the hypervisor console
+  or over SSH opens the menu (DESIGN 14f), with the password typed at login as the only one asked;
+  ssh commands and scp still reach bash.
+- **`cloud-guest-utils`** in the image, for the menu's "Grow the disk".
+
+The image pulls Argus `:latest` (v0.9.5) and argus-updater `:latest` (0.2.16) at build.
+
 ## [0.9.5] - 2026-10-22
 
 ### Added
