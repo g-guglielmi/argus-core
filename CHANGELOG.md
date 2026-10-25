@@ -21,6 +21,13 @@ GitHub Release from the matching section below.
   query)" for that case and asks once more after a second before reporting; a name that doesn't
   exist is reported at once as before. The script is the one the probe image carries (7.0.32-r3)
   and the one the core's collectors sync installs.
+- **HTTP and TCP checks resolve IPv4 first.** The probe image's libc (musl) treats a combined
+  IPv4 and IPv6 lookup as "no such name" when the IPv6 half comes back NXDOMAIN, which AdGuard
+  Home answers for a name rewritten to another name; the checks then reported every such URL as
+  not resolving. Both checks now ask for IPv4 addresses on their own and try them first, asking
+  for IPv6 only when a name has no IPv4 address, so that answer can no longer poison the lookup.
+  The TCP check also tells a resolver that didn't answer from a name that doesn't exist, like the
+  HTTP one (7.0.32-r4 on the probes).
 - **A UniFi controller restart no longer sends one alert per sensor per device.** While the
   Network application restarted (an update), the controller reported every device disconnected
   with empty statistics; four sensors per device (CPU, memory, uptime, clients) failed on the

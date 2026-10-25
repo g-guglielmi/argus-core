@@ -325,11 +325,13 @@ class ResolveTest(unittest.TestCase):
         """getaddrinfo that fails the first `failures` calls with errno_ and then answers for real."""
         real, calls = socket.getaddrinfo, []
 
-        def fake(host, *a, **kw):
+        def fake(host, port, family=0, *a, **kw):
+            if family == socket.AF_INET6:  # the name has no IPv6 address; only the IPv4 questions count
+                raise socket.gaierror(getattr(socket, "EAI_NONAME", -2), "no such name")
             calls.append(host)
             if len(calls) <= failures:
                 raise socket.gaierror(errno_, "resolver says no")
-            return real("127.0.0.1", *a, **kw)
+            return real("127.0.0.1", port, family, *a, **kw)
         socket.getaddrinfo = fake
         self.addCleanup(setattr, socket, "getaddrinfo", real)
         slept = []
@@ -361,6 +363,34 @@ class ResolveTest(unittest.TestCase):
         r = self.check()
         self.assertEqual((r["up"], r["error"]), (0, "the host name does not resolve"), r)
         self.assertEqual((len(calls), slept), (1, []))
+
+    def test_ipv4_is_asked_for_first_and_alone(self):
+        """musl answers "no such name" to a combined A+AAAA question when the AAAA half is NXDOMAIN:
+        the check asks for IPv4 on its own, so that answer never reaches it."""
+        real, families = socket.getaddrinfo, []
+
+        def fake(host, port, family=0, *a, **kw):
+            families.append(family)
+            if family == socket.AF_INET:
+                return real("127.0.0.1", port, family, *a, **kw)
+            raise socket.gaierror(getattr(socket, "EAI_NONAME", -2), "poisoned by an AAAA NXDOMAIN")
+        socket.getaddrinfo = fake
+        self.addCleanup(setattr, socket, "getaddrinfo", real)
+        r = self.check()
+        self.assertEqual((r["up"], r["status"]), (1, 200), r)
+        self.assertEqual(families, [socket.AF_INET], "one question, IPv4, and no IPv6 one once it answered")
+
+    def test_ipv6_is_the_fallback_when_there_is_no_ipv4_address(self):
+        real, families = socket.getaddrinfo, []
+
+        def fake(host, port, family=0, *a, **kw):
+            families.append(family)
+            raise socket.gaierror(getattr(socket, "EAI_NONAME", -2), "no such name")
+        socket.getaddrinfo = fake
+        self.addCleanup(setattr, socket, "getaddrinfo", real)
+        r = self.check()
+        self.assertEqual((r["up"], r["error"]), (0, "the host name does not resolve"), r)
+        self.assertEqual(families, [socket.AF_INET, socket.AF_INET6])
 
 
 class MainTest(unittest.TestCase):

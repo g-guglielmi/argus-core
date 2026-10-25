@@ -180,7 +180,8 @@ Services, Cloudflare, Zoom, Dropbox and Apple iCloud start ticked; Microsoft Azu
 Salesforce, GitHub and ChatGPT are there too) and add your own with a name (**+ Another service**), up
 to 16. Each is its own sensor under **Cloud services**: its response time, with a red band while it
 doesn't answer and why (`no answer within 10 s`, `the host name does not resolve`, `the resolver did
-not answer in time`; that last one is asked once more before the URL counts as down). Any answer short
+not answer in time`; that last one is asked once more before the URL counts as down). Names are
+resolved IPv4 first, IPv6 only when there is no IPv4 address. Any answer short
 of a server error counts, since a login page still says the service is there. Alerts: **Zoom does not
 answer from this site** (High, after 3 checks), slow (`{$SAAS.TIME.WARN}` 1 s) and very slow
 (`{$SAAS.TIME.HIGH}` 3 s).
