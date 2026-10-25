@@ -13,6 +13,11 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Fixed
+- **The Updates page's verdict line sits evenly between its hairlines.** "Everything is on the
+  newest version." (and the other outcomes of Check for updates) had its room above and none
+  below, so it crowded the Argus core card under it.
+
 ## [0.9.7] - 2026-10-25
 
 ### Fixed

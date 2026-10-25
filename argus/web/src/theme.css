@@ -334,7 +334,7 @@ span.muted, p.muted { color: var(--muted); }
 .upd-more > summary { font-size: 11.5px; color: var(--faint); cursor: pointer; width: fit-content; }
 .upd-more > summary:hover { color: var(--text); }
 .upd-more[open] > summary { margin-bottom: 8px; }
-.upd-check { margin: 0; padding: 10px var(--gutter) 0; font-size: 12.5px; }
+.upd-check { margin: 0; padding: 10px var(--gutter); font-size: 12.5px; } /* a row of its own between the head's hairline and the first card's: the same room above its caps as under its baseline (15px / 14.75px measured) */
 .upd-check.ok { color: var(--ok); }
 .upd-check.warn { color: var(--warn); }
 /* A version cell stays on one line on desktop, so the auto-sized table gives its column an honest
