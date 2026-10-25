@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-10-25
+
 ### Fixed
 - **HTTP checks tell a resolver that didn't answer from a name that doesn't exist.** A DNS server
   that drops or refuses the probe's query made a URL "down" with "the host name does not resolve",
