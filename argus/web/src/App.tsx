@@ -1995,7 +1995,7 @@ function ProbeUpdates({ proxies, error, target, onTarget, onChanged }: { proxies
     <section className="set-card">
       <div className="upd-head">
         <h3>Probes</h3>
-        {n > 0 && <Button variant="primary" onClick={updateAll} title="Queue an update for every probe and sidecar that is behind">Update all ({n})</Button>}
+        {n > 0 && <Button variant="primary" className="compact" onClick={updateAll} title="Queue an update for every probe and sidecar that is behind">Update all ({n})</Button>}
       </div>
       <p className="set-note">The Zabbix proxy each site runs, and the argus-updater sidecar that updates it. A sidecar takes a queued update at its next check-in, within a minute, and rolls back one that doesn't start healthy. Argus looks for newer versions every 3 hours.</p>
       <FleetTarget target={target} latest={list.find((p) => p.latest)?.latest} onSaved={onTarget} />

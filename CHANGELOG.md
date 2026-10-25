@@ -17,6 +17,10 @@ GitHub Release from the matching section below.
 - **The Updates page's verdict line sits evenly between its hairlines.** "Everything is on the
   newest version." (and the other outcomes of Check for updates) had its room above and none
   below, so it crowded the Argus core card under it.
+- **Section titles sit closer to their hairline.** Argus core, Probes and Operating systems sat
+  28px under the line above them (the title row reserved the height of a button it rarely
+  shows); every section title, on Settings too, now sits 21px under it, and the Probes card's
+  Update all button is a compact one that never pushes the title down.
 
 ## [0.9.7] - 2026-10-25
 

@@ -314,7 +314,9 @@ span.muted, p.muted { color: var(--muted); }
 /* Updates page: every section in rows. A group is one machine or setting: its label and sub-line on
    the left, then one line per part (part name | version + status pill + action), and under a part,
    aligned with its version, what it needs to say (a log, a hint). */
-.upd-head { display: flex; align-items: center; gap: 10px; min-height: 28px; }
+/* The title row is as tall as its title, so a card's title sits 21px under its hairline whether or not a
+   button sits beside it: that button is a compact one (24px, the title's own height) and never grows the row. */
+.upd-head { display: flex; align-items: center; gap: 10px; }
 .upd-head .btn { margin-left: auto; }
 .upd-group { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 8px 14px; padding: 11px 0; border-top: 1px solid var(--border); }
 .upd-group:last-child { padding-bottom: 0; }
@@ -1019,7 +1021,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 /* Settings page */
 /* minmax(0, 1fr): a card never grows past the page for a wide child (a table scrolls inside it). */
 .set-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; padding: 0 0 8px; }
-.set-card { padding: 18px var(--gutter) 20px; border-top: 1px solid var(--border); }
+.set-card { padding: 14px var(--gutter) 18px; border-top: 1px solid var(--border); } /* 21px from the hairline to the title's caps (measured), close to the 15px of a one-line row like the Updates verdict */
 /* Settings and Account: groups, each a caption over its sections; the header's jump links scroll
    to one, landing it under the folded header. */
 .set-group { scroll-margin-top: calc(var(--topbar-h, 66px) + 44px); }
@@ -1267,6 +1269,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   .iconbtn { width: 40px; height: 40px; }
   .btn { padding: 8px 14px; font-size: 13px; }
   .btn.compact { padding: 7px 12px; font-size: 13px; }
+  .upd-head { align-items: flex-start; } /* the touch-sized Update all button is taller than the title: the title keeps its place at the top of the row */
   .stat { padding: 5px 9px; }
   .toasts { left: 12px; right: 12px; bottom: 12px; width: auto; }
   .seg button { padding: 7px 12px; font-size: 13px; }
