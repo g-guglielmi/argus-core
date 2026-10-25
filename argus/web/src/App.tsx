@@ -3988,7 +3988,7 @@ function ProbeProcesses({ p, isAdmin, onChanged, onClose }: { p: Proxy; isAdmin:
         ? <div className="hs-note">{p.report_stale ? probeReportNote(p) : `This probe doesn't report its process counts yet. It needs a probe image from 7.0.31-r8 on.`}</div>
         : (
           <table className="sensors" style={{ marginTop: 6 }}>
-            <thead><tr><th>Process</th><th>Running</th><th>Busiest hour</th><th>Argus</th></tr></thead>
+            <thead><tr><th>Process</th><th>Running</th><th>Busiest hour</th><th title="What Argus decided for the count, from its busiest hour">Decision</th></tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.name}>
@@ -4002,7 +4002,7 @@ function ProbeProcesses({ p, isAdmin, onChanged, onClose }: { p: Proxy; isAdmin:
                       ? <span className="tag err" title={`Raised ${r.held.from} to ${r.held.to} ${relTime(r.held.at)}: busiest hour ${Math.round(r.held.before)}% before, ${Math.round(r.held.after)}% after. Put back and held.`}>held at {r.running}</span>
                       : r.target && r.target !== r.running
                       ? <span className="tag avail">→ {r.target}</span>
-                      : <span className="okquiet">keep</span>}
+                      : <span className="okquiet">no change</span>}
                   </td>
                 </tr>
               ))}

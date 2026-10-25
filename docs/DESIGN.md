@@ -2297,7 +2297,7 @@ kept in the proxy's buffer, well under the 3-minute "not reporting" alert.
 **Mode** (`ARGUS_PROBE_AUTOSCALE`, Settings -> Probes): `restart` (default: the sidecar restarts the
 probe to apply a change), `next-restart` (a change applies whenever the probe next starts: an
 update, a reboot), `off` (no evaluation, no counts handed out; probes keep what they have). Each
-change is logged, shown on the Probes page (Processes: running count, busiest hour, target) and
+change is logged, shown on the Probes page (Processes: running count, busiest hour, decision) and
 told once as a system notice.
 
 ## 18d. Core health (implemented)

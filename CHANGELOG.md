@@ -22,6 +22,10 @@ GitHub Release from the matching section below.
   shows); every section title, on Settings too, now sits 21px under it, and the Probes card's
   Update all button is a compact one that never pushes the title down.
 
+### Changed
+- **The Zabbix processes dialog names its last column.** The column that held "keep" under an
+  "Argus" header is now "Decision", and a count Argus leaves as it is reads "no change".
+
 ## [0.9.7] - 2026-10-25
 
 ### Fixed
