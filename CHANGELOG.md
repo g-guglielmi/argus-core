@@ -13,6 +13,13 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **Markers on the charts.** A sensor's chart shows what happened to its host in the range: changes
+  to the host and to that sensor (never another sensor's), acknowledgements and notes, journal
+  entries, maintenance windows and restarts (read from the uptime sensor). Pins sit in a lane above
+  the chart, a card on hover or tap says when, what, who and why, and a folded list under the legend
+  names them all, which is the way in on a phone. Group charts get them too.
+
 ## [0.9.8] - 2026-10-25
 
 ### Fixed

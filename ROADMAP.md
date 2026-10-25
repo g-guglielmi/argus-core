@@ -412,9 +412,10 @@ What OneUptime does that Argus doesn't yet, kept to what fits an IT team watchin
 UI change starts with a real-CSS mockup. Left out on purpose: OpenTelemetry logs and traces, RUM,
 SIEM/SOAR, the AI investigator, a workflow engine, Terraform/CLI, phone and SMS paging, postmortems,
 NetFlow.
-- [ ] **Change markers on charts** - a sensor's chart marks what happened to its host in the shown
-  period: change-log entries, OS updates and reboots, maintenance windows, acknowledgements, so "why
-  did it jump at 03:00?" is answered on the chart. All from data Argus already keeps. - _(BE+FE)_ M
+- [x] **Change markers on charts** - a sensor's chart marks what happened to its host in the shown
+  period: its changes and the sensor's own, acknowledgements and notes, the journal, maintenance
+  windows and restarts, in a lane above the chart with a list under it. DESIGN section 7l. -
+  _Unreleased_
 - [ ] **The vendor's own status beside Common SaaS** - many services publish a standard Statuspage
   `/api/v2/status.json` (GitHub, Atlassian, Zoom, Dropbox, Cloudflare); a service's row shows the
   vendor's word next to the probe's own reachability, so "only us, from this site" and "the vendor is

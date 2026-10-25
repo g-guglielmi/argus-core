@@ -383,7 +383,7 @@ func (s *Server) handleBulkSensors(w http.ResponseWriter, r *http.Request) {
 	until := untilFrom(req.DurationSeconds)
 	now := time.Now().Unix()
 	res := bulkResult{Failed: []bulkFailure{}}
-	var names, hosts []string
+	var names, hosts, items []string
 	for _, key := range req.Keys {
 		row, known := byKey[key]
 		label := row.Label
@@ -434,9 +434,10 @@ func (s *Server) handleBulkSensors(w http.ResponseWriter, r *http.Request) {
 		res.Done++
 		names = append(names, name)
 		hosts = append(hosts, row.HostID)
+		items = append(items, row.ItemID)
 	}
 	if res.Done > 0 {
-		c := store.Change{Category: "states", Action: verb + " " + plural(res.Done, "sensor", "sensors"), Object: namesText(names), HostIDs: hosts}
+		c := store.Change{Category: "states", Action: verb + " " + plural(res.Done, "sensor", "sensors"), Object: namesText(names), HostIDs: hosts, ItemIDs: items}
 		switch req.Action {
 		case "ack":
 			c.Detail, c.Reason = durDetail("until fixed")(map[string]any{"duration_seconds": float64(req.DurationSeconds)}), note

@@ -591,7 +591,8 @@ Who changed what and when (NetBox's change log, `changes.go`). Every signed-in w
 it), or in the handler's own words (`noteChange`). Handlers add the values before and after
 (`changeDiff`): host settings (names, probe, interfaces, class options, per-host thresholds, add-ons,
 master sensor, sensor order), default thresholds, class, probe and groups of a host, settings, shared
-channels and users. A secret only reads "changed". A route the table doesn't list isn't logged:
+channels and users. An entry also keeps the sensors it was done to (`items`), for the chart markers
+(section 7l). A secret only reads "changed". A route the table doesn't list isn't logged:
 sign-ins, test sends, checks, reads; revealing a probe VM's console password is the one read that is.
 Nothing of a request body is kept but the fields a route chose to show. One action is one entry,
 however many hosts it touched (`change_hosts` lists them, for a host's own list and the filters).
@@ -985,6 +986,43 @@ user is.
   schedule from then, so a time already past today waits for the next one.
 
 ---
+
+## 7l. Chart markers
+
+What happened to a sensor's host in the range its chart shows, drawn on the chart, so "why did it
+jump at 03:00?" is answered there (OneUptime's change events; `marks.go`). `GET
+/api/marks?items=<id,id>&range=<2h..1Y>` (anyone who sees the sensors; up to 12, a group chart's
+channels) gathers, oldest first, at most 300 (the newest):
+- **The change log** (section 7c) of the sensors' hosts: the host's own entries (settings, class,
+  probe, thresholds, pause...) and the sensors' own (an acknowledgement, a pause, a note), never
+  another sensor's. Each entry keeps the sensors it was done to (`changes.items`, `,id,id,`; empty =
+  the whole host): an item route names its item, an event or a sensor key every census row that
+  matches (a problem over several sensors is on each), a bulk sensor action each sensor; a row Argus
+  raised itself has no item and stays the host's. Entries from before the column (NULL) are matched
+  by the name they gave ("host · sensor"). An acknowledgement and a note get their own kinds; a
+  journal entry's log line is left out (the journal has its own marker). The text is the action, its
+  detail and up to three values before and after; who and the reason ride along.
+- **The journal** (section 7e), each entry in its kind's colour.
+- **Maintenance windows** (section 9) covering the hosts, each occurrence in the range as a stretch
+  (the reports' `occurrencesBetween`); a disabled window shows none, and a window edited or deleted
+  shows as it is now.
+- **Restarts**, from the host's uptime sensor (`system.uptime`, `system.uptime[snmp]`,
+  `system.uptime[ssh]`, `unifi.uptime`; `zabbix[uptime]` on a probe's host reads "Zabbix
+  restarted"). From raw readings (2h, 2d) the boot is the reading's time less its uptime, never before
+  the reading taken before it; from hourly trends (7d and longer) an hour whose lowest reading is far
+  below its highest (the restart was inside it) or below the hour before's lowest (at the turn of the
+  hour), placed mid-hour and shown as "around". SNMP's 32-bit counter wrapping after 497 days is not
+  a restart.
+
+A source that fails is left out; the markers never fail a chart, and they arrive with the chart's
+history so it doesn't jump. **In the UI** (single and group charts, not the daily bars): a 24px lane
+above the plot holds a pin per event (an icon in its kind's colour: a change neutral, an
+acknowledgement in the acknowledged colour, a note and an info journal entry in the accent, a journal
+warning or problem in theirs, a restart in the paused blue), pins closer than 14px merged into one
+with their count, and a window as a bar; the plot stays clean but for a faint band per window.
+Hovering, focusing or tapping a pin shows a card (when, what, who and the reason) and draws its dashed
+line through the plot; zooming re-places the pins. Under the legend a folded "N events in this
+range" lists them newest first, the way in on a phone; hovering or tapping a row draws its line.
 
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")
 

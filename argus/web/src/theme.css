@@ -831,6 +831,31 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .rtab { font: inherit; font-size: 11.5px; font-weight: 600; color: var(--muted); background: none; border: 1px solid transparent; padding: 3px 9px; border-radius: 6px; cursor: pointer; }
 .rtab:hover { color: var(--text); } .rtab.on { background: var(--panel); border-color: var(--border); color: var(--text); }
 .chartsvg { position: relative; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+/* Chart markers (DESIGN 7l): pins in a lane above the chart, a window as a bar, a card on hover, and
+   the range's events folded under the legend. --ec is the marker's colour, set per marker. */
+.ev-chart { position: relative; }
+.ev-lane { position: relative; height: 24px; }
+.ev-pin { position: absolute; top: 3px; width: 18px; height: 18px; margin-left: -9px; padding: 0; border-radius: 50%; border: 1.5px solid var(--ec); background: var(--panel); color: var(--ec); display: flex; align-items: center; justify-content: center; cursor: pointer; font: inherit; }
+.ev-pin svg { width: 11px; height: 11px; }
+.ev-pin:hover, .ev-pin:focus-visible { background: var(--ec); color: var(--panel); outline: none; }
+.ev-pin .ev-n { position: absolute; top: -6px; right: -7px; min-width: 13px; height: 13px; padding: 0 3px; border-radius: 7px; background: var(--text); color: var(--panel); font-size: 9px; font-weight: 700; line-height: 13px; }
+.ev-span { position: absolute; top: 9px; height: 6px; padding: 0; border: 0; border-radius: 3px; background: color-mix(in srgb, var(--ec) 70%, transparent); cursor: pointer; }
+.ev-span:hover, .ev-span:focus-visible { background: var(--ec); outline: none; }
+.ev-tip { position: absolute; top: 24px; z-index: 50; width: max-content; max-width: min(300px, 100%); background: var(--panel); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); padding: 8px 11px; font-size: 12.5px; pointer-events: none; overflow-wrap: anywhere; }
+.ev-tip .ev-row + .ev-row { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; }
+.ev-tip .ev-when { color: var(--faint); font-size: 11.5px; }
+.ev-tip .ev-what { font-weight: 600; }
+.ev-tip .ev-who, .ev-list .ev-who { color: var(--muted); font-size: 11.5px; }
+.ev-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ec); margin-right: 6px; vertical-align: 1px; }
+.ev-list { margin-top: 6px; border-top: 1px solid var(--border); }
+.ev-list summary { cursor: pointer; font-size: 11.5px; font-weight: 600; color: var(--muted); padding: 7px 0 3px; list-style: none; }
+.ev-list summary::-webkit-details-marker { display: none; }
+.ev-list summary::before { content: '›'; display: inline-block; color: var(--accent); margin-right: 6px; transition: transform var(--dur-fast); }
+.ev-list[open] summary::before { transform: rotate(90deg); }
+.ev-list ul { list-style: none; margin: 0; padding: 0; font-size: 12.5px; }
+.ev-list li { display: grid; grid-template-columns: 124px minmax(0, 1fr); gap: 10px; padding: 5px 6px; border-radius: 6px; overflow-wrap: anywhere; }
+.ev-list li:hover, .ev-list li.on { background: var(--panel); } /* the chart row is --elevated, the same tone as --hover */
+.ev-list .ev-when { color: var(--faint); font-variant-numeric: tabular-nums; } /* a window's "from ... to ..." wraps under its start */
 
 /* ---------- placeholders / empty states ---------- */
 .ph-hero { text-align: center; padding: 36px 24px 26px; }

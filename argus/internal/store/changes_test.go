@@ -65,3 +65,36 @@ func TestChangeLog(t *testing.T) {
 		t.Fatalf("pruned entry still listed for its host: %+v", host)
 	}
 }
+
+// A change keeps the sensors it was done to, for the chart markers: none is the whole host, and an
+// entry written before the log kept them reads as not known.
+func TestChangeItems(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	if err := st.AddChanges(ctx, []Change{
+		{At: 100, Actor: "Alice Rossi", Category: "states", Action: "Paused a sensor", Object: "web1 · CPU", HostIDs: []string{"7"}, ItemIDs: []string{"501", "", "501", "502"}},
+		{At: 200, Actor: "Alice Rossi", Category: "hosts", Action: "Changed host settings", Object: "web1", HostIDs: []string{"7"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.Exec(`INSERT INTO changes (at, action, object) VALUES (50, 'Paused a sensor', 'web1 · Disk /')`); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.ListChanges(ctx, ChangeQuery{})
+	if err != nil || len(got) != 3 {
+		t.Fatalf("list: %+v %v", got, err)
+	}
+	byAt := map[int64]Change{}
+	for _, c := range got {
+		byAt[c.At] = c
+	}
+	if c := byAt[100]; !c.ItemsKnown || len(c.ItemIDs) != 2 || c.ItemIDs[0] != "501" || c.ItemIDs[1] != "502" {
+		t.Fatalf("sensor entry (deduped, blanks dropped): %+v", c)
+	}
+	if c := byAt[200]; !c.ItemsKnown || len(c.ItemIDs) != 0 {
+		t.Fatalf("host-wide entry: %+v", c)
+	}
+	if c := byAt[50]; c.ItemsKnown || len(c.ItemIDs) != 0 {
+		t.Fatalf("an entry from before: %+v", c)
+	}
+}

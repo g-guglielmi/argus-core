@@ -957,6 +957,11 @@ CREATE TABLE IF NOT EXISTS reports (
 	if err := s.ensureColumn("host_upstream", "auto_source TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// The sensors a change was done to (changes.go encodeItemIDs), for the chart markers; NULL on the
+	// entries written before.
+	if err := s.ensureColumn("changes", "items TEXT"); err != nil {
+		return err
+	}
 	// A told system notice keeps what its all-clear needs (notices.go SentNotice).
 	for _, ddl := range []string{"since INTEGER NOT NULL DEFAULT 0", "cleared TEXT NOT NULL DEFAULT ''", "host TEXT NOT NULL DEFAULT ''", "site TEXT NOT NULL DEFAULT ''", "view TEXT NOT NULL DEFAULT ''"} {
 		if err := s.ensureColumn("notices_sent", ddl); err != nil {

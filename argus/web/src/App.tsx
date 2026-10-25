@@ -12148,6 +12148,188 @@ function buildPlot(data: Series, units: string, width: number, c: ChartColors, o
   return [opts, [gx, gv] as uPlot.AlignedData]
 }
 
+// Chart markers (DESIGN section 7l): what happened to a sensor's host in the shown range, from
+// /api/marks - its changes and the sensor's own, the journal, maintenance windows, restarts. Pins sit
+// in a lane above the chart (the plot stays clean) and a folded list under the legend names them all
+// (the way in on a phone); hovering either draws the event's line through the plot.
+type Mark = { t: number; end?: number; kind: 'change' | 'ack' | 'note' | 'journal' | 'maint' | 'restart'; sub?: string; what: string; who?: string; why?: string; approx?: boolean }
+type MarkState = { marks: Mark[]; hot: Mark[] | null }
+
+// fetchMarks never fails a chart: markers only add to it.
+function fetchMarks(ids: string[], range: string): Promise<Mark[]> {
+  return fetch(`/api/marks?items=${encodeURIComponent(ids.join(','))}&range=${range}`)
+    .then((r) => (r.ok ? r.json() : { marks: [] }))
+    .then((d: { marks?: Mark[] }) => d.marks || [])
+    .catch(() => [])
+}
+
+// markVar is a marker's colour token: a change neutral, a journal entry in its kind's colour (the
+// status-note kinds), the rest in the colour of their state elsewhere.
+function markVar(m: Mark): string {
+  switch (m.kind) {
+    case 'ack': return '--acked'
+    case 'note': return '--accent'
+    case 'journal': return m.sub === 'warning' ? '--warn' : m.sub === 'problem' ? '--err' : '--accent'
+    case 'maint': return '--maint'
+    case 'restart': return '--paused'
+  }
+  return '--faint'
+}
+
+const MARK_ICON: Record<Mark['kind'], ReactNode> = {
+  change: <path d="M4 20h4L19 9l-4-4L4 16v4z" />,
+  ack: <path d="M5 12.5l4.5 4.5L19 7.5" />,
+  note: <><path d="M6 3h9l4 4v14H6z" /><path d="M14 3v5h5" /></>,
+  journal: <><path d="M6 3h9l4 4v14H6z" /><path d="M14 3v5h5" /></>,
+  maint: <><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M4 10h16M9 3v4M15 3v4" /></>,
+  restart: <><path d="M12 3.5v8" /><path d="M7.2 6.6a7 7 0 1 0 9.6 0" /></>,
+}
+
+const markWhat = (m: Mark) => (m.kind === 'journal' ? 'Journal: ' : '') + m.what
+const markWho = (m: Mark) => [m.who, m.why ? `"${m.why}"` : ''].filter(Boolean).join(' · ')
+function markWhen(m: Mark): string {
+  const at = (t: number) => new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  if (m.end) {
+    const a = new Date(m.t * 1000), b = new Date(m.end * 1000)
+    const sameDay = a.toDateString() === b.toDateString()
+    return at(m.t) + ' to ' + (sameDay ? b.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : at(m.end))
+  }
+  return (m.approx ? 'around ' : '') + at(m.t)
+}
+
+// marksPlugin draws the windows as faint bands under the series and the hovered event's line over
+// them; onLayout tells the lane to place its pins again (the chart was built, resized or zoomed).
+function marksPlugin(ref: { current: MarkState }, onLayout: () => void): uPlot.Plugin {
+  const css = () => getComputedStyle(document.documentElement)
+  return {
+    hooks: {
+      ready: [() => onLayout()],
+      setSize: [() => onLayout()],
+      setScale: [(_u: uPlot, key: string) => { if (key === 'x') onLayout() }],
+      drawClear: [(u: uPlot) => {
+        const { marks, hot } = ref.current
+        const { left, top, width, height } = u.bbox
+        const cs = css()
+        for (const m of marks) {
+          if (!m.end) continue
+          const x0 = Math.max(left, u.valToPos(m.t, 'x', true)), x1 = Math.min(left + width, u.valToPos(m.end, 'x', true))
+          if (!isFinite(x0) || !isFinite(x1) || x1 <= x0) continue
+          u.ctx.fillStyle = withAlpha(cs.getPropertyValue(markVar(m)).trim(), hot?.includes(m) ? 0.14 : 0.06)
+          u.ctx.fillRect(x0, top, x1 - x0, height)
+        }
+      }],
+      draw: [(u: uPlot) => {
+        const hot = ref.current.hot
+        if (!hot) return
+        const { left, top, width, height } = u.bbox
+        const cs = css()
+        const ctx = u.ctx
+        ctx.save()
+        ctx.lineWidth = devicePixelRatio
+        ctx.setLineDash([4 * devicePixelRatio, 3 * devicePixelRatio])
+        for (const m of hot) {
+          if (m.end) continue
+          const x = Math.round(u.valToPos(m.t, 'x', true)) + 0.5
+          if (!isFinite(x) || x < left || x > left + width) continue
+          ctx.strokeStyle = withAlpha(cs.getPropertyValue(markVar(m)).trim(), 0.95)
+          ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, top + height); ctx.stroke()
+        }
+        ctx.restore()
+      }],
+    },
+  }
+}
+
+// useChartMarks is a chart's marker state: the markers, the hovered ones (drawn through the plot)
+// and a layout tick the lane re-places its pins on.
+function useChartMarks(plot: { current: uPlot | null }) {
+  const [marks, setMarks] = useState<Mark[]>([])
+  const [hot, setHot] = useState<Mark[] | null>(null)
+  const [, setLayout] = useState(0)
+  const ref = useRef<MarkState>({ marks: [], hot: null })
+  ref.current.marks = marks
+  useEffect(() => { ref.current.hot = hot; plot.current?.redraw(false) }, [hot, plot])
+  const plugin = () => marksPlugin(ref, () => setLayout((x) => x + 1))
+  return { marks, setMarks, hot, setHot, plugin }
+}
+
+// MarkLane is the strip of pins above a chart: one per event, those closer than 14px as one pin with
+// their count; a window is a bar. Hovering, focusing or tapping one shows its card and its line.
+function MarkLane({ plot, marks, setHot }: { plot: uPlot | null; marks: Mark[]; setHot: (m: Mark[] | null) => void }) {
+  const [tip, setTip] = useState<{ x: number; evs: Mark[] } | null>(null)
+  const tipRef = useRef<HTMLDivElement>(null)
+  const laneRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = tipRef.current, lane = laneRef.current
+    if (!el || !lane || !tip) return
+    const w = lane.clientWidth
+    el.style.left = Math.max(0, Math.min(w - el.offsetWidth, tip.x - el.offsetWidth / 2)) + 'px'
+  }, [tip])
+  if (!plot || plot.scales.x.min == null) return <div className="ev-lane" ref={laneRef} />
+  const left = plot.bbox.left / devicePixelRatio
+  const width = plot.bbox.width / devicePixelRatio
+  const pins: { x: number; evs: Mark[] }[] = []
+  for (const m of marks) {
+    if (m.end) continue
+    const x = plot.valToPos(m.t, 'x')
+    if (!isFinite(x) || x < 0 || x > width) continue
+    const last = pins[pins.length - 1]
+    if (last && x - last.x < 14) last.evs.push(m)
+    else pins.push({ x, evs: [m] })
+  }
+  const show = (x: number, evs: Mark[]) => { setTip({ x: left + x, evs }); setHot(evs) }
+  const hide = () => { setTip(null); setHot(null) }
+  const label = (evs: Mark[]) => evs.map((m) => `${markWhen(m)}: ${markWhat(m)}`).join('; ')
+  return (
+    <div className="ev-lane" ref={laneRef}>
+      {marks.filter((m) => m.end).map((m, i) => {
+        const x0 = Math.max(0, plot.valToPos(m.t, 'x')), x1 = Math.min(width, plot.valToPos(m.end as number, 'x'))
+        if (!isFinite(x0) || !isFinite(x1) || x1 <= 0 || x0 >= width) return null
+        return <button key={'s' + i} type="button" className="ev-span" aria-label={label([m])} style={{ left: left + x0, width: Math.max(4, x1 - x0), '--ec': `var(${markVar(m)})` } as CSSProperties}
+          onMouseEnter={() => show((x0 + x1) / 2, [m])} onMouseLeave={hide} onFocus={() => show((x0 + x1) / 2, [m])} onBlur={hide} onClick={() => show((x0 + x1) / 2, [m])} />
+      })}
+      {pins.map((p) => (
+        <button key={p.evs[0].t + ':' + p.evs.length} type="button" className="ev-pin" aria-label={label(p.evs)} style={{ left: left + p.x, '--ec': `var(${markVar(p.evs[0])})` } as CSSProperties}
+          onMouseEnter={() => show(p.x, p.evs)} onMouseLeave={hide} onFocus={() => show(p.x, p.evs)} onBlur={hide} onClick={() => show(p.x, p.evs)}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{MARK_ICON[p.evs[0].kind]}</svg>
+          {p.evs.length > 1 && <span className="ev-n">{p.evs.length}</span>}
+        </button>
+      ))}
+      {tip && (
+        <div className="ev-tip" ref={tipRef} role="tooltip">
+          {tip.evs.map((m, i) => (
+            <div key={i} className="ev-row">
+              <div className="ev-when"><span className="ev-dot" style={{ '--ec': `var(${markVar(m)})` } as CSSProperties} />{markWhen(m)}</div>
+              <div className="ev-what">{markWhat(m)}</div>
+              {markWho(m) && <div className="ev-who">{markWho(m)}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// MarkList is the range's events under the chart, newest first, folded; hovering or tapping a row
+// draws its line on the chart.
+function MarkList({ marks, hot, setHot }: { marks: Mark[]; hot: Mark[] | null; setHot: (m: Mark[] | null) => void }) {
+  if (marks.length === 0) return null
+  const rows = [...marks].reverse()
+  return (
+    <details className="ev-list">
+      <summary>{marks.length === 1 ? '1 event' : `${marks.length} events`} in this range</summary>
+      <ul>
+        {rows.map((m, i) => (
+          <li key={i} className={hot?.length === 1 && hot[0] === m ? 'on' : undefined} onMouseEnter={() => setHot([m])} onMouseLeave={() => setHot(null)} onClick={() => setHot([m])}>
+            <span className="ev-when"><span className="ev-dot" style={{ '--ec': `var(${markVar(m)})` } as CSSProperties} />{markWhen(m)}</span>
+            <span><span className="ev-what">{markWhat(m)}</span>{markWho(m) && <span className="ev-who"> · {markWho(m)}</span>}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  )
+}
+
 // bars switches to the daily bar mode for a single daily-ratio sensor (block rate): one bar per
 // day from /api/daily, with the day-scale range tabs; label names the legend there.
 // thr bands the line by value (only the stretch past a threshold takes the warning/error colour), so a
@@ -12170,6 +12352,7 @@ function SensorChart({ itemId, units, color = 'var(--accent)', bars, label, thr,
   const plot = useRef<uPlot | null>(null)
   const zoomedRef = useRef(false) // true while the user has zoomed in; pauses auto-refresh
   const lastKey = useRef('')
+  const mk = useChartMarks(plot)
 
   // Refresh the open chart periodically so it stays live.
   useEffect(() => { const t = setInterval(() => { if (!zoomedRef.current) setTick((x) => x + 1) }, 60000); return () => clearInterval(t) }, [])
@@ -12190,6 +12373,7 @@ function SensorChart({ itemId, units, color = 'var(--accent)', bars, label, thr,
     let slowTimer: ReturnType<typeof setTimeout> | undefined
     if (fresh) slowTimer = setTimeout(() => { if (!cancelled) setShowLoading(true) }, 300)
     setError(null)
+    const marksP = bars ? Promise.resolve([] as Mark[]) : fetchMarks([itemId], range)
     const get = (rk: string) => fetch(`/api/items/${itemId}/history?range=${rk}${runs ? '&runs=1' : ''}`)
       .then(async (r) => { if (!r.ok) throw new Error(await errText(r, 'Failed to load history')); return r.json() as Promise<Series> })
     // Bar mode: the day-scale ranges are trend-backed and trends lag the still-open hour - merge a
@@ -12203,8 +12387,8 @@ function SensorChart({ itemId, units, color = 'var(--accent)', bars, label, thr,
           return { name: label || '', units, kind: 'history', points: vals.map((v, i) => ({ t: i, v })) } as Series
         })
       : get(range))
-      .then((d: Series) => { if (!cancelled) setData(d) })
-      .catch((e) => { if (!cancelled) { setError(e.message || 'Failed to load history'); setData(null) } })
+      .then((d: Series) => marksP.then((m) => { if (!cancelled) { mk.setMarks(m); setData(d) } }))
+      .catch((e) => { if (!cancelled) { setError(e.message || 'Failed to load history'); setData(null); mk.setMarks([]) } })
       .finally(() => { if (slowTimer) clearTimeout(slowTimer); if (!cancelled) { setLoading(false); setShowLoading(false) } })
     return () => { cancelled = true; if (slowTimer) clearTimeout(slowTimer) }
   }, [itemId, range, tick, bars, runs])
@@ -12216,11 +12400,12 @@ function SensorChart({ itemId, units, color = 'var(--accent)', bars, label, thr,
     const [opts, aligned] = bars
       ? buildBarPlot([{ label: data.name || 'value', units, values: data.points.map((p) => p.v ?? 0) }], width, chartColors(color), (z) => { zoomedRef.current = z })
       : buildPlot(data, units, width, chartColors(banded ? 'var(--accent)' : color), (z) => { zoomedRef.current = z }, banded ? thr : undefined, runs)
+    if (mk.marks.length) opts.plugins = [...(opts.plugins || []), mk.plugin()]
     plot.current = new uPlot(opts, aligned, host.current)
     colorLegendChecks(plot.current)
     return () => { if (plot.current) { plot.current.destroy(); plot.current = null } }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, units, color, themeTick, bars, thrKey, runs])
+  }, [data, units, color, themeTick, bars, thrKey, runs, mk.marks])
 
   useEffect(() => {
     function onResize() { if (plot.current && host.current) plot.current.setSize({ width: host.current.clientWidth, height: 320 }) }
@@ -12239,7 +12424,11 @@ function SensorChart({ itemId, units, color = 'var(--accent)', bars, label, thr,
       {showLoading && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>Loading…</p>}
       {error && <p style={{ color: 'var(--err)', margin: '0.3rem 0' }}>{error}</p>}
       {!loading && !error && data && data.points.length === 0 && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>{runs ? 'No run in this range.' : 'No data in this range.'}</p>}
-      <div ref={host} style={{ width: '100%' }} />
+      <div className="ev-chart">
+        {mk.marks.length > 0 && data && data.points.length > 0 && <MarkLane plot={plot.current} marks={mk.marks} setHot={mk.setHot} />}
+        <div ref={host} style={{ width: '100%' }} />
+      </div>
+      {data && data.points.length > 0 && <MarkList marks={mk.marks} hot={mk.hot} setHot={mk.setHot} />}
     </div>
   )
 }
@@ -12622,6 +12811,7 @@ function SensorGroupChart({ channels, bars, runs }: { channels: GroupChan[]; bar
   // the user's per-channel toggles (by label) and re-apply them after each rebuild.
   const showRef = useRef<Record<string, boolean>>({})
   const key = channels.map((c) => c.id).join(',')
+  const mk = useChartMarks(plot)
 
   useEffect(() => { const t = setInterval(() => { if (!zoomedRef.current) setTick((x) => x + 1) }, 60000); return () => clearInterval(t) }, [])
   useEffect(() => {
@@ -12641,6 +12831,7 @@ function SensorGroupChart({ channels, bars, runs }: { channels: GroupChan[]; bar
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error('failed'))))
         .then((m: Record<string, number[]>) => {
           if (cancelled) return
+          mk.setMarks([])
           setSeries(channels.map((ch) => ({ label: ch.label, units: ch.units, points: [], values: m[ch.id] || [] })))
         })
         .catch(() => { if (!cancelled) setError('Failed to load history') })
@@ -12650,6 +12841,7 @@ function SensorGroupChart({ channels, bars, runs }: { channels: GroupChan[]; bar
       ? fetch(`/api/hosts/${runsHost}/speedtest/runs?range=${range}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)
       : Promise.resolve(null)
     list.then((l) => { if (!cancelled) setRunList(l) })
+    const marksP = fetchMarks(channels.map((ch) => ch.id), range)
     Promise.all(channels.map((ch) =>
       fetch(`/api/items/${ch.id}/history?range=${range}${runsOn ? '&runs=1' : ''}`).then((r) => (r.ok ? r.json() : null)).then((d: Series | null) => ({
         label: ch.label, units: ch.units, downtime: !!ch.invert, off: !!ch.defaultOff, hold: !!ch.hold, seedValue: ch.seedValue, seedClock: ch.seedClock, thr: ch.thr, stepped: !!ch.stepped, color: ch.color,
@@ -12658,7 +12850,7 @@ function SensorGroupChart({ channels, bars, runs }: { channels: GroupChan[]; bar
         // (present only on long ranges) so the primary channel can draw a shaded envelope.
         points: d ? d.points.map((p) => { let v = p.v ?? p.avg ?? null; if (ch.invert && v != null) v = v > 0 ? 0 : 1; return { t: p.t, v, lo: ch.invert ? null : (p.min ?? null), hi: ch.invert ? null : (p.max ?? null) } }) : [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[],
       })).catch(() => ({ label: ch.label, units: ch.units, downtime: !!ch.invert, hold: !!ch.hold, seedValue: ch.seedValue, seedClock: ch.seedClock, thr: ch.thr, stepped: !!ch.stepped, color: ch.color, points: [] as { t: number; v: number | null; lo?: number | null; hi?: number | null }[] }))
-    )).then((res) => { if (!cancelled) setSeries(res) }).catch(() => { if (!cancelled) setError('Failed to load history') })
+    )).then((res) => marksP.then((m) => { if (!cancelled) { mk.setMarks(m); setSeries(res) } })).catch(() => { if (!cancelled) setError('Failed to load history') })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, range, tick, bars, runsOn, runsHost, runsList])
@@ -12674,13 +12866,15 @@ function SensorGroupChart({ channels, bars, runs }: { channels: GroupChan[]; bar
       ? buildBarPlot(series.map((s) => ({ label: s.label, units: s.units, values: s.values || [] })), width, chartColors('var(--accent)'), (z) => { zoomedRef.current = z }, onToggle)
       : buildMultiPlot(series, width, chartColors('var(--accent)'), [from, to], (z) => { zoomedRef.current = z }, onToggle,
         runsOn ? { runs: true, reasons: new Map((runList?.runs || []).filter((r) => !r.ok && r.error).map((r) => [r.t, r.error as string])) } : undefined)
+    if (mk.marks.length && !bars) opts.plugins = [...(opts.plugins || []), mk.plugin()]
     plot.current = new uPlot(opts, aligned, host.current)
     // Re-apply the user's remembered show/hide choices (they survive refresh + range change).
     const sv = showRef.current
     plot.current.series.forEach((s, i) => { if (i === 0) return; const l = s.label; if (typeof l === 'string' && sv[l] !== undefined && sv[l] !== s.show) plot.current!.setSeries(i, { show: sv[l] }) })
     colorLegendChecks(plot.current)
     return () => { if (plot.current) { plot.current.destroy(); plot.current = null } }
-  }, [series, themeTick, range, bars, runsOn, runList])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [series, themeTick, range, bars, runsOn, runList, mk.marks])
 
   useEffect(() => {
     function onResize() { if (plot.current && host.current) plot.current.setSize({ width: host.current.clientWidth, height: 320 }) }
@@ -12698,7 +12892,11 @@ function SensorGroupChart({ channels, bars, runs }: { channels: GroupChan[]; bar
       </div>
       {error && <p style={{ color: 'var(--err)', margin: '0.3rem 0' }}>{error}</p>}
       {empty && <p style={{ color: 'var(--muted)', margin: '0.3rem 0' }}>{runsOn ? `No run in this range${runs?.lastRun ? `: the last one was ${relTime(runs.lastRun)}` : ''}.` : 'No data in this range.'}</p>}
-      <div ref={host} style={{ width: '100%' }} />
+      <div className="ev-chart">
+        {!bars && !empty && mk.marks.length > 0 && <MarkLane plot={plot.current} marks={mk.marks} setHot={mk.setHot} />}
+        <div ref={host} style={{ width: '100%' }} />
+      </div>
+      {!bars && !empty && <MarkList marks={mk.marks} hot={mk.hot} setHot={mk.setHot} />}
       {runsList && <SpeedRunsList data={runList} />}
     </div>
   )

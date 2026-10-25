@@ -5,6 +5,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"strings"
 )
@@ -25,6 +26,11 @@ type Change struct {
 	Reason    string
 	RequestID string
 	HostIDs   []string // the hosts it touched, for a host's own list and the probe / group filters
+	// ItemIDs are the sensors it was done to (an acknowledgement, a pause, a note); none = the whole
+	// host, for the chart markers (marks.go). ItemsKnown is false on entries written before the log
+	// kept them: those name their sensor only in Object ("host · sensor").
+	ItemIDs    []string
+	ItemsKnown bool
 }
 
 // ChangeDiff is one value a change moved from Old to New ("" = it wasn't set).
@@ -50,8 +56,8 @@ func (s *Store) AddChanges(ctx context.Context, cs []Change) error {
 			b, _ := json.Marshal(c.Diff)
 			diff = string(b)
 		}
-		res, err := tx.ExecContext(ctx, `INSERT INTO changes (at, actor_kind, actor_id, actor, category, action, object, detail, diff, reason, request_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, c.At, c.ActorKind, c.ActorID, c.Actor, c.Category, c.Action, c.Object, c.Detail, diff, c.Reason, c.RequestID)
+		res, err := tx.ExecContext(ctx, `INSERT INTO changes (at, actor_kind, actor_id, actor, category, action, object, detail, diff, reason, request_id, items)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, c.At, c.ActorKind, c.ActorID, c.Actor, c.Category, c.Action, c.Object, c.Detail, diff, c.Reason, c.RequestID, encodeItemIDs(c.ItemIDs))
 		if err != nil {
 			return err
 		}
@@ -70,6 +76,23 @@ func (s *Store) AddChanges(ctx context.Context, cs []Change) error {
 	return tx.Commit()
 }
 
+// encodeItemIDs stores a change's sensors as ",id,id," ("" = the whole host; NULL = an entry from
+// before the log kept them).
+func encodeItemIDs(ids []string) string {
+	var keep []string
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if id = strings.TrimSpace(id); id != "" && !seen[id] {
+			seen[id] = true
+			keep = append(keep, id)
+		}
+	}
+	if len(keep) == 0 {
+		return ""
+	}
+	return "," + strings.Join(keep, ",") + ","
+}
+
 // ChangeQuery narrows a change log read. Zero values don't filter.
 type ChangeQuery struct {
 	From     int64    // at or after (unix seconds)
@@ -80,7 +103,7 @@ type ChangeQuery struct {
 	Limit    int
 }
 
-const changeCols = `id, at, actor_kind, actor_id, actor, category, action, object, detail, diff, reason, request_id`
+const changeCols = `id, at, actor_kind, actor_id, actor, category, action, object, detail, diff, reason, request_id, items`
 
 // ListChanges returns the newest entries matching q, newest first, each with its hosts.
 func (s *Store) ListChanges(ctx context.Context, q ChangeQuery) ([]Change, error) {
@@ -127,9 +150,16 @@ func (s *Store) ListChanges(ctx context.Context, q ChangeQuery) ([]Change, error
 	for rows.Next() {
 		var c Change
 		var diff string
-		if err := rows.Scan(&c.ID, &c.At, &c.ActorKind, &c.ActorID, &c.Actor, &c.Category, &c.Action, &c.Object, &c.Detail, &diff, &c.Reason, &c.RequestID); err != nil {
+		var items sql.NullString
+		if err := rows.Scan(&c.ID, &c.At, &c.ActorKind, &c.ActorID, &c.Actor, &c.Category, &c.Action, &c.Object, &c.Detail, &diff, &c.Reason, &c.RequestID, &items); err != nil {
 			rows.Close()
 			return nil, err
+		}
+		c.ItemsKnown = items.Valid
+		for _, id := range strings.Split(items.String, ",") {
+			if id != "" {
+				c.ItemIDs = append(c.ItemIDs, id)
+			}
 		}
 		if diff != "" {
 			_ = json.Unmarshal([]byte(diff), &c.Diff)

@@ -45,7 +45,8 @@ API key, and MAC):
 - **Monitoring tree** - site → host → sensor, grouped by Zabbix host group and ordered by hand
   (drag a row, or use the arrows), with curated "key sensor" views, live values, inline sparklines,
   and per-sensor uPlot charts (2h/2d/1M/3M/6M/1Y with drag-to-zoom; traffic charts show the total
-  moved over the range).
+  moved over the range). Charts mark what happened in their range: changes to the host and the
+  sensor, acknowledgements, journal entries, maintenance windows and restarts.
 - **States** - acknowledge (with expiry + undo), pause (stops Zabbix collection), hide
   (Argus-side suppression), each with duration picker and auto-expiry. Host-level states
   inherit to sensors.

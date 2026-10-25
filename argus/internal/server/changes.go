@@ -419,6 +419,7 @@ func (s *Server) changeLog(next http.Handler) http.Handler {
 					}
 					c.Object = o.name
 					c.HostIDs = append(c.HostIDs, o.hostIDs...)
+					c.ItemIDs = o.itemIDs
 				}
 				if rc.detail != nil && body != nil {
 					if d := rc.detail(body); d != "" {
@@ -551,10 +552,12 @@ func newRequestID() string {
 	return hex.EncodeToString(b[:])
 }
 
-// resolvedObject is a changed object's name and the hosts it belongs to.
+// resolvedObject is a changed object's name, the hosts it belongs to and, for a sensor, its items
+// (every sensor an event is on).
 type resolvedObject struct {
 	name    string
 	hostIDs []string
+	itemIDs []string
 }
 
 // resolveChangeObject names the object a route's path points at. Best-effort: a name it can't find
@@ -565,12 +568,14 @@ func (s *Server) resolveChangeObject(ctx context.Context, kind string, vals map[
 	case "host":
 		if idx, err := s.hostIndex(ctx); err == nil {
 			if h, ok := idx[id]; ok {
-				return resolvedObject{h.Name, []string{id}}
+				return resolvedObject{name: h.Name, hostIDs: []string{id}}
 			}
 		}
-		return resolvedObject{"host " + id, []string{id}}
+		return resolvedObject{name: "host " + id, hostIDs: []string{id}}
 	case "item":
-		return s.resolveSensor(ctx, func(row sensorRow) bool { return row.ItemID == id })
+		o := s.resolveSensor(ctx, func(row sensorRow) bool { return row.ItemID == id })
+		o.itemIDs = []string{id}
+		return o
 	case "sensorkey":
 		key := vals["key"]
 		return s.resolveSensor(ctx, func(row sensorRow) bool {
@@ -650,7 +655,7 @@ func (s *Server) resolveChangeObject(ctx context.Context, kind string, vals map[
 						name = h.Name + " · " + p.Name
 					}
 				}
-				return resolvedObject{name, []string{p.HostID}}
+				return resolvedObject{name: name, hostIDs: []string{p.HostID}}
 			}
 		}
 	case "controller":
@@ -682,22 +687,31 @@ func (s *Server) resolveChangeObject(ctx context.Context, kind string, vals map[
 	return resolvedObject{}
 }
 
-// resolveSensor names a sensor "host · sensor" from the census.
+// resolveSensor names a sensor "host · sensor" from the census, with the items of every row that
+// matches (a problem over several sensors is on each). A row Argus raised itself has no item: its
+// entry stays the whole host's.
 func (s *Server) resolveSensor(ctx context.Context, match func(sensorRow) bool) resolvedObject {
 	rows, err := s.sensorCensus(ctx)
 	if err != nil {
 		return resolvedObject{}
 	}
+	var o resolvedObject
 	for _, row := range rows {
-		if match(row) {
+		if !match(row) {
+			continue
+		}
+		if o.name == "" {
 			name := row.Label
 			if name == "" {
 				name = row.Name
 			}
-			return resolvedObject{row.HostName + " · " + name, []string{row.HostID}}
+			o.name, o.hostIDs = row.HostName+" · "+name, []string{row.HostID}
+		}
+		if row.ItemID != "" {
+			o.itemIDs = append(o.itemIDs, row.ItemID)
 		}
 	}
-	return resolvedObject{}
+	return o
 }
 
 // --- reading the log ---
