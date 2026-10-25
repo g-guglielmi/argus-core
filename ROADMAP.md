@@ -407,6 +407,48 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [ ] **Android native app with push notifications** - the app registers a device with Argus; the notifier delivers alerts as **push** (e.g. FCM) via a new "push" notification channel type, alongside Discord/Telegram/email. A PWA + web push is a cheaper fallback if a full native app isn't warranted. - _(app + BE)_ **L**
 - [ ] **iOS app** - _undecided_; would need APNs + an Apple developer account. Decide once the Android app exists.
 
+### J. OneUptime borrowings (agreed 2026-10-25)
+What OneUptime does that Argus doesn't yet, kept to what fits an IT team watching its own sites. Each
+UI change starts with a real-CSS mockup. Left out on purpose: OpenTelemetry logs and traces, RUM,
+SIEM/SOAR, the AI investigator, a workflow engine, Terraform/CLI, phone and SMS paging, postmortems,
+NetFlow.
+- [ ] **Change markers on charts** - a sensor's chart marks what happened to its host in the shown
+  period: change-log entries, OS updates and reboots, maintenance windows, acknowledgements, so "why
+  did it jump at 03:00?" is answered on the chart. All from data Argus already keeps. - _(BE+FE)_ M
+- [ ] **The vendor's own status beside Common SaaS** - many services publish a standard Statuspage
+  `/api/v2/status.json` (GitHub, Atlassian, Zoom, Dropbox, Cloudflare); a service's row shows the
+  vendor's word next to the probe's own reachability, so "only us, from this site" and "the vendor is
+  down" read apart. Microsoft 365 (Graph service health, needs an app registration) is a later step. -
+  _(BE+FE+templates)_ M
+- [ ] **Email heartbeat** - for gear that only reports by email (backup jobs, NAS backup reports,
+  appliance digests): Argus reads a dedicated mailbox, matches each mail on sender and subject, and a
+  success or failure mail feeds a push sensor; no mail by the deadline is late, then missed, like any
+  push sensor (warning, then error). - _(BE+FE)_ M
+- [ ] **Domain registration expiry** - the days until a domain expires (RDAP), beside the TLS
+  certificate's days left; warning at 30 days, error at 7, both editable. - _(templates)_ S
+- [ ] **One timeline per incident** - everything about one problem in one place: when it opened,
+  which channel was told when, escalations and reminders, who acknowledged it and with what note, the
+  sensors it held, the recovery. Answers "did anyone actually get paged?" - _(BE+FE)_ M
+- [ ] **Maintenance calendar feed** - a secret `.ics` link per user (or per site) so planned windows
+  show in Outlook, plus a calendar view on the Maintenance page. - _(BE+FE)_ S
+- [ ] **Runbook notes** - a "what to do" text per device class or per sensor, shown beside the
+  problem and carried in its alerts the way "who to call" is (a switch per channel). - _(BE+FE)_ S
+- [ ] **On-call rotation** - the team takes on-call a week each (5 people today): an on-call
+  channel type that delivers only to whoever is on call now, from a weekly rota (with swaps and
+  overrides for a single day or week), the rota visible to the team and the hand-over announced.
+  Design to be talked through first. - _(BE+FE)_ M
+- [ ] **Multi-step web checks** - "can I log in to the portal": Zabbix web scenarios (steps, form
+  posts, variables carried from one page to the next, required text and status per step), so no
+  headless browser on the probes; the failing step and why as the reason. - _(BE+FE+templates)_ M
+- [ ] **Uptime targets** - a guaranteed uptime per host or site (e.g. 99.9% a month) and the downtime
+  still allowed this period, in the host card, the PDF reports and the status pages; a warning when
+  most of the allowance is spent, an error when it's gone. - _(BE+FE)_ S
+- [ ] **SNMP traps (opt-in)** - not used here, but welcome for whoever does: the proxy's native trap
+  items, per host, off by default. - _(probe+templates)_ M
+- [ ] **Syslog - evaluate first** - only as event triggers, never as a log store (a log server does
+  that job): would the devices we watch say something by syslog that polling can't see, quickly
+  enough to matter? Decide at production rollout with the real devices in hand. - _decision_
+
 ---
 
 ## Suggested near-term order
@@ -430,5 +472,8 @@ v0.4.56-v0.4.58) · plus the §14 lifecycle line (OS patching, core Zabbix minor
    ~6000-sensor deployment. ~~**PDF reports** (§D)~~ ✅.
 4. **Zabbix 8.0 LTS** (§G) - before 7.0's full support ends (around mid-2027).
 5. **(last)** **Android native app** with push notifications (§I) - iOS TBD.
+
+Agreed 2026-10-25: the **OneUptime borrowings (§J)**, order to be set; change markers on charts, the
+vendor status beside Common SaaS and the email heartbeat first.
 
 Blocked / deferred: **site4** probe (§A) - its building is under renovation, so it won't come online in the near term; bring it online once that's done.
