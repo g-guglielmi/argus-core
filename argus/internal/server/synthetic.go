@@ -280,6 +280,28 @@ func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, 
 				out.readings[id] = "Not supported: " + collectorWhy(it.Key, it.Error)
 			}
 		}
+		// A UniFi controller restarting or unreachable shows on its devices at once: one problem on
+		// the controller's host, the devices' own held behind it (controllerfold.go).
+		if groups := loadUniFiGroups(ctx, st, zbx); len(groups) > 0 {
+			signals := unifiSignals(ctx, zbx, groups, items, since, now)
+			if outages := controllerOutages(groups, signals); len(outages) > 0 || controllerOpen() {
+				hostName, hostOf := map[string]string{}, map[string]zabbix.TargetHost{}
+				if hosts, err := zbx.Hosts(ctx); err == nil {
+					for _, h := range hosts {
+						hostName[h.HostID] = h.Name
+						hostOf[h.HostID] = zabbix.TargetHost{HostID: h.HostID, Name: h.Name, Status: h.Status}
+					}
+				}
+				probs, targets, readings := controllerProblems(outages, hostName, func(id string) (zabbix.TargetHost, bool) { h, ok := hostOf[id]; return h, ok }, now)
+				out.problems = append(out.problems, probs...)
+				for id, t := range targets {
+					out.targets[id] = t
+				}
+				for id, r := range readings {
+					out.readings[id] = r
+				}
+			}
+		}
 	}
 
 	ifaces, ierr := zbx.UnavailableInterfaces(ctx)

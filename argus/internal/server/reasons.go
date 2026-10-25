@@ -35,6 +35,8 @@ var reasonKeys = map[string]string{
 	"http.url.up":         "http.url.error",
 	"saas.up":             "saas.error",
 	"speedtest.ok":        "speedtest.error",
+	// A UniFi device's controller state: what the controller reports about it is the reason.
+	"unifi.device.state": "unifi.device.state.reason",
 	// A push sensor's last run: the job's own message is the reason.
 	"argus.push.ok": "argus.push.message",
 	// Linux by SSH, per systemd unit and per Docker container: the state text is the reason.

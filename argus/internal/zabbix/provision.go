@@ -323,6 +323,29 @@ func (c *Client) HostMacros(ctx context.Context, hostID string) ([]HostMacro, er
 	return out, err
 }
 
+// UserMacroHosts returns, for one macro name, every host that sets it and its value: {$UNIFI.URL}
+// groups the devices read through the same controller (server/controllerfold.go).
+func (c *Client) UserMacroHosts(ctx context.Context, macro string) (map[string]string, error) {
+	var rows []struct {
+		HostID string `json:"hostid"`
+		Value  string `json:"value"`
+	}
+	err := c.call(ctx, "usermacro.get", map[string]any{
+		"output": []string{"hostid", "value"},
+		"filter": map[string]any{"macro": macro},
+	}, true, &rows)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(rows))
+	for _, r := range rows {
+		if r.HostID != "" && r.HostID != "0" {
+			out[r.HostID] = r.Value
+		}
+	}
+	return out, nil
+}
+
 // TemplateMacros returns a template's own user macros (usermacro.get with templateids). Used by the
 // thresholds screen to read/reset each class template's current threshold-macro values. A Zabbix
 // template shares the hosts table, so the create/update/delete macro calls below work on a template

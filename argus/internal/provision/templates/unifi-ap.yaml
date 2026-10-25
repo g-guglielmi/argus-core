@@ -122,6 +122,8 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.state'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '0'
             - type: JAVASCRIPT
               parameters:
                 - 'return String(value) === "1" ? 1 : 0;'
@@ -134,6 +136,32 @@ zabbix_export:
                   value: 'Access point online again on the UniFi controller'
               priority: HIGH
               description: 'The controller has not reported the access point connected on the last 3 checks.'
+        - uuid: 4bb2fe56705e497fb79e5d3286880cf1
+          name: 'Controller state reason'
+          type: DEPENDENT
+          key: unifi.device.state.reason
+          delay: '0'
+          history: 7d
+          trends: '0'
+          value_type: CHAR
+          description: 'What the controller reports about the access point (connected, disconnected, adopting, heartbeat missed, ...): the reason behind Controller state. Not a curated sensor.'
+          master_item:
+            key: unifi.ap.raw
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.state'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: 'not reported by the controller'
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var names = {0: 'disconnected', 1: 'connected', 2: 'pending adoption', 3: 'disconnected', 4: 'upgrading', 5: 'provisioning', 6: 'heartbeat missed', 7: 'adopting', 8: 'deleting', 9: 'adoption failed', 10: 'isolated', 11: 'adoption error'};
+                  var n = names[String(value)];
+                  return n ? n : (String(value).indexOf(' ') >= 0 ? value : 'state ' + value);
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
         - uuid: 83af81798ee24e53b7467c77e73c76ce
           name: 'CPU utilization'
           type: DEPENDENT
@@ -149,6 +177,7 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.cpu'
+              error_handler: DISCARD_VALUE
           triggers:
             - uuid: dfb20555d3154ef9a22ee976a67c51b6
               expression: 'min(/Argus UniFi AP by HTTP/unifi.cpu.util,#3)>={$CPU.UTIL.WARN} and min(/Argus UniFi AP by HTTP/unifi.cpu.util,#3)<{$CPU.UTIL.HIGH}'
@@ -181,6 +210,7 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.mem'
+              error_handler: DISCARD_VALUE
           triggers:
             - uuid: e4ee4d69e6ee4f82803715d71ce1c396
               expression: 'min(/Argus UniFi AP by HTTP/unifi.mem.util,#3)>={$MEM.USED.WARN} and min(/Argus UniFi AP by HTTP/unifi.mem.util,#3)<{$MEM.USED.HIGH}'
@@ -213,6 +243,7 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.uptime'
+              error_handler: DISCARD_VALUE
         - uuid: d834274abc654565a71ec0164c8eba8c
           name: Temperature
           type: DEPENDENT
@@ -245,6 +276,7 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.clients'
+              error_handler: DISCARD_VALUE
         - uuid: a3f41e451cd8407ba5e8daa9509dd4f8
           name: 'Experience score'
           type: DEPENDENT
@@ -276,6 +308,7 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.version'
+              error_handler: DISCARD_VALUE
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d
@@ -294,6 +327,7 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.upgrade_to'
+              error_handler: DISCARD_VALUE
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d
@@ -312,6 +346,7 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.model'
+              error_handler: DISCARD_VALUE
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d
@@ -330,6 +365,7 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.serial'
+              error_handler: DISCARD_VALUE
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d
@@ -348,6 +384,7 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.mac'
+              error_handler: DISCARD_VALUE
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d
@@ -366,6 +403,7 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.uplink_mac'
+              error_handler: DISCARD_VALUE
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d
@@ -384,6 +422,7 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.uplink_port'
+              error_handler: DISCARD_VALUE
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d

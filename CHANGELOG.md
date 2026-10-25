@@ -13,6 +13,24 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Fixed
+- **A UniFi controller restart no longer sends one alert per sensor per device.** While the
+  Network application restarted (an update), the controller reported every device disconnected
+  with empty statistics; four sensors per device (CPU, memory, uptime, clients) failed on the
+  empty value and Argus alerted "stopped collecting" for each, then "collecting again" for each.
+  Those sensors now discard a sample they can't read, like the others already did; the device's
+  Controller state sensor reads "offline" when its field is missing and gained a reason sensor
+  (what the controller reports: disconnected, adopting, heartbeat missed, ...).
+
+### Changed
+- **One alert per UniFi controller outage.** A device's Controller state is now its second master
+  (its threshold alerts wait while the controller reports it offline), and when enough devices of
+  one controller are offline on it at once while still answering ping, or their controller calls
+  fail (at least two, at least half), Argus raises one problem on the controller's host, "UniFi
+  controller unifi.example.lan: 4 of 5 devices offline on it", and holds the devices' alerts behind
+  it; a device's ping is never held by it. The devices wait out the settle window when the
+  controller is back, then one still offline alerts on its own. DESIGN section on master sensors.
+
 ## [0.9.6] - 2026-10-23
 
 ### Added

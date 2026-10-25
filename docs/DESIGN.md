@@ -1143,8 +1143,9 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
 - **Master sensors (dependencies):** every host has a master sensor - its ICMP ping by default
   (`icmpping`), another sensor or none per host (`host_masters`), and the Probe host's reporting
   sensor (`zabbix[uptime]`). A collector-based host also has its collector's reachability sensor
-  (`nut.reachable`, `xcp.reachable`, `linux.ssh.reachable`, `adguard.running`, `hass.running`) as a
-  second master, so a stopped service alerts once as "unreachable" while the machine still pings;
+  (`nut.reachable`, `xcp.reachable`, `linux.ssh.reachable`, `adguard.running`, `hass.running`, and a
+  UniFi device's `unifi.device.state`, what its controller reports about it) as a second master, so a
+  stopped service alerts once as "unreachable" while the machine still pings;
   "none" drops both. Masters are ranked (the ping, or the chosen sensor, above the collector) and
   hold only what ranks below them, so when the whole machine is down the ping's own alert goes out
   and the collector's is held; two masters down together never hold each other, which would leave
@@ -1155,7 +1156,20 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   monitors** and of Zabbix's own per-proxy checks (`zabbix.proxy.*[<proxy>]` on the Zabbix server
   host), so a probe outage sends only the probe's alerts. The device a host is plugged into (its
   **upstream device**, section 7f) is a master too: while it, or one above it, is down, the host's
-  alerts are held behind it, so a dead switch sends one alert, not one per access point and camera. To
+  alerts are held behind it, so a dead switch sends one alert, not one per access point and camera.
+  A **UniFi controller** is a master of the devices read through it, too (`controllerfold.go`): the
+  hosts sharing a `{$UNIFI.URL}` are its devices, and when enough of them show the controller's
+  signature at once (reported offline on it while still answering ping, or their controller call
+  failing: at least two, and at least half), Argus raises one problem on the controller's own host
+  (the console with that URL, else the gateway, else the first device): "UniFi controller
+  unifi.example.lan: 4 of 5 devices offline on it", with the devices as its reading. The devices'
+  own alerts are held behind it (`held: behind the UniFi controller`), the console's included, but
+  never a device's ping: the controller feeds the device's sensors, not its network path, so a device
+  that stopped answering still alerts. The outage keeps its start across ticks, and when it ends the
+  devices wait out the settle window, after which one still offline alerts on its own. Fewer devices
+  in trouble than the quorum are their own problems. The UniFi sensors read from the controller's
+  answer discard a sample they can't read instead of failing (a device re-adopting reports null
+  statistics), so a controller restart never turns into one "stopped collecting" per sensor. To
   win the race with a slow master (ping
   needs 3 failed checks), a new problem also waits up to 5 minutes while the master hasn't reported
   since the problem began, or its last ping failed. After a master recovers, what it holds waits out

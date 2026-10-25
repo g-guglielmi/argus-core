@@ -89,3 +89,26 @@ You can change any of these later in **host settings → UniFi options** (the AP
   against a CA store, which a console's own certificate never passes). The discovery sweep and scan
   enrichment, which run from Argus and the probes, do check it: pin the controller's certificate
   under Discovery settings (offered automatically when you save it), or choose Ignore there.
+
+## When the controller restarts or updates
+
+The Network application restarting (an update, a reboot of the console) takes every device read
+through it along: the API answers with the devices marked disconnected and their statistics empty,
+or doesn't answer at all. Argus reads that as one event, the controller's, not one per device:
+
+- The sensors read from the controller's answer (CPU, memory, uptime, clients, the inventory values)
+  discard a sample they can't read instead of failing, so nothing "stops collecting" while a device
+  re-adopts; the chart just has a gap.
+- Each device's **Controller state** sensor (what the controller reports about it) is the master of
+  the device's other sensors: while the controller reports it offline, its threshold alerts wait.
+  Its reason sensor says what the controller reports (disconnected, adopting, heartbeat missed, ...).
+- When enough devices of the same controller are offline on it at once while still answering ping
+  (at least two, and at least half of them), or their controller calls fail, Argus raises **one**
+  problem on the controller's own host: "UniFi controller unifi.example.lan: 4 of 5 devices
+  offline on it", and holds every device alert behind it ("held: behind the UniFi controller"). A
+  device's ping is never held by the controller: a device that really stopped answering still
+  alerts. When the devices are back, the one problem resolves ("its devices are back on it"); a
+  device still offline after the settle window alerts on its own.
+
+Fewer devices in trouble than that are their own problems and alert as such. For a planned
+update, a maintenance window on the site's UniFi devices is still the quiet way.

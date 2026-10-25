@@ -728,6 +728,9 @@ func recoveryTitle(stt store.NotifyState) string {
 		if up := interfaceUpName(stt.Name); up != "" {
 			return up
 		}
+		if up := controllerUpName(stt.Name); up != "" {
+			return up
+		}
 	}
 	return "Back to normal: " + stt.Name
 }

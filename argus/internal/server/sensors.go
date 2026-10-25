@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"argus/internal/zabbix"
+	"strings"
 )
 
 type sensorRow struct {
@@ -49,6 +50,9 @@ type sensorRow struct {
 
 // interfaceRowLabel names the census row of an unreachable interface after what stopped answering.
 func interfaceRowLabel(problem string) string {
+	if strings.HasPrefix(problem, "UniFi controller ") {
+		return "UniFi controller"
+	}
 	switch problem {
 	case "Zabbix agent not reachable":
 		return "Zabbix agent"

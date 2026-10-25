@@ -8358,6 +8358,7 @@ function watchEyebrow(): string { return SCOPE.sites.length ? `Watch · ${sitesL
 // another host (the site's probe), or the down device it is plugged into.
 function heldLabel(h: HeldBy, hostId: string): string {
   if (h.via === 'upstream') return `held: behind ${h.host_name}, which is down`
+  if (h.via === 'controller') return `held: behind the UniFi controller${h.host_id !== hostId ? ` (${h.host_name})` : ''}, which is restarting or unreachable`
   return `held: ${h.name}${h.host_id !== hostId ? ` on ${h.host_name}` : ''} is down`
 }
 

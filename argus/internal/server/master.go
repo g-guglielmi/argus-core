@@ -35,8 +35,10 @@ const (
 )
 
 // collectorMasterKeys are the Argus templates' collector reachability sensors (1 = the collector
-// reaches its target, 0 = it doesn't): each one feeds the rest of its host's sensors.
-var collectorMasterKeys = []string{"nut.reachable", "xcp.reachable", "linux.ssh.reachable", "adguard.running", "hass.running"}
+// reaches its target, 0 = it doesn't): each one feeds the rest of its host's sensors. A UniFi
+// device's "controller state" is one too: its readings come from the controller, so while the
+// controller reports it offline nothing else about it can be judged.
+var collectorMasterKeys = []string{"nut.reachable", "xcp.reachable", "linux.ssh.reachable", "adguard.running", "hass.running", "unifi.device.state"}
 
 // isReachabilityKey reports whether a master's value is a 1/0 reachability (ping or a collector), so
 // a fresh 0 means "going down" even before its trigger fires.
@@ -76,6 +78,10 @@ type masterSet struct {
 	proxyByName map[string]string       // proxy name -> proxy id
 	down        map[string]bool         // master item id -> it has an open "down" problem
 	upstream    map[string]upstreamLink // host id -> the device it is plugged into (upstream.go)
+	// controller is, per UniFi host, the pseudo master standing for its controller's outage
+	// (controllerfold.go: its id is the outage problem's), and controllerHost that outage's host.
+	controller     map[string][]masterItem
+	controllerHost map[string]string
 	// recovered is when each master's "down" trigger last went back to OK (its lastchange in Zabbix),
 	// and settle how long after that the alerts it holds still wait: a site or a device coming back
 	// up has services still starting and agents not yet listening, which would alert on the way.
@@ -93,6 +99,20 @@ func loadMasters(ctx context.Context, st *store.Store, zbx *zabbix.Client, hosts
 		hostProxy: map[string]string{}, proxyByName: map[string]string{}, down: masterDown(problems, targets),
 	}
 	m.upstream = loadUpstreams(ctx, st, zbx).eff
+	m.controller, m.controllerHost = map[string][]masterItem{}, map[string]string{}
+	for _, g := range loadUniFiGroups(ctx, st, zbx) {
+		// Reported every tick (lastClock now), so a device's own alert never waits on it unless the
+		// controller is in outage.
+		pm := masterItem{itemID: controllerID(g.url), key: controllerKey, lastClock: time.Now().Unix(), rank: -1}
+		owner := g.host
+		if owner == "" && len(g.devices) > 0 {
+			owner = g.devices[0]
+		}
+		m.controllerHost[pm.itemID] = owner
+		for _, h := range g.devices {
+			m.controller[h] = append(m.controller[h], pm)
+		}
+	}
 	classes, _ := st.DeviceClasses(ctx)
 	for _, h := range hosts {
 		m.hostProxy[h.HostID] = h.ProxyID
@@ -172,6 +192,15 @@ func loadMasters(ctx context.Context, st *store.Store, zbx *zabbix.Client, hosts
 		if trigs, err := zbx.ItemTriggers(ctx, list); err == nil {
 			m.recovered, m.settle = masterRecoveries(trigs), settle
 		}
+		// A controller just back: its devices wait out the window too (reconnecting, re-adopting).
+		for _, g := range loadUniFiGroups(ctx, st, zbx) {
+			if r := controllerRecoveredAt(g.url); r > 0 {
+				if m.recovered == nil {
+					m.recovered, m.settle = map[string]int64{}, settle
+				}
+				m.recovered[controllerID(g.url)] = r
+			}
+		}
 	}
 	return m
 }
@@ -209,6 +238,10 @@ func masterDown(problems []zabbix.Problem, targets map[string]zabbix.TriggerTarg
 		}
 		for _, it := range t.Items {
 			out[it.ItemID] = true
+		}
+		// A controller outage has no sensor: its problem id is the pseudo master it holds through.
+		if strings.HasPrefix(p.EventID, synthController) {
+			out[p.EventID] = true
 		}
 	}
 	return out
@@ -272,6 +305,18 @@ func (m masterSet) hold(hostID string, items []masterRef, start, now int64) hold
 		if v := m.judge(hm, items, start, now); v.held {
 			v.by, v.master, v.host = "host", hm, hostID
 			return v
+		}
+	}
+	// The UniFi controller its readings come through: while Argus reads the controller itself as
+	// restarting or unreachable (controllerfold.go), the device's own alerts wait on that. It feeds
+	// the device's sensors, not its ping, so a device that stopped answering still alerts; and the
+	// outage problem, which has no sensor of its own, is never held by itself.
+	if len(items) > 0 && !ping {
+		for _, cm := range m.controller[hostID] {
+			if v := m.judge(cm, items, start, now); v.held {
+				v.by, v.master, v.host = "controller", cm, m.controllerHost[cm.itemID]
+				return v
+			}
 		}
 	}
 	return holdVerdict{}
@@ -408,6 +453,9 @@ func (s *Server) markHeld(ctx context.Context, rows []sensorRow, problems []zabb
 		ref := &heldRef{HostID: v.host, HostName: hostName[v.host], ItemID: v.master.itemID, Name: sensorLabel(v.master.key, v.master.key)}
 		if v.by == "upstream" {
 			ref.Via = "upstream"
+		}
+		if v.by == "controller" {
+			ref.Via, ref.Name = "controller", "UniFi controller"
 		}
 		if j, ok := byItem[v.master.itemID]; ok {
 			if rows[j].Label != "" {
