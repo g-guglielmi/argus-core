@@ -299,7 +299,22 @@ Ookla. A probe whose collector predates the engine (it prints no `engine`) is ca
 `{$SAAS.URLS}`, each entry named with `#name=`, any answer short of a server error counting
 (`{$SAAS.EXPECT}` 200-499), one group per service under **Cloud services** like the Web checks; the
 catalog of services is `provision/saas.go`, the template's default list is generated from it and a test
-keeps them equal). Zabbix runs a new item within 60 seconds of its creation (since 6.0.2), so a
+keeps them equal). **The vendor's own word** (`vendorstatus.go`, OneUptime's external status page
+monitor, as context only): a catalog service whose vendor publishes a machine-readable status carries
+its source (an Atlassian Statuspage's `/api/v2/incidents/unresolved.json`: Cloudflare, Zoom, Dropbox,
+GitHub; a page with only `/api/v2/status.json`'s indicator: ChatGPT; Slack's own API). Every 5
+minutes the core reads the sources of the services some site checks (the `saas.up[<id>]` and
+`saas.time[<id>]` items, the id being the first 10 hex of the URL's SHA-1 as `argus_http.py` gives it,
+so a renamed service still finds its vendor; no add-on, no request), keeping a word 20 minutes when
+the page stops answering. Only open incidents count, never the headline: Cloudflare's reads "Partial
+System Outage" most days from regional rerouting with no incident open, Zoom's "maintenance" for weeks
+of no-impact work; the worst open incident (impact, name, since when, how many more) is the word.
+It never alerts by itself. It shows under a Cloud services problem in the lists ("GitHub's status
+page: no incident open", or the incident in its tone, with a link to the page), under the service's
+row on the host page while the vendor has an incident open or the site's own check fails, and as a
+line in the service's alerts, reminders and RESOLVED (the webhook's `vendor`). Microsoft 365, Google,
+AWS and Apple publish none (Microsoft 365's service health needs Graph and an app registration: a
+later step). Zabbix runs a new item within 60 seconds of its creation (since 6.0.2), so a
 speed test every 6 hours shows its first reading a minute after it is turned on; Argus doesn't run it
 as well (it once did, and that made two tests in a row). A sensor's or group's **Check now**
 (`POST /api/items/check`, admin and helpdesk) runs the items that do the reading (a dependent item's

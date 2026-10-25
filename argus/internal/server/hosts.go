@@ -86,6 +86,8 @@ type itemView struct {
 	Thresholds *itemThresholds `json:"thr,omitempty"`
 	// Note is the note left on the sensor while it is in trouble (sensornotes.go).
 	Note *sensorNoteView `json:"note,omitempty"`
+	// Vendor is what a Common SaaS service's vendor says on its status page (vendorstatus.go).
+	Vendor *vendorWord `json:"vendor,omitempty"`
 }
 
 // numericValueType reports whether a Zabbix value_type is graphable (0 float, 3 unsigned).
@@ -698,6 +700,7 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			iv.Category, iv.Label = cat, label
 			iv.Instance, iv.Channel = inst, ch
 		}
+		iv.Vendor = vendors.wordForKey(it.Key)
 		out = append(out, iv)
 	}
 	// Alert-mute state: which sensors have triggers (so alerts can be disabled) and whether every one

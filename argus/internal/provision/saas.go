@@ -15,6 +15,18 @@ type SaaSService struct {
 	Name    string `json:"name"`
 	URL     string `json:"url"`
 	Default bool   `json:"default"` // checked on a new add-on
+	// Status is where the vendor says whether it has an incident open (none = it publishes no
+	// machine-readable status): beside the probe's own check, it tells "only us" from "the vendor".
+	Status *SaaSStatus `json:"status,omitempty"`
+}
+
+// SaaSStatus is a vendor's public status source. Kind "statuspage" is an Atlassian Statuspage
+// (API + /api/v2/incidents/unresolved.json), "indicator" a page with only /api/v2/status.json (its
+// indicator, maintenance not counted), "slack" Slack's own API. Page is the status page for people.
+type SaaSStatus struct {
+	Kind string `json:"kind"`
+	API  string `json:"-"`
+	Page string `json:"page"`
 }
 
 // saasServices is the catalog. Each address answers small and fast (a health or robots page, a
@@ -27,14 +39,20 @@ var saasServices = []SaaSService{
 	{ID: "google", Name: "Google", URL: "https://www.google.com/generate_204", Default: true},
 	{ID: "youtube", Name: "YouTube", URL: "https://www.youtube.com/generate_204"},
 	{ID: "aws", Name: "Amazon Web Services", URL: "https://dynamodb.eu-central-1.amazonaws.com/ping", Default: true},
-	{ID: "cloudflare", Name: "Cloudflare", URL: "https://www.cloudflare.com/cdn-cgi/trace", Default: true},
-	{ID: "zoom", Name: "Zoom", URL: "https://zoom.us/robots.txt", Default: true},
-	{ID: "slack", Name: "Slack", URL: "https://slack.com/api/api.test"},
+	{ID: "cloudflare", Name: "Cloudflare", URL: "https://www.cloudflare.com/cdn-cgi/trace", Default: true,
+		Status: &SaaSStatus{Kind: "statuspage", API: "https://www.cloudflarestatus.com", Page: "https://www.cloudflarestatus.com"}},
+	{ID: "zoom", Name: "Zoom", URL: "https://zoom.us/robots.txt", Default: true,
+		Status: &SaaSStatus{Kind: "statuspage", API: "https://www.zoomstatus.com", Page: "https://www.zoomstatus.com"}},
+	{ID: "slack", Name: "Slack", URL: "https://slack.com/api/api.test",
+		Status: &SaaSStatus{Kind: "slack", API: "https://slack-status.com/api/v2.0.0/current", Page: "https://slack-status.com"}},
 	{ID: "salesforce", Name: "Salesforce", URL: "https://login.salesforce.com/"},
-	{ID: "dropbox", Name: "Dropbox", URL: "https://www.dropbox.com/robots.txt", Default: true},
-	{ID: "github", Name: "GitHub", URL: "https://api.github.com/zen"},
+	{ID: "dropbox", Name: "Dropbox", URL: "https://www.dropbox.com/robots.txt", Default: true,
+		Status: &SaaSStatus{Kind: "statuspage", API: "https://status.dropbox.com", Page: "https://status.dropbox.com"}},
+	{ID: "github", Name: "GitHub", URL: "https://api.github.com/zen",
+		Status: &SaaSStatus{Kind: "statuspage", API: "https://www.githubstatus.com", Page: "https://www.githubstatus.com"}},
 	{ID: "apple", Name: "Apple iCloud", URL: "https://www.apple.com/library/test/success.html", Default: true},
-	{ID: "chatgpt", Name: "ChatGPT", URL: "https://chatgpt.com/robots.txt"},
+	{ID: "chatgpt", Name: "ChatGPT", URL: "https://chatgpt.com/robots.txt",
+		Status: &SaaSStatus{Kind: "indicator", API: "https://status.openai.com/api/v2/status.json", Page: "https://status.openai.com"}},
 }
 
 // SaaSServices is the catalog, in the order the add-on lists it.

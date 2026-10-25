@@ -19,6 +19,12 @@ GitHub Release from the matching section below.
   entries, maintenance windows and restarts (read from the uptime sensor). Pins sit in a lane above
   the chart, a card on hover or tap says when, what, who and why, and a folded list under the legend
   names them all, which is the way in on a phone. Group charts get them too.
+- **The vendor's own word beside the cloud service checks.** For Cloudflare, Zoom, Dropbox, GitHub,
+  ChatGPT and Slack, Argus reads the vendor's status page every 5 minutes and says whether it has an
+  incident open: under a cloud service's problem in the lists and in its alerts ("GitHub's status
+  page: no incident open" means it's only this site), and under the service on the host page while
+  the vendor has an incident open. Only open incidents count, never the page's headline, and it never
+  alerts by itself.
 
 ## [0.9.8] - 2026-10-25
 

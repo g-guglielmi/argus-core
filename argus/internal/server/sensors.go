@@ -38,6 +38,9 @@ type sensorRow struct {
 	// Maintenance is the window its host is in right now (alerts held); set per response, never on
 	// the shared census rows.
 	Maintenance *maintHit `json:"maintenance,omitempty"`
+	// Vendor is what a Common SaaS service's vendor says on its status page (vendorstatus.go); set per
+	// response like Maintenance.
+	Vendor *vendorWord `json:"vendor,omitempty"`
 	// HeldBy is the master whose outage holds this sensor's alerts (master.go); the lists fold it under
 	// that master. Holds is, on a master's row, how many sensors it holds.
 	HeldBy *heldRef `json:"held_by,omitempty"`

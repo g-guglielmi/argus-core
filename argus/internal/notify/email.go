@@ -355,6 +355,9 @@ func htmlBody(e Event) string {
 	if bl := e.behindLine(); bl != "" {
 		lead += `<div class="txt" style="font-size:13px;color:#111827;margin-bottom:12px">` + htmlEscape(bl) + `</div>`
 	}
+	if vl := e.vendorLine(); vl != "" {
+		lead += `<div class="mut" style="font-size:13px;color:#6b7280;margin-bottom:12px">` + htmlEscape(vl) + `</div>`
+	}
 	if cls := e.callLines(); len(cls) > 0 {
 		lead += `<div class="txt" style="font-size:13px;color:#111827;margin-bottom:12px;font-weight:600">`
 		for i, cl := range cls {

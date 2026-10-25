@@ -267,6 +267,7 @@ func (s *Server) handleCensus(w http.ResponseWriter, r *http.Request) {
 				h := h
 				sr.Maintenance = &h // sr is this loop's copy, not the shared census row
 			}
+			sr.Vendor = vendors.wordForKey(sr.key)
 			rows = append(rows, sr)
 		}
 	}

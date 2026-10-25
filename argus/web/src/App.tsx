@@ -78,7 +78,7 @@ const SEVERITIES: { v: number; label: string }[] = [
   { v: 2, label: 'Warnings and errors' },
   { v: 3, label: 'Errors only' },
 ]
-type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string; updown?: boolean; note?: SensorNote }
+type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string; updown?: boolean; note?: SensorNote; vendor?: VendorWord }
 // SensorNote is a note left on a sensor in trouble: shown and sent with it until it is OK again.
 type SensorNote = { text: string; by?: string; at: number }
 // A sensor's effective warning/high values, read from its own triggers (below = lower is worse).
@@ -86,7 +86,10 @@ type Thr = { warn?: number; high?: number; below?: boolean }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[]; held_by?: HeldBy; hidden?: boolean }
 type TriggerHost = { id: string; name: string }
 type Trigger = { id: string; description: string; severity: number; enabled: boolean; problem: boolean; since: number; hosts: TriggerHost[]; sensors: string[] }
-type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean; maintenance?: MaintHit; held_by?: HeldBy; holds?: number; note?: SensorNote; call?: string }
+type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean; maintenance?: MaintHit; held_by?: HeldBy; holds?: number; note?: SensorNote; call?: string; vendor?: VendorWord }
+// VendorWord is what a Common SaaS service's vendor says on its status page: its open incidents, the
+// worst one's impact and name (vendorstatus.go).
+type VendorWord = { service: string; open: number; impact?: string; title?: string; since?: number; page: string; checked: number }
 // The master whose outage holds a sensor's alerts: the lists fold the sensor under it.
 type HeldBy = { host_id: string; host_name: string; item_id: string; name: string; via?: string }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
@@ -8619,6 +8622,30 @@ function PathView({ hops }: { hops: Hop[] }) {
   )
 }
 
+const GLOBE_IC = <svg className="vendor-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>
+
+// VendorText is the vendor's word: "GitHub's status page: no incident open", or its worst open
+// incident with its impact, since when and how many more, then a link to the page. Its tone is the
+// incident's (minor a warning, major or critical an error).
+function vendorTone(w: VendorWord): string {
+  if (!w.open) return ''
+  return w.impact === 'minor' ? 'minor' : w.impact === 'major' || w.impact === 'critical' ? 'major' : ''
+}
+function VendorText({ w }: { w: VendorWord }) {
+  let text = `${w.service}'s status page: `
+  if (!w.open) text += 'no incident open'
+  else {
+    text += (w.impact && w.impact !== 'none' ? w.impact + ' ' : '') + 'incident'
+    if (w.title) text += ` "${w.title}"`
+    if (w.since) {
+      const d = new Date(w.since * 1000)
+      text += ' since ' + (Date.now() - d.getTime() > 20 * 3600 * 1000 ? d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+    }
+    if (w.open > 1) text += ` (and ${w.open - 1} more)`
+  }
+  return <>{GLOBE_IC}{text} · <a href={w.page} target="_blank" rel="noopener noreferrer">status page</a></>
+}
+
 const PHONE_IC = <svg className="call-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z" /></svg>
 
 // lineSpeed is a line's contracted speed: "1000 Mbps", or "1000/300 Mbps" when the upload differs.
@@ -10625,6 +10652,11 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                         <td><div className="lccell"><span className="when">{relTime(Math.max(...row.items.map((x) => x.last_clock || 0)))}</span>{canPause && actions.length > 0 && <Kebab actions={actions} />}</div></td>
                       </tr>
                       {gWhy && gWhyId && whyOpen[gWhyId] && <tr className="whyrow"><td colSpan={5}><div className="why-line">{gWhy}</div></td></tr>}
+                      {(() => {
+                        const vw = row.items.find((i) => i.vendor)?.vendor
+                        if (!vw || !(vw.open > 0 || gState)) return null
+                        return <tr className="vendorrow"><td colSpan={5}><div className={'vline ' + vendorTone(vw)} title="What the vendor says on its status page, read every 5 minutes"><VendorText w={vw} /></div></td></tr>
+                      })()}
                       {gNoted.length > 0 && (
                         <tr className="noterow"><td colSpan={5}>
                           {/* The same note on several channels reads once. */}
@@ -10880,6 +10912,7 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
                       {h && (h.via === 'upstream'
                         ? <div className="sreason held-tag" title="Its alerts wait until the device it is plugged into is back">Held: behind {h.host_name}, which is down</div>
                         : <div className="sreason held-tag" title="Its alerts wait until the master sensor is back">Held: {h.name}{h.host_id !== s.host_id ? ` on ${h.host_name}` : ''} is down</div>)}
+                      {s.vendor && <div className={'sreason vendor-line ' + vendorTone(s.vendor)} title="What the vendor says on its status page, read every 5 minutes">{<VendorText w={s.vendor} />}</div>}
                       {s.call && <div className="sreason call-line" title="Who to call, from the site's info">{PHONE_IC}{s.call}</div>}
                       {s.note && <NoteLine note={s.note} />}
                     </td>

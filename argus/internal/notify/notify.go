@@ -46,6 +46,7 @@ type Event struct {
 	NoteBy    string    // who left it
 	Behind    string    // the hosts plugged in behind this one, when its main sensor (ping) is the one down
 	Call      []string  // who to call: the site's internet line it is about and its contact (problems and reminders, "Who to call" channels)
+	Vendor    string    // a cloud service's vendor on its status page ("GitHub's status page: no incident open"), problems, reminders and RESOLVED
 	Detail    string    // a system notice's explanation, one or more lines (info only)
 	OpenURL   string    // deep link to the sensor in Argus (optional)
 	AckURL    string    // signed one-click acknowledge link (problem alerts only, optional)
@@ -194,6 +195,15 @@ func (e Event) behindLine() string {
 	return "Behind it: " + e.Behind + " (their alerts wait while it is down)"
 }
 
+// vendorLine is what a cloud service's vendor says on its status page: on an alert, a reminder and
+// a RESOLVED ("" otherwise).
+func (e Event) vendorLine() string {
+	if e.Kind != "problem" && e.Kind != "reminder" && e.Kind != "recovery" {
+		return ""
+	}
+	return e.Vendor
+}
+
 // callLines are who to call about an alert ("Call Example Fiber +1 555 0100, circuit EXF-000123
 // (WAN 1)", "On-site IT: Bob Verdi +1 555 0101"): on a problem or a reminder only.
 func (e Event) callLines() []string {
@@ -282,6 +292,9 @@ func (e Event) bodyLines() []string {
 	if bl := e.behindLine(); bl != "" {
 		lines = append(lines, bl)
 	}
+	if vl := e.vendorLine(); vl != "" {
+		lines = append(lines, vl)
+	}
 	lines = append(lines, e.callLines()...)
 	lines = append(lines, "Host: "+e.Host)
 	if e.Site != "" {
@@ -340,6 +353,9 @@ func (e Event) cardLines() []string {
 	}
 	if bl := e.behindLine(); bl != "" {
 		out = append(out, bl)
+	}
+	if vl := e.vendorLine(); vl != "" {
+		out = append(out, vl)
 	}
 	out = append(out, e.callLines()...)
 	return append(out, at+e.When.Format("2006-01-02 15:04 MST"))

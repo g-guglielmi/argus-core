@@ -399,6 +399,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			}
 			ev.Note, ev.NoteBy = noteFor(notes, stt.ItemID, eid)
 			ev.Behind = masters.behindFor(stt.HostID, []masterRef{{id: stt.ItemID}}, hostNames)
+			ev.Vendor = vendorLine(vendors.wordForItem(stt.ItemID), loc)
 			for _, d := range dests {
 				if _, got := deliveries[eid][d.key]; got && !d.quietFor(stt.Severity) {
 					d.send(ctx, ev)
@@ -559,6 +560,9 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		}
 		base.Note, base.NoteBy = noteFor(notes, itemID, p.EventID)
 		base.Behind = masters.behindFor(hostID, masterRefs(t), hostNames)
+		if len(t.Items) > 0 {
+			base.Vendor = vendorLine(vendors.wordForKey(t.Items[0].Key), loc)
+		}
 		if info, ok := sites[siteOf(groups)]; ok {
 			key := ""
 			if len(t.Items) > 0 {

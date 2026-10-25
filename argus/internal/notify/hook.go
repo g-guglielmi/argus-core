@@ -61,6 +61,7 @@ type WebhookPayload struct {
 	NoteBy        string   `json:"note_by,omitempty"`  // who left it
 	Behind        string   `json:"behind,omitempty"`   // the hosts behind a device whose ping went down or came back
 	Call          []string `json:"call,omitempty"`     // who to call (a "Who to call" channel's problems and reminders)
+	Vendor        string   `json:"vendor,omitempty"`   // a cloud service's vendor on its status page (alerts, reminders, RESOLVED)
 	Detail        string   `json:"detail,omitempty"`   // a notice's explanation
 	OpenURL       string   `json:"open_url,omitempty"` // the sensor in Argus
 	AckURL        string   `json:"ack_url,omitempty"`  // the signed acknowledge link (open alerts)
@@ -81,6 +82,7 @@ func webhookPayload(e Event) WebhookPayload {
 		p.Behind = e.Behind
 	}
 	p.Call = e.callLines()
+	p.Vendor = e.vendorLine()
 	if e.isAlert() {
 		p.Severity, p.SeverityLabel, p.Value, p.Threshold, p.AckURL = e.Severity, severityLabel(e.Severity), e.Value, e.Threshold, e.AckURL
 	}

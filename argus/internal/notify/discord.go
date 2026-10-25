@@ -61,6 +61,9 @@ func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 	if bl := e.behindLine(); bl != "" {
 		desc = append(desc, mdEscape(bl))
 	}
+	if vl := e.vendorLine(); vl != "" {
+		desc = append(desc, mdEscape(vl))
+	}
 	for _, cl := range e.callLines() {
 		desc = append(desc, "**"+mdEscape(cl)+"**")
 	}

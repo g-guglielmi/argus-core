@@ -90,6 +90,9 @@ func telegramMessage(e Event) (string, [][]map[string]string) {
 		if bl := e.behindLine(); bl != "" {
 			b.WriteString(htmlEscape(bl) + "\n")
 		}
+		if vl := e.vendorLine(); vl != "" {
+			b.WriteString(htmlEscape(vl) + "\n")
+		}
 		b.WriteString("At " + e.When.Format("2006-01-02 15:04 MST") + "\n")
 	case "ack":
 		b.WriteString(htmlEscape(e.ackLine()) + "\n")
@@ -109,6 +112,9 @@ func telegramMessage(e Event) (string, [][]map[string]string) {
 		}
 		if bl := e.behindLine(); bl != "" {
 			b.WriteString(htmlEscape(bl) + "\n")
+		}
+		if vl := e.vendorLine(); vl != "" {
+			b.WriteString(htmlEscape(vl) + "\n")
 		}
 		for _, cl := range e.callLines() {
 			b.WriteString("<b>" + htmlEscape(cl) + "</b>\n")

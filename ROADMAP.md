@@ -416,11 +416,12 @@ NetFlow.
   period: its changes and the sensor's own, acknowledgements and notes, the journal, maintenance
   windows and restarts, in a lane above the chart with a list under it. DESIGN section 7l. -
   _Unreleased_
-- [ ] **The vendor's own status beside Common SaaS** - many services publish a standard Statuspage
-  `/api/v2/status.json` (GitHub, Atlassian, Zoom, Dropbox, Cloudflare); a service's row shows the
-  vendor's word next to the probe's own reachability, so "only us, from this site" and "the vendor is
-  down" read apart. Microsoft 365 (Graph service health, needs an app registration) is a later step. -
-  _(BE+FE+templates)_ M
+- [x] **The vendor's own status beside Common SaaS** - the vendor's open incidents (Cloudflare, Zoom,
+  Dropbox, GitHub, ChatGPT, Slack) under a cloud service's problem, on the host page and in its
+  alerts, so "only us, from this site" and "the vendor is down" read apart; context only, never an
+  alert of its own. DESIGN section 5. - _Unreleased_
+- [ ] **Microsoft 365 service health** - the same word for Microsoft 365 and Teams from Graph's
+  service health (an Entra app registration with ServiceHealth.Read.All, per tenant). - _(BE+FE)_ S
 - [ ] **Email heartbeat** - for gear that only reports by email (backup jobs, NAS backup reports,
   appliance digests): Argus reads a dedicated mailbox, matches each mail on sender and subject, and a
   success or failure mail feeds a push sensor; no mail by the deadline is late, then missed, like any

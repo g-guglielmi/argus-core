@@ -108,7 +108,8 @@ API key, and MAC):
   jitter and latency while busy (bufferbloat) every few hours, with its public address and provider,
   against Cloudflare's speed test or, once you accept Ookla's terms, Ookla's (with packet loss); and
   whether Microsoft 365, Google, AWS, Zoom and other cloud
-  services (or your own) answer from the site, and how fast, every 2 minutes.
+  services (or your own) answer from the site, and how fast, every 2 minutes, with the vendor's own
+  word beside them where it publishes one (an incident open, or none: then it's only this site).
 - **Import** - hosts from a spreadsheet (CSV) or straight from PRTG (a read-only API key: probes
   mapped to Argus probes, groups and tags kept, the class guessed from the PRTG sensors). Argus
   checks every row first (class, site, probe, already monitored, the inputs a class needs) and lets

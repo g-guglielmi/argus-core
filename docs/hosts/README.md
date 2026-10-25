@@ -184,7 +184,10 @@ not answer in time`; that last one is asked once more before the URL counts as d
 resolved IPv4 first, IPv6 only when there is no IPv4 address. Any answer short
 of a server error counts, since a login page still says the service is there. Alerts: **Zoom does not
 answer from this site** (High, after 3 checks), slow (`{$SAAS.TIME.WARN}` 1 s) and very slow
-(`{$SAAS.TIME.HIGH}` 3 s).
+(`{$SAAS.TIME.HIGH}` 3 s). For Cloudflare, Zoom, Dropbox, GitHub, ChatGPT and Slack, Argus also reads the
+vendor's status page every 5 minutes: a problem and its alerts say whether the vendor has an incident
+open ("GitHub's status page: no incident open" means it's only this site), and the service's row
+says so while one is open. It never alerts by itself.
 
 **HTTP/HTTPS endpoint add-on.** A real request to each web page you list, from the host's probe, once
 a minute. Under **URLs**, **+ Add URL** adds a row, up to 16; with no rows, it checks the host itself on

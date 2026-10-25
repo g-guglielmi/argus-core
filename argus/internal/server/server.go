@@ -93,6 +93,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	s.startNotices(context.Background())
 	// Ping the outside monitor once a minute while Argus is healthy (heartbeat.go).
 	s.startHeartbeat(context.Background())
+	// Read the SaaS vendors' status pages for the services the sites check (vendorstatus.go).
+	s.startVendorStatus(context.Background())
 	// Mirror the stored core reboot window to the shared update dir so the host reboot timer sees it
 	// even if the setting is never touched after this boot (DESIGN §14c). Best-effort.
 	s.syncRebootWindowFile(context.Background())

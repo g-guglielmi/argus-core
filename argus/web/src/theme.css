@@ -1380,6 +1380,15 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .noterow .snote { margin: 0 0 6px 18px; }
 .noterow .snote + .snote { margin-top: 4px; }
 .sreason.inc-note { color: var(--accent); }
+/* A cloud service's vendor on its status page: under its problem in the lists, and under its row on
+   the host page while the vendor has an incident open or this site's check fails. */
+.vendor-ic { display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: -2px; }
+.sreason.vendor-line, .vendorrow .vline { color: var(--muted); }
+.sreason.vendor-line.minor, .vendorrow .vline.minor { color: var(--warn); }
+.sreason.vendor-line.major, .vendorrow .vline.major { color: var(--err); }
+.sreason.vendor-line a, .vendorrow .vline a { color: inherit; }
+.vendorrow td { padding-top: 0 !important; border-top: 0 !important; }
+.vendorrow .vline { margin: 0 0 6px 18px; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
 /* Incidents of hidden sensors: left out of the history unless asked for, then dimmed and tagged. */
 .slist-inc tr.inc-hidden td { opacity: 0.6; }
 .inc-name .tag-hidden { margin-left: 8px; vertical-align: 1px; }
