@@ -14,6 +14,13 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 ### Fixed
+- **HTTP checks tell a resolver that didn't answer from a name that doesn't exist.** A DNS server
+  that drops or refuses the probe's query made a URL "down" with "the host name does not resolve",
+  the same words as for a name that doesn't exist, and a single dropped lookup was enough. The
+  check now says "the resolver did not answer in time (the DNS server drops or refuses the
+  query)" for that case and asks once more after a second before reporting; a name that doesn't
+  exist is reported at once as before. The script is the one the probe image carries (7.0.32-r3)
+  and the one the core's collectors sync installs.
 - **A UniFi controller restart no longer sends one alert per sensor per device.** While the
   Network application restarted (an update), the controller reported every device disconnected
   with empty statistics; four sensors per device (CPU, memory, uptime, clients) failed on the

@@ -308,6 +308,61 @@ class HTTPSTest(unittest.TestCase):
         self.assertIsNone(r["cert_days"], "ignore doesn't read the certificate")
 
 
+class ResolveTest(unittest.TestCase):
+    """A resolver that didn't answer in time is asked once more and named; a name that doesn't exist
+    is reported at once."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.srv, cls.port = serve()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.srv.server_close()
+
+    def resolve(self, failures, errno_):
+        """getaddrinfo that fails the first `failures` calls with errno_ and then answers for real."""
+        real, calls = socket.getaddrinfo, []
+
+        def fake(host, *a, **kw):
+            calls.append(host)
+            if len(calls) <= failures:
+                raise socket.gaierror(errno_, "resolver says no")
+            return real("127.0.0.1", *a, **kw)
+        socket.getaddrinfo = fake
+        self.addCleanup(setattr, socket, "getaddrinfo", real)
+        slept = []
+        real_sleep = ah.time.sleep
+        ah.time.sleep = lambda s: slept.append(s)
+        self.addCleanup(setattr, ah.time, "sleep", real_sleep)
+        return calls, slept
+
+    def check(self):
+        es = ah.parse_urls("http://name.example.test:%d/ok" % self.port, "127.0.0.1", "http", self.port)
+        return ah.run(es, ah.parse_codes("200-299"), "verify", 5)[0]
+
+    def test_a_dropped_query_is_retried_once(self):
+        calls, slept = self.resolve(1, getattr(socket, "EAI_AGAIN", -3))
+        r = self.check()
+        self.assertEqual((r["up"], r["status"], r["error"]), (1, 200, ""), r)
+        self.assertEqual((len(calls), slept), (2, [ah.RESOLVE_RETRY_WAIT]))
+        self.assertNotIn("retry", r)
+
+    def test_a_resolver_that_keeps_dropping_is_named(self):
+        calls, slept = self.resolve(5, getattr(socket, "EAI_AGAIN", -3))
+        r = self.check()
+        self.assertEqual((r["up"], r["error"]), (0, "the resolver did not answer in time (the DNS server drops or refuses the query)"), r)
+        self.assertEqual((len(calls), len(slept)), (2, 1), "one retry, not more")
+        self.assertNotIn("retry", r)
+
+    def test_no_such_name_is_not_retried(self):
+        calls, slept = self.resolve(5, getattr(socket, "EAI_NONAME", -2))
+        r = self.check()
+        self.assertEqual((r["up"], r["error"]), (0, "the host name does not resolve"), r)
+        self.assertEqual((len(calls), slept), (1, []))
+
+
 class MainTest(unittest.TestCase):
     def test_output(self):
         srv, port = serve()
