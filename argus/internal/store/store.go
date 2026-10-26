@@ -546,6 +546,29 @@ CREATE TABLE IF NOT EXISTS push_hosts (
   host_id  TEXT PRIMARY KEY,
   key_hash TEXT NOT NULL
 );
+-- Mailboxes Argus reads for the push sensors that report by email (mailboxes.go): IMAP or a Microsoft
+-- 365 mailbox through Graph; the password or client secret encrypted; where the reads got to.
+CREATE TABLE IF NOT EXISTS mailboxes (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  host        TEXT NOT NULL DEFAULT '',
+  port        INTEGER NOT NULL DEFAULT 0,
+  security    TEXT NOT NULL DEFAULT '',
+  username    TEXT NOT NULL DEFAULT '',
+  secret_enc  TEXT NOT NULL DEFAULT '',
+  tenant      TEXT NOT NULL DEFAULT '',
+  client_id   TEXT NOT NULL DEFAULT '',
+  address     TEXT NOT NULL DEFAULT '',
+  folder      TEXT NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL,
+  created_by  TEXT NOT NULL DEFAULT '',
+  last_at     INTEGER NOT NULL DEFAULT 0,
+  last_error  TEXT NOT NULL DEFAULT '',
+  error_since INTEGER NOT NULL DEFAULT 0,
+  mails       INTEGER NOT NULL DEFAULT 0,
+  watermark   TEXT NOT NULL DEFAULT ''
+);
 
 -- Sensor notes: what someone wants others to know about a sensor in trouble ("ISP ticket open"). A
 -- note shows with its sensor, and goes out with its alerts, until the sensor is OK again; the notifier
@@ -956,6 +979,13 @@ CREATE TABLE IF NOT EXISTS reports (
 	// others) or a hypervisor's class ("xcpng").
 	if err := s.ensureColumn("host_upstream", "auto_source TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
+	}
+	// A push sensor's email rule and the last mail it took (mailboxes.go).
+	for _, ddl := range []string{"mail_box INTEGER NOT NULL DEFAULT 0", "mail_from TEXT NOT NULL DEFAULT ''", "mail_subject TEXT NOT NULL DEFAULT ''",
+		"mail_ok TEXT NOT NULL DEFAULT ''", "mail_fail TEXT NOT NULL DEFAULT ''", "mail_last_at INTEGER NOT NULL DEFAULT 0", "mail_last_subject TEXT NOT NULL DEFAULT ''"} {
+		if err := s.ensureColumn("push_sensors", ddl); err != nil {
+			return err
+		}
 	}
 	// The sensors a change was done to (changes.go encodeItemIDs), for the chart markers; NULL on the
 	// entries written before.

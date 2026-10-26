@@ -159,7 +159,7 @@ func TestPushPollAges(t *testing.T) {
 		{ID: 1, Name: "never", CreatedAt: now - 500, LastOK: true},
 		{ID: 2, Name: "failed", CreatedAt: now - 9000, LastAt: now - 60, LastOK: false},
 		{ID: 3, Name: "future", CreatedAt: now, LastAt: now + 30, LastOK: true, LastMsg: "clock skew"},
-	}, now)
+	}, now, nil)
 	if got[0].Age != 500 || got[0].OK != 1 {
 		t.Errorf("never ran: %+v", got[0])
 	}

@@ -55,11 +55,46 @@ type pushView struct {
 	LastMsg    string `json:"last_msg,omitempty"`
 	Runs       int64  `json:"runs"`
 	URL        string `json:"url,omitempty"` // the job's URL: admins and helpdesk only
+	// Mail is its email rule (mailboxes.go), with the last mail it took; nil = it doesn't read email.
+	Mail *pushMailView `json:"mail,omitempty"`
+}
+
+type pushMailView struct {
+	Mailbox     int64  `json:"mailbox"`
+	MailboxName string `json:"mailbox_name,omitempty"`
+	From        string `json:"from"`
+	Subject     string `json:"subject"`
+	OK          string `json:"ok"`
+	Fail        string `json:"fail"`
+	LastAt      int64  `json:"last_at,omitempty"`
+	LastSubject string `json:"last_subject,omitempty"`
 }
 
 func toPushView(p store.PushSensor) pushView {
-	return pushView{ID: p.ID, HostID: p.HostID, Name: p.Name, LateSecs: p.LateSecs, MissedSecs: p.MissedSecs, CreatedAt: p.CreatedAt,
+	v := pushView{ID: p.ID, HostID: p.HostID, Name: p.Name, LateSecs: p.LateSecs, MissedSecs: p.MissedSecs, CreatedAt: p.CreatedAt,
 		CreatedBy: p.CreatedBy, LastAt: p.LastAt, LastOK: p.LastOK, LastMsg: p.LastMsg, Runs: p.Runs}
+	if p.Mail.Mailbox != 0 {
+		v.Mail = &pushMailView{Mailbox: p.Mail.Mailbox, From: p.Mail.From, Subject: p.Mail.Subject, OK: p.Mail.OK, Fail: p.Mail.Fail,
+			LastAt: p.MailLastAt, LastSubject: p.MailLastSubject}
+	}
+	return v
+}
+
+// withMailboxNames names each view's mailbox.
+func (s *Server) withMailboxNames(ctx context.Context, vs []pushView) {
+	boxes, err := s.st.ListMailboxes(ctx)
+	if err != nil {
+		return
+	}
+	names := map[int64]string{}
+	for _, b := range boxes {
+		names[b.ID] = b.Name
+	}
+	for i := range vs {
+		if vs[i].Mail != nil {
+			vs[i].Mail.MailboxName = names[vs[i].Mail.Mailbox]
+		}
+	}
 }
 
 // pushURL is a push sensor's URL: absolute when Argus knows its address, else the path.
@@ -71,6 +106,38 @@ type pushRequest struct {
 	Name       string `json:"name"`
 	LateSecs   int64  `json:"late_secs"`
 	MissedSecs int64  `json:"missed_secs"`
+	// Mail is the email rule (nil or mailbox 0 = it doesn't read email).
+	Mail *struct {
+		Mailbox int64  `json:"mailbox"`
+		From    string `json:"from"`
+		Subject string `json:"subject"`
+		OK      string `json:"ok"`
+		Fail    string `json:"fail"`
+	} `json:"mail"`
+}
+
+// mailRule checks the request's email rule against the mailboxes there are.
+func (s *Server) mailRule(ctx context.Context, req pushRequest) (store.PushMailRule, string) {
+	if req.Mail == nil || req.Mail.Mailbox == 0 {
+		return store.PushMailRule{}, ""
+	}
+	if _, err := s.st.GetMailbox(ctx, req.Mail.Mailbox); err != nil {
+		return store.PushMailRule{}, "that mailbox doesn't exist (any more)"
+	}
+	r := store.PushMailRule{Mailbox: req.Mail.Mailbox, From: strings.TrimSpace(req.Mail.From), Subject: strings.TrimSpace(req.Mail.Subject),
+		OK: strings.TrimSpace(req.Mail.OK), Fail: strings.TrimSpace(req.Mail.Fail)}
+	if r.From == "" && r.Subject == "" {
+		return r, "say who the mails come from, what their subject contains, or both"
+	}
+	for _, f := range []string{r.From, r.Subject, r.OK, r.Fail} {
+		if len([]rune(f)) > 300 || !noControl(f) {
+			return r, "a field of the email rule is too long or has characters it can't have"
+		}
+	}
+	if len(mailWords(r.OK)) == 0 {
+		return r, "list at least one word that says the run went well"
+	}
+	return r, ""
 }
 
 // validate checks a push sensor's name and times; others are the host's other push sensors.
@@ -119,6 +186,7 @@ func (s *Server) handleListPush(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, v)
 	}
+	s.withMailboxNames(r.Context(), out)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -149,6 +217,11 @@ func (s *Server) handleCreatePush(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
 		return
 	}
+	rule, msg := s.mailRule(ctx, req)
+	if msg != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+		return
+	}
 	by := ""
 	if u, ok := auth.UserFrom(r.Context()); ok {
 		by = u.Email
@@ -166,6 +239,12 @@ func (s *Server) handleCreatePush(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
+	if rule.Mailbox != 0 {
+		_ = s.st.SetPushMailRule(ctx, id, rule)
+		if p, err := s.st.GetPushSensor(ctx, id); err == nil {
+			s.applyRecentMail(ctx, *p)
+		}
+	}
 	p, err := s.st.GetPushSensor(ctx, id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": s.errText(r, err)})
@@ -173,8 +252,10 @@ func (s *Server) handleCreatePush(w http.ResponseWriter, r *http.Request) {
 	}
 	v := toPushView(*p)
 	v.URL = s.pushURL(r, token)
+	vs := []pushView{v}
+	s.withMailboxNames(ctx, vs)
 	s.logger.Info("push sensor created", "host", hostID, "id", id, "name", req.Name, "by", by)
-	writeJSON(w, http.StatusOK, v)
+	writeJSON(w, http.StatusOK, vs[0])
 }
 
 // pushSensorInScope loads the path-id push sensor and confirms its host is the caller's to see (404
@@ -217,10 +298,26 @@ func (s *Server) handleUpdatePush(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
 		return
 	}
+	rule, msg := s.mailRule(r.Context(), req)
+	if msg != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+		return
+	}
 	p.Name, p.LateSecs, p.MissedSecs = req.Name, req.LateSecs, req.MissedSecs
 	if err := s.st.UpdatePushSensor(r.Context(), *p); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": s.errText(r, err)})
 		return
+	}
+	if rule != p.Mail {
+		if err := s.st.SetPushMailRule(r.Context(), p.ID, rule); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": s.errText(r, err)})
+			return
+		}
+		p.Mail = rule
+		s.applyRecentMail(r.Context(), *p)
+		if fresh, err := s.st.GetPushSensor(r.Context(), p.ID); err == nil {
+			p = fresh
+		}
 	}
 	// The new name and times reach Zabbix with the next read (the discovery carries them). Saving also
 	// puts back the host's URL and key, for a host whose macros were lost.
@@ -234,7 +331,9 @@ func (s *Server) handleUpdatePush(w http.ResponseWriter, r *http.Request) {
 	if tok, err := s.st.PushToken(r.Context(), p.ID); err == nil {
 		v.URL = s.pushURL(r, tok)
 	}
-	writeJSON(w, http.StatusOK, v)
+	vs := []pushView{v}
+	s.withMailboxNames(r.Context(), vs)
+	writeJSON(w, http.StatusOK, vs[0])
 }
 
 // handleRotatePush gives a push sensor a new URL; the old one stops working at once.
@@ -472,8 +571,9 @@ type pushPollEntry struct {
 	Missed  int64  `json:"missed"`
 }
 
-// pushPoll is what the host's template reads at now.
-func pushPoll(list []store.PushSensor, now int64) []pushPollEntry {
+// pushPoll is what the host's template reads at now. trouble says, per mailbox that can't be read,
+// why: a push sensor reading it that is late says so instead of its last run.
+func pushPoll(list []store.PushSensor, now int64, trouble map[int64]string) []pushPollEntry {
 	out := make([]pushPollEntry, 0, len(list))
 	for _, p := range list {
 		since, ok, msg := p.LastAt, 1, p.LastMsg
@@ -487,6 +587,9 @@ func pushPoll(list []store.PushSensor, now int64) []pushPollEntry {
 			msg = "The last run reported success"
 		case msg == "":
 			msg = "The last run reported a failure, without a message"
+		}
+		if why := trouble[p.Mail.Mailbox]; why != "" && p.Mail.Mailbox != 0 && now-since >= p.LateSecs {
+			msg = "No run read: " + why
 		}
 		out = append(out, pushPollEntry{ID: strconv.FormatInt(p.ID, 10), Name: p.Name, OK: ok, Age: max(0, now-since), Message: msg, Late: p.LateSecs, Missed: p.MissedSecs})
 	}
@@ -508,5 +611,5 @@ func (s *Server) handlePushPoll(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not read the push sensors"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"sensors": pushPoll(list, time.Now().Unix())})
+	writeJSON(w, http.StatusOK, map[string]any{"sensors": pushPoll(list, time.Now().Unix(), s.mailboxTrouble(r.Context()))})
 }

@@ -234,6 +234,11 @@ var changeRoutes = map[string]routeChange{
 	"PATCH /api/links/{id}":        {cat: "settings", action: "Changed a device link"},
 	"DELETE /api/links/{id}":       {cat: "settings", action: "Deleted a device link"},
 
+	// mailboxes for the push sensors that report by email
+	"POST /api/mailboxes":        {cat: "settings", action: "Created a mailbox", detail: fieldDetail("name")},
+	"PATCH /api/mailboxes/{id}":  {cat: "settings", action: "Changed a mailbox", obj: "mailbox"},
+	"DELETE /api/mailboxes/{id}": {cat: "settings", action: "Deleted a mailbox", obj: "mailbox", pre: true},
+
 	// tags
 	"POST /api/tags":             {cat: "settings", action: "Created a tag"},
 	"PATCH /api/tags/{name}":     {cat: "settings", action: "Changed a tag"},
@@ -622,6 +627,12 @@ func (s *Server) resolveChangeObject(ctx context.Context, kind string, vals map[
 		if n, err := strconv.ParseInt(id, 10, 64); err == nil {
 			if m, err := s.st.MaintenanceWindow(ctx, n); err == nil {
 				return resolvedObject{name: m.Name, hostIDs: m.HostIDs}
+			}
+		}
+	case "mailbox":
+		if n, err := strconv.ParseInt(id, 10, 64); err == nil {
+			if m, err := s.st.GetMailbox(ctx, n); err == nil {
+				return resolvedObject{name: m.Name}
 			}
 		}
 	case "report":

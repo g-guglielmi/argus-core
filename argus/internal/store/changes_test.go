@@ -6,6 +6,7 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 // The change log keeps one entry per action with the hosts it touched: a host's own list finds the
@@ -96,5 +97,39 @@ func TestChangeItems(t *testing.T) {
 	}
 	if c := byAt[50]; c.ItemsKnown || len(c.ItemIDs) != 0 {
 		t.Fatalf("an entry from before: %+v", c)
+	}
+}
+
+// A push sensor's mail run counts at the mail's time; a mail that arrived late (older than the run on
+// record) is counted but doesn't replace it. Deleting the mailbox takes the rule off.
+func TestPushMailRuns(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	mb, err := st.CreateMailbox(ctx, Mailbox{Name: "Backups", Kind: "imap", Host: "imap.example.com", Port: 993, Security: "tls", Username: "u", Secret: "pw", Folder: "INBOX"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, err := st.GetMailbox(ctx, mb); err != nil || m.Secret != "pw" {
+		t.Fatalf("mailbox: %+v %v", m, err)
+	}
+	id, err := st.CreatePushSensor(ctx, PushSensor{HostID: "7", Name: "Nightly", LateSecs: 3600, MissedSecs: 7200}, "tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetPushMailRule(ctx, id, PushMailRule{Mailbox: mb, From: "veeam@", OK: "success"}); err != nil {
+		t.Fatal(err)
+	}
+	t1 := time.Unix(2_000_000, 0)
+	_ = st.RecordPushByID(ctx, id, true, "[Success] job", t1, "[Success] job")
+	_ = st.RecordPushByID(ctx, id, false, "[Failed] job", t1.Add(-time.Hour), "[Failed] job")
+	p, _ := st.GetPushSensor(ctx, id)
+	if p.LastAt != t1.Unix() || !p.LastOK || p.LastMsg != "[Success] job" || p.Runs != 2 || p.MailLastSubject != "[Success] job" || p.Mail.From != "veeam@" {
+		t.Fatalf("after a late mail: %+v", p)
+	}
+	if err := st.DeleteMailbox(ctx, mb); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := st.GetPushSensor(ctx, id); p.Mail.Mailbox != 0 {
+		t.Fatalf("the rule stays after its mailbox went: %+v", p.Mail)
 	}
 }

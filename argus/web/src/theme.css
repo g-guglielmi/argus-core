@@ -1548,6 +1548,16 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .tag-row.editing { display: block; }
 .tag-row-desc { font-size: 13px; overflow-wrap: anywhere; }
 .tag-row-act { display: inline-flex; gap: 6px; align-items: center; }
+/* A mailbox's editor (Settings, Mailboxes) and a push sensor's email rule (host settings). */
+.mb-form { display: grid; gap: 10px; padding: 10px 0 4px; }
+.mb-kind, .mb-test { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mb-test .set-hint { margin: 0; }
+.mb-test .set-hint.mb-bad { color: var(--err); }
+.mb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.field > .mb-port { display: flex; gap: 8px; margin: 0; font-size: inherit; } /* over .field > span, the label's own rule */
+.mb-port .input:first-child { width: 90px; flex: none; }
+.push-mail { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+@media (max-width: 640px) { .mb-grid { grid-template-columns: 1fr; } }
 .tag-form { display: grid; grid-template-columns: minmax(140px, 200px) auto minmax(0, 1fr) auto; gap: 8px 10px; align-items: center; }
 .tag-swatches { display: inline-flex; gap: 5px; }
 .tag-swatches .swatch { width: 18px; height: 18px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }

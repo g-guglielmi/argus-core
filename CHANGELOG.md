@@ -25,6 +25,11 @@ GitHub Release from the matching section below.
   page: no incident open" means it's only this site), and under the service on the host page while
   the vendor has an incident open. Only open incidents count, never the page's headline, and it never
   alerts by itself.
+- **Push sensors can read their runs from email.** For gear that only mails its result (a backup's job
+  report, a NAS's daily report): admins add a mailbox in Settings, Mailboxes (IMAP, or a Microsoft 365
+  mailbox through Graph with an app that may read only that mailbox), and a push sensor reads the mails
+  from its job (by sender and subject), a failure or success word deciding the run. Argus only reads
+  the mailbox, never marks, moves or deletes a mail, and a run counts at the time its mail arrived.
 
 ## [0.9.8] - 2026-10-25
 

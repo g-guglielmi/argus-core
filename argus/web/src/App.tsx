@@ -2738,6 +2738,8 @@ function SettingsView({ onOpenUpdates }: { onOpenUpdates: () => void }) {
           {groupForm('Probes')}
           {groupForm('Alerting')}
           {groupForm('Watchdog')}
+          {/* Mailboxes for the push sensors that report by email (mailboxes.go). */}
+          <MailboxesCard />
         </div>
         <div className="set-group" id="set-hosts">
           <div className="set-group-cap">Hosts</div>
@@ -7623,7 +7625,12 @@ function HttpUrlsEditor({ value, tlsDefault, onChange, disabled }: { value: stri
   )
 }
 
-type PushSensor = { id: number; host_id: string; name: string; late_secs: number; missed_secs: number; created_at: number; created_by?: string; last_at?: number; last_ok: boolean; last_msg?: string; runs: number; url?: string }
+type PushSensor = { id: number; host_id: string; name: string; late_secs: number; missed_secs: number; created_at: number; created_by?: string; last_at?: number; last_ok: boolean; last_msg?: string; runs: number; url?: string; mail?: PushMail }
+// PushMail is a push sensor's email rule: the mailbox it reads, what its job's mails look like and the
+// words that say how the run went (mailboxes.go), with the last mail it took.
+type PushMail = { mailbox: number; mailbox_name?: string; from: string; subject: string; ok: string; fail: string; last_at?: number; last_subject?: string }
+const MAIL_OK_WORDS = 'success, succeeded, completed'
+const MAIL_FAIL_WORDS = 'fail, error'
 
 // A push sensor's times are entered as a number and a unit; PUSH_UNITS are the units offered.
 const PUSH_UNITS: { s: number; label: string }[] = [{ s: 60, label: 'minutes' }, { s: 3600, label: 'hours' }, { s: 86400, label: 'days' }]
@@ -7700,7 +7707,7 @@ function PushSensorsSection({ hostId, canEdit, open, onToggle }: { hostId: strin
   return (
     <HsSection title="Push sensors" open={open} onToggle={onToggle} warn={failed.length > 0}
       summary={list.length === 0 ? 'none' : list.map((p) => p.name + (p.last_at && !p.last_ok ? ' (failed)' : '')).join(', ')}>
-      <div className="hs-note" style={{ margin: '0 0 10px' }}>Jobs that report to Argus when they run: a backup, a cron job, a scheduled task. Each has its own URL the job calls at the end, with <span className="mono">status=ok</span> or <span className="mono">status=fail</span> and an optional <span className="mono">msg</span>. A failed run is an error; no run for longer than the late time is a warning, longer than the missed time an error. The sensors show up within a minute. Changes here are saved at once.</div>
+      <div className="hs-note" style={{ margin: '0 0 10px' }}>Jobs that report to Argus when they run: a backup, a cron job, a scheduled task. Each has its own URL the job calls at the end, with <span className="mono">status=ok</span> or <span className="mono">status=fail</span> and an optional <span className="mono">msg</span>, or reads its runs from the mails the job sends to a mailbox. A failed run is an error; no run for longer than the late time is a warning, longer than the missed time an error. The sensors show up within a minute. Changes here are saved at once.</div>
       {list.map((p) => (
         <div className="push-row" key={p.id}>
           <div className="push-head">
@@ -7721,7 +7728,7 @@ function PushSensorsSection({ hostId, canEdit, open, onToggle }: { hostId: strin
               </span>
             )}
           </div>
-          <div className="push-sub">Late after {fmtDuration(p.late_secs)}, missed after {fmtDuration(p.missed_secs)} · {p.runs} run{p.runs === 1 ? '' : 's'} reported</div>
+          <div className="push-sub">Late after {fmtDuration(p.late_secs)}, missed after {fmtDuration(p.missed_secs)} · {p.runs} run{p.runs === 1 ? '' : 's'} reported{p.mail && <> · by email{p.mail.from ? <> from <span className="mono">{p.mail.from}</span></> : null}{p.mail.subject ? <> about “{p.mail.subject}”</> : null} in {p.mail.mailbox_name || 'a mailbox'}</>}</div>
           {shown === p.id && p.url && (
             <div className="push-url">
               <div className="push-urlline"><span className="mono">{abs(p.url)}</span><CopyButton text={abs(p.url)} /></div>
@@ -7749,9 +7756,16 @@ function PushEditor({ hostId, initial, onDone }: { hostId: string; initial: Push
   const [late, setLate] = useState(pushParts(initial?.late_secs || 25 * 3600))
   const [missed, setMissed] = useState(pushParts(initial?.missed_secs || 49 * 3600))
   const [busy, setBusy] = useState(false)
+  // The email rule: off unless the sensor reads a mailbox; the mailboxes come from Settings.
+  const [boxes, setBoxes] = useState<{ id: number; name: string }[] | null>(null)
+  const [mailOn, setMailOn] = useState(!!initial?.mail)
+  const [mail, setMail] = useState<PushMail>(initial?.mail || { mailbox: 0, from: '', subject: '', ok: MAIL_OK_WORDS, fail: MAIL_FAIL_WORDS })
+  useEffect(() => { fetch('/api/mailboxes/names').then((r) => (r.ok ? r.json() : [])).then((l) => setBoxes(l || [])).catch(() => setBoxes([])) }, [])
+  const mailbox = mail.mailbox || boxes?.[0]?.id || 0
   async function save() {
     setBusy(true)
-    const body = { name, late_secs: Math.round(Number(late[0]) * late[1]), missed_secs: Math.round(Number(missed[0]) * missed[1]) }
+    const body = { name, late_secs: Math.round(Number(late[0]) * late[1]), missed_secs: Math.round(Number(missed[0]) * missed[1]),
+      mail: mailOn ? { mailbox, from: mail.from, subject: mail.subject, ok: mail.ok, fail: mail.fail } : { mailbox: 0 } }
     const res = await fetch(initial ? `/api/push-sensors/${initial.id}` : `/api/hosts/${hostId}/push`, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null)
     setBusy(false)
     if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the push sensor')); return }
@@ -7773,8 +7787,26 @@ function PushEditor({ hostId, initial, onDone }: { hostId: string; initial: Push
         <label className="field"><span>Error when no run for</span>{dur(missed, setMissed)}</label>
       </div>
       <div className="hs-note">For a daily job, 25 and 49 hours give it an hour of slack before each.</div>
+      <div className="push-mail">
+        <Switch checked={mailOn} disabled={!mailOn && !boxes?.length} onChange={setMailOn} label="Read its runs from email"
+          title={!boxes?.length ? 'No mailbox yet: an admin adds one in Settings, Mailboxes' : undefined} />
+        {!mailOn && boxes && boxes.length === 0 && <div className="hs-note">No mailbox yet: an admin adds one in Settings, Mailboxes.</div>}
+        {mailOn && (
+          <>
+            <div className="hs-grid">
+              <label className="field"><span>Mailbox</span><Select value={mailbox} onChange={(e) => setMail({ ...mail, mailbox: Number(e.target.value) })}>{(boxes || []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</Select></label>
+              <label className="field"><span>From (contains)</span><input className="input mono" value={mail.from} placeholder="e.g. backup@example.com" maxLength={300} onChange={(e) => setMail({ ...mail, from: e.target.value })} /></label>
+              <label className="field"><span>Subject contains</span><input className="input" value={mail.subject} placeholder="e.g. Backup job NAS" maxLength={300} onChange={(e) => setMail({ ...mail, subject: e.target.value })} /></label>
+              <div />
+              <label className="field"><span>Success when it says</span><input className="input" value={mail.ok} maxLength={300} onChange={(e) => setMail({ ...mail, ok: e.target.value })} /></label>
+              <label className="field"><span>Failure when it says</span><input className="input" value={mail.fail} maxLength={300} onChange={(e) => setMail({ ...mail, fail: e.target.value })} /></label>
+            </div>
+            <div className="hs-note">Argus looks for the words in the subject, then the start of the text, any case, where a word starts (fail finds Failed); a failure word wins. A matching mail that says neither is a failed run (with its subject), so a changed wording doesn't pass quietly. A mail counts at the time it arrived.{initial?.mail?.last_at ? <> Last matching mail: <b>{initial.mail.last_subject || '(no subject)'}</b>, {relTime(initial.mail.last_at)}.</> : null}</div>
+          </>
+        )}
+      </div>
       <div className="hs-add">
-        <Button variant="primary" disabled={busy || !name.trim()} onClick={save}>{busy ? 'Saving…' : initial ? 'Save push sensor' : 'Add push sensor'}</Button>
+        <Button variant="primary" disabled={busy || !name.trim() || (mailOn && (!mailbox || (!mail.from.trim() && !mail.subject.trim()) || !mail.ok.trim()))} onClick={save}>{busy ? 'Saving…' : initial ? 'Save push sensor' : 'Add push sensor'}</Button>
         <Button variant="ghost" onClick={() => onDone(null)}>Cancel</Button>
       </div>
     </div>
@@ -9730,6 +9762,121 @@ function LinksCard() {
         {editing === 0 && <div className="tag-row editing">{editor}</div>}
       </div>
       {editing === null && <div className="set-row set-actions"><Button variant="primary" onClick={() => start(null)}>+ New link</Button></div>}
+    </section>
+  )
+}
+
+// --- Mailboxes ---
+
+type Mailbox = { id: number; name: string; kind: 'imap' | 'graph'; host?: string; port?: number; security?: string; username?: string; has_secret: boolean; tenant?: string; client_id?: string; address?: string; folder: string; last_at?: number; last_error?: string; error_since?: number; mails: number; sensors: number }
+type MailboxForm = { name: string; kind: 'imap' | 'graph'; host: string; port: string; security: string; username: string; secret: string; tenant: string; client_id: string; address: string; folder: string }
+
+// MailboxesCard is the Settings section where admins set the mailboxes Argus reads for the push
+// sensors that report by email: IMAP, or a Microsoft 365 mailbox through Graph. Argus only reads them.
+function MailboxesCard() {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [boxes, setBoxes] = useState<Mailbox[] | null>(null)
+  const [editing, setEditing] = useState<number | null>(null) // a mailbox's id, or 0 for a new one
+  const [form, setForm] = useState<MailboxForm | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [test, setTest] = useState<{ ok: boolean; text: string } | null>(null)
+  const load = () => fetch('/api/mailboxes').then((r) => (r.ok ? r.json() : [])).then((x) => setBoxes(x || [])).catch(() => setBoxes([]))
+  useEffect(() => { load(); const t = window.setInterval(load, 60000); return () => window.clearInterval(t) }, [])
+  function start(m: Mailbox | null) {
+    setEditing(m ? m.id : 0); setTest(null)
+    setForm(m
+      ? { name: m.name, kind: m.kind, host: m.host || '', port: m.port ? String(m.port) : '', security: m.security || 'tls', username: m.username || '', secret: '', tenant: m.tenant || '', client_id: m.client_id || '', address: m.address || '', folder: m.folder }
+      : { name: '', kind: 'imap', host: '', port: '', security: 'tls', username: '', secret: '', tenant: '', client_id: '', address: '', folder: '' })
+  }
+  const body = (f: MailboxForm) => JSON.stringify({ ...f, id: editing || 0, port: Number(f.port) || 0 })
+  async function save() {
+    if (!form) return
+    setBusy(true)
+    const res = await fetch(editing ? `/api/mailboxes/${editing}` : '/api/mailboxes', { method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: body(form) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the mailbox')); return }
+    toast.success('Mailbox saved. Argus reads it now.')
+    setEditing(null); setForm(null); load()
+  }
+  async function runTest() {
+    if (!form) return
+    setBusy(true); setTest(null)
+    const res = await fetch('/api/mailboxes/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body(form) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { setTest({ ok: false, text: await errText(res, 'Could not test the mailbox') }); return }
+    const d: { ok: boolean; error?: string; count?: number; newest?: number; folder?: string } = await res.json()
+    if (!d.ok) { setTest({ ok: false, text: d.error || 'It did not work.' }); return }
+    setTest({ ok: true, text: `Connected: ${plural(d.count || 0, 'mail')} in ${d.folder}${d.newest ? `, the newest from ${fmtWhen(d.newest)}` : ''}.` })
+  }
+  async function del(m: Mailbox) {
+    const used = m.sensors ? ` ${plural(m.sensors, 'push sensor')} read it; they stop reading email.` : ''
+    if (!(await confirm({ title: 'Delete mailbox', message: `Delete ${m.name}?${used}`, confirmLabel: 'Delete', danger: true }))) return
+    const res = await fetch(`/api/mailboxes/${m.id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not delete the mailbox')); return }
+    load()
+  }
+  const set = (patch: Partial<MailboxForm>) => form && setForm({ ...form, ...patch })
+  const cur = boxes?.find((b) => b.id === editing)
+  const keepSecret = !!cur?.has_secret && cur.kind === form?.kind
+  const editor = form && (
+    <div className="mb-form">
+      <div className="mb-kind"><span className="flabel">Kind</span>
+        <div className="seg" role="group" aria-label="Kind of mailbox">
+          <button type="button" className={form.kind === 'imap' ? 'on' : ''} onClick={() => set({ kind: 'imap' })}>IMAP</button>
+          <button type="button" className={form.kind === 'graph' ? 'on' : ''} onClick={() => set({ kind: 'graph' })}>Microsoft 365</button>
+        </div>
+      </div>
+      {form.kind === 'imap' ? (
+        <div className="mb-grid">
+          <label className="field"><span>Name</span><input className="input" value={form.name} maxLength={64} placeholder="e.g. NAS reports" onChange={(e) => set({ name: e.target.value })} /></label>
+          <label className="field"><span>Folder</span><input className="input" value={form.folder} placeholder="INBOX" onChange={(e) => set({ folder: e.target.value })} /></label>
+          <label className="field"><span>Server</span><input className="input mono" value={form.host} placeholder="imap.example.com" onChange={(e) => set({ host: e.target.value })} /></label>
+          <label className="field"><span>Port and security</span><span className="mb-port"><input className="input" inputMode="numeric" value={form.port} placeholder={form.security === 'starttls' ? '143' : '993'} onChange={(e) => set({ port: e.target.value })} /><Select value={form.security} onChange={(e) => set({ security: e.target.value })}><option value="tls">TLS</option><option value="starttls">STARTTLS</option></Select></span></label>
+          <label className="field"><span>User name</span><input className="input mono" value={form.username} autoComplete="off" onChange={(e) => set({ username: e.target.value })} /></label>
+          <label className="field"><span>Password</span><input className="input" type="password" value={form.secret} autoComplete="new-password" placeholder={keepSecret ? 'unchanged' : ''} onChange={(e) => set({ secret: e.target.value })} /></label>
+        </div>
+      ) : (
+        <>
+          <div className="mb-grid">
+            <label className="field"><span>Name</span><input className="input" value={form.name} maxLength={64} placeholder="e.g. Backup reports" onChange={(e) => set({ name: e.target.value })} /></label>
+            <label className="field"><span>Mailbox</span><input className="input mono" value={form.address} placeholder="backups@example.com" onChange={(e) => set({ address: e.target.value })} /></label>
+            <label className="field"><span>Tenant ID</span><input className="input mono" value={form.tenant} placeholder="the directory's ID or its domain" onChange={(e) => set({ tenant: e.target.value })} /></label>
+            <label className="field"><span>Application (client) ID</span><input className="input mono" value={form.client_id} onChange={(e) => set({ client_id: e.target.value })} /></label>
+            <label className="field"><span>Client secret</span><input className="input" type="password" value={form.secret} autoComplete="new-password" placeholder={keepSecret ? 'unchanged' : ''} onChange={(e) => set({ secret: e.target.value })} /></label>
+            <label className="field"><span>Folder</span><input className="input" value={form.folder} placeholder="Inbox" onChange={(e) => set({ folder: e.target.value })} /></label>
+          </div>
+          <p className="set-hint" style={{ margin: 0 }}>An app registration in Microsoft Entra that Exchange lets read only this mailbox (docs/push-sensors.md has the steps). The secret is kept encrypted.</p>
+        </>
+      )}
+      <div className="mb-test">
+        <Button onClick={runTest} disabled={busy}>Test</Button>
+        {test && <span className={'set-hint' + (test.ok ? '' : ' mb-bad')}>{test.text}</span>}
+      </div>
+      <span className="tag-form-act"><Button variant="ghost" onClick={() => { setEditing(null); setForm(null) }} disabled={busy}>Cancel</Button><Button variant="primary" onClick={save} disabled={busy || !form.name.trim()}>{busy ? 'Working…' : 'Save'}</Button></span>
+    </div>
+  )
+  const status = (m: Mailbox) => {
+    if (m.last_error) return <><span className="tag avail">failing</span> {m.last_error}{m.error_since ? ` (since ${fmtWhen(m.error_since)})` : ''}</>
+    if (m.last_at) return <><span className="tag online">reading</span> read {relTime(m.last_at)}, {plural(m.mails, 'mail')} so far, {plural(m.sensors, 'push sensor')}</>
+    return <><span className="set-src">waiting</span> the first read is within 2 minutes</>
+  }
+  return (
+    <section className="set-card">
+      <h3>Mailboxes</h3>
+      <p className="set-note">Mailboxes Argus reads for push sensors that report by email: a backup that mails its result, a NAS's daily report. Use a mailbox only these reports reach. Argus reads it every 2 minutes and never changes it (no mail is marked, moved or deleted); a mail counts once, at the time it arrived.</p>
+      <div className="tag-rows">
+        {(boxes || []).map((m) => editing === m.id ? <div key={m.id} className="tag-row editing">{editor}</div> : (
+          <div key={m.id} className="tag-row">
+            <span className="complabel">{m.name}</span>
+            <span className="tag-row-desc">{m.kind === 'graph' ? 'Microsoft 365' : 'IMAP'} · <span className="mono">{m.kind === 'graph' ? m.address : m.username}</span>{m.kind === 'imap' && <> on <span className="mono">{m.host}</span></>}<span className="sub-line"> · {status(m)}</span></span>
+            <span className="tag-row-act"><Button variant="ghost" className="compact" onClick={() => start(m)}>Edit</Button><Kebab actions={[{ label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => del(m) }]} /></span>
+          </div>
+        ))}
+        {boxes && boxes.length === 0 && editing !== 0 && <p className="set-hint" style={{ margin: '4px 0 8px' }}>No mailboxes.</p>}
+        {editing === 0 && <div className="tag-row editing">{editor}</div>}
+      </div>
+      {editing === null && <div className="set-row set-actions"><Button variant="primary" onClick={() => start(null)}>+ New mailbox</Button></div>}
     </section>
   )
 }

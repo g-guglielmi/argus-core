@@ -1039,6 +1039,33 @@ Hovering, focusing or tapping a pin shows a card (when, what, who and the reason
 line through the plot; zooming re-places the pins. Under the legend a folded "N events in this
 range" lists them newest first, the way in on a phone; hovering or tapping a row draws its line.
 
+## 7m. Email heartbeat (push sensors by email)
+
+OneUptime's incoming email monitor, as push sensors (`mailboxes.go`, `internal/mailread`): for gear that
+only reports by email. **Mailboxes** (Settings, admin; `mailboxes`, up to 20): IMAP (server, port,
+TLS or STARTTLS, user, password, folder; `emersion/go-imap`, the folder opened with EXAMINE so
+nothing is marked seen) or Microsoft 365 through Graph (tenant, client ID, client secret, mailbox,
+folder; client credentials, the token kept until a minute before it expires; the app may read only
+that mailbox, through RBAC for Applications). The secret is encrypted like the channels'; the list
+never returns it, a blank one on edit keeps it, and a new kind needs its own. **Test** (`POST
+/api/mailboxes/test`) signs in and counts the folder's mails. Argus never marks, moves or deletes a
+mail: it keeps a **watermark** per mailbox (IMAP `<UIDVALIDITY>:<last UID>`, a renumbered folder
+starting over; Graph `<last received time>|<ids read at that time>`), reads every 2 minutes (and at
+once when a mailbox is saved) what arrived after it, oldest first, at most 200 a read, and a new
+mailbox, or one whose place changed, reads back 48 hours. A mail is its sender, its decoded subject,
+the start of its text (the first text/plain part, else the HTML without tags; Graph's 255-character
+preview) and when it arrived.
+
+**A push sensor's rule** (`push_sensors.mail_*`): the mailbox, **From (contains)** and **Subject
+contains** (one or both), success and failure words. A failure word, then a success word, is looked
+for in the subject, then in the text (case-insensitive, at the start of a word); a matching mail with
+neither is a failed run that says so. The run counts at the mail's arrival time (`RecordPushByID`; an
+older one than the run on record counts without replacing it), so the late and missed times work as
+for URL pushes. The last 48 hours of mails (at most 300 a mailbox) are kept in memory, so a rule saved
+after its job's mail arrived takes the newest match at once. A mailbox that can't be read shows why in
+Settings (`last_error`, since when), and its late push sensors say "No run read: its mailbox ... can't
+be read since ..." instead of their last run. Deleting a mailbox takes the rule off its push sensors.
+
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")
 
 > Sequencing: **§C** built the class templates (§5) plus a **manual** attach path; **§B** automates

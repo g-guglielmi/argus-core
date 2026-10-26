@@ -18,6 +18,7 @@ import (
 	"argus/internal/auth"
 	"argus/internal/config"
 	"argus/internal/mfa"
+	"argus/internal/mailread"
 	"argus/internal/pki"
 	"argus/internal/ratelimit"
 	"argus/internal/settings"
@@ -62,6 +63,7 @@ type Server struct {
 	upsTrack      upstreamTrack     // the controller's answers on their way to being taken (upstream.go)
 	mapFactCache  mapFactCache      // the devices' models and addresses for the maps (maps.go)
 	startedAt     time.Time         // when this Argus started: the probes' report check counts from it (probereport.go)
+	mail          *mailState        // the mailboxes' recent mails and a way to read them at once (mailboxes.go)
 }
 
 // New builds the HTTP handler. signingSecret is the alert-link HMAC secret main resolved (and
@@ -71,7 +73,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, mgr: mgr, dummyHash: dummy,
 		signingSecret: signingSecret,
 		loginLimiter:  mgr.Limiter(), pkLimiter: ratelimit.New(30, 5*time.Minute), writeLimiter: ratelimit.New(60, time.Minute), checkinLimit: ratelimit.New(12, time.Minute),
-		probeLatest: &probeLatestCache{}, updaterLatest: &probeLatestCache{}, appLatest: &appLatestCache{}, probeVM: &probeVMCache{}, startedAt: time.Now()}
+		probeLatest: &probeLatestCache{}, updaterLatest: &probeLatestCache{}, appLatest: &appLatestCache{}, probeVM: &probeVMCache{}, startedAt: time.Now(),
+		mail: &mailState{recent: map[int64][]mailread.Mail{}, kick: make(chan struct{}, 1)}}
 	// The sensor census behind the pills, the Overview and the status pages, built in the
 	// background and served from memory.
 	s.census = newCensusCache(s.buildCensus)
@@ -95,6 +98,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	s.startHeartbeat(context.Background())
 	// Read the SaaS vendors' status pages for the services the sites check (vendorstatus.go).
 	s.startVendorStatus(context.Background())
+	// Read the mailboxes for the push sensors that report by email (mailboxes.go).
+	s.startMailRead(context.Background())
 	// Mirror the stored core reboot window to the shared update dir so the host reboot timer sees it
 	// even if the setting is never touched after this boot (DESIGN §14c). Best-effort.
 	s.syncRebootWindowFile(context.Background())
@@ -233,6 +238,13 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/hosts/{id}/journal", auth.RequireAuth(s.scopedHost(s.handleHostJournal)))
 	mux.HandleFunc("POST /api/hosts/{id}/journal", auth.RequireRoles(s.scopedHost(s.handleAddJournal), "admin", "helpdesk"))
 	mux.HandleFunc("DELETE /api/journal/{id}", auth.RequireRoles(s.handleDeleteJournal, "admin", "helpdesk"))
+	// mailboxes for the push sensors that report by email (mailboxes.go)
+	mux.HandleFunc("GET /api/mailboxes", auth.RequireRole("admin", s.handleListMailboxes))
+	mux.HandleFunc("GET /api/mailboxes/names", auth.RequireRoles(s.handleMailboxNames, "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/mailboxes", auth.RequireRole("admin", s.handleSaveMailbox))
+	mux.HandleFunc("POST /api/mailboxes/test", auth.RequireRole("admin", s.handleTestMailbox))
+	mux.HandleFunc("PATCH /api/mailboxes/{id}", auth.RequireRole("admin", s.handleSaveMailbox))
+	mux.HandleFunc("DELETE /api/mailboxes/{id}", auth.RequireRole("admin", s.handleDeleteMailbox))
 	mux.HandleFunc("GET /api/links", auth.RequireRole("admin", s.handleLinkTemplates))
 	mux.HandleFunc("POST /api/links", auth.RequireRole("admin", s.handleSaveLinkTemplate))
 	mux.HandleFunc("PATCH /api/links/{id}", auth.RequireRole("admin", s.handleSaveLinkTemplate))

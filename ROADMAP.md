@@ -422,10 +422,9 @@ NetFlow.
   alert of its own. DESIGN section 5. - _Unreleased_
 - [ ] **Microsoft 365 service health** - the same word for Microsoft 365 and Teams from Graph's
   service health (an Entra app registration with ServiceHealth.Read.All, per tenant). - _(BE+FE)_ S
-- [ ] **Email heartbeat** - for gear that only reports by email (backup jobs, NAS backup reports,
-  appliance digests): Argus reads a dedicated mailbox, matches each mail on sender and subject, and a
-  success or failure mail feeds a push sensor; no mail by the deadline is late, then missed, like any
-  push sensor (warning, then error). - _(BE+FE)_ M
+- [x] **Email heartbeat** - push sensors that read their runs from the mails their job sends to a
+  mailbox (IMAP, or Microsoft 365 through Graph), matched on sender and subject, a failure or success
+  word deciding the run; read-only. DESIGN section 7m. - _Unreleased_
 - [ ] **Domain registration expiry** - the days until a domain expires (RDAP), beside the TLS
   certificate's days left; warning at 30 days, error at 7, both editable. - _(templates)_ S
 - [ ] **One timeline per incident** - everything about one problem in one place: when it opened,

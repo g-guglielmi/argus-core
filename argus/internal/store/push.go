@@ -26,13 +26,18 @@ type PushSensor struct {
 	LastMsg    string
 	Runs       int64
 	HasLink    bool // the URL can be copied again (its token is kept encrypted)
+	// Mail is its email rule (Mailbox 0 = it doesn't read email), with the last mail it took.
+	Mail            PushMailRule
+	MailLastAt      int64
+	MailLastSubject string
 }
 
-const pushColumns = `id,host_id,name,late_secs,missed_secs,created_at,created_by,last_at,last_ok,last_msg,runs,token_enc<>''`
+const pushColumns = `id,host_id,name,late_secs,missed_secs,created_at,created_by,last_at,last_ok,last_msg,runs,token_enc<>'',mail_box,mail_from,mail_subject,mail_ok,mail_fail,mail_last_at,mail_last_subject`
 
 func scanPush(row rowScanner) (*PushSensor, error) {
 	var p PushSensor
-	if err := row.Scan(&p.ID, &p.HostID, &p.Name, &p.LateSecs, &p.MissedSecs, &p.CreatedAt, &p.CreatedBy, &p.LastAt, &p.LastOK, &p.LastMsg, &p.Runs, &p.HasLink); err != nil {
+	if err := row.Scan(&p.ID, &p.HostID, &p.Name, &p.LateSecs, &p.MissedSecs, &p.CreatedAt, &p.CreatedBy, &p.LastAt, &p.LastOK, &p.LastMsg, &p.Runs, &p.HasLink,
+		&p.Mail.Mailbox, &p.Mail.From, &p.Mail.Subject, &p.Mail.OK, &p.Mail.Fail, &p.MailLastAt, &p.MailLastSubject); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
