@@ -428,9 +428,9 @@ NetFlow.
 - [x] **Domain registration expiry** - the days until each domain a host's web checks name (or that
   is typed on it) expires, read daily by RDAP or WHOIS; warning at 30 days, error at 7, both editable.
   DESIGN section 7n. - _Unreleased_
-- [ ] **One timeline per incident** - everything about one problem in one place: when it opened,
-  which channel was told when, escalations and reminders, who acknowledged it and with what note, the
-  sensors it held, the recovery. Answers "did anyone actually get paged?" - _(BE+FE)_ M
+- [x] **One timeline per incident** - everything about one problem in one place on History: when it
+  opened, which channel was told when (and which couldn't be), escalations and reminders, holds,
+  acknowledgements and notes, the end. DESIGN section 7b. - _Unreleased_
 - [x] **Maintenance calendar feed** - a secret `.ics` link per user so planned windows show in
   Outlook, plus a month calendar on the Maintenance page. DESIGN section 9. - _Unreleased_
 - [x] **Runbook notes** - what to do, per sensor or per sensor kind on a class, beside the problem

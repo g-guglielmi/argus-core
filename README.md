@@ -89,7 +89,8 @@ API key, and MAC):
   with ok or fail and a message, or mails its result to a mailbox Argus reads (IMAP or Microsoft 365,
   read-only); Argus raises an error for a failed run and a warning, then an error, when the job is late
   or didn't run ([docs/push-sensors.md](docs/push-sensors.md)).
-- **Incident history** - what went wrong and when, per host and across the fleet: start, duration,
+- **Incident history** - what went wrong and when, per host and across the fleet, each incident opening
+  onto its timeline (who was alerted, escalated to and reminded, and when; acknowledgements and notes): start, duration,
   who acknowledged it, the note left on the sensor and the reason the device's collector gave, over
   24 h to 90 days, by probe and group too. Hidden sensors' incidents are left out unless you ask for
   them. Export the list as CSV.

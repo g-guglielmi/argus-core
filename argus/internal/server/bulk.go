@@ -414,6 +414,11 @@ func (s *Server) handleBulkSensors(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			_, err = s.st.SetSensorNote(ctx, key, row.HostID, note, caller.ID, userLabel(caller), now)
+			if err == nil {
+				for _, e := range row.EventIDs {
+					tlog(ctx, s.st, e, "note", userLabel(caller), "", note, 0)
+				}
+			}
 		case "pause", "hide":
 			if row.Synthetic || row.ItemID == "" {
 				fail("it isn't a sensor of its own, so it can't be " + map[string]string{"pause": "paused", "hide": "hidden"}[req.Action])

@@ -25,6 +25,10 @@ GitHub Release from the matching section below.
   page: no incident open" means it's only this site), and under the service on the host page while
   the vendor has an incident open. Only open incidents count, never the page's headline, and it never
   alerts by itself.
+- **One timeline per incident.** An incident on the History page opens onto everything that happened
+  to it in order: when it opened, every alert, escalation and reminder with the channel it went to (a
+  send that failed in red, with the channel's error), holds and maintenance waits, acknowledgements and
+  notes, and the end. Argus keeps them a year, from this release on.
 - **Runbook notes.** What to do when a sensor is in trouble, written from its menu (Runbook…) for that
   sensor or for every sensor of its kind on hosts of its class: its first line shows under the problem
   in the lists and on the host page, the rest a click away, and channels with **Runbook notes** on send

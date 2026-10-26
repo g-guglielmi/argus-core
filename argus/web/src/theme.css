@@ -1380,6 +1380,29 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .noterow .snote { margin: 0 0 6px 18px; }
 .noterow .snote + .snote { margin-top: 4px; }
 .sreason.inc-note { color: var(--accent); }
+/* An incident's timeline (History): a row opens onto everything about it, in order. */
+.inc-caret { color: var(--accent); display: inline-block; margin-right: 6px; transition: transform var(--dur-fast); }
+.inc-caret.open { transform: rotate(90deg); }
+.slist-inc tr.inc-open-row > td { border-bottom: none; }
+.tl-row > td { background: var(--elevated); padding: 8px 16px 14px 32px !important; }
+.tl { list-style: none; margin: 0; padding: 0; position: relative; font-size: 12.5px; }
+.tl::before { content: ""; position: absolute; left: 95px; top: 6px; bottom: 6px; width: 1px; background: var(--border-strong); }
+.tl li { display: grid; grid-template-columns: 82px 14px minmax(0, 1fr); gap: 0 8px; align-items: start; padding: 4px 0; }
+.tl .tl-t { color: var(--faint); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.tl .tl-d { width: 9px; height: 9px; border-radius: 50%; margin: 4px 0 0 1px; background: var(--tc, var(--faint)); box-shadow: 0 0 0 3px var(--elevated); position: relative; }
+.tl .tl-x { overflow-wrap: anywhere; }
+.tl .tl-x b { font-weight: 600; }
+.tl .tl-s { color: var(--muted); }
+.tl .tl-fail { color: var(--err); }
+.tl-k-opened { --tc: var(--err); } .tl-k-alerted, .tl-k-escalated, .tl-k-note { --tc: var(--accent); } .tl-k-reminder { --tc: var(--warn); }
+.tl-k-ack, .tl-k-unack, .tl-k-ack_told { --tc: var(--acked); } .tl-k-held { --tc: var(--paused); } .tl-k-maintenance { --tc: var(--maint); }
+.tl-k-resolved { --tc: var(--ok); } .tl-k-send_failed { --tc: var(--err); }
+@media (max-width: 640px) {
+  .tl-row > td { padding: 8px 10px 12px !important; }
+  .tl::before { left: 61px; }
+  .tl li { grid-template-columns: 48px 14px minmax(0, 1fr); }
+  .tl .tl-t { white-space: normal; }
+}
 /* What to do under a sensor in trouble (its runbook): the first line, more for the rest. */
 .sreason.runbook-line { color: var(--text); font-size: 12px; }
 .noterow .runbook-line { margin: 0 0 6px 18px; }

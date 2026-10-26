@@ -8688,28 +8688,87 @@ function AvailabilityPanel({ itemId }: { itemId: string }) {
 
 type Incident = { event_id: string; host_id: string; host_name: string; site?: string; item_id?: string; sensor?: string; name: string; severity: number; start: number; end?: number; ack_by?: string; ack_note?: string; reason?: string; argus?: boolean; note?: string; note_by?: string; hidden?: boolean }
 
-// IncidentRows lists incidents newest first; the host column only in the fleet-wide list.
+type TimelineEntry = { at: number; kind: string; who?: string; channel?: string; detail?: string }
+
+// IncidentTimeline is everything about one incident in order (timeline.go): opened, who was alerted,
+// escalated to and reminded (a send that failed in red), holds and maintenance waits, acknowledgements
+// and notes, the end. Alerts sent together read as one line.
+function IncidentTimeline({ eventId, start }: { eventId: string; start: number }) {
+  const [entries, setEntries] = useState<TimelineEntry[] | null>(null)
+  useEffect(() => {
+    let live = true
+    fetch(`/api/incidents/${encodeURIComponent(eventId)}/timeline`).then((r) => (r.ok ? r.json() : { entries: [] })).then((d) => { if (live) setEntries(d.entries || []) }).catch(() => { if (live) setEntries([]) })
+    return () => { live = false }
+  }, [eventId])
+  if (entries === null) return <div className="set-hint" style={{ margin: 0 }}>Loading…</div>
+  if (entries.length === 0) return <div className="set-hint" style={{ margin: 0 }}>No timeline for this incident: Argus keeps one for the incidents that open from 0.9.9 on.</div>
+  // Alerts sent in the same minute read as one line.
+  const lines: TimelineEntry[] = []
+  for (const e of entries) {
+    const last = lines[lines.length - 1]
+    if (last && e.kind === 'alerted' && last.kind === 'alerted' && Math.abs(e.at - last.at) < 60) last.channel += ', ' + e.channel
+    else lines.push({ ...e })
+  }
+  const day0 = dayKeyTZ(start)
+  const when = (t: number) => (dayKeyTZ(t) === day0 ? timeTZ(t) : fmtWhen(t))
+  const text = (e: TimelineEntry): ReactNode => {
+    const q = e.detail ? <>: "{e.detail}"</> : null
+    switch (e.kind) {
+      case 'opened': return <><b>Opened</b> ({e.detail})</>
+      case 'alerted': return <><b>Alerted</b> {e.channel}</>
+      case 'escalated': return <><b>Escalated</b> to {e.channel} <span className="tl-s">· {e.detail}</span></>
+      case 'reminder': return <><b>{(e.detail || 'reminder').replace(/^r/, 'R')}</b> to {e.channel}</>
+      case 'send_failed': return <span className="tl-fail"><b>Could not alert</b> {e.channel}: {e.detail}</span>
+      case 'held': return <><b>Held</b>: its alert waits while {e.detail} is down</>
+      case 'maintenance': return <><b>Waited</b> for the maintenance window {e.detail}</>
+      case 'ack': return <><b>Acknowledged</b> by {e.who}{q}</>
+      case 'unack': return <><b>Acknowledgement removed</b> by {e.who}</>
+      case 'ack_told': return <><b>Told</b> the channels it was acknowledged <span className="tl-s">· {e.detail}</span></>
+      case 'note': return <><b>Note</b> by {e.who}: {e.detail}</>
+      case 'resolved': return <><b>Resolved</b>: {e.detail}</>
+    }
+    return <>{e.kind} {e.detail}</>
+  }
+  return (
+    <ol className="tl">
+      {lines.map((e, i) => (
+        <li key={i} className={'tl-k-' + e.kind}><span className="tl-t">{when(e.at)}</span><span className="tl-d" /><span className="tl-x">{text(e)}</span></li>
+      ))}
+    </ol>
+  )
+}
+
+// IncidentRows lists incidents newest first; the host column only in the fleet-wide list. A row opens
+// onto its timeline.
 function IncidentRows({ rows, goHost }: { rows: Incident[]; goHost: ((h: string) => void) | null }) {
   const now = Math.floor(Date.now() / 1000)
+  const [openId, setOpenId] = useState<string | null>(null)
   return (
     <div className="enroll-scroll">
       <table className={'slist slist-inc' + (goHost ? '' : ' nohost')}>
         <thead><tr><th className="slgrow">What happened</th>{goHost && <th>Host</th>}<th>Started</th><th>Duration</th><th>Acknowledged</th></tr></thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.event_id + ':' + r.start} className={r.hidden ? 'inc-hidden' : undefined}>
+          {rows.map((r) => {
+            const k = r.event_id + ':' + r.start
+            const open = openId === k
+            return (
+            <Fragment key={k}>
+            <tr className={(r.hidden ? 'inc-hidden' : '') + (open ? ' inc-open-row' : '') || undefined} style={{ cursor: 'pointer' }} onClick={() => setOpenId(open ? null : k)}>
               <td className="slgrow" style={{ borderLeft: `3px solid ${sevInfo(r.severity).color}`, paddingLeft: 13 }}>
-                <div className="inc-name">{r.name}{r.hidden && <span className="tag-hidden" title="Its sensor (or host) is hidden">hidden</span>}</div>
+                <div className="inc-name"><span className={'inc-caret' + (open ? ' open' : '')} aria-hidden="true">›</span>{r.name}{r.hidden && <span className="tag-hidden" title="Its sensor (or host) is hidden">hidden</span>}</div>
                 <div className="sreason"><SevText sev={r.severity} />{r.sensor && r.sensor !== r.name ? <> · {r.sensor}</> : null}</div>
                 {r.reason && <div className="sreason inc-why">{r.reason}</div>}
                 {r.note && <div className="sreason inc-note" title="The note on the sensor during this incident">Note: {r.note}{r.note_by ? ` (${r.note_by})` : ''}</div>}
               </td>
-              {goHost && <td data-label="Host"><span><span className="lnk-host" onClick={() => goHost(r.host_id)}>{r.host_name}</span>{r.site ? <span className="inc-site"> · {r.site}</span> : null}</span></td>}
+              {goHost && <td data-label="Host"><span><span className="lnk-host" onClick={(e) => { e.stopPropagation(); goHost(r.host_id) }}>{r.host_name}</span>{r.site ? <span className="inc-site"> · {r.site}</span> : null}</span></td>}
               <td className="mono" data-label="Started">{fmtWhen(r.start)}</td>
               <td data-label="Duration">{r.end ? <span className="mono">{fmtDuration(r.end - r.start)}</span> : <span className="tag inc-open">ongoing · {fmtDuration(now - r.start)}</span>}</td>
               <td data-label="Acknowledged" title={r.ack_note || undefined}>{r.ack_by || <span className="muted">-</span>}</td>
             </tr>
-          ))}
+            {open && <tr className="tl-row"><td colSpan={goHost ? 5 : 4}><IncidentTimeline eventId={r.event_id} start={r.start} /></td></tr>}
+            </Fragment>
+            )
+          })}
         </tbody>
       </table>
     </div>

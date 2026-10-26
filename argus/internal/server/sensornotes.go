@@ -121,6 +121,9 @@ func (s *Server) handleSetSensorNote(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
+	for _, e := range row.EventIDs {
+		tlog(ctx, s.st, e, "note", userLabel(caller), "", text, 0)
+	}
 	writeJSON(w, http.StatusOK, noteViewOf(n))
 }
 

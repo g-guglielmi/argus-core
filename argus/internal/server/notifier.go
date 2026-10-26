@@ -73,8 +73,9 @@ type notifyDest struct {
 	// quietFloor > 0 while its owner's quiet hours are on: only problems at or above it are sent now;
 	// a quieter one waits (and goes out once the quiet hours end, if still open).
 	quietFloor int
-	created    int64 // unix s
-	send       func(ctx context.Context, ev notify.Event)
+	created    int64  // unix s
+	label      string // how the incident timeline names it: "IT team (Telegram)"
+	send       func(ctx context.Context, ev notify.Event) error
 }
 
 // hostRoute is what decides which channels hear of a host's problem: its groups (sites) and its tags.
@@ -156,6 +157,7 @@ type userDirectory struct {
 	recipients []userRecipient     // active users, for the email-to-users channels
 	scopes     map[int64]siteScope // every user's sites, for their personal channels
 	quiet      map[int64]int       // users in their quiet hours now -> the lowest severity still sent
+	names      map[int64]string    // every user's name, for the timeline's personal channels
 }
 
 // inQuietHours reports whether minute-of-day m falls in [start, end), which may wrap past midnight.
@@ -172,7 +174,7 @@ func inQuietHours(start, end, m int) bool {
 // loadUserDirectory reads the users once per tick. A user it can't find sees nothing, so a personal
 // channel never outlives its owner's limits.
 func loadUserDirectory(ctx context.Context, st *store.Store, now time.Time, loc *time.Location) userDirectory {
-	dir := userDirectory{scopes: map[int64]siteScope{}, quiet: map[int64]int{}}
+	dir := userDirectory{scopes: map[int64]siteScope{}, quiet: map[int64]int{}, names: map[int64]string{}}
 	users, err := st.ListUsers(ctx)
 	if err != nil {
 		return dir
@@ -183,6 +185,7 @@ func loadUserDirectory(ctx context.Context, st *store.Store, now time.Time, loc 
 		u := &users[i]
 		sc := scopeOf(u)
 		dir.scopes[u.ID] = sc
+		dir.names[u.ID] = userLabel(u)
 		if inQuietHours(u.QuietStart, u.QuietEnd, minute) {
 			floor := u.QuietFloor
 			if floor < 2 || floor > 5 {
@@ -207,7 +210,10 @@ func notifyDests(st *store.Store, channels []store.NotifyChannel, userChannels [
 			key: store.DeliveryKey(store.DeliveryGlobal, c.ID), kind: store.DeliveryGlobal, id: c.ID,
 			sites: c.Sites, tags: c.Tags, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
 			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, call: c.WhoToCall, runbook: c.Runbooks, created: c.CreatedAt.Unix(),
-			send: func(ctx context.Context, ev notify.Event) { sendGlobal(ctx, st, c, dir.recipients, ev, logger) },
+			label: c.Name + " (" + channelTypeName(c.Type) + ")",
+			send: func(ctx context.Context, ev notify.Event) error {
+				return sendGlobal(ctx, st, c, dir.recipients, ev, logger)
+			},
 		})
 	}
 	for _, c := range userChannels {
@@ -221,7 +227,8 @@ func notifyDests(st *store.Store, channels []store.NotifyChannel, userChannels [
 			key: store.DeliveryKey(store.DeliveryUser, c.ID), kind: store.DeliveryUser, id: c.ID,
 			sites: sites, tags: c.Tags, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
 			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, call: c.WhoToCall, runbook: c.Runbooks, userID: c.UserID, scoped: !sc.all, quietFloor: dir.quiet[c.UserID], created: c.CreatedAt.Unix(),
-			send: func(ctx context.Context, ev notify.Event) { sendPersonal(ctx, st, c, ev, logger) },
+			label: dir.names[c.UserID] + "'s " + channelTypeName(c.Type),
+			send:  func(ctx context.Context, ev notify.Event) error { return sendPersonal(ctx, st, c, ev, logger) },
 		})
 	}
 	return out
@@ -314,6 +321,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		hostTags = effectiveTagNames(ctx, st, hosts)
 	}
 	// Site info, for the channels that say who to call (siteinfo.go).
+	pruneIncidentLogDaily(ctx, st)
 	sites, _ := st.SiteInfos(ctx)
 	runbooks := loadRunbooks(ctx, st) // what to do, for the "Runbook notes" channels
 
@@ -402,12 +410,19 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			ev.Note, ev.NoteBy = noteFor(notes, stt.ItemID, eid)
 			ev.Behind = masters.behindFor(stt.HostID, []masterRef{{id: stt.ItemID}}, hostNames)
 			ev.Vendor = vendorLine(vendors.wordForItem(stt.ItemID), loc)
+			told := 0
 			for _, d := range dests {
 				if _, got := deliveries[eid][d.key]; got && !d.quietFor(stt.Severity) {
-					d.send(ctx, ev)
+					if d.send(ctx, ev) == nil {
+						told++
+					}
 				}
 			}
+			tlog(ctx, st, eid, "resolved", "", "", ev.Name+fmt.Sprintf(" (%d channels told)", told), 0)
+		} else if stt.State == "firing" {
+			tlog(ctx, st, eid, "resolved", "", "", recoveryTitle(stt), 0)
 		}
+		forgetTimelineState(eid)
 		_ = st.DeleteNotifyState(ctx, eid)
 	}
 
@@ -430,8 +445,11 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		groups := hostGroups[hostID]
 		route := hostRoute{groups: groups, tags: hostTags[hostID]}
 		alertable := isAlertable(t, hiddenHosts, hiddenItems, acked, p.EventID)
-		if _, held := inMaint[hostID]; held {
+		if mw, held := inMaint[hostID]; held {
 			alertable = false // in a maintenance window: alerted once it ends, if still open
+			if _, known := states[p.EventID]; known {
+				tlogMaintenance(ctx, st, p.EventID, mw.Name)
+			}
 		}
 		_, isAcked := acked[p.EventID]
 		isNoData := strings.Contains(t.Expression, "nodata(")
@@ -480,6 +498,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 				if hv.down && stt.HeldAt != now.Unix() {
 					if stt.HeldAt == 0 {
 						logger.Info("notifier: alert held while its master sensor is down", "event", p.EventID, "host", hostName, "name", p.Name, "by", hv.by)
+						tlog(ctx, st, p.EventID, "held", "", "", hv.by, 0)
 					}
 					stt.HeldAt = now.Unix()
 					_ = st.UpsertNotifyState(ctx, stt)
@@ -513,6 +532,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 				Recovery: stt.Recovery,
 			}
 			_ = st.UpsertNotifyState(ctx, stt)
+			tlog(ctx, st, p.EventID, "opened", "", "", severityName(sev)+": "+p.Name, start)
 		}
 
 		// Firing. Acknowledging stops escalation and reminders; the channels that already got the alert
@@ -526,11 +546,15 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 						OpenURL: OpenLink(publicURL, hostID, itemID),
 					}
 					ev.AckBy, ev.AckNote = ackBy(ctx, st, p.EventID)
+					told := 0
 					for _, d := range dests {
 						if _, got := deliveries[p.EventID][d.key]; got && !d.quietFor(sev) {
-							d.send(ctx, ev)
+							if d.send(ctx, ev) == nil {
+								told++
+							}
 						}
 					}
+					tlog(ctx, st, p.EventID, "ack_told", "", "", fmt.Sprintf("%d channels told", told), 0)
 				}
 				stt.AckNotified = true
 				_ = st.UpsertNotifyState(ctx, stt)
@@ -592,7 +616,17 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			} else {
 				row = store.NotifyDelivery{EventID: p.EventID, Kind: pd.dest.kind, ChannelID: pd.dest.id, FirstSent: now.Unix()}
 			}
-			pd.dest.send(ctx, ev)
+			err := pd.dest.send(ctx, ev)
+			switch {
+			case err != nil:
+				tlog(ctx, st, p.EventID, "send_failed", "", pd.dest.label, err.Error(), 0)
+			case pd.reminder:
+				tlog(ctx, st, p.EventID, "reminder", "", pd.dest.label, fmt.Sprintf("reminder %d", ev.Reminder), 0)
+			case pd.dest.delay > 0:
+				tlog(ctx, st, p.EventID, "escalated", "", pd.dest.label, fmt.Sprintf("its Notify after is %s", fmtMinutesGo(pd.dest.delay/60)), 0)
+			default:
+				tlog(ctx, st, p.EventID, "alerted", "", pd.dest.label, "", 0)
+			}
 			row.Severity = sev
 			row.LastSent = now.Unix()
 			_ = st.UpsertNotifyDelivery(ctx, row)
@@ -898,7 +932,7 @@ func matchingUserChannels(channels []store.UserNotifyChannel, groups []string, s
 // Notifications cards show "last sent" / "last failure"), so a broken webhook or SMTP password is
 // visible in the UI rather than only in the core's log. An email channel set to deliver to registered
 // users is fanned out to each active user's address. st may be nil in tests.
-func sendGlobal(ctx context.Context, st *store.Store, c store.NotifyChannel, users []userRecipient, ev notify.Event, logger *slog.Logger) {
+func sendGlobal(ctx context.Context, st *store.Store, c store.NotifyChannel, users []userRecipient, ev notify.Event, logger *slog.Logger) error {
 	var err error
 	if c.Type == "email" && c.Config["recipients"] == "users" {
 		err = sendEmailToUsers(ctx, c, users, ev, logger)
@@ -913,6 +947,7 @@ func sendGlobal(ctx context.Context, st *store.Store, c store.NotifyChannel, use
 			logger.Warn("notifier: record delivery", "channel", c.Name, "err", rerr)
 		}
 	}
+	return err
 }
 
 // sendEmailToUsers delivers ev to each active user's registered email as a separate, private message
@@ -960,7 +995,7 @@ func sendEmailToUsers(ctx context.Context, c store.NotifyChannel, users []userRe
 
 // sendPersonal delivers ev to one personal (per-user) channel, recording the outcome on the channel so
 // its owner sees their own delivery health. Reuses the leaf notify.Send with the channel's own config.
-func sendPersonal(ctx context.Context, st *store.Store, c store.UserNotifyChannel, ev notify.Event, logger *slog.Logger) {
+func sendPersonal(ctx context.Context, st *store.Store, c store.UserNotifyChannel, ev notify.Event, logger *slog.Logger) error {
 	err := notify.Send(ctx, notify.Channel{ID: c.ID, Type: c.Type, Name: "personal", Enabled: c.Enabled, Config: c.Config, PublicOnly: true}, ev)
 	if err != nil {
 		logger.Warn("notifier: personal send failed", "channel", c.ID, "user", c.UserID, "type", c.Type, "kind", ev.Kind, "err", err)
@@ -970,6 +1005,7 @@ func sendPersonal(ctx context.Context, st *store.Store, c store.UserNotifyChanne
 			logger.Warn("notifier: record personal delivery", "channel", c.ID, "err", rerr)
 		}
 	}
+	return err
 }
 
 func toNotifyChannel(c store.NotifyChannel) notify.Channel {

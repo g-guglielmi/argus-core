@@ -29,6 +29,9 @@ type tickProblem struct {
 // with its ping (item 100) and the collector's reachability sensor (item 101), whose last readings
 // are ping and running, and the given problems open for a quarter of an hour. It returns the events
 // that reached the one alert channel.
+// lastTickStore is the store runNotifier last ran on, for a test to read what it recorded.
+var lastTickStore *store.Store
+
 func runNotifier(t *testing.T, ping, running string, problems []tickProblem) []string {
 	t.Helper()
 	now := time.Now().Unix()
@@ -90,6 +93,7 @@ func runNotifier(t *testing.T, ping, running string, problems []tickProblem) []s
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
+	lastTickStore = st
 	ctx := t.Context()
 	zbx := zabbix.New(mock.URL, "test-token")
 	t.Setenv("ARGUS_ALERT_DELAY_SECONDS", "0") // alert as soon as a problem is seen twice
@@ -149,5 +153,22 @@ func TestNotifierDeviceDown(t *testing.T) {
 	// Only the web endpoint fails: it alerts on its own.
 	if sent := runNotifier(t, "1", "1", []tickProblem{httpDown}); strings.Join(sent, ",") != "e3" {
 		t.Fatalf("endpoint down: want its alert sent, got %v", sent)
+	}
+}
+
+// The incident timeline records what the notifier did: the incident opened, and the channel it tried
+// to alert (here it can't: the test channel has no webhook, so the timeline says why).
+func TestNotifierTimeline(t *testing.T) {
+	runNotifier(t, "1", "1", []tickProblem{{event: "7001", name: "AdGuard is not running", sev: "4", key: "adguard.running", itemID: "101"}})
+	entries, err := lastTickStore.IncidentLog(t.Context(), "7001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kinds []string
+	for _, e := range entries {
+		kinds = append(kinds, e.Kind+":"+e.Channel)
+	}
+	if len(entries) < 2 || entries[0].Kind != "opened" || entries[0].Detail != "High: AdGuard is not running" || entries[1].Kind != "send_failed" || entries[1].Channel != "ops (Discord)" || entries[1].Detail == "" {
+		t.Fatalf("timeline: %v %+v", kinds, entries)
 	}
 }

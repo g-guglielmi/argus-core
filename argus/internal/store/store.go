@@ -546,6 +546,18 @@ CREATE TABLE IF NOT EXISTS push_hosts (
   host_id  TEXT PRIMARY KEY,
   key_hash TEXT NOT NULL
 );
+-- One timeline per incident (server/timeline.go): what happened to it, in order; kept a year.
+CREATE TABLE IF NOT EXISTS incident_log (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id TEXT NOT NULL,
+  at       INTEGER NOT NULL,
+  kind     TEXT NOT NULL,
+  who      TEXT NOT NULL DEFAULT '',
+  channel  TEXT NOT NULL DEFAULT '',
+  detail   TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_incident_log_event ON incident_log(event_id, at);
+CREATE INDEX IF NOT EXISTS idx_incident_log_at ON incident_log(at);
 -- Runbook notes (server/runbooks.go): what to do when a sensor is in trouble, for one sensor or for a
 -- kind of sensor on hosts of a class.
 CREATE TABLE IF NOT EXISTS runbooks (

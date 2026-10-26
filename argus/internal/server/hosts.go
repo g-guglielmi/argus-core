@@ -459,6 +459,7 @@ func (s *Server) ackEvent(ctx context.Context, eventID string, by int64, note st
 	if err := s.st.SetSuppression(ctx, "ack", "event", eventID, by, note, until); err != nil {
 		return err
 	}
+	tlog(ctx, s.st, eventID, "ack", s.ackWho(ctx, by), "", note, 0)
 	if s.zbx.Authenticated() && !isSynthetic(eventID) { // Argus-raised problems have no Zabbix event
 		c, cancel := context.WithTimeout(ctx, 12*time.Second)
 		defer cancel()
@@ -471,6 +472,9 @@ func (s *Server) ackEvent(ctx context.Context, eventID string, by int64, note st
 func (s *Server) handleUnackEvent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	_ = s.st.ClearSuppression(r.Context(), "ack", "event", id)
+	if u, ok := auth.UserFrom(r.Context()); ok {
+		tlog(r.Context(), s.st, id, "unack", userLabel(u), "", "", 0)
+	}
 	if s.zbx.Authenticated() && !isSynthetic(id) {
 		ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 		defer cancel()

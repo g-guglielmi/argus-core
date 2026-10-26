@@ -587,6 +587,15 @@ Errors + Warnings or Errors only, filterable by host, sensor or reason, and by p
 (`GET /api/incidents?days=N&probe=<proxy id, 0 = the server>&group=<name>`, each repeatable; a group
 covers its subgroups, and the filter narrows within the user's sites). **Export CSV** saves the list
 as shown. Zabbix's events follow its housekeeping retention (Settings, Data retention).
+**One timeline per incident** (`timeline.go`, `incident_log`, kept a year; OneUptime's incident
+timeline): an incident row on History (and a host's History tab) opens onto what happened to it in
+order (`GET /api/incidents/{id}/timeline`, anyone who sees its host). The notifier records when it
+opened (severity and name, at the incident's start), each channel it alerted at once, escalated to
+(its Notify after) or reminded, and a send that failed with the channel's error, a hold behind a down
+master (once per hold) and a wait for a maintenance window (once per wait), the channels told of an
+acknowledgement, and the end with how many channels heard; the handlers record each acknowledgement
+(who, from the alert link too, and the note), its removal, and the notes left on the sensor. Channels
+read as "IT team (Telegram)", a personal one as its owner's. Incidents from before 0.9.9 have none.
 Hiding a sensor says its problems aren't news: a problem whose sensors are all hidden (`sensorsHidden`)
 is left out of the Overview, the status pages, the pills and the alerts, and of the host's badge,
 count and colour in the tree too (`handleHosts`); the host's own page still lists it, dimmed under
