@@ -7030,7 +7030,13 @@ function MaintenanceView({ canEdit }: { canEdit: boolean }) {
   const [sites, setSites] = useState<string[]>([])
   const [hosts, setHosts] = useState<Host[]>([])
   const [editing, setEditing] = useState<MaintWindow | 'new' | null>(null)
+  // List or Calendar, remembered per browser.
+  const [mode, setMode] = useState<'list' | 'calendar'>(() => { try { return localStorage.getItem('argus-maint-view') === 'calendar' ? 'calendar' : 'list' } catch { return 'list' } })
+  const [feed, setFeed] = useState(false)
+  const [calTick, setCalTick] = useState(0)
+  const switchMode = (m: 'list' | 'calendar') => { setMode(m); try { localStorage.setItem('argus-maint-view', m) } catch { /* private window */ } }
   function load() {
+    setCalTick((x) => x + 1)
     fetch('/api/maintenance').then((r) => (r.ok ? r.json() : Promise.reject(r))).then((w) => setWins(w || [])).catch(() => { setWins([]); toast.error('Failed to load the maintenance windows') })
   }
   useEffect(() => {
@@ -7058,12 +7064,20 @@ function MaintenanceView({ canEdit }: { canEdit: boolean }) {
       <div className="phead">
         <PanelTitle eyebrow="Configure">Maintenance windows</PanelTitle>
         <span className="hint">times in the Argus timezone{CLOCK.tz ? ` (${CLOCK.tz})` : ''}</span>
-        {canEdit && <div className="tools"><button className="btn primary" onClick={() => setEditing('new')}>+ Add window</button></div>}
+        <div className="tools">
+          <div className="seg" role="group" aria-label="Show the windows as">
+            <button type="button" className={mode === 'list' ? 'on' : ''} onClick={() => switchMode('list')}>List</button>
+            <button type="button" className={mode === 'calendar' ? 'on' : ''} onClick={() => switchMode('calendar')}>Calendar</button>
+          </div>
+          <button className="btn" onClick={() => setFeed(true)}>Calendar feed…</button>
+          {canEdit && <button className="btn primary" onClick={() => setEditing('new')}>+ Add window</button>}
+        </div>
       </div>
       <p className="set-note" style={{ padding: '10px 16px 0', margin: 0 }}>
         During a window its hosts keep collecting and their problems stay on screen, but nobody is alerted about them. When it ends, whatever is still wrong is alerted.
       </p>
-      {wins === null ? <Skeleton rows={3} cols={4} /> : wins.length === 0 ? (
+      {mode === 'calendar' ? <MaintCalendar tick={calTick} onOpen={canEdit ? (id) => { const w = wins?.find((x) => x.id === id); if (w) setEditing(w) } : undefined} />
+        : wins === null ? <Skeleton rows={3} cols={4} /> : wins.length === 0 ? (
         <div className="empty-state" style={{ padding: '28px 16px' }}>No maintenance windows yet.{canEdit ? ' Add one for a nightly backup, a monthly parity check or a patch night.' : ''}</div>
       ) : (
         <table className="utable mtable">
@@ -7094,7 +7108,109 @@ function MaintenanceView({ canEdit }: { canEdit: boolean }) {
       )}
       {editing && <MaintenanceDialog initial={editing === 'new' ? null : editing} sites={sites} hosts={hosts}
         onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); toast.success('Window saved'); load() }} />}
+      {feed && <CalendarFeedDialog onClose={() => setFeed(false)} />}
     </div>
+  )
+}
+
+type MaintRun = { id: number; name: string; start: number; end: number }
+
+// dayKeyTZ is a unix time's day in the Argus timezone, "2026-10-24".
+function dayKeyTZ(unix: number): string {
+  const opts: Intl.DateTimeFormatOptions = { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: CLOCK.tz }
+  let parts: Intl.DateTimeFormatPart[]
+  try { parts = new Intl.DateTimeFormat('en-CA', opts).formatToParts(new Date(unix * 1000)) } catch { delete opts.timeZone; parts = new Intl.DateTimeFormat('en-CA', opts).formatToParts(new Date(unix * 1000)) }
+  const get = (t: string) => parts.find((p) => p.type === t)?.value || ''
+  return `${get('year')}-${get('month')}-${get('day')}`
+}
+function timeTZ(unix: number): string {
+  const opts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: !CLOCK.h24, timeZone: CLOCK.tz }
+  try { return new Intl.DateTimeFormat(undefined, opts).format(new Date(unix * 1000)) } catch { delete opts.timeZone; return new Intl.DateTimeFormat(undefined, opts).format(new Date(unix * 1000)) }
+}
+
+// MaintCalendar is the month of the windows' runs (Monday first, days in the Argus timezone); a run
+// opens its window when the user may edit it.
+function MaintCalendar({ tick, onOpen }: { tick: number; onOpen?: (id: number) => void }) {
+  const today = dayKeyTZ(Math.floor(Date.now() / 1000))
+  const [ym, setYm] = useState<[number, number]>(() => [Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1])
+  const [runs, setRuns] = useState<MaintRun[] | null>(null)
+  const first = Date.UTC(ym[0], ym[1], 1)
+  const lead = (new Date(first).getUTCDay() + 6) % 7
+  const days = Array.from({ length: 42 }, (_, i) => new Date(first + (i - lead) * 86400000))
+  const key = (d: Date) => d.toISOString().slice(0, 10)
+  useEffect(() => {
+    let live = true
+    const from = Math.floor(days[0].getTime() / 1000) - 86400, to = Math.floor(days[41].getTime() / 1000) + 2 * 86400
+    setRuns(null)
+    fetch(`/api/maintenance/occurrences?from=${from}&to=${to}`).then((r) => (r.ok ? r.json() : [])).then((x) => { if (live) setRuns(x || []) }).catch(() => { if (live) setRuns([]) })
+    return () => { live = false }
+  }, [ym[0], ym[1], tick]) // eslint-disable-line react-hooks/exhaustive-deps
+  const byDay = new Map<string, MaintRun[]>()
+  for (const r of runs || []) { const k = dayKeyTZ(r.start); byDay.set(k, [...(byDay.get(k) || []), r]) }
+  const month = new Date(first).toLocaleDateString([], { month: 'long', year: 'numeric', timeZone: 'UTC' })
+  const step = (n: number) => setYm(([y, m]) => { const d = new Date(Date.UTC(y, m + n, 1)); return [d.getUTCFullYear(), d.getUTCMonth()] })
+  const weekdays = Array.from({ length: 7 }, (_, i) => new Date(Date.UTC(2026, 9, 26 + i)).toLocaleDateString([], { weekday: 'short', timeZone: 'UTC' }))
+  const span = (r: MaintRun) => `${r.name}: ${fmtWhen(r.start)} to ${dayKeyTZ(r.start) === dayKeyTZ(r.end) ? timeTZ(r.end) : fmtWhen(r.end)}`
+  return (
+    <div className="cal-wrap">
+      <div className="cal-head">
+        <button className="btn compact" aria-label="Previous month" onClick={() => step(-1)}>‹</button>
+        <span className="cal-month">{month}</span>
+        <button className="btn compact" aria-label="Next month" onClick={() => step(1)}>›</button>
+        <button className="btn ghost compact" onClick={() => setYm([Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1])}>Today</button>
+        {runs === null && <span className="set-hint" style={{ margin: 0 }}>Loading…</span>}
+      </div>
+      <div className="cal" role="grid" aria-label={`Maintenance windows, ${month}`}>
+        {weekdays.map((w) => <div key={w} className="cal-wd" role="columnheader">{w}</div>)}
+        {days.map((d) => {
+          const k = key(d), list = byDay.get(k) || []
+          return (
+            <div key={k} role="gridcell" className={'cal-day' + (d.getUTCMonth() !== ym[1] ? ' out' : '') + (k === today ? ' today' : '')}>
+              <span className="cal-n">{d.getUTCDate()}</span>
+              {list.slice(0, 3).map((r) => (
+                <button key={r.id + ':' + r.start} type="button" className="cal-ev" title={span(r)} disabled={!onOpen} onClick={() => onOpen?.(r.id)}>{timeTZ(r.start)} {r.name}</button>
+              ))}
+              {list.length > 3 && <span className="cal-more" title={list.slice(3).map(span).join('\n')}>+{list.length - 3} more</span>}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// CalendarFeedDialog shows the user's own calendar link (an .ics of the windows they see) to subscribe
+// to in Outlook or Google Calendar, and makes a new one.
+function CalendarFeedDialog({ onClose }: { onClose: () => void }) {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [feed, setFeed] = useState<{ url: string; public_url: boolean } | null>(null)
+  useEffect(() => { fetch('/api/me/calendar-feed').then((r) => (r.ok ? r.json() : null)).then(setFeed).catch(() => setFeed(null)) }, [])
+  const abs = (u: string) => (u.startsWith('/') ? window.location.origin + u : u)
+  async function rotate() {
+    if (!(await confirm({ title: 'New link', message: 'Make a new calendar link? The current one stops working at once: calendars subscribed to it stop updating.', confirmLabel: 'New link', danger: true }))) return
+    const res = await fetch('/api/me/calendar-feed/rotate', { method: 'POST' }).catch(() => null)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not make a new link')); return }
+    setFeed(await res.json()); toast.success('New link made. Subscribe to it again.')
+  }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return createPortal(
+    <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 520 }}>
+        <div className="dlg-title">Calendar feed</div>
+        <div className="dlg-msg">Subscribe to this link in your calendar (Outlook: Add calendar, From internet; Google Calendar: Other calendars, From URL) to see the maintenance windows you can see, kept up to date. It is yours: anyone with it sees those windows, so don't share it. A calendar that fetches it from its own servers (Outlook on the web, Google Calendar) needs Argus reachable from the internet; Outlook on your PC fetches it from there.</div>
+        {feed && !feed.public_url && <div className="dlg-msg" style={{ color: 'var(--warn)', marginTop: 8 }}>The Public URL isn't set (Settings, an admin): the link names this browser's address.</div>}
+        {feed ? (
+          <div className="feed-url"><input className="input mono" readOnly value={abs(feed.url)} aria-label="Calendar link" onFocus={(e) => e.target.select()} /><CopyButton text={abs(feed.url)} /></div>
+        ) : <Skeleton rows={1} cols={1} />}
+        <div className="dlg-foot"><Button variant="ghost" onClick={rotate} disabled={!feed}>New link</Button><Button variant="primary" onClick={onClose}>Done</Button></div>
+      </div>
+    </div>,
+    document.body,
   )
 }
 

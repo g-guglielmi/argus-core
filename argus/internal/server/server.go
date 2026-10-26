@@ -279,6 +279,9 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// are config writes, so helpdesk/admin only.
 	// maintenance windows: when some hosts' alerts are held (list: any user, their sites' windows)
 	mux.HandleFunc("GET /api/maintenance", auth.RequireAuth(s.handleListMaintenance))
+	mux.HandleFunc("GET /api/maintenance/occurrences", auth.RequireAuth(s.handleMaintOccurrences))
+	mux.HandleFunc("GET /api/me/calendar-feed", auth.RequireAuth(s.handleMyCalendarFeed))
+	mux.HandleFunc("POST /api/me/calendar-feed/rotate", auth.RequireAuth(s.handleRotateCalendarFeed))
 	mux.HandleFunc("POST /api/maintenance", auth.RequireRoles(s.handleCreateMaintenance, "admin", "helpdesk"))
 	mux.HandleFunc("PATCH /api/maintenance/{id}", auth.RequireRoles(s.handleUpdateMaintenance, "admin", "helpdesk"))
 	mux.HandleFunc("DELETE /api/maintenance/{id}", auth.RequireRoles(s.handleDeleteMaintenance, "admin", "helpdesk"))
@@ -435,6 +438,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 
 	// Status pages (a wall screen's read-only dashboard, opened with a secret link instead of a login):
 	// the public link + page + its data, and the admin API that manages them. See statuspage.go.
+	// the maintenance calendar feed (public: the token is the credential; calendar.go)
+	mux.HandleFunc("GET /cal/m/{file}", s.handleCalendarICS)
 	mux.HandleFunc("GET /status/{token}", s.handleStatusLink)
 	mux.HandleFunc("GET /status", s.handleStatusPage)
 	mux.HandleFunc("GET /status/data", s.handleStatusData)

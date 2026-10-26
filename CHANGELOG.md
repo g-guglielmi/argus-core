@@ -25,6 +25,9 @@ GitHub Release from the matching section below.
   page: no incident open" means it's only this site), and under the service on the host page while
   the vendor has an incident open. Only open incidents count, never the page's headline, and it never
   alerts by itself.
+- **A maintenance calendar.** The Maintenance page shows the windows as a list or as a month calendar
+  with every run, and **Calendar feed…** gives each user a secret link to subscribe to in Outlook or
+  Google Calendar, with the windows they can see, kept up to date.
 - **Domain expiry.** Every domain a host's web checks name (shop.example.com counts as example.com),
   and any domain typed in its settings (one used only for mail), gets a sensor with the days until its
   registration expires: a warning under 30 days, an error under 7, both in Thresholds. Argus reads each

@@ -1556,6 +1556,28 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .mb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
 .field > .mb-port { display: flex; gap: 8px; margin: 0; font-size: inherit; } /* over .field > span, the label's own rule */
 .mb-port .input:first-child { width: 90px; flex: none; }
+/* The maintenance calendar (Maintenance, Calendar): a month, Monday first, each run a chip. */
+.cal-head { display: flex; align-items: center; gap: 10px; padding: 10px var(--gutter); flex-wrap: wrap; }
+.cal-head .cal-month { font-weight: 650; min-width: 130px; text-transform: capitalize; }
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-top: 1px solid var(--border); }
+.cal .cal-wd { font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.cal .cal-day { min-height: 86px; padding: 4px 6px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cal .cal-day:nth-child(7n) { border-right: none; }
+.cal .cal-day.out { background: var(--hover); }
+.cal .cal-day.out .cal-n { color: var(--faint); }
+.cal .cal-day.today .cal-n { background: var(--accent); color: #fff; border-radius: 10px; padding: 0 6px; }
+.cal .cal-n { font-size: 11.5px; font-weight: 600; color: var(--muted); align-self: flex-start; }
+.cal-ev { font: inherit; font-size: 11px; line-height: 1.35; text-align: left; padding: 1px 6px; border: 0; border-left: 2px solid var(--maint); border-radius: 4px; background: color-mix(in srgb, var(--maint) 16%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); cursor: pointer; }
+.cal-ev:disabled { cursor: default; }
+.cal-ev:not(:disabled):hover { background: color-mix(in srgb, var(--maint) 26%, transparent); }
+.cal-more { font-size: 11px; color: var(--muted); padding-left: 6px; }
+.feed-url { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+.feed-url .input { flex: 1; min-width: 0; }
+@media (max-width: 640px) {
+  .cal .cal-day { min-height: 58px; padding: 3px; }
+  .cal-ev { font-size: 0; padding: 0; height: 6px; border-left-width: 0; background: var(--maint); } /* a bar per run; the title says which */
+  .cal-more { font-size: 10px; padding: 0; }
+}
 .host-settings .domain-add { display: flex; gap: 8px; align-items: center; }
 .host-settings .hs-note.warn { color: var(--warn); }
 .host-settings .domain-add .input { max-width: 280px; }

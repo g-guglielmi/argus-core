@@ -994,6 +994,12 @@ CREATE TABLE IF NOT EXISTS reports (
 	if err := s.ensureColumn("host_upstream", "auto_source TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// A user's calendar feed: its token's SHA-256, and the token encrypted (calendar.go).
+	for _, ddl := range []string{"cal_hash TEXT NOT NULL DEFAULT ''", "cal_enc TEXT NOT NULL DEFAULT ''"} {
+		if err := s.ensureColumn("users", ddl); err != nil {
+			return err
+		}
+	}
 	// A push sensor's email rule and the last mail it took (mailboxes.go).
 	for _, ddl := range []string{"mail_box INTEGER NOT NULL DEFAULT 0", "mail_from TEXT NOT NULL DEFAULT ''", "mail_subject TEXT NOT NULL DEFAULT ''",
 		"mail_ok TEXT NOT NULL DEFAULT ''", "mail_fail TEXT NOT NULL DEFAULT ''", "mail_last_at INTEGER NOT NULL DEFAULT 0", "mail_last_subject TEXT NOT NULL DEFAULT ''"} {

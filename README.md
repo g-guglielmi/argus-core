@@ -72,7 +72,8 @@ API key, and MAC):
   SMB, NFS, rsync over SSH or S3; one command restores it all onto a new core
   ([docs/backup-and-restore.md](docs/backup-and-restore.md)).
 - **Maintenance windows and quiet hours** - recurring or one-off windows (sites or hosts) during
-  which alerts wait for planned work and whatever is still wrong is alerted afterwards; and per-user
+  which alerts wait for planned work and whatever is still wrong is alerted afterwards, as a list or a
+  month calendar, with a personal calendar feed for Outlook or Google Calendar; and per-user
   quiet hours for personal channels, letting only the serious problems through at night.
 - **Uptime** - 24 h, 7 day and 30 day uptime per host (on its master sensor, else its ping) and
   per up/down sensor, a strip of the last checks and a bar per day; status pages show their hosts'

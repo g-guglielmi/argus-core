@@ -1216,6 +1216,16 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   **Remind for** severity (independent of its alert floor, so "alert on warnings, remind only about
   errors" is one channel); acknowledging, pausing or hiding stops them. A
   channel added after a problem went live isn't sent that problem.
+- **Maintenance calendar (OneUptime's maintenance calendar; `calendar.go`):** the Maintenance page
+  shows the windows as a list or as a **Calendar**, a month (Monday first, days in the Argus timezone)
+  with every run of the enabled windows the user sees (`GET /api/maintenance/occurrences?from=&to=`, up
+  to 62 days, from the reports' `occurrencesBetween`), a run opening its window for those who may edit
+  it. **Calendar feed…** gives each user their own secret link (`/cal/m/<token>.ics`; the token's
+  SHA-256 in `users.cal_hash` for the lookup, encrypted in `cal_enc` to show it again; **New link**
+  replaces it, logged in Changes) to subscribe to in Outlook or Google Calendar: an iCalendar of the runs
+  of the windows that user sees (their sites), 30 days back and 180 ahead, one event per run with UTC
+  times and a UID stable per run, refreshed hourly. A disabled user's link answers 404. A calendar that
+  fetches from its own servers needs Argus reachable from the internet.
 - **Heartbeat (who watches Argus):** nothing inside Argus can report that Argus itself stopped, so
   with a **Heartbeat URL** set (Settings -> Heartbeat, `ARGUS_HEARTBEAT_URL`) it pings an outside
   monitor (a healthchecks.io check, an Uptime Kuma push monitor) once a minute, but only while it is

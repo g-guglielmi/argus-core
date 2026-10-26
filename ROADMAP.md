@@ -431,8 +431,8 @@ NetFlow.
 - [ ] **One timeline per incident** - everything about one problem in one place: when it opened,
   which channel was told when, escalations and reminders, who acknowledged it and with what note, the
   sensors it held, the recovery. Answers "did anyone actually get paged?" - _(BE+FE)_ M
-- [ ] **Maintenance calendar feed** - a secret `.ics` link per user (or per site) so planned windows
-  show in Outlook, plus a calendar view on the Maintenance page. - _(BE+FE)_ S
+- [x] **Maintenance calendar feed** - a secret `.ics` link per user so planned windows show in
+  Outlook, plus a month calendar on the Maintenance page. DESIGN section 9. - _Unreleased_
 - [ ] **Runbook notes** - a "what to do" text per device class or per sensor, shown beside the
   problem and carried in its alerts the way "who to call" is (a switch per channel). - _(BE+FE)_ S
 - [ ] **On-call rotation** - the team takes on-call a week each (5 people today): an on-call

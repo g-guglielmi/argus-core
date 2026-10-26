@@ -206,6 +206,7 @@ var changeRoutes = map[string]routeChange{
 	"POST /api/me/mfa/disable":              {cat: "users", action: "Turned off two-factor sign-in"},
 	"POST /api/me/mfa/recovery-codes":       {cat: "users", action: "Made new recovery codes"},
 	"POST /api/me/passkeys/register/finish": {cat: "users", action: "Added a passkey"},
+	"POST /api/me/calendar-feed/rotate":     {cat: "users", action: "Made a new calendar feed link"},
 	"DELETE /api/me/passkeys/{id}":          {cat: "users", action: "Removed a passkey"},
 	"POST /api/me/notify/channels":          {cat: "channels", action: "Added a personal channel", detail: fieldDetail("type")},
 	"PATCH /api/me/notify/channels/{id}":    {cat: "channels", action: "Changed a personal channel"},
