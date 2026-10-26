@@ -546,6 +546,13 @@ CREATE TABLE IF NOT EXISTS push_hosts (
   host_id  TEXT PRIMARY KEY,
   key_hash TEXT NOT NULL
 );
+-- Uptime targets (server/uptimetarget.go): a guaranteed uptime per month, on a site or a host.
+CREATE TABLE IF NOT EXISTS uptime_targets (
+  scope TEXT NOT NULL,
+  key   TEXT NOT NULL,
+  pct   REAL NOT NULL,
+  PRIMARY KEY (scope, key)
+);
 -- One timeline per incident (server/timeline.go): what happened to it, in order; kept a year.
 CREATE TABLE IF NOT EXISTS incident_log (
   id       INTEGER PRIMARY KEY AUTOINCREMENT,

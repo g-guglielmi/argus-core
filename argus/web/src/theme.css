@@ -483,6 +483,14 @@ span.muted, p.muted { color: var(--muted); }
 .upanel-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .upanel-l { font-size: 12px; color: var(--muted); min-width: 104px; }
 .upanel .upchecks { max-width: 520px; height: 18px; }
+/* A host's uptime target this month, in its uptime band. */
+.uptarget { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.uptarget .ut-bar { position: relative; width: 120px; height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; }
+.uptarget .ut-bar > span { position: absolute; inset: 0 auto 0 0; background: var(--ok); }
+.uptarget .ut-bar.warn > span { background: var(--warn); } .uptarget .ut-bar.err > span { background: var(--err); }
+.uptarget b { color: var(--text); font-weight: 600; }
+.target-pick { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.target-pick .input { width: auto; }
 .updays { display: inline-flex; gap: 3px; height: 22px; flex: 1 1 220px; max-width: 520px; min-width: 150px; }
 .updays > span { flex: 1 1 0; min-width: 2px; border-radius: 2px; }
 

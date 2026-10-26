@@ -25,6 +25,10 @@ GitHub Release from the matching section below.
   page: no incident open" means it's only this site), and under the service on the host page while
   the vendor has an incident open. Only open incidents count, never the page's headline, and it never
   alerts by itself.
+- **Uptime targets.** A guaranteed uptime per month (like 99.9 %), set on a site for its hosts or on a
+  host: the host's uptime band shows the downtime still allowed this month, a sensor warns when 75 % of
+  the allowance is spent and errors when it is gone (both in Thresholds), time in a maintenance window
+  counts as up, and reports and status pages say whether each host meets its target.
 - **One timeline per incident.** An incident on the History page opens onto everything that happened
   to it in order: when it opened, every alert, escalation and reminder with the channel it went to (a
   send that failed in red, with the channel's error), holds and maintenance waits, acknowledgements and

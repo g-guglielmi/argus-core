@@ -442,9 +442,9 @@ NetFlow.
 - [ ] **Multi-step web checks** - "can I log in to the portal": Zabbix web scenarios (steps, form
   posts, variables carried from one page to the next, required text and status per step), so no
   headless browser on the probes; the failing step and why as the reason. - _(BE+FE+templates)_ M
-- [ ] **Uptime targets** - a guaranteed uptime per host or site (e.g. 99.9% a month) and the downtime
-  still allowed this period, in the host card, the PDF reports and the status pages; a warning when
-  most of the allowance is spent, an error when it's gone. - _(BE+FE)_ S
+- [x] **Uptime targets** - a guaranteed uptime per host or site per month, the downtime still allowed
+  in the host card, met or missed in the reports and status pages, a sensor that warns at 75 % of the
+  allowance and errors at 100 %; maintenance counts as up. DESIGN section 7b. - _Unreleased_
 - [ ] **SNMP traps (opt-in)** - not used here, but welcome for whoever does: the proxy's native trap
   items, per host, off by default. - _(probe+templates)_ M
 - [ ] **Syslog - evaluate first** - only as event triggers, never as a log store (a log server does

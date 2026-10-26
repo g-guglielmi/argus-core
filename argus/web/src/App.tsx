@@ -8345,6 +8345,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
 
       {cfg.class_id !== 'probe' && <PushSensorsSection hostId={hostId} canEdit={canEdit} {...sec('push')} />}
       {cfg.class_id !== 'probe' && <DomainsSection hostId={hostId} canEdit={canEdit} {...sec('domains')} />}
+      <UptimeTargetSection hostId={hostId} canEdit={canEdit} {...sec('uptime')} />
 
       {cfg.master && (
         <HsSection title="Master sensor" {...sec('master')}
@@ -8610,7 +8611,8 @@ function fmtWhen(unix: number): string {
   catch { delete opts.timeZone; return new Intl.DateTimeFormat(undefined, opts).format(new Date(unix * 1000)) }
 }
 
-type Availability = { item_id: string; label?: string; uptime_24h: number | null; uptime_7d: number | null; uptime_30d: number | null; checks: [number, number][]; days: { day: string; pct: number | null }[] }
+type UptimeTarget = { pct: number; source: 'host' | 'site'; site?: string; month: string; allowed_s: number; used_s: number; used_pct: number; elapsed_s: number; uptime_pct: number; measured?: string }
+type Availability = { target?: UptimeTarget; item_id: string; label?: string; uptime_24h: number | null; uptime_7d: number | null; uptime_30d: number | null; checks: [number, number][]; days: { day: string; pct: number | null }[] }
 
 // fmtUptime never rounds up to 100%: one missed check in a month still reads 99.99%.
 function fmtUptime(v: number | null | undefined): string {
@@ -8664,7 +8666,90 @@ function HostUptime({ hostId }: { hostId: string }) {
       <span className="upband-l" title={a.label ? `Measured on ${a.label}` : undefined}>Uptime</span>
       <UptimeFigures a={a} />
       <UptimeChecks checks={a.checks} />
+      {a.target && <UptimeTargetBar t={a.target} />}
     </div>
+  )
+}
+
+// fmtDowntime is a stretch of downtime: "44 min", "2 h 10 min", "1 d 3 h".
+function fmtDowntime(s: number): string {
+  if (s < 60) return `${Math.max(0, Math.round(s))} s`
+  if (s < 3600) return `${Math.round(s / 60)} min`
+  if (s < 86400) { const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); return m ? `${h} h ${m} min` : `${h} h` }
+  const d = Math.floor(s / 86400), h = Math.round((s % 86400) / 3600); return h ? `${d} d ${h} h` : `${d} d`
+}
+
+// UptimeTargetBar is a host's uptime target this month: the downtime still allowed, the allowance spent
+// as a bar (amber from 75 %, red once it is gone).
+function UptimeTargetBar({ t }: { t: UptimeTarget }) {
+  const month = new Date(Number(t.month.slice(0, 4)), Number(t.month.slice(5, 7)) - 1, 1).toLocaleDateString([], { month: 'long' })
+  const left = Math.max(0, t.allowed_s - t.used_s)
+  const tone = t.used_pct >= 100 ? 'err' : t.used_pct >= 75 ? 'warn' : ''
+  const title = `Target ${t.pct}% in ${month}${t.source === 'site' ? ` (from ${t.site})` : ''}: ${fmtDowntime(t.allowed_s)} of downtime allowed, ${fmtDowntime(t.used_s)} used so far (time in a maintenance window counts as up). ${month} so far: ${t.uptime_pct}%.`
+  return (
+    <span className="uptarget" title={title}>
+      <span className="upband-l">Target {t.pct}%</span>
+      <span className={'ut-bar ' + tone}><span style={{ width: Math.min(100, t.used_pct) + '%' }} /></span>
+      <span>{t.used_pct >= 100 ? <b>Missed</b> : <><b>{fmtDowntime(left)}</b> of downtime left</>} in {month} ({fmtDowntime(t.used_s)} of {fmtDowntime(t.allowed_s)} used)</span>
+    </span>
+  )
+}
+
+const TARGET_PRESETS = [99, 99.5, 99.9, 99.95, 99.99]
+
+// TargetPicker picks a monthly uptime target: a preset, another value (90 to under 100), none, or (a
+// host) its site's.
+function TargetPicker({ value, inherit, onChange, disabled }: { value: number | null; inherit?: string; onChange: (v: number | null) => void; disabled?: boolean }) {
+  const other = value != null && value > 0 && !TARGET_PRESETS.includes(value)
+  const [custom, setCustom] = useState(other ? String(value) : '')
+  const [otherOn, setOtherOn] = useState(other)
+  const sel = otherOn ? 'other' : value == null ? (inherit !== undefined ? 'inherit' : 'none') : value === 0 ? 'none' : String(value)
+  return (
+    <span className="target-pick">
+      <Select value={sel} disabled={disabled} onChange={(e) => {
+        const v = e.target.value
+        if (v === 'other') { setOtherOn(true); return }
+        setOtherOn(false)
+        onChange(v === 'inherit' ? null : v === 'none' ? (inherit !== undefined ? 0 : null) : Number(v))
+      }}>
+        {inherit !== undefined && <option value="inherit">{inherit}</option>}
+        <option value="none">None</option>
+        {TARGET_PRESETS.map((p) => <option key={p} value={String(p)}>{p} %</option>)}
+        <option value="other">Other…</option>
+      </Select>
+      {otherOn && <>
+        <input className="input" inputMode="decimal" value={custom} placeholder="99.8" aria-label="Target, %" onChange={(e) => setCustom(e.target.value)} style={{ width: 90 }} />
+        <Button disabled={disabled || !(Number(custom.replace(',', '.')) >= 90 && Number(custom.replace(',', '.')) < 100)} onClick={() => onChange(Number(custom.replace(',', '.')))}>Set</Button>
+      </>}
+    </span>
+  )
+}
+
+// UptimeTargetSection is a host's monthly uptime target in its settings, its own or its site's; saved
+// at once.
+function UptimeTargetSection({ hostId, canEdit, open, onToggle }: { hostId: string; canEdit: boolean; open: boolean; onToggle: () => void }) {
+  const toast = useToast()
+  const [data, setData] = useState<{ host: number | null; site?: string; site_pct?: number } | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { fetch(`/api/hosts/${hostId}/uptime-target`).then((r) => (r.ok ? r.json() : null)).then(setData).catch(() => setData(null)) }, [hostId])
+  if (!data) return null
+  const siteLabel = data.site_pct ? `From ${data.site || 'its site'} (${data.site_pct} %)` : `From ${data.site || 'its site'} (none)`
+  const eff = data.host != null ? data.host : data.site_pct || 0
+  async function set(v: number | null) {
+    setBusy(true)
+    const res = await fetch(`/api/hosts/${hostId}/uptime-target`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pct: v }) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the target')); return }
+    setData(await res.json()); toast.success('Uptime target saved.')
+  }
+  return (
+    <HsSection title="Uptime target" open={open} onToggle={onToggle} summary={eff ? `${eff} % a month${data.host == null ? `, from ${data.site}` : ''}` : 'none'}>
+      <div className="hs-grid">
+        <label className="field"><span>Guaranteed uptime per month</span><TargetPicker value={data.host} inherit={siteLabel} onChange={set} disabled={!canEdit || busy} /></label>
+        <div />
+      </div>
+      <div className="hs-note">Measured like the host's uptime (its master sensor, else its ping), over the calendar month in the Argus timezone; time in a maintenance window counts as up. A sensor, Downtime allowance used, warns at 75 % of the downtime the target allows and errors at 100 % (Thresholds). A site's target (its info) applies to its hosts that don't set their own. Saved at once.</div>
+    </HsSection>
   )
 }
 
@@ -9094,6 +9179,11 @@ function SiteInfoDialog({ site, onClose, onSaved }: { site: string; onClose: () 
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [reason, setReason] = useState('')
+  const [target, setTarget] = useState<number | null>(null)
+  const [targetWas, setTargetWas] = useState<number | null>(null)
+  useEffect(() => {
+    fetch(`/api/sites/${encodeURIComponent(site)}/uptime-target`).then((r) => (r.ok ? r.json() : null)).then((x: { pct: number | null } | null) => { setTarget(x?.pct ?? null); setTargetWas(x?.pct ?? null) }).catch(() => {})
+  }, [site])
   useEffect(() => {
     fetch(`/api/sites/${encodeURIComponent(site)}/info?choices=1`).then((r) => (r.ok ? r.json() : null)).then((x: SiteInfo | null) => {
       if (x) {
@@ -9116,6 +9206,10 @@ function SiteInfoDialog({ site, onClose, onSaved }: { site: string; onClose: () 
     const res = await fetch(`/api/sites/${encodeURIComponent(site)}/info`, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) }, body: JSON.stringify({ address, note, contacts, lines: lines.map(({ down, up, ...l }) => ({ ...l, down_mbps: mbpsIn(down), up_mbps: mbpsIn(up) })) }) }).catch(() => null)
     setBusy(false)
     if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the site info')); return }
+    if (target !== targetWas) {
+      const tr = await fetch(`/api/sites/${encodeURIComponent(site)}/uptime-target`, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) }, body: JSON.stringify({ pct: target }) }).catch(() => null)
+      if (!tr || !tr.ok) { toast.error(await errText(tr, 'Saved, but not the uptime target')); return }
+    }
     toast.success('Site info saved')
     onSaved()
   }
@@ -9124,6 +9218,7 @@ function SiteInfoDialog({ site, onClose, onSaved }: { site: string; onClose: () 
       <div className="hs-grid">
         <label className="chan-field"><span className="flabel">Address</span><input className="input" maxLength={200} value={address} onChange={(e) => setAddress(e.target.value)} placeholder="1 Example Street, Example City" /></label>
         <label className="chan-field"><span className="flabel">Note</span><input className="input" maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reception opens 08:00-18:00" /></label>
+        <div className="chan-field"><span className="flabel">Guaranteed uptime per month</span><TargetPicker value={target} onChange={setTarget} /><span className="set-note" style={{ margin: 0 }}>For each of the site's hosts that don't set their own (host settings, Uptime target).</span></div>
       </div>
       <div className="site-ed-h">Contacts</div>
       <div className="hs-note">Who to call about this site. The first one goes in the alerts of a channel with Who to call on.</div>

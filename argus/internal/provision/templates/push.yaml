@@ -17,9 +17,11 @@ zabbix_export:
         warning, longer than its "missed" time an error. Both times are set per push sensor in Argus and
         arrive with the discovery. The same read carries the host's domains and the days until each
         one's registration expires (Argus reads them once a day, DESIGN section 7n): a warning under
-        {$DOMAIN.EXPIRY.WARN} days, an error under {$DOMAIN.EXPIRY.HIGH}. Argus links this template with
-        a host's first push sensor or domain, sets both macros, and unlinks it when it has neither; it
-        isn't attached by hand. DESIGN section 5.
+        {$DOMAIN.EXPIRY.WARN} days, an error under {$DOMAIN.EXPIRY.HIGH}; and, for a host with an uptime
+        target, the share of this month's downtime allowance spent (DESIGN section 7b): a warning from
+        {$UPTIME.ALLOWANCE.WARN} %, an error from {$UPTIME.ALLOWANCE.HIGH} %. Argus links this template
+        with a host's first push sensor, domain or target, sets both macros, and unlinks it when it has
+        none; it isn't attached by hand. DESIGN section 5.
       groups:
         - name: Templates/Argus
       items:
@@ -55,6 +57,65 @@ zabbix_export:
             - name: key
               value: '{$PUSH.KEY}'
       discovery_rules:
+        - uuid: 15eb13fc51374ce99ad82649d029f453
+          name: 'Uptime target discovery'
+          type: DEPENDENT
+          key: argus.uptime.discovery
+          delay: '0'
+          lifetime: 1h
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          description: 'The host''s uptime target this month, when it has one (its own, or its site''s, set in Argus).'
+          master_item:
+            key: argus.push.raw
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (d.error) { throw d.error; }
+                  return JSON.stringify(d.uptime_target ? [{ '{#PERIOD}': 'month' }] : []);
+              error_handler: DISCARD_VALUE
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          item_prototypes:
+            - uuid: 83ead3afc3194d05a39f7fe96a6aa3a3
+              name: 'Downtime allowance used'
+              type: DEPENDENT
+              key: 'argus.uptime.allowance[{#PERIOD}]'
+              delay: '0'
+              history: 90d
+              trends: 365d
+              value_type: FLOAT
+              units: '%'
+              description: 'The share of this month''s downtime allowance spent: the downtime so far (time in a maintenance window counts as up) against what the host''s uptime target allows in the whole month, as Argus reads it.'
+              master_item:
+                key: argus.push.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      if (d.error) { throw d.error; }
+                      if (!d.uptime_target) { throw 'the host no longer has an uptime target in Argus'; }
+                      return d.uptime_target.used_pct;
+              trigger_prototypes:
+                - uuid: ccb6d1edd7ef4a2d9612d09fd2909a60
+                  expression: 'last(/Argus Push/argus.uptime.allowance[{#PERIOD}])>={$UPTIME.ALLOWANCE.WARN} and last(/Argus Push/argus.uptime.allowance[{#PERIOD}])<{$UPTIME.ALLOWANCE.HIGH}'
+                  name: 'Most of this month''s downtime allowance is spent'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'The downtime allowance starts over'
+                  priority: WARNING
+                  description: 'The host has spent {$UPTIME.ALLOWANCE.WARN} % or more of the downtime its uptime target allows this month: a little more and it misses its target.'
+                - uuid: 7a45e0030e024163bede9d49b5fcaa9f
+                  expression: 'last(/Argus Push/argus.uptime.allowance[{#PERIOD}])>={$UPTIME.ALLOWANCE.HIGH}'
+                  name: 'This month''s uptime target is missed'
+                  tags:
+                    - tag: argus.recovery
+                      value: 'The downtime allowance starts over'
+                  priority: HIGH
+                  description: 'The host has spent its whole downtime allowance this month: it misses its uptime target.'
         - uuid: ed40b535ce7d454b845c990183ad4b13
           name: 'Domain discovery'
           type: DEPENDENT
@@ -259,3 +320,9 @@ zabbix_export:
         - macro: '{$DOMAIN.EXPIRY.HIGH}'
           value: '7'
           description: 'A domain whose registration expires in fewer days than this is an error.'
+        - macro: '{$UPTIME.ALLOWANCE.WARN}'
+          value: '75'
+          description: 'A host that has spent this share (%) of its monthly downtime allowance is a warning.'
+        - macro: '{$UPTIME.ALLOWANCE.HIGH}'
+          value: '100'
+          description: 'A host that has spent this share (%) of its monthly downtime allowance is an error: it misses its uptime target.'

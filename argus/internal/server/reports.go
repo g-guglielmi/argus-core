@@ -628,6 +628,20 @@ func (s *Server) buildReport(ctx context.Context, run reportRun) (report.Doc, er
 	}
 	doc.Scope = reportScopeLine(spec, len(covered), nSensors)
 
+	// A report without a target of its own holds each host to its monthly uptime target, when it has
+	// one (uptimetarget.go).
+	targetOf := func(h *reportHost) float64 { return spec.Target }
+	anyTarget := spec.Target > 0
+	if spec.Target <= 0 {
+		if siteT, hostT, err := s.st.UptimeTargets(ctx); err == nil && (len(siteT) > 0 || len(hostT) > 0) {
+			targetOf = func(h *reportHost) float64 { p, _, _ := effectiveTarget(siteT, hostT, h.h.HostID, h.groups); return p }
+			for _, h := range hosts {
+				if h.covered && targetOf(h) > 0 {
+					anyTarget = true
+				}
+			}
+		}
+	}
 	// Page 1: the tiles and the hosts table.
 	var tot upAgg
 	var totDown, totMaint time.Duration
@@ -643,7 +657,7 @@ func (s *Server) buildReport(ctx context.Context, run reportRun) (report.Doc, er
 		if h.down > 0 {
 			downHosts++
 		}
-		if p, ok := h.pct(); ok && spec.Target > 0 && p < spec.Target {
+		if p, ok := h.pct(); ok && targetOf(h) > 0 && p < targetOf(h) {
 			under = append(under, h.h.Name+", "+fmtPct(p))
 		}
 	}
@@ -656,8 +670,12 @@ func (s *Server) buildReport(ctx context.Context, run reportRun) (report.Doc, er
 			upTile.Sub += ", target " + strconv.FormatFloat(spec.Target, 'f', -1, 64) + " %"
 		}
 		doc.Tiles = append(doc.Tiles, upTile)
-		if spec.Target > 0 {
-			t := report.Tile{Label: "Under target", Value: "none", Tone: report.Good, Sub: "every host at " + strconv.FormatFloat(spec.Target, 'f', -1, 64) + " % or more"}
+		if anyTarget {
+			sub := "every host at its target or more"
+			if spec.Target > 0 {
+				sub = "every host at " + strconv.FormatFloat(spec.Target, 'f', -1, 64) + " % or more"
+			}
+			t := report.Tile{Label: "Under target", Value: "none", Tone: report.Good, Sub: sub}
 			if len(under) > 0 {
 				t = report.Tile{Label: "Under target", Value: plural(len(under), "host", "hosts"), Tone: report.Err, Sub: strings.Join(under, "; ")}
 			}
@@ -722,7 +740,7 @@ func (s *Server) buildReport(ctx context.Context, run reportRun) (report.Doc, er
 			} else if h.item == "" {
 				sec.Uptime = "no uptime sensor"
 			}
-			sec.Days = reportDays(h, from, to, loc, spec.Target)
+			sec.Days = reportDays(h, from, to, loc, targetOf(h))
 			if len(h.probs) == 0 {
 				sec.NoProblems = "No problems in the period."
 			}

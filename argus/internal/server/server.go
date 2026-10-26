@@ -314,6 +314,10 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// host settings editor: read the identity + interfaces (any user), reconcile-save them (config write).
 	mux.HandleFunc("GET /api/hosts/{id}/config", auth.RequireAuth(s.scopedHost(s.handleHostConfig)))
 	mux.HandleFunc("PATCH /api/hosts/{id}/config", auth.RequireRoles(s.scopedHost(s.handleUpdateHostConfig), "admin", "helpdesk"))
+	mux.HandleFunc("GET /api/hosts/{id}/uptime-target", auth.RequireAuth(s.scopedHost(s.handleHostUptimeTarget)))
+	mux.HandleFunc("PUT /api/hosts/{id}/uptime-target", auth.RequireRoles(s.scopedHost(s.handleSetHostUptimeTarget), "admin", "helpdesk"))
+	mux.HandleFunc("GET /api/sites/{site}/uptime-target", auth.RequireAuth(s.handleSiteUptimeTarget))
+	mux.HandleFunc("PUT /api/sites/{site}/uptime-target", auth.RequireRoles(s.handleSetSiteUptimeTarget, "admin", "helpdesk"))
 	mux.HandleFunc("GET /api/hosts/{id}/domains", auth.RequireAuth(s.scopedHost(s.handleHostDomains)))
 	mux.HandleFunc("PUT /api/hosts/{id}/domains", auth.RequireRoles(s.scopedHost(s.handleSetHostDomains), "admin", "helpdesk"))
 	mux.HandleFunc("GET /api/hosts/{id}/push", auth.RequireAuth(s.scopedHost(s.handleListPush)))

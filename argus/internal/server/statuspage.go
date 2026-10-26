@@ -605,6 +605,11 @@ func (s *Server) buildStatus(ctx context.Context, p store.StatusPage) (statusVie
 		onPage = append(onPage, h)
 	}
 	up := statusUptimeFor(s.hostUptimes(ctx, onPage), siteOf, nameOf)
+	for i := range up.Below {
+		if t := s.hostTarget(ctx, up.Below[i].id); t != nil {
+			up.Below[i].Target, up.Below[i].TargetUsed = t.Pct, t.UsedPct
+		}
+	}
 	v.Uptime = &up
 	var rows []sensorRow
 	for _, sr := range sensors {

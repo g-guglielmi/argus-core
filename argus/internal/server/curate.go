@@ -798,6 +798,9 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	// Domain expiry (Argus Push, domains.go): one row per domain, its days left.
 	case "argus.domain.days":
 		return "Domains", name, "", "", true
+	// The uptime target (Argus Push, uptimetarget.go): the share of the month's downtime allowance spent.
+	case "argus.uptime.allowance":
+		return "Uptime", "Downtime allowance used", "", "", true
 	}
 
 	// Heuristic fallback for temperature sensors, whose keys vary widely by template/SNMP.

@@ -298,13 +298,22 @@
     var t = el('table', 'below');
     t.appendChild(el('caption', null, 'Under 100% in the last 30 days'));
     var hr = el('tr');
-    ['Host', 'Site', '7 days', '30 days'].forEach(function (h, i) { var th = el('th', null, h); if (i > 1) th.style.textAlign = 'right'; hr.appendChild(th); });
+    var targets = u.below.some(function (h) { return h.target; });
+    var cols = ['Host', 'Site', '7 days', '30 days'];
+    if (targets) cols.push('Target this month');
+    cols.forEach(function (h, i) { var th = el('th', null, h); if (i > 1) th.style.textAlign = 'right'; hr.appendChild(th); });
     var th = el('thead'); th.appendChild(hr); t.appendChild(th);
     var tb = el('tbody');
     u.below.forEach(function (h) {
       var tr = el('tr');
       tr.appendChild(el('td', null, h.host)); tr.appendChild(el('td', null, h.site));
       [h.uptime_7d, h.uptime_30d].forEach(function (x) { var td = el('td', 'n', fmtUptime(x)); td.style.color = uptimeColor(x); tr.appendChild(td); });
+      if (targets) {
+        // Its monthly target: missed once the allowance is spent, else how much of it is.
+        var tt = el('td', 'n', h.target ? h.target + '%: ' + (h.target_used >= 100 ? 'missed' : Math.round(h.target_used) + '% of the allowance used') : '-');
+        if (h.target) tt.style.color = h.target_used >= 100 ? 'var(--err)' : h.target_used >= 75 ? 'var(--warn)' : 'var(--muted)';
+        tr.appendChild(tt);
+      }
       tb.appendChild(tr);
     });
     t.appendChild(tb);

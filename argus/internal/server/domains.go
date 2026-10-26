@@ -177,7 +177,7 @@ func (s *Server) checkDomains(ctx context.Context) {
 		return
 	}
 	want := map[string]bool{}
-	hosts := map[string]bool{}
+	hosts := s.targetedHosts(ctx) // an uptime target reaches the probe the same way
 	for _, m := range []map[string][]string{auto, extra} {
 		for h, ds := range m {
 			hosts[h] = true

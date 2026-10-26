@@ -364,7 +364,7 @@ func (s *Server) handleDeletePush(w http.ResponseWriter, r *http.Request) {
 	// Its sensors go at the template's next read. With the host's last push sensor gone, the template
 	// and its macros go too, unless the host has domains (they reach its probe the same way).
 	rest, _ := s.st.ListPushSensors(r.Context(), p.HostID)
-	if len(rest) == 0 && len(s.pushDomains(r.Context(), p.HostID, time.Now())) == 0 {
+	if len(rest) == 0 && len(s.pushDomains(r.Context(), p.HostID, time.Now())) == 0 && !s.targetedHosts(r.Context())[p.HostID] {
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
 		if err := s.dropPushHost(ctx, p.HostID); err != nil {
@@ -617,5 +617,9 @@ func (s *Server) handlePushPoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	writeJSON(w, http.StatusOK, map[string]any{"sensors": pushPoll(list, now.Unix(), s.mailboxTrouble(r.Context())), "domains": s.pushDomains(r.Context(), hostID, now)})
+	out := map[string]any{"sensors": pushPoll(list, now.Unix(), s.mailboxTrouble(r.Context())), "domains": s.pushDomains(r.Context(), hostID, now)}
+	if t := s.hostTarget(r.Context(), hostID); t != nil {
+		out["uptime_target"] = pushTargetEntry{Pct: t.Pct, UsedPct: t.UsedPct}
+	}
+	writeJSON(w, http.StatusOK, out)
 }

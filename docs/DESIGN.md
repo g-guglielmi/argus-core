@@ -587,6 +587,21 @@ Errors + Warnings or Errors only, filterable by host, sensor or reason, and by p
 (`GET /api/incidents?days=N&probe=<proxy id, 0 = the server>&group=<name>`, each repeatable; a group
 covers its subgroups, and the filter narrows within the user's sites). **Export CSV** saves the list
 as shown. Zabbix's events follow its housekeeping retention (Settings, Data retention).
+**Uptime targets** (`uptimetarget.go`, `uptime_targets`): a guaranteed uptime per calendar month (99.9
+%), set on a site (site info, for its hosts) or on a host (host settings, **Uptime target**: its site's,
+none, or its own; saved at once, logged in Changes). The month's downtime is measured like the host's
+uptime (its master sensor, else its ping): from the hourly trends (`exactUptime` where an hour wasn't
+all up), an hour partly down spread evenly, the raw checks for the hours the trends don't cover yet;
+time in a maintenance window covering the host counts as up (planned work isn't held against the
+target). The allowance is the downtime the target leaves in the whole month (99.9 % of October: 44
+min). The host's uptime band shows the downtime still allowed and the share spent; the push channel
+(section 5) carries the share to the host's probe, where the Argus Push template's **Downtime allowance
+used** (%) warns from `{$UPTIME.ALLOWANCE.WARN}` 75 and errors from `{$UPTIME.ALLOWANCE.HIGH}` 100 (both
+in Thresholds), so a host about to miss its target alerts before it does. A report without a target of
+its own holds each host to its monthly target ("Under target", the day tones); a status page's hosts
+under 100 % say their target this month (missed, or the share of the allowance used). Kept 5 minutes
+per host.
+
 **One timeline per incident** (`timeline.go`, `incident_log`, kept a year; OneUptime's incident
 timeline): an incident row on History (and a host's History tab) opens onto what happened to it in
 order (`GET /api/incidents/{id}/timeline`, anyone who sees its host). The notifier records when it

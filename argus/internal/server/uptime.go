@@ -117,6 +117,8 @@ type availabilityView struct {
 	Uptime30 *float64        `json:"uptime_30d"`
 	Checks   [][2]int64      `json:"checks"`
 	Days     []uptimeDayView `json:"days"`
+	// Target is the host's uptime target this month (uptimetarget.go); host views only.
+	Target *targetView `json:"target,omitempty"`
 }
 
 // exactUptime corrects the hourly trends of up/down sensors kept as whole numbers (value type 3, the
@@ -355,6 +357,7 @@ func (s *Server) handleHostAvailability(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "Zabbix: " + s.errText(r, err)})
 		return
 	}
+	v.Target = s.hostTarget(ctx, hostID) // v is the cache's copy
 	writeJSON(w, http.StatusOK, v)
 }
 
@@ -592,10 +595,15 @@ type statusUptime struct {
 }
 
 type statusUptimeHost struct {
+	id   string
 	Host string   `json:"host"`
 	Site string   `json:"site"`
 	D7   *float64 `json:"uptime_7d"`
 	D30  *float64 `json:"uptime_30d"`
+	// Its uptime target this month (uptimetarget.go), when it has one: the target and the share of its
+	// downtime allowance spent.
+	Target     float64 `json:"target,omitempty"`
+	TargetUsed float64 `json:"target_used,omitempty"`
 }
 
 const statusUptimeBelowMax = 10
@@ -611,7 +619,7 @@ func statusUptimeFor(ups map[string]hostUptime, siteOf, nameOf map[string]string
 		v.Hosts++
 		sum += *u.D30
 		if *u.D30 < 100 {
-			v.Below = append(v.Below, statusUptimeHost{Host: nameOf[h], Site: siteOf[h], D7: u.D7, D30: u.D30})
+			v.Below = append(v.Below, statusUptimeHost{id: h, Host: nameOf[h], Site: siteOf[h], D7: u.D7, D30: u.D30})
 		}
 	}
 	if v.Hosts > 0 {

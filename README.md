@@ -77,6 +77,8 @@ API key, and MAC):
   which alerts wait for planned work and whatever is still wrong is alerted afterwards, as a list or a
   month calendar, with a personal calendar feed for Outlook or Google Calendar; and per-user
   quiet hours for personal channels, letting only the serious problems through at night.
+- **Uptime targets** - a guaranteed uptime per month for a site's hosts or one host: the downtime still
+  allowed, an alert before the target is missed, met or missed in reports and on status pages.
 - **Uptime** - 24 h, 7 day and 30 day uptime per host (on its master sensor, else its ping) and
   per up/down sensor, a strip of the last checks and a bar per day; status pages show their hosts'
   30-day uptime and the ones under 100%.

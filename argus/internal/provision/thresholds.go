@@ -169,6 +169,8 @@ var thresholdCatalog = []TemplateThresholds{
 	{Template: TemplatePush, Specs: []ThresholdSpec{
 		{Macro: "{$DOMAIN.EXPIRY.WARN}", Label: "Domain days left - warning", Unit: "days"},
 		{Macro: "{$DOMAIN.EXPIRY.HIGH}", Label: "Domain days left - high", Unit: "days"},
+		{Macro: "{$UPTIME.ALLOWANCE.WARN}", Label: "Downtime allowance used - warning", Unit: "%"},
+		{Macro: "{$UPTIME.ALLOWANCE.HIGH}", Label: "Downtime allowance used - high", Unit: "%"},
 	}},
 	{Template: TemplateHTTP, Specs: []ThresholdSpec{
 		{Macro: "{$HTTP.RESPONSE.WARN}", Label: "Response time - warning", Unit: "s"},
