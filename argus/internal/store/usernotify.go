@@ -29,6 +29,7 @@ type UserNotifyChannel struct {
 	Alerts      bool // carries problem alerts
 	Notices     bool // carries Argus's system notices
 	WhoToCall   bool // alerts carry the site's internet line and contact
+	Runbooks    bool // alerts carry the sensor's runbook note
 	Config      map[string]string
 	CreatedAt   time.Time
 	// Delivery health, recorded per send (alerts and the Send-test button alike).
@@ -38,15 +39,15 @@ type UserNotifyChannel struct {
 	SentCount   int64
 }
 
-const userChannelColumns = `id,user_id,type,enabled,site,min_severity,config,created_at,last_sent_at,last_error,last_error_at,sent_count,delay_min,repeat_min,repeat_min_severity,alerts,system_notices,tags,who_to_call`
+const userChannelColumns = `id,user_id,type,enabled,site,min_severity,config,created_at,last_sent_at,last_error,last_error_at,sent_count,delay_min,repeat_min,repeat_min_severity,alerts,system_notices,tags,who_to_call,runbooks`
 
 func (s *Store) scanUserChannel(row rowScanner) (*UserNotifyChannel, error) {
 	var c UserNotifyChannel
-	var enabled, alerts, notices, call int
+	var enabled, alerts, notices, call, rb int
 	var cfg string
 	var site, tags string
 	var created int64
-	if err := row.Scan(&c.ID, &c.UserID, &c.Type, &enabled, &site, &c.MinSeverity, &cfg, &created, &c.LastSentAt, &c.LastError, &c.LastErrorAt, &c.SentCount, &c.DelayMin, &c.RepeatMin, &c.RepeatSev, &alerts, &notices, &tags, &call); err != nil {
+	if err := row.Scan(&c.ID, &c.UserID, &c.Type, &enabled, &site, &c.MinSeverity, &cfg, &created, &c.LastSentAt, &c.LastError, &c.LastErrorAt, &c.SentCount, &c.DelayMin, &c.RepeatMin, &c.RepeatSev, &alerts, &notices, &tags, &call, &rb); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -55,6 +56,7 @@ func (s *Store) scanUserChannel(row rowScanner) (*UserNotifyChannel, error) {
 	c.Enabled = enabled != 0
 	c.Alerts, c.Notices = alerts != 0, notices != 0
 	c.WhoToCall = call != 0
+	c.Runbooks = rb != 0
 	c.Sites = decodeSites(site)
 	c.Tags = decodeSites(tags)
 	c.CreatedAt = time.Unix(created, 0)
@@ -110,8 +112,8 @@ func (s *Store) CreateUserNotifyChannel(ctx context.Context, c UserNotifyChannel
 		enabled = 1
 	}
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO user_notify_channels(user_id,type,enabled,site,min_severity,config,created_at,delay_min,repeat_min,repeat_min_severity,alerts,system_notices,tags,who_to_call) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		c.UserID, c.Type, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), time.Now().Unix(), c.DelayMin, c.RepeatMin, c.RepeatSev, boolInt(c.Alerts), boolInt(c.Notices), encodeSites(c.Tags), boolInt(c.WhoToCall))
+		`INSERT INTO user_notify_channels(user_id,type,enabled,site,min_severity,config,created_at,delay_min,repeat_min,repeat_min_severity,alerts,system_notices,tags,who_to_call,runbooks) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		c.UserID, c.Type, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), time.Now().Unix(), c.DelayMin, c.RepeatMin, c.RepeatSev, boolInt(c.Alerts), boolInt(c.Notices), encodeSites(c.Tags), boolInt(c.WhoToCall), boolInt(c.Runbooks))
 	if err != nil {
 		return 0, err
 	}
@@ -125,8 +127,8 @@ func (s *Store) UpdateUserNotifyChannel(ctx context.Context, c UserNotifyChannel
 		enabled = 1
 	}
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE user_notify_channels SET type=?,enabled=?,site=?,min_severity=?,config=?,delay_min=?,repeat_min=?,repeat_min_severity=?,alerts=?,system_notices=?,tags=?,who_to_call=? WHERE id=?`,
-		c.Type, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), c.DelayMin, c.RepeatMin, c.RepeatSev, boolInt(c.Alerts), boolInt(c.Notices), encodeSites(c.Tags), boolInt(c.WhoToCall), c.ID)
+		`UPDATE user_notify_channels SET type=?,enabled=?,site=?,min_severity=?,config=?,delay_min=?,repeat_min=?,repeat_min_severity=?,alerts=?,system_notices=?,tags=?,who_to_call=?,runbooks=? WHERE id=?`,
+		c.Type, enabled, encodeSites(c.Sites), c.MinSeverity, s.cipher.Encrypt(string(cfg)), c.DelayMin, c.RepeatMin, c.RepeatSev, boolInt(c.Alerts), boolInt(c.Notices), encodeSites(c.Tags), boolInt(c.WhoToCall), boolInt(c.Runbooks), c.ID)
 	return err
 }
 

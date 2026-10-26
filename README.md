@@ -50,6 +50,8 @@ API key, and MAC):
 - **States** - acknowledge (with expiry + undo), pause (stops Zabbix collection), hide
   (Argus-side suppression), each with duration picker and auto-expiry. Host-level states
   inherit to sensors.
+- **Runbook notes** - what to do when a sensor is in trouble, for that sensor or every sensor of its
+  kind on hosts of its class: shown under the problem and sent with its alerts on the channels you pick.
 - **Sensor notes** - leave a note on a sensor in trouble ("ISP ticket 4471 open, technician on site
   at 14:00"): it shows with the sensor in the lists, on the host page and on the status pages, goes
   out with its alerts, reminders and RESOLVED, and clears itself once the sensor is OK again. The

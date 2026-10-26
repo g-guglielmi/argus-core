@@ -274,6 +274,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("PUT /api/sensors/{key}/note", auth.RequireRoles(s.handleSetSensorNote, "admin", "helpdesk"))
 	mux.HandleFunc("DELETE /api/sensors/{key}/note", auth.RequireRoles(s.handleClearSensorNote, "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/items/{id}/priority", auth.RequireRoles(s.scopedItem(s.handleItemPriority), "admin", "helpdesk"))
+	mux.HandleFunc("GET /api/runbooks/item/{id}", auth.RequireAuth(s.scopedItem(s.handleItemRunbook)))
+	mux.HandleFunc("PUT /api/runbooks/item/{id}", auth.RequireRoles(s.scopedItem(s.handleSaveRunbook), "admin", "helpdesk"))
 
 	// tree groups (Zabbix host groups): list is read-only; create/rename/delete + host membership
 	// are config writes, so helpdesk/admin only.

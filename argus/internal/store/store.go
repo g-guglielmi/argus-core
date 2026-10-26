@@ -546,6 +546,20 @@ CREATE TABLE IF NOT EXISTS push_hosts (
   host_id  TEXT PRIMARY KEY,
   key_hash TEXT NOT NULL
 );
+-- Runbook notes (server/runbooks.go): what to do when a sensor is in trouble, for one sensor or for a
+-- kind of sensor on hosts of a class.
+CREATE TABLE IF NOT EXISTS runbooks (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  scope      TEXT NOT NULL,
+  item_id    TEXT NOT NULL DEFAULT '',
+  class_id   TEXT NOT NULL DEFAULT '',
+  key_kind   TEXT NOT NULL DEFAULT '',
+  label      TEXT NOT NULL DEFAULT '',
+  text       TEXT NOT NULL,
+  by_name    TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_runbooks_target ON runbooks(scope, item_id, class_id, key_kind);
 -- Domain expiry (server/domains.go): the domains typed on a host (beside the ones its web checks
 -- name), and what Argus last read about each domain's registration.
 CREATE TABLE IF NOT EXISTS host_domains (
@@ -972,6 +986,13 @@ CREATE TABLE IF NOT EXISTS reports (
 	}
 	// "Who to call": the channel's alerts carry the site's internet line and contact (site.go).
 	if err := s.ensureColumn("notify_channels", "who_to_call INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	// "Runbook notes": the channel's alerts carry the sensor's runbook (runbooks.go).
+	if err := s.ensureColumn("notify_channels", "runbooks INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("user_notify_channels", "runbooks INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	if err := s.ensureColumn("user_notify_channels", "who_to_call INTEGER NOT NULL DEFAULT 0"); err != nil {

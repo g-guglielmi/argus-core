@@ -68,6 +68,7 @@ type notifyDest struct {
 	notices bool     // carries Argus's system notices
 	userID  int64    // a personal channel's owner (0 for a shared channel)
 	call    bool     // "Who to call": its alerts carry the site's internet line and contact (siteinfo.go)
+	runbook bool     // "Runbook notes": its alerts carry the sensor's runbook (runbooks.go)
 	scoped  bool     // a personal channel of a user limited to some sites (scope.go)
 	// quietFloor > 0 while its owner's quiet hours are on: only problems at or above it are sent now;
 	// a quieter one waits (and goes out once the quiet hours end, if still open).
@@ -205,7 +206,7 @@ func notifyDests(st *store.Store, channels []store.NotifyChannel, userChannels [
 		out = append(out, notifyDest{
 			key: store.DeliveryKey(store.DeliveryGlobal, c.ID), kind: store.DeliveryGlobal, id: c.ID,
 			sites: c.Sites, tags: c.Tags, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
-			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, call: c.WhoToCall, created: c.CreatedAt.Unix(),
+			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, call: c.WhoToCall, runbook: c.Runbooks, created: c.CreatedAt.Unix(),
 			send: func(ctx context.Context, ev notify.Event) { sendGlobal(ctx, st, c, dir.recipients, ev, logger) },
 		})
 	}
@@ -219,7 +220,7 @@ func notifyDests(st *store.Store, channels []store.NotifyChannel, userChannels [
 		out = append(out, notifyDest{
 			key: store.DeliveryKey(store.DeliveryUser, c.ID), kind: store.DeliveryUser, id: c.ID,
 			sites: sites, tags: c.Tags, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
-			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, call: c.WhoToCall, userID: c.UserID, scoped: !sc.all, quietFloor: dir.quiet[c.UserID], created: c.CreatedAt.Unix(),
+			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, call: c.WhoToCall, runbook: c.Runbooks, userID: c.UserID, scoped: !sc.all, quietFloor: dir.quiet[c.UserID], created: c.CreatedAt.Unix(),
 			send: func(ctx context.Context, ev notify.Event) { sendPersonal(ctx, st, c, ev, logger) },
 		})
 	}
@@ -314,6 +315,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	}
 	// Site info, for the channels that say who to call (siteinfo.go).
 	sites, _ := st.SiteInfos(ctx)
+	runbooks := loadRunbooks(ctx, st) // what to do, for the "Runbook notes" channels
 
 	channels, _ := st.EnabledNotifyChannels(ctx)
 	userChannels, _ := st.EnabledUserNotifyChannels(ctx)
@@ -562,6 +564,9 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		base.Behind = masters.behindFor(hostID, masterRefs(t), hostNames)
 		if len(t.Items) > 0 {
 			base.Vendor = vendorLine(vendors.wordForKey(t.Items[0].Key), loc)
+			if rb := runbooks.find(hostID, t.Items[0].ItemID, t.Items[0].Key); rb != nil {
+				base.Runbook = rb.Text
+			}
 		}
 		if info, ok := sites[siteOf(groups)]; ok {
 			key := ""
@@ -574,6 +579,9 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			ev := base
 			if !pd.dest.call {
 				ev.Call = nil
+			}
+			if !pd.dest.runbook {
+				ev.Runbook = ""
 			}
 			row := pd.row
 			if pd.reminder {

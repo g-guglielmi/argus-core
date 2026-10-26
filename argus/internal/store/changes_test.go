@@ -133,3 +133,20 @@ func TestPushMailRuns(t *testing.T) {
 		t.Fatalf("the rule stays after its mailbox went: %+v", p.Mail)
 	}
 }
+
+// A runbook replaces the one for the same sensor or kind; removing it takes it off.
+func TestRunbooksStore(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	_ = st.SaveRunbook(ctx, Runbook{Scope: "kind", ClassID: "unifi-ap", KeyKind: "icmpping", Text: "first"})
+	_ = st.SaveRunbook(ctx, Runbook{Scope: "kind", ClassID: "unifi-ap", KeyKind: "icmpping", Text: "second"})
+	_ = st.SaveRunbook(ctx, Runbook{Scope: "item", ItemID: "501", Text: "own"})
+	rbs, err := st.Runbooks(ctx)
+	if err != nil || len(rbs) != 2 || rbs[0].Text != "second" && rbs[1].Text != "second" {
+		t.Fatalf("runbooks: %+v %v", rbs, err)
+	}
+	_ = st.DeleteRunbook(ctx, "item", "501", "", "")
+	if rbs, _ := st.Runbooks(ctx); len(rbs) != 1 || rbs[0].Scope != "kind" {
+		t.Fatalf("after removing the sensor's: %+v", rbs)
+	}
+}

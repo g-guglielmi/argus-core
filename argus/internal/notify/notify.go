@@ -47,6 +47,7 @@ type Event struct {
 	Behind    string    // the hosts plugged in behind this one, when its main sensor (ping) is the one down
 	Call      []string  // who to call: the site's internet line it is about and its contact (problems and reminders, "Who to call" channels)
 	Vendor    string    // a cloud service's vendor on its status page ("GitHub's status page: no incident open"), problems, reminders and RESOLVED
+	Runbook   string    // what to do (the sensor's runbook note, "Runbook notes" channels): problems and reminders
 	Detail    string    // a system notice's explanation, one or more lines (info only)
 	OpenURL   string    // deep link to the sensor in Argus (optional)
 	AckURL    string    // signed one-click acknowledge link (problem alerts only, optional)
@@ -204,6 +205,21 @@ func (e Event) vendorLine() string {
 	return e.Vendor
 }
 
+// runbookLines are what to do about an alert, its runbook note line by line under "What to do:": on a
+// problem or a reminder only.
+func (e Event) runbookLines() []string {
+	if (e.Kind != "problem" && e.Kind != "reminder") || strings.TrimSpace(e.Runbook) == "" {
+		return nil
+	}
+	out := []string{"What to do:"}
+	for _, l := range strings.Split(e.Runbook, "\n") {
+		if l = strings.TrimRight(l, " \t"); strings.TrimSpace(l) != "" {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
 // callLines are who to call about an alert ("Call Example Fiber +1 555 0100, circuit EXF-000123
 // (WAN 1)", "On-site IT: Bob Verdi +1 555 0101"): on a problem or a reminder only.
 func (e Event) callLines() []string {
@@ -296,6 +312,7 @@ func (e Event) bodyLines() []string {
 		lines = append(lines, vl)
 	}
 	lines = append(lines, e.callLines()...)
+	lines = append(lines, e.runbookLines()...)
 	lines = append(lines, "Host: "+e.Host)
 	if e.Site != "" {
 		lines = append(lines, "Site: "+e.Site)
@@ -358,6 +375,7 @@ func (e Event) cardLines() []string {
 		out = append(out, vl)
 	}
 	out = append(out, e.callLines()...)
+	out = append(out, e.runbookLines()...)
 	return append(out, at+e.When.Format("2006-01-02 15:04 MST"))
 }
 

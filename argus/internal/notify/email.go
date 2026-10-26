@@ -369,6 +369,14 @@ func htmlBody(e Event) string {
 		lead += `</div>`
 	}
 
+	if rls := e.runbookLines(); len(rls) > 0 {
+		lead += `<div class="txt" style="font-size:13px;color:#111827;margin-bottom:12px;padding:8px 10px;border-left:3px solid #2ea8c9;background:rgba(46,168,201,0.08);border-radius:4px"><b>` + htmlEscape(rls[0]) + `</b>`
+		for _, rl := range rls[1:] {
+			lead += `<br>` + htmlEscape(rl)
+		}
+		lead += `</div>`
+	}
+
 	var buttons strings.Builder
 	btn := func(label, href, bg string) {
 		buttons.WriteString(`<a href="` + htmlEscape(href) + `" style="display:inline-block;padding:8px 16px;margin:0 8px 8px 0;border-radius:7px;background:` + bg + `;color:#fff;text-decoration:none;font-size:13px;font-weight:600">` + label + `</a>`)

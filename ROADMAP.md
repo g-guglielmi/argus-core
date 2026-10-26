@@ -433,8 +433,8 @@ NetFlow.
   sensors it held, the recovery. Answers "did anyone actually get paged?" - _(BE+FE)_ M
 - [x] **Maintenance calendar feed** - a secret `.ics` link per user so planned windows show in
   Outlook, plus a month calendar on the Maintenance page. DESIGN section 9. - _Unreleased_
-- [ ] **Runbook notes** - a "what to do" text per device class or per sensor, shown beside the
-  problem and carried in its alerts the way "who to call" is (a switch per channel). - _(BE+FE)_ S
+- [x] **Runbook notes** - what to do, per sensor or per sensor kind on a class, beside the problem
+  and in the alerts of channels with "Runbook notes" on. DESIGN section 7o. - _Unreleased_
 - [ ] **On-call rotation** - the team takes on-call a week each (5 people today): an on-call
   channel type that delivers only to whoever is on call now, from a weekly rota (with swaps and
   overrides for a single day or week), the rota visible to the team and the hand-over announced.

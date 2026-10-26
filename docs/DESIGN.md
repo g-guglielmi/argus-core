@@ -1090,6 +1090,24 @@ it, at the Public URL). A domain whose expiry can't be read gets no sensor (it w
 supported" and alert as stopped collecting); its row in host settings says why. Under **Domains** in
 the host's sensors, one row each.
 
+## 7o. Runbook notes
+
+What someone should do when a sensor is in trouble (OneUptime's runbooks, kept to text; `runbooks.go`,
+`runbooks` table). Written from a sensor's menu (**Runbook…**, admin and helpdesk; `GET`/`PUT
+/api/runbooks/item/{id}`, an empty text removing it; logged in Changes) for **this sensor only** or for
+**every sensor of its kind on hosts of its class**: the class is the host's device class, the kind its
+item key with the instance as `*` (`vfs.fs.size[/data,pused]` -> `vfs.fs.size[*,pused]`, so every
+mount's used space is one kind and its free space another). A sensor's own runbook wins over its
+kind's; a host without a class can have only its sensors' own. Plain text, up to 1000 characters. A
+group's menu writes the runbook of its channel in trouble (when one is), else of its main reading.
+
+It shows under a sensor in trouble: its first line ("What to do: ...") with **more** for the rest, in
+the problem lists and on the host page (a group shows its channels' first). In alerts, a channel's
+**Runbook notes** switch (global and personal, off by default, like Who to call) adds the whole note
+under "What to do:" to its alerts and reminders, never to a RESOLVED or an acknowledgement; the webhook
+sends it as `runbook`. The views and the notifier read the runbooks with the hosts' classes, kept 15
+seconds.
+
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")
 
 > Sequencing: **§C** built the class templates (§5) plus a **manual** attach path; **§B** automates

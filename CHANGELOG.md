@@ -25,6 +25,10 @@ GitHub Release from the matching section below.
   page: no incident open" means it's only this site), and under the service on the host page while
   the vendor has an incident open. Only open incidents count, never the page's headline, and it never
   alerts by itself.
+- **Runbook notes.** What to do when a sensor is in trouble, written from its menu (Runbook…) for that
+  sensor or for every sensor of its kind on hosts of its class: its first line shows under the problem
+  in the lists and on the host page, the rest a click away, and channels with **Runbook notes** on send
+  it with the alert and its reminders.
 - **A maintenance calendar.** The Maintenance page shows the windows as a list or as a month calendar
   with every run, and **Calendar feed…** gives each user a secret link to subscribe to in Outlook or
   Google Calendar, with the windows they can see, kept up to date.

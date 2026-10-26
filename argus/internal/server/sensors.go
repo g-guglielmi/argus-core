@@ -41,6 +41,8 @@ type sensorRow struct {
 	// Vendor is what a Common SaaS service's vendor says on its status page (vendorstatus.go); set per
 	// response like Maintenance.
 	Vendor *vendorWord `json:"vendor,omitempty"`
+	// Runbook is what to do when it is in trouble (runbooks.go); set per response.
+	Runbook *runbookView `json:"runbook,omitempty"`
 	// HeldBy is the master whose outage holds this sensor's alerts (master.go); the lists fold it under
 	// that master. Holds is, on a master's row, how many sensors it holds.
 	HeldBy *heldRef `json:"held_by,omitempty"`

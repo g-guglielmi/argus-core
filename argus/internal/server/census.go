@@ -256,6 +256,7 @@ func (s *Server) handleCensus(w http.ResponseWriter, r *http.Request) {
 	}
 	rows := []sensorRow{}
 	inMaint := s.maintenanceNow(ctx)
+	rbs := loadRunbooks(ctx, s.st)
 	for _, sr := range all {
 		if sr.HeldBy != nil {
 			counts["held"]++
@@ -268,6 +269,7 @@ func (s *Server) handleCensus(w http.ResponseWriter, r *http.Request) {
 				sr.Maintenance = &h // sr is this loop's copy, not the shared census row
 			}
 			sr.Vendor = vendors.wordForKey(sr.key)
+			sr.Runbook = rbs.view(sr.HostID, sr.ItemID, sr.key)
 			rows = append(rows, sr)
 		}
 	}

@@ -29,6 +29,7 @@ type channelView struct {
 	Alerts      bool              `json:"alerts"`
 	Notices     bool              `json:"system_notices"`
 	WhoToCall   bool              `json:"who_to_call"`
+	Runbooks    bool              `json:"runbooks"`
 	Config      map[string]string `json:"config"`
 	// Delivery health for the channel card: last successful send, last failure (+ reason), sent count.
 	LastSentAt  int64  `json:"last_sent_at,omitempty"`
@@ -79,7 +80,7 @@ func toChannelView(c store.NotifyChannel) channelView {
 	cfg := maskChannelConfig(c.Config)
 	return channelView{
 		ID: c.ID, Type: c.Type, Name: c.Name, Enabled: c.Enabled, Sites: c.Sites, Tags: nonNilStrings(c.Tags), MinSeverity: c.MinSeverity,
-		DelayMin: c.DelayMin, RepeatMin: c.RepeatMin, RepeatSev: c.RepeatSev, Alerts: c.Alerts, Notices: c.Notices, WhoToCall: c.WhoToCall, Config: cfg,
+		DelayMin: c.DelayMin, RepeatMin: c.RepeatMin, RepeatSev: c.RepeatSev, Alerts: c.Alerts, Notices: c.Notices, WhoToCall: c.WhoToCall, Runbooks: c.Runbooks, Config: cfg,
 		LastSentAt: c.LastSentAt, LastError: c.LastError, LastErrorAt: c.LastErrorAt, SentCount: c.SentCount,
 	}
 }
@@ -123,6 +124,7 @@ type channelRequest struct {
 	Alerts      *bool             `json:"alerts"` // nil = true (a client from before system notices)
 	Notices     bool              `json:"system_notices"`
 	WhoToCall   bool              `json:"who_to_call"`
+	Runbooks    bool              `json:"runbooks"`
 	Config      map[string]string `json:"config"`
 }
 
@@ -213,7 +215,7 @@ func (req channelRequest) validate() (store.NotifyChannel, string) {
 	}
 	return store.NotifyChannel{
 		Type: t, Name: name, Enabled: req.Enabled, Sites: cleanSites(req.Sites), Tags: cleanSites(req.Tags), MinSeverity: sev,
-		DelayMin: delay, RepeatMin: repeat, RepeatSev: alertLevel(req.RepeatSev), Alerts: alerts, Notices: notices, WhoToCall: req.WhoToCall, Config: cfg,
+		DelayMin: delay, RepeatMin: repeat, RepeatSev: alertLevel(req.RepeatSev), Alerts: alerts, Notices: notices, WhoToCall: req.WhoToCall, Runbooks: req.Runbooks, Config: cfg,
 	}, ""
 }
 

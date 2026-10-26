@@ -33,6 +33,7 @@ type userChannelView struct {
 	Alerts      bool              `json:"alerts"`
 	Notices     bool              `json:"system_notices"`
 	WhoToCall   bool              `json:"who_to_call"`
+	Runbooks    bool              `json:"runbooks"`
 	Config      map[string]string `json:"config"`
 	// Delivery health for the card: last successful send, last failure (+ reason), sent count.
 	LastSentAt  int64  `json:"last_sent_at,omitempty"`
@@ -45,7 +46,7 @@ func toUserChannelView(c store.UserNotifyChannel) userChannelView {
 	cfg := maskChannelConfig(c.Config)
 	return userChannelView{
 		ID: c.ID, Type: c.Type, Enabled: c.Enabled, Sites: c.Sites, Tags: nonNilStrings(c.Tags), MinSeverity: c.MinSeverity,
-		DelayMin: c.DelayMin, RepeatMin: c.RepeatMin, RepeatSev: c.RepeatSev, Alerts: c.Alerts, Notices: c.Notices, WhoToCall: c.WhoToCall, Config: cfg,
+		DelayMin: c.DelayMin, RepeatMin: c.RepeatMin, RepeatSev: c.RepeatSev, Alerts: c.Alerts, Notices: c.Notices, WhoToCall: c.WhoToCall, Runbooks: c.Runbooks, Config: cfg,
 		LastSentAt: c.LastSentAt, LastError: c.LastError, LastErrorAt: c.LastErrorAt, SentCount: c.SentCount,
 	}
 }
@@ -62,6 +63,7 @@ type userChannelRequest struct {
 	Alerts      *bool             `json:"alerts"` // nil = true
 	Notices     bool              `json:"system_notices"`
 	WhoToCall   bool              `json:"who_to_call"`
+	Runbooks    bool              `json:"runbooks"`
 	Config      map[string]string `json:"config"`
 }
 
@@ -87,7 +89,7 @@ func (req userChannelRequest) validate() (store.UserNotifyChannel, string) {
 	}
 	return store.UserNotifyChannel{
 		Type: t, Enabled: req.Enabled, Sites: cleanSites(req.Sites), Tags: cleanSites(req.Tags), MinSeverity: sev,
-		DelayMin: delay, RepeatMin: repeat, RepeatSev: alertLevel(req.RepeatSev), Alerts: alerts, Notices: notices, WhoToCall: req.WhoToCall, Config: cfg,
+		DelayMin: delay, RepeatMin: repeat, RepeatSev: alertLevel(req.RepeatSev), Alerts: alerts, Notices: notices, WhoToCall: req.WhoToCall, Runbooks: req.Runbooks, Config: cfg,
 	}, ""
 }
 

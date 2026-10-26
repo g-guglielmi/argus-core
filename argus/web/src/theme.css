@@ -1380,6 +1380,15 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .noterow .snote { margin: 0 0 6px 18px; }
 .noterow .snote + .snote { margin-top: 4px; }
 .sreason.inc-note { color: var(--accent); }
+/* What to do under a sensor in trouble (its runbook): the first line, more for the rest. */
+.sreason.runbook-line { color: var(--text); font-size: 12px; }
+.noterow .runbook-line { margin: 0 0 6px 18px; }
+.rb-ic { display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: -2px; color: var(--accent); }
+.rb-more { color: var(--accent); background: none; border: 0; padding: 0; font: inherit; cursor: pointer; margin-left: 6px; }
+.rb-full { white-space: pre-wrap; margin: 4px 0 6px 17px; padding: 6px 9px; border-left: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); border-radius: 0 5px 5px 0; font-size: 12px; overflow-wrap: anywhere; }
+.noterow .rb-full { margin-left: 35px; }
+.rb-scope { display: grid; gap: 8px; margin-top: 12px; font-size: 13px; }
+.rb-scope label { display: flex; gap: 8px; align-items: flex-start; }
 /* A cloud service's vendor on its status page: under its problem in the lists, and under its row on
    the host page while the vendor has an incident open or this site's check fails. */
 .vendor-ic { display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: -2px; }

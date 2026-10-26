@@ -262,6 +262,7 @@ func channelDiff(r *http.Request, was, now store.NotifyChannel) {
 	changeDiff(r, "Problem alerts", onOff(was.Alerts), onOff(now.Alerts))
 	changeDiff(r, "System notices", onOff(was.Notices), onOff(now.Notices))
 	changeDiff(r, "Who to call", onOff(was.WhoToCall), onOff(now.WhoToCall))
+	changeDiff(r, "Runbook notes", onOff(was.Runbooks), onOff(now.Runbooks))
 	for k, v := range now.Config {
 		if was.Config[k] != v {
 			changeDiff(r, "Connection", "", "changed")

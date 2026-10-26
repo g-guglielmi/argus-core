@@ -119,6 +119,13 @@ func telegramMessage(e Event) (string, [][]map[string]string) {
 		for _, cl := range e.callLines() {
 			b.WriteString("<b>" + htmlEscape(cl) + "</b>\n")
 		}
+		for i, rl := range e.runbookLines() {
+			if i == 0 {
+				b.WriteString("<b>" + htmlEscape(rl) + "</b>\n")
+			} else {
+				b.WriteString(htmlEscape(rl) + "\n")
+			}
+		}
 		b.WriteString("Since " + e.When.Format("2006-01-02 15:04 MST") + "\n")
 	}
 	var row []map[string]string

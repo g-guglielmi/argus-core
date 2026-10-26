@@ -70,7 +70,7 @@ type Proxy = { id: string; name: string; tags?: string[]; last_access: number; o
 type ProbeJob = { state: 'queued' | 'updating' | 'failed'; tag: string; at?: number }
 type ProcRow = { name: string; label: string; running: number; target?: number; pinned?: boolean; peak?: number; held?: { from: number; to: number; before: number; after: number; at: number; cpus: number } }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
-type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; tags?: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; who_to_call?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
+type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; tags?: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; who_to_call?: boolean; runbooks?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 // Zabbix severities the notifier can act on (it never alerts below Warning). Used by the channel editor.
 // Alert levels a notification channel can choose (Zabbix severity floors). The app shows problems as
 // warnings (Zabbix Warning) or errors (Average, High, Disaster), so these are the two choices.
@@ -78,7 +78,7 @@ const SEVERITIES: { v: number; label: string }[] = [
   { v: 2, label: 'Warnings and errors' },
   { v: 3, label: 'Errors only' },
 ]
-type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string; updown?: boolean; note?: SensorNote; vendor?: VendorWord }
+type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string; updown?: boolean; note?: SensorNote; vendor?: VendorWord; runbook?: RunbookNote }
 // SensorNote is a note left on a sensor in trouble: shown and sent with it until it is OK again.
 type SensorNote = { text: string; by?: string; at: number }
 // A sensor's effective warning/high values, read from its own triggers (below = lower is worse).
@@ -86,7 +86,9 @@ type Thr = { warn?: number; high?: number; below?: boolean }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[]; held_by?: HeldBy; hidden?: boolean }
 type TriggerHost = { id: string; name: string }
 type Trigger = { id: string; description: string; severity: number; enabled: boolean; problem: boolean; since: number; hosts: TriggerHost[]; sensors: string[] }
-type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean; maintenance?: MaintHit; held_by?: HeldBy; holds?: number; note?: SensorNote; call?: string; vendor?: VendorWord }
+type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean; maintenance?: MaintHit; held_by?: HeldBy; holds?: number; note?: SensorNote; call?: string; vendor?: VendorWord; runbook?: RunbookNote }
+// RunbookNote is what to do when a sensor is in trouble, its own or its kind's (runbooks.go).
+type RunbookNote = { text: string; scope: 'item' | 'kind' }
 // VendorWord is what a Common SaaS service's vendor says on its status page: its open incidents, the
 // worst one's impact and name (vendorstatus.go).
 type VendorWord = { service: string; open: number; impact?: string; title?: string; since?: number; page: string; checked: number }
@@ -3187,7 +3189,7 @@ function reminderSchedule(first: number): string {
 
 // timingLabel is the channel card's escalation summary, appended to its meta line ("" when immediate
 // with no reminders, which is how every channel behaved before escalation existed).
-function timingLabel(c: { min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; who_to_call?: boolean; alerts?: boolean }): string {
+function timingLabel(c: { min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; who_to_call?: boolean; runbooks?: boolean; alerts?: boolean }): string {
   let out = ''
   if (c.delay_min) out += ` · after ${fmtMinutes(c.delay_min)}`
   if (c.repeat_min) {
@@ -3196,6 +3198,7 @@ function timingLabel(c: { min_severity: number; delay_min?: number; repeat_min?:
     if (rs > c.min_severity) out += ` (${SEVERITIES.find((s) => s.v === rs)?.label || ''})`
   }
   if (c.who_to_call && c.alerts !== false) out += ' · says who to call'
+  if (c.runbooks && c.alerts !== false) out += ' · with runbook notes'
   return out
 }
 
@@ -3234,6 +3237,15 @@ function CallSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boo
     <div className="chan-field">
       <Switch checked={checked} onChange={onChange} label="Who to call" />
       <span className="set-note" style={{ margin: 0 }}>Adds who to call from the site's info: on an alert about an internet line, its provider, circuit and support number; on every alert, the site's first contact. Whoever reads it on the phone can call straight away.</span>
+    </div>
+  )
+}
+
+function RunbookSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="chan-field">
+      <Switch checked={checked} onChange={onChange} label="Runbook notes" />
+      <span className="set-note" style={{ margin: 0 }}>Adds what to do, the runbook written for the sensor or its kind (a sensor's menu, Runbook), to its alerts and reminders.</span>
     </div>
   )
 }
@@ -3312,13 +3324,14 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   const [alerts, setAlerts] = useState(initial ? initial.alerts !== false : true)
   const [notices, setNotices] = useState(!!initial?.system_notices)
   const [call, setCall] = useState(!!initial?.who_to_call)
+  const [rbOn, setRbOn] = useState(!!initial?.runbooks)
   const [enabled, setEnabled] = useState(initial ? initial.enabled : true)
   const [config, setConfig] = useState<Record<string, string>>(initial?.config || {})
   const setCfg = (k: string, v: string) => setConfig((c) => ({ ...c, [k]: v }))
 
   async function save(e: FormEvent) {
     e.preventDefault(); onError('')
-    const body = { type, name, sites: selSites, tags: selTags, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, alerts, system_notices: notices, who_to_call: alerts && call, enabled, config }
+    const body = { type, name, sites: selSites, tags: selTags, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, alerts, system_notices: notices, who_to_call: alerts && call, runbooks: alerts && rbOn, enabled, config }
     const url = initial ? `/api/notify/channels/${initial.id}` : '/api/notify/channels'
     const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
@@ -3390,6 +3403,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
           </div>
         )}
         {alerts && <CallSwitch checked={call} onChange={setCall} />}
+        {alerts && <RunbookSwitch checked={rbOn} onChange={setRbOn} />}
         <NoticesSwitch checked={notices} onChange={setNotices} />
         {!alerts && !notices && <p className="set-note txt-err" style={{ margin: 0 }}>Turn on alerts, system notices, or both.</p>}
       </ChanSection>
@@ -3398,7 +3412,7 @@ function ChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   )
 }
 
-type UserChannel = { id: number; type: string; enabled: boolean; sites: string[]; tags?: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; who_to_call?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
+type UserChannel = { id: number; type: string; enabled: boolean; sites: string[]; tags?: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; who_to_call?: boolean; runbooks?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
 
 // PersonalNotifyCard lets any signed-in user manage their own alert destinations (PERSONAL_TYPES),
 // separate from the shared channels an admin configures in the Notifications tab. Self-service:
@@ -3505,13 +3519,14 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
   const [alerts, setAlerts] = useState(initial ? initial.alerts !== false : true)
   const [notices, setNotices] = useState(!!initial?.system_notices)
   const [call, setCall] = useState(!!initial?.who_to_call)
+  const [rbOn, setRbOn] = useState(!!initial?.runbooks)
   const [enabled, setEnabled] = useState(initial ? initial.enabled : true)
   const [config, setConfig] = useState<Record<string, string>>(initial?.config || {})
   const setCfg = (k: string, v: string) => setConfig((c) => ({ ...c, [k]: v }))
 
   async function save(e: FormEvent) {
     e.preventDefault(); onError('')
-    const body = { type, sites: selSites, tags: selTags, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, alerts, system_notices: notices, who_to_call: alerts && call, enabled, config }
+    const body = { type, sites: selSites, tags: selTags, min_severity: minSev, delay_min: delayMin, repeat_min: repeatMin, repeat_min_severity: remSev, alerts, system_notices: notices, who_to_call: alerts && call, runbooks: alerts && rbOn, enabled, config }
     const url = initial ? `/api/me/notify/channels/${initial.id}` : '/api/me/notify/channels'
     const res = await fetch(url, { method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) { onError(await errText(res, 'Could not save channel')); return }
@@ -3565,6 +3580,7 @@ function PersonalChannelEditor({ initial, sites, onCancel, onSaved, onError }: {
           </div>
         )}
         {alerts && <CallSwitch checked={call} onChange={setCall} />}
+        {alerts && <RunbookSwitch checked={rbOn} onChange={setRbOn} />}
         <NoticesSwitch checked={notices} onChange={setNotices} />
         {!alerts && !notices && <p className="set-note txt-err" style={{ margin: 0 }}>Turn on alerts, system notices, or both.</p>}
       </ChanSection>
@@ -8857,6 +8873,84 @@ function VendorText({ w }: { w: VendorWord }) {
   return <>{GLOBE_IC}{text} · <a href={w.page} target="_blank" rel="noopener noreferrer">status page</a></>
 }
 
+const RUNBOOK_IC = <svg className="rb-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" /><path d="M4 19V5" /><path d="M8 7h7" /></svg>
+
+// RunbookLine is what to do under a sensor in trouble: the runbook's first line, more for the rest.
+function RunbookLine({ rb }: { rb: RunbookNote }) {
+  const [open, setOpen] = useState(false)
+  const [first, ...rest] = rb.text.split('\n')
+  const more = rest.join('\n').trim()
+  return (
+    <>
+      <div className="sreason runbook-line" title={rb.scope === 'kind' ? 'The runbook for every sensor of this kind on hosts of this class' : 'This sensor\'s runbook'}>
+        {RUNBOOK_IC}What to do: {first}
+        {more && <button type="button" className="rb-more" aria-expanded={open} onClick={(e) => { e.stopPropagation(); setOpen(!open) }}>{open ? 'less' : 'more'}</button>}
+      </div>
+      {open && more && <div className="rb-full">{more}</div>}
+    </>
+  )
+}
+
+type RunbookInfo = { sensor: string; class_id: string; class_label: string; kind_count: number; item?: { text: string; by?: string; updated_at: number }; kind?: { text: string; by?: string; updated_at: number } }
+
+// RunbookDialog writes what to do for a sensor, or for every sensor of its kind on hosts of its class.
+function RunbookDialog({ itemId, label, onClose, onSaved }: { itemId: string; label: string; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast()
+  const [info, setInfo] = useState<RunbookInfo | null>(null)
+  const [scope, setScope] = useState<'item' | 'kind'>('item')
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    fetch(`/api/runbooks/item/${itemId}`).then((r) => (r.ok ? r.json() : Promise.reject())).then((d: RunbookInfo) => {
+      setInfo(d)
+      const sc = d.item ? 'item' : d.kind || d.class_id ? 'kind' : 'item'
+      setScope(sc); setText((sc === 'item' ? d.item?.text : d.kind?.text) || '')
+    }).catch(() => { toast.error('Could not read the runbook'); onClose() })
+  }, [itemId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  const pick = (sc: 'item' | 'kind') => { setScope(sc); setText((sc === 'item' ? info?.item?.text : info?.kind?.text) || '') }
+  async function save(t: string) {
+    setBusy(true)
+    const res = await fetch(`/api/runbooks/item/${itemId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope, text: t }) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the runbook')); return }
+    toast.success(t.trim() ? 'Runbook saved.' : 'Runbook removed.')
+    onSaved()
+  }
+  const saved = scope === 'item' ? info?.item : info?.kind
+  return createPortal(
+    <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: 560 }}>
+        <div className="dlg-title">Runbook · {label}</div>
+        <div className="dlg-msg">What someone should do when this sensor is in trouble. Plain text, up to 1000 characters; the first line is what the lists show, and channels with Runbook notes on send it all with the alert.</div>
+        {!info ? <Skeleton rows={3} cols={1} /> : (
+          <>
+            <label className="dlg-field"><span>What to do</span><textarea className="input" rows={6} maxLength={1000} value={text} onChange={(e) => setText(e.target.value)} placeholder={'1. Check the PoE port on the switch it\'s plugged into.\n2. ...'} /></label>
+            <div className="rb-scope">
+              <label><input type="radio" name="rb-scope" checked={scope === 'item'} onChange={() => pick('item')} /> <span>This sensor only{info.item ? ' (has one)' : ''}</span></label>
+              <label><input type="radio" name="rb-scope" checked={scope === 'kind'} disabled={!info.class_id} onChange={() => pick('kind')} /> <span>
+                {info.class_id ? <>Every {info.sensor} sensor on {info.class_label} hosts ({info.kind_count} now){info.kind ? ' (has one)' : ''}</> : 'Every sensor of its kind (this host has no class)'}
+                <br /><span className="set-hint">A sensor's own runbook wins over its kind's.</span>
+              </span></label>
+            </div>
+            {saved?.by && <div className="set-hint" style={{ marginTop: 8 }}>Written by {saved.by}, {relTime(saved.updated_at)}.</div>}
+          </>
+        )}
+        <div className="dlg-foot">
+          {saved && <Button variant="ghost" disabled={busy} onClick={() => save('')}>Remove</Button>}
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={busy || !info || !text.trim()} onClick={() => save(text)}>{busy ? 'Saving…' : 'Save'}</Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 const PHONE_IC = <svg className="call-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z" /></svg>
 
 // lineSpeed is a line's contracted speed: "1000 Mbps", or "1000/300 Mbps" when the upload differs.
@@ -10566,6 +10660,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
   const [problems, setProblems] = useState<Problem[]>([])
   const [error, setError] = useState<string | null>(null)
   const [openItem, setOpenItem] = useState<string | null>(null)
+  const [rbFor, setRbFor] = useState<{ id: string; label: string } | null>(null) // the sensor whose runbook is being written
   const [whyOpen, toggleWhy] = useWhyOpen()
 
   function loadItems(reset = true) {
@@ -10810,6 +10905,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
   const probColor = open.length === 0 ? (shown.length === 0 ? 'var(--muted)' : 'var(--acked)') : probErr ? 'var(--err)' : 'var(--warn)'
   return (
     <div>
+      {rbFor && <RunbookDialog itemId={rbFor.id} label={rbFor.label} onClose={() => setRbFor(null)} onSaved={() => { setRbFor(null); loadItems(false) }} />}
       {!onlyItem && <HostUptime hostId={hostId} />}
       {maintenance && (
         <div className="maint-band">
@@ -10935,6 +11031,10 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                   const actions: KAction[] = []
                   if (gUnacked.length) actions.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => gUnacked.forEach((p) => ack(p, s)) })
                   if (gTrouble.length || gNoted.length) actions.push(...noteActions(notes, gNoteKeys, row.instance, gNoted[0]?.note))
+                  // A group's runbook is its channel in trouble's (the one in trouble when only one is), else its main reading's.
+                  const rbItem = gTrouble.length === 1 ? gTrouble[0] : primary
+                  actions.push({ label: rbItem.runbook ? 'Runbook…' : 'Write a runbook…', icon: kbIcon.edit, onClick: () => setRbFor({ id: rbItem.id, label: rbItem.label || rbItem.name }) })
+                  const gRunbook = (gTrouble.find((i) => i.runbook) || row.items.find((i) => i.runbook))?.runbook
                   if (actions.length && acts.length) actions.push({ sep: true, label: '' })
                   actions.push(...acts)
                   const gCharted = row.items.filter((i) => i.numeric)
@@ -10983,6 +11083,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                         if (!vw || !(vw.open > 0 || gState)) return null
                         return <tr className="vendorrow"><td colSpan={5}><div className={'vline ' + vendorTone(vw)} title="What the vendor says on its status page, read every 5 minutes"><VendorText w={vw} /></div></td></tr>
                       })()}
+                      {gRunbook && gState && <tr className="noterow"><td colSpan={5}><RunbookLine rb={gRunbook} /></td></tr>}
                       {gNoted.length > 0 && (
                         <tr className="noterow"><td colSpan={5}>
                           {/* The same note on several channels reads once. */}
@@ -11047,6 +11148,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                 const actions: KAction[] = []
                 if (unacked.length) actions.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => unacked.forEach((p) => ack(p, s)) })
                 if (it.note || problems.some((p) => p.item_ids.includes(it.id))) actions.push(...noteActions(notes, [it.id], label, it.note))
+                actions.push({ label: it.runbook ? 'Runbook…' : 'Write a runbook…', icon: kbIcon.edit, onClick: () => setRbFor({ id: it.id, label }) })
                 if (actions.length && acts.length) actions.push({ sep: true, label: '' })
                 actions.push(...acts)
                 if (onAddToReport && it.numeric) actions.push({ sep: true, label: '' }, { label: 'Add to a report', icon: kbIcon.report, onClick: () => onAddToReport({ sensor: { host_id: hostId, items: [it.id], label } }, label) })
@@ -11089,6 +11191,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                     </tr>
                     {it.why && whyOpen[it.id] && <tr className="whyrow"><td colSpan={5}><div className="why-line">{it.why}</div></td></tr>}
                     {it.note && <tr className="noterow"><td colSpan={5}><NoteLine note={it.note} /></td></tr>}
+                    {it.runbook && st && <tr className="noterow"><td colSpan={5}><RunbookLine rb={it.runbook} /></td></tr>}
                     {open && clickable && (
                       <tr className="chartrow"><td colSpan={5}><div className="chart-reveal">{it.updown ? <AvailabilityPanel itemId={it.id} /> : <SensorChart itemId={it.id} units={it.units} color={trendColor} bars={barRate} label={label} thr={it.thr} runs={it.key.startsWith('speedtest.')} />}</div></td></tr>
                     )}
@@ -11106,6 +11209,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
 // StatusListView is the flat cross-site list opened from a top-bar status chip: every sensor in
 // the chosen state, with deep-links to its host/chart and a per-row kebab.
 function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, onBack }: { filter: string; sensors: SensorRow[]; loading?: boolean; canPause: boolean; goHost: (h: string) => void; goSensor: (h: string, i: string, name?: string) => void; onBack: () => void }) {
+  const [rbFor, setRbFor] = useState<{ id: string; label: string } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const notes = useNoteEditor()
   const toast = useToast()
@@ -11191,12 +11295,14 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
     if (acts.length) acts.push({ sep: true, label: '' })
     // An Argus-raised row (an unreachable agent) isn't a Zabbix sensor: it can be acknowledged, not paused or hidden.
     if (s.synthetic) return acts.filter((a) => !a.sep)
+    acts.push({ label: s.runbook ? 'Runbook…' : 'Write a runbook…', icon: kbIcon.edit, onClick: () => setRbFor({ id: s.item_id, label: `${s.label || s.name} on ${s.host_name}` }) }, { sep: true, label: '' })
     acts.push({ label: 'Pause', icon: kbIcon.pause, onPick: (sec) => itemAction(s, 'pause', sec) }, { label: 'Hide', icon: kbIcon.hide, onPick: (sec) => itemAction(s, 'hide', sec) })
     return acts
   }
   const durCol = filter === 'paused' ? 'Paused' : filter === 'hidden' ? 'Hidden' : 'Last check'
   return (
     <div className="panel">
+      {rbFor && <RunbookDialog itemId={rbFor.id} label={rbFor.label} onClose={() => setRbFor(null)} onSaved={() => setRbFor(null)} />}
       <div className="phead">
         <PanelTitle eyebrow={watchEyebrow()}>{attention ? 'Active problems' : `${STATE_LABEL[filter]} sensors`}</PanelTitle>
         <span className="hint">{main.length} sensor{main.length === 1 ? '' : 's'}{heldToggle && <> · {heldToggle}</>}</span>
@@ -11240,6 +11346,7 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
                         : <div className="sreason held-tag" title="Its alerts wait until the master sensor is back">Held: {h.name}{h.host_id !== s.host_id ? ` on ${h.host_name}` : ''} is down</div>)}
                       {s.vendor && <div className={'sreason vendor-line ' + vendorTone(s.vendor)} title="What the vendor says on its status page, read every 5 minutes">{<VendorText w={s.vendor} />}</div>}
                       {s.call && <div className="sreason call-line" title="Who to call, from the site's info">{PHONE_IC}{s.call}</div>}
+                      {s.runbook && <RunbookLine rb={s.runbook} />}
                       {s.note && <NoteLine note={s.note} />}
                     </td>
                     <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <WhyText why={s.why} onToggle={() => toggleWhy(s.host_id + ':' + s.item_id)}>{dv}{du ? <span className="unit"> {du}</span> : null}</WhyText> })() : <WhyText why={s.why} color="var(--err)" onToggle={() => toggleWhy(s.host_id + ':' + s.item_id)}>not supported</WhyText>}</td>

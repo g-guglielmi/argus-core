@@ -88,6 +88,8 @@ type itemView struct {
 	Note *sensorNoteView `json:"note,omitempty"`
 	// Vendor is what a Common SaaS service's vendor says on its status page (vendorstatus.go).
 	Vendor *vendorWord `json:"vendor,omitempty"`
+	// Runbook is what to do when it is in trouble (runbooks.go).
+	Runbook *runbookView `json:"runbook,omitempty"`
 }
 
 // numericValueType reports whether a Zabbix value_type is graphable (0 float, 3 unsigned).
@@ -597,6 +599,7 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	all := r.URL.Query().Get("all") == "1"
+	rbs := loadRunbooks(ctx, s.st)
 	hideMap, _ := s.st.ActiveSuppressionMap(ctx, "hide", "item")
 	pauseMap, _ := s.st.ActiveSuppressionMap(ctx, "pause", "item")
 	prioMap, _ := s.st.ItemPriorities(ctx)
@@ -701,6 +704,7 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			iv.Instance, iv.Channel = inst, ch
 		}
 		iv.Vendor = vendors.wordForKey(it.Key)
+		iv.Runbook = rbs.view(it.HostID, it.ItemID, it.Key)
 		out = append(out, iv)
 	}
 	// Alert-mute state: which sensors have triggers (so alerts can be disabled) and whether every one
