@@ -1,0 +1,25 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: b0123beba96045ada8542647604ac6ca
+      name: Templates/Argus
+  templates:
+    - uuid: 7ec0de74388e4c399ab50a12aeb8471a
+      template: 'Argus Web Scenarios'
+      name: 'Argus Web Scenarios'
+      description: |
+        The thresholds of a host's multi-step web checks (Zabbix web scenarios, set in Argus's host
+        settings, Web scenarios): each step taking longer than {$WEB.TIME.WARN} seconds is a warning,
+        longer than {$WEB.TIME.HIGH} an error. The scenarios themselves, their items and their
+        triggers are the host's own, made by Argus (a failed step is an error that says which step and
+        why); Argus links this template with a host's first scenario and unlinks it with the last.
+        DESIGN section 7p.
+      groups:
+        - name: Templates/Argus
+      macros:
+        - macro: '{$WEB.TIME.WARN}'
+          value: '5'
+          description: 'A web scenario step that takes longer than this many seconds is a warning.'
+        - macro: '{$WEB.TIME.HIGH}'
+          value: '15'
+          description: 'A web scenario step that takes longer than this many seconds is an error.'

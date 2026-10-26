@@ -44,11 +44,13 @@ var reasonKeys = map[string]string{
 	"linux.ssh.container.running": "linux.ssh.container.status",
 	// Linux by SSH, the failed systemd units: a count, whose reason is their names.
 	"linux.ssh.units.failed": "linux.ssh.units.failed.names",
+	// A web scenario (Zabbix's own items): the step that failed, whose reason is Zabbix's error.
+	"web.test.fail": "web.test.error",
 }
 
 // countKeys are the reason-carrying sensors that count problems rather than flag up/down: their
 // reason shows while the count is above 0, and they have no uptime.
-var countKeys = map[string]bool{"linux.ssh.units.failed": true}
+var countKeys = map[string]bool{"linux.ssh.units.failed": true, "web.test.fail": true}
 
 func keyBase(key string) string {
 	if i := strings.IndexByte(key, '['); i >= 0 {
@@ -176,6 +178,16 @@ func runningReading(key, value string) (string, bool) {
 	base := key
 	if i := strings.IndexByte(key, '['); i >= 0 {
 		base = key[:i]
+	}
+	if base == "web.test.fail" { // the step that failed, 0 when none did
+		switch v := strings.TrimSpace(value); v {
+		case "":
+			return "", false
+		case "0":
+			return "OK", true
+		default:
+			return "Step " + v + " failed", true
+		}
 	}
 	words, ok := runningKeys[base]
 	if !ok {

@@ -25,6 +25,8 @@ const (
 	TemplateTCP  = "Argus TCP ports"
 	// TemplatePush reads a host's push sensors back from Argus (push.go); Argus links it itself.
 	TemplatePush = "Argus Push"
+	// TemplateWeb carries the thresholds of a host's web scenarios (webscenarios.go); Argus links it.
+	TemplateWeb = "Argus Web Scenarios"
 	// TemplateProbeHealth is the per-probe health template (internal checks run on the proxy).
 	TemplateProbeHealth = "Argus Probe Health"
 	// ClassCore is the Argus core itself: the Zabbix server's own host, adopted at startup.

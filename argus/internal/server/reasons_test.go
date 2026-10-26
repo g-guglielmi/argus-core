@@ -87,6 +87,10 @@ func TestWithReason(t *testing.T) {
 
 // Every collector flag Argus knows has a reason item, and the templates carry both: a new collector
 // template that reports "down" without saying why fails here (DESIGN section 5).
+// zabbixBuiltIn are reason-carrying items Zabbix makes itself rather than a template: a web
+// scenario's result and its error.
+var zabbixBuiltIn = map[string]bool{"web.test.fail": true}
+
 func TestTemplatesSayWhy(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("..", "provision", "templates", "*.yaml"))
 	if err != nil || len(files) == 0 {
@@ -106,6 +110,9 @@ func TestTemplatesSayWhy(t *testing.T) {
 		}
 	}
 	for flag, reason := range reasonKeys {
+		if zabbixBuiltIn[flag] {
+			continue // Zabbix makes these items itself (a web scenario's), not a template
+		}
 		if !strings.Contains(all, "key: "+flag+"\n") && !strings.Contains(all, "key: '"+flag+"[") {
 			t.Errorf("no template item %s", flag)
 		}

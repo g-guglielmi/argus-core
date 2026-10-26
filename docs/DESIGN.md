@@ -1132,6 +1132,27 @@ under "What to do:" to its alerts and reminders, never to a RESOLVED or an ackno
 sends it as `runbook`. The views and the notifier read the runbooks with the hosts' classes, kept 15
 seconds.
 
+## 7p. Multi-step web checks
+
+"Can I log in to the portal", checked end to end with Zabbix's own web scenarios (OneUptime's synthetic
+monitors without a browser; `webscenarios.go`, `zabbix/httptest.go`). A host's settings get **Web
+scenarios** (admin and helpdesk, saved at once, logged in Changes; up to 20 a host): a name, how often
+(1 minute to 1 hour) and up to 10 steps, each a full http(s) URL, form fields (name=value a line, a POST
+when there are any), the text the page must contain and the status codes it may answer. The host's
+proxy runs the steps in order, keeping cookies, following redirects, 15 seconds a step, one retry. A
+password goes in a secret host macro (`{$WEB.PASSWORD}`, any `{$NAME}` a step names gets a password field
+beside the steps; a blank one keeps it), never in the scenario. Names keep to letters, digits, spaces and
+`. _ : / ( ) -`, so the item keys Zabbix makes need no quoting.
+
+Zabbix makes the items (`web.test.fail[<scenario>]`, the step that failed or 0; `web.test.error`, why;
+`web.test.time[<scenario>,<step>,resp]` per step); Argus makes the host's triggers, tagged
+`argus.web=<scenario id>` and remade on every save: the scenario failed (High), and each step slow (a
+warning past `{$WEB.TIME.WARN}` 5 s, an error past `{$WEB.TIME.HIGH}` 15 s), the thresholds being the
+**Argus Web Scenarios** template's macros (linked with a host's first scenario, unlinked with its last)
+so Thresholds edits them. On the host, each scenario is a group under **Web scenarios**: its result ("OK"
+or "Step 2 failed", the error as the reason, a count key like the failed units) and each step's time.
+Deleting a scenario takes its items and triggers with it.
+
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")
 
 > Sequencing: **§C** built the class templates (§5) plus a **manual** attach path; **§B** automates

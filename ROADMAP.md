@@ -439,9 +439,10 @@ NetFlow.
   channel type that delivers only to whoever is on call now, from a weekly rota (with swaps and
   overrides for a single day or week), the rota visible to the team and the hand-over announced.
   Design to be talked through first. - _(BE+FE)_ M
-- [ ] **Multi-step web checks** - "can I log in to the portal": Zabbix web scenarios (steps, form
-  posts, variables carried from one page to the next, required text and status per step), so no
-  headless browser on the probes; the failing step and why as the reason. - _(BE+FE+templates)_ M
+- [x] **Multi-step web checks** - "can I log in to the portal": Zabbix web scenarios written in host
+  settings (steps, form posts, cookies kept, required text and status per step, secrets in secret
+  macros); the failing step and why as the reason, slow steps against thresholds. DESIGN section 7p. -
+  _Unreleased_
 - [x] **Uptime targets** - a guaranteed uptime per host or site per month, the downtime still allowed
   in the host card, met or missed in the reports and status pages, a sensor that warns at 75 % of the
   allowance and errors at 100 %; maintenance counts as up. DESIGN section 7b. - _Unreleased_

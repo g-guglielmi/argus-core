@@ -82,6 +82,8 @@ API key, and MAC):
 - **Uptime** - 24 h, 7 day and 30 day uptime per host (on its master sensor, else its ping) and
   per up/down sensor, a strip of the last checks and a bar per day; status pages show their hosts'
   30-day uptime and the ones under 100%.
+- **Multi-step web checks** - "can I log in to the portal", end to end: steps the probe runs in order
+  with cookies kept (open the page, post the form, check what comes back), the step that failed and why.
 - **Domain expiry** - the days until each domain a host's web checks name (or that you type on it)
   stops being registered, read once a day from its registry (RDAP, or WHOIS for registries like .it).
 - **Web checks** - the HTTP/HTTPS add-on requests each URL you list (any host, subdomain or path) once a

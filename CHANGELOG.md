@@ -25,6 +25,11 @@ GitHub Release from the matching section below.
   page: no incident open" means it's only this site), and under the service on the host page while
   the vendor has an incident open. Only open incidents count, never the page's headline, and it never
   alerts by itself.
+- **Multi-step web checks.** A host's settings get Web scenarios: steps the host's probe runs in order,
+  keeping cookies, so a login is checked end to end (open the page, post the form, check the page after
+  it). A failed step is an error that says which step and why; a slow step a warning past 5 seconds and
+  an error past 15 (Thresholds). Passwords go in secret macros, never in the scenario. Built on Zabbix's
+  own web scenarios: no browser on the probes.
 - **Uptime targets.** A guaranteed uptime per month (like 99.9 %), set on a site for its hosts or on a
   host: the host's uptime band shows the downtime still allowed this month, a sensor warns when 75 % of
   the allowance is spent and errors when it is gone (both in Thresholds), time in a maintenance window

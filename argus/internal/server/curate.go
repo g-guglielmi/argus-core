@@ -798,6 +798,14 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	// Domain expiry (Argus Push, domains.go): one row per domain, its days left.
 	case "argus.domain.days":
 		return "Domains", name, "", "", true
+	// Web scenarios (Zabbix httptest, webscenarios.go): one group per scenario, its result (0 = every step
+	// passed, else the step that failed, with Zabbix's error as the reason) and each step's time.
+	case "web.test.fail":
+		inst := param(p, 0)
+		return "Web scenarios", inst + " result", inst, "Result", true
+	case "web.test.time":
+		inst := param(p, 0)
+		return "Web scenarios", inst + ": " + param(p, 1), inst, param(p, 1), true
 	// The uptime target (Argus Push, uptimetarget.go): the share of the month's downtime allowance spent.
 	case "argus.uptime.allowance":
 		return "Uptime", "Downtime allowance used", "", "", true

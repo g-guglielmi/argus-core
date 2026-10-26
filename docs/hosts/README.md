@@ -189,6 +189,13 @@ vendor's status page every 5 minutes: a problem and its alerts say whether the v
 open ("GitHub's status page: no incident open" means it's only this site), and the service's row
 says so while one is open. It never alerts by itself.
 
+**Web scenarios (any host).** Multi-step web checks in the host's settings, **Web scenarios**: steps the
+host's probe runs in order every few minutes, keeping cookies, so a login is checked end to end. Each
+step is a URL, form fields to post (one name=value a line), the text the page must contain and the status
+codes it may answer. Put a password in a secret macro, like `password={$WEB.PASSWORD}`, and give it its
+value in the field that appears. On the host each scenario reads OK, or which step failed and why (an
+error); a step slower than 5 seconds is a warning, than 15 an error (Thresholds, Argus Web Scenarios).
+
 **Domains (any host).** The domains a host's web checks name (`shop.example.com` counts as
 `example.com`) each get a sensor under **Domains** with the days until their registration expires: a
 warning under 30 days, an error under 7 (Thresholds). Add the ones the checks don't name, like a domain

@@ -1618,6 +1618,16 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   .cal-ev { font-size: 0; padding: 0; height: 6px; border-left-width: 0; background: var(--maint); } /* a bar per run; the title says which */
   .cal-more { font-size: 10px; padding: 0; }
 }
+/* A web scenario's steps (host settings, Web scenarios). */
+.ws-wrap { overflow-x: auto; }
+.ws-steps { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 12.5px; margin: 6px 0 4px; }
+.ws-steps th { text-align: left; font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); font-weight: 600; padding: 4px 6px; }
+.ws-steps td { padding: 4px 6px; vertical-align: top; border-top: 1px solid var(--border); }
+.ws-steps .input { width: 100%; padding: 5px 8px; font-size: 12.5px; }
+.ws-steps td.n { color: var(--faint); width: 22px; padding-top: 10px; }
+.ws-steps .tag-x { background: none; border: 0; color: var(--faint); font-size: 18px; line-height: 1; cursor: pointer; padding: 6px 4px; }
+.ws-steps .tag-x:hover { color: var(--err); }
+.ws-steps textarea.input { min-height: 30px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12px; resize: vertical; }
 .host-settings .domain-add { display: flex; gap: 8px; align-items: center; }
 .host-settings .hs-note.warn { color: var(--warn); }
 .host-settings .domain-add .input { max-width: 280px; }

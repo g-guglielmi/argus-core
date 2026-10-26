@@ -7882,6 +7882,112 @@ function PushSensorsSection({ hostId, canEdit, open, onToggle }: { hostId: strin
   )
 }
 
+type WSStep = { name: string; url: string; posts: string; required: string; status: string }
+type WebScenario = { id: string; name: string; every: string; steps: WSStep[]; last_at?: number; failed: number; error?: string; total_s?: number; secrets: string[] }
+const WS_EVERY: [string, string][] = [['1m', '1 minute'], ['2m', '2 minutes'], ['5m', '5 minutes'], ['15m', '15 minutes'], ['30m', '30 minutes'], ['1h', '1 hour']]
+const NO_STEP: WSStep = { name: '', url: '', posts: '', required: '', status: '200' }
+
+// WebScenariosSection lists a host's multi-step web checks (Zabbix web scenarios, webscenarios.go) with
+// how each one last ran, and lets admins and helpdesk add, edit and delete them; saved at once.
+function WebScenariosSection({ hostId, canEdit, open, onToggle }: { hostId: string; canEdit: boolean; open: boolean; onToggle: () => void }) {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [list, setList] = useState<WebScenario[] | null>(null)
+  const [editing, setEditing] = useState<WebScenario | 'new' | null>(null)
+  const load = () => fetch(`/api/hosts/${hostId}/web-scenarios`).then((r) => (r.ok ? r.json() : [])).then((l) => setList(l || [])).catch(() => setList([]))
+  useEffect(() => { load() }, [hostId]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (list === null) return null
+  if (!canEdit && list.length === 0) return null
+  async function del(w: WebScenario) {
+    if (!(await confirm({ title: 'Delete web scenario', message: `Delete ${w.name}? Its sensors and their history go with it.`, confirmLabel: 'Delete', danger: true }))) return
+    const res = await fetch(`/api/web-scenarios/${w.id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not delete the scenario')); return }
+    toast.success('Web scenario deleted.'); load()
+  }
+  const failing = list.filter((w) => w.failed > 0)
+  const meta = (w: WebScenario) => !w.last_at ? 'No run yet' : w.failed > 0 ? `Step ${w.failed} failed ${relTime(w.last_at)}${w.error ? `: ${w.error}` : ''}` : `OK ${relTime(w.last_at)} · ${plural(w.steps.length, 'step')}${w.total_s ? ` in ${w.total_s} s` : ''}`
+  return (
+    <HsSection title="Web scenarios" open={open} onToggle={onToggle} warn={failing.length > 0}
+      summary={list.length === 0 ? 'none' : list.map((w) => w.name + (w.failed > 0 ? ' (failing)' : '')).join(', ')}>
+      <div className="hs-note" style={{ margin: '0 0 10px' }}>Multi-step web checks: steps the host's probe runs in order, keeping cookies, so a login is checked end to end (open the page, post the form, check the page after it). A failed step is an error that says which and why; a step slower than 5 seconds a warning, than 15 an error (Thresholds). Changes here are saved at once.</div>
+      {list.map((w) => (
+        <div className="push-row" key={w.id}>
+          <div className="push-head">
+            <span className={'sdot' + (w.failed > 0 ? ' pulse' : '')} style={{ '--dot': !w.last_at ? 'var(--faint)' : w.failed > 0 ? 'var(--err)' : 'var(--ok)' } as CSSProperties} />
+            <b className="push-name">{w.name}</b>
+            <span className="push-meta">{meta(w)}</span>
+            {canEdit && <span className="push-actions"><Kebab actions={[{ label: 'Edit…', icon: kbIcon.edit, onClick: () => setEditing(w) }, { sep: true, label: '' }, { label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => del(w) }]} /></span>}
+          </div>
+          <div className="push-sub">Every {WS_EVERY.find(([v]) => v === w.every)?.[1] || w.every} · {w.steps.map((s) => s.name).join(' → ')}</div>
+          {editing !== 'new' && editing?.id === w.id && <ScenarioEditor hostId={hostId} initial={w} onDone={(l) => { setEditing(null); if (l) setList(l) }} />}
+        </div>
+      ))}
+      {editing === 'new' && <div className="push-row"><b className="push-name">New web scenario</b><ScenarioEditor hostId={hostId} initial={null} onDone={(l) => { setEditing(null); if (l) setList(l) }} /></div>}
+      {canEdit && editing !== 'new' && <div className="hs-add"><Button onClick={() => setEditing('new')}>+ Add scenario</Button></div>}
+    </HsSection>
+  )
+}
+
+// ScenarioEditor edits one web scenario: its name, how often, its steps, and the secrets they name.
+function ScenarioEditor({ hostId, initial, onDone }: { hostId: string; initial: WebScenario | null; onDone: (list: WebScenario[] | null) => void }) {
+  const toast = useToast()
+  const [name, setName] = useState(initial?.name || '')
+  const [every, setEvery] = useState(initial?.every || '5m')
+  const [steps, setSteps] = useState<WSStep[]>(initial?.steps.length ? initial.steps : [{ ...NO_STEP }])
+  const [secrets, setSecrets] = useState<Record<string, string>>({})
+  const [busy, setBusy] = useState(false)
+  const setStep = (i: number, v: Partial<WSStep>) => setSteps((ss) => ss.map((s, j) => (j === i ? { ...s, ...v } : s)))
+  const named = [...new Set(steps.flatMap((s) => (s.url + ' ' + s.posts + ' ' + s.required).match(/\{\$[A-Z0-9_.]{1,64}\}/g) || []))]
+  async function save() {
+    setBusy(true)
+    const body = JSON.stringify({ name, every, steps, secrets: Object.fromEntries(named.map((m) => [m, secrets[m] || ''])) })
+    const res = await fetch(initial ? `/api/web-scenarios/${initial.id}` : `/api/hosts/${hostId}/web-scenarios`, { method: initial ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the scenario')); return }
+    toast.success(initial ? 'Web scenario saved.' : 'Web scenario added. Its sensors appear within its first run.')
+    onDone(await res.json())
+  }
+  return (
+    <div className="push-edit">
+      <div className="hs-grid">
+        <label className="field"><span>Name</span><input className="input" value={name} maxLength={64} placeholder="e.g. Portal login" onChange={(e) => setName(e.target.value)} /></label>
+        <label className="field"><span>Every</span><Select value={every} onChange={(e) => setEvery(e.target.value)}>{WS_EVERY.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></label>
+      </div>
+      <div className="ws-wrap">
+        <table className="ws-steps">
+          <thead><tr><th /><th style={{ width: '20%' }}>Step</th><th>URL</th><th style={{ width: '22%' }}>Form fields (POST)</th><th style={{ width: '16%' }}>Must contain</th><th style={{ width: '10%' }}>Status</th><th /></tr></thead>
+          <tbody>
+            {steps.map((s, i) => (
+              <tr key={i}>
+                <td className="n">{i + 1}</td>
+                <td><input className="input" value={s.name} maxLength={64} placeholder={`Step ${i + 1}`} aria-label={`Step ${i + 1} name`} onChange={(e) => setStep(i, { name: e.target.value })} /></td>
+                <td><input className="input mono" value={s.url} placeholder="https://portal.example.com/login" aria-label={`Step ${i + 1} URL`} onChange={(e) => setStep(i, { url: e.target.value })} /></td>
+                <td><textarea className="input" rows={Math.min(5, Math.max(1, s.posts.split('\n').length))} value={s.posts} placeholder="none: a GET" aria-label={`Step ${i + 1} form fields`} onChange={(e) => setStep(i, { posts: e.target.value })} /></td>
+                <td><input className="input" value={s.required} maxLength={255} aria-label={`Step ${i + 1} text it must contain`} onChange={(e) => setStep(i, { required: e.target.value })} /></td>
+                <td><input className="input" value={s.status} placeholder="200" aria-label={`Step ${i + 1} status codes`} onChange={(e) => setStep(i, { status: e.target.value })} /></td>
+                <td>{steps.length > 1 && <button type="button" className="tag-x" aria-label={`Remove step ${i + 1}`} onClick={() => setSteps((ss) => ss.filter((_, j) => j !== i))}>×</button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {steps.length < 10 && <div className="hs-add"><Button variant="ghost" className="compact" onClick={() => setSteps((ss) => [...ss, { ...NO_STEP }])}>+ Add step</Button></div>}
+      {named.length > 0 && (
+        <div className="hs-grid">
+          {named.map((m) => (
+            <label key={m} className="field"><span>{m} (secret)</span><input className="input" type="password" autoComplete="new-password" value={secrets[m] || ''} placeholder={initial?.secrets.includes(m) ? 'unchanged' : ''} onChange={(e) => setSecrets({ ...secrets, [m]: e.target.value })} /></label>
+          ))}
+        </div>
+      )}
+      <div className="hs-note">Steps run in order with the cookies of the ones before, from the host's probe. Form fields are one name=value a line; {'{$NAME}'} names a host macro: give it a value above to keep a password out of the scenario (a secret macro). Status codes are like 200, 200,302 or 200-299.</div>
+      <div className="hs-add">
+        <Button variant="primary" disabled={busy || !name.trim() || steps.some((s) => !s.url.trim())} onClick={save}>{busy ? 'Saving…' : initial ? 'Save scenario' : 'Add scenario'}</Button>
+        <Button variant="ghost" onClick={() => onDone(null)}>Cancel</Button>
+      </div>
+    </div>
+  )
+}
+
 // HostDomain is one of a host's domains: where it comes from and what Argus last read (domains.go).
 type HostDomain = { name: string; auto: boolean; typed: boolean; expires_at?: number; checked_at?: number; via?: string; error?: string }
 
@@ -8346,6 +8452,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
       {cfg.class_id !== 'probe' && <PushSensorsSection hostId={hostId} canEdit={canEdit} {...sec('push')} />}
       {cfg.class_id !== 'probe' && <DomainsSection hostId={hostId} canEdit={canEdit} {...sec('domains')} />}
       <UptimeTargetSection hostId={hostId} canEdit={canEdit} {...sec('uptime')} />
+      <WebScenariosSection hostId={hostId} canEdit={canEdit} {...sec('web')} />
 
       {cfg.master && (
         <HsSection title="Master sensor" {...sec('master')}

@@ -172,6 +172,10 @@ var thresholdCatalog = []TemplateThresholds{
 		{Macro: "{$UPTIME.ALLOWANCE.WARN}", Label: "Downtime allowance used - warning", Unit: "%"},
 		{Macro: "{$UPTIME.ALLOWANCE.HIGH}", Label: "Downtime allowance used - high", Unit: "%"},
 	}},
+	{Template: TemplateWeb, Specs: []ThresholdSpec{
+		{Macro: "{$WEB.TIME.WARN}", Label: "Web scenario step time - warning", Unit: "s"},
+		{Macro: "{$WEB.TIME.HIGH}", Label: "Web scenario step time - high", Unit: "s"},
+	}},
 	{Template: TemplateHTTP, Specs: []ThresholdSpec{
 		{Macro: "{$HTTP.RESPONSE.WARN}", Label: "Response time - warning", Unit: "s"},
 		{Macro: "{$HTTP.RESPONSE.HIGH}", Label: "Response time - high", Unit: "s"},
