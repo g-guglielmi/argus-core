@@ -1931,6 +1931,20 @@ every probe VM, the core's own status and the reboot-window mask; `GET /api/os/s
 `PUT /api/os/reboot-window`, default **notify only**). The window is mirrored to `reboot-window.json` for the core's host watcher; patching stays
 strictly local (Argus never runs `apt` remotely).
 
+**The Zabbix frontend, kept narrow (`argus-web-guard`).** A host tool of the core (script, a
+oneshot service enabled at boot and run when an update installs it, an hourly timer that puts it
+back). Two things, each changing only what it owns: (1) a `conf.d` file in every installed php-fpm
+turns session upload progress off (Zabbix never uses it; it was the confirmed trigger of PHP2Shell,
+CVE-2026-109619), php-fpm reloaded only when the file changed; (2) when nginx also serves the
+frontend over https on this machine (a server with `ssl` that proxies to the zabbix vhost's plain
+`listen` port, `:8443` on the appliance), an iptables and ip6tables chain `ARGUS-ZBX-WEB`, jumped
+to from INPUT for that port, lets in only `lo` and the Docker bridges (`docker+`, `br-+`) and
+resets the rest. Interfaces, not addresses: a container reaching the VM's LAN address still arrives
+on its bridge, and a DHCP lease change changes nothing. A core installed by hand without https keeps
+its plain port open (its Zabbix UI lives there), and so does a core with
+`/etc/argus-core/zabbix-http-open`; either way an earlier chain is removed. A run that finds
+everything in place changes and logs nothing.
+
 ### The probe host-tools channel
 
 The core's pattern (above) applied to the probe VM, so a probe VM's host side follows the probe

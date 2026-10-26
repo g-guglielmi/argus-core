@@ -1,0 +1,12 @@
+# argus-web-guard.timer - re-assert the frontend guard hourly, so a script a core update replaced
+# takes effect and a flushed firewall is put back.
+[Unit]
+Description=Argus core: re-assert the Zabbix frontend guard hourly
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

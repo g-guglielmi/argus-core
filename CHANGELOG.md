@@ -56,6 +56,17 @@ GitHub Release from the matching section below.
   from its job (by sender and subject), a failure or success word deciding the run. Argus only reads
   the mailbox, never marks, moves or deletes a mail, and a run counts at the time its mail arrived.
 
+### Security
+- **The core's Zabbix frontend is kept narrow** (`argus-web-guard`, a host tool: installed by the
+  update, run at boot and hourly). php-fpm gets session upload progress turned off: Zabbix never uses
+  it, and it was the confirmed trigger of PHP2Shell (CVE-2026-109619; Debian's fixed PHP came with
+  the nightly security updates, this closes the path besides). Where the frontend is also served over
+  https on the same machine (`:8443` on the appliance), its plain port `:8080` now answers only that
+  machine and its containers, so an Argus on the same VM keeps working whichever address it uses,
+  and the LAN reaches Zabbix over https only: open the Zabbix UI on `https://<core>:8443`. A core
+  installed by hand without https keeps `:8080` open, and so does any core with the file
+  `/etc/argus-core/zabbix-http-open`.
+
 ## [0.9.8] - 2026-10-25
 
 ### Fixed

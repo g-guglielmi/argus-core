@@ -75,7 +75,7 @@ scrubbed of secrets once setup completes.
 | Account | Created by | Password |
 |---|---|---|
 | Debian user (default `argus`) | step 1 | yours (Advanced: separate) - console + SSH |
-| Zabbix `Admin` | step 5 (rotated from the default) | yours (Advanced: separate) - the Zabbix UI on `:8080` |
+| Zabbix `Admin` | step 5 (rotated from the default) | yours (Advanced: separate) - the Zabbix UI on `:8443` |
 | Argus admin (your email) | step 6 (first-run seed) | yours (Advanced: separate) - Argus on `:8081` |
 
 Machine-generated and never displayed: the **database password** (in `zabbix_server.conf` /
@@ -128,8 +128,9 @@ PostgreSQL and nginx keep their usual places.
   the reboot is operator-scheduled from the Argus **Updates** page; the host reporter and
   reboot-window watcher are baked in via `setup-core.sh`.
 - **Ports**: Argus on **:443** (https, via nginx; the container itself listens on `127.0.0.1:8081`
-  only), Zabbix UI/API on **:8080** (plain) and on **:8443** (https, the same certificate as Argus:
-  for an Argus running on another host, whose API token must not cross the LAN in clear), proxies
+  only), Zabbix UI/API on **:8443** (https, the same certificate as Argus: for your browser and for
+  an Argus running on another host, whose API token must not cross the LAN in clear) and on **:8080**
+  (plain, for the VM itself and its containers only: `argus-web-guard`, DESIGN 14c), proxies
   inbound on **:10051**, and **:80** serves the setup page first, then a permanent redirect to Argus
   over https.
 - **The setup page asks for a setup code** that the VM prints on its console (the hypervisor's
@@ -173,7 +174,7 @@ packer build argus-core-vm.pkr.hcl        # -> output/argus-core-vm.qcow2
    enrollment PKI already works), and take a **hypervisor snapshot**.
 
 Afterwards, `http://<vm-ip>/` redirects to Argus over https. The Zabbix UI stays available on
-`:8080` (user `Admin`) for engine-room work.
+`https://<vm-ip>:8443` (user `Admin`) for engine-room work.
 
 **Backups**: turn them on in **Settings -> Backups** (daily, encrypted, exported to SMB, NFS, rsync or
 S3). The tools are in the image; a hypervisor snapshot is not a backup of the data on its own. To

@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+
+# argus-web-guard - keeps the core's Zabbix frontend narrow (DESIGN 14c). Run at boot, hourly and
+# whenever a core update installs it (argus-web-guard.service + .timer):
+#  1. PHP's session upload progress is turned off for php-fpm (a conf.d file in every installed
+#     version). Zabbix never uses it, and it was the confirmed trigger of PHP2Shell's
+#     CVE-2026-109619; php-fpm is reloaded only when the file changed.
+#  2. The frontend's plain http port (the zabbix vhost's `listen`, :8080) answers only this machine
+#     and its containers when the same frontend is also served over https here (an nginx server
+#     that proxies to it, :8443 on the appliance): the LAN uses https, and the super-admin API token
+#     never crosses it in clear. Traffic from the VM itself arrives on lo, from a container on a
+#     Docker bridge (docker0, br-*), whichever address it was sent to; everything else is refused.
+#     A core installed by hand without https keeps its plain port open (its Zabbix UI lives there),
+#     and so does any core with /etc/argus-core/zabbix-http-open.
+# Local, never remote; changes nothing it doesn't own (its own iptables chain and conf.d file).
+set -u
+ZBX_NGINX="${ARGUS_ZBX_NGINX:-/etc/zabbix/nginx.conf}"
+NGINX_DIR="${ARGUS_NGINX_DIR:-/etc/nginx}"
+PHP_DIR="${ARGUS_PHP_DIR:-/etc/php}"
+OPEN_FLAG="${ARGUS_WEB_GUARD_OPEN:-/etc/argus-core/zabbix-http-open}"
+CHAIN=ARGUS-ZBX-WEB
+INI_NAME=99-argus-hardening.ini
+INI_BODY='; Written by argus-web-guard (Argus core host tools). Zabbix does not use session upload
+; progress, and it was the confirmed trigger of CVE-2026-109619 (PHP2Shell).
+session.upload_progress.enabled = Off'
+
+say() { logger -t argus-web-guard "$*"; }
+
+# 1. PHP: one conf.d file per installed php-fpm.
+for confd in "$PHP_DIR"/*/fpm/conf.d; do
+  [ -d "$confd" ] || continue
+  ver="$(basename "$(dirname "$(dirname "$confd")")")"
+  f="$confd/$INI_NAME"
+  if [ -f "$f" ] && [ "$(cat "$f")" = "$INI_BODY" ]; then
+    continue
+  fi
+  printf '%s\n' "$INI_BODY" > "$f.argus-new" && mv -f "$f.argus-new" "$f"
+  if systemctl reload "php$ver-fpm" >/dev/null 2>&1; then
+    say "php $ver: session upload progress off, php$ver-fpm reloaded"
+  else
+    say "php $ver: session upload progress off (php$ver-fpm not reloaded: not running?)"
+  fi
+done
+
+# 2. The plain frontend port.
+port="$(sed -n 's/^[[:space:]]*listen[[:space:]]\{1,\}\([0-9]\{1,5\}\);.*/\1/p' "$ZBX_NGINX" 2>/dev/null | head -n 1)"
+why=""
+if [ -z "$port" ]; then
+  why="the Zabbix frontend has no plain port to guard"
+elif [ -e "$OPEN_FLAG" ]; then
+  why="$OPEN_FLAG says to keep :$port open"
+elif [ -z "$(grep -rlsE "proxy_pass[[:space:]]+http://(127\.0\.0\.1|localhost):$port[;/]" "$NGINX_DIR" | xargs -r grep -lsE "listen[^;]*[[:space:]]ssl")" ]; then
+  why="no https frontend here, so :$port stays the way in"
+fi
+
+unguard() {
+  local ipt="$1" rule
+  "$ipt" -w -S INPUT 2>/dev/null | sed -n "s/^-A INPUT \(.* -j $CHAIN\)\$/\1/p" | while read -r rule; do
+    # shellcheck disable=SC2086  # the rule's words, as iptables printed them
+    "$ipt" -w -D INPUT $rule
+  done
+  "$ipt" -w -F "$CHAIN" >/dev/null 2>&1
+  "$ipt" -w -X "$CHAIN" >/dev/null 2>&1
+  return 0
+}
+
+WANT="-N $CHAIN
+-A $CHAIN -i lo -j RETURN
+-A $CHAIN -i docker+ -j RETURN
+-A $CHAIN -i br-+ -j RETURN
+-A $CHAIN -p tcp -j REJECT --reject-with tcp-reset"
+
+# in_place: the chain reads as WANT and INPUT jumps to it once, for this port.
+in_place() {
+  local ipt="$1"
+  [ "$("$ipt" -w -S "$CHAIN" 2>/dev/null)" = "$WANT" ] &&
+    [ "$("$ipt" -w -S INPUT 2>/dev/null | grep -c -- "-j $CHAIN\$")" = 1 ] &&
+    "$ipt" -w -C INPUT -p tcp --dport "$port" -j "$CHAIN" >/dev/null 2>&1
+}
+
+guard() {
+  local ipt="$1"
+  unguard "$ipt"
+  "$ipt" -w -N "$CHAIN" &&
+    "$ipt" -w -A "$CHAIN" -i lo -j RETURN &&
+    "$ipt" -w -A "$CHAIN" -i docker+ -j RETURN &&
+    "$ipt" -w -A "$CHAIN" -i br-+ -j RETURN &&
+    "$ipt" -w -A "$CHAIN" -p tcp -j REJECT --reject-with tcp-reset &&
+    "$ipt" -w -I INPUT 1 -p tcp --dport "$port" -j "$CHAIN"
+}
+
+found=0
+for ipt in ${ARGUS_IPT_TOOLS:-iptables ip6tables}; do
+  command -v "$ipt" >/dev/null 2>&1 || continue
+  found=1
+  if [ -n "$why" ]; then
+    if "$ipt" -w -S "$CHAIN" >/dev/null 2>&1; then
+      unguard "$ipt"
+      say "$ipt: guard removed, $why"
+    fi
+  elif in_place "$ipt"; then
+    :
+  elif guard "$ipt"; then
+    say "$ipt: :$port answers this machine and its containers only; the LAN uses the https frontend"
+  else
+    say "$ipt: could not guard :$port"
+  fi
+done
+if [ "$found" = 0 ] && [ -z "$why" ]; then
+  say "no iptables on this host: :$port is not guarded"
+fi
+exit 0

@@ -14,6 +14,7 @@ argus-backup                       /usr/local/sbin/argus-backup                 
 argus-restore                      /usr/local/sbin/argus-restore                                     0755
 argus-console                      /usr/local/sbin/argus-console                                     0755
 argus-console-login                /usr/local/sbin/argus-console-login                               0755
+argus-web-guard                    /usr/local/sbin/argus-web-guard                                   0755
 argus-os-report.service            /etc/systemd/system/argus-os-report.service                       0644 render
 argus-os-report.timer              /etc/systemd/system/argus-os-report.timer                         0644 enable
 argus-reboot-check.service         /etc/systemd/system/argus-reboot-check.service                    0644 render
@@ -33,3 +34,5 @@ argus-size-zabbix-postgresql.conf  /etc/systemd/system/postgresql@.service.d/arg
 argus-backup.service               /etc/systemd/system/argus-backup.service                          0644 render
 argus-backup.timer                 /etc/systemd/system/argus-backup.timer                            0644 render enable
 argus-backup.path                  /etc/systemd/system/argus-backup.path                             0644 render enable
+argus-web-guard.service            /etc/systemd/system/argus-web-guard.service                       0644 enable
+argus-web-guard.timer              /etc/systemd/system/argus-web-guard.timer                         0644 enable

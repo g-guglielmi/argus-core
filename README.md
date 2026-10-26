@@ -382,7 +382,8 @@ docker run -d \
 > monitoring CA, and Argus trusts that CA through the `ca.crt` it already mounts
 > (`ARGUS_CA_CERT_FILE`; another CA goes in `ARGUS_ZABBIX_CA_FILE`). Over plain http to another
 > host, Argus logs a warning at start. On the appliance itself the container reaches Zabbix on the
-> same VM, where http is fine.
+> same VM, where http is fine: there the plain `:8080` answers only the VM and its containers
+> (`argus-web-guard`, DESIGN 14c), so another host must use `:8443`.
 >
 > **Passkeys** (`ARGUS_RP_*`) need HTTPS + a real domain - omit them for a plain-HTTP/IP
 > setup and Argus falls back to password + TOTP.

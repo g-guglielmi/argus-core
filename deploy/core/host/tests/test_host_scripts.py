@@ -1473,5 +1473,150 @@ class ConsoleTest(unittest.TestCase):
         self.assertEqual(r.stdout.strip(), "passed-through", "an ssh command or scp goes to bash, not the menu")
 
 
+# A stateful stand-in for iptables/ip6tables: the chain and INPUT's rules live in files, as `-S`
+# prints them, so the guard's idempotence and clean-up are tested against what it would leave.
+FAKE_IPT = r'''
+[ "$1" = "-w" ] && shift
+d="$IPT_DIR/$(basename "$0")"; mkdir -p "$d"
+echo "$(basename "$0") $*" >> "$LOG"
+op="$1"; ch="$2"; shift 2
+case "$op" in
+  -S) if [ "$ch" = INPUT ]; then echo "-P INPUT ACCEPT"; cat "$d/input" 2>/dev/null; exit 0; fi
+      [ -f "$d/$ch" ] || exit 1; cat "$d/$ch" ;;
+  -N) [ -f "$d/$ch" ] && exit 1; echo "-N $ch" > "$d/$ch" ;;
+  -A) [ -f "$d/$ch" ] || exit 1; echo "-A $ch $*" >> "$d/$ch" ;;
+  -F) [ -f "$d/$ch" ] || exit 1; echo "-N $ch" > "$d/$ch" ;;
+  -X) [ -f "$d/$ch" ] || exit 1; rm -f "$d/$ch" ;;
+  -I) shift; echo "-A INPUT $*" >> "$d/input" ;;
+  -C) grep -qxF -- "-A INPUT $*" "$d/input" 2>/dev/null ;;
+  -D) grep -vxF -- "-A INPUT $*" "$d/input" > "$d/input.new"; mv "$d/input.new" "$d/input" ;;
+esac
+'''
+
+ZBX_VHOST = "server {\n        listen          8080;\n        server_name     _;\n        root    /usr/share/zabbix;\n}\n"
+HTTPS_CONF = ("server {\n    listen 443 ssl default_server;\n    location / { proxy_pass http://127.0.0.1:8081; }\n}\n"
+              "server {\n    listen 8443 ssl;\n    location / {\n        proxy_pass http://127.0.0.1:8080;\n    }\n}\n")
+
+
+class WebGuardTest(unittest.TestCase):
+    """argus-web-guard: PHP's upload progress off, the plain Zabbix port for this machine only."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.etc = os.path.join(self.tmp, "etc")
+        for d in ("zabbix", "nginx/conf.d", "php/8.4/fpm/conf.d", "php/8.4/cli/conf.d", "argus-core"):
+            os.makedirs(os.path.join(self.etc, d))
+        self.write("zabbix/nginx.conf", ZBX_VHOST)
+        self.write("nginx/conf.d/argus-https.conf", HTTPS_CONF)
+        self.ipt = os.path.join(self.tmp, "ipt")
+        self.bin = os.path.join(self.tmp, "bin")
+        os.makedirs(self.bin)
+        for name, body in {"iptables": FAKE_IPT, "ip6tables": FAKE_IPT,
+                           "systemctl": "echo \"systemctl $*\" >> \"$LOG\"\n",
+                           "logger": "echo \"logger $*\" >> \"$LOG\"\n"}.items():
+            path = os.path.join(self.bin, name)
+            with open(path, "w", newline="\n") as fh:
+                fh.write("#!/usr/bin/env bash\n" + body)
+            os.chmod(path, 0o755)
+        self.script = os.path.join(self.tmp, "argus-web-guard")
+        with open(self.script, "w", newline="\n") as fh:
+            fh.write(script_body("argus-web-guard"))
+
+    def write(self, rel, body):
+        with open(os.path.join(self.etc, rel), "w", newline="\n") as fh:
+            fh.write(body)
+
+    def run_guard(self, extra=None):
+        log = os.path.join(self.tmp, "calls.log")
+        if os.path.exists(log):
+            os.remove(log)
+        e = dict(os.environ, LOG=winpath(log), IPT_DIR=winpath(self.ipt),
+                 ARGUS_ZBX_NGINX=winpath(os.path.join(self.etc, "zabbix", "nginx.conf")),
+                 ARGUS_NGINX_DIR=winpath(os.path.join(self.etc, "nginx")),
+                 ARGUS_PHP_DIR=winpath(os.path.join(self.etc, "php")),
+                 ARGUS_WEB_GUARD_OPEN=winpath(os.path.join(self.etc, "argus-core", "zabbix-http-open")),
+                 PATH=winpath(self.bin) + os.pathsep + os.environ.get("PATH", ""))
+        e.update(extra or {})
+        r = subprocess.run([WHICH("bash"), winpath(self.script)], env=e, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        if not os.path.exists(log):
+            return ""
+        with open(log) as fh:
+            return fh.read()
+
+    def rules(self, tool="iptables"):
+        out = {}
+        for name in ("ARGUS-ZBX-WEB", "input"):
+            p = os.path.join(self.ipt, tool, name)
+            out[name] = open(p).read() if os.path.exists(p) else None
+        return out
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_appliance_guards_the_plain_port_once(self):
+        calls = self.run_guard()
+        for tool in ("iptables", "ip6tables"):
+            r = self.rules(tool)
+            self.assertEqual(r["ARGUS-ZBX-WEB"].splitlines(), [
+                "-N ARGUS-ZBX-WEB", "-A ARGUS-ZBX-WEB -i lo -j RETURN", "-A ARGUS-ZBX-WEB -i docker+ -j RETURN",
+                "-A ARGUS-ZBX-WEB -i br-+ -j RETURN", "-A ARGUS-ZBX-WEB -p tcp -j REJECT --reject-with tcp-reset"], tool)
+            self.assertEqual(r["input"].splitlines(), ["-A INPUT -p tcp --dport 8080 -j ARGUS-ZBX-WEB"], tool)
+        self.assertIn("answers this machine and its containers only", calls)
+        with open(os.path.join(self.etc, "php", "8.4", "fpm", "conf.d", "99-argus-hardening.ini")) as fh:
+            self.assertIn("session.upload_progress.enabled = Off", fh.read())
+        self.assertFalse(os.path.exists(os.path.join(self.etc, "php", "8.4", "cli", "conf.d", "99-argus-hardening.ini")), "php-fpm only")
+        self.assertIn("systemctl reload php8.4-fpm", calls)
+        again = self.run_guard()
+        self.assertNotIn("systemctl reload", again, "an unchanged file reloads nothing")
+        self.assertNotIn(" -N ", again, "rules in place are left alone")
+        self.assertNotIn("logger", again, "a run that changes nothing says nothing")
+        self.assertEqual(self.rules()["input"].count("ARGUS-ZBX-WEB"), 1)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_a_new_port_moves_the_jump(self):
+        self.run_guard()
+        self.write("zabbix/nginx.conf", ZBX_VHOST.replace("8080", "8088"))
+        self.write("nginx/conf.d/argus-https.conf", HTTPS_CONF.replace("127.0.0.1:8080", "127.0.0.1:8088"))
+        self.run_guard()
+        self.assertEqual(self.rules()["input"].splitlines(), ["-A INPUT -p tcp --dport 8088 -j ARGUS-ZBX-WEB"])
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_hand_installed_core_without_https_keeps_its_port_and_drops_an_old_guard(self):
+        self.run_guard()
+        os.remove(os.path.join(self.etc, "nginx", "conf.d", "argus-https.conf"))
+        calls = self.run_guard()
+        self.assertEqual(self.rules(), {"ARGUS-ZBX-WEB": None, "input": ""})
+        self.assertIn("no https frontend here", calls)
+        quiet = self.run_guard()
+        self.assertNotIn("logger", quiet, "nothing to remove, nothing said")
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_a_plain_proxy_is_not_an_https_frontend(self):
+        self.write("nginx/conf.d/argus-https.conf", "server {\n    listen 8443;\n    location / { proxy_pass http://127.0.0.1:8080; }\n}\n")
+        self.run_guard()
+        self.assertEqual(self.rules()["ARGUS-ZBX-WEB"], None)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_the_open_flag_keeps_the_port_open(self):
+        self.run_guard()
+        self.write("argus-core/zabbix-http-open", "")
+        calls = self.run_guard()
+        self.assertEqual(self.rules()["ARGUS-ZBX-WEB"], None)
+        self.assertIn("says to keep :8080 open", calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_without_iptables_it_says_so_and_still_turns_upload_progress_off(self):
+        calls = self.run_guard(extra={"ARGUS_IPT_TOOLS": "no-such-iptables"})
+        self.assertIn("no iptables on this host", calls)
+        self.assertTrue(os.path.exists(os.path.join(self.etc, "php", "8.4", "fpm", "conf.d", "99-argus-hardening.ini")))
+
+    def test_manifest_installs_and_enables_it(self):
+        with open(os.path.join(HOST, "manifest"), encoding="utf-8") as fh:
+            manifest = fh.read()
+        self.assertRegex(manifest, r"argus-web-guard +/usr/local/sbin/argus-web-guard +0755\n")
+        for unit in ("argus-web-guard.service", "argus-web-guard.timer"):
+            self.assertRegex(manifest, r"%s +/etc/systemd/system/%s +0644 enable\n" % (re.escape(unit), re.escape(unit)))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

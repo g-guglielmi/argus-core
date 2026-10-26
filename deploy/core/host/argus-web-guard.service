@@ -1,0 +1,15 @@
+# argus-web-guard.service - keep the Zabbix frontend narrow (DESIGN 14c): session upload progress
+# off for php-fpm, and the plain frontend port for this machine and its containers only when the
+# frontend is also served over https here. Runs at boot, hourly (argus-web-guard.timer) and when a
+# core update installs it.
+[Unit]
+Description=Argus core: keep the Zabbix frontend narrow
+Documentation=https://github.com/g-guglielmi/argus-core/blob/main/docs/DESIGN.md
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/argus-web-guard
+
+[Install]
+WantedBy=multi-user.target
