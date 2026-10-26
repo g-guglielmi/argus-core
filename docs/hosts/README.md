@@ -189,6 +189,13 @@ vendor's status page every 5 minutes: a problem and its alerts say whether the v
 open ("GitHub's status page: no incident open" means it's only this site), and the service's row
 says so while one is open. It never alerts by itself.
 
+**Domains (any host).** The domains a host's web checks name (`shop.example.com` counts as
+`example.com`) each get a sensor under **Domains** with the days until their registration expires: a
+warning under 30 days, an error under 7 (Thresholds). Add the ones the checks don't name, like a domain
+used only for mail, in the host's settings, **Domains**. Argus reads each once a day from its registry
+(RDAP, or WHOIS for registries without RDAP, like .it); a registry that doesn't publish expiry dates
+(.de, .eu) gets no sensor, and the host's settings say so.
+
 **HTTP/HTTPS endpoint add-on.** A real request to each web page you list, from the host's probe, once
 a minute. Under **URLs**, **+ Add URL** adds a row, up to 16; with no rows, it checks the host itself on
 **Scheme**, **Port** and **Certificate**. Those fields show only while something uses them: a blank

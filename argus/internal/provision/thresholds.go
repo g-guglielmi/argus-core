@@ -166,6 +166,10 @@ var thresholdCatalog = []TemplateThresholds{
 		{Macro: "{$XCP.TEMP.WARN}", Label: "Hypervisor CPU temp - warning", Unit: "°C"},
 		{Macro: "{$XCP.TEMP.HIGH}", Label: "Hypervisor CPU temp - high", Unit: "°C"},
 	}},
+	{Template: TemplatePush, Specs: []ThresholdSpec{
+		{Macro: "{$DOMAIN.EXPIRY.WARN}", Label: "Domain days left - warning", Unit: "days"},
+		{Macro: "{$DOMAIN.EXPIRY.HIGH}", Label: "Domain days left - high", Unit: "days"},
+	}},
 	{Template: TemplateHTTP, Specs: []ThresholdSpec{
 		{Macro: "{$HTTP.RESPONSE.WARN}", Label: "Response time - warning", Unit: "s"},
 		{Macro: "{$HTTP.RESPONSE.HIGH}", Label: "Response time - high", Unit: "s"},

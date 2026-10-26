@@ -362,9 +362,9 @@ func (s *Server) handleDeletePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Its sensors go at the template's next read. With the host's last push sensor gone, the template
-	// and its macros go too.
+	// and its macros go too, unless the host has domains (they reach its probe the same way).
 	rest, _ := s.st.ListPushSensors(r.Context(), p.HostID)
-	if len(rest) == 0 {
+	if len(rest) == 0 && len(s.pushDomains(r.Context(), p.HostID, time.Now())) == 0 {
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
 		if err := s.dropPushHost(ctx, p.HostID); err != nil {
@@ -395,6 +395,11 @@ func (s *Server) pushHostProblem(ctx context.Context, r *http.Request, hostID st
 // sensors with. The key is made once and kept (only its hash is stored); a host whose key macro or
 // stored hash went missing gets a new one.
 func (s *Server) ensurePushHost(ctx context.Context, r *http.Request, hostID string) error {
+	return s.ensurePushHostAt(ctx, strings.TrimRight(s.baseURL(r), "/"), hostID)
+}
+
+// ensurePushHostAt links the push template on a host and sets its macros, Argus being at base.
+func (s *Server) ensurePushHostAt(ctx context.Context, base, hostID string) error {
 	names, err := s.zbx.HostLinkedTemplateNames(ctx, hostID)
 	if err != nil {
 		return err
@@ -423,7 +428,7 @@ func (s *Server) ensurePushHost(ctx context.Context, r *http.Request, hostID str
 	for _, m := range hm {
 		cur[m.Macro] = m
 	}
-	url := strings.TrimRight(s.baseURL(r), "/") + "/api/push/host/" + hostID
+	url := base + "/api/push/host/" + hostID
 	if err := s.setHostMacro(ctx, hostID, cur, pushMacroURL, url, 0); err != nil {
 		return err
 	}
@@ -611,5 +616,6 @@ func (s *Server) handlePushPoll(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not read the push sensors"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"sensors": pushPoll(list, time.Now().Unix(), s.mailboxTrouble(r.Context()))})
+	now := time.Now()
+	writeJSON(w, http.StatusOK, map[string]any{"sensors": pushPoll(list, now.Unix(), s.mailboxTrouble(r.Context())), "domains": s.pushDomains(r.Context(), hostID, now)})
 }

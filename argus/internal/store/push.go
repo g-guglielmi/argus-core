@@ -132,6 +132,24 @@ func (s *Store) RecordPush(ctx context.Context, token string, ok bool, msg strin
 	return scanPush(s.db.QueryRowContext(ctx, `SELECT `+pushColumns+` FROM push_sensors WHERE token_hash=?`, HashStatusToken(token)))
 }
 
+// PushHostIDs returns the hosts that have a push key (the push template is on them).
+func (s *Store) PushHostIDs(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT host_id FROM push_hosts`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var h string
+		if err := rows.Scan(&h); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
 // PushHostKeyHash returns the SHA-256 of the key a host's template reads its push sensors with.
 func (s *Store) PushHostKeyHash(ctx context.Context, hostID string) (string, error) {
 	var h string

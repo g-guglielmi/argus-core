@@ -7750,6 +7750,68 @@ function PushSensorsSection({ hostId, canEdit, open, onToggle }: { hostId: strin
   )
 }
 
+// HostDomain is one of a host's domains: where it comes from and what Argus last read (domains.go).
+type HostDomain = { name: string; auto: boolean; typed: boolean; expires_at?: number; checked_at?: number; via?: string; error?: string }
+
+// DomainsSection lists a host's domains with when each one's registration expires: the ones its web
+// checks name, and the ones typed here (a domain used only for mail). Saved at once, like push sensors.
+function DomainsSection({ hostId, canEdit, open, onToggle }: { hostId: string; canEdit: boolean; open: boolean; onToggle: () => void }) {
+  const toast = useToast()
+  const [data, setData] = useState<{ domains: HostDomain[]; public_url: boolean } | null>(null)
+  const [add, setAdd] = useState('')
+  const [busy, setBusy] = useState(false)
+  const load = () => fetch(`/api/hosts/${hostId}/domains`).then((r) => (r.ok ? r.json() : null)).then(setData).catch(() => setData(null))
+  useEffect(() => { load() }, [hostId]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (!data) return null
+  const list = data.domains
+  if (!canEdit && list.length === 0) return null
+  async function save(typed: string[]) {
+    setBusy(true)
+    const res = await fetch(`/api/hosts/${hostId}/domains`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ domains: typed }) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the domains')); return false }
+    setData(await res.json())
+    return true
+  }
+  const typed = list.filter((d) => d.typed).map((d) => d.name)
+  const days = (t: number) => Math.floor((t * 1000 - Date.now()) / 86400000)
+  const soon = list.filter((d) => d.expires_at && days(d.expires_at) < 30)
+  const tone = (d: HostDomain) => { if (!d.expires_at) return 'var(--faint)'; const n = days(d.expires_at); return n < 7 ? 'var(--err)' : n < 30 ? 'var(--warn)' : 'var(--ok)' }
+  const state = (d: HostDomain) => {
+    if (d.expires_at) {
+      const n = days(d.expires_at)
+      return <><span className="push-meta">{n < 0 ? `expired ${fmtWhen(d.expires_at)}` : `expires ${new Date(d.expires_at * 1000).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })}, in ${plural(n, 'day')}`}{d.error ? ` (the last read didn't work: ${d.error})` : ''}</span></>
+    }
+    if (d.error) return <span className="push-meta">no sensor: {d.error}</span>
+    return <span className="push-meta">reading it from the registry…</span>
+  }
+  return (
+    <HsSection title="Domains" open={open} onToggle={onToggle} warn={soon.length > 0}
+      summary={list.length === 0 ? 'none' : list.map((d) => d.name + (d.expires_at && days(d.expires_at) < 30 ? ' (expires soon)' : '')).join(', ')}>
+      <div className="hs-note" style={{ margin: '0 0 10px' }}>When each domain's registration expires, read from its registry once a day: a warning under 30 days, an error under 7 (Thresholds). The domains this host's web checks name come on their own; add the ones they don't, like a domain used only for mail. A registry that doesn't publish expiry dates (.de, .eu) gets no sensor. Changes here are saved at once.</div>
+      {!data.public_url && <div className="hs-note warn">Set the Public URL in Settings: the host's probe reads the domains from Argus at it.</div>}
+      {list.map((d) => (
+        <div className="push-row" key={d.name}>
+          <div className="push-head">
+            <span className="sdot" style={{ '--dot': tone(d) } as CSSProperties} />
+            <b className="push-name mono">{d.name}</b>
+            {state(d)}
+            {canEdit && d.typed && <span className="push-actions"><Button variant="ghost" className="compact" disabled={busy} onClick={() => save(typed.filter((x) => x !== d.name))}>Remove</Button></span>}
+          </div>
+          <div className="push-sub">{d.auto && d.typed ? 'From its web checks, and typed here' : d.auto ? 'From its web checks' : 'Typed here'}{d.checked_at ? ` · read ${relTime(d.checked_at)}${d.via ? ` by ${d.via === 'rdap' ? 'RDAP' : 'WHOIS'}` : ''}` : ''}</div>
+        </div>
+      ))}
+      {canEdit && (
+        <div className="hs-add domain-add">
+          <input className="input mono" value={add} placeholder="example.com" maxLength={253} aria-label="Domain to add" onChange={(e) => setAdd(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && add.trim()) { e.preventDefault(); save([...typed, add.trim()]).then((ok) => ok && setAdd('')) } }} />
+          <Button disabled={busy || !add.trim()} onClick={() => save([...typed, add.trim()]).then((ok) => ok && setAdd(''))}>+ Add domain</Button>
+        </div>
+      )}
+    </HsSection>
+  )
+}
+
 function PushEditor({ hostId, initial, onDone }: { hostId: string; initial: PushSensor | null; onDone: (saved: PushSensor | null) => void }) {
   const toast = useToast()
   const [name, setName] = useState(initial?.name || '')
@@ -8150,6 +8212,7 @@ function HostSettings({ hostId, canEdit, isAdmin, onClose, onSaved, inDialog }: 
       })()}
 
       {cfg.class_id !== 'probe' && <PushSensorsSection hostId={hostId} canEdit={canEdit} {...sec('push')} />}
+      {cfg.class_id !== 'probe' && <DomainsSection hostId={hostId} canEdit={canEdit} {...sec('domains')} />}
 
       {cfg.master && (
         <HsSection title="Master sensor" {...sec('master')}

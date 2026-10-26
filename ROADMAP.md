@@ -425,8 +425,9 @@ NetFlow.
 - [x] **Email heartbeat** - push sensors that read their runs from the mails their job sends to a
   mailbox (IMAP, or Microsoft 365 through Graph), matched on sender and subject, a failure or success
   word deciding the run; read-only. DESIGN section 7m. - _Unreleased_
-- [ ] **Domain registration expiry** - the days until a domain expires (RDAP), beside the TLS
-  certificate's days left; warning at 30 days, error at 7, both editable. - _(templates)_ S
+- [x] **Domain registration expiry** - the days until each domain a host's web checks name (or that
+  is typed on it) expires, read daily by RDAP or WHOIS; warning at 30 days, error at 7, both editable.
+  DESIGN section 7n. - _Unreleased_
 - [ ] **One timeline per incident** - everything about one problem in one place: when it opened,
   which channel was told when, escalations and reminders, who acknowledged it and with what note, the
   sensors it held, the recovery. Answers "did anyone actually get paged?" - _(BE+FE)_ M

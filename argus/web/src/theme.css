@@ -1556,6 +1556,9 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .mb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
 .field > .mb-port { display: flex; gap: 8px; margin: 0; font-size: inherit; } /* over .field > span, the label's own rule */
 .mb-port .input:first-child { width: 90px; flex: none; }
+.host-settings .domain-add { display: flex; gap: 8px; align-items: center; }
+.host-settings .hs-note.warn { color: var(--warn); }
+.host-settings .domain-add .input { max-width: 280px; }
 .push-mail { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
 @media (max-width: 640px) { .mb-grid { grid-template-columns: 1fr; } }
 .tag-form { display: grid; grid-template-columns: minmax(140px, 200px) auto minmax(0, 1fr) auto; gap: 8px 10px; align-items: center; }

@@ -1066,6 +1066,30 @@ after its job's mail arrived takes the newest match at once. A mailbox that can'
 Settings (`last_error`, since when), and its late push sensors say "No run read: its mailbox ... can't
 be read since ..." instead of their last run. Deleting a mailbox takes the rule off its push sensors.
 
+## 7n. Domain expiry
+
+When a host's domains stop being registered, beside its certificates (OneUptime's domain monitor;
+`domains.go`, `internal/domainexp`). **A host's domains** are the registrable domains its web checks
+name (`{$HTTP.URLS}`: full URLs and bare host names, `shop.example.com` -> `example.com` by the public
+suffix list; paths, addresses and internal names name none) and the ones typed in its settings
+(**Domains**: a domain used only for mail; `host_domains`, up to 20, each saved as the registrable
+domain; logged in Changes). **Argus reads each domain** once a day (`domain_checks`; an hourly loop
+reads the ones due, a failed read again after 6 hours, 2 seconds between lookups): the registry's RDAP
+(found in IANA's bootstrap file, kept a day; the `expiration` event), else its WHOIS (the server IANA's
+WHOIS names for the TLD, kept a day; the expiry line, in the date formats registries use), so `.it`
+(no RDAP) works. A registry that publishes no expiry (`.de`, `.eu`) says so; a domain the registry
+doesn't know says that. A failed read keeps the expiry the last good one found.
+
+**To Zabbix** through the push channel (section 5): `/api/push/host/{id}` carries `domains` (name, whole
+days left, expiry date; only the ones whose expiry is known), and the **Argus Push** template's
+**Domain discovery** makes `argus.domain.days[<domain>]` (days, below 0 once expired) with **expires
+soon** (Warning, under `{$DOMAIN.EXPIRY.WARN}` 30), **expires very soon** (High, under
+`{$DOMAIN.EXPIRY.HIGH}` 7) and **has expired** (High), both thresholds in the Thresholds screen. The
+template goes on a host with its first push sensor or domain and off when it has neither (the loop links
+it, at the Public URL). A domain whose expiry can't be read gets no sensor (it would only ever read "not
+supported" and alert as stopped collecting); its row in host settings says why. Under **Domains** in
+the host's sensors, one row each.
+
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")
 
 > Sequencing: **§C** built the class templates (§5) plus a **manual** attach path; **§B** automates

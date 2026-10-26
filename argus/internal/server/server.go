@@ -17,8 +17,8 @@ import (
 
 	"argus/internal/auth"
 	"argus/internal/config"
-	"argus/internal/mfa"
 	"argus/internal/mailread"
+	"argus/internal/mfa"
 	"argus/internal/pki"
 	"argus/internal/ratelimit"
 	"argus/internal/settings"
@@ -64,6 +64,7 @@ type Server struct {
 	mapFactCache  mapFactCache      // the devices' models and addresses for the maps (maps.go)
 	startedAt     time.Time         // when this Argus started: the probes' report check counts from it (probereport.go)
 	mail          *mailState        // the mailboxes' recent mails and a way to read them at once (mailboxes.go)
+	domainKick    chan struct{}     // read the domains now: one was typed on a host (domains.go)
 }
 
 // New builds the HTTP handler. signingSecret is the alert-link HMAC secret main resolved (and
@@ -74,7 +75,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 		signingSecret: signingSecret,
 		loginLimiter:  mgr.Limiter(), pkLimiter: ratelimit.New(30, 5*time.Minute), writeLimiter: ratelimit.New(60, time.Minute), checkinLimit: ratelimit.New(12, time.Minute),
 		probeLatest: &probeLatestCache{}, updaterLatest: &probeLatestCache{}, appLatest: &appLatestCache{}, probeVM: &probeVMCache{}, startedAt: time.Now(),
-		mail: &mailState{recent: map[int64][]mailread.Mail{}, kick: make(chan struct{}, 1)}}
+		mail: &mailState{recent: map[int64][]mailread.Mail{}, kick: make(chan struct{}, 1)}, domainKick: make(chan struct{}, 1)}
 	// The sensor census behind the pills, the Overview and the status pages, built in the
 	// background and served from memory.
 	s.census = newCensusCache(s.buildCensus)
@@ -100,6 +101,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	s.startVendorStatus(context.Background())
 	// Read the mailboxes for the push sensors that report by email (mailboxes.go).
 	s.startMailRead(context.Background())
+	// Read when the hosts' domains expire, once a day each (domains.go).
+	s.startDomainChecks(context.Background())
 	// Mirror the stored core reboot window to the shared update dir so the host reboot timer sees it
 	// even if the setting is never touched after this boot (DESIGN §14c). Best-effort.
 	s.syncRebootWindowFile(context.Background())
@@ -305,6 +308,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// host settings editor: read the identity + interfaces (any user), reconcile-save them (config write).
 	mux.HandleFunc("GET /api/hosts/{id}/config", auth.RequireAuth(s.scopedHost(s.handleHostConfig)))
 	mux.HandleFunc("PATCH /api/hosts/{id}/config", auth.RequireRoles(s.scopedHost(s.handleUpdateHostConfig), "admin", "helpdesk"))
+	mux.HandleFunc("GET /api/hosts/{id}/domains", auth.RequireAuth(s.scopedHost(s.handleHostDomains)))
+	mux.HandleFunc("PUT /api/hosts/{id}/domains", auth.RequireRoles(s.scopedHost(s.handleSetHostDomains), "admin", "helpdesk"))
 	mux.HandleFunc("GET /api/hosts/{id}/push", auth.RequireAuth(s.scopedHost(s.handleListPush)))
 	mux.HandleFunc("POST /api/hosts/{id}/push", auth.RequireRoles(s.scopedHost(s.handleCreatePush), "admin", "helpdesk"))
 	mux.HandleFunc("PATCH /api/push-sensors/{id}", auth.RequireRoles(s.handleUpdatePush, "admin", "helpdesk"))

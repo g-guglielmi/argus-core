@@ -138,6 +138,7 @@ var changeRoutes = map[string]routeChange{
 	"POST /api/hosts/{id}/groups":        {cat: "hosts", action: "Changed a host's groups", obj: "host"},
 	"POST /api/hosts/{id}/discover":      {cat: "hosts", action: "Ran discovery on a host", obj: "host"},
 	"POST /api/hosts/{id}/push":          {cat: "hosts", action: "Added a push sensor", obj: "host", detail: fieldDetail("name")},
+	"PUT /api/hosts/{id}/domains":        {cat: "hosts", action: "Changed a host's domains", obj: "host"},
 	"PATCH /api/push-sensors/{id}":       {cat: "hosts", action: "Changed a push sensor", obj: "push"},
 	"POST /api/push-sensors/{id}/rotate": {cat: "hosts", action: "Made a new push URL", obj: "push"},
 	"DELETE /api/push-sensors/{id}":      {cat: "hosts", action: "Removed a push sensor", obj: "push", pre: true},

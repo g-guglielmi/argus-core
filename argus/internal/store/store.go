@@ -546,6 +546,20 @@ CREATE TABLE IF NOT EXISTS push_hosts (
   host_id  TEXT PRIMARY KEY,
   key_hash TEXT NOT NULL
 );
+-- Domain expiry (server/domains.go): the domains typed on a host (beside the ones its web checks
+-- name), and what Argus last read about each domain's registration.
+CREATE TABLE IF NOT EXISTS host_domains (
+  host_id TEXT NOT NULL,
+  domain  TEXT NOT NULL,
+  PRIMARY KEY (host_id, domain)
+);
+CREATE TABLE IF NOT EXISTS domain_checks (
+  domain     TEXT PRIMARY KEY,
+  expires_at INTEGER NOT NULL DEFAULT 0,
+  checked_at INTEGER NOT NULL DEFAULT 0,
+  via        TEXT NOT NULL DEFAULT '',
+  error      TEXT NOT NULL DEFAULT ''
+);
 -- Mailboxes Argus reads for the push sensors that report by email (mailboxes.go): IMAP or a Microsoft
 -- 365 mailbox through Graph; the password or client secret encrypted; where the reads got to.
 CREATE TABLE IF NOT EXISTS mailboxes (

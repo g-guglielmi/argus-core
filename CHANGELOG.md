@@ -25,6 +25,11 @@ GitHub Release from the matching section below.
   page: no incident open" means it's only this site), and under the service on the host page while
   the vendor has an incident open. Only open incidents count, never the page's headline, and it never
   alerts by itself.
+- **Domain expiry.** Every domain a host's web checks name (shop.example.com counts as example.com),
+  and any domain typed in its settings (one used only for mail), gets a sensor with the days until its
+  registration expires: a warning under 30 days, an error under 7, both in Thresholds. Argus reads each
+  domain once a day from its registry (RDAP, or WHOIS where the registry has none, as .it); a registry
+  that doesn't publish expiry dates (.de, .eu) gets no sensor, and the host's settings say why.
 - **Push sensors can read their runs from email.** For gear that only mails its result (a backup's job
   report, a NAS's daily report): admins add a mailbox in Settings, Mailboxes (IMAP, or a Microsoft 365
   mailbox through Graph with an app that may read only that mailbox), and a push sensor reads the mails

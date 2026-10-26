@@ -794,6 +794,10 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	case "argus.push.age":
 		inst := pushInstance(name, " since last run", p)
 		return "Push", inst + " since last run", inst, "Since last run", true
+
+	// Domain expiry (Argus Push, domains.go): one row per domain, its days left.
+	case "argus.domain.days":
+		return "Domains", name, "", "", true
 	}
 
 	// Heuristic fallback for temperature sensors, whose keys vary widely by template/SNMP.

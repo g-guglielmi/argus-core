@@ -15,8 +15,11 @@ zabbix_export:
         ordinary sensor: the last run's result, the time since it, and the job's message as the reason.
         A run that reports a failure is an error; no run for longer than the sensor's "late" time is a
         warning, longer than its "missed" time an error. Both times are set per push sensor in Argus and
-        arrive with the discovery. Argus links this template with a host's first push sensor, sets both
-        macros, and unlinks it with the last; it isn't attached by hand. DESIGN section 5.
+        arrive with the discovery. The same read carries the host's domains and the days until each
+        one's registration expires (Argus reads them once a day, DESIGN section 7n): a warning under
+        {$DOMAIN.EXPIRY.WARN} days, an error under {$DOMAIN.EXPIRY.HIGH}. Argus links this template with
+        a host's first push sensor or domain, sets both macros, and unlinks it when it has neither; it
+        isn't attached by hand. DESIGN section 5.
       groups:
         - name: Templates/Argus
       items:
@@ -52,6 +55,80 @@ zabbix_export:
             - name: key
               value: '{$PUSH.KEY}'
       discovery_rules:
+        - uuid: ed40b535ce7d454b845c990183ad4b13
+          name: 'Domain discovery'
+          type: DEPENDENT
+          key: argus.domain.discovery
+          delay: '0'
+          lifetime: 1h
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          description: 'One sensor per domain of this host whose expiry Argus has read: the registrable domains its web checks name and the ones typed on it in Argus. A domain whose registry publishes no expiry gets none (its host settings say why). While Argus can''t be read the discovery keeps what it had.'
+          master_item:
+            key: argus.push.raw
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var d = JSON.parse(value);
+                  if (d.error) { throw d.error; }
+                  var out = [];
+                  var ds = d.domains || [];
+                  for (var i = 0; i < ds.length; i++) { out.push({ '{#DOMAIN}': ds[i].name }); }
+                  return JSON.stringify(out);
+              error_handler: DISCARD_VALUE
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          item_prototypes:
+            - uuid: 01e809d6be8e45ee8d879f1bff300f79
+              name: '{#DOMAIN} registration expires in'
+              type: DEPENDENT
+              key: 'argus.domain.days[{#DOMAIN}]'
+              delay: '0'
+              history: 30d
+              trends: 365d
+              value_type: FLOAT
+              units: days
+              description: 'Days until the registration of {#DOMAIN} expires (below 0 once it has), as Argus last read it from the registry (RDAP or WHOIS, once a day). When Argus can''t be read, why.'
+              master_item:
+                key: argus.push.raw
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var d = JSON.parse(value);
+                      if (d.error) { throw d.error; }
+                      var ds = d.domains || [];
+                      for (var i = 0; i < ds.length; i++) { if (ds[i].name === '{#DOMAIN}') { return ds[i].days; } }
+                      throw '{#DOMAIN} is no longer one of this host''s domains in Argus';
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              trigger_prototypes:
+                - uuid: 19dc366c1ff34138b48c07f62e4684dd
+                  expression: 'last(/Argus Push/argus.domain.days[{#DOMAIN}])<{$DOMAIN.EXPIRY.WARN} and last(/Argus Push/argus.domain.days[{#DOMAIN}])>={$DOMAIN.EXPIRY.HIGH}'
+                  name: '{#DOMAIN} expires soon'
+                  tags:
+                    - tag: argus.recovery
+                      value: '{#DOMAIN} was renewed'
+                  priority: WARNING
+                  description: 'The registration of {#DOMAIN} expires in less than {$DOMAIN.EXPIRY.WARN} days: renew it with its registrar.'
+                - uuid: b7d1191578654da6837337f80174a241
+                  expression: 'last(/Argus Push/argus.domain.days[{#DOMAIN}])<{$DOMAIN.EXPIRY.HIGH} and last(/Argus Push/argus.domain.days[{#DOMAIN}])>=0'
+                  name: '{#DOMAIN} expires very soon'
+                  tags:
+                    - tag: argus.recovery
+                      value: '{#DOMAIN} was renewed'
+                  priority: HIGH
+                  description: 'The registration of {#DOMAIN} expires in less than {$DOMAIN.EXPIRY.HIGH} days: renew it with its registrar now.'
+                - uuid: 5b3c47f7dd294a9fa2c7f4595d329f25
+                  expression: 'last(/Argus Push/argus.domain.days[{#DOMAIN}])<0'
+                  name: '{#DOMAIN} has expired'
+                  tags:
+                    - tag: argus.recovery
+                      value: '{#DOMAIN} was renewed'
+                  priority: HIGH
+                  description: 'The registration of {#DOMAIN} has expired: its websites and mail stop once the registry deletes it.'
         - uuid: 048f0eb9b3a54c5a9419973c9b0f508a
           name: 'Push sensor discovery'
           type: DEPENDENT
@@ -176,3 +253,9 @@ zabbix_export:
         - macro: '{$PUSH.KEY}'
           value: ''
           description: 'The key this host reads its push sensors with. Set by Argus, as a secret macro.'
+        - macro: '{$DOMAIN.EXPIRY.WARN}'
+          value: '30'
+          description: 'A domain whose registration expires in fewer days than this is a warning.'
+        - macro: '{$DOMAIN.EXPIRY.HIGH}'
+          value: '7'
+          description: 'A domain whose registration expires in fewer days than this is an error.'
