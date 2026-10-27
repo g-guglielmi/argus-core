@@ -2038,6 +2038,7 @@ class GuestAgentTest(unittest.TestCase):
         e = dict(os.environ, LOG=winpath(log), STATE=winpath(self.state), ARGUS_PROBE_DIR=winpath(self.probe),
                  ARGUS_CORE_SETUP_DIR=winpath(os.path.join(self.tmp, "core-setup")), ARGUS_XE_UNIT=winpath(self.unit),
                  ARGUS_POLICY_RC=winpath(self.policy), PATH=winpath(self.bin) + os.pathsep + os.environ.get("PATH", ""))
+        e.pop("JOURNAL_STREAM", None)  # a CI runner is itself a systemd service: only a case that says so runs "under systemd"
         e.update(env)
         r = subprocess.run([WHICH("bash"), winpath(self.script), *args], env=e, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, rc, r.stdout + r.stderr)
