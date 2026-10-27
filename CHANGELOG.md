@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.9] - 2026-10-27
+
 ### Added
 - **Markers on the charts.** A sensor's chart shows what happened to its host in the range: changes
   to the host and to that sensor (never another sensor's), acknowledgements and notes, journal

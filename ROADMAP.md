@@ -391,17 +391,17 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **More alert channels** - Microsoft Teams (a Workflow webhook, Adaptive Card), Slack (incoming
   webhook), ntfy, Gotify and Pushover (phone push, priority by severity), and a generic JSON webhook;
   personal channels can be Teams, Slack, ntfy or Pushover too, sent only to public addresses. -
-  _Unreleased_
+  v0.7.0
 - [x] **Push sensors** - a job (backup, cron, scheduled task) calls its own secret URL when it runs,
   with ok or fail and a message; the host's `Argus Push` template reads them back through its proxy,
-  so a failed run is an error and a late or missed one a warning, then an error. - _Unreleased_
+  so a failed run is an error and a late or missed one a warning, then an error. - v0.7.0
 - [x] **Real HTTP checks** - the HTTP/HTTPS add-on requests each listed URL (full URLs or paths on the
   host): accepted status codes after redirects, text the page must (not) contain, response time, the
   certificate's days left and a trusted-certificate check, with why when it isn't up (`argus_http.py`,
-  probe r15). - _Unreleased_
+  probe r15). - v0.7.0
 - [x] **Status page notes + maintenance** - a pinned note per page (info, warning or problem, for a
   time or until removed), and the maintenance windows of the page's hosts, in progress and coming up;
-  problem rows say when their host is in one. - _Unreleased_
+  problem rows say when their host is in one. - v0.7.0
 
 ### I. Mobile app (last step)
 - [ ] **Android native app with push notifications** - the app registers a device with Argus; the notifier delivers alerts as **push** (e.g. FCM) via a new "push" notification channel type, alongside Discord/Telegram/email. A PWA + web push is a cheaper fallback if a full native app isn't warranted. - _(app + BE)_ **L**
@@ -415,26 +415,26 @@ NetFlow.
 - [x] **Change markers on charts** - a sensor's chart marks what happened to its host in the shown
   period: its changes and the sensor's own, acknowledgements and notes, the journal, maintenance
   windows and restarts, in a lane above the chart with a list under it. DESIGN section 7l. -
-  _Unreleased_
+  v0.9.9
 - [x] **The vendor's own status beside Common SaaS** - the vendor's open incidents (Cloudflare, Zoom,
   Dropbox, GitHub, ChatGPT, Slack) under a cloud service's problem, on the host page and in its
   alerts, so "only us, from this site" and "the vendor is down" read apart; context only, never an
-  alert of its own. DESIGN section 5. - _Unreleased_
+  alert of its own. DESIGN section 5. - v0.9.9
 - [ ] **Microsoft 365 service health** - the same word for Microsoft 365 and Teams from Graph's
   service health (an Entra app registration with ServiceHealth.Read.All, per tenant). - _(BE+FE)_ S
 - [x] **Email heartbeat** - push sensors that read their runs from the mails their job sends to a
   mailbox (IMAP, or Microsoft 365 through Graph), matched on sender and subject, a failure or success
-  word deciding the run; read-only. DESIGN section 7m. - _Unreleased_
+  word deciding the run; read-only. DESIGN section 7m. - v0.9.9
 - [x] **Domain registration expiry** - the days until each domain a host's web checks name (or that
   is typed on it) expires, read daily by RDAP or WHOIS; warning at 30 days, error at 7, both editable.
-  DESIGN section 7n. - _Unreleased_
+  DESIGN section 7n. - v0.9.9
 - [x] **One timeline per incident** - everything about one problem in one place on History: when it
   opened, which channel was told when (and which couldn't be), escalations and reminders, holds,
-  acknowledgements and notes, the end. DESIGN section 7b. - _Unreleased_
+  acknowledgements and notes, the end. DESIGN section 7b. - v0.9.9
 - [x] **Maintenance calendar feed** - a secret `.ics` link per user so planned windows show in
-  Outlook, plus a month calendar on the Maintenance page. DESIGN section 9. - _Unreleased_
+  Outlook, plus a month calendar on the Maintenance page. DESIGN section 9. - v0.9.9
 - [x] **Runbook notes** - what to do, per sensor or per sensor kind on a class, beside the problem
-  and in the alerts of channels with "Runbook notes" on. DESIGN section 7o. - _Unreleased_
+  and in the alerts of channels with "Runbook notes" on. DESIGN section 7o. - v0.9.9
 - [ ] **On-call rotation** - the team takes on-call a week each (5 people today): an on-call
   channel type that delivers only to whoever is on call now, from a weekly rota (with swaps and
   overrides for a single day or week), the rota visible to the team and the hand-over announced.
@@ -442,10 +442,10 @@ NetFlow.
 - [x] **Multi-step web checks** - "can I log in to the portal": Zabbix web scenarios written in host
   settings (steps, form posts, cookies kept, required text and status per step, secrets in secret
   macros); the failing step and why as the reason, slow steps against thresholds. DESIGN section 7p. -
-  _Unreleased_
+  v0.9.9
 - [x] **Uptime targets** - a guaranteed uptime per host or site per month, the downtime still allowed
   in the host card, met or missed in the reports and status pages, a sensor that warns at 75 % of the
-  allowance and errors at 100 %; maintenance counts as up. DESIGN section 7b. - _Unreleased_
+  allowance and errors at 100 %; maintenance counts as up. DESIGN section 7b. - v0.9.9
 - [ ] **SNMP traps (opt-in)** - not used here, but welcome for whoever does: the proxy's native trap
   items, per host, off by default. - _(probe+templates)_ M
 - [ ] **Syslog - evaluate first** - only as event triggers, never as a log store (a log server does
@@ -455,12 +455,12 @@ NetFlow.
 ### K. Certificates (agreed 2026-10-27)
 - [x] **The core's certificates renew themselves** - the https front and the Zabbix server's, 30 days
   ahead (`argus-cert-renew`); the monitoring CA too, signed again with its own key two years ahead,
-  the probes taking it at check-in. DESIGN section 14c. - _Unreleased_
+  the probes taking it at check-in. DESIGN section 14c. - v0.9.9
 - [x] **Probes renew their own certificates** - a new key 30 days ahead, signed by Argus on proof of
-  the token and the current key (probe 7.0.32-r8). DESIGN section 14c. - _Unreleased_
+  the token and the current key (probe 7.0.32-r8). DESIGN section 14c. - v0.9.9
 - [x] **Settings > Certificates** - every certificate the monitoring runs on and when it ends (the CA,
   the https front, the Zabbix server, each probe), amber at 21 days, red at 7; rows like Mailboxes.
-  DESIGN section 14c. - _Unreleased_
+  DESIGN section 14c. - v0.9.9
 - [ ] **Public certificates with Lego (ACME)** - a Let's Encrypt (or other ACME CA) certificate for
   Argus's own address, so PCs need no monitoring CA: Argus asks with the Lego library and a host tool
   installs it into nginx and reloads it, the same path the renewals use; renewed by itself and listed
