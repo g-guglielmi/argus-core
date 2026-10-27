@@ -35,6 +35,13 @@ Run once, anywhere with `openssl` (ideally on the core VM). Produces:
 Copy `ca.crt` + `zabbix-core.*` to the core; copy `ca.crt` + `proxy-<site>.*` to each probe.
 **Never copy `ca.key` or other sites' keys to a probe.**
 
+The CA lasts ten years. On a core where Argus and its host tools run, it renews itself two years
+before its end (`argus-cert-renew`, DESIGN 14c). Elsewhere (Argus on its own machine, a CA kept
+offline) Argus warns a year ahead: `RENEW_CA=1 ./gen-certs.sh` signs `ca.crt` again with `ca.key`, the
+same name and key, so every certificate it signed stays trusted. Put the new `ca.crt` where the old one
+is: Argus's `/ca` mount (it reads it within five minutes and hands it to the probes at their
+check-in), Zabbix's `TLSCAFile` (then restart zabbix-server), and the PCs that trust it.
+
 ### 2. Stand up the core  → `core/setup-core.sh`
 Debian 12 / Ubuntu 24.04 assumed (apt). Installs Zabbix 7.0 LTS, PostgreSQL 16 +
 TimescaleDB, creates the DB, imports schema, enables Timescale compression/partitioning.

@@ -124,6 +124,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 		} else {
 			s.ca = ca
 			logger.Info("probe enrollment enabled", "ca_subject", ca.SubjectCN())
+			s.startCARefresh(context.Background())
 		}
 	}
 

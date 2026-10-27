@@ -4,16 +4,22 @@
 
 # argus-cert-renew - renews the core's certificates before they run out (DESIGN 14c). Run daily, at
 # boot and whenever a core update installs it (argus-cert-renew.service + .timer):
+#  - the monitoring CA itself (/docker/argus/pki/ca.crt), two years before its end: signed again
+#    with its own key, the same name, for ten years. Every certificate it signed stays trusted (the
+#    same key signs them), Zabbix's copy (TLSCAFile) is replaced and zabbix-server restarted, Argus
+#    reads the file again and hands it to the probes at their check-in; the PCs that trust it need
+#    the new ca.crt before the old one ends, which Argus tells;
 #  - the https front's certificate (/etc/nginx/argus/argus-web.crt: Argus on :443 on the appliance,
 #    the Zabbix frontend on :8443), nginx reloaded;
 #  - the Zabbix server's TLS certificate (TLSCertFile in zabbix_server.conf), the one every probe
 #    checks on :10051, zabbix-server restarted (the probes buffer the minute it takes).
 # A certificate is renewed 30 days before its end: same subject and names, a new key, two years
-# (never past the CA's own end), signed by the monitoring CA in /docker/argus/pki. Only one that CA
-# signed: a certificate of your own is left alone and, close to its end, said once per boot. So is
-# the CA itself close to its end: every probe trusts it, so replacing it is a planned change.
+# (never past the CA's own end), signed by the monitoring CA. Only one that CA signed: a certificate
+# of your own is left alone and, close to its end, said once per boot.
 # A renewal the service refuses (nginx -t, zabbix-server not starting) is put back as it was.
-# Local, never remote; a run with nothing to renew changes and logs nothing.
+# Local, never remote; a run with nothing to renew changes and logs nothing. Without the CA's key on
+# this machine (Argus elsewhere, or a CA kept offline) it does nothing: Argus tells a CA close to
+# its end.
 set -u
 PKI_DIR="${ARGUS_PKI_DIR:-/docker/argus/pki}"
 WEB_CRT="${ARGUS_WEB_CRT:-/etc/nginx/argus/argus-web.crt}"
@@ -23,6 +29,8 @@ NOTE_FILE="${ARGUS_CERT_RENEW_NOTE:-/run/argus-cert-renew.note}"
 SETTLE="${ARGUS_CERT_RENEW_SETTLE:-5}"
 RENEW_DAYS=30
 LEAF_DAYS=730
+CA_RENEW_DAYS=730
+CA_DAYS=3650
 CA_WARN_DAYS=180
 CA_CRT="$PKI_DIR/ca.crt"
 CA_KEY="$PKI_DIR/ca.key"
@@ -115,6 +123,78 @@ renew() {
   fi
 }
 
+# pubkey CERT, subject CERT: what makes a CA the same CA after its renewal.
+pubkey() { openssl x509 -in "$1" -noout -pubkey 2>/dev/null; }
+subject() { openssl x509 -in "$1" -noout -subject -nameopt RFC2253 2>/dev/null; }
+
+# put FILE NEW: NEW replaces FILE by a rename in FILE's folder, with FILE's owner and mode; the old one
+# is kept as FILE.argus-old until the caller drops it or puts it back.
+put() {
+  local tmp
+  tmp="$(mktemp "$(dirname "$1")/.argus-renew.XXXXXX")" || return 1
+  if ! cat "$2" > "$tmp" || ! cp -p "$1" "$1.argus-old"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  chown --reference="$1" "$tmp" 2>/dev/null
+  chmod --reference="$1" "$tmp"
+  mv -f "$tmp" "$1"
+}
+
+# renew_ca: the CA certificate signed again with its own key when it ends within CA_RENEW_DAYS. The
+# new one must be the same CA (name and key), signed by itself, ending later, and every certificate
+# of this machine the old one trusts must verify with it, or nothing changes.
+renew_ca() {
+  local tmp zca="" old_end leaf
+  [ "$CA_LEFT" -le "$CA_RENEW_DAYS" ] || return 0
+  tmp="$(mktemp -d "$PKI_DIR/.argus-renew.XXXXXX")" || return 0
+  if ! openssl x509 -in "$CA_CRT" -signkey "$CA_KEY" -days "$CA_DAYS" -set_serial "0x$(openssl rand -hex 16)" \
+      -out "$tmp/ca.crt" >/dev/null 2>&1 ||
+    [ "$(subject "$tmp/ca.crt")" != "$(subject "$CA_CRT")" ] || [ "$(pubkey "$tmp/ca.crt")" != "$(pubkey "$CA_CRT")" ] ||
+    ! openssl verify -CAfile "$tmp/ca.crt" "$tmp/ca.crt" >/dev/null 2>&1 ||
+    ! openssl x509 -in "$tmp/ca.crt" -noout -checkend $(( (CA_LEFT + 1) * 86400 )) >/dev/null 2>&1; then
+    rm -rf "$tmp"
+    note "ca-sign" "the monitoring CA ($CA_CRT) ends in $CA_LEFT days and could not be signed again with its key"
+    return 0
+  fi
+  for leaf in "$WEB_CRT" "$(conf_value TLSCertFile)"; do
+    [ -s "$leaf" ] || continue
+    if openssl verify -no_check_time -CAfile "$CA_CRT" "$leaf" >/dev/null 2>&1 &&
+      ! openssl verify -no_check_time -CAfile "$tmp/ca.crt" "$leaf" >/dev/null 2>&1; then
+      rm -rf "$tmp"
+      note "ca-leaf" "the monitoring CA ($CA_CRT) ends in $CA_LEFT days and a renewal would not trust $leaf: not renewed"
+      return 0
+    fi
+  done
+  old_end="$(openssl x509 -in "$CA_CRT" -noout -enddate 2>/dev/null | sed -n 's/^notAfter=//p')"
+  if ! put "$CA_CRT" "$tmp/ca.crt"; then
+    rm -rf "$tmp"
+    note "ca-copy" "the monitoring CA ($CA_CRT) ends in $CA_LEFT days and could not be replaced safely"
+    return 0
+  fi
+  # Zabbix's own copy of the CA (TLSCAFile), when it holds just this CA: zabbix-server reads it at start.
+  zca="$(conf_value TLSCAFile)"
+  if [ -n "$zca" ] && [ -s "$zca" ] && [ "$zca" != "$CA_CRT" ] && [ "$(grep -c 'BEGIN CERTIFICATE' "$zca")" = 1 ] &&
+    [ "$(pubkey "$zca")" = "$(pubkey "$CA_CRT")" ]; then
+    if ! put "$zca" "$tmp/ca.crt"; then
+      zca=""
+    elif ! restart_zabbix; then
+      mv -f "$zca.argus-old" "$zca"
+      mv -f "$CA_CRT.argus-old" "$CA_CRT"
+      restart_zabbix || true
+      rm -rf "$tmp"
+      note "ca-refused" "the monitoring CA ($CA_CRT) ends in $CA_LEFT days and zabbix-server did not start with it renewed: the old one is back"
+      return 0
+    fi
+  else
+    zca=""
+  fi
+  rm -rf "$tmp"
+  rm -f "$CA_CRT.argus-old" ${zca:+"$zca.argus-old"}
+  say "the monitoring CA ($CA_CRT) renewed for $CA_DAYS days, the same name and key (it ended in $CA_LEFT days)${zca:+ (and the copy Zabbix reads, $zca)}: Argus hands it to the probes; PCs that trust it need the new ca.crt before ${old_end:-the old one ends}"
+  CA_LEFT="$(days_left "$CA_CRT")" || CA_LEFT=0
+}
+
 if [ ! -r "$CA_CRT" ] || [ ! -r "$CA_KEY" ]; then
   exit 0  # no monitoring CA on this machine (Argus elsewhere, or a CA kept offline): nothing to sign with
 fi
@@ -122,8 +202,9 @@ if ! CA_LEFT="$(days_left "$CA_CRT")"; then
   note "ca-unreadable" "cannot read the monitoring CA ($CA_CRT): nothing renewed"
   exit 0
 fi
+renew_ca
 if [ "$CA_LEFT" -le "$CA_WARN_DAYS" ]; then
-  note "ca-ending" "the monitoring CA ($CA_CRT) ends in $CA_LEFT days: every probe trusts it, plan its replacement"
+  note "ca-ending" "the monitoring CA ($CA_CRT) ends in $CA_LEFT days and was not renewed (see above): every probe trusts it"
 fi
 
 renew "https front" "$WEB_CRT" "$WEB_KEY" reload_nginx

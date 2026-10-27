@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
@@ -130,13 +131,29 @@ func main() {
 	// https on :8443 for this case, with a certificate from the monitoring CA, which the client
 	// trusts when the CA file is at hand (ARGUS_ZABBIX_CA_FILE, else the enrollment CA's cert).
 	if cfg.ZabbixCAFile != "" {
-		if pem, err := os.ReadFile(cfg.ZabbixCAFile); err != nil {
+		pem, err := os.ReadFile(cfg.ZabbixCAFile)
+		if err != nil {
 			logger.Warn("Zabbix CA file not read; the API's certificate must then be signed by a system-trusted CA", "file", cfg.ZabbixCAFile, "err", err)
 		} else if err := zbx.TrustCA(pem); err != nil {
 			logger.Warn("Zabbix CA file not usable", "file", cfg.ZabbixCAFile, "err", err)
 		} else {
 			logger.Info("Zabbix API certificates signed by the CA in this file are trusted", "file", cfg.ZabbixCAFile)
 		}
+		// The core VM renews the CA in place (argus-cert-renew): the renewed file is trusted without a restart.
+		go func(last []byte) {
+			for range time.Tick(5 * time.Minute) {
+				cur, err := os.ReadFile(cfg.ZabbixCAFile)
+				if err != nil || bytes.Equal(cur, last) {
+					continue
+				}
+				if err := zbx.TrustCA(cur); err != nil {
+					logger.Warn("Zabbix CA file changed but is not usable; the one read before stays trusted", "file", cfg.ZabbixCAFile, "err", err)
+				} else {
+					logger.Info("Zabbix CA file changed: the CA in it is trusted now", "file", cfg.ZabbixCAFile)
+				}
+				last = cur
+			}
+		}(pem)
 	}
 	if u, err := url.Parse(zbx.URL()); err == nil && u.Scheme == "http" {
 		switch u.Hostname() {

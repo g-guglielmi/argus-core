@@ -19,6 +19,12 @@
 # Regenerate an existing leaf (e.g. after a suspected key leak):
 #   FORCE=1 ./gen-certs.sh proxysite      # note: FORCE regenerates only what you name
 #
+# RENEW THE CA before its end (a core VM with Argus does this by itself, two years ahead):
+#   RENEW_CA=1 ./gen-certs.sh
+# signs ca.crt again with ca.key: the same name and key, ten more years, so every certificate it
+# signed stays trusted. Then put the new ca.crt where the old one is: Argus's /ca mount (Argus hands
+# it to the probes), Zabbix's TLSCAFile (restart zabbix-server) and the PCs that trust it.
+#
 # Output: ./out/{ca.crt,ca.key, zabbix-core.crt/.key, proxy-<site>.crt/.key}
 set -euo pipefail
 
@@ -33,6 +39,19 @@ DEFAULT_SITES=(site1 site2 site3 site4 site5)
 if [[ $# -gt 0 ]]; then SITES=("$@"); else SITES=("${DEFAULT_SITES[@]}"); fi
 
 mkdir -p "$OUT"; cd "$OUT"
+
+if [[ "${RENEW_CA:-0}" == "1" ]]; then
+  [[ -f ca.crt && -f ca.key ]] || { echo "no ca.crt + ca.key in $OUT to renew" >&2; exit 1; }
+  echo ">> CA ($CA_CN): signing it again with its own key"
+  openssl x509 -in ca.crt -signkey ca.key -days "$DAYS_CA" -set_serial "0x$(openssl rand -hex 16)" -out ca.crt.new
+  if [[ "$(openssl x509 -in ca.crt.new -noout -pubkey)" != "$(openssl x509 -in ca.crt -noout -pubkey)" ]]; then
+    rm -f ca.crt.new; echo "ca.key is not the key of ca.crt: nothing renewed" >&2; exit 1
+  fi
+  cp -p ca.crt ca.crt.old && mv -f ca.crt.new ca.crt
+  echo "   $(openssl x509 -in ca.crt -noout -enddate) (the old one is in ca.crt.old)"
+  echo "   Put this ca.crt where the old one is: Argus's /ca mount, Zabbix's TLSCAFile (restart zabbix-server), the PCs."
+  exit 0
+fi
 
 echo ">> CA ($CA_CN)"
 if [[ ! -f ca.key ]]; then

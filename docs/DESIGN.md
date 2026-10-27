@@ -1963,10 +1963,29 @@ with the same CN and subject alternative names and a new key, for two years but 
 own end, the new pair taking the old one's owner and mode by a rename in the same folder; then nginx
 is tested and reloaded, or zabbix-server restarted and checked active, and a refusal puts the old pair
 back and the service on it again. Because the subject and issuer stay the same, a probe needs nothing.
-Left alone, each said once per boot (by key, not by text, since the text counts days): a certificate
-the monitoring CA did not sign (your own), and the CA itself within 180 days of its end (every probe
-trusts it, so replacing it is a planned change, not a timer's). Without the CA on the machine
-(Argus elsewhere, or a CA kept offline) it does nothing. A Zabbix on its own VM never runs it.
+Left alone, said once per boot (by key, not by text, since the text counts days): a certificate the
+monitoring CA did not sign (your own). Without the CA on the machine (Argus elsewhere, or a CA kept
+offline) it does nothing. A Zabbix on its own VM never runs it.
+
+**The monitoring CA renews itself.** It lasts ten years and every probe and the Zabbix server trust
+it, so it is renewed in place rather than replaced: two years before its end `argus-cert-renew` signs
+the CA certificate again with its own key (`openssl x509 -signkey`: the same subject, key and key
+identifier, a new serial, ten more years). A certificate checks against an issuer by name and key, so
+every certificate the old one signed verifies with the new one and nothing re-enrolls. It is taken
+only when it is the same CA, signed by itself, ending later, and every certificate of the machine the
+old one trusts verifies with it; then it replaces `ca.crt` (owner and mode kept), the copy Zabbix
+reads (`TLSCAFile`, when it holds just this CA) too, and zabbix-server restarts, a refusal putting both
+back. Argus reads the CA file again every five minutes (pki.Refresh: the same name and key, else the
+one loaded at start stays), for enrollment and for the Zabbix API's TLS trust. The probe reports the
+SHA-256 of its `ca.crt` in its minute check-in (`ca`), and Argus answers a different one with its CA
+(PEM). The probe takes it only as a renewal of the CA it has (one certificate, the same name and key,
+valid now, ending later; anything else could let another server pass for the core) and saves it for
+the proxy's next start, which reads the CA only then; a proxy still running on a CA within 30 days of
+its end stops itself so Docker's restart policy brings it back on the renewed one. System notices: the
+renewal itself (with the old end, until when PCs that trust the old certificate keep working), a probe
+on another CA a day after (`probe-ca:`: one that refused it, or an image that doesn't report its CA),
+and a CA within a year of its end that nobody renewed (Argus on its own machine; `RENEW_CA=1
+./gen-certs.sh` signs it again the same way).
 
 ### The probe host-tools channel
 

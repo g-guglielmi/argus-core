@@ -893,6 +893,11 @@ CREATE TABLE IF NOT EXISTS reports (
 	if err := s.ensureColumn("probe_agents", "host_tools TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// The SHA-256 of the monitoring CA the probe trusts (its ca.crt), as its minute report gives it:
+	// Argus hands a renewed CA to a probe whose CA differs. "" until a probe that reports it checks in.
+	if err := s.ensureColumn("probe_agents", "ca_fp TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	// Discovery job kind ('scan' = subnet scan, 'unifi' = controller sweep) plus the sweep's
 	// controller reference: the id resolves credentials at dispatch time, the name is a display
 	// snapshot that survives the controller's deletion.

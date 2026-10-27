@@ -195,7 +195,10 @@ expires (the same CA signing it is enough).
 again by the monitoring CA with the same names (`argus-cert-renew`, daily): the https front's and the
 Zabbix server's, which every probe checks. PCs that trust the CA trust the renewed one, and probes need
 nothing. A certificate of your own in `/etc/nginx/argus` is never touched: renew it yourself, and
-`journalctl -t argus-cert-renew` reminds you 30 days ahead.
+`journalctl -t argus-cert-renew` reminds you 30 days ahead. The CA itself (ten years) is signed again
+with its own key two years before its end: the probes take it at their check-in, and a system notice
+says until when the PCs that trust the old one keep working (install the new
+`/docker/argus/pki/ca.crt` on them before then).
 
 ## Scope / notes
 

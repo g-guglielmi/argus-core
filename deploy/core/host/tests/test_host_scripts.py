@@ -1889,13 +1889,59 @@ class CertRenewTest(unittest.TestCase):
         self.assertLess(self.days(os.path.join(self.zbx, "zabbix-core.crt")), 30, "zabbix-server did not come back: old pair")
         self.assertEqual(calls.count("systemctl restart zabbix-server"), 2, "restarted again on the old pair")
 
+    def pubkey(self, crt):
+        return subprocess.run([OPENSSL, "x509", "-in", crt, "-noout", "-pubkey"], capture_output=True, text=True).stdout
+
+    def ca_close_to_its_end(self):
+        """A CA 300 days from its end, leaves far from theirs, Zabbix's copy of the CA in its folder."""
+        self.ca(self.pki, 300)
+        self.leaf("web", self.web, "argus-web", "core.example.lan", 400, "DNS:core.example.lan")
+        self.leaf("zbx", self.zbx, "zabbix-core", "zabbix-core", 400)
+        shutil.copy(os.path.join(self.pki, "ca.crt"), os.path.join(self.zbx, "ca.crt"))
+        return os.path.join(self.pki, "ca.crt"), os.path.join(self.zbx, "ca.crt")
+
     @unittest.skipUnless(WHICH("bash") and OPENSSL, "needs bash and openssl")
-    def test_a_ca_close_to_its_end_is_said_and_caps_nothing_it_cannot(self):
+    def test_a_ca_close_to_its_end_is_signed_again_with_its_key_and_everything_stays_trusted(self):
+        ca, zca = self.ca_close_to_its_end()
+        key, subject = self.pubkey(ca), self.text(ca).splitlines()[0]
+        leaves = (os.path.join(self.web, "argus-web.crt"), os.path.join(self.zbx, "zabbix-core.crt"))
+        before = [self.read(c) for c in leaves]
+        calls = self.run_renew()
+        self.assertGreater(self.days(ca), 3600)
+        self.assertEqual(self.pubkey(ca), key, "the same key")
+        self.assertEqual(self.text(ca).splitlines()[0], subject, "the same name")
+        self.assertEqual(self.read(zca), self.read(ca), "Zabbix's copy is the renewed CA")
+        self.assertEqual([self.read(c) for c in leaves], before, "certificates far from their end are left alone")
+        for crt in leaves:
+            v = subprocess.run([OPENSSL, "verify", "-CAfile", ca, crt], capture_output=True, text=True)
+            self.assertEqual(v.returncode, 0, "a certificate signed before the renewal stays trusted: " + v.stdout + v.stderr)
+        self.assertIn("systemctl restart zabbix-server", calls)
+        self.assertIn("renewed for 3650 days, the same name and key", calls)
+        self.assertIn("PCs that trust it need the new ca.crt before", calls)
+        self.assertNotIn("reload nginx", calls)
+        self.assertEqual([f for f in os.listdir(self.pki) + os.listdir(self.zbx) if "argus" in f], [], "nothing left behind")
+        self.assertEqual(self.run_renew(), "", "renewed: nothing more to do")
+
+    @unittest.skipUnless(WHICH("bash") and OPENSSL, "needs bash and openssl")
+    def test_a_ca_renewal_zabbix_refuses_is_put_back(self):
+        ca, zca = self.ca_close_to_its_end()
+        before = self.read(ca)
+        calls = self.run_renew(extra={"ZBX_DOWN": "1"})
+        self.assertEqual(self.read(ca), before)
+        self.assertEqual(self.read(zca), before)
+        self.assertIn("zabbix-server did not start with it renewed: the old one is back", calls)
+        self.assertEqual(calls.count("systemctl restart zabbix-server"), 2, "restarted again on the old CA")
+
+    @unittest.skipUnless(WHICH("bash") and OPENSSL, "needs bash and openssl")
+    def test_a_ca_that_cannot_be_signed_again_is_said_and_caps_nothing_it_cannot(self):
         self.ca(self.pki, 20)
         self.leaf("web", self.web, "argus-web", "core.example.lan", 10, "DNS:core.example.lan")
+        before = self.read(os.path.join(self.pki, "ca.crt"))
+        self.ssl("genrsa", "-out", os.path.join(self.pki, "ca.key"), "2048")  # a key that isn't the CA's
         calls = self.run_renew()
-        self.assertIn("the monitoring CA (", calls)
-        self.assertIn("plan its replacement", calls)
+        self.assertEqual(self.read(os.path.join(self.pki, "ca.crt")), before)
+        self.assertIn("could not be signed again with its key", calls)
+        self.assertIn("was not renewed (see above): every probe trusts it", calls)
         self.assertIn("it cannot be renewed with it", calls)
         self.assertLess(self.days(os.path.join(self.web, "argus-web.crt")), 11)
 

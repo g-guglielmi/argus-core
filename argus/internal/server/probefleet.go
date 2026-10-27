@@ -118,6 +118,9 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		// The sidecar's report on the probe VM's host scripts and units, kept current from the probe
 		// image (DESIGN 14c). null until its first run; absent from a proxy container's report.
 		HostTools json.RawMessage `json:"host_tools"`
+		// The SHA-256 of the monitoring CA in the proxy container's ca.crt (hex). A CA that differs
+		// from Argus's is handed back: the core VM renewed it (DESIGN 14c, argus-cert-renew).
+		CA string `json:"ca"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -139,6 +142,8 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 	if req.Restarts != nil {
 		_ = s.st.SetProbeRestarts(ctx, proxyName, *req.Restarts)
 	}
+	caFP := cleanFingerprint(req.CA)
+	_ = s.st.SetProbeCA(ctx, proxyName, caFP)
 	if req.CPU != nil {
 		if n, q, l, ok := cleanCPU(req.CPU.Count, req.CPU.Quota, req.CPU.Load); ok {
 			_ = s.st.RecordProbeCPU(ctx, proxyName, n, q, l[0], l[1], l[2])
@@ -159,8 +164,14 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		// for the sidecar to restart the proxy so it starts with them.
 		Procs        map[string]int `json:"procs,omitempty"`
 		RestartProxy bool           `json:"restart_proxy,omitempty"`
+		// The monitoring CA (PEM), only to a probe whose ca.crt differs: it takes a renewal of the
+		// same CA (the same name and key, a later end) and refuses anything else.
+		CA string `json:"ca,omitempty"`
 	}
 	resp.Target = target
+	if s.ca != nil && caFP != "" && caFP != s.ca.Fingerprint() {
+		resp.CA = string(s.ca.CertPEM())
+	}
 	s.procsHandout(ctx, proxyName, req.SelfUpdate, req.Restarts, &resp.Procs, &resp.RestartProxy)
 	// Only the sidecar acts on tags, and only it gets the digests (a plain reporter needn't cost a
 	// registry lookup per minute).
@@ -200,6 +211,21 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 	}
 	// The probe knows its own image repo; it only needs the tag to converge on.
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// cleanFingerprint is a reported certificate fingerprint as lowercase hex without separators, or ""
+// when it isn't a SHA-256 one.
+func cleanFingerprint(fp string) string {
+	fp = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(fp), ":", ""))
+	if len(fp) != 64 {
+		return ""
+	}
+	for _, c := range fp {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return ""
+		}
+	}
+	return fp
 }
 
 // probeTargetTag maps a fleet target to the pullable image tag ("latest" stays "latest"; a pin

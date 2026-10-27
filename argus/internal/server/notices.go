@@ -188,6 +188,8 @@ func (s *Server) noticeTick(ctx context.Context) {
 	conds = append(conds, probeConds...)
 	conds = append(conds, channelFailingNotices(channels, userChannels)...)
 	conds = append(conds, s.backupNotices(ctx)...)
+	caConds, caEvents := s.caNotices(ctx, time.Now())
+	conds = append(conds, caConds...)
 
 	// Conditions: track since when each holds; tell the ones old enough; forget the ones that ended.
 	keys := make([]string, 0, len(conds))
@@ -217,6 +219,7 @@ func (s *Server) noticeTick(ctx context.Context) {
 
 	// Events. The "updated to" ones of a fleet update wait in the pool and go out together.
 	events := append(probeEvents, s.coreUpdateNotices()...)
+	events = append(events, caEvents...)
 	events = append(events, s.scanNotices(ctx)...)
 	var pooled []notice
 	for _, n := range events {

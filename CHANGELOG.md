@@ -70,8 +70,16 @@ GitHub Release from the matching section below.
   its end each one is signed again by the monitoring CA with the same names and a new key, for two
   years; nginx is reloaded, zabbix-server restarted (the probes buffer the minute it takes), and a
   renewal the service refuses is put back as it was. A certificate of your own (not signed by the
-  monitoring CA) is left alone, and so is the CA itself: both are said in
-  `journalctl -t argus-cert-renew` when they come close to their end.
+  monitoring CA) is left alone and said in `journalctl -t argus-cert-renew` close to its end.
+- **The monitoring CA renews itself too.** Two years before its end (it lasts ten) the core VM signs
+  it again with its own key and name, for ten more years: every certificate it signed stays trusted,
+  so nothing re-enrolls. Zabbix's copy is replaced and zabbix-server restarted (a refusal puts the old
+  one back), Argus reads the renewed file without a restart and hands it to each probe at its minute
+  check-in, and the probe takes it only when it is the same CA (same name and key, a later end).
+  A system notice says when it happened and until when the PCs that trust the old certificate keep
+  working; another names a probe that doesn't take it (an image older than this, or one that refused
+  it) a day later, and one says when a CA within a year of its end was not renewed (Argus on its own
+  machine: `RENEW_CA=1 ./gen-certs.sh` signs it again). Needs probe image 7.0.32-r7 or newer.
 - **The core's Zabbix frontend is kept narrow** (`argus-web-guard`, a host tool: installed by the
   update and run right then, again at boot and hourly). php-fpm gets session upload progress turned off: Zabbix never uses
   it, and it was the confirmed trigger of PHP2Shell (CVE-2026-109619; Debian's fixed PHP came with
