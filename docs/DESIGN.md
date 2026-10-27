@@ -1987,6 +1987,22 @@ on another CA a day after (`probe-ca:`: one that refused it, or an image that do
 and a CA within a year of its end that nobody renewed (Argus on its own machine; `RENEW_CA=1
 ./gen-certs.sh` signs it again the same way).
 
+**Probes renew their own certificates.** A probe's key never leaves it, so the core can't renew its
+certificate; the probe does, from its minute check-in loop (not the updater sidecar, which is
+optional and holds the Docker socket, not the key). Thirty days before the end it makes a new key and
+request and posts `{csr, cert, sig}` to `/api/probes/renew-cert` with its check-in token: `cert` is the
+current certificate, `sig` the request's text signed by the current key (`openssl dgst -sha256
+-sign`, base64). Argus signs (five years, CN forced to the token's proxy, capped at the CA's end) only
+when the current certificate is the monitoring CA's (`pki.Signed`, issuer and signature, time left
+out so an ended one still counts) for that proxy and its key signed the request: a token alone gets
+nothing. The probe takes the answer only for its new key, its name and the CA it trusts, ending later,
+keeps `proxy.crt.old` / `proxy.key.old`, and stops its proxy so Docker restarts it on the new pair
+(the proxy reads it only at start); a failure is said and tried again hourly. Zabbix pins issuer and
+subject, which don't change, so nothing changes on the server. The probe reports its certificate's
+end at check-in (`cert_end`), kept per probe with the last renewal; a probe within 14 days of the end
+is a system notice (`probe-cert:`). Settings > Certificates lists the core's certificates from
+`core-certs.json` (written by `argus-cert-renew` at every run into the update dir) and every probe's.
+
 ### The probe host-tools channel
 
 The core's pattern (above) applied to the probe VM, so a probe VM's host side follows the probe

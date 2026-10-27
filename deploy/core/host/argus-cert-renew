@@ -18,14 +18,16 @@
 # of your own is left alone and, close to its end, said once per boot.
 # A renewal the service refuses (nginx -t, zabbix-server not starting) is put back as it was.
 # Local, never remote; a run with nothing to renew changes and logs nothing. Without the CA's key on
-# this machine (Argus elsewhere, or a CA kept offline) it does nothing: Argus tells a CA close to
-# its end.
+# this machine (Argus elsewhere, or a CA kept offline) it renews nothing: Argus tells a CA close to
+# its end. Every run writes what it found to core-certs.json in the shared state dir, which Argus
+# shows under Settings > Certificates.
 set -u
 PKI_DIR="${ARGUS_PKI_DIR:-/docker/argus/pki}"
 WEB_CRT="${ARGUS_WEB_CRT:-/etc/nginx/argus/argus-web.crt}"
 WEB_KEY="${ARGUS_WEB_KEY:-/etc/nginx/argus/argus-web.key}"
 ZBX_CONF="${ARGUS_ZBX_SERVER_CONF:-/etc/zabbix/zabbix_server.conf}"
 NOTE_FILE="${ARGUS_CERT_RENEW_NOTE:-/run/argus-cert-renew.note}"
+STATE_DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
 SETTLE="${ARGUS_CERT_RENEW_SETTLE:-5}"
 RENEW_DAYS=30
 LEAF_DAYS=730
@@ -195,22 +197,63 @@ renew_ca() {
   CA_LEFT="$(days_left "$CA_CRT")" || CA_LEFT=0
 }
 
-if [ ! -r "$CA_CRT" ] || [ ! -r "$CA_KEY" ]; then
-  exit 0  # no monitoring CA on this machine (Argus elsewhere, or a CA kept offline): nothing to sign with
-fi
-if ! CA_LEFT="$(days_left "$CA_CRT")"; then
-  note "ca-unreadable" "cannot read the monitoring CA ($CA_CRT): nothing renewed"
-  exit 0
-fi
-renew_ca
-if [ "$CA_LEFT" -le "$CA_WARN_DAYS" ]; then
-  note "ca-ending" "the monitoring CA ($CA_CRT) ends in $CA_LEFT days and was not renewed (see above): every probe trusts it"
-fi
+# json TEXT: TEXT as a JSON string.
+json() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\000-\037')"; }
 
-renew "https front" "$WEB_CRT" "$WEB_KEY" reload_nginx
-zcrt="$(conf_value TLSCertFile)"
-zkey="$(conf_value TLSKeyFile)"
-if [ -n "$zcrt" ] && [ -n "$zkey" ]; then
-  renew "Zabbix server" "$zcrt" "$zkey" restart_zabbix
+# entry ID NAME FILE: one certificate of this machine as core-certs.json lists it: its subject, its end
+# (unix seconds), whether the monitoring CA signed it, and whether this machine renews it.
+entry() {
+  local end by_ca=false auto=false
+  [ -s "$3" ] || return 0
+  end="$(openssl x509 -in "$3" -noout -enddate 2>/dev/null | sed -n 's/^notAfter=//p')"
+  end="$(date -d "$end" +%s 2>/dev/null)" || return 0
+  if [ -r "$CA_CRT" ] && openssl verify -no_check_time -CAfile "$CA_CRT" "$3" >/dev/null 2>&1; then
+    by_ca=true
+    [ "$CAN_SIGN" = 1 ] && auto=true
+  fi
+  printf '%s{"id":%s,"name":%s,"file":%s,"subject":%s,"ends":%s,"by_ca":%s,"auto":%s}' "$SEP" "$(json "$1")" "$(json "$2")" \
+    "$(json "$3")" "$(json "$(subject "$3" | sed 's/^subject=//')")" "$end" "$by_ca" "$auto"
+  SEP=","
+}
+
+# report: core-certs.json in the shared state dir, written whole and renamed into place (the Argus
+# container reads it through the bind mount, so 0644; the dir itself is left as it is).
+report() {
+  local tmp
+  [ -d "$STATE_DIR" ] || return 0
+  tmp="$(mktemp "$STATE_DIR/.core-certs.XXXXXX" 2>/dev/null)" || return 0
+  SEP=""
+  {
+    printf '{"at":%s,"certs":[' "$(date +%s)"
+    entry ca "Monitoring CA" "$CA_CRT"
+    entry web "https front" "$WEB_CRT"
+    entry zabbix "Zabbix server" "$(conf_value TLSCertFile)"
+    printf ']}\n'
+  } > "$tmp"
+  chmod 0644 "$tmp"
+  mv -f "$tmp" "$STATE_DIR/core-certs.json"
+}
+
+CAN_SIGN=0
+if [ -r "$CA_CRT" ] && [ -r "$CA_KEY" ]; then
+  if CA_LEFT="$(days_left "$CA_CRT")"; then
+    CAN_SIGN=1
+  else
+    note "ca-unreadable" "cannot read the monitoring CA ($CA_CRT): nothing renewed"
+  fi
 fi
+# Without the CA (Argus elsewhere, or a CA kept offline) nothing can be signed: only the report.
+if [ "$CAN_SIGN" = 1 ]; then
+  renew_ca
+  if [ "$CA_LEFT" -le "$CA_WARN_DAYS" ]; then
+    note "ca-ending" "the monitoring CA ($CA_CRT) ends in $CA_LEFT days and was not renewed (see above): every probe trusts it"
+  fi
+  renew "https front" "$WEB_CRT" "$WEB_KEY" reload_nginx
+  zcrt="$(conf_value TLSCertFile)"
+  zkey="$(conf_value TLSKeyFile)"
+  if [ -n "$zcrt" ] && [ -n "$zkey" ]; then
+    renew "Zabbix server" "$zcrt" "$zkey" restart_zabbix
+  fi
+fi
+report
 exit 0

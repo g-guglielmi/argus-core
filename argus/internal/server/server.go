@@ -161,6 +161,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/probes/os-status", s.handleReportProbeOSStatus)
 	// probe fleet check-in (public; authenticated by the long-lived probe token from enrollment)
 	mux.HandleFunc("POST /api/probes/checkin", s.handleProbeCheckin)
+	// a probe renews its own certificate (public; the probe token plus proof of its current key). See probecert.go.
+	mux.HandleFunc("POST /api/probes/renew-cert", s.handleProbeRenewCert)
 	// network-scan results a probe posts back after check-in handed it a discovery job (public;
 	// probe-token authenticated, own 2 MB body cap). See netdiscovery.go.
 	mux.HandleFunc("POST /api/probes/scan-results", s.handleScanResults)
@@ -391,6 +393,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/settings/retention", auth.RequireRole("admin", s.handleGetRetention))
 	mux.HandleFunc("PUT /api/settings/retention", auth.RequireRole("admin", s.handleSetRetention))
 	mux.HandleFunc("GET /api/backup", auth.RequireRole("admin", s.handleGetBackup))
+	// Settings > Certificates: every certificate the monitoring runs on and when it ends (certificates.go).
+	mux.HandleFunc("GET /api/certificates", auth.RequireRole("admin", s.handleCertificates))
 	mux.HandleFunc("PUT /api/backup", auth.RequireRole("admin", s.handleSetBackup))
 	mux.HandleFunc("POST /api/backup/run", auth.RequireRole("admin", s.handleBackupRun))
 	mux.HandleFunc("POST /api/backup/ssh-key", auth.RequireRole("admin", s.handleBackupSSHKey))

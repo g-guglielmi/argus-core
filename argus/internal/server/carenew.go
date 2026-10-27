@@ -21,8 +21,9 @@ const (
 	caRefreshEvery = 5 * time.Minute
 	// caSeenKey is the CA Argus last saw ("fingerprint|end unix"); caRenewedKey the last renewal it
 	// saw ("fingerprint|old end unix"): the probes still on the old CA keep that end until they move.
-	caSeenKey    = "ca_seen"
-	caRenewedKey = "ca_renewed"
+	caSeenKey      = "ca_seen"
+	caRenewedKey   = "ca_renewed"
+	caRenewedAtKey = "ca_renewed_at" // unix seconds Argus first saw the renewal
 	// caEndingDays: a CA this close to its end that is still not renewed is told (the core VM renews
 	// it 730 days ahead, so on the appliance this means the renewal didn't happen).
 	caEndingDays = 365
@@ -68,6 +69,7 @@ func (s *Server) caNotices(ctx context.Context, now time.Time) (conds, events []
 	if seenFP, seenEnd, ok := s.metaCA(ctx, caSeenKey); !ok || seenFP != fp {
 		if ok && end.After(seenEnd) {
 			_ = s.st.MetaSet(ctx, caRenewedKey, fp+"|"+itoa64(seenEnd.Unix()))
+			_ = s.st.MetaSet(ctx, caRenewedAtKey, itoa64(now.Unix()))
 			events = append(events, notice{key: "ca-renewed:" + fp, title: "The monitoring CA was renewed",
 				detail: "It now ends on " + day(end) + " (same name and key, so every certificate it signed stays trusted). " +
 					"Probes take it at their next check-in. PCs that trust the old certificate keep working until " + day(seenEnd) +
@@ -92,6 +94,14 @@ func (s *Server) caNotices(ctx context.Context, now time.Time) (conds, events []
 			continue
 		}
 		site := probeSite(name)
+		// The probe's own certificate renews itself 30 days ahead (probecert.go); one within 14 days of
+		// its end didn't, and the probe goes dark when it ends.
+		if ag.CertEnd > 0 && time.Unix(ag.CertEnd, 0).Sub(now) < 14*24*time.Hour {
+			conds = append(conds, notice{key: "probe-cert:" + name + ":" + itoa64(ag.CertEnd), title: "Probe " + site + "'s certificate ends on " + day(time.Unix(ag.CertEnd, 0)),
+				detail: "It renews itself 30 days ahead and hasn't: its log says why (argus-probe: certificate renewal failed ...), or its image is older than that. " +
+					"When it ends the probe can't reach the core until a renewal goes through.",
+				host: "Probe " + site, site: site, view: "probes", cleared: "Probe " + site + "'s certificate was renewed"})
+		}
 		ends := ""
 		if renewed {
 			ends = " It loses the core on " + day(oldEnd) + ", when the old one ends."

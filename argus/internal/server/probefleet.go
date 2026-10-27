@@ -121,6 +121,8 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		// The SHA-256 of the monitoring CA in the proxy container's ca.crt (hex). A CA that differs
 		// from Argus's is handed back: the core VM renewed it (DESIGN 14c, argus-cert-renew).
 		CA string `json:"ca"`
+		// When the probe's own certificate ends, "2031-08-10 08:23:27Z" (openssl -dateopt iso_8601).
+		CertEnd string `json:"cert_end"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -144,6 +146,9 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 	}
 	caFP := cleanFingerprint(req.CA)
 	_ = s.st.SetProbeCA(ctx, proxyName, caFP)
+	if t, err := time.Parse("2006-01-02 15:04:05Z", strings.TrimSpace(req.CertEnd)); err == nil {
+		_ = s.st.SetProbeCertEnd(ctx, proxyName, t.Unix())
+	}
 	if req.CPU != nil {
 		if n, q, l, ok := cleanCPU(req.CPU.Count, req.CPU.Quota, req.CPU.Load); ok {
 			_ = s.st.RecordProbeCPU(ctx, proxyName, n, q, l[0], l[1], l[2])

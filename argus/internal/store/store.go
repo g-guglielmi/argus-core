@@ -898,6 +898,14 @@ CREATE TABLE IF NOT EXISTS reports (
 	if err := s.ensureColumn("probe_agents", "ca_fp TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// The end of the probe's own certificate (unix seconds, as its minute report gives it; 0 = not
+	// reported) and when Argus last renewed it (POST /api/probes/renew-cert).
+	if err := s.ensureColumn("probe_agents", "cert_end INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("probe_agents", "cert_renewed_at INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	// Discovery job kind ('scan' = subnet scan, 'unifi' = controller sweep) plus the sweep's
 	// controller reference: the id resolves credentials at dispatch time, the name is a display
 	// snapshot that survives the controller's deletion.

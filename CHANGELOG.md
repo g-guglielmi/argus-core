@@ -80,6 +80,18 @@ GitHub Release from the matching section below.
   working; another names a probe that doesn't take it (an image older than this, or one that refused
   it) a day later, and one says when a CA within a year of its end was not renewed (Argus on its own
   machine: `RENEW_CA=1 ./gen-certs.sh` signs it again). Needs probe image 7.0.32-r7 or newer.
+- **Probes renew their own certificates.** A probe's key never leaves it, so thirty days before its
+  certificate ends the probe makes a new key and asks Argus to sign it (`POST
+  /api/probes/renew-cert`). Proof of who asks is the check-in token AND the current certificate with
+  a signature over the request made by the current key, so a leaked token alone gets nothing; a
+  certificate that already ended still proves where it came from, so a probe that went dark on one
+  comes back by itself. The new certificate lasts five years, like an enrolled one; the probe takes it
+  only for its new key, its name and the CA it trusts, keeps the old pair beside it and restarts its
+  proxy on the new one. Each probe reports when its certificate ends, and a system notice names one
+  within 14 days of its end. Needs probe image 7.0.32-r8 or newer.
+- `argus-cert-renew` writes `core-certs.json` (the CA, the https front, the Zabbix server: subject,
+  end, signed by the monitoring CA, renewed here) into the update dir at every run, and
+  `GET /api/certificates` (admin) lists them with every probe's certificate, for Settings.
 - **The core's Zabbix frontend is kept narrow** (`argus-web-guard`, a host tool: installed by the
   update and run right then, again at boot and hourly). php-fpm gets session upload progress turned off: Zabbix never uses
   it, and it was the confirmed trigger of PHP2Shell (CVE-2026-109619; Debian's fixed PHP came with

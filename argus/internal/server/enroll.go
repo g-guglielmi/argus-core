@@ -195,6 +195,8 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	} else if err := s.st.UpsertProbeCredential(ctx, t.ProxyName, probeHash); err != nil {
 		s.logger.Warn("enroll: could not store probe check-in credential", "proxy", t.ProxyName, "err", err)
 		probeToken = ""
+	} else if c, err := parseCertPEM(certPEM); err == nil {
+		_ = s.st.SetProbeCertEnd(ctx, t.ProxyName, c.NotAfter.Unix())
 	}
 	s.logger.Info("probe enrolled", "proxy", t.ProxyName)
 

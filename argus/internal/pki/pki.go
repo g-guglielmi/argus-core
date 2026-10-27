@@ -146,6 +146,15 @@ func (c *CA) NotAfter() time.Time {
 	return c.cert.NotAfter
 }
 
+// Signed reports whether this CA signed cert: its issuer is the CA's name and the CA's key made its
+// signature. Time is left out, so a certificate that already ended can still prove where it came from.
+func (c *CA) Signed(cert *x509.Certificate) bool {
+	c.mu.RLock()
+	parent := c.cert
+	c.mu.RUnlock()
+	return bytes.Equal(cert.RawIssuer, parent.RawSubject) && cert.CheckSignatureFrom(parent) == nil
+}
+
 // Fingerprint is a certificate's SHA-256 in lowercase hex, as `openssl x509 -fingerprint -sha256`
 // prints it without the colons.
 func Fingerprint(cert *x509.Certificate) string {

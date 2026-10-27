@@ -1752,7 +1752,8 @@ class CertRenewTest(unittest.TestCase):
         self.web = os.path.join(self.tmp, "nginx-argus")
         self.zbx = os.path.join(self.tmp, "zabbix-certs")
         self.bin = os.path.join(self.tmp, "bin")
-        for d in (self.pki, self.web, self.zbx, self.bin):
+        self.state = os.path.join(self.tmp, "state")
+        for d in (self.pki, self.web, self.zbx, self.bin, self.state):
             os.makedirs(d)
         self.ca(self.pki, 3650)
         self.leaf("web", self.web, "argus-web", "core.example.lan", 10, "DNS:core.example.lan,DNS:core,IP:10.0.0.10")
@@ -1819,7 +1820,7 @@ class CertRenewTest(unittest.TestCase):
                  ARGUS_WEB_CRT=winpath(os.path.join(self.web, "argus-web.crt")),
                  ARGUS_WEB_KEY=winpath(os.path.join(self.web, "argus-web.key")),
                  ARGUS_ZBX_SERVER_CONF=winpath(self.conf), ARGUS_CERT_RENEW_NOTE=winpath(os.path.join(self.tmp, "note")),
-                 ARGUS_CERT_RENEW_SETTLE="0", MSYS2_ARG_CONV_EXCL="/CN=",
+                 ARGUS_CERT_RENEW_SETTLE="0", MSYS2_ARG_CONV_EXCL="/CN=", ARGUS_STATE_DIR=winpath(self.state),
                  PATH=winpath(self.bin) + os.pathsep + os.environ.get("PATH", ""))
         e.update(extra or {})
         r = subprocess.run([WHICH("bash"), winpath(self.script)], env=e, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
@@ -1944,6 +1945,29 @@ class CertRenewTest(unittest.TestCase):
         self.assertIn("was not renewed (see above): every probe trusts it", calls)
         self.assertIn("it cannot be renewed with it", calls)
         self.assertLess(self.days(os.path.join(self.web, "argus-web.crt")), 11)
+
+    @unittest.skipUnless(WHICH("bash") and OPENSSL, "needs bash and openssl")
+    def test_every_run_reports_the_certificates_for_argus(self):
+        self.leaf("web", self.web, "argus-web", "core.example.lan", 400, "DNS:core.example.lan")
+        self.leaf("zbx", self.zbx, "zabbix-core", "zabbix-core", 400)
+        self.assertEqual(self.run_renew(), "", "a report is no news")
+        with open(os.path.join(self.state, "core-certs.json"), encoding="utf-8") as fh:
+            rep = json.load(fh)
+        got = {c["id"]: c for c in rep["certs"]}
+        self.assertEqual(sorted(got), ["ca", "web", "zabbix"])
+        self.assertEqual(got["ca"]["subject"], "CN=Monitoring Core CA")
+        self.assertEqual(got["web"]["subject"], "CN=core.example.lan")
+        self.assertTrue(all(c["by_ca"] and c["auto"] for c in rep["certs"]))
+        self.assertAlmostEqual((got["zabbix"]["ends"] - datetime.datetime.now().timestamp()) / 86400, 400, delta=1)
+        self.assertTrue(got["zabbix"]["file"].endswith("zabbix-core.crt"))
+        # Without the CA's key nothing is renewed here: said so per certificate.
+        os.remove(os.path.join(self.pki, "ca.key"))
+        self.run_renew()
+        with open(os.path.join(self.state, "core-certs.json"), encoding="utf-8") as fh:
+            rep = json.load(fh)
+        self.assertFalse(any(c["auto"] for c in rep["certs"]))
+        self.assertTrue(all(c["by_ca"] for c in rep["certs"]))
+        self.assertEqual([f for f in os.listdir(self.state) if f != "core-certs.json"], [], "no temporary file left")
 
     @unittest.skipUnless(WHICH("bash") and OPENSSL, "needs bash and openssl")
     def test_without_the_ca_on_this_machine_it_does_nothing(self):
