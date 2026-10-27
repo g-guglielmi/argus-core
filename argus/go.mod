@@ -7,7 +7,7 @@ require (
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/kdomanski/iso9660 v0.4.0
 	github.com/pquerna/otp v1.5.0
-	github.com/signintech/gopdf v0.38.1
+	github.com/signintech/gopdf v0.38.2
 	golang.org/x/crypto v0.58.0
 	golang.org/x/image v0.47.0
 	golang.org/x/sys v0.49.0
