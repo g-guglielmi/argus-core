@@ -105,7 +105,7 @@ jobs:
           mkdir -p ../core && cd ../core
           git clone -q --depth 1 https://github.com/${{ github.repository_owner }}/argus-core.git .
           cd "$GITHUB_WORKSPACE"
-          for f in argus-console argus-console-login argus-guest-agent argus-guest-agent.service; do
+          for f in argus-console argus-console-login argus-console-quiet.service argus-guest-agent argus-guest-agent.service; do
             if ! cmp -s "../core/deploy/core/host/$f" "deploy/probe-vm/host/$f"; then
               echo "::error::deploy/probe-vm/host/$f differs from argus-core's deploy/core/host/$f"; exit 1
             fi

@@ -2021,7 +2021,7 @@ class GuestAgentTest(unittest.TestCase):
         with open(self.script, "w", newline="\n") as fh:
             fh.write(script_body("argus-guest-agent"))
         self.state = os.path.join(self.tmp, "installed")
-        self.dropin = os.path.join(self.tmp, "dropin", "argus.conf")
+        self.unit = os.path.join(self.tmp, "units", "xe-linux-distribution.service")
         self.policy = os.path.join(self.tmp, "policy-rc.d")
 
     def appliance(self, kind="probe"):
@@ -2036,11 +2036,12 @@ class GuestAgentTest(unittest.TestCase):
         if os.path.exists(log):
             os.remove(log)
         e = dict(os.environ, LOG=winpath(log), STATE=winpath(self.state), ARGUS_PROBE_DIR=winpath(self.probe),
-                 ARGUS_CORE_SETUP_DIR=winpath(os.path.join(self.tmp, "core-setup")), ARGUS_XE_DROPIN=winpath(self.dropin),
+                 ARGUS_CORE_SETUP_DIR=winpath(os.path.join(self.tmp, "core-setup")), ARGUS_XE_UNIT=winpath(self.unit),
                  ARGUS_POLICY_RC=winpath(self.policy), PATH=winpath(self.bin) + os.pathsep + os.environ.get("PATH", ""))
         e.update(env)
         r = subprocess.run([WHICH("bash"), winpath(self.script), *args], env=e, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, rc, r.stdout + r.stderr)
+        self.stdout = r.stdout
         if not os.path.exists(log):
             return ""
         with open(log) as fh:
@@ -2066,12 +2067,43 @@ class GuestAgentTest(unittest.TestCase):
         self.assertIn("sha256sum -c --status", calls)
         self.assertRegex(calls, r"apt-get .*install --no-install-recommends \S+xe-guest-utilities\.deb held=no")
         self.assertEqual(self.installed(), ["xe-guest-utilities"])
-        with open(self.dropin) as fh:
-            self.assertIn("ConditionVirtualization=xen", fh.read())
+        with open(self.unit) as fh:
+            unit = fh.read()
+        self.assertIn("ConditionVirtualization=xen\n", unit)
+        self.assertIn("ExecStartPre=/usr/sbin/xe-linux-distribution /var/cache/xe-linux-distribution\n", unit)
+        self.assertIn("ExecStart=/usr/sbin/xe-daemon\n", unit)
+        self.assertIn("WantedBy=multi-user.target\n", unit)
+        self.assertIn("systemctl enable xe-linux-distribution.service", calls)
+        self.assertIn("systemctl restart xe-linux-distribution.service", calls, "the agent moves to the native unit")
         self.assertIn("installed the guest agent for xen (xe-guest-utilities)", calls)
+        self.assertNotIn("native systemd unit", calls, "a fresh install says it once")
         again = self.run_agent(VIRT="xen")
         self.assertNotIn("curl", again)
-        self.assertNotIn("logger", again, "nothing to do: nothing said")
+        self.assertEqual(again, "", "nothing to do: nothing said, nothing restarted")
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_r10s_drop_in_gives_way_to_the_native_unit(self):
+        self.appliance()
+        with open(self.state, "w") as fh:
+            fh.write("xe-guest-utilities\n")
+        os.makedirs(self.unit + ".d")
+        with open(os.path.join(self.unit + ".d", "argus.conf"), "w") as fh:
+            fh.write("[Unit]\nConditionVirtualization=xen\n")
+        calls = self.run_agent(VIRT="xen")
+        self.assertFalse(os.path.exists(self.unit + ".d"), "the drop-in and its folder are gone")
+        self.assertTrue(os.path.exists(self.unit))
+        self.assertIn("systemctl restart xe-linux-distribution.service", calls)
+        self.assertIn("xe-guest-utilities now runs from its native systemd unit", calls)
+        self.assertNotIn("curl", calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_under_systemd_each_line_reaches_the_journal_once(self):
+        self.appliance()
+        self.run_agent(VIRT="vmware", JOURNAL_STREAM="8:12345")
+        self.assertEqual(self.stdout, "", "systemd would send the echo to the journal a second time")
+        os.remove(self.state)
+        self.run_agent(VIRT="vmware")
+        self.assertIn("argus-guest-agent: installed the guest agent for vmware", self.stdout)
 
     @unittest.skipUnless(WHICH("bash"), "needs bash")
     def test_a_download_with_another_checksum_installs_nothing(self):
@@ -2114,8 +2146,10 @@ class GuestAgentTest(unittest.TestCase):
         self.assertEqual(sorted(self.installed()), ["hyperv-daemons", "open-vm-tools", "qemu-guest-agent", "xe-guest-utilities"])
         self.assertNotIn("held=no", calls, "no service starts while the packages go in")
         self.assertFalse(os.path.exists(self.policy), "the hold is lifted after")
-        with open(self.dropin) as fh:
+        with open(self.unit) as fh:
             self.assertIn("ConditionVirtualization=xen", fh.read())
+        self.assertIn("systemctl enable xe-linux-distribution.service", calls)
+        self.assertNotIn("restart", calls, "nothing starts at the image build")
 
     def test_manifest_and_unit(self):
         with open(os.path.join(HOST, "manifest"), encoding="utf-8") as fh:
@@ -2125,6 +2159,13 @@ class GuestAgentTest(unittest.TestCase):
         unit = script_body("argus-guest-agent.service")
         self.assertIn("Restart=on-failure", unit)
         self.assertIn("WantedBy=multi-user.target", unit)
+        self.assertRegex(manifest, r"argus-console-quiet\.service +/etc/systemd/system/argus-console-quiet\.service +0644 enable\n")
+        quiet = script_body("argus-console-quiet.service")
+        self.assertIn("ConditionPathExists=|/docker/argus-probe/host-tools.json\n", quiet)
+        self.assertIn("ConditionPathExists=|/var/lib/argus-core-setup\n", quiet, "a core installed by hand keeps its own settings")
+        self.assertIn("DefaultDependencies=no\n", quiet)
+        self.assertIn("ExecStart=/bin/sh -c 'echo 4 > /proc/sys/kernel/printk'\n", quiet)
+        self.assertIn("WantedBy=sysinit.target", quiet)
         self.assertIn("ONE FILE,\n# TWO REPOSITORIES", script_body("argus-guest-agent").replace("VM), so", "VM), so"))
 
 if __name__ == "__main__":

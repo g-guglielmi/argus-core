@@ -32,6 +32,7 @@ argus-tz-check.timer               /etc/systemd/system/argus-tz-check.timer     
 argus-patch.service                /etc/systemd/system/argus-patch.service                           0644 render
 argus-patch.path                   /etc/systemd/system/argus-patch.path                              0644 render enable
 argus-guest-agent.service          /etc/systemd/system/argus-guest-agent.service                     0644 enable
+argus-console-quiet.service        /etc/systemd/system/argus-console-quiet.service                   0644 enable
 argus-host-tools.service           /etc/systemd/system/argus-host-tools.service                      0644 render
 argus-host-tools.path              /etc/systemd/system/argus-host-tools.path                         0644 render enable
 argus-size-zabbix.service          /etc/systemd/system/argus-size-zabbix.service                     0644 enable

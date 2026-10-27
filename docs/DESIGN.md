@@ -2005,8 +2005,11 @@ is a system notice (`probe-cert:`). Settings > Certificates lists the core's cer
 
 **Guest agents on the appliance VMs (`argus-guest-agent`).** One image runs on every hypervisor, so it
 carries every guest agent and each starts only on its own: xe-guest-utilities for Xen (XenServer's
-GitHub release, downloaded and taken only when its SHA-256 matches the one pinned in the script; its
-SysV init script fails outside Xen, so a drop-in adds `ConditionVirtualization=xen`), open-vm-tools
+GitHub release, downloaded and taken only when its SHA-256 matches the one pinned in the script; the
+.deb starts it with a SysV script, which systemd runs only through a compatibility layer it is
+dropping, so the script installs XenServer's own native unit from their repository under the same
+name, with Debian's paths and `ConditionVirtualization=xen`, and moves the running agent to it),
+open-vm-tools
 (its unit has `ConditionVirtualization=vmware`), qemu-guest-agent (bound to the guest agent channel's
 device) and hyperv-daemons (bound to Hyper-V's devices), the last three from Debian. The image build
 runs `argus-guest-agent --all` with service starts held (`policy-rc.d`), since the build VM is KVM and
@@ -2018,6 +2021,14 @@ none, and an install that failed (no network yet at the site) is tried again an 
 folder on the core VM): a core installed by hand picks its own agent. A Xen agent already there
 (xe-guest-utilities or xen-guest-agent) is kept. xen-guest-agent (Rust) is the likely successor;
 it replaces xe-guest-utilities here once it has a current release published somewhere stable.
+
+**A quiet console on the appliance VMs (`argus-console-quiet.service`).** The Debian cloud image
+boots without `quiet`, so the kernel's console log level let every informational line (veth ports
+of each container restart, generator notes at each `daemon-reload`) print over the console menu on
+the hypervisor console. A oneshot unit early in boot (after systemd-sysctl, before sysinit.target)
+sets the console level to 4: errors and worse still reach the screen, everything stays in the
+journal. One file in both repositories, delivered by the host-tools channel; its conditions keep it
+to the appliances (`host-tools.json` on a probe VM, the first-boot state folder on the core VM).
 
 ### The probe host-tools channel
 

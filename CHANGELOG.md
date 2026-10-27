@@ -21,7 +21,14 @@ GitHub Release from the matching section below.
   addresses, OS and memory. Only the one of the hypervisor the VM runs on is installed, and each
   starts only on its own; a VM that already has a Xen agent keeps it, and a core installed by hand
   is left alone. The next core-vm image carries all of them from its build. The script is one file
-  with the probe VM's, and the weekly scan fails when the two copies drift.
+  with the probe VM's, and the weekly scan fails when the two copies drift. Xen's agent runs from
+  XenServer's own systemd unit (`mk/xe-linux-distribution.service` in their repository, with
+  Debian's paths), which their .deb leaves out: systemd no longer runs the package's SysV script
+  through the compatibility layer it is dropping, nor warns about it at every reload.
+- **Only kernel errors on the core VM's console** (`argus-console-quiet`, a host tool). The VM boots
+  without "quiet", so the kernel printed every informational line (the containers' network ports,
+  systemd's notes) over the console menu; now only errors reach the screen and the rest stays in the
+  journal. Only on the appliance; a core installed by hand keeps its own setting.
 
 ## [core-vm/v0.1.9] - 2026-10-28
 
