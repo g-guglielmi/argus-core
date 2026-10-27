@@ -469,7 +469,10 @@ NetFlow.
   `/.well-known/acme-challenge/` to Argus) and DNS-01 (works for an address the internet can't reach,
   and for wildcards; the provider's API credentials kept encrypted). DNS providers are built in one
   by one, not Lego's whole list (each pulls its SDK into the image): Cloudflare first (an API token
-  scoped to Zone DNS edit), RFC 2136 for a DNS server of your own, more on request. The name must be
+  scoped to Zone DNS edit), RFC 2136 for a DNS server of your own, more on request. A domain at a
+  registrar with no DNS API (register.it has none, and Lego no provider for it) delegates only the
+  challenge: one CNAME set once by hand, `_acme-challenge.<name>` pointing into a zone Argus can
+  write (a Cloudflare zone), which Lego follows; the domain itself stays where it is. The name must be
   in a public domain you own (split DNS points it inside); `.lan` names can't have one. Left alone:
   installs where a reverse proxy of your own (HAProxy, NetScaler) holds the public certificate. -
   _(BE+host+FE)_ M
