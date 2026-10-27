@@ -2752,6 +2752,8 @@ function SettingsView({ onOpenUpdates }: { onOpenUpdates: () => void }) {
         </div>
         <div className="set-group" id="set-access">
           <div className="set-group-cap">Access and security</div>
+          {/* Every certificate the monitoring runs on and when it ends (certificates.go). */}
+          <CertificatesCard />
           {groupForm('Access')}
           {groupForm('Proxy')}
           {groupForm('Security')}
@@ -10313,6 +10315,94 @@ type MailboxForm = { name: string; kind: 'imap' | 'graph'; host: string; port: s
 
 // MailboxesCard is the Settings section where admins set the mailboxes Argus reads for the push
 // sensors that report by email: IMAP, or a Microsoft 365 mailbox through Graph. Argus only reads them.
+type CoreCert = { id: string; name: string; file: string; subject: string; ends: number; by_ca: boolean; auto: boolean }
+type ProbeCertRow = { name: string; site: string; ends: number; renewed_at: number; auto: boolean; version: string }
+type CertificatesView = {
+  core: { at: number; certs: CoreCert[] }
+  ca: { subject: string; ends: number; sha256: string; renewed_at: number } | null
+  probes: ProbeCertRow[]
+  warn_days: number
+  error_days: number
+}
+
+const CERT_PURPOSE: Record<string, string> = {
+  ca: 'trusted by every probe, the Zabbix server and your PCs',
+  web: 'Argus on :443, the Zabbix frontend on :8443',
+  zabbix: 'what every probe checks on :10051',
+}
+
+// CertificatesCard lists the certificates the monitoring runs on and when they end: the core's (as its
+// argus-cert-renew last reported them) and each probe's. Read-only: they renew by themselves, and a
+// row says when one doesn't.
+function CertificatesCard() {
+  const [v, setV] = useState<CertificatesView | null>(null)
+  useEffect(() => {
+    const load = () => fetch('/api/certificates').then((r) => (r.ok ? r.json() : null)).then(setV).catch(() => {})
+    load()
+    const t = window.setInterval(load, 300000)
+    return () => window.clearInterval(t)
+  }, [])
+  if (!v) return <section className="set-card"><h3>Certificates</h3><Skeleton rows={3} cols={2} /></section>
+  const now = Date.now() / 1000
+  // state: the end date and a chip, amber and red close to the end, else whether it renews by itself.
+  const state = (ends: number, auto: boolean) => {
+    if (!ends) return <span className="set-src">end not known</span>
+    const days = Math.floor((ends - now) / 86400)
+    const left = days < 0 ? 'ended' : days === 0 ? 'today' : `in ${plural(days, 'day')}`
+    const chip = days < v.error_days ? <span className="tag err">{left}</span>
+      : days < v.warn_days ? <span className="tag avail">{left}</span>
+      : auto ? <span className="okquiet">renews itself</span> : <span className="set-src">renew by hand</span>
+    return <><span className="cert-ends">{fmtDay(ends)}</span>{chip}</>
+  }
+  const core: CoreCert[] = v.core.certs.length > 0 ? v.core.certs
+    : v.ca ? [{ id: 'ca', name: 'Monitoring CA', file: '', subject: v.ca.subject, ends: v.ca.ends, by_ca: true, auto: false }] : []
+  // overdue: one that renews itself and is inside the warning window should have renewed already.
+  const overdue = (ends: number, auto: boolean) => auto && ends > 0 && (ends - now) / 86400 < v.warn_days
+  const coreNote = (c: CoreCert) => {
+    if (!c.by_ca) return 'not signed by the monitoring CA: renew it yourself'
+    if (overdue(c.ends, c.auto)) return "the renewal hasn't gone through: journalctl -t argus-cert-renew on the core says why"
+    if (c.id === 'ca' && v.ca?.renewed_at) return `${CERT_PURPOSE.ca}; renewed ${fmtDay(v.ca.renewed_at)}`
+    if (!c.auto && c.id === 'ca') return `${CERT_PURPOSE.ca}; renew it with RENEW_CA=1 gen-certs.sh (deploy README)`
+    return CERT_PURPOSE[c.id] || c.file
+  }
+  const probeNote = (p: ProbeCertRow) => {
+    if (!p.auto) return p.version ? `runs ${p.version}, which can't renew it: update the probe` : "hasn't reported yet"
+    if (!p.ends) return 'its end shows after its next check-in'
+    if (overdue(p.ends, p.auto)) return "the renewal hasn't gone through: the probe's log says why (argus-probe: certificate renewal failed)"
+    return p.renewed_at ? `renewed ${fmtDay(p.renewed_at)}` : 'renews itself 30 days ahead'
+  }
+  return (
+    <section className="set-card">
+      <h3>Certificates</h3>
+      <p className="set-note">The certificates the monitoring runs on and when they end. The core renews its own 30 days ahead and the monitoring CA two years ahead; each probe renews its own. Nothing to do here unless one turns amber or red.</p>
+      {core.length > 0 && (
+        <div className="tag-rows">
+          {core.map((c) => (
+            <div key={c.id} className="tag-row">
+              <span className="complabel">{c.name}</span>
+              <span className="tag-row-desc"><span className="mono">{c.subject}</span><span className="sub-line"> · {coreNote(c)}</span></span>
+              <span className="tag-row-act">{state(c.ends, c.auto)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {v.core.at === 0 && <p className="set-hint" style={{ margin: '4px 0 8px' }}>The core's https and Zabbix server certificates show here once its host tools report them (the core VM, or a core with the host tools installed).</p>}
+      {v.probes.length > 0 && <>
+        <div className="cert-sub">Probes</div>
+        <div className="tag-rows">
+          {v.probes.map((p) => (
+            <div key={p.name} className="tag-row">
+              <span className="complabel">{p.site}</span>
+              <span className="tag-row-desc"><span className="mono">CN={p.name}</span><span className="sub-line"> · {probeNote(p)}</span></span>
+              <span className="tag-row-act">{state(p.ends, p.auto)}</span>
+            </div>
+          ))}
+        </div>
+      </>}
+    </section>
+  )
+}
+
 function MailboxesCard() {
   const toast = useToast()
   const confirm = useConfirm()

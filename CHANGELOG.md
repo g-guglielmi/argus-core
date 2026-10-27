@@ -89,9 +89,11 @@ GitHub Release from the matching section below.
   only for its new key, its name and the CA it trusts, keeps the old pair beside it and restarts its
   proxy on the new one. Each probe reports when its certificate ends, and a system notice names one
   within 14 days of its end. Needs probe image 7.0.32-r8 or newer.
-- `argus-cert-renew` writes `core-certs.json` (the CA, the https front, the Zabbix server: subject,
-  end, signed by the monitoring CA, renewed here) into the update dir at every run, and
-  `GET /api/certificates` (admin) lists them with every probe's certificate, for Settings.
+- **Settings > Certificates** (under Access and security): every certificate the monitoring runs on
+  and when it ends: the monitoring CA, the https front and the Zabbix server (as the core's
+  `argus-cert-renew` reports them in `core-certs.json` at every run), and each probe's. A row says
+  whether it renews itself, turns amber 21 days before its end and red at 7, and says why when a
+  renewal is overdue (the core's journal, the probe's log) or the probe's image can't renew it.
 - **The core's Zabbix frontend is kept narrow** (`argus-web-guard`, a host tool: installed by the
   update and run right then, again at boot and hourly). php-fpm gets session upload progress turned off: Zabbix never uses
   it, and it was the confirmed trigger of PHP2Shell (CVE-2026-109619; Debian's fixed PHP came with

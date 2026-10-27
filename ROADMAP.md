@@ -452,6 +452,23 @@ NetFlow.
   that job): would the devices we watch say something by syslog that polling can't see, quickly
   enough to matter? Decide at production rollout with the real devices in hand. - _decision_
 
+### K. Certificates (agreed 2026-10-27)
+- [x] **The core's certificates renew themselves** - the https front and the Zabbix server's, 30 days
+  ahead (`argus-cert-renew`); the monitoring CA too, signed again with its own key two years ahead,
+  the probes taking it at check-in. DESIGN section 14c. - _Unreleased_
+- [x] **Probes renew their own certificates** - a new key 30 days ahead, signed by Argus on proof of
+  the token and the current key (probe 7.0.32-r8). DESIGN section 14c. - _Unreleased_
+- [x] **Settings > Certificates** - every certificate the monitoring runs on and when it ends (the CA,
+  the https front, the Zabbix server, each probe), amber at 21 days, red at 7; rows like Mailboxes.
+  DESIGN section 14c. - _Unreleased_
+- [ ] **Public certificates with Lego (ACME)** - a Let's Encrypt (or other ACME CA) certificate for
+  Argus's own address, so PCs need no monitoring CA: Argus asks with the Lego library and a host tool
+  installs it into nginx and reloads it, the same path the renewals use; renewed by itself and listed
+  under Settings > Certificates. To decide first: DNS-01 (works for addresses the internet can't
+  reach, needs the DNS provider's API credentials, kept encrypted) or HTTP-01 (needs :80 reachable
+  from the internet); and installs where a reverse proxy of your own (HAProxy, NetScaler) holds the
+  public certificate, which this leaves alone. - _(BE+host+FE)_ M
+
 ---
 
 ## Suggested near-term order
