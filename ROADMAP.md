@@ -464,10 +464,15 @@ NetFlow.
 - [ ] **Public certificates with Lego (ACME)** - a Let's Encrypt (or other ACME CA) certificate for
   Argus's own address, so PCs need no monitoring CA: Argus asks with the Lego library and a host tool
   installs it into nginx and reloads it, the same path the renewals use; renewed by itself and listed
-  under Settings > Certificates. To decide first: DNS-01 (works for addresses the internet can't
-  reach, needs the DNS provider's API credentials, kept encrypted) or HTTP-01 (needs :80 reachable
-  from the internet); and installs where a reverse proxy of your own (HAProxy, NetScaler) holds the
-  public certificate, which this leaves alone. - _(BE+host+FE)_ M
+  under Settings > Certificates. Both challenges, chosen per certificate (agreed 2026-10-27):
+  HTTP-01 (needs :80 reachable from the internet for that name; nginx on the core hands
+  `/.well-known/acme-challenge/` to Argus) and DNS-01 (works for an address the internet can't reach,
+  and for wildcards; the provider's API credentials kept encrypted). DNS providers are built in one
+  by one, not Lego's whole list (each pulls its SDK into the image): Cloudflare first (an API token
+  scoped to Zone DNS edit), RFC 2136 for a DNS server of your own, more on request. The name must be
+  in a public domain you own (split DNS points it inside); `.lan` names can't have one. Left alone:
+  installs where a reverse proxy of your own (HAProxy, NetScaler) holds the public certificate. -
+  _(BE+host+FE)_ M
 
 ---
 
