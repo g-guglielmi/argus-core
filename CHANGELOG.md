@@ -56,6 +56,11 @@ GitHub Release from the matching section below.
   from its job (by sender and subject), a failure or success word deciding the run. Argus only reads
   the mailbox, never marks, moves or deletes a mail, and a run counts at the time its mail arrived.
 
+### Changed
+- **Add probe names XCP-ng, XenServer and Nutanix AHV** on the appliance downloads: the OVA for
+  VMware, VirtualBox, XCP-ng and XenServer, the qcow2 for KVM, Proxmox and Nutanix AHV (its own disk
+  format), the VHD for Hyper-V. The probe VM and core appliance READMEs say how to import each.
+
 ### Security
 - **The core's Zabbix frontend is kept narrow** (`argus-web-guard`, a host tool: installed by the
   update, run at boot and hourly). php-fpm gets session upload progress turned off: Zabbix never uses

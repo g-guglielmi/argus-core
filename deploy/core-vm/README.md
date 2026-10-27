@@ -159,9 +159,10 @@ packer build argus-core-vm.pkr.hcl        # -> output/argus-core-vm.qcow2
 
 ## Deploying
 
-1. **Import the disk** - `argus-core-vm.ova` (VMware / Nutanix / VirtualBox / Xen Orchestra
-   **Import → OVA**), `argus-core-vm.qcow2` (KVM/libvirt), or `argus-core-vm.vhd` (XCP-NG VDI import /
-   Hyper-V; gunzip first). Give it **2+ vCPU and 4+ GB RAM** (more for bigger fleets, §14b: every boot sizes Zabbix's caches
+1. **Import the disk** - `argus-core-vm.ova` (VMware / VirtualBox / XCP-ng and XenServer: Xen
+   Orchestra **Import → OVA** or XenCenter **Import**), `argus-core-vm.qcow2` (KVM/libvirt/Proxmox,
+   and Nutanix AHV: a *Disk* image in Prism's Image Configuration, cloned into the VM's disk), or
+   `argus-core-vm.vhd` (XCP-ng VDI import / Hyper-V Generation 1; gunzip first). Give it **2+ vCPU and 4+ GB RAM** (more for bigger fleets, §14b: every boot sizes Zabbix's caches
    and process counts, and PostgreSQL's memory, to the VM, so to grow it you shut it down, add RAM
    or cores, and start it).
 2. **Boot it on a network with DHCP** and find its address (your hypervisor console shows it, or your

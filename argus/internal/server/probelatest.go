@@ -188,9 +188,9 @@ func (s *Server) handleProbesCheckUpdates(w http.ResponseWriter, r *http.Request
 func vmImageLabel(name string) string {
 	switch {
 	case strings.HasSuffix(name, ".ova"):
-		return "OVA · VirtualBox / VMware"
+		return "OVA · VMware / VirtualBox / XCP-ng / XenServer"
 	case strings.HasSuffix(name, ".qcow2"):
-		return "qcow2 · KVM / QEMU / Proxmox"
+		return "qcow2 · KVM / Proxmox / Nutanix AHV"
 	case strings.HasSuffix(name, ".vhd.gz"), strings.HasSuffix(name, ".vhd"):
 		return "VHD · Hyper-V"
 	default:
