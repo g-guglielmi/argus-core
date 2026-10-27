@@ -174,6 +174,14 @@ packer build argus-core-vm.pkr.hcl        # -> output/argus-core-vm.qcow2
    `/docker/argus/pki/ca.crt` on your PC), add your first probe (**Probes → Add probe** - the
    enrollment PKI already works), and take a **hypervisor snapshot**.
 
+**Guest agent**: the image carries every hypervisor's guest agent and only the one of the hypervisor
+it runs on starts, so the hypervisor shows the VM's addresses, OS and memory: xe-guest-utilities on XCP-ng and XenServer
+(XenServer's own release, pinned by its checksum), open-vm-tools on VMware, qemu-guest-agent on KVM
+(Proxmox, libvirt, Nutanix AHV; it runs when the VM has the QEMU guest agent channel, which
+Proxmox adds with Options -> QEMU Guest Agent) and hyperv-daemons on Hyper-V. A core
+VM built from an older image gets the one it needs with its next core update (`argus-guest-agent`, a
+host tool); a core installed by hand is left alone, its guest agent is yours to pick.
+
 Afterwards, `http://<vm-ip>/` redirects to Argus over https. The Zabbix UI stays available on
 `https://<vm-ip>:8443` (user `Admin`) for engine-room work.
 

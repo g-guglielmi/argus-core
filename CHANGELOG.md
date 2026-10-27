@@ -13,6 +13,16 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **The hypervisor's guest agent on the core VM** (`argus-guest-agent`, a host tool: installed by the
+  update, run at boot and again an hour after a failed try). XCP-ng and XenServer get
+  xe-guest-utilities (XenServer's own release, taken only with its pinned checksum), VMware
+  open-vm-tools, KVM qemu-guest-agent, Hyper-V hyperv-daemons, so the hypervisor shows the VM's
+  addresses, OS and memory. Only the one of the hypervisor the VM runs on is installed, and each
+  starts only on its own; a VM that already has a Xen agent keeps it, and a core installed by hand
+  is left alone. The next core-vm image carries all of them from its build. The script is one file
+  with the probe VM's, and the weekly scan fails when the two copies drift.
+
 ## [0.9.9] - 2026-10-27
 
 ### Added

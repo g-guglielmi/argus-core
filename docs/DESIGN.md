@@ -2003,6 +2003,22 @@ end at check-in (`cert_end`), kept per probe with the last renewal; a probe with
 is a system notice (`probe-cert:`). Settings > Certificates lists the core's certificates from
 `core-certs.json` (written by `argus-cert-renew` at every run into the update dir) and every probe's.
 
+**Guest agents on the appliance VMs (`argus-guest-agent`).** One image runs on every hypervisor, so it
+carries every guest agent and each starts only on its own: xe-guest-utilities for Xen (XenServer's
+GitHub release, downloaded and taken only when its SHA-256 matches the one pinned in the script; its
+SysV init script fails outside Xen, so a drop-in adds `ConditionVirtualization=xen`), open-vm-tools
+(its unit has `ConditionVirtualization=vmware`), qemu-guest-agent (bound to the guest agent channel's
+device) and hyperv-daemons (bound to Hyper-V's devices), the last three from Debian. The image build
+runs `argus-guest-agent --all` with service starts held (`policy-rc.d`), since the build VM is KVM and
+xe-guest-utilities' start fails there. On a running VM, the same script is a host tool in both
+repositories (one file, diffed weekly by scan.yml) with a oneshot unit enabled by the host-tools
+channel: at boot it installs the agent of the hypervisor `systemd-detect-virt` names when the VM has
+none, and an install that failed (no network yet at the site) is tried again an hour later
+(`Restart=on-failure`). Only on the appliances (`host-tools.json` on a probe VM, the first-boot state
+folder on the core VM): a core installed by hand picks its own agent. A Xen agent already there
+(xe-guest-utilities or xen-guest-agent) is kept. xen-guest-agent (Rust) is the likely successor;
+it replaces xe-guest-utilities here once it has a current release published somewhere stable.
+
 ### The probe host-tools channel
 
 The core's pattern (above) applied to the probe VM, so a probe VM's host side follows the probe

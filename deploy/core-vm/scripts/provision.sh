@@ -95,6 +95,11 @@ systemctl enable systemd-networkd.service systemd-resolved.service
 systemctl enable argus-firstboot.service
 systemctl enable argus-hostkeys.service
 
+# Every hypervisor's guest agent (argus-guest-agent, installed by setup-core.sh's host tools: Xen,
+# VMware, KVM, Hyper-V), so the hypervisor shows the VM's addresses and OS whichever one it lands on;
+# each starts only on its own. On a running core VM the same script adds the one it needs.
+/usr/local/sbin/argus-guest-agent --all
+
 echo "==> pre-pulling the core images (best-effort, so first boot doesn't wait on big pulls)"
 docker pull ghcr.io/g-guglielmi/argus:latest || true
 docker pull ghcr.io/g-guglielmi/argus-updater:latest || true

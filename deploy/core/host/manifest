@@ -16,6 +16,7 @@ argus-backup                       /usr/local/sbin/argus-backup                 
 argus-restore                      /usr/local/sbin/argus-restore                                     0755
 argus-console                      /usr/local/sbin/argus-console                                     0755
 argus-console-login                /usr/local/sbin/argus-console-login                               0755
+argus-guest-agent                  /usr/local/sbin/argus-guest-agent                                 0755
 argus-web-guard                    /usr/local/sbin/argus-web-guard                                   0755
 argus-cert-renew                   /usr/local/sbin/argus-cert-renew                                  0755
 argus-os-report.service            /etc/systemd/system/argus-os-report.service                       0644 render
@@ -30,6 +31,7 @@ argus-tz-check.service             /etc/systemd/system/argus-tz-check.service   
 argus-tz-check.timer               /etc/systemd/system/argus-tz-check.timer                          0644 enable
 argus-patch.service                /etc/systemd/system/argus-patch.service                           0644 render
 argus-patch.path                   /etc/systemd/system/argus-patch.path                              0644 render enable
+argus-guest-agent.service          /etc/systemd/system/argus-guest-agent.service                     0644 enable
 argus-host-tools.service           /etc/systemd/system/argus-host-tools.service                      0644 render
 argus-host-tools.path              /etc/systemd/system/argus-host-tools.path                         0644 render enable
 argus-size-zabbix.service          /etc/systemd/system/argus-size-zabbix.service                     0644 enable

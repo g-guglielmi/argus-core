@@ -1983,5 +1983,149 @@ class CertRenewTest(unittest.TestCase):
         with open(os.path.join(HOST, "argus-cert-renew.timer"), encoding="utf-8") as fh:
             self.assertIn("OnUnitActiveSec=1d", fh.read())
 
+
+class GuestAgentTest(unittest.TestCase):
+    """argus-guest-agent: the hypervisor's guest agent on the appliance VMs, and nothing elsewhere."""
+
+    FAKES = {
+        "logger": 'echo "logger $*" >> "$LOG"\n',
+        "systemctl": 'echo "systemctl $*" >> "$LOG"\n',
+        "systemd-detect-virt": '[ -n "${VIRT:-}" ] || { echo none; exit 1; }\necho "$VIRT"\n',
+        # dpkg-query -W -f=FORMAT PKG...: the installed ones from $STATE.
+        "dpkg-query": ('fmt=""; pk=()\nfor a in "$@"; do case "$a" in -W) ;; -f=*) fmt="${a#-f=}";; *) pk+=("$a");; esac; done\n'
+                       'rc=1\nfor x in "${pk[@]}"; do\n  if grep -qx "$x" "$STATE" 2>/dev/null; then\n'
+                       '    rc=0; case "$fmt" in *Package*) echo "$x install ok installed";; *) printf "install ok installed";; esac\n'
+                       '  fi\ndone\nexit $rc\n'),
+        # apt-get: logs its words (and whether service starts are held); install adds the packages to $STATE.
+        "apt-get": ('held=no; [ -e "$ARGUS_POLICY_RC" ] && held=yes\necho "apt-get $* held=$held" >> "$LOG"\n'
+                    '[ -n "${APT_FAIL:-}" ] && exit 100\ninst=0\nfor a in "$@"; do\n  case "$a" in\n'
+                    '    install) inst=1;;\n    -*|update) ;;\n    *.deb) [ $inst = 1 ] && echo xe-guest-utilities >> "$STATE";;\n'
+                    '    *) [ $inst = 1 ] && echo "$a" >> "$STATE";;\n  esac\ndone\nexit 0\n'),
+        "curl": ('echo "curl $*" >> "$LOG"\nout=""\nwhile [ $# -gt 0 ]; do [ "$1" = -o ] && { out=$2; shift; }; shift; done\n'
+                 '[ -n "$out" ] && echo deb > "$out"\nexit ${CURL_RC:-0}\n'),
+        "sha256sum": 'cat >/dev/null\necho "sha256sum $*" >> "$LOG"\nexit ${SHA_RC:-0}\n',
+    }
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.bin = os.path.join(self.tmp, "bin")
+        self.probe = os.path.join(self.tmp, "probe")
+        os.makedirs(self.bin)
+        os.makedirs(self.probe)
+        for name, body in self.FAKES.items():
+            path = os.path.join(self.bin, name)
+            with open(path, "w", newline="\n") as fh:
+                fh.write("#!/usr/bin/env bash\n" + body)
+            os.chmod(path, 0o755)
+        self.script = os.path.join(self.tmp, "argus-guest-agent")
+        with open(self.script, "w", newline="\n") as fh:
+            fh.write(script_body("argus-guest-agent"))
+        self.state = os.path.join(self.tmp, "installed")
+        self.dropin = os.path.join(self.tmp, "dropin", "argus.conf")
+        self.policy = os.path.join(self.tmp, "policy-rc.d")
+
+    def appliance(self, kind="probe"):
+        if kind == "probe":
+            with open(os.path.join(self.probe, "host-tools.json"), "w") as fh:
+                fh.write("{}")
+        else:
+            os.makedirs(os.path.join(self.tmp, "core-setup"))
+
+    def run_agent(self, *args, rc=0, **env):
+        log = os.path.join(self.tmp, "calls.log")
+        if os.path.exists(log):
+            os.remove(log)
+        e = dict(os.environ, LOG=winpath(log), STATE=winpath(self.state), ARGUS_PROBE_DIR=winpath(self.probe),
+                 ARGUS_CORE_SETUP_DIR=winpath(os.path.join(self.tmp, "core-setup")), ARGUS_XE_DROPIN=winpath(self.dropin),
+                 ARGUS_POLICY_RC=winpath(self.policy), PATH=winpath(self.bin) + os.pathsep + os.environ.get("PATH", ""))
+        e.update(env)
+        r = subprocess.run([WHICH("bash"), winpath(self.script), *args], env=e, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, rc, r.stdout + r.stderr)
+        if not os.path.exists(log):
+            return ""
+        with open(log) as fh:
+            return fh.read()
+
+    def installed(self):
+        if not os.path.exists(self.state):
+            return []
+        with open(self.state) as fh:
+            return fh.read().split()
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_a_core_installed_by_hand_is_left_alone(self):
+        self.assertEqual(self.run_agent(VIRT="xen"), "")
+        self.assertEqual(self.installed(), [])
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_xen_gets_xenservers_agent_by_its_checksum_and_only_xen_starts_it(self):
+        self.appliance()
+        calls = self.run_agent(VIRT="xen")
+        self.assertIn("curl -fsSL --retry 3 -o ", calls)
+        self.assertIn("https://github.com/xenserver/xe-guest-utilities/releases/download/v10.0.0/xe-guest-utilities_10.0.0-1_amd64.deb", calls)
+        self.assertIn("sha256sum -c --status", calls)
+        self.assertRegex(calls, r"apt-get .*install --no-install-recommends \S+xe-guest-utilities\.deb held=no")
+        self.assertEqual(self.installed(), ["xe-guest-utilities"])
+        with open(self.dropin) as fh:
+            self.assertIn("ConditionVirtualization=xen", fh.read())
+        self.assertIn("installed the guest agent for xen (xe-guest-utilities)", calls)
+        again = self.run_agent(VIRT="xen")
+        self.assertNotIn("curl", again)
+        self.assertNotIn("logger", again, "nothing to do: nothing said")
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_a_download_with_another_checksum_installs_nothing(self):
+        self.appliance()
+        calls = self.run_agent(VIRT="xen", SHA_RC="1", rc=1)
+        self.assertNotIn(" install ", calls)
+        self.assertIn("could not download xe-guest-utilities 10.0.0 with its expected checksum", calls)
+        self.assertIn("trying again in an hour", calls)
+        self.assertEqual(self.installed(), [])
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_each_other_hypervisor_gets_its_debian_agent(self):
+        self.appliance("core")
+        for virt, pkg in (("vmware", "open-vm-tools"), ("kvm", "qemu-guest-agent"), ("qemu", "qemu-guest-agent"), ("microsoft", "hyperv-daemons")):
+            if os.path.exists(self.state):
+                os.remove(self.state)
+            calls = self.run_agent(VIRT=virt)
+            self.assertIn("install --no-install-recommends " + pkg, calls, virt)
+            self.assertNotIn("curl", calls)
+            self.assertEqual(self.installed(), [pkg], virt)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_a_xen_agent_already_there_is_kept_and_bare_metal_gets_nothing(self):
+        self.appliance()
+        with open(self.state, "w") as fh:
+            fh.write("xen-guest-agent\n")
+        self.assertNotIn("curl", self.run_agent(VIRT="xen"))
+        os.remove(self.state)
+        self.assertEqual(self.run_agent(VIRT=""), "")
+        self.assertEqual(self.run_agent(VIRT="oracle"), "")
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_a_failed_apt_run_is_tried_again(self):
+        self.appliance()
+        self.assertIn("did not install; trying again in an hour", self.run_agent(VIRT="vmware", APT_FAIL="1", rc=1))
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_the_image_build_installs_every_agent_with_services_held(self):
+        calls = self.run_agent("--all", VIRT="kvm")
+        self.assertEqual(sorted(self.installed()), ["hyperv-daemons", "open-vm-tools", "qemu-guest-agent", "xe-guest-utilities"])
+        self.assertNotIn("held=no", calls, "no service starts while the packages go in")
+        self.assertFalse(os.path.exists(self.policy), "the hold is lifted after")
+        with open(self.dropin) as fh:
+            self.assertIn("ConditionVirtualization=xen", fh.read())
+
+    def test_manifest_and_unit(self):
+        with open(os.path.join(HOST, "manifest"), encoding="utf-8") as fh:
+            manifest = fh.read()
+        self.assertRegex(manifest, r"argus-guest-agent +/usr/local/sbin/argus-guest-agent +0755\n")
+        self.assertRegex(manifest, r"argus-guest-agent\.service +/etc/systemd/system/argus-guest-agent\.service +0644 enable\n")
+        unit = script_body("argus-guest-agent.service")
+        self.assertIn("Restart=on-failure", unit)
+        self.assertIn("WantedBy=multi-user.target", unit)
+        self.assertIn("ONE FILE,\n# TWO REPOSITORIES", script_body("argus-guest-agent").replace("VM), so", "VM), so"))
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

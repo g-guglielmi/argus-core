@@ -96,15 +96,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository_owner }}/${{ matrix.repo }}
-      # The console menu is one file kept identical in argus-core (deploy/core/host) and argus-probe
-      # (deploy/probe-vm/host): a copy that drifted is a bug, caught here every week.
-      - name: The console menu matches the core's copy
+      # The console menu and the guest-agent installer are each one file kept identical in argus-core
+      # (deploy/core/host) and argus-probe (deploy/probe-vm/host): a copy that drifted is a bug, caught
+      # here every week.
+      - name: The shared host files match the core's copies
         if: matrix.repo == 'argus-probe'
         run: |
           mkdir -p ../core && cd ../core
           git clone -q --depth 1 https://github.com/${{ github.repository_owner }}/argus-core.git .
           cd "$GITHUB_WORKSPACE"
-          for f in argus-console argus-console-login; do
+          for f in argus-console argus-console-login argus-guest-agent argus-guest-agent.service; do
             if ! cmp -s "../core/deploy/core/host/$f" "deploy/probe-vm/host/$f"; then
               echo "::error::deploy/probe-vm/host/$f differs from argus-core's deploy/core/host/$f"; exit 1
             fi
