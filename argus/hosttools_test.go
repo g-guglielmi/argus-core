@@ -91,12 +91,57 @@ argus-host-tools.path    /etc/systemd/system/argus-host-tools.path   0644 render
 	if strings.Join(sum.Installed, " ") != "/usr/local/sbin/argus-os-report" || sum.Apply {
 		t.Errorf("script-only change: %+v", sum)
 	}
+	if _, err := os.Stat(filepath.Join(upd, hostToolsApplyFile)); err == nil {
+		t.Error("a script change with nothing to run again must not drop the marker")
+	}
 	writeTool(t, src, "argus-os-report.timer", "[Timer]\nOnBootSec=5min\n")
 	out.Reset()
 	_ = installHostTools(src, root, "/docker/argus-update", upd, &out)
 	_ = json.Unmarshal(out.Bytes(), &sum)
 	if !sum.Apply || strings.Join(sum.UnitsChanged, " ") != "argus-os-report.timer" {
 		t.Errorf("unit change: %+v", sum)
+	}
+}
+
+func TestInstallHostToolsRunsAgainWhatTheManifestSaysAfterAnyChange(t *testing.T) {
+	// A oneshot with run starts again after a round that wrote only a script, so a new version of it
+	// acts now rather than at its timer's next tick.
+	src, root, upd := t.TempDir(), t.TempDir(), t.TempDir()
+	writeTool(t, src, "manifest", `argus-web-guard          /usr/local/sbin/argus-web-guard            0755
+argus-web-guard.service  /etc/systemd/system/argus-web-guard.service 0644 enable run
+argus-web-guard.timer    /etc/systemd/system/argus-web-guard.timer   0644 enable
+`)
+	writeTool(t, src, "argus-web-guard", "#!/usr/bin/env bash\necho v1\n")
+	writeTool(t, src, "argus-web-guard.service", "[Service]\nType=oneshot\n")
+	writeTool(t, src, "argus-web-guard.timer", "[Timer]\nOnUnitActiveSec=1h\n")
+	if err := installHostTools(src, root, "/docker/argus-update", upd, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Remove(filepath.Join(upd, hostToolsApplyFile))
+
+	writeTool(t, src, "argus-web-guard", "#!/usr/bin/env bash\necho v2\n")
+	var out bytes.Buffer
+	_ = installHostTools(src, root, "/docker/argus-update", upd, &out)
+	var sum hostToolsSummary
+	_ = json.Unmarshal(out.Bytes(), &sum)
+	if !sum.Apply || len(sum.UnitsChanged) != 0 {
+		t.Fatalf("script-only change with a run entry: %+v", sum)
+	}
+	mb, err := os.ReadFile(filepath.Join(upd, hostToolsApplyFile))
+	if err != nil {
+		t.Fatal("no marker:", err)
+	}
+	var marker map[string]any
+	_ = json.Unmarshal(mb, &marker)
+	if marker["run"] != "argus-web-guard.service" || marker["changed"] != "" {
+		t.Errorf("marker = %v", marker)
+	}
+
+	// Nothing written: nothing to run.
+	_ = os.Remove(filepath.Join(upd, hostToolsApplyFile))
+	_ = installHostTools(src, root, "/docker/argus-update", upd, &bytes.Buffer{})
+	if _, err := os.Stat(filepath.Join(upd, hostToolsApplyFile)); err == nil {
+		t.Error("an unchanged round must not drop the marker")
 	}
 }
 
@@ -145,6 +190,9 @@ func TestRepoManifestMatchesTheHostFolder(t *testing.T) {
 			if !e.Enable {
 				t.Errorf("%s is a timer or path unit without enable", e.Source)
 			}
+		}
+		if e.Run && !strings.HasSuffix(e.Dest, ".service") {
+			t.Errorf("%s has run, which only a service takes", e.Source)
 		}
 		if strings.HasPrefix(e.Dest, "/usr/local/sbin/") && e.Mode != 0o755 {
 			t.Errorf("%s is a script with mode %o", e.Source, e.Mode)

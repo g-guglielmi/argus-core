@@ -2353,19 +2353,21 @@ plane; the probe checks in and converges.
   the container (the OS reporter, the reboot, patch and Zabbix minor-update watchers, the timezone
   check, the sizing tool, the backup tools, their systemd units) is a file in `deploy/core/host`,
   listed in its `manifest` (destination, mode, whether `@STATE_DIR@` is rendered, whether the unit
-  is enabled). `install-host-tools.sh` installs them from that list the first time (`setup-core.sh`
+  is enabled, whether a service runs again after an update: `run`). `install-host-tools.sh` installs them from that list the first time (`setup-core.sh`
   in both modes, `setup-core-patching.sh` on an existing core, the appliance image at build). The
   Argus image carries the same folder (`/host-tools`, the `hosttools` build context, labelled
   `io.argus.host-tools`) and `/argus install-host-tools --root /host --state-dir DIR` writes the
-  files that changed (atomically, with their modes) and, when a systemd file changed, drops
-  `host-tools-apply.json` in the shared dir. The `core`-mode updater runs that image once, as root,
+  files that changed (atomically, with their modes) and, when a systemd file changed or any file
+  changed while the manifest lists a service to `run`, drops `host-tools-apply.json` in the shared
+  dir. The `core`-mode updater runs that image once, as root,
   `--network none`, read-only, with the host's `/usr/local/sbin` and `/etc/systemd/system` bound
   under `/host` and the shared dir at `/update`, on the same rhythm as the collectors, and only
   where the reporter's `os-status.json` shows the host was set up as a core (Argus on Unraid or a
   plain Docker host is skipped); it reports in `host-tools.json`, shown on the Updates page. A
   container cannot reload systemd: `argus-host-tools.path` on the host starts
-  `argus-host-tools-apply`, which reloads, enables every timer and path unit the marker lists, and
-  re-reports. From a core's first install on, nothing on its host side is ever re-run by hand.
+  `argus-host-tools-apply`, which reloads, enables every timer and path unit the marker lists,
+  starts again the services it lists to run (`argus-web-guard`, so a new guard acts at the update and
+  not at its timer's next tick), and re-reports. From a core's first install on, nothing on its host side is ever re-run by hand.
 
 **Tradeoff acknowledged.** Any automatic in-place container update needs Docker socket access at
 the site (the same mechanism Watchtower uses). The win over Watchtower is **central version control

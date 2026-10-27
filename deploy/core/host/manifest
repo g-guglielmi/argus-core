@@ -1,6 +1,8 @@
 # The Argus core's host files (DESIGN 14c): source in this folder, destination on the host, mode, flags.
 # flags: render = substitute @STATE_DIR@ with the folder shared with the Argus container;
-#        enable = systemctl enable --now it (timers, path units, the sizing service).
+#        enable = systemctl enable --now it (timers, path units, the sizing service);
+#        run = start it again after any update that wrote a host file (an idempotent oneshot whose
+#              new script should act now, not at its timer's next tick).
 # install-host-tools.sh reads this at first install; `argus install-host-tools` (the image, run by the
 # argus-updater after each core update) reads the same lines. Keep it the one list.
 argus-os-report                    /usr/local/sbin/argus-os-report                                   0755
@@ -34,5 +36,5 @@ argus-size-zabbix-postgresql.conf  /etc/systemd/system/postgresql@.service.d/arg
 argus-backup.service               /etc/systemd/system/argus-backup.service                          0644 render
 argus-backup.timer                 /etc/systemd/system/argus-backup.timer                            0644 render enable
 argus-backup.path                  /etc/systemd/system/argus-backup.path                             0644 render enable
-argus-web-guard.service            /etc/systemd/system/argus-web-guard.service                       0644 enable
+argus-web-guard.service            /etc/systemd/system/argus-web-guard.service                       0644 enable run
 argus-web-guard.timer              /etc/systemd/system/argus-web-guard.timer                         0644 enable

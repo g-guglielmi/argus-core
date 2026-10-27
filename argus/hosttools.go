@@ -25,9 +25,10 @@ import (
 // deploy/core/host there, manifest included).
 const imageHostTools = "/host-tools"
 
-// hostToolsApplyFile is the marker dropped in the shared update dir when a unit changed: a container
-// cannot reload systemd, so argus-host-tools.path on the host starts argus-host-tools-apply, which
-// reloads and enables what the marker lists.
+// hostToolsApplyFile is the marker dropped in the shared update dir when a unit changed, or when
+// anything changed and the manifest has services to run again: a container cannot reach systemd, so
+// argus-host-tools.path on the host starts argus-host-tools-apply, which reloads, enables and starts
+// what the marker lists.
 const hostToolsApplyFile = "host-tools-apply.json"
 
 // hostToolsSummary is what `argus install-host-tools` prints, for the argus-updater to report.
@@ -40,12 +41,15 @@ type hostToolsSummary struct {
 }
 
 // hostToolEntry is one manifest line: a file in the image, its destination on the host, its mode and
-// flags (render = substitute @STATE_DIR@, enable = the host enables it after a reload).
+// flags (render = substitute @STATE_DIR@, enable = the host enables it after a reload, run = the host
+// starts it again after any round that wrote a file, for a oneshot that must act on a new script
+// right away rather than at its timer's next tick).
 type hostToolEntry struct {
 	Source, Dest string
 	Mode         os.FileMode
 	Render       bool
 	Enable       bool
+	Run          bool
 }
 
 // runInstallHostTools is `argus install-host-tools [--root /host] [--state-dir DIR] [--update-dir /update]`.
@@ -98,6 +102,8 @@ func parseHostToolsManifest(r io.Reader) ([]hostToolEntry, error) {
 				e.Render = true
 			case "enable":
 				e.Enable = true
+			case "run":
+				e.Run = true
 			default:
 				return nil, fmt.Errorf("manifest line %d: unknown flag %q", n+1, fl)
 			}
@@ -112,8 +118,8 @@ func parseHostToolsManifest(r io.Reader) ([]hostToolEntry, error) {
 
 // installHostTools writes every manifest entry under root, a file only when its content or mode
 // differs (to a temporary name, then renamed over, so nothing on the host ever reads half a script),
-// and drops the reload marker in updateDir when a systemd file changed. It writes a hostToolsSummary
-// to w.
+// and drops the reload marker in updateDir when a systemd file changed, or when any file changed and
+// some entry is to run again. It writes a hostToolsSummary to w.
 func installHostTools(src, root, stateDir, updateDir string, w io.Writer) error {
 	mf, err := os.Open(filepath.Join(src, "manifest"))
 	if err != nil {
@@ -125,7 +131,7 @@ func installHostTools(src, root, stateDir, updateDir string, w io.Writer) error 
 		return err
 	}
 	sum := hostToolsSummary{Version: buildinfo.Version, Installed: []string{}, Unchanged: []string{}, UnitsChanged: []string{}}
-	var enable []string
+	var enable, rerun []string
 	for _, e := range entries {
 		b, err := os.ReadFile(filepath.Join(src, e.Source))
 		if err != nil {
@@ -136,6 +142,9 @@ func installHostTools(src, root, stateDir, updateDir string, w io.Writer) error 
 		}
 		if e.Enable {
 			enable = append(enable, filepath.Base(e.Dest))
+		}
+		if e.Run {
+			rerun = append(rerun, filepath.Base(e.Dest))
 		}
 		target := filepath.Join(root, filepath.FromSlash(e.Dest))
 		if cur, err := os.ReadFile(target); err == nil && bytes.Equal(cur, b) {
@@ -168,8 +177,9 @@ func installHostTools(src, root, stateDir, updateDir string, w io.Writer) error 
 	sort.Strings(sum.Installed)
 	sort.Strings(sum.Unchanged)
 	sort.Strings(sum.UnitsChanged)
-	if len(sum.UnitsChanged) > 0 {
-		marker := map[string]any{"at": time.Now().Unix(), "version": buildinfo.Version, "enable": strings.Join(enable, " "), "changed": strings.Join(sum.UnitsChanged, " ")}
+	if len(sum.UnitsChanged) > 0 || (len(sum.Installed) > 0 && len(rerun) > 0) {
+		marker := map[string]any{"at": time.Now().Unix(), "version": buildinfo.Version, "enable": strings.Join(enable, " "),
+			"run": strings.Join(rerun, " "), "changed": strings.Join(sum.UnitsChanged, " ")}
 		mb, _ := json.Marshal(marker)
 		final := filepath.Join(updateDir, hostToolsApplyFile)
 		tmp := final + ".tmp"

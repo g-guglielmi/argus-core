@@ -63,7 +63,7 @@ GitHub Release from the matching section below.
 
 ### Security
 - **The core's Zabbix frontend is kept narrow** (`argus-web-guard`, a host tool: installed by the
-  update, run at boot and hourly). php-fpm gets session upload progress turned off: Zabbix never uses
+  update and run right then, again at boot and hourly). php-fpm gets session upload progress turned off: Zabbix never uses
   it, and it was the confirmed trigger of PHP2Shell (CVE-2026-109619; Debian's fixed PHP came with
   the nightly security updates, this closes the path besides). A core installed by hand now serves
   the Zabbix frontend and API over https on `:8443` as the appliance does: an nginx server of its own

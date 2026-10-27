@@ -4306,13 +4306,19 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
                 <div style={{ display: 'grid', gap: 7 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 600 }}>1 · Virtual appliance <span style={{ color: 'var(--accent)', fontWeight: 400 }}>{vmInfo?.version ? <>· {vmInfo.version} </> : null}- download <strong>one</strong> for your hypervisor</span></div>
                   {vmInfo && vmInfo.images.length > 0 ? (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {vmInfo.images.map((img) => (
-                        <a key={img.name} href={img.url} target="_blank" rel="noopener noreferrer" download title={`Download ${img.name}`}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--elevated)', color: 'var(--text)', fontSize: 12.5, fontWeight: 600, textDecoration: 'none' }}>
-                          {img.label}<span style={{ color: 'var(--faint)', fontWeight: 400 }}>· {img.size >= 1073741824 ? `${(img.size / 1073741824).toFixed(1)} GB` : `${Math.round(img.size / 1048576)} MB`}</span>
-                        </a>
-                      ))}
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      {/* One row per image, stacked: the format, the hypervisors it is for, its size. */}
+                      {vmInfo.images.map((img) => {
+                        const [format, hypervisors] = img.label.split(' · ')
+                        return (
+                          <a key={img.name} href={img.url} target="_blank" rel="noopener noreferrer" download title={`Download ${img.name}`}
+                            style={{ display: 'grid', gridTemplateColumns: '48px 1fr auto', alignItems: 'center', gap: 10, padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--elevated)', color: 'var(--text)', fontSize: 12.5, textDecoration: 'none' }}>
+                            <span style={{ fontWeight: 600, gridColumn: hypervisors ? undefined : '1 / 3' }}>{format}</span>
+                            {hypervisors && <span>{hypervisors}</span>}
+                            <span style={{ color: 'var(--faint)' }}>{img.size >= 1073741824 ? `${(img.size / 1073741824).toFixed(1)} GB` : `${Math.round(img.size / 1048576)} MB`}</span>
+                          </a>
+                        )
+                      })}
                     </div>
                   ) : (
                     <a href="https://github.com/g-guglielmi/argus-probe/releases" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5 }}>Download the appliance from GitHub releases →</a>

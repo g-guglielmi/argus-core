@@ -848,8 +848,20 @@ class PatchingTest(unittest.TestCase):
         self.assertIn("systemctl daemon-reload", calls)
         self.assertIn("systemctl enable --now argus-os-report.timer", calls)
         self.assertIn("systemctl enable --now argus-host-tools.path", calls)
+        self.assertNotIn("systemctl start", calls, "nothing listed to run again")
         _, quiet = self.host_script("argus-host-tools-apply", shims, {})
         self.assertEqual(quiet, "", "without a marker it does nothing")
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_host_tools_apply_starts_again_what_the_marker_lists_to_run(self):
+        # A round that wrote only a script: nothing to enable that changed, the guard runs now.
+        shims = {"systemctl": "echo \"systemctl $*\" >> \"$LOG\"\n", "logger": "echo \"logger $*\" >> \"$LOG\"\n"}
+        marker = ('{"at":1,"changed":"","enable":"argus-os-report.timer argus-web-guard.service",'
+                  '"run":"argus-web-guard.service","version":"v0.9.9"}')
+        _, calls = self.host_script("argus-host-tools-apply", shims, {"host-tools-apply.json": marker})
+        self.assertIn("systemctl start --no-block argus-web-guard.service", calls)
+        self.assertIn("run again: argus-web-guard.service", calls)
+        self.assertLess(calls.index("enable --now argus-web-guard.service"), calls.index("start --no-block"))
 
     def host_script(self, name, shims, state_files, env=None):
         """Run one host script under bash with stand-ins on PATH; returns (results, log)."""
@@ -1722,8 +1734,9 @@ class WebGuardTest(unittest.TestCase):
         with open(os.path.join(HOST, "manifest"), encoding="utf-8") as fh:
             manifest = fh.read()
         self.assertRegex(manifest, r"argus-web-guard +/usr/local/sbin/argus-web-guard +0755\n")
-        for unit in ("argus-web-guard.service", "argus-web-guard.timer"):
-            self.assertRegex(manifest, r"%s +/etc/systemd/system/%s +0644 enable\n" % (re.escape(unit), re.escape(unit)))
+        self.assertRegex(manifest, r"argus-web-guard\.service +/etc/systemd/system/argus-web-guard\.service +0644 enable run\n",
+                         "a new guard acts at the update, not at the timer's next tick")
+        self.assertRegex(manifest, r"argus-web-guard\.timer +/etc/systemd/system/argus-web-guard\.timer +0644 enable\n")
 
 
 if __name__ == "__main__":
