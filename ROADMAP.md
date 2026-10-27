@@ -47,7 +47,7 @@ Legend: `[x]` done · `[~]` partly done · `[ ]` planned · _(FE)_ frontend-only
 - [x] **Token-based enrollment / PKI service** - mint token → probe self-generates key + CSR → core signs & registers proxy via Zabbix API; private key never leaves the probe - v0.4.0
 - [x] **"Add probe" wizard** UI + self-enrolling `argus-probe` image - v0.4.0
 - [x] **Delete / deregister a proxy from Argus** - remove a decommissioned probe from the Probes page: `proxy.delete` via the Zabbix API plus cleanup of the Argus-side records (enroll tokens, check-in/version state in `probe_agents`, per-proxy SNMP defaults in `snmp_defaults`). A **"Clean up"** reconcile prunes orphan rows left when a proxy is deleted directly in Zabbix (out-of-band), keeping pending enrollment tokens. The empty `proxy-<site>` host group is left in place (delete/hide it from the tree). - v0.4.29
-- [~] Bring **site2-site5** probes online (Probes → Add probe) - **4/5 done** (site1, site2, site3, site5); **site4** blocked - its building is under renovation, so it won't come online in the near term - _(ops)_ S
+- [x] Bring **site2-site5** probes online (Probes → Add probe) - **5/5 done**: site4 came online on 2026-10-27, once its building's renovation was over - _(ops)_ S
 - [x] **Probe fleet updates - control plane + opt-in self-update** - Argus holds a fleet target (`latest` or a `7.0.29-r1` pin) + shows each probe's version vs target; probes check in outbound; drift gets a one-click manual update; opt-in compose sidecar (`ARGUS_PROBE_ROLE=updater`) self-updates via the Docker socket. See DESIGN §18 - v0.4.8
 - [x] **Dashboard-triggered self-update + exact-version reporting** - probes report their exact `X.Y.Z-rN` version over the check-in; a socket-enabled probe self-updates on demand via a short-lived `recreate` sister container (config-cloning, rollback on failure); "Enable reporting" mints a check-in token for older probes (persisted to the volume, one env var); redeploy-aware wizard command; snmptraps bound so no anonymous volume - v0.4.9
 - [x] **Resolve "latest" from the registry for accurate drift** - Argus core polls GHCR anonymously (`ghcr.io/token` → `/v2/<owner>/argus-probe/tags/list`) every 3h, picks the newest `X.Y.Z-rN` tag, and compares to each probe's reported version, so a `latest` target flags "outdated → rN" instead of just "tracking". - v0.4.9
@@ -504,4 +504,4 @@ v0.4.56-v0.4.58) · plus the §14 lifecycle line (OS patching, core Zabbix minor
 Agreed 2026-10-25: the **OneUptime borrowings (§J)**, order to be set; change markers on charts, the
 vendor status beside Common SaaS and the email heartbeat first.
 
-Blocked / deferred: **site4** probe (§A) - its building is under renovation, so it won't come online in the near term; bring it online once that's done.
+Done 2026-10-27: the **site4** probe (§A) is online, the whole fleet with it.
