@@ -23,6 +23,24 @@ GitHub Release from the matching section below.
   is left alone. The next core-vm image carries all of them from its build. The script is one file
   with the probe VM's, and the weekly scan fails when the two copies drift.
 
+## [core-vm/v0.1.9] - 2026-10-28
+
+The appliance with every hypervisor's guest agent and the certificate renewal of Argus v0.9.9. It is
+what a new core VM boots from; a core VM already running gets its host tools through its updater
+(the guest agent with the next core release) and keeps its disk.
+
+### Added
+- **Every hypervisor's guest agent, each starting only on its own** (`argus-guest-agent --all` at
+  build, with service starts held): xe-guest-utilities 10.0.0 for XCP-ng and XenServer (XenServer's
+  release, pinned by its checksum), open-vm-tools for VMware, qemu-guest-agent for KVM (Proxmox,
+  libvirt, Nutanix AHV; it runs when the VM has the QEMU guest agent channel) and hyperv-daemons for
+  Hyper-V, so the hypervisor shows the VM's addresses, OS and memory from the first boot.
+- **The host tools of v0.9.9 from the first boot**: `argus-cert-renew` (the VM's certificates and
+  the monitoring CA renew themselves, `core-certs.json` for Settings > Certificates) and the
+  narrowed Zabbix frontend (`argus-web-guard`).
+
+The image pulls Argus `:latest` (v0.9.9) and argus-updater `:latest` (0.2.19) at build.
+
 ## [0.9.9] - 2026-10-27
 
 ### Added
