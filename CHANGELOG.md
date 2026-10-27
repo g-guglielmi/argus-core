@@ -60,12 +60,18 @@ GitHub Release from the matching section below.
 - **The core's Zabbix frontend is kept narrow** (`argus-web-guard`, a host tool: installed by the
   update, run at boot and hourly). php-fpm gets session upload progress turned off: Zabbix never uses
   it, and it was the confirmed trigger of PHP2Shell (CVE-2026-109619; Debian's fixed PHP came with
-  the nightly security updates, this closes the path besides). Where the frontend is also served over
-  https on the same machine (`:8443` on the appliance), its plain port `:8080` now answers only that
-  machine and its containers, so an Argus on the same VM keeps working whichever address it uses,
-  and the LAN reaches Zabbix over https only: open the Zabbix UI on `https://<core>:8443`. A core
-  installed by hand without https keeps `:8080` open, and so does any core with the file
-  `/etc/argus-core/zabbix-http-open`.
+  the nightly security updates, this closes the path besides). A core installed by hand now serves
+  the Zabbix frontend and API over https on `:8443` as the appliance does: an nginx server of its own
+  (`/etc/nginx/conf.d/argus-zabbix-https.conf`) with a certificate for the machine signed by the
+  monitoring CA in `/docker/argus/pki` (in `/etc/nginx/argus`, both kept in backups). Wherever that
+  https frontend exists, the plain `:8080` then answers only the machine and its containers, so an
+  Argus on the same VM keeps working whichever address it uses, and the LAN reaches Zabbix over
+  https only: open the Zabbix UI on `https://<core>:8443` (with the CA's `ca.crt` installed on your
+  PC, the browser trusts it). Anything else that reaches `:8080` from another machine (a reverse
+  proxy, a script) moves to `:8443`, or the file `/etc/argus-core/zabbix-http-open` keeps `:8080`
+  open. Nothing changes where `:8443` is taken by another service or the CA is not in
+  `/docker/argus/pki` (said once in `journalctl -t argus-web-guard`), nor where Argus runs without
+  Zabbix: a Zabbix on its own VM is yours to put behind https, and deploy/README.md shows how.
 
 ## [0.9.8] - 2026-10-25
 

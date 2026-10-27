@@ -131,7 +131,7 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 **Core**
 | Var | Default | Purpose |
 |---|---|---|
-| `ARGUS_ZABBIX_API_URL` | *(empty)* | _(UI)_ Zabbix JSON-RPC endpoint, e.g. `https://10.0.0.10:8443/api_jsonrpc.php` (the appliance's TLS port; plain http only on the same VM, the token is a super-admin credential) |
+| `ARGUS_ZABBIX_API_URL` | *(empty)* | _(UI)_ Zabbix JSON-RPC endpoint, e.g. `https://10.0.0.10:8443/api_jsonrpc.php` (the core's TLS port, on the appliance and on a core installed by hand that runs Argus; plain http only on the same VM, the token is a super-admin credential) |
 | `ARGUS_ZABBIX_API_TOKEN` | *(empty)* | _(UI)_ Zabbix API token (Bearer). Needs **write** scope for acknowledge/pause; **super-admin** to manage tree groups (create/rename/delete host groups, move hosts). A read-only token returns a 502 on those actions. |
 | `ARGUS_DATA_DIR` | `/data` | SQLite DB + encryption keyfile location (mount a volume) |
 | `ARGUS_LISTEN` | `:8080` | address the server listens on inside the container |
@@ -175,7 +175,7 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 | Var | Default | Purpose |
 |---|---|---|
 | `ARGUS_CA_CERT_FILE` | *(empty)* | path to the monitoring CA cert (`ca.crt`) mounted into the container |
-| `ARGUS_ZABBIX_CA_FILE` | `ARGUS_CA_CERT_FILE` | a CA certificate (PEM) the Zabbix API client trusts besides the system roots: the core appliance serves the API over https on `:8443` with a certificate from the monitoring CA, so with the CA mounted nothing more is needed |
+| `ARGUS_ZABBIX_CA_FILE` | `ARGUS_CA_CERT_FILE` | a CA certificate (PEM) the Zabbix API client trusts besides the system roots: the core serves the API over https on `:8443` with a certificate from the monitoring CA (the appliance, a core installed by hand that runs Argus, or the server deploy/README.md shows for a Zabbix on its own VM), so with the CA mounted nothing more is needed |
 | `ARGUS_CA_KEY_FILE` | *(empty)* | path to the CA private key (`ca.key`) - mount **read-only**; both must be set to enable enrollment |
 | `ARGUS_PROBE_CORE_HOST` | *(Public URL host)* | _(UI)_ address probes dial for `:10051` (FQDN or LAN IP). Falls back to the Public URL's hostname |
 | `ARGUS_PROBE_AUTOSCALE` | `restart` | _(UI)_ probe process autoscaling: `restart` sizes each probe's Zabbix process counts from its load and has the updater sidecar restart it to apply a change; `next-restart` applies a change at the probe's next start; `off` leaves the counts alone |

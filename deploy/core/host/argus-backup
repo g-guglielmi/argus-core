@@ -67,6 +67,7 @@ FILE_PATHS = [
     "etc/zabbix",
     "etc/nginx/conf.d/argus-https.conf",
     "etc/nginx/conf.d/argus-port80.conf",
+    "etc/nginx/conf.d/argus-zabbix-https.conf",
     "etc/nginx/argus",
     "etc/postgresql",
     "etc/apt/preferences.d/timescaledb-pin.pref",

@@ -1493,18 +1493,37 @@ case "$op" in
 esac
 '''
 
+# Stand-ins for what the https step calls: nginx -t fails on NGINX_T_FAIL, ss reports :8443 taken on
+# SS_TAKEN, openssl writes its -out/-keyout files (and logs the extension file it was given).
+FAKE_NGINX = 'echo "nginx $*" >> "$LOG"; [ -z "${NGINX_T_FAIL:-}" ]\n'
+FAKE_SS = '[ -n "${SS_TAKEN:-}" ] && echo "LISTEN 0 511 0.0.0.0:8443 0.0.0.0:*"; exit 0\n'
+FAKE_OPENSSL = r'''
+echo "openssl $*" >> "$LOG"
+[ "$1" = rand ] && { echo 00112233445566778899aabbccddeeff; exit 0; }
+[ -n "${OPENSSL_FAIL:-}" ] && exit 1
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -out|-keyout) echo fake > "$2"; shift ;;
+    -extfile) cat "$2" >> "$LOG"; shift ;;
+  esac
+  shift
+done
+'''
+FAKE_HOSTNAME = 'case "${1:-}" in -f) echo core.example.lan ;; -I) echo "10.0.0.10 172.17.0.1" ;; *) echo core ;; esac\n'
+FAKE_IP = 'echo "1.1.1.1 via 10.0.0.1 dev eth0 src 10.0.0.10 uid 0"\n'
+
 ZBX_VHOST = "server {\n        listen          8080;\n        server_name     _;\n        root    /usr/share/zabbix;\n}\n"
 HTTPS_CONF = ("server {\n    listen 443 ssl default_server;\n    location / { proxy_pass http://127.0.0.1:8081; }\n}\n"
               "server {\n    listen 8443 ssl;\n    location / {\n        proxy_pass http://127.0.0.1:8080;\n    }\n}\n")
 
 
 class WebGuardTest(unittest.TestCase):
-    """argus-web-guard: PHP's upload progress off, the plain Zabbix port for this machine only."""
+    """argus-web-guard: PHP's upload progress off, https on :8443, the plain port for this machine only."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.etc = os.path.join(self.tmp, "etc")
-        for d in ("zabbix", "nginx/conf.d", "php/8.4/fpm/conf.d", "php/8.4/cli/conf.d", "argus-core"):
+        for d in ("zabbix", "nginx/conf.d", "php/8.4/fpm/conf.d", "php/8.4/cli/conf.d", "argus-core", "pki"):
             os.makedirs(os.path.join(self.etc, d))
         self.write("zabbix/nginx.conf", ZBX_VHOST)
         self.write("nginx/conf.d/argus-https.conf", HTTPS_CONF)
@@ -1513,7 +1532,9 @@ class WebGuardTest(unittest.TestCase):
         os.makedirs(self.bin)
         for name, body in {"iptables": FAKE_IPT, "ip6tables": FAKE_IPT,
                            "systemctl": "echo \"systemctl $*\" >> \"$LOG\"\n",
-                           "logger": "echo \"logger $*\" >> \"$LOG\"\n"}.items():
+                           "logger": "echo \"logger $*\" >> \"$LOG\"\n",
+                           "nginx": FAKE_NGINX, "ss": FAKE_SS, "openssl": FAKE_OPENSSL,
+                           "hostname": FAKE_HOSTNAME, "ip": FAKE_IP}.items():
             path = os.path.join(self.bin, name)
             with open(path, "w", newline="\n") as fh:
                 fh.write("#!/usr/bin/env bash\n" + body)
@@ -1526,6 +1547,20 @@ class WebGuardTest(unittest.TestCase):
         with open(os.path.join(self.etc, rel), "w", newline="\n") as fh:
             fh.write(body)
 
+    def hand_installed(self, ca=True):
+        """A core installed by hand: the zabbix vhost and no https frontend, with or without the CA."""
+        os.remove(os.path.join(self.etc, "nginx", "conf.d", "argus-https.conf"))
+        if ca:
+            self.write("pki/ca.crt", "ca\n")
+            self.write("pki/ca.key", "key\n")
+
+    def ours(self):
+        p = os.path.join(self.etc, "nginx", "conf.d", "argus-zabbix-https.conf")
+        if not os.path.exists(p):
+            return None
+        with open(p) as fh:
+            return fh.read()
+
     def run_guard(self, extra=None):
         log = os.path.join(self.tmp, "calls.log")
         if os.path.exists(log):
@@ -1535,6 +1570,8 @@ class WebGuardTest(unittest.TestCase):
                  ARGUS_NGINX_DIR=winpath(os.path.join(self.etc, "nginx")),
                  ARGUS_PHP_DIR=winpath(os.path.join(self.etc, "php")),
                  ARGUS_WEB_GUARD_OPEN=winpath(os.path.join(self.etc, "argus-core", "zabbix-http-open")),
+                 ARGUS_PKI_DIR=winpath(os.path.join(self.etc, "pki")),
+                 ARGUS_WEB_GUARD_NOTE=winpath(os.path.join(self.tmp, "note")),
                  PATH=winpath(self.bin) + os.pathsep + os.environ.get("PATH", ""))
         e.update(extra or {})
         r = subprocess.run([WHICH("bash"), winpath(self.script)], env=e, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
@@ -1561,6 +1598,8 @@ class WebGuardTest(unittest.TestCase):
                 "-A ARGUS-ZBX-WEB -i br-+ -j RETURN", "-A ARGUS-ZBX-WEB -p tcp -j REJECT --reject-with tcp-reset"], tool)
             self.assertEqual(r["input"].splitlines(), ["-A INPUT -p tcp --dport 8080 -j ARGUS-ZBX-WEB"], tool)
         self.assertIn("answers this machine and its containers only", calls)
+        self.assertIsNone(self.ours(), "the appliance's own https frontend is left alone")
+        self.assertNotIn("openssl", calls)
         with open(os.path.join(self.etc, "php", "8.4", "fpm", "conf.d", "99-argus-hardening.ini")) as fh:
             self.assertIn("session.upload_progress.enabled = Off", fh.read())
         self.assertFalse(os.path.exists(os.path.join(self.etc, "php", "8.4", "cli", "conf.d", "99-argus-hardening.ini")), "php-fpm only")
@@ -1580,14 +1619,84 @@ class WebGuardTest(unittest.TestCase):
         self.assertEqual(self.rules()["input"].splitlines(), ["-A INPUT -p tcp --dport 8088 -j ARGUS-ZBX-WEB"])
 
     @unittest.skipUnless(WHICH("bash"), "needs bash")
-    def test_hand_installed_core_without_https_keeps_its_port_and_drops_an_old_guard(self):
-        self.run_guard()
-        os.remove(os.path.join(self.etc, "nginx", "conf.d", "argus-https.conf"))
+    def test_hand_installed_core_gets_https_on_8443_then_the_guard(self):
+        self.hand_installed()
         calls = self.run_guard()
+        conf = self.ours()
+        self.assertIn("listen 8443 ssl;", conf)
+        self.assertIn("proxy_pass http://127.0.0.1:8080;", conf)
+        self.assertIn("ssl_certificate %s;" % winpath(os.path.join(self.etc, "nginx", "argus", "argus-web.crt")), conf)
+        self.assertIn("proxy_set_header Host $host;", conf)
+        for name in ("argus-web.crt", "argus-web.key"):
+            self.assertTrue(os.path.exists(os.path.join(self.etc, "nginx", "argus", name)), name)
+        self.assertIn("-subj /CN=core.example.lan", calls)
+        self.assertIn("subjectAltName=DNS:core.example.lan,DNS:core,IP:10.0.0.10", calls)
+        self.assertIn("-set_serial 0x00112233445566778899aabbccddeeff", calls)
+        self.assertIn("nginx -t", calls)
+        self.assertIn("systemctl reload nginx", calls)
+        self.assertIn(":8443 serves the Zabbix frontend and its API over https", calls)
+        self.assertEqual(self.rules()["input"].splitlines(), ["-A INPUT -p tcp --dport 8080 -j ARGUS-ZBX-WEB"])
+        quiet = self.run_guard()
+        for word in ("logger", "nginx", "openssl"):
+            self.assertNotIn(word, quiet, "a run that changes nothing touches nothing")
+        # The vhost moves to another port: the https server follows it, and so does the guard.
+        self.write("zabbix/nginx.conf", ZBX_VHOST.replace("8080", "8088"))
+        calls = self.run_guard()
+        self.assertIn("proxy_pass http://127.0.0.1:8088;", self.ours())
+        self.assertNotIn("openssl", calls, "the certificate is kept")
+        self.assertEqual(self.rules()["input"].splitlines(), ["-A INPUT -p tcp --dport 8088 -j ARGUS-ZBX-WEB"])
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_hand_installed_core_without_the_ca_keeps_its_port_and_drops_an_old_guard(self):
+        self.run_guard()
+        self.hand_installed(ca=False)
+        calls = self.run_guard()
+        self.assertIsNone(self.ours())
         self.assertEqual(self.rules(), {"ARGUS-ZBX-WEB": None, "input": ""})
+        self.assertIn("no monitoring CA in", calls)
         self.assertIn("no https frontend here", calls)
         quiet = self.run_guard()
-        self.assertNotIn("logger", quiet, "nothing to remove, nothing said")
+        self.assertNotIn("logger", quiet, "nothing to remove, the lasting condition said once")
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_a_taken_8443_is_left_alone(self):
+        self.hand_installed()
+        calls = self.run_guard(extra={"SS_TAKEN": "1"})
+        self.assertIsNone(self.ours())
+        self.assertNotIn("openssl", calls)
+        self.assertIn(":8443 is taken by another service", calls)
+        self.assertEqual(self.rules()["ARGUS-ZBX-WEB"], None)
+        self.assertNotIn("logger", self.run_guard(extra={"SS_TAKEN": "1"}), "said once")
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_a_server_nginx_refuses_is_taken_back(self):
+        self.hand_installed()
+        calls = self.run_guard(extra={"NGINX_T_FAIL": "1"})
+        self.assertIsNone(self.ours())
+        self.assertNotIn("systemctl reload nginx", calls)
+        self.assertIn("nginx refused the :8443 server", calls)
+        self.assertEqual(self.rules()["ARGUS-ZBX-WEB"], None)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_an_https_frontend_of_your_own_retires_ours(self):
+        self.hand_installed()
+        self.run_guard()
+        self.write("nginx/conf.d/argus-https.conf", HTTPS_CONF)
+        calls = self.run_guard()
+        self.assertIsNone(self.ours())
+        self.assertIn("the guard's :8443 server removed", calls)
+        self.assertEqual(self.rules()["input"].splitlines(), ["-A INPUT -p tcp --dport 8080 -j ARGUS-ZBX-WEB"])
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_an_argus_without_the_zabbix_frontend_is_left_alone(self):
+        # Argus on its own VM: the host tools run there too, but there is no zabbix vhost.
+        self.hand_installed()
+        os.remove(os.path.join(self.etc, "zabbix", "nginx.conf"))
+        calls = self.run_guard()
+        self.assertIsNone(self.ours())
+        self.assertNotIn("openssl", calls)
+        self.assertNotIn("nginx", calls)
+        self.assertEqual(self.rules()["ARGUS-ZBX-WEB"], None)
 
     @unittest.skipUnless(WHICH("bash"), "needs bash")
     def test_a_plain_proxy_is_not_an_https_frontend(self):
@@ -1603,7 +1712,6 @@ class WebGuardTest(unittest.TestCase):
         self.assertEqual(self.rules()["ARGUS-ZBX-WEB"], None)
         self.assertIn("says to keep :8080 open", calls)
 
-    @unittest.skipUnless(WHICH("bash"), "needs bash")
     @unittest.skipUnless(WHICH("bash"), "needs bash")
     def test_without_iptables_it_says_so_and_still_turns_upload_progress_off(self):
         calls = self.run_guard(extra={"ARGUS_IPT_TOOLS": "no-such-iptables"})

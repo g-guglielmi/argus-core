@@ -293,6 +293,18 @@ Two steps are manual:
    history 30d, trends 730d, compression after 7d. (Once Argus is running you can also set
    these later in Argus under **Settings → Data retention**, if its Zabbix token is a Super admin.)
 
+> **The Zabbix UI over https (:8443).** Once Argus runs on this VM with its update sidecar (sections
+> 2 and 3), its host tools make the core match the appliance: the Zabbix frontend and API are also
+> served over https on **:8443**, with a certificate for the VM signed by the monitoring CA in
+> `/docker/argus/pki`, and the plain `:8080` then answers only the VM and its containers
+> (`argus-web-guard`, DESIGN 14c). From then on open the Zabbix UI on `https://<core-ip>:8443`
+> (install `ca.crt` on your PC to trust it); anything else that reaches `:8080` from another machine
+> moves to `:8443`, or `sudo touch /etc/argus-core/zabbix-http-open` keeps `:8080` open.
+> **Zabbix on its own VM** (Argus elsewhere) gets none of this, since Argus's host tools run only
+> where Argus does: put its frontend behind https on `:8443` yourself, so the API token never
+> crosses the LAN in clear ([deploy/README.md](deploy/README.md#the-zabbix-frontend-over-https-8443)
+> has the certificate and the nginx server).
+
 #### 1c. Register a probe (per remote site)
 
 In the Zabbix UI → **Administration → Proxies → Create proxy**:
@@ -377,13 +389,16 @@ docker run -d \
 > 8081 (→ container 8080).
 >
 > **Zabbix API over https:** the token is a super-admin credential sent as a `Bearer` header on
-> every poll. When Argus runs on another host than Zabbix, use an https address: the core appliance
-> serves the Zabbix frontend and API over TLS on **:8443** with a certificate signed by the
-> monitoring CA, and Argus trusts that CA through the `ca.crt` it already mounts
-> (`ARGUS_CA_CERT_FILE`; another CA goes in `ARGUS_ZABBIX_CA_FILE`). Over plain http to another
-> host, Argus logs a warning at start. On the appliance itself the container reaches Zabbix on the
-> same VM, where http is fine: there the plain `:8080` answers only the VM and its containers
-> (`argus-web-guard`, DESIGN 14c), so another host must use `:8443`.
+> every poll, so use the https address, `https://<core>:8443/api_jsonrpc.php`, whenever Argus and
+> Zabbix are on different machines. The core appliance serves it, so does a core installed by hand
+> once Argus runs on it (section 1b), and for a Zabbix on its own VM
+> [deploy/README.md](deploy/README.md#the-zabbix-frontend-over-https-8443) shows the nginx server
+> to add. The certificate is signed by the monitoring CA, and Argus trusts that CA through the
+> `ca.crt` it already mounts (`ARGUS_CA_CERT_FILE`; another CA goes in `ARGUS_ZABBIX_CA_FILE`).
+> Over plain http to another host, Argus logs a warning at start. An Argus on the same VM as Zabbix
+> may also use `http://<core-ip>:8080/api_jsonrpc.php`: its requests never leave the machine, and
+> the plain `:8080` keeps answering the VM and its containers after the LAN moves to `:8443`
+> (`argus-web-guard`, DESIGN 14c).
 >
 > **Passkeys** (`ARGUS_RP_*`) need HTTPS + a real domain - omit them for a plain-HTTP/IP
 > setup and Argus falls back to password + TOTP.

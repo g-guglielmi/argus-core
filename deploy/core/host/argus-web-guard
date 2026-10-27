@@ -7,19 +7,30 @@
 #  1. PHP's session upload progress is turned off for php-fpm (a conf.d file in every installed
 #     version). Zabbix never uses it, and it was the confirmed trigger of PHP2Shell's
 #     CVE-2026-109619; php-fpm is reloaded only when the file changed.
-#  2. The frontend's plain http port (the zabbix vhost's `listen`, :8080) answers only this machine
-#     and its containers when the same frontend is also served over https here (an nginx server
-#     that proxies to it, :8443 on the appliance): the LAN uses https, and the super-admin API token
-#     never crosses it in clear. Traffic from the VM itself arrives on lo, from a container on a
-#     Docker bridge (docker0, br-*), whichever address it was sent to; everything else is refused.
-#     A core installed by hand without https keeps its plain port open (its Zabbix UI lives there),
-#     and so does any core with /etc/argus-core/zabbix-http-open.
-# Local, never remote; changes nothing it doesn't own (its own iptables chain and conf.d file).
+#  2. The frontend is served over https on :8443, the same as on the core appliance: a core
+#     installed by hand gets an nginx server of its own (argus-zabbix-https.conf) with a certificate
+#     signed by the monitoring CA in /docker/argus/pki. One that already serves it over https (the
+#     appliance's argus-https.conf, or your own) is left alone. Only where the Zabbix frontend
+#     lives: an Argus on another VM has no zabbix vhost, so this does nothing there.
+#  3. The frontend's plain http port (the zabbix vhost's `listen`, :8080) answers only this machine
+#     and its containers once the same frontend is served over https here: the LAN uses https, and
+#     the super-admin API token never crosses it in clear. Traffic from the VM itself arrives on lo,
+#     from a container on a Docker bridge (docker0, br-*), whichever address it was sent to;
+#     everything else is refused. A core with /etc/argus-core/zabbix-http-open keeps it open.
+# Local, never remote; changes nothing it doesn't own (its own iptables chain, conf.d files and,
+# where none existed, the certificate in /etc/nginx/argus).
 set -u
 ZBX_NGINX="${ARGUS_ZBX_NGINX:-/etc/zabbix/nginx.conf}"
 NGINX_DIR="${ARGUS_NGINX_DIR:-/etc/nginx}"
 PHP_DIR="${ARGUS_PHP_DIR:-/etc/php}"
+PKI_DIR="${ARGUS_PKI_DIR:-/docker/argus/pki}"
+CERT_DIR="${ARGUS_WEB_CERT_DIR:-$NGINX_DIR/argus}"
 OPEN_FLAG="${ARGUS_WEB_GUARD_OPEN:-/etc/argus-core/zabbix-http-open}"
+NOTE_FILE="${ARGUS_WEB_GUARD_NOTE:-/run/argus-web-guard.note}"
+HTTPS_PORT=8443
+HTTPS_CONF="$NGINX_DIR/conf.d/argus-zabbix-https.conf"
+CRT="$CERT_DIR/argus-web.crt"
+KEY="$CERT_DIR/argus-web.key"
 CHAIN=ARGUS-ZBX-WEB
 INI_NAME=99-argus-hardening.ini
 INI_BODY='; Written by argus-web-guard (Argus core host tools). Zabbix does not use session upload
@@ -27,6 +38,13 @@ INI_BODY='; Written by argus-web-guard (Argus core host tools). Zabbix does not 
 session.upload_progress.enabled = Off'
 
 say() { logger -t argus-web-guard "$*"; }
+# note: a lasting condition is said once per boot, not every hour.
+note() {
+  [ "$(cat "$NOTE_FILE" 2>/dev/null)" = "$*" ] && return 0
+  say "$*"
+  printf '%s\n' "$*" > "$NOTE_FILE" 2>/dev/null
+  return 0
+}
 
 # 1. PHP: one conf.d file per installed php-fpm.
 for confd in "$PHP_DIR"/*/fpm/conf.d; do
@@ -44,14 +62,134 @@ for confd in "$PHP_DIR"/*/fpm/conf.d; do
   fi
 done
 
-# 2. The plain frontend port.
 port="$(sed -n 's/^[[:space:]]*listen[[:space:]]\{1,\}\([0-9]\{1,5\}\);.*/\1/p' "$ZBX_NGINX" 2>/dev/null | head -n 1)"
+
+# https_frontends: the nginx files that serve the plain port over https (proxy to it + listen ssl).
+https_frontends() {
+  grep -rlsE "proxy_pass[[:space:]]+http://(127\.0\.0\.1|localhost):$port[;/]" "$NGINX_DIR" |
+    xargs -r grep -lsE "listen[^;]*[[:space:]]ssl"
+}
+
+# 2. The https frontend a core installed by hand lacks.
+primary_ip() {
+  local ip
+  ip="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]\{7,15\}\).*/\1/p' | head -n 1)"
+  [ -n "$ip" ] || ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  printf '%s' "$ip"
+}
+
+# make_cert: this machine's https certificate, as the appliance's first boot makes it (its name and
+# address, signed by the monitoring CA, two years). A random serial, so nothing is written to the CA's
+# folder.
+make_cert() {
+  local name fqdn ip san tmp rc
+  name="$(hostname 2>/dev/null)"
+  fqdn="$(hostname -f 2>/dev/null)"
+  [ -n "$fqdn" ] || fqdn="$name"
+  san="DNS:$fqdn"
+  if [ -n "$name" ] && [ "$name" != "$fqdn" ]; then san="$san,DNS:$name"; fi
+  ip="$(primary_ip)"
+  if [ -n "$ip" ]; then san="$san,IP:$ip"; fi
+  tmp="$(mktemp -d)" || return 1
+  mkdir -p "$CERT_DIR" && chmod 700 "$CERT_DIR" &&
+    printf 'subjectAltName=%s\nextendedKeyUsage=serverAuth\nbasicConstraints=CA:FALSE\n' "$san" > "$tmp/ext" &&
+    openssl req -newkey rsa:2048 -nodes -keyout "$tmp/key" -out "$tmp/csr" -subj "/CN=$fqdn" >/dev/null 2>&1 &&
+    openssl x509 -req -in "$tmp/csr" -CA "$PKI_DIR/ca.crt" -CAkey "$PKI_DIR/ca.key" \
+      -set_serial "0x$(openssl rand -hex 16)" -out "$tmp/crt" -days 730 -sha256 -extfile "$tmp/ext" >/dev/null 2>&1 &&
+    install -m 600 "$tmp/key" "$KEY" && install -m 644 "$tmp/crt" "$CRT"
+  rc=$?
+  rm -rf "$tmp"
+  return $rc
+}
+
+https_body() {
+  cat <<EOF
+# Written by argus-web-guard (Argus core host tools): the Zabbix frontend and its API over https on
+# :$HTTPS_PORT, the same as on the core appliance. Rewritten when it differs from what the guard
+# expects; to keep the plain :$port open to the LAN, create /etc/argus-core/zabbix-http-open.
+server {
+    listen $HTTPS_PORT ssl;
+    server_name _;
+    ssl_certificate $CRT;
+    ssl_certificate_key $KEY;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    client_max_body_size 16m;
+    location / {
+        proxy_pass http://127.0.0.1:$port;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 300s;
+    }
+}
+EOF
+}
+
+# reload_nginx: the new configuration is tested first; one nginx refuses goes back to what was there.
+reload_nginx() {
+  local old="$1"
+  if nginx -t >/dev/null 2>&1; then
+    systemctl reload nginx >/dev/null 2>&1
+    rm -f "$old"
+    return 0
+  fi
+  if [ -f "$old" ]; then mv -f "$old" "$HTTPS_CONF"; else rm -f "$HTTPS_CONF"; fi
+  return 1
+}
+
+ensure_https() {
+  local others body
+  others="$(https_frontends | grep -vxF "$HTTPS_CONF")"
+  if [ -n "$others" ]; then
+    # Served over https already (the appliance, or your own): the guard's server steps aside.
+    if [ -f "$HTTPS_CONF" ]; then
+      mv -f "$HTTPS_CONF" "$HTTPS_CONF.argus-old"
+      reload_nginx "$HTTPS_CONF.argus-old" &&
+        say "the Zabbix frontend is served over https by $(echo "$others" | head -n 1): the guard's :$HTTPS_PORT server removed"
+    fi
+    return 0
+  fi
+  body="$(https_body)"
+  if [ -f "$HTTPS_CONF" ] && [ "$(cat "$HTTPS_CONF")" = "$body" ] && [ -s "$CRT" ] && [ -s "$KEY" ]; then
+    return 0
+  fi
+  if [ ! -f "$HTTPS_CONF" ] && [ -n "$(ss -Hltn "sport = :$HTTPS_PORT" 2>/dev/null)" ]; then
+    note ":$HTTPS_PORT is taken by another service: the Zabbix frontend gets no https here, :$port stays open"
+    return 0
+  fi
+  if [ ! -s "$CRT" ] || [ ! -s "$KEY" ]; then
+    if [ ! -r "$PKI_DIR/ca.crt" ] || [ ! -r "$PKI_DIR/ca.key" ]; then
+      note "no monitoring CA in $PKI_DIR (ca.crt + ca.key): the Zabbix frontend gets no https here, :$port stays open"
+      return 0
+    fi
+    if ! make_cert; then
+      note "could not sign a certificate for :$HTTPS_PORT with the CA in $PKI_DIR: :$port stays open"
+      return 0
+    fi
+    say "https certificate for this machine signed by the monitoring CA ($CRT)"
+  fi
+  [ -f "$HTTPS_CONF" ] && cp -p "$HTTPS_CONF" "$HTTPS_CONF.argus-old"
+  printf '%s\n' "$body" > "$HTTPS_CONF"
+  if reload_nginx "$HTTPS_CONF.argus-old"; then
+    say ":$HTTPS_PORT serves the Zabbix frontend and its API over https"
+  else
+    note "nginx refused the :$HTTPS_PORT server (nginx -t): left as it was, :$port stays open"
+  fi
+}
+
+if [ -n "$port" ] && command -v nginx >/dev/null 2>&1; then
+  ensure_https
+fi
+
+# 3. The plain frontend port.
 why=""
 if [ -z "$port" ]; then
   why="the Zabbix frontend has no plain port to guard"
 elif [ -e "$OPEN_FLAG" ]; then
   why="$OPEN_FLAG says to keep :$port open"
-elif [ -z "$(grep -rlsE "proxy_pass[[:space:]]+http://(127\.0\.0\.1|localhost):$port[;/]" "$NGINX_DIR" | xargs -r grep -lsE "listen[^;]*[[:space:]]ssl")" ]; then
+elif [ -z "$(https_frontends)" ]; then
   why="no https frontend here, so :$port stays the way in"
 fi
 

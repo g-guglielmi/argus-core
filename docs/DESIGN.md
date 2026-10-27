@@ -169,8 +169,9 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
 - **The status page** allows only its one inline script, by hash; the acknowledgement page from an
   email link allows none; a disabled account answers a sign-in like a wrong password.
 - **The Zabbix API token** is a super-admin credential sent as a Bearer header on every poll, so from
-  another host the API must be https: the core appliance serves the frontend and API over TLS on
-  `:8443` with the VM's certificate (signed by the monitoring CA), the client trusts that CA
+  another host the API must be https: the core serves the frontend and API over TLS on `:8443`
+  with the VM's certificate (signed by the monitoring CA; the appliance from first boot, a core
+  installed by hand through `argus-web-guard`, 14c), the client trusts that CA
   through `ARGUS_ZABBIX_CA_FILE` (default: the enrollment CA's `ca.crt` it already mounts), and a
   plain-http URL to a host that isn't the container's own is a warning at start.
 - **Secrets at rest** are AES-256-GCM under `ARGUS_SECRET_KEY` (stretched into the key with argon2id,
@@ -1933,17 +1934,24 @@ strictly local (Argus never runs `apt` remotely).
 
 **The Zabbix frontend, kept narrow (`argus-web-guard`).** A host tool of the core (script, a
 oneshot service enabled at boot and run when an update installs it, an hourly timer that puts it
-back). Two things, each changing only what it owns: (1) a `conf.d` file in every installed php-fpm
-turns session upload progress off (Zabbix never uses it; it was the confirmed trigger of PHP2Shell,
-CVE-2026-109619), php-fpm reloaded only when the file changed; (2) when nginx also serves the
-frontend over https on this machine (a server with `ssl` that proxies to the zabbix vhost's plain
-`listen` port, `:8443` on the appliance), an iptables and ip6tables chain `ARGUS-ZBX-WEB`, jumped
-to from INPUT for that port, lets in only `lo` and the Docker bridges (`docker+`, `br-+`) and
-resets the rest. Interfaces, not addresses: a container reaching the VM's LAN address still arrives
-on its bridge, and a DHCP lease change changes nothing. A core installed by hand without https keeps
-its plain port open (its Zabbix UI lives there), and so does a core with
-`/etc/argus-core/zabbix-http-open`; either way an earlier chain is removed. A run that finds
-everything in place changes and logs nothing.
+back). Three things, each changing only what it owns: (1) a `conf.d` file in every installed
+php-fpm turns session upload progress off (Zabbix never uses it; it was the confirmed trigger of
+PHP2Shell, CVE-2026-109619), php-fpm reloaded only when the file changed; (2) a core installed by
+hand gets the appliance's https frontend: when no nginx server with `ssl` proxies to the zabbix
+vhost's plain `listen` port, it writes `conf.d/argus-zabbix-https.conf` (`:8443`, the same server
+block as the appliance's) with a certificate in `/etc/nginx/argus` signed by the CA in
+`/docker/argus/pki` (the machine's name and address, two years, a random serial so the CA's folder
+is never written), checked with `nginx -t` and taken back when nginx refuses it; skipped, said once
+per boot, when `:8443` is held by another service or the CA isn't there; and removed again if
+another https server for the frontend appears (the appliance's, or the admin's own). Only where the
+zabbix vhost lives: an Argus on its own VM runs the tool too and finds nothing to do, and a Zabbix on
+its own VM never runs it (deploy/README.md shows the same server by hand); (3) when nginx serves the
+frontend over https on this machine, an iptables and ip6tables chain `ARGUS-ZBX-WEB`, jumped to from
+INPUT for the plain port, lets in only `lo` and the Docker bridges (`docker+`, `br-+`) and resets
+the rest. Interfaces, not addresses: a container reaching the VM's LAN address still arrives on its
+bridge, and a DHCP lease change changes nothing. Without an https frontend the plain port stays open
+(the Zabbix UI lives there), and so it does on a core with `/etc/argus-core/zabbix-http-open`; either
+way an earlier chain is removed. A run that finds everything in place changes and logs nothing.
 
 ### The probe host-tools channel
 

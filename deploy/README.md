@@ -66,7 +66,58 @@ against zoneinfo; the built-in UTC default is never pushed).
 > rest (DESIGN 14f); on the appliance it is the Debian user's login shell.
 
 After it's up:
-- Zabbix web UI (admin engine room) on the VM - lock it to the private network / admin only.
+- Zabbix web UI (admin engine room) on the VM - lock it to the private network / admin only. With
+  Argus on the same VM, its host tools add https on `:8443` and keep `:8080` for the VM itself (next).
+
+#### The Zabbix frontend over https (:8443)
+
+The Zabbix API token Argus uses is a super-admin credential, so the frontend should be reached over
+https from any other machine. **Argus on the same VM:** nothing to do. Once Argus and its update
+sidecar run there, `argus-web-guard` (a host tool, DESIGN 14c) serves the frontend and API on
+`:8443` with a certificate for the VM signed by the CA in `/docker/argus/pki`, and narrows the plain
+`:8080` to the VM and its containers. `journalctl -t argus-web-guard` says what it did, and
+`/etc/argus-core/zabbix-http-open` keeps `:8080` open to the LAN.
+
+**Zabbix on its own VM** (Argus elsewhere): Argus's host tools never run there, so add the same
+https server yourself. On the Zabbix VM, with `ca.crt` + `ca.key` from `pki/out` copied next to you
+(take `ca.key` away again afterwards), and your VM's name and address in place of the examples:
+
+```bash
+sudo install -d -m 700 /etc/nginx/argus
+sudo openssl req -newkey rsa:2048 -nodes -subj "/CN=zabbix.example.lan" \
+  -keyout /etc/nginx/argus/argus-web.key -out /tmp/argus-web.csr
+printf 'subjectAltName=DNS:zabbix.example.lan,IP:10.0.0.10\nextendedKeyUsage=serverAuth\nbasicConstraints=CA:FALSE\n' > /tmp/argus-web.ext
+sudo openssl x509 -req -in /tmp/argus-web.csr -CA ca.crt -CAkey ca.key -set_serial "0x$(openssl rand -hex 16)" \
+  -days 730 -sha256 -extfile /tmp/argus-web.ext -out /etc/nginx/argus/argus-web.crt
+```
+
+Then `/etc/nginx/conf.d/argus-zabbix-https.conf` (the port in `proxy_pass` is the `listen` of
+`/etc/zabbix/nginx.conf`), and `sudo nginx -t && sudo systemctl reload nginx`:
+
+```nginx
+server {
+    listen 8443 ssl;
+    server_name _;
+    ssl_certificate /etc/nginx/argus/argus-web.crt;
+    ssl_certificate_key /etc/nginx/argus/argus-web.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    client_max_body_size 16m;
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 300s;
+    }
+}
+```
+
+Point Argus at `https://<zabbix-vm>:8443/api_jsonrpc.php`; it trusts the certificate through the
+`ca.crt` it mounts. Then close `:8080` to everything but the VM itself at your firewall, or bind the
+zabbix vhost to `listen 127.0.0.1:8080;`.
+
 - Publish **TCP 10051** to wherever probes will reach it (LAN via Site Magic today; a NAT/
   HAProxy TCP-passthrough rule for future no-VPN sites).
 
