@@ -1953,6 +1953,21 @@ bridge, and a DHCP lease change changes nothing. Without an https frontend the p
 (the Zabbix UI lives there), and so it does on a core with `/etc/argus-core/zabbix-http-open`; either
 way an earlier chain is removed. A run that finds everything in place changes and logs nothing.
 
+**The core's certificates renew themselves (`argus-cert-renew`).** A host tool of the core (script, a
+oneshot service with the manifest's `run` flag so an update runs it, a daily timer). Two
+certificates the monitoring CA in `/docker/argus/pki` signed live on the core: the https front's
+(`/etc/nginx/argus/argus-web.crt`: Argus on `:443` on the appliance, the Zabbix frontend on
+`:8443`), and the Zabbix server's TLS certificate (`TLSCertFile` in `zabbix_server.conf`), which
+every probe checks on `:10051` by issuer and subject. Thirty days before its end each is signed again
+with the same CN and subject alternative names and a new key, for two years but never past the CA's
+own end, the new pair taking the old one's owner and mode by a rename in the same folder; then nginx
+is tested and reloaded, or zabbix-server restarted and checked active, and a refusal puts the old pair
+back and the service on it again. Because the subject and issuer stay the same, a probe needs nothing.
+Left alone, each said once per boot (by key, not by text, since the text counts days): a certificate
+the monitoring CA did not sign (your own), and the CA itself within 180 days of its end (every probe
+trusts it, so replacing it is a planned change, not a timer's). Without the CA on the machine
+(Argus elsewhere, or a CA kept offline) it does nothing. A Zabbix on its own VM never runs it.
+
 ### The probe host-tools channel
 
 The core's pattern (above) applied to the probe VM, so a probe VM's host side follows the probe

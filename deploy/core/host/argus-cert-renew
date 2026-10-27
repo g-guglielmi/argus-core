@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+
+# argus-cert-renew - renews the core's certificates before they run out (DESIGN 14c). Run daily, at
+# boot and whenever a core update installs it (argus-cert-renew.service + .timer):
+#  - the https front's certificate (/etc/nginx/argus/argus-web.crt: Argus on :443 on the appliance,
+#    the Zabbix frontend on :8443), nginx reloaded;
+#  - the Zabbix server's TLS certificate (TLSCertFile in zabbix_server.conf), the one every probe
+#    checks on :10051, zabbix-server restarted (the probes buffer the minute it takes).
+# A certificate is renewed 30 days before its end: same subject and names, a new key, two years
+# (never past the CA's own end), signed by the monitoring CA in /docker/argus/pki. Only one that CA
+# signed: a certificate of your own is left alone and, close to its end, said once per boot. So is
+# the CA itself close to its end: every probe trusts it, so replacing it is a planned change.
+# A renewal the service refuses (nginx -t, zabbix-server not starting) is put back as it was.
+# Local, never remote; a run with nothing to renew changes and logs nothing.
+set -u
+PKI_DIR="${ARGUS_PKI_DIR:-/docker/argus/pki}"
+WEB_CRT="${ARGUS_WEB_CRT:-/etc/nginx/argus/argus-web.crt}"
+WEB_KEY="${ARGUS_WEB_KEY:-/etc/nginx/argus/argus-web.key}"
+ZBX_CONF="${ARGUS_ZBX_SERVER_CONF:-/etc/zabbix/zabbix_server.conf}"
+NOTE_FILE="${ARGUS_CERT_RENEW_NOTE:-/run/argus-cert-renew.note}"
+SETTLE="${ARGUS_CERT_RENEW_SETTLE:-5}"
+RENEW_DAYS=30
+LEAF_DAYS=730
+CA_WARN_DAYS=180
+CA_CRT="$PKI_DIR/ca.crt"
+CA_KEY="$PKI_DIR/ca.key"
+
+say() { logger -t argus-cert-renew "$*"; }
+# note KEY MESSAGE: a lasting condition is said once per boot, not every day (by its KEY: the message
+# carries a day count that changes).
+note() {
+  grep -qxF -- "$1" "$NOTE_FILE" 2>/dev/null && return 0
+  say "$2"
+  printf '%s\n' "$1" >> "$NOTE_FILE" 2>/dev/null
+  return 0
+}
+
+# days_left CERT: whole days until the certificate's end (negative once it has ended).
+days_left() {
+  local end
+  end="$(openssl x509 -in "$1" -noout -enddate 2>/dev/null | sed -n 's/^notAfter=//p')"
+  [ -n "$end" ] || return 1
+  end="$(date -d "$end" +%s 2>/dev/null)" || return 1
+  echo $(((end - $(date +%s)) / 86400))
+}
+
+# conf_value KEY: an uncommented KEY=value of zabbix_server.conf.
+conf_value() {
+  sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\([^[:space:]]*\).*/\1/p" "$ZBX_CONF" 2>/dev/null | tail -n 1
+}
+
+reload_nginx() { nginx -t >/dev/null 2>&1 && systemctl reload nginx >/dev/null 2>&1; }
+restart_zabbix() {
+  systemctl restart zabbix-server >/dev/null 2>&1 || return 1
+  sleep "$SETTLE"
+  systemctl is-active --quiet zabbix-server
+}
+
+# renew WHAT CRT KEY APPLY: a new key and certificate for CRT when it ends within RENEW_DAYS and the
+# monitoring CA signed it; APPLY makes the service use it, and a failure puts the old pair back.
+renew() {
+  local what="$1" crt="$2" key="$3" apply="$4" left cn san tmp days
+  [ -s "$crt" ] && [ -s "$key" ] || return 0
+  openssl x509 -in "$crt" -noout -checkend $((RENEW_DAYS * 86400)) >/dev/null 2>&1 && return 0
+  left="$(days_left "$crt")" || left="?"
+  if ! openssl verify -no_check_time -CAfile "$CA_CRT" "$crt" >/dev/null 2>&1; then
+    note "own $crt" "$what: $crt ends in $left days and the monitoring CA did not sign it: renew it yourself"
+    return 0
+  fi
+  days=$LEAF_DAYS
+  if [ "$CA_LEFT" -lt "$days" ]; then days=$CA_LEFT; fi
+  if [ "$days" -le "$RENEW_DAYS" ]; then
+    note "ca-short $crt" "$what: $crt ends in $left days, but so does the monitoring CA (in $CA_LEFT): it cannot be renewed with it"
+    return 0
+  fi
+  cn="$(openssl x509 -in "$crt" -noout -subject -nameopt RFC2253 2>/dev/null | sed -n 's/^subject=.*CN=\([^,]*\).*/\1/p')"
+  if [ -z "$cn" ]; then
+    note "no-name $crt" "$what: $crt has no name to renew it with"
+    return 0
+  fi
+  san="$(openssl x509 -in "$crt" -noout -ext subjectAltName 2>/dev/null | grep -E 'DNS:|IP Address:' | sed 's/IP Address:/IP:/g; s/[[:space:]]//g' | head -n 1)"
+  # Made next to the certificate, so the new pair replaces the old one by a rename.
+  tmp="$(mktemp -d "$(dirname "$crt")/.argus-renew.XXXXXX")" || return 0
+  if [ -n "$san" ]; then
+    printf 'subjectAltName=%s\nextendedKeyUsage=serverAuth\nbasicConstraints=CA:FALSE\n' "$san" > "$tmp/ext"
+  fi
+  if ! openssl req -newkey rsa:2048 -nodes -keyout "$tmp/key" -out "$tmp/csr" -subj "/CN=$cn" >/dev/null 2>&1 ||
+    ! openssl x509 -req -in "$tmp/csr" -CA "$CA_CRT" -CAkey "$CA_KEY" -set_serial "0x$(openssl rand -hex 16)" \
+      -out "$tmp/crt" -days "$days" -sha256 ${san:+-extfile "$tmp/ext"} >/dev/null 2>&1; then
+    rm -rf "$tmp"
+    note "sign $crt" "$what: could not sign a new certificate for $crt with the CA in $PKI_DIR"
+    return 0
+  fi
+  if ! cp -p "$crt" "$crt.argus-old" || ! cp -p "$key" "$key.argus-old"; then
+    rm -rf "$tmp"
+    note "copy $crt" "$what: could not keep a copy of $crt to renew it safely"
+    return 0
+  fi
+  # The new pair takes the old one's owner and mode (zabbix-server reads its key as zabbix).
+  chown --reference="$crt" "$tmp/crt" 2>/dev/null
+  chmod --reference="$crt" "$tmp/crt"
+  chown --reference="$key" "$tmp/key" 2>/dev/null
+  chmod --reference="$key" "$tmp/key"
+  mv -f "$tmp/crt" "$crt" && mv -f "$tmp/key" "$key"
+  rm -rf "$tmp"
+  if "$apply"; then
+    rm -f "$crt.argus-old" "$key.argus-old"
+    say "$what: $crt renewed for $days days (it ended in $left days)"
+  else
+    mv -f "$crt.argus-old" "$crt" && mv -f "$key.argus-old" "$key"
+    "$apply" || true
+    note "refused $crt" "$what: a renewed $crt was refused, the old one is back (ends in $left days)"
+  fi
+}
+
+if [ ! -r "$CA_CRT" ] || [ ! -r "$CA_KEY" ]; then
+  exit 0  # no monitoring CA on this machine (Argus elsewhere, or a CA kept offline): nothing to sign with
+fi
+if ! CA_LEFT="$(days_left "$CA_CRT")"; then
+  note "ca-unreadable" "cannot read the monitoring CA ($CA_CRT): nothing renewed"
+  exit 0
+fi
+if [ "$CA_LEFT" -le "$CA_WARN_DAYS" ]; then
+  note "ca-ending" "the monitoring CA ($CA_CRT) ends in $CA_LEFT days: every probe trusts it, plan its replacement"
+fi
+
+renew "https front" "$WEB_CRT" "$WEB_KEY" reload_nginx
+zcrt="$(conf_value TLSCertFile)"
+zkey="$(conf_value TLSKeyFile)"
+if [ -n "$zcrt" ] && [ -n "$zkey" ]; then
+  renew "Zabbix server" "$zcrt" "$zkey" restart_zabbix
+fi
+exit 0

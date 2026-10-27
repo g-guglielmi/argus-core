@@ -76,7 +76,10 @@ https from any other machine. **Argus on the same VM:** nothing to do. Once Argu
 sidecar run there, `argus-web-guard` (a host tool, DESIGN 14c) serves the frontend and API on
 `:8443` with a certificate for the VM signed by the CA in `/docker/argus/pki`, and narrows the plain
 `:8080` to the VM and its containers. `journalctl -t argus-web-guard` says what it did, and
-`/etc/argus-core/zabbix-http-open` keeps `:8080` open to the LAN.
+`/etc/argus-core/zabbix-http-open` keeps `:8080` open to the LAN. That certificate and the Zabbix
+server's (`zabbix-core.crt`, two years from `gen-certs.sh`, the one every probe checks) renew
+themselves 30 days before their end, signed again by the CA with the same names (`argus-cert-renew`,
+DESIGN 14c), as long as the CA stays in `/docker/argus/pki`.
 
 **Zabbix on its own VM** (Argus elsewhere): Argus's host tools never run there, so add the same
 https server yourself. On the Zabbix VM, with `ca.crt` + `ca.key` from `pki/out` copied next to you
@@ -116,7 +119,9 @@ server {
 
 Point Argus at `https://<zabbix-vm>:8443/api_jsonrpc.php`; it trusts the certificate through the
 `ca.crt` it mounts. Then close `:8080` to everything but the VM itself at your firewall, or bind the
-zabbix vhost to `listen 127.0.0.1:8080;`.
+zabbix vhost to `listen 127.0.0.1:8080;`. Nothing renews these certificates on a VM without Argus:
+sign them again the same way before they end (`argus-web.crt` after two years, and `zabbix-core.crt`,
+which every probe checks; `openssl x509 -in <crt> -noout -enddate` shows when).
 
 - Publish **TCP 10051** to wherever probes will reach it (LAN via Site Magic today; a NAT/
   HAProxy TCP-passthrough rule for future no-VPN sites).

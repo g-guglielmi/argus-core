@@ -1,0 +1,12 @@
+# argus-cert-renew.timer - look at the core's certificates daily: one is renewed 30 days before its
+# end, so a VM that is off for a while still renews in time.
+[Unit]
+Description=Argus core: renew the core's certificates daily when due
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=1d
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

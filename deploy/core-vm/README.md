@@ -191,6 +191,12 @@ months): once a browser trusts the VM's certificate it refuses a plain-http or c
 visit from then on, so a replacement certificate must be trusted by the PCs before the old one
 expires (the same CA signing it is enough).
 
+**Certificate renewal**: the VM's own certificates renew themselves 30 days before their end, signed
+again by the monitoring CA with the same names (`argus-cert-renew`, daily): the https front's and the
+Zabbix server's, which every probe checks. PCs that trust the CA trust the renewed one, and probes need
+nothing. A certificate of your own in `/etc/nginx/argus` is never touched: renew it yourself, and
+`journalctl -t argus-cert-renew` reminds you 30 days ahead.
+
 ## Scope / notes
 
 - **First boot needs DHCP** (the chicken-and-egg is real: you reach the setup page by IP). To move to

@@ -1739,5 +1739,179 @@ class WebGuardTest(unittest.TestCase):
         self.assertRegex(manifest, r"argus-web-guard\.timer +/etc/systemd/system/argus-web-guard\.timer +0644 enable\n")
 
 
+
+OPENSSL = WHICH("openssl")
+
+
+class CertRenewTest(unittest.TestCase):
+    """argus-cert-renew: the core's certificates the monitoring CA signed are renewed before their end."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.pki = os.path.join(self.tmp, "pki")
+        self.web = os.path.join(self.tmp, "nginx-argus")
+        self.zbx = os.path.join(self.tmp, "zabbix-certs")
+        self.bin = os.path.join(self.tmp, "bin")
+        for d in (self.pki, self.web, self.zbx, self.bin):
+            os.makedirs(d)
+        self.ca(self.pki, 3650)
+        self.leaf("web", self.web, "argus-web", "core.example.lan", 10, "DNS:core.example.lan,DNS:core,IP:10.0.0.10")
+        self.leaf("zbx", self.zbx, "zabbix-core", "zabbix-core", 10)
+        self.conf = os.path.join(self.tmp, "zabbix_server.conf")
+        with open(self.conf, "w", newline="\n") as fh:
+            fh.write("# TLSCertFile=/nowhere\nTLSCAFile=%s/ca.crt\nTLSCertFile=%s\nTLSKeyFile=%s\n" % (
+                winpath(self.zbx), winpath(os.path.join(self.zbx, "zabbix-core.crt")),
+                winpath(os.path.join(self.zbx, "zabbix-core.key"))))
+        for name, body in {"logger": 'echo "logger $*" >> "$LOG"\n',
+                           "nginx": 'echo "nginx $*" >> "$LOG"; [ -z "${NGINX_T_FAIL:-}" ]\n',
+                           "systemctl": 'echo "systemctl $*" >> "$LOG"\n'
+                                        '[ "$1" = is-active ] && [ -n "${ZBX_DOWN:-}" ] && exit 3\nexit 0\n'}.items():
+            path = os.path.join(self.bin, name)
+            with open(path, "w", newline="\n") as fh:
+                fh.write("#!/usr/bin/env bash\n" + body)
+            os.chmod(path, 0o755)
+        self.script = os.path.join(self.tmp, "argus-cert-renew")
+        with open(self.script, "w", newline="\n") as fh:
+            fh.write(script_body("argus-cert-renew"))
+
+    def ssl(self, *args):
+        subprocess.run([OPENSSL, *args], check=True, capture_output=True, timeout=60)
+
+    def ca(self, d, days):
+        self.ssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", os.path.join(d, "ca.key"),
+                 "-out", os.path.join(d, "ca.crt"), "-days", str(days), "-subj", "/CN=Monitoring Core CA")
+
+    def leaf(self, tag, d, name, cn, days, san=None, ca_dir=None):
+        ca_dir = ca_dir or self.pki
+        key, csr, crt = (os.path.join(d, name + x) for x in (".key", ".csr", ".crt"))
+        self.ssl("req", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", csr, "-subj", "/CN=" + cn)
+        args = ["x509", "-req", "-in", csr, "-CA", os.path.join(ca_dir, "ca.crt"), "-CAkey", os.path.join(ca_dir, "ca.key"),
+                "-set_serial", "0x01", "-out", crt, "-days", str(days), "-sha256"]
+        if san:
+            ext = os.path.join(d, name + ".ext")
+            with open(ext, "w") as fh:
+                fh.write("subjectAltName=%s\nextendedKeyUsage=serverAuth\nbasicConstraints=CA:FALSE\n" % san)
+            args += ["-extfile", ext]
+            self.ssl(*args)
+            os.remove(ext)
+        else:
+            self.ssl(*args)
+        os.remove(csr)
+
+    def text(self, crt):
+        return subprocess.run([OPENSSL, "x509", "-in", crt, "-noout", "-subject", "-enddate", "-ext", "subjectAltName"],
+                              capture_output=True, text=True, timeout=60).stdout
+
+    def days(self, crt):
+        end = subprocess.run([OPENSSL, "x509", "-in", crt, "-noout", "-enddate"], capture_output=True, text=True).stdout
+        at = datetime.datetime.strptime(end.strip().split("=", 1)[1], "%b %d %H:%M:%S %Y GMT").replace(tzinfo=datetime.timezone.utc)
+        return (at - datetime.datetime.now(datetime.timezone.utc)).total_seconds() / 86400
+
+    def read(self, path):
+        with open(path, "rb") as fh:
+            return fh.read()
+
+    def run_renew(self, extra=None):
+        log = os.path.join(self.tmp, "calls.log")
+        if os.path.exists(log):
+            os.remove(log)
+        e = dict(os.environ, LOG=winpath(log), ARGUS_PKI_DIR=winpath(self.pki),
+                 ARGUS_WEB_CRT=winpath(os.path.join(self.web, "argus-web.crt")),
+                 ARGUS_WEB_KEY=winpath(os.path.join(self.web, "argus-web.key")),
+                 ARGUS_ZBX_SERVER_CONF=winpath(self.conf), ARGUS_CERT_RENEW_NOTE=winpath(os.path.join(self.tmp, "note")),
+                 ARGUS_CERT_RENEW_SETTLE="0", MSYS2_ARG_CONV_EXCL="/CN=",
+                 PATH=winpath(self.bin) + os.pathsep + os.environ.get("PATH", ""))
+        e.update(extra or {})
+        r = subprocess.run([WHICH("bash"), winpath(self.script)], env=e, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        if not os.path.exists(log):
+            return ""
+        with open(log) as fh:
+            return fh.read()
+
+    @unittest.skipUnless(WHICH("bash") and OPENSSL, "needs bash and openssl")
+    def test_both_certificates_are_renewed_with_their_names_and_a_new_key(self):
+        web_crt, web_key = os.path.join(self.web, "argus-web.crt"), os.path.join(self.web, "argus-web.key")
+        zbx_crt, zbx_key = os.path.join(self.zbx, "zabbix-core.crt"), os.path.join(self.zbx, "zabbix-core.key")
+        old_web_key, old_zbx_key = self.read(web_key), self.read(zbx_key)
+        calls = self.run_renew()
+        self.assertGreater(self.days(web_crt), 700)
+        self.assertGreater(self.days(zbx_crt), 700)
+        web = self.text(web_crt)
+        self.assertIn("CN=core.example.lan", web.replace(" ", ""))
+        self.assertIn("DNS:core.example.lan, DNS:core, IP Address:10.0.0.10", web)
+        self.assertIn("CN=zabbix-core", self.text(zbx_crt).replace(" ", ""))
+        self.assertNotIn("DNS:", self.text(zbx_crt), "a certificate without names stays without names")
+        self.assertNotEqual(self.read(web_key), old_web_key, "a new key")
+        self.assertNotEqual(self.read(zbx_key), old_zbx_key, "a new key")
+        for crt in (web_crt, zbx_crt):
+            v = subprocess.run([OPENSSL, "verify", "-CAfile", os.path.join(self.pki, "ca.crt"), crt], capture_output=True, text=True)
+            self.assertEqual(v.returncode, 0, v.stdout + v.stderr)
+        self.assertIn("nginx -t", calls)
+        self.assertIn("systemctl reload nginx", calls)
+        self.assertIn("systemctl restart zabbix-server", calls)
+        self.assertIn("https front: ", calls)
+        self.assertIn("Zabbix server: ", calls)
+        self.assertEqual([f for f in os.listdir(self.web) + os.listdir(self.zbx) if "argus" in f and f not in ("argus-web.crt", "argus-web.key")], [],
+                         "no backup or temporary file is left behind")
+        self.assertEqual(self.run_renew(), "", "nothing due: nothing touched, nothing said")
+
+    @unittest.skipUnless(WHICH("bash") and OPENSSL, "needs bash and openssl")
+    def test_a_certificate_far_from_its_end_is_left_alone(self):
+        self.leaf("web", self.web, "argus-web", "core.example.lan", 400, "DNS:core.example.lan")
+        self.leaf("zbx", self.zbx, "zabbix-core", "zabbix-core", 400)
+        before = self.read(os.path.join(self.web, "argus-web.crt"))
+        self.assertEqual(self.run_renew(), "")
+        self.assertEqual(self.read(os.path.join(self.web, "argus-web.crt")), before)
+
+    @unittest.skipUnless(WHICH("bash") and OPENSSL, "needs bash and openssl")
+    def test_a_certificate_of_your_own_is_left_alone_and_said_once(self):
+        other = os.path.join(self.tmp, "other-ca")
+        os.makedirs(other)
+        self.ca(other, 3650)
+        self.leaf("web", self.web, "argus-web", "monitoring.example.com", 10, "DNS:monitoring.example.com", ca_dir=other)
+        before = self.read(os.path.join(self.web, "argus-web.crt"))
+        calls = self.run_renew()
+        self.assertEqual(self.read(os.path.join(self.web, "argus-web.crt")), before)
+        self.assertIn("the monitoring CA did not sign it: renew it yourself", calls)
+        self.assertNotIn("reload nginx", calls)
+        again = self.run_renew()
+        self.assertNotIn("renew it yourself", again, "said once per boot")
+
+    @unittest.skipUnless(WHICH("bash") and OPENSSL, "needs bash and openssl")
+    def test_a_renewal_the_service_refuses_is_put_back(self):
+        crt, key = os.path.join(self.web, "argus-web.crt"), os.path.join(self.web, "argus-web.key")
+        before = (self.read(crt), self.read(key))
+        calls = self.run_renew(extra={"NGINX_T_FAIL": "1", "ZBX_DOWN": "1"})
+        self.assertEqual((self.read(crt), self.read(key)), before)
+        self.assertIn("a renewed", calls)
+        self.assertIn("was refused, the old one is back", calls)
+        self.assertLess(self.days(os.path.join(self.zbx, "zabbix-core.crt")), 30, "zabbix-server did not come back: old pair")
+        self.assertEqual(calls.count("systemctl restart zabbix-server"), 2, "restarted again on the old pair")
+
+    @unittest.skipUnless(WHICH("bash") and OPENSSL, "needs bash and openssl")
+    def test_a_ca_close_to_its_end_is_said_and_caps_nothing_it_cannot(self):
+        self.ca(self.pki, 20)
+        self.leaf("web", self.web, "argus-web", "core.example.lan", 10, "DNS:core.example.lan")
+        calls = self.run_renew()
+        self.assertIn("the monitoring CA (", calls)
+        self.assertIn("plan its replacement", calls)
+        self.assertIn("it cannot be renewed with it", calls)
+        self.assertLess(self.days(os.path.join(self.web, "argus-web.crt")), 11)
+
+    @unittest.skipUnless(WHICH("bash") and OPENSSL, "needs bash and openssl")
+    def test_without_the_ca_on_this_machine_it_does_nothing(self):
+        os.remove(os.path.join(self.pki, "ca.key"))
+        self.assertEqual(self.run_renew(), "")
+
+    def test_manifest_installs_it_with_a_daily_timer(self):
+        with open(os.path.join(HOST, "manifest"), encoding="utf-8") as fh:
+            manifest = fh.read()
+        self.assertRegex(manifest, r"argus-cert-renew +/usr/local/sbin/argus-cert-renew +0755\n")
+        self.assertRegex(manifest, r"argus-cert-renew\.service +/etc/systemd/system/argus-cert-renew\.service +0644 run\n")
+        self.assertRegex(manifest, r"argus-cert-renew\.timer +/etc/systemd/system/argus-cert-renew\.timer +0644 enable\n")
+        with open(os.path.join(HOST, "argus-cert-renew.timer"), encoding="utf-8") as fh:
+            self.assertIn("OnUnitActiveSec=1d", fh.read())
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

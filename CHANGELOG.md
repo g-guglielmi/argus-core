@@ -62,6 +62,16 @@ GitHub Release from the matching section below.
   format), the VHD for Hyper-V. The probe VM and core appliance READMEs say how to import each.
 
 ### Security
+- **The core's certificates renew themselves** (`argus-cert-renew`, a host tool: installed by the
+  update and run right then, again daily). Nothing renewed them before: the https front's certificate
+  (Argus on `:443` on the appliance, the Zabbix frontend on `:8443`) lasts two years, and the Zabbix
+  server's TLS certificate, the one every probe checks on `:10051`, two years on a core installed by
+  hand (five on the appliance), after which every probe would have lost the core. Thirty days before
+  its end each one is signed again by the monitoring CA with the same names and a new key, for two
+  years; nginx is reloaded, zabbix-server restarted (the probes buffer the minute it takes), and a
+  renewal the service refuses is put back as it was. A certificate of your own (not signed by the
+  monitoring CA) is left alone, and so is the CA itself: both are said in
+  `journalctl -t argus-cert-renew` when they come close to their end.
 - **The core's Zabbix frontend is kept narrow** (`argus-web-guard`, a host tool: installed by the
   update and run right then, again at boot and hourly). php-fpm gets session upload progress turned off: Zabbix never uses
   it, and it was the confirmed trigger of PHP2Shell (CVE-2026-109619; Debian's fixed PHP came with

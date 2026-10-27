@@ -1,0 +1,11 @@
+# argus-cert-renew.service - renew the core's certificates the monitoring CA signed (the https front
+# and the Zabbix server's TLS certificate) 30 days before their end (DESIGN 14c). Started daily by
+# argus-cert-renew.timer and when a core update installs it.
+[Unit]
+Description=Argus core: renew the core's certificates before they end
+Documentation=https://github.com/g-guglielmi/argus-core/blob/main/docs/DESIGN.md
+After=network.target nginx.service zabbix-server.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/argus-cert-renew

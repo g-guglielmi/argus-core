@@ -17,6 +17,7 @@ argus-restore                      /usr/local/sbin/argus-restore                
 argus-console                      /usr/local/sbin/argus-console                                     0755
 argus-console-login                /usr/local/sbin/argus-console-login                               0755
 argus-web-guard                    /usr/local/sbin/argus-web-guard                                   0755
+argus-cert-renew                   /usr/local/sbin/argus-cert-renew                                  0755
 argus-os-report.service            /etc/systemd/system/argus-os-report.service                       0644 render
 argus-os-report.timer              /etc/systemd/system/argus-os-report.timer                         0644 enable
 argus-reboot-check.service         /etc/systemd/system/argus-reboot-check.service                    0644 render
@@ -38,3 +39,5 @@ argus-backup.timer                 /etc/systemd/system/argus-backup.timer       
 argus-backup.path                  /etc/systemd/system/argus-backup.path                             0644 render enable
 argus-web-guard.service            /etc/systemd/system/argus-web-guard.service                       0644 enable run
 argus-web-guard.timer              /etc/systemd/system/argus-web-guard.timer                         0644 enable
+argus-cert-renew.service           /etc/systemd/system/argus-cert-renew.service                      0644 run
+argus-cert-renew.timer             /etc/systemd/system/argus-cert-renew.timer                        0644 enable
