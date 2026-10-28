@@ -45,7 +45,7 @@ type proxyView struct {
 	SecUpdates     int    `json:"sec_updates"`
 	RebootRequired bool   `json:"reboot_required"`
 	OSReportedAt   int64  `json:"os_reported_at"`
-	OSVersion      string `json:"os_version"` // the probe VM's OS pretty-name ("" if not reported)
+	OSVersion      string `json:"os_version"` // the probe VM's OS name, "Debian 13.7" ("" if not reported)
 	// The sidecar's last report on the probe VM's host scripts and units, kept current from the
 	// probe image (DESIGN 14c); nil until a sidecar that knows the channel checked in.
 	HostTools *probeHostTools `json:"host_tools,omitempty"`

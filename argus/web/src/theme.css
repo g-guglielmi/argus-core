@@ -966,12 +966,11 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 /* Make the horizontal row dividers stronger than the vertical column dividers, so probe rows read
    apart while the column grid stays subtle. */
 .enroll-probes td { border-bottom-color: var(--border-strong); }
-/* the live probes table carries 7 columns (Probe · Status · Last check-in · Version · Update ·
-   Mode · Enrolled) whose content is short and uneven (a probe name, a version, the update chip),
-   so let the browser size each column to its content (table-layout:auto) instead of the fixed 4-col
-   percentages above. width stays 100% (inherited): the table fills the card and the browser spreads
-   the slack across all columns in proportion to their content, so no single column balloons and there
-   is no dead space on the right. nowrap keeps every cell on one line (incl. the "Update... -> x.y.z-rN"
+/* the live probes table carries 6 columns (Probe · Health · Proxy · Updater · VM OS · menu) whose
+   content is short and uneven (a probe name, a version, the update chip), so let the browser size
+   each column to its content (table-layout:auto) instead of the fixed 4-col percentages above. width
+   stays 100% (inherited): the table fills the card, and the five data columns take equal shares (below)
+   rather than shares by content length, so the one with the longest line doesn't balloon. nowrap keeps every cell on one line (incl. the "Update... -> x.y.z-rN"
    chip, whose flex row is nowrap) so each column reports an honest one-line width; if the viewport is
    too narrow to fit that, .enroll-scroll scrolls horizontally rather than wrapping a cell.
    NB: the modifier is `enroll-probes`, not `live` - `.live` is the heartbeat pill (display:inline-flex)
@@ -979,10 +978,12 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .enroll-scroll { overflow-x: auto; }
 .enroll.enroll-probes { table-layout: auto; }
 /* Reset the 4-col percentage widths the base .enroll rules above set for the tokens table
-   (nth-child 1..4 = 40/18/27/15%). Without this, the 7-col probes table inherits them - col 1 = 40%
-   balloons the Probe column and columns 5-7 (Update/Mode/Enrolled) starve - which is exactly the
-   "huge Probe, cramped Update" bug. width:auto lets auto-layout size every column to its content. */
+   (nth-child 1..4 = 40/18/27/15%). Without this, the probes table inherits them - col 1 = 40%
+   balloons the Probe column and the later columns starve - which is exactly the "huge Probe, cramped
+   Update" bug. Then the five data columns get equal shares: the slack used to go by content length,
+   and an OS name plus a pill made VM OS the widest column. A cell wider than its share still grows. */
 .enroll.enroll-probes th:nth-child(n) { width: auto; }
+.enroll.enroll-probes th:nth-child(-n+5) { width: 20%; }
 .enroll.enroll-probes th, .enroll.enroll-probes td { white-space: nowrap; overflow: visible; text-overflow: clip; }
 .enroll tr:last-child td { border-bottom: none; }
 

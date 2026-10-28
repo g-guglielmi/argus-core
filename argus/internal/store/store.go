@@ -267,7 +267,7 @@ CREATE TABLE IF NOT EXISTS probe_agents (
   sec_updates       INTEGER NOT NULL DEFAULT -1, -- pending OS security-update count a probe VM reports (-1 = never reported)
   reboot_required   INTEGER NOT NULL DEFAULT 0,  -- the probe VM's OS flagged /var/run/reboot-required
   os_reported_at    INTEGER NOT NULL DEFAULT 0,  -- unix seconds the OS patch status was last reported
-  os_version        TEXT NOT NULL DEFAULT ''     -- the probe VM's OS pretty-name (e.g. "Debian GNU/Linux 13 (trixie)")
+  os_version        TEXT NOT NULL DEFAULT ''     -- the probe VM's OS name (e.g. "Debian 13.7")
 );
 
 -- A probe's load average, one row per check-in (a minute apart), kept a day: the autoscaler reads

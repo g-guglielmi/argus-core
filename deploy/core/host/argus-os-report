@@ -8,7 +8,17 @@ DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
 sec="$(apt-get -s -o Debug::NoLocking=true upgrade 2>/dev/null | awk '/^Inst/ && /[Ss]ecurity/ {n++} END{print n+0}')"
 [ -n "$sec" ] || sec=-1
 reboot=false; [ -f /var/run/reboot-required ] && reboot=true
-os="$( . /etc/os-release 2>/dev/null && printf '%s' "${PRETTY_NAME:-Linux}" )"
+# os_name prints the OS as Argus shows it: Debian with its point release ("Debian 13.7", from
+# DEBIAN_VERSION_FULL, or /etc/debian_version before Debian 13 added it), anything else by its
+# PRETTY_NAME ("Ubuntu 24.04.3 LTS"). Testing and sid read "forky/sid": those keep the pretty name.
+os_name() {
+  ( . "${1:-/etc/os-release}" 2>/dev/null || exit 0
+    v="${DEBIAN_VERSION_FULL:-}"
+    [ "${ID:-}" = debian ] && [ -z "$v" ] && v="$(cat "${2:-/etc/debian_version}" 2>/dev/null)"
+    case "$v" in ''|[!0-9]*|*[!0-9.]*) v="" ;; esac
+    if [ "${ID:-}" = debian ] && [ -n "$v" ]; then printf 'Debian %s' "$v"; else printf '%s' "${PRETTY_NAME:-Linux}"; fi )
+}
+os="$(os_name)"
 # Zabbix server package: installed + candidate version (normalized: no epoch, no revision) so
 # Argus can show "x.y.z available" and the zbx-update watcher knows when to act. Both empty
 # when Zabbix isn't installed on this host.

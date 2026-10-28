@@ -1122,17 +1122,35 @@ function osPill(sec: number, reboot: boolean, when: string): ReactNode {
   return <UpdPill kind="none" title={`The security-update count is unknown. ${when}`}>count unknown</UpdPill>
 }
 
-// osName trims the "GNU/Linux" filler off a reported PRETTY_NAME: "Debian 13 (trixie)".
+// osName trims the "GNU/Linux" filler off an older reporter's PRETTY_NAME ("Debian 13 (trixie)"). The
+// current reporters send Debian with its point release ("Debian 13.7"), which passes as it is.
 function osName(s?: string): string { return (s || '').replace('GNU/Linux ', '') }
 
 // The sidecar's last report on a probe VM's host scripts and units, kept current from the probe
 // image (DESIGN 14c): whether the last run installed them, failed, or found nothing to do here.
 type ProbeHostTools = { state: string; message?: string; version?: string; at?: string; installed?: number; apply?: boolean }
-function hostToolsPill(t: ProbeHostTools): ReactNode {
+
+// probeToolsState reads a probe VM's host tools against the probe it runs: current, going in (the
+// sidecar writes the new version's right after it updates the probe), or failed. null for a probe
+// with none to keep (a container probe) or no report (no sidecar, or one too old to send it).
+function probeToolsState(p: Proxy): { state: 'ok' | 'updating' | 'failed'; title: string } | null {
+  const t = p.host_tools
+  if (!t || t.state === 'skipped') return null
+  const what = "The probe VM's host scripts and systemd units (OS reporter, console, guest agent, patching), kept current from the probe image by the sidecar."
   const when = t.at ? ` Last run ${t.at}.` : ''
-  if (t.state === 'ok') return <UpdPill kind="ok" title={`The VM's host scripts and units match the probe image${t.version ? ' ' + t.version : ''}${t.installed ? `; ${t.installed} file${t.installed === 1 ? '' : 's'} written at the last run${t.apply ? ', systemd reloaded' : ''}` : ''}.${when}`}>host tools current</UpdPill>
-  if (t.state === 'failed') return <UpdPill kind="bad" title={`${t.message || 'The last run failed.'}${when}`}>host tools failed</UpdPill>
-  return <UpdPill kind="none" title={`${t.message || 'Nothing to keep current on this host.'}${when}`}>no host tools</UpdPill>
+  if (t.state === 'failed') return { state: 'failed', title: `${what} ${t.message || 'The last run failed.'} The sidecar tries again after the next probe update, and daily.${when}` }
+  if (t.version && p.version && t.version !== p.version) return { state: 'updating', title: `${what} Installed from ${t.version}; ${p.version}'s are going in now.${when}` }
+  const wrote = t.installed ? ` ${t.installed} file${t.installed === 1 ? '' : 's'} written at the last run${t.apply ? ', systemd reloaded' : ''}.` : ''
+  return { state: 'ok', title: `${what} Installed from ${t.version || 'this probe version'}.${wrote}${when}` }
+}
+
+// probeToolsPill is that state as the Updates page's pill ("up to date"), or, with `named`, as the
+// Probes page's, which names what it is about ("host tools updating").
+function probeToolsPill(ts: NonNullable<ReturnType<typeof probeToolsState>>, named = false): ReactNode {
+  const n = named ? 'host tools ' : ''
+  if (ts.state === 'failed') return <UpdPill kind="bad" title={ts.title}>{n}failed</UpdPill>
+  if (ts.state === 'updating') return <UpdPill kind="busy" title={ts.title}>{n}updating</UpdPill>
+  return <UpdPill kind="ok" title={ts.title}>{n}up to date</UpdPill>
 }
 
 // WeeklyWindow picks when something on the core happens by itself: never (notify only), or weekly at
@@ -1307,7 +1325,7 @@ function OSUpdatesCard({ proxies, vmLatest }: { proxies: Proxy[] | null; vmLates
 
       {vms.map((p) => (
         <UpdGroup key={p.name} label={p.name} sub="probe VM">
-          <UpdPart label="OS"><UpdVer v={osName(p.os_version)} title="The operating system this VM reports" />{osPill(typeof p.sec_updates === 'number' ? p.sec_updates : -1, !!p.reboot_required, `Reported ${relTime(p.os_reported_at!)}.`)}{p.host_tools && p.host_tools.state !== 'skipped' && hostToolsPill(p.host_tools)}</UpdPart>
+          <UpdPart label="OS"><UpdVer v={osName(p.os_version)} title="The operating system this VM reports" />{osPill(typeof p.sec_updates === 'number' ? p.sec_updates : -1, !!p.reboot_required, `Reported ${relTime(p.os_reported_at!)}.`)}</UpdPart>
         </UpdGroup>
       ))}
       {proxies && vms.length === 0 && <UpdGroup label="Probe VMs"><UpdPart label=""><UpdPill kind="none">none reporting</UpdPill></UpdPart></UpdGroup>}
@@ -2002,13 +2020,13 @@ function ProbeUpdates({ proxies, error, target, onTarget, onChanged }: { proxies
         <h3>Probes</h3>
         {n > 0 && <Button variant="primary" className="compact" onClick={updateAll} title="Queue an update for every probe and sidecar that is behind">Update all ({n})</Button>}
       </div>
-      <p className="set-note">The Zabbix proxy each site runs, and the argus-updater sidecar that updates it. A sidecar takes a queued update at its next check-in, within a minute, and rolls back one that doesn't start healthy. Argus looks for newer versions every 3 hours.</p>
+      <p className="set-note">The Zabbix proxy each site runs, the argus-updater sidecar that updates it and, on a probe VM, the host tools the sidecar installs from the probe image. A sidecar takes a queued update at its next check-in, within a minute, and rolls back one that doesn't start healthy. Argus looks for newer versions every 3 hours.</p>
       <FleetTarget target={target} latest={list.find((p) => p.latest)?.latest} onSaved={onTarget} />
       {error ? <UpdGroup label="Probes"><UpdPart label=""><span className="set-hint" style={{ color: 'var(--err)' }}>{error}</span></UpdPart></UpdGroup>
         : proxies === null ? <Skeleton rows={3} cols={3} />
         : list.length === 0 ? <UpdGroup label="Probes"><UpdPart label=""><UpdPill kind="none">none yet: a probe shows here once it enrolls and checks in</UpdPill></UpdPart></UpdGroup>
         : list.map((p) => {
-          const ps = proxyState(p), us = updaterState(p)
+          const ps = proxyState(p), us = updaterState(p), ts = probeToolsState(p)
           return (
             <UpdGroup key={p.name} label={p.name} sub={p.online ? 'online' : 'offline: updates once back'} subWarn={!p.online}>
               <UpdPart label="Proxy">
@@ -2021,6 +2039,7 @@ function ProbeUpdates({ proxies, error, target, onTarget, onChanged }: { proxies
                 {p.selfupdate && <UpdVer v={vv(p.updater_version) || '?'} title="The argus-updater sidecar managing this probe" />}{us.pill}
                 {us.can && <button className="btn" onClick={() => updateUpdater(p)}>Update</button>}
               </UpdPart>
+              {ts && <UpdPart label="Host tools">{p.host_tools?.version && <UpdVer v={p.host_tools.version} title="The probe version they were installed from" />}{probeToolsPill(ts)}</UpdPart>}
             </UpdGroup>
           )
         })}
@@ -3901,12 +3920,13 @@ function probeUpdateTag(target?: string): string {
 // (unattended-upgrades, security only) and auto-reboots in a weekly window; this only *reports*. A
 // dash means no report (a container probe, or a VM that hasn't reported yet).
 function OSCell({ p }: { p: Proxy }) {
+  const tools = probeToolsState(p)
   if (!p.os_reported_at) return <span className="mono" style={{ color: 'var(--faint)' }} title="No OS patch report - a container probe, or a VM probe that hasn't reported yet">-</span>
   return (
     <span className="vcell">
       {p.os_version && <UpdVer v={osName(p.os_version)} title="Operating system reported by the VM" />}
       {osPill(typeof p.sec_updates === 'number' ? p.sec_updates : -1, !!p.reboot_required, `Reported ${relTime(p.os_reported_at)}.`)}
-      {p.host_tools && p.host_tools.state !== 'skipped' && hostToolsPill(p.host_tools)}
+      {tools && tools.state !== 'ok' && probeToolsPill(tools, true)}
     </span>
   )
 }

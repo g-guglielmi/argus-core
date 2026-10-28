@@ -256,7 +256,7 @@ func (s *Store) ProbeAgents(ctx context.Context) (map[string]ProbeAgent, error) 
 }
 
 // SetProbeOSStatus records a probe VM's OS patch status - the pending security-update count, whether
-// the OS needs a reboot, and the OS pretty-name - reported by the VM's host-side timer (DESIGN §14c).
+// the OS needs a reboot, and the OS name ("Debian 13.7") - reported by the VM's host-side timer (DESIGN §14c).
 // A negative count is clamped to -1 (unknown). ErrNotFound if the probe never enrolled through Argus.
 func (s *Store) SetProbeOSStatus(ctx context.Context, proxyName string, secUpdates int, rebootRequired bool, osVersion string) error {
 	if secUpdates < 0 {

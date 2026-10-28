@@ -1947,7 +1947,10 @@ and a reboot watcher that honours the operator window. Argus surfaces per-probe 
 page (the **OS** column + a "N need a reboot" rollup) and on the **Updates** page (Operating systems:
 every probe VM, the core's own status and the reboot-window mask; `GET /api/os/status`,
 `PUT /api/os/reboot-window`, default **notify only**). The window is mirrored to `reboot-window.json` for the core's host watcher; patching stays
-strictly local (Argus never runs `apt` remotely).
+strictly local (Argus never runs `apt` remotely). Both reporters (and the backup manifest) name the
+OS the same way: Debian by its point release, "Debian 13.7" (`DEBIAN_VERSION_FULL` in os-release,
+or `/etc/debian_version` before Debian 13 added it), any other OS by its `PRETTY_NAME`; a VM whose
+reporter predates that shows "Debian 13 (trixie)" until its host tools update.
 
 **The Zabbix frontend, kept narrow (`argus-web-guard`).** A host tool of the core (script, a
 oneshot service enabled at boot and run when an update installs it, an hourly timer that puts it
@@ -2063,8 +2066,10 @@ probe's data folder: that file is the sign of a probe VM. The argus-updater's pr
 elsewhere (no sign, or no systemd to bind) is skipped once per image. The sidecar's mount of the
 data folder is read-only, so the probe image writes the outcome file for it, and the sidecar's
 own check-in carries the report as `host_tools` (state, reason, version, when, files written,
-reload); Argus keeps it on the probe (`probe_agents.host_tools`) and shows it as a pill beside
-the OS status on the Probes page and the Updates page. `argus-host-tools.path` on the VM does the
+reload); Argus keeps it on the probe (`probe_agents.host_tools`) and shows it on the Updates page
+as a **Host tools** row under the probe's sidecar (the probe version they came from: up to date,
+updating while the sidecar writes a newer probe's, failed with the reason), and on the Probes page
+as a pill in the VM OS column only while they're updating or failed. `argus-host-tools.path` on the VM does the
 reload and re-runs the reporter. The reporter now also keeps `os-status.json` in the data folder,
 for the console. A change to `deploy/probe-vm/host/**` is a probe release like any image change.
 
@@ -2428,7 +2433,8 @@ plane; the probe checks in and converges.
   (the core's channel, the fleet target, the core's reboot and Zabbix windows) are groups of their
   own whose value reads like a version and is changed in place. **Argus core**: the channel (the tag
   the core runs under, `channel` in `GET /api/version`), then the core, its sidecar and the
-  collectors. **Probes**: the fleet target, then every probe's proxy and sidecar, with **Update all**
+  collectors. **Probes**: the fleet target, then every probe's proxy, sidecar and (on a probe VM) the host
+  tools the sidecar installs from the probe image, with **Update all**
   for every one that is behind. **Operating systems**: the two core windows, the core VM (OS, Zabbix),
   each probe VM, and the newest probe VM image. The Probes page keeps the versions as read-only status in the same words; a probe that
   is behind links to Updates (admins only: helpdesk sees Probes, not Updates).

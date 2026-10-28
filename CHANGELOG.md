@@ -13,6 +13,22 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Changed
+- **A probe VM's host tools sit with the probe on the Updates page.** The host tools (the VM's OS
+  reporter, console, guest agent and patching scripts, which the sidecar installs from the probe
+  image) moved out of the Operating systems section into the probe's own group under Probes, as a
+  **Host tools** row below the sidecar: the probe version they came from, then up to date, updating
+  or failed. On the Probes page they show as a pill in the VM OS column only while they're updating
+  or failed; a normal day shows none.
+- **The Probes page's columns share the width evenly.** The browser handed out the spare width by
+  how long each column's content was, so the VM OS column, an OS name plus a pill, came out much
+  wider than the rest.
+- **Debian is named by its point release: "Debian 13.7", not "Debian 13 (trixie)".** The core VM
+  and the probe VMs report it (from os-release's `DEBIAN_VERSION_FULL`, or `/etc/debian_version` on
+  Debian before 13), and the backup manifest records it the same way; any other OS keeps its own
+  name. The core VM's reporter updates with this release, the probe VMs' with probe 7.0.32-r12; a
+  VM shows the old name until its own reporter has updated.
+
 ## [0.9.11] - 2026-10-28
 
 ### Fixed

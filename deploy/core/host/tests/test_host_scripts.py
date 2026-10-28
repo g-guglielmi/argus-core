@@ -206,6 +206,11 @@ class BackupTest(unittest.TestCase):
         with open(os.path.join(self.dirs["state"], "backup-status.json"), encoding="utf-8") as f:
             return json.load(f)
 
+    def test_manifest_names_the_os_like_the_reporter(self):
+        for i, (release, debian, want) in enumerate(OS_NAMES):
+            rel, deb = os_name_files(self.tmp, i, release, debian)
+            self.assertEqual(self.mod.os_name(rel, deb), want, release)
+
     def test_schedule(self):
         m, p = self.mod, plan(hour=2, minute=30, timezone="Europe/Rome")
         at = lambda y, mo, d, h, mi: datetime.datetime(y, mo, d, h, mi, tzinfo=m.plan_zone(p))
@@ -803,6 +808,31 @@ def script_body(name):
         return fh.read()
 
 
+# (os-release, /etc/debian_version or None, the name Argus shows). Debian by its point release, from
+# DEBIAN_VERSION_FULL (Debian 13 on) or debian_version (before); anything else by its PRETTY_NAME.
+DEBIAN_13 = ('PRETTY_NAME="Debian GNU/Linux 13 (trixie)"\nNAME="Debian GNU/Linux"\nVERSION_ID="13"\n'
+             'VERSION="13 (trixie)"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.7\nID=debian\n')
+OS_NAMES = [
+    (DEBIAN_13, "13.7", "Debian 13.7"),
+    (DEBIAN_13, None, "Debian 13.7"),
+    ('PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\nVERSION_ID="12"\nID=debian\n', "12.12\n", "Debian 12.12"),
+    ('PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\nVERSION_ID="12"\nID=debian\n', None, "Debian GNU/Linux 12 (bookworm)"),
+    ('PRETTY_NAME="Debian GNU/Linux forky/sid"\nID=debian\n', "forky/sid\n", "Debian GNU/Linux forky/sid"),
+    ('PRETTY_NAME="Ubuntu 24.04.3 LTS"\nVERSION_ID="24.04"\nID=ubuntu\nID_LIKE=debian\n', "trixie/sid\n", "Ubuntu 24.04.3 LTS"),
+    (None, None, ""),
+]
+
+
+def os_name_files(tmp, i, release, debian):
+    """The case's os-release and debian_version as files in tmp (a missing one is never written)."""
+    rel, deb = os.path.join(tmp, "os-release-%d" % i), os.path.join(tmp, "debian_version-%d" % i)
+    for path, text in ((rel, release), (deb, debian)):
+        if text is not None:
+            with open(path, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(text)
+    return rel, deb
+
+
 class PatchingTest(unittest.TestCase):
     """The host scripts setup-core.sh and setup-core-patching.sh install, and the Zabbix minor updater."""
 
@@ -819,6 +849,23 @@ class PatchingTest(unittest.TestCase):
             manifest = fh.read()
         for unit in ("argus-zbx-update.path", "argus-reboot-check.path", "argus-patch.path", "argus-host-tools.path"):
             self.assertRegex(manifest, r"%s +0644 render enable" % re.escape(unit))
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_reporter_names_debian_by_its_point_release(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        body = script_body("argus-os-report")
+        i = body.index("os_name() {")
+        fn = body[i:body.index("\n}\n", i) + 3]
+        self.assertIn('os="$(os_name)"', body)
+        for n, (release, debian, want) in enumerate(OS_NAMES):
+            rel, deb = os_name_files(tmp, n, release, debian)
+            script = os.path.join(tmp, "os-name-%d.sh" % n)
+            with open(script, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(fn + 'os_name "$1" "$2"\n')
+            r = subprocess.run([WHICH("bash"), winpath(script), winpath(rel), winpath(deb)], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(r.stdout, want, release)
 
     @unittest.skipUnless(WHICH("bash"), "needs bash")
     def test_install_host_tools_renders_the_manifest_into_a_root(self):

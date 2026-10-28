@@ -550,15 +550,36 @@ def part_files(work, manifest):
     manifest["files"] = paths
 
 
+def os_name(release="/etc/os-release", debian="/etc/debian_version"):
+    """The OS as Argus shows it: Debian with its point release ("Debian 13.7", from DEBIAN_VERSION_FULL,
+    or /etc/debian_version before Debian 13 added it), anything else by its PRETTY_NAME. "" if unreadable."""
+    kv = {}
+    try:
+        with open(release, encoding="utf-8") as f:
+            for line in f:
+                if "=" in line and not line.startswith("#"):
+                    k, v = line.split("=", 1)
+                    kv[k.strip()] = v.strip().strip('"').strip("'")
+    except OSError:
+        return ""
+    if kv.get("ID") == "debian":
+        v = kv.get("DEBIAN_VERSION_FULL", "")
+        if not v:
+            try:
+                with open(debian, encoding="utf-8") as f:
+                    v = f.read().strip()
+            except OSError:
+                pass
+        if re.fullmatch(r"[0-9][0-9.]*", v):  # testing and sid read "forky/sid": those keep the pretty name
+            return "Debian " + v
+    return kv.get("PRETTY_NAME", "")
+
+
 def versions():
     out = {"backup_format": 1}
-    try:
-        with open("/etc/os-release", encoding="utf-8") as f:
-            for line in f:
-                if line.startswith("PRETTY_NAME="):
-                    out["os"] = line.split("=", 1)[1].strip().strip('"')
-    except OSError:
-        pass
+    name = os_name()
+    if name:
+        out["os"] = name
     for pkg in ("zabbix-server-pgsql", "postgresql-17", "timescaledb-2-postgresql-17"):
         try:
             v = run(["dpkg-query", "-W", "-f=${Version}", pkg], timeout=30).stdout.decode().strip()

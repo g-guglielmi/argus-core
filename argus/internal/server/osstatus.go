@@ -232,7 +232,7 @@ type coreOSView struct {
 	SecUpdates     int    `json:"sec_updates"`     // pending security updates (-1 = unknown)
 	RebootRequired bool   `json:"reboot_required"` // /var/run/reboot-required present
 	ReportedAt     int64  `json:"reported_at"`     // unix seconds the host last reported
-	OS             string `json:"os,omitempty"`    // e.g. "Debian GNU/Linux 13 (trixie)"
+	OS             string `json:"os,omitempty"`    // e.g. "Debian 13.7" (older reporters: "Debian GNU/Linux 13 (trixie)")
 	// Zabbix server package versions (host-installed; reporter r2+): installed and the apt
 	// candidate, normalized (no epoch/revision). Both empty when Zabbix isn't on the host or the
 	// reporter predates them.
