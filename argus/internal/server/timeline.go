@@ -14,9 +14,9 @@ import (
 
 // One timeline per incident (DESIGN section 7b): what happened to it in order, so "did anyone get
 // paged?" has an answer. The notifier records when it opened, each channel it alerted (or couldn't:
-// the channel's error), escalated to or reminded, a hold behind a down master or a wait for a
-// maintenance window, the channels told of an acknowledgement, and the end; the handlers record the
-// acknowledgements and the notes. Kept a year (incident_log).
+// the channel's error), escalated to or reminded, a hold behind a down master, a wait for a
+// maintenance window or for a problem heard of late, the channels told of an acknowledgement, and the
+// end; the handlers record the acknowledgements and the notes. Kept a year (incident_log).
 
 const incidentLogKeep = 365 * 24 * time.Hour
 

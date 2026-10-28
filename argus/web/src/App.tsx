@@ -8920,6 +8920,7 @@ function IncidentTimeline({ eventId, start }: { eventId: string; start: number }
       case 'reminder': return <><b>{(e.detail || 'reminder').replace(/^r/, 'R')}</b> to {e.channel}</>
       case 'send_failed': return <span className="tl-fail"><b>Could not alert</b> {e.channel}: {e.detail}</span>
       case 'held': return <><b>Held</b>: its alert waits while {e.detail} is down</>
+      case 'late': return <><b>Reported late</b>: Zabbix got its readings {e.detail} after it began (stored while the link was down), so its alert waits to see if it is already over</>
       case 'maintenance': return <><b>Waited</b> for the maintenance window {e.detail}</>
       case 'ack': return <><b>Acknowledged</b> by {e.who}{q}</>
       case 'unack': return <><b>Acknowledgement removed</b> by {e.who}</>

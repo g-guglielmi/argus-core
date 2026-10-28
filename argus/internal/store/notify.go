@@ -59,6 +59,9 @@ type NotifyState struct {
 	// Recovery is how its RESOLVED message names what came back ("GitHub answers again from this
 	// site"): its trigger's argus.recovery tag, kept while the problem is open ("" = none).
 	Recovery string
+	// Late is set when Argus heard of the problem well after it began: Zabbix only got its readings
+	// late, from a probe sending what it stored while cut off. Its alert waits to see if it is over.
+	Late bool
 }
 
 // --- channels ---
@@ -228,7 +231,7 @@ func boolInt(b bool) int {
 // NotifyStates returns every tracked event keyed by event id.
 func (s *Store) NotifyStates(ctx context.Context) (map[string]NotifyState, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT event_id,host_id,item_id,host_name,name,severity,state,first_seen,fired_at,incident_start,ack_notified,held_at,recovery FROM notify_events`)
+		`SELECT event_id,host_id,item_id,host_name,name,severity,state,first_seen,fired_at,incident_start,ack_notified,held_at,recovery,late FROM notify_events`)
 	if err != nil {
 		return nil, err
 	}
@@ -237,11 +240,12 @@ func (s *Store) NotifyStates(ctx context.Context) (map[string]NotifyState, error
 	for rows.Next() {
 		var st NotifyState
 		var fired sql.NullInt64
-		var ackN int
-		if err := rows.Scan(&st.EventID, &st.HostID, &st.ItemID, &st.HostName, &st.Name, &st.Severity, &st.State, &st.FirstSeen, &fired, &st.IncidentStart, &ackN, &st.HeldAt, &st.Recovery); err != nil {
+		var ackN, late int
+		if err := rows.Scan(&st.EventID, &st.HostID, &st.ItemID, &st.HostName, &st.Name, &st.Severity, &st.State, &st.FirstSeen, &fired, &st.IncidentStart, &ackN, &st.HeldAt, &st.Recovery, &late); err != nil {
 			return nil, err
 		}
 		st.AckNotified = ackN != 0
+		st.Late = late != 0
 		if fired.Valid {
 			v := fired.Int64
 			st.FiredAt = &v
@@ -257,19 +261,22 @@ func (s *Store) UpsertNotifyState(ctx context.Context, st NotifyState) error {
 	if st.FiredAt != nil {
 		fired = *st.FiredAt
 	}
-	ackN := 0
+	ackN, late := 0, 0
 	if st.AckNotified {
 		ackN = 1
 	}
+	if st.Late {
+		late = 1
+	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO notify_events(event_id,host_id,item_id,host_name,name,severity,state,first_seen,fired_at,incident_start,ack_notified,held_at,recovery)
-		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+		`INSERT INTO notify_events(event_id,host_id,item_id,host_name,name,severity,state,first_seen,fired_at,incident_start,ack_notified,held_at,recovery,late)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(event_id) DO UPDATE SET
 		   host_id=excluded.host_id, item_id=excluded.item_id, host_name=excluded.host_name, name=excluded.name,
 		   severity=excluded.severity, state=excluded.state, fired_at=excluded.fired_at,
 		   incident_start=excluded.incident_start, ack_notified=excluded.ack_notified, held_at=excluded.held_at,
-		   recovery=excluded.recovery`,
-		st.EventID, st.HostID, st.ItemID, st.HostName, st.Name, st.Severity, st.State, st.FirstSeen, fired, st.IncidentStart, ackN, st.HeldAt, st.Recovery)
+		   recovery=excluded.recovery, late=excluded.late`,
+		st.EventID, st.HostID, st.ItemID, st.HostName, st.Name, st.Severity, st.State, st.FirstSeen, fired, st.IncidentStart, ackN, st.HeldAt, st.Recovery, late)
 	return err
 }
 

@@ -13,6 +13,22 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Fixed
+- **No alert and RESOLVED pair for what a probe reports late after an outage.** A probe cut off from
+  the core keeps checking and stores the readings; as it reconnects it sends them, and Zabbix opens
+  the problems they show, dated when they began, which the next live check closes a minute later.
+  Each one sent its alert ("Since 00:34", at 00:58) and its RESOLVED right after. Now a problem
+  Argus hears of more than 2 minutes after it began (and after Argus's own previous look, so not
+  one from while Argus itself was down) waits the settle window from that moment (Settings,
+  Alerting, "Settle after an outage", 5 minutes by default): one that closes meanwhile sends
+  nothing, one still open then alerts as usual with its real start. Its incident timeline says
+  "Reported late" and, when it closed, that nothing was sent. The probe's own "not reporting" and
+  "unreachable" alerts and their recovery still tell of the outage as it happens.
+- **The settle window after a probe comes back counts from when Argus saw it come back.** Zabbix
+  dates the probe's recovery by the stored reading that closed its "no data" trigger, taken up to
+  3 minutes before it arrived, so the window ended that much early and alerts it should have held
+  still went out.
+
 ## [0.9.10] - 2026-10-28
 
 ### Added

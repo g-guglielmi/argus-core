@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"argus/internal/provision"
@@ -192,6 +193,15 @@ func loadMasters(ctx context.Context, st *store.Store, zbx *zabbix.Client, hosts
 		if trigs, err := zbx.ItemTriggers(ctx, list); err == nil {
 			m.recovered, m.settle = masterRecoveries(trigs), settle
 		}
+		// Settle from the later of the two: Zabbix's recovery time or when the notifier saw it come back.
+		for id, at := range mastersBack() {
+			if m.recovered == nil {
+				m.recovered, m.settle = map[string]int64{}, settle
+			}
+			if at > m.recovered[id] {
+				m.recovered[id] = at
+			}
+		}
 		// A controller just back: its devices wait out the window too (reconnecting, re-adopting).
 		for _, g := range loadUniFiGroups(ctx, st, zbx) {
 			if r := controllerRecoveredAt(g.url); r > 0 {
@@ -203,6 +213,53 @@ func loadMasters(ctx context.Context, st *store.Store, zbx *zabbix.Client, hosts
 		}
 	}
 	return m
+}
+
+// masterClock is when the notifier, by its own clock, last saw each master come back: Zabbix dates a
+// recovery by the reading that closed it, and a probe reconnecting sends what it stored while cut off,
+// so its "no data" trigger closes on a reading taken minutes before it arrived. Settling from that
+// time alone, the window would end before the site has settled. Kept in memory: after a restart the
+// recovery times Zabbix keeps still apply.
+var masterClock = struct {
+	sync.Mutex
+	down map[string]bool  // master item id -> down at the last notifier pass
+	back map[string]int64 // master item id -> when the notifier saw it come back (unix s)
+}{down: map[string]bool{}, back: map[string]int64{}}
+
+// masterBackKeep is how long a seen recovery is remembered: longer than any settle window.
+const masterBackKeep = 24 * 60 * 60
+
+// noteMastersDown records which masters are down at this notifier pass (masterDown); those that were
+// down at the last one and no longer are came back now.
+func noteMastersDown(down map[string]bool, now int64) {
+	masterClock.Lock()
+	defer masterClock.Unlock()
+	for id := range masterClock.down {
+		if !down[id] {
+			masterClock.back[id] = now
+		}
+	}
+	masterClock.down = map[string]bool{}
+	for id := range down {
+		masterClock.down[id] = true
+		delete(masterClock.back, id)
+	}
+	for id, at := range masterClock.back {
+		if now-at > masterBackKeep {
+			delete(masterClock.back, id)
+		}
+	}
+}
+
+// mastersBack is when the notifier saw each master come back, by its own clock.
+func mastersBack() map[string]int64 {
+	masterClock.Lock()
+	defer masterClock.Unlock()
+	out := make(map[string]int64, len(masterClock.back))
+	for id, at := range masterClock.back {
+		out[id] = at
+	}
+	return out
 }
 
 // masterRecoveries reads, per master sensor, when its "down" trigger (an error-level one, or a "no

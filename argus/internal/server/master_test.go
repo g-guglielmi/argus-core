@@ -237,3 +237,28 @@ func TestMasterDown(t *testing.T) {
 		t.Fatalf("down = %v (want the error and the no-data warning, not the loss warning)", down)
 	}
 }
+
+// The notifier notes, by its own clock, when a master it saw down is back; a master down again is
+// forgotten until it is back again, and a recovery is forgotten after a day.
+func TestNoteMastersDown(t *testing.T) {
+	masterClock.Lock()
+	masterClock.down, masterClock.back = map[string]bool{}, map[string]int64{}
+	masterClock.Unlock()
+	noteMastersDown(map[string]bool{"700": true}, 1000)
+	if b := mastersBack(); len(b) != 0 {
+		t.Fatalf("down: want nothing back, got %v", b)
+	}
+	noteMastersDown(map[string]bool{}, 1060)
+	if b := mastersBack(); b["700"] != 1060 {
+		t.Fatalf("back: want 700 at 1060, got %v", b)
+	}
+	noteMastersDown(map[string]bool{"700": true}, 1100)
+	if b := mastersBack(); len(b) != 0 {
+		t.Fatalf("down again: want nothing back, got %v", b)
+	}
+	noteMastersDown(map[string]bool{}, 1200)
+	noteMastersDown(map[string]bool{}, 1200+masterBackKeep+1)
+	if b := mastersBack(); len(b) != 0 {
+		t.Fatalf("a day later: want it forgotten, got %v", b)
+	}
+}

@@ -978,6 +978,10 @@ CREATE TABLE IF NOT EXISTS reports (
 	if err := s.ensureColumn("notify_events", "ack_notified INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	// Set when Argus heard of a problem well after it began (a probe's stored readings): its alert waits.
+	if err := s.ensureColumn("notify_events", "late INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	// Escalation + reminders, per channel (global and personal): "notify after" = minutes a problem must
 	// stay open and unacknowledged before this channel hears of it (0 = with the first alert); "remind
 	// every" = minutes to the first reminder while it stays open and unacknowledged, each next one twice

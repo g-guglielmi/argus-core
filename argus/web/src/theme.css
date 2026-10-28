@@ -1403,7 +1403,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .tl .tl-s { color: var(--muted); }
 .tl .tl-fail { color: var(--err); }
 .tl-k-opened { --tc: var(--err); } .tl-k-alerted, .tl-k-escalated, .tl-k-note { --tc: var(--accent); } .tl-k-reminder { --tc: var(--warn); }
-.tl-k-ack, .tl-k-unack, .tl-k-ack_told { --tc: var(--acked); } .tl-k-held { --tc: var(--paused); } .tl-k-maintenance { --tc: var(--maint); }
+.tl-k-ack, .tl-k-unack, .tl-k-ack_told { --tc: var(--acked); } .tl-k-held, .tl-k-late { --tc: var(--paused); } .tl-k-maintenance { --tc: var(--maint); }
 .tl-k-resolved { --tc: var(--ok); } .tl-k-send_failed { --tc: var(--err); }
 @media (max-width: 640px) {
   .tl-row > td { padding: 8px 10px 12px !important; }

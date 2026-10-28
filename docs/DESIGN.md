@@ -608,8 +608,10 @@ timeline): an incident row on History (and a host's History tab) opens onto what
 order (`GET /api/incidents/{id}/timeline`, anyone who sees its host). The notifier records when it
 opened (severity and name, at the incident's start), each channel it alerted at once, escalated to
 (its Notify after) or reminded, and a send that failed with the channel's error, a hold behind a down
-master (once per hold) and a wait for a maintenance window (once per wait), the channels told of an
-acknowledgement, and the end with how many channels heard; the handlers record each acknowledgement
+master (once per hold), a wait for a maintenance window (once per wait) and a problem heard of late
+(section 7, masters: "Reported late", with how long after it began), the channels told of an
+acknowledgement, and the end with how many channels heard (or, for a problem heard of late that
+closed while it waited, that nothing was sent); the handlers record each acknowledgement
 (who, from the alert link too, and the note), its removal, and the notes left on the sensor. Channels
 read as "IT team (Telegram)", a personal one as its owner's. Incidents from before 0.9.9 have none.
 Hiding a sensor says its problems aren't news: a problem whose sensors are all hidden (`sensorsHidden`)
@@ -1355,11 +1357,26 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   `ARGUS_SETTLE_SECONDS`, 0 = off): a site or a device coming back up has services still starting
   and agents not yet listening, which would otherwise alert on the way (the maintenance rule applied
   to recoveries: whatever is still open when the window ends alerts then). The recovery time is the
-  master's "down" trigger's `lastchange` in Zabbix (`masterRecoveries`, read with the masters'
-  triggers each tick), so the window survives a core restart; a settling hold isn't shown on the
-  rows (`markHeld` reads no trigger states). A problem held by a down master also waits out the
-  alert delay again (at least 90 s) after the master recovers; a held problem that is still open
-  after that alerts normally.
+  later of the master's "down" trigger's `lastchange` in Zabbix (`masterRecoveries`, read with the
+  masters' triggers each tick), which keeps the window across a core restart, and the moment the
+  notifier saw the master come back (`noteMastersDown`, in memory): Zabbix dates a recovery by the
+  reading that closed it, and a probe reconnecting closes its "no data" trigger with a stored reading
+  taken up to the trigger's period before it arrived, which alone would end the window minutes
+  early. A settling hold isn't shown on the rows (`markHeld` reads no trigger states). A problem
+  held by a down master also waits out the alert delay again (at least 90 s) after the master
+  recovers; a held problem that is still open after that alerts normally.
+  **Problems heard of late.** A probe cut off from the core keeps checking and stores the readings;
+  as it reconnects it sends them, and Zabbix opens the problems they show dated when they began
+  ("Since 00:34" at 00:58), which the next live check closes again: every one would send its alert
+  and its RESOLVED a minute apart. A problem that began more than 2 minutes before the notifier's
+  previous read of the problem list yet wasn't in it is heard of late (`heardLate`; the last read is
+  `notifier_last_read` in meta, so one that began while Argus was down isn't late, and Argus's own
+  problems never are). It is flagged (`notify_events.late`) and its alert waits the settle window (at
+  least the alert delay, 90 s) from when Argus first saw it: one that closes meanwhile sends nothing,
+  neither the problem nor its recovery, and one still open then alerts as usual, with its real
+  start. Its timeline says "Reported late" and, if it closed, that nothing was sent. The site's own
+  messages are the probe's "not reporting" / "unreachable" alerts and their recovery, which Zabbix
+  raises in real time.
   The census applies the same rule (`markHeld`): an unacknowledged error or warning a **down** master
   holds (not one merely yet to report, so rows don't flicker) carries `held_by` (the master's host,
   item and label), the master's row `holds` (how many), and `/api/census` counts them as `held`

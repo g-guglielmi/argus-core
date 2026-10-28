@@ -160,7 +160,7 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 | `ARGUS_SESSION_IDLE_MINUTES` | `0` | _(UI)_ sign out after this long with no activity (`0` disables the idle timeout) |
 | `ARGUS_TIME_FORMAT` | `24h` | _(UI)_ how clocks read in Argus and on status pages: `24h` or `12h` |
 | `ARGUS_ALERT_DELAY_SECONDS` | `60` | _(UI)_ how long a problem must last before anyone is notified (flap guard); `0` alerts at once. "No data" alerts skip it. Per-channel escalation and reminders are set on each channel |
-| `ARGUS_SETTLE_SECONDS` | `300` | _(UI)_ after a probe, a device's ping, a collector or an upstream device comes back, the alerts of what it holds wait this long (services still starting, agents not yet listening); whatever is still wrong when it ends is alerted then. `0` switches it off |
+| `ARGUS_SETTLE_SECONDS` | `300` | _(UI)_ after a probe, a device's ping, a collector or an upstream device comes back, the alerts of what it holds wait this long (services still starting, agents not yet listening), as does a problem Argus hears of late (the readings a probe stored while cut off); whatever is still wrong when it ends is alerted then. `0` switches it off |
 | `ARGUS_TRUSTED_ORIGINS` | *(empty)* | _(UI)_ **Allowed FQDNs and IPs**: the addresses people type in the browser to reach Argus, comma-separated; any other `Host` is refused (DNS rebinding). Empty = off. The Public URL host and localhost are always allowed; probe endpoints are never checked. `*` turns it off (lockout recovery). Independently of the list, a state-changing API request from another origin (or a non-JSON body) is always refused |
 
 **Notifications**

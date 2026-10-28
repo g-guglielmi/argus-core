@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +24,14 @@ const (
 	minHoldGraceSecs   = 90
 	notifyPollInterval = 30 * time.Second
 	notifyBaselineKey  = "notifier_baseline"
+	// lateSlackSecs is how long before Argus's previous read of the problem list a problem must have
+	// begun, without being in it, to count as heard of late: Zabbix only just got its readings, from a
+	// probe (or an agent) sending what it stored while it couldn't reach the core. Zabbix dates such a
+	// problem by its readings, so the backlog opens problems that the next live check closes again.
+	lateSlackSecs = 120
+	// notifyLastReadKey is when the alert loop last read the problem list (unix s), kept across restarts:
+	// a problem that began while Argus was down isn't late, Argus just wasn't looking.
+	notifyLastReadKey = "notifier_last_read"
 	// Set once the alerts already firing when per-channel delivery tracking arrived were credited to the
 	// channels that got them under the old "every matching channel" routing, so they still resolve there.
 	notifyDeliveriesKey = "notifier_deliveries_backfilled"
@@ -251,6 +260,11 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		return
 	}
 	notifierRanAt.Store(time.Now().Unix()) // the heartbeat's "alert loop is running" (heartbeat.go)
+	var lastRead int64
+	if v, ok, _ := st.MetaGet(ctx, notifyLastReadKey); ok {
+		lastRead = atoi64(v)
+	}
+	_ = st.MetaSet(ctx, notifyLastReadKey, strconv.FormatInt(time.Now().Unix(), 10))
 
 	// One-time baseline: on the very first run, record everything currently active as
 	// 'baseline' so a fresh install (or a Zabbix already full of problems) doesn't spam.
@@ -347,11 +361,14 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	}
 
 	// Master sensors: a host's ping (or chosen sensor) and its site's probe hold its other alerts while down.
-	masters := loadMasters(ctx, st, zbx, hosts, problems, targets, int64(mgr.Settle()/time.Second))
+	settle := int64(mgr.Settle() / time.Second)
+	noteMastersDown(masterDown(problems, targets), time.Now().Unix())
+	masters := loadMasters(ctx, st, zbx, hosts, problems, targets, settle)
 	grace := int64(flapDelay / time.Second)
 	if grace < minHoldGraceSecs {
 		grace = minHoldGraceSecs
 	}
+	lateWait := max(settle, grace) // how long a problem heard of late waits (below)
 
 	// The notes on sensors in trouble go out with their alerts; once a sensor is OK they clear (below).
 	notes, _ := st.LiveSensorNotes(ctx)
@@ -421,6 +438,8 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			tlog(ctx, st, eid, "resolved", "", "", ev.Name+fmt.Sprintf(" (%d channels told)", told), 0)
 		} else if stt.State == "firing" {
 			tlog(ctx, st, eid, "resolved", "", "", recoveryTitle(stt), 0)
+		} else if stt.State == "pending" && stt.Late {
+			tlog(ctx, st, eid, "resolved", "", "", "it closed while its alert waited, so nothing was sent", 0)
 		}
 		forgetTimelineState(eid)
 		_ = st.DeleteNotifyState(ctx, eid)
@@ -469,10 +488,15 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			}
 		}
 		if !seen {
+			late := heardLate(p, lastRead)
 			_ = st.UpsertNotifyState(ctx, store.NotifyState{
 				EventID: p.EventID, HostID: hostID, ItemID: itemID, HostName: hostName, Name: p.Name,
-				Severity: sev, State: "pending", FirstSeen: now.Unix(), IncidentStart: start, Recovery: recoveryOf(p),
+				Severity: sev, State: "pending", FirstSeen: now.Unix(), IncidentStart: start, Recovery: recoveryOf(p), Late: late,
 			})
+			if late {
+				logger.Info("notifier: problem heard of late, its alert waits to see if it is over", "event", p.EventID, "host", hostName, "name", p.Name, "began", p.Clock)
+				tlog(ctx, st, p.EventID, "late", "", "", notify.FormatDuration(now.Unix()-atoi64(p.Clock)), 0)
+			}
 			continue
 		}
 		if r := recoveryOf(p); r != stt.Recovery { // an alert from before the sentences existed, or a template change
@@ -506,6 +530,12 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 				continue
 			}
 			if stt.HeldAt > 0 && now.Unix()-stt.HeldAt < grace {
+				continue
+			}
+			// Heard of late: a probe's stored readings, delivered as it reconnected, open problems that
+			// the next live check closes. It waits the settle window from when Argus first saw it, and
+			// alerts only if it is still open then.
+			if stt.Late && now.Unix()-stt.FirstSeen < lateWait {
 				continue
 			}
 			// A "no data" trigger already waited its own period (that IS its flap guard), so it alerts
@@ -638,6 +668,18 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	if terr == nil {
 		sweepSensorNotes(ctx, st, notes, problems, targets, grace, now.Unix())
 	}
+}
+
+// heardLate reports whether Argus hears of a problem well after it began: it began more than
+// lateSlackSecs before the previous read of the problem list (lastRead) and wasn't in it. Zabbix then
+// only just got its readings, as a probe (or an agent) that couldn't reach the core sent what it had
+// stored. Argus's own problems are dated by Argus, never late; with no previous read nothing is.
+func heardLate(p zabbix.Problem, lastRead int64) bool {
+	if lastRead == 0 || isSynthetic(p.EventID) {
+		return false
+	}
+	c := atoi64(p.Clock)
+	return c > 0 && c < lastRead-lateSlackSecs
 }
 
 // plannedDelivery is one send the notifier owes a destination this tick: the alert itself (the

@@ -100,3 +100,27 @@ func TestFormatThreshold(t *testing.T) {
 		}
 	}
 }
+
+// A problem is heard of late when it began well before the previous read of the problem list yet
+// wasn't in it. Zabbix's own lag, Argus's own problems and a first read never count.
+func TestHeardLate(t *testing.T) {
+	p := func(id string, clock int64) zabbix.Problem { return zabbix.Problem{EventID: id, Clock: itoa64(clock)} }
+	cases := []struct {
+		name     string
+		p        zabbix.Problem
+		lastRead int64
+		want     bool
+	}{
+		{"a probe's stored readings", p("1", 1000), 1000 + 22*60, true},
+		{"Zabbix's own lag", p("1", 1000), 1000 + 60, false},
+		{"began after the last read", p("1", 1000), 990, false},
+		{"no earlier read", p("1", 1000), 0, false},
+		{"Argus's own problem", p(synthPrefix+"x", 1000), 1000 + 22*60, false},
+		{"no clock", p("1", 0), 1000, false},
+	}
+	for _, c := range cases {
+		if got := heardLate(c.p, c.lastRead); got != c.want {
+			t.Errorf("%s: heardLate = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
