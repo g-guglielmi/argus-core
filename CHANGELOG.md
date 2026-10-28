@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.12] - 2026-10-28
+
 ### Changed
 - **A probe VM's host tools sit with the probe on the Updates page.** The host tools (the VM's OS
   reporter, console, guest agent and patching scripts, which the sidecar installs from the probe
