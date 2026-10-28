@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.10] - 2026-10-28
+
 ### Added
 - **The hypervisor's guest agent on the core VM** (`argus-guest-agent`, a host tool: installed by the
   update, run at boot and again an hour after a failed try). XCP-ng and XenServer get
@@ -20,7 +22,7 @@ GitHub Release from the matching section below.
   open-vm-tools, KVM qemu-guest-agent, Hyper-V hyperv-daemons, so the hypervisor shows the VM's
   addresses, OS and memory. Only the one of the hypervisor the VM runs on is installed, and each
   starts only on its own; a VM that already has a Xen agent keeps it, and a core installed by hand
-  is left alone. The next core-vm image carries all of them from its build. The script is one file
+  is left alone. core-vm v0.1.9 carries all of them from its build. The script is one file
   with the probe VM's, and the weekly scan fails when the two copies drift. Xen's agent runs from
   XenServer's own systemd unit (`mk/xe-linux-distribution.service` in their repository, with
   Debian's paths), which their .deb leaves out: systemd no longer runs the package's SysV script
@@ -29,6 +31,9 @@ GitHub Release from the matching section below.
   without "quiet", so the kernel printed every informational line (the containers' network ports,
   systemd's notes) over the console menu; now only errors reach the screen and the rest stays in the
   journal. Only on the appliance; a core installed by hand keeps its own setting.
+
+### Changed
+- gopdf, the PDF reports' library, 0.38.1 to 0.38.2.
 
 ## [core-vm/v0.1.9] - 2026-10-28
 
