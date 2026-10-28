@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.11] - 2026-10-28
+
 ### Fixed
 - **No alert and RESOLVED pair for what a probe reports late after an outage.** A probe cut off from
   the core keeps checking and stores the readings; as it reconnects it sends them, and Zabbix opens
