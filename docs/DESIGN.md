@@ -2057,7 +2057,8 @@ release instead of waiting for a new probe-vm image. `deploy/probe-vm/host/` in 
 the VM's host files (the OS reporter, the console menu and its login wrapper, the apply script,
 their units) with a `manifest` of the same grammar, and `install-host-tools.py` (Python, standard
 library, the Go installer's logic: write only what changed, atomically, with the manifest's mode,
-`@STATE_DIR@` rendered, the reload marker dropped when a systemd file changed). The probe image
+`@STATE_DIR@` rendered, the reload marker dropped when any file changed, so the VM reloads and
+re-reports at once, as the core does through its `run` entries). The probe image
 carries that folder as `/host-tools` (a named build context, `LABEL io.argus.host-tools`), and the
 image build of the VM runs the same installer against `/` and writes `host-tools.json` into the
 probe's data folder: that file is the sign of a probe VM. The argus-updater's probe-watch mode
