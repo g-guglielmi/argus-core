@@ -132,8 +132,14 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   remote WMI keeps a domain account with remote rights on every server and needs firewall openings
   for it, and remote WMI from a Linux probe is fragile. Agents could also add themselves (Zabbix
   autoregistration, adopted like a discovery result). The PRTG import maps WMI devices to it (today
-  they become Windows (SNMP)). Lab first on a Windows 11 and a Windows Server VM. - _(BE+templates+
-  docs)_ M-L
+  they become Windows (SNMP)). Lab first on a Windows 11 and a Windows Server VM. Second step, the
+  first remediation in Argus: a per-service **"Start it when it stops"** switch (off by default) on
+  the Services sensors; when Argus sees the service down it runs the start through the agent
+  (`script.execute` on the host, a remote command the active agent picks up at its next refresh,
+  `AllowKey=system.run[net start *]` in the MSI command line so the agent can start services and
+  nothing else), a few attempts per hour at most, never inside a maintenance window or behind a
+  down master, each attempt on the incident timeline, and the alert goes out only when the start
+  fails or the service falls again. - _(BE+templates+docs)_ M-L
 
 **SNMP gaps** (DESIGN §5) - unRAID disk-temp/SMART, Hyper-V per-VM (WMI), XCP-NG XAPI, UniFi PoE/WAN, AdGuard stats, NUT protocol - are handled inside the per-class work above, not a separate track.
 
