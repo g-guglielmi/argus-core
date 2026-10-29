@@ -21,7 +21,7 @@ zabbix_export:
         - name: Templates/Argus
       items:
         - uuid: 91e1747a66584223811a1687aa2aa5a0
-          name: 'UPS raw data'
+          name: 'UPS data'
           type: SCRIPT
           key: nut.raw
           delay: 1m

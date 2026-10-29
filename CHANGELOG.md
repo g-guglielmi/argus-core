@@ -13,6 +13,24 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Fixed
+- **A UniFi OS update is one alert, not fifty.** A controller call that can't reach the controller
+  at all (connection refused or timed out, as when the console reboots for an update) now opens the
+  controller's outage on its own, "UniFi controller 10.0.0.1:443: does not answer", whichever device
+  makes it; the fold from 0.9.7 waited for half the site's devices to show it, which an update over
+  in minutes never reached, and 55 alerts went out for two devices. The devices' alerts are held
+  behind it and, once it answers again, wait out the settle window. The quorum stays for the other
+  signature, devices reported offline while they still ping.
+- **A failing controller call is one alert per device, not one per sensor.** While the call a
+  device's readings come from fails for a reason of its own (a bad key, a wrong MAC), its sensors no
+  longer each alert "stopped collecting" with the same error: the call does, once, "Controller data
+  stopped collecting" with the reason. The same for the other families read through one call
+  (AdGuard, Home Assistant, a UPS over its API).
+- **A burst of alerts no longer loses its tail to the chat services' limits.** Telegram, Discord,
+  Slack and the others refuse too many messages at once with "HTTP 429" and a wait, and the refused
+  ones were lost. Sends to one destination are now spaced (Telegram 3 s, Discord 2 s, the rest 1 s;
+  email none) and a refusal is waited out as the service asked, then sent again.
+
 ## [0.9.12] - 2026-10-28
 
 ### Changed

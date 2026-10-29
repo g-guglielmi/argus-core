@@ -17,15 +17,18 @@ import (
 	"argus/internal/zabbix"
 )
 
-// A UniFi controller that restarts (its Network application updating) or drops off the network takes
-// every device read through it with it: the API answers with the devices marked disconnected, or
-// doesn't answer at all. Each device would then alert on its own, one "offline on the controller" or
-// "stopped collecting" per access point, switch and gateway, and the same again when they return. That
-// is one event, the controller's, so Argus reads it as one: when enough of a controller's devices show
-// that signature at once, it raises one problem on the controller's own host (the console, else the
-// gateway, else the first device) and holds the devices' alerts behind it, the way a down probe holds
-// its site. A device still offline once the controller is back alerts on its own after the settle
-// window. The devices of a controller are the hosts that share its {$UNIFI.URL}.
+// A UniFi controller that restarts (its Network application updating) or drops off the network (a
+// UniFi OS update reboots the console) takes every device read through it with it: the API answers
+// with the devices marked disconnected, or doesn't answer at all. Each device would then alert on its
+// own, one "offline on the controller" or "stopped collecting" per access point, switch and gateway,
+// and the same again when they return. That is one event, the controller's, so Argus reads it as one:
+// it raises one problem on the controller's own host (the console, else the gateway, else the first
+// device) and holds the devices' alerts behind it, the way a down probe holds its site. Two
+// signatures: a call that can't reach the controller at all (connection refused, timed out) says the
+// controller is away whichever device makes it, so one device's is enough; devices reported offline
+// while they still answer ping need a quorum, since two access points re-adopting on their own are
+// two problems. A device still offline once the controller is back alerts on its own after the
+// settle window. The devices of a controller are the hosts that share its {$UNIFI.URL}.
 
 const (
 	unifiURLMacro   = "{$UNIFI.URL}"
@@ -137,9 +140,11 @@ func loadUniFiGroups(ctx context.Context, st *store.Store, zbx *zabbix.Client) [
 
 // deviceSignal is what one UniFi host says about its controller.
 type deviceSignal struct {
-	connected int  // its "controller state" reading: 1 connected, 0 not, -1 unknown (never read)
-	pingUp    bool // its ping (true when it has none): a device that doesn't ping is its own problem
-	rawBroken bool // the sensor that calls the controller has stopped (not supported for long enough)
+	connected   int    // its "controller state" reading: 1 connected, 0 not, -1 unknown (never read)
+	pingUp      bool   // its ping (true when it has none): a device that doesn't ping is its own problem
+	rawBroken   bool   // the sensor that calls the controller has stopped (not supported for long enough)
+	unreachable bool   // ...because the call couldn't reach the controller at all (controllerUnreachable)
+	rawError    string // the call's error, for the reading
 }
 
 // affected reports the controller's signature on a device: reported offline while still answering,
@@ -148,24 +153,42 @@ func (d deviceSignal) affected() bool {
 	return (d.connected == 0 && d.pingUp) || d.rawBroken
 }
 
-// controllerOutage is one controller read as restarting or unreachable, with the devices showing it.
-type controllerOutage struct {
-	group    unifiGroup
-	affected []string // host ids, sorted
+// controllerUnreachable reads a controller call's error for the controller not answering at all,
+// as against refusing the call (an HTTP status: a bad key, a wrong MAC or site, which are the host's
+// own) or the host's own macros being wrong. Zabbix words a failed connection "cannot get URL: ..."
+// (refused, no route, not resolved, TLS) and a call that hangs as timed out.
+func controllerUnreachable(err string) bool {
+	e := strings.ToLower(err)
+	return strings.Contains(e, "cannot get url") || strings.Contains(e, "timed out") || strings.Contains(e, "timeout")
 }
 
-// controllerOutages finds the controllers whose devices show the signature in numbers.
+// controllerOutage is one controller read as restarting or unreachable, with the devices showing it.
+type controllerOutage struct {
+	group       unifiGroup
+	affected    []string // host ids, sorted
+	unreachable bool     // the controller doesn't answer its calls (else: it reports the devices offline)
+	err         string   // one such call's error
+}
+
+// controllerOutages finds the controllers in outage: any device whose call can't reach it, or a
+// quorum of devices showing its signature.
 func controllerOutages(groups []unifiGroup, signals map[string]deviceSignal) []controllerOutage {
 	var out []controllerOutage
 	for _, g := range groups {
 		var hit []string
+		o := controllerOutage{group: g}
 		for _, h := range g.devices {
-			if signals[h].affected() {
+			s := signals[h]
+			if s.affected() {
 				hit = append(hit, h)
 			}
+			if s.unreachable && !o.unreachable {
+				o.unreachable, o.err = true, s.rawError
+			}
 		}
-		if len(hit) >= controllerQuorum && 2*len(hit) >= len(g.devices) {
-			out = append(out, controllerOutage{group: g, affected: hit})
+		if o.unreachable || (len(hit) >= controllerQuorum && 2*len(hit) >= len(g.devices)) {
+			o.affected = hit
+			out = append(out, o)
 		}
 	}
 	return out
@@ -270,7 +293,8 @@ func unifiSignals(ctx context.Context, zbx *zabbix.Client, groups []unifiGroup, 
 		}
 		for _, h := range it.Hosts {
 			if d, member := signals[h.HostID]; member {
-				d.rawBroken = true
+				d.rawBroken, d.rawError = true, it.Error
+				d.unreachable = controllerUnreachable(it.Error)
 				signals[h.HostID] = d
 			}
 		}
@@ -303,13 +327,18 @@ func controllerProblems(outages []controllerOutage, hostName map[string]string, 
 			}
 		}
 		sort.Strings(names)
+		name := fmt.Sprintf("UniFi controller %s: %d of %d devices offline on it", controllerLabel(o.group.url), len(o.affected), len(o.group.devices))
+		reading := "The controller is restarting or unreachable; offline on it: " + strings.Join(names, ", ")
+		if o.unreachable {
+			name = fmt.Sprintf("UniFi controller %s: does not answer", controllerLabel(o.group.url))
+			reading = fmt.Sprintf("%s. %d of %d devices read through it", unsupportedReading(o.err), len(o.affected), len(o.group.devices))
+		}
 		problems = append(problems, zabbix.Problem{
-			EventID: id, ObjectID: id,
-			Name:     fmt.Sprintf("UniFi controller %s: %d of %d devices offline on it", controllerLabel(o.group.url), len(o.affected), len(o.group.devices)),
+			EventID: id, ObjectID: id, Name: name,
 			Severity: synthSevInterface, Clock: itoa64(controllerSince(o.group.url, now)), Acknowledged: "0",
 		})
 		targets[id] = zabbix.TriggerTarget{Hosts: []zabbix.TargetHost{h}}
-		readings[id] = "The controller is restarting or unreachable; offline on it: " + strings.Join(names, ", ")
+		readings[id] = reading
 	}
 	controllerEnded(open, now)
 	return problems, targets, readings
@@ -319,6 +348,9 @@ func controllerProblems(outages []controllerOutage, hostName map[string]string, 
 func controllerUpName(name string) string {
 	if !strings.HasPrefix(name, "UniFi controller ") {
 		return ""
+	}
+	if rest, ok := strings.CutSuffix(name, ": does not answer"); ok {
+		return rest + ": answers again"
 	}
 	if i := strings.LastIndex(name, ": "); i > 0 { // the label may carry a port ("host:11443")
 		return name[:i] + ": its devices are back on it"

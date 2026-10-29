@@ -22,7 +22,7 @@ zabbix_export:
         - name: Templates/Argus
       items:
         - uuid: 97fe9bcb03e14e33813afffc41497d6d
-          name: 'UniFi raw device data'
+          name: 'Controller data'
           type: SCRIPT
           key: unifi.console.raw
           delay: 1m

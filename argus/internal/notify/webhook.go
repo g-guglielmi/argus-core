@@ -168,6 +168,9 @@ func redactErr(err error) error {
 	if err == nil {
 		return nil
 	}
+	if rl, ok := AsRateLimited(err); ok { // carries no address, and the notifier reads its wait
+		return rl
+	}
 	if r := Redact(err.Error()); r != err.Error() {
 		return errors.New(r)
 	}

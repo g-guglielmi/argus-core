@@ -116,6 +116,23 @@ var synthCache struct {
 // unknown, so it never alerts.
 var plumbingKeys = map[string]bool{"unifi.wired.clients": true, "unifi.downlinks": true, "xcp.vm.nics": true}
 
+// failingMasters reads the unsupported list for the masters in it (failing: a dependent of one has
+// no reading of its own to alert about, the master's alert says why) and, of those, the ones whose
+// dependents have collected (collected: the master stands for readings that worked, so it alerts
+// even though it keeps no history of its own).
+func failingMasters(items []zabbix.UnsupportedItem) (failing, collected map[string]bool) {
+	failing, collected = map[string]bool{}, map[string]bool{}
+	for _, it := range items {
+		failing[it.ItemID] = true
+	}
+	for _, it := range items {
+		if failing[it.MasterItemID] && atoi64(it.LastClock) > 0 {
+			collected[it.MasterItemID] = true
+		}
+	}
+	return failing, collected
+}
+
 // A collector that isn't running alerts for itself, with why (collectors.go), so its readings, whose
 // steps only discard, say nothing more while it is down: one alert, not one per speed or latency.
 func leftOverUnsupported(it zabbix.UnsupportedItem, master zabbix.MasterItem) bool {
@@ -228,6 +245,7 @@ func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, 
 		}
 		masterOf, _ := zbx.MasterItems(ctx, masters)
 		flags := downFlagValues(ctx, zbx, items)
+		failing, collected := failingMasters(items)
 		for _, it := range items {
 			start, ok := since[it.ItemID]
 			delay := it.Delay
@@ -238,6 +256,13 @@ func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, 
 			id := synthUnsupported + it.ItemID
 			if plumbingKeys[it.Key] {
 				out.silent[id] = true // feeds Argus itself (the upstream device), not a reading anyone watches
+				continue
+			}
+			// The call its readings come from is failing: that is one alert, the call's own, with the
+			// reason (a UniFi device's "Controller data stopped collecting: cannot get URL ..."), not
+			// one per sensor fed by it. A controller update used to send twenty or thirty per device.
+			if dep && failing[it.MasterItemID] {
+				out.silent[id] = true
 				continue
 			}
 			if dep && leftOverUnsupported(it, m) {
@@ -264,9 +289,11 @@ func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, 
 					continue
 				}
 			}
-			// A collector alerts even when it never collected: its sensors only exist once it runs.
+			// A collector alerts even when it never collected: its sensors only exist once it runs. So
+			// does a call whose readings collected (a raw master keeps no history, so its own clock
+			// never says): it stands for them while it fails.
 			_, isColl := collectorOf(it.Key)
-			if !ok || (atoi64(it.LastClock) == 0 && !isColl) || now-start < int64(unsupportedChecks)*intervalSecs(delay) || len(it.Hosts) == 0 {
+			if !ok || (atoi64(it.LastClock) == 0 && !isColl && !collected[it.ItemID]) || now-start < int64(unsupportedChecks)*intervalSecs(delay) || len(it.Hosts) == 0 {
 				out.silent[id] = true
 				continue
 			}

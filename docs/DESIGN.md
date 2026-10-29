@@ -1269,6 +1269,12 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
 
 - **Routing:** Warning **and** Error → Telegram + Discord + email (same for all sites).
 - **Recovery (OK) notifications:** enabled.
+- **Paced sends:** the chat services refuse a burst (Telegram about a message a second to a chat and
+  20 a minute to a group, a Discord webhook 30 a minute, Slack and Teams about one a second) with
+  HTTP 429 and a wait, and a burst of alerts used to lose its tail to that. Sends to one destination
+  are spaced (`sendGap`: Telegram 3 s, Discord 2 s, the other services 1 s, email none), and a 429
+  is waited out as asked (up to 90 s) and sent again; a longer pause holds that destination until
+  the next tick. The alert arrives a little later, not never.
 - **Flap debounce (alert delay):** a problem must stay open for the **alert delay** (Settings ->
   Alerting, default 60 s, `ARGUS_ALERT_DELAY_SECONDS`) before anyone is notified.
 - **Escalation + reminders, per channel:** every channel (global or personal) has a **Notify after**
@@ -1338,18 +1344,23 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   **upstream device**, section 7f) is a master too: while it, or one above it, is down, the host's
   alerts are held behind it, so a dead switch sends one alert, not one per access point and camera.
   A **UniFi controller** is a master of the devices read through it, too (`controllerfold.go`): the
-  hosts sharing a `{$UNIFI.URL}` are its devices, and when enough of them show the controller's
-  signature at once (reported offline on it while still answering ping, or their controller call
-  failing: at least two, and at least half), Argus raises one problem on the controller's own host
-  (the console with that URL, else the gateway, else the first device): "UniFi controller
-  unifi.example.lan: 4 of 5 devices offline on it", with the devices as its reading. The devices'
+  hosts sharing a `{$UNIFI.URL}` are its devices. Two signatures open the controller's outage: a
+  controller call that can't reach it at all (connection refused, timed out, not resolved: Zabbix's
+  "cannot get URL") says the controller is away whichever device makes it, so one device's is
+  enough, and the problem reads "UniFi controller 10.0.0.1:443: does not answer" with the call's
+  error; devices reported offline on it while still answering ping (or their call refused) need a
+  quorum, at least two and at least half, since two access points re-adopting on their own are two
+  problems, and that problem reads "UniFi controller unifi.example.lan: 4 of 5 devices offline on
+  it". Either is raised on the controller's own host (the console with that URL, else the gateway,
+  else the first device), with the devices as its reading. The devices'
   own alerts are held behind it (`held: behind the UniFi controller`), the console's included, but
   never a device's ping: the controller feeds the device's sensors, not its network path, so a device
   that stopped answering still alerts. The outage keeps its start across ticks, and when it ends the
   devices wait out the settle window, after which one still offline alerts on its own. Fewer devices
   in trouble than the quorum are their own problems. The UniFi sensors read from the controller's
   answer discard a sample they can't read instead of failing (a device re-adopting reports null
-  statistics), so a controller restart never turns into one "stopped collecting" per sensor. To
+  statistics), and while the call itself fails its sensors say nothing of their own (below), so a
+  controller restart never turns into one "stopped collecting" per sensor. To
   win the race with a slow master (ping
   needs 3 failed checks), a new problem also waits up to 5 minutes while the master hasn't reported
   since the problem began, or its last ping failed. After a master recovers, what it holds waits out
@@ -1398,7 +1409,11 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   `item_unsupported` records since when, as Zabbix doesn't say). A dependent sensor whose own steps
   can't fail (each discards, or sets, its value on error) is left out while its master collects:
   only its master's failure made it unsupported, and Zabbix keeps that state until it stores a value,
-  which a URL that doesn't answer never gives its response time (`leftOverUnsupported`). A reading
+  which a URL that doesn't answer never gives its response time (`leftOverUnsupported`). While the
+  master itself fails, its dependents are left out the same way and the master alerts in their
+  place, "Controller data stopped collecting" with the call's error, one per device rather than one
+  per sensor fed by the call (`failingMasters`; a raw master keeps no history, so having collected
+  is read from its dependents). A reading
   of a target that doesn't answer is left out too, whatever made it unsupported: a response time,
   status code, certificate or resolved address whose own up/down flag (same key parameters,
   `downFlags`: `saas.time` and `saas.up`, `http.url.*` and `http.url.up`, `tcp.port.time` and

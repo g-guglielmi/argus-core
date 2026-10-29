@@ -20,7 +20,7 @@ zabbix_export:
         - name: Templates/Argus
       items:
         - uuid: 994d74774f7e478bbdf1c8b948967e1b
-          name: 'Home Assistant raw data'
+          name: 'Home Assistant data'
           type: SCRIPT
           key: hass.raw
           delay: 1m

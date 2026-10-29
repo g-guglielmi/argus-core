@@ -73,6 +73,11 @@ You can change any of these later in **host settings → UniFi options** (the AP
 
 ## Troubleshooting
 
+- **Updating the controller or UniFi OS.** While the controller restarts, Argus raises one problem on
+  the controller's host ("UniFi controller 10.0.0.1:443: does not answer", or "N of M devices offline
+  on it") and holds the devices' own alerts behind it; once it answers again, the devices wait out
+  the settle window before anything still wrong alerts on its own. A planned update is still best
+  put in a maintenance window, which sends nothing at all.
 - **Start with the reason.** Hover (or tap) the sensor's value in Argus - `not supported` - to see why, in the controller's own words; the alert carries the same text.
 - **No metrics but ping is up.** Check the controller URL and port are reachable from the proxy, the
   API key is valid, and the MAC matches a device on the named site. A wrong site name is a common

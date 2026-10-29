@@ -22,7 +22,7 @@ zabbix_export:
         - name: Templates/Argus
       items:
         - uuid: 90d6b9b58c754d7ba3c269ae58658262
-          name: 'AdGuard raw data'
+          name: 'AdGuard data'
           type: SCRIPT
           key: adguard.raw
           delay: 1m

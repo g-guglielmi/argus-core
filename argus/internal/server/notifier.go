@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"argus/internal/notify"
@@ -220,9 +221,9 @@ func notifyDests(st *store.Store, channels []store.NotifyChannel, userChannels [
 			sites: c.Sites, tags: c.Tags, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
 			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, call: c.WhoToCall, runbook: c.Runbooks, created: c.CreatedAt.Unix(),
 			label: c.Name + " (" + channelTypeName(c.Type) + ")",
-			send: func(ctx context.Context, ev notify.Event) error {
+			send: paced(store.DeliveryKey(store.DeliveryGlobal, c.ID), c.Type, func(ctx context.Context, ev notify.Event) error {
 				return sendGlobal(ctx, st, c, dir.recipients, ev, logger)
-			},
+			}),
 		})
 	}
 	for _, c := range userChannels {
@@ -237,10 +238,96 @@ func notifyDests(st *store.Store, channels []store.NotifyChannel, userChannels [
 			sites: sites, tags: c.Tags, minSev: c.MinSeverity, delay: int64(c.DelayMin) * 60, repeat: int64(c.RepeatMin) * 60,
 			remSev: c.RepeatSev, alerts: c.Alerts, notices: c.Notices, call: c.WhoToCall, runbook: c.Runbooks, userID: c.UserID, scoped: !sc.all, quietFloor: dir.quiet[c.UserID], created: c.CreatedAt.Unix(),
 			label: dir.names[c.UserID] + "'s " + channelTypeName(c.Type),
-			send:  func(ctx context.Context, ev notify.Event) error { return sendPersonal(ctx, st, c, ev, logger) },
+			send:  paced(store.DeliveryKey(store.DeliveryUser, c.ID), c.Type, func(ctx context.Context, ev notify.Event) error { return sendPersonal(ctx, st, c, ev, logger) }),
 		})
 	}
 	return out
+}
+
+// The chat services take a burst badly: Telegram allows about a message a second to a chat and 20 a
+// minute to a group, a Discord webhook 30 a minute, Slack and Teams about one a second, and answer
+// the rest with HTTP 429 and a wait. One incident on many sensors used to lose part of itself to
+// that (a controller update: 55 alerts in a minute, Telegram refused the last 20). So the sends to
+// one destination are spaced by sendGap for its service, and when the service asks for a pause
+// anyway, that send waits it out (up to rateLimitWait) and goes again, and the destination's next
+// sends wait too. Email has no such limit. Pacing stretches a tick, never a send: the alert goes out
+// a little later, not never.
+const rateLimitWait = 90 * time.Second
+
+var pacing struct {
+	mu   sync.Mutex
+	next map[string]time.Time // destination key -> not before
+}
+
+// sendGap is the least time between two sends to one destination of a service.
+func sendGap(typ string) time.Duration {
+	switch typ {
+	case "telegram":
+		return 3 * time.Second
+	case "discord":
+		return 2 * time.Second
+	case "slack", "teams", "ntfy", "gotify", "pushover", "webhook":
+		return time.Second
+	}
+	return 0
+}
+
+// paced wraps a destination's send with the pacing above.
+func paced(key, typ string, send func(context.Context, notify.Event) error) func(context.Context, notify.Event) error {
+	gap := sendGap(typ)
+	if gap == 0 {
+		return send
+	}
+	return func(ctx context.Context, ev notify.Event) error {
+		if err := pacingWait(ctx, key); err != nil {
+			return err
+		}
+		err := send(ctx, ev)
+		if rl, ok := notify.AsRateLimited(err); ok {
+			wait := rl.After
+			if wait <= 0 {
+				wait = gap * 5
+			}
+			if wait > rateLimitWait {
+				pacingNext(key, time.Now().Add(wait))
+				return err // too long to hold a tick for: the next tick's sends to it wait it out
+			}
+			pacingNext(key, time.Now().Add(wait))
+			if err := pacingWait(ctx, key); err != nil {
+				return err
+			}
+			err = send(ctx, ev)
+		}
+		pacingNext(key, time.Now().Add(gap))
+		return err
+	}
+}
+
+// pacingWait sleeps until the destination may be sent to again (or ctx ends).
+func pacingWait(ctx context.Context, key string) error {
+	pacing.mu.Lock()
+	at := pacing.next[key]
+	pacing.mu.Unlock()
+	if d := time.Until(at); d > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(d):
+		}
+	}
+	return nil
+}
+
+// pacingNext notes when the destination may be sent to again (only ever later than it already was).
+func pacingNext(key string, at time.Time) {
+	pacing.mu.Lock()
+	defer pacing.mu.Unlock()
+	if pacing.next == nil {
+		pacing.next = map[string]time.Time{}
+	}
+	if at.After(pacing.next[key]) {
+		pacing.next[key] = at
+	}
 }
 
 func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger, mgr *settings.Manager, secret string) {

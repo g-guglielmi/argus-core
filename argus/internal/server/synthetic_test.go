@@ -30,6 +30,26 @@ func TestSyntheticHelpers(t *testing.T) {
 	}
 }
 
+// A master in the unsupported list is failing: its dependents say nothing of their own, and it
+// stands for them when they have collected (its own clock never says: a raw master keeps no history).
+func TestFailingMasters(t *testing.T) {
+	items := []zabbix.UnsupportedItem{
+		{ItemID: "10", Key: "unifi.switch.raw", LastClock: "0"},
+		{ItemID: "11", Key: "unifi.cpu.util", MasterItemID: "10", LastClock: "1000"},
+		{ItemID: "12", Key: "unifi.mem.util", MasterItemID: "10", LastClock: "1000"},
+		{ItemID: "20", Key: "hass.raw", LastClock: "0"},
+		{ItemID: "21", Key: "hass.running", MasterItemID: "20", LastClock: "0"},    // never collected: a new host
+		{ItemID: "31", Key: "snmp.if.in[3]", MasterItemID: "30", LastClock: "900"}, // its master is fine
+	}
+	failing, collected := failingMasters(items)
+	if !failing["10"] || !failing["20"] || failing["30"] || !failing["11"] {
+		t.Fatalf("failing: %v", failing)
+	}
+	if !collected["10"] || collected["20"] || collected["30"] || collected["11"] {
+		t.Fatalf("collected: %v", collected)
+	}
+}
+
 // Argus-raised problems join Zabbix's list and target map without disturbing them.
 func TestSyntheticMerge(t *testing.T) {
 	id := synthUnsupported + "900"

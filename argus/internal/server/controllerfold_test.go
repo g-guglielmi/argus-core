@@ -88,6 +88,45 @@ func TestControllerOutagesNeedAQuorum(t *testing.T) {
 	}
 }
 
+// A call that can't reach the controller at all is the controller's outage, whichever device makes
+// it: one is enough, the lone device of a controller included. A call the controller refused is not.
+func TestAnUnreachableControllerNeedsNoQuorum(t *testing.T) {
+	g := unifiGroup{url: "https://c", host: "9", devices: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}}
+	s := map[string]deviceSignal{}
+	for _, d := range g.devices {
+		s[d] = deviceSignal{connected: 1, pingUp: true}
+	}
+	s["3"] = deviceSignal{connected: 1, pingUp: true, rawBroken: true, unreachable: true, rawError: "cannot get URL: Failed to connect to 10.0.0.1:443 after 66 ms: Could not connect to server"}
+	out := controllerOutages([]unifiGroup{g}, s)
+	if len(out) != 1 || !out[0].unreachable || strings.Join(out[0].affected, ",") != "3" || !strings.Contains(out[0].err, "Could not connect") {
+		t.Fatalf("one unreachable call: %+v", out)
+	}
+	// Refused (a bad key): that device's own problem, below the quorum.
+	s["3"] = deviceSignal{connected: 1, pingUp: true, rawBroken: true, rawError: "UniFi API HTTP 401 (api.err.LoginRequired)"}
+	if out := controllerOutages([]unifiGroup{g}, s); len(out) != 0 {
+		t.Fatalf("a refused call folded: %+v", out)
+	}
+	// The lone device of a controller folds too when its call can't reach it.
+	lone := unifiGroup{url: "https://l", devices: []string{"1"}}
+	if out := controllerOutages([]unifiGroup{lone}, map[string]deviceSignal{"1": {connected: 1, pingUp: true, rawBroken: true, unreachable: true}}); len(out) != 1 || !out[0].unreachable {
+		t.Fatalf("a lone unreachable: %+v", out)
+	}
+	for err, want := range map[string]bool{
+		"cannot get URL: Failed to connect to 10.0.0.1:443 after 66 ms: Could not connect to server": true,
+		"cannot get URL: Could not resolve host: unifi.example.lan":                                  true,
+		"Timeout while executing a script.":                                                          true,
+		"cannot get URL: Operation timed out after 15000 milliseconds":                               true,
+		"UniFi API HTTP 401 (api.err.LoginRequired) - check the API key":                             false,
+		"UniFi API HTTP 400 (api.err.UnknownDevice)":                                                 false,
+		"set {$UNIFI.URL}, {$UNIFI.KEY} and {$UNIFI.MAC} on the host":                                false,
+		"Value null not suitable for Numeric (float)":                                                false,
+	} {
+		if controllerUnreachable(err) != want {
+			t.Errorf("%q: unreachable %v", err, !want)
+		}
+	}
+}
+
 func TestControllerProblemsKeepTheirStartAndEnd(t *testing.T) {
 	controllerClock.since, controllerClock.recovered = nil, nil
 	g := unifiGroup{url: "https://unifi.example.lan", host: "9", devices: []string{"1", "2", "9"}}
@@ -112,6 +151,16 @@ func TestControllerProblemsKeepTheirStartAndEnd(t *testing.T) {
 	probs, _, _ = controllerProblems(out, names, hostOf, 1300)
 	if probs[0].Clock != "1000" {
 		t.Fatalf("the start moved: %+v", probs)
+	}
+	// Now its calls can't reach it: the same outage (its start kept), worded for that, with the
+	// call's own error as the reading.
+	away := []controllerOutage{{group: g, affected: []string{"1", "2", "9"}, unreachable: true, err: "cannot get URL: Failed to connect to 10.0.0.1:443 after 66 ms: Could not connect to server"}}
+	probs, _, readings = controllerProblems(away, names, hostOf, 1400)
+	if probs[0].Name != "UniFi controller unifi.example.lan: does not answer" || probs[0].Clock != "1000" {
+		t.Fatalf("unreachable: %+v", probs)
+	}
+	if readings[id] != "Not supported: cannot get URL: Failed to connect to 10.0.0.1:443 after 66 ms: Could not connect to server. 3 of 3 devices read through it" {
+		t.Fatalf("unreachable reading: %q", readings[id])
 	}
 	// Gone: the end is noted for the settle window, and a fresh outage later starts afresh.
 	controllerProblems(nil, names, hostOf, 1600)
@@ -182,6 +231,12 @@ func TestControllerHoldsItsDevices(t *testing.T) {
 func TestControllerWording(t *testing.T) {
 	if controllerUpName("UniFi controller unifi.example.lan:11443: 3 of 5 devices offline on it") != "UniFi controller unifi.example.lan:11443: its devices are back on it" {
 		t.Fatal("recovery sentence")
+	}
+	if controllerUpName("UniFi controller 10.0.0.1:443: does not answer") != "UniFi controller 10.0.0.1:443: answers again" {
+		t.Fatal("recovery sentence of an unreachable controller")
+	}
+	if interfaceRowLabel("UniFi controller 10.0.0.1:443: does not answer") != "UniFi controller" {
+		t.Fatal("row label of an unreachable controller")
 	}
 	if controllerUpName("Access point offline on the UniFi controller") != "" {
 		t.Fatal("a device's own problem is not the controller's")

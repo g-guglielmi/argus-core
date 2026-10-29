@@ -78,7 +78,7 @@ zabbix_export:
             - name: site
               value: '{$UNIFI.SITE}'
         - uuid: d0f5fcaee12f4e1d995a54293245d740
-          name: 'UniFi raw device data'
+          name: 'Controller data'
           type: SCRIPT
           key: unifi.switch.raw
           delay: 1m
