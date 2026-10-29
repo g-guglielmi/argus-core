@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.13] - 2026-10-29
+
 ### Fixed
 - **A UniFi OS update is one alert, not fifty.** A controller call that can't reach the controller
   at all (connection refused or timed out, as when the console reboots for an update) now opens the
