@@ -1275,6 +1275,14 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   are spaced (`sendGap`: Telegram 3 s, Discord 2 s, the other services 1 s, email none), and a 429
   is waited out as asked (up to 90 s) and sent again; a longer pause holds that destination until
   the next tick. The alert arrives a little later, not never.
+- **Retried sends (the outbox):** a send that fails for any other reason (the core without internet,
+  the service down, its DNS gone) waits in `notify_outbox` and goes again with growing gaps (30 s,
+  doubling, at most 10 min apart) for up to a day; every kind takes that path (the alert, a reminder,
+  the acknowledged notice, the RESOLVED), so a core that loses its internet sends everything that
+  happened meanwhile once the link is back, each message dated when it happened. Sends to one
+  destination for one incident keep their order (a RESOLVED queues behind its alert still waiting, a
+  reminder behind one is dropped), a destination failing again keeps the rest of its queue for the
+  next pass, and the incident timeline says "tries again", then "sent 12m late" (`outbox.go`).
 - **Flap debounce (alert delay):** a problem must stay open for the **alert delay** (Settings ->
   Alerting, default 60 s, `ARGUS_ALERT_DELAY_SECONDS`) before anyone is notified.
 - **Escalation + reminders, per channel:** every channel (global or personal) has a **Notify after**

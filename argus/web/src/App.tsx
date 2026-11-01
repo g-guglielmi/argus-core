@@ -8935,10 +8935,10 @@ function IncidentTimeline({ eventId, start }: { eventId: string; start: number }
     const q = e.detail ? <>: "{e.detail}"</> : null
     switch (e.kind) {
       case 'opened': return <><b>Opened</b> ({e.detail})</>
-      case 'alerted': return <><b>Alerted</b> {e.channel}</>
+      case 'alerted': return <><b>Alerted</b> {e.channel}{e.detail ? <span className="tl-s"> · {e.detail}</span> : null}</>
       case 'escalated': return <><b>Escalated</b> to {e.channel} <span className="tl-s">· {e.detail}</span></>
       case 'reminder': return <><b>{(e.detail || 'reminder').replace(/^r/, 'R')}</b> to {e.channel}</>
-      case 'send_failed': return <span className="tl-fail"><b>Could not alert</b> {e.channel}: {e.detail}</span>
+      case 'send_failed': return <span className="tl-fail"><b>Could not reach</b> {e.channel}: {e.detail}</span>
       case 'held': return <><b>Held</b>: its alert waits while {e.detail} is down</>
       case 'late': return <><b>Reported late</b>: Zabbix got its readings {e.detail} after it began (stored while the link was down), so its alert waits to see if it is already over</>
       case 'maintenance': return <><b>Waited</b> for the maintenance window {e.detail}</>

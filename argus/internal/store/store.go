@@ -248,6 +248,21 @@ CREATE TABLE IF NOT EXISTS notify_deliveries (
   PRIMARY KEY (event_id, kind, channel_id)
 );
 
+-- Sends that failed for a reason other than a rate limit (the core without internet, the service
+-- down) wait here and go again with growing gaps for up to a day, oldest first per destination.
+CREATE TABLE IF NOT EXISTS notify_outbox (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id   TEXT NOT NULL,
+  dest_key   TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  label      TEXT NOT NULL DEFAULT '',
+  event      BLOB NOT NULL,
+  attempts   INTEGER NOT NULL DEFAULT 0,
+  queued_at  INTEGER NOT NULL,
+  next_at    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notify_outbox_next ON notify_outbox(next_at);
+
 -- Per-probe fleet-update agents. A long-lived check-in credential is issued at enrollment
 -- (token_hash) so the probe can authenticate version check-ins; version/selfupdate/last_checkin
 -- are refreshed on each check-in and power the fleet-update view. Keyed by proxy name.

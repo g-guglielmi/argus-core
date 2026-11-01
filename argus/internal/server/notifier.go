@@ -446,6 +446,8 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		logger.Warn("notifier: load deliveries", "err", err)
 		return
 	}
+	// Sends that failed earlier go again first, so a channel reads an incident in order.
+	pending := drainOutbox(ctx, st, dests, logger, time.Now())
 
 	// Master sensors: a host's ping (or chosen sensor) and its site's probe hold its other alerts while down.
 	settle := int64(mgr.Settle() / time.Second)
@@ -514,15 +516,17 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			ev.Note, ev.NoteBy = noteFor(notes, stt.ItemID, eid)
 			ev.Behind = masters.behindFor(stt.HostID, []masterRef{{id: stt.ItemID}}, hostNames)
 			ev.Vendor = vendorLine(vendors.wordForItem(stt.ItemID), loc)
-			told := 0
+			told, trying := 0, 0
 			for _, d := range dests {
 				if _, got := deliveries[eid][d.key]; got && !d.quietFor(stt.Severity) {
-					if d.send(ctx, ev) == nil {
+					if deliver(ctx, st, pending, d, eid, ev) == nil {
 						told++
+					} else {
+						trying++
 					}
 				}
 			}
-			tlog(ctx, st, eid, "resolved", "", "", ev.Name+fmt.Sprintf(" (%d channels told)", told), 0)
+			tlog(ctx, st, eid, "resolved", "", "", ev.Name+" ("+toldCount(told, trying)+")", 0)
 		} else if stt.State == "firing" {
 			tlog(ctx, st, eid, "resolved", "", "", recoveryTitle(stt), 0)
 		} else if stt.State == "pending" && stt.Late {
@@ -663,15 +667,17 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 						OpenURL: OpenLink(publicURL, hostID, itemID),
 					}
 					ev.AckBy, ev.AckNote = ackBy(ctx, st, p.EventID)
-					told := 0
+					told, trying := 0, 0
 					for _, d := range dests {
 						if _, got := deliveries[p.EventID][d.key]; got && !d.quietFor(sev) {
-							if d.send(ctx, ev) == nil {
+							if deliver(ctx, st, pending, d, p.EventID, ev) == nil {
 								told++
+							} else {
+								trying++
 							}
 						}
 					}
-					tlog(ctx, st, p.EventID, "ack_told", "", "", fmt.Sprintf("%d channels told", told), 0)
+					tlog(ctx, st, p.EventID, "ack_told", "", "", toldCount(told, trying), 0)
 				}
 				stt.AckNotified = true
 				_ = st.UpsertNotifyState(ctx, stt)
@@ -717,6 +723,9 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			base.Call = callLines(info, hostID, key)
 		}
 		for _, pd := range plan {
+			if pd.reminder && pending[pendingKey(p.EventID, pd.dest.key)] {
+				continue // its alert is still waiting in the outbox: a reminder behind it says nothing new
+			}
 			ev := base
 			if !pd.dest.call {
 				ev.Call = nil
@@ -733,10 +742,10 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			} else {
 				row = store.NotifyDelivery{EventID: p.EventID, Kind: pd.dest.kind, ChannelID: pd.dest.id, FirstSent: now.Unix()}
 			}
-			err := pd.dest.send(ctx, ev)
+			err := deliver(ctx, st, pending, pd.dest, p.EventID, ev)
 			switch {
 			case err != nil:
-				tlog(ctx, st, p.EventID, "send_failed", "", pd.dest.label, err.Error(), 0)
+				tlog(ctx, st, p.EventID, "send_failed", "", pd.dest.label, retryNote(err), 0)
 			case pd.reminder:
 				tlog(ctx, st, p.EventID, "reminder", "", pd.dest.label, fmt.Sprintf("reminder %d", ev.Reminder), 0)
 			case pd.dest.delay > 0:

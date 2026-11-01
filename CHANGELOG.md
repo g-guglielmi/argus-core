@@ -13,6 +13,14 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Fixed
+- **A failed send is tried again, for a day.** A send that failed for a reason other than a rate limit
+  (the core without internet, the service down) was recorded as delivered and never retried, and a
+  RESOLVED had no second chance at all. Every send now waits in an outbox and goes again with growing
+  gaps (30 s, doubling, at most 10 min apart) for up to a day, in order per channel and incident:
+  a core that loses its internet sends what happened meanwhile once the link is back, each message
+  dated when it happened. The incident timeline says "tries again", then "sent 12m late".
+
 ## [0.9.13] - 2026-10-29
 
 ### Fixed
