@@ -11276,8 +11276,11 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
   // master's: it waits with it, so it isn't one more thing to handle.
   // A problem on hidden sensors only isn't news (the badge and the Overview leave it out): it sits
   // dimmed under its own line, never colours the banner, and a panel of hidden ones only is grey.
-  const shown = problems.filter((p) => !p.hidden)
-  const hiddenProblems = problems.filter((p) => p.hidden)
+  // A drilled sensor's banner lists its own problems only: the host's others are a click away.
+  const ownIds = new Set(shownItems.map((i) => i.id))
+  const banner = onlyItem ? problems.filter((p) => p.item_ids.some((id) => ownIds.has(id))) : problems
+  const shown = banner.filter((p) => !p.hidden)
+  const hiddenProblems = banner.filter((p) => p.hidden)
   const open = shown.filter((p) => !p.acknowledged && !p.held_by)
   const probErr = open.some((p) => p.state === 'error')
   const probColor = open.length === 0 ? (shown.length === 0 ? 'var(--muted)' : 'var(--acked)') : probErr ? 'var(--err)' : 'var(--warn)'
@@ -11299,7 +11302,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
       )}
       {!onlyItem && <HostTabs hostId={hostId} tab={tab} setTab={setTab} sensors={items.length} tick={countTick} />}
       {tab !== 'sensors' && !onlyItem && <HostTabBody hostId={hostId} tab={tab} canEdit={canPause} onOpenSettings={onOpenSettings} onChanged={() => setCountTick((t) => t + 1)} />}
-      {(tab === 'sensors' || onlyItem) && problems.length > 0 && (
+      {(tab === 'sensors' || onlyItem) && banner.length > 0 && (
         <div style={{ border: `1px solid color-mix(in srgb, ${probColor} 30%, var(--border))`, background: `color-mix(in srgb, ${probColor} 7%, var(--panel))`, borderRadius: 8, padding: '0.5rem 0.75rem', marginBottom: '0.5rem' }}>
           <div style={{ color: probColor, fontSize: 12, marginBottom: 4, fontWeight: 600 }}>{shown.length === 0 ? 'Problems on hidden sensors' : open.length === 0 ? (shown.some((p) => p.acknowledged) ? 'Acknowledged problems' : 'Problems on hold') : probErr ? 'Active problems' : 'Active warnings'}</div>
           {[...shown, ...hiddenProblems].map((p, i) => {

@@ -20,6 +20,9 @@ GitHub Release from the matching section below.
   days discovery kept them. A port or radio sensor discovery no longer finds now stays quiet, and
   the port, PoE and radio discovery drops it after a day. A drive, VM or hypervisor that drops out
   still alerts.
+- **A sensor's own page lists its own problems.** Drilled into one sensor (or a port's channels),
+  the problems banner listed every problem on the host; it now lists only the ones on what is shown,
+  and none when that sensor is fine.
 
 ## [0.9.15] - 2026-11-02
 
