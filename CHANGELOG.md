@@ -24,6 +24,13 @@ GitHub Release from the matching section below.
   the problems banner listed every problem on the host; it now lists only the ones on what is shown,
   and none when that sensor is fine.
 
+### Added
+- **A sensor gone from its device says so.** A sensor its discovery no longer finds (a port the
+  device no longer has, a removed disk, interface, service or VM) read like one waiting for data,
+  dashes and an old "last check". Its row now carries a grey bar, reads "gone from the device ·
+  removed in 21h", and its last check says when it was last seen; hovering it says when discovery
+  lost it and when it goes.
+
 ## [0.9.15] - 2026-11-02
 
 ### Changed

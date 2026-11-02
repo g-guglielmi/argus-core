@@ -211,6 +211,8 @@ type Item struct {
 	Status    string `json:"status"` // "0" enabled, "1" disabled
 	State     string `json:"state"`  // "0" normal, "1" not supported
 	Error     string `json:"error"`  // Zabbix's reason while State is "1"
+	// A discovered item's standing with its rule (gone from the device, and when it goes).
+	Discovery ItemDiscovery `json:"itemDiscovery"`
 }
 
 type Trigger struct {
@@ -405,9 +407,10 @@ func (c *Client) PingLatencyItems(ctx context.Context) (map[string]Item, error) 
 // Items returns the items of one host, sorted by name.
 func (c *Client) Items(ctx context.Context, hostID string) ([]Item, error) {
 	params := map[string]any{
-		"output":    []string{"itemid", "hostid", "name", "key_", "lastvalue", "lastclock", "units", "value_type", "status", "state", "error"},
-		"hostids":   hostID,
-		"sortfield": "name",
+		"output":              []string{"itemid", "hostid", "name", "key_", "lastvalue", "lastclock", "units", "value_type", "status", "state", "error"},
+		"selectItemDiscovery": []string{"status", "lastcheck", "ts_delete"},
+		"hostids":             hostID,
+		"sortfield":           "name",
 	}
 	var items []Item
 	if err := c.call(ctx, "item.get", params, true, &items); err != nil {
@@ -841,7 +844,9 @@ type UnsupportedItem struct {
 // ItemDiscovery is a discovered item's standing with the discovery rule that made it. Zabbix returns
 // an empty array for an item no rule made, which reads as the zero value.
 type ItemDiscovery struct {
-	Status string `json:"status"` // "1": the rule no longer finds it (it is deleted at ts_delete)
+	Status    string `json:"status"`    // "1": the rule no longer finds it (it is deleted at ts_delete)
+	LastCheck string `json:"lastcheck"` // when the rule last found it
+	TSDelete  string `json:"ts_delete"` // when Zabbix deletes it ("0": never)
 }
 
 func (d *ItemDiscovery) UnmarshalJSON(b []byte) error {

@@ -78,7 +78,10 @@ const SEVERITIES: { v: number; label: string }[] = [
   { v: 2, label: 'Warnings and errors' },
   { v: 3, label: 'Errors only' },
 ]
-type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string; updown?: boolean; note?: SensorNote; vendor?: VendorWord; runbook?: RunbookNote }
+type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string; updown?: boolean; note?: SensorNote; vendor?: VendorWord; runbook?: RunbookNote; gone?: Gone }
+// Gone: a sensor its discovery no longer finds (a port the device no longer has), when discovery last
+// found it and when Zabbix removes it (0: never).
+type Gone = { since: number; removed: number }
 // SensorNote is a note left on a sensor in trouble: shown and sent with it until it is OK again.
 type SensorNote = { text: string; by?: string; at: number }
 // A sensor's effective warning/high values, read from its own triggers (below = lower is worse).
@@ -257,6 +260,14 @@ function relTime(unix: number): string {
   if (!unix) return 'never'
   const s = Math.floor(Date.now() / 1000) - unix
   return s < 0 ? `in ${relSpan(-s)}` : `${relSpan(s)} ago`
+}
+
+// A gone sensor's value says so and when it goes; its row's hover says when discovery lost it.
+function goneText(g: Gone): JSX.Element {
+  return <span className="gone-txt">gone from the device{g.removed ? <span className="gone-when"> · removed {relTime(g.removed)}</span> : null}</span>
+}
+function goneTip(g: Gone): string {
+  return `Its discovery stopped finding it${g.since ? ' on ' + fmtWhen(g.since) : ''}: the device no longer reports it.` + (g.removed ? ` Removed ${fmtWhen(g.removed)}.` : '')
 }
 
 // roundNum rounds to 2 decimals for |v|>=1 and 4 for small values (so sub-second timings
@@ -11386,7 +11397,8 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                   const gAcked = !row.items.some((i) => itemState[i.id] && itemAcked[i.id] === false)
                   const gPaused = hostPaused || row.items.every((i) => i.paused)
                   const gHidden = hostHidden || row.items.every((i) => i.hidden)
-                  const rowClass = gHidden ? 'hidden' : gPaused ? 'paused' : gState ? (gAcked ? 'acked' : (gState === 'error' ? 'err' : 'warn')) : ''
+                  const gGone = row.items.every((i) => i.gone) ? row.items[0].gone : undefined
+                  const rowClass = gHidden ? 'hidden' : gPaused ? 'paused' : gState ? (gAcked ? 'acked' : (gState === 'error' ? 'err' : 'warn')) : gGone ? 'gone' : ''
                   const trendColor = gState ? healthColor(gState, gAcked) : 'var(--accent)'
                   const gPrio = Math.max(...row.items.map((i) => i.priority))
                   // Pause/Hide/Ack act on every channel of the instance (you pause a disk, not one metric).
@@ -11423,7 +11435,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                   return (
                     <Fragment key={gkey}>
                       {catRow}
-                      <tr className={rowClass} onClick={clickable ? () => setOpenItem(open ? null : gkey) : undefined} style={{ cursor: clickable ? 'pointer' : 'default' }}>
+                      <tr className={rowClass} title={gGone ? goneTip(gGone) : undefined} onClick={clickable ? () => setOpenItem(open ? null : gkey) : undefined} style={{ cursor: clickable ? 'pointer' : 'default' }}>
                         <td className="namecell">
                           <span className={'sname' + (clickable ? ' sclick' : '')} style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: gPaused || gHidden ? 0.6 : 1 }}>
                             {clickable && <span className="scaret" style={{ color: 'var(--accent)', display: 'inline-block', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'none' }}>›</span>}
@@ -11437,7 +11449,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                             {(() => { const al = row.items.filter((i) => i.alertable); if (!al.length) return null; const n = al.filter((i) => i.alerts_off).length; if (n === 0) return null; return <span style={{ color: 'var(--faint)', fontSize: 11 }}> ({n === al.length ? 'alerts off' : n + ' muted'})</span> })()}
                           </span>
                         </td>
-                        <td className="mono val">{gWhy && gWhyId ? <WhyText why={gWhy} onToggle={() => toggleWhy(gWhyId)}>{headline}</WhyText> : headline ?? <span style={{ color: 'var(--muted)' }}>-</span>}</td>
+                        <td className="mono val">{gGone ? goneText(gGone) : gWhy && gWhyId ? <WhyText why={gWhy} onToggle={() => toggleWhy(gWhyId)}>{headline}</WhyText> : headline ?? <span style={{ color: 'var(--muted)' }}>-</span>}</td>
                         <td className="strend">{clickable ? (() => {
                           // Counter-total groups show the daily mini bars (a miniature of the big
                           // bar chart) instead of a drifting rolling-total line.
@@ -11456,7 +11468,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                           return <Spark values={vals} color={trendColor} width={168} units={gin && gout ? undefined : primary.units} thr={gin && gout ? undefined : primary.thr} />
                         })() : null}</td>
                         <td className="prio-cell" data-label="Priority"><PriorityStars value={gPrio} canEdit={canPause} onSet={(p) => row.items.forEach((i) => setItemPriority(i, p))} /></td>
-                        <td><div className="lccell"><span className="when">{relTime(Math.max(...row.items.map((x) => x.last_clock || 0)))}</span>{canPause && actions.length > 0 && <Kebab actions={actions} />}</div></td>
+                        <td><div className="lccell"><span className="when">{gGone ? 'seen ' + relTime(gGone.since) : relTime(Math.max(...row.items.map((x) => x.last_clock || 0)))}</span>{canPause && actions.length > 0 && <Kebab actions={actions} />}</div></td>
                       </tr>
                       {gWhy && gWhyId && whyOpen[gWhyId] && <tr className="whyrow"><td colSpan={5}><div className="why-line">{gWhy}</div></td></tr>}
                       {(() => {
@@ -11511,7 +11523,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                 // the host controls it.
                 const effPaused = it.paused || hostPaused
                 const effHidden = it.hidden || hostHidden
-                const rowClass = effHidden ? 'hidden' : effPaused ? 'paused' : st ? (itemAcked[it.id] ? 'acked' : (st === 'error' ? 'err' : 'warn')) : ''
+                const rowClass = effHidden ? 'hidden' : effPaused ? 'paused' : st ? (itemAcked[it.id] ? 'acked' : (st === 'error' ? 'err' : 'warn')) : it.gone ? 'gone' : ''
                 const unacked = problems.filter((p) => p.item_ids.includes(it.id) && !p.acknowledged)
                 // Pause/Hide are offered only when the host isn't already controlling that state
                 // (an inherited "· host" state is cleared at the host, not per-sensor).
@@ -11540,7 +11552,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                 return (
                   <Fragment key={it.id}>
                     {catRow}
-                    <tr className={rowClass} onClick={clickable ? () => { const next = open ? null : it.id; setOpenItem(next); onNavigate(hostId, next) } : undefined} style={{ opacity: it.supported ? 1 : 0.55, cursor: clickable ? 'pointer' : 'default' }}>
+                    <tr className={rowClass} title={it.gone ? goneTip(it.gone) : undefined} onClick={clickable ? () => { const next = open ? null : it.id; setOpenItem(next); onNavigate(hostId, next) } : undefined} style={{ opacity: it.supported || it.gone ? 1 : 0.55, cursor: clickable ? 'pointer' : 'default' }}>
                       <td className="namecell">
                         <span className={'sname' + (clickable ? ' sclick' : '')} style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: effPaused || effHidden ? 0.6 : 1 }}>
                           {clickable && <span className="scaret" style={{ color: 'var(--accent)', display: 'inline-block', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'none' }}>›</span>}
@@ -11551,7 +11563,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                         </span>
                       </td>
                       <td className="mono val">
-                        {it.supported
+                        {it.gone ? goneText(it.gone) : it.supported
                           ? (() => {
                             // A daily-ratio row reads TODAY's local-day rate (the /api/daily bucket,
                             // derived from the same counters as the row above) - the raw reading is
@@ -11565,7 +11577,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                       <td className="prio-cell" data-label="Priority"><PriorityStars value={it.priority} canEdit={canPause} onSet={(p) => setItemPriority(it, p)} /></td>
                       <td>
                         <div className="lccell">
-                          <span className="when">{relTime(it.last_clock)}</span>
+                          <span className="when">{it.gone ? 'seen ' + relTime(it.gone.since) : relTime(it.last_clock)}</span>
                           {canPause && actions.length > 0 && <Kebab disabled={busyItem === it.id} actions={actions} />}
                         </div>
                       </td>

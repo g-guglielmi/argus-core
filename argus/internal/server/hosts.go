@@ -90,6 +90,23 @@ type itemView struct {
 	Vendor *vendorWord `json:"vendor,omitempty"`
 	// Runbook is what to do when it is in trouble (runbooks.go).
 	Runbook *runbookView `json:"runbook,omitempty"`
+	// Gone is set on a sensor its discovery no longer finds (a port the device no longer has).
+	Gone *goneView `json:"gone,omitempty"`
+}
+
+// goneView says when discovery last found a sensor and when Zabbix deletes it (0: never).
+type goneView struct {
+	Since   int64 `json:"since"`
+	Removed int64 `json:"removed"`
+}
+
+func goneOf(d zabbix.ItemDiscovery) *goneView {
+	if !d.Lost() {
+		return nil
+	}
+	since, _ := strconv.ParseInt(d.LastCheck, 10, 64)
+	removed, _ := strconv.ParseInt(d.TSDelete, 10, 64)
+	return &goneView{Since: since, Removed: removed}
 }
 
 // numericValueType reports whether a Zabbix value_type is graphable (0 float, 3 unsigned).
@@ -655,6 +672,7 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			Numeric:   numericValueType(it.ValueType),
 			Paused:    it.Status == "1", // disabled in Zabbix
 			Priority:  priorityOf(prioMap, it.ItemID),
+			Gone:      goneOf(it.Discovery),
 		}
 		if r, ok := runningReading(it.Key, it.LastValue); ok {
 			iv.LastValue = r // a service / container reads Running or Down, not 1 / 0

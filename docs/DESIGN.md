@@ -332,7 +332,10 @@ A UniFi port or radio sensor its discovery no longer finds (Zabbix's `itemDiscov
 `goneFromDevice`) went with the device it was on, swapped for a model with fewer ports or radios:
 it stays quiet, and the port, PoE and radio discovery rules drop it after a day (the WAN rule keeps
 14 days and its own availability trigger). A drive, VM or hypervisor that drops out of its discovery
-still alerts: that one is news.
+still alerts: that one is news. Every such sensor, whatever its class, shows as gone on its host's
+sensor list (`gone` on `/api/hosts/{id}/items`, from `itemDiscovery.lastcheck` and `ts_delete`): a
+grey bar, "gone from the device · removed in 21h" as its value, "seen 3h ago" as its last check. A
+problem on it still colours its bar; a channel group is gone when all its channels are.
 A speed test reading a run didn't produce is discarded by its script returning `null` (Zabbix 7.0
 discards that without an error; a throw left the sensor "not supported" in practice despite its
 "discard value" handler), and the speed test's readings (`measuredByRuns`, dependents by their own

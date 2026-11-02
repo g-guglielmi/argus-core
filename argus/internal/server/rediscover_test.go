@@ -52,6 +52,20 @@ func TestGoneFromDevice(t *testing.T) {
 	}
 }
 
+// The sensor list marks a sensor discovery lost with when it was last found and when it goes.
+func TestGoneOf(t *testing.T) {
+	if g := goneOf(zabbix.ItemDiscovery{Status: "0", LastCheck: "100"}); g != nil {
+		t.Fatalf("still found: got %+v, want nil", g)
+	}
+	if g := goneOf(zabbix.ItemDiscovery{}); g != nil {
+		t.Fatalf("not discovered: got %+v, want nil", g)
+	}
+	g := goneOf(zabbix.ItemDiscovery{Status: "1", LastCheck: "1793620000", TSDelete: "1793706400"})
+	if g == nil || g.Since != 1793620000 || g.Removed != 1793706400 {
+		t.Fatalf("lost: got %+v", g)
+	}
+}
+
 // A host's discovery runs once per rediscoverEvery, not on every notifier tick.
 func TestRediscoverDue(t *testing.T) {
 	now := time.Now()
