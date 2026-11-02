@@ -13,6 +13,14 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Fixed
+- **A UniFi device swapped for a smaller model no longer alerts for the ports it lost.** A gateway
+  with four LAN ports replaced by one with fewer (the old one's backup restored, the new MAC set)
+  left every port it no longer has alerting "stopped collecting", four sensors a port, for the 14
+  days discovery kept them. A port or radio sensor discovery no longer finds now stays quiet, and
+  the port, PoE and radio discovery drops it after a day. A drive, VM or hypervisor that drops out
+  still alerts.
+
 ## [0.9.15] - 2026-11-02
 
 ### Changed

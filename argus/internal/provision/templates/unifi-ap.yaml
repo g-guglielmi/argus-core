@@ -466,9 +466,9 @@ zabbix_export:
           type: DEPENDENT
           key: unifi.radio.discovery
           delay: '0'
-          lifetime: 14d
+          lifetime: 1d
           enabled_lifetime_type: DISABLE_NEVER
-          description: 'Radios from the controller (one per band the AP serves). Lost radios are never disabled; one really gone ages out after 14 days.'
+          description: 'Radios from the controller (one per band the AP serves). Lost radios are never disabled; one really gone (the AP swapped for another model) stays quiet in Argus and ages out after a day.'
           master_item:
             key: unifi.ap.raw
           preprocessing:

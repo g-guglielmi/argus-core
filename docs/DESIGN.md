@@ -328,6 +328,11 @@ name, so the notifier runs the host's discovery rules at once (`rediscoverRenumb
 5 minutes a host) instead of waiting for the hourly run; discovery repoints the same sensors (history
 kept) or, for an interface really gone, disables them (Zabbix's default for lost resources). The
 alert waits `rediscoverGrace` (10 minutes) meanwhile; one still failing past it alerts as usual.
+A UniFi port or radio sensor its discovery no longer finds (Zabbix's `itemDiscovery.status` 1,
+`goneFromDevice`) went with the device it was on, swapped for a model with fewer ports or radios:
+it stays quiet, and the port, PoE and radio discovery rules drop it after a day (the WAN rule keeps
+14 days and its own availability trigger). A drive, VM or hypervisor that drops out of its discovery
+still alerts: that one is news.
 A speed test reading a run didn't produce is discarded by its script returning `null` (Zabbix 7.0
 discards that without an error; a throw left the sensor "not supported" in practice despite its
 "discard value" handler), and the speed test's readings (`measuredByRuns`, dependents by their own

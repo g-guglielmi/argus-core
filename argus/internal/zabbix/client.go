@@ -835,7 +835,26 @@ type UnsupportedItem struct {
 	Hosts        []TargetHost `json:"hosts"`
 	// The item's own preprocessing: whether a step can make it unsupported by itself.
 	Preprocessing []PreprocStep `json:"preprocessing"`
+	Discovery     ItemDiscovery `json:"itemDiscovery"` // a discovered item's standing with its rule
 }
+
+// ItemDiscovery is a discovered item's standing with the discovery rule that made it. Zabbix returns
+// an empty array for an item no rule made, which reads as the zero value.
+type ItemDiscovery struct {
+	Status string `json:"status"` // "1": the rule no longer finds it (it is deleted at ts_delete)
+}
+
+func (d *ItemDiscovery) UnmarshalJSON(b []byte) error {
+	if len(b) > 0 && b[0] == '[' {
+		*d = ItemDiscovery{}
+		return nil
+	}
+	type plain ItemDiscovery
+	return json.Unmarshal(b, (*plain)(d))
+}
+
+// Lost reports a discovered item its rule no longer finds.
+func (d ItemDiscovery) Lost() bool { return d.Status == "1" }
 
 // PreprocStep is one preprocessing step: its type and what it does on error ("0" fail the item,
 // "1" discard the value, "2" set a value, "3" set an error).
@@ -858,6 +877,7 @@ func (c *Client) UnsupportedItems(ctx context.Context) ([]UnsupportedItem, error
 		"output":              []string{"itemid", "hostid", "name", "key_", "error", "lastclock", "delay", "master_itemid", "type", "flags"},
 		"selectHosts":         []string{"hostid", "name", "status"},
 		"selectPreprocessing": []string{"type", "error_handler"},
+		"selectItemDiscovery": []string{"status"},
 		"filter":              map[string]any{"state": 1, "status": 0},
 		"monitored":           true,
 	}

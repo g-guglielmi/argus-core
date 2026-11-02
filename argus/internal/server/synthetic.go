@@ -79,6 +79,16 @@ func renumberedInstance(it zabbix.UnsupportedItem) bool {
 	return strings.Contains(e, "no such instance") || strings.Contains(e, "no such object")
 }
 
+// goneFromDevice reports a UniFi port or radio sensor its discovery no longer finds: the device was
+// swapped for a model with fewer (a gateway with four LAN ports for one with one), which is no fault,
+// and discovery removes the sensor after a day. A drive, VM or hypervisor that drops out still alerts.
+func goneFromDevice(it zabbix.UnsupportedItem) bool {
+	if it.Flags != "4" || !it.Discovery.Lost() {
+		return false
+	}
+	return strings.HasPrefix(it.Key, "unifi.port.") || strings.HasPrefix(it.Key, "unifi.radio.")
+}
+
 // syntheticProblems gathers the Argus-raised problems. record = true (the notifier) keeps the
 // "unsupported since" table in step; the read-only API paths pass false and only look it up, so a
 // sensor they see first isn't counted as unsupported for 10 minutes yet.
@@ -271,6 +281,10 @@ func collectSynthetic(ctx context.Context, st *store.Store, zbx *zabbix.Client, 
 			}
 			if targetDown(it, flags) {
 				out.silent[id] = true // its target's own alert says it doesn't answer
+				continue
+			}
+			if goneFromDevice(it) {
+				out.silent[id] = true
 				continue
 			}
 			// A speed test reading a run didn't produce (no latency while busy, no download when

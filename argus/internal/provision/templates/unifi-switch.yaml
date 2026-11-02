@@ -561,9 +561,9 @@ zabbix_export:
           type: DEPENDENT
           key: unifi.port.discovery
           delay: '0'
-          lifetime: 14d
+          lifetime: 1d
           enabled_lifetime_type: DISABLE_NEVER
-          description: 'Physical switch ports from the controller - only ports that exist. Lost ports are never disabled (a controller mid-update can briefly report an empty port table); a port really gone ages out after 14 days.'
+          description: 'Physical switch ports from the controller - only ports that exist. Lost ports are never disabled (a controller mid-update can briefly report an empty port table); a port really gone (the switch swapped for a smaller model) stays quiet in Argus and ages out after a day.'
           master_item:
             key: unifi.switch.raw
           preprocessing:
@@ -670,7 +670,7 @@ zabbix_export:
           type: DEPENDENT
           key: unifi.poe.discovery
           delay: '0'
-          lifetime: 14d
+          lifetime: 1d
           enabled_lifetime_type: DISABLE_NEVER
           description: 'The subset of ports that are PoE-capable - only those get a PoE power sensor.'
           master_item:

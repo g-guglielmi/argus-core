@@ -89,6 +89,10 @@ You can change any of these later in **host settings → UniFi options** (the AP
   LAN with a derived address (usually the second hex digit differs, often the last byte too), so a MAC
   read from the network, `arp` or a scanner is not the one the controller knows. Discovery takes the
   controller's MAC when it matches a device.
+- **Replaced the device** (a new gateway restored from the old one's backup, say): the IP, site and
+  API key carry over, the MAC does not. Put the new device's MAC (as the controller lists it) in the
+  host's settings and the readings come back. Ports or radios the new model doesn't have stay quiet
+  and are removed after a day.
 - **HTTPS certificate errors** on a self-hosted controller are expected (self-signed); the template
   does not verify the certificate for the Integration API call (Zabbix HTTP items can only verify
   against a CA store, which a console's own certificate never passes). The discovery sweep and scan
