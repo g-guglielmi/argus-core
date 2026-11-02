@@ -13,6 +13,13 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.15] - 2026-11-02
+
+### Changed
+- **Dependencies:** the SQLite driver modernc.org/sqlite 1.61.0, the PDF library gopdf 0.38.3 and
+  the web build tool vite 8.3.5; in CI, docker/login-action 4.7.0. Nothing changes in what the app
+  does or in how it is deployed.
+
 ## [0.9.14] - 2026-11-02
 
 ### Fixed
