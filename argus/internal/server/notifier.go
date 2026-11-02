@@ -446,8 +446,13 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		logger.Warn("notifier: load deliveries", "err", err)
 		return
 	}
-	// Sends that failed earlier go again first, so a channel reads an incident in order.
-	pending := drainOutbox(ctx, st, dests, logger, time.Now())
+	activeIDs := make(map[string]zabbix.Problem, len(problems))
+	for _, p := range problems {
+		activeIDs[p.EventID] = p
+	}
+	// Sends that failed earlier go again first (what is still true), so a channel reads an incident
+	// in order.
+	pending, recapped := drainOutbox(ctx, st, dests, activeIDs, logger, time.Now())
 
 	// Master sensors: a host's ping (or chosen sensor) and its site's probe hold its other alerts while down.
 	settle := int64(mgr.Settle() / time.Second)
@@ -461,11 +466,6 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 
 	// The notes on sensors in trouble go out with their alerts; once a sensor is OK they clear (below).
 	notes, _ := st.LiveSensorNotes(ctx)
-
-	activeIDs := make(map[string]zabbix.Problem, len(problems))
-	for _, p := range problems {
-		activeIDs[p.EventID] = p
-	}
 
 	// Incident starts handed over by alerts that closed on a severity change, keyed by host|item: the
 	// problem that took over inherits them, so its "Recovered after" covers the whole incident.
@@ -516,9 +516,19 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			ev.Note, ev.NoteBy = noteFor(notes, stt.ItemID, eid)
 			ev.Behind = masters.behindFor(stt.HostID, []masterRef{{id: stt.ItemID}}, hostNames)
 			ev.Vendor = vendorLine(vendors.wordForItem(stt.ItemID), loc)
-			told, trying := 0, 0
+			told, trying, dropped := 0, 0, 0
 			for _, d := range dests {
 				if _, got := deliveries[eid][d.key]; got && !d.quietFor(stt.Severity) {
+					if k := pendingKey(eid, d.key); pending[k] || recapped[k] {
+						// Its alert never got out: nothing to resolve there. The recap tells of it.
+						if pending[k] {
+							recapDropped(ctx, st, d, stt.HostName, stt.Name, time.Unix(incidentStart(stt), 0).In(loc), time.Now().In(loc))
+							_ = st.DeleteOutboxPair(ctx, eid, d.key)
+							delete(pending, k)
+						}
+						dropped++
+						continue
+					}
 					if deliver(ctx, st, pending, d, eid, ev) == nil {
 						told++
 					} else {
@@ -526,7 +536,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 					}
 				}
 			}
-			tlog(ctx, st, eid, "resolved", "", "", ev.Name+" ("+toldCount(told, trying)+")", 0)
+			tlog(ctx, st, eid, "resolved", "", "", ev.Name+" ("+toldCount(told, trying, dropped)+")", 0)
 		} else if stt.State == "firing" {
 			tlog(ctx, st, eid, "resolved", "", "", recoveryTitle(stt), 0)
 		} else if stt.State == "pending" && stt.Late {
@@ -677,7 +687,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 							}
 						}
 					}
-					tlog(ctx, st, p.EventID, "ack_told", "", "", toldCount(told, trying), 0)
+					tlog(ctx, st, p.EventID, "ack_told", "", "", toldCount(told, trying, 0), 0)
 				}
 				stt.AckNotified = true
 				_ = st.UpsertNotifyState(ctx, stt)

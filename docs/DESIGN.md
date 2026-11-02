@@ -1278,11 +1278,15 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
 - **Retried sends (the outbox):** a send that fails for any other reason (the core without internet,
   the service down, its DNS gone) waits in `notify_outbox` and goes again with growing gaps (30 s,
   doubling, at most 10 min apart) for up to a day; every kind takes that path (the alert, a reminder,
-  the acknowledged notice, the RESOLVED), so a core that loses its internet sends everything that
-  happened meanwhile once the link is back, each message dated when it happened. Sends to one
-  destination for one incident keep their order (a RESOLVED queues behind its alert still waiting, a
-  reminder behind one is dropped), a destination failing again keeps the rest of its queue for the
-  next pass, and the incident timeline says "tries again", then "sent 12m late" (`outbox.go`).
+  the acknowledged notice, the RESOLVED). The outbox delivers the present, not the past: once the
+  destination answers again, an alert goes out only if its problem is still open (dated when it
+  began), a RESOLVED only for an alert the destination heard, a reminder never (the next comes on
+  schedule), and the incidents that came and went meanwhile fold into **one recap per destination**
+  ("3 incidents came and went while this channel could not be reached", one line each: host, name,
+  from, to), sent after the rest. Sends to one destination for one incident keep their order (a
+  later one never overtakes an earlier one still waiting), a destination failing again keeps the rest
+  of its queue for the next pass, and the incident timeline says "tries again", then "sent 12m late"
+  or "it was over before the channel could be reached: dropped, told in a recap" (`outbox.go`).
 - **Flap debounce (alert delay):** a problem must stay open for the **alert delay** (Settings ->
   Alerting, default 60 s, `ARGUS_ALERT_DELAY_SECONDS`) before anyone is notified.
 - **Escalation + reminders, per channel:** every channel (global or personal) has a **Notify after**
