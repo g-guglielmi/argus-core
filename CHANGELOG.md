@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.14] - 2026-11-02
+
 ### Fixed
 - **A failed send is tried again, for a day.** A send that failed for a reason other than a rate limit
   (the core without internet, the service down) was recorded as delivered and never retried, and a
