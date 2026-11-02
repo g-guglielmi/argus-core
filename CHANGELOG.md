@@ -13,6 +13,15 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.16] - 2026-11-02
+
+### Added
+- **A sensor gone from its device says so.** A sensor its discovery no longer finds (a port the
+  device no longer has, a removed disk, interface, service or VM) read like one waiting for data,
+  dashes and an old "last check". Its row now carries a grey bar, reads "gone from the device ·
+  removed in 21h", and its last check says when it was last seen; hovering it says when discovery
+  lost it and when it goes.
+
 ### Fixed
 - **A UniFi device swapped for a smaller model no longer alerts for the ports it lost.** A gateway
   with four LAN ports replaced by one with fewer (the old one's backup restored, the new MAC set)
@@ -23,13 +32,6 @@ GitHub Release from the matching section below.
 - **A sensor's own page lists its own problems.** Drilled into one sensor (or a port's channels),
   the problems banner listed every problem on the host; it now lists only the ones on what is shown,
   and none when that sensor is fine.
-
-### Added
-- **A sensor gone from its device says so.** A sensor its discovery no longer finds (a port the
-  device no longer has, a removed disk, interface, service or VM) read like one waiting for data,
-  dashes and an old "last check". Its row now carries a grey bar, reads "gone from the device ·
-  removed in 21h", and its last check says when it was last seen; hovering it says when discovery
-  lost it and when it goes.
 
 ## [0.9.15] - 2026-11-02
 
