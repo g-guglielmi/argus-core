@@ -188,10 +188,6 @@ func (s *Server) startCensusRefresh(ctx context.Context) {
 	}()
 }
 
-// censusMachinePaths are the routes probes and enrollment call on their own schedule; they don't
-// change what the census shows, and they arrive every minute from every probe.
-var censusMachinePaths = []string{"/api/probes/checkin", "/api/probes/break-glass", "/api/probes/os-status", "/api/probes/scan-results", "/api/enroll"}
-
 // censusInvalidator marks the census stale after any change a signed-in user makes (and after an
 // acknowledgement through an alert's signed link), once the handler has finished, so a build that
 // starts afterwards sees the change.
@@ -204,10 +200,8 @@ func (s *Server) censusInvalidator(next http.Handler) http.Handler {
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			return
 		}
-		for _, p := range censusMachinePaths {
-			if r.URL.Path == p {
-				return
-			}
+		if machineAPIPaths[r.URL.Path] { // probes call these on their own schedule; nothing the census shows
+			return
 		}
 		if _, signedIn := auth.UserFrom(r.Context()); signedIn || r.URL.Path == "/api/alert/ack" {
 			s.census.invalidate()

@@ -5703,7 +5703,7 @@ type DiagResult = {
 type DiagRunView = { id: number; source: string; tool: DiagTool; target: string; state: 'queued' | 'running' | 'done' | 'failed'; created: number; updated: number; result: DiagResult; duration: number }
 
 const DIAG_TOOLS: { v: DiagTool; l: string }[] = [{ v: 'ping', l: 'Ping' }, { v: 'traceroute', l: 'Traceroute' }, { v: 'dns', l: 'DNS lookup' }]
-const DNS_TYPES: { v: string; l: string }[] = [{ v: 'both', l: 'A + AAAA' }, { v: 'A', l: 'A' }, { v: 'AAAA', l: 'AAAA' }, { v: 'CNAME', l: 'CNAME' }, { v: 'MX', l: 'MX' }, { v: 'TXT', l: 'TXT' }, { v: 'PTR', l: 'PTR' }]
+const DNS_TYPES: { v: string; l: string }[] = [{ v: 'A', l: 'A' }, { v: 'AAAA', l: 'AAAA' }, { v: 'both', l: 'A + AAAA' }, { v: 'CNAME', l: 'CNAME' }, { v: 'MX', l: 'MX' }, { v: 'TXT', l: 'TXT' }, { v: 'PTR', l: 'PTR' }]
 
 function diagMS(v?: number): string {
   if (typeof v !== 'number') return '-'
@@ -5731,7 +5731,7 @@ function DiagDialog({ hostId, source: initialSource, onClose }: { hostId?: strin
   const [source, setSource] = useState(initialSource || '')
   const [target, setTarget] = useState('')
   const [count, setCount] = useState(5)
-  const [dnsType, setDnsType] = useState('both')
+  const [dnsType, setDnsType] = useState('A')
   const [server, setServer] = useState('')
   const [proxies, setProxies] = useState<Proxy[] | null>(null)
   const [run, setRun] = useState<DiagRunView | null>(null)
@@ -5800,7 +5800,7 @@ function DiagDialog({ hostId, source: initialSource, onClose }: { hostId?: strin
       <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: tool === 'dns' ? 'min(760px, 94vw)' : 'min(640px, 94vw)' }}>
         <div className="dlg-title">Diagnose{target.trim() ? ` · ${target.trim()}` : ''}</div>
         <div className="seg dg-tools" role="tablist">
-          {DIAG_TOOLS.map((t) => <button key={t.v} type="button" className={tool === t.v ? 'on' : ''} onClick={() => { setTool(t.v); setRun(null); setErr(null); if (t.v === 'dns' && dnsType === 'both' && /^[0-9.]+$|:/.test(target.trim())) setDnsType('PTR') }}>{t.l}</button>)}
+          {DIAG_TOOLS.map((t) => <button key={t.v} type="button" className={tool === t.v ? 'on' : ''} onClick={() => { setTool(t.v); setRun(null); setErr(null); if (t.v === 'dns' && dnsType === 'A' && /^[0-9.]+$|:/.test(target.trim())) setDnsType('PTR') }}>{t.l}</button>)}
         </div>
         <div className="dg-row">
           <Field label="Run from">
@@ -5842,7 +5842,10 @@ function DiagDialog({ hostId, source: initialSource, onClose }: { hostId?: strin
             {run.tool === 'ping' && r.ping && (r.ping.replies ?? []).length > 0 && <DiagPing replies={r.ping.replies ?? []} />}
             {run.tool === 'traceroute' && r.trace && (r.trace.hops ?? []).length > 0 && <DiagTrace hops={r.trace.hops ?? []} />}
             {run.tool === 'dns' && r.dns && <DiagDNS d={r.dns} core={source === 'core'} />}
-            {r.raw && <button type="button" className="linklike dg-rawfold" onClick={() => setShowRaw((v) => !v)}>{showRaw ? 'Hide the raw output' : '› Show the raw output'}</button>}
+            {r.raw && <button type="button" className="linklike dg-rawfold" aria-expanded={showRaw} onClick={() => setShowRaw((v) => !v)}>
+              <svg className={'chev' + (showRaw ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+              {showRaw ? 'Hide the raw output' : 'Show the raw output'}
+            </button>}
             {showRaw && r.raw && <pre className="mono dg-raw">{r.raw}</pre>}
           </div>
         )}

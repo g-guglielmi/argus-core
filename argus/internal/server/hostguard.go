@@ -33,6 +33,8 @@ var machineAPIPaths = map[string]bool{
 	"/api/probes/os-status":    true,
 	"/api/probes/break-glass":  true,
 	"/api/probes/scan-results": true,
+	"/api/probes/diag-results": true,
+	"/api/probes/renew-cert":   true,
 }
 
 // formAPIPaths take a browser form post rather than JSON; they authenticate with a signed link,

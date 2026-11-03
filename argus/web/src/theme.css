@@ -772,7 +772,8 @@ span.muted, p.muted { color: var(--muted); }
 .dg-tbl tr.err td:first-child { box-shadow: inset 2px 0 0 var(--err); }
 .dg-why { color: var(--muted); font-size: 12.5px; }
 .dg-sec { font-size: 12.5px; font-weight: 600; margin-top: 14px; }
-.dg-rawfold { display: block; font-size: 12.5px; margin-top: 10px; }
+.dg-rawfold { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; margin-top: 10px; }
+.dg-rawfold .chev { width: 13px; height: 13px; color: currentColor; }
 .dg-raw { margin: 8px 0 0; font-size: 12px; line-height: 1.55; color: var(--text); white-space: pre; overflow: auto; max-height: 260px; }
 .dlg-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px; margin: -6px; }
 

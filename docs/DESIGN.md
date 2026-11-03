@@ -1178,7 +1178,7 @@ tool, read for the user, with the raw output one click away:
 - **Traceroute** (up to 30 hops, one probe each, 2 s per hop): address, name (a PTR lookup with a
   short timeout), round trip; a silent hop says routers often drop these, a "destination
   unreachable" ends the trace with its reason.
-- **DNS lookup** (A + AAAA, A, AAAA, CNAME, MX, TXT or PTR; a server address, or the source's own):
+- **DNS lookup** (A by default, AAAA, A + AAAA, CNAME, MX, TXT or PTR; a server address, or the source's own):
   the server's answers with their TTL and the rcode in words (NXDOMAIN: the name does not exist), and
   what the system resolver the checks use answers. The two differing is flagged: the case where a
   musl resolver reads an AAAA NXDOMAIN as no such name for the A too.

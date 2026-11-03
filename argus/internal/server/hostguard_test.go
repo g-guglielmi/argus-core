@@ -6,6 +6,8 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -129,5 +131,24 @@ func TestAllowedHostsLockout(t *testing.T) {
 	}
 	if msg := allowedHostsLockout(pr, map[string]string{"timezone": "Europe/Rome"}, []string{"10.0.0.10"}, pub, false); msg != "" {
 		t.Fatalf("unrelated change refused: %s", msg)
+	}
+}
+
+// TestProbeRoutesSkipTheGuard: every route a probe calls with its own token is on machineAPIPaths.
+// A probe often dials the core by IP, so one left off is refused once an admin fills the allowed
+// list in (the diagnostics results were, until this test).
+func TestProbeRoutesSkipTheGuard(t *testing.T) {
+	src, err := os.ReadFile("server.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes := regexp.MustCompile(`HandleFunc\("POST (/api/(?:probes/[a-z-]+|enroll))", s\.handle`).FindAllStringSubmatch(string(src), -1)
+	if len(routes) < 7 {
+		t.Fatalf("found only %d probe routes in server.go; has the registration changed?", len(routes))
+	}
+	for _, m := range routes {
+		if !machineAPIPaths[m[1]] {
+			t.Errorf("%s is called by probes but missing from machineAPIPaths", m[1])
+		}
 	}
 }

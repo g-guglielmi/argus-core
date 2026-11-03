@@ -24,6 +24,12 @@ GitHub Release from the matching section below.
   so a run starts within seconds. Each run is in the change log. Probes run them from
   probe/v7.0.32-r14; older ones show "needs probe update".
 
+### Fixed
+- **A probe's certificate renewal is no longer refused by the allowed FQDNs and IPs list.** Once an
+  admin filled the list in, a probe that reaches the core by an address outside it had its renewal
+  turned away with the browsers' 403; the probes' calls are never checked against the list, and that
+  one now isn't either.
+
 ## [0.9.16] - 2026-11-02
 
 ### Added
