@@ -204,13 +204,18 @@ func (s *Server) probeHostHandout(ctx context.Context, name string, ag *store.Pr
 	return win, &probeHostReq{Kind: q.Kind, At: q.At}
 }
 
-// probesFast reports whether the probes should check in fast now: someone has the Updates page open.
+// probesFast reports whether the probes should check in fast now: someone has the Updates page open,
+// or Argus has just started.
 func (s *Server) probesFast() bool { return time.Now().Unix() < s.updatesWatched.Load() }
+
+// probesWarmFor is how long one ping of the Updates page (it sends one every 90 seconds) or a start of
+// Argus keeps the fleet checking in fast.
+const probesWarmFor = 2 * time.Minute
 
 // POST /api/probes/warm (admin): the Updates page is open, so the fleet checks in fast for a while
 // and a Reboot now, a Patch now or an Update there is taken within seconds.
 func (s *Server) handleWarmProbes(w http.ResponseWriter, r *http.Request) {
-	s.updatesWatched.Store(time.Now().Add(2 * time.Minute).Unix())
+	s.updatesWatched.Store(time.Now().Add(probesWarmFor).Unix())
 	w.WriteHeader(http.StatusNoContent)
 }
 

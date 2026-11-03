@@ -22,12 +22,16 @@ GitHub Release from the matching section below.
   reads the host's route when it starts and after each start of the probe), with the gateway. A
   container on a bridge with no sidecar shows none: the address Argus sees is the last NAT's on the
   way (a Tailscale exit node, a VPN router), so it is only said on hover. A host whose own address
-  is public (a VPS) has no LAN.
-  The public address is the probe's own lookup (Cloudflare's trace, every hour, carried by every
-  report from probe 7.0.32-r20 on), or the public address Argus sees. An offline probe's are its
-  last known, faint.
+  is public (a VPS) has no LAN. The public address is the probe's own lookup (Cloudflare's trace,
+  every hour, carried by every report from probe 7.0.32-r20 on), or the public address Argus sees.
+  An offline probe's are its last known, faint.
 
 ### Fixed
+- **Probe updates are taken at once right after a core update.** Argus forgot at its restart that
+  the Updates page was open, and a sidecar whose check-in found the core restarting slept its whole
+  round (5 minutes): probe updates queued just after a core update waited for it. Argus now asks the
+  fleet for fast check-ins for two minutes after it starts, and the sidecar (argus-updater 0.2.23)
+  tries a check-in that got no answer again after 15 seconds, backing off to its round.
 - **A core on the testing channel is offered the release tagged on the commit it already runs.**
   A release tagged straight on a commit whose main build the core had installed was never offered
   (same code, so the testing check saw nothing new) and the core kept its development stamp. Now

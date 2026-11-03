@@ -87,6 +87,10 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// background and served from memory.
 	s.census = newCensusCache(s.buildCensus)
 	s.startCensusRefresh(context.Background())
+	// A restart (most often the core's own update) forgets that the Updates page is open, and that is
+	// when someone usually is watching it: the fleet checks in fast for the first two minutes, until
+	// the page's next ping takes over (probereboot.go).
+	s.updatesWatched.Store(time.Now().Add(probesWarmFor).Unix())
 	// Size each probe's Zabbix process counts from its own load (autoscale.go).
 	s.startProcAutoscale(context.Background())
 	// Poll public GHCR for the newest probe revision so the fleet view can flag "-rN available"

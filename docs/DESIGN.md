@@ -2070,7 +2070,12 @@ for two minutes after, every probe's container and sidecar check-in answer carri
 (the container already took `next` for diagnostics; the sidecar from 0.2.20, held to 5 s..its
 interval), so a click there is taken within seconds. A sidecar also gets it while an update is
 queued for it, and it checks in again right after installing host tools, so a probe update's host
-tools stop showing "updating" as soon as they are in.
+tools stop showing "updating" as soon as they are in. A restart forgets the page (the flag lives in
+memory) just when someone is most likely watching, after the core's own update, so Argus counts as
+watched for two minutes after it starts. A sidecar whose check-in got no answer (the core
+restarting, the network gone) tries again after 15 s, then 30, 60, ... up to its interval
+(`missed_wait`, 0.2.23); before, it slept the whole interval, and probe updates queued right after
+a core update waited up to five minutes.
 
 **The Zabbix frontend, kept narrow (`argus-web-guard`).** A host tool of the core (script, a
 oneshot service enabled at boot and run when an update installs it, an hourly timer that puts it
