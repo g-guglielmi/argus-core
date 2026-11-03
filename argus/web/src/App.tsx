@@ -62,7 +62,10 @@ type SaaSService = { id: string; name: string; url: string; default: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg; tags?: HostTag[]; own?: { asset_tag: string; location: string }; links?: LinkRow[]; class_links?: LinkRow[]; upstream?: UpstreamInfo }
 // A host's master sensor: while it's down, the host's other alerts are held (item_id "" = none).
 type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; options: { id: string; label: string }[] }
-type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; diags?: boolean; update_status?: string; last_checkin?: number; report_at?: number; report_stale?: boolean; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; host_tools?: ProbeHostTools; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean; host?: ProbeHostState }
+type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; diags?: boolean; update_status?: string; last_checkin?: number; report_at?: number; report_stale?: boolean; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; host_tools?: ProbeHostTools; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean; host?: ProbeHostState; lan?: ProbeAddr; public?: ProbeAddr }
+// A probe's LAN or public address (probeaddrs.go): where it came from (host: the probe VM's own report;
+// probe: the probe container's report or its lookup; seen: where Argus sees its reports come from).
+type ProbeAddr = { ip: string; src: 'host' | 'probe' | 'seen'; gw?: string; at?: number }
 // A probe VM's reboots (DESIGN 14c): its own window (none: the fleet's), whether it takes Reboot now and
 // Patch now, a request on its way (sent: its check-in took it), and the last result of each.
 type ProbeHostState = { own_window?: OSWindow; now?: boolean; pending?: { kind: 'reboot' | 'patch'; at: number; sent?: number }; reboot?: HostActionResult; patch?: HostActionResult }
@@ -4062,6 +4065,7 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
                     <span className="sub-line" title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>
                       {p.mode}{p.enrolled_at ? ` · enrolled ${new Date(p.enrolled_at * 1000).toLocaleDateString()}` : ' · manual'}
                     </span>
+                    <ProbeAddrs p={p} />
                     {((p.tags && p.tags.length > 0) || (isAdmin && allTags.length > 0)) && (
                       <span className="probe-tags">
                         <TagList tags={(p.tags || []).map((n) => ({ name: n, color: tagColor(n) }))} />
@@ -4136,6 +4140,38 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
       </table>
       </div>
     </div>
+  )
+}
+
+// ProbeAddrs is the line under a probe's name: its LAN and public address, each saying on hover where
+// it came from and when. A LAN address Argus only sees (a container on Docker's bridge, behind its
+// host's NAT) carries a *. An offline probe's are its last known, faint. Nothing before the first report.
+function ProbeAddrs({ p }: { p: Proxy }) {
+  if (!p.lan && !p.public) return null
+  const when = (a: ProbeAddr) => (a.at ? `, ${relTime(a.at)}` : '')
+  const lanTitle = (a: ProbeAddr) => a.src === 'host'
+    ? `Reported by the probe VM${a.gw ? ` (gateway ${a.gw})` : ''}${when(a)}`
+    : a.src === 'probe'
+      ? `The address the probe reaches out from${when(a)}`
+      : `The address Argus sees this probe's reports come from${when(a)}: the probe runs on Docker's bridge network, where it sees only its own 172.17.x address`
+  const pubTitle = (a: ProbeAddr) => a.src === 'probe'
+    ? `Looked up by the probe${when(a)}`
+    : `The public address Argus sees this probe's reports come from${when(a)}`
+  return (
+    <span className={'sub-line probe-addrs' + (p.online ? '' : ' off')}>
+      <span>
+        <span className="lbl">LAN</span>
+        {p.lan
+          ? <><span className="mono" title={lanTitle(p.lan)}>{p.lan.ip}</span>{p.lan.src === 'seen' && <span className="lbl" title={lanTitle(p.lan)}>*</span>}</>
+          : <span className="mono lbl" title="This probe runs on Docker's bridge network, where it sees only its own 172.17.x address, and reaches Argus over the internet: its LAN address isn't known">-</span>}
+      </span>
+      <span>
+        <span className="lbl">public</span>
+        {p.public
+          ? <span className="mono" title={pubTitle(p.public)}>{p.public.ip}</span>
+          : <span className="mono lbl" title="Not looked up yet: the probe asks Cloudflare every half hour, and this probe reaches Argus through a private address">-</span>}
+      </span>
+    </span>
   )
 }
 

@@ -1613,6 +1613,11 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .tags-edit .msel { min-width: 130px; }
 .hs-tags { align-items: center; }
 .probe-tags { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+/* The probe's LAN and public address under its name (ProbeAddrs): faint labels, an offline probe's last known faint too. */
+/* Each label stays with its address; the two pairs wrap onto two lines only when the column is narrow. */
+.probe-addrs { display: inline-flex; column-gap: 10px; row-gap: 2px; align-items: baseline; flex-wrap: wrap; }
+.probe-addrs > span { display: inline-flex; gap: 6px; align-items: baseline; white-space: nowrap; }
+.probe-addrs .lbl, .probe-addrs.off .mono { color: var(--faint); }
 /* Settings, Tags: one row per tag, the editor in place of the row being edited. */
 .tag-rows { display: grid; }
 .tag-row { display: grid; grid-template-columns: 160px minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; padding: 9px 0; border-top: 1px solid var(--border); }

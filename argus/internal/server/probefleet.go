@@ -125,6 +125,10 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		CA string `json:"ca"`
 		// When the probe's own certificate ends, "2031-08-10 08:23:27Z" (openssl -dateopt iso_8601).
 		CertEnd string `json:"cert_end"`
+		// The address the proxy container reaches out from, and its public one when it just looked
+		// it up (probeaddrs.go); absent from a sidecar's report and from an older probe's.
+		IP       string `json:"ip"`
+		PublicIP string `json:"public_ip"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -137,6 +141,14 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Diags != nil {
 		_ = s.st.SetProbeDiags(ctx, proxyName, *req.Diags)
+	}
+	// The addresses come with the proxy container's own report only: its sidecar may sit elsewhere.
+	if req.Scans != nil && *req.Scans {
+		pub := cleanAddr(req.PublicIP)
+		if !publicAddr(pub) {
+			pub = ""
+		}
+		_ = s.st.SetProbeReportAddrs(ctx, proxyName, cleanAddr(req.IP), cleanAddr(s.clientIP(r)), pub)
 	}
 	_ = s.st.SetUpdaterVersion(ctx, proxyName, reportedVersion(req.UpdaterVersion))
 	if doc := cleanHostTools(req.HostTools); doc != "" {

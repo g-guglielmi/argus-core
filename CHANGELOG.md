@@ -13,6 +13,15 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **Every probe shows its LAN and public address.** A line under the probe's name on the Probes
+  page; hovering an address says where it came from and when. A probe VM's LAN address is its own
+  report (with its gateway); a container on Docker's bridge, which sees only a 172.17.x address,
+  shows the address Argus sees its reports come from, marked `*`; a probe with host networking or on
+  a macvlan shows its own. The public address is the probe's own lookup (Cloudflare's trace, every
+  half hour), or the public address Argus sees. An offline probe's are its last known, faint. Needs
+  probe 7.0.32-r19; an older probe shows only what Argus sees.
+
 ### Fixed
 - **A core on the testing channel is offered the release tagged on the commit it already runs.**
   A release tagged straight on a commit whose main build the core had installed was never offered

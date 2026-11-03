@@ -933,6 +933,16 @@ CREATE TABLE IF NOT EXISTS reports (
 			return err
 		}
 	}
+	// A probe's addresses (probeaddrs.go): the one its container reaches out from, the one Argus sees
+	// its minute report come from, its public one (the probe's own lookup, and when) and a probe VM's
+	// LAN address and gateway from its host.
+	for _, col := range []string{"addr_own TEXT NOT NULL DEFAULT ''", "addr_seen TEXT NOT NULL DEFAULT ''", "addr_at INTEGER NOT NULL DEFAULT 0",
+		"addr_public TEXT NOT NULL DEFAULT ''", "addr_public_at INTEGER NOT NULL DEFAULT 0",
+		"addr_host TEXT NOT NULL DEFAULT ''", "addr_host_gw TEXT NOT NULL DEFAULT ''", "addr_host_at INTEGER NOT NULL DEFAULT 0"} {
+		if err := s.ensureColumn("probe_agents", col); err != nil {
+			return err
+		}
+	}
 	// Discovery job kind ('scan' = subnet scan, 'unifi' = controller sweep) plus the sweep's
 	// controller reference: the id resolves credentials at dispatch time, the name is a display
 	// snapshot that survives the controller's deletion.

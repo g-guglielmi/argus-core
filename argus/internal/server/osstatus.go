@@ -217,6 +217,11 @@ func (s *Server) handleReportProbeOSStatus(w http.ResponseWriter, r *http.Reques
 		BootedAt  int64             `json:"booted_at"`
 		Reboot    *hostActionResult `json:"reboot"`
 		Patch     *hostActionResult `json:"patch"`
+		// The VM's LAN address and gateway (a reporter from probe r19 on; probeaddrs.go).
+		LAN *struct {
+			IP string `json:"ip"`
+			GW string `json:"gw"`
+		} `json:"lan"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -229,6 +234,9 @@ func (s *Server) handleReportProbeOSStatus(w http.ResponseWriter, r *http.Reques
 	if err := s.st.SetProbeOSStatus(ctx, proxyName, count, req.RebootRequired, clip(printable(req.OS), 80)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not store OS status"})
 		return
+	}
+	if req.LAN != nil {
+		_ = s.st.SetProbeHostAddr(ctx, proxyName, cleanAddr(req.LAN.IP), cleanAddr(req.LAN.GW))
 	}
 	if req.RebootNow != nil {
 		s.recordProbeHostActions(ctx, proxyName, probeHostActions{RebootNow: *req.RebootNow, PatchNow: req.PatchNow, BootedAt: req.BootedAt, Reboot: req.Reboot, Patch: req.Patch})

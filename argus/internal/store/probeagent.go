@@ -63,7 +63,8 @@ func (s *Store) UpsertProbeCredential(ctx context.Context, proxyName, tokenHash 
 		`INSERT INTO probe_agents(proxy_name,token_hash,created_at,version,selfupdate,last_checkin)
 		 VALUES(?,?,?,'',0,0)
 		 ON CONFLICT(proxy_name) DO UPDATE SET token_hash=excluded.token_hash, created_at=excluded.created_at,
-		   version='', selfupdate=0, last_checkin=0, report_at=0, ca_fp='', cert_end=0`,
+		   version='', selfupdate=0, last_checkin=0, report_at=0, ca_fp='', cert_end=0,
+		   addr_own='', addr_seen='', addr_at=0, addr_public='', addr_public_at=0`,
 		proxyName, tokenHash, time.Now().Unix())
 	return err
 }

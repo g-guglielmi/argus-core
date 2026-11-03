@@ -2537,6 +2537,18 @@ plane; the probe checks in and converges.
   pickers of the discovery dialogs say "(not reporting to Argus)" and refuse it instead of "(needs
   probe update)", its Processes panel says why it has no counts, and a system notice goes out after
   15 more minutes (`probe-report:<proxy>`). A re-enrollment resets `report_at`.
+- **A probe's addresses** (`probeaddrs.go`). The Probes page shows a LAN and a public address under
+  each probe's name. The proxy container's minute report carries `ip` (the source of its route to the
+  internet) and, every half hour or when `ip` changes, `public_ip` (the probe's own lookup, one HTTPS
+  call to Cloudflare's trace at `1.1.1.1`); Argus stores both with the address it sees the report
+  come from (`clientIP`, so `ARGUS_TRUST_PROXY` applies), and a probe VM's OS report adds `lan`
+  (`{ip, gw}` from `ip -j route get` on the VM). LAN, the most exact first: the VM's report; the
+  container's `ip` when it is private and either outside 172.16.0.0/12 (Docker's bridge pools) or
+  the very address Argus sees (host networking, a macvlan, a field kit); the private address Argus
+  sees (a container on a bridge behind its host's NAT, shown with a `*`); else none. Public: the
+  probe's lookup, else the public address Argus sees. 100.64.0.0/10 (carrier NAT, Tailscale) counts
+  as private. Only the proxy container's report sets them (the sidecar may run elsewhere); a
+  re-enrollment forgets the container's, not the VM's.
 - **Updates show their steps.** The Updates page follows a core update and a sidecar self-update step by
   step until it ends. The core update's `status.json` keeps every message in `steps`; a sidecar
   self-update is remembered by the core in `updater-job.json` (the request file is consumed when the
