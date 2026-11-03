@@ -403,7 +403,7 @@ func cleanDiagResult(res diag.Result) diag.Result {
 	if p := res.Ping; p != nil {
 		p.Replies = p.Replies[:min(len(p.Replies), 20)]
 		for i := range p.Replies {
-			p.Replies[i].From = line(p.Replies[i].From, 64)
+			p.Replies[i].From, p.Replies[i].Error = line(p.Replies[i].From, 64), line(p.Replies[i].Error, 160)
 		}
 	}
 	if t := res.Trace; t != nil {

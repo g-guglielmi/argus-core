@@ -55,6 +55,8 @@ type Reply struct {
 	Seq  int      `json:"seq"`
 	From string   `json:"from,omitempty"`
 	MS   *float64 `json:"ms,omitempty"`
+	// Error says why a probe's ping could not send this one at all (it is not a lost reply).
+	Error string `json:"error,omitempty"`
 }
 
 // Trace is the path so far; Reached is set when the target itself answered.

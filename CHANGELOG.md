@@ -25,6 +25,8 @@ GitHub Release from the matching section below.
   probe/v7.0.32-r14; older ones show "needs probe update".
 
 ### Fixed
+- **A diagnostic ping that could not run says so.** A probe from r16 reports why ping failed to send
+  (its own error), and the reply row shows it instead of "no reply within 1 s".
 - **A probe's certificate renewal is no longer refused by the allowed FQDNs and IPs list.** Once an
   admin filled the list in, a probe that reaches the core by an address outside it had its renewal
   turned away with the browsers' 403; the probes' calls are never checked against the list, and that

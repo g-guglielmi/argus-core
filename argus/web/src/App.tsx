@@ -5696,7 +5696,7 @@ type DiagTool = 'ping' | 'traceroute' | 'dns'
 type DiagAnswer = { type: string; value?: string; ttl?: number; error?: string }
 type DiagResult = {
   addr?: string; done: boolean; error?: string; raw: string
-  ping?: { replies: { seq: number; from?: string; ms?: number }[] | null }
+  ping?: { replies: { seq: number; from?: string; ms?: number; error?: string }[] | null }
   trace?: { hops: { n: number; addr?: string; name?: string; ms?: number; note?: string }[] | null; reached: boolean }
   dns?: { server: string; answers: DiagAnswer[] | null; system: DiagAnswer[] | null; differ: boolean }
 }
@@ -5858,7 +5858,7 @@ function DiagDialog({ hostId, source: initialSource, onClose }: { hostId?: strin
   )
 }
 
-function DiagPing({ replies }: { replies: { seq: number; from?: string; ms?: number }[] }) {
+function DiagPing({ replies }: { replies: { seq: number; from?: string; ms?: number; error?: string }[] }) {
   const got = replies.map((x) => x.ms).filter((v): v is number => typeof v === 'number')
   const lost = replies.length - got.length
   return <>
@@ -5874,7 +5874,7 @@ function DiagPing({ replies }: { replies: { seq: number; from?: string; ms?: num
         {replies.map((x) => (
           <tr key={x.seq} className={typeof x.ms === 'number' ? '' : 'err'}>
             <td>{x.seq + 1}</td>
-            <td>{typeof x.ms === 'number' ? <>from <span className="mono">{x.from}</span></> : <span className="dg-why">no reply within 1 s</span>}</td>
+            <td>{typeof x.ms === 'number' ? <>from <span className="mono">{x.from}</span></> : <span className="dg-why">{x.error ? `ping failed: ${x.error}` : 'no reply within 1 s'}</span>}</td>
             <td className="num mono">{diagMS(x.ms)}</td>
           </tr>
         ))}
