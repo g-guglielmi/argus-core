@@ -77,9 +77,12 @@ type proxyView struct {
 	// hears from the probe (probereport.go).
 	ReportAt    int64 `json:"report_at"`
 	ReportStale bool  `json:"report_stale,omitempty"`
-	// The probe's LAN and public address (probeaddrs.go), nil when unknown.
-	LAN    *probeAddrView `json:"lan,omitempty"`
-	Public *probeAddrView `json:"public,omitempty"`
+	// The probe's LAN and public address (probeaddrs.go), nil when unknown; why there is no LAN
+	// address ("public_host" | "bridge" | ""), and where Argus sees the probe's reports come from.
+	LAN     *probeAddrView `json:"lan,omitempty"`
+	LANNone string         `json:"lan_none,omitempty"`
+	Public  *probeAddrView `json:"public,omitempty"`
+	SeenIP  string         `json:"seen_ip,omitempty"`
 }
 
 // handleProxies lists Zabbix proxies (the per-site collectors) with their last-access time, so
@@ -193,9 +196,10 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			IsVM:           ag.OSReportedAt > 0,
 			Host:           vmHostView(ag, hosts[p.Name], now),
 			Tags:           nonNilStrings(probeTags[p.ProxyID]),
-			LAN:            probeLAN(addrs[p.Name]),
 			Public:         probePublic(addrs[p.Name]),
+			SeenIP:         addrs[p.Name].Seen,
 		})
+		out[len(out)-1].LAN, out[len(out)-1].LANNone = probeLAN(addrs[p.Name])
 	}
 	writeJSON(w, http.StatusOK, out)
 }

@@ -15,12 +15,15 @@ GitHub Release from the matching section below.
 
 ### Added
 - **Every probe shows its LAN and public address.** A line under the probe's name on the Probes
-  page; hovering an address says where it came from and when. A probe VM's LAN address is its own
-  report (with its gateway); a container on Docker's bridge, which sees only a 172.17.x address,
-  shows the address Argus sees its reports come from, marked `*`; a probe with host networking or on
-  a macvlan shows its own. The public address is the probe's own lookup (Cloudflare's trace, every
-  half hour), or the public address Argus sees. An offline probe's are its last known, faint. Needs
-  probe 7.0.32-r19; an older probe shows only what Argus sees.
+  page; hovering an address says where it came from and when, a dash says why there is none. The
+  LAN address is the host's: a probe VM's own report, or the argus-updater sidecar's (0.2.22 on; it
+  reads the host's route when it starts and after each start of the probe), with the gateway; a
+  probe with host networking or on a macvlan shows its own. A container on Docker's bridge with no
+  sidecar shows none: the address Argus sees is the last NAT's on the way (a Tailscale exit node, a
+  VPN router), so it is only said on hover. A host whose own address is public (a VPS) has no LAN.
+  The public address is the probe's own lookup (Cloudflare's trace, every hour, carried by every
+  report from probe 7.0.32-r20 on), or the public address Argus sees. An offline probe's are its
+  last known, faint.
 
 ### Fixed
 - **A core on the testing channel is offered the release tagged on the commit it already runs.**

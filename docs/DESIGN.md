@@ -2539,16 +2539,20 @@ plane; the probe checks in and converges.
   15 more minutes (`probe-report:<proxy>`). A re-enrollment resets `report_at`.
 - **A probe's addresses** (`probeaddrs.go`). The Probes page shows a LAN and a public address under
   each probe's name. The proxy container's minute report carries `ip` (the source of its route to the
-  internet) and, every half hour or when `ip` changes, `public_ip` (the probe's own lookup, one HTTPS
-  call to Cloudflare's trace at `1.1.1.1`); Argus stores both with the address it sees the report
-  come from (`clientIP`, so `ARGUS_TRUST_PROXY` applies), and a probe VM's OS report adds `lan`
-  (`{ip, gw}` from `ip -j route get` on the VM). LAN, the most exact first: the VM's report; the
-  container's `ip` when it is private and either outside 172.16.0.0/12 (Docker's bridge pools) or
-  the very address Argus sees (host networking, a macvlan, a field kit); the private address Argus
-  sees (a container on a bridge behind its host's NAT, shown with a `*`); else none. Public: the
-  probe's lookup, else the public address Argus sees. 100.64.0.0/10 (carrier NAT, Tailscale) counts
-  as private. Only the proxy container's report sets them (the sidecar may run elsewhere); a
-  re-enrollment forgets the container's, not the VM's.
+  internet) and the last `public_ip` its own lookup found (one HTTPS call to Cloudflare's trace at
+  `1.1.1.1`, every hour or when `ip` changes) with its age, `public_age`; Argus stores them with the
+  address it sees the report come from (`clientIP`, so `ARGUS_TRUST_PROXY` applies). The host's LAN
+  address and gateway come from a probe VM's OS report (`lan`, `ip -j route get` on the VM) or the
+  argus-updater sidecar's check-in (`host_lan`: it runs its own image once with `--network host`
+  when it starts and after each start of the proxy, not on a timer). LAN, the most exact first: the
+  host's, when private; none when the host's own address is public (a VPS: `lan_none`
+  "public_host"); the container's `ip` when it is private and either outside 172.16.0.0/12 (Docker's
+  bridge pools) or the very address Argus sees (host networking, a macvlan, a field kit); else none
+  (`lan_none` "bridge"). The address Argus sees is never the LAN address (a Tailscale exit node or a
+  VPN router NATs the probe's away: the first cut showed the exit node's), only said on hover
+  (`seen_ip`). Public: the probe's lookup, else a public host address, else the public address Argus
+  sees. 100.64.0.0/10 (carrier NAT, Tailscale) counts as private. A re-enrollment forgets the
+  container's addresses, not the host's.
 - **Updates show their steps.** The Updates page follows a core update and a sidecar self-update step by
   step until it ends. The core update's `status.json` keeps every message in `steps`; a sidecar
   self-update is remembered by the core in `updater-job.json` (the request file is consumed when the

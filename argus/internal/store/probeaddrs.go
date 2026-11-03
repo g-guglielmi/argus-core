@@ -13,7 +13,8 @@ import (
 //     it runs with host networking or on a macvlan), and Seen: the one Argus sees its minute report
 //     come from; At is when the report last carried them.
 //   - Public: the probe's own lookup of its public address, and when it was made.
-//   - Host, HostGW: a probe VM's LAN address and gateway, as its host reports them, and when.
+//   - Host, HostGW: the host's LAN address and gateway, as a probe VM's OS report or the
+//     argus-updater sidecar (reading them with the host's network) gives them, and when.
 //
 // The values are checked addresses (the server parses them before storing); "" when unknown.
 type ProbeAddrs struct {
@@ -26,22 +27,21 @@ type ProbeAddrs struct {
 }
 
 // SetProbeReportAddrs records the addresses of a probe container's minute report: its own and the
-// one Argus saw it from (always), and a public one when the report carries a fresh lookup ("" keeps
-// the last one).
-func (s *Store) SetProbeReportAddrs(ctx context.Context, proxyName, own, seen, public string) error {
-	now := time.Now().Unix()
-	if _, err := s.db.ExecContext(ctx, `UPDATE probe_agents SET addr_own=?, addr_seen=?, addr_at=? WHERE proxy_name=?`, own, seen, now, proxyName); err != nil {
+// one Argus saw it from (always), and the public one with when the probe's lookup found it, when the
+// report carries one ("" keeps the last one).
+func (s *Store) SetProbeReportAddrs(ctx context.Context, proxyName, own, seen, public string, publicAt int64) error {
+	if _, err := s.db.ExecContext(ctx, `UPDATE probe_agents SET addr_own=?, addr_seen=?, addr_at=? WHERE proxy_name=?`, own, seen, time.Now().Unix(), proxyName); err != nil {
 		return err
 	}
 	if public == "" {
 		return nil
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE probe_agents SET addr_public=?, addr_public_at=? WHERE proxy_name=?`, public, now, proxyName)
+	_, err := s.db.ExecContext(ctx, `UPDATE probe_agents SET addr_public=?, addr_public_at=? WHERE proxy_name=?`, public, publicAt, proxyName)
 	return err
 }
 
-// SetProbeHostAddr records a probe VM's LAN address and gateway, as its host reports them ("" ip is
-// ignored: a reporter without them keeps what was there).
+// SetProbeHostAddr records the host's LAN address and gateway, from a probe VM's OS report or the
+// sidecar's check-in ("" ip is ignored: a reporter without them keeps what was there).
 func (s *Store) SetProbeHostAddr(ctx context.Context, proxyName, ip, gw string) error {
 	if ip == "" {
 		return nil

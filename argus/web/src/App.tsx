@@ -62,8 +62,8 @@ type SaaSService = { id: string; name: string; url: string; default: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg; tags?: HostTag[]; own?: { asset_tag: string; location: string }; links?: LinkRow[]; class_links?: LinkRow[]; upstream?: UpstreamInfo }
 // A host's master sensor: while it's down, the host's other alerts are held (item_id "" = none).
 type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; options: { id: string; label: string }[] }
-type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; diags?: boolean; update_status?: string; last_checkin?: number; report_at?: number; report_stale?: boolean; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; host_tools?: ProbeHostTools; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean; host?: ProbeHostState; lan?: ProbeAddr; public?: ProbeAddr }
-// A probe's LAN or public address (probeaddrs.go): where it came from (host: the probe VM's own report;
+type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; diags?: boolean; update_status?: string; last_checkin?: number; report_at?: number; report_stale?: boolean; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; host_tools?: ProbeHostTools; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean; host?: ProbeHostState; lan?: ProbeAddr; lan_none?: 'public_host' | 'bridge'; public?: ProbeAddr; seen_ip?: string }
+// A probe's LAN or public address (probeaddrs.go): where it came from (host: the host's report, a probe VM's or the sidecar's;
 // probe: the probe container's report or its lookup; seen: where Argus sees its reports come from).
 type ProbeAddr = { ip: string; src: 'host' | 'probe' | 'seen'; gw?: string; at?: number }
 // A probe VM's reboots (DESIGN 14c): its own window (none: the fleet's), whether it takes Reboot now and
@@ -4144,32 +4144,39 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
 }
 
 // ProbeAddrs is the line under a probe's name: its LAN and public address, each saying on hover where
-// it came from and when. A LAN address Argus only sees (a container on Docker's bridge, behind its
-// host's NAT) carries a *. An offline probe's are its last known, faint. Nothing before the first report.
+// it came from and when; a dash says why there is none. The address Argus sees the reports come from
+// is only ever said on hover (any NAT on the way puts its own there). An offline probe's are its last
+// known, faint. Nothing before the first report.
 function ProbeAddrs({ p }: { p: Proxy }) {
-  if (!p.lan && !p.public) return null
+  if (!p.lan && !p.public && !p.lan_none) return null
   const when = (a: ProbeAddr) => (a.at ? `, ${relTime(a.at)}` : '')
+  const seen = p.seen_ip ? ` Argus sees its reports come from ${p.seen_ip}.` : ''
   const lanTitle = (a: ProbeAddr) => a.src === 'host'
-    ? `Reported by the probe VM${a.gw ? ` (gateway ${a.gw})` : ''}${when(a)}`
-    : a.src === 'probe'
-      ? `The address the probe reaches out from${when(a)}`
-      : `The address Argus sees this probe's reports come from${when(a)}: the probe runs on Docker's bridge network, where it sees only its own 172.17.x address`
+    ? `Reported by the probe's host${a.gw ? ` (gateway ${a.gw})` : ''}${when(a)}`
+    : `The address the probe reaches out from${when(a)}`
   const pubTitle = (a: ProbeAddr) => a.src === 'probe'
     ? `Looked up by the probe${when(a)}`
-    : `The public address Argus sees this probe's reports come from${when(a)}`
+    : a.src === 'host'
+      ? `The probe's host is on the internet directly, with this address${when(a)}`
+      : `The public address Argus sees this probe's reports come from${when(a)}`
+  const noLAN = p.lan_none === 'public_host'
+    ? `The probe's host is on the internet directly: it has no LAN address.${seen}`
+    : `This probe runs on Docker's bridge network, where it sees only its own 172.17.x address. ${p.selfupdate
+      ? 'Its argus-updater sidecar reports the host\'s from version 0.2.22, when it starts and after each start of the probe.'
+      : 'With the argus-updater sidecar next to it, the host\'s would show here.'}${seen}`
   return (
     <span className={'sub-line probe-addrs' + (p.online ? '' : ' off')}>
       <span>
         <span className="lbl">LAN</span>
         {p.lan
-          ? <><span className="mono" title={lanTitle(p.lan)}>{p.lan.ip}</span>{p.lan.src === 'seen' && <span className="lbl" title={lanTitle(p.lan)}>*</span>}</>
-          : <span className="mono lbl" title="This probe runs on Docker's bridge network, where it sees only its own 172.17.x address, and reaches Argus over the internet: its LAN address isn't known">-</span>}
+          ? <span className="mono" title={lanTitle(p.lan)}>{p.lan.ip}</span>
+          : <span className="mono lbl" title={noLAN}>-</span>}
       </span>
       <span>
         <span className="lbl">public</span>
         {p.public
           ? <span className="mono" title={pubTitle(p.public)}>{p.public.ip}</span>
-          : <span className="mono lbl" title="Not looked up yet: the probe asks Cloudflare every half hour, and this probe reaches Argus through a private address">-</span>}
+          : <span className="mono lbl" title={`Not looked up yet: the probe asks Cloudflare every hour.${seen}`}>-</span>}
       </span>
     </span>
   )

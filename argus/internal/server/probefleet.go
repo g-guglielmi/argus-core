@@ -129,6 +129,15 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		// it up (probeaddrs.go); absent from a sidecar's report and from an older probe's.
 		IP       string `json:"ip"`
 		PublicIP string `json:"public_ip"`
+		// How long ago the probe's lookup found PublicIP (seconds; probe r20 on, which sends the last
+		// one with every report). Absent: found just now (r19 sent it only right after a lookup).
+		PublicAge *int64 `json:"public_age"`
+		// The host's LAN address and gateway, as the sidecar reads them with the host's network
+		// (updater 0.2.22 on); null until it has.
+		HostLAN *struct {
+			IP string `json:"ip"`
+			GW string `json:"gw"`
+		} `json:"host_lan"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -148,7 +157,10 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		if !publicAddr(pub) {
 			pub = ""
 		}
-		_ = s.st.SetProbeReportAddrs(ctx, proxyName, cleanAddr(req.IP), cleanAddr(s.clientIP(r)), pub)
+		_ = s.st.SetProbeReportAddrs(ctx, proxyName, cleanAddr(req.IP), cleanAddr(s.clientIP(r)), pub, publicFoundAt(req.PublicAge, time.Now()))
+	}
+	if req.HostLAN != nil {
+		_ = s.st.SetProbeHostAddr(ctx, proxyName, cleanAddr(req.HostLAN.IP), cleanAddr(req.HostLAN.GW))
 	}
 	_ = s.st.SetUpdaterVersion(ctx, proxyName, reportedVersion(req.UpdaterVersion))
 	if doc := cleanHostTools(req.HostTools); doc != "" {

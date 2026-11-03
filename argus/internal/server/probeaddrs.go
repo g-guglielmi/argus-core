@@ -6,25 +6,28 @@ package server
 import (
 	"net/netip"
 	"strings"
+	"time"
 
 	"argus/internal/store"
 )
 
-// A probe's LAN and public address, the line under its name on the Probes page. Three sources, the
+// A probe's LAN and public address, the line under its name on the Probes page. The sources, the
 // most exact first:
-//   - a probe VM's host reports its LAN address and gateway with its OS status (argus-os-report);
-//   - the probe container's minute report carries the address it reaches out from, and now and then
-//     its public one (a lookup the probe makes itself, every half hour and when its address changes);
-//   - Argus sees where that report comes from.
+//   - the host's LAN address and gateway: a probe VM's OS report (argus-os-report), or the
+//     argus-updater sidecar's check-in (it reads them with the host's network when it starts and
+//     after each start of the proxy);
+//   - the probe container's minute report: the address it reaches out from, and the last public one
+//     its own lookup found (every hour and when its address changes), with its age;
+//   - where Argus sees that report come from.
 //
 // A container on Docker's bridge network (the usual docker run, a probe VM's too) reaches out from a
-// 172.17.x address that means nothing on the site; behind its host's NAT, Argus sees the host's
-// address instead, which is the one to show when it is a private one (the report came through the VPN
-// or the core's own network).
+// 172.17.x address that means nothing on the site. The address Argus sees is no LAN address either:
+// any NAT on the way (the host's, a VPN router's, a Tailscale exit node's) puts its own there. So it
+// is never shown as the LAN address, only said on hover.
 
-// probeAddrView is one address on the Probes page: the address, where it came from (host: the probe
-// VM's own report; probe: the probe container's report or its lookup; seen: where Argus sees the
-// probe's report come from), the gateway when known and when it was last reported.
+// probeAddrView is one address on the Probes page: the address, where it came from (host: the host's
+// report, the probe VM's or the sidecar's; probe: the probe container's report or its lookup; seen:
+// where Argus sees the probe's report come from), the gateway when known and when it was reported.
 type probeAddrView struct {
 	IP  string `json:"ip"`
 	Src string `json:"src"`
@@ -70,31 +73,45 @@ func inDockerNets(s string) bool {
 	return err == nil && dockerNets.Contains(a)
 }
 
-// probeLAN picks the LAN address to show: the VM host's report; else the container's own address
-// when it is a site one (host networking, a macvlan, or the very address Argus sees); else the
-// private address Argus sees the report come from (the container's host, behind its NAT). nil when
-// none is known: a container on a bridge whose report comes over the internet.
-func probeLAN(a store.ProbeAddrs) *probeAddrView {
+// probeLAN picks the LAN address to show: the host's report when it is a private address; else the
+// container's own address when it is a site one (host networking, a macvlan, or the very address
+// Argus sees). nil when none is known, with why: "public_host" (the host's own address is a public
+// one: a VPS on the internet has no LAN) or "bridge" (a container on Docker's bridge, with no sidecar
+// to read the host's).
+func probeLAN(a store.ProbeAddrs) (*probeAddrView, string) {
 	switch {
-	case a.Host != "":
-		return &probeAddrView{IP: a.Host, Src: "host", GW: a.HostGW, At: a.HostAt}
+	case privateAddr(a.Host):
+		return &probeAddrView{IP: a.Host, Src: "host", GW: a.HostGW, At: a.HostAt}, ""
+	case publicAddr(a.Host):
+		return nil, "public_host"
 	case privateAddr(a.Own) && (a.Own == a.Seen || !inDockerNets(a.Own)):
-		return &probeAddrView{IP: a.Own, Src: "probe", At: a.At}
-	case privateAddr(a.Seen):
+		return &probeAddrView{IP: a.Own, Src: "probe", At: a.At}, ""
+	case a.Own != "" || a.Seen != "":
+		return nil, "bridge"
+	}
+	return nil, ""
+}
+
+// probePublic picks the public address to show: the probe's own lookup; else a host whose own address
+// is public (a VPS); else the public address Argus sees the report come from. nil when none is known
+// (a probe that reports over the VPN and couldn't look it up).
+func probePublic(a store.ProbeAddrs) *probeAddrView {
+	switch {
+	case a.Public != "":
+		return &probeAddrView{IP: a.Public, Src: "probe", At: a.PublicAt}
+	case publicAddr(a.Host):
+		return &probeAddrView{IP: a.Host, Src: "host", At: a.HostAt}
+	case publicAddr(a.Seen):
 		return &probeAddrView{IP: a.Seen, Src: "seen", At: a.At}
 	}
 	return nil
 }
 
-// probePublic picks the public address to show: the probe's own lookup; else the public address
-// Argus sees the report come from. nil when neither is known (a probe that reports over the VPN
-// and couldn't look it up).
-func probePublic(a store.ProbeAddrs) *probeAddrView {
-	switch {
-	case a.Public != "":
-		return &probeAddrView{IP: a.Public, Src: "probe", At: a.PublicAt}
-	case publicAddr(a.Seen):
-		return &probeAddrView{IP: a.Seen, Src: "seen", At: a.At}
+// publicFoundAt is when the probe's lookup found the public address it reports: now less the age it
+// gives (held to 0..30 days), or now when it gives none (r19 sent it right after the lookup).
+func publicFoundAt(age *int64, now time.Time) int64 {
+	if age == nil || *age < 0 || *age > 30*86400 {
+		return now.Unix()
 	}
-	return nil
+	return now.Unix() - *age
 }
