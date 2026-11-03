@@ -2558,7 +2558,8 @@ plane; the probe checks in and converges.
   Zabbix lines (Reboot now, Patch now, Update now) in its group. **Probes**: the image channel (the
   fleet target: `latest` or a recent release, the core's picker) and the fleet's reboot window, then every probe's proxy, sidecar and, on a probe VM, the host tools
   the sidecar installs from the probe image and its OS line (Reboot now, Patch now), plus a Reboots
-  line only for a probe with a window of its own; then the newest probe VM image. **Update all**
+  line only for a probe with a window of its own. The probe VM image is not here: nothing running
+  updates from it, and the Add probe wizard that installs it shows its version. **Update all**
   queues every one that is behind. There is no separate Operating systems section.
   Both sections use one vocabulary: **Image channel** (the tag the core runs, the tag the probes
   converge on; the same picker, channels then the newest five releases then a custom version, which

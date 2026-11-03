@@ -31,7 +31,9 @@ GitHub Release from the matching section below.
 ### Changed
 - **The Updates page has no Operating systems section.** The core's reboot and Zabbix windows and
   its OS and Zabbix lines are in the Argus core section; each probe VM's OS line is in its own group
-  under Probes, with the fleet reboot window under the image channel and the probe VM image last.
+  under Probes, with the fleet reboot window under the image channel. The probe VM image line is
+  gone: nothing on it ever updated, and the Add probe wizard, which installs it, shows its version
+  with the downloads.
 - **One vocabulary for the core and the probes on the Updates page.** The core's Channel and the
   probes' Fleet target are both **Image channel** now, with the same picker: the channel first, then
   the newest few releases, then **Custom version…** for any other published release (checked

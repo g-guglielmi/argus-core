@@ -2179,7 +2179,7 @@ function FleetTarget({ target, latest, onSaved }: { target: string | null; lates
 
 // ProbeUpdates is the Probes section: the image channel and the reboot window, then each probe's proxy and argus-updater
 // sidecar with their Update buttons. A sidecar takes what is queued for it at its next check-in.
-function ProbeUpdates({ proxies, error, target, onTarget, onChanged, os, onOS, vmLatest }: { proxies: Proxy[] | null; error: string; target: string | null; onTarget: (t: string) => void; onChanged: () => void; os: OSStatus | null; onOS: () => void; vmLatest: string }) {
+function ProbeUpdates({ proxies, error, target, onTarget, onChanged, os, onOS }: { proxies: Proxy[] | null; error: string; target: string | null; onTarget: (t: string) => void; onChanged: () => void; os: OSStatus | null; onOS: () => void }) {
   const confirm = useConfirm()
   const act = useProbeOS(onChanged)
   const toast = useToast()
@@ -2254,11 +2254,6 @@ function ProbeUpdates({ proxies, error, target, onTarget, onChanged, os, onOS, v
             </UpdGroup>
           )
         })}
-      <UpdGroup label="Probe VM image" sub="for new probes">
-        <UpdPart label="Image">{vmLatest
-          ? <><UpdVer v={vv(vmLatest)} title="The newest probe appliance release" /><UpdPill kind="info" title="What Add probe installs for a new probe VM. A VM already running doesn't need it: its probe updates through its sidecar, and its OS patches itself.">newest</UpdPill></>
-          : <UpdPill kind="none">not looked up yet</UpdPill>}</UpdPart>
-      </UpdGroup>
     </section>
   )
 }
@@ -2297,7 +2292,6 @@ function UpdatesView() {
   const [proxies, setProxies] = useState<Proxy[] | null>(null)
   const [proxyErr, setProxyErr] = useState('')
   const [target, setTarget] = useState<string | null>(null)
-  const [vmLatest, setVmLatest] = useState('')
   const [checking, setChecking] = useState(false)
   const [checkMsg, setCheckMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [os, setOs] = useState<OSStatus | null>(null)
@@ -2321,7 +2315,6 @@ function UpdatesView() {
   useEffect(() => {
     getJSON('/api/version').then((d) => { if (d) setV(d) })
     getJSON('/api/probes/target').then((d) => { if (d && d.target) setTarget(d.target) })
-    getJSON('/api/probes/vm-images').then((d) => { if (d && d.version) setVmLatest(d.version) })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // The core's and its sidecar's jobs every 3 s while one runs, every 15 s otherwise, so one asked for
   // in another tab still shows; the probes every 30 s, every 5 s while one of theirs is in hand.
@@ -2331,7 +2324,7 @@ function UpdatesView() {
   useEffect(() => { loadProxies(); const t = setInterval(loadProxies, probeBusy ? 5000 : 30000); return () => clearInterval(t) }, [probeBusy]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Check for updates looks up everything at once (the core's release, the probe image, both
-  // updaters, the probe VM image), then reloads what it decides and says it in one line.
+  // updaters), then reloads what it decides and says it in one line.
   async function checkAll() {
     setChecking(true); setCheckMsg(null)
     try {
@@ -2341,7 +2334,6 @@ function UpdatesView() {
       if (cv) setV(cv)
       if (st) setUpd(st)
       if (list) { setProxies(list); setProxyErr('') }
-      if (pv && pv.vm_latest) setVmLatest(pv.vm_latest)
       setCheckMsg(updatesVerdict(cv, pv, st || upd, list || proxies || []))
     } finally { setChecking(false) }
   }
@@ -2356,7 +2348,7 @@ function UpdatesView() {
       {checkMsg && <p className={'upd-check ' + (checkMsg.ok ? 'ok' : 'warn')} role="status">{checkMsg.text}</p>}
       <div className="set-body">
         <CoreUpdates v={v} upd={upd} onChanged={loadUpd} os={os} onOS={loadOs} />
-        <ProbeUpdates proxies={proxies} error={proxyErr} target={target} onTarget={setTarget} onChanged={loadProxies} os={os} onOS={loadOs} vmLatest={vmLatest} />
+        <ProbeUpdates proxies={proxies} error={proxyErr} target={target} onTarget={setTarget} onChanged={loadProxies} os={os} onOS={loadOs} />
       </div>
     </div>
   )
