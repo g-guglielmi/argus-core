@@ -24,7 +24,8 @@ func TestRebootWindowValid(t *testing.T) {
 		{"auto weekday too high", rebootWindow{Mode: "auto", Weekday: 7}, false},
 		{"auto hour too high", rebootWindow{Mode: "auto", Hour: 24}, false},
 		{"auto minute too high", rebootWindow{Mode: "auto", Minute: 60}, false},
-		{"auto negative", rebootWindow{Mode: "auto", Weekday: -1}, false},
+		{"auto every day", rebootWindow{Mode: "auto", Weekday: -1, Hour: 3}, true},
+		{"auto below every day", rebootWindow{Mode: "auto", Weekday: -2}, false},
 	}
 	for _, c := range cases {
 		if got := c.rw.valid(); got != c.want {

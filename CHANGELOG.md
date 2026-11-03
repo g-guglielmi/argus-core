@@ -17,7 +17,7 @@ GitHub Release from the matching section below.
 
 ### Added
 - **Probe VM reboots on a window Argus keeps, and Reboot now and Patch now per probe VM.** The
-  Updates page's Probes section has a **Probe reboots** setting next to the fleet target: when the
+  Updates page's Probes section has a **Reboots** setting under its image channel: when the
   probe VMs reboot by themselves, only when an update needs it, every day at 03:00 by default (what
   they did before) or a day and time you pick, or notify only. The time reads on the core's clock,
   whatever time zone a VM runs. A probe can keep a window of its own (its **⋮ > Reboot window…** on
@@ -31,7 +31,14 @@ GitHub Release from the matching section below.
 ### Changed
 - **The Updates page has no Operating systems section.** The core's reboot and Zabbix windows and
   its OS and Zabbix lines are in the Argus core section; each probe VM's OS line is in its own group
-  under Probes, with the fleet reboot window next to the fleet target and the probe VM image last.
+  under Probes, with the fleet reboot window under the image channel and the probe VM image last.
+- **One vocabulary for the core and the probes on the Updates page.** The core's Channel and the
+  probes' Fleet target are both **Image channel** now, with the same picker: the channel first, then
+  the newest few releases, and a pin reads "(pinned)" (the probes' free-text box is gone; a switch
+  asks first, since it moves the whole fleet). The core's Core reboot and Core Zabbix updates are
+  **Reboots** and **Zabbix updates**, and every window has the same choices, **Every day** included
+  for the core's too, and reads on the same "core's clock" (the core VM's local time was that clock
+  already). The core's default stays notify only.
 
 - **Diagnostics: ping, traceroute and DNS lookup from the core or any probe.** A host's ⋮ menu has
   **Diagnose…** (its address and its own probe filled in), a probe's on the Probes page **Diagnose

@@ -99,12 +99,12 @@ func validTimezone(tz string) bool {
 	return true
 }
 
-// rebootWindow is the operator-scheduled reboot policy for the core VM. Mode "notify" never reboots
-// unattended (Argus just flags reboot-required); mode "auto" reboots in the given weekly window when
-// the OS needs it. Weekday is 0=Sunday..6=Saturday.
+// rebootWindow is an operator-scheduled policy: the core's reboot, its Zabbix minor updates, a probe
+// VM's reboot. Mode "notify" never acts unattended (Argus just flags what is due); mode "auto" acts in
+// the window when something is due. Weekday is 0=Sunday..6=Saturday, or -1 for every day.
 type rebootWindow struct {
 	Mode    string `json:"mode"`    // "notify" | "auto"
-	Weekday int    `json:"weekday"` // 0..6 (auto only)
+	Weekday int    `json:"weekday"` // -1 (every day), 0..6 (auto only)
 	Hour    int    `json:"hour"`    // 0..23 (auto only)
 	Minute  int    `json:"minute"`  // 0..59 (auto only)
 }
@@ -119,7 +119,7 @@ func (rw rebootWindow) valid() bool {
 		return false
 	}
 	if rw.Mode == "auto" {
-		return rw.Weekday >= 0 && rw.Weekday <= 6 && rw.Hour >= 0 && rw.Hour <= 23 && rw.Minute >= 0 && rw.Minute <= 59
+		return rw.Weekday >= everyDay && rw.Weekday <= 6 && rw.Hour >= 0 && rw.Hour <= 23 && rw.Minute >= 0 && rw.Minute <= 59
 	}
 	return true
 }
@@ -500,7 +500,7 @@ func (s *Server) handleSetRebootWindow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !rw.valid() {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": `mode must be "notify" or "auto"; for auto, weekday 0-6, hour 0-23, minute 0-59`})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": `mode must be "notify" or "auto"; for auto, weekday -1 (every day) to 6, hour 0-23, minute 0-59`})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
@@ -526,7 +526,7 @@ func (s *Server) handleSetZbxWindow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !rw.valid() {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": `mode must be "notify" or "auto"; for auto, weekday 0-6, hour 0-23, minute 0-59`})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": `mode must be "notify" or "auto"; for auto, weekday -1 (every day) to 6, hour 0-23, minute 0-59`})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)

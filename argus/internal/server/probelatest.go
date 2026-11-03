@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,8 +29,25 @@ const probeLatestRefresh = 3 * time.Hour
 // the public GHCR tags list and refreshed periodically. It lets the fleet view compute real drift
 // against the "latest" target instead of only showing "tracking".
 type probeLatestCache struct {
-	mu      sync.RWMutex
-	version string
+	mu       sync.RWMutex
+	version  string
+	releases []string // the newest few X.Y.Z-rN, newest first (the probe image only: its image-channel picker)
+}
+
+// getReleases returns the newest few published releases, newest first.
+func (c *probeLatestCache) getReleases() []string {
+	if c == nil {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return append([]string(nil), c.releases...)
+}
+
+func (c *probeLatestCache) setReleases(r []string) {
+	c.mu.Lock()
+	c.releases = r
+	c.mu.Unlock()
 }
 
 func (c *probeLatestCache) get() string {
@@ -72,14 +90,18 @@ func (s *Server) startProbeLatestRefresh(ctx context.Context) {
 func (s *Server) refreshProbeLatest(ctx context.Context) error {
 	c, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	v, err := resolveLatestProbeVersion(c)
+	rels, err := resolveProbeReleases(c)
 	if err != nil {
 		s.logger.Warn("probe latest: GHCR resolve failed", "err", err)
 		return err
 	}
-	if v != "" {
-		s.probeLatest.set(v)
-		s.logger.Info("probe latest resolved from GHCR", "version", v)
+	if len(rels) > 0 {
+		s.probeLatest.set(rels[0])
+		if len(rels) > probeTargetReleases {
+			rels = rels[:probeTargetReleases]
+		}
+		s.probeLatest.setReleases(rels)
+		s.logger.Info("probe latest resolved from GHCR", "version", rels[0])
 	}
 	return nil
 }
@@ -387,24 +409,34 @@ func updaterStatus(reported, latest string) string {
 
 var probeVerTag = regexp.MustCompile(`^([0-9]+)\.([0-9]+)\.([0-9]+)-r([0-9]+)$`)
 
-// resolveLatestProbeVersion returns the newest X.Y.Z-rN tag published for the probe image, read
-// anonymously from the public GHCR registry (token -> tags list). "" if none is found.
-func resolveLatestProbeVersion(ctx context.Context) (string, error) {
+// probeTargetReleases is how many recent probe releases the image-channel picker offers as pins.
+const probeTargetReleases = 5
+
+// resolveProbeReleases returns every X.Y.Z-rN tag published for the probe image, newest first, read
+// anonymously from the public GHCR registry (token -> tags list). Empty if none is found.
+func resolveProbeReleases(ctx context.Context) ([]string, error) {
 	repoPath := strings.TrimPrefix(probeImageRepo, "ghcr.io/") // "<owner>/argus-probe"
 
 	var tok struct {
 		Token string `json:"token"`
 	}
 	if err := ghcrGetJSON(ctx, "https://ghcr.io/token?scope=repository:"+repoPath+":pull", "", &tok); err != nil {
-		return "", err
+		return nil, err
 	}
 	tags, err := ghcrListTags(ctx, repoPath, tok.Token)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+	return newestProbeTags(tags), nil
+}
 
-	best := ""
-	var bestKey [4]int
+// newestProbeTags keeps the X.Y.Z-rN tags of a list, newest first.
+func newestProbeTags(tags []string) []string {
+	type rel struct {
+		tag string
+		key [4]int
+	}
+	var rels []rel
 	for _, t := range tags {
 		m := probeVerTag.FindStringSubmatch(t)
 		if m == nil {
@@ -414,11 +446,14 @@ func resolveLatestProbeVersion(ctx context.Context) (string, error) {
 		for i := 0; i < 4; i++ {
 			k[i], _ = strconv.Atoi(m[i+1])
 		}
-		if best == "" || versionLess(bestKey, k) {
-			best, bestKey = t, k
-		}
+		rels = append(rels, rel{t, k})
 	}
-	return best, nil
+	sort.Slice(rels, func(i, j int) bool { return versionLess(rels[j].key, rels[i].key) })
+	out := make([]string, 0, len(rels))
+	for _, r := range rels {
+		out = append(out, r.tag)
+	}
+	return out
 }
 
 // versionLess reports whether a sorts before b as a (major, minor, patch, revision) tuple.

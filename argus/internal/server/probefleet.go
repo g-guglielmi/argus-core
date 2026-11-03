@@ -400,7 +400,8 @@ func (s *Server) handleGetProbeTarget(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not read target"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"target": target})
+	// The newest few releases ride along for the image-channel picker (pins), newest first.
+	writeJSON(w, http.StatusOK, map[string]any{"target": target, "releases": nonNilStrings(s.probeLatest.getReleases())})
 }
 
 // handleSetProbeTarget updates the fleet's target probe version (admin). Accepts "latest" or an

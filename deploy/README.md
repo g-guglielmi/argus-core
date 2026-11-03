@@ -243,7 +243,7 @@ recreate - **no re-enrollment**: the signed cert + `ca.crt` live on the persiste
 `/var/lib/zabbix` volume, and the entrypoint skips enrollment whenever those certs already exist
 (so the single-use token is never needed again). Options:
 
-- **Argus** (recommended): the Updates page shows every probe's version against the fleet target
+- **Argus** (recommended): the Updates page shows every probe's version against the probes' image channel
   and applies an update through the probe's updater sidecar (next section). No third-party
   auto-updater is needed or supported next to it.
 - **unRAID**: the built-in *CA Auto Update* plugin updates the container on a schedule.
@@ -256,7 +256,7 @@ pick it up. (Pin a specific tag instead if you'd rather gate probe updates - see
 ### Fleet updates - Argus-coordinated (v0.4.8)
 
 Argus is a **control plane** for probe versions: it holds a **fleet target** (Updates → Probes →
-*Fleet target*: `latest` or an exact pin like `7.0.29-r1`) and shows each probe's running version
+*Image channel*: `latest` or a recent release to pin, like `7.0.29-r1`) and shows each probe's running version
 against it. Every probe self-reports its baked-in version every ~5 min over an outbound-only
 check-in (a long-lived token issued at enrollment) - nothing inbound is opened.
 

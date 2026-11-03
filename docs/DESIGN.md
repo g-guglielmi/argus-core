@@ -1964,7 +1964,7 @@ without needing a full reboot.
 
 **Reboot policy differs by role:**
 - **Probes (cattle) - automatic.** A probe VM reboots by itself when an update needs it, in its
-  **reboot window**: the fleet's (Updates > Probes, **Probe reboots**; every day at 03:00 by default),
+  **reboot window**: the fleet's (Updates > Probes, **Reboots**; every day at 03:00 by default),
   or one of its own (the probe's **⋮ > Reboot window…**), or never by itself (notify only). Probes
   buffer 7 days offline, so a ~60s reboot is invisible. Fully hands-off.
 - **Core (pet) - operator-scheduled.** Security patches auto-apply, but the **reboot is never
@@ -2551,15 +2551,19 @@ plane; the probe checks in and converges.
   three sections laid out the same way, in rows. A group is one machine or one setting: its label on
   the left, then one line per part with its version, one status pill (up to date, available, queued,
   updating, failed) and its **Update** button, and under a part its step log or a hint. Settings
-  (the core's channel, the fleet target, the core's reboot and Zabbix windows) are groups of their
+  (the two image channels, the reboot and Zabbix windows) are groups of their
   own whose value reads like a version and is changed in place. **Argus core**: the channel (the tag
   the core runs under, `channel` in `GET /api/version`), then the core, its sidecar and the
   collectors, with the core's OS: its reboot and Zabbix windows as settings, and the core's OS and
-  Zabbix lines (Reboot now, Patch now, Update now) in its group. **Probes**: the fleet target and the
-  fleet's probe reboot window, then every probe's proxy, sidecar and, on a probe VM, the host tools
+  Zabbix lines (Reboot now, Patch now, Update now) in its group. **Probes**: the image channel (the
+  fleet target: `latest` or a recent release, the core's picker) and the fleet's reboot window, then every probe's proxy, sidecar and, on a probe VM, the host tools
   the sidecar installs from the probe image and its OS line (Reboot now, Patch now), plus a Reboots
   line only for a probe with a window of its own; then the newest probe VM image. **Update all**
-  queues every one that is behind. There is no separate Operating systems section. The Probes page keeps the versions as read-only status in the same words; a probe that
+  queues every one that is behind. There is no separate Operating systems section.
+  Both sections use one vocabulary: **Image channel** (the tag the core runs, the tag the probes
+  converge on; the same picker, channels then the newest five releases, a pin reads "(pinned)"),
+  **Reboots** and **Zabbix updates** with one window picker (notify only, or a day or every day
+  and a time, on the core's clock). The Probes page keeps the versions as read-only status in the same words; a probe that
   is behind links to Updates (admins only: helpdesk sees Probes, not Updates).
 - **The core host's collectors ride the image.** The core's Zabbix server is a host package, so the
   collectors (external checks) it runs for the hosts it monitors live in the host's

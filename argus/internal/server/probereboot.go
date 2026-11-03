@@ -40,14 +40,6 @@ const probeFastCheckin = 15
 // update needs a reboot.
 func defaultProbeWindow() rebootWindow { return rebootWindow{Mode: "auto", Weekday: everyDay, Hour: 3} }
 
-// validProbe is valid, plus every day.
-func (rw rebootWindow) validProbe() bool {
-	if rw.Mode == "auto" && rw.Weekday == everyDay {
-		return rw.Hour >= 0 && rw.Hour <= 23 && rw.Minute >= 0 && rw.Minute <= 59
-	}
-	return rw.valid()
-}
-
 // normal drops the day and time of a notify-only window, so two equal policies compare equal.
 func (rw rebootWindow) normal() rebootWindow {
 	if rw.Mode != "auto" {
@@ -63,7 +55,7 @@ func (s *Server) loadProbeWindow(ctx context.Context) rebootWindow {
 		return defaultProbeWindow()
 	}
 	var rw rebootWindow
-	if json.Unmarshal([]byte(raw), &rw) != nil || !rw.validProbe() {
+	if json.Unmarshal([]byte(raw), &rw) != nil || !rw.valid() {
 		return defaultProbeWindow()
 	}
 	return rw.normal()
@@ -75,7 +67,7 @@ func ownProbeWindow(doc string) *rebootWindow {
 		return nil
 	}
 	var rw rebootWindow
-	if json.Unmarshal([]byte(doc), &rw) != nil || !rw.validProbe() {
+	if json.Unmarshal([]byte(doc), &rw) != nil || !rw.valid() {
 		return nil
 	}
 	rw = rw.normal()
@@ -319,7 +311,7 @@ func decodeProbeWindow(w http.ResponseWriter, r *http.Request) (rebootWindow, bo
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return rw, false
 	}
-	if !rw.validProbe() {
+	if !rw.valid() {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": `mode must be "notify" or "auto"; for auto, weekday -1 (every day) to 6, hour 0-23, minute 0-59`})
 		return rw, false
 	}
@@ -358,7 +350,7 @@ func (s *Server) handleSetOwnProbeWindow(w http.ResponseWriter, r *http.Request)
 	}
 	doc := ""
 	if !body.Fleet {
-		if !body.rebootWindow.validProbe() {
+		if !body.rebootWindow.valid() {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": `mode must be "notify" or "auto"; for auto, weekday -1 (every day) to 6, hour 0-23, minute 0-59`})
 			return
 		}

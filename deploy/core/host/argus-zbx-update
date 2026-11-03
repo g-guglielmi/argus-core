@@ -16,11 +16,11 @@ else
   [ -f "$WIN" ] || exit 0
   mode="$(sed -n 's/.*"mode":"\([a-z]*\)".*/\1/p' "$WIN")"
   [ "$mode" = "auto" ] || exit 0
-  wd="$(sed -n 's/.*"weekday":\([0-9]*\).*/\1/p' "$WIN")"
+  wd="$(sed -n 's/.*"weekday":\(-\{0,1\}[0-9]*\).*/\1/p' "$WIN")"   # -1: every day
   wh="$(sed -n 's/.*"hour":\([0-9]*\).*/\1/p' "$WIN")"
   wm="$(sed -n 's/.*"minute":\([0-9]*\).*/\1/p' "$WIN")"
   now_wd="$(date +%w)"; now_h="$(date +%-H)"; now_m="$(date +%-M)"
-  [ "$now_wd" = "$wd" ] && [ "$now_h" = "$wh" ] || exit 0
+  { [ "$wd" = "-1" ] || [ "$now_wd" = "$wd" ]; } && [ "$now_h" = "$wh" ] || exit 0
   # The timer fires every 5 min; act if we're within a 10-minute slack of the target minute.
   [ "$now_m" -ge "$wm" ] && [ "$now_m" -lt $((wm + 10)) ] || exit 0
   why="window"

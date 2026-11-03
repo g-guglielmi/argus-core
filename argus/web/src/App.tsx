@@ -1170,9 +1170,9 @@ function probeToolsPill(ts: NonNullable<ReturnType<typeof probeToolsState>>, nam
   return <UpdPill kind="ok" title={ts.title}>{n}up to date</UpdPill>
 }
 
-// WeeklyWindow picks when something happens by itself: never (notify only), or at a day and time. The
-// core's reboot and its Zabbix minor updates are weekly on the core VM's clock; a probe VM's reboot
-// may also be every day, and a probe's own window may go back to the fleet's (fleetLabel).
+// WeeklyWindow picks when something happens by itself: never (notify only), or at a day and time (or
+// every day), on the core's clock: the core's reboot and its Zabbix minor updates, the probe VMs'
+// reboot. A probe's own window may go back to the fleet's (fleetLabel).
 function WeeklyWindow({ autoLabel, mode, weekday, time, onMode, onWeekday, onTime, everyDay, fleetLabel }: {
   autoLabel: string; mode: string; weekday: number; time: string
   onMode: (m: string) => void; onWeekday: (d: number) => void; onTime: (t: string) => void
@@ -1323,31 +1323,31 @@ function useCoreOS(os: OSStatus | null, load: () => void, selfUpdate: boolean): 
     : zAvail ? <UpdPill kind="avail" title="A minor update is available from the Zabbix repo: it applies in the Core Zabbix updates window, with Update now, or by hand">{c.zbx_candidate} available</UpdPill>
     : <UpdPill kind="ok" title={os.fleet_zbx && os.fleet_zbx !== c.zbx_server ? `The probes run ${os.fleet_zbx}.` : undefined}>up to date</UpdPill>
   const policies = <>
-    <UpdPolicy label="Core reboot" value={windowText(os.reboot_window)}
-      title={os.reboot_window.mode === 'auto' ? "The core reboots only when an update needs it, in this window (the core VM's local time)" : 'Argus flags "reboot needed" and leaves the reboot to you'}
+    <UpdPolicy label="Reboots" value={windowText(os.reboot_window)}
+      title={os.reboot_window.mode === 'auto' ? `The core reboots only when an update needs it, in this window (${coreClock(os.clock_tz)})` : 'Argus flags "reboot needed" and leaves the reboot to you'}
       onEdit={() => r.setOpen(true)}
       editor={r.open ? <>
-        <WeeklyWindow autoLabel="Auto-reboot weekly" mode={r.mode} weekday={r.weekday} time={r.time} onMode={r.setMode} onWeekday={r.setWeekday} onTime={r.setTime} />
+        <WeeklyWindow autoLabel="Auto-reboot when needed" everyDay mode={r.mode} weekday={r.weekday} time={r.time} onMode={r.setMode} onWeekday={r.setWeekday} onTime={r.setTime} />
         <Button variant="primary" onClick={() => saveWindow('/api/os/reboot-window', 'reboot window', r)} disabled={saving || !r.dirty}>{saving ? 'Saving…' : 'Save'}</Button>
         <Button variant="default" onClick={r.cancel} disabled={saving}>Cancel</Button>
       </> : undefined}
       below={r.open ? <p className="set-hint">{r.mode === 'auto'
-        ? <>The core reboots only when an update needs it, on <strong>{WEEKDAYS[r.weekday]}</strong> at <strong>{r.time}</strong> (the core VM's local time). Take a hypervisor snapshot as your safety net.</>
+        ? <>The core reboots only when an update needs it, <strong>{r.weekday < 0 ? 'every day' : `on ${WEEKDAYS[r.weekday]}`}</strong> at <strong>{r.time}</strong> on {coreClock(os.clock_tz)}. Zabbix and Argus are away for a minute or two; take a hypervisor snapshot as your safety net.</>
         : 'Notify only: Argus flags "reboot needed" and leaves the reboot to you.'}</p> : undefined} />
 
     {/* Core Zabbix minor updates (same major only). The Zabbix apt repo is pinned per major line
         and the host applier double-guards on the major.minor prefix: a major upgrade is always a
         planned manual event (database migration, TimescaleDB compatibility). */}
-    <UpdPolicy label="Core Zabbix updates" value={windowText(os.zbx_window)}
-      title={os.zbx_window.mode === 'auto' ? "Pending zabbix-* minors apply in this window (the core VM's local time), then zabbix-server restarts" : 'Argus shows when a minor is available and leaves applying it to you'}
+    <UpdPolicy label="Zabbix updates" value={windowText(os.zbx_window)}
+      title={os.zbx_window.mode === 'auto' ? `Pending zabbix-* minors apply in this window (${coreClock(os.clock_tz)}), then zabbix-server restarts` : 'Argus shows when a minor is available and leaves applying it to you'}
       onEdit={() => z.setOpen(true)}
       editor={z.open ? <>
-        <WeeklyWindow autoLabel="Auto-update weekly" mode={z.mode} weekday={z.weekday} time={z.time} onMode={z.setMode} onWeekday={z.setWeekday} onTime={z.setTime} />
+        <WeeklyWindow autoLabel="Auto-update when available" everyDay mode={z.mode} weekday={z.weekday} time={z.time} onMode={z.setMode} onWeekday={z.setWeekday} onTime={z.setTime} />
         <Button variant="primary" onClick={() => saveWindow('/api/os/zbx-window', 'update window', z)} disabled={saving || !z.dirty}>{saving ? 'Saving…' : 'Save'}</Button>
         <Button variant="default" onClick={z.cancel} disabled={saving}>Cancel</Button>
       </> : undefined}
       below={z.open ? <p className="set-hint">{z.mode === 'auto'
-        ? <>Pending zabbix-* minors apply on <strong>{WEEKDAYS[z.weekday]}</strong> at <strong>{z.time}</strong> (the core VM's local time), then zabbix-server restarts: a seconds-long blip the probes buffer through. Major upgrades are never automated: they migrate the database.</>
+        ? <>Pending zabbix-* minors apply <strong>{z.weekday < 0 ? 'every day' : `on ${WEEKDAYS[z.weekday]}`}</strong> at <strong>{z.time}</strong> on {coreClock(os.clock_tz)}, then zabbix-server restarts: a seconds-long blip the probes buffer through. Major upgrades are never automated: they migrate the database.</>
         : 'Notify only: Argus shows when a minor is available and leaves applying it to you. Major upgrades are never automated: they migrate the database.'}</p> : undefined} />
   </>
   const parts = <>
@@ -1372,7 +1372,7 @@ function ProbeFleetWindow({ os, onSaved }: { os: OSStatus | null; onSaved: () =>
   if (!os) return null
   const clock = coreClock(os.clock_tz)
   return (
-    <UpdPolicy label="Probe reboots" value={windowText(os.probe_window)}
+    <UpdPolicy label="Reboots" value={windowText(os.probe_window)}
       title={os.probe_window.mode === 'auto' ? `Each probe VM reboots only when an update needs it, in this window (${clock}); a probe with its own window keeps it` : 'Argus flags "reboot needed" on each probe VM and leaves the reboot to you'}
       onEdit={() => w.setOpen(true)}
       editor={w.open ? <>
@@ -1865,7 +1865,7 @@ function UpdBelow({ children }: { children: ReactNode }) {
   return <div className="upd-below">{children}</div>
 }
 
-// UpdPolicy is a setting of a section (the core's channel, the fleet target, a maintenance window): a
+// UpdPolicy is a setting of a section (an image channel, a maintenance window): a
 // group of its own whose value reads like a version, changed in place.
 function UpdPolicy({ label, value, title, onEdit, editor, below }: { label: string; value: string; title?: string; onEdit?: () => void; editor?: ReactNode; below?: ReactNode }) {
   return (
@@ -1910,8 +1910,8 @@ function proxyState(p: Proxy): { pill: ReactNode; can: 'self' | 'manual' | '' } 
   const can = p.selfupdate ? 'self' : 'manual'
   if (job) return { pill: jobPill(job, 'probe'), can }
   if (p.update_status === 'outdated') return { pill: <UpdPill kind="avail">{probeTo(p)} available</UpdPill>, can }
-  if (p.update_status === 'tracking') return { pill: <UpdPill kind="info" title="The fleet target is latest and the newest published version isn't known yet: Check for updates looks it up">tracking latest</UpdPill>, can: p.selfupdate ? 'self' : '' }
-  return { pill: <UpdPill kind="ok" title="Running the fleet target version">up to date</UpdPill>, can: '' }
+  if (p.update_status === 'tracking') return { pill: <UpdPill kind="info" title="The probes' image channel is latest and the newest published version isn't known yet: Check for updates looks it up">tracking latest</UpdPill>, can: p.selfupdate ? 'self' : '' }
+  return { pill: <UpdPill kind="ok" title="Running what the probes' image channel asks for">up to date</UpdPill>, can: '' }
 }
 
 // updaterState is where a probe's argus-updater sidecar stands against the newest published one.
@@ -2045,7 +2045,7 @@ function CoreRows({ v, upd, onChanged, os, onOS }: { v: VersionInfo; upd: Update
       <p className="set-note">The Argus app on this server, the argus-updater sidecar that installs its updates (it holds the Docker socket and rolls an update back if the new version doesn't start healthy), the collectors and host tools it copies in, and the Debian and Zabbix under it. Argus looks for a newer release every night. The Debian patches itself, security updates only; Argus never runs apt remotely, since there's no clean rollback. The core hosts the database and Zabbix, so its reboot and its Zabbix minor updates wait for the windows below, or for a click on their line.</p>
 
       {self && (
-        <UpdPolicy label="Channel" value={channelText} title={channelTitle}
+        <UpdPolicy label="Image channel" value={channelText} title={channelTitle}
           onEdit={targets && upd.state !== 'success' && !active ? () => setSwitching(true) : undefined}
           editor={switching && targets ? <>
             <select className="input" value={switchTo} onChange={(e) => setSwitchTo(e.target.value)} style={{ width: 240 }} aria-label="Switch to">
@@ -2102,43 +2102,65 @@ function CoreRows({ v, upd, onChanged, os, onOS }: { v: VersionInfo; upd: Update
   )
 }
 
-// FleetTarget is the version every probe converges on: 'latest' (rolling) or an exact pin like
-// '7.0.29-r1'. The sidecars and the manual command both honour it.
+// FleetTarget is the probes' image channel: what every probe runs, the rolling 'latest' or a release it
+// stays on (a pin like '7.0.32-r16'). The sidecars and the manual command both honour it. The same
+// picker as the core's channel: the channel first, then the newest few releases.
 function FleetTarget({ target, latest, onSaved }: { target: string | null; latest?: string; onSaved: (t: string) => void }) {
+  const confirm = useConfirm()
   const [editing, setEditing] = useState(false)
   const [val, setVal] = useState('')
+  const [releases, setReleases] = useState<string[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  function start() { setVal(target || 'latest'); setError(null); setEditing(true) }
-  const valid = (v: string) => v === 'latest' || /^[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+$/.test(v.trim())
+  function start() {
+    setVal(''); setError(null); setEditing(true)
+    fetch('/api/probes/target').then((r) => (r.ok ? r.json() : null)).then((d) => setReleases((d && d.releases) || [])).catch(() => setReleases([]))
+  }
+  // The pin in force stays choosable even once it's older than the newest few.
+  const pins = [...(releases || [])]
+  if (target && target !== 'latest' && !pins.includes(target)) pins.push(target)
 
   async function save() {
-    const v = val.trim()
-    if (!valid(v)) { setError('Use "latest" or a pin like 7.0.29-r1'); return }
+    if (!val) return
+    const msg = val === 'latest'
+      ? 'Switch every probe to the latest channel? Each sidecar moves its probe to the newest release at its next check-in, and keeps following new releases.'
+      : `Switch every probe to ${val}? Each sidecar moves its probe to that release at its next check-in, and it stays there until you switch back to latest.`
+    if (!(await confirm({ title: 'Switch the probes\' image', message: msg, confirmLabel: 'Switch' }))) return
     setBusy(true); setError(null)
     try {
-      const res = await fetch('/api/probes/target', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: v }) })
-      if (!res.ok) { setError(await errText(res, 'Could not save target')); return }
+      const res = await fetch('/api/probes/target', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: val }) })
+      if (!res.ok) { setError(await errText(res, 'Could not switch the image channel')); return }
       const d = await res.json(); onSaved(d.target); setEditing(false)
     } finally { setBusy(false) }
   }
 
+  const text = !target ? '…' : target === 'latest' ? 'latest' : `${target} (pinned)`
   return (
-    <UpdPolicy label="Fleet target" value={target ?? '…'}
-      title={`What every probe runs: latest, or a pin like 7.0.29-r1.${latest ? ` The newest published is ${latest}.` : ''}`}
+    <UpdPolicy label="Image channel" value={text}
+      title={target === 'latest' ? `Every probe follows the stable releases.${latest ? ` The newest is ${latest}.` : ''}` : 'Every probe stays on this release until you switch back to latest'}
       onEdit={start}
       editor={editing ? <>
-        <input className="input mono" style={{ width: 160 }} value={val} autoFocus placeholder="latest" aria-label="Fleet target version" onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }} />
-        <Button variant="primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</Button>
+        <select className="input" value={val} onChange={(e) => setVal(e.target.value)} style={{ width: 240 }} aria-label="Switch to">
+          <option value="">Select a target…</option>
+          <optgroup label="Channels">
+            <option value="latest">latest - stable releases</option>
+          </optgroup>
+          {pins.length > 0 && (
+            <optgroup label="Recent releases">
+              {pins.map((t) => <option key={t} value={t}>{t}</option>)}
+            </optgroup>
+          )}
+        </select>
+        <Button variant="primary" disabled={busy || !val || val === target} onClick={save}>{busy ? 'Switching…' : 'Switch'}</Button>
         <Button variant="default" disabled={busy} onClick={() => setEditing(false)}>Cancel</Button>
       </> : undefined}
       below={error ? <p className="set-hint" style={{ color: 'var(--err)' }}>{error}</p>
-        : editing ? <p className="set-hint">What every probe runs: <span className="mono">latest</span>, or a pin like <span className="mono">7.0.29-r1</span>.{latest ? <> The newest published is <span className="mono">{latest}</span>.</> : null}</p> : undefined} />
+        : editing ? <p className="set-hint">The image every probe runs: the channel it follows (<span className="mono">latest</span>: stable releases; probes have no testing channel), or a release they all stay on (pinned).{latest ? <> The newest is <span className="mono">{latest}</span>.</> : null}{releases === null ? ' Loading the releases…' : null}</p> : undefined} />
   )
 }
 
-// ProbeUpdates is the Probes section: the fleet target, then each probe's proxy and argus-updater
+// ProbeUpdates is the Probes section: the image channel and the reboot window, then each probe's proxy and argus-updater
 // sidecar with their Update buttons. A sidecar takes what is queued for it at its next check-in.
 function ProbeUpdates({ proxies, error, target, onTarget, onChanged, os, onOS, vmLatest }: { proxies: Proxy[] | null; error: string; target: string | null; onTarget: (t: string) => void; onChanged: () => void; os: OSStatus | null; onOS: () => void; vmLatest: string }) {
   const confirm = useConfirm()

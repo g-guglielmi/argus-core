@@ -979,6 +979,22 @@ class PatchingTest(unittest.TestCase):
         self.assertNotIn("systemctl reboot", calls)
 
     @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_reboot_window_every_day(self):
+        # A Wednesday at 13:02 by the shimmed clock: an every-day 13:00 window reboots, a Friday one waits.
+        shims = {"systemctl": "echo \"systemctl $*\" >> \"$LOG\"\n", "logger": ":\n",
+                 "date": 'case "$1" in +%w) echo 3;; +%-H) echo 13;; +%-M) echo 2;; *) echo 1700000000;; esac\n'}
+        flag = os.path.join(tempfile.mkdtemp(), "reboot-required")
+        with open(flag, "w") as fh:
+            fh.write("")
+        results, calls = self.host_script("argus-reboot-check", shims,
+                                          {"reboot-window.json": '{"mode":"auto","weekday":-1,"hour":13,"minute":0}'}, {"ARGUS_REBOOT_FLAG": winpath(flag)})
+        self.assertIn("systemctl reboot", calls)
+        self.assertEqual(results["reboot-result.json"]["why"], "window")
+        results, calls = self.host_script("argus-reboot-check", shims,
+                                          {"reboot-window.json": '{"mode":"auto","weekday":5,"hour":13,"minute":0}'}, {"ARGUS_REBOOT_FLAG": winpath(flag)})
+        self.assertNotIn("systemctl reboot", calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
     def test_patch_now_runs_the_nightly_policy_and_reports(self):
         shims = {"unattended-upgrade": "echo \"unattended-upgrade $*\" >> \"$LOG\"; exit \"${UA_RC:-0}\"\n", "logger": "cat > /dev/null\n"}
         results, calls = self.host_script("argus-patch", shims, {"patch-request.json": '{"at":1}'})

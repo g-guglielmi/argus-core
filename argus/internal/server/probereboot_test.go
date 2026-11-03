@@ -32,13 +32,9 @@ func TestProbeWindowValid(t *testing.T) {
 		{rebootWindow{Mode: "auto", Weekday: everyDay, Hour: 24}, false},
 		{rebootWindow{Mode: "weekly"}, false},
 	} {
-		if got := tc.w.validProbe(); got != tc.want {
-			t.Errorf("%+v: validProbe = %v, want %v", tc.w, got, tc.want)
+		if got := tc.w.valid(); got != tc.want {
+			t.Errorf("%+v: valid = %v, want %v", tc.w, got, tc.want)
 		}
-	}
-	// The core's own windows keep their weekly shape: every day is a probe choice.
-	if (rebootWindow{Mode: "auto", Weekday: everyDay, Hour: 3}).valid() {
-		t.Error("the core's reboot window took every day")
 	}
 	if d := defaultProbeWindow(); d.Mode != "auto" || d.Weekday != everyDay || d.Hour != 3 || d.Minute != 0 {
 		t.Errorf("default = %+v, want every day at 03:00 (what the probe VMs did before)", d)
