@@ -94,6 +94,14 @@ the hypervisor, keyboard layout, the console password, reboot, power off, and **
 everything else (a normal bash; `sudo` asks your password there as usual). Ssh commands and scp
 with the same account work unchanged.
 
+**Docker commands take `sudo`.** The account is in the `sudo` group and deliberately *not* in
+`docker`: membership of `docker` is root without a password (one `docker run` that mounts the host
+is enough), and it would bypass the password and the log that `sudo` keeps. So from the shell it is
+`sudo docker ps`, `sudo docker logs argus`, `sudo docker exec ...`; a plain `docker` command answers
+"permission denied ... docker.sock" (and piped into `grep`, that answer is filtered away and the
+output just looks empty). The menu's **View logs** shows the latest of Argus's, the updater's, Zabbix
+server's, PostgreSQL's and nginx's logs without it.
+
 The menu is `argus-console` from the core's host tools, so a core installed by hand has it too:
 `sudo argus-console` (it runs as root: the Docker socket, networkd, the journal and apt are
 root's). To get the same login behaviour as the appliance there, `sudo argus-console
