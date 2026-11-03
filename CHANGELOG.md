@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.17] - 2026-11-03
+
 ### Added
 - **Probe VM reboots on a window Argus keeps, and Reboot now and Patch now per probe VM.** The
   Updates page's Probes section has a **Probe reboots** setting next to the fleet target: when the
