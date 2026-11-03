@@ -5732,6 +5732,9 @@ function DiagDialog({ hostId, source: initialSource, onClose }: { hostId?: strin
   const [target, setTarget] = useState('')
   const [count, setCount] = useState(5)
   const [dnsType, setDnsType] = useState('A')
+  // The DNS type follows the target (an address looks up its PTR, a name its A) until it is picked by hand.
+  const [typePicked, setTypePicked] = useState(false)
+  const autoType = (t: string) => { if (!typePicked) setDnsType(/^[0-9.]+$|:/.test(t.trim()) ? 'PTR' : 'A') }
   const [server, setServer] = useState('')
   const [proxies, setProxies] = useState<Proxy[] | null>(null)
   const [run, setRun] = useState<DiagRunView | null>(null)
@@ -5800,7 +5803,7 @@ function DiagDialog({ hostId, source: initialSource, onClose }: { hostId?: strin
       <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: tool === 'dns' ? 'min(760px, 94vw)' : 'min(640px, 94vw)' }}>
         <div className="dlg-title">Diagnose{target.trim() ? ` · ${target.trim()}` : ''}</div>
         <div className="seg dg-tools" role="tablist">
-          {DIAG_TOOLS.map((t) => <button key={t.v} type="button" className={tool === t.v ? 'on' : ''} onClick={() => { setTool(t.v); setRun(null); setErr(null); if (t.v === 'dns' && dnsType === 'A' && /^[0-9.]+$|:/.test(target.trim())) setDnsType('PTR') }}>{t.l}</button>)}
+          {DIAG_TOOLS.map((t) => <button key={t.v} type="button" className={tool === t.v ? 'on' : ''} onClick={() => { setTool(t.v); setRun(null); setErr(null); if (t.v === 'dns') autoType(target) }}>{t.l}</button>)}
         </div>
         <div className="dg-row">
           <Field label="Run from">
@@ -5811,7 +5814,7 @@ function DiagDialog({ hostId, source: initialSource, onClose }: { hostId?: strin
             </Select>
           </Field>
           <Field label="Target" placeholder={tool === 'dns' && dnsType === 'PTR' ? '10.0.0.20' : 'host name or address'} value={target}
-            onChange={(e) => setTarget(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !busy && !going && target.trim() && source) void start() }} />
+            onChange={(e) => { setTarget(e.target.value); if (tool === 'dns') autoType(e.target.value) }} onKeyDown={(e) => { if (e.key === 'Enter' && !busy && !going && target.trim() && source) void start() }} />
           {tool === 'ping' && (
             <Field label="Count">
               <Select value={String(count)} onChange={(e) => setCount(Number(e.target.value))}>
@@ -5821,7 +5824,7 @@ function DiagDialog({ hostId, source: initialSource, onClose }: { hostId?: strin
           )}
           {tool === 'dns' && <>
             <Field label="Type">
-              <Select value={dnsType} onChange={(e) => setDnsType(e.target.value)}>
+              <Select value={dnsType} onChange={(e) => { setDnsType(e.target.value); setTypePicked(true) }}>
                 {DNS_TYPES.map((t) => <option key={t.v} value={t.v}>{t.l}</option>)}
               </Select>
             </Field>
