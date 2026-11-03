@@ -934,11 +934,12 @@ CREATE TABLE IF NOT EXISTS reports (
 		}
 	}
 	// A probe's addresses (probeaddrs.go): the one its container reaches out from, the one Argus sees
-	// its minute report come from, its public one (the probe's own lookup, and when) and a probe VM's
-	// LAN address and gateway from its host.
+	// its minute report come from, its public one (the probe's own lookup, and when), the host's LAN
+	// address and gateway, and the kind of Docker network the container is on (the sidecar's word).
 	for _, col := range []string{"addr_own TEXT NOT NULL DEFAULT ''", "addr_seen TEXT NOT NULL DEFAULT ''", "addr_at INTEGER NOT NULL DEFAULT 0",
 		"addr_public TEXT NOT NULL DEFAULT ''", "addr_public_at INTEGER NOT NULL DEFAULT 0",
-		"addr_host TEXT NOT NULL DEFAULT ''", "addr_host_gw TEXT NOT NULL DEFAULT ''", "addr_host_at INTEGER NOT NULL DEFAULT 0"} {
+		"addr_host TEXT NOT NULL DEFAULT ''", "addr_host_gw TEXT NOT NULL DEFAULT ''", "addr_host_at INTEGER NOT NULL DEFAULT 0",
+		"addr_net TEXT NOT NULL DEFAULT ''"} {
 		if err := s.ensureColumn("probe_agents", col); err != nil {
 			return err
 		}

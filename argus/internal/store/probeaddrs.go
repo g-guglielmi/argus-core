@@ -15,6 +15,8 @@ import (
 //   - Public: the probe's own lookup of its public address, and when it was made.
 //   - Host, HostGW: the host's LAN address and gateway, as a probe VM's OS report or the
 //     argus-updater sidecar (reading them with the host's network) gives them, and when.
+//   - Net: the driver of the Docker network the proxy container is on, as the sidecar tells it
+//     (bridge, macvlan, ipvlan, host; "" when unknown).
 //
 // The values are checked addresses (the server parses them before storing); "" when unknown.
 type ProbeAddrs struct {
@@ -24,6 +26,7 @@ type ProbeAddrs struct {
 	PublicAt     int64
 	Host, HostGW string
 	HostAt       int64
+	Net          string
 }
 
 // SetProbeReportAddrs records the addresses of a probe container's minute report: its own and the
@@ -50,9 +53,15 @@ func (s *Store) SetProbeHostAddr(ctx context.Context, proxyName, ip, gw string) 
 	return err
 }
 
+// SetProbeNet records the kind of Docker network the proxy container is on, as the sidecar tells it.
+func (s *Store) SetProbeNet(ctx context.Context, proxyName, net string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE probe_agents SET addr_net=? WHERE proxy_name=?`, net, proxyName)
+	return err
+}
+
 // ProbeAddresses returns every probe's addresses, keyed by proxy name.
 func (s *Store) ProbeAddresses(ctx context.Context) (map[string]ProbeAddrs, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,addr_own,addr_seen,addr_at,addr_public,addr_public_at,addr_host,addr_host_gw,addr_host_at FROM probe_agents`)
+	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,addr_own,addr_seen,addr_at,addr_public,addr_public_at,addr_host,addr_host_gw,addr_host_at,addr_net FROM probe_agents`)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +70,7 @@ func (s *Store) ProbeAddresses(ctx context.Context) (map[string]ProbeAddrs, erro
 	for rows.Next() {
 		var name string
 		var a ProbeAddrs
-		if err := rows.Scan(&name, &a.Own, &a.Seen, &a.At, &a.Public, &a.PublicAt, &a.Host, &a.HostGW, &a.HostAt); err != nil {
+		if err := rows.Scan(&name, &a.Own, &a.Seen, &a.At, &a.Public, &a.PublicAt, &a.Host, &a.HostGW, &a.HostAt, &a.Net); err != nil {
 			return nil, err
 		}
 		out[name] = a

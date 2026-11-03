@@ -65,7 +65,7 @@ type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; op
 type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; diags?: boolean; update_status?: string; last_checkin?: number; report_at?: number; report_stale?: boolean; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; host_tools?: ProbeHostTools; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean; host?: ProbeHostState; lan?: ProbeAddr; lan_none?: 'public_host' | 'bridge'; public?: ProbeAddr; seen_ip?: string }
 // A probe's LAN or public address (probeaddrs.go): where it came from (host: the host's report, a probe VM's or the sidecar's;
 // probe: the probe container's report or its lookup; seen: where Argus sees its reports come from).
-type ProbeAddr = { ip: string; src: 'host' | 'probe' | 'seen'; gw?: string; at?: number }
+type ProbeAddr = { ip: string; src: 'host' | 'probe' | 'seen'; gw?: string; at?: number; net?: string }
 // A probe VM's reboots (DESIGN 14c): its own window (none: the fleet's), whether it takes Reboot now and
 // Patch now, a request on its way (sent: its check-in took it), and the last result of each.
 type ProbeHostState = { own_window?: OSWindow; now?: boolean; pending?: { kind: 'reboot' | 'patch'; at: number; sent?: number }; reboot?: HostActionResult; patch?: HostActionResult }
@@ -4153,7 +4153,7 @@ function ProbeAddrs({ p }: { p: Proxy }) {
   const seen = p.seen_ip ? ` Argus sees its reports come from ${p.seen_ip}.` : ''
   const lanTitle = (a: ProbeAddr) => a.src === 'host'
     ? `Reported by the probe's host${a.gw ? ` (gateway ${a.gw})` : ''}${when(a)}`
-    : `The address the probe reaches out from${when(a)}`
+    : `The probe container's own address${a.net ? ` on its ${a.net} network` : ''}${when(a)}`
   const pubTitle = (a: ProbeAddr) => a.src === 'probe'
     ? `Looked up by the probe${when(a)}`
     : a.src === 'host'

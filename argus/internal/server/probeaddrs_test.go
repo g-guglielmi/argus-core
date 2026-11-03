@@ -58,6 +58,16 @@ func TestProbeAddrChoice(t *testing.T) {
 			"10.0.3.30", "probe", "", "", ""},
 		{"a Tailscale address on the host counts as private", store.ProbeAddrs{Own: "172.17.0.2", Host: "100.101.102.103"},
 			"100.101.102.103", "host", "", "", ""},
+		{"a macvlan (a dedicated address on Unraid's br0): its own address, not the host's", store.ProbeAddrs{Own: "10.0.4.250", Seen: "10.0.4.250", Host: "10.0.4.10", Net: "macvlan"},
+			"10.0.4.250", "probe", "", "", ""},
+		{"an ipvlan seen through a NAT: still its own address", store.ProbeAddrs{Own: "10.0.5.250", Seen: "10.0.0.2", Host: "10.0.5.10", Net: "ipvlan"},
+			"10.0.5.250", "probe", "", "", ""},
+		{"a dedicated address in 172.16/12 on a macvlan: its own address", store.ProbeAddrs{Own: "172.20.1.5", Seen: "10.0.0.2", Net: "macvlan"},
+			"172.20.1.5", "probe", "", "", ""},
+		{"a dedicated address, no sidecar: its own address over the host's", store.ProbeAddrs{Own: "10.0.6.250", Seen: "10.0.6.250", Host: "10.0.6.10"},
+			"10.0.6.250", "probe", "", "", ""},
+		{"a user's bridge handing out 192.168.x: the host's", store.ProbeAddrs{Own: "192.168.100.2", Seen: "10.0.7.10", Host: "10.0.7.10", Net: "bridge"},
+			"10.0.7.10", "host", "", "", ""},
 		{"nothing reported yet", store.ProbeAddrs{}, "", "", "", "", ""},
 	}
 	for _, c := range cases {

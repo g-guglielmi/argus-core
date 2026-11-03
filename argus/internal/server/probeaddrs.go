@@ -13,9 +13,12 @@ import (
 
 // A probe's LAN and public address, the line under its name on the Probes page. The sources, the
 // most exact first:
-//   - the host's LAN address and gateway: a probe VM's OS report (argus-os-report), or the
-//     argus-updater sidecar's check-in (it reads them with the host's network when it starts and
-//     after each start of the proxy);
+//   - the kind of Docker network the proxy container is on, from the argus-updater sidecar's
+//     check-in: on a macvlan, an ipvlan or the host's network the container's own address is the LAN
+//     one (a container with a dedicated address on the site);
+//   - the host's LAN address and gateway: a probe VM's OS report (argus-os-report), or the sidecar's
+//     check-in (on a bridge it reads them with the host's network when it starts and after each
+//     start of the proxy);
 //   - the probe container's minute report: the address it reaches out from, and the last public one
 //     its own lookup found (every hour and when its address changes), with its age;
 //   - where Argus sees that report come from.
@@ -33,6 +36,16 @@ type probeAddrView struct {
 	Src string `json:"src"`
 	GW  string `json:"gw,omitempty"`
 	At  int64  `json:"at,omitempty"`
+	Net string `json:"net,omitempty"` // the container's network kind, for its own address (the sidecar's word)
+}
+
+// cleanNet is a Docker network driver name as the sidecar reports it, or "" when it isn't one.
+func cleanNet(s string) string {
+	switch s = strings.TrimSpace(s); s {
+	case "bridge", "macvlan", "ipvlan", "host", "overlay":
+		return s
+	}
+	return ""
 }
 
 // cleanAddr is s as a canonical unicast IP address, or "" when it isn't one (empty, garbage, a
@@ -73,19 +86,28 @@ func inDockerNets(s string) bool {
 	return err == nil && dockerNets.Contains(a)
 }
 
-// probeLAN picks the LAN address to show: the host's report when it is a private address; else the
-// container's own address when it is a site one (host networking, a macvlan, or the very address
-// Argus sees). nil when none is known, with why: "public_host" (the host's own address is a public
-// one: a VPS on the internet has no LAN) or "bridge" (a container on Docker's bridge, with no sidecar
-// to read the host's).
+// probeLAN picks the LAN address to show. The container's own address comes first when it is one on
+// the site: the sidecar says the container is on a macvlan, an ipvlan or the host's network, or, with
+// no word from a sidecar, the address is private and outside Docker's bridge pools (or the very one
+// Argus sees). Else the host's, when private. nil when none is known, with why: "public_host" (the
+// host's own address is a public one: a VPS on the internet has no LAN) or "bridge" (a container on
+// a bridge, with no sidecar to read the host's).
 func probeLAN(a store.ProbeAddrs) (*probeAddrView, string) {
+	own := privateAddr(a.Own)
+	switch a.Net {
+	case "macvlan", "ipvlan", "host":
+	case "bridge", "overlay":
+		own = false // a bridge of the user's may well hand out 192.168.x: never a site address
+	default:
+		own = own && (a.Own == a.Seen || !inDockerNets(a.Own))
+	}
 	switch {
+	case own:
+		return &probeAddrView{IP: a.Own, Src: "probe", At: a.At, Net: a.Net}, ""
 	case privateAddr(a.Host):
 		return &probeAddrView{IP: a.Host, Src: "host", GW: a.HostGW, At: a.HostAt}, ""
 	case publicAddr(a.Host):
 		return nil, "public_host"
-	case privateAddr(a.Own) && (a.Own == a.Seen || !inDockerNets(a.Own)):
-		return &probeAddrView{IP: a.Own, Src: "probe", At: a.At}, ""
 	case a.Own != "" || a.Seen != "":
 		return nil, "bridge"
 	}

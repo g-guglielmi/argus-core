@@ -2543,12 +2543,14 @@ plane; the probe checks in and converges.
   `1.1.1.1`, every hour or when `ip` changes) with its age, `public_age`; Argus stores them with the
   address it sees the report come from (`clientIP`, so `ARGUS_TRUST_PROXY` applies). The host's LAN
   address and gateway come from a probe VM's OS report (`lan`, `ip -j route get` on the VM) or the
-  argus-updater sidecar's check-in (`host_lan`: it runs its own image once with `--network host`
-  when it starts and after each start of the proxy, not on a timer). LAN, the most exact first: the
-  host's, when private; none when the host's own address is public (a VPS: `lan_none`
-  "public_host"); the container's `ip` when it is private and either outside 172.16.0.0/12 (Docker's
-  bridge pools) or the very address Argus sees (host networking, a macvlan, a field kit); else none
-  (`lan_none` "bridge"). The address Argus sees is never the LAN address (a Tailscale exit node or a
+  argus-updater sidecar's check-in (`host_lan`: `net`, the driver of the proxy's Docker network, and
+  on a bridge `ip` and `gw`, read by running its own image once with `--network host` when it starts
+  and after each start of the proxy, not on a timer). LAN, the most exact first: the container's
+  `ip`, when the sidecar says macvlan, ipvlan or host (a dedicated address on the site) or, with no
+  word from a sidecar, when it is private and either outside 172.16.0.0/12 (Docker's bridge pools)
+  or the very address Argus sees (a field kit); never on a bridge the sidecar names (a user's bridge
+  may hand out 192.168.x); then the host's, when private; none when the host's own address is public
+  (a VPS: `lan_none` "public_host"); else none (`lan_none` "bridge"). The address Argus sees is never the LAN address (a Tailscale exit node or a
   VPN router NATs the probe's away: the first cut showed the exit node's), only said on hover
   (`seen_ip`). Public: the probe's lookup, else a public host address, else the public address Argus
   sees. 100.64.0.0/10 (carrier NAT, Tailscale) counts as private. A re-enrollment forgets the

@@ -29,6 +29,9 @@ func TestProbeAddresses(t *testing.T) {
 	if err := st.SetProbeHostAddr(ctx, "proxy-a", "", "10.0.9.1"); err != nil { // an older reporter: ignored
 		t.Fatal(err)
 	}
+	if err := st.SetProbeNet(ctx, "proxy-a", "macvlan"); err != nil {
+		t.Fatal(err)
+	}
 	all, err := st.ProbeAddresses(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -39,6 +42,9 @@ func TestProbeAddresses(t *testing.T) {
 	}
 	if a.Public != "203.0.113.10" || a.PublicAt != 1700000000 {
 		t.Fatalf("public = %q at %d, want the last lookup kept", a.Public, a.PublicAt)
+	}
+	if a.Net != "macvlan" {
+		t.Fatalf("net = %q, want the sidecar's", a.Net)
 	}
 	if a.Host != "10.0.1.21" || a.HostGW != "10.0.1.1" || a.HostAt == 0 {
 		t.Fatalf("host = %q via %q at %d, want the host's report", a.Host, a.HostGW, a.HostAt)
