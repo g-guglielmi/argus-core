@@ -925,6 +925,14 @@ CREATE TABLE IF NOT EXISTS reports (
 	if err := s.ensureColumn("probe_agents", "cert_renewed_at INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	// A probe VM's reboots (DESIGN 14c): its own reboot window (JSON, "" = the fleet's), what its host
+	// reporter says about Reboot now and Patch now (JSON: the capability, the boot time, the last
+	// result of each), and the Reboot now or Patch now an admin asked for (JSON, "" = none).
+	for _, col := range []string{"reboot_window TEXT NOT NULL DEFAULT ''", "host_actions TEXT NOT NULL DEFAULT ''", "host_req TEXT NOT NULL DEFAULT ''"} {
+		if err := s.ensureColumn("probe_agents", col); err != nil {
+			return err
+		}
+	}
 	// Discovery job kind ('scan' = subnet scan, 'unifi' = controller sweep) plus the sweep's
 	// controller reference: the id resolves credentials at dispatch time, the name is a display
 	// snapshot that survives the controller's deletion.

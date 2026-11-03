@@ -62,7 +62,10 @@ type SaaSService = { id: string; name: string; url: string; default: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg; tags?: HostTag[]; own?: { asset_tag: string; location: string }; links?: LinkRow[]; class_links?: LinkRow[]; upstream?: UpstreamInfo }
 // A host's master sensor: while it's down, the host's other alerts are held (item_id "" = none).
 type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; options: { id: string; label: string }[] }
-type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; diags?: boolean; update_status?: string; last_checkin?: number; report_at?: number; report_stale?: boolean; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; host_tools?: ProbeHostTools; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean }
+type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; diags?: boolean; update_status?: string; last_checkin?: number; report_at?: number; report_stale?: boolean; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; host_tools?: ProbeHostTools; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean; host?: ProbeHostState }
+// A probe VM's reboots (DESIGN 14c): its own window (none: the fleet's), whether it takes Reboot now and
+// Patch now, a request on its way (sent: its check-in took it), and the last result of each.
+type ProbeHostState = { own_window?: OSWindow; now?: boolean; pending?: { kind: 'reboot' | 'patch'; at: number; sent?: number }; reboot?: HostActionResult; patch?: HostActionResult }
 // One Zabbix process kind on a probe: what it runs, Argus's target, the busiest hour at the last
 // evaluation, and a hold (put back after a raise that didn't lower its load).
 // An update Argus asked a probe's sidecar for, while it is in hand: queued for the sidecar's next
@@ -1121,6 +1124,9 @@ type OSStatus = {
   reboot_window: OSWindow
   zbx_window: OSWindow
   fleet_zbx?: string
+  // The probe VMs' fleet reboot window (weekday -1 = every day) and the zone of the core's clock it reads in.
+  probe_window: OSWindow
+  clock_tz?: string
 }
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -1164,20 +1170,24 @@ function probeToolsPill(ts: NonNullable<ReturnType<typeof probeToolsState>>, nam
   return <UpdPill kind="ok" title={ts.title}>{n}up to date</UpdPill>
 }
 
-// WeeklyWindow picks when something on the core happens by itself: never (notify only), or weekly at
-// a day and time on the core VM's clock. Shared by the core's reboot and its Zabbix minor updates.
-function WeeklyWindow({ autoLabel, mode, weekday, time, onMode, onWeekday, onTime }: {
+// WeeklyWindow picks when something happens by itself: never (notify only), or at a day and time. The
+// core's reboot and its Zabbix minor updates are weekly on the core VM's clock; a probe VM's reboot
+// may also be every day, and a probe's own window may go back to the fleet's (fleetLabel).
+function WeeklyWindow({ autoLabel, mode, weekday, time, onMode, onWeekday, onTime, everyDay, fleetLabel }: {
   autoLabel: string; mode: string; weekday: number; time: string
   onMode: (m: string) => void; onWeekday: (d: number) => void; onTime: (t: string) => void
+  everyDay?: boolean; fleetLabel?: string
 }) {
   return (
     <>
-      <select className="input" value={mode} onChange={(e) => onMode(e.target.value)} style={{ width: 200 }} aria-label="When">
+      <select className="input" value={mode} onChange={(e) => onMode(e.target.value)} style={{ width: fleetLabel ? 260 : everyDay ? 230 : 200 }} aria-label="When">
+        {fleetLabel && <option value="fleet">{fleetLabel}</option>}
         <option value="notify">Notify only</option>
         <option value="auto">{autoLabel}</option>
       </select>
       {mode === 'auto' && <>
         <select className="input" value={weekday} onChange={(e) => onWeekday(parseInt(e.target.value, 10))} style={{ width: 130 }} aria-label="Day">
+          {everyDay && <option value={-1}>Every day</option>}
           {WEEKDAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
         </select>
         <input className="input" type="time" value={time} onChange={(e) => onTime(e.target.value)} style={{ width: 120 }} aria-label="Time" />
@@ -1186,60 +1196,76 @@ function WeeklyWindow({ autoLabel, mode, weekday, time, onMode, onWeekday, onTim
   )
 }
 
+// dayText is a window's day: a weekday, or every day (-1, probe windows only).
+function dayText(d: number): string { return d < 0 ? 'Every day' : WEEKDAYS[d] }
+
 // windowText is a saved window as a policy row shows it.
 function windowText(w?: OSWindow): string {
   if (!w) return '…'
-  return w.mode === 'auto' ? `${WEEKDAYS[w.weekday]} ${fmtHM24(w.hour * 60 + w.minute)}` : 'notify only'
+  return w.mode === 'auto' ? `${dayText(w.weekday)} ${fmtHM24(w.hour * 60 + w.minute)}` : 'notify only'
 }
 
-// OSUpdatesCard is the Updates page's Operating systems section (DESIGN section 14c). The Debian under
-// the core VM and every probe VM patches itself locally (unattended-upgrades, security suite only);
-// Argus never runs apt remotely. It shows where each VM stands and schedules the core's reboot and its
-// Zabbix minor updates (a pet that must not bounce unannounced), which host timers honour locally.
-function OSUpdatesCard({ proxies, vmLatest }: { proxies: Proxy[] | null; vmLatest: string }) {
+const hm = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+
+// windowBody is what a window editor saves.
+function windowBody(m: string, wd: number, t: string): OSWindow {
+  const [h, mi] = t.split(':').map((n) => parseInt(n, 10))
+  return m === 'auto' ? { mode: m, weekday: wd, hour: h || 0, minute: mi || 0 } : { mode: 'notify', weekday: 0, hour: 0, minute: 0 }
+}
+
+// coreClock names the clock the probe windows read on: the core's, in its zone.
+function coreClock(tz?: string): string { return tz ? `the core's clock (${tz})` : "the core's clock" }
+
+// useWindowEdit is one window's editor state: open, its mode, day and time, and whether it differs
+// from the saved one.
+function useWindowEdit(saved: OSWindow | undefined, fallback: string) {
+  const [open, setOpen] = useState(false)
+  const [mode, setMode] = useState('notify')
+  const [weekday, setWeekday] = useState(0)
+  const [time, setTime] = useState(fallback)
+  const reset = (w?: OSWindow) => { if (!w) return; setMode(w.mode); setWeekday(w.weekday); setTime(w.mode === 'auto' ? hm(w.hour, w.minute) : fallback) }
+  useEffect(() => { if (!open) reset(saved) }, [saved?.mode, saved?.weekday, saved?.hour, saved?.minute, open]) // eslint-disable-line react-hooks/exhaustive-deps
+  const dirty = !!saved && (mode !== saved.mode || (mode === 'auto' && (weekday !== saved.weekday || time !== hm(saved.hour, saved.minute))))
+  return { open, setOpen, mode, setMode, weekday, setWeekday, time, setTime, dirty, cancel: () => { reset(saved); setOpen(false) } }
+}
+
+// saveJSON PUTs a body, says how it went, and reports whether it went through.
+function useSaveJSON() {
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  const save = async (url: string, body: unknown, label: string): Promise<boolean> => {
+    setBusy(true)
+    try {
+      const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null)
+      if (!res || !res.ok) { toast.error(await errText(res, `Could not save the ${label}`)); return false }
+      toast.success(`${label[0].toUpperCase()}${label.slice(1)} saved.`)
+      return true
+    } finally { setBusy(false) }
+  }
+  return { busy, save }
+}
+
+// useCoreOS is the core's operating system on the Updates page (DESIGN section 14c), in the Argus core
+// section: the Debian under the core VM patches itself (security suite only) and Argus never runs apt
+// remotely; the core hosts the database and Zabbix, so its reboot and its Zabbix minor updates wait
+// for their windows (policy rows) or a click on its OS and Zabbix lines (parts of the Argus group).
+function useCoreOS(os: OSStatus | null, load: () => void, selfUpdate: boolean): { policies: ReactNode; parts: ReactNode } {
   const toast = useToast()
   const confirm = useConfirm()
   // When Update now / Reboot now / Patch now was clicked (unix seconds), 0 = not this session.
   const [zReq, setZReq] = useState(0)
   const [rReq, setRReq] = useState(0)
   const [pReq, setPReq] = useState(0)
-  const [os, setOs] = useState<OSStatus | null>(null)
-  const [mode, setMode] = useState('notify')
-  const [weekday, setWeekday] = useState(0)
-  const [time, setTime] = useState('03:00')
-  // The Zabbix minor-update window (same shape, its own policy).
-  const [zMode, setZMode] = useState('notify')
-  const [zWeekday, setZWeekday] = useState(0)
-  const [zTime, setZTime] = useState('04:00')
   const [busy, setBusy] = useState(false)
-  const [editR, setEditR] = useState(false)
-  const [editZ, setEditZ] = useState(false)
-
-  const timeStr = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-  const reset = (d: OSStatus) => {
-    setMode(d.reboot_window.mode); setWeekday(d.reboot_window.weekday); setTime(timeStr(d.reboot_window.hour, d.reboot_window.minute))
-    if (d.zbx_window) { setZMode(d.zbx_window.mode); setZWeekday(d.zbx_window.weekday); setZTime(timeStr(d.zbx_window.hour, d.zbx_window.minute)) }
+  const r = useWindowEdit(os?.reboot_window, '03:00')
+  const z = useWindowEdit(os?.zbx_window, '04:00')
+  const { busy: saving, save } = useSaveJSON()
+  const saveWindow = async (url: string, label: string, w: ReturnType<typeof useWindowEdit>) => {
+    if (await save(url, windowBody(w.mode, w.weekday, w.time), label)) { load(); w.setOpen(false) }
   }
-  const load = () => fetch('/api/os/status').then((r) => (r.ok ? r.json() : null)).then((d: OSStatus | null) => { if (d) { setOs(d); reset(d) } }).catch(() => {})
-  useEffect(() => { load() }, [])
-
-  const dirty = !!os && (mode !== os.reboot_window.mode || (mode === 'auto' && (weekday !== os.reboot_window.weekday || time !== timeStr(os.reboot_window.hour, os.reboot_window.minute))))
-  const zDirty = !!os && (zMode !== os.zbx_window.mode || (zMode === 'auto' && (zWeekday !== os.zbx_window.weekday || zTime !== timeStr(os.zbx_window.hour, os.zbx_window.minute))))
-  const saveWindow = async (url: string, label: string, m: string, wd: number, t: string, done: () => void) => {
-    const [h, mi] = t.split(':').map((n) => parseInt(n, 10))
-    const body = m === 'auto' ? { mode: m, weekday: wd, hour: h || 0, minute: mi || 0 } : { mode: 'notify' }
-    setBusy(true)
-    try {
-      const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      if (!res.ok) { toast.error(await errText(res, `Could not save the ${label}`)); return }
-      toast.success(`${label[0].toUpperCase()}${label.slice(1)} saved.`); await load(); done()
-    } finally { setBusy(false) }
-  }
-  const cancel = (close: () => void) => { if (os) reset(os); close() }
 
   const c = os?.core
   const reported = c?.available && c.reported_at > 0 ? `Reported ${relTime(c.reported_at)}.` : ''
-  const vms = (proxies || []).filter((p) => p.os_reported_at)
   // The three "now" actions share one shape: a request is pending from the click until the host has
   // reported again after it (every script re-reports when done; a reboot reports after boot), or
   // its result says failed; a fresh page sees a request file still waiting the same way. The
@@ -1261,7 +1287,7 @@ function OSUpdatesCard({ proxies, vmLatest }: { proxies: Proxy[] | null; vmLates
     try {
       const res = await fetch(url, { method: 'POST' })
       if (!res.ok) { toast.error(await errText(res, failMsg)); return }
-      mark(Math.floor(Date.now() / 1000)); toast.success(okMsg); await load()
+      mark(Math.floor(Date.now() / 1000)); toast.success(okMsg); load()
     } finally { setBusy(false) }
   }
   const updateZbxNow = async () => {
@@ -1278,76 +1304,205 @@ function OSUpdatesCard({ proxies, vmLatest }: { proxies: Proxy[] | null; vmLates
     if (!(await confirm({ title: 'Patch the core', message: `Apply the ${c.sec_updates} pending security update${c.sec_updates === 1 ? '' : 's'} now? They are the ones that would apply by themselves tonight; services restart as needed, and a kernel update asks for a reboot afterwards.`, confirmLabel: 'Patch now' }))) return
     await request('/api/os/patch', 'Could not request the patching', 'Patching requested: the host applies the updates within a minute.', setPReq)
   }
-  const canNow = !!c?.zbx_update_now && !!c.reboot_now && !!c.patch_now
-  const osPillNode = !c?.available ? <UpdPill kind="none">not reporting</UpdPill>
-    : rPending ? <UpdPill kind="busy" title="The core is rebooting; it reports when it is back">rebooting…</UpdPill>
+
+  if (!os) return { policies: null, parts: null }
+  if (!c?.available) {
+    // Argus as a container on another kind of host: its OS is that host's. A Debian core set up by
+    // hand without the reporter is told how to add it.
+    return {
+      policies: null,
+      parts: selfUpdate ? <UpdBelow><p className="set-hint">The core's operating system isn't reporting: on a Debian core set up with <span className="mono">deploy/core/setup-core.sh</span>, its host reporter shows the OS and Zabbix patch status here and takes the windows and buttons.</p></UpdBelow> : null,
+    }
+  }
+  const canNow = !!c.zbx_update_now && !!c.reboot_now && !!c.patch_now
+  const osPillNode = rPending ? <UpdPill kind="busy" title="The core is rebooting; it reports when it is back">rebooting…</UpdPill>
     : pPending ? <UpdPill kind="busy" title="The host is applying the pending security updates">patching…</UpdPill>
     : osPill(c.sec_updates, c.reboot_required, reported)
-  const zPill = !c?.zbx_server ? <UpdPill kind="none">not reporting</UpdPill>
+  const zPill = !c.zbx_server ? <UpdPill kind="none">not reporting</UpdPill>
     : zPending ? <UpdPill kind="busy" title="The host is applying the update; the Zabbix server restarts when it is done">updating to {c.zbx_candidate}…</UpdPill>
     : zAvail ? <UpdPill kind="avail" title="A minor update is available from the Zabbix repo: it applies in the Core Zabbix updates window, with Update now, or by hand">{c.zbx_candidate} available</UpdPill>
-    : <UpdPill kind="ok" title={os?.fleet_zbx && os.fleet_zbx !== c.zbx_server ? `The probes run ${os.fleet_zbx}.` : undefined}>up to date</UpdPill>
+    : <UpdPill kind="ok" title={os.fleet_zbx && os.fleet_zbx !== c.zbx_server ? `The probes run ${os.fleet_zbx}.` : undefined}>up to date</UpdPill>
+  const policies = <>
+    <UpdPolicy label="Core reboot" value={windowText(os.reboot_window)}
+      title={os.reboot_window.mode === 'auto' ? "The core reboots only when an update needs it, in this window (the core VM's local time)" : 'Argus flags "reboot needed" and leaves the reboot to you'}
+      onEdit={() => r.setOpen(true)}
+      editor={r.open ? <>
+        <WeeklyWindow autoLabel="Auto-reboot weekly" mode={r.mode} weekday={r.weekday} time={r.time} onMode={r.setMode} onWeekday={r.setWeekday} onTime={r.setTime} />
+        <Button variant="primary" onClick={() => saveWindow('/api/os/reboot-window', 'reboot window', r)} disabled={saving || !r.dirty}>{saving ? 'Saving…' : 'Save'}</Button>
+        <Button variant="default" onClick={r.cancel} disabled={saving}>Cancel</Button>
+      </> : undefined}
+      below={r.open ? <p className="set-hint">{r.mode === 'auto'
+        ? <>The core reboots only when an update needs it, on <strong>{WEEKDAYS[r.weekday]}</strong> at <strong>{r.time}</strong> (the core VM's local time). Take a hypervisor snapshot as your safety net.</>
+        : 'Notify only: Argus flags "reboot needed" and leaves the reboot to you.'}</p> : undefined} />
+
+    {/* Core Zabbix minor updates (same major only). The Zabbix apt repo is pinned per major line
+        and the host applier double-guards on the major.minor prefix: a major upgrade is always a
+        planned manual event (database migration, TimescaleDB compatibility). */}
+    <UpdPolicy label="Core Zabbix updates" value={windowText(os.zbx_window)}
+      title={os.zbx_window.mode === 'auto' ? "Pending zabbix-* minors apply in this window (the core VM's local time), then zabbix-server restarts" : 'Argus shows when a minor is available and leaves applying it to you'}
+      onEdit={() => z.setOpen(true)}
+      editor={z.open ? <>
+        <WeeklyWindow autoLabel="Auto-update weekly" mode={z.mode} weekday={z.weekday} time={z.time} onMode={z.setMode} onWeekday={z.setWeekday} onTime={z.setTime} />
+        <Button variant="primary" onClick={() => saveWindow('/api/os/zbx-window', 'update window', z)} disabled={saving || !z.dirty}>{saving ? 'Saving…' : 'Save'}</Button>
+        <Button variant="default" onClick={z.cancel} disabled={saving}>Cancel</Button>
+      </> : undefined}
+      below={z.open ? <p className="set-hint">{z.mode === 'auto'
+        ? <>Pending zabbix-* minors apply on <strong>{WEEKDAYS[z.weekday]}</strong> at <strong>{z.time}</strong> (the core VM's local time), then zabbix-server restarts: a seconds-long blip the probes buffer through. Major upgrades are never automated: they migrate the database.</>
+        : 'Notify only: Argus shows when a minor is available and leaves applying it to you. Major upgrades are never automated: they migrate the database.'}</p> : undefined} />
+  </>
+  const parts = <>
+    <UpdPart label="OS">{c.os && <UpdVer v={osName(c.os)} title="The operating system the core VM reports" />}{osPillNode}
+      {c.reboot_required && c.reboot_now && !rPending && <Button variant="default" onClick={rebootNow} disabled={busy} title="The core reboots right away, outside the window">Reboot now</Button>}
+      {c.sec_updates > 0 && c.patch_now && !pPending && <Button variant="default" onClick={patchNow} disabled={busy} title="The host applies the pending security updates right away">Patch now</Button>}</UpdPart>
+    {rFailed && <UpdBelow><p className="set-hint" style={{ color: 'var(--err)' }}>The last reboot request ({relTime(rFailed.at)}) failed: {rFailed.detail}</p></UpdBelow>}
+    {pFailed && <UpdBelow><p className="set-hint" style={{ color: 'var(--err)' }}>The last patching ({relTime(pFailed.at)}) failed: {pFailed.detail}</p></UpdBelow>}
+    <UpdPart label="Zabbix">{c.zbx_server && <UpdVer v={c.zbx_server} title="The Zabbix server version on the core" />}{zPill}{zAvail && !zPending && c.zbx_update_now && <Button variant="default" onClick={updateZbxNow} disabled={busy} title="The host applies the update right away, outside the window">Update now</Button>}</UpdPart>
+    {!c.zbx_server && <UpdBelow><p className="set-hint">The host reporter predates Zabbix version reporting: re-run <span className="mono">deploy/core/setup-core-patching.sh</span> from the repo to enable it.</p></UpdBelow>}
+    {!canNow && (zAvail || c.reboot_required || c.sec_updates > 0) && <UpdBelow><p className="set-hint">Update now, Reboot now and Patch now need the newer host scripts: re-run <span className="mono">deploy/core/setup-core-patching.sh</span> on the core VM; until then the windows apply them.</p></UpdBelow>}
+    {zFailed && <UpdBelow><p className="set-hint" style={{ color: 'var(--err)' }}>The last update attempt ({relTime(zFailed.at)}) failed: {zFailed.detail}</p></UpdBelow>}
+  </>
+  return { policies, parts }
+}
+
+// ProbeFleetWindow is the Probes section's reboot policy: when the probe VMs reboot by themselves, on
+// the core's clock, unless a probe has a window of its own.
+function ProbeFleetWindow({ os, onSaved }: { os: OSStatus | null; onSaved: () => void }) {
+  const w = useWindowEdit(os?.probe_window, '03:00')
+  const { busy, save } = useSaveJSON()
+  if (!os) return null
+  const clock = coreClock(os.clock_tz)
   return (
-    <section className="set-card">
-      <div className="upd-head"><h3>Operating systems</h3></div>
-      {!os || os.core.available
-        ? <p className="set-note">The Debian under the core and probe VMs patches itself: security updates only, applied automatically. Argus never runs apt remotely, since there's no clean rollback. A probe VM reboots by itself in a weekly window around 03:00 when an update needs it; the core hosts the database and Zabbix, so its reboot and its Zabbix minor updates wait for the windows below, or for a click on their row. A container probe patches with its Docker host and isn't listed.</p>
-        : <p className="set-note">The core's operating system is managed outside Argus here: this section covers the Argus appliance and a Debian core set up with <span className="mono">deploy/core/setup-core.sh</span>, whose host reporter shows the OS and Zabbix patch status and takes the windows and buttons. Probe VMs report on their own and are listed below; a container probe patches with its Docker host and isn't listed.</p>}
-      {!os ? <Skeleton rows={3} cols={2} /> : !os.core.available ? null : <>
-        <UpdPolicy label="Core reboot" value={windowText(os.reboot_window)}
-          title={os.reboot_window.mode === 'auto' ? "The core reboots only when an update needs it, in this window (the core VM's local time)" : 'Argus flags "reboot needed" and leaves the reboot to you'}
-          onEdit={() => setEditR(true)}
-          editor={editR ? <>
-            <WeeklyWindow autoLabel="Auto-reboot weekly" mode={mode} weekday={weekday} time={time} onMode={setMode} onWeekday={setWeekday} onTime={setTime} />
-            <Button variant="primary" onClick={() => saveWindow('/api/os/reboot-window', 'reboot window', mode, weekday, time, () => setEditR(false))} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save'}</Button>
-            <Button variant="default" onClick={() => cancel(() => setEditR(false))} disabled={busy}>Cancel</Button>
-          </> : undefined}
-          below={editR ? <p className="set-hint">{mode === 'auto'
-            ? <>The core reboots only when an update needs it, on <strong>{WEEKDAYS[weekday]}</strong> at <strong>{time}</strong> (the core VM's local time). Take a hypervisor snapshot as your safety net.</>
-            : 'Notify only: Argus flags "reboot needed" and leaves the reboot to you.'}</p> : undefined} />
-
-        {/* Core Zabbix minor updates (same major only). The Zabbix apt repo is pinned per major line
-            and the host applier double-guards on the major.minor prefix: a major upgrade is always a
-            planned manual event (database migration, TimescaleDB compatibility). */}
-        <UpdPolicy label="Core Zabbix updates" value={windowText(os.zbx_window)}
-          title={os.zbx_window.mode === 'auto' ? "Pending zabbix-* minors apply in this window (the core VM's local time), then zabbix-server restarts" : 'Argus shows when a minor is available and leaves applying it to you'}
-          onEdit={() => setEditZ(true)}
-          editor={editZ ? <>
-            <WeeklyWindow autoLabel="Auto-update weekly" mode={zMode} weekday={zWeekday} time={zTime} onMode={setZMode} onWeekday={setZWeekday} onTime={setZTime} />
-            <Button variant="primary" onClick={() => saveWindow('/api/os/zbx-window', 'update window', zMode, zWeekday, zTime, () => setEditZ(false))} disabled={busy || !zDirty}>{busy ? 'Saving…' : 'Save'}</Button>
-            <Button variant="default" onClick={() => cancel(() => setEditZ(false))} disabled={busy}>Cancel</Button>
-          </> : undefined}
-          below={editZ ? <p className="set-hint">{zMode === 'auto'
-            ? <>Pending zabbix-* minors apply on <strong>{WEEKDAYS[zWeekday]}</strong> at <strong>{zTime}</strong> (the core VM's local time), then zabbix-server restarts: a seconds-long blip the probes buffer through. Major upgrades are never automated: they migrate the database.</>
-            : 'Notify only: Argus shows when a minor is available and leaves applying it to you. Major upgrades are never automated: they migrate the database.'}</p> : undefined} />
-
-        <UpdGroup label="Core VM" sub="this server">
-          <UpdPart label="OS">{c?.available && c.os && <UpdVer v={osName(c.os)} title="The operating system the core VM reports" />}{osPillNode}
-            {c?.available && c.reboot_required && c.reboot_now && !rPending && <Button variant="default" onClick={rebootNow} disabled={busy} title="The core reboots right away, outside the window">Reboot now</Button>}
-            {c?.available && c.sec_updates > 0 && c.patch_now && !pPending && <Button variant="default" onClick={patchNow} disabled={busy} title="The host applies the pending security updates right away">Patch now</Button>}</UpdPart>
-          {rFailed && <UpdBelow><p className="set-hint" style={{ color: 'var(--err)' }}>The last reboot request ({relTime(rFailed.at)}) failed: {rFailed.detail}</p></UpdBelow>}
-          {pFailed && <UpdBelow><p className="set-hint" style={{ color: 'var(--err)' }}>The last patching ({relTime(pFailed.at)}) failed: {pFailed.detail}</p></UpdBelow>}
-          <UpdPart label="Zabbix">{c?.zbx_server && <UpdVer v={c.zbx_server} title="The Zabbix server version on the core" />}{zPill}{zAvail && !zPending && c?.zbx_update_now && <Button variant="default" onClick={updateZbxNow} disabled={busy} title="The host applies the update right away, outside the window">Update now</Button>}</UpdPart>
-          {c?.available && !c.zbx_server && <UpdBelow><p className="set-hint">The host reporter predates Zabbix version reporting: re-run <span className="mono">deploy/core/setup-core-patching.sh</span> from the repo to enable it.</p></UpdBelow>}
-          {c?.available && !canNow && (zAvail || c.reboot_required || c.sec_updates > 0) && <UpdBelow><p className="set-hint">Update now, Reboot now and Patch now need the newer host scripts: re-run <span className="mono">deploy/core/setup-core-patching.sh</span> on the core VM; until then the windows apply them.</p></UpdBelow>}
-          {zFailed && <UpdBelow><p className="set-hint" style={{ color: 'var(--err)' }}>The last update attempt ({relTime(zFailed.at)}) failed: {zFailed.detail}</p></UpdBelow>}
-        </UpdGroup>
-      </>}
-
-      {vms.map((p) => (
-        <UpdGroup key={p.name} label={p.name} sub="probe VM">
-          <UpdPart label="OS"><UpdVer v={osName(p.os_version)} title="The operating system this VM reports" />{osPill(typeof p.sec_updates === 'number' ? p.sec_updates : -1, !!p.reboot_required, `Reported ${relTime(p.os_reported_at!)}.`)}</UpdPart>
-        </UpdGroup>
-      ))}
-      {proxies && vms.length === 0 && <UpdGroup label="Probe VMs"><UpdPart label=""><UpdPill kind="none">none reporting</UpdPill></UpdPart></UpdGroup>}
-
-      <UpdGroup label="Probe VM image" sub="for new probes">
-        <UpdPart label="Image">{vmLatest
-          ? <><UpdVer v={vv(vmLatest)} title="The newest probe appliance release" /><UpdPill kind="info" title="What Add probe installs for a new probe VM. A VM already running doesn't need it: its probe updates through its sidecar, and its OS patches itself.">newest</UpdPill></>
-          : <UpdPill kind="none">not looked up yet</UpdPill>}</UpdPart>
-      </UpdGroup>
-    </section>
+    <UpdPolicy label="Probe reboots" value={windowText(os.probe_window)}
+      title={os.probe_window.mode === 'auto' ? `Each probe VM reboots only when an update needs it, in this window (${clock}); a probe with its own window keeps it` : 'Argus flags "reboot needed" on each probe VM and leaves the reboot to you'}
+      onEdit={() => w.setOpen(true)}
+      editor={w.open ? <>
+        <WeeklyWindow autoLabel="Auto-reboot when needed" everyDay mode={w.mode} weekday={w.weekday} time={w.time} onMode={w.setMode} onWeekday={w.setWeekday} onTime={w.setTime} />
+        <Button variant="primary" onClick={async () => { if (await save('/api/os/probe-reboot-window', windowBody(w.mode, w.weekday, w.time), 'reboot window')) { onSaved(); w.setOpen(false) } }} disabled={busy || !w.dirty}>{busy ? 'Saving…' : 'Save'}</Button>
+        <Button variant="default" onClick={w.cancel} disabled={busy}>Cancel</Button>
+      </> : undefined}
+      below={w.open ? <p className="set-hint">{w.mode === 'auto'
+        ? <>Each probe VM reboots only when an update needs it, <strong>{w.weekday < 0 ? 'every day' : `on ${WEEKDAYS[w.weekday]}`}</strong> at <strong>{w.time}</strong> on {clock}, whatever time zone the VM runs. A probe with its own window keeps it. A reboot takes about a minute; the probe buffers its data meanwhile.</>
+        : 'Notify only: Argus flags "reboot needed" on each probe VM and leaves the reboot to you (Reboot now). A probe with its own window keeps it.'}</p> : undefined} />
   )
+}
+
+// The fleet window before /api/os/status has answered: what a probe VM does without one.
+const DEFAULT_PROBE_WINDOW: OSWindow = { mode: 'auto', weekday: -1, hour: 3, minute: 0 }
+
+// useOwnWindow edits one probe's own reboot window: the fleet's (the first choice), notify only, or a
+// day and time of its own. Inline on the Updates page and in the Probes page's band alike; reset()
+// loads what is saved when the editor opens.
+function useOwnWindow(p: Proxy, fleetIn: OSWindow | undefined, tz: string | undefined, onSaved: () => void, onClose: () => void) {
+  const fleet = fleetIn || DEFAULT_PROBE_WINDOW
+  const own = p.host?.own_window
+  const [mode, setMode] = useState('fleet')
+  const [weekday, setWeekday] = useState(-1)
+  const [time, setTime] = useState('03:00')
+  const reset = () => {
+    const w = own && own.mode === 'auto' ? own : fleet.mode === 'auto' ? fleet : DEFAULT_PROBE_WINDOW
+    setMode(own ? own.mode : 'fleet'); setWeekday(w.weekday); setTime(hm(w.hour, w.minute))
+  }
+  const { busy, save } = useSaveJSON()
+  const dirty = mode === 'fleet' ? !!own : !own || mode !== own.mode || (mode === 'auto' && (weekday !== own.weekday || time !== hm(own.hour, own.minute)))
+  const submit = async () => {
+    const body = mode === 'fleet' ? { fleet: true } : windowBody(mode, weekday, time)
+    if (await save(`/api/probes/${encodeURIComponent(p.name)}/reboot-window`, body, 'reboot window')) { onSaved(); onClose() }
+  }
+  const clock = coreClock(tz)
+  const fleetText = windowText(fleet).toLowerCase()
+  const controls = <>
+    <WeeklyWindow autoLabel="Auto-reboot when needed" everyDay fleetLabel={`Fleet window (${fleetText})`} mode={mode} weekday={weekday} time={time} onMode={setMode} onWeekday={setWeekday} onTime={setTime} />
+    <Button variant="primary" onClick={submit} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save'}</Button>
+    <Button variant="default" onClick={onClose} disabled={busy}>Cancel</Button>
+  </>
+  const hint = <p className="set-hint">{mode === 'fleet'
+    ? <>{p.name} follows the fleet window ({fleet.mode === 'auto' ? <>it reboots only when an update needs it, <strong>{fleetText}</strong> on {clock}</> : 'notify only'}) and moves with it.</>
+    : mode === 'auto'
+      ? <>{p.name} keeps its own window: it reboots only when an update needs it, <strong>{weekday < 0 ? 'every day' : `on ${WEEKDAYS[weekday]}`}</strong> at <strong>{time}</strong> on {clock}. The fleet window no longer applies to it.</>
+      : <>Notify only: Argus flags "reboot needed" on {p.name} and leaves the reboot to you. The fleet window no longer applies to it.</>}</p>
+  return { reset, controls, hint }
+}
+
+// ProbeRebootBand is the Probes page's inline band for a probe's own reboot window (its ⋮ menu).
+function ProbeRebootBand({ p, onChanged, onClose }: { p: Proxy; onChanged: () => void; onClose: () => void }) {
+  const [os, setOs] = useState<OSStatus | null>(null)
+  const ed = useOwnWindow(p, os?.probe_window, os?.clock_tz, onChanged, onClose)
+  useEffect(() => { fetch('/api/os/status').then((r) => (r.ok ? r.json() : null)).then((d: OSStatus | null) => setOs(d)).catch(() => {}) }, [])
+  useEffect(() => { if (os) ed.reset() }, [os]) // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div className="host-settings snmp-band">
+      <div className="hs-title">Reboot window · {p.name}</div>
+      <div className="hs-note">The probe VM reboots by itself only when an update needs it, in this window. Its OS patches itself either way (security updates only).</div>
+      {!os ? <span style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</span> : <>
+        <div className="vcell" style={{ marginTop: 8 }}>{ed.controls}</div>
+        {ed.hint}
+      </>}
+    </div>
+  )
+}
+
+// useProbeOS is a probe VM's Reboot now and Patch now, the same on the Updates page and in the Probes
+// page's ⋮ menu: the probe's next check-in hands the request to its proxy container, which leaves it
+// for the VM's host (DESIGN 14c).
+function useProbeOS(onChanged: () => void) {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const ask = async (p: Proxy, kind: 'reboot' | 'patch') => {
+    const n = p.sec_updates || 0
+    const ok = kind === 'reboot'
+      ? await confirm({ title: `Reboot ${p.name}`, message: `Reboot the probe VM ${p.name} now? Its next check-in takes the request, within a minute; the VM is away for a minute or two and the probe buffers its data meanwhile, sending it when it is back. Take a hypervisor snapshot first if you want a way back.`, confirmLabel: 'Reboot now', danger: true })
+      : await confirm({ title: `Patch ${p.name}`, message: `Apply the ${n} pending security update${n === 1 ? '' : 's'} on ${p.name} now? They are the ones that would apply by themselves tonight; services restart as needed, and a kernel update asks for a reboot afterwards.`, confirmLabel: 'Patch now' })
+    if (!ok) return
+    const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/${kind}`, { method: 'POST' }).catch(() => null)
+    if (!res || !res.ok) { toast.error(await errText(res, kind === 'reboot' ? 'Could not request the reboot' : 'Could not request the patching')); return }
+    toast.success(kind === 'reboot' ? `Reboot requested: ${p.name} takes it at its next check-in and reports when it is back.` : `Patching requested: ${p.name} takes it at its next check-in.`)
+    onChanged()
+  }
+  return { reboot: (p: Proxy) => ask(p, 'reboot'), patch: (p: Proxy) => ask(p, 'patch') }
+}
+
+// probeOSPill is a probe VM's OS line: what it is doing for Argus (a reboot or patching on its way),
+// else its patch state.
+function probeOSPill(p: Proxy): ReactNode {
+  const q = p.host?.pending
+  if (q) {
+    const what = q.kind === 'reboot' ? 'rebooting' : 'patching'
+    return q.sent
+      ? <UpdPill kind="busy" title={q.kind === 'reboot' ? 'The VM took the reboot; it reports when it is back' : 'The VM is applying the pending security updates'}>{what}…</UpdPill>
+      : <UpdPill kind="busy" title="Requested: the probe takes it at its next check-in">{q.kind === 'reboot' ? 'reboot' : 'patching'} requested</UpdPill>
+  }
+  return osPill(typeof p.sec_updates === 'number' ? p.sec_updates : -1, !!p.reboot_required, p.os_reported_at ? `Reported ${relTime(p.os_reported_at)}.` : '')
+}
+
+// probeOSFailed is a probe VM's last Reboot now or Patch now that failed while it is still due.
+function probeOSFailed(p: Proxy): { what: string; res: HostActionResult } | null {
+  const h = p.host
+  if (!h || h.pending) return null
+  if (h.reboot?.state === 'failed' && p.reboot_required) return { what: 'reboot request', res: h.reboot }
+  if (h.patch?.state === 'failed' && (p.sec_updates || 0) > 0) return { what: 'patching', res: h.patch }
+  return null
+}
+
+// ProbeOSParts are a probe VM's lines in its Updates group: its OS (Reboot now when the OS wants it,
+// Patch now with pending updates) and, only when it has a window of its own, its Reboots line.
+function ProbeOSParts({ p, os, act, onChanged }: { p: Proxy; os: OSStatus | null; act: ReturnType<typeof useProbeOS>; onChanged: () => void }) {
+  const [edit, setEdit] = useState(false)
+  const ed = useOwnWindow(p, os?.probe_window, os?.clock_tz, onChanged, () => setEdit(false))
+  if (!p.os_reported_at) return null
+  const h = p.host
+  const failed = probeOSFailed(p)
+  const own = h?.own_window
+  return <>
+    <UpdPart label="OS">
+      <UpdVer v={osName(p.os_version)} title="The operating system this VM reports" />{probeOSPill(p)}
+      {h?.now && !h.pending && p.reboot_required && <Button variant="default" onClick={() => act.reboot(p)} title="The VM reboots at its next check-in, outside its window">Reboot now</Button>}
+      {h?.now && !h.pending && (p.sec_updates || 0) > 0 && <Button variant="default" onClick={() => act.patch(p)} title="The VM applies the pending security updates at its next check-in">Patch now</Button>}
+    </UpdPart>
+    {failed && <UpdBelow><p className="set-hint" style={{ color: 'var(--err)' }}>The last {failed.what} ({relTime(failed.res.at)}) failed: {failed.res.detail}</p></UpdBelow>}
+    {!h?.now && (p.reboot_required || (p.sec_updates || 0) > 0) && <UpdBelow><p className="set-hint">Reboot now and Patch now come with this probe's next update (its host tools); until then its updates apply by themselves and it reboots in its window.</p></UpdBelow>}
+    {(own || edit) && <UpdPart label="Reboots">{edit ? ed.controls : <><UpdVer v={windowText(own)} title={`This probe's own reboot window, on ${coreClock(os?.clock_tz)}`} /><UpdPill kind="info" title="This probe keeps its own window instead of the fleet's">own window</UpdPill><button className="btn" onClick={() => { ed.reset(); setEdit(true) }}>Change</button></>}</UpdPart>}
+    {edit && <UpdBelow>{ed.hint}</UpdBelow>}
+  </>
 }
 
 type Retention = {
@@ -1772,13 +1927,14 @@ function updaterState(p: Proxy): { pill: ReactNode; can: boolean } {
 
 // CoreUpdates is the Argus core section: the core's channel, then the core, the argus-updater sidecar
 // that installs its updates, and the collectors that sidecar copies into this server's Zabbix.
-function CoreUpdates({ v, upd, onChanged }: { v: VersionInfo | null; upd: UpdateState | null; onChanged: () => void }) {
+function CoreUpdates({ v, upd, onChanged, os, onOS }: { v: VersionInfo | null; upd: UpdateState | null; onChanged: () => void; os: OSStatus | null; onOS: () => void }) {
   if (!v || !upd) return <section className="set-card"><h3>Argus core</h3><Skeleton rows={3} cols={2} /></section>
-  return <CoreRows v={v} upd={upd} onChanged={onChanged} />
+  return <CoreRows v={v} upd={upd} onChanged={onChanged} os={os} onOS={onOS} />
 }
 
-function CoreRows({ v, upd, onChanged }: { v: VersionInfo; upd: UpdateState; onChanged: () => void }) {
+function CoreRows({ v, upd, onChanged, os, onOS }: { v: VersionInfo; upd: UpdateState; onChanged: () => void; os: OSStatus | null; onOS: () => void }) {
   const confirm = useConfirm()
+  const cos = useCoreOS(os, onOS, upd.self_update_enabled)
   const [notes, setNotes] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [targets, setTargets] = useState<{ channels: string[]; releases: string[] } | null>(null)
@@ -1886,7 +2042,7 @@ function CoreRows({ v, upd, onChanged }: { v: VersionInfo; upd: UpdateState; onC
   return (
     <section className="set-card">
       <div className="upd-head"><h3>Argus core</h3></div>
-      <p className="set-note">The Argus app on this server, the argus-updater sidecar that installs its updates (it holds the Docker socket and rolls an update back if the new version doesn't start healthy), and the collectors it copies into this server's Zabbix. Argus looks for a newer release every night.</p>
+      <p className="set-note">The Argus app on this server, the argus-updater sidecar that installs its updates (it holds the Docker socket and rolls an update back if the new version doesn't start healthy), the collectors and host tools it copies in, and the Debian and Zabbix under it. Argus looks for a newer release every night. The Debian patches itself, security updates only; Argus never runs apt remotely, since there's no clean rollback. The core hosts the database and Zabbix, so its reboot and its Zabbix minor updates wait for the windows below, or for a click on their line.</p>
 
       {self && (
         <UpdPolicy label="Channel" value={channelText} title={channelTitle}
@@ -1909,6 +2065,7 @@ function CoreRows({ v, upd, onChanged }: { v: VersionInfo; upd: UpdateState; onC
           </> : undefined}
           below={switching ? <p className="set-hint">Switches the running image to the chosen channel or version. A version pins the core: it stays there until you switch back to <span className="mono">latest</span> or <span className="mono">testing</span>.</p> : undefined} />
       )}
+      {cos.policies}
 
       <UpdGroup label="Argus" sub="this server">
         <UpdPart label="Argus"><UpdVer v={running} title="The Argus version this server runs" />{corePill}{coreAction}</UpdPart>
@@ -1939,6 +2096,7 @@ function CoreRows({ v, upd, onChanged }: { v: VersionInfo; upd: UpdateState; onC
         {self && <UpdPart label="Collectors">{upd.collectors?.version && <UpdVer v={vv(upd.collectors.version)} title="The Argus version they were installed from" />}{coll.pill}</UpdPart>}
         {self && <UpdPart label="Host tools">{upd.host_tools?.version && <UpdVer v={vv(upd.host_tools.version)} title="The Argus version they were installed from" />}{tools.pill}</UpdPart>}
         {self && coll.note && <UpdBelow><p className="set-hint" style={coll.warn ? { color: 'var(--warn)' } : undefined}>{coll.note}</p></UpdBelow>}
+        {cos.parts}
       </UpdGroup>
     </section>
   )
@@ -1982,8 +2140,9 @@ function FleetTarget({ target, latest, onSaved }: { target: string | null; lates
 
 // ProbeUpdates is the Probes section: the fleet target, then each probe's proxy and argus-updater
 // sidecar with their Update buttons. A sidecar takes what is queued for it at its next check-in.
-function ProbeUpdates({ proxies, error, target, onTarget, onChanged }: { proxies: Proxy[] | null; error: string; target: string | null; onTarget: (t: string) => void; onChanged: () => void }) {
+function ProbeUpdates({ proxies, error, target, onTarget, onChanged, os, onOS, vmLatest }: { proxies: Proxy[] | null; error: string; target: string | null; onTarget: (t: string) => void; onChanged: () => void; os: OSStatus | null; onOS: () => void; vmLatest: string }) {
   const confirm = useConfirm()
+  const act = useProbeOS(onChanged)
   const toast = useToast()
   const [openCmd, setOpenCmd] = useState<string | null>(null) // probe whose manual update command is open
   const list = proxies || []
@@ -2031,8 +2190,9 @@ function ProbeUpdates({ proxies, error, target, onTarget, onChanged }: { proxies
         <h3>Probes</h3>
         {n > 0 && <Button variant="primary" className="compact" onClick={updateAll} title="Queue an update for every probe and sidecar that is behind">Update all ({n})</Button>}
       </div>
-      <p className="set-note">The Zabbix proxy each site runs, the argus-updater sidecar that updates it and, on a probe VM, the host tools the sidecar installs from the probe image. A sidecar takes a queued update at its next check-in, within a minute, and rolls back one that doesn't start healthy. Argus looks for newer versions every 3 hours.</p>
+      <p className="set-note">The Zabbix proxy each site runs, the argus-updater sidecar that updates it and, on a probe VM, the host tools the sidecar installs from the probe image and the Debian under it. A sidecar takes a queued update at its next check-in and rolls back one that doesn't start healthy; while this page is open the probes check in every few seconds. Argus looks for newer versions every 3 hours. A probe VM's Debian patches itself, security updates only, and reboots only when an update needs it, in its reboot window; a container probe patches with its Docker host.</p>
       <FleetTarget target={target} latest={list.find((p) => p.latest)?.latest} onSaved={onTarget} />
+      <ProbeFleetWindow os={os} onSaved={onOS} />
       {error ? <UpdGroup label="Probes"><UpdPart label=""><span className="set-hint" style={{ color: 'var(--err)' }}>{error}</span></UpdPart></UpdGroup>
         : proxies === null ? <Skeleton rows={3} cols={3} />
         : list.length === 0 ? <UpdGroup label="Probes"><UpdPart label=""><UpdPill kind="none">none yet: a probe shows here once it enrolls and checks in</UpdPill></UpdPart></UpdGroup>
@@ -2051,9 +2211,15 @@ function ProbeUpdates({ proxies, error, target, onTarget, onChanged }: { proxies
                 {us.can && <button className="btn" onClick={() => updateUpdater(p)}>Update</button>}
               </UpdPart>
               {ts && <UpdPart label="Host tools">{p.host_tools?.version && <UpdVer v={p.host_tools.version} title="The probe version they were installed from" />}{probeToolsPill(ts)}</UpdPart>}
+              <ProbeOSParts p={p} os={os} act={act} onChanged={onChanged} />
             </UpdGroup>
           )
         })}
+      <UpdGroup label="Probe VM image" sub="for new probes">
+        <UpdPart label="Image">{vmLatest
+          ? <><UpdVer v={vv(vmLatest)} title="The newest probe appliance release" /><UpdPill kind="info" title="What Add probe installs for a new probe VM. A VM already running doesn't need it: its probe updates through its sidecar, and its OS patches itself.">newest</UpdPill></>
+          : <UpdPill kind="none">not looked up yet</UpdPill>}</UpdPart>
+      </UpdGroup>
     </section>
   )
 }
@@ -2084,8 +2250,8 @@ function updatesVerdict(v: VersionInfo | null, pv: { probe_latest?: string; upda
   return { ok: true, text: 'Everything is on the newest version.' }
 }
 
-// UpdatesView is the Updates page (admin): one Check for updates for everything, then the core, the
-// probes and the operating systems, each in its own section.
+// UpdatesView is the Updates page (admin): one Check for updates for everything, then the core and the
+// probes, each with the operating system under it.
 function UpdatesView() {
   const [v, setV] = useState<VersionInfo | null>(null)
   const [upd, setUpd] = useState<UpdateState | null>(null)
@@ -2095,7 +2261,18 @@ function UpdatesView() {
   const [vmLatest, setVmLatest] = useState('')
   const [checking, setChecking] = useState(false)
   const [checkMsg, setCheckMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [os, setOs] = useState<OSStatus | null>(null)
   const getJSON = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+  const loadOs = () => getJSON('/api/os/status').then((d: OSStatus | null) => { if (d) setOs(d) })
+  useEffect(() => { loadOs() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // While this page is open the probes and their sidecars check in every few seconds, so what is
+  // clicked here is taken at once.
+  useEffect(() => {
+    const warm = () => { void fetch('/api/probes/warm', { method: 'POST' }).catch(() => null) }
+    warm()
+    const t = window.setInterval(warm, 90_000)
+    return () => window.clearInterval(t)
+  }, [])
   // A failed fetch keeps the last state (the core restarts during its own update).
   const loadUpd = () => getJSON('/api/update/state').then((d) => { if (d) setUpd(d) })
   const loadProxies = () => fetch('/api/proxies')
@@ -2111,7 +2288,7 @@ function UpdatesView() {
   // in another tab still shows; the probes every 30 s, every 5 s while one of theirs is in hand.
   const coreBusy = !!upd && (upd.state === 'requested' || upd.state === 'running' || upd.sidecar?.state === 'queued' || upd.sidecar?.state === 'running')
   useEffect(() => { loadUpd(); const t = setInterval(loadUpd, coreBusy ? 3000 : 15000); return () => clearInterval(t) }, [coreBusy]) // eslint-disable-line react-hooks/exhaustive-deps
-  const probeBusy = (proxies || []).some((p) => jobInHand(p.update_job) || jobInHand(p.updater_job))
+  const probeBusy = (proxies || []).some((p) => jobInHand(p.update_job) || jobInHand(p.updater_job) || !!p.host?.pending)
   useEffect(() => { loadProxies(); const t = setInterval(loadProxies, probeBusy ? 5000 : 30000); return () => clearInterval(t) }, [probeBusy]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Check for updates looks up everything at once (the core's release, the probe image, both
@@ -2139,9 +2316,8 @@ function UpdatesView() {
       </div>
       {checkMsg && <p className={'upd-check ' + (checkMsg.ok ? 'ok' : 'warn')} role="status">{checkMsg.text}</p>}
       <div className="set-body">
-        <CoreUpdates v={v} upd={upd} onChanged={loadUpd} />
-        <ProbeUpdates proxies={proxies} error={proxyErr} target={target} onTarget={setTarget} onChanged={loadProxies} />
-        <OSUpdatesCard proxies={proxies} vmLatest={vmLatest} />
+        <CoreUpdates v={v} upd={upd} onChanged={loadUpd} os={os} onOS={loadOs} />
+        <ProbeUpdates proxies={proxies} error={proxyErr} target={target} onTarget={setTarget} onChanged={loadProxies} os={os} onOS={loadOs} vmLatest={vmLatest} />
       </div>
     </div>
   )
@@ -3691,6 +3867,7 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
   const [openSnmp, setOpenSnmp] = useState<string | null>(null) // proxy name whose SNMP-defaults band is open
   const [openProcs, setOpenProcs] = useState<string | null>(null) // proxy name whose Zabbix-processes band is open
   const [diagFrom, setDiagFrom] = useState<string | null>(null) // proxy id the diagnostics dialog runs from
+  const [openReboot, setOpenReboot] = useState<string | null>(null) // proxy name whose reboot-window band is open
   const canEdit = role === 'admin' || role === 'helpdesk'
   const isAdmin = role === 'admin'
   const toast = useToast()
@@ -3753,7 +3930,8 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
     .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load probes'))
   useEffect(() => { loadProxies(); const t = setInterval(loadProxies, 30000); return () => clearInterval(t) }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // While an update is queued or under way, look every 5 s, so its row moves on as it happens.
-  const jobBusy = (proxies || []).some((p) => [p.update_job, p.updater_job].some((j) => j && j.state !== 'failed'))
+  const jobBusy = (proxies || []).some((p) => [p.update_job, p.updater_job].some((j) => j && j.state !== 'failed') || !!p.host?.pending)
+  const osAct = useProbeOS(() => { void loadProxies() })
   useEffect(() => { if (!jobBusy) return; const t = setInterval(loadProxies, 5000); return () => clearInterval(t) }, [jobBusy]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function loadTokens() {
@@ -3797,7 +3975,7 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
         <span className="hint">{proxies ? `${proxies.length} known to the core` : '…'}</span>
         {(() => {
           const needReboot = (proxies || []).filter((p) => p.reboot_required).length
-          return needReboot > 0 ? <span className="tag avail" title="These probe VMs need a reboot to finish applying OS updates; each reboots in its weekly ~03:00 window">{needReboot === 1 ? '1 needs' : `${needReboot} need`} a reboot</span> : null
+          return needReboot > 0 ? <span className="tag avail" title="These probe VMs need a reboot to finish applying OS updates; each reboots in its reboot window (the Updates page), or with Reboot now">{needReboot === 1 ? '1 needs' : `${needReboot} need`} a reboot</span> : null
         })()}
         {canEdit && <div className="tools">
           {isAdmin && <button className="btn" onClick={reconcile} title="Prune Argus records left behind by probes deleted directly in Zabbix">Clean up</button>}
@@ -3907,6 +4085,10 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
                     canEdit && p.id ? { label: 'SNMP defaults', onClick: () => setOpenSnmp((n) => (n === p.name ? null : p.name)) } : null,
                     { label: 'Processes', onClick: () => setOpenProcs((n) => (n === p.name ? null : p.name)) },
                     canEdit && p.id ? { label: 'Diagnose from here…', onClick: () => setDiagFrom(p.id) } : null,
+                    isAdmin && p.host ? 'sep' : null,
+                    isAdmin && p.host?.now && !p.host.pending && p.reboot_required ? { label: 'Reboot now…', onClick: () => osAct.reboot(p) } : null,
+                    isAdmin && p.host?.now && !p.host.pending && (p.sec_updates || 0) > 0 ? { label: 'Patch now…', onClick: () => osAct.patch(p) } : null,
+                    isAdmin && p.host ? { label: 'Reboot window…', onClick: () => setOpenReboot((n) => (n === p.name ? null : p.name)) } : null,
                     isAdmin && p.break_glass ? { label: p.break_glass_user ? `Console (${p.break_glass_user})` : 'Console', onClick: () => revealBreakGlass(p) } : null,
                     isAdmin && p.id ? 'sep' : null,
                     isAdmin && p.id ? { label: 'Delete probe', onClick: () => del(p), danger: true } : null,
@@ -3916,6 +4098,7 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
               {report?.name === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
               {openSnmp === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></td></tr>}
               {openProcs === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProbeProcesses p={p} isAdmin={isAdmin} onChanged={loadProxies} onClose={() => setOpenProcs(null)} /></td></tr>}
+              {openReboot === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProbeRebootBand p={p} onChanged={() => { void loadProxies() }} onClose={() => setOpenReboot(null)} /></td></tr>}
             </Fragment>
           ))}
         </tbody>
@@ -3931,15 +4114,15 @@ function probeUpdateTag(target?: string): string {
 }
 
 // OSCell is the "OS" column: a VM probe's Debian patch status (DESIGN §14c). The OS patches itself
-// (unattended-upgrades, security only) and auto-reboots in a weekly window; this only *reports*. A
-// dash means no report (a container probe, or a VM that hasn't reported yet).
+// (unattended-upgrades, security only) and reboots in its reboot window; Reboot now and Patch now are
+// in the row's menu. A dash means no report (a container probe, or a VM that hasn't reported yet).
 function OSCell({ p }: { p: Proxy }) {
   const tools = probeToolsState(p)
   if (!p.os_reported_at) return <span className="mono" style={{ color: 'var(--faint)' }} title="No OS patch report - a container probe, or a VM probe that hasn't reported yet">-</span>
   return (
     <span className="vcell">
       {p.os_version && <UpdVer v={osName(p.os_version)} title="Operating system reported by the VM" />}
-      {osPill(typeof p.sec_updates === 'number' ? p.sec_updates : -1, !!p.reboot_required, `Reported ${relTime(p.os_reported_at)}.`)}
+      {probeOSPill(p)}
       {tools && tools.state !== 'ok' && probeToolsPill(tools, true)}
     </span>
   )

@@ -71,6 +71,8 @@ type proxyView struct {
 	CPUPeak    *float64  `json:"cpu_peak,omitempty"`
 	CPUStarved bool      `json:"cpu_starved,omitempty"`
 	IsVM       bool      `json:"is_vm,omitempty"` // a probe VM (it reports OS status), not a container on another host
+	// A probe VM's reboots (probereboot.go): its own window, Reboot now and Patch now. Nil for a container probe.
+	Host *probeHostView `json:"host,omitempty"`
 	// The probe container's own minute report (0 = never), and whether it's missing while Zabbix
 	// hears from the probe (probereport.go).
 	ReportAt    int64 `json:"report_at"`
@@ -119,6 +121,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 	updaterLatest := s.updaterLatest.get()                     // newest published argus-updater version from GHCR
 	autoscale := s.mgr.ProbeAutoscale()
 	probeTags, _ := s.st.ProbeTags(ctx)
+	hosts, _ := s.st.ProbeHosts(ctx) // best-effort, as above
 	now := time.Now().Unix()
 	out := make([]proxyView, 0, len(proxies))
 	for _, p := range proxies {
@@ -184,10 +187,19 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			CPUPeak:        cpuPeakView(ag.Procs.CPU),
 			CPUStarved:     ag.Procs.CPU.Starved,
 			IsVM:           ag.OSReportedAt > 0,
+			Host:           vmHostView(ag, hosts[p.Name], now),
 			Tags:           nonNilStrings(probeTags[p.ProxyID]),
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// vmHostView is a probe VM's reboots, nil for a container probe.
+func vmHostView(ag store.ProbeAgent, h store.ProbeHost, now int64) *probeHostView {
+	if ag.OSReportedAt == 0 {
+		return nil
+	}
+	return probeHostViewOf(h, now)
 }
 
 // cpuLoadView is the reported 1/5/15-minute load averages, or nothing before the first report.

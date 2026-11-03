@@ -14,6 +14,23 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 ### Added
+- **Probe VM reboots on a window Argus keeps, and Reboot now and Patch now per probe VM.** The
+  Updates page's Probes section has a **Probe reboots** setting next to the fleet target: when the
+  probe VMs reboot by themselves, only when an update needs it, every day at 03:00 by default (what
+  they did before) or a day and time you pick, or notify only. The time reads on the core's clock,
+  whatever time zone a VM runs. A probe can keep a window of its own (its **⋮ > Reboot window…** on
+  the Probes page), shown as a Reboots line in its group; one on the fleet's shows none. Each probe
+  VM's OS line has **Reboot now** when its OS wants a reboot and **Patch now** with security updates
+  pending, also in its ⋮ menu; the probe takes them at its next check-in. Needs probe r17 (its host
+  tools); an older probe keeps rebooting every day at 03:00 on its own clock.
+- **The probes check in every few seconds while the Updates page is open**, so an Update, Reboot
+  now or Patch now there is taken at once (a sidecar from updater 0.2.20 takes it too).
+
+### Changed
+- **The Updates page has no Operating systems section.** The core's reboot and Zabbix windows and
+  its OS and Zabbix lines are in the Argus core section; each probe VM's OS line is in its own group
+  under Probes, with the fleet reboot window next to the fleet target and the probe VM image last.
+
 - **Diagnostics: ping, traceroute and DNS lookup from the core or any probe.** A host's ⋮ menu has
   **Diagnose…** (its address and its own probe filled in), a probe's on the Probes page **Diagnose
   from here…**; admins and helpdesk can run them. The results come laid out per tool: a ping's lost,

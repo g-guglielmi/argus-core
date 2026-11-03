@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"argus/internal/auth"
@@ -45,28 +46,31 @@ type Server struct {
 	acct          acctStripes        // attempts on an over-limit account wait their turn (limits.go)
 	writeLimiter  *ratelimit.Limiter // a viewer's logged writes per minute (changes.go)
 	checkinLimit  *ratelimit.Limiter // a probe's check-ins per minute (probefleet.go)
-	diagLimit     *ratelimit.Limiter // a user's diagnostics per ten minutes (diag.go)
-	diags         *diagBoard         // the diagnostics running and just run (diag.go)
-	featMu        sync.Mutex         // guards the cached public /api/features answer
-	featResetOK   bool
-	featResetAt   time.Time
-	ca            *pki.CA           // nil when probe enrollment is not configured
-	probeLatest   *probeLatestCache // newest published probe version, polled from public GHCR
-	updaterLatest *probeLatestCache // newest published argus-updater version, polled from public GHCR
-	appLatest     *appLatestCache   // newest published app release, polled from public GHCR
-	probeVM       *probeVMCache     // newest probe-vm appliance + assets, polled from GitHub Releases
-	digests       digestCache       // tag -> digest, handed out with every update so the updater can verify the pull
-	census        *censusCache      // the sensor census, kept warm in memory (census.go)
-	hb            heartbeat         // the outside monitor's ping (heartbeat.go)
-	hostGroups    hostGroupsCache   // host -> group names, for per-site visibility (scope.go)
-	maint         maintCache        // the hosts in a maintenance window right now (maintenance.go)
-	mux           *http.ServeMux    // the routes, so the change log can match a request before it runs (changes.go)
-	ups           upstreamCache     // the devices hosts are plugged into (upstream.go)
-	upsTrack      upstreamTrack     // the controller's answers on their way to being taken (upstream.go)
-	mapFactCache  mapFactCache      // the devices' models and addresses for the maps (maps.go)
-	startedAt     time.Time         // when this Argus started: the probes' report check counts from it (probereport.go)
-	mail          *mailState        // the mailboxes' recent mails and a way to read them at once (mailboxes.go)
-	domainKick    chan struct{}     // read the domains now: one was typed on a host (domains.go)
+	// Until when (unix seconds) someone has the Updates page open: the probes and their sidecars
+	// check in every probeFastCheckin seconds meanwhile (probereboot.go).
+	updatesWatched atomic.Int64
+	diagLimit      *ratelimit.Limiter // a user's diagnostics per ten minutes (diag.go)
+	diags          *diagBoard         // the diagnostics running and just run (diag.go)
+	featMu         sync.Mutex         // guards the cached public /api/features answer
+	featResetOK    bool
+	featResetAt    time.Time
+	ca             *pki.CA           // nil when probe enrollment is not configured
+	probeLatest    *probeLatestCache // newest published probe version, polled from public GHCR
+	updaterLatest  *probeLatestCache // newest published argus-updater version, polled from public GHCR
+	appLatest      *appLatestCache   // newest published app release, polled from public GHCR
+	probeVM        *probeVMCache     // newest probe-vm appliance + assets, polled from GitHub Releases
+	digests        digestCache       // tag -> digest, handed out with every update so the updater can verify the pull
+	census         *censusCache      // the sensor census, kept warm in memory (census.go)
+	hb             heartbeat         // the outside monitor's ping (heartbeat.go)
+	hostGroups     hostGroupsCache   // host -> group names, for per-site visibility (scope.go)
+	maint          maintCache        // the hosts in a maintenance window right now (maintenance.go)
+	mux            *http.ServeMux    // the routes, so the change log can match a request before it runs (changes.go)
+	ups            upstreamCache     // the devices hosts are plugged into (upstream.go)
+	upsTrack       upstreamTrack     // the controller's answers on their way to being taken (upstream.go)
+	mapFactCache   mapFactCache      // the devices' models and addresses for the maps (maps.go)
+	startedAt      time.Time         // when this Argus started: the probes' report check counts from it (probereport.go)
+	mail           *mailState        // the mailboxes' recent mails and a way to read them at once (mailboxes.go)
+	domainKick     chan struct{}     // read the domains now: one was typed on a host (domains.go)
 }
 
 // New builds the HTTP handler. signingSecret is the alert-link HMAC secret main resolved (and
@@ -426,6 +430,12 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/probes/{name}/update", auth.RequireRole("admin", s.handleTriggerProbeUpdate))
 	// trigger a self-update of the probe's argus-updater sidecar (admin; recreates itself)
 	mux.HandleFunc("POST /api/probes/{name}/updater-update", auth.RequireRole("admin", s.handleTriggerUpdaterUpdate))
+	// A probe VM's reboots (probereboot.go): Reboot now, Patch now, its own window; the Updates page
+	// keeps the fleet's check-ins fast while it is open.
+	mux.HandleFunc("POST /api/probes/{name}/reboot", auth.RequireRole("admin", s.handleProbeRebootNow))
+	mux.HandleFunc("POST /api/probes/{name}/patch", auth.RequireRole("admin", s.handleProbePatchNow))
+	mux.HandleFunc("PUT /api/probes/{name}/reboot-window", auth.RequireRole("admin", s.handleSetOwnProbeWindow))
+	mux.HandleFunc("POST /api/probes/warm", auth.RequireRole("admin", s.handleWarmProbes))
 	// issue a check-in credential for an already-enrolled probe (admin) - turns on version reporting
 	mux.HandleFunc("POST /api/probes/{name}/checkin-token", auth.RequireRole("admin", s.handleIssueCheckinToken))
 	// reveal a probe VM's break-glass console credential (admin; decrypted on demand)
@@ -446,6 +456,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/os/status", auth.RequireAuth(s.handleOSStatus))
 	mux.HandleFunc("PUT /api/os/reboot-window", auth.RequireRole("admin", s.handleSetRebootWindow))
 	mux.HandleFunc("PUT /api/os/zbx-window", auth.RequireRole("admin", s.handleSetZbxWindow))
+	mux.HandleFunc("PUT /api/os/probe-reboot-window", auth.RequireRole("admin", s.handleSetProbeWindow))
 	mux.HandleFunc("POST /api/os/zbx-update", auth.RequireRole("admin", s.handleZbxUpdateNow))
 	mux.HandleFunc("POST /api/os/reboot", auth.RequireRole("admin", s.handleRebootNow))
 	mux.HandleFunc("POST /api/os/patch", auth.RequireRole("admin", s.handlePatchNow))

@@ -1963,7 +1963,9 @@ will not drag Timescale forward. Ship `needrestart` too, so services restart aft
 without needing a full reboot.
 
 **Reboot policy differs by role:**
-- **Probes (cattle) - automatic.** Auto-reboot in a **weekly maintenance window, ~03:00** local. Probes
+- **Probes (cattle) - automatic.** A probe VM reboots by itself when an update needs it, in its
+  **reboot window**: the fleet's (Updates > Probes, **Probe reboots**; every day at 03:00 by default),
+  or one of its own (the probe's **⋮ > Reboot window…**), or never by itself (notify only). Probes
   buffer 7 days offline, so a ~60s reboot is invisible. Fully hands-off.
 - **Core (pet) - operator-scheduled.** Security patches auto-apply, but the **reboot is never
   unattended**. Argus core gets a small **Settings mask to pick a day + time** for the core's reboot
@@ -2038,6 +2040,37 @@ strictly local (Argus never runs `apt` remotely). Both reporters (and the backup
 OS the same way: Debian by its point release, "Debian 13.7" (`DEBIAN_VERSION_FULL` in os-release,
 or `/etc/debian_version` before Debian 13 added it), any other OS by its `PRETTY_NAME`; a VM whose
 reporter predates that shows "Debian 13 (trixie)" until its host tools update.
+
+**Probe VM reboots, Reboot now and Patch now (core 0.9.17, probe r17, updater 0.2.20).** A probe
+VM's reboot follows a window Argus keeps, like the core's: the **fleet** window (app_meta
+`probe_reboot_window`, `PUT /api/os/probe-reboot-window`; default every day at 03:00, what the
+image did before through unattended-upgrades' `Automatic-Reboot-Time`) or the probe's **own**
+(`probe_agents.reboot_window`, `PUT /api/probes/{name}/reboot-window`, `{"fleet":true}` puts it
+back). The weekday may be -1, every day, for probe windows only. The windows read on the
+**core's clock**: the zone set in Settings, else the one the core VM reports, handed out with the
+window, so 03:00 is one moment at every site whatever zone a VM runs (a VM that doesn't know the
+zone uses its own clock). Reaching the VM: only the proxy container holds the probe's data folder
+the VM's systemd units watch (the sidecar mounts it read-only), so the container's minute check-in
+carries `reboot_window` (on a probe VM only, one that reports OS status) and, once, a
+`host_request` (`{kind: reboot|patch, at}`); `checkin.sh` writes `reboot-window.json` (when it
+changed) and `reboot-request.json` / `patch-request.json` there. On the VM, host tools from the
+probe image: `argus-reboot-check` (a 5-minute timer and a path unit on the request) reboots only
+when `/var/run/reboot-required` exists, in the window or on request, and writes an apt drop-in that
+turns unattended-upgrades' own reboot off; `argus-patch` (a path unit) runs the same
+security-only `unattended-upgrade` as the daily one. Each leaves a result file, and
+`argus-os-report` adds to its report that the VM takes the requests, when it booted, and the last
+results; a request is settled by the result after it, or, for a reboot, by a boot after it, and one
+open for 20 minutes is dropped. A request does nothing the OS doesn't already ask for, so a
+container that wrote one on its own could at most bring a needed reboot forward. Requests are
+refused, with why, for a container probe, for host tools that predate them, for a reboot the OS
+doesn't need or patching with nothing pending, and while one is open.
+
+**Fast check-ins while the Updates page is open.** The page posts `/api/probes/warm` every 90 s;
+for two minutes after, every probe's container and sidecar check-in answer carries `next: 15`
+(the container already took `next` for diagnostics; the sidecar from 0.2.20, held to 5 s..its
+interval), so a click there is taken within seconds. A sidecar also gets it while an update is
+queued for it, and it checks in again right after installing host tools, so a probe update's host
+tools stop showing "updating" as soon as they are in.
 
 **The Zabbix frontend, kept narrow (`argus-web-guard`).** A host tool of the core (script, a
 oneshot service enabled at boot and run when an update installs it, an hourly timer that puts it
@@ -2521,10 +2554,12 @@ plane; the probe checks in and converges.
   (the core's channel, the fleet target, the core's reboot and Zabbix windows) are groups of their
   own whose value reads like a version and is changed in place. **Argus core**: the channel (the tag
   the core runs under, `channel` in `GET /api/version`), then the core, its sidecar and the
-  collectors. **Probes**: the fleet target, then every probe's proxy, sidecar and (on a probe VM) the host
-  tools the sidecar installs from the probe image, with **Update all**
-  for every one that is behind. **Operating systems**: the two core windows, the core VM (OS, Zabbix),
-  each probe VM, and the newest probe VM image. The Probes page keeps the versions as read-only status in the same words; a probe that
+  collectors, with the core's OS: its reboot and Zabbix windows as settings, and the core's OS and
+  Zabbix lines (Reboot now, Patch now, Update now) in its group. **Probes**: the fleet target and the
+  fleet's probe reboot window, then every probe's proxy, sidecar and, on a probe VM, the host tools
+  the sidecar installs from the probe image and its OS line (Reboot now, Patch now), plus a Reboots
+  line only for a probe with a window of its own; then the newest probe VM image. **Update all**
+  queues every one that is behind. There is no separate Operating systems section. The Probes page keeps the versions as read-only status in the same words; a probe that
   is behind links to Updates (admins only: helpdesk sees Probes, not Updates).
 - **The core host's collectors ride the image.** The core's Zabbix server is a host package, so the
   collectors (external checks) it runs for the hosts it monitors live in the host's

@@ -210,8 +210,15 @@ func (s *Server) handleReportProbeOSStatus(w http.ResponseWriter, r *http.Reques
 		SecUpdates     *int   `json:"sec_updates"`
 		RebootRequired bool   `json:"reboot_required"`
 		OS             string `json:"os"`
+		// Reboot now and Patch now (a reporter from probe r17 on): whether the VM's scripts take
+		// them, when it booted, and the last result of each.
+		RebootNow *bool             `json:"reboot_now"`
+		PatchNow  bool              `json:"patch_now"`
+		BootedAt  int64             `json:"booted_at"`
+		Reboot    *hostActionResult `json:"reboot"`
+		Patch     *hostActionResult `json:"patch"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
@@ -222,6 +229,9 @@ func (s *Server) handleReportProbeOSStatus(w http.ResponseWriter, r *http.Reques
 	if err := s.st.SetProbeOSStatus(ctx, proxyName, count, req.RebootRequired, clip(printable(req.OS), 80)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not store OS status"})
 		return
+	}
+	if req.RebootNow != nil {
+		s.recordProbeHostActions(ctx, proxyName, probeHostActions{RebootNow: *req.RebootNow, PatchNow: req.PatchNow, BootedAt: req.BootedAt, Reboot: req.Reboot, Patch: req.Patch})
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -264,6 +274,10 @@ type osStatusResponse struct {
 	RebootWindow rebootWindow `json:"reboot_window"`
 	ZbxWindow    rebootWindow `json:"zbx_window"`
 	FleetZbx     string       `json:"fleet_zbx,omitempty"` // newest Zabbix version among the probes
+	// The probe VMs' fleet reboot window (probereboot.go) and the zone of the core's clock it reads
+	// in ("" when unknown: each VM then reads it on its own clock).
+	ProbeWindow rebootWindow `json:"probe_window"`
+	ClockTZ     string       `json:"clock_tz,omitempty"`
 }
 
 // coreOSStatus reads the core VM's OS status file from the shared update dir.
@@ -472,6 +486,8 @@ func (s *Server) handleOSStatus(w http.ResponseWriter, r *http.Request) {
 		RebootWindow: s.loadRebootWindow(ctx),
 		ZbxWindow:    s.loadZbxWindow(ctx),
 		FleetZbx:     fleet,
+		ProbeWindow:  s.loadProbeWindow(ctx),
+		ClockTZ:      s.coreClockTZ(),
 	})
 }
 

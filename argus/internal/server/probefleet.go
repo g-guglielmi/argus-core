@@ -181,6 +181,10 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		// The monitoring CA (PEM), only to a probe whose ca.crt differs: it takes a renewal of the
 		// same CA (the same name and key, a later end) and refuses anything else.
 		CA string `json:"ca,omitempty"`
+		// A probe VM's reboots (probereboot.go), to the proxy container only: the window its host
+		// keeps (reboot-window.json in the data folder), and a Reboot now or Patch now, once.
+		RebootWindow *probeWindowFile `json:"reboot_window,omitempty"`
+		HostRequest  *probeHostReq    `json:"host_request,omitempty"`
 	}
 	resp.Target = target
 	if s.ca != nil && caFP != "" && caFP != s.ca.Fingerprint() {
@@ -229,6 +233,22 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		if s.diags.fast(proxyName) {
 			resp.Next = diagFastCheckin
 		}
+		// The probe VM's window, and a Reboot now or Patch now: only the proxy container holds the
+		// data folder the host watches (the sidecar mounts it read-only).
+		if ag, err := s.st.ProbeAgentByName(ctx, proxyName); err == nil {
+			resp.RebootWindow, resp.HostRequest = s.probeHostHandout(ctx, proxyName, ag)
+		}
+	}
+	// While the Updates page is open, the probe and its sidecar check in every few seconds, so what
+	// is clicked there is taken at once; the sidecar too while an update of its waits for it.
+	fast := s.probesFast()
+	if !fast && req.SelfUpdate != nil && *req.SelfUpdate {
+		if ag, err := s.st.ProbeAgentByName(ctx, proxyName); err == nil && (ag.PendingUpdate != "" || ag.PendingUpdaterUpdate != "") {
+			fast = true
+		}
+	}
+	if fast && (resp.Next == 0 || resp.Next > probeFastCheckin) {
+		resp.Next = probeFastCheckin
 	}
 	// The probe knows its own image repo; it only needs the tag to converge on.
 	writeJSON(w, http.StatusOK, resp)
