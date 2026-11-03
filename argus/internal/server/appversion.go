@@ -318,7 +318,13 @@ func resolveTestingUpdate(ctx context.Context, cur string) (available bool, targ
 	// from newer-code: equal revisions -> same source -> no update, which stops a just-released box
 	// from being offered a phantom ":testing" update to its own commit forever. If either revision is
 	// unreadable (an image built before the label existed) we fall back to the digest verdict.
-	if sameRevision(ctx, repoPath, tok, runningRef) {
+	if testingVer, same := sameRevision(ctx, repoPath, tok, runningRef); same {
+		// Same code, except one case: a development build of the very commit a release was then
+		// tagged on. The tag build republished :testing stamped vX.Y.Z, so the box is offered it and
+		// carries the release's name (one restart, same code), however the release was cut.
+		if releaseOfOwnCommit(cur, testingVer) {
+			return true, testingVer, nil
+		}
 		return false, "", nil
 	}
 	// An update exists; best-effort read the target build's version label to name it (empty is fine).
@@ -333,19 +339,30 @@ func resolveTestingUpdate(ctx context.Context, cur string) (available bool, targ
 const ociRevisionLabel = "org.opencontainers.image.revision"
 
 // sameRevision reports whether the :testing image and the running image (identified by runningRef)
-// were built from the same git commit. Used to distinguish a same-commit rebuild (different digest,
-// identical code) from a genuinely newer :testing build. Returns false when either revision label is
-// missing or unreadable, so a real update is never suppressed on incomplete data.
-func sameRevision(ctx context.Context, repoPath, tok, runningRef string) bool {
+// were built from the same git commit, with the :testing image's version label. Used to distinguish a
+// same-commit rebuild (different digest, identical code) from a genuinely newer :testing build.
+// Returns false when either revision label is missing or unreadable, so a real update is never
+// suppressed on incomplete data.
+func sameRevision(ctx context.Context, repoPath, tok, runningRef string) (testingVersion string, same bool) {
 	testingLabels, err := ghcrImageLabels(ctx, repoPath, "testing", tok)
 	if err != nil {
-		return false
+		return "", false
 	}
 	runningLabels, err := ghcrImageLabels(ctx, repoPath, runningRef, tok)
 	if err != nil {
-		return false
+		return "", false
 	}
-	return revisionsMatch(testingLabels[ociRevisionLabel], runningLabels[ociRevisionLabel])
+	return testingLabels["org.opencontainers.image.version"], revisionsMatch(testingLabels[ociRevisionLabel], runningLabels[ociRevisionLabel])
+}
+
+// appVerClean is a release stamp and nothing else: vX.Y.Z.
+var appVerClean = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+
+// releaseOfOwnCommit reports whether a same-commit :testing image (stamped testingVer) is the release
+// of the development build running (cur): only then is a same-commit image an update. A clean
+// release is never offered the main build of its own commit (the phantom-update loop).
+func releaseOfOwnCommit(cur, testingVer string) bool {
+	return appVerDev.MatchString(cur) && appVerClean.MatchString(testingVer)
 }
 
 // revisionsMatch reports whether two image git-revision labels identify the same commit. Both must be

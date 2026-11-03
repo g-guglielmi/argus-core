@@ -13,6 +13,13 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Fixed
+- **A core on the testing channel is offered the release tagged on the commit it already runs.**
+  A release tagged straight on a commit whose main build the core had installed was never offered
+  (same code, so the testing check saw nothing new) and the core kept its development stamp. Now
+  it is offered the release by name, one restart for the same code; a release still never goes
+  back to its commit's main build.
+
 ## [0.9.17] - 2026-11-03
 
 ### Added

@@ -105,6 +105,29 @@ func TestRevisionsMatch(t *testing.T) {
 	}
 }
 
+// TestReleaseOfOwnCommit: a development build is offered the release tagged on its own commit (the
+// tag build republished :testing, clean), while a clean release is never offered its commit's main
+// build and two development stamps of one commit stay the same code.
+func TestReleaseOfOwnCommit(t *testing.T) {
+	cases := []struct {
+		cur, testing string
+		want         bool
+	}{
+		{"v0.9.16-9-g1992195", "v0.9.17", true},             // tagged on the commit the box runs
+		{"v0.9.16-9-g1992195-dirty", "v0.9.17", true},       // a dirty dev build too
+		{"v0.9.17", "v0.9.16-9-g1992195", false},            // a release never goes back to its main build
+		{"v0.9.17", "v0.9.17", false},                       // already the release
+		{"v0.9.16-9-g1992195", "v0.9.16-9-g1992195", false}, // the same main build, rebuilt
+		{"v0.9.16-9-g1992195", "", false},                   // no version label: same code, no update
+		{"v0.9.16-9-g1992195", "v0.9.17-rc1", false},        // not a release stamp
+	}
+	for _, c := range cases {
+		if got := releaseOfOwnCommit(c.cur, c.testing); got != c.want {
+			t.Errorf("releaseOfOwnCommit(%q, %q) = %v, want %v", c.cur, c.testing, got, c.want)
+		}
+	}
+}
+
 // TestChannelFor covers the fix where a dev-stamped build is the testing channel regardless of a
 // sidecar's reported tag - a build ahead of the newest release can only be :testing.
 func TestChannelFor(t *testing.T) {
