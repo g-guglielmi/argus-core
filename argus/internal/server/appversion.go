@@ -540,11 +540,12 @@ func (s *Server) updateTargets() (channels, releases []string) {
 	return []string{"latest", "testing"}, rels
 }
 
-// isAllowedTarget reports whether tag is one of the selectable switch targets (guards against an
-// admin POSTing an arbitrary tag).
+// isAllowedTarget reports whether tag is a switch target: a channel, or any published release (the
+// picker lists the newest few; a custom version may name an older one). Guards against an admin
+// POSTing an arbitrary tag.
 func (s *Server) isAllowedTarget(tag string) bool {
-	channels, releases := s.updateTargets()
-	for _, t := range append(channels, releases...) {
+	channels, _ := s.updateTargets()
+	for _, t := range append(channels, s.appLatest.getReleases()...) {
 		if t == tag {
 			return true
 		}

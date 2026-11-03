@@ -231,3 +231,22 @@ func TestProbesCheckInFastWhileTheUpdatesPageIsOpen(t *testing.T) {
 		t.Fatalf("next = %v, want %d", out["next"], probeFastCheckin)
 	}
 }
+
+// A custom probe pin must be a published release once the list is known.
+func TestProbePinRefusal(t *testing.T) {
+	rels := []string{"7.0.32-r17", "7.0.32-r16", "7.0.31-r9"}
+	for _, tc := range []struct {
+		target string
+		rels   []string
+		ok     bool
+	}{
+		{"latest", rels, true},
+		{"7.0.31-r9", rels, true}, // an old one, past the picker's few
+		{"7.0.31-r99", rels, false},
+		{"7.0.31-r99", nil, true}, // GHCR not reached yet: the shape alone
+	} {
+		if got := probePinRefusal(tc.target, tc.rels) == ""; got != tc.ok {
+			t.Errorf("%s with %v: ok = %v, want %v", tc.target, tc.rels, got, tc.ok)
+		}
+	}
+}

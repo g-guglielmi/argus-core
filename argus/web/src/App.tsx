@@ -1940,6 +1940,7 @@ function CoreRows({ v, upd, onChanged, os, onOS }: { v: VersionInfo; upd: Update
   const [targets, setTargets] = useState<{ channels: string[]; releases: string[] } | null>(null)
   const [switching, setSwitching] = useState(false)
   const [switchTo, setSwitchTo] = useState('')
+  const [custom, setCustom] = useState('') // the Custom version… box: any published release
   const [err, setErr] = useState('')
   useEffect(() => { fetch('/api/version/tags').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setTargets(d) }).catch(() => {}) }, [])
   // A check that finds a newer release has other notes to show.
@@ -1965,15 +1966,18 @@ function CoreRows({ v, upd, onChanged, os, onOS }: { v: VersionInfo; upd: Update
     setBusy(true); await post('/api/update/start', null, 'could not start the update'); setBusy(false)
   }
   // Deliberately switch the core to a chosen channel or version (bypassing the in-place channel-preserve).
+  const coreCustom = /^v?\d+\.\d+\.\d+$/.test(custom.trim()) ? 'v' + custom.trim().replace(/^v/, '') : ''
+  const switchTarget = switchTo === 'custom' ? coreCustom : switchTo
+  const closeSwitch = () => { setSwitching(false); setSwitchTo(''); setCustom('') }
   const doSwitch = async () => {
-    if (!switchTo) return
-    const isVer = /^v?\d+\.\d+\.\d+$/.test(switchTo)
+    if (!switchTarget) return
+    const isVer = /^v?\d+\.\d+\.\d+$/.test(switchTarget)
     const msg = isVer
-      ? `Switch Argus to ${switchTo}? This pins the core to that exact version: it won't track a channel until you switch back to latest or testing. The core pulls the image and restarts briefly.`
-      : `Switch Argus to the "${switchTo}" channel? The core pulls that image and restarts briefly.`
+      ? `Switch Argus to ${switchTarget}? This pins the core to that exact version: it won't track a channel until you switch back to latest or testing. The core pulls the image and restarts briefly.`
+      : `Switch Argus to the "${switchTarget}" channel? The core pulls that image and restarts briefly.`
     if (!(await confirm({ title: 'Switch version', message: msg, confirmLabel: 'Switch' }))) return
-    setBusy(true); await post('/api/update/start', { target: switchTo }, 'could not start the switch'); setBusy(false)
-    setSwitching(false); setSwitchTo('')
+    setBusy(true); await post('/api/update/start', { target: switchTarget }, 'could not start the switch'); setBusy(false)
+    closeSwitch()
   }
   const dismiss = () => fetch('/api/update/dismiss', { method: 'POST' }).then(onChanged).catch(() => {})
   // After an update the running page is still the OLD bundle: close the finished job, then reload for
@@ -2059,11 +2063,17 @@ function CoreRows({ v, upd, onChanged, os, onOS }: { v: VersionInfo; upd: Update
                   {targets.releases.map((t) => <option key={t} value={t}>{t}</option>)}
                 </optgroup>
               )}
+              <optgroup label="Other">
+                <option value="custom">Custom version…</option>
+              </optgroup>
             </select>
-            <Button variant="primary" onClick={doSwitch} disabled={busy || active || !switchTo}>Switch</Button>
-            <Button variant="default" onClick={() => { setSwitching(false); setSwitchTo('') }} disabled={busy}>Cancel</Button>
+            {switchTo === 'custom' && <input className="input mono" style={{ width: 140 }} value={custom} autoFocus placeholder="v0.9.12" aria-label="Custom version" onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && switchTarget) void doSwitch(); if (e.key === 'Escape') closeSwitch() }} />}
+            <Button variant="primary" onClick={doSwitch} disabled={busy || active || !switchTarget}>Switch</Button>
+            <Button variant="default" onClick={closeSwitch} disabled={busy}>Cancel</Button>
           </> : undefined}
-          below={switching ? <p className="set-hint">Switches the running image to the chosen channel or version. A version pins the core: it stays there until you switch back to <span className="mono">latest</span> or <span className="mono">testing</span>.</p> : undefined} />
+          below={switching ? <p className="set-hint">{switchTo === 'custom'
+            ? <>Any published release, like <span className="mono">v0.9.12</span>: Argus checks it against the releases on GHCR. It pins the core: it stays there until you switch back to <span className="mono">latest</span> or <span className="mono">testing</span>.</>
+            : <>Switches the running image to the chosen channel or version. A version pins the core: it stays there until you switch back to <span className="mono">latest</span> or <span className="mono">testing</span>.</>}</p> : undefined} />
       )}
       {cos.policies}
 
@@ -2109,27 +2119,29 @@ function FleetTarget({ target, latest, onSaved }: { target: string | null; lates
   const confirm = useConfirm()
   const [editing, setEditing] = useState(false)
   const [val, setVal] = useState('')
+  const [custom, setCustom] = useState('') // the Custom version… box: any published release
   const [releases, setReleases] = useState<string[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   function start() {
-    setVal(''); setError(null); setEditing(true)
+    setVal(''); setCustom(''); setError(null); setEditing(true)
     fetch('/api/probes/target').then((r) => (r.ok ? r.json() : null)).then((d) => setReleases((d && d.releases) || [])).catch(() => setReleases([]))
   }
   // The pin in force stays choosable even once it's older than the newest few.
   const pins = [...(releases || [])]
   if (target && target !== 'latest' && !pins.includes(target)) pins.push(target)
 
+  const to = val === 'custom' ? (/^\d+\.\d+\.\d+-r\d+$/.test(custom.trim()) ? custom.trim() : '') : val
   async function save() {
-    if (!val) return
-    const msg = val === 'latest'
+    if (!to) return
+    const msg = to === 'latest'
       ? 'Switch every probe to the latest channel? Each sidecar moves its probe to the newest release at its next check-in, and keeps following new releases.'
-      : `Switch every probe to ${val}? Each sidecar moves its probe to that release at its next check-in, and it stays there until you switch back to latest.`
+      : `Switch every probe to ${to}? Each sidecar moves its probe to that release at its next check-in, and it stays there until you switch back to latest.`
     if (!(await confirm({ title: 'Switch the probes\' image', message: msg, confirmLabel: 'Switch' }))) return
     setBusy(true); setError(null)
     try {
-      const res = await fetch('/api/probes/target', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: val }) })
+      const res = await fetch('/api/probes/target', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: to }) })
       if (!res.ok) { setError(await errText(res, 'Could not switch the image channel')); return }
       const d = await res.json(); onSaved(d.target); setEditing(false)
     } finally { setBusy(false) }
@@ -2151,11 +2163,16 @@ function FleetTarget({ target, latest, onSaved }: { target: string | null; lates
               {pins.map((t) => <option key={t} value={t}>{t}</option>)}
             </optgroup>
           )}
+          <optgroup label="Other">
+            <option value="custom">Custom version…</option>
+          </optgroup>
         </select>
-        <Button variant="primary" disabled={busy || !val || val === target} onClick={save}>{busy ? 'Switching…' : 'Switch'}</Button>
+        {val === 'custom' && <input className="input mono" style={{ width: 140 }} value={custom} autoFocus placeholder="7.0.32-r10" aria-label="Custom version" onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && to) void save(); if (e.key === 'Escape') setEditing(false) }} />}
+        <Button variant="primary" disabled={busy || !to || to === target} onClick={save}>{busy ? 'Switching…' : 'Switch'}</Button>
         <Button variant="default" disabled={busy} onClick={() => setEditing(false)}>Cancel</Button>
       </> : undefined}
       below={error ? <p className="set-hint" style={{ color: 'var(--err)' }}>{error}</p>
+        : editing && val === 'custom' ? <p className="set-hint">Any published probe release, like <span className="mono">7.0.32-r10</span>: Argus checks it against the releases on GHCR. Every probe stays on it until you switch back to <span className="mono">latest</span>.</p>
         : editing ? <p className="set-hint">The image every probe runs: the channel it follows (<span className="mono">latest</span>: stable releases; probes have no testing channel), or a release they all stay on (pinned).{latest ? <> The newest is <span className="mono">{latest}</span>.</> : null}{releases === null ? ' Loading the releases…' : null}</p> : undefined} />
   )
 }

@@ -34,8 +34,10 @@ GitHub Release from the matching section below.
   under Probes, with the fleet reboot window under the image channel and the probe VM image last.
 - **One vocabulary for the core and the probes on the Updates page.** The core's Channel and the
   probes' Fleet target are both **Image channel** now, with the same picker: the channel first, then
-  the newest few releases, and a pin reads "(pinned)" (the probes' free-text box is gone; a switch
-  asks first, since it moves the whole fleet). The core's Core reboot and Core Zabbix updates are
+  the newest few releases, then **Custom version…** for any other published release (checked
+  against the releases on GHCR, so neither the core nor the probes can be sent to a tag that isn't
+  there), and a pin reads "(pinned)". A switch of the probes asks first, since it moves the whole
+  fleet. The core's Core reboot and Core Zabbix updates are
   **Reboots** and **Zabbix updates**, and every window has the same choices, **Every day** included
   for the core's too, and reads on the same "core's clock" (the core VM's local time was that clock
   already). The core's default stays notify only.

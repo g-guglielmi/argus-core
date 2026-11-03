@@ -31,10 +31,10 @@ const probeLatestRefresh = 3 * time.Hour
 type probeLatestCache struct {
 	mu       sync.RWMutex
 	version  string
-	releases []string // the newest few X.Y.Z-rN, newest first (the probe image only: its image-channel picker)
+	releases []string // every published X.Y.Z-rN, newest first (the probe image only: its image-channel picker)
 }
 
-// getReleases returns the newest few published releases, newest first.
+// getReleases returns every published release, newest first.
 func (c *probeLatestCache) getReleases() []string {
 	if c == nil {
 		return nil
@@ -97,9 +97,6 @@ func (s *Server) refreshProbeLatest(ctx context.Context) error {
 	}
 	if len(rels) > 0 {
 		s.probeLatest.set(rels[0])
-		if len(rels) > probeTargetReleases {
-			rels = rels[:probeTargetReleases]
-		}
 		s.probeLatest.setReleases(rels)
 		s.logger.Info("probe latest resolved from GHCR", "version", rels[0])
 	}

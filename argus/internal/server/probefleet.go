@@ -401,11 +401,16 @@ func (s *Server) handleGetProbeTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The newest few releases ride along for the image-channel picker (pins), newest first.
-	writeJSON(w, http.StatusOK, map[string]any{"target": target, "releases": nonNilStrings(s.probeLatest.getReleases())})
+	rels := s.probeLatest.getReleases()
+	if len(rels) > probeTargetReleases {
+		rels = rels[:probeTargetReleases]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"target": target, "releases": nonNilStrings(rels)})
 }
 
 // handleSetProbeTarget updates the fleet's target probe version (admin). Accepts "latest" or an
-// exact pin like "7.0.29-r1".
+// exact pin like "7.0.29-r1" that is a published release (any of them, not only the few the picker
+// lists: the custom version); while the releases aren't known yet, any pin of that shape.
 func (s *Server) handleSetProbeTarget(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Target string `json:"target"`
@@ -419,12 +424,31 @@ func (s *Server) handleSetProbeTarget(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": `target must be "latest" or a pin like "7.0.29-r1"`})
 		return
 	}
+	if why := probePinRefusal(target, s.probeLatest.getReleases()); why != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": why})
+		return
+	}
 	if err := s.st.SetProbeTargetVersion(r.Context(), target); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save target"})
 		return
 	}
 	s.logger.Info("probe fleet target set", "target", target)
 	writeJSON(w, http.StatusOK, map[string]string{"target": target})
+}
+
+// probePinRefusal says why a probe pin can't be the fleet target, "" when it can: it must be a
+// published release, so the sidecars never chase a tag that isn't there. Without the release list
+// (GHCR not reached yet) the shape alone has to do.
+func probePinRefusal(target string, releases []string) string {
+	if target == "latest" || len(releases) == 0 {
+		return ""
+	}
+	for _, r := range releases {
+		if r == target {
+			return ""
+		}
+	}
+	return target + " is not a published probe release"
 }
 
 // bearerToken extracts a Bearer token from the Authorization header ("" if absent).

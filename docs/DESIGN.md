@@ -2561,7 +2561,9 @@ plane; the probe checks in and converges.
   line only for a probe with a window of its own; then the newest probe VM image. **Update all**
   queues every one that is behind. There is no separate Operating systems section.
   Both sections use one vocabulary: **Image channel** (the tag the core runs, the tag the probes
-  converge on; the same picker, channels then the newest five releases, a pin reads "(pinned)"),
+  converge on; the same picker, channels then the newest five releases then a custom version, which
+  must be a published release: the core and the probes check it against the GHCR tags they already
+  read; a pin reads "(pinned)"),
   **Reboots** and **Zabbix updates** with one window picker (notify only, or a day or every day
   and a time, on the core's clock). The Probes page keeps the versions as read-only status in the same words; a probe that
   is behind links to Updates (admins only: helpdesk sees Probes, not Updates).

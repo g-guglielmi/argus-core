@@ -334,7 +334,7 @@ func (s *Server) handleUpdateStart(w http.ResponseWriter, r *http.Request) {
 		// Deliberate switch: honour the exact tag (bypassing the updater's channel-preserve), but only
 		// if it's one of the offered targets - never an arbitrary tag.
 		if !s.isAllowedTarget(body.Target) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown update target"})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": clip(printable(body.Target), 40) + " is not a channel or a published release"})
 			return
 		}
 		targetTag, exact = body.Target, true
