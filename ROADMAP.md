@@ -511,3 +511,6 @@ Agreed 2026-10-25: the **OneUptime borrowings (§J)**, order to be set; change m
 vendor status beside Common SaaS and the email heartbeat first.
 
 Done 2026-10-27: the **site4** probe (§A) is online, the whole fleet with it.
+
+Done 2026-11-03: **diagnostics**, a ping, traceroute or DNS lookup from the core or a probe, run by
+admins and helpdesk from a host's or a probe's menu (DESIGN 7q; probe/v7.0.32-r14).

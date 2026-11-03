@@ -30,6 +30,7 @@ type proxyView struct {
 	SelfUpdate     bool     `json:"selfupdate"`      // an argus-updater sidecar is managing this probe
 	Scans          bool     `json:"scans"`           // the probe advertises the network-scan capability (§B discovery)
 	Sweeps         bool     `json:"sweeps"`          // ... and the UniFi-sweep capability
+	Diags          bool     `json:"diags"`           // ... and runs diagnostics (diag.go)
 	UpdateStatus   string   `json:"update_status"`   // unknown | tracking | current | outdated | external
 	LastCheckin    int64    `json:"last_checkin"`    // unix seconds of the last Argus check-in (0 = never)
 	UpdaterVersion string   `json:"updater_version"` // version of the managing argus-updater sidecar ("" = none)
@@ -151,6 +152,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			SelfUpdate:     ag.SelfUpdate,
 			Scans:          ag.Scans,
 			Sweeps:         ag.Sweeps,
+			Diags:          ag.Diags,
 			UpdateStatus:   status,
 			LastCheckin:    ag.LastCheckin,
 			ReportAt:       ag.ReportAt,

@@ -62,7 +62,7 @@ type SaaSService = { id: string; name: string; url: string; default: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg; tags?: HostTag[]; own?: { asset_tag: string; location: string }; links?: LinkRow[]; class_links?: LinkRow[]; upstream?: UpstreamInfo }
 // A host's master sensor: while it's down, the host's other alerts are held (item_id "" = none).
 type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; options: { id: string; label: string }[] }
-type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; update_status?: string; last_checkin?: number; report_at?: number; report_stale?: boolean; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; host_tools?: ProbeHostTools; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean }
+type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; diags?: boolean; update_status?: string; last_checkin?: number; report_at?: number; report_stale?: boolean; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; host_tools?: ProbeHostTools; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean }
 // One Zabbix process kind on a probe: what it runs, Argus's target, the busiest hour at the last
 // evaluation, and a hold (put back after a raise that didn't lower its load).
 // An update Argus asked a probe's sidecar for, while it is in hand: queued for the sidecar's next
@@ -3690,6 +3690,7 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
   const [report, setReport] = useState<{ name: string; token: string } | null>(null) // minted check-in token to show
   const [openSnmp, setOpenSnmp] = useState<string | null>(null) // proxy name whose SNMP-defaults band is open
   const [openProcs, setOpenProcs] = useState<string | null>(null) // proxy name whose Zabbix-processes band is open
+  const [diagFrom, setDiagFrom] = useState<string | null>(null) // proxy id the diagnostics dialog runs from
   const canEdit = role === 'admin' || role === 'helpdesk'
   const isAdmin = role === 'admin'
   const toast = useToast()
@@ -3815,6 +3816,7 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
           <div className="hs-mon hs-tags"><span className="hs-monlabel">Tags</span><TagsEditor all={allTags} value={probeTags} onChange={setProbeTags} /></div>
         </BulkDialog>
       )}
+      {diagFrom && <DiagDialog source={diagFrom} onClose={() => setDiagFrom(null)} />}
       {isAdmin && enroll && wizardOpen && <AddProbeWizard existingNames={(proxies || []).map((p) => p.name)} onClose={() => { setWizardOpen(false); loadTokens(); loadProxies() }} onEnrolled={() => { loadTokens(); loadProxies() }} />}
 
       {isAdmin && enroll && pendingTokens.length > 0 && (
@@ -3904,6 +3906,7 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
                   <ProbeRowMenu items={[
                     canEdit && p.id ? { label: 'SNMP defaults', onClick: () => setOpenSnmp((n) => (n === p.name ? null : p.name)) } : null,
                     { label: 'Processes', onClick: () => setOpenProcs((n) => (n === p.name ? null : p.name)) },
+                    canEdit && p.id ? { label: 'Diagnose from here…', onClick: () => setDiagFrom(p.id) } : null,
                     isAdmin && p.break_glass ? { label: p.break_glass_user ? `Console (${p.break_glass_user})` : 'Console', onClick: () => revealBreakGlass(p) } : null,
                     isAdmin && p.id ? 'sep' : null,
                     isAdmin && p.id ? { label: 'Delete probe', onClick: () => del(p), danger: true } : null,
@@ -4495,6 +4498,7 @@ const kbIcon = {
   folderOpen: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 8V6.2a1.8 1.8 0 0 1 1.8-1.8h3.9l2 2h6.5A1.8 1.8 0 0 1 20 8.2V9" /><path d="M3 9.2h17.8l-1.9 8.2a1.8 1.8 0 0 1-1.8 1.4H6.4a1.8 1.8 0 0 1-1.8-1.4z" /></svg>,
   gear: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
   trash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" /></svg>,
+  diag: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l2.5-6 4 12 2.5-6h5" /></svg>,
   discover: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="8.5" /><path d="M12 12l5-5" /><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" /><path d="M20.5 12a8.5 8.5 0 0 0-2.5-6" opacity="0.5" /></svg>,
 }
 
@@ -4670,6 +4674,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
   const collapseReady = useRef<boolean>((() => { try { return sessionStorage.getItem('argus.tree.collapsed') != null } catch { return false } })())
   const [openHost, setOpenHost] = useState<string | null>(() => { try { return sessionStorage.getItem('argus.tree.openhost') } catch { return null } })
   const [editGroupsHost, setEditGroupsHost] = useState<string | null>(null) // host id with the "Edit groups…" band open
+  const [diagHost, setDiagHost] = useState<string | null>(null) // host id the diagnostics dialog is open on
   const [settingsHost, setSettingsHost] = useState<string | null>(null) // host id with the "Settings…" band open
   const [showAll, setShowAll] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -5156,6 +5161,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
                 { label: 'Settings…', icon: kbIcon.gear, onClick: () => openSettings(h.id) },
                 { label: 'Edit groups…', icon: kbIcon.folder, onClick: () => { setSettingsHost(null); setEditGroupsHost((cur) => (cur === h.id ? null : h.id)) } },
                 { label: 'Discover now', icon: kbIcon.discover, onClick: () => discoverNow(h) },
+                { label: 'Diagnose…', icon: kbIcon.diag, onClick: () => setDiagHost(h.id) },
                 ...(onAddToReport ? [{ sep: true, label: '' }, { label: 'Add to a report', icon: kbIcon.report, onClick: () => onAddToReport({ host: h.id }, h.name) }] : []),
               ]} />
             )}
@@ -5310,6 +5316,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
         placeholder={focus.level === 'group' ? 'Subgroup name (use / for deeper nesting)' : 'New group name (use / for nesting, e.g. site1/Network)'}
         confirmLabel="Create" onConfirm={(name) => createGroup(name)} onCancel={() => setCreating(false)} />}
       {addingDevice && <AddDeviceBand classes={classes} groups={groups} proxies={proxies} defaultSite={focus.level === 'group' ? focus.path : ''} onCancel={() => setAddingDevice(false)} onCreated={() => { setAddingDevice(false); setError(null); load(); fireDataRefresh() }} />}
+      {diagHost && <DiagDialog hostId={diagHost} onClose={() => setDiagHost(null)} />}
       {settingsHost && <HostSettingsModal hostId={settingsHost} hostName={hosts.find((h) => h.id === settingsHost)?.name} canEdit={canPause} isAdmin={role === 'admin'} onClose={closeSettings} onSaved={() => { closeSettings(); load(); fireDataRefresh() }} />}
       {focusSite && <SitePanel site={focusSite} canEdit={canPause} editing={siteEdit} onEditDone={() => setSiteEdit(false)} tick={siteInfoTick} />}
       {siteInfoFor && <SiteInfoDialog site={siteInfoFor} onClose={() => setSiteInfoFor(null)} onSaved={() => { setSiteInfoFor(null); setSiteInfoTick((t) => t + 1) }} />}
@@ -5681,6 +5688,242 @@ const UNIFI_AUTOFILL = ['{$UNIFI.URL}', '{$UNIFI.KEY}', '{$UNIFI.MAC}', '{$UNIFI
 // DiscDialog is the Discovery tab's action dialog (new scan / sweep / controllers): the landing
 // page stays a clean history, each action opens wizard-style. z-index sits BELOW the confirm
 // provider's (100) so a nested confirm - e.g. deleting a controller - paints on top.
+// Diagnostics (DESIGN 7q): a ping, traceroute or DNS lookup from the core or a probe, laid out per
+// tool with the raw output one click away. Opened from a host's ⋮ menu (its address and its own probe
+// filled in) or a probe's (that probe). While it is open on a probe it keeps that probe's check-ins
+// fast, so a run starts within seconds instead of at the next minute.
+type DiagTool = 'ping' | 'traceroute' | 'dns'
+type DiagAnswer = { type: string; value?: string; ttl?: number; error?: string }
+type DiagResult = {
+  addr?: string; done: boolean; error?: string; raw: string
+  ping?: { replies: { seq: number; from?: string; ms?: number }[] | null }
+  trace?: { hops: { n: number; addr?: string; name?: string; ms?: number; note?: string }[] | null; reached: boolean }
+  dns?: { server: string; answers: DiagAnswer[] | null; system: DiagAnswer[] | null; differ: boolean }
+}
+type DiagRunView = { id: number; source: string; tool: DiagTool; target: string; state: 'queued' | 'running' | 'done' | 'failed'; created: number; updated: number; result: DiagResult; duration: number }
+
+const DIAG_TOOLS: { v: DiagTool; l: string }[] = [{ v: 'ping', l: 'Ping' }, { v: 'traceroute', l: 'Traceroute' }, { v: 'dns', l: 'DNS lookup' }]
+const DNS_TYPES: { v: string; l: string }[] = [{ v: 'both', l: 'A + AAAA' }, { v: 'A', l: 'A' }, { v: 'AAAA', l: 'AAAA' }, { v: 'CNAME', l: 'CNAME' }, { v: 'MX', l: 'MX' }, { v: 'TXT', l: 'TXT' }, { v: 'PTR', l: 'PTR' }]
+
+function diagMS(v?: number): string {
+  if (typeof v !== 'number') return '-'
+  return (v < 10 ? v.toFixed(2) : v.toFixed(1)) + ' ms'
+}
+
+// diagTag is the run's state in a pill: waiting and running spin, a finished run says how it went.
+function diagTag(run: DiagRunView): JSX.Element {
+  const r = run.result
+  if (run.state === 'queued') return <span className="tag pending jobtag"><span className="spinner sm" />waiting</span>
+  if (run.state === 'running') return <span className="tag pending jobtag"><span className="spinner sm" />running</span>
+  if (run.state === 'failed' || (r.error && !r.ping?.replies?.length && !r.trace?.hops?.length && !r.dns)) return <span className="tag err">failed</span>
+  if (run.tool === 'ping') {
+    const reps = r.ping?.replies ?? [], lost = reps.filter((x) => typeof x.ms !== 'number').length
+    return lost === 0 ? <span className="tag online">all {reps.length} answered</span> : <span className="tag err">{lost} of {reps.length} lost</span>
+  }
+  if (run.tool === 'traceroute') return r.trace?.reached ? <span className="tag online">reached</span> : <span className="tag err">not reached</span>
+  const d = r.dns
+  if (d?.differ) return <span className="tag err">answers differ</span>
+  return (d?.answers ?? []).some((a) => !a.error) ? <span className="tag online">answered</span> : <span className="tag err">no answer</span>
+}
+
+function DiagDialog({ hostId, source: initialSource, onClose }: { hostId?: string; source?: string; onClose: () => void }) {
+  const [tool, setTool] = useState<DiagTool>('ping')
+  const [source, setSource] = useState(initialSource || '')
+  const [target, setTarget] = useState('')
+  const [count, setCount] = useState(5)
+  const [dnsType, setDnsType] = useState('both')
+  const [server, setServer] = useState('')
+  const [proxies, setProxies] = useState<Proxy[] | null>(null)
+  const [run, setRun] = useState<DiagRunView | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [showRaw, setShowRaw] = useState(false)
+  const poll = useRef(0) // bumped by every new run and on close: an older poll stops
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  useEffect(() => () => { poll.current++ }, [])
+  useEffect(() => {
+    fetch('/api/proxies').then((r) => (r.ok ? r.json() : [])).then((d: Proxy[]) => setProxies(d || [])).catch(() => setProxies([]))
+    if (!hostId) { if (!initialSource) setSource('core'); return }
+    // From a host: its address, and the collector that monitors it.
+    fetch(`/api/hosts/${hostId}/config`).then((r) => (r.ok ? r.json() : null)).then((c: HostCfg | null) => {
+      if (!c) { setSource((s) => s || 'core'); return }
+      const ifc = c.interfaces?.find((i) => (i.useip ? i.ip : i.dns || i.ip))
+      if (ifc) setTarget(ifc.useip ? ifc.ip : ifc.dns || ifc.ip)
+      setSource(c.monitored_by === 1 && c.proxy_id ? c.proxy_id : 'core')
+    }).catch(() => setSource((s) => s || 'core'))
+  }, [hostId, initialSource])
+  // Keep the chosen probe's check-ins fast while the dialog is open on it.
+  useEffect(() => {
+    if (!source || source === 'core') return
+    const warm = () => { void fetch('/api/diag/warm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source }) }).catch(() => null) }
+    warm()
+    const t = window.setInterval(warm, 90_000)
+    return () => window.clearInterval(t)
+  }, [source])
+
+  const going = run !== null && (run.state === 'queued' || run.state === 'running')
+  async function start() {
+    setErr(null); setShowRaw(false)
+    setBusy(true)
+    const res = await fetch('/api/diag', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source, tool, target: target.trim(), count, type: dnsType, server: server.trim(), host_id: hostId || '' }) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { setErr(await errText(res, 'Could not start the diagnostic')); return }
+    const { id } = await res.json() as { id: number }
+    const mine = ++poll.current
+    const tick = async () => {
+      if (poll.current !== mine) return
+      const r = await fetch(`/api/diag/${id}`).catch(() => null)
+      if (poll.current !== mine) return
+      if (!r || !r.ok) { setErr(await errText(r, 'Lost track of the diagnostic')); setRun(null); return }
+      const v = await r.json() as DiagRunView
+      setRun(v)
+      if (v.state === 'queued' || v.state === 'running') window.setTimeout(tick, 1000)
+    }
+    void tick()
+  }
+
+  const r = run?.result
+  const meta = !run || run.state === 'queued' ? '' : [
+    run.tool === 'ping' && r?.ping ? `${(r.ping.replies ?? []).length} sent` : '',
+    run.tool === 'traceroute' && r?.trace ? `${(r.trace.hops ?? []).length} hop${(r.trace.hops ?? []).length === 1 ? '' : 's'}` : '',
+    r?.addr && r.addr !== run.target ? r.addr : '',
+    run.state === 'done' || run.state === 'failed' ? `took ${Math.max(run.duration, 0.1).toFixed(1)} s` : '',
+  ].filter(Boolean).join(' · ')
+
+  return createPortal(
+    <div className="dlg-backdrop" style={{ zIndex: 90 }} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="dlg" role="dialog" aria-modal="true" style={{ maxWidth: tool === 'dns' ? 'min(760px, 94vw)' : 'min(640px, 94vw)' }}>
+        <div className="dlg-title">Diagnose{target.trim() ? ` · ${target.trim()}` : ''}</div>
+        <div className="seg dg-tools" role="tablist">
+          {DIAG_TOOLS.map((t) => <button key={t.v} type="button" className={tool === t.v ? 'on' : ''} onClick={() => { setTool(t.v); setRun(null); setErr(null); if (t.v === 'dns' && dnsType === 'both' && /^[0-9.]+$|:/.test(target.trim())) setDnsType('PTR') }}>{t.l}</button>)}
+        </div>
+        <div className="dg-row">
+          <Field label="Run from">
+            <Select value={source} onChange={(e) => { setSource(e.target.value); setRun(null) }}>
+              {!source && <option value="">Choose…</option>}
+              <option value="core">Core server</option>
+              {(proxies || []).map((p) => <option key={p.id} value={p.id} disabled={!p.diags || p.report_stale}>{p.name}{probeCanLabel(p, p.diags)}</option>)}
+            </Select>
+          </Field>
+          <Field label="Target" placeholder={tool === 'dns' && dnsType === 'PTR' ? '10.0.0.20' : 'host name or address'} value={target}
+            onChange={(e) => setTarget(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !busy && !going && target.trim() && source) void start() }} />
+          {tool === 'ping' && (
+            <Field label="Count">
+              <Select value={String(count)} onChange={(e) => setCount(Number(e.target.value))}>
+                {[5, 10, 20].map((n) => <option key={n} value={n}>{n}</option>)}
+              </Select>
+            </Field>
+          )}
+          {tool === 'dns' && <>
+            <Field label="Type">
+              <Select value={dnsType} onChange={(e) => setDnsType(e.target.value)}>
+                {DNS_TYPES.map((t) => <option key={t.v} value={t.v}>{t.l}</option>)}
+              </Select>
+            </Field>
+            <Field label="DNS server" placeholder={source === 'core' ? "the core's own" : "the probe's own"} value={server} onChange={(e) => setServer(e.target.value)} />
+          </>}
+          <div className="dg-go">
+            <Button variant="primary" onClick={() => void start()} disabled={busy || going || !target.trim() || !source}>
+              {going || busy ? <><span className="spinner" style={{ width: 11, height: 11 }} />Running…</> : 'Run'}
+            </Button>
+          </div>
+        </div>
+        {err && <Banner variant="error">{err}</Banner>}
+        {run && r && (
+          <div className="dg-out">
+            <div className="dg-head"><span>From {run.source}{meta ? ` · ${meta}` : ''}</span>{diagTag(run)}</div>
+            {r.error && <p className="dg-note err">{r.error}</p>}
+            {run.state === 'queued' && <p className="dg-note">A probe picks up a diagnostic when it checks in: within seconds while this dialog is open, at most a minute after it opened.</p>}
+            {run.tool === 'ping' && r.ping && (r.ping.replies ?? []).length > 0 && <DiagPing replies={r.ping.replies ?? []} />}
+            {run.tool === 'traceroute' && r.trace && (r.trace.hops ?? []).length > 0 && <DiagTrace hops={r.trace.hops ?? []} />}
+            {run.tool === 'dns' && r.dns && <DiagDNS d={r.dns} core={source === 'core'} />}
+            {r.raw && <button type="button" className="linklike dg-rawfold" onClick={() => setShowRaw((v) => !v)}>{showRaw ? 'Hide the raw output' : '› Show the raw output'}</button>}
+            {showRaw && r.raw && <pre className="mono dg-raw">{r.raw}</pre>}
+          </div>
+        )}
+        <div className="dlg-foot">
+          <Button variant="ghost" onClick={onClose}>Close</Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+function DiagPing({ replies }: { replies: { seq: number; from?: string; ms?: number }[] }) {
+  const got = replies.map((x) => x.ms).filter((v): v is number => typeof v === 'number')
+  const lost = replies.length - got.length
+  return <>
+    <div className="dg-sum">
+      <div><span>Lost</span><b className="mono">{Math.round((lost * 100) / replies.length)} %</b></div>
+      <div><span>Min</span><b className="mono">{got.length ? diagMS(Math.min(...got)) : '-'}</b></div>
+      <div><span>Avg</span><b className="mono">{got.length ? diagMS(got.reduce((a, b) => a + b, 0) / got.length) : '-'}</b></div>
+      <div><span>Max</span><b className="mono">{got.length ? diagMS(Math.max(...got)) : '-'}</b></div>
+    </div>
+    <table className="dg-tbl">
+      <thead><tr><th>#</th><th>Reply</th><th className="num">Round trip</th></tr></thead>
+      <tbody>
+        {replies.map((x) => (
+          <tr key={x.seq} className={typeof x.ms === 'number' ? '' : 'err'}>
+            <td>{x.seq + 1}</td>
+            <td>{typeof x.ms === 'number' ? <>from <span className="mono">{x.from}</span></> : <span className="dg-why">no reply within 1 s</span>}</td>
+            <td className="num mono">{diagMS(x.ms)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </>
+}
+
+function DiagTrace({ hops }: { hops: { n: number; addr?: string; name?: string; ms?: number; note?: string }[] }) {
+  return (
+    <table className="dg-tbl">
+      <thead><tr><th>#</th><th>Address</th><th>Name</th><th className="num">Round trip</th></tr></thead>
+      <tbody>
+        {hops.map((h) => (
+          <tr key={h.n} className={h.note ? 'err' : h.addr ? '' : 'dim'}>
+            <td>{h.n}</td>
+            <td className="mono">{h.addr || '*'}</td>
+            <td>{h.note ? <span className="dg-why">{h.note}</span> : h.addr ? h.name || '-' : <span className="dg-why">no answer (routers often drop these, not a fault on its own)</span>}</td>
+            <td className="num mono">{diagMS(h.ms)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function DiagDNS({ d, core }: { d: NonNullable<DiagResult['dns']>; core: boolean }) {
+  const rows = (as: DiagAnswer[], ttl: boolean) => (
+    <table className="dg-tbl">
+      <thead><tr><th>Type</th><th>Answer</th>{ttl && <th className="num">TTL</th>}</tr></thead>
+      <tbody>
+        {as.map((a, i) => (
+          <tr key={i} className={a.error ? 'err' : ''}>
+            <td>{a.type}</td>
+            <td>{a.error ? <span className="dg-why">{a.error}</span> : <span className="mono">{a.value}</span>}</td>
+            {ttl && <td className="num mono">{typeof a.ttl === 'number' ? a.ttl : '-'}</td>}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+  const answers = d.answers ?? [], system = d.system ?? []
+  return <>
+    {d.server && <div className="dg-sec">The DNS server <span className="mono">{d.server}</span> answers</div>}
+    {answers.length > 0 && rows(answers, true)}
+    {system.length > 0 && <>
+      <div className="dg-sec">What the {core ? "core's" : "probe's"} checks see <span className="dg-why">(the system resolver)</span></div>
+      {rows(system, false)}
+    </>}
+  </>
+}
+
 function DiscDialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }

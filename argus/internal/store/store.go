@@ -870,6 +870,10 @@ CREATE TABLE IF NOT EXISTS reports (
 	if err := s.ensureColumn("probe_agents", "sweeps INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	// ... and the diagnostics capability (diag.go).
+	if err := s.ensureColumn("probe_agents", "diags INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	// Zabbix process counts Argus manages per probe (probeprocs.go): JSON maps and lists, times in
 	// unix seconds, and whether the updater sidecar can restart the probe to apply them.
 	for _, col := range []string{

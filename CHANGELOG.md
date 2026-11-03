@@ -13,6 +13,17 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **Diagnostics: ping, traceroute and DNS lookup from the core or any probe.** A host's ⋮ menu has
+  **Diagnose…** (its address and its own probe filled in), a probe's on the Probes page **Diagnose
+  from here…**; admins and helpdesk can run them. The results come laid out per tool: a ping's lost,
+  min, avg and max and each reply; a traceroute's hops with their names and round trips; a DNS
+  lookup's answers from the server with their TTL, beside what the checks' own resolver sees, flagged
+  when the two differ. The raw output is one click away. The core runs them itself, a probe on its
+  check-in: while the dialog is open the probe checks in every few seconds instead of every minute,
+  so a run starts within seconds. Each run is in the change log. Probes run them from
+  probe/v7.0.32-r14; older ones show "needs probe update".
+
 ## [0.9.16] - 2026-11-02
 
 ### Added

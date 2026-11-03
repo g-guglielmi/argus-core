@@ -45,6 +45,8 @@ type Server struct {
 	acct          acctStripes        // attempts on an over-limit account wait their turn (limits.go)
 	writeLimiter  *ratelimit.Limiter // a viewer's logged writes per minute (changes.go)
 	checkinLimit  *ratelimit.Limiter // a probe's check-ins per minute (probefleet.go)
+	diagLimit     *ratelimit.Limiter // a user's diagnostics per ten minutes (diag.go)
+	diags         *diagBoard         // the diagnostics running and just run (diag.go)
 	featMu        sync.Mutex         // guards the cached public /api/features answer
 	featResetOK   bool
 	featResetAt   time.Time
@@ -73,7 +75,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	dummy, _ := auth.HashPassword("argus-nonexistent-user")
 	s := &Server{cfg: cfg, zbx: zbx, st: st, logger: logger, mgr: mgr, dummyHash: dummy,
 		signingSecret: signingSecret,
-		loginLimiter:  mgr.Limiter(), pkLimiter: ratelimit.New(30, 5*time.Minute), writeLimiter: ratelimit.New(60, time.Minute), checkinLimit: ratelimit.New(12, time.Minute),
+		loginLimiter:  mgr.Limiter(), pkLimiter: ratelimit.New(30, 5*time.Minute), writeLimiter: ratelimit.New(60, time.Minute), checkinLimit: ratelimit.New(30, time.Minute),
+		diagLimit: ratelimit.New(40, 10*time.Minute), diags: newDiagBoard(),
 		probeLatest: &probeLatestCache{}, updaterLatest: &probeLatestCache{}, appLatest: &appLatestCache{}, probeVM: &probeVMCache{}, startedAt: time.Now(),
 		mail: &mailState{recent: map[int64][]mailread.Mail{}, kick: make(chan struct{}, 1)}, domainKick: make(chan struct{}, 1)}
 	// The sensor census behind the pills, the Overview and the status pages, built in the
@@ -166,6 +169,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// network-scan results a probe posts back after check-in handed it a discovery job (public;
 	// probe-token authenticated, own 2 MB body cap). See netdiscovery.go.
 	mux.HandleFunc("POST /api/probes/scan-results", s.handleScanResults)
+	// diagnostic results a probe posts back as they come (public; probe-token authenticated). See diag.go.
+	mux.HandleFunc("POST /api/probes/diag-results", s.handleDiagResults)
 	// signed one-click acknowledge link from notifications (public; HMAC-verified, GET confirms)
 	mux.HandleFunc("GET /api/alert/ack", s.handleAlertAck)
 	mux.HandleFunc("POST /api/alert/ack", s.handleAlertAck)
@@ -238,6 +243,10 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/maps/{name}", auth.RequireAuth(s.handleMap))
 	mux.HandleFunc("PUT /api/maps/{name}", auth.RequireRole("admin", s.handleSetMapOn))
 	mux.HandleFunc("PUT /api/maps/{name}/layout", auth.RequireRoles(s.handleSetMapLayout, "admin", "helpdesk"))
+	// diagnostics: a ping, traceroute or DNS lookup from the core or a probe (diag.go)
+	mux.HandleFunc("POST /api/diag", auth.RequireRoles(s.handleStartDiag, "admin", "helpdesk"))
+	mux.HandleFunc("GET /api/diag/{id}", auth.RequireRoles(s.handleGetDiag, "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/diag/warm", auth.RequireRoles(s.handleWarmDiag, "admin", "helpdesk"))
 	mux.HandleFunc("GET /api/sites/info", auth.RequireAuth(s.handleSiteInfos))
 	mux.HandleFunc("GET /api/sites/{site}/info", auth.RequireAuth(s.handleSiteInfo))
 	mux.HandleFunc("PUT /api/sites/{site}/info", auth.RequireRoles(s.handleSetSiteInfo, "admin", "helpdesk"))

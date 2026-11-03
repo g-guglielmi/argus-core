@@ -90,8 +90,9 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid probe token"})
 		return
 	}
-	// A probe checks in once a minute, its sidecar too: every check-in writes rows, so a token
-	// looping faster than that is held to a sane rate.
+	// A probe checks in once a minute, its sidecar too, and every few seconds while a diagnostic waits
+	// for it (diag.go): every check-in writes rows, so a token looping faster than that is held to a
+	// sane rate.
 	if blocked, retry := s.checkinLimit.Blocked("checkin:" + proxyName); blocked {
 		writeThrottled(w, retry)
 		return
@@ -103,6 +104,7 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		UpdaterVersion string `json:"updater_version"` // the sidecar reports its own version here
 		Scans          *bool  `json:"scans"`           // the proxy container advertises the network-scan capability
 		Sweeps         *bool  `json:"sweeps"`          // ... and the UniFi-sweep capability
+		Diags          *bool  `json:"diags"`           // ... and the diagnostics one (diag.go)
 		// The proxy container reports the Zabbix process counts it started with, and which of them
 		// the operator set on the container; the sidecar says whether it can restart the proxy.
 		Procs       map[string]int `json:"procs"`
@@ -132,6 +134,9 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 	if err := s.st.RecordProbeCheckin(ctx, proxyName, reportedVersion(req.Version), req.SelfUpdate, req.Scans, req.Sweeps); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not record check-in"})
 		return
+	}
+	if req.Diags != nil {
+		_ = s.st.SetProbeDiags(ctx, proxyName, *req.Diags)
 	}
 	_ = s.st.SetUpdaterVersion(ctx, proxyName, reportedVersion(req.UpdaterVersion))
 	if doc := cleanHostTools(req.HostTools); doc != "" {
@@ -165,6 +170,10 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		UpdaterDigest string           `json:"updater_update_digest,omitempty"`
 		Scan          *scanJobPayload  `json:"scan,omitempty"`
 		Sweep         *sweepJobPayload `json:"sweep,omitempty"`
+		// A diagnostic to run (diag.go), and when to check in next while one waits or a dialog that
+		// may start one is open (seconds; absent: the usual minute).
+		Diag *diagJob `json:"diag,omitempty"`
+		Next int      `json:"next,omitempty"`
 		// The process counts the probe should start with (absent: keep what it has), and a one-shot
 		// for the sidecar to restart the proxy so it starts with them.
 		Procs        map[string]int `json:"procs,omitempty"`
@@ -213,6 +222,13 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 	// scan or a UniFi sweep); at most one of the two fields is set. See netdiscovery.go.
 	if req.Scans != nil && *req.Scans {
 		resp.Scan, resp.Sweep = s.takeDiscoveryHandout(ctx, proxyName)
+	}
+	// The same for a diagnostic, and the fast check-ins while one may come.
+	if req.Diags != nil && *req.Diags {
+		resp.Diag = s.diags.take(proxyName)
+		if s.diags.fast(proxyName) {
+			resp.Next = diagFastCheckin
+		}
 	}
 	// The probe knows its own image repo; it only needs the tag to converge on.
 	writeJSON(w, http.StatusOK, resp)

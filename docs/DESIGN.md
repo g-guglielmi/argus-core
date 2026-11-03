@@ -1164,6 +1164,55 @@ so Thresholds edits them. On the host, each scenario is a group under **Web scen
 or "Step 2 failed", the error as the reason, a count key like the failed units) and each step's time.
 Deleting a scenario takes its items and triggers with it.
 
+## 7q. Diagnostics (ping, traceroute, DNS lookup)
+
+An admin or helpdesk user runs a ping, a traceroute or a DNS lookup from the core or from a probe,
+without a shell anywhere (`diag.go`, `internal/diag`, the probe's `argus_diag.py`). One dialog,
+opened where the user is: a host's ⋮ menu (**Diagnose…**, its address and its own collector filled
+in) or a probe's on the Probes page (**Diagnose from here…**). **Run from** lists the Core server and
+the probes; one too old for it, or not reporting, is greyed out with why. A scoped user picks among
+the probes at their sites (the core is open to all, as for monitoring). Results are laid out per
+tool, read for the user, with the raw output one click away:
+
+- **Ping** (5, 10 or 20 echoes, a second apart): lost, min, avg, max, then each reply.
+- **Traceroute** (up to 30 hops, one probe each, 2 s per hop): address, name (a PTR lookup with a
+  short timeout), round trip; a silent hop says routers often drop these, a "destination
+  unreachable" ends the trace with its reason.
+- **DNS lookup** (A + AAAA, A, AAAA, CNAME, MX, TXT or PTR; a server address, or the source's own):
+  the server's answers with their TTL and the rcode in words (NXDOMAIN: the name does not exist), and
+  what the system resolver the checks use answers. The two differing is flagged: the case where a
+  musl resolver reads an AAAA NXDOMAIN as no such name for the A too.
+
+Ping and traceroute go to the target's IPv4 address, the way the checks resolve names first.
+
+**On the core** the run happens in process: the image has no shell and no tools. Ping and traceroute
+use the unprivileged datagram ICMP socket the network scanner uses (Docker's default
+`ping_group_range`); the traceroute raises the TTL and reads the routers' "time exceeded" from the
+socket's error queue (`IP_RECVERR`, the offender address in the control message). DNS is
+`x/net/dns/dnsmessage` over UDP, TCP when truncated, the system side the Go resolver. **On a probe**
+the run rides the check-in channel like a scan: the probe advertises `"diags": true`, the next
+check-in hands out `diag: {id, tool, target, ...}`, and `argus_diag.py` runs busybox's `ping` and
+`traceroute -I -n -q 1` (as root, the target one argument, never through a shell), a small DNS client
+of its own and musl's `getaddrinfo`, and posts the same result shape to `/api/probes/diag-results` as
+it goes (probe token; only its own run, only while it runs; lengths and counts bounded).
+
+**Fast check-ins.** A probe checks in once a minute; while a run waits for it, or a dialog that may
+start one is open on it (the dialog warms its probe, `POST /api/diag/warm`, for two minutes and again
+every 90 s), the check-in answer carries `next: 3` and the probe comes back in three seconds (it
+holds any `next` to 2..60), then drops back to the minute by itself. So the first run after the
+dialog opens can wait up to a minute, the ones after start within seconds. The check-in rate limit is
+30 a minute per probe for it. Nothing else changes cadence: updates, scans and process tuning are
+fine at the minute, and a faster steady interval would cost every probe, its DNS and its link all
+day for a tool used now and then.
+
+**Guards.** Only admin and helpdesk (`POST /api/diag`, `GET /api/diag/{id}`); the target must be a
+host name or an address (letters, digits, `. _ : -`, starting and ending with a letter or digit), the
+DNS server an address; one run at a time per source; 40 runs per user in ten minutes. Runs live in
+memory only, read back by whoever started them (an admin reads any) for 15 minutes; a run the probe
+never takes fails after 90 s ("did not pick it up"), one that stops reporting after 60 s, the core's
+own is cut off after two minutes. Every run is in the change log ("Ran a diagnostic", Probes: the tool,
+target and source; on the host it was opened on).
+
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")
 
 > Sequencing: **§C** built the class templates (§5) plus a **manual** attach path; **§B** automates

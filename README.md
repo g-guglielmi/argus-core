@@ -135,6 +135,9 @@ API key, and MAC):
   with no link), and thicker the more it carries. Click a device for its page, a link for its traffic
   chart; drag devices to arrange them (everyone sees the same map). On a phone the same tree reads as
   a list. A site's map is off until an admin turns it on, so an unused one costs nothing.
+- **Diagnostics** - a ping, a traceroute or a DNS lookup from the core or any probe, from a host's
+  or a probe's ⋮ menu: the results laid out for you (loss and round trips, the path hop by hop, the
+  DNS server's answers beside what the checks' own resolver sees), the raw output one click away.
 - **Inventory** - every device with its model, firmware or OS, serial, IP and MAC, grouped by class,
   filterable by probe and group, exportable as CSV; a UniFi device with newer firmware on offer from its
   controller, or any device behind the newest on exactly its model, is flagged.
