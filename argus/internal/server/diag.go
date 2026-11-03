@@ -32,7 +32,7 @@ const (
 	diagFastCheckin = 3                // seconds between a warm probe's check-ins
 	diagWarmFor     = 2 * time.Minute  // how long an open dialog keeps its probe warm
 	diagPickupWait  = 90 * time.Second // a queued run the probe never took fails after this
-	diagSilentAfter = 60 * time.Second // a running probe run that stops reporting fails after this
+	diagSilentAfter = 60 * time.Second // a probe run with no word back for this long fails
 	diagRunLimit    = 2 * time.Minute  // the core's own run is cut off after this
 	diagKeep        = 15 * time.Minute // a finished run can be read back this long
 )
@@ -43,7 +43,7 @@ type diagRun struct {
 	Source     string
 	SourceName string // "Core server" or the probe's name, for the dialog and the log
 	Req        diag.Request
-	State      string // queued | running | done | failed
+	State      string // queued | sent (a probe took it, no result yet) | running | done | failed
 	Result     diag.Result
 	By         int64
 	Created    time.Time
@@ -70,6 +70,10 @@ func (b *diagBoard) tidy(now time.Time) {
 			r.State, r.Updated = "failed", now
 			r.Result.Done = true
 			r.Result.Error = r.SourceName + " did not pick it up: is it checking in to Argus?"
+		case r.State == "sent" && now.Sub(r.Updated) > diagSilentAfter:
+			r.State, r.Updated = "failed", now
+			r.Result.Done = true
+			r.Result.Error = r.SourceName + " took the run, but none of its results reached Argus: the probe's log says why"
 		case r.State == "running" && r.Source != "core" && now.Sub(r.Updated) > diagSilentAfter:
 			r.State, r.Updated = "failed", now
 			r.Result.Done = true
@@ -91,7 +95,7 @@ func (b *diagBoard) add(r *diagRun) bool {
 	defer b.mu.Unlock()
 	b.tidy(r.Created)
 	for _, o := range b.runs {
-		if o.Source == r.Source && (o.State == "queued" || o.State == "running") {
+		if o.Source == r.Source && (o.State == "queued" || o.State == "sent" || o.State == "running") {
 			return false
 		}
 	}
@@ -134,7 +138,7 @@ func (b *diagBoard) take(proxyName string) *diagJob {
 	b.tidy(now)
 	for _, r := range b.runs {
 		if r.Source == proxyName && r.State == "queued" {
-			r.State, r.Updated = "running", now
+			r.State, r.Updated = "sent", now // running once its first result arrives
 			return &diagJob{ID: r.ID, Request: r.Req}
 		}
 	}
@@ -164,19 +168,25 @@ func (b *diagBoard) warmUp(proxyName string) {
 	b.mu.Unlock()
 }
 
-// report takes a result for a run: only the source's own, and only while it runs.
-func (b *diagBoard) report(source string, id int64, res diag.Result) bool {
+// report takes a result for a run: only the source's own, and only while it runs. "" when taken,
+// else why not, for the log.
+func (b *diagBoard) report(source string, id int64, res diag.Result) string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	r, ok := b.runs[id]
-	if !ok || r.Source != source || r.State != "running" {
-		return false
+	switch {
+	case !ok:
+		return "no such run (finished over 15 minutes ago, or Argus restarted since)"
+	case r.Source != source:
+		return "the run belongs to another source"
+	case r.State != "sent" && r.State != "running":
+		return "the run is already " + r.State
 	}
-	r.Result, r.Updated = res, time.Now()
+	r.Result, r.Updated, r.State = res, time.Now(), "running"
 	if res.Done {
 		r.State = "done"
 	}
-	return true
+	return ""
 }
 
 // diagSource is where a run can go: the core, or a probe that runs diagnostics and reports.
@@ -357,6 +367,7 @@ func (s *Server) handleDiagResults(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	proxyName, err := s.st.ProbeNameByToken(ctx, auth.HashToken(tok))
 	if err != nil {
+		s.logger.Warn("diagnostic result refused: unknown probe token", "ip", s.clientIP(r))
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid probe token"})
 		return
 	}
@@ -365,11 +376,13 @@ func (s *Server) handleDiagResults(w http.ResponseWriter, r *http.Request) {
 		Result diag.Result `json:"result"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<10)).Decode(&req); err != nil {
+		s.logger.Warn("diagnostic result refused: unreadable body", "probe", proxyName, "err", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
-	if !s.diags.report(proxyName, req.ID, cleanDiagResult(req.Result)) {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown diagnostic"})
+	if why := s.diags.report(proxyName, req.ID, cleanDiagResult(req.Result)); why != "" {
+		s.logger.Warn("diagnostic result refused", "probe", proxyName, "id", req.ID, "why", why)
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown diagnostic: " + why})
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

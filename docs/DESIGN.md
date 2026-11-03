@@ -1209,8 +1209,11 @@ day for a tool used now and then.
 host name or an address (letters, digits, `. _ : -`, starting and ending with a letter or digit), the
 DNS server an address; one run at a time per source; 40 runs per user in ten minutes. Runs live in
 memory only, read back by whoever started them (an admin reads any) for 15 minutes; a run the probe
-never takes fails after 90 s ("did not pick it up"), one that stops reporting after 60 s, the core's
-own is cut off after two minutes. Every run is in the change log ("Ran a diagnostic", Probes: the tool,
+never takes fails after 90 s ("did not pick it up"). A run handed out at a check-in reads "picked up"
+and turns running with its first result, so the dialog never claims a run that has not started; one
+with no result 60 s after it was taken fails saying none reached Argus (the probe's log says why),
+one that stops reporting after 60 s, the core's own is cut off after two minutes. Argus logs each
+result post it refuses, with why. Every run is in the change log ("Ran a diagnostic", Probes: the tool,
 target and source; on the host it was opened on).
 
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")

@@ -74,6 +74,9 @@ func TestDiagRidesTheCheckin(t *testing.T) {
 	if out := checkin(); out["diag"] != nil || out["next"] != nil {
 		t.Fatalf("handed out: want it once, got %v", out)
 	}
+	if got, _ := s.diags.get(run.ID); got.State != "sent" {
+		t.Fatalf("handed out: want sent until its first result, got %s", got.State)
+	}
 	report := func(tok, body string) int {
 		t.Helper()
 		r := httptest.NewRequest("POST", "/api/probes/diag-results", strings.NewReader(body))
@@ -134,6 +137,13 @@ func TestDiagBoard(t *testing.T) {
 	b.warmUp("proxy-site2")
 	if !b.fast("proxy-site2") {
 		t.Fatal("a warmed probe does not check in fast")
+	}
+	// A probe that took a run but whose results never arrive: failed, saying so, not "stopped reporting".
+	silent := time.Now().Add(-2 * diagSilentAfter)
+	took := &diagRun{Source: "proxy-site3", SourceName: "proxy-site3", State: "sent", Created: silent, Updated: silent}
+	b.add(took)
+	if got, _ := b.get(took.ID); got.State != "failed" || !strings.Contains(got.Result.Error, "none of its results reached Argus") {
+		t.Fatalf("a sent run with no word back: %+v", got)
 	}
 }
 

@@ -5700,7 +5700,7 @@ type DiagResult = {
   trace?: { hops: { n: number; addr?: string; name?: string; ms?: number; note?: string }[] | null; reached: boolean }
   dns?: { server: string; answers: DiagAnswer[] | null; system: DiagAnswer[] | null; differ: boolean }
 }
-type DiagRunView = { id: number; source: string; tool: DiagTool; target: string; state: 'queued' | 'running' | 'done' | 'failed'; created: number; updated: number; result: DiagResult; duration: number }
+type DiagRunView = { id: number; source: string; tool: DiagTool; target: string; state: 'queued' | 'sent' | 'running' | 'done' | 'failed'; created: number; updated: number; result: DiagResult; duration: number }
 
 const DIAG_TOOLS: { v: DiagTool; l: string }[] = [{ v: 'ping', l: 'Ping' }, { v: 'traceroute', l: 'Traceroute' }, { v: 'dns', l: 'DNS lookup' }]
 const DNS_TYPES: { v: string; l: string }[] = [{ v: 'A', l: 'A' }, { v: 'AAAA', l: 'AAAA' }, { v: 'both', l: 'A + AAAA' }, { v: 'CNAME', l: 'CNAME' }, { v: 'MX', l: 'MX' }, { v: 'TXT', l: 'TXT' }, { v: 'PTR', l: 'PTR' }]
@@ -5713,7 +5713,7 @@ function diagMS(v?: number): string {
 // diagTag is the run's state in a pill: waiting and running spin, a finished run says how it went.
 function diagTag(run: DiagRunView): JSX.Element {
   const r = run.result
-  if (run.state === 'queued') return <span className="tag pending jobtag"><span className="spinner sm" />waiting</span>
+  if (run.state === 'queued' || run.state === 'sent') return <span className="tag pending jobtag"><span className="spinner sm" />waiting</span>
   if (run.state === 'running') return <span className="tag pending jobtag"><span className="spinner sm" />running</span>
   if (run.state === 'failed' || (r.error && !r.ping?.replies?.length && !r.trace?.hops?.length && !r.dns)) return <span className="tag err">failed</span>
   if (run.tool === 'ping') {
@@ -5766,7 +5766,7 @@ function DiagDialog({ hostId, source: initialSource, onClose }: { hostId?: strin
     return () => window.clearInterval(t)
   }, [source])
 
-  const going = run !== null && (run.state === 'queued' || run.state === 'running')
+  const going = run !== null && (run.state === 'queued' || run.state === 'sent' || run.state === 'running')
   async function start() {
     setErr(null); setShowRaw(false)
     setBusy(true)
@@ -5782,13 +5782,13 @@ function DiagDialog({ hostId, source: initialSource, onClose }: { hostId?: strin
       if (!r || !r.ok) { setErr(await errText(r, 'Lost track of the diagnostic')); setRun(null); return }
       const v = await r.json() as DiagRunView
       setRun(v)
-      if (v.state === 'queued' || v.state === 'running') window.setTimeout(tick, 1000)
+      if (v.state === 'queued' || v.state === 'sent' || v.state === 'running') window.setTimeout(tick, 1000)
     }
     void tick()
   }
 
   const r = run?.result
-  const meta = !run || run.state === 'queued' ? '' : [
+  const meta = !run || run.state === 'queued' ? '' : run.state === 'sent' ? 'picked up, waiting for its first results' : [
     run.tool === 'ping' && r?.ping ? `${(r.ping.replies ?? []).length} sent` : '',
     run.tool === 'traceroute' && r?.trace ? `${(r.trace.hops ?? []).length} hop${(r.trace.hops ?? []).length === 1 ? '' : 's'}` : '',
     r?.addr && r.addr !== run.target ? r.addr : '',
