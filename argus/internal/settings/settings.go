@@ -37,6 +37,7 @@ const (
 	KeyLoginMax      = "login_max_attempts"
 	KeyLoginWindow   = "login_window_minutes"
 	KeyProbeCoreHost = "probe_core_host"
+	KeyProbeKitHost  = "probe_kit_core_host"
 	KeySessionMax    = "session_max_hours"
 	KeySessionIdle   = "session_idle_minutes"
 	KeyAllowedHosts  = "allowed_hosts"
@@ -81,7 +82,7 @@ type def struct {
 var defs = []def{
 	{KeyZabbixURL, "ARGUS_ZABBIX_API_URL", "Zabbix API URL", "Connection", "url", false, "", "JSON-RPC endpoint, e.g. http://10.0.0.10:8080/api_jsonrpc.php", 0},
 	{KeyZabbixToken, "ARGUS_ZABBIX_API_TOKEN", "Zabbix API token", "Connection", "text", true, "", "Bearer token with write scope (for acknowledge/pause). Leave blank to keep the current value.", 0},
-	{KeyPublicURL, "ARGUS_PUBLIC_URL", "Public URL", "General", "url", false, "", "External base URL, used for Open/Acknowledge links in notifications.", 0},
+	{KeyPublicURL, "ARGUS_PUBLIC_URL", "Public URL", "General", "url", false, "", "External base URL: the links in notifications, and the address probes check in at (each takes it at enrollment and keeps it). Use the public FQDN from the start, so a probe, a field kit above all, checks in from any network.", 0},
 	{KeyTimezone, "ARGUS_TZ", "Timezone", "General", "tz", false, "UTC", "IANA name, e.g. Europe/Rome - used for notification timestamps AND applied to the core VM's clock by its host timer.", 0},
 	{KeyLoginMax, "ARGUS_LOGIN_MAX_ATTEMPTS", "Login max attempts", "Security", "int", false, "7", "Failed sign-ins per window before throttling.", 1},
 	{KeyLoginWindow, "ARGUS_LOGIN_WINDOW_MINUTES", "Login window (minutes)", "Security", "int", false, "15", "Sliding window for the attempt counter.", 1},
@@ -93,6 +94,7 @@ var defs = []def{
 	{KeySettle, "ARGUS_SETTLE_SECONDS", "Settle after an outage (seconds)", "Alerting", "int", false, "300", "After a probe, a device's ping, a collector or an upstream device comes back, the alerts of what it holds wait this long, so services still starting and agents not yet listening don't alert on the way up. A problem Argus hears of late, from the readings a probe stored while it was cut off, waits this long too. Whatever is still wrong when it ends is alerted then. 0 switches it off.", 0},
 	{KeyTrustProxy, "ARGUS_TRUST_PROXY", "Trusted proxies", "Proxy", "proxylist", false, "", "Leave empty when people reach Argus directly. true = one reverse proxy on the LAN or the same host in front of Argus (the client is the address it adds to X-Forwarded-For; a connection from a public address is taken as a direct client). Or list the proxies' addresses or networks, comma-separated, e.g. 10.0.0.2, 10.0.5.0/24: forwarded headers then count only from them, and a chain of proxies (NetScaler -> HAProxy -> Argus) resolves to the real client.", 0},
 	{KeyProbeCoreHost, "ARGUS_PROBE_CORE_HOST", "Probe core host", "Probes", "host", false, "", "Address probes dial for :10051 (host or host:port). Prefer an IP: the proxy re-resolves this on every data send, so an FQDN here generates heavy DNS load. Baked into new enrollments and re-synced to existing probes at their next restart. Falls back to the Public URL host if empty.", 0},
+	{KeyProbeKitHost, "ARGUS_PROBE_KIT_CORE_HOST", "Field kit core host", "Probes", "host", false, "", "The address a field kit dials for :10051 from a network that isn't yours: the core's public one (host or host:port, an IP if you can). A probe turned into a field kit (its ⋮ menu on the Probes page) takes it at its next check-in and dials it from its next start; it checks in with Argus at the Public URL, like every probe. Empty: field kits use the Probe core host.", 0},
 	{KeyHeartbeatURL, "ARGUS_HEARTBEAT_URL", "Heartbeat URL", "Watchdog", "url", false, "", "An outside monitor's ping URL, e.g. a healthchecks.io check or an Uptime Kuma push monitor. Argus requests it once a minute while it is healthy end to end, so the monitor alerts you when the pings stop. Empty turns it off.", 0},
 	{KeyChangesKeep, "ARGUS_CHANGES_KEEP_DAYS", "Keep changes for", "Changes", "choice", false, "365", "How long the change log keeps who changed what. Older entries are dropped once a day. Journal entries stay as long as their host.", 0},
 	{KeyAutoscale, "ARGUS_PROBE_AUTOSCALE", "Process autoscaling", "Probes", "choice", false, AutoscaleRestart, "Zabbix starts a fixed number of pingers, pollers, trappers and workers and reads them only at start. Argus watches how busy each kind is on every probe and raises a count whose busiest hour passed 60% (aiming for 50%), or lowers one that stayed under 20%, never below the image's own default. Counts set on the container (ZBX_START* variables) are left alone. With the updater sidecar the probe restarts to apply a change (a few seconds; collected data is kept); otherwise it applies at the probe's next start.", 0},
@@ -143,6 +145,7 @@ type Manager struct {
 	publicURL     string
 	loc           *time.Location
 	probeCoreHost string
+	probeKitHost  string
 	sessionMax    time.Duration
 	sessionIdle   time.Duration
 	allowedHosts  []string // nil = the allowed-hosts check is off
@@ -203,6 +206,13 @@ func (m *Manager) ProbeCoreHost() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.probeCoreHost
+}
+
+// ProbeKitCoreHost is the address field kits dial for :10051 ("" = the probe core host).
+func (m *Manager) ProbeKitCoreHost() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.probeKitHost
 }
 
 // SessionMaxLifetime is the absolute lifetime granted to a new session.
@@ -389,6 +399,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	// A malformed value (a stale env var, a hand-edited row) is dropped rather than handed to the
 	// probes, which write it into their own configuration.
 	pch, _ := ParseHostPort(effective(snap[KeyProbeCoreHost]))
+	pkh, _ := ParseHostPort(effective(snap[KeyProbeKitHost]))
 	sessMaxH := atoiClamp(effective(snap[KeySessionMax]), 12, 1)
 	sessIdleMin := atoiClamp(effective(snap[KeySessionIdle]), 0, 0)
 	allowed, _ := ParseHostList(effective(snap[KeyAllowedHosts])) // validated on the way in
@@ -411,6 +422,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	m.publicURL = pub
 	m.loc = loc
 	m.probeCoreHost = pch
+	m.probeKitHost = pkh
 	m.sessionMax = time.Duration(sessMaxH) * time.Hour
 	m.sessionIdle = time.Duration(sessIdleMin) * time.Minute
 	m.allowedHosts = allowed

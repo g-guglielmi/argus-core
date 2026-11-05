@@ -2497,6 +2497,16 @@ plane; the probe checks in and converges.
   leaves the last-known host in place; an explicit `ZBX_SERVER_HOST` on the probe always wins.
   Prefer an **IP** for this value - the proxy re-resolves it on every data send, so an FQDN floods
   DNS.
+- **Field kits.** A probe brought to a network for a while (a Raspberry Pi in a bag), not one that
+  stays. An admin turns a probe into one from its ⋮ menu on the Probes page (`PUT
+  /api/probes/{name}/kit`, the `kit` column of `probe_agents`, `probekit.go`); the list marks it
+  with a violet **field kit** tag (`--kit`, a colour no state uses). A field kit's check-in hands
+  it the **field kit core host** (`ARGUS_PROBE_KIT_CORE_HOST`, Settings > Probes: the core's public
+  address) instead of the fleet's, applied at its next start like any core host; with none set it
+  gets the fleet's. Its check-in address needs nothing: every probe checks in at the Public URL
+  it got at enrollment, which is why the Public URL should be the public FQDN from the start.
+  Next: a Raspberry Pi kit method in Add probe (on by default when enrolled that way), and the kit's
+  hosts going quiet while it is away and being removed after it has been gone a while.
 - **Target.** Argus holds a dashboard-settable target in `app_meta` (`GET`/`PUT /api/probes/target`,
   admin): `latest`, or an exact pin in the **decoupled probe scheme** - `7.0.29-r1`, *not* app
   semver (see the probe-image versioning in `deploy/README.md`). `/api/proxies` reports each

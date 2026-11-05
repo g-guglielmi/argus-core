@@ -14,6 +14,12 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 ### Added
+- **Field kits.** A probe you bring to a network for a while (a Raspberry Pi in a bag) can be made a
+  field kit from its ⋮ menu on the Probes page; the list marks it with a violet field kit tag. A
+  field kit dials Zabbix at the new **Field kit core host** (Settings, Probes, or
+  `ARGUS_PROBE_KIT_CORE_HOST`): the core's public address, instead of the fleet's. It takes it at
+  its next check-in and dials it from its next start; it checks in at the Public URL like every
+  probe, so set the Public URL to the public FQDN from the start.
 - **Every probe shows its LAN and public address.** A line under the probe's name on the Probes
   page; hovering an address says where it came from and when, a dash says why there is none. A
   probe container with an address of its own on the LAN (a macvlan or an ipvlan, like Unraid's

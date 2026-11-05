@@ -91,6 +91,17 @@ func (s *Server) probeCoreHost() string {
 	return ""
 }
 
+// probeCoreHostFor is the address one probe dials: a field kit's is the field kit core host when
+// one is set (it works from networks that aren't yours), every other probe's the fleet's.
+func (s *Server) probeCoreHostFor(ctx context.Context, proxyName string) string {
+	if h := s.mgr.ProbeKitCoreHost(); h != "" {
+		if kit, err := s.st.ProbeIsKit(ctx, proxyName); err == nil && kit {
+			return h
+		}
+	}
+	return s.probeCoreHost()
+}
+
 // --- probe enrollment (public; token-authenticated) ---
 
 type enrollRequest struct {

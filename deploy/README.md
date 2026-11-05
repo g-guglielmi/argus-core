@@ -192,6 +192,12 @@ probe no longer needs `gen-certs.sh` or manual proxy registration:
   **whole fleet**: each probe picks up the new host from its check-in and applies it at its next
   restart (no re-enrollment). A probe can still override the central value with `-e ZBX_SERVER_HOST=…`
   on its `docker run` (pins one probe, and that pin wins over the central re-sync).
+- Set the **Public URL** to the core's **public FQDN** from the start: it is the address every
+  probe checks in at, taken at enrollment and kept, so a probe enrolled with it checks in from any
+  network. A **field kit** (a probe you bring to a network for a while, turned into one from its ⋮
+  menu on the Probes page) dials Zabbix at the **Field kit core host** instead of the probe core
+  host (`ARGUS_PROBE_KIT_CORE_HOST` or **Settings → Probes**): the core's public address, with
+  `:10051` reachable from outside. Empty, field kits use the probe core host.
 - The Zabbix API token Argus uses must have **super-admin** rights (to run `proxy.create`).
 - For remote sites with no VPN, publish **TCP 10051** on the core to the internet (HAProxy TCP
   passthrough / NAT), and make the `ghcr.io/<owner>/argus-probe` package public (or `docker login`).

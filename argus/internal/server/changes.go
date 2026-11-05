@@ -185,6 +185,7 @@ var changeRoutes = map[string]routeChange{
 	"POST /api/probes/{name}/checkin-token":  {cat: "probes", action: "Issued a probe check-in credential", obj: "probe"},
 	"GET /api/probes/{name}/break-glass":     {cat: "probes", action: "Revealed a probe VM's console password", obj: "probe"},
 	"PUT /api/maps/{name}":                   {cat: "probes", action: "Switched a site's map", obj: "probe", detail: onOffDetail},
+	"PUT /api/probes/{name}/kit":             {cat: "probes", action: "Switched a probe's field kit", obj: "probe", detail: kitDetail},
 
 	// updates
 	"POST /api/update/start":    {cat: "updates", action: "Updated Argus", detail: fieldDetail("target")},
@@ -290,6 +291,16 @@ func onOffDetail(b map[string]any) string {
 			return "on"
 		}
 		return "off"
+	}
+	return ""
+}
+
+func kitDetail(b map[string]any) string {
+	if on, ok := b["kit"].(bool); ok {
+		if on {
+			return "field kit"
+		}
+		return "a probe like any other"
 	}
 	return ""
 }

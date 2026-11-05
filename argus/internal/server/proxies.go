@@ -81,6 +81,7 @@ type proxyView struct {
 	// address ("public_host" | "bridge" | ""), and where Argus sees the probe's reports come from.
 	LAN     *probeAddrView `json:"lan,omitempty"`
 	LANNone string         `json:"lan_none,omitempty"`
+	Kit     bool           `json:"kit,omitempty"` // a field kit: it dials the field kit core host (probekit.go)
 	Public  *probeAddrView `json:"public,omitempty"`
 	SeenIP  string         `json:"seen_ip,omitempty"`
 }
@@ -129,6 +130,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 	probeTags, _ := s.st.ProbeTags(ctx)
 	hosts, _ := s.st.ProbeHosts(ctx) // best-effort, as above
 	addrs, _ := s.st.ProbeAddresses(ctx)
+	kits, _ := s.st.ProbeKits(ctx)
 	now := time.Now().Unix()
 	out := make([]proxyView, 0, len(proxies))
 	for _, p := range proxies {
@@ -198,6 +200,7 @@ func (s *Server) handleProxies(w http.ResponseWriter, r *http.Request) {
 			Tags:           nonNilStrings(probeTags[p.ProxyID]),
 			Public:         probePublic(addrs[p.Name]),
 			SeenIP:         addrs[p.Name].Seen,
+			Kit:            kits[p.Name],
 		})
 		out[len(out)-1].LAN, out[len(out)-1].LANNone = probeLAN(addrs[p.Name])
 	}

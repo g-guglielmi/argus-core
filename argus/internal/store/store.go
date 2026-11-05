@@ -944,6 +944,11 @@ CREATE TABLE IF NOT EXISTS reports (
 			return err
 		}
 	}
+	// A field kit (probekit.go): a probe brought to a network for a while, which dials Zabbix at the
+	// field kit core host instead of the fleet's.
+	if err := s.ensureColumn("probe_agents", "kit INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	// Discovery job kind ('scan' = subnet scan, 'unifi' = controller sweep) plus the sweep's
 	// controller reference: the id resolves credentials at dispatch time, the name is a display
 	// snapshot that survives the controller's deletion.

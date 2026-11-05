@@ -62,7 +62,7 @@ type SaaSService = { id: string; name: string; url: string; default: boolean }
 type HostCfg = { hostid: string; host: string; name: string; monitored_by: number; proxy_id?: string; proxy_name?: string; proxy_default?: SnmpCfg; interfaces: Iface[]; class_id?: string; class_label?: string; macros?: MacroField[]; thresholds?: ThresholdField[]; addons?: AddOnCfg[]; vm_names?: string[]; categories?: string[]; category_order?: string[]; master?: MasterCfg; tags?: HostTag[]; own?: { asset_tag: string; location: string }; links?: LinkRow[]; class_links?: LinkRow[]; upstream?: UpstreamInfo }
 // A host's master sensor: while it's down, the host's other alerts are held (item_id "" = none).
 type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; options: { id: string; label: string }[] }
-type Proxy = { id: string; name: string; tags?: string[]; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; diags?: boolean; update_status?: string; last_checkin?: number; report_at?: number; report_stale?: boolean; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; host_tools?: ProbeHostTools; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean; host?: ProbeHostState; lan?: ProbeAddr; lan_none?: 'public_host' | 'bridge'; public?: ProbeAddr; seen_ip?: string }
+type Proxy = { id: string; name: string; tags?: string[]; kit?: boolean; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; diags?: boolean; update_status?: string; last_checkin?: number; report_at?: number; report_stale?: boolean; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; host_tools?: ProbeHostTools; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean; host?: ProbeHostState; lan?: ProbeAddr; lan_none?: 'public_host' | 'bridge'; public?: ProbeAddr; seen_ip?: string }
 // A probe's LAN or public address (probeaddrs.go): where it came from (host: the host's report, a probe VM's or the sidecar's;
 // probe: the probe container's report or its lookup; seen: where Argus sees its reports come from).
 type ProbeAddr = { ip: string; src: 'host' | 'probe' | 'seen'; gw?: string; at?: number; net?: string }
@@ -1441,6 +1441,51 @@ function ProbeRebootDialog({ p, onChanged, onClose }: { p: Proxy; onChanged: () 
       <div className="dlg-foot">
         <Button variant="ghost" onClick={onClose} disabled={ed.busy}>Cancel</Button>
         <Button variant="primary" onClick={ed.submit} disabled={!os || ed.busy || !ed.dirty}>{ed.busy ? 'Saving…' : 'Save'}</Button>
+      </div>
+    </Popup>
+  )
+}
+
+// ProbeKitDialog is a probe's Field kit switch (its ⋮ menu): a probe brought to a network for a while,
+// not one that stays. A field kit dials Zabbix at the field kit core host (Settings, Probes), the core's
+// public address, instead of the fleet's; it checks in at the Public URL like every probe.
+function ProbeKitDialog({ p, onChanged, onClose }: { p: Proxy; onChanged: () => void; onClose: () => void }) {
+  const toast = useToast()
+  const [kit, setKit] = useState(!!p.kit)
+  const [hosts, setHosts] = useState<{ fleet: string; kit: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    fetch('/api/settings').then((r) => (r.ok ? r.json() : [])).then((list: { key: string; value?: string }[]) => {
+      const val = (k: string) => (list.find((x) => x.key === k)?.value || '').trim()
+      let fleet = val('probe_core_host')
+      if (!fleet) { try { fleet = new URL(val('public_url')).hostname } catch { fleet = '' } }
+      setHosts({ fleet, kit: val('probe_kit_core_host') })
+    }).catch(() => setHosts({ fleet: '', kit: '' }))
+  }, [])
+  async function save() {
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/kit`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kit }) }).catch(() => null)
+      if (!res || !res.ok) { toast.error(await errText(res, 'Could not save the field kit switch')); return }
+      toast.success(kit ? `${p.name} is a field kit: it takes the field kit core host at its next check-in.` : `${p.name} is a probe like any other again.`)
+      onChanged(); onClose()
+    } finally { setBusy(false) }
+  }
+  const mono = (v: string) => <span className="mono">{v}</span>
+  return (
+    <Popup title={`Field kit · ${p.name}`} onClose={() => { if (!busy) onClose() }}>
+      <div className="host-settings">
+        <div className="hs-note">A probe you bring to a network for a while (a Raspberry Pi in a bag), not one that stays.</div>
+        <div style={{ margin: '12px 0' }}><Switch checked={kit} onChange={setKit} label="Field kit" /></div>
+        {!hosts ? <span style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</span>
+          : kit ? (hosts.kit
+            ? <div className="hs-note">It dials Zabbix at the field kit core host, {mono(hosts.kit)} (Settings, Probes), instead of the fleet's{hosts.fleet ? <>, {mono(hosts.fleet)}</> : null}. It checks in with Argus at the Public URL, like every probe. It takes the address at its next check-in and dials it from its next start.</div>
+            : <div className="hs-note warn">No field kit core host is set (Settings, Probes): until there is one, a field kit dials the fleet's address{hosts.fleet ? <>, {mono(hosts.fleet)}</> : null}, which a network that isn't yours may not reach.</div>)
+          : <div className="hs-note">A probe like any other: it dials Zabbix at the fleet's address{hosts.fleet ? <>, {mono(hosts.fleet)}</> : null}.</div>}
+      </div>
+      <div className="dlg-foot">
+        <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button variant="primary" onClick={save} disabled={busy || kit === !!p.kit}>{busy ? 'Saving…' : 'Save'}</Button>
       </div>
     </Popup>
   )
@@ -2930,7 +2975,7 @@ function SettingsView({ onOpenUpdates }: { onOpenUpdates: () => void }) {
     { name: 'Sessions', title: 'Sessions', note: 'How long a sign-in stays valid. Changes take effect immediately, including for existing sessions: lowering the max length can sign users out on their next request.' },
     { name: 'Access', title: 'Allowed FQDNs and IPs', note: "The addresses people type in the browser's address bar to open Argus, like monitoring.example.com or 10.0.0.10. With a list set, Argus refuses API requests for any other address and changes coming from other sites, which blocks DNS-rebinding and cross-site attacks." },
     { name: 'Proxy', title: 'Reverse proxy', note: "Which proxies in front of Argus it believes about who is connecting (X-Forwarded-For) and which address and scheme they used (X-Forwarded-Host / -Proto). That feeds the login rate limit, status pages' allowed networks and Allowed FQDNs and IPs. List your proxies' addresses when there's more than one, like NetScaler in front of HAProxy." },
-    { name: 'Probes', title: 'Probes', note: 'The address probes dial for the Zabbix server (:10051), and how Argus sizes their Zabbix processes.' },
+    { name: 'Probes', title: 'Probes', note: 'The addresses probes and field kits dial for the Zabbix server (:10051), and how Argus sizes their Zabbix processes.' },
     { name: 'Changes', title: 'Change log', note: 'How long Argus keeps who changed what (Admin, Changes).' },
   ]
 
@@ -3928,6 +3973,7 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
   const [openProcs, setOpenProcs] = useState<string | null>(null) // proxy name whose Zabbix-processes popup is open
   const [diagFrom, setDiagFrom] = useState<string | null>(null) // proxy id the diagnostics dialog runs from
   const [openReboot, setOpenReboot] = useState<string | null>(null) // proxy name whose reboot-window popup is open
+  const [openKit, setOpenKit] = useState<string | null>(null) // proxy name whose Field kit popup is open
   const canEdit = role === 'admin' || role === 'helpdesk'
   const isAdmin = role === 'admin'
   const toast = useToast()
@@ -4087,7 +4133,7 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
               <tr>
                 <td data-label="Probe">
                   <div className="cell-stack">
-                    <strong>{p.name}</strong>
+                    <strong>{p.name}{p.kit && <span className="tag kit" title="A field kit: it dials Zabbix at the field kit core host (Settings, Probes)">field kit</span>}</strong>
                     <span className="sub-line" title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>
                       {p.mode}{p.enrolled_at ? ` · enrolled ${new Date(p.enrolled_at * 1000).toLocaleDateString()}` : ' · manual'}
                     </span>
@@ -4150,6 +4196,7 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
                     isAdmin && p.host?.now && !p.host.pending && p.reboot_required ? { label: 'Reboot now…', onClick: () => osAct.reboot(p) } : null,
                     isAdmin && p.host?.now && !p.host.pending && (p.sec_updates || 0) > 0 ? { label: 'Patch now…', onClick: () => osAct.patch(p) } : null,
                     isAdmin && p.host ? { label: 'Reboot window…', onClick: () => setOpenReboot(p.name) } : null,
+                    isAdmin && p.last_checkin ? { label: 'Field kit…', onClick: () => setOpenKit(p.name) } : null,
                     isAdmin && p.break_glass ? { label: p.break_glass_user ? `Console (${p.break_glass_user})` : 'Console', onClick: () => revealBreakGlass(p) } : null,
                     isAdmin && p.id ? 'sep' : null,
                     isAdmin && p.id ? { label: 'Delete probe', onClick: () => del(p), danger: true } : null,
@@ -4160,6 +4207,7 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
               {openSnmp === p.name && <Popup title={`SNMP default · ${p.name}`} onClose={() => setOpenSnmp(null)}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></Popup>}
               {openProcs === p.name && <ProbeProcesses p={p} isAdmin={isAdmin} onChanged={loadProxies} onClose={() => setOpenProcs(null)} />}
               {openReboot === p.name && <ProbeRebootDialog p={p} onChanged={() => { void loadProxies() }} onClose={() => setOpenReboot(null)} />}
+              {openKit === p.name && <ProbeKitDialog p={p} onChanged={() => { void loadProxies() }} onClose={() => setOpenKit(null)} />}
             </Fragment>
           ))}
         </tbody>

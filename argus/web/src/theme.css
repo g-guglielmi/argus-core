@@ -10,14 +10,15 @@
   --hidden: #8b93a0;
   --acked: #cf8585;
   --maint: #2fa39a; /* a host in a maintenance window: its alerts wait */
+  --kit: #7c3aed; /* a field kit: violet, a colour no state uses */
   /* Motion - subtle & quick; every consumer is disabled under prefers-reduced-motion. */
   --dur-fast: 120ms;
   --dur-base: 180ms;
   --dur-slow: 260ms;
   --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
   /* The surface (v0.9): everything lies flat on it, edge to edge, --gutter from the edges, sections
-     and rows divided by hairlines; no boxes but the floating ones (menus, dialogs, toasts) and the
-     inline editors. --hover is a row under the pointer. Light: white. Dark: the deep page tone. */
+     and rows divided by hairlines; no boxes but the floating ones (menus, dialogs, toasts).
+     --hover is a row under the pointer. Light: white. Dark: the deep page tone. */
   --gutter: 22px;
 
   --bg: #eaeef4;
@@ -37,7 +38,7 @@
     --bg: #0e1218; --panel: #151b23; --elevated: #1b222c; --border: #262f3b; --border-strong: #333f4e;
     --text: #eef2f8; --muted: #b3bfcd; --faint: #8b98a8;
     --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 8px 28px rgba(0,0,0,0.35); --accent-weak: rgba(46,168,201,0.16);
-    --surface: #0e1218; --hover: #151b23;
+    --surface: #0e1218; --hover: #151b23; --kit: #a78bfa;
     color-scheme: dark;
   }
 }
@@ -45,14 +46,14 @@
   --bg: #0e1218; --panel: #151b23; --elevated: #1b222c; --border: #262f3b; --border-strong: #333f4e;
   --text: #eef2f8; --muted: #b3bfcd; --faint: #8b98a8;
   --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 8px 28px rgba(0,0,0,0.35); --accent-weak: rgba(46,168,201,0.16);
-  --surface: #0e1218; --hover: #151b23;
+  --surface: #0e1218; --hover: #151b23; --kit: #a78bfa;
   color-scheme: dark;
 }
 :root[data-theme="light"] {
   --bg: #eaeef4; --panel: #ffffff; --elevated: #f4f7fb; --border: #dbe2ec; --border-strong: #c7d0dd;
   --text: #141d28; --muted: #4f5b69; --faint: #647082;
   --shadow: 0 1px 2px rgba(20,30,45,0.06), 0 6px 20px rgba(20,30,45,0.06); --accent-weak: rgba(46,168,201,0.14);
-  --surface: #ffffff; --hover: #f4f7fb;
+  --surface: #ffffff; --hover: #f4f7fb; --kit: #7c3aed;
   color-scheme: light;
 }
 
@@ -563,6 +564,7 @@ span.muted, p.muted { color: var(--muted); }
 .tag { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border-strong); color: var(--muted); white-space: nowrap; }
 .tag.online { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
 .tag.pending { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
+.tag.kit { color: var(--kit); border-color: color-mix(in srgb, var(--kit) 45%, var(--border)); margin-left: 8px; vertical-align: 1px; }
 /* An update in hand on the Probes page: a small spinner inside the tag. */
 .tag.jobtag { display: inline-flex; align-items: center; gap: 5px; }
 .spinner.sm { width: 9px; height: 9px; border-width: 1.5px; border-top-color: var(--warn); }

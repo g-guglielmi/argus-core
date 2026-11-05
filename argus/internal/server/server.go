@@ -439,6 +439,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/probes/{name}/reboot", auth.RequireRole("admin", s.handleProbeRebootNow))
 	mux.HandleFunc("POST /api/probes/{name}/patch", auth.RequireRole("admin", s.handleProbePatchNow))
 	mux.HandleFunc("PUT /api/probes/{name}/reboot-window", auth.RequireRole("admin", s.handleSetOwnProbeWindow))
+	mux.HandleFunc("PUT /api/probes/{name}/kit", auth.RequireRole("admin", s.handleSetProbeKit))
 	mux.HandleFunc("POST /api/probes/warm", auth.RequireRole("admin", s.handleWarmProbes))
 	// issue a check-in credential for an already-enrolled probe (admin) - turns on version reporting
 	mux.HandleFunc("POST /api/probes/{name}/checkin-token", auth.RequireRole("admin", s.handleIssueCheckinToken))
