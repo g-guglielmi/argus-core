@@ -283,3 +283,25 @@ export class ErrorBoundary extends Component<BoundaryProps, BoundaryState> {
     return full ? <div className="err-full">{body}</div> : body
   }
 }
+
+// Popup is the one dialog shell for what a row's menu opens (a probe's reboot window, a group's name,
+// a new user): never an inline band under the row. The content brings its own notes and foot; Esc or
+// a click outside closes it, unless a confirm opened on top of it is the one being answered.
+export function Popup({ title, onClose, wide, children }: { title: ReactNode; onClose: () => void; wide?: boolean; children: ReactNode }) {
+  const close = useRef(onClose)
+  close.current = onClose
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('.dlg-ask')) close.current() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
+  return createPortal(
+    <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="dlg popup" role="dialog" aria-modal="true" style={{ maxWidth: wide ? 'min(780px, 94vw)' : 'min(600px, 94vw)' }}>
+        <div className="dlg-title">{title}</div>
+        <div className="dlg-scroll">{children}</div>
+      </div>
+    </div>,
+    document.body,
+  )
+}

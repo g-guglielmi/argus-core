@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { registerPasskey, loginWithPasskey, PasskeyBridgeError } from './webauthn'
-import { Button, Card, Field, Banner, Badge, CopyButton, Switch, Select, Combobox, Skeleton, EmptyState, ErrorBoundary, copyToClipboard, type ComboOption } from './ui'
+import { Button, Card, Field, Banner, Badge, CopyButton, Switch, Select, Combobox, Skeleton, EmptyState, ErrorBoundary, Popup, copyToClipboard, type ComboOption } from './ui'
 import { useConfirm, usePrompt, useAlert } from './dialog'
 import { useToast } from './toast'
 
@@ -1329,14 +1329,14 @@ function useCoreOS(os: OSStatus | null, load: () => void, selfUpdate: boolean): 
     <UpdPolicy label="Reboots" value={windowText(os.reboot_window)}
       title={os.reboot_window.mode === 'auto' ? `The core reboots only when an update needs it, in this window (${coreClock(os.clock_tz)})` : 'Argus flags "reboot needed" and leaves the reboot to you'}
       onEdit={() => r.setOpen(true)}
-      editor={r.open ? <>
-        <WeeklyWindow autoLabel="Auto-reboot when needed" everyDay mode={r.mode} weekday={r.weekday} time={r.time} onMode={r.setMode} onWeekday={r.setWeekday} onTime={r.setTime} />
-        <Button variant="primary" onClick={() => saveWindow('/api/os/reboot-window', 'reboot window', r)} disabled={saving || !r.dirty}>{saving ? 'Saving…' : 'Save'}</Button>
-        <Button variant="default" onClick={r.cancel} disabled={saving}>Cancel</Button>
-      </> : undefined}
-      below={r.open ? <p className="set-hint">{r.mode === 'auto'
-        ? <>The core reboots only when an update needs it, <strong>{r.weekday < 0 ? 'every day' : `on ${WEEKDAYS[r.weekday]}`}</strong> at <strong>{r.time}</strong> on {coreClock(os.clock_tz)}. Zabbix and Argus are away for a minute or two; take a hypervisor snapshot as your safety net.</>
-        : 'Notify only: Argus flags "reboot needed" and leaves the reboot to you.'}</p> : undefined} />
+      edit={r.open ? {
+        title: 'Core reboot window',
+        controls: <WeeklyWindow autoLabel="Auto-reboot when needed" everyDay mode={r.mode} weekday={r.weekday} time={r.time} onMode={r.setMode} onWeekday={r.setWeekday} onTime={r.setTime} />,
+        hint: <p className="set-hint">{r.mode === 'auto'
+          ? <>The core reboots only when an update needs it, <strong>{r.weekday < 0 ? 'every day' : `on ${WEEKDAYS[r.weekday]}`}</strong> at <strong>{r.time}</strong> on {coreClock(os.clock_tz)}. Zabbix and Argus are away for a minute or two; take a hypervisor snapshot as your safety net.</>
+          : 'Notify only: Argus flags "reboot needed" and leaves the reboot to you.'}</p>,
+        onSave: () => { void saveWindow('/api/os/reboot-window', 'reboot window', r) }, onCancel: r.cancel, canSave: r.dirty, busy: saving,
+      } : null} />
 
     {/* Core Zabbix minor updates (same major only). The Zabbix apt repo is pinned per major line
         and the host applier double-guards on the major.minor prefix: a major upgrade is always a
@@ -1344,14 +1344,14 @@ function useCoreOS(os: OSStatus | null, load: () => void, selfUpdate: boolean): 
     <UpdPolicy label="Zabbix updates" value={windowText(os.zbx_window)}
       title={os.zbx_window.mode === 'auto' ? `Pending zabbix-* minors apply in this window (${coreClock(os.clock_tz)}), then zabbix-server restarts` : 'Argus shows when a minor is available and leaves applying it to you'}
       onEdit={() => z.setOpen(true)}
-      editor={z.open ? <>
-        <WeeklyWindow autoLabel="Auto-update when available" everyDay mode={z.mode} weekday={z.weekday} time={z.time} onMode={z.setMode} onWeekday={z.setWeekday} onTime={z.setTime} />
-        <Button variant="primary" onClick={() => saveWindow('/api/os/zbx-window', 'update window', z)} disabled={saving || !z.dirty}>{saving ? 'Saving…' : 'Save'}</Button>
-        <Button variant="default" onClick={z.cancel} disabled={saving}>Cancel</Button>
-      </> : undefined}
-      below={z.open ? <p className="set-hint">{z.mode === 'auto'
-        ? <>Pending zabbix-* minors apply <strong>{z.weekday < 0 ? 'every day' : `on ${WEEKDAYS[z.weekday]}`}</strong> at <strong>{z.time}</strong> on {coreClock(os.clock_tz)}, then zabbix-server restarts: a seconds-long blip the probes buffer through. Major upgrades are never automated: they migrate the database.</>
-        : 'Notify only: Argus shows when a minor is available and leaves applying it to you. Major upgrades are never automated: they migrate the database.'}</p> : undefined} />
+      edit={z.open ? {
+        title: 'Core Zabbix update window',
+        controls: <WeeklyWindow autoLabel="Auto-update when available" everyDay mode={z.mode} weekday={z.weekday} time={z.time} onMode={z.setMode} onWeekday={z.setWeekday} onTime={z.setTime} />,
+        hint: <p className="set-hint">{z.mode === 'auto'
+          ? <>Pending zabbix-* minors apply <strong>{z.weekday < 0 ? 'every day' : `on ${WEEKDAYS[z.weekday]}`}</strong> at <strong>{z.time}</strong> on {coreClock(os.clock_tz)}, then zabbix-server restarts: a seconds-long blip the probes buffer through. Major upgrades are never automated: they migrate the database.</>
+          : 'Notify only: Argus shows when a minor is available and leaves applying it to you. Major upgrades are never automated: they migrate the database.'}</p>,
+        onSave: () => { void saveWindow('/api/os/zbx-window', 'update window', z) }, onCancel: z.cancel, canSave: z.dirty, busy: saving,
+      } : null} />
   </>
   const parts = <>
     <UpdPart label="OS">{c.os && <UpdVer v={osName(c.os)} title="The operating system the core VM reports" />}{osPillNode}
@@ -1378,14 +1378,15 @@ function ProbeFleetWindow({ os, onSaved }: { os: OSStatus | null; onSaved: () =>
     <UpdPolicy label="Reboots" value={windowText(os.probe_window)}
       title={os.probe_window.mode === 'auto' ? `Each probe VM reboots only when an update needs it, in this window (${clock}); a probe with its own window keeps it` : 'Argus flags "reboot needed" on each probe VM and leaves the reboot to you'}
       onEdit={() => w.setOpen(true)}
-      editor={w.open ? <>
-        <WeeklyWindow autoLabel="Auto-reboot when needed" everyDay mode={w.mode} weekday={w.weekday} time={w.time} onMode={w.setMode} onWeekday={w.setWeekday} onTime={w.setTime} />
-        <Button variant="primary" onClick={async () => { if (await save('/api/os/probe-reboot-window', windowBody(w.mode, w.weekday, w.time), 'reboot window')) { onSaved(); w.setOpen(false) } }} disabled={busy || !w.dirty}>{busy ? 'Saving…' : 'Save'}</Button>
-        <Button variant="default" onClick={w.cancel} disabled={busy}>Cancel</Button>
-      </> : undefined}
-      below={w.open ? <p className="set-hint">{w.mode === 'auto'
-        ? <>Each probe VM reboots only when an update needs it, <strong>{w.weekday < 0 ? 'every day' : `on ${WEEKDAYS[w.weekday]}`}</strong> at <strong>{w.time}</strong> on {clock}, whatever time zone the VM runs. A probe with its own window keeps it. A reboot takes about a minute; the probe buffers its data meanwhile.</>
-        : 'Notify only: Argus flags "reboot needed" on each probe VM and leaves the reboot to you (Reboot now). A probe with its own window keeps it.'}</p> : undefined} />
+      edit={w.open ? {
+        title: 'Probe VM reboot window',
+        controls: <WeeklyWindow autoLabel="Auto-reboot when needed" everyDay mode={w.mode} weekday={w.weekday} time={w.time} onMode={w.setMode} onWeekday={w.setWeekday} onTime={w.setTime} />,
+        hint: <p className="set-hint">{w.mode === 'auto'
+          ? <>Each probe VM reboots only when an update needs it, <strong>{w.weekday < 0 ? 'every day' : `on ${WEEKDAYS[w.weekday]}`}</strong> at <strong>{w.time}</strong> on {clock}, whatever time zone the VM runs. A probe with its own window keeps it. A reboot takes about a minute; the probe buffers its data meanwhile.</>
+          : 'Notify only: Argus flags "reboot needed" on each probe VM and leaves the reboot to you (Reboot now). A probe with its own window keeps it.'}</p>,
+        onSave: async () => { if (await save('/api/os/probe-reboot-window', windowBody(w.mode, w.weekday, w.time), 'reboot window')) { onSaved(); w.setOpen(false) } },
+        onCancel: w.cancel, canSave: w.dirty, busy,
+      } : null} />
   )
 }
 
@@ -1393,7 +1394,7 @@ function ProbeFleetWindow({ os, onSaved }: { os: OSStatus | null; onSaved: () =>
 const DEFAULT_PROBE_WINDOW: OSWindow = { mode: 'auto', weekday: -1, hour: 3, minute: 0 }
 
 // useOwnWindow edits one probe's own reboot window: the fleet's (the first choice), notify only, or a
-// day and time of its own. Inline on the Updates page and in the Probes page's band alike; reset()
+// day and time of its own, in ProbeRebootDialog (the Updates page and the Probes page alike); reset()
 // loads what is saved when the editor opens.
 function useOwnWindow(p: Proxy, fleetIn: OSWindow | undefined, tz: string | undefined, onSaved: () => void, onClose: () => void) {
   const fleet = fleetIn || DEFAULT_PROBE_WINDOW
@@ -1413,34 +1414,35 @@ function useOwnWindow(p: Proxy, fleetIn: OSWindow | undefined, tz: string | unde
   }
   const clock = coreClock(tz)
   const fleetText = windowText(fleet).toLowerCase()
-  const controls = <>
-    <WeeklyWindow autoLabel="Auto-reboot when needed" everyDay fleetLabel={`Fleet window (${fleetText})`} mode={mode} weekday={weekday} time={time} onMode={setMode} onWeekday={setWeekday} onTime={setTime} />
-    <Button variant="primary" onClick={submit} disabled={busy || !dirty}>{busy ? 'Saving…' : 'Save'}</Button>
-    <Button variant="default" onClick={onClose} disabled={busy}>Cancel</Button>
-  </>
+  const controls = <WeeklyWindow autoLabel="Auto-reboot when needed" everyDay fleetLabel={`Fleet window (${fleetText})`} mode={mode} weekday={weekday} time={time} onMode={setMode} onWeekday={setWeekday} onTime={setTime} />
   const hint = <p className="set-hint">{mode === 'fleet'
     ? <>{p.name} follows the fleet window ({fleet.mode === 'auto' ? <>it reboots only when an update needs it, <strong>{fleetText}</strong> on {clock}</> : 'notify only'}) and moves with it.</>
     : mode === 'auto'
       ? <>{p.name} keeps its own window: it reboots only when an update needs it, <strong>{weekday < 0 ? 'every day' : `on ${WEEKDAYS[weekday]}`}</strong> at <strong>{time}</strong> on {clock}. The fleet window no longer applies to it.</>
       : <>Notify only: Argus flags "reboot needed" on {p.name} and leaves the reboot to you. The fleet window no longer applies to it.</>}</p>
-  return { reset, controls, hint }
+  return { reset, controls, hint, submit, busy, dirty }
 }
 
-// ProbeRebootBand is the Probes page's inline band for a probe's own reboot window (its ⋮ menu).
-function ProbeRebootBand({ p, onChanged, onClose }: { p: Proxy; onChanged: () => void; onClose: () => void }) {
+// ProbeRebootDialog is a probe's own reboot window, from the Probes page's ⋮ menu.
+function ProbeRebootDialog({ p, onChanged, onClose }: { p: Proxy; onChanged: () => void; onClose: () => void }) {
   const [os, setOs] = useState<OSStatus | null>(null)
   const ed = useOwnWindow(p, os?.probe_window, os?.clock_tz, onChanged, onClose)
   useEffect(() => { fetch('/api/os/status').then((r) => (r.ok ? r.json() : null)).then((d: OSStatus | null) => setOs(d)).catch(() => {}) }, [])
   useEffect(() => { if (os) ed.reset() }, [os]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <div className="host-settings snmp-band">
-      <div className="hs-title">Reboot window · {p.name}</div>
-      <div className="hs-note">The probe VM reboots by itself only when an update needs it, in this window. Its OS patches itself either way (security updates only).</div>
-      {!os ? <span style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</span> : <>
-        <div className="vcell" style={{ marginTop: 8 }}>{ed.controls}</div>
-        {ed.hint}
-      </>}
-    </div>
+    <Popup title={`Reboot window · ${p.name}`} onClose={() => { if (!ed.busy) onClose() }}>
+      <div className="host-settings">
+        <div className="hs-note">The probe VM reboots by itself only when an update needs it, in this window. Its OS patches itself either way (security updates only).</div>
+        {!os ? <span style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</span> : <>
+          <div className="vcell" style={{ marginTop: 8, flexWrap: 'wrap', gap: 8 }}>{ed.controls}</div>
+          {ed.hint}
+        </>}
+      </div>
+      <div className="dlg-foot">
+        <Button variant="ghost" onClick={onClose} disabled={ed.busy}>Cancel</Button>
+        <Button variant="primary" onClick={ed.submit} disabled={!os || ed.busy || !ed.dirty}>{ed.busy ? 'Saving…' : 'Save'}</Button>
+      </div>
+    </Popup>
   )
 }
 
@@ -1490,7 +1492,6 @@ function probeOSFailed(p: Proxy): { what: string; res: HostActionResult } | null
 // Patch now with pending updates) and, only when it has a window of its own, its Reboots line.
 function ProbeOSParts({ p, os, act, onChanged }: { p: Proxy; os: OSStatus | null; act: ReturnType<typeof useProbeOS>; onChanged: () => void }) {
   const [edit, setEdit] = useState(false)
-  const ed = useOwnWindow(p, os?.probe_window, os?.clock_tz, onChanged, () => setEdit(false))
   if (!p.os_reported_at) return null
   const h = p.host
   const failed = probeOSFailed(p)
@@ -1503,8 +1504,8 @@ function ProbeOSParts({ p, os, act, onChanged }: { p: Proxy; os: OSStatus | null
     </UpdPart>
     {failed && <UpdBelow><p className="set-hint" style={{ color: 'var(--err)' }}>The last {failed.what} ({relTime(failed.res.at)}) failed: {failed.res.detail}</p></UpdBelow>}
     {!h?.now && (p.reboot_required || (p.sec_updates || 0) > 0) && <UpdBelow><p className="set-hint">Reboot now and Patch now come with this probe's next update (its host tools); until then its updates apply by themselves and it reboots in its window.</p></UpdBelow>}
-    {(own || edit) && <UpdPart label="Reboots">{edit ? ed.controls : <><UpdVer v={windowText(own)} title={`This probe's own reboot window, on ${coreClock(os?.clock_tz)}`} /><UpdPill kind="info" title="This probe keeps its own window instead of the fleet's">own window</UpdPill><button className="btn" onClick={() => { ed.reset(); setEdit(true) }}>Change</button></>}</UpdPart>}
-    {edit && <UpdBelow>{ed.hint}</UpdBelow>}
+    {own && <UpdPart label="Reboots"><UpdVer v={windowText(own)} title={`This probe's own reboot window, on ${coreClock(os?.clock_tz)}`} /><UpdPill kind="info" title="This probe keeps its own window instead of the fleet's">own window</UpdPill><button className="btn" onClick={() => setEdit(true)}>Change</button></UpdPart>}
+    {edit && <ProbeRebootDialog p={p} onChanged={onChanged} onClose={() => setEdit(false)} />}
   </>
 }
 
@@ -1868,14 +1869,34 @@ function UpdBelow({ children }: { children: ReactNode }) {
   return <div className="upd-below">{children}</div>
 }
 
-// UpdPolicy is a setting of a section (an image channel, a maintenance window): a
-// group of its own whose value reads like a version, changed in place.
-function UpdPolicy({ label, value, title, onEdit, editor, below }: { label: string; value: string; title?: string; onEdit?: () => void; editor?: ReactNode; below?: ReactNode }) {
+// PolicyEdit is an UpdPolicy's popup: its controls, a line on what they do, and Save.
+type PolicyEdit = { title: string; controls: ReactNode; hint?: ReactNode; error?: string | null; onSave: () => void; onCancel: () => void; canSave: boolean; busy: boolean; saveLabel?: string; busyLabel?: string }
+
+// UpdPolicy is a setting of a section (an image channel, a maintenance window): a group of its own
+// whose value reads like a version. Change opens its popup.
+function UpdPolicy({ label, value, title, onEdit, edit, below }: { label: string; value: string; title?: string; onEdit?: () => void; edit?: PolicyEdit | null; below?: ReactNode }) {
   return (
     <UpdGroup label={label}>
-      <UpdPart label="">{editor || <><UpdVer v={value} title={title} />{onEdit && <button className="btn" onClick={onEdit}>Change</button>}</>}</UpdPart>
+      <UpdPart label=""><UpdVer v={value} title={title} />{onEdit && <button className="btn" onClick={onEdit}>Change</button>}</UpdPart>
       {below && <UpdBelow>{below}</UpdBelow>}
+      {edit && <PolicyPopup edit={edit} />}
     </UpdGroup>
+  )
+}
+
+function PolicyPopup({ edit }: { edit: PolicyEdit }) {
+  return (
+    <Popup title={edit.title} onClose={() => { if (!edit.busy) edit.onCancel() }}>
+      <div className="host-settings">
+        <div className="vcell" style={{ flexWrap: 'wrap', gap: 8 }}>{edit.controls}</div>
+        {edit.hint}
+        {edit.error && <p className="set-hint" style={{ color: 'var(--err)' }}>{edit.error}</p>}
+      </div>
+      <div className="dlg-foot">
+        <Button variant="ghost" onClick={edit.onCancel} disabled={edit.busy}>Cancel</Button>
+        <Button variant="primary" onClick={edit.onSave} disabled={edit.busy || !edit.canSave}>{edit.busy ? (edit.busyLabel || 'Saving…') : (edit.saveLabel || 'Save')}</Button>
+      </div>
+    </Popup>
   )
 }
 
@@ -2054,7 +2075,9 @@ function CoreRows({ v, upd, onChanged, os, onOS }: { v: VersionInfo; upd: Update
       {self && (
         <UpdPolicy label="Image channel" value={channelText} title={channelTitle}
           onEdit={targets && upd.state !== 'success' && !active ? () => setSwitching(true) : undefined}
-          editor={switching && targets ? <>
+          edit={switching && targets ? {
+            title: 'Argus image channel',
+            controls: <>
             <select className="input" value={switchTo} onChange={(e) => setSwitchTo(e.target.value)} style={{ width: 240 }} aria-label="Switch to">
               <option value="">Select a target…</option>
               <optgroup label="Channels">
@@ -2070,13 +2093,13 @@ function CoreRows({ v, upd, onChanged, os, onOS }: { v: VersionInfo; upd: Update
                 <option value="custom">Custom version…</option>
               </optgroup>
             </select>
-            {switchTo === 'custom' && <input className="input mono" style={{ width: 140 }} value={custom} autoFocus placeholder="v0.9.12" aria-label="Custom version" onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && switchTarget) void doSwitch(); if (e.key === 'Escape') closeSwitch() }} />}
-            <Button variant="primary" onClick={doSwitch} disabled={busy || active || !switchTarget}>Switch</Button>
-            <Button variant="default" onClick={closeSwitch} disabled={busy}>Cancel</Button>
-          </> : undefined}
-          below={switching ? <p className="set-hint">{switchTo === 'custom'
-            ? <>Any published release, like <span className="mono">v0.9.12</span>: Argus checks it against the releases on GHCR. It pins the core: it stays there until you switch back to <span className="mono">latest</span> or <span className="mono">testing</span>.</>
-            : <>Switches the running image to the chosen channel or version. A version pins the core: it stays there until you switch back to <span className="mono">latest</span> or <span className="mono">testing</span>.</>}</p> : undefined} />
+            {switchTo === 'custom' && <input className="input mono" style={{ width: 140 }} value={custom} autoFocus placeholder="v0.9.12" aria-label="Custom version" onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && switchTarget) void doSwitch() }} />}
+            </>,
+            hint: <p className="set-hint">{switchTo === 'custom'
+              ? <>Any published release, like <span className="mono">v0.9.12</span>: Argus checks it against the releases on GHCR. It pins the core: it stays there until you switch back to <span className="mono">latest</span> or <span className="mono">testing</span>.</>
+              : <>Switches the running image to the chosen channel or version. A version pins the core: it stays there until you switch back to <span className="mono">latest</span> or <span className="mono">testing</span>.</>}</p>,
+            onSave: () => { void doSwitch() }, onCancel: closeSwitch, canSave: !active && !!switchTarget, busy, saveLabel: 'Switch', busyLabel: 'Switching…',
+          } : null} />
       )}
       {cos.policies}
 
@@ -2155,7 +2178,9 @@ function FleetTarget({ target, latest, onSaved }: { target: string | null; lates
     <UpdPolicy label="Image channel" value={text}
       title={target === 'latest' ? `Every probe follows the stable releases.${latest ? ` The newest is ${latest}.` : ''}` : 'Every probe stays on this release until you switch back to latest'}
       onEdit={start}
-      editor={editing ? <>
+      edit={editing ? {
+        title: 'Probe image channel',
+        controls: <>
         <select className="input" value={val} onChange={(e) => setVal(e.target.value)} style={{ width: 240 }} aria-label="Switch to">
           <option value="">Select a target…</option>
           <optgroup label="Channels">
@@ -2170,13 +2195,14 @@ function FleetTarget({ target, latest, onSaved }: { target: string | null; lates
             <option value="custom">Custom version…</option>
           </optgroup>
         </select>
-        {val === 'custom' && <input className="input mono" style={{ width: 140 }} value={custom} autoFocus placeholder="7.0.32-r10" aria-label="Custom version" onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && to) void save(); if (e.key === 'Escape') setEditing(false) }} />}
-        <Button variant="primary" disabled={busy || !to || to === target} onClick={save}>{busy ? 'Switching…' : 'Switch'}</Button>
-        <Button variant="default" disabled={busy} onClick={() => setEditing(false)}>Cancel</Button>
-      </> : undefined}
-      below={error ? <p className="set-hint" style={{ color: 'var(--err)' }}>{error}</p>
-        : editing && val === 'custom' ? <p className="set-hint">Any published probe release, like <span className="mono">7.0.32-r10</span>: Argus checks it against the releases on GHCR. Every probe stays on it until you switch back to <span className="mono">latest</span>.</p>
-        : editing ? <p className="set-hint">The image every probe runs: the channel it follows (<span className="mono">latest</span>: stable releases; probes have no testing channel), or a release they all stay on (pinned).{latest ? <> The newest is <span className="mono">{latest}</span>.</> : null}{releases === null ? ' Loading the releases…' : null}</p> : undefined} />
+        {val === 'custom' && <input className="input mono" style={{ width: 140 }} value={custom} autoFocus placeholder="7.0.32-r10" aria-label="Custom version" onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && to) void save() }} />}
+        </>,
+        hint: val === 'custom'
+          ? <p className="set-hint">Any published probe release, like <span className="mono">7.0.32-r10</span>: Argus checks it against the releases on GHCR. Every probe stays on it until you switch back to <span className="mono">latest</span>.</p>
+          : <p className="set-hint">The image every probe runs: the channel it follows (<span className="mono">latest</span>: stable releases; probes have no testing channel), or a release they all stay on (pinned).{latest ? <> The newest is <span className="mono">{latest}</span>.</> : null}{releases === null ? ' Loading the releases…' : null}</p>,
+        error,
+        onSave: () => { void save() }, onCancel: () => setEditing(false), canSave: !!to && to !== target, busy, saveLabel: 'Switch', busyLabel: 'Switching…',
+      } : null} />
   )
 }
 
@@ -2245,9 +2271,9 @@ function ProbeUpdates({ proxies, error, target, onTarget, onChanged, os, onOS }:
               <UpdPart label="Proxy">
                 <UpdVer v={p.version} title="The Zabbix proxy version this probe runs" />{ps.pill}
                 {ps.can === 'self' && <button className="btn" onClick={() => updateProbe(p)}>Update</button>}
-                {ps.can === 'manual' && <button className="btn" onClick={() => setOpenCmd((o) => (o === p.name ? null : p.name))} title="This probe has no sidecar: show how to update it by hand">{openCmd === p.name ? 'Hide' : 'Update…'}</button>}
+                {ps.can === 'manual' && <button className="btn" onClick={() => setOpenCmd(p.name)} title="This probe has no sidecar: show how to update it by hand">Update…</button>}
               </UpdPart>
-              {openCmd === p.name && <UpdBelow><ProbeUpdateCommand p={p} /></UpdBelow>}
+              {openCmd === p.name && <ProbeUpdateCommand p={p} onClose={() => setOpenCmd(null)} />}
               <UpdPart label="Sidecar">
                 {p.selfupdate && <UpdVer v={vv(p.updater_version) || '?'} title="The argus-updater sidecar managing this probe" />}{us.pill}
                 {us.can && <button className="btn" onClick={() => updateUpdater(p)}>Update</button>}
@@ -3898,10 +3924,10 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
   const [tokens, setTokens] = useState<EnrollTokenRow[] | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [report, setReport] = useState<{ name: string; token: string } | null>(null) // minted check-in token to show
-  const [openSnmp, setOpenSnmp] = useState<string | null>(null) // proxy name whose SNMP-defaults band is open
-  const [openProcs, setOpenProcs] = useState<string | null>(null) // proxy name whose Zabbix-processes band is open
+  const [openSnmp, setOpenSnmp] = useState<string | null>(null) // proxy name whose SNMP-defaults popup is open
+  const [openProcs, setOpenProcs] = useState<string | null>(null) // proxy name whose Zabbix-processes popup is open
   const [diagFrom, setDiagFrom] = useState<string | null>(null) // proxy id the diagnostics dialog runs from
-  const [openReboot, setOpenReboot] = useState<string | null>(null) // proxy name whose reboot-window band is open
+  const [openReboot, setOpenReboot] = useState<string | null>(null) // proxy name whose reboot-window popup is open
   const canEdit = role === 'admin' || role === 'helpdesk'
   const isAdmin = role === 'admin'
   const toast = useToast()
@@ -4117,23 +4143,23 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
                 <td data-label="VM OS Version"><OSCell p={p} /></td>
                 <td className="row-actions">
                   <ProbeRowMenu items={[
-                    canEdit && p.id ? { label: 'SNMP defaults', onClick: () => setOpenSnmp((n) => (n === p.name ? null : p.name)) } : null,
-                    { label: 'Processes', onClick: () => setOpenProcs((n) => (n === p.name ? null : p.name)) },
+                    canEdit && p.id ? { label: 'SNMP defaults…', onClick: () => setOpenSnmp(p.name) } : null,
+                    { label: 'Processes…', onClick: () => setOpenProcs(p.name) },
                     canEdit && p.id ? { label: 'Diagnose from here…', onClick: () => setDiagFrom(p.id) } : null,
                     isAdmin && p.host ? 'sep' : null,
                     isAdmin && p.host?.now && !p.host.pending && p.reboot_required ? { label: 'Reboot now…', onClick: () => osAct.reboot(p) } : null,
                     isAdmin && p.host?.now && !p.host.pending && (p.sec_updates || 0) > 0 ? { label: 'Patch now…', onClick: () => osAct.patch(p) } : null,
-                    isAdmin && p.host ? { label: 'Reboot window…', onClick: () => setOpenReboot((n) => (n === p.name ? null : p.name)) } : null,
+                    isAdmin && p.host ? { label: 'Reboot window…', onClick: () => setOpenReboot(p.name) } : null,
                     isAdmin && p.break_glass ? { label: p.break_glass_user ? `Console (${p.break_glass_user})` : 'Console', onClick: () => revealBreakGlass(p) } : null,
                     isAdmin && p.id ? 'sep' : null,
                     isAdmin && p.id ? { label: 'Delete probe', onClick: () => del(p), danger: true } : null,
                   ]} />
                 </td>
               </tr>
-              {report?.name === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} /></td></tr>}
-              {openSnmp === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></td></tr>}
-              {openProcs === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProbeProcesses p={p} isAdmin={isAdmin} onChanged={loadProxies} onClose={() => setOpenProcs(null)} /></td></tr>}
-              {openReboot === p.name && <tr><td colSpan={6} style={{ padding: 0 }}><ProbeRebootBand p={p} onChanged={() => { void loadProxies() }} onClose={() => setOpenReboot(null)} /></td></tr>}
+              {report?.name === p.name && <ReportTokenPanel token={report.token} name={p.name} onDone={() => setReport(null)} />}
+              {openSnmp === p.name && <Popup title={`SNMP default · ${p.name}`} onClose={() => setOpenSnmp(null)}><ProxySNMP proxyId={p.id} proxyName={p.name} onClose={() => setOpenSnmp(null)} /></Popup>}
+              {openProcs === p.name && <ProbeProcesses p={p} isAdmin={isAdmin} onChanged={loadProxies} onClose={() => setOpenProcs(null)} />}
+              {openReboot === p.name && <ProbeRebootDialog p={p} onChanged={() => { void loadProxies() }} onClose={() => setOpenReboot(null)} />}
             </Fragment>
           ))}
         </tbody>
@@ -4249,7 +4275,7 @@ function ProbeRowMenu({ items }: { items: Array<ProbeMenuItem | 'sep' | false | 
   )
 }
 
-// ProbeProcesses is the inline band listing a probe's Zabbix process counts: what each kind runs, how
+// ProbeProcesses is the popup listing a probe's Zabbix process counts: what each kind runs, how
 // busy its busiest hour was at Argus's last evaluation, and the count Argus wants (autoscale.go).
 function ProbeProcesses({ p, isAdmin, onChanged, onClose }: { p: Proxy; isAdmin: boolean; onChanged: () => void; onClose: () => void }) {
   const toast = useToast()
@@ -4273,8 +4299,8 @@ function ProbeProcesses({ p, isAdmin, onChanged, onClose }: { p: Proxy; isAdmin:
       : "A change is waiting: it applies when the probe next starts (it has no updater sidecar that can restart it, or autoscaling applies at the next start).")
     : ''
   return (
+    <Popup title={`Zabbix processes · ${p.name}`} onClose={onClose} wide>
     <div className="host-settings">
-      <div className="hs-title">Zabbix processes · {p.name}</div>
       <div className="hs-note">
         {p.autoscale === 'off'
           ? 'Autoscaling is off (Settings, Probes): these counts stay as they are.'
@@ -4328,6 +4354,7 @@ function ProbeProcesses({ p, isAdmin, onChanged, onClose }: { p: Proxy; isAdmin:
       {!pending && settling && rows.length > 0 && p.autoscale !== 'off' && <div className="hs-note">These counts started {relTime(p.procs_since!)}. Argus judges them once they have run for 6 hours, and checks that every raise lowered the load (it puts back one that didn't).</div>}
       <div className="hs-foot"><Button variant="ghost" onClick={onClose}>Close</Button></div>
     </div>
+    </Popup>
   )
 }
 
@@ -4336,25 +4363,25 @@ function ProbeProcesses({ p, isAdmin, onChanged, onClose }: { p: Proxy; isAdmin:
 function ReportTokenPanel({ token, name, onDone }: { token: string; name: string; onDone: () => void }) {
   const envLine = `ARGUS_PROBE_TOKEN=${token}`
   return (
-    <div style={{ padding: '12px 16px', background: 'var(--elevated)', borderBottom: '1px solid var(--border)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
-        <strong>Enable version reporting for {name}</strong>
+    <Popup title={`Enable version reporting for ${name}`} onClose={onDone}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
         <span className="envpill" title="Shown once">token shown once</span>
         <CopyButton text={envLine} variant="default" style={{ marginLeft: 'auto' }} />
-        <Button variant="default" onClick={onDone}>Done</Button>
       </div>
       <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: '0 0 8px' }}>
         Add this environment variable to the <strong>{`argus-${name}`}</strong> container (unRAID: Edit → Add another variable) and restart it. The probe already knows the check-in URL from its enroll URL, so this token is all it needs - no re-enrollment. It's saved to the probe's volume on first boot, so you can remove the variable afterward.
       </p>
       <pre style={{ margin: 0, padding: '10px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12 }}><code>{envLine}</code></pre>
-    </div>
+      <div className="dlg-foot"><Button variant="primary" onClick={onDone}>Done</Button></div>
+    </Popup>
   )
 }
 
-// ProbeUpdateCommand renders the copyable pull+restart command for a single probe (manual path).
-function ProbeUpdateCommand({ p }: { p: Proxy }) {
+// ProbeUpdateCommand is the popup with the copyable pull+restart command for a single probe (manual path).
+function ProbeUpdateCommand({ p, onClose }: { p: Proxy; onClose: () => void }) {
   const cmd = `docker pull ${PROBE_IMAGE.replace(/:latest$/, '')}:${probeUpdateTag(p.target)} && docker restart argus-${p.name}`
   return (
+    <Popup title={`Update ${p.name} by hand`} onClose={onClose}>
     <div className="upd-cmd">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
         <span className="set-hint">{p.name} has no argus-updater sidecar, so it updates by hand. On its Docker host{p.version ? ` (it runs ${p.version})` : ''}:</span>
@@ -4362,6 +4389,8 @@ function ProbeUpdateCommand({ p }: { p: Proxy }) {
       </div>
       <pre style={{ margin: 0, padding: '10px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12 }}><code>{cmd}</code></pre>
     </div>
+    <div className="dlg-foot"><Button variant="primary" onClick={onClose}>Done</Button></div>
+    </Popup>
   )
 }
 
@@ -4911,16 +4940,16 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
   const [hosts, setHosts] = useState<Host[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const [proxies, setProxies] = useState<Proxy[]>([])
-  const [creating, setCreating] = useState(false) // "+ New group" inline band open
-  const [addingDevice, setAddingDevice] = useState(false) // "+ Add device" inline band open (admin)
+  const [creating, setCreating] = useState(false) // "+ New group" popup open
+  const [addingDevice, setAddingDevice] = useState(false) // "+ Add device" popup open (admin)
   const [siteEdit, setSiteEdit] = useState(false) // the site info editor (siteinfo.go)
   // The site info editor opened from a site's row menu, without opening the site; the tick reloads the
   // site's panel when it is the one on screen.
   const [siteInfoFor, setSiteInfoFor] = useState<string | null>(null)
   const [siteInfoTick, setSiteInfoTick] = useState(0)
   const [classes, setClasses] = useState<DeviceClass[]>([]) // device-class catalog for the attach band
-  const [gAction, setGAction] = useState<{ id: string; mode: 'rename' | 'delete' } | null>(null) // per-group rename/delete band
-  const [newSubPath, setNewSubPath] = useState<string | null>(null) // group path under which a "New subgroup" band is open
+  const [gAction, setGAction] = useState<{ id: string; mode: 'rename' } | null>(null) // the group whose Rename popup is open
+  const [newSubPath, setNewSubPath] = useState<string | null>(null) // group path under which a "New subgroup" popup is open
   const [focus, setFocus] = useState<Focus>({ level: 'root' })
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -4930,7 +4959,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
   const [collapsed, setCollapsed] = useState<Set<string>>(() => { try { const s = sessionStorage.getItem('argus.tree.collapsed'); if (s) return new Set<string>(JSON.parse(s)) } catch { /* ignore */ } return new Set() })
   const collapseReady = useRef<boolean>((() => { try { return sessionStorage.getItem('argus.tree.collapsed') != null } catch { return false } })())
   const [openHost, setOpenHost] = useState<string | null>(() => { try { return sessionStorage.getItem('argus.tree.openhost') } catch { return null } })
-  const [editGroupsHost, setEditGroupsHost] = useState<string | null>(null) // host id with the "Edit groups…" band open
+  const [editGroupsHost, setEditGroupsHost] = useState<string | null>(null) // host id with the "Edit groups…" popup open
   const [diagHost, setDiagHost] = useState<string | null>(null) // host id the diagnostics dialog is open on
   const [settingsHost, setSettingsHost] = useState<string | null>(null) // host id with the "Settings…" band open
   const [showAll, setShowAll] = useState(false)
@@ -5416,7 +5445,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
                 h.hidden ? { label: 'Show', icon: kbIcon.show, onClick: () => clearHostState(h, 'hide') } : { label: 'Hide', icon: kbIcon.hide, onPick: (s) => setHostState(h, 'hide', s) },
                 { sep: true, label: '' },
                 { label: 'Settings…', icon: kbIcon.gear, onClick: () => openSettings(h.id) },
-                { label: 'Edit groups…', icon: kbIcon.folder, onClick: () => { setSettingsHost(null); setEditGroupsHost((cur) => (cur === h.id ? null : h.id)) } },
+                { label: 'Edit groups…', icon: kbIcon.folder, onClick: () => { setSettingsHost(null); setEditGroupsHost(h.id) } },
                 { label: 'Discover now', icon: kbIcon.discover, onClick: () => discoverNow(h) },
                 { label: 'Diagnose…', icon: kbIcon.diag, onClick: () => setDiagHost(h.id) },
                 ...(onAddToReport ? [{ sep: true, label: '' }, { label: 'Add to a report', icon: kbIcon.report, onClick: () => onAddToReport({ host: h.id }, h.name) }] : []),
@@ -5424,7 +5453,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
             )}
           </div>
         </div>
-        {editGroupsHost === h.id && <GroupEditor current={h.groups || []} groups={groups} onSave={(ids) => setHostGroups(h.id, ids)} onCancel={() => setEditGroupsHost(null)} />}
+        {editGroupsHost === h.id && <GroupEditor hostName={h.name} current={h.groups || []} groups={groups} onSave={(ids) => setHostGroups(h.id, ids)} onCancel={() => setEditGroupsHost(null)} />}
         {hopen && <div className="host-body" style={{ paddingLeft: indent(depth) }}><HostItems hostId={h.id} canPause={canPause} hostPaused={h.paused} hostHidden={h.hidden} maintenance={h.maintenance} showAll={showAllEff} autoOpenItem={target && target.hostId === h.id ? target.itemId : undefined} onlyItem={focus.level === 'sensor' && focus.hostId === h.id ? focusItemId ?? undefined : undefined} onDrillSensor={(itemId, itemName) => drillSensor(path, h.id, itemId, itemName)} onItemName={(itemId, itemName) => setFocus((f) => (f.level === 'sensor' && f.itemId === itemId && !f.itemName ? { ...f, itemName } : f))} onNavigate={onNavigate} onOpenSettings={canPause ? () => openSettings(h.id) : undefined} heldBehind={h.held_behind} onAddToReport={onAddToReport} /></div>}
       </div>
     )
@@ -5466,7 +5495,11 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
                 ] : []),
                 { label: 'New subgroup…', icon: kbIcon.folder, onClick: () => { setError(null); setGAction(null); setNewSubPath(node.path); setCollapsed((c) => { const n = new Set(c); n.delete(node.path); return n }) } },
                 { label: 'Rename…', icon: kbIcon.edit, onClick: () => { setError(null); setNewSubPath(null); setGAction({ id: g.id, mode: 'rename' }) } },
-                { label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => { setError(null); setNewSubPath(null); if (node.hosts.length) { setError(`Move the ${node.hosts.length} host${node.hosts.length === 1 ? '' : 's'} out of "${node.path}" before deleting it.`); return } setGAction({ id: g.id, mode: 'delete' }) } },
+                { label: 'Delete…', icon: kbIcon.trash, danger: true, onClick: async () => {
+                  setError(null); setNewSubPath(null); setGAction(null)
+                  if (node.hosts.length) { setError(`Move the ${node.hosts.length} host${node.hosts.length === 1 ? '' : 's'} out of "${node.path}" before deleting it.`); return }
+                  if (await confirm({ title: 'Delete group', message: `Delete the group “${node.path}”? This can’t be undone.`, confirmLabel: 'Delete', danger: true })) await deleteGroup(g)
+                } },
                 // Hide/unhide is an admin, advanced-mode capability (unhiding needs "Show hidden", which
                 // only appears in advanced mode) - so the hide action only shows there too.
                 ...(advanced ? [
@@ -5481,16 +5514,9 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
         </div>
         {g && gAction?.id === g.id && (
           gAction.mode === 'rename'
-            ? <GroupNameBand initial={node.path} placeholder="Group path" confirmLabel="Rename" onConfirm={(v) => renameGroup(g, v)} onCancel={() => setGAction(null)} />
-            : <div className="group-band">
-                <span className="gb-msg">Delete the group “{node.path}”? This can’t be undone.</span>
-                <div className="gb-foot">
-                  <Button variant="ghost" onClick={() => setGAction(null)}>Cancel</Button>
-                  <Button variant="danger" onClick={() => deleteGroup(g)}>Delete</Button>
-                </div>
-              </div>
+            && <GroupNameDialog title="Rename group" initial={node.path} placeholder="Group path" confirmLabel="Rename" onConfirm={(v) => renameGroup(g, v)} onCancel={() => setGAction(null)} />
         )}
-        {newSubPath === node.path && <GroupNameBand prefix={node.path + '/'} placeholder="Subgroup name" confirmLabel="Create" onConfirm={(v) => createGroup(v)} onCancel={() => setNewSubPath(null)} />}
+        {newSubPath === node.path && <GroupNameDialog title="New subgroup" prefix={node.path + '/'} placeholder="Subgroup name" confirmLabel="Create" onConfirm={(v) => createGroup(v)} onCancel={() => setNewSubPath(null)} />}
         {expanded && (() => {
           const kids = mergedChildren(node.hosts, node.children, node.path)
           const keys = kids.map((k) => k.key)
@@ -5515,8 +5541,8 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
         <span className="hint">{(showHiddenEff ? groups.length : groups.filter((g) => !hidden.has(g.name)).length)} group{groups.length === 1 ? '' : 's'}{!showHiddenEff && hidden.size > 0 ? ` (${hidden.size} hidden)` : ''} · {hosts.length} host{hosts.length === 1 ? '' : 's'}</span>
         {focus.level !== 'sensor' && (
           <div className="tools">
-            {canPause && focus.level !== 'host' && !reorder && <button className="btn primary" onClick={() => { setError(null); setCreating((v) => !v) }}>+ New group</button>}
-            {role === 'admin' && (focus.level === 'root' || focus.level === 'group') && !reorder && <button className="btn primary" onClick={() => { setError(null); setCreating(false); setAddingDevice((v) => !v) }}>+ Add device</button>}
+            {canPause && focus.level !== 'host' && !reorder && <button className="btn primary" onClick={() => { setError(null); setCreating(true) }}>+ New group</button>}
+            {role === 'admin' && (focus.level === 'root' || focus.level === 'group') && !reorder && <button className="btn primary" onClick={() => { setError(null); setCreating(false); setAddingDevice(true) }}>+ Add device</button>}
             {/* Desktop: the secondary controls inline. Phone: the same actions in a ⋯ menu (plus a visible
                 Done while reordering), so the toolbar stays one row on a narrow card. */}
             <span className="tools-desktop">
@@ -5568,11 +5594,11 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
           </>}
         </div>
       )}
-      {creating && <GroupNameBand
+      {creating && <GroupNameDialog title={focus.level === 'group' ? 'New subgroup' : 'New group'}
         prefix={focus.level === 'group' ? focus.path + '/' : undefined}
         placeholder={focus.level === 'group' ? 'Subgroup name (use / for deeper nesting)' : 'New group name (use / for nesting, e.g. site1/Network)'}
         confirmLabel="Create" onConfirm={(name) => createGroup(name)} onCancel={() => setCreating(false)} />}
-      {addingDevice && <AddDeviceBand classes={classes} groups={groups} proxies={proxies} defaultSite={focus.level === 'group' ? focus.path : ''} onCancel={() => setAddingDevice(false)} onCreated={() => { setAddingDevice(false); setError(null); load(); fireDataRefresh() }} />}
+      {addingDevice && <AddDeviceDialog classes={classes} groups={groups} proxies={proxies} defaultSite={focus.level === 'group' ? focus.path : ''} onCancel={() => setAddingDevice(false)} onCreated={() => { setAddingDevice(false); setError(null); load(); fireDataRefresh() }} />}
       {diagHost && <DiagDialog hostId={diagHost} onClose={() => setDiagHost(null)} />}
       {settingsHost && <HostSettingsModal hostId={settingsHost} hostName={hosts.find((h) => h.id === settingsHost)?.name} canEdit={canPause} isAdmin={role === 'admin'} onClose={closeSettings} onSaved={() => { closeSettings(); load(); fireDataRefresh() }} />}
       {focusSite && <SitePanel site={focusSite} canEdit={canPause} editing={siteEdit} onEditDone={() => setSiteEdit(false)} tick={siteInfoTick} />}
@@ -5680,31 +5706,33 @@ function BulkThresholdsDialog({ hostId, count, busy, reason, setReason, onApply,
   )
 }
 
-// GroupNameBand is the inline name editor used for "New group" and "Rename group" (replacing the
-// browser prompt): a text field with Enter-to-confirm / Esc-to-cancel and explicit buttons.
-function GroupNameBand({ initial = '', prefix, placeholder, confirmLabel, onConfirm, onCancel }: { initial?: string; prefix?: string; placeholder?: string; confirmLabel: string; onConfirm: (name: string) => void | Promise<void>; onCancel: () => void }) {
+// GroupNameDialog is the name popup for "New group", "New subgroup" and "Rename" (replacing the
+// browser prompt): a text field with Enter to confirm, Esc to cancel, and explicit buttons.
+function GroupNameDialog({ title, initial = '', prefix, placeholder, confirmLabel, onConfirm, onCancel }: { title: string; initial?: string; prefix?: string; placeholder?: string; confirmLabel: string; onConfirm: (name: string) => void | Promise<void>; onCancel: () => void }) {
   const [v, setV] = useState(initial)
   const [busy, setBusy] = useState(false)
   const submit = async () => { if (!v.trim() || busy) return; setBusy(true); await onConfirm((prefix || '') + v); setBusy(false) }
   return (
-    <div className="group-band">
-      {prefix && <span className="gb-prefix">{prefix}</span>}
-      <input className="input" autoFocus placeholder={placeholder} value={v}
-        onChange={(e) => setV(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') submit(); else if (e.key === 'Escape') onCancel() }} />
-      <div className="gb-foot">
+    <Popup title={title} onClose={onCancel}>
+      <div className="group-band">
+        {prefix && <span className="gb-prefix">{prefix}</span>}
+        <input className="input" autoFocus placeholder={placeholder} value={v}
+          onChange={(e) => setV(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit() }} />
+      </div>
+      <div className="dlg-foot">
         <Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
         <Button variant="primary" onClick={submit} disabled={!v.trim() || busy}>{confirmLabel}</Button>
       </div>
-    </div>
+    </Popup>
   )
 }
 
-// AddDeviceBand is the inline "+ Add device" form (admin): pick a device class, name it, place it in a
+// AddDeviceDialog is the "+ Add device" popup (admin): pick a device class, name it, place it in a
 // site + proxy, and (optionally) add the HTTP/HTTPS check. It POSTs /api/hosts, which creates the
 // Zabbix host wired to the class's templates (Base Ping is always attached). The minimal manual-attach
 // path (ROADMAP §C, phase C0) the discovery pipeline (§B) later automates.
-function AddDeviceBand({ classes, groups, proxies, defaultSite, onCancel, onCreated }: { classes: DeviceClass[]; groups: Group[]; proxies: Proxy[]; defaultSite: string; onCancel: () => void; onCreated: (hostId: string) => void }) {
+function AddDeviceDialog({ classes, groups, proxies, defaultSite, onCancel, onCreated }: { classes: DeviceClass[]; groups: Group[]; proxies: Proxy[]; defaultSite: string; onCancel: () => void; onCreated: (hostId: string) => void }) {
   const [classId, setClassId] = useState('base')
   const [name, setName] = useState('')
   const [ip, setIp] = useState('')
@@ -6651,7 +6679,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
   const [sel, setSel] = useState<Set<number>>(new Set())
   const [rowCfg, setRowCfg] = useState<Record<number, DiscRowCfg>>({})
   const [rowErr, setRowErr] = useState<Record<number, string>>({})
-  const [open, setOpen] = useState<Set<number>>(new Set()) // rows with the settings band expanded
+  const [openId, setOpenId] = useState<number | null>(null) // the row whose Device settings popup is open
   const [showIgnored, setShowIgnored] = useState(false)
   const [adding, setAdding] = useState(false)
 
@@ -6717,7 +6745,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
   // inherits the site picked for an earlier scan of another site - the effect below re-defaults it from
   // THIS scan's source.
   useEffect(() => {
-    setSel(new Set()); setRowErr({}); setOpen(new Set()); setSite(''); setDlg(null)
+    setSel(new Set()); setRowErr({}); setOpenId(null); setSite(''); setDlg(null)
     if (!scanId) { setJob(null); setResults([]); return }
     void loadJob(Number(scanId))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -6918,7 +6946,6 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => sel.has(id))
   const toggle = (id: number) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
   const toggleAll = () => setSel(allSelected ? new Set<number>() : new Set(selectableIds))
-  const toggleOpen = (id: number) => setOpen((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
   const setCfg = (id: number, patch: Partial<DiscRowCfg>) => setRowCfg((c) => ({ ...c, [id]: { ...c[id], ...patch } }))
   const setRowClass = (id: number, classId: string, ip: string) => setRowCfg((c) => {
     const cur = c[id]
@@ -6947,7 +6974,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
       const siteFor = (cfg.site || site).trim()
       if (!siteFor) bad = 'pick a site - in the toolbar for all selected, or per device in the row settings'
       if (!cfg.name.trim()) bad = 'a name is required'
-      if (bad) { errs[id] = bad; setOpen((s) => new Set(s).add(id)); continue }
+      if (bad) { errs[id] = bad; continue }
       const body: Record<string, unknown> = { name: cfg.name.trim(), ip: r.ip, use_ip: true, site: siteFor, proxy_id: jobProxyId, class_id: cfg.classId, discovery_result_id: id }
       if (Object.keys(macros).length) body.macros = macros
       if (cls?.offers_http && cfg.http) {
@@ -7264,7 +7291,7 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
                   const cfg = rowCfg[r.id]
                   const canPick = selectable(r)
                   const cls = classes.find((c) => c.id === cfg?.classId)
-                  const hasBand = canPick // the band always at least offers the per-device site override
+                  const hasBand = canPick // the popup always at least offers the per-device site override
                   const fp = facts(r)
                   return (
                     <Fragment key={r.id}>
@@ -7297,14 +7324,14 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
                                 const missing = attachMacros(cfg.classId).filter((ms) => ms.required && !autoFilled(r, cfg.classId, ms.macro) && !(cfg.macros[ms.macro] || '').trim())
                                 return missing.length > 0 ? (
                                   <button className="iconbtn disc-warn" title={`This class still needs: ${missing.map((m) => m.label).join(', ')} - click to fill them in`}
-                                    aria-label="Missing required settings" onClick={() => setOpen((s) => new Set(s).add(r.id))}>
+                                    aria-label="Missing required settings" onClick={() => setOpenId(r.id)}>
                                     <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /><path d="M12 9.5v4M12 17h.01" /></svg>
                                   </button>
                                 ) : null
                               })()}
                               {hasBand && (
-                                <button className="iconbtn" title="Device settings" aria-label="Device settings" onClick={() => toggleOpen(r.id)}>
-                                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"><path d={open.has(r.id) ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'} /></svg>
+                                <button className="iconbtn" title="Device settings" aria-label="Device settings" onClick={() => setOpenId(r.id)}>
+                                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" /><circle cx="16" cy="6" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="18" cy="18" r="2" /></svg>
                                 </button>
                               )}
                             </div>
@@ -7318,8 +7345,8 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
                           </div>
                         </td>
                       </tr>
-                      {canPick && cfg && open.has(r.id) && (
-                        <tr className="disc-band-row"><td colSpan={5} style={{ padding: 0 }}>
+                      {canPick && cfg && openId === r.id && (
+                        <Popup title={`Device settings · ${cfg.name || r.ip}`} onClose={() => setOpenId(null)}>
                           <div className="disc-band">
                             <div style={grid}>
                               <Field label="Site (this device)">
@@ -7369,7 +7396,8 @@ function DiscoveryView({ scanId, onOpenScan }: { scanId: string | null; onOpenSc
                               </div>
                             )}
                           </div>
-                        </td></tr>
+                          <div className="dlg-foot"><Button variant="primary" onClick={() => setOpenId(null)}>Done</Button></div>
+                        </Popup>
                       )}
                     </Fragment>
                   )
@@ -9155,7 +9183,6 @@ function ProxySNMP({ proxyId, proxyName, onClose, embedded }: { proxyId: string;
   if (!snmp) return <div className={root}><span style={{ color: 'var(--muted)', fontSize: 13 }}>Loading…</span></div>
   return (
     <div className={root}>
-      {!embedded && <div className="hs-title">SNMP default · {proxyName}</div>}
       <div className="hs-note">{embedded ? 'Hosts set to “inherit” use these credentials.' : 'Hosts on this proxy set to “inherit” use these credentials.'} Saving applies them to every inheriting host.{isSet ? '' : ' No default is set yet.'}</div>
       <div className="if-snmp" style={{ borderTop: 'none', marginTop: 4, paddingTop: 0 }}>
         <label className="field"><span>SNMP version</span>
@@ -9195,17 +9222,16 @@ function ProxySNMP({ proxyId, proxyName, onClose, embedded }: { proxyId: string;
   )
 }
 
-// GroupEditor is the inline band under a host row for moving it between tree groups: a checkbox per
-// group (current membership pre-checked), enforcing at least one. Save replaces the host's full group
-// set. An inline band rather than a modal: it edits one row in place.
-function GroupEditor({ current, groups, onSave, onCancel }: { current: string[]; groups: Group[]; onSave: (ids: string[]) => Promise<void> | void; onCancel: () => void }) {
+// GroupEditor is the popup for moving a host between tree groups: a checkbox per group (current
+// membership pre-checked), enforcing at least one. Save replaces the host's full group set.
+function GroupEditor({ hostName, current, groups, onSave, onCancel }: { hostName: string; current: string[]; groups: Group[]; onSave: (ids: string[]) => Promise<void> | void; onCancel: () => void }) {
   const [sel, setSel] = useState<Set<string>>(() => new Set(groups.filter((g) => current.includes(g.name)).map((g) => g.id)))
   const [busy, setBusy] = useState(false)
   function toggle(id: string) { setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n }) }
   const sorted = [...groups].sort((a, b) => a.name.localeCompare(b.name))
   return (
+    <Popup title={`Groups for ${hostName}`} onClose={onCancel}>
     <div className="group-edit">
-      <div className="ge-title">Groups for this host</div>
       {sorted.length === 0
         ? <div style={{ color: 'var(--muted)', fontSize: 13 }}>No groups yet - create one first.</div>
         : <div className="ge-list">
@@ -9216,11 +9242,12 @@ function GroupEditor({ current, groups, onSave, onCancel }: { current: string[];
               </label>
             ))}
           </div>}
-      <div className="ge-foot">
+      <div className="dlg-foot">
         <Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
         <Button variant="primary" disabled={sel.size === 0 || busy} onClick={async () => { setBusy(true); await onSave([...sel]); setBusy(false) }}>Save</Button>
       </div>
     </div>
+    </Popup>
   )
 }
 
@@ -10818,30 +10845,36 @@ function LinksCard() {
     if (!res || !res.ok) { toast.error(await errText(res, 'Could not delete the link')); return }
     load()
   }
-  const editor = (
-    <div className="link-form">
-      <input className="input" placeholder="Label, e.g. Web UI" maxLength={40} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} aria-label="Link label" />
-      <input className="input mono" placeholder="https://{ip}" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} aria-label="Link address" />
-      <SitePicker options={classes.filter((c) => !c.internal).map((c) => c.id)} labelOf={classLabel} value={form.classes} onChange={(v) => setForm({ ...form, classes: v })} allLabel="Every class" noun="classes" />
-      <span className="tag-form-act"><Button variant="ghost" onClick={() => setEditing(null)} disabled={busy}>Cancel</Button><Button variant="primary" onClick={save} disabled={busy || !form.label.trim() || !form.url.trim()}>{busy ? 'Saving…' : 'Save'}</Button></span>
-    </div>
+  const editor = editing !== null && (
+    <Popup title={editing ? `Edit ${tpls.find((t) => t.id === editing)?.label || 'link'}` : 'New device link'} onClose={() => setEditing(null)}>
+      <div className="host-settings">
+        <div className="hs-grid">
+          <Field label="Label" className="input" placeholder="e.g. Web UI" maxLength={40} autoFocus value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} />
+          <Field label="Address" className="input mono" placeholder="https://{ip}" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
+        </div>
+        <div className="field" style={{ marginTop: 12 }}><span>Device classes</span>
+          <SitePicker options={classes.filter((c) => !c.internal).map((c) => c.id)} labelOf={classLabel} value={form.classes} onChange={(v) => setForm({ ...form, classes: v })} allLabel="Every class" noun="classes" />
+        </div>
+      </div>
+      <div className="dlg-foot"><Button variant="ghost" onClick={() => setEditing(null)} disabled={busy}>Cancel</Button><Button variant="primary" onClick={save} disabled={busy || !form.label.trim() || !form.url.trim()}>{busy ? 'Saving…' : 'Save'}</Button></div>
+    </Popup>
   )
   return (
     <section className="set-card">
       <h3>Device links</h3>
       <p className="set-note">Buttons on the Device tab of every host of some classes. <span className="mono">{'{ip}'}</span>, <span className="mono">{'{name}'}</span>, <span className="mono">{'{host}'}</span>, <span className="mono">{'{mac}'}</span>, <span className="mono">{'{group}'}</span> and <span className="mono">{'{macro:NAME}'}</span> (a host macro, like <span className="mono">{'{macro:UNIFI.URL}'}</span>) are filled in from the host; a host missing one doesn't get the button. A host can add its own in its settings.</p>
       <div className="tag-rows">
-        {tpls.map((t) => editing === t.id ? <div key={t.id} className="tag-row editing">{editor}</div> : (
+        {tpls.map((t) => (
           <div key={t.id} className="tag-row">
             <span className="complabel">{t.label}</span>
             <span className="tag-row-desc"><span className="mono">{t.url}</span><span className="sub-line"> · {t.classes.length ? t.classes.map(classLabel).join(', ') : 'every class'}</span></span>
             <span className="tag-row-act"><Button variant="ghost" className="compact" onClick={() => start(t)}>Edit</Button><Kebab actions={[{ label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => del(t) }]} /></span>
           </div>
         ))}
-        {tpls.length === 0 && editing !== 0 && <p className="set-hint" style={{ margin: '4px 0 8px' }}>No device links.</p>}
-        {editing === 0 && <div className="tag-row editing">{editor}</div>}
+        {tpls.length === 0 && <p className="set-hint" style={{ margin: '4px 0 8px' }}>No device links.</p>}
       </div>
-      {editing === null && <div className="set-row set-actions"><Button variant="primary" onClick={() => start(null)}>+ New link</Button></div>}
+      <div className="set-row set-actions"><Button variant="primary" onClick={() => start(null)}>+ New link</Button></div>
+      {editor}
     </section>
   )
 }
@@ -10987,7 +11020,8 @@ function MailboxesCard() {
   const set = (patch: Partial<MailboxForm>) => form && setForm({ ...form, ...patch })
   const cur = boxes?.find((b) => b.id === editing)
   const keepSecret = !!cur?.has_secret && cur.kind === form?.kind
-  const editor = form && (
+  const editor = form && editing !== null && (
+    <Popup title={editing ? `Edit ${cur?.name || 'mailbox'}` : 'New mailbox'} onClose={() => { setEditing(null); setForm(null) }}>
     <div className="mb-form">
       <div className="mb-kind"><span className="flabel">Kind</span>
         <div className="seg" role="group" aria-label="Kind of mailbox">
@@ -11021,8 +11055,9 @@ function MailboxesCard() {
         <Button onClick={runTest} disabled={busy}>Test</Button>
         {test && <span className={'set-hint' + (test.ok ? '' : ' mb-bad')}>{test.text}</span>}
       </div>
-      <span className="tag-form-act"><Button variant="ghost" onClick={() => { setEditing(null); setForm(null) }} disabled={busy}>Cancel</Button><Button variant="primary" onClick={save} disabled={busy || !form.name.trim()}>{busy ? 'Working…' : 'Save'}</Button></span>
     </div>
+    <div className="dlg-foot"><Button variant="ghost" onClick={() => { setEditing(null); setForm(null) }} disabled={busy}>Cancel</Button><Button variant="primary" onClick={save} disabled={busy || !form.name.trim()}>{busy ? 'Working…' : 'Save'}</Button></div>
+    </Popup>
   )
   const status = (m: Mailbox) => {
     if (m.last_error) return <><span className="tag avail">failing</span> {m.last_error}{m.error_since ? ` (since ${fmtWhen(m.error_since)})` : ''}</>
@@ -11034,17 +11069,17 @@ function MailboxesCard() {
       <h3>Mailboxes</h3>
       <p className="set-note">Mailboxes Argus reads for push sensors that report by email: a backup that mails its result, a NAS's daily report. Use a mailbox only these reports reach. Argus reads it every 2 minutes and never changes it (no mail is marked, moved or deleted); a mail counts once, at the time it arrived.</p>
       <div className="tag-rows">
-        {(boxes || []).map((m) => editing === m.id ? <div key={m.id} className="tag-row editing">{editor}</div> : (
+        {(boxes || []).map((m) => (
           <div key={m.id} className="tag-row">
             <span className="complabel">{m.name}</span>
             <span className="tag-row-desc">{m.kind === 'graph' ? 'Microsoft 365' : 'IMAP'} · <span className="mono">{m.kind === 'graph' ? m.address : m.username}</span>{m.kind === 'imap' && <> on <span className="mono">{m.host}</span></>}<span className="sub-line"> · {status(m)}</span></span>
             <span className="tag-row-act"><Button variant="ghost" className="compact" onClick={() => start(m)}>Edit</Button><Kebab actions={[{ label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => del(m) }]} /></span>
           </div>
         ))}
-        {boxes && boxes.length === 0 && editing !== 0 && <p className="set-hint" style={{ margin: '4px 0 8px' }}>No mailboxes.</p>}
-        {editing === 0 && <div className="tag-row editing">{editor}</div>}
+        {boxes && boxes.length === 0 && <p className="set-hint" style={{ margin: '4px 0 8px' }}>No mailboxes.</p>}
       </div>
-      {editing === null && <div className="set-row set-actions"><Button variant="primary" onClick={() => start(null)}>+ New mailbox</Button></div>}
+      <div className="set-row set-actions"><Button variant="primary" onClick={() => start(null)}>+ New mailbox</Button></div>
+      {editor}
     </section>
   )
 }
@@ -11125,35 +11160,41 @@ function TagsCard() {
     if (!res || !res.ok) { toast.error(await errText(res, 'Could not delete the tag')); return }
     reload(); fireDataRefresh()
   }
-  const editor = (
-    <div className="tag-form">
-      <input className="input" placeholder="Name, e.g. critical" maxLength={32} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} aria-label="Tag name" />
-      <span className="tag-swatches" role="radiogroup" aria-label="Colour">
-        {TAG_COLORS.map((c) => <button key={c} type="button" role="radio" aria-checked={form.color === c} className={'swatch' + (form.color === c ? ' on' : '')} style={{ background: c }} onClick={() => setForm({ ...form, color: c })} aria-label={c} />)}
-      </span>
-      <input className="input tag-desc" placeholder="What it means (optional)" maxLength={120} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} aria-label="Description" />
-      <span className="tag-form-act">
+  const editor = editing !== null && (
+    <Popup title={editing ? `Edit the tag ${editing}` : 'New tag'} onClose={() => setEditing(null)}>
+      <div className="host-settings">
+        <div className="hs-grid">
+          <Field label="Name" className="input" placeholder="e.g. critical" maxLength={32} autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <div className="field"><span>Colour</span>
+            <span className="tag-swatches" role="radiogroup" aria-label="Colour" style={{ display: 'flex', alignItems: 'center', minHeight: 37, margin: 0 }}>
+              {TAG_COLORS.map((c) => <button key={c} type="button" role="radio" aria-checked={form.color === c} className={'swatch' + (form.color === c ? ' on' : '')} style={{ background: c }} onClick={() => setForm({ ...form, color: c })} aria-label={c} />)}
+            </span>
+          </div>
+        </div>
+        <div style={{ marginTop: 12 }}><Field label="What it means (optional)" className="input" maxLength={120} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+      </div>
+      <div className="dlg-foot">
         <Button variant="ghost" onClick={() => setEditing(null)} disabled={busy}>Cancel</Button>
         <Button variant="primary" onClick={save} disabled={busy || !form.name.trim()}>{busy ? 'Saving…' : 'Save'}</Button>
-      </span>
-    </div>
+      </div>
+    </Popup>
   )
   return (
     <section className="set-card">
       <h3>Tags</h3>
       <p className="set-note">Labels that cut across sites. Filter the tree by them, and limit a channel to the hosts with a tag. Put them on a host in its settings, on many from the tree's selection, or on a probe (Probes) to give them to every host it monitors.</p>
       <div className="tag-rows">
-        {tags.map((t) => editing === t.name ? <div key={t.name} className="tag-row editing">{editor}</div> : (
+        {tags.map((t) => (
           <div key={t.name} className="tag-row">
             <span className="tag-row-chip"><TagChip tag={{ name: t.name, color: t.color }} /></span>
             <span className="tag-row-desc">{t.description || <span className="muted">no description</span>}<span className="sub-line"> · {t.hosts} host{t.hosts === 1 ? '' : 's'}{t.probes ? ` (${t.probes} probe${t.probes === 1 ? '' : 's'})` : ''}</span></span>
             <span className="tag-row-act"><Button variant="ghost" className="compact" onClick={() => start(t)}>Edit</Button><Kebab actions={[{ label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => del(t) }]} /></span>
           </div>
         ))}
-        {tags.length === 0 && editing !== '' && <p className="set-hint" style={{ margin: '4px 0 8px' }}>No tags yet.</p>}
-        {editing === '' && <div className="tag-row editing">{editor}</div>}
+        {tags.length === 0 && <p className="set-hint" style={{ margin: '4px 0 8px' }}>No tags yet.</p>}
       </div>
-      {editing === null && <div className="set-row set-actions"><Button variant="primary" onClick={() => start(null)}>+ New tag</Button></div>}
+      <div className="set-row set-actions"><Button variant="primary" onClick={() => start(null)}>+ New tag</Button></div>
+      {editor}
     </section>
   )
 }
@@ -14411,19 +14452,26 @@ function UsersView() {
     <div className="panel">
       <div className="phead">
         <PanelTitle eyebrow="Admin">Users</PanelTitle><span className="hint">{users.length} account{users.length === 1 ? '' : 's'}</span>
-        <div className="tools"><button className="btn primary" onClick={() => setAdding((v) => !v)}>{adding ? 'Cancel' : '+ Add user'}</button></div>
+        <div className="tools"><button className="btn primary" onClick={() => setAdding(true)}>+ Add user</button></div>
       </div>
 
       {adding && (
-        <form onSubmit={create} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--elevated)' }}>
-          <input className="input" type="email" placeholder="email" value={nu.email} onChange={(e) => setNu({ ...nu, email: e.target.value })} required />
-          <input className="input" placeholder="name" value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} />
-          <input className="input" placeholder="surname" value={nu.surname} onChange={(e) => setNu({ ...nu, surname: e.target.value })} />
-          <Select value={nu.role} onChange={(e) => setNu({ ...nu, role: e.target.value })}>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</Select>
-          {nu.role !== 'admin' && <div className="usites" title="Which sites this account sees"><SitePicker options={siteOptions} value={nu.sites} onChange={(v) => setNu({ ...nu, sites: v })} /></div>}
-          <input className="input" type="password" placeholder="password (min 8)" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} required />
-          <button type="submit" className="btn primary">Add</button>
-        </form>
+        <Popup title="Add a user" onClose={() => setAdding(false)}>
+          <form onSubmit={create} className="host-settings">
+            <div className="hs-grid">
+              <Field label="Email" className="input" type="email" autoFocus value={nu.email} onChange={(e) => setNu({ ...nu, email: e.target.value })} required />
+              <Field label="Role"><Select value={nu.role} onChange={(e) => setNu({ ...nu, role: e.target.value })}>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</Select></Field>
+              <Field label="Name" className="input" value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} />
+              <Field label="Surname" className="input" value={nu.surname} onChange={(e) => setNu({ ...nu, surname: e.target.value })} />
+              <Field label="Password (8 characters or more)" className="input" type="password" autoComplete="new-password" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} required />
+              {nu.role !== 'admin' && <div className="field" title="Which sites this account sees"><span>Sites</span><SitePicker options={siteOptions} value={nu.sites} onChange={(v) => setNu({ ...nu, sites: v })} /></div>}
+            </div>
+            <div className="dlg-foot">
+              <Button variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
+              <Button variant="primary" type="submit">Add user</Button>
+            </div>
+          </form>
+        </Popup>
       )}
 
       {!loaded && <Skeleton rows={3} cols={6} />}

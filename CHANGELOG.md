@@ -26,6 +26,14 @@ GitHub Release from the matching section below.
   every hour, carried by every report from probe 7.0.32-r20 on), or the public address Argus sees.
   An offline probe's are its last known, faint.
 
+### Changed
+- **What a menu opens is a popup, never a band under the row.** A probe's SNMP defaults,
+  processes and reboot window, its version-reporting token and the command that updates it by
+  hand; New group, New subgroup, Rename and Edit groups in the tree (Delete asks with the confirm
+  dialog); Add user; device links, mailboxes and tags in Settings; the windows and image channels
+  on the Updates page; a discovered device's settings. They open in one dialog shell, like alert
+  channels and maintenance windows already did: Esc or a click outside closes it.
+
 ### Fixed
 - **Probe updates are taken at once right after a core update.** Argus forgot at its restart that
   the Updates page was open, and a sidecar whose check-in found the core restarting slept its whole

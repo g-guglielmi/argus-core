@@ -1715,7 +1715,7 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   with a vertical one), and so are the sections and cards inside: `.acct .card`, `.set-card`, `.chan`,
   `.thr-list-row` are stretches of the surface under a hairline, inset by the gutter. Nothing in a
   page is boxed; floating things (menus, dialogs, toasts, the sign-in card and the full-page error,
-  which float on the page itself), the inline editors a row opens and the sidebar keep `--panel`.
+  which float on the page itself) and the sidebar keep `--panel`.
   The sticky, folding head and the table gutters are desktop rules (min-width 769px): a phone stacks
   rows into cards with insets of their own, and its head scrolls with the page. A row under the pointer takes
   `--hover`. A view's list closes with a hairline under its last row (`.content > .panel`, the Reports
@@ -1728,6 +1728,15 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   This Argus, Monitoring, Hosts, Access and security, Data; Account is three (`ACCOUNT_GROUPS`:
   Preferences, Notifications, Sign-in and security), the per-user Interface preference (Advanced
   mode) among its Preferences. `JumpLinks` draws the links for both.
+- **What a menu opens is a popup:** a setting or form reached from a row's ⋮ menu or a button (a
+  probe's reboot window, SNMP defaults or processes, New group, Rename, Edit groups, Add user, a
+  device link, mailbox or tag, an Updates window or image channel, a discovered device's settings)
+  opens in one dialog shell (`Popup` in `ui.tsx`: a title, the content, Cancel and Save at the
+  foot; Esc or a click outside closes it), never as a band pushed in under the row. A delete asks
+  with the confirm dialog. Inline under a row stays only what a row reveals about itself: a
+  sensor's chart, its why, note and runbook lines, an incident's timeline. Editors already inside a
+  dialog (push sensors and web scenarios in host settings) stay there rather than stack a dialog
+  on a dialog.
 - **Tree order (Reorder mode):** the Monitoring tree's order is Argus's own, per sibling set (a
   parent's direct hosts and subgroups as one list, `PUT /api/tree/order`), set in Reorder mode by
   admins and helpdesk. Every row has up/down arrows; with a mouse or trackpad (`(hover: hover) and

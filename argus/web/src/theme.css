@@ -600,18 +600,14 @@ span.muted, p.muted { color: var(--muted); }
 
 /* Inline "Edit groups…" band under a host row */
 .group-edit { margin: 0 var(--gutter) 10px calc(var(--gutter) + 22px); padding: 12px 14px; background: var(--elevated); border: 1px solid var(--border); border-radius: 8px; }
-.group-edit .ge-title { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint); margin-bottom: 8px; }
 .group-edit .ge-list { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-bottom: 12px; }
 .group-edit .ge-row { display: flex; align-items: center; gap: 7px; font-size: 13px; cursor: pointer; min-width: 160px; }
 .group-edit .ge-row input { cursor: pointer; }
-.group-edit .ge-foot { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* Inline group name editor (New group / Rename) and delete confirm band */
 .group-band { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 8px var(--gutter); padding: 10px 12px; background: var(--elevated); border: 1px solid var(--border); border-radius: 8px; }
 .group-band .input { flex: 1 1 220px; }
 .group-band .gb-prefix { font-size: 13px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
-.group-band .gb-msg { flex: 1 1 220px; font-size: 13px; }
-.group-band .gb-foot { display: flex; gap: 8px; margin-left: auto; }
 
 /* Inline "Settings…" band under a host row */
 .host-settings { margin: 0 var(--gutter) 10px calc(var(--gutter) + 22px); padding: 14px; background: var(--elevated); border: 1px solid var(--border); border-radius: 8px; }
@@ -679,6 +675,11 @@ span.muted, p.muted { color: var(--muted); }
 .host-settings select.input { cursor: pointer; }
 /* Inside the settings dialog the band chrome is redundant - the .dlg supplies it. */
 .host-settings.in-dlg { margin: 0; padding: 2px 0 0; background: none; border: none; border-radius: 0; }
+/* A row menu's popup (ui.tsx Popup): the band's content without the band's box. */
+.dlg.popup { max-height: calc(100dvh - 32px); display: flex; flex-direction: column; }
+.dlg.popup .host-settings, .dlg.popup .group-band, .dlg.popup .group-edit, .dlg.popup .disc-band { margin: 0; padding: 2px 0 0; background: none; border: none; border-radius: 0; max-width: none; }
+.dlg.popup .host-settings > .hs-note:first-child { margin-top: 0; }
+.dlg.popup .group-edit .ge-list { margin-bottom: 0; }
 @media (max-width: 640px) { .host-settings .hs-grid, .host-settings .if-fields, .host-settings .if-snmp { grid-template-columns: 1fr; } }
 /* The probes table forces `white-space: nowrap` on every cell (so version strings don't wrap); the
    SNMP band lives in a cell and inherits it, which stops its note/title wrapping and spills the text
@@ -1035,7 +1036,6 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
    dividers look randomly stronger/weaker wherever muted and editable rows interleave. */
 .enroll-discovery tr.disc-muted td > * { opacity: 0.62; }
 /* the expanded per-row settings band (site + class macros + HTTP add-on) */
-.disc-band-row td { padding: 0; }
 .disc-band { padding: 10px var(--gutter) 14px; background: var(--elevated); border-bottom: 1px solid var(--border-strong); display: flex; flex-direction: column; gap: 0.7rem; }
 /* the amber missing-required-settings nudge next to the class picker */
 .iconbtn.disc-warn { color: var(--warn); }
@@ -1303,8 +1303,6 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   .enroll-discovery td[data-label="Class"] > div { margin-left: auto; }
   .enroll-discovery .disc-name { width: min(220px, 60vw); }
   .enroll-discovery td:first-child { display: flex; align-items: center; margin-bottom: 0; padding: 8px 0; }
-  .enroll-discovery tr.disc-band-row { border-bottom: 2px solid var(--border-strong); }
-  .enroll-discovery .disc-band-row td { padding: 0; }
 
   /* --- monitoring tree: drop the trend column, compact the priority, tighten indentation ---
      The expanded host's sensor table used to overflow the card (Last check + kebab clipped, values
@@ -1521,7 +1519,6 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .linkbtns .btn svg { width: 13px; height: 13px; color: var(--faint); }
 .link-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
 .link-edit { display: grid; grid-template-columns: minmax(110px, 160px) minmax(0, 1fr) auto; gap: 8px; margin-bottom: 8px; }
-.link-form { display: grid; grid-template-columns: minmax(120px, 170px) minmax(0, 1fr) minmax(150px, 220px) auto; gap: 8px 10px; align-items: center; }
 /* A site's info: the rows on its page, the problem lists' who-to-call line, and the editor. */
 .site-info { padding: 2px var(--gutter) 6px; border-bottom: 1px solid var(--border); }
 .site-empty { padding: 10px var(--gutter); font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--border); }
@@ -1622,7 +1619,6 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .tag-rows { display: grid; }
 .tag-row { display: grid; grid-template-columns: 160px minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; padding: 9px 0; border-top: 1px solid var(--border); }
 .tag-row:first-child { border-top: 0; }
-.tag-row.editing { display: block; }
 .tag-row-desc { font-size: 13px; overflow-wrap: anywhere; }
 .tag-row-act { display: inline-flex; gap: 6px; align-items: center; }
 /* Settings > Certificates: the end date beside its chip, and the Probes caption between the two lists. */
@@ -1673,11 +1669,9 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .host-settings .domain-add .input { max-width: 280px; }
 .push-mail { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
 @media (max-width: 640px) { .mb-grid { grid-template-columns: 1fr; } }
-.tag-form { display: grid; grid-template-columns: minmax(140px, 200px) auto minmax(0, 1fr) auto; gap: 8px 10px; align-items: center; }
 .tag-swatches { display: inline-flex; gap: 5px; }
 .tag-swatches .swatch { width: 18px; height: 18px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
 .tag-swatches .swatch.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--panel) inset; }
-.tag-form-act { display: inline-flex; gap: 6px; justify-content: flex-end; }
 
 /* Selecting for bulk actions: a checkbox on each row, and the action bar pinned to the bottom of the
    panel while anything is picked. */
@@ -1700,10 +1694,9 @@ input.tsel { width: 15px; height: 15px; accent-color: var(--accent); margin: 0 8
   .bulkbar > * { flex: none; }
   .tag-row { grid-template-columns: minmax(0, 1fr) auto; }
   .tag-row-desc { grid-column: 1 / -1; grid-row: 2; }
-  .tag-form { grid-template-columns: minmax(0, 1fr); }
   .info-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .info-line .k { min-width: 0; width: 100%; }
-  .link-edit, .link-form, .journal-add { grid-template-columns: minmax(0, 1fr); }
+  .link-edit, .journal-add { grid-template-columns: minmax(0, 1fr); }
   .site-contact-ed, .site-line-ed { grid-template-columns: minmax(0, 1fr); }
   .imp-scroll { max-height: none; border: 0; }
   .imp-table tr.bad { background: color-mix(in srgb, var(--err) 6%, transparent); }
