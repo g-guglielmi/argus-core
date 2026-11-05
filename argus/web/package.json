@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "flag-icons": "7.6.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "uplot": "^1.6.31"

@@ -24,6 +24,7 @@ type ProbeAddrs struct {
 	At           int64
 	Public       string
 	PublicAt     int64
+	PublicCC     string // the country the probe's lookup placed Public in (two capitals; "" unknown)
 	Host, HostGW string
 	HostAt       int64
 	Net          string
@@ -32,14 +33,14 @@ type ProbeAddrs struct {
 // SetProbeReportAddrs records the addresses of a probe container's minute report: its own and the
 // one Argus saw it from (always), and the public one with when the probe's lookup found it, when the
 // report carries one ("" keeps the last one).
-func (s *Store) SetProbeReportAddrs(ctx context.Context, proxyName, own, seen, public string, publicAt int64) error {
+func (s *Store) SetProbeReportAddrs(ctx context.Context, proxyName, own, seen, public, publicCC string, publicAt int64) error {
 	if _, err := s.db.ExecContext(ctx, `UPDATE probe_agents SET addr_own=?, addr_seen=?, addr_at=? WHERE proxy_name=?`, own, seen, time.Now().Unix(), proxyName); err != nil {
 		return err
 	}
 	if public == "" {
 		return nil
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE probe_agents SET addr_public=?, addr_public_at=? WHERE proxy_name=?`, public, publicAt, proxyName)
+	_, err := s.db.ExecContext(ctx, `UPDATE probe_agents SET addr_public=?, addr_public_at=?, addr_public_cc=? WHERE proxy_name=?`, public, publicAt, publicCC, proxyName)
 	return err
 }
 
@@ -61,7 +62,7 @@ func (s *Store) SetProbeNet(ctx context.Context, proxyName, net string) error {
 
 // ProbeAddresses returns every probe's addresses, keyed by proxy name.
 func (s *Store) ProbeAddresses(ctx context.Context) (map[string]ProbeAddrs, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,addr_own,addr_seen,addr_at,addr_public,addr_public_at,addr_host,addr_host_gw,addr_host_at,addr_net FROM probe_agents`)
+	rows, err := s.db.QueryContext(ctx, `SELECT proxy_name,addr_own,addr_seen,addr_at,addr_public,addr_public_at,addr_public_cc,addr_host,addr_host_gw,addr_host_at,addr_net FROM probe_agents`)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +71,7 @@ func (s *Store) ProbeAddresses(ctx context.Context) (map[string]ProbeAddrs, erro
 	for rows.Next() {
 		var name string
 		var a ProbeAddrs
-		if err := rows.Scan(&name, &a.Own, &a.Seen, &a.At, &a.Public, &a.PublicAt, &a.Host, &a.HostGW, &a.HostAt, &a.Net); err != nil {
+		if err := rows.Scan(&name, &a.Own, &a.Seen, &a.At, &a.Public, &a.PublicAt, &a.PublicCC, &a.Host, &a.HostGW, &a.HostAt, &a.Net); err != nil {
 			return nil, err
 		}
 		out[name] = a

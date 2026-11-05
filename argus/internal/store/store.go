@@ -939,7 +939,7 @@ CREATE TABLE IF NOT EXISTS reports (
 	for _, col := range []string{"addr_own TEXT NOT NULL DEFAULT ''", "addr_seen TEXT NOT NULL DEFAULT ''", "addr_at INTEGER NOT NULL DEFAULT 0",
 		"addr_public TEXT NOT NULL DEFAULT ''", "addr_public_at INTEGER NOT NULL DEFAULT 0",
 		"addr_host TEXT NOT NULL DEFAULT ''", "addr_host_gw TEXT NOT NULL DEFAULT ''", "addr_host_at INTEGER NOT NULL DEFAULT 0",
-		"addr_net TEXT NOT NULL DEFAULT ''"} {
+		"addr_net TEXT NOT NULL DEFAULT ''", "addr_public_cc TEXT NOT NULL DEFAULT ''"} {
 		if err := s.ensureColumn("probe_agents", col); err != nil {
 			return err
 		}

@@ -106,3 +106,12 @@ func TestPublicFoundAt(t *testing.T) {
 		}
 	}
 }
+
+// A country is two capitals; Cloudflare's XX (unknown) and T1 (Tor) are none.
+func TestCleanCC(t *testing.T) {
+	for in, want := range map[string]string{"IT": "IT", "FR": "FR", "it": "", "XX": "", "T1": "", "ITA": "", "": "", "I\"": ""} {
+		if got := cleanCC(in); got != want {
+			t.Errorf("cleanCC(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

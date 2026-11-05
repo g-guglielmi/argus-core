@@ -37,6 +37,16 @@ type probeAddrView struct {
 	GW  string `json:"gw,omitempty"`
 	At  int64  `json:"at,omitempty"`
 	Net string `json:"net,omitempty"` // the container's network kind, for its own address (the sidecar's word)
+	CC  string `json:"cc,omitempty"`  // a public address's country, from the probe's own lookup (the flag)
+}
+
+// cleanCC is a country code as the probe's lookup reports it (ISO 3166 alpha-2, two capitals), or ""
+// for anything else, and for Cloudflare's XX (unknown) and T1 (Tor), which are no country.
+func cleanCC(cc string) string {
+	if len(cc) != 2 || cc[0] < 'A' || cc[0] > 'Z' || cc[1] < 'A' || cc[1] > 'Z' || cc == "XX" {
+		return ""
+	}
+	return cc
 }
 
 // cleanNet is a Docker network driver name as the sidecar reports it, or "" when it isn't one.
@@ -120,7 +130,7 @@ func probeLAN(a store.ProbeAddrs) (*probeAddrView, string) {
 func probePublic(a store.ProbeAddrs) *probeAddrView {
 	switch {
 	case a.Public != "":
-		return &probeAddrView{IP: a.Public, Src: "probe", At: a.PublicAt}
+		return &probeAddrView{IP: a.Public, Src: "probe", At: a.PublicAt, CC: a.PublicCC}
 	case publicAddr(a.Host):
 		return &probeAddrView{IP: a.Host, Src: "host", At: a.HostAt}
 	case publicAddr(a.Seen):

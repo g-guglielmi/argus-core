@@ -37,7 +37,8 @@ GitHub Release from the matching section below.
   way (a Tailscale exit node, a VPN router), so it is only said on hover. A host whose own address
   is public (a VPS) has no LAN. The public address is the probe's own lookup (Cloudflare's trace,
   every hour, carried by every report from probe 7.0.32-r20 on), or the public address Argus sees.
-  An offline probe's are its last known, faint.
+  An offline probe's are its last known, faint. From probe 7.0.32-r21 the lookup also gives the
+  address's country, shown as a flag beside it (its name on hover).
 
 ### Changed
 - **What a menu opens is a popup, never a band under the row.** A probe's SNMP defaults,

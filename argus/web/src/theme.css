@@ -1617,6 +1617,8 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .probe-addrs { display: inline-flex; column-gap: 10px; row-gap: 2px; align-items: baseline; flex-wrap: wrap; }
 .probe-addrs > span { display: inline-flex; gap: 6px; align-items: baseline; white-space: nowrap; }
 .probe-addrs .lbl, .probe-addrs.off .mono { color: var(--faint); }
+.probe-addrs .flag { align-self: center; flex: none; border-radius: 2px; box-shadow: 0 0 0 1px var(--border); }
+.probe-addrs.off .flag { opacity: 0.55; }
 /* Settings, Tags: one row per tag, the editor in place of the row being edited. */
 .tag-rows { display: grid; }
 .tag-row { display: grid; grid-template-columns: 160px minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; padding: 9px 0; border-top: 1px solid var(--border); }

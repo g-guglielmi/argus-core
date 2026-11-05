@@ -132,6 +132,8 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		// How long ago the probe's lookup found PublicIP (seconds; probe r20 on, which sends the last
 		// one with every report). Absent: found just now (r19 sent it only right after a lookup).
 		PublicAge *int64 `json:"public_age"`
+		// The country the probe's lookup placed PublicIP in (Cloudflare's loc=; probe r21 on).
+		PublicCC string `json:"public_cc"`
 		// The kind of Docker network the proxy container is on and, on a bridge, the host's LAN
 		// address and gateway, as the sidecar reads them with the host's network (updater 0.2.22 on);
 		// null until it has.
@@ -159,7 +161,7 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		if !publicAddr(pub) {
 			pub = ""
 		}
-		_ = s.st.SetProbeReportAddrs(ctx, proxyName, cleanAddr(req.IP), cleanAddr(s.clientIP(r)), pub, publicFoundAt(req.PublicAge, time.Now()))
+		_ = s.st.SetProbeReportAddrs(ctx, proxyName, cleanAddr(req.IP), cleanAddr(s.clientIP(r)), pub, cleanCC(req.PublicCC), publicFoundAt(req.PublicAge, time.Now()))
 	}
 	if req.HostLAN != nil {
 		_ = s.st.SetProbeNet(ctx, proxyName, cleanNet(req.HostLAN.Net))

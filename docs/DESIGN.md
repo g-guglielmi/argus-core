@@ -2583,7 +2583,11 @@ plane; the probe checks in and converges.
   VPN router NATs the probe's away: the first cut showed the exit node's), only said on hover
   (`seen_ip`). Public: the probe's lookup, else a public host address, else the public address Argus
   sees. 100.64.0.0/10 (carrier NAT, Tailscale) counts as private. A re-enrollment forgets the
-  container's addresses, not the host's.
+  container's addresses, not the host's. The probe's lookup also reports the country Cloudflare
+  places the address in (`public_cc`, its trace's `loc=`; probe r21 on), shown as a flag beside the
+  public address with the country's name on hover. The flags are flag-icons' SVGs (MIT), each its
+  own asset fetched only when shown: Windows draws no flag emoji, only their two letters. A public
+  address from the host or from what Argus sees has no country.
 - **Updates show their steps.** The Updates page follows a core update and a sidecar self-update step by
   step until it ends. The core update's `status.json` keeps every message in `steps`; a sidecar
   self-update is remembered by the core in `updater-job.json` (the request file is consumed when the

@@ -17,10 +17,10 @@ func TestProbeAddresses(t *testing.T) {
 	if err := st.UpsertProbeCredential(ctx, "proxy-a", "hash-a"); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetProbeReportAddrs(ctx, "proxy-a", "172.17.0.2", "10.0.1.20", "203.0.113.10", 1700000000); err != nil {
+	if err := st.SetProbeReportAddrs(ctx, "proxy-a", "172.17.0.2", "10.0.1.20", "203.0.113.10", "IT", 1700000000); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetProbeReportAddrs(ctx, "proxy-a", "172.17.0.3", "10.0.1.21", "", 1700000500); err != nil {
+	if err := st.SetProbeReportAddrs(ctx, "proxy-a", "172.17.0.3", "10.0.1.21", "", "", 1700000500); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetProbeHostAddr(ctx, "proxy-a", "10.0.1.21", "10.0.1.1"); err != nil {
@@ -40,8 +40,8 @@ func TestProbeAddresses(t *testing.T) {
 	if a.Own != "172.17.0.3" || a.Seen != "10.0.1.21" || a.At == 0 {
 		t.Fatalf("report addresses = %q %q %d, want the last report's", a.Own, a.Seen, a.At)
 	}
-	if a.Public != "203.0.113.10" || a.PublicAt != 1700000000 {
-		t.Fatalf("public = %q at %d, want the last lookup kept", a.Public, a.PublicAt)
+	if a.Public != "203.0.113.10" || a.PublicAt != 1700000000 || a.PublicCC != "IT" {
+		t.Fatalf("public = %q (%q) at %d, want the last lookup kept", a.Public, a.PublicCC, a.PublicAt)
 	}
 	if a.Net != "macvlan" {
 		t.Fatalf("net = %q, want the sidecar's", a.Net)

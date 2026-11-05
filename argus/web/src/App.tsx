@@ -65,7 +65,7 @@ type MasterCfg = { item_id: string; default_item_id: string; custom: boolean; op
 type Proxy = { id: string; name: string; tags?: string[]; kit?: boolean; last_access: number; online: boolean; mode: string; probe_host_id?: string; probe_health?: 'ok' | 'warning' | 'error'; enrolled_at?: number; version?: string; target?: string; latest?: string; selfupdate?: boolean; scans?: boolean; sweeps?: boolean; diags?: boolean; update_status?: string; last_checkin?: number; report_at?: number; report_stale?: boolean; updater_version?: string; updater_latest?: string; updater_status?: string; update_job?: ProbeJob; updater_job?: ProbeJob; break_glass?: boolean; break_glass_user?: string; sec_updates?: number; reboot_required?: boolean; os_reported_at?: number; os_version?: string; host_tools?: ProbeHostTools; procs?: ProcRow[]; procs_pending?: boolean; procs_note?: string; procs_note_at?: number; procs_since?: number; procs_restarts?: boolean; autoscale?: string; cpu_count?: number; cpu_usable?: number; cpu_load?: number[]; cpu_peak?: number; cpu_starved?: boolean; is_vm?: boolean; host?: ProbeHostState; lan?: ProbeAddr; lan_none?: 'public_host' | 'bridge'; public?: ProbeAddr; seen_ip?: string }
 // A probe's LAN or public address (probeaddrs.go): where it came from (host: the host's report, a probe VM's or the sidecar's;
 // probe: the probe container's report or its lookup; seen: where Argus sees its reports come from).
-type ProbeAddr = { ip: string; src: 'host' | 'probe' | 'seen'; gw?: string; at?: number; net?: string }
+type ProbeAddr = { ip: string; src: 'host' | 'probe' | 'seen'; gw?: string; at?: number; net?: string; cc?: string }
 // A probe VM's reboots (DESIGN 14c): its own window (none: the fleet's), whether it takes Reboot now and
 // Patch now, a request on its way (sent: its check-in took it), and the last result of each.
 type ProbeHostState = { own_window?: OSWindow; now?: boolean; pending?: { kind: 'reboot' | 'patch'; at: number; sent?: number }; reboot?: HostActionResult; patch?: HostActionResult }
@@ -4221,6 +4221,20 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
 // it came from and when; a dash says why there is none. The address Argus sees the reports come from
 // is only ever said on hover (any NAT on the way puts its own there). An offline probe's are its last
 // known, faint. Nothing before the first report.
+// FLAGS are the country flags (flag-icons, MIT), as files fetched only when shown: Windows draws no
+// flag emoji, only their two letters.
+const FLAGS = import.meta.glob<string>('../node_modules/flag-icons/flags/4x3/*.svg', { query: '?url&no-inline', import: 'default', eager: true })
+const REGIONS = (() => { try { return new Intl.DisplayNames(['en'], { type: 'region' }) } catch { return null } })()
+
+// Flag is a country's flag, titled with its name; nothing for a code there is no flag for.
+function Flag({ cc }: { cc: string }) {
+  const url = FLAGS[`../node_modules/flag-icons/flags/4x3/${cc.toLowerCase()}.svg`]
+  if (!url) return null
+  let name = cc
+  try { name = REGIONS?.of(cc) || cc } catch { /* an unknown code keeps its letters */ }
+  return <img className="flag" src={url} alt={name} title={name} width={16} height={12} />
+}
+
 function ProbeAddrs({ p }: { p: Proxy }) {
   if (!p.lan && !p.public && !p.lan_none) return null
   const when = (a: ProbeAddr) => (a.at ? `, ${relTime(a.at)}` : '')
@@ -4249,7 +4263,7 @@ function ProbeAddrs({ p }: { p: Proxy }) {
       <span>
         <span className="lbl">public</span>
         {p.public
-          ? <span className="mono" title={pubTitle(p.public)}>{p.public.ip}</span>
+          ? <><span className="mono" title={pubTitle(p.public)}>{p.public.ip}</span>{p.public.cc && <Flag cc={p.public.cc} />}</>
           : <span className="mono lbl" title={`Not looked up yet: the probe asks Cloudflare every hour.${seen}`}>-</span>}
       </span>
     </span>
