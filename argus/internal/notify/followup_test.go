@@ -102,3 +102,30 @@ func TestInfoMessages(t *testing.T) {
 		t.Fatalf("host subject = %q", got)
 	}
 }
+
+// A system notice about a failure reads as an error on every channel, a warning one as a warning;
+// news stays [INFO].
+func TestInfoLevels(t *testing.T) {
+	when := sampleProblem().When
+	f := Event{Kind: "info", State: "error", Name: "Argus update to testing failed", Detail: "rolled back", When: when}
+	if got := f.subject(); got != "[ERROR] Argus update to testing failed" {
+		t.Fatalf("error subject = %q", got)
+	}
+	if f.color() != colorError || htmlColor(f) != "#e2564d" || f.emoji() != "🔴" || ntfyTag(f) != "red_circle" || f.teamsStyle() != "attention" || gotifyPriority(f) != 7 {
+		t.Fatalf("error look: %x %s %s %s %s %d", f.color(), htmlColor(f), f.emoji(), ntfyTag(f), f.teamsStyle(), gotifyPriority(f))
+	}
+	if body := strings.Join(f.bodyLines(), "\n"); !strings.Contains(body, "rolled back") || strings.Contains(body, "Severity") {
+		t.Fatalf("error body:\n%s", body)
+	}
+	w := Event{Kind: "info", State: "warning", Name: "No core backup lately", When: when}
+	if got := w.subject(); got != "[WARNING] No core backup lately" {
+		t.Fatalf("warning subject = %q", got)
+	}
+	if w.color() != colorWarning || w.emoji() != "🟡" || w.teamsStyle() != "warning" {
+		t.Fatalf("warning look: %x %s %s", w.color(), w.emoji(), w.teamsStyle())
+	}
+	n := Event{Kind: "info", State: "ok", Name: "Argus updated to testing", When: when}
+	if n.subject() != "[INFO] Argus updated to testing" || n.color() != colorInfo || n.emoji() != "ℹ️" {
+		t.Fatalf("news: %s %x %s", n.subject(), n.color(), n.emoji())
+	}
+}

@@ -53,6 +53,17 @@ GitHub Release from the matching section below.
   dialog); Add user; device links, mailboxes and tags in Settings; the windows and image channels
   on the Updates page; a discovered device's settings. They open in one dialog shell, like alert
   channels and maintenance windows already did: Esc or a click outside closes it.
+- **Emails look right in Outlook for Windows.** Outlook draws mail with Word, which stretched the
+  card across the window, dropped its spacing and turned the buttons into highlighted text. Every
+  Argus mail (alerts, notices, the password reset, the reports) is now one table-built card that
+  keeps its width, spacing and buttons there too, and looks as before everywhere else.
+- **A failure told by Argus is an error, not news.** A failed core or probe update, a failed
+  backup or backup export, a failing notification channel, a probe not reporting or not taking the
+  monitoring CA now go out as **[ERROR]** in red; no recent backup, a certificate or the CA ending,
+  a probe short on CPU as **[WARNING]** in amber; the rest stays **[INFO]**. On every channel.
+- **The Probes page: LAN IP and Public IP each on their own line**, under the name, labels aligned.
+  The proxy mode ("active") is gone from the line above (every Argus probe is active; a passive
+  proxy still says so), which now reads "Enrolled <date>" or "Registered by hand".
 
 ### Fixed
 - **Probe updates are taken at once right after a core update.** Argus forgot at its restart that

@@ -1614,8 +1614,8 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .probe-tags { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
 /* The probe's LAN and public address under its name (ProbeAddrs): faint labels, an offline probe's last known faint too. */
 /* Each label stays with its address; the two pairs wrap onto two lines only when the column is narrow. */
-.probe-addrs { display: inline-flex; column-gap: 10px; row-gap: 2px; align-items: baseline; flex-wrap: wrap; }
-.probe-addrs > span { display: inline-flex; gap: 6px; align-items: baseline; white-space: nowrap; }
+.probe-addrs { display: grid; grid-template-columns: max-content max-content; column-gap: 8px; row-gap: 1px; align-items: baseline; justify-content: start; }
+.probe-addrs > .val { display: inline-flex; gap: 6px; align-items: baseline; white-space: nowrap; }
 .probe-addrs .lbl, .probe-addrs.off .mono { color: var(--faint); }
 .probe-addrs .flag { align-self: center; flex: none; border-radius: 2px; box-shadow: 0 0 0 1px var(--border); }
 .probe-addrs.off .flag { opacity: 0.55; }

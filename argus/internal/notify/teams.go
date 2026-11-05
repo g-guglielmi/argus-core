@@ -38,7 +38,7 @@ func (e Event) teamsStyle() string {
 	switch {
 	case e.Kind == "ack":
 		return "accent"
-	case e.Kind == "info":
+	case e.plainInfo():
 		return "emphasis"
 	case e.Kind == "recovery" || e.State == "ok":
 		return "good"

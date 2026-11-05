@@ -63,7 +63,7 @@ func (s *Server) probeReportNotices(ctx context.Context, agents map[string]store
 			continue
 		}
 		site := probeSite(p.Name)
-		out = append(out, notice{key: "probe-report:" + p.Name, title: "Probe " + site + " isn't reporting to Argus",
+		out = append(out, notice{level: noticeError, key: "probe-report:" + p.Name, title: "Probe " + site + " isn't reporting to Argus",
 			detail: reportStaleDetail(ag, s.mgr.Location()), host: "Probe " + site, site: site, view: "probes", minAge: reportNoticeAge,
 			cleared: "Probe " + site + " is reporting to Argus again"})
 	}

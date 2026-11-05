@@ -4166,7 +4166,7 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
                   <div className="cell-stack">
                     <strong>{p.name}{p.kit && <span className="tag kit" title="A field kit: it dials Zabbix at the field kit core host (Settings, Probes)">field kit</span>}</strong>
                     <span className="sub-line" title={p.enrolled_at ? 'Self-enrolled via Argus' : 'No Argus enrollment on record (manually registered)'}>
-                      {p.mode}{p.enrolled_at ? ` · enrolled ${new Date(p.enrolled_at * 1000).toLocaleDateString()}` : ' · manual'}
+                      {p.mode && p.mode !== 'active' ? `${p.mode} proxy · ` : ''}{p.enrolled_at ? `Enrolled ${new Date(p.enrolled_at * 1000).toLocaleDateString()}` : 'Registered by hand'}
                     </span>
                     <ProbeAddrs p={p} />
                     {((p.tags && p.tags.length > 0) || (isAdmin && allTags.length > 0)) && (
@@ -4285,14 +4285,14 @@ function ProbeAddrs({ p }: { p: Proxy }) {
       : 'With the argus-updater sidecar next to it, the host\'s would show here.'}${seen}`
   return (
     <span className={'sub-line probe-addrs' + (p.online ? '' : ' off')}>
-      <span>
-        <span className="lbl">LAN</span>
+      <span className="lbl">LAN IP</span>
+      <span className="val">
         {p.lan
           ? <span className="mono" title={lanTitle(p.lan)}>{p.lan.ip}</span>
           : <span className="mono lbl" title={noLAN}>-</span>}
       </span>
-      <span>
-        <span className="lbl">public</span>
+      <span className="lbl">Public IP</span>
+      <span className="val">
         {p.public
           ? <><span className="mono" title={pubTitle(p.public)}>{p.public.ip}</span>{p.public.cc && <Flag cc={p.public.cc} />}</>
           : <span className="mono lbl" title={`Not looked up yet: the probe asks Cloudflare every hour.${seen}`}>-</span>}

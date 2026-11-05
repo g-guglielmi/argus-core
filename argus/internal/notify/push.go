@@ -87,7 +87,7 @@ func ntfyTag(e Event) string {
 		return "white_check_mark"
 	case e.Kind == "ack":
 		return "large_blue_circle"
-	case e.Kind == "info":
+	case e.plainInfo():
 		return "information_source"
 	case e.State == "error":
 		return "red_circle"
@@ -136,8 +136,10 @@ func gotifyPriority(e Event) int {
 	switch {
 	case e.Kind == "ack":
 		return 3
-	case e.Kind == "info":
+	case e.plainInfo():
 		return 4
+	case e.Kind == "info" && e.State == "error":
+		return 7
 	case !e.isAlert():
 		return 5
 	case e.Severity >= 5:

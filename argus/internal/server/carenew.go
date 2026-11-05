@@ -80,7 +80,7 @@ func (s *Server) caNotices(ctx context.Context, now time.Time) (conds, events []
 	}
 
 	if left := end.Sub(now); left < caEndingDays*24*time.Hour {
-		conds = append(conds, notice{key: "ca-ending:" + fp, title: "The monitoring CA ends on " + day(end),
+		conds = append(conds, notice{level: noticeWarning, key: "ca-ending:" + fp, title: "The monitoring CA ends on " + day(end),
 			detail: "Every probe and the Zabbix server trust it, and nothing renewed it (the core VM does so two years ahead). " +
 				"Sign it again with its own key and name, as the deploy README says, and Argus hands it to the probes.",
 			view: "probes"})
@@ -97,7 +97,7 @@ func (s *Server) caNotices(ctx context.Context, now time.Time) (conds, events []
 		// The probe's own certificate renews itself 30 days ahead (probecert.go); one within 14 days of
 		// its end didn't, and the probe goes dark when it ends.
 		if ag.CertEnd > 0 && time.Unix(ag.CertEnd, 0).Sub(now) < 14*24*time.Hour {
-			conds = append(conds, notice{key: "probe-cert:" + name + ":" + itoa64(ag.CertEnd), title: "Probe " + site + "'s certificate ends on " + day(time.Unix(ag.CertEnd, 0)),
+			conds = append(conds, notice{level: noticeWarning, key: "probe-cert:" + name + ":" + itoa64(ag.CertEnd), title: "Probe " + site + "'s certificate ends on " + day(time.Unix(ag.CertEnd, 0)),
 				detail: "It renews itself 30 days ahead and hasn't: its log says why (argus-probe: certificate renewal failed ...), or its image is older than that. " +
 					"When it ends the probe can't reach the core until a renewal goes through.",
 				host: "Probe " + site, site: site, view: "probes", cleared: "Probe " + site + "'s certificate was renewed"})
@@ -108,11 +108,11 @@ func (s *Server) caNotices(ctx context.Context, now time.Time) (conds, events []
 		}
 		switch {
 		case ag.CAFingerprint != "" && ag.CAFingerprint != fp:
-			conds = append(conds, notice{key: "probe-ca:" + name + ":" + fp, title: "Probe " + site + " doesn't take the monitoring CA",
+			conds = append(conds, notice{level: noticeError, key: "probe-ca:" + name + ":" + fp, title: "Probe " + site + " doesn't take the monitoring CA",
 				detail: "Argus hands it the CA at every check-in and its ca.crt still holds another one; the probe's log says why (argus-probe: ...)." + ends,
 				host:   "Probe " + site, site: site, view: "probes", minAge: caProbeGrace, cleared: "Probe " + site + " took the monitoring CA"})
 		case ag.CAFingerprint == "" && renewed:
-			conds = append(conds, notice{key: "probe-ca:" + name + ":" + fp, title: "Probe " + site + " can't take the renewed monitoring CA",
+			conds = append(conds, notice{level: noticeError, key: "probe-ca:" + name + ":" + fp, title: "Probe " + site + " can't take the renewed monitoring CA",
 				detail: "Its image is older than the CA renewal: update it, and it takes the CA by itself." + ends,
 				host:   "Probe " + site, site: site, view: "updates", minAge: caProbeGrace, cleared: "Probe " + site + " took the monitoring CA"})
 		}

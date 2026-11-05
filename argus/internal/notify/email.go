@@ -263,7 +263,7 @@ func htmlColor(e Event) string {
 	if e.Kind == "ack" {
 		return "#3b82f6"
 	}
-	if e.Kind == "info" {
+	if e.plainInfo() {
 		return "#2ea8c9"
 	}
 	switch e.State {
@@ -289,33 +289,68 @@ func settingsURL(openURL string) string {
 	return base + "?view=notifications"
 }
 
-// htmlBody renders the styled HTML part as a full document: one card with a severity-coloured header
-// carrying the subject, a detail table (severity, host, site, reading, time), the inline chart, the
-// action buttons, and a footer linking back to the channel settings. Inline styles give every client
-// the light look; the <style> block adds a dark override for clients that honour prefers-color-scheme
-// (Apple Mail, iOS Mail, Outlook mobile), keyed on the class names. A problem's header already names
-// the trigger, so the body no longer repeats it as its first line.
+// htmlBody renders an alert or notice as an email Card (emailcard.go): the header in the event's
+// colour carrying the subject, the lead paragraphs (a recovery's "Back after", a reminder's "Still
+// open", a notice's explanation, the acknowledger and their note, the sensor's note, the hosts
+// behind, the vendor's word, who to call, the runbook), the details table (severity, host, site,
+// reading, time), the inline chart, the buttons, and a footer linking back to the channel settings.
+// A problem's header already names the trigger, so the body doesn't repeat it.
 func htmlBody(e Event) string {
-	var rows strings.Builder
-	row := func(k, v, color string) {
-		vs := "color:#111827"
-		if color != "" {
-			vs = "color:" + color + ";font-weight:600"
-		}
-		rows.WriteString(`<tr><td class="mut" style="padding:4px 0;color:#6b7280;width:110px;vertical-align:top">` + htmlEscape(k) + `</td><td class="txt" style="padding:4px 0;` + vs + `">` + htmlEscape(v) + `</td></tr>`)
-	}
 	c := htmlColor(e)
+	var body []string
+	switch e.Kind {
+	case "recovery":
+		if bl := e.backLine(); bl != "" {
+			body = append(body, CardText(htmlEscape(bl+".")))
+		}
+	case "reminder":
+		body = append(body, CardText(htmlEscape(e.stillOpen())))
+	case "info":
+		for _, l := range e.detailLines() {
+			body = append(body, CardText(htmlEscape(l)))
+		}
+	case "ack":
+		body = append(body, CardText(htmlEscape(e.ackLine())))
+		if e.AckNote != "" {
+			body = append(body, CardMuted(`<i>`+htmlEscape(e.AckNote)+`</i>`))
+		}
+	}
+	if nl := e.noteLine(); nl != "" {
+		body = append(body, CardCallout(htmlEscape(nl)))
+	}
+	if bl := e.behindLine(); bl != "" {
+		body = append(body, CardText(htmlEscape(bl)))
+	}
+	if vl := e.vendorLine(); vl != "" {
+		body = append(body, CardMuted(htmlEscape(vl)))
+	}
+	if cls := e.callLines(); len(cls) > 0 {
+		parts := make([]string, len(cls))
+		for i, cl := range cls {
+			parts[i] = htmlEscape(cl)
+		}
+		body = append(body, CardText(`<b>`+strings.Join(parts, `<br>`)+`</b>`))
+	}
+	if rls := e.runbookLines(); len(rls) > 0 {
+		h := `<b>` + htmlEscape(rls[0]) + `</b>`
+		for _, rl := range rls[1:] {
+			h += `<br>` + htmlEscape(rl)
+		}
+		body = append(body, CardCallout(h))
+	}
+
+	var rows []cardDetail
 	if e.isAlert() {
-		row("Severity", severityLabel(e.Severity), c)
+		rows = append(rows, cardDetail{"Severity", severityLabel(e.Severity), c})
 	}
 	if e.Host != "" {
-		row("Host", e.Host, "")
+		rows = append(rows, cardDetail{"Host", e.Host, ""})
 	}
 	if e.Site != "" {
-		row("Site", e.Site, "")
+		rows = append(rows, cardDetail{"Site", e.Site, ""})
 	}
 	if v := e.valueLine(); v != "" && e.showsReading() {
-		row("Reading", strings.TrimPrefix(v, "Value: "), "")
+		rows = append(rows, cardDetail{"Reading", strings.TrimPrefix(v, "Value: "), ""})
 	}
 	when := "Problem since"
 	switch e.Kind {
@@ -326,89 +361,25 @@ func htmlBody(e Event) string {
 	case "info":
 		when = "Time"
 	}
-	row(when, e.When.Format("2006-01-02 15:04:05 MST"), "")
-
-	lead := ""
-	leadDiv := func(text string) string {
-		return `<div class="txt" style="font-size:14px;color:#111827;margin-bottom:12px">` + htmlEscape(text) + `</div>`
-	}
-	switch e.Kind {
-	case "recovery":
-		if bl := e.backLine(); bl != "" {
-			lead = leadDiv(bl + ".")
-		}
-	case "reminder":
-		lead = leadDiv(e.stillOpen())
-	case "info":
-		for _, l := range e.detailLines() {
-			lead += leadDiv(l)
-		}
-	case "ack":
-		lead = leadDiv(e.ackLine())
-		if e.AckNote != "" {
-			lead += `<div class="mut" style="font-size:13px;color:#6b7280;margin:-6px 0 12px;font-style:italic">` + htmlEscape(e.AckNote) + `</div>`
-		}
-	}
-	if nl := e.noteLine(); nl != "" {
-		lead += `<div class="txt" style="font-size:13px;color:#111827;margin-bottom:12px;padding:8px 10px;border-left:3px solid #2ea8c9;background:rgba(46,168,201,0.08);border-radius:4px">` + htmlEscape(nl) + `</div>`
-	}
-	if bl := e.behindLine(); bl != "" {
-		lead += `<div class="txt" style="font-size:13px;color:#111827;margin-bottom:12px">` + htmlEscape(bl) + `</div>`
-	}
-	if vl := e.vendorLine(); vl != "" {
-		lead += `<div class="mut" style="font-size:13px;color:#6b7280;margin-bottom:12px">` + htmlEscape(vl) + `</div>`
-	}
-	if cls := e.callLines(); len(cls) > 0 {
-		lead += `<div class="txt" style="font-size:13px;color:#111827;margin-bottom:12px;font-weight:600">`
-		for i, cl := range cls {
-			if i > 0 {
-				lead += `<br>`
-			}
-			lead += htmlEscape(cl)
-		}
-		lead += `</div>`
+	rows = append(rows, cardDetail{when, e.When.Format("2006-01-02 15:04:05 MST"), ""})
+	body = append(body, cardDetails(rows))
+	if len(e.ChartPNG) > 0 {
+		body = append(body, cardImage("cid:chart@argus", "2-hour trend"))
 	}
 
-	if rls := e.runbookLines(); len(rls) > 0 {
-		lead += `<div class="txt" style="font-size:13px;color:#111827;margin-bottom:12px;padding:8px 10px;border-left:3px solid #2ea8c9;background:rgba(46,168,201,0.08);border-radius:4px"><b>` + htmlEscape(rls[0]) + `</b>`
-		for _, rl := range rls[1:] {
-			lead += `<br>` + htmlEscape(rl)
-		}
-		lead += `</div>`
-	}
-
-	var buttons strings.Builder
-	btn := func(label, href, bg string) {
-		buttons.WriteString(`<a href="` + htmlEscape(href) + `" style="display:inline-block;padding:8px 16px;margin:0 8px 8px 0;border-radius:7px;background:` + bg + `;color:#fff;text-decoration:none;font-size:13px;font-weight:600">` + label + `</a>`)
-	}
+	var buttons []Button
 	if e.OpenURL != "" {
-		btn("Open in Argus", e.OpenURL, "#2ea8c9")
+		buttons = append(buttons, Button{"Open in Argus", e.OpenURL, AccentColor})
 	}
 	if e.isAlert() && e.AckURL != "" {
-		btn("Acknowledge", e.AckURL, "#6b7280")
+		buttons = append(buttons, Button{"Acknowledge", e.AckURL, "#6b7280"})
 	}
 
-	chart := ""
-	if len(e.ChartPNG) > 0 {
-		chart = `<img class="chart" src="cid:chart@argus" alt="2-hour trend" style="display:block;width:100%;max-width:524px;margin-top:14px;border:1px solid #e5e7eb;border-radius:8px">`
-	}
-
-	foot := `<div class="foot mut" style="padding:10px 18px;border-top:1px solid #e5e7eb;font-size:11px;color:#6b7280">Sent by Argus`
+	foot := "Sent by Argus"
 	if u := settingsURL(e.OpenURL); u != "" {
 		foot += ` · <a href="` + htmlEscape(u) + `" style="color:#6b7280">Manage channels</a>`
 	}
-	foot += `</div>`
-
-	return `<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark">` +
-		`<style>@media (prefers-color-scheme: dark){body,.bg{background:#0e1218!important}.card{background:#151b23!important;border-color:#262f3b!important}.txt{color:#eef2f8!important}.mut{color:#8b98a8!important}.foot,.chart{border-color:#262f3b!important}}</style></head>` +
-		`<body class="bg" style="margin:0;padding:16px;background:#f3f4f6">` +
-		`<div class="card" style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;background:#ffffff">` +
-		`<div style="background:` + c + `;color:#fff;padding:14px 18px;font-size:16px;font-weight:600">` + e.emoji() + " " + htmlEscape(e.subject()) + `</div>` +
-		`<div style="padding:16px 18px">` + lead +
-		`<table style="width:100%;font-size:13px;border-collapse:collapse">` + rows.String() + `</table>` +
-		chart +
-		`<div style="margin-top:16px">` + buttons.String() + `</div>` +
-		`</div>` + foot + `</div></body></html>`
+	return Card{Color: c, Title: e.emoji() + " " + e.subject(), Body: body, Buttons: buttons, Foot: foot}.HTML()
 }
 
 // splitList parses a comma-separated list into trimmed, non-empty values.

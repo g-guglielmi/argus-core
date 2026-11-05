@@ -1501,7 +1501,10 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   master instead.
 - **Who to call:** a channel can add the site's internet line and contact to its alerts (section 7g).
 - **System notices:** Argus's own news as `[INFO]` messages (neutral colour, no reminders; an
-  all-clear only for the conditions whose ending is news, below), for channels with **System
+  all-clear only for the conditions whose ending is news, below); a notice's `level` makes a failure
+  `[ERROR]` (red: an update, a backup or its export, a channel, a probe not reporting or not taking
+  the CA) and one heading for trouble `[WARNING]` (amber: no recent backup, a certificate or the CA
+  ending, a probe short on CPU), on every channel (`Event.plainInfo`), for channels with **System
   notices** on (`system_notices`, off by default; a channel's
   alert level can be **None** = `alerts` off, for a notices-only channel; one with neither is
   refused). A loop in the server checks once a minute, since most sources are only read on request:
@@ -1565,7 +1568,10 @@ elsewhere reads "Back to normal: <problem>"; it leads with "Back after 3m" and s
 now, without the threshold -
 **Open in Argus** and, for problems, a signed one-click **Acknowledge**. Email is a single-card HTML
 message with a plain-text alternative, the inline 2-hour chart, a dark-mode override for clients that
-honour it, and a footer linking back to the channel page; Telegram is a compact card whose links are
+honour it, and a footer linking back to the channel page; the card (`notify.Card`, also the password
+reset's and the reports') is built of nested tables with solid `bgcolor`s, cell padding, cell
+buttons and a conditional 560-pixel table, since Outlook for Windows draws mail with Word (no
+max-width, div spacing, link padding or rgba); Telegram is a compact card whose links are
 inline-keyboard buttons (a photo message when a chart is attached); Discord is an embed with
 Severity / Host / Site / Reading fields. Microsoft Teams gets an Adaptive Card (a header in the status
 style, the details as plain text runs so nothing typed is read as Markdown, Open in Argus /
@@ -2573,8 +2579,8 @@ plane; the probe checks in and converges.
   pickers of the discovery dialogs say "(not reporting to Argus)" and refuse it instead of "(needs
   probe update)", its Processes panel says why it has no counts, and a system notice goes out after
   15 more minutes (`probe-report:<proxy>`). A re-enrollment resets `report_at`.
-- **A probe's addresses** (`probeaddrs.go`). The Probes page shows a LAN and a public address under
-  each probe's name. The proxy container's minute report carries `ip` (the source of its route to the
+- **A probe's addresses** (`probeaddrs.go`). The Probes page shows a LAN IP and a Public IP, a line
+  each, under each probe's name. The proxy container's minute report carries `ip` (the source of its route to the
   internet) and the last `public_ip` its own lookup found (one HTTPS call to Cloudflare's trace at
   `1.1.1.1`, every hour or when `ip` changes) with its age, `public_age`; Argus stores them with the
   address it sees the report come from (`clientIP`, so `ARGUS_TRUST_PROXY` applies). The host's LAN

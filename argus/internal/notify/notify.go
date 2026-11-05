@@ -79,11 +79,17 @@ func (e Event) backLine() string {
 	return "Back after " + fmtDur(e.SinceSecs)
 }
 
+// plainInfo reports whether the event is a system notice that is news: a failing one (state
+// "error") or a warning one is told in red or amber like a problem, with [ERROR] / [WARNING].
+func (e Event) plainInfo() bool {
+	return e.Kind == "info" && e.State != "error" && e.State != "warning"
+}
+
 func (e Event) color() int {
 	if e.Kind == "ack" {
 		return colorAck
 	}
-	if e.Kind == "info" {
+	if e.plainInfo() {
 		return colorInfo
 	}
 	switch e.State {
@@ -104,7 +110,7 @@ func (e Event) emoji() string {
 	if e.Kind == "ack" {
 		return "🔵"
 	}
-	if e.Kind == "info" {
+	if e.plainInfo() {
 		return "ℹ️"
 	}
 	switch e.State {
@@ -145,6 +151,12 @@ func (e Event) tag() string {
 	case "ack":
 		return "ACKNOWLEDGED"
 	case "info":
+		switch e.State {
+		case "error":
+			return "ERROR"
+		case "warning":
+			return "WARNING"
+		}
 		return "INFO"
 	case "reminder":
 		return strings.ToUpper(severityLabel(e.Severity)) + " REMINDER"

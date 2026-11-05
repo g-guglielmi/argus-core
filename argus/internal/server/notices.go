@@ -59,8 +59,12 @@ const (
 // belongs - a site (a probe's) or the whole install ("").
 type notice struct {
 	key, title, detail string
-	host, site, view   string // host label, site group, and the Argus view to link to
-	minAge             time.Duration
+	// level is how bad it is: noticeError (a failure: an update, a backup, a channel, a probe gone
+	// quiet), noticeWarning (heading for one: a certificate ending, no backup lately) or "" for
+	// news. The channels tell [ERROR] and [WARNING] in red and amber, the rest as [INFO].
+	level            string
+	host, site, view string // host label, site group, and the Argus view to link to
+	minAge           time.Duration
 	// cleared is the all-clear's title, told when this condition ends after being told ("" = none).
 	cleared string
 	// skip leaves a destination out (a failing channel isn't told about itself; a personal channel's
@@ -70,6 +74,11 @@ type notice struct {
 	// line in the pooled message ("mybz (was 7.0.31-r31)"). Empty = told on its own.
 	pool, member string
 }
+
+const (
+	noticeError   = "error"
+	noticeWarning = "warning"
+)
 
 // noticePool is the "updated to" events held back to be told together, persisted across restarts.
 type noticePool struct {
@@ -257,13 +266,21 @@ func (s *Server) tellOnce(ctx context.Context, n notice, kind string, dests []no
 		return
 	}
 	ev := notify.Event{
-		Kind: "info", State: "ok", Name: n.title, Detail: n.detail, Host: n.host, Site: n.site,
+		Kind: "info", State: noticeState(n.level), Name: n.title, Detail: n.detail, Host: n.host, Site: n.site,
 		When: time.Now().In(s.mgr.Location()), OpenURL: viewLink(s.mgr.PublicURL(), n.view),
 	}
 	s.logger.Info("notices: sending", "key", n.key, "channels", len(to))
 	for _, d := range to {
 		d.send(ctx, ev)
 	}
+}
+
+// noticeState is the event state a notice's level is told with ("ok" for news).
+func noticeState(level string) string {
+	if level == "" {
+		return "ok"
+	}
+	return level
 }
 
 // tellCleared sends a told condition's all-clear once it has ended: the same [INFO] shape, to the
@@ -356,7 +373,7 @@ func (s *Server) coreUpdateNotices() []notice {
 	if st.Message != "" {
 		detail = st.Message + "\n" + detail
 	}
-	return []notice{{key: "core-update:" + id, title: "Argus update to " + st.Target + " failed", detail: detail, view: "updates"}}
+	return []notice{{level: noticeError, key: "core-update:" + id, title: "Argus update to " + st.Target + " failed", detail: detail, view: "updates"}}
 }
 
 // coreOSNotices: the core VM's pending security updates, a reboot it needs, and a Zabbix server minor
@@ -443,7 +460,7 @@ func (s *Server) probeNotices(ctx context.Context) (conds, events []notice) {
 		if ag.Procs.CPU.Starved || len(ag.Procs.Held) > 0 {
 			if s.mgr.ProbeAutoscale() != settings.AutoscaleOff {
 				title, detail := probeCPUNotice(site, ag)
-				conds = append(conds, notice{key: "probe-cpu:" + name, title: title, detail: detail, host: host, site: site, view: "probes",
+				conds = append(conds, notice{level: noticeWarning, key: "probe-cpu:" + name, title: title, detail: detail, host: host, site: site, view: "probes",
 					cleared: "Probe " + site + " is no longer short on CPU"})
 			}
 		}
@@ -497,7 +514,7 @@ func (s *Server) selfUpdateEvents(ctx context.Context, proxy, what, version, ver
 		case versionMatchesTag(version, tag), changed, rollingTag(tag) && versionMatchesTag(version, newest):
 			_ = s.st.MetaDelete(ctx, pendPrefix+proxy)
 		case time.Since(time.Unix(atoi64(at), 0)) > selfUpdateGrace:
-			out = append(out, notice{key: what + "-update-failed:" + proxy + ":" + tag + ":" + at, title: subject + " failed to update to " + tag,
+			out = append(out, notice{level: noticeError, key: what + "-update-failed:" + proxy + ":" + tag + ":" + at, title: subject + " failed to update to " + tag,
 				detail: "It's still on " + version + " " + fmt.Sprint(int(selfUpdateGrace.Minutes())) + " minutes after the update was handed out; the updater rolls back a version that doesn't start healthy.",
 				host:   host, site: site, view: "updates"})
 			_ = s.st.MetaDelete(ctx, pendPrefix+proxy)
@@ -585,7 +602,7 @@ func channelFailingNotices(channels []store.NotifyChannel, userChannels []store.
 			continue
 		}
 		key := store.DeliveryKey(store.DeliveryGlobal, c.ID)
-		out = append(out, notice{key: "channel-failing:" + key, title: "Notification channel failing: " + c.Name,
+		out = append(out, notice{level: noticeError, key: "channel-failing:" + key, title: "Notification channel failing: " + c.Name,
 			detail: "Its deliveries keep failing: " + c.LastError, view: "notifications", minAge: 30 * time.Minute,
 			skip: func(d notifyDest) bool { return d.key == key }, cleared: "Notification channel delivering again: " + c.Name})
 	}
@@ -598,7 +615,7 @@ func channelFailingNotices(channels []store.NotifyChannel, userChannels []store.
 		if label == "" {
 			label = c.Type
 		}
-		out = append(out, notice{key: "channel-failing:" + key, title: "Your " + label + " channel is failing",
+		out = append(out, notice{level: noticeError, key: "channel-failing:" + key, title: "Your " + label + " channel is failing",
 			detail: "Its deliveries keep failing: " + c.LastError, view: "account", minAge: 30 * time.Minute,
 			skip: func(d notifyDest) bool { return d.key == key || d.kind != store.DeliveryUser || d.userID != owner }})
 	}

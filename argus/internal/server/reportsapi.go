@@ -597,13 +597,13 @@ func (s *Server) emailReport(ctx context.Context, run reportRun) error {
 		link = strings.TrimRight(p, "/") + "/?view=reports"
 	}
 	text := run.name + "\r\n" + doc.Period + "\r\n\r\nThe report is attached as a PDF."
-	body := "<p style=\"font:15px sans-serif;margin:0 0 4px\"><b>" + html.EscapeString(run.name) + "</b></p>" +
-		"<p style=\"font:14px sans-serif;color:#555;margin:0 0 14px\">" + html.EscapeString(doc.Period) + "</p>" +
-		"<p style=\"font:14px sans-serif;margin:0\">The report is attached as a PDF.</p>"
+	card := notify.Card{Color: notify.AccentColor, Title: run.name,
+		Body: []string{notify.CardMuted(html.EscapeString(doc.Period)), notify.CardText("The report is attached as a PDF.")}}
 	if link != "" {
 		text += "\r\nReports in Argus: " + link
-		body += "<p style=\"font:14px sans-serif;margin:10px 0 0\"><a href=\"" + html.EscapeString(link) + "\">Reports in Argus</a></p>"
+		card.Buttons = []notify.Button{{Label: "Reports in Argus", Href: link, Color: notify.AccentColor}}
 	}
+	body := card.HTML()
 	file := reportFile(run.name, run.spec, run.now, s.mgr.Location())
 	msg := notify.AttachmentMessage(from, run.to, subject, text, body, file, "application/pdf", pdf)
 	sendCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
