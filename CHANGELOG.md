@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.18] - 2026-11-05
+
 ### Added
 - **A field kit away is quiet, and its hosts go after a while.** A field kit going offline doesn't
   alert (its hosts' alerts are held, as any probe's are). Once it has been away longer than the new
