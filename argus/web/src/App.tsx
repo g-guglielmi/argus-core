@@ -1451,9 +1451,26 @@ function ProbeRebootDialog({ p, onChanged, onClose }: { p: Proxy; onChanged: () 
 // public address, instead of the fleet's; it checks in at the Public URL like every probe.
 function ProbeKitDialog({ p, onChanged, onClose }: { p: Proxy; onChanged: () => void; onClose: () => void }) {
   const toast = useToast()
+  const confirm = useConfirm()
   const [kit, setKit] = useState(!!p.kit)
   const [hosts, setHosts] = useState<{ fleet: string; kit: string } | null>(null)
+  const [mine, setMine] = useState<{ hosts: number; days: number; last_access: number } | null>(null) // its hosts, and when they go
   const [busy, setBusy] = useState(false)
+  const loadMine = () => fetch(`/api/probes/${encodeURIComponent(p.name)}/kit-hosts`).then((r) => (r.ok ? r.json() : null)).then(setMine).catch(() => setMine(null))
+  useEffect(() => { if (p.kit) void loadMine() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  async function removeHosts() {
+    if (!mine || !mine.hosts) return
+    const n = `${mine.hosts} host${mine.hosts === 1 ? '' : 's'}`
+    if (!(await confirm({ title: 'Remove the kit\'s hosts', message: `Remove the ${n} ${p.name} monitors, from Zabbix and from Argus? Their sensors and settings go; their incidents and alerts stay in the history. Its own Probe host stays. Do it before taking the kit to the next network.`, confirmLabel: `Remove ${n}`, danger: true }))) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/kit-hosts`, { method: 'DELETE' }).catch(() => null)
+      if (!res || !res.ok) { toast.error(await errText(res, 'Could not remove the hosts')); return }
+      const n = Number((await res.json().catch(() => ({}))).removed) || 0
+      toast.success(`Removed ${n} host${n === 1 ? '' : 's'} of ${p.name}.`)
+      fireDataRefresh(); void loadMine()
+    } finally { setBusy(false) }
+  }
   useEffect(() => {
     fetch('/api/settings').then((r) => (r.ok ? r.json() : [])).then((list: { key: string; value?: string }[]) => {
       const val = (k: string) => (list.find((x) => x.key === k)?.value || '').trim()
@@ -1482,6 +1499,20 @@ function ProbeKitDialog({ p, onChanged, onClose }: { p: Proxy; onChanged: () => 
             ? <div className="hs-note">It dials Zabbix at the field kit core host, {mono(hosts.kit)} (Settings, Probes), instead of the fleet's{hosts.fleet ? <>, {mono(hosts.fleet)}</> : null}. It checks in with Argus at the Public URL, like every probe. It takes the address at its next check-in and dials it from its next start.</div>
             : <div className="hs-note warn">No field kit core host is set (Settings, Probes): until there is one, a field kit dials the fleet's address{hosts.fleet ? <>, {mono(hosts.fleet)}</> : null}, which a network that isn't yours may not reach.</div>)
           : <div className="hs-note">A probe like any other: it dials Zabbix at the fleet's address{hosts.fleet ? <>, {mono(hosts.fleet)}</> : null}.</div>}
+        {p.kit && kit && mine && (
+          <>
+            <div className="hs-title">Its hosts</div>
+            <div className="hs-note">
+              {mine.hosts === 0 ? 'It monitors no hosts. ' : `It monitors ${mine.hosts} host${mine.hosts === 1 ? '' : 's'}. `}
+              While it is away its being offline doesn't alert, and its hosts' alerts are held.{' '}
+              {mine.days > 0
+                ? <>After {mine.days} days away (Settings, Probes) they are removed, from Zabbix and from Argus; their incidents and alerts stay in the history.</>
+                : 'They are never removed by themselves (Settings, Probes: Field kit hosts kept for 0 days).'}
+              {mine.days > 0 && mine.hosts > 0 && !p.online && mine.last_access > 0 && <> Away since {fmtWhen(mine.last_access)}: they go {relTime(mine.last_access + mine.days * 86400)}.</>}
+            </div>
+            {mine.hosts > 0 && <div style={{ marginTop: 8 }}><Button variant="danger" onClick={removeHosts} disabled={busy}>Remove its {mine.hosts} host{mine.hosts === 1 ? '' : 's'} now</Button></div>}
+          </>
+        )}
       </div>
       <div className="dlg-foot">
         <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>

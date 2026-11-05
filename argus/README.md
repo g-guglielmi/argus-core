@@ -178,6 +178,7 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 | `ARGUS_ZABBIX_CA_FILE` | `ARGUS_CA_CERT_FILE` | a CA certificate (PEM) the Zabbix API client trusts besides the system roots: the core serves the API over https on `:8443` with a certificate from the monitoring CA (the appliance, a core installed by hand that runs Argus, or the server deploy/README.md shows for a Zabbix on its own VM), so with the CA mounted nothing more is needed |
 | `ARGUS_CA_KEY_FILE` | *(empty)* | path to the CA private key (`ca.key`) - mount **read-only**; both must be set to enable enrollment |
 | `ARGUS_PROBE_CORE_HOST` | *(Public URL host)* | _(UI)_ address probes dial for `:10051` (FQDN or LAN IP). Falls back to the Public URL's hostname |
+| `ARGUS_PROBE_KIT_HOSTS_DAYS` | `14` | _(UI)_ days a field kit can be away before the hosts it monitors are removed (history kept); `0` keeps them |
 | `ARGUS_PROBE_KIT_CORE_HOST` | *(Probe core host)* | _(UI)_ address field kits dial for `:10051` from networks that aren't yours: the core's public one. A probe becomes a field kit from its ⋮ menu on the Probes page |
 | `ARGUS_PROBE_AUTOSCALE` | `restart` | _(UI)_ probe process autoscaling: `restart` sizes each probe's Zabbix process counts from its load and has the updater sidecar restart it to apply a change; `next-restart` applies a change at the probe's next start; `off` leaves the counts alone |
 

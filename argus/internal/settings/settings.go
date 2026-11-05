@@ -38,6 +38,7 @@ const (
 	KeyLoginWindow   = "login_window_minutes"
 	KeyProbeCoreHost = "probe_core_host"
 	KeyProbeKitHost  = "probe_kit_core_host"
+	KeyKitHostsDays  = "probe_kit_hosts_days"
 	KeySessionMax    = "session_max_hours"
 	KeySessionIdle   = "session_idle_minutes"
 	KeyAllowedHosts  = "allowed_hosts"
@@ -95,6 +96,7 @@ var defs = []def{
 	{KeyTrustProxy, "ARGUS_TRUST_PROXY", "Trusted proxies", "Proxy", "proxylist", false, "", "Leave empty when people reach Argus directly. true = one reverse proxy on the LAN or the same host in front of Argus (the client is the address it adds to X-Forwarded-For; a connection from a public address is taken as a direct client). Or list the proxies' addresses or networks, comma-separated, e.g. 10.0.0.2, 10.0.5.0/24: forwarded headers then count only from them, and a chain of proxies (NetScaler -> HAProxy -> Argus) resolves to the real client.", 0},
 	{KeyProbeCoreHost, "ARGUS_PROBE_CORE_HOST", "Probe core host", "Probes", "host", false, "", "Address probes dial for :10051 (host or host:port). Prefer an IP: the proxy re-resolves this on every data send, so an FQDN here generates heavy DNS load. Baked into new enrollments and re-synced to existing probes at their next restart. Falls back to the Public URL host if empty.", 0},
 	{KeyProbeKitHost, "ARGUS_PROBE_KIT_CORE_HOST", "Field kit core host", "Probes", "host", false, "", "The address a field kit dials for :10051 from a network that isn't yours: the core's public one (host or host:port, an IP if you can). A probe turned into a field kit (its ⋮ menu on the Probes page) takes it at its next check-in and dials it from its next start; it checks in with Argus at the Public URL, like every probe. Empty: field kits use the Probe core host.", 0},
+	{KeyKitHostsDays, "ARGUS_PROBE_KIT_HOSTS_DAYS", "Field kit hosts kept for (days)", "Probes", "int", false, "14", "How long a field kit can be away before the hosts it monitors are removed, from Zabbix and from Argus (their incidents and alerts stay in the history); its own Probe host stays. While it is away its being offline doesn't alert and its hosts' alerts are held. 0 keeps them.", 0},
 	{KeyHeartbeatURL, "ARGUS_HEARTBEAT_URL", "Heartbeat URL", "Watchdog", "url", false, "", "An outside monitor's ping URL, e.g. a healthchecks.io check or an Uptime Kuma push monitor. Argus requests it once a minute while it is healthy end to end, so the monitor alerts you when the pings stop. Empty turns it off.", 0},
 	{KeyChangesKeep, "ARGUS_CHANGES_KEEP_DAYS", "Keep changes for", "Changes", "choice", false, "365", "How long the change log keeps who changed what. Older entries are dropped once a day. Journal entries stay as long as their host.", 0},
 	{KeyAutoscale, "ARGUS_PROBE_AUTOSCALE", "Process autoscaling", "Probes", "choice", false, AutoscaleRestart, "Zabbix starts a fixed number of pingers, pollers, trappers and workers and reads them only at start. Argus watches how busy each kind is on every probe and raises a count whose busiest hour passed 60% (aiming for 50%), or lowers one that stayed under 20%, never below the image's own default. Counts set on the container (ZBX_START* variables) are left alone. With the updater sidecar the probe restarts to apply a change (a few seconds; collected data is kept); otherwise it applies at the probe's next start.", 0},
@@ -146,6 +148,7 @@ type Manager struct {
 	loc           *time.Location
 	probeCoreHost string
 	probeKitHost  string
+	kitHostsDays  int
 	sessionMax    time.Duration
 	sessionIdle   time.Duration
 	allowedHosts  []string // nil = the allowed-hosts check is off
@@ -206,6 +209,13 @@ func (m *Manager) ProbeCoreHost() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.probeCoreHost
+}
+
+// KitHostsDays is how long a field kit can be away before its hosts are removed (0 = never).
+func (m *Manager) KitHostsDays() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.kitHostsDays
 }
 
 // ProbeKitCoreHost is the address field kits dial for :10051 ("" = the probe core host).
@@ -423,6 +433,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	m.loc = loc
 	m.probeCoreHost = pch
 	m.probeKitHost = pkh
+	m.kitHostsDays = atoiClamp(effective(snap[KeyKitHostsDays]), 14, 0)
 	m.sessionMax = time.Duration(sessMaxH) * time.Hour
 	m.sessionIdle = time.Duration(sessIdleMin) * time.Minute
 	m.allowedHosts = allowed

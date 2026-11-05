@@ -458,6 +458,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	settle := int64(mgr.Settle() / time.Second)
 	noteMastersDown(masterDown(problems, targets), time.Now().Unix())
 	masters := loadMasters(ctx, st, zbx, hosts, problems, targets, settle)
+	kitHere := kitProbeHosts(ctx, st, zbx, masters)
 	grace := int64(flapDelay / time.Second)
 	if grace < minHoldGraceSecs {
 		grace = minHoldGraceSecs
@@ -573,6 +574,9 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		}
 		_, isAcked := acked[p.EventID]
 		isNoData := strings.Contains(t.Expression, "nodata(")
+		if isNoData && kitHere[hostID] {
+			alertable = false // a field kit away is expected: its not reporting never alerts (kithosts.go)
+		}
 
 		stt, seen := states[p.EventID]
 		// The incident began when Zabbix raised this problem - or earlier, if it took over from an alert

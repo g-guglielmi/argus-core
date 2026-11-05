@@ -71,6 +71,7 @@ type Server struct {
 	startedAt      time.Time         // when this Argus started: the probes' report check counts from it (probereport.go)
 	mail           *mailState        // the mailboxes' recent mails and a way to read them at once (mailboxes.go)
 	domainKick     chan struct{}     // read the domains now: one was typed on a host (domains.go)
+	kitGone        kitRemovals       // field kits' hosts removed, for the notices loop (kithosts.go)
 }
 
 // New builds the HTTP handler. signingSecret is the alert-link HMAC secret main resolved (and
@@ -106,6 +107,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// System notices (updates available, self-update results, finished scans, ...) for the channels
 	// that opted in.
 	s.startNotices(context.Background())
+	s.startKitExpiry(context.Background())
 	// Ping the outside monitor once a minute while Argus is healthy (heartbeat.go).
 	s.startHeartbeat(context.Background())
 	// Read the SaaS vendors' status pages for the services the sites check (vendorstatus.go).
@@ -440,6 +442,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/probes/{name}/patch", auth.RequireRole("admin", s.handleProbePatchNow))
 	mux.HandleFunc("PUT /api/probes/{name}/reboot-window", auth.RequireRole("admin", s.handleSetOwnProbeWindow))
 	mux.HandleFunc("PUT /api/probes/{name}/kit", auth.RequireRole("admin", s.handleSetProbeKit))
+	mux.HandleFunc("GET /api/probes/{name}/kit-hosts", auth.RequireRole("admin", s.handleKitHosts))
+	mux.HandleFunc("DELETE /api/probes/{name}/kit-hosts", auth.RequireRole("admin", s.handleKitHosts))
 	mux.HandleFunc("POST /api/probes/warm", auth.RequireRole("admin", s.handleWarmProbes))
 	// issue a check-in credential for an already-enrolled probe (admin) - turns on version reporting
 	mux.HandleFunc("POST /api/probes/{name}/checkin-token", auth.RequireRole("admin", s.handleIssueCheckinToken))

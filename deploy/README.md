@@ -197,7 +197,10 @@ probe no longer needs `gen-certs.sh` or manual proxy registration:
   network. A **field kit** (a probe you bring to a network for a while, turned into one from its ⋮
   menu on the Probes page) dials Zabbix at the **Field kit core host** instead of the probe core
   host (`ARGUS_PROBE_KIT_CORE_HOST` or **Settings → Probes**): the core's public address, with
-  `:10051` reachable from outside. Empty, field kits use the probe core host.
+  `:10051` reachable from outside. Empty, field kits use the probe core host. A kit away doesn't
+  alert; after **Field kit hosts kept for** days away (`ARGUS_PROBE_KIT_HOSTS_DAYS`, default 14,
+  `0` keeps them) the hosts it monitors are removed, history kept, and its Field kit popup removes
+  them at once before you take it to the next network.
 - The Zabbix API token Argus uses must have **super-admin** rights (to run `proxy.create`).
 - For remote sites with no VPN, publish **TCP 10051** on the core to the internet (HAProxy TCP
   passthrough / NAT), and make the `ghcr.io/<owner>/argus-probe` package public (or `docker login`).

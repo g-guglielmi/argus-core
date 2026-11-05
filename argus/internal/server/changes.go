@@ -186,6 +186,7 @@ var changeRoutes = map[string]routeChange{
 	"GET /api/probes/{name}/break-glass":     {cat: "probes", action: "Revealed a probe VM's console password", obj: "probe"},
 	"PUT /api/maps/{name}":                   {cat: "probes", action: "Switched a site's map", obj: "probe", detail: onOffDetail},
 	"PUT /api/probes/{name}/kit":             {cat: "probes", action: "Switched a probe's field kit", obj: "probe", detail: kitDetail},
+	"DELETE /api/probes/{name}/kit-hosts":    {cat: "probes", action: "Removed a field kit's hosts", obj: "probe"},
 
 	// updates
 	"POST /api/update/start":    {cat: "updates", action: "Updated Argus", detail: fieldDetail("target")},

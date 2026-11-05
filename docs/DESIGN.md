@@ -2510,8 +2510,15 @@ plane; the probe checks in and converges.
   core host. The wizard edits the card's own `dietpi.txt` in the browser (DietPi reads its own lines
   from it, so Argus never ships a copy that would age) and generates `Automation_Custom_Script.sh`,
   which DietPi runs once after installing Docker: the probe and its sidecar, then the spent token
-  scrubbed from the card. Next: the kit's hosts going quiet while it is away and being removed after
-  it has been gone a while.
+  scrubbed from the card. **Away** (`kithosts.go`): a kit's not reporting (the nodata problems on its
+  Probe host) never alerts, and its hosts' alerts are held by its site's probe as any probe's are.
+  Once it has been away (Zabbix's `lastaccess`) longer than the **Field kit hosts kept for** days
+  (`ARGUS_PROBE_KIT_HOSTS_DAYS`, default 14, 0 = never), an hourly job removes the hosts its proxy
+  monitors, its own Probe host aside: `host.delete` in Zabbix, then their rows in Argus's host
+  tables and host suppressions (`DeleteHostRecords`); the incidents, alerts sent and the change log
+  stay, and a discovered device that had become one is offered again. It is logged as done by Argus
+  and told as a system notice. The Field kit popup shows the count and when they go, and **Remove
+  its hosts now** (`DELETE /api/probes/{name}/kit-hosts`, a kit only) for moving it on at once.
 - **Target.** Argus holds a dashboard-settable target in `app_meta` (`GET`/`PUT /api/probes/target`,
   admin): `latest`, or an exact pin in the **decoupled probe scheme** - `7.0.29-r1`, *not* app
   semver (see the probe-image versioning in `deploy/README.md`). `/api/proxies` reports each

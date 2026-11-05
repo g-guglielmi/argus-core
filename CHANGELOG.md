@@ -14,6 +14,12 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 ### Added
+- **A field kit away is quiet, and its hosts go after a while.** A field kit going offline doesn't
+  alert (its hosts' alerts are held, as any probe's are). Once it has been away longer than the new
+  **Field kit hosts kept for** setting (Settings, Probes; 14 days unless set, 0 keeps them), the
+  hosts it monitors are removed, from Zabbix and from Argus; their incidents and alerts stay in the
+  history, a system notice says so, and the change log has it. The Field kit popup shows how many
+  hosts it has and when they go, with **Remove its hosts now** for taking it to the next network.
 - **A Raspberry Pi field kit method in Add probe.** For a 64-bit Pi with DietPi on a network cable:
   pick the `dietpi.txt` on the flashed SD card and Argus sets the kit's lines in your browser (an
   unattended first boot that installs Docker, the probe's name as hostname, Argus's time zone, a

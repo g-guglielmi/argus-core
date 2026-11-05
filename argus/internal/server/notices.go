@@ -221,6 +221,7 @@ func (s *Server) noticeTick(ctx context.Context) {
 	events := append(probeEvents, s.coreUpdateNotices()...)
 	events = append(events, caEvents...)
 	events = append(events, s.scanNotices(ctx)...)
+	events = append(events, s.kitGone.take()...)
 	var pooled []notice
 	for _, n := range events {
 		if n.pool != "" {
