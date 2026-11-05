@@ -14,6 +14,13 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 ### Added
+- **A Raspberry Pi field kit method in Add probe.** For a 64-bit Pi with DietPi on a network cable:
+  pick the `dietpi.txt` on the flashed SD card and Argus sets the kit's lines in your browser (an
+  unattended first boot that installs Docker, the probe's name as hostname, Argus's time zone, a
+  generated password shown once, automatic upgrades), then save the generated
+  `Automation_Custom_Script.sh` next to it. On first boot DietPi installs Docker and the script
+  starts the probe and its updater sidecar, then takes the spent token off the card. The probe is a
+  field kit from its first boot.
 - **Field kits.** A probe you bring to a network for a while (a Raspberry Pi in a bag) can be made a
   field kit from its ⋮ menu on the Probes page; the list marks it with a violet field kit tag. A
   field kit dials Zabbix at the new **Field kit core host** (Settings, Probes, or

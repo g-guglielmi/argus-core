@@ -206,8 +206,17 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	} else if err := s.st.UpsertProbeCredential(ctx, t.ProxyName, probeHash); err != nil {
 		s.logger.Warn("enroll: could not store probe check-in credential", "proxy", t.ProxyName, "err", err)
 		probeToken = ""
-	} else if c, err := parseCertPEM(certPEM); err == nil {
-		_ = s.st.SetProbeCertEnd(ctx, t.ProxyName, c.NotAfter.Unix())
+	} else {
+		if c, err := parseCertPEM(certPEM); err == nil {
+			_ = s.st.SetProbeCertEnd(ctx, t.ProxyName, c.NotAfter.Unix())
+		}
+		// A field kit's token (the Raspberry Pi kit method) makes the probe a kit from the start, so
+		// its very first core host is the field kit one.
+		if t.Kit {
+			if err := s.st.SetProbeKit(ctx, t.ProxyName, true); err != nil {
+				s.logger.Warn("enroll: could not mark the field kit", "proxy", t.ProxyName, "err", err)
+			}
+		}
 	}
 	s.logger.Info("probe enrolled", "proxy", t.ProxyName)
 
@@ -215,7 +224,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		Certificate: string(certPEM),
 		CA:          string(s.ca.CertPEM()),
 		ProxyName:   t.ProxyName,
-		CoreHost:    s.probeCoreHost(),
+		CoreHost:    s.probeCoreHostFor(ctx, t.ProxyName),
 		ProbeToken:  probeToken,
 		CheckinURL:  s.probeCheckinURL(),
 	})
@@ -264,6 +273,7 @@ func (s *Server) handleCreateEnrollToken(w http.ResponseWriter, r *http.Request)
 	var req struct {
 		Site     string `json:"site"`
 		TTLHours int    `json:"ttl_hours"`
+		Kit      bool   `json:"kit"` // the Raspberry Pi kit method: the probe is a field kit from the start
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -295,9 +305,16 @@ func (s *Server) handleCreateEnrollToken(w http.ResponseWriter, r *http.Request)
 	}
 	expires := time.Now().Add(time.Duration(ttl) * time.Hour)
 	id, err := s.st.CreateEnrollToken(r.Context(), hash, proxyName, site, createdBy, expires)
+	if err == nil && req.Kit {
+		err = s.st.SetEnrollTokenKit(r.Context(), id)
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create token"})
 		return
+	}
+	coreHost := s.probeCoreHost()
+	if h := s.mgr.ProbeKitCoreHost(); req.Kit && h != "" {
+		coreHost = h
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":         id,
@@ -306,7 +323,8 @@ func (s *Server) handleCreateEnrollToken(w http.ResponseWriter, r *http.Request)
 		"site":       site,
 		"expires_at": expires.Unix(),
 		"enroll_url": enrollURLFrom(s.baseURL(r)),
-		"core_host":  s.probeCoreHost(),
+		"core_host":  coreHost,
+		"kit":        req.Kit,
 	})
 }
 

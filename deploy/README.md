@@ -212,6 +212,27 @@ probe no longer needs `gen-certs.sh` or manual proxy registration:
    single-use token isn't re-redeemed on restart.
 3. The proxy appears **online** in the Probes list within a minute.
 
+**A Raspberry Pi field kit (DietPi).** The **Raspberry Pi field kit** method in Add probe is for a
+probe you bring to a network for a while: a 64-bit Pi (3, 4, 5 or Zero 2 W) on a network cable. It
+is a field kit from its first boot (its token says so), so it dials the Field kit core host, and it
+needs the Public URL and `:10051` reachable from the networks it goes to.
+1. Flash DietPi (the Trixie image the wizard links) on an SD card.
+2. Reopen the card: its FAT boot partition holds `dietpi.txt`. Pick it in the wizard: Argus sets
+   the kit's lines in the browser (the file never leaves it) and hands it back to save over the
+   original. DietPi reads its own lines from that file, so it is edited, never replaced. The lines:
+   `AUTO_SETUP_AUTOMATED=1`, a generated `AUTO_SETUP_GLOBAL_PASSWORD` (the root and dietpi password,
+   shown once; DietPi takes it out of the file at first boot), `AUTO_SETUP_NET_HOSTNAME` (the
+   proxy name), `AUTO_SETUP_TIMEZONE` (Argus's), `AUTO_SETUP_KEYBOARD_LAYOUT`,
+   `AUTO_SETUP_INSTALL_SOFTWARE_ID=docker`, `AUTO_SETUP_CUSTOM_SCRIPT_EXEC=0`, `SURVEY_OPTED_IN=0`
+   and `CONFIG_CHECK_APT_UPDATES=2` (automatic upgrades). The wizard also shows them to set by hand.
+3. Save the wizard's `Automation_Custom_Script.sh` next to it. DietPi runs it once, as root, after
+   its first-run installs: it starts the probe and its argus-updater sidecar under
+   `/docker/argus-<proxy>` (like the Docker run method), then takes the spent token out of the
+   copies on the card. A failed start keeps the token, so a rerun can still enroll.
+4. Boot the Pi on a cable. The first boot updates DietPi and installs Docker (10 to 15 minutes),
+   then the kit enrolls. Wi-Fi isn't set up by the wizard: for it, set `aWIFI_SSID[0]` and
+   `aWIFI_KEY[0]` in the card's `dietpi-wifi.txt` and `AUTO_SETUP_NET_WIFI_ENABLED=1` in `dietpi.txt`.
+
 The manual flow below stays available as a fallback (e.g. before the CA is mounted).
 
 ### Migrating a manually-enrolled proxy to `argus-probe`

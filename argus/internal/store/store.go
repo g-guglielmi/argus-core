@@ -945,8 +945,12 @@ CREATE TABLE IF NOT EXISTS reports (
 		}
 	}
 	// A field kit (probekit.go): a probe brought to a network for a while, which dials Zabbix at the
-	// field kit core host instead of the fleet's.
+	// field kit core host instead of the fleet's; a token minted by the Raspberry Pi kit method makes
+	// the probe that redeems it one from the start.
 	if err := s.ensureColumn("probe_agents", "kit INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("enroll_tokens", "kit INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	// Discovery job kind ('scan' = subnet scan, 'unifi' = controller sweep) plus the sweep's

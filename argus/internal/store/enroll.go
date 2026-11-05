@@ -20,16 +20,18 @@ type EnrollToken struct {
 	CreatedAt time.Time
 	ExpiresAt time.Time
 	UsedAt    *time.Time
+	Kit       bool // the probe it enrolls is a field kit from the start (the Raspberry Pi kit method)
 }
 
-const enrollColumns = `id,proxy_name,site,created_by,created_at,expires_at,used_at`
+const enrollColumns = `id,proxy_name,site,created_by,created_at,expires_at,used_at,kit`
 
 func scanEnrollToken(row rowScanner) (*EnrollToken, error) {
 	var t EnrollToken
 	var createdBy sql.NullInt64
 	var created, expires int64
 	var used sql.NullInt64
-	if err := row.Scan(&t.ID, &t.ProxyName, &t.Site, &createdBy, &created, &expires, &used); err != nil {
+	var kit int
+	if err := row.Scan(&t.ID, &t.ProxyName, &t.Site, &createdBy, &created, &expires, &used, &kit); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -38,6 +40,7 @@ func scanEnrollToken(row rowScanner) (*EnrollToken, error) {
 	if createdBy.Valid {
 		t.CreatedBy = &createdBy.Int64
 	}
+	t.Kit = kit != 0
 	t.CreatedAt = time.Unix(created, 0)
 	t.ExpiresAt = time.Unix(expires, 0)
 	if used.Valid {
@@ -55,6 +58,12 @@ func (s *Store) CreateEnrollToken(ctx context.Context, tokenHash, proxyName, sit
 		return 0, err
 	}
 	return res.LastInsertId()
+}
+
+// SetEnrollTokenKit marks a token as a field kit's: the probe that redeems it is a kit from the start.
+func (s *Store) SetEnrollTokenKit(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE enroll_tokens SET kit=1 WHERE id=?`, id)
+	return err
 }
 
 // EnrollTokenByHash looks up a token by its hash regardless of state; the caller checks expiry/use.

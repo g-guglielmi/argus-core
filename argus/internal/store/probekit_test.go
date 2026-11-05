@@ -8,6 +8,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestProbeKitFlag(t *testing.T) {
@@ -43,4 +44,27 @@ func TestProbeKitFlag(t *testing.T) {
 	if kit, _ := st.ProbeIsKit(ctx, "proxy-kit1"); kit {
 		t.Fatal("switched off, still a kit")
 	}
+}
+
+// A token minted by the Raspberry Pi kit method says so when it is claimed.
+func TestEnrollTokenKit(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	exp := time.Now().Add(time.Hour)
+	plain, _ := st.CreateEnrollToken(ctx, "h-plain", "proxy-site1", "site1", 1, exp)
+	kit, _ := st.CreateEnrollToken(ctx, "h-kit", "proxy-kit1", "kit1", 1, exp)
+	if err := st.SetEnrollTokenKit(ctx, kit); err != nil {
+		t.Fatal(err)
+	}
+	for hash, want := range map[string]bool{"h-plain": false, "h-kit": true} {
+		tok, err := st.ClaimEnrollToken(ctx, hash, time.Now())
+		if err != nil || tok.Kit != want {
+			t.Fatalf("%s: %+v, %v; want kit=%v", hash, tok, err, want)
+		}
+	}
+	_ = plain
 }

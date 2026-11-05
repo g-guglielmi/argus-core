@@ -2505,8 +2505,13 @@ plane; the probe checks in and converges.
   address) instead of the fleet's, applied at its next start like any core host; with none set it
   gets the fleet's. Its check-in address needs nothing: every probe checks in at the Public URL
   it got at enrollment, which is why the Public URL should be the public FQDN from the start.
-  Next: a Raspberry Pi kit method in Add probe (on by default when enrolled that way), and the kit's
-  hosts going quiet while it is away and being removed after it has been gone a while.
+  The **Raspberry Pi field kit** method in Add probe (DietPi) mints a kit token (`enroll_tokens.kit`):
+  the probe that redeems it is a kit from the start, and enrollment already hands it the field kit
+  core host. The wizard edits the card's own `dietpi.txt` in the browser (DietPi reads its own lines
+  from it, so Argus never ships a copy that would age) and generates `Automation_Custom_Script.sh`,
+  which DietPi runs once after installing Docker: the probe and its sidecar, then the spent token
+  scrubbed from the card. Next: the kit's hosts going quiet while it is away and being removed after
+  it has been gone a while.
 - **Target.** Argus holds a dashboard-settable target in `app_meta` (`GET`/`PUT /api/probes/target`,
   admin): `latest`, or an exact pin in the **decoupled probe scheme** - `7.0.29-r1`, *not* app
   semver (see the probe-image versioning in `deploy/README.md`). `/api/proxies` reports each
