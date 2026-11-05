@@ -66,6 +66,9 @@ GitHub Release from the matching section below.
   proxy still says so), which now reads "Enrolled <date>" or "Registered by hand".
 
 ### Fixed
+- **A long host name no longer runs into its IP on the map.** The names in a box of hosts or VMs
+  were cut at a count of characters, so a wide name beside a long IP overlapped it. Every label on
+  the map is now fitted to the room it has, measured at its own font, and cut with an ellipsis.
 - **Probe updates are taken at once right after a core update.** Argus forgot at its restart that
   the Updates page was open, and a sidecar whose check-in found the core restarting slept its whole
   round (5 minutes): probe updates queued just after a core update waited for it. Argus now asks the

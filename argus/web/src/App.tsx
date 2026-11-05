@@ -10395,7 +10395,30 @@ function mapUse(l: MapLinkT): string {
   return l.use === 0 && Math.max(l.down ?? 0, l.up ?? 0) > 0 ? '<1%' : `${l.use}%`
 }
 
-function mapTrunc(s: string, n: number): string { return s.length > n ? s.slice(0, n - 1) + '…' : s }
+// SVG text neither wraps nor clips, so the map fits each label to the room it has, measured in
+// pixels at its own font: a count of characters let a wide name run into a long IP.
+let mapCtx: CanvasRenderingContext2D | null | undefined
+let mapFont = ''
+function mapTextW(s: string, size: number, weight = 400): number {
+  if (mapCtx === undefined) {
+    mapCtx = document.createElement('canvas').getContext('2d')
+    mapFont = getComputedStyle(document.body).fontFamily || 'sans-serif'
+  }
+  if (!mapCtx) return s.length * size * 0.62
+  mapCtx.font = `${weight} ${size}px ${mapFont}`
+  return mapCtx.measureText(s).width
+}
+// mapFit is s, cut with an ellipsis where it would pass px wide.
+function mapFit(s: string, px: number, size: number, weight = 400): string {
+  if (mapTextW(s, size, weight) <= px) return s
+  let lo = 0, hi = s.length
+  while (lo < hi) {
+    const m = (lo + hi + 1) >> 1
+    if (mapTextW(s.slice(0, m).trimEnd() + '…', size, weight) <= px) lo = m
+    else hi = m - 1
+  }
+  return s.slice(0, Math.max(1, lo)).trimEnd() + '…'
+}
 
 function mapNodeSub(n: MapNodeT, nowSec: number, out?: MapLinkT): string {
   if (n.kind === 'internet' && out?.spare) return [n.provider, 'not connected'].filter(Boolean).join(' · ')
@@ -10953,7 +10976,7 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
                         <title>{[n.name, sub].filter(Boolean).join(' · ')}</title>
                         <rect className="mg-hit" x={4} width={MAP_W - 8} height={MAP_ROW} rx={5} />
                         <circle className={'mn-dot ' + states[i]} cx={15} cy={MAP_ROW / 2} r={3.5} />
-                        <text className="mg-name" x={26} y={13}>{mapTrunc(n.name, n.ip ? 15 : 22)}</text>
+                        <text className="mg-name" x={26} y={13}>{mapFit(n.name, MAP_W - 10 - 26 - (n.ip ? mapTextW(n.ip, 10.5) + 8 : 0), 12, 600)}</text>
                         {n.ip && <text className="mg-ip" x={MAP_W - 10} y={13} textAnchor="end">{n.ip}</text>}
                       </g>
                     )
@@ -10974,9 +10997,9 @@ function SiteMapView({ probe, onBack, role, goHost, goSensor }: { probe: string;
                 <rect className={'mn-box ' + (tone === 'ok' ? '' : tone)} width={MAP_W} height={MAP_H} rx={10} />
                 <g className="mn-ic" transform="translate(12 15)">{MAP_ICON[n.kind] || MAP_ICON.host}</g>
                 <circle className={'mn-dot ' + tone} cx={MAP_W - 12} cy={12} r={4} />
-                <text className="mn-name" x={38} y={21}>{mapTrunc(n.name, 18)}</text>
+                <text className="mn-name" x={38} y={21}>{mapFit(n.name, MAP_W - 38 - 22, 12.5, 600)}</text>
                 {/* The internet's provider and speed, when both don't fit, leave the speed to the hover text. */}
-                <text className="mn-sub" x={38} y={36}>{mapTrunc(n.kind === 'internet' && sub.length > 24 && n.provider ? n.provider : sub, 24)}</text>
+                <text className="mn-sub" x={38} y={36}>{mapFit(n.kind === 'internet' && mapTextW(sub, 10.5) > MAP_W - 48 && n.provider ? n.provider : sub, MAP_W - 48, 10.5)}</text>
               </g>
             )
           })}
