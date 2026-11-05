@@ -1570,8 +1570,9 @@ now, without the threshold -
 message with a plain-text alternative, the inline 2-hour chart, a dark-mode override for clients that
 honour it, and a footer linking back to the channel page; the card (`notify.Card`, also the password
 reset's and the reports') is built of nested tables with solid `bgcolor`s, cell padding, cell
-buttons and a conditional 560-pixel table, since Outlook for Windows draws mail with Word (no
-max-width, div spacing, link padding or rgba); Telegram is a compact card whose links are
+buttons and a conditional 720-pixel table, since Outlook for Windows draws mail with Word (no
+max-width, div spacing, link padding or rgba); a phone gets it edge to edge (a max-width media
+query), and the chart PNG is drawn at the card's image width (`notify.ChartWidth`), never scaled; Telegram is a compact card whose links are
 inline-keyboard buttons (a photo message when a chart is attached); Discord is an embed with
 Severity / Host / Site / Reading fields. Microsoft Teams gets an Adaptive Card (a header in the status
 style, the details as plain text runs so nothing typed is read as Markdown, Open in Argus /

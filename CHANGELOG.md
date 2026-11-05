@@ -56,7 +56,8 @@ GitHub Release from the matching section below.
 - **Emails look right in Outlook for Windows.** Outlook draws mail with Word, which stretched the
   card across the window, dropped its spacing and turned the buttons into highlighted text. Every
   Argus mail (alerts, notices, the password reset, the reports) is now one table-built card that
-  keeps its width, spacing and buttons there too, and looks as before everywhere else.
+  keeps its width, spacing and buttons there too. It is also wider on a desktop (720 pixels, the
+  chart drawn at the width it is shown) and goes edge to edge on a phone.
 - **A failure told by Argus is an error, not news.** A failed core or probe update, a failed
   backup or backup export, a failing notification channel, a probe not reporting or not taking the
   monitoring CA now go out as **[ERROR]** in red; no recent backup, a certificate or the CA ending,

@@ -31,8 +31,13 @@ type Card struct {
 type Button struct{ Label, Href, Color string }
 
 const (
-	cardFont  = `'Segoe UI',-apple-system,Roboto,Helvetica,Arial,sans-serif`
-	cardWidth = 560
+	cardFont = `'Segoe UI',-apple-system,Roboto,Helvetica,Arial,sans-serif`
+	// cardWidth is the card on a desktop (and always in Outlook for Windows, which takes it from a
+	// fixed table); narrower screens get the card across their whole width.
+	cardWidth = 720
+	// ChartWidth is the width of an alert's chart in the card: the body less its padding and the
+	// image's border. The chart is drawn at exactly this size, so it is never scaled on a desktop.
+	ChartWidth = cardWidth - 36 - 2
 	// AccentColor is the Argus accent: a notice, a link, a button.
 	AccentColor = "#2ea8c9"
 )
@@ -78,7 +83,7 @@ func cardDetails(rows []cardDetail) string {
 
 // cardImage is an inline image the width of the body (cid: reference).
 func cardImage(src, alt string) string {
-	w := cardWidth - 36 - 2 // the body's padding, the image's border
+	w := ChartWidth
 	return `<tr><td style="padding:10px 0 4px"><img class="chart" src="` + htmlEscape(src) + `" alt="` + htmlEscape(alt) + `" width="` + strconv.Itoa(w) + `" ` +
 		`style="display:block;width:100%;max-width:` + strconv.Itoa(w) + `px;height:auto;border:1px solid #e5e7eb;border-radius:8px"></td></tr>`
 }
@@ -92,23 +97,26 @@ func (c Card) HTML() string {
 		`<!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript>` +
 		`<style>table,td,a,span{font-family:'Segoe UI',Arial,sans-serif !important}</style><![endif]-->` +
 		`<style>@media (prefers-color-scheme: dark){body,.bg{background:#0e1218 !important}.card{background:#151b23 !important;border-color:#262f3b !important}` +
-		`.txt{color:#eef2f8 !important}.mut{color:#8b98a8 !important}.call{background:#13262e !important}.foot,.chart{border-color:#262f3b !important}}</style></head>`)
+		`.txt{color:#eef2f8 !important}.mut{color:#8b98a8 !important}.call{background:#13262e !important}.foot,.chart{border-color:#262f3b !important}}` +
+		// A phone: the card goes edge to edge, square, with a little less padding inside.
+		`@media (max-width:600px){.wrap{padding:0 !important}.card{border-radius:0 !important;border-left:0 !important;border-right:0 !important}` +
+		`.head{border-radius:0 !important}.pad{padding-left:14px !important;padding-right:14px !important}}</style></head>`)
 	b.WriteString(`<body class="bg" bgcolor="#f3f4f6" style="margin:0;padding:0;background:#f3f4f6">`)
-	b.WriteString(`<table role="presentation" class="bg" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f3f4f6" style="background:#f3f4f6"><tr><td align="center" style="padding:16px 8px">`)
+	b.WriteString(`<table role="presentation" class="bg" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f3f4f6" style="background:#f3f4f6"><tr><td class="wrap" align="center" style="padding:16px 8px">`)
 	b.WriteString(`<!--[if mso]><table role="presentation" width="` + strconv.Itoa(cardWidth) + `" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->`)
 	b.WriteString(`<table role="presentation" class="card" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" ` +
 		`style="max-width:` + strconv.Itoa(cardWidth) + `px;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;border-collapse:separate">`)
-	b.WriteString(`<tr><td bgcolor="` + c.Color + `" style="background:` + c.Color + `;padding:14px 18px;border-radius:11px 11px 0 0;font-family:` + cardFont +
+	b.WriteString(`<tr><td class="head pad" bgcolor="` + c.Color + `" style="background:` + c.Color + `;padding:14px 18px;border-radius:11px 11px 0 0;font-family:` + cardFont +
 		`;font-size:16px;line-height:22px;font-weight:bold;color:#ffffff">` + htmlEscape(c.Title) + `</td></tr>`)
 	if len(c.Body) > 0 {
-		b.WriteString(`<tr><td style="padding:16px 18px 4px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">`)
+		b.WriteString(`<tr><td class="pad" style="padding:16px 18px 4px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">`)
 		for _, r := range c.Body {
 			b.WriteString(r)
 		}
 		b.WriteString(`</table></td></tr>`)
 	}
 	if len(c.Buttons) > 0 {
-		b.WriteString(`<tr><td style="padding:8px 18px 16px"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>`)
+		b.WriteString(`<tr><td class="pad" style="padding:8px 18px 16px"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>`)
 		for i, bt := range c.Buttons {
 			if i > 0 {
 				b.WriteString(`<td width="8" style="width:8px;font-size:0;line-height:0">&nbsp;</td>`)
@@ -123,7 +131,7 @@ func (c Card) HTML() string {
 	if foot == "" {
 		foot = "Sent by Argus"
 	}
-	b.WriteString(`<tr><td class="foot mut" style="padding:10px 18px;border-top:1px solid #e5e7eb;font-family:` + cardFont + `;font-size:11px;line-height:16px;color:#6b7280">` + foot + `</td></tr>`)
+	b.WriteString(`<tr><td class="foot mut pad" style="padding:10px 18px;border-top:1px solid #e5e7eb;font-family:` + cardFont + `;font-size:11px;line-height:16px;color:#6b7280">` + foot + `</td></tr>`)
 	b.WriteString(`</table><!--[if mso]></td></tr></table><![endif]--></td></tr></table></body></html>`)
 	return b.String()
 }

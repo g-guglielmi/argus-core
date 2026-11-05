@@ -8,6 +8,8 @@ import (
 	"image/png"
 	"os"
 	"testing"
+
+	"argus/internal/notify"
 )
 
 func TestAxisNum(t *testing.T) {
@@ -117,9 +119,10 @@ func TestRenderStateChart(t *testing.T) {
 	}
 	shade := blendWhite(bandErr.R, bandErr.G, bandErr.B, 0.18)
 	want := [3]uint8{shade.R, shade.G, shade.B}
-	const mL, pw, mid = 60, 528, 90 // the plot's left edge and width; a height between the two levels
-	downX := mL + 60*pw/120         // the middle of the down stretch
-	upX := mL + 20*pw/120           // the middle of the first up stretch
+	const mL, mid = 60, 90            // the plot's left edge; a height between the two levels
+	pw := notify.ChartWidth - mL - 12 // the plot's width: the chart less its margins
+	downX := mL + 60*pw/120           // the middle of the down stretch
+	upX := mL + 20*pw/120             // the middle of the first up stretch
 	for _, y := range []int{18, mid, 150} {
 		if got := rgb(downX, y); got != want {
 			t.Fatalf("down stretch at y=%d is %v, want the red shade %v", y, got, want)

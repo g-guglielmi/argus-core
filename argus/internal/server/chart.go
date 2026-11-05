@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"argus/internal/notify"
 	"argus/internal/zabbix"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
@@ -120,7 +121,8 @@ func bandColor(v float64, thr *itemThresholds) color.RGBA {
 // error band, like the app's charts) and dashed, labelled reference lines mark the thresholds that
 // fall inside the plotted range; without it the whole line takes the given status colour.
 func renderChart(vals []float64, cr, cg, cb uint8, units string, thr *itemThresholds) []byte {
-	const w, h = 600, 200
+	// As wide as the email card shows it (notify.ChartWidth), so it is never scaled there.
+	const w, h = notify.ChartWidth, 200
 	// Room on the left for Y labels (wider, to fit unit suffixes like "5.2GBps") and along the bottom.
 	const mL, mR, mT, mB = 60, 12, 12, 26
 	pw, ph := w-mL-mR, h-mT-mB
@@ -317,7 +319,8 @@ func drawTimeAxis(img *image.RGBA, left, right, baseY int, axis, label color.RGB
 // whole plot, like the app's Downtime band, and a step line on the "up" or the "down" level. Drawn as
 // a plain 1/0 line with its area filled, the shaded blocks would be the time it was up.
 func renderStateChart(vals []float64) []byte {
-	const w, h = 600, 200
+	// As wide as the email card shows it (notify.ChartWidth), so it is never scaled there.
+	const w, h = notify.ChartWidth, 200
 	const mL, mR, mT, mB = 60, 12, 12, 26
 	const inset = 14 // the two levels sit inside the plot, clear of its edges
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
